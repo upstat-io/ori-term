@@ -1,4 +1,8 @@
 //! Tests for shell detection, injection, and script embedding.
+//!
+//! Catalog rows: OSC-7, OSC-9, OSC-99, OSC-133-PROMPT, OSC-133-CMD-COMPLETE,
+//! OSC-633, OSC-777, SHINT-OSC-7-CWD, SHINT-OSC-133-PROMPT, SHINT-OSC-133-CMD-COMPLETE,
+//! SHINT-OSC-633-VSCODE, SHINT-OSC-9-NOTIFY, SHINT-OSC-99-NOTIFY, SHINT-OSC-777-NOTIFY
 
 use std::path::Path;
 

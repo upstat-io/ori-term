@@ -183,15 +183,24 @@ impl<S: EffectSink> PaneIoThread<S> {
                     terminator,
                     reply,
                 }) => {
-                    let reply_for_main = reply.clone();
-                    self.send_mux_event(MuxEvent::HostClipboardLoad {
-                        pane_id: self.pane_id,
+                    // Register BEFORE sending the mux event: the main
+                    // thread's handler may race us — receive the event,
+                    // fulfill the token, and send a wake byte all before
+                    // this closure's next line. If register ran after
+                    // send, the wake would fire against an empty pending
+                    // list, no reply would emit, and the caller would
+                    // time out. Registering first closes that window —
+                    // `poll_pending_responses` always sees the token
+                    // (Pending or Fulfilled) by the time any wake path
+                    // reaches it.
+                    self.register_host_request_response(HostRequest::ClipboardLoad {
                         selection,
                         clipboard_char,
                         terminator: terminator.clone(),
-                        reply: reply_for_main,
+                        reply: reply.clone(),
                     });
-                    self.register_host_request_response(HostRequest::ClipboardLoad {
+                    self.send_mux_event(MuxEvent::HostClipboardLoad {
+                        pane_id: self.pane_id,
                         selection,
                         clipboard_char,
                         terminator,
@@ -204,15 +213,16 @@ impl<S: EffectSink> PaneIoThread<S> {
                     terminator,
                     reply,
                 }) => {
-                    let reply_for_main = reply.clone();
-                    self.send_mux_event(MuxEvent::HostColorQuery {
-                        pane_id: self.pane_id,
+                    // See ClipboardLoad arm above for the register-before-
+                    // send rationale.
+                    self.register_host_request_response(HostRequest::ColorQuery {
                         prefix: prefix.clone(),
                         index,
                         terminator: terminator.clone(),
-                        reply: reply_for_main,
+                        reply: reply.clone(),
                     });
-                    self.register_host_request_response(HostRequest::ColorQuery {
+                    self.send_mux_event(MuxEvent::HostColorQuery {
+                        pane_id: self.pane_id,
                         prefix,
                         index,
                         terminator,

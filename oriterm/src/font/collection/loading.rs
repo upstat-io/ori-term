@@ -153,6 +153,36 @@ impl FontSet {
         }
     }
 
+    /// Construct a `FontSet` from raw test-only TrueType bytes with a
+    /// specified family name.
+    ///
+    /// Produces a minimal font set: the given bytes become the primary
+    /// regular face; no bold / italic / bold-italic / medium variants;
+    /// no fallbacks. The embedded emoji fallback is intentionally omitted
+    /// so tests that inject a specific font get exactly that font (plus
+    /// the production missing-glyph path, which is the behavior under test).
+    ///
+    /// Consumed by §11.2 font-precedence tests that prove the built-in
+    /// Canvas renderer wins unconditionally over a font that advertises
+    /// coverage of the subcell-glyph ranges — see
+    /// `oriterm_test_support::fixtures::SUBCELL_PRECEDENCE_TEST_FONT`.
+    #[cfg(test)]
+    pub fn from_test_bytes(data: Vec<u8>, family_name: &str) -> Self {
+        Self {
+            family_name: family_name.to_owned(),
+            regular: FontData {
+                data: FontBytes::owned(data),
+                index: 0,
+            },
+            bold: None,
+            italic: None,
+            bold_italic: None,
+            medium: None,
+            has_variant: [true, false, false, false],
+            fallbacks: Vec::new(),
+        }
+    }
+
     /// Replace emoji fallback with a system font file (test-only).
     ///
     /// Reads the font from `path` and sets it as the sole fallback.

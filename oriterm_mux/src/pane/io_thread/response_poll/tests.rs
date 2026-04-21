@@ -55,15 +55,23 @@ fn spawn_queueing_pair() -> (
 
 /// Recv from `mux_rx` filtering for the first `MuxEvent::HostClipboardLoad`,
 /// returning its `reply` token for the test to fulfill.
+///
+/// The absolute deadline is enforced at the top of every loop iteration.
+/// `recv_timeout` alone is insufficient: if the IO thread streams unrelated
+/// events (typically `Snapshot`) faster than this loop iterates, each
+/// `recv_timeout(remaining)` returns `Ok` with a non-matching event and
+/// the loop continues — potentially forever. The top-of-loop deadline
+/// check guarantees the helper terminates regardless of event rate.
 fn await_host_clipboard_load(
     rx: &mpsc::Receiver<MuxEvent>,
     deadline: Duration,
 ) -> ResponseToken<String> {
     let start = std::time::Instant::now();
     loop {
-        let remaining = deadline
-            .checked_sub(start.elapsed())
-            .unwrap_or(Duration::ZERO);
+        if start.elapsed() >= deadline {
+            panic!("HostClipboardLoad never arrived within {deadline:?}");
+        }
+        let remaining = deadline.saturating_sub(start.elapsed());
         match rx.recv_timeout(remaining) {
             Ok(MuxEvent::HostClipboardLoad { reply, .. }) => return reply,
             Ok(_) => continue, // skip unrelated MuxEvents (snapshot, etc.)
@@ -73,13 +81,15 @@ fn await_host_clipboard_load(
 }
 
 /// Recv from `mux_rx` filtering for the first `MuxEvent::PtyWrite`,
-/// returning its byte payload.
+/// returning its byte payload. Same absolute-deadline contract as
+/// [`await_host_clipboard_load`].
 fn await_pty_write(rx: &mpsc::Receiver<MuxEvent>, deadline: Duration) -> Vec<u8> {
     let start = std::time::Instant::now();
     loop {
-        let remaining = deadline
-            .checked_sub(start.elapsed())
-            .unwrap_or(Duration::ZERO);
+        if start.elapsed() >= deadline {
+            panic!("PtyWrite never arrived within {deadline:?}");
+        }
+        let remaining = deadline.saturating_sub(start.elapsed());
         match rx.recv_timeout(remaining) {
             Ok(MuxEvent::PtyWrite { data, .. }) => return data,
             Ok(_) => continue,

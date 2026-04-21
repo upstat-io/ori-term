@@ -10,6 +10,9 @@
 //! - Run: `cargo test -p oriterm_core --test spec_chain`
 
 mod baseline;
+mod dec_presentation;
+mod dec_rect_ops;
 mod osc;
 mod pilots;
 mod private_modes;
+mod sixel;

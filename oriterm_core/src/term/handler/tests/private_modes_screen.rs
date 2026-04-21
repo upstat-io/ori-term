@@ -1,3 +1,5 @@
+//! Catalog rows: DEC-ALT-SCREEN-47, DEC-ALT-SCREEN-1047, DEC-SAVE-CURSOR-1048
+
 use crate::index::Column;
 use crate::term::{Term, TermMode};
 use crate::theme::Theme;

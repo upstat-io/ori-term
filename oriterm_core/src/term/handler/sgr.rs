@@ -17,7 +17,10 @@ pub(super) fn apply(template: &mut Cell, attr: &Attr) {
         Attr::Reset => {
             template.fg = Color::Named(NamedColor::Foreground);
             template.bg = Color::Named(NamedColor::Background);
-            template.flags = CellFlags::empty();
+            // PROTECTED is a DECSCA attribute, NOT an SGR attribute —
+            // `SGR 0` does NOT clear it. Preserve the DECSCA bit and
+            // clear only the SGR-owned flags.
+            template.flags &= CellFlags::PROTECTED;
             template.set_underline_color(None);
         }
         Attr::Bold => template.flags.insert(CellFlags::BOLD),

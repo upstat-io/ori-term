@@ -25,6 +25,11 @@ pub(super) enum DcsState {
     Sixel,
     /// DECRQSS: Request Status String (DCS `$q` ... ST).
     Decrqss,
+    /// DECRSPS: Restore Presentation Status (DCS Ps `$t` Pt ST).
+    ///
+    /// Carries the `Ps` selector (1 = DECCIR cursor-info, 2 = DECTABSR
+    /// tab-stops) alongside the payload accumulated via `put`.
+    Decrsps { ps: u16 },
 }
 
 /// Internal state for VTE processor.
@@ -42,8 +47,19 @@ pub(super) struct ProcessorState<T: Timeout> {
     /// Active DCS sequence type for routing `put`/`unhook` calls.
     pub(super) dcs_state: DcsState,
 
+    // VENDORED PATCH (oriterm): spec-conformance §12 — DCS abort flag.
+    /// Set by `Perform::notify_dcs_abort` when the parser aborts an
+    /// in-flight DCS via CAN (0x18), SUB (0x1A), or ESC (0x1B) —
+    /// consumed by `dispatch_unhook` so sixel (and other DCS kinds) can
+    /// distinguish a normal ST finish from an abort. Reset to `false`
+    /// after every unhook so the next DCS starts with a clean flag.
+    pub(super) dcs_aborted: bool,
+
     /// Buffer for DECRQSS data bytes (the status type being queried).
     pub(super) decrqss_buf: Vec<u8>,
+
+    /// Buffer for DECRSPS payload bytes (state-restore Pt body).
+    pub(super) decrsps_buf: Vec<u8>,
 }
 
 /// State for synchronized terminal updates.

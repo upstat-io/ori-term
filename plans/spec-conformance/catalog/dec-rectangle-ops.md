@@ -7,179 +7,30 @@ owner_section: "09A"
 
 # DEC Private CSI Rectangular Operations Catalog
 
-This catalog covers DEC private CSI sequences that operate on a 4-coordinate rectangular area (top, left, bottom, right). It includes DECRQCRA (the checksum-query op that surfaced the original gap via esctest), the DECxxxA family (DECCARA, DECRARA, DECCRA, DECFRA, DECERA, DECSERA), DECSACE (modifier for DECCARA/DECRARA), and the xterm extensions XTCHECKSUM and XTREPORTSGR.
+DEC private CSI sequences that operate on a 4-coordinate rectangular area (top, left, bottom, right). Covers:
 
-- Primary spec: xterm `ctlseqs.txt` + DEC STD 070 §6 / VT420 PRM
-- Cross-reference: wezterm `docs/escape-sequences.md`
-- Stack ID prefix: `DECRECT`
-- Related catalogs: `catalog/dec-private-modes.md` (numeric DECSET/DECRST), `catalog/dec-presentation.md` (column ops + presentation queries)
+- **DECRQCRA** — checksum query that surfaced the original top-down gap via esctest.
+- **DECxxxA family** — DECCARA, DECRARA, DECCRA, DECFRA, DECERA, DECSERA.
+- **DECSACE** — attribute-change-extent modifier for DECCARA/DECRARA.
+- **xterm extensions** — XTCHECKSUM (patch-336 checksum flags) and XTREPORTSGR (per-cell SGR report).
 
----
+Primary spec: xterm `ctlseqs.txt` + DEC STD 070 §6 / VT420 Programming Reference Manual.
 
-## DECRECT-DECSACE
+Cross-reference: wezterm `docs/escape-sequences.md` (behavior tiebreaker for ambiguous parameter handling).
 
-| Field | Value |
-|---|---|
-| **ID** | `DECRECT-DECSACE` |
-| **Spec source** | xterm ctlseqs.txt `CSI Ps * x` |
-| **Sequence** | `CSI Ps * x` — Select attribute change extent |
-| **Description** | Controls which attributes are changed by DECCARA/DECRARA; Ps=0 stream, Ps=1 rect |
-| **Implementation** | MISSING — to be added by Section 09A |
-| **Apex layer** | effect-mode-state |
-| **Test chain** | parser:pending dispatch:pending state:pending |
-| **Verification** | missing |
-| **De-facto ref** | — |
-| **Notes** | Param stored as `ace_mode` on Term; consumed by DECCARA/DECRARA to determine change extent |
+Stack ID prefix: `DECRECT`.
 
----
+Related catalogs: `catalog/dec-private-modes.md` (numeric DECSET/DECRST modes), `catalog/dec-presentation.md` (column ops + presentation queries).
 
-## DECRECT-DECCARA
-
-| Field | Value |
-|---|---|
-| **ID** | `DECRECT-DECCARA` |
-| **Spec source** | xterm ctlseqs.txt `CSI Pt;Pl;Pb;Pr;Pm $ r` |
-| **Sequence** | `CSI Pt;Pl;Pb;Pr;Pm $ r` — Change attributes in rectangular area |
-| **Description** | Applies SGR attribute change to cells in the specified rectangle |
-| **Implementation** | MISSING — to be added by Section 09A |
-| **Apex layer** | state-snapshot |
-| **Test chain** | parser:pending dispatch:pending state:pending snapshot:pending |
-| **Verification** | missing |
-| **De-facto ref** | wezterm `docs/escape-sequences.md` DECCARA |
-| **Notes** | DECLRMM-aware; DECSACE mode governs stream vs rect extent |
-
----
-
-## DECRECT-DECRARA
-
-| Field | Value |
-|---|---|
-| **ID** | `DECRECT-DECRARA` |
-| **Spec source** | xterm ctlseqs.txt `CSI Pt;Pl;Pb;Pr;Pm $ t` |
-| **Sequence** | `CSI Pt;Pl;Pb;Pr;Pm $ t` — Reverse attributes in rectangular area |
-| **Description** | Reverses (toggles) video attributes in cells within the specified rectangle |
-| **Implementation** | MISSING — to be added by Section 09A |
-| **Apex layer** | state-snapshot |
-| **Test chain** | parser:pending dispatch:pending state:pending snapshot:pending |
-| **Verification** | missing |
-| **De-facto ref** | — |
-| **Notes** | Reversal applies only to SGR attributes listed in Pm params |
-
----
-
-## DECRECT-DECCRA
-
-| Field | Value |
-|---|---|
-| **ID** | `DECRECT-DECCRA` |
-| **Spec source** | xterm ctlseqs.txt `CSI Pt;Pl;Pb;Pr;Pp;Pt;Pl;Pp $ v` |
-| **Sequence** | `CSI Pt;Pl;Pb;Pr;Pp;Pt;Pl;Pp $ v` — Copy rectangular area |
-| **Description** | Copies a rectangular area of cells from source page to destination page |
-| **Implementation** | MISSING — to be added by Section 09A |
-| **Apex layer** | state-snapshot |
-| **Test chain** | parser:pending dispatch:pending state:pending snapshot:pending |
-| **Verification** | missing |
-| **De-facto ref** | wezterm `docs/escape-sequences.md` DECCRA |
-| **Notes** | Source and destination pages; overlapping regions defined by copy-before-overwrite semantics |
-
----
-
-## DECRECT-DECFRA
-
-| Field | Value |
-|---|---|
-| **ID** | `DECRECT-DECFRA` |
-| **Spec source** | xterm ctlseqs.txt `CSI Pc;Pt;Pl;Pb;Pr $ x` |
-| **Sequence** | `CSI Pc;Pt;Pl;Pb;Pr $ x` — Fill rectangular area |
-| **Description** | Fills the specified rectangular area with character Pc and current SGR attributes |
-| **Implementation** | MISSING — to be added by Section 09A |
-| **Apex layer** | state-snapshot |
-| **Test chain** | parser:pending dispatch:pending state:pending snapshot:pending |
-| **Verification** | missing |
-| **De-facto ref** | wezterm `docs/escape-sequences.md` DECFRA |
-| **Notes** | DECLRMM-aware; Pc is a character code point, not a string |
-
----
-
-## DECRECT-XTCHECKSUM
-
-| Field | Value |
-|---|---|
-| **ID** | `DECRECT-XTCHECKSUM` |
-| **Spec source** | xterm ctlseqs.txt `CSI Ps # y` |
-| **Sequence** | `CSI Ps # y` — Select checksum extension flags (xterm) |
-| **Description** | Sets xterm checksum algorithm flags used by subsequent DECRQCRA requests |
-| **Implementation** | MISSING — to be added by Section 09A |
-| **Apex layer** | effect-mode-state |
-| **Test chain** | parser:pending dispatch:pending state:pending |
-| **Verification** | missing |
-| **De-facto ref** | xterm patch-336 |
-| **Notes** | Ps is a bitmask; stored as `checksum_flags: u16` on Term; consumed by DECRQCRA handler |
-
----
-
-## DECRECT-DECRQCRA
-
-| Field | Value |
-|---|---|
-| **ID** | `DECRECT-DECRQCRA` |
-| **Spec source** | xterm ctlseqs.txt `CSI Pi;Pg;Pt;Pl;Pb;Pr * y` |
-| **Sequence** | `CSI Pi;Pg;Pt;Pl;Pb;Pr * y` — Request checksum of rectangular area |
-| **Description** | Computes a checksum of the specified rectangular area and emits a DCS reply |
-| **Implementation** | MISSING — to be added by Section 09A |
-| **Apex layer** | effect-pty-write |
-| **Test chain** | parser:pending dispatch:pending effect:pending |
-| **Verification** | missing |
-| **De-facto ref** | xterm patch-336 (algorithm); esctest2 `DECRQCRA` suite (coordinate clamping) |
-| **Notes** | Reply format: `DCS Pi ! ~ XXXX ST` (4-hex-digit checksum); synchronous emission via PtyEffect::Write (NOT HostRequest); algorithm: xor-folded 16-bit sum of attribute-selected cell data |
-
----
-
-## DECRECT-DECERA
-
-| Field | Value |
-|---|---|
-| **ID** | `DECRECT-DECERA` |
-| **Spec source** | xterm ctlseqs.txt `CSI Pt;Pl;Pb;Pr $ z` |
-| **Sequence** | `CSI Pt;Pl;Pb;Pr $ z` — Erase rectangular area |
-| **Description** | Erases all characters in the specified rectangle (replaces with space, default attrs) |
-| **Implementation** | MISSING — to be added by Section 09A |
-| **Apex layer** | state-snapshot |
-| **Test chain** | parser:pending dispatch:pending state:pending snapshot:pending |
-| **Verification** | missing |
-| **De-facto ref** | — |
-| **Notes** | DECLRMM-aware; respects DECSCA selective-erase protection attribute |
-
----
-
-## DECRECT-DECSERA
-
-| Field | Value |
-|---|---|
-| **ID** | `DECRECT-DECSERA` |
-| **Spec source** | xterm ctlseqs.txt `CSI Pt;Pl;Pb;Pr $ {` |
-| **Sequence** | `` CSI Pt;Pl;Pb;Pr $ { `` — Selective erase rectangular area |
-| **Description** | Erases unprotected characters in the specified rectangle (DECSCA-protected cells are skipped) |
-| **Implementation** | MISSING — to be added by Section 09A |
-| **Apex layer** | state-snapshot |
-| **Test chain** | parser:pending dispatch:pending state:pending snapshot:pending |
-| **Verification** | missing |
-| **De-facto ref** | — |
-| **Notes** | Companion to DECERA; only erases cells not marked with DECSCA protection |
-
----
-
-## DECRECT-XTREPORTSGR
-
-| Field | Value |
-|---|---|
-| **ID** | `DECRECT-XTREPORTSGR` |
-| **Spec source** | xterm ctlseqs.txt `CSI Pt;Pl;Pb;Pr # \|` |
-| **Sequence** | `CSI Pt;Pl;Pb;Pr # \|` — Report selected graphic rendition (xterm) |
-| **Description** | Emits the SGR attributes for each cell in the rectangle as a DCS stream |
-| **Implementation** | MISSING — to be added by Section 09A |
-| **Apex layer** | effect-pty-write |
-| **Test chain** | parser:pending dispatch:pending effect:pending |
-| **Verification** | missing |
-| **De-facto ref** | xterm patch-336 |
-| **Notes** | DCS reply per-cell format; complex serialization; verified-with-deviation acceptable if only basic SGR attrs are included |
+| ID | Spec source | Sequence | Description | Implementation | Apex layer | Test chain | Verification | De-facto ref | Notes |
+|---|---|---|---|---|---|---|---|---|---|
+| `DECRECT-DECSACE` | xterm ctlseqs.txt `CSI Ps * x` | `` `CSI Ps * x` `` | Select attribute change extent; Ps=0 stream, Ps=1 rect | `oriterm_core/src/term/handler/rect_ops/mod.rs::decsace_impl` | effect-mode-state | parser:green dispatch:green state:green | implemented-unverified | — | Ps=2 → Rectangle, all other values → Stream; stored as `AceMode` on Term (NEVER on Grid per §09A.R finding #9 LEAK guard); consumed by DECCARA/DECRARA; RIS resets to Stream |
+| `DECRECT-DECCARA` | xterm ctlseqs.txt `CSI Pt;Pl;Pb;Pr;Pm $ r` | `` `CSI Pt;Pl;Pb;Pr;Pm $ r` `` | Change attributes in rectangular area | `oriterm_core/src/term/handler/rect_ops/mod.rs::deccara_impl` | state-snapshot | parser:green dispatch:green state:green snapshot:pending | implemented-unverified | wezterm docs/escape-sequences.md DECCARA | DECLRMM-aware via `clamp_rect`; DECSACE governs stream/rect extent; delegates to `Grid::apply_sgr_rect` (grid-layer ownership per §09A.R finding #8); DEC SGR subset only (0/1/4/5/7/8/22/24/25/27/28) |
+| `DECRECT-DECRARA` | xterm ctlseqs.txt `CSI Pt;Pl;Pb;Pr;Pm $ t` | `` `CSI Pt;Pl;Pb;Pr;Pm $ t` `` | Reverse attributes in rectangular area | `oriterm_core/src/term/handler/rect_ops/mod.rs::decrara_impl` | state-snapshot | parser:green dispatch:green state:green snapshot:pending | implemented-unverified | — | XOR-toggle of SGR bits per cell; Ps=0 toggles every reversible bit (BOLD/UNDERLINE/BLINK/INVERSE/HIDDEN); delegates to `Grid::reverse_sgr_rect`; DECLRMM-aware + DECSACE-aware |
+| `DECRECT-DECCRA` | xterm ctlseqs.txt `CSI Pt;Pl;Pb;Pr;Pp;Pt;Pl;Pp $ v` | `` `CSI Pt;Pl;Pb;Pr;Pp;Pt;Pl;Pp $ v` `` | Copy rectangular area from source page to destination page | `oriterm_core/src/term/handler/rect_ops/mod.rs::deccra_impl` | state-snapshot | parser:green dispatch:green state:green snapshot:pending | implemented-unverified | wezterm docs/escape-sequences.md DECCRA | Copy-before-overwrite via scratch buffer in `Grid::copy_rect` (single allocation per DECCRA, permitted by plan); page params ignored (ori_term is single-page — verified-with-deviation); dest clipped to grid bounds |
+| `DECRECT-DECFRA` | xterm ctlseqs.txt `CSI Pc;Pt;Pl;Pb;Pr $ x` | `` `CSI Pc;Pt;Pl;Pb;Pr $ x` `` | Fill rectangular area with character Pc + current SGR | `oriterm_core/src/term/handler/rect_ops/mod.rs::decfra_impl` | state-snapshot | parser:green dispatch:green state:green snapshot:pending | implemented-unverified | wezterm docs/escape-sequences.md DECFRA, xterm charproc.c:5659-5677 | Pc=0 defaults to space per xterm `use_default_value`; Pc in [0x20..=0x7E] ∪ [0xA0..=0xFF] else ignored; delegates to `Grid::fill_rect`; DECLRMM-aware |
+| `DECRECT-XTCHECKSUM` | xterm ctlseqs.txt `CSI Ps # y` | `` `CSI Ps # y` `` | Select checksum extension flags (xterm patch-336) | `oriterm_core/src/term/handler/rect_ops/mod.rs::xtchecksum_impl` | effect-mode-state | parser:green dispatch:green state:green | implemented-unverified | xterm patch-336 | Ps is a bitmask; stored as `checksum_flags: u16` on Term; consumed by DECRQCRA handler |
+| `DECRECT-DECRQCRA` | xterm ctlseqs.txt `CSI Pi;Pg;Pt;Pl;Pb;Pr * y` | `` `CSI Pi;Pg;Pt;Pl;Pb;Pr * y` `` | Request checksum of rectangular area; emits DCS reply | `oriterm_core/src/term/handler/rect_ops/mod.rs::decrqcra_impl` | effect-pty-write | parser:green dispatch:green effect:green | implemented-unverified | xterm patch-336 (algorithm); esctest2 DECRQCRA suite (clamping) | Reply `DCS Pi !~ XXXX ST` (4-hex checksum); synchronous emission via PtyEffect::Write (NOT HostRequest); algorithm = xterm sum-then-negate |
+| `DECRECT-DECERA` | xterm ctlseqs.txt `CSI Pt;Pl;Pb;Pr $ z` | `` `CSI Pt;Pl;Pb;Pr $ z` `` | Erase rectangular area (space + default attrs) | `oriterm_core/src/term/handler/rect_ops/mod.rs::decera_impl` | state-snapshot | parser:green dispatch:green state:green snapshot:pending | implemented-unverified | — | DECLRMM-aware via `clamp_rect`; IGNORES `CellFlags::PROTECTED` (DECSERA honors it); delegates to `Grid::erase_rect_all` with BCE bg from cursor template |
+| `DECRECT-DECSERA` | xterm ctlseqs.txt `CSI Pt;Pl;Pb;Pr $ {` | `` `CSI Pt;Pl;Pb;Pr $ {` `` | Selective erase rectangular area (skip DECSCA-protected cells) | `oriterm_core/src/term/handler/rect_ops/mod.rs::decsera_impl` | state-snapshot | parser:green dispatch:green state:green snapshot:pending | implemented-unverified | — | Companion to DECERA; PROTECTED cells (set by DECSCA Ps=1) survive the erase; delegates to `Grid::erase_rect_unprotected` |
+| `DECRECT-XTREPORTSGR` | xterm ctlseqs.txt `CSI Pt;Pl;Pb;Pr # \|` | `` `CSI Pt;Pl;Pb;Pr # \|` `` | Report selected graphic rendition (xterm) | MISSING — to be added by Section 09A | effect-pty-write | parser:pending dispatch:pending effect:pending | missing | xterm patch-336 | DCS reply per-cell format; verified-with-deviation acceptable if only basic SGR attrs included |

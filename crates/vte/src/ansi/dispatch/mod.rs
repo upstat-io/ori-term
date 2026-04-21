@@ -69,6 +69,15 @@ fn dispatch_hook<H: Handler, T: Timeout>(
             state.decrqss_buf.clear();
             state.dcs_state = DcsState::Decrqss;
         },
+        't' if intermediates == [b'$'] => {
+            // DCS Ps $ t ... ST = DECRSPS (Restore Presentation Status).
+            // Ps selects the format (1 = DECCIR cursor info, 2 = DECTABSR
+            // tab stops). Default is 0 (invalid) when no param is given —
+            // the handler stub logs and ignores.
+            let ps = params.iter().next().and_then(|sub| sub.first().copied()).unwrap_or(0);
+            state.decrsps_buf.clear();
+            state.dcs_state = DcsState::Decrsps { ps };
+        },
         _ => {
             debug!(
                 "[unhandled hook] params={:?}, ints: {:?}, ignore: {:?}, action: {:?}",
@@ -93,21 +102,42 @@ fn dispatch_put<H: Handler, T: Timeout>(
                 state.decrqss_buf.push(byte);
             }
         },
+        DcsState::Decrsps { .. } => {
+            // Collect the presentation-state payload. Cap matches MAX_APC_LEN
+            // to bound memory against malicious input; DECRSPS payloads are
+            // typically small (cursor info or tab-stop vector).
+            if state.decrsps_buf.len() < MAX_APC_LEN {
+                state.decrsps_buf.push(byte);
+            }
+        },
         DcsState::None => debug!("[unhandled put] byte={:?}", byte),
     }
 }
 
 #[inline]
 fn dispatch_unhook<H: Handler, T: Timeout>(state: &mut ProcessorState<T>, handler: &mut H) {
+    let aborted = state.dcs_aborted;
     match state.dcs_state {
-        DcsState::Sixel => handler.sixel_end(),
+        DcsState::Sixel => handler.sixel_end(aborted),
         DcsState::Decrqss => {
             let query: Vec<u8> = state.decrqss_buf.drain(..).collect();
+            // DECRQSS status strings are query/response — an aborted
+            // query still returns the current status; no payload to
+            // discard on abort.
             handler.decrqss(&query);
+        },
+        DcsState::Decrsps { ps } => {
+            let payload: Vec<u8> = state.decrsps_buf.drain(..).collect();
+            // DECRSPS aborted mid-payload would restore a truncated
+            // state; today the handler stubs log + ignore, so abort
+            // path is functionally equivalent. When a real restore
+            // lands, it must check `aborted` before applying.
+            handler.decrsps(ps, &payload);
         },
         DcsState::None => debug!("[unhandled unhook]"),
     }
     state.dcs_state = DcsState::None;
+    state.dcs_aborted = false;
 }
 
 #[inline]
@@ -171,9 +201,11 @@ fn dispatch_esc<H: Handler>(handler: &mut H, intermediates: &[u8], byte: u8) {
         (b'0', intermediates) => {
             configure_charset!(StandardCharset::SpecialCharacterAndLineDrawing, intermediates)
         },
+        (b'6', []) => handler.decbi(),
         (b'7', []) => handler.save_cursor_position(),
         (b'8', [b'#']) => handler.decaln(),
         (b'8', []) => handler.restore_cursor_position(),
+        (b'9', []) => handler.decfi(),
         (b'=', []) => handler.set_keypad_application_mode(),
         (b'>', []) => handler.unset_keypad_application_mode(),
         (b'N', []) => handler.set_single_shift(CharsetIndex::G2),
@@ -214,6 +246,12 @@ where
     #[inline]
     fn unhook(&mut self) {
         dispatch_unhook(self.state, self.handler);
+    }
+
+    // VENDORED PATCH (oriterm): spec-conformance §12 — DCS abort flag set.
+    #[inline]
+    fn notify_dcs_abort(&mut self) {
+        self.state.dcs_aborted = true;
     }
 
     #[inline]

@@ -8,6 +8,9 @@
 .claude/**/*.bak.*
 .claude/.sync-ref/
 .claude/sync-manifest.json
+# /sync-from-orilang also writes backups alongside repo-root scripts/ and diagnostics/.
+scripts/**/*.bak.*
+diagnostics/**/*.bak.*
 
 # Python bytecode from helper scripts (.claude/skills/, scripts/plan_corpus, etc.)
 **/__pycache__/
@@ -15,3 +18,8 @@
 
 # Claude scheduled-task lock file (local-only runtime state).
 .claude/scheduled_tasks.lock
+
+# Local state cache written by diagnostics/state.sh (per-machine HEAD tracking,
+# test/clippy/hygiene status). Regenerated on refresh; would otherwise churn
+# on every commit-push via the Step 8 sha-only refresh.
+.claude/state/known-state.json

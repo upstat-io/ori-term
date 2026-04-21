@@ -48,6 +48,101 @@ fn is_empty_false_after_setting_char() {
     assert!(!cell.is_empty());
 }
 
+/// Regression: BUG-08-17. `CellFlags::DRAWN` must default clear so
+/// pristine cells are correctly distinguished from application-written
+/// ones by `compute_rect_checksum`.
+#[test]
+fn default_cell_has_drawn_clear() {
+    assert!(!Cell::default().flags.contains(CellFlags::DRAWN));
+}
+
+/// Regression: BUG-08-17 TPR codex F1. `is_empty()` stays orthogonal
+/// to DRAWN — it answers "visually empty", NOT "never written". A
+/// cell that was written by the application as a plain space under
+/// default SGR still LOOKS empty (same pixels as a pristine cell),
+/// so `is_empty()` MUST return true. Consumers that need the "never
+/// written" semantic query `flags.contains(CellFlags::DRAWN)` directly.
+///
+/// This orthogonality preserves the pre-fix behavior of `Row::is_blank`
+/// and `Row::content_len` — used by reflow at
+/// `oriterm_core/src/grid/resize/mod.rs:222` and `:407` — so existing
+/// reflow semantics are unchanged by the CHARDRAWN infrastructure.
+#[test]
+fn is_empty_stays_true_when_only_drawn_is_set() {
+    let mut cell = Cell::default();
+    cell.flags.insert(CellFlags::DRAWN);
+    assert!(
+        cell.is_empty(),
+        "a drawn-but-visually-empty cell MUST still be is_empty \
+         (DRAWN is orthogonal to visual emptiness)"
+    );
+}
+
+/// Regression: BUG-08-17 TPR codex F1. A cell with DRAWN + any other
+/// flag (SGR or structural) is NOT is_empty — the non-DRAWN flag bit
+/// is what makes it visually non-empty, not DRAWN itself.
+#[test]
+fn is_empty_false_when_drawn_plus_sgr_flag() {
+    let mut cell = Cell::default();
+    cell.flags.insert(CellFlags::DRAWN | CellFlags::BOLD);
+    assert!(
+        !cell.is_empty(),
+        "DRAWN + BOLD: BOLD is a visible attribute so is_empty is false"
+    );
+}
+
+/// Regression: BUG-08-17. `Cell::reset(&template)` copies flags from
+/// the template wholesale. A DRAWN-clear template must produce a
+/// DRAWN-clear cell, so every reset path automatically clears DRAWN
+/// without explicit instrumentation.
+#[test]
+fn cell_reset_from_default_template_clears_drawn() {
+    let mut cell = Cell::default();
+    cell.flags = CellFlags::DRAWN | CellFlags::BOLD;
+    cell.reset(&Cell::default());
+    assert!(!cell.flags.contains(CellFlags::DRAWN));
+}
+
+/// Regression: BUG-08-17. BCE template (`Cell::from(bg)`) must not
+/// carry DRAWN either — BCE-erased cells are NOT drawn per xterm.
+#[test]
+fn bce_template_has_drawn_clear() {
+    let template = Cell::from(Color::Named(NamedColor::Red));
+    assert!(!template.flags.contains(CellFlags::DRAWN));
+}
+
+/// Regression: BUG-08-17. `CellFlags::INTERNAL_CELL_STATE` is the
+/// union of bits that must never appear on `cursor.template.flags`.
+/// Every structural / write-history bit belongs here; SGR attrs stay
+/// out. Pin the exact membership so drift at the definition site trips
+/// this test.
+#[test]
+fn internal_cell_state_union_pins_exact_membership() {
+    let expected = CellFlags::DRAWN
+        | CellFlags::WRAP
+        | CellFlags::WIDE_CHAR
+        | CellFlags::WIDE_CHAR_SPACER
+        | CellFlags::LEADING_WIDE_CHAR_SPACER;
+    assert_eq!(CellFlags::INTERNAL_CELL_STATE, expected);
+
+    // Negative pin: SGR attributes MUST NOT be in the internal set.
+    assert!(!CellFlags::INTERNAL_CELL_STATE.contains(CellFlags::BOLD));
+    assert!(!CellFlags::INTERNAL_CELL_STATE.contains(CellFlags::UNDERLINE));
+    assert!(!CellFlags::INTERNAL_CELL_STATE.contains(CellFlags::INVERSE));
+    assert!(!CellFlags::INTERNAL_CELL_STATE.contains(CellFlags::HIDDEN));
+    assert!(!CellFlags::INTERNAL_CELL_STATE.contains(CellFlags::BLINK));
+}
+
+/// Regression: BUG-08-17. Size invariant MUST hold after adding DRAWN.
+/// The existing `size_assertion` test covers the same property, but
+/// this test explicitly cross-references the bug so future additions
+/// to CellFlags (e.g. future §09A.8 PROTECTED bit) re-check it with
+/// the right framing.
+#[test]
+fn cell_size_survives_drawn_addition() {
+    assert!(size_of::<Cell>() <= 24);
+}
+
 #[test]
 fn wide_char_width() {
     let mut cell = Cell::default();

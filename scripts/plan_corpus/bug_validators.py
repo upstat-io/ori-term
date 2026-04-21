@@ -1,343 +1,372 @@
-"""bug_validators.py — Cross-check plan supersedes: vs bug-entry Superseded-by: markers.
+"""Bidirectional supersede-drift validator + auto-fix planner.
 
-This module implements Gate 1.6 of /continue-roadmap: bidirectional
-supersede-drift detection.
+A plan that lists `supersedes: ["plans/bug-tracker/fix-BUG-XX-NNN.md"]` in
+its frontmatter MUST have the corresponding bug entry carrying a
+`Superseded by: plans/{plan-name}/` line. Conversely, a bug entry carrying
+`Superseded by:` MUST point at a plan whose frontmatter declares it as a
+supersede target. Either direction missing is `bug_marker_drift` —
+detectable here, auto-fixable by inserting the missing marker line into
+the bug entry body (the safe direction; never mutate plan frontmatter).
 
-Background (see fix-bug-design.md §4 2026-04-16 incident):
-    When a plan declares `supersedes: [plans/bug-tracker/section-NN-*.md]`
-    in its 00-overview.md, the bug entry in that section MUST carry a
-    `Superseded by:` lifecycle marker.  Without the marker, /fix-bug Phase 0
-    can't detect the routing and re-triggers the ~170k-token Phase -1
-    rules-file re-read on every invocation.
+Used by `roadmap_scan.py` to fire the `bug_marker_drift` auto-fix gate
+during /continue-roadmap Step 2 cleanup.
 
-    Conversely, when a bug entry has a `Superseded by:` marker but no plan
-    claims it in `supersedes:`, the marker is orphaned — the plan may have
-    been renamed, deleted, or the attribution was wrong.  Orphan markers
-    are surfaced for manual review but are NOT auto-fixed.
+## What this module enforces (the §I5 invariant)
 
-Public API:
-    find_supersede_drift(plans_dir: Path) -> DriftReport
-    plan_auto_fixes(report: DriftReport) -> list[PlannedEdit]
+The `Superseded by:` lifecycle marker has two endpoints that must agree:
 
-Data model:
-    DriftReport     — result of a full cross-check scan
-    MissingMarker   — bug claimed by a plan but has no Superseded-by marker
-    OrphanMarker    — bug has a Superseded-by marker but no plan claims it
-    PlannedEdit     — concrete file-edit spec for inserting a missing marker
+  * **Bug entry side**: `plans/bug-tracker/section-NN-*.md` body line
+    `Superseded by: plans/{plan}/`.
+  * **Plan side**: `plans/{plan}/00-overview.md` frontmatter
+    `supersedes: ["plans/bug-tracker/fix-BUG-XX-NNN.md"]`.
 
-Wire format used by roadmap_scan.py Gate 1.6 payload:
-    PlannedEdit.file_path       → "file" key
-    PlannedEdit.bug_id          → "bug_id" key
-    PlannedEdit.header_lineno   → "header_lineno" key
-    PlannedEdit.insert_line     → "insert_line" key
-    PlannedEdit.rationale       → "rationale" key
-    OrphanMarker.bug_id                  → "bug_id" key
-    OrphanMarker.bug_section_file        → filename component of "file" key
-    OrphanMarker.bug_lineno              → "lineno" key
-    OrphanMarker.declared_target         → "declared_target" key
-    OrphanMarker.plan_overview_supersedes → "claiming_plans" key
+Without bidirectional declaration, supersede routing leaks: bugs without
+markers re-trigger `/fix-bug`'s ~170k-token Phase -1 waste; plans without
+back-references can't be discovered from the bug tracker.
+
+## What this module does NOT do
+
+It does not auto-fix the plan-frontmatter side. Plan frontmatter is the
+canonical SSOT (the supersede declaration originates with plan creation);
+mutating it as a downstream auto-fix would invert authority. The auto-fix
+direction is always: plan frontmatter (authoritative) → bug entry marker
+(derived). If a bug entry has a marker pointing at a plan that doesn't
+declare it, that's a `BUG_MARKER_ORPHAN` finding — surfaced for the user
+to resolve manually, never auto-edited.
 """
+
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
-try:
-    import yaml
-except ImportError:
-    yaml = None  # type: ignore[assignment]
-
-from scripts.plan_corpus.bug_markers import BUG_HEADER_RE, SUPERSEDED_RE, parse_bug_entries
+from .bug_markers import BugEntry, parse_bug_tracker_dir, BUG_HEADER_RE
 
 
 # ---------------------------------------------------------------------------
-# Regex: extract target from "Superseded by: <target>" line
+# Drift finding shapes
 # ---------------------------------------------------------------------------
 
-# Captures everything after the colon (stripped).
-_SUPERSEDED_BY_TARGET_RE = re.compile(
-    r"(?im)^\s*superseded\s+by\s*:\s*(.+)$"
+
+@dataclass
+class MissingSupersedeMarker:
+    """A bug entry that should have a `Superseded by:` marker but doesn't.
+
+    Detected when a plan's frontmatter `supersedes:` list contains the
+    path to this bug's fix-section file (`plans/bug-tracker/fix-BUG-XX-NNN.md`),
+    but the bug entry body has no `Superseded by:` line.
+
+    Auto-fixable: insert a `  Superseded by: plans/{plan_name}/` line into
+    the bug entry body, after the existing context lines but before the
+    next blank line / next entry header.
+    """
+    bug_id: str
+    bug_section_file: str       # e.g. "section-04-codegen-llvm.md"
+    bug_lineno: int             # 1-based line of the entry header
+    plan_name: str              # e.g. "empty-container-typeck-phase-contract"
+    plan_overview_path: str     # e.g. "plans/empty-container-typeck-phase-contract/00-overview.md"
+
+    @property
+    def bug_section_path(self) -> str:
+        return f"plans/bug-tracker/{self.bug_section_file}"
+
+    @property
+    def insert_text(self) -> str:
+        """The line to insert into the bug entry body."""
+        return (
+            f"  Superseded by: `plans/{self.plan_name}/` — fix lands when "
+            f"that plan completes; do NOT use `/fix-bug` (use "
+            f"`/continue-roadmap {self.plan_name}` instead). Auto-inserted "
+            f"by /continue-roadmap Step 2 from {self.plan_overview_path} "
+            f"`supersedes:` declaration."
+        )
+
+
+@dataclass
+class OrphanSupersedeMarker:
+    """A bug entry's `Superseded by:` marker points at a plan that doesn't
+    claim to supersede it.
+
+    NOT auto-fixable — the marker MAY have been hand-written incorrectly,
+    or the plan's frontmatter MAY have been recently changed. Surfaced
+    for user review.
+    """
+    bug_id: str
+    bug_section_file: str
+    bug_lineno: int
+    declared_target: str                # what the bug entry says
+    plan_overview_supersedes: list[str] # what the plan actually claims (may be empty)
+
+
+# ---------------------------------------------------------------------------
+# Plan frontmatter scanning (lightweight — uses regex, not full YAML parse)
+# ---------------------------------------------------------------------------
+
+# Match a `supersedes:` block in plan frontmatter. The block can be:
+#   supersedes: []
+#   supersedes:
+#     - "plans/bug-tracker/fix-BUG-XX-NNN.md"
+#     - "another"
+# We extract list entries; bare `[]` returns empty list.
+_SUPERSEDES_BLOCK_RE = re.compile(
+    r"^supersedes:\s*(?:\[\s*\]|\n((?:[ \t]+-\s+.*\n)+))",
+    re.MULTILINE,
+)
+_SUPERSEDES_ITEM_RE = re.compile(r"^[ \t]+-\s+\"?([^\"\n]+?)\"?\s*$", re.MULTILINE)
+# Reference to a fix-section file: captures BUG-XX-NNN
+_FIX_BUG_REF_RE = re.compile(
+    r"plans/bug-tracker/fix-(BUG-\d{2}-\d{3})\.md",
 )
 
 
+def parse_plan_supersedes(overview_path: Path) -> list[str]:
+    """Extract the `supersedes:` list from a plan's `00-overview.md` frontmatter.
+
+    Returns the raw string entries (e.g., `"plans/bug-tracker/fix-BUG-04-074.md"`).
+    Empty list if no supersedes field, no items, or unreadable file.
+    Lightweight regex-based — does NOT require full YAML parse.
+    """
+    try:
+        text = overview_path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return []
+    # Frontmatter is between the first two `---` fences
+    parts = text.split("---", 2)
+    if len(parts) < 3:
+        return []
+    fm = parts[1]
+    block_m = _SUPERSEDES_BLOCK_RE.search(fm)
+    if not block_m:
+        return []
+    block_body = block_m.group(1) or ""
+    return [m.group(1).strip() for m in _SUPERSEDES_ITEM_RE.finditer(block_body)]
+
+
 # ---------------------------------------------------------------------------
-# Data model
+# Bidirectional drift detection
 # ---------------------------------------------------------------------------
 
 
 @dataclass
-class MissingMarker:
-    """A plan claims a bug via supersedes: but the bug entry lacks the marker."""
-    plan_name: str          # e.g. "spec-conformance"
-    plan_dir: str           # e.g. "plans/spec-conformance"
-    supersedes_target: str  # entry from plan supersedes: list, e.g. "plans/tack-conformance/"
-    # The bug_id and bug-tracker context — may be None if the supersedes
-    # target points to a plan directory (not a specific bug entry).
-    # When the target is a plan directory, we skip auto-fix (ambiguous).
-    bug_id: str | None = None
-    bug_section_file: str | None = None
-    bug_lineno: int | None = None
+class SupersedeDriftReport:
+    """Result of a corpus-wide supersede-drift scan."""
+    missing_markers: list[MissingSupersedeMarker]
+    orphan_markers: list[OrphanSupersedeMarker]
+
+    @property
+    def total(self) -> int:
+        return len(self.missing_markers) + len(self.orphan_markers)
 
 
-@dataclass
-class OrphanMarker:
-    """A bug entry has a Superseded-by marker but no plan claims it."""
-    bug_id: str
-    bug_section_file: str     # filename only, e.g. "section-04-fonts.md"
-    bug_lineno: int           # 1-based line number of the bug header
-    declared_target: str      # text after "Superseded by:"
-    plan_overview_supersedes: list[str]  # plans that claim this bug (empty = none)
+def find_supersede_drift(
+    plans_dir: Path,
+    bug_tracker_dir: Path | None = None,
+) -> SupersedeDriftReport:
+    """Scan all plans for `supersedes:` declarations vs bug-entry markers.
+
+    Returns a report containing:
+      - `missing_markers`: bug entries lacking a `Superseded by:` line
+        even though a plan claims them. Auto-fixable.
+      - `orphan_markers`: bug entries whose `Superseded by:` line points at
+        a plan that doesn't claim them. Surfaced, not auto-fixed.
+
+    Bug-tracker dir defaults to `plans_dir / "bug-tracker"`.
+    """
+    if bug_tracker_dir is None:
+        bug_tracker_dir = plans_dir / "bug-tracker"
+
+    # Build map: BUG-XX-NNN -> list of plans claiming to supersede it
+    claims: dict[str, list[tuple[str, str]]] = {}  # bug_id -> [(plan_name, overview_path)]
+    for overview_path in plans_dir.rglob("00-overview.md"):
+        # Skip overviews under bug-tracker itself
+        try:
+            rel = overview_path.relative_to(plans_dir)
+        except ValueError:
+            continue
+        if rel.parts and rel.parts[0] == "bug-tracker":
+            continue
+        plan_name = overview_path.parent.name
+        for entry in parse_plan_supersedes(overview_path):
+            for m in _FIX_BUG_REF_RE.finditer(entry):
+                bug_id = m.group(1)
+                claims.setdefault(bug_id, []).append(
+                    (plan_name, str(overview_path.relative_to(plans_dir.parent))),
+                )
+
+    # Parse all bug entries
+    entries = parse_bug_tracker_dir(bug_tracker_dir)
+    by_id: dict[str, BugEntry] = {e.bug_id: e for e in entries}
+
+    missing: list[MissingSupersedeMarker] = []
+    orphan: list[OrphanSupersedeMarker] = []
+
+    # Direction A: plan claims bug → bug should have marker
+    for bug_id, plan_refs in claims.items():
+        entry = by_id.get(bug_id)
+        if entry is None:
+            # Plan supersedes a bug that doesn't exist in the tracker.
+            # That's a different finding (DEAD_REFERENCE) — not our job here.
+            continue
+        if entry.status == "fixed":
+            # Resolved bugs don't need supersede markers; the plan already
+            # closed them out.
+            continue
+        if entry.excluded_reason == "Superseded by plan":
+            # Marker is present; check it points at a plan in the claim list
+            target = entry.superseded_by or ""
+            target_plan_name = target.rstrip("/").rsplit("/", 1)[-1] if target else ""
+            if not any(plan_name == target_plan_name for plan_name, _ in plan_refs):
+                # Marker points at a different plan than the one(s) claiming.
+                # That's an orphan — surface for review.
+                orphan.append(OrphanSupersedeMarker(
+                    bug_id=bug_id,
+                    bug_section_file=entry.source_file,
+                    bug_lineno=entry.lineno,
+                    declared_target=target,
+                    plan_overview_supersedes=[
+                        f"plans/{name}/" for name, _ in plan_refs
+                    ],
+                ))
+            # else: marker matches one of the claiming plans — clean.
+        else:
+            # No marker; pick the first claiming plan (most plans claim
+            # only one bug; multi-plan claims are rare and the user can
+            # disambiguate manually after auto-fix).
+            plan_name, overview_path = plan_refs[0]
+            missing.append(MissingSupersedeMarker(
+                bug_id=bug_id,
+                bug_section_file=entry.source_file,
+                bug_lineno=entry.lineno,
+                plan_name=plan_name,
+                plan_overview_path=overview_path,
+            ))
+
+    # Direction B: bug has marker → plan should claim it
+    for entry in entries:
+        if entry.excluded_reason != "Superseded by plan":
+            continue
+        if entry.bug_id in claims:
+            # Already handled above (matched or orphan)
+            continue
+        # Bug claims to be superseded but no plan declares it
+        target = entry.superseded_by or "(unparseable)"
+        orphan.append(OrphanSupersedeMarker(
+            bug_id=entry.bug_id,
+            bug_section_file=entry.source_file,
+            bug_lineno=entry.lineno,
+            declared_target=target,
+            plan_overview_supersedes=[],  # nobody claims it
+        ))
+
+    return SupersedeDriftReport(missing_markers=missing, orphan_markers=orphan)
 
 
-@dataclass
-class DriftReport:
-    """Result of a full bidirectional cross-check."""
-    missing_markers: list[MissingMarker] = field(default_factory=list)
-    orphan_markers: list[OrphanMarker] = field(default_factory=list)
+# ---------------------------------------------------------------------------
+# Auto-fix planner — turns missing-marker findings into file edits
+# ---------------------------------------------------------------------------
 
 
 @dataclass
 class PlannedEdit:
-    """A concrete file-edit spec for inserting a missing Superseded-by marker.
+    """A planned edit to a bug-tracker section file: insert a line after
+    the bug entry's existing body lines.
 
-    The auto-fix inserts `insert_line` into the bug entry body immediately
-    after the last body line (before the next blank line or next `- [`).
-    The application protocol is in workflow.md Step 2c.
+    Consumers (workflow.md Step 2d) apply by:
+      1. Read the file
+      2. Find the bug entry header at `header_lineno` (1-based)
+      3. Walk forward to the last non-blank, non-`- [` body line
+      4. Insert `insert_line` immediately after that line
+
+    The insertion is idempotent: if the line is already present (string
+    match against the marker portion `Superseded by:`), skip.
     """
-    file_path: str    # absolute or repo-relative path to the section file
-    bug_id: str       # "BUG-04-045"
-    header_lineno: int   # 1-based line number of the `- [ ] BUG-...` header
-    insert_line: str  # the full "  Superseded by: plans/foo/" line to insert
-    rationale: str    # human-readable explanation
+    file_path: str          # e.g. "plans/bug-tracker/section-04-codegen-llvm.md"
+    bug_id: str
+    header_lineno: int      # 1-based line of `- [ ] [BUG-...]` header
+    insert_line: str        # the line to insert (without trailing newline)
+    rationale: str          # human-readable explanation
 
 
-# ---------------------------------------------------------------------------
-# YAML frontmatter reader
-# ---------------------------------------------------------------------------
+def plan_auto_fixes(report: SupersedeDriftReport) -> list[PlannedEdit]:
+    """Convert a drift report into a list of `PlannedEdit`s for the
+    `missing_markers` half. Orphans are NOT auto-fixed.
 
-
-def _read_frontmatter(path: Path) -> dict[str, Any]:
-    """Read YAML frontmatter from a Markdown file.
-
-    Returns empty dict on any error (missing file, parse failure, no YAML).
-    """
-    try:
-        text = path.read_text(encoding="utf-8")
-    except OSError:
-        return {}
-
-    if not text.startswith("---"):
-        return {}
-
-    # Find closing `---`
-    end = text.find("\n---", 3)
-    if end == -1:
-        return {}
-
-    fm_text = text[3:end].strip()
-    if yaml is None:
-        return {}
-    try:
-        result = yaml.safe_load(fm_text)
-        return result if isinstance(result, dict) else {}
-    except yaml.YAMLError:
-        return {}
-
-
-# ---------------------------------------------------------------------------
-# Plan scanner: build supersedes map
-# ---------------------------------------------------------------------------
-
-
-def _scan_plans_supersedes(plans_dir: Path) -> dict[str, list[str]]:
-    """Scan every plan's 00-overview.md for `supersedes:` declarations.
-
-    Returns a dict mapping supersede-target string → list of plan names that
-    claim it.  The target strings are taken verbatim from the YAML list —
-    they may be plan dirs ("plans/foo/") or specific files.
-
-    Only `plans/*/00-overview.md` is scanned (not nested plans).
-    """
-    result: dict[str, list[str]] = {}
-    for overview in sorted(plans_dir.glob("*/00-overview.md")):
-        fm = _read_frontmatter(overview)
-        supersedes_raw = fm.get("supersedes")
-        if not supersedes_raw:
-            continue
-        if isinstance(supersedes_raw, str):
-            targets = [supersedes_raw]
-        elif isinstance(supersedes_raw, list):
-            targets = [str(t) for t in supersedes_raw]
-        else:
-            continue
-        plan_name = overview.parent.name
-        for target in targets:
-            t = target.strip()
-            if t:
-                result.setdefault(t, []).append(plan_name)
-    return result
-
-
-# ---------------------------------------------------------------------------
-# Bug-tracker scanner: build markers map
-# ---------------------------------------------------------------------------
-
-
-def _scan_bug_tracker_superseded(plans_dir: Path) -> list[dict[str, Any]]:
-    """Scan bug-tracker section files for entries with `Superseded by:` markers.
-
-    Returns a list of dicts with keys:
-        bug_id, section_file, header_lineno, declared_target, body_text
-    """
-    bug_tracker = plans_dir / "bug-tracker"
-    if not bug_tracker.is_dir():
-        return []
-
-    results = []
-    for section_file in sorted(bug_tracker.glob("section-*.md")):
-        try:
-            text = section_file.read_text(encoding="utf-8")
-        except OSError:
-            continue
-
-        for entry in parse_bug_entries(text, section_file.name):
-            if entry.status == "fixed":
-                continue  # already resolved — skip
-            body_text = "\n".join(entry.body_lines)
-            m = _SUPERSEDED_BY_TARGET_RE.search(body_text)
-            if m:
-                target = m.group(1).strip()
-                results.append({
-                    "bug_id": entry.bug_id,
-                    "section_file": section_file.name,
-                    "header_lineno": entry.lineno,
-                    "declared_target": target,
-                    "body_lines": entry.body_lines,
-                })
-    return results
-
-
-# ---------------------------------------------------------------------------
-# Public API
-# ---------------------------------------------------------------------------
-
-
-def find_supersede_drift(plans_dir: Path) -> DriftReport:
-    """Cross-check plan `supersedes:` declarations vs bug-entry `Superseded by:` markers.
-
-    Args:
-        plans_dir: Path to the `plans/` directory (repo root / "plans").
-
-    Returns:
-        DriftReport with:
-          - missing_markers: plan claims a supersede target that corresponds to
-            a bug entry, but the entry lacks the `Superseded by:` marker.
-          - orphan_markers: bug entry has `Superseded by:` but no plan claims it
-            via `supersedes:`.
-
-    Note on scope:
-        Plans whose `supersedes:` targets are plan directories (not specific
-        bug-tracker section files) are recorded as MissingMarker entries with
-        `bug_id=None` — the auto-fix pipeline skips these (ambiguous target;
-        no single bug entry to annotate).  Only section-file targets or
-        targets containing a bug-tracker path can map to a specific bug entry.
-    """
-    report = DriftReport()
-
-    # Step 1 — build map: target_string → [plan_name, ...]
-    plan_supersedes = _scan_plans_supersedes(plans_dir)
-
-    # Step 2 — build map: bug_id → declared_target (for bugs with the marker)
-    superseded_entries = _scan_bug_tracker_superseded(plans_dir)
-    superseded_by_bug_id: dict[str, dict] = {
-        e["bug_id"]: e for e in superseded_entries
-    }
-
-    # Step 3 — find orphan markers:
-    # Bug has `Superseded by: <target>` but no plan claims it.
-    for entry in superseded_entries:
-        target = entry["declared_target"]
-        claiming = plan_supersedes.get(target, [])
-        if not claiming:
-            report.orphan_markers.append(OrphanMarker(
-                bug_id=entry["bug_id"],
-                bug_section_file=entry["section_file"],
-                bug_lineno=entry["header_lineno"],
-                declared_target=target,
-                plan_overview_supersedes=claiming,
-            ))
-
-    # Step 4 — find missing markers:
-    # Plan claims a supersede target but the corresponding bug entry lacks marker.
-    # We only attempt to map targets that look like bug-tracker section files
-    # (e.g., "plans/bug-tracker/section-04-fonts.md") or plan directories.
-    # For plan-directory targets (e.g., "plans/tack-conformance/"), we emit a
-    # MissingMarker with bug_id=None — no auto-fix, just informational.
-    bug_tracker_prefix = "plans/bug-tracker/"
-    for target, claiming_plans in plan_supersedes.items():
-        if bug_tracker_prefix in target and "section-" in target:
-            # Target looks like a specific bug-tracker section file.
-            # We can't pinpoint a single bug entry without more context,
-            # so we leave bug_id=None for now.  The auto-fix pipeline will
-            # skip entries with bug_id=None.
-            section_file_name = Path(target.split(bug_tracker_prefix)[-1]).name
-            report.missing_markers.append(MissingMarker(
-                plan_name=claiming_plans[0] if claiming_plans else "unknown",
-                plan_dir=f"plans/{claiming_plans[0]}" if claiming_plans else "",
-                supersedes_target=target,
-                bug_id=None,
-                bug_section_file=section_file_name,
-                bug_lineno=None,
-            ))
-        else:
-            # Target is a plan directory — informational only.
-            # (We don't know which specific bug entry to annotate.)
-            report.missing_markers.append(MissingMarker(
-                plan_name=claiming_plans[0] if claiming_plans else "unknown",
-                plan_dir=f"plans/{claiming_plans[0]}" if claiming_plans else "",
-                supersedes_target=target,
-                bug_id=None,
-                bug_section_file=None,
-                bug_lineno=None,
-            ))
-
-    return report
-
-
-def plan_auto_fixes(report: DriftReport) -> list[PlannedEdit]:
-    """Convert a DriftReport into a list of auto-fixable PlannedEdit entries.
-
-    Only MissingMarker entries where `bug_id` is not None are auto-fixable
-    (those are entries where a plan claims a specific bug-tracker bug-entry file
-    target and the bug entry was found but lacks the marker).
-
-    Entries with `bug_id=None` (plan-directory targets, ambiguous section-file
-    targets) are skipped — the auto-fix cannot pinpoint the edit location.
-
-    Returns:
-        List of PlannedEdit objects, one per fixable MissingMarker.
+    Each edit inserts a `Superseded by:` line into the bug entry body.
+    The workflow.md Step 2d consumer applies via the Edit tool.
     """
     edits: list[PlannedEdit] = []
-    for mm in report.missing_markers:
-        if mm.bug_id is None or mm.bug_section_file is None or mm.bug_lineno is None:
-            continue  # ambiguous target — skip auto-fix
-
-        insert_line = f"  Superseded by: {mm.supersedes_target} (via plan `{mm.plan_name}` supersedes: field)"
-        rationale = (
-            f"Plan `{mm.plan_name}` declares `supersedes: [{mm.supersedes_target}]` "
-            f"in its 00-overview.md, but bug entry {mm.bug_id} in "
-            f"`plans/bug-tracker/{mm.bug_section_file}` lacks the "
-            f"`Superseded by:` lifecycle marker. Without the marker, "
-            f"/fix-bug Phase 0 cannot detect the routing and re-triggers "
-            f"the ~170k-token Phase -1 waste on every invocation."
-        )
+    for finding in report.missing_markers:
         edits.append(PlannedEdit(
-            file_path=f"plans/bug-tracker/{mm.bug_section_file}",
-            bug_id=mm.bug_id,
-            header_lineno=mm.bug_lineno,
-            insert_line=insert_line,
-            rationale=rationale,
+            file_path=finding.bug_section_path,
+            bug_id=finding.bug_id,
+            header_lineno=finding.bug_lineno,
+            insert_line=finding.insert_text,
+            rationale=(
+                f"Plan {finding.plan_overview_path} declares "
+                f"`supersedes: [\"plans/bug-tracker/fix-{finding.bug_id}.md\"]` "
+                f"but the bug entry has no `Superseded by:` marker. "
+                f"Inserting marker for bidirectional discoverability."
+            ),
         ))
     return edits
+
+
+def apply_planned_edits(edits: list[PlannedEdit], repo_root: Path) -> list[str]:
+    """Apply a list of `PlannedEdit`s to disk. Returns list of applied
+    file paths (relative to repo_root).
+
+    Idempotent: skips edits whose target line already contains
+    `Superseded by:` for this bug entry (string-match, no regex).
+    """
+    applied: list[str] = []
+    # Group edits by file to minimize read/writes
+    by_file: dict[str, list[PlannedEdit]] = {}
+    for e in edits:
+        by_file.setdefault(e.file_path, []).append(e)
+    for rel_path, file_edits in by_file.items():
+        path = repo_root / rel_path
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        lines = text.splitlines()
+        # Sort edits by lineno descending so insertions don't shift later edits
+        file_edits.sort(key=lambda e: e.header_lineno, reverse=True)
+        modified = False
+        for edit in file_edits:
+            # Find end of body (last indented non-blank line)
+            insert_at = edit.header_lineno  # 1-based; convert to 0-based index
+            i = insert_at  # next line after header
+            last_body = i - 1
+            while i < len(lines):
+                line = lines[i]
+                if line.strip() == "":
+                    break
+                if line.startswith("- ["):
+                    break
+                last_body = i
+                i += 1
+            # Idempotency check: scan the body for an existing Superseded by line
+            body_slice = lines[edit.header_lineno:i]
+            if any("Superseded by:" in bl for bl in body_slice):
+                continue
+            # Insert after last_body (0-based index → insert at last_body+1)
+            lines.insert(last_body + 1, edit.insert_line)
+            modified = True
+        if modified:
+            path.write_text("\n".join(lines) + ("\n" if text.endswith("\n") else ""), encoding="utf-8")
+            applied.append(rel_path)
+    return applied
+
+
+__all__ = [
+    "MissingSupersedeMarker",
+    "OrphanSupersedeMarker",
+    "SupersedeDriftReport",
+    "PlannedEdit",
+    "parse_plan_supersedes",
+    "find_supersede_drift",
+    "plan_auto_fixes",
+    "apply_planned_edits",
+]

@@ -135,7 +135,13 @@ pub fn parse_catalog_markdown(path: &Path) -> Result<Vec<Row>, CatalogParseError
             });
         }
 
-        let id = cells[0].trim().to_string();
+        // Row IDs are frequently wrapped in markdown code spans
+        // (`` `DECPRES-DECIC` ``) when the catalog author wants them
+        // rendered in monospace. Strip surrounding backticks so the
+        // stored ID matches what a test's `/// Catalog row: DECPRES-DECIC`
+        // citation produces after scanner normalization — the catalog ID
+        // is the semantic key, not the markdown presentation.
+        let id = cells[0].trim().trim_matches('`').trim().to_string();
         if id.is_empty() {
             return Err(CatalogParseError::EmptyId {
                 path: path_str,

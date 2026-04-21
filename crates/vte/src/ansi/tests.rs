@@ -35,6 +35,12 @@ struct MockHandler {
     reset_colors: Vec<usize>,
     title: Option<String>,
     icon_name: Option<String>,
+    decic_counts: Vec<u16>,
+    decdc_counts: Vec<u16>,
+    decbi_calls: u32,
+    decfi_calls: u32,
+    decrqss_queries: Vec<Vec<u8>>,
+    decrsps_calls: Vec<(u16, Vec<u8>)>,
 }
 
 impl Handler for MockHandler {
@@ -74,6 +80,30 @@ impl Handler for MockHandler {
     fn set_icon_name(&mut self, name: Option<String>) {
         self.icon_name = name;
     }
+
+    fn decic(&mut self, count: u16) {
+        self.decic_counts.push(count);
+    }
+
+    fn decdc(&mut self, count: u16) {
+        self.decdc_counts.push(count);
+    }
+
+    fn decbi(&mut self) {
+        self.decbi_calls += 1;
+    }
+
+    fn decfi(&mut self) {
+        self.decfi_calls += 1;
+    }
+
+    fn decrqss(&mut self, query: &[u8]) {
+        self.decrqss_queries.push(query.to_vec());
+    }
+
+    fn decrsps(&mut self, ps: u16, pt: &[u8]) {
+        self.decrsps_calls.push((ps, pt.to_vec()));
+    }
 }
 
 impl Default for MockHandler {
@@ -87,6 +117,12 @@ impl Default for MockHandler {
             reset_colors: Vec::new(),
             title: None,
             icon_name: None,
+            decic_counts: Vec::new(),
+            decdc_counts: Vec::new(),
+            decbi_calls: 0,
+            decfi_calls: 0,
+            decrqss_queries: Vec::new(),
+            decrsps_calls: Vec::new(),
         }
     }
 }
@@ -509,4 +545,108 @@ fn osc_2_sets_only_title() {
     parser.advance(&mut handler, bytes);
     assert_eq!(handler.title.as_deref(), Some("title"));
     assert_eq!(handler.icon_name, None);
+}
+
+#[test]
+fn parse_esc_6_dispatches_decbi() {
+    // DECBI: ESC 6
+    let bytes: &[u8] = b"\x1b6";
+    let mut parser = Processor::<TestSyncHandler>::new();
+    let mut handler = MockHandler::default();
+    parser.advance(&mut handler, bytes);
+    assert_eq!(handler.decbi_calls, 1);
+    assert_eq!(handler.decfi_calls, 0);
+}
+
+#[test]
+fn parse_esc_9_dispatches_decfi() {
+    // DECFI: ESC 9
+    let bytes: &[u8] = b"\x1b9";
+    let mut parser = Processor::<TestSyncHandler>::new();
+    let mut handler = MockHandler::default();
+    parser.advance(&mut handler, bytes);
+    assert_eq!(handler.decfi_calls, 1);
+    assert_eq!(handler.decbi_calls, 0);
+}
+
+#[test]
+fn parse_csi_apostrophe_right_brace_dispatches_decic() {
+    // DECIC: CSI Ps ' }
+    let bytes: &[u8] = b"\x1b[3'}";
+    let mut parser = Processor::<TestSyncHandler>::new();
+    let mut handler = MockHandler::default();
+    parser.advance(&mut handler, bytes);
+    assert_eq!(handler.decic_counts, vec![3]);
+    assert!(handler.decdc_counts.is_empty());
+}
+
+#[test]
+fn parse_csi_apostrophe_tilde_dispatches_decdc() {
+    // DECDC: CSI Ps ' ~
+    let bytes: &[u8] = b"\x1b[2'~";
+    let mut parser = Processor::<TestSyncHandler>::new();
+    let mut handler = MockHandler::default();
+    parser.advance(&mut handler, bytes);
+    assert_eq!(handler.decdc_counts, vec![2]);
+    assert!(handler.decic_counts.is_empty());
+}
+
+#[test]
+fn parse_decic_default_count_is_one() {
+    // DECIC with no explicit Ps → default 1.
+    let bytes: &[u8] = b"\x1b['}";
+    let mut parser = Processor::<TestSyncHandler>::new();
+    let mut handler = MockHandler::default();
+    parser.advance(&mut handler, bytes);
+    assert_eq!(handler.decic_counts, vec![1]);
+}
+
+#[test]
+fn parse_decrqss_decscusr_routes_to_handler() {
+    // DECRQSS DECSCUSR query: DCS $ q q ST.
+    let bytes: &[u8] = b"\x1bP$qq\x1b\\";
+    let mut parser = Processor::<TestSyncHandler>::new();
+    let mut handler = MockHandler::default();
+    parser.advance(&mut handler, bytes);
+    assert_eq!(handler.decrqss_queries, vec![b"q".to_vec()]);
+}
+
+#[test]
+fn parse_decrqss_decsca_routes_to_handler() {
+    // DECRQSS DECSCA query: DCS $ q " q ST.
+    let bytes: &[u8] = b"\x1bP$q\"q\x1b\\";
+    let mut parser = Processor::<TestSyncHandler>::new();
+    let mut handler = MockHandler::default();
+    parser.advance(&mut handler, bytes);
+    assert_eq!(handler.decrqss_queries, vec![b"\"q".to_vec()]);
+}
+
+#[test]
+fn parse_decrsps_ps1_routes_to_handler() {
+    // DECRSPS with Ps=1 (DECCIR cursor-info) and a small payload.
+    let bytes: &[u8] = b"\x1bP1$tABC\x1b\\";
+    let mut parser = Processor::<TestSyncHandler>::new();
+    let mut handler = MockHandler::default();
+    parser.advance(&mut handler, bytes);
+    assert_eq!(handler.decrsps_calls, vec![(1, b"ABC".to_vec())]);
+}
+
+#[test]
+fn parse_decrsps_ps2_routes_to_handler() {
+    // DECRSPS with Ps=2 (DECTABSR tab-stop vector).
+    let bytes: &[u8] = b"\x1bP2$t1/9/17\x1b\\";
+    let mut parser = Processor::<TestSyncHandler>::new();
+    let mut handler = MockHandler::default();
+    parser.advance(&mut handler, bytes);
+    assert_eq!(handler.decrsps_calls, vec![(2, b"1/9/17".to_vec())]);
+}
+
+#[test]
+fn parse_decrsps_default_ps_is_zero() {
+    // DECRSPS with no explicit Ps → default 0 (unrecognized format).
+    let bytes: &[u8] = b"\x1bP$t\x1b\\";
+    let mut parser = Processor::<TestSyncHandler>::new();
+    let mut handler = MockHandler::default();
+    parser.advance(&mut handler, bytes);
+    assert_eq!(handler.decrsps_calls, vec![(0, Vec::<u8>::new())]);
 }

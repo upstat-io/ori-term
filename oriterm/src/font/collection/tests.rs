@@ -99,6 +99,60 @@ fn font_set_load_default_succeeds() {
     assert!(result.is_ok(), "FontSet::load(None, 400) must succeed");
 }
 
+#[test]
+fn from_test_bytes_accepts_subcell_precedence_fixture() {
+    // Proves the committed `subcell-precedence-test.ttf` fixture is a valid
+    // TTF that round-trips through `FontSet::from_test_bytes` → `FontCollection::new`.
+    //
+    // If this fails, either the fixture needs regeneration (see
+    // `crates/oriterm_test_support/tests/fixtures/fonts/generate_subcell_precedence_test.py`)
+    // or the font pipeline has regressed on minimal glyph tables.
+    let font_bytes = oriterm_test_support::fixtures::SUBCELL_PRECEDENCE_TEST_FONT.to_vec();
+    let fs = FontSet::from_test_bytes(font_bytes, "Subcell Precedence Test");
+    let fc = FontCollection::new(
+        fs,
+        12.0,
+        96.0,
+        GlyphFormat::Alpha,
+        400,
+        550,
+        HintingMode::None,
+    );
+    assert!(
+        fc.is_ok(),
+        "subcell-precedence-test.ttf must parse into a FontCollection"
+    );
+}
+
+#[test]
+fn subcell_precedence_fixture_advertises_all_six_families() {
+    // Proves the fixture's character map covers the six codepoints the
+    // precedence tests will query. If any of these are missing, the shaper
+    // will fall back to the emoji / missing-glyph path and the test will
+    // stop exercising the "font wins vs built-in wins" contrast the
+    // precedence tests need.
+    let fd = build_face(
+        FontBytes::owned(oriterm_test_support::fixtures::SUBCELL_PRECEDENCE_TEST_FONT.to_vec()),
+        0,
+    )
+    .expect("subcell-precedence-test.ttf must build a face");
+    let expected = [
+        '\u{256C}',  // box drawing
+        '\u{2588}',  // full block
+        '\u{259F}',  // quadrant
+        '\u{1FB3B}', // sextant family
+        '\u{1CDE5}', // octant family
+        '\u{28FF}',  // braille
+    ];
+    for ch in expected {
+        assert!(
+            has_glyph(&fd, ch),
+            "precedence fixture must advertise coverage of U+{:04X}",
+            ch as u32
+        );
+    }
+}
+
 // ── FontCollection construction ──
 
 #[test]

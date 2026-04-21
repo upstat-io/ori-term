@@ -6,7 +6,7 @@
 
 use log::debug;
 
-use crate::cell::Cell;
+use crate::cell::{Cell, CellFlags};
 use crate::effect::sink::EffectSink;
 use crate::effect::{Effect, HostEffect};
 use crate::index::{Column, Line};
@@ -67,6 +67,15 @@ impl<S: EffectSink> Term<S> {
 
         self.effect_sink
             .push(Effect::Host(HostEffect::TitleSet { value: None }));
+
+        // §09A.8 presentation state.
+        self.char_protection = false;
+        self.conformance_level = 64;
+        self.c1_7bit = true;
+        self.active_status_display = 0;
+        self.status_line_type = 0;
+        // §09A.6: DECSACE attribute-change extent mode.
+        self.ace_mode = crate::term::AceMode::default();
     }
 
     /// DECSTR (CSI ! p): Soft Terminal Reset.
@@ -97,6 +106,10 @@ impl<S: EffectSink> Term<S> {
         self.cursor_shape = crate::grid::CursorShape::default();
         self.keyboard_mode_stack.clear();
         self.inactive_keyboard_mode_stack.clear();
+        // DECSTR clears the DECSCA protection state — cursor template
+        // is reset above via `soft_reset_grid`, but `char_protection`
+        // mirrors the same state on Term and must follow suit.
+        self.char_protection = false;
     }
 
     /// Reset SGR-relevant state on a single grid (DECSTR scope).
@@ -128,12 +141,15 @@ impl<S: EffectSink> Term<S> {
         grid.reset_left_right_margins();
 
         // Fill every visible cell with 'E' and default attributes.
+        // DECALN cells are application-written per xterm semantics —
+        // set DRAWN so DECRQCRA treats them as drawn (BUG-08-17).
         let template = Cell::default();
         for line in 0..lines {
             for col in 0..cols {
                 let cell = &mut grid[Line(line as i32)][Column(col)];
                 cell.reset(&template);
                 cell.ch = 'E';
+                cell.flags.insert(CellFlags::DRAWN);
             }
         }
 
