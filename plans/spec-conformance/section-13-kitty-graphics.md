@@ -2,7 +2,7 @@
 section: "13"
 title: "Kitty Graphics Protocol"
 status: not-started
-reviewed: false
+reviewed: true
 goal: "Drive every catalog row in `catalog/kitty-graphics.md` from `implemented-unverified`/`missing`/`stub` to `verified` — full APC `_G` protocol including chunked transmission, animation, virtual placements, and unicode placeholders. This section is the canonical home for the kitty graphics verification chain AND for the unicode-placeholder rendering implementation (currently `missing` in the catalog)."
 success_criteria:
   - "Top-down spec audit committed at `plans/spec-conformance/audits/section-13-top-down-inventory.md`. Every sequence in the canonical spec source(s) for this stack (sw.kovidgoyal.net/kitty/graphics-protocol/ docs (primary, kitty source is the de facto SPEC for this protocol) + kitty source `kittens/icat/icat.py` cross-reference) maps to a catalog row ID OR carries an explicit `not-targeted` decision with rationale. `cargo run -p oriterm_test_support --bin spec-coverage-report -- --check audit-files` passes for this audit file. This is enforced PER `plans/spec-conformance/audits/README.md` lint contract — added by Section 09A as the SSOT for top-down catalog coverage to prevent the bottom-up gap that hid DECRQCRA from the catalog."
@@ -27,12 +27,9 @@ inspired_by:
   - "wezterm `term/src/terminalstate/kitty.rs` — production reference for chunked transmission, animation, frame composition"
 depends_on: ["12"]
 third_party_review:
-  status: none
-  updated: null
-review_pipeline:
-  stage: editor-done
-  next_step: 6
+  status: findings
   updated: 2026-04-21
+  notes: "user-accepted at iter_cap_reached after 3 rounds; 10 findings fixed inline (zero outstanding); survivor-mode all 3 rounds (gemini 429 persistent)"
 sections:
   - id: "13.0"
     title: "Top-down spec audit + catalog row carve-out (BLOCKING)"
