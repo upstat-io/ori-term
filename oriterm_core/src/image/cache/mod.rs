@@ -1,6 +1,7 @@
 //! Image cache with LRU eviction and configurable memory limits.
 
 mod animation;
+mod deletion;
 mod eviction;
 mod lifecycle;
 
@@ -45,6 +46,15 @@ pub struct ImageCache {
     access_counter: u64,
     /// Set when placements/images change; caller clears via `take_dirty()`.
     pub(super) dirty: bool,
+    /// Monotonic creation-order rank for each stored image.
+    ///
+    /// Distinct from `last_accessed` (LRU tracking, bumped on access).
+    /// `store_order[id]` is set once at `store()` time and never updated —
+    /// kitty `d=n/N` resolves "newest image with number I=" by this field,
+    /// not by LRU recency (see `newest_by_image_number`).
+    store_order: HashMap<ImageId, u64>,
+    /// Next value to assign in `store_order` when storing an image.
+    next_store_order: u64,
     /// Per-image animation state for multi-frame images.
     pub(super) animations: HashMap<ImageId, AnimationState>,
     /// All decoded frames for animated images (frame 0 is also in `ImageData.data`).
@@ -67,6 +77,8 @@ impl ImageCache {
             next_id: AUTO_ID_START,
             access_counter: 0,
             dirty: false,
+            store_order: HashMap::new(),
+            next_store_order: 0,
             animations: HashMap::new(),
             animation_frames: HashMap::new(),
             frame_starts: HashMap::new(),
@@ -162,6 +174,8 @@ impl ImageCache {
 
         self.memory_used += size;
         self.images.insert(id, data);
+        self.next_store_order = self.next_store_order.wrapping_add(1);
+        self.store_order.insert(id, self.next_store_order);
         self.dirty = true;
         Ok(id)
     }
@@ -175,18 +189,25 @@ impl ImageCache {
     /// Remove an image and all its placements.
     pub(crate) fn remove_image(&mut self, id: ImageId) {
         if let Some(img) = self.images.remove(&id) {
-            self.memory_used = self.memory_used.saturating_sub(img.data.len());
-
-            // Subtract animation frames 1..N (frame 0 is already subtracted
-            // above as `img.data`).
+            // For animated images `animation_frames[id]` holds every frame
+            // (including frame 0), so it is the single SSOT for the image's
+            // memory footprint — `img.data` points at whichever frame is
+            // currently displayed and its size can drift from frame 0's as
+            // the animation advances (see `apply_frame`). Using `img.data`
+            // in that case would double-count (or under-count) depending on
+            // which frame was active. Static images have no
+            // `animation_frames` entry; fall back to `img.data`.
             if let Some(frames) = self.animation_frames.remove(&id) {
-                let extra: usize = frames.iter().skip(1).map(|f| f.len()).sum();
-                self.memory_used = self.memory_used.saturating_sub(extra);
+                let total: usize = frames.iter().map(|f| f.len()).sum();
+                self.memory_used = self.memory_used.saturating_sub(total);
+            } else {
+                self.memory_used = self.memory_used.saturating_sub(img.data.len());
             }
 
             self.placements.retain(|p| p.image_id != id);
             self.animations.remove(&id);
             self.frame_starts.remove(&id);
+            self.store_order.remove(&id);
             self.dirty = true;
         }
     }
@@ -241,12 +262,12 @@ impl ImageCache {
         self.remove_placements_where(|p| p.z_index == z)
     }
 
-    /// Remove all placements at a specific cell position.
+    /// Remove placements whose origin cell equals `(col, row)` exactly.
     ///
-    /// Returns the image IDs of removed placements for targeted orphan
-    /// pruning. Only removes placements — does NOT prune orphaned image
-    /// data. This preserves the Kitty lowercase/uppercase semantic split:
-    /// lowercase deletes placements only, uppercase also removes image data.
+    /// Origin-cell equality — NOT span intersection. Used by sixel
+    /// re-placement to drop the previous placement anchored at this
+    /// exact origin before writing a fresh one. Kitty `d=c/C/p/P` does
+    /// NOT use this; see `remove_placements_intersecting_cell`.
     pub(crate) fn remove_by_position(&mut self, col: usize, row: StableRowIndex) -> Vec<ImageId> {
         self.remove_placements_where(|p| p.cell_col == col && p.cell_row == row)
     }
@@ -266,7 +287,7 @@ impl ImageCache {
     }
 
     /// Remove placements matching a predicate and return affected image IDs.
-    fn remove_placements_where(
+    pub(super) fn remove_placements_where(
         &mut self,
         predicate: impl Fn(&ImagePlacement) -> bool,
     ) -> Vec<ImageId> {
@@ -325,6 +346,7 @@ impl ImageCache {
         self.animations.clear();
         self.animation_frames.clear();
         self.frame_starts.clear();
+        self.store_order.clear();
         self.memory_used = 0;
     }
 
@@ -345,6 +367,13 @@ impl ImageCache {
     pub(crate) fn get_no_touch(&self, id: ImageId) -> Option<&ImageData> {
         self.images.get(&id)
     }
+
+    /// Test-only probe for `frame_starts[id]` — returns the start instant
+    /// if one has been seeded by `advance_animations`, else `None`.
+    #[cfg(test)]
+    pub(crate) fn frame_starts_for_test(&self, id: ImageId) -> Option<Instant> {
+        self.frame_starts.get(&id).copied()
+    }
 }
 
 impl Default for ImageCache {
@@ -364,6 +393,8 @@ impl std::fmt::Debug for ImageCache {
             .field("next_id", &self.next_id)
             .field("access_counter", &self.access_counter)
             .field("dirty", &self.dirty)
+            .field("store_order", &self.store_order.len())
+            .field("next_store_order", &self.next_store_order)
             .field("animations", &self.animations.len())
             .field("animation_frames", &self.animation_frames.len())
             .field("frame_starts", &self.frame_starts.len())

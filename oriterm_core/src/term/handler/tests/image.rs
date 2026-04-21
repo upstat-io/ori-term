@@ -29,6 +29,7 @@ fn place_test_image(
         format: ImageFormat::Rgba,
         source: ImageSource::Direct,
         last_accessed: 0,
+        image_number: None,
     };
     t.image_cache_mut().store(data).expect("store failed");
     let grid = t.grid();

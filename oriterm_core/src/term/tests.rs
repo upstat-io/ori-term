@@ -1871,6 +1871,7 @@ fn place_test_image(
         format: ImageFormat::Rgba,
         source: ImageSource::Direct,
         last_accessed: 0,
+        image_number: None,
     };
     term.image_cache_mut().store(data).unwrap();
     term.image_cache_mut().place(ImagePlacement {

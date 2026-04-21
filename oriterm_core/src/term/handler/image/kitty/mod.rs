@@ -25,6 +25,7 @@ mod transmit;
 /// Parameters for storing an image via Kitty protocol.
 pub(super) struct KittyStoreParams {
     pub(super) image_id: u32,
+    pub(super) image_number: Option<u32>,
     pub(super) payload: Vec<u8>,
     pub(super) format: u32,
     pub(super) width: u32,
@@ -67,7 +68,7 @@ impl<S: EffectSink> Term<S> {
 
     /// Finalize payload from accumulated chunks or single command.
     pub(super) fn kitty_finalize_payload(&mut self, cmd: &KittyCommand) -> KittyStoreParams {
-        let (payload, format, width, height, transmission) =
+        let (payload, format, width, height, transmission, image_number) =
             if let Some(mut loading) = self.loading_image.take() {
                 loading.payload.extend_from_slice(&cmd.payload);
                 (
@@ -76,6 +77,7 @@ impl<S: EffectSink> Term<S> {
                     loading.width,
                     loading.height,
                     loading.transmission,
+                    loading.image_number,
                 )
             } else {
                 (
@@ -84,6 +86,7 @@ impl<S: EffectSink> Term<S> {
                     cmd.source_width,
                     cmd.source_height,
                     cmd.transmission,
+                    cmd.image_number,
                 )
             };
 
@@ -93,6 +96,7 @@ impl<S: EffectSink> Term<S> {
 
         KittyStoreParams {
             image_id,
+            image_number,
             payload,
             format,
             width,

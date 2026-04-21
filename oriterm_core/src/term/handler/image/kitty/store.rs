@@ -32,6 +32,7 @@ impl<S: EffectSink> Term<S> {
             format: crate::image::ImageFormat::Rgba,
             source,
             last_accessed: 0,
+            image_number: p.image_number,
         };
 
         self.image_cache_mut()
@@ -121,6 +122,7 @@ impl<S: EffectSink> Term<S> {
             format: crate::image::ImageFormat::Rgba,
             source,
             last_accessed: 0,
+            image_number: p.image_number,
         };
 
         self.image_cache_mut()

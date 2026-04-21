@@ -26,6 +26,7 @@ fn make_image(id: u32, bytes: usize) -> ImageData {
         format: ImageFormat::Rgba,
         source: ImageSource::Direct,
         last_accessed: 0,
+        image_number: None,
     }
 }
 
@@ -312,6 +313,7 @@ fn removed_placement_not_in_renderable_content() {
         format: ImageFormat::Rgba,
         source: ImageSource::Direct,
         last_accessed: 0,
+        image_number: None,
     };
     term.image_cache_mut().store(data).unwrap();
     term.image_cache_mut()
