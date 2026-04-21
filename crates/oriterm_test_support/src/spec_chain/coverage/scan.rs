@@ -236,3 +236,135 @@ fn extract_const_field_id(line: &str) -> Option<String> {
     }
     Some(id.to_string())
 }
+
+/// Print a per-line trace of every citation prefix encountered in `path`.
+///
+/// For each matching line, shows what was matched, what was normalized,
+/// and for each piece whether it was accepted as a catalog-row ID or
+/// dropped (with the drop reason). Used by
+/// `spec-coverage-report --explain <file>` to debug silently-dropped
+/// citations without reading the normalizer source.
+///
+/// Writes directly to stdout. Returns `Err` only on filesystem failures.
+pub fn explain_file(path: &Path) -> Result<(), CoverageError> {
+    let content = std::fs::read_to_string(path)
+        .map_err(|e| CoverageError::Scan(format!("failed to read {}: {e}", path.display())))?;
+
+    println!("Explaining citations in: {}", path.display());
+    let mut accepted = 0usize;
+    let mut dropped = 0usize;
+
+    for (lineno, line) in content.lines().enumerate() {
+        let trimmed = line.trim();
+
+        if let Some(id) = extract_const_field_id(trimmed) {
+            println!("line {}: const-field citation", lineno + 1);
+            println!("  {line}");
+            println!("  ✓ ACCEPTED as citation: {id}");
+            accepted += 1;
+            continue;
+        }
+
+        let Some(rest) = find_citation_prefix(trimmed) else {
+            continue;
+        };
+
+        println!("line {}: comment citation", lineno + 1);
+        println!("  {line}");
+        println!("  collected (text after prefix): {rest:?}");
+
+        for (piece_idx, piece) in rest.split(',').enumerate() {
+            println!("  piece {}: {piece:?}", piece_idx + 1);
+            let steps = trace_normalize(piece);
+            for (step_name, step_val) in &steps.steps {
+                println!("    after {step_name:<24}: {step_val:?}");
+            }
+            match &steps.outcome {
+                NormalizeOutcome::Accepted(id) => {
+                    println!("    ✓ ACCEPTED as citation: {id}");
+                    accepted += 1;
+                }
+                NormalizeOutcome::DroppedEmpty => {
+                    println!(
+                        "    ✗ DROPPED: empty after normalization \
+                         (hint: citation prefix used on non-ID text)"
+                    );
+                    dropped += 1;
+                }
+                NormalizeOutcome::DroppedInvalidChars(final_s) => {
+                    println!(
+                        "    ✗ DROPPED: final text {final_s:?} contains \
+                         whitespace or non-identifier chars \
+                         (valid chars: ASCII alphanumeric, '-', '_')"
+                    );
+                    println!(
+                        "      hint: catalog IDs are bare identifiers — \
+                         put extra prose in `(parenthetical)` form or on a \
+                         separate line. Em-dashes and nested backticks in \
+                         the citation tail are the common cause."
+                    );
+                    dropped += 1;
+                }
+            }
+        }
+    }
+
+    println!();
+    println!("Summary: {accepted} accepted, {dropped} dropped");
+    if dropped > 0 {
+        println!(
+            "Dropped citations are invisible to the coverage gate. Fix \
+             the citation format or run with --check to confirm no \
+             FALSE VERIFIED rows result from this file."
+        );
+    }
+    Ok(())
+}
+
+/// Output of tracing `normalize_row_id` against a single piece.
+struct NormalizeTrace {
+    /// Per-step intermediate values: `(step_name, value_after_step)`.
+    steps: Vec<(&'static str, String)>,
+    outcome: NormalizeOutcome,
+}
+
+enum NormalizeOutcome {
+    Accepted(String),
+    DroppedEmpty,
+    /// Dropped because final text still contains whitespace or
+    /// non-identifier chars. Carries the final text for display.
+    DroppedInvalidChars(String),
+}
+
+/// Mirror `normalize_row_id`'s logic while collecting per-step
+/// intermediate values. Must stay in lockstep with `normalize_row_id` —
+/// if the normalizer gains a step, add a matching entry here.
+fn trace_normalize(raw: &str) -> NormalizeTrace {
+    let mut steps = Vec::with_capacity(5);
+    let s = raw.trim();
+    steps.push(("trim", s.to_string()));
+
+    let s = s.split_once(". ").map_or(s, |(before, _)| before);
+    steps.push(("sentence-boundary drop", s.to_string()));
+
+    let s = s.split_once(" (").map_or(s, |(before, _)| before);
+    steps.push(("paren qualifier drop", s.to_string()));
+
+    let s = s.trim_end_matches('.');
+    steps.push(("trailing-period trim", s.to_string()));
+
+    let s = s.trim_matches('`').trim();
+    steps.push(("backtick trim", s.to_string()));
+
+    let outcome = if s.is_empty() {
+        NormalizeOutcome::DroppedEmpty
+    } else if !s
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
+        NormalizeOutcome::DroppedInvalidChars(s.to_string())
+    } else {
+        NormalizeOutcome::Accepted(s.to_string())
+    };
+    NormalizeTrace { steps, outcome }
+}
