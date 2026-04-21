@@ -9,7 +9,23 @@
 //!   piece becomes its own citation. The plural form exists so a test
 //!   file that covers multiple catalog rows can cite them on one doc
 //!   line without a silent-miss when the natural-English plural is used.
+//! - Multi-line continuation: when a citation line ends with a trailing
+//!   comma, subsequent lines that start with `//`, `//!`, or `///` are
+//!   appended until a line without a trailing comma is consumed. This
+//!   supports the natural wrap when a long list of row IDs doesn't fit
+//!   on one line.
 //! - `catalog_row_id: "<ID>"` (const field in `SpecScenario`)
+//!
+//! Each piece is normalized before becoming a citation:
+//! - Trailing periods dropped (`OSC-2.` → `OSC-2`)
+//! - Trailing parenthetical qualifier dropped (`SIXEL-REPEAT (§12.4 GPU-apex)` → `SIXEL-REPEAT`)
+//! - Trailing prose after a sentence-boundary `. ` dropped (`OSC-4-QUERY. Apex: …` → `OSC-4-QUERY`)
+//! - Surrounding backticks dropped (`` `SIXEL-BG-NoChange` `` → `SIXEL-BG-NoChange`)
+//!
+//! Pieces that still contain whitespace after normalization are silently
+//! dropped — they are prose (author error), not row IDs, and cannot match
+//! any catalog row. Validation rejects anything that isn't a bare
+//! identifier (ASCII alphanumeric + `-_`).
 //!
 //! Also scans `src/` directories because visual `spec_chain` tests live
 //! under `oriterm/src/gpu/visual_regression/spec_chain/` as unit tests.
@@ -72,45 +88,135 @@ fn walk_dir_recursive(
     Ok(())
 }
 
+const CITATION_PREFIXES: &[&str] = &[
+    "// Catalog row: ",
+    "//! Catalog row: ",
+    "/// Catalog row: ",
+    "// Catalog rows: ",
+    "//! Catalog rows: ",
+    "/// Catalog rows: ",
+];
+
 fn scan_file(path: &Path, citations: &mut Vec<Citation>) -> Result<(), CoverageError> {
     let content = std::fs::read_to_string(path)
         .map_err(|e| CoverageError::Scan(format!("failed to read {}: {e}", path.display())))?;
 
-    for line in content.lines() {
-        let trimmed = line.trim();
+    let lines: Vec<&str> = content.lines().collect();
+    let mut i = 0;
+    while i < lines.len() {
+        let trimmed = lines[i].trim();
 
-        // Pattern 1: comment citation — `// Catalog row: ID` (singular)
-        // or `// Catalog rows: A, B, C` (plural, comma-separated). Both
-        // forms support `//`, `//!`, and `///` comment prefixes.
-        let prefixes = [
-            "// Catalog row: ",
-            "//! Catalog row: ",
-            "/// Catalog row: ",
-            "// Catalog rows: ",
-            "//! Catalog rows: ",
-            "/// Catalog rows: ",
-        ];
-        if let Some(rest) = prefixes.iter().find_map(|p| trimmed.strip_prefix(p)) {
-            for piece in rest.split(',') {
-                let id = piece.trim();
-                if !id.is_empty() {
-                    citations.push(Citation {
-                        row_id: id.to_string(),
-                        file_path: path.to_path_buf(),
-                    });
-                }
-            }
-        }
-
-        // Pattern 2: const field citation — `catalog_row_id: "ID"`
+        // Const-field citation — `catalog_row_id: "ID"`.
         if let Some(id) = extract_const_field_id(trimmed) {
             citations.push(Citation {
                 row_id: id,
                 file_path: path.to_path_buf(),
             });
         }
+
+        // Comment citation — `// Catalog row[s]: ...` with optional
+        // multi-line continuation when a line ends in a trailing comma.
+        if let Some(rest) = find_citation_prefix(trimmed) {
+            let mut collected = rest.to_string();
+            while trailing_comma(&collected) {
+                let next_idx = i + 1;
+                if next_idx >= lines.len() {
+                    break;
+                }
+                let trimmed_next = lines[next_idx].trim();
+                let Some(next_text) = strip_comment_marker(trimmed_next) else {
+                    // Non-comment line terminates the continuation without
+                    // consuming it — the outer loop will re-process line
+                    // `next_idx` normally.
+                    break;
+                };
+                i = next_idx;
+                collected.push(' ');
+                collected.push_str(next_text);
+            }
+
+            for piece in collected.split(',') {
+                if let Some(id) = normalize_row_id(piece) {
+                    citations.push(Citation {
+                        row_id: id,
+                        file_path: path.to_path_buf(),
+                    });
+                }
+            }
+        }
+
+        i += 1;
     }
     Ok(())
+}
+
+/// Match any of the six citation prefixes and return the text after the
+/// prefix.
+fn find_citation_prefix(line: &str) -> Option<&str> {
+    CITATION_PREFIXES.iter().find_map(|p| line.strip_prefix(p))
+}
+
+/// Check whether a citation fragment ends with a trailing comma (allowing
+/// trailing whitespace). Signals that the list continues on the next
+/// comment line.
+fn trailing_comma(s: &str) -> bool {
+    s.trim_end().ends_with(',')
+}
+
+/// Strip the comment marker (`//`, `///`, or `//!`) from a line, returning
+/// the text after the marker with leading whitespace trimmed. Returns
+/// `None` if the line is not a comment.
+///
+/// Order matters: `///` and `//!` must be tried before `//` because `//`
+/// is a prefix of both.
+fn strip_comment_marker(line: &str) -> Option<&str> {
+    let rest = line
+        .strip_prefix("///")
+        .or_else(|| line.strip_prefix("//!"))
+        .or_else(|| line.strip_prefix("//"))?;
+    Some(rest.trim_start())
+}
+
+/// Normalize a split citation piece into a bare row ID, or return `None`
+/// if the piece is not a valid identifier after normalization.
+///
+/// Normalization order:
+/// 1. Trim surrounding whitespace.
+/// 2. Drop everything after the first sentence-boundary `. ` (trailing
+///    prose like `OSC-4-QUERY. Apex: state-snapshot` → `OSC-4-QUERY`).
+/// 3. Drop trailing parenthetical qualifier (` (§12.4 GPU-apex)`).
+/// 4. Drop trailing periods.
+/// 5. Trim surrounding backticks.
+/// 6. Trim surrounding whitespace again.
+///
+/// Validation: the result must be non-empty and consist only of ASCII
+/// alphanumeric + `-` / `_`. Prose (anything containing whitespace or
+/// other characters) is silently dropped; the author used the citation
+/// prefix on non-ID text, which cannot match a catalog row.
+fn normalize_row_id(raw: &str) -> Option<String> {
+    let s = raw.trim();
+    // Sentence-boundary prose drop: `ID. Extra prose.` → `ID`.
+    // `split_once` returns `Option<(&str, &str)>` with valid UTF-8
+    // boundaries, sidestepping clippy's `string_slice` lint on raw byte
+    // indexing.
+    let s = s.split_once(". ").map_or(s, |(before, _)| before);
+    // Trailing parenthetical qualifier drop.
+    let s = s.split_once(" (").map_or(s, |(before, _)| before);
+    // Trailing period(s) drop.
+    let s = s.trim_end_matches('.');
+    // Surrounding backticks.
+    let s = s.trim_matches('`').trim();
+
+    if s.is_empty() {
+        return None;
+    }
+    if !s
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
+        return None;
+    }
+    Some(s.to_string())
 }
 
 /// Extract a catalog row ID from a `catalog_row_id: "ID"` pattern.

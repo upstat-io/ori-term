@@ -107,6 +107,13 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: test-linux
+      - name: Clear stale uncataloged-sequence spool
+        # `target/spec-chain-uncataloged/` is populated by test runs and
+        # consumed by `spec-coverage-report --check`'s backlog gate. The
+        # rust-cache restores `target/`, so without this explicit clean
+        # the gate reads yesterday's accumulated sequences on top of
+        # today's — stateful pollution causing spurious backlog failures.
+        run: rm -rf target/spec-chain-uncataloged
       - name: Spec coverage lint
         run: cargo run -p oriterm_test_support --bin spec-coverage-report -- --check
       - name: Audit-files lint

@@ -38,9 +38,12 @@ fn main() -> ExitCode {
         workspace_root.join("oriterm/tests"),
         workspace_root.join("oriterm/src"),
         workspace_root.join("oriterm_ui/tests"),
+        workspace_root.join("oriterm_ui/src"),
         workspace_root.join("oriterm_mux/tests"),
+        workspace_root.join("oriterm_mux/src"),
         workspace_root.join("crates/oriterm_test_support/src"),
         workspace_root.join("crates/oriterm_test_support/tests"),
+        workspace_root.join("crates/vte/src"),
     ];
 
     // Exclude the scanner's own source and binary to prevent it from

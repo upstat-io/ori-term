@@ -28,6 +28,14 @@ sections:
 
 ## 07.1 Active Bugs
 
+- [ ] `[BUG-07-019][medium]` **`spec-coverage-report --check` UNCATALOGED BACKLOG is 100% false positives — OSC tuple signatures from the runtime observer and the catalog canonicalizer disagree on which slot carries the OSC numeric id** — found during CI nightly fix sweep (2026-04-21).
+  Repro: run any test that emits an OSC sequence, then `cargo run -p oriterm_test_support --bin spec-coverage-report -- --check`. Every OSC tuple reports as "observed but not in catalog" even when the catalog has the matching row (e.g., `OSC-52`, `OSC-7`, `OSC-1337` all false-fire).
+  Subsystem: `crates/oriterm_test_support/src/spec_chain/uncataloged/mod.rs` (`perform_action_to_sig`) + `crates/oriterm_test_support/src/catalog/tuple/canonical.rs` (`parse_osc`).
+  Analysis: `TupleSig = (category, intermediates, final_byte)`. For OSC the observer produces `final_byte = OSC numeric id` (e.g., `"52"`), while `parse_osc` produces `final_byte = terminator` (e.g., `"BEL"` after ST→BEL normalization). The two canonicalizations never match, so ALL observed OSC sequences appear as uncataloged. CSI/DCS/ESC alignments appear to work — this is an OSC-specific signature-misalignment.
+  Fix: pick one canonicalization as canonical. Recommended: change `parse_osc` to place the OSC numeric id (first payload part) in `final_byte` and move the terminator information elsewhere (or drop it, since BEL/ST is interchangeable after normalization and not a discriminator). Update any tests that assert on the current OSC tuple shape.
+  Found: 2026-04-21 | Source: nightly CI failure fix — `test-all.sh` integration of `spec-coverage-report` surfaced the backlog as fatal after the scanner decoration-stripping fix cleared the static-gate failures.
+  Workaround in place: `test-all.sh` runs `spec-coverage-report --check` BEFORE `cargo test` (matching CI ordering), so the spool is empty and the backlog gate vacuous-passes. Once aligned, the gate can run post-test to detect genuine new sequences.
+
 - [ ] `[BUG-07-017][low]` **`.claude/skills/impl-hygiene-review/plan-annotations.py` crashes with `NameError: name 'AIMS_SECTION_RE' is not defined`** — found by §12.2 impl-hygiene-review Phase 0.
   Repro: invoke the impl-hygiene-review skill against any scope; Phase 0 runs `plan-annotations.py` and it crashes before producing output. The other three Phase-0 tools (`hygiene-lint.py`, `enum-drift.py`, `fn-rename.py`) still run successfully — this is an isolated bug in the plan-annotations linter.
   Subsystem: `.claude/skills/impl-hygiene-review/plan-annotations.py` (around line 631 — reference to undefined regex constant).

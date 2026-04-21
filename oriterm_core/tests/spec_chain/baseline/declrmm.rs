@@ -10,6 +10,8 @@
 //!
 //! - `DEC-DECLRMM` (mode 69) — left/right margin mode
 //!
+//! Catalog rows: XT-DECSLRM
+//!
 //! # Why state apex (not renderable)
 //!
 //! `observe_renderable` in `crates/oriterm_test_support/src/spec_chain/observers/renderable.rs`
