@@ -220,6 +220,39 @@ fn sixel_placement_anchors_at_cursor_position() {
     );
 }
 
+// Orphan cleanup via prune_scrollback.
+
+/// Catalog row: orphan cleanup (consumes §07's `prune_scrollback` hook).
+///
+/// Place a sixel at stable_row=0, then drive enough linefeeds to push
+/// that row off the end of the scrollback buffer. The VTE handler's
+/// `linefeed` path in `oriterm_core/src/term/handler/mod.rs` calls
+/// `prune_images_if_evicted` after each linefeed; once the placement's
+/// stable_row falls below `total_evicted`, `ImageCache::prune_scrollback`
+/// drops it. Harness scrollback is 1000 lines; grid is 24 lines;
+/// 24 + 1000 + margin = 1100 linefeeds guarantees eviction.
+#[test]
+fn sixel_placement_pruned_when_scrollback_evicts_its_row() {
+    let mut h = SpecHarness::new();
+    h.feed(&dcs_n_cols_wide(5));
+    assert_eq!(
+        placement_count(&h),
+        1,
+        "placement committed at stable_row=0",
+    );
+
+    // 1100 linefeeds — 24 grid-fills + 1000 scrollback-fills + 76 margin.
+    let lfs = vec![b'\n'; 1100];
+    h.feed(&lfs);
+
+    assert_eq!(
+        placement_count(&h),
+        0,
+        "placement at evicted stable_row must be pruned via \
+         prune_images_if_evicted → ImageCache::prune_scrollback",
+    );
+}
+
 // Matrix completeness.
 
 /// Structural matrix-completeness pin for §12.3's non-GPU scope.
@@ -236,11 +269,12 @@ fn grid_integration_category_matrix_completeness() {
         "sixel_cursor_right_priority",
         "placement_z_index_zero",
         "placement_anchor_at_cursor",
+        "placement_pruned_on_scrollback_eviction",
     ];
     assert_eq!(
         CATEGORIES.len(),
-        6,
-        "§12.3 non-GPU scope has 6 grid-integration categories; \
+        7,
+        "§12.3 non-GPU scope has 7 grid-integration categories; \
          update this list if the plan changes",
     );
 }
