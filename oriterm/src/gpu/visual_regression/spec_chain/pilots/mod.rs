@@ -5,3 +5,6 @@
 //! `oriterm_core/tests/spec_chain/pilots/` — they don't need GPU access.
 
 pub mod sixel_minimal;
+pub mod sixel_occlusion_subcell;
+pub mod sixel_occlusion_wide_cjk;
+pub mod sixel_occlusion_zwj;

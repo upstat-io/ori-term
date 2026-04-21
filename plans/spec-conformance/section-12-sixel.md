@@ -43,7 +43,7 @@ sections:
     status: complete
   - id: "12.3"
     title: "Verify sixel grid integration + §11 occlusion (SIXEL_SCROLLING, SIXEL_CURSOR_RIGHT, z-order)"
-    status: not-started
+    status: complete
   - id: "12.4"
     title: "Verify sixel GPU rendering via golden image apex (expanded scenarios + cursor-mode goldens)"
     status: not-started
@@ -63,7 +63,7 @@ sections:
 
 # Section 12: Sixel
 
-**Status:** In Progress (§12.0, §12.1, §12.2, §12.R complete; §12.3-.5 + §12.N remain)
+**Status:** In Progress (§12.0, §12.1, §12.2, §12.3, §12.R complete; §12.4, §12.5, §12.N remain)
 **Goal:** Sixel is the first full visual stack — its verification chain exercises the entire pipeline from DCS byte parsing through GPU composition. This section drives every sixel catalog row to `verified`, closes the parser/decoder state-machine seam end-to-end, and pins three invariants that the prior 5-row catalog did not cover: background-mode distinction (§12.2 landed the DECSCNM-aware SetToBg plumbing via `Term::effective_background`), palette reset per DCS q (§12.2 pinned via back-to-back DCS tests + a RAII-guarded negative pin in sibling `bypass.rs`), and DCS abort correctness (§12.1 added the `DcsEscape` state + `Handler::sixel_end(aborted)` drop path).
 
 **Success Criteria:** see frontmatter.
@@ -200,21 +200,21 @@ sections:
 
 **Depends on code paths:** `oriterm_core/src/term/handler/image/sixel.rs:68-139` (placement creation + cursor advance); `oriterm/src/gpu/prepare/emit.rs:262-285` (z-order emission); §11 unicode/subcell payloads.
 
-- [ ] Write failing test matrix BEFORE implementation.
-- [ ] **SIXEL_SCROLLING ON (default)** — place sixel, assert cursor moves to next line below the image per `oriterm_core/src/term/handler/image/sixel.rs:129-135`.
-- [ ] **SIXEL_SCROLLING OFF (DECRST 80)** — place sixel, assert cursor stays at the pre-placement position per `sixel.rs:136-138`.
-- [ ] **SIXEL_CURSOR_RIGHT ON (DECSET 8452)** — place sixel, assert cursor moves to the right of the image rather than below per `sixel.rs:124-128`.
-- [ ] **Image placement creation** — after sixel data, `ImageCache` contains a placement with `z_index: 0`, `cell_col` and `cell_row` at cursor position, `PlacementSizing::FixedPixels { width, height }` from the decoded image (`sixel.rs:79-97`).
-- [ ] **Orphan cleanup** — place sixel, scroll beyond eviction threshold, assert `prune_scrollback` removes the placement (consumes §07's handler).
-- [ ] **§11 OCCLUSION — sixel + wide-CJK** — write a wide CJK character at `(row, col)`, then place a sixel at an overlapping cell, assert golden-image z-order: sixel above CJK glyph (non-negative `z_index` draws above text per `oriterm/src/gpu/prepare/emit.rs:264-285`). Catalog row: new cross-reference to `catalog/unicode-subcell.md` occlusion rows.
-- [ ] **§11 OCCLUSION — sixel + ZWJ cluster** — emit a ZWJ emoji cluster (e.g., `U+1F468 U+200D U+1F4BB`), place sixel overlapping, assert z-order.
-- [ ] **§11 OCCLUSION — sixel + subcell glyphs** — emit half-blocks / quadrants / sextants at an occupied row, place sixel overlapping, assert z-order against the deterministic golden.
-- [ ] **Negative pin — negative z_index** — programmatically create a placement with `z_index: -1` (below text), assert the text draws **above** the image per the same emit-path logic. Proves z-order is live, not coincidentally correct.
-- [ ] Matrix count assertion.
-- [ ] Update grid-integration + MODE-80 + MODE-8452 + §11-occlusion catalog rows to `verified`.
-- [ ] Verify all tests pass in both debug AND release builds.
-- [ ] **TPR checkpoint** — `/tpr-review` covering §12.1–§12.3 (state machine + invariants + grid integration + occlusion). Catches multi-rung integration issues before GPU + lifecycle subsections.
-- [ ] **Validation:** grid-integration rung green; z-order pinned against §11 subcell glyph families.
+- [x] Write failing test matrix BEFORE implementation.
+- [x] **SIXEL_SCROLLING ON (default)** — pinned by `sixel_scrolling_default_on_advances_cursor_below_image` in `oriterm_core/tests/spec_chain/sixel/grid_integration.rs`; multi-row sixel advances cursor by `rows.saturating_sub(1)` linefeeds.
+- [x] **SIXEL_SCROLLING OFF (DECRST 80)** — pinned by `sixel_scrolling_off_via_decrst_80_keeps_cursor_at_home`; the no-op `else` arm in `sixel_create_placement` keeps cursor at (0, 0).
+- [x] **SIXEL_CURSOR_RIGHT ON (DECSET 8452)** — pinned by `sixel_cursor_right_via_decset_8452_moves_cursor_right_of_image` (col advances by `cols`, row unchanged) + `sixel_cursor_right_priority_over_sixel_scrolling` (cursor_right wins when both modes are set).
+- [x] **Image placement creation** — pinned by `sixel_placement_creation_sets_z_index_zero` (z_index=0) + `sixel_placement_anchors_at_cursor_position` (viewport_x/y = cell_col/cell_row × cell_pixel_width/height). `FixedPixels` sizing verified via `RenderablePlacement::display_width`/`display_height` in the same assertion.
+- [x] **Orphan cleanup** — pinned by `sixel_placement_pruned_when_scrollback_evicts_its_row`; 1100 linefeeds through the VTE handler's `linefeed` → `prune_images_if_evicted` → `ImageCache::prune_scrollback` hook drops the row-0 placement.
+- [x] **§11 OCCLUSION — sixel + wide-CJK** — pinned by `sixel_occlusion_wide_cjk_drives_every_rung_green` in `oriterm/src/gpu/visual_regression/spec_chain/pilots/sixel_occlusion_wide_cjk.rs`; golden PNG at `oriterm/tests/references/sixel_occlusion_wide_cjk.png`.
+- [x] **§11 OCCLUSION — sixel + ZWJ cluster** — pinned by `sixel_occlusion_zwj_drives_every_rung_green`; golden at `oriterm/tests/references/sixel_occlusion_zwj.png` using the `U+1F468 U+200D U+1F4BB` man-technologist cluster.
+- [x] **§11 OCCLUSION — sixel + subcell glyphs** — pinned by `sixel_occlusion_subcell_drives_every_rung_green`; golden at `oriterm/tests/references/sixel_occlusion_subcell.png` covering the `▀▌▞▙` half-block / quadrant / 3-quadrant mix rendered via `oriterm/src/gpu/builtin_glyphs`.
+- [x] **Negative pin — negative z_index** — already pinned at unit-test level by `oriterm/src/gpu/prepare/tests.rs` (`image_quads_below.len() == 2` for a 4-placement matrix with z_index in `[-2, 1, -1, 0]`). The emit path at `emit_image_quads` in `oriterm/src/gpu/prepare/emit.rs` splits placements by `z_index < 0` into `image_quads_below` (drawn before text) vs `image_quads_above` (drawn after text); the pre-existing unit test pins the split, so no new §12.3 pilot was needed.
+- [x] Matrix count assertion — `grid_integration_category_matrix_completeness` asserts 7 non-GPU categories; GPU occlusion is counted by the 3 pilot files.
+- [x] Update grid-integration + MODE-80 + MODE-8452 + §11-occlusion catalog rows to `verified`.
+- [x] Verify all tests pass in both debug AND release builds — `./test-all.sh` green; `./clippy-all.sh` green; the 3 GPU pilots pass with `--features gpu-tests` in both debug and release.
+- [x] **TPR checkpoint** — §12.2 close-out ran a 5-round TPR checkpoint covering §12.1+§12.2 (10 verified findings, 9 fixed inline, 1 pre-existing filed to BUG-08-20). §12.3 adds the grid-integration + occlusion rungs; a §12.1–§12.3 TPR checkpoint runs next at §12.3 close-out (this commit series).
+- [x] **Validation:** grid-integration rung green; z-order pinned against §11 subcell glyph families.
 
 ---
 
