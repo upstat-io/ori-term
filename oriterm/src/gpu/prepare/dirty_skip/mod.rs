@@ -253,8 +253,11 @@ pub(crate) fn fill_frame_incremental(
             resolve_cell_colors(cell, sel, search, &cursor, cursor_opacity, &input.palette);
 
         // Skip default palette background so the window clear color (with
-        // theme opacity for glass/acrylic) shows through.
-        let bg_w = if cell.flags.contains(CellFlags::WIDE_CHAR) {
+        // theme opacity for glass/acrylic) shows through. Verify the wide
+        // pair's spacer actually exists before extending bg to 2*cw — an
+        // orphaned WIDE_CHAR flag would otherwise bleed into the adjacent
+        // cell (BUG-06-016 mojibake black-strip symptom).
+        let bg_w = if super::wide_char_has_spacer(cells, i.saturating_sub(1)) {
             2.0 * cw
         } else {
             cw

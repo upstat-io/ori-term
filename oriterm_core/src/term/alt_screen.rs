@@ -48,13 +48,21 @@ impl<S: EffectSink> Term<S> {
 
     /// Switch to alt screen, clearing it on enter (mode 1047).
     ///
-    /// When entering alt screen: clears the alt grid, then swaps.
-    /// Does NOT save or restore the cursor position.
+    /// When entering alt screen: clears the alt grid AND the alt image
+    /// cache, then swaps. Does NOT save or restore the cursor position.
+    ///
+    /// The alt image cache must clear alongside the grid — DECSET 1047/1049
+    /// semantics say "clear the alt screen on enter", and alt-screen
+    /// placements live outside the grid. Leaving the cache intact would
+    /// resurrect kitty/sixel placements on re-entry.
     pub fn swap_alt_clear(&mut self) {
         self.selection_dirty = true;
         self.ensure_alt_grid();
-        // Clear the alt grid before entering.
+        // Clear the alt grid AND alt image cache before entering.
         self.alt_grid.as_mut().unwrap().reset();
+        if let Some(cache) = self.alt_image_cache.as_mut() {
+            cache.clear();
+        }
         self.toggle_alt_common();
     }
 
