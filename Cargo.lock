@@ -1999,6 +1999,7 @@ dependencies = [
  "libc",
  "log",
  "mio",
+ "tempfile",
  "windows-sys 0.59.0",
 ]
 
@@ -2028,6 +2029,7 @@ dependencies = [
 name = "oriterm_test_support"
 version = "0.2.0-alpha.20260421"
 dependencies = [
+ "base64",
  "clap",
  "oriterm_core",
  "portable-pty",

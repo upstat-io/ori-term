@@ -8,8 +8,7 @@
 //! - Mode 67 (DECBKM) has its own `TermMode::DECBKM` flag.
 
 use oriterm_core::TermMode;
-use oriterm_core::effect::{Effect, PtyEffect};
-use oriterm_test_support::spec_chain::SpecHarness;
+use oriterm_test_support::spec_chain::{SpecHarness, pty_writes};
 
 // ── DECNKM (mode 66) — flag toggle ─────────────────────────────────
 
@@ -74,11 +73,7 @@ fn decnkm_decrqm_default_reset() {
     let mut h = SpecHarness::new();
     h.feed(b"\x1b[?66$p");
     let expected = b"\x1b[?66;2$y";
-    let found = h
-        .outcome()
-        .effects_emitted
-        .iter()
-        .any(|e| matches!(e, Effect::Pty(PtyEffect::Write { bytes, .. }) if bytes == expected));
+    let found = pty_writes(&h).any(|(b, _)| b == expected);
     assert!(found, "DECRQM ?66 must report 2 (reset) by default");
 }
 
@@ -88,11 +83,7 @@ fn decnkm_decrqm_after_set() {
     h.feed(b"\x1b[?66h");
     h.feed(b"\x1b[?66$p");
     let expected = b"\x1b[?66;1$y";
-    let found = h
-        .outcome()
-        .effects_emitted
-        .iter()
-        .any(|e| matches!(e, Effect::Pty(PtyEffect::Write { bytes, .. }) if bytes == expected));
+    let found = pty_writes(&h).any(|(b, _)| b == expected);
     assert!(found, "DECRQM ?66 must report 1 (set) after DECSET");
 }
 
@@ -107,11 +98,7 @@ fn deckpam_propagates_to_decrqm_66() {
 
     h.feed(b"\x1b[?66$p");
     let expected = b"\x1b[?66;1$y";
-    let found = h
-        .outcome()
-        .effects_emitted
-        .iter()
-        .any(|e| matches!(e, Effect::Pty(PtyEffect::Write { bytes, .. }) if bytes == expected));
+    let found = pty_writes(&h).any(|(b, _)| b == expected);
     assert!(
         found,
         "DECRQM ?66 must report 1 when APP_KEYPAD was set by ESC ="
@@ -200,11 +187,7 @@ fn decbkm_decrqm_default_reset() {
     let mut h = SpecHarness::new();
     h.feed(b"\x1b[?67$p");
     let expected = b"\x1b[?67;2$y";
-    let found = h
-        .outcome()
-        .effects_emitted
-        .iter()
-        .any(|e| matches!(e, Effect::Pty(PtyEffect::Write { bytes, .. }) if bytes == expected));
+    let found = pty_writes(&h).any(|(b, _)| b == expected);
     assert!(found, "DECRQM ?67 must report 2 (reset) by default");
 }
 
@@ -214,11 +197,7 @@ fn decbkm_decrqm_after_set() {
     h.feed(b"\x1b[?67h");
     h.feed(b"\x1b[?67$p");
     let expected = b"\x1b[?67;1$y";
-    let found = h
-        .outcome()
-        .effects_emitted
-        .iter()
-        .any(|e| matches!(e, Effect::Pty(PtyEffect::Write { bytes, .. }) if bytes == expected));
+    let found = pty_writes(&h).any(|(b, _)| b == expected);
     assert!(found, "DECRQM ?67 must report 1 (set) after DECSET");
 }
 

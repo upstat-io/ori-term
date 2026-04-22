@@ -24,32 +24,10 @@
 //! OSC-19-SET, OSC-19-QUERY, OSC-113, OSC-114, OSC-117, OSC-119, OSC-L,
 //! OSC-l.
 
-use oriterm_core::effect::{Effect, PtyEffect};
-use oriterm_test_support::spec_chain::SpecHarness;
+use oriterm_test_support::spec_chain::{
+    SpecHarness, assert_no_pty_writes, expect_single_pty_write,
+};
 use vte::ansi::Rgb;
-
-/// Locate the single `PtyEffect::Write` on the transcript and return its
-/// bytes. Panics if there is not exactly one.
-fn expect_pty_write(harness: &SpecHarness) -> Vec<u8> {
-    let effects = &harness.outcome().effects_emitted;
-    let mut found = None;
-    for eff in effects {
-        if let Effect::Pty(PtyEffect::Write { bytes, .. }) = eff {
-            assert!(found.is_none(), "more than one PtyEffect::Write emitted");
-            found = Some(bytes.clone());
-        }
-    }
-    found.unwrap_or_else(|| panic!("expected one PtyEffect::Write; got {effects:?}"))
-}
-
-/// Assert there are NO PTY write effects on the transcript.
-fn assert_no_pty_write(harness: &SpecHarness) {
-    for eff in &harness.outcome().effects_emitted {
-        if let Effect::Pty(PtyEffect::Write { .. }) = eff {
-            panic!("unexpected PtyEffect::Write on transcript: {eff:?}");
-        }
-    }
-}
 
 // ── OSC 3 — set X11 window property ─────────────────────────────────
 
@@ -117,7 +95,7 @@ fn osc5_query_slot_0_replies_via_pty() {
     harness.feed(b"\x1b]5;0;rgb:ab/cd/ef\x1b\\");
     harness.feed(b"\x1b]5;0;?\x1b\\");
 
-    let reply = expect_pty_write(&harness);
+    let reply = expect_single_pty_write(&harness);
     assert_eq!(
         reply.as_slice(),
         b"\x1b]5;0;rgb:abab/cdcd/efef\x1b\\",
@@ -140,7 +118,7 @@ fn osc5_invalid_color_dropped() {
             "slot {idx} must remain empty after malformed OSC 5"
         );
     }
-    assert_no_pty_write(&harness);
+    assert_no_pty_writes(&harness);
 }
 
 // ── OSC 6 — iTerm2 tab title color ──────────────────────────────────
@@ -212,7 +190,7 @@ fn osc13_query_replies_via_pty() {
     harness.feed(b"\x1b]13;rgb:11/22/33\x1b\\");
     harness.feed(b"\x1b]13;?\x1b\\");
 
-    let reply = expect_pty_write(&harness);
+    let reply = expect_single_pty_write(&harness);
     assert_eq!(reply.as_slice(), b"\x1b]13;rgb:1111/2222/3333\x1b\\");
 }
 
@@ -263,7 +241,7 @@ fn osc14_query_replies_via_pty() {
     harness.feed(b"\x1b]14;rgb:44/55/66\x1b\\");
     harness.feed(b"\x1b]14;?\x1b\\");
 
-    let reply = expect_pty_write(&harness);
+    let reply = expect_single_pty_write(&harness);
     assert_eq!(reply.as_slice(), b"\x1b]14;rgb:4444/5555/6666\x1b\\");
 }
 
@@ -312,7 +290,7 @@ fn osc17_query_replies_via_pty() {
     harness.feed(b"\x1b]17;rgb:77/88/99\x1b\\");
     harness.feed(b"\x1b]17;?\x1b\\");
 
-    let reply = expect_pty_write(&harness);
+    let reply = expect_single_pty_write(&harness);
     assert_eq!(reply.as_slice(), b"\x1b]17;rgb:7777/8888/9999\x1b\\");
 }
 
@@ -361,7 +339,7 @@ fn osc19_query_replies_via_pty() {
     harness.feed(b"\x1b]19;rgb:aa/bb/cc\x1b\\");
     harness.feed(b"\x1b]19;?\x1b\\");
 
-    let reply = expect_pty_write(&harness);
+    let reply = expect_single_pty_write(&harness);
     assert_eq!(reply.as_slice(), b"\x1b]19;rgb:aaaa/bbbb/cccc\x1b\\");
 }
 

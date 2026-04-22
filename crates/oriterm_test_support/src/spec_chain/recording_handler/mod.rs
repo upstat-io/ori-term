@@ -7,6 +7,7 @@
 
 use oriterm_core::Term;
 use oriterm_core::effect::sink::EffectSink;
+use oriterm_core::image::kitty::{KittyCommand, parse_kitty_command};
 use vte::ansi::Handler;
 
 // Re-import cursor_icon via the vendored VTE's re-export.
@@ -54,6 +55,17 @@ pub enum DispatchArgs {
     /// abort-plumbing tests can verify the dispatch-rung argument, not
     /// just the end-to-end `ImageCache` state.
     SixelEnd { aborted: bool },
+    /// `Handler::apc_dispatch` routed to the Kitty graphics protocol
+    /// (payload's first byte is `G`).
+    ///
+    /// The captured `KittyCommand` lets matrix tests assert per-cell
+    /// dispatch identity (action × format × transmission) rather than
+    /// collapsing every APC `_G` into the generic `Other` arm. The
+    /// parser output is boxed to keep the enum discriminant small —
+    /// `KittyCommand` is a wide struct (~200 bytes with its payload
+    /// buffer) and the `Box` avoids bloating every other `DispatchArgs`
+    /// variant.
+    KittyApc { command: Box<KittyCommand> },
     /// Fallback for methods not yet given typed args.
     Other { method: &'static str },
 }
@@ -326,7 +338,24 @@ impl<S: EffectSink> Handler for RecordingHandler<S> {
     }
 
     fn apc_dispatch(&mut self, payload: &[u8]) {
-        self.record_other("apc_dispatch");
+        // Payloads starting with `G` are kitty graphics commands; parse
+        // into a typed `KittyCommand` so matrix tests can assert per-cell
+        // dispatch identity (action × format × transmission) rather than
+        // collapsing every APC `_G` into the generic `Other` arm. Parse
+        // failures fall back to `Other` — a malformed APC body is a
+        // distinct test concern from dispatch-arg capture.
+        match payload.split_first() {
+            Some((&b'G', body)) => match parse_kitty_command(body) {
+                Ok(command) => self.record(
+                    "apc_dispatch",
+                    DispatchArgs::KittyApc {
+                        command: Box::new(command),
+                    },
+                ),
+                Err(_) => self.record_other("apc_dispatch"),
+            },
+            _ => self.record_other("apc_dispatch"),
+        }
         Handler::apc_dispatch(&mut self.term, payload);
     }
 
@@ -403,3 +432,6 @@ impl<S: EffectSink> Handler for RecordingHandler<S> {
     delegate_other!(decbi);
     delegate_other!(decfi);
 }
+
+#[cfg(test)]
+mod tests;

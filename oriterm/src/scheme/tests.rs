@@ -216,7 +216,8 @@ fn resolve_scheme_returns_none_for_unknown() {
 /// `resolve_scheme` loads a theme from an absolute file path.
 #[test]
 fn resolve_scheme_absolute_path() {
-    let path = std::env::temp_dir().join("oriterm_test_absolute_theme.toml");
+    let guard = oriterm_test_support::TempDirGuard::new("scheme_absolute_path");
+    let path = guard.path().join("absolute_theme.toml");
     std::fs::write(
         &path,
         r##"
@@ -238,8 +239,6 @@ cursor = "#c0caf5"
     let scheme = super::resolve_scheme(abs).expect("should load from absolute path");
     assert_eq!(scheme.name, "Custom Absolute");
     assert_eq!(scheme.fg.r, 0xc0);
-
-    let _ = std::fs::remove_file(&path);
 }
 
 /// `resolve_scheme` returns None for a nonexistent absolute path.
@@ -266,7 +265,8 @@ fn discover_all_includes_builtins() {
 fn discover_all_user_overrides_builtin() {
     // This test requires a theme file named "nord.toml" in the config themes dir.
     // We verify the override logic via `resolve_scheme` with a temp file approach.
-    let path = std::env::temp_dir().join("oriterm_test_override_nord.toml");
+    let guard = oriterm_test_support::TempDirGuard::new("scheme_override_nord");
+    let path = guard.path().join("nord.toml");
     std::fs::write(
         &path,
         r##"
@@ -290,8 +290,6 @@ cursor = "#ffffff"
     // Confirm we got the custom colors, not the builtin Nord.
     assert_eq!(scheme.fg.r, 0xaa);
     assert_eq!(scheme.bg.r, 0x11);
-
-    let _ = std::fs::remove_file(&path);
 }
 
 // --- conditional parsing edge cases ---

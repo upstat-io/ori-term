@@ -12,7 +12,7 @@
 //! via the `interrupt_demo()` path in `hud.c:288`).
 
 use oriterm_core::effect::{Effect, PtyEffect};
-use oriterm_test_support::spec_chain::SpecHarness;
+use oriterm_test_support::spec_chain::{SpecHarness, pty_writes};
 
 const NOTCURSES_STARTUP: &[u8] =
     include_bytes!("../../../../plans/spec-conformance/captures/notcurses-demo-intro.cap");
@@ -23,10 +23,8 @@ fn replay_notcurses_startup() -> Vec<u8> {
     let mut h = SpecHarness::new();
     h.feed(NOTCURSES_STARTUP);
     let mut out = Vec::new();
-    for eff in &h.outcome().effects_emitted {
-        if let Effect::Pty(PtyEffect::Write { bytes, .. }) = eff {
-            out.extend_from_slice(bytes);
-        }
+    for (bytes, _) in pty_writes(&h) {
+        out.extend_from_slice(bytes);
     }
     out
 }

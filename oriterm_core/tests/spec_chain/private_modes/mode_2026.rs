@@ -10,10 +10,9 @@
 //! - `DEC-SYNC-UPDATE` — flag toggle + DECRQM (core-layer only)
 
 use oriterm_core::TermMode;
-use oriterm_core::effect::{Effect, PtyEffect};
 use oriterm_test_support::spec_chain::{
     ApexLayer, DispatchExpectation, ParserExpectation, ScenarioExpectations, SpecHarness,
-    SpecScenario,
+    SpecScenario, pty_writes,
 };
 
 /// DECSET `?2026` sets `TermMode::SYNC_UPDATE`.
@@ -111,9 +110,7 @@ fn mode_2026_decrqm_default_reset() {
     harness.feed(b"\x1b[?2026$p");
 
     let expected_response = b"\x1b[?2026;2$y";
-    let found = harness.outcome().effects_emitted.iter().any(
-        |e| matches!(e, Effect::Pty(PtyEffect::Write { bytes, .. }) if bytes == expected_response),
-    );
+    let found = pty_writes(&harness).any(|(b, _)| b == expected_response);
     assert!(
         found,
         "DECRQM ?2026 when reset should emit {:?}, got effects: {:?}",
@@ -144,9 +141,7 @@ fn mode_2026_decrqm_after_set() {
     harness.feed(b"\x1b[?2026h\x1b[?2026$p\x1b[?2026l");
 
     let expected_response = b"\x1b[?2026;1$y";
-    let found = harness.outcome().effects_emitted.iter().any(
-        |e| matches!(e, Effect::Pty(PtyEffect::Write { bytes, .. }) if bytes == expected_response),
-    );
+    let found = pty_writes(&harness).any(|(b, _)| b == expected_response);
     assert!(
         found,
         "DECRQM ?2026 when set should emit {:?}, got effects: {:?}",

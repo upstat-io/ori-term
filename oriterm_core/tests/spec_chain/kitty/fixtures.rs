@@ -8,10 +8,12 @@
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 
-use oriterm_core::effect::{Effect, PtyEffect, PtyWriteKind};
-use oriterm_test_support::spec_chain::SpecHarness;
+use oriterm_core::effect::PtyWriteKind;
 pub(super) use oriterm_test_support::spec_chain::TempDirGuard;
 pub(super) use oriterm_test_support::spec_chain::sixel_fixtures::placement_count;
+use oriterm_test_support::spec_chain::{
+    SpecHarness, count_exact_pty_writes, pty_write_concat, pty_write_contains,
+};
 
 /// Build the full `\x1b_G<control>;<payload_b64>\x1b\\` APC command.
 pub(super) fn kitty_apc(control: &[u8], payload_b64: &str) -> Vec<u8> {
@@ -71,27 +73,12 @@ pub(super) fn tmp_dir(suffix: &str) -> TempDirGuard {
 /// Concatenation of every `ImageProtocolReply` write the harness saw
 /// so the assertion messages can show the full transcript on failure.
 pub(super) fn reply_bytes(h: &SpecHarness) -> Vec<u8> {
-    let mut out = Vec::new();
-    for e in &h.outcome().effects_emitted {
-        if let Effect::Pty(PtyEffect::Write {
-            kind: PtyWriteKind::ImageProtocolReply,
-            bytes,
-        }) = e
-        {
-            out.extend_from_slice(bytes);
-        }
-    }
-    out
+    pty_write_concat(h, PtyWriteKind::ImageProtocolReply)
 }
 
 /// True iff an `ImageProtocolReply` write contained `needle` bytes.
 pub(super) fn reply_contains(h: &SpecHarness, needle: &[u8]) -> bool {
-    h.outcome().effects_emitted.iter().any(|e| {
-        matches!(e, Effect::Pty(PtyEffect::Write {
-            kind: PtyWriteKind::ImageProtocolReply,
-            bytes,
-        }) if bytes.windows(needle.len()).any(|w| w == needle))
-    })
+    pty_write_contains(h, PtyWriteKind::ImageProtocolReply, needle)
 }
 
 /// Count how many `ImageProtocolReply` writes matched `expected` byte-for-byte.
@@ -99,16 +86,7 @@ pub(super) fn reply_contains(h: &SpecHarness, needle: &[u8]) -> bool {
 /// command's reply was already in the transcript" (per the §13.1 TPR round 0
 /// finding that multi-step tests were satisfied by aggregated transcripts).
 pub(super) fn count_replies_exact(h: &SpecHarness, expected: &[u8]) -> usize {
-    h.outcome()
-        .effects_emitted
-        .iter()
-        .filter(|e| {
-            matches!(e, Effect::Pty(PtyEffect::Write {
-            kind: PtyWriteKind::ImageProtocolReply,
-            bytes,
-        }) if bytes.as_slice() == expected)
-        })
-        .count()
+    count_exact_pty_writes(h, PtyWriteKind::ImageProtocolReply, expected)
 }
 
 pub(super) fn ok_reply_for(id: u32) -> Vec<u8> {

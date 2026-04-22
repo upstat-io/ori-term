@@ -20,6 +20,8 @@ pub mod spec_chain;
 pub mod tack_framework;
 pub mod terminfo;
 
+pub use spec_chain::TempDirGuard;
+
 pub use session::{
     PtyResponder, PtySession, infocmp_available, tack_available, tic_available, tool_available,
     vttest_available,
