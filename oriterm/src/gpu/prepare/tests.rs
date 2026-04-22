@@ -3993,3 +3993,126 @@ fn non_blink_cell_ignores_text_blink_opacity() {
         glyph.fg_color[3],
     );
 }
+
+// ── BUG-06-016 regression pins: wide-char bg-bleed (mojibake black strip) ──
+//
+// When a cell carries `WIDE_CHAR` but the adjacent cell at col+1 does NOT
+// carry `WIDE_CHAR_SPACER`, the pair is orphaned. The GPU renderer must
+// NOT extend the bg rect to 2*cw in that case — otherwise the bg bleeds
+// into the adjacent column. When the adjacent cell's own bg equals
+// palette.background, its own bg rect is elided (to let the window clear
+// color show through) so the bleed is visible.
+
+#[test]
+fn wide_char_has_spacer_paired_returns_true() {
+    use oriterm_core::RenderableCell;
+    let cells = vec![
+        RenderableCell {
+            line: 0,
+            column: Column(0),
+            ch: 'Ａ',
+            fg: Rgb::default(),
+            bg: Rgb::default(),
+            flags: CellFlags::WIDE_CHAR,
+            underline_color: None,
+            has_hyperlink: false,
+            hyperlink_uri: None,
+            zerowidth: Vec::new(),
+        },
+        RenderableCell {
+            line: 0,
+            column: Column(1),
+            ch: ' ',
+            fg: Rgb::default(),
+            bg: Rgb::default(),
+            flags: CellFlags::WIDE_CHAR_SPACER,
+            underline_color: None,
+            has_hyperlink: false,
+            hyperlink_uri: None,
+            zerowidth: Vec::new(),
+        },
+    ];
+    assert!(super::wide_char_has_spacer(&cells, 0));
+}
+
+#[test]
+fn wide_char_has_spacer_orphaned_returns_false() {
+    use oriterm_core::RenderableCell;
+    let cells = vec![
+        RenderableCell {
+            line: 0,
+            column: Column(0),
+            ch: 'Ａ',
+            fg: Rgb::default(),
+            bg: Rgb::default(),
+            flags: CellFlags::WIDE_CHAR,
+            underline_color: None,
+            has_hyperlink: false,
+            hyperlink_uri: None,
+            zerowidth: Vec::new(),
+        },
+        RenderableCell {
+            line: 0,
+            column: Column(1),
+            ch: 'B',
+            fg: Rgb::default(),
+            bg: Rgb::default(),
+            flags: CellFlags::empty(),
+            underline_color: None,
+            has_hyperlink: false,
+            hyperlink_uri: None,
+            zerowidth: Vec::new(),
+        },
+    ];
+    assert!(!super::wide_char_has_spacer(&cells, 0));
+}
+
+#[test]
+fn wide_char_has_spacer_end_of_row_returns_false() {
+    use oriterm_core::RenderableCell;
+    let cells = vec![
+        RenderableCell {
+            line: 0,
+            column: Column(0),
+            ch: 'Ａ',
+            fg: Rgb::default(),
+            bg: Rgb::default(),
+            flags: CellFlags::WIDE_CHAR,
+            underline_color: None,
+            has_hyperlink: false,
+            hyperlink_uri: None,
+            zerowidth: Vec::new(),
+        },
+        RenderableCell {
+            line: 1,
+            column: Column(0),
+            ch: ' ',
+            fg: Rgb::default(),
+            bg: Rgb::default(),
+            flags: CellFlags::WIDE_CHAR_SPACER,
+            underline_color: None,
+            has_hyperlink: false,
+            hyperlink_uri: None,
+            zerowidth: Vec::new(),
+        },
+    ];
+    assert!(!super::wide_char_has_spacer(&cells, 0));
+}
+
+#[test]
+fn wide_char_has_spacer_non_wide_returns_false() {
+    use oriterm_core::RenderableCell;
+    let cells = vec![RenderableCell {
+        line: 0,
+        column: Column(0),
+        ch: 'A',
+        fg: Rgb::default(),
+        bg: Rgb::default(),
+        flags: CellFlags::empty(),
+        underline_color: None,
+        has_hyperlink: false,
+        hyperlink_uri: None,
+        zerowidth: Vec::new(),
+    }];
+    assert!(!super::wide_char_has_spacer(&cells, 0));
+}
