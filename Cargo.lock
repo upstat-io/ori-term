@@ -1921,7 +1921,7 @@ dependencies = [
 
 [[package]]
 name = "oriterm"
-version = "0.2.0-alpha.20260420"
+version = "0.2.0-alpha.20260421"
 dependencies = [
  "anyhow",
  "arboard",
@@ -1971,7 +1971,7 @@ dependencies = [
 
 [[package]]
 name = "oriterm_core"
-version = "0.2.0-alpha.20260420"
+version = "0.2.0-alpha.20260421"
 dependencies = [
  "base64",
  "bitflags 2.11.1",
@@ -1994,7 +1994,7 @@ dependencies = [
 
 [[package]]
 name = "oriterm_ipc"
-version = "0.2.0-alpha.20260420"
+version = "0.2.0-alpha.20260421"
 dependencies = [
  "libc",
  "log",
@@ -2004,7 +2004,7 @@ dependencies = [
 
 [[package]]
 name = "oriterm_mux"
-version = "0.2.0-alpha.20260420"
+version = "0.2.0-alpha.20260421"
 dependencies = [
  "base64",
  "bincode",
@@ -2026,7 +2026,7 @@ dependencies = [
 
 [[package]]
 name = "oriterm_test_support"
-version = "0.2.0-alpha.20260420"
+version = "0.2.0-alpha.20260421"
 dependencies = [
  "clap",
  "oriterm_core",
@@ -2038,7 +2038,7 @@ dependencies = [
 
 [[package]]
 name = "oriterm_ui"
-version = "0.2.0-alpha.20260420"
+version = "0.2.0-alpha.20260421"
 dependencies = [
  "criterion",
  "image",
@@ -2950,7 +2950,7 @@ dependencies = [
  "indexmap",
  "toml_datetime 1.1.1+spec-1.1.0",
  "toml_parser",
- "winnow 1.0.1",
+ "winnow 1.0.2",
 ]
 
 [[package]]
@@ -2959,7 +2959,7 @@ version = "1.1.2+spec-1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2abe9b86193656635d2411dc43050282ca48aa31c2451210f4202550afb7526"
 dependencies = [
- "winnow 1.0.1",
+ "winnow 1.0.2",
 ]
 
 [[package]]
@@ -3863,9 +3863,9 @@ dependencies = [
 
 [[package]]
 name = "winnow"
-version = "1.0.1"
+version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "09dac053f1cd375980747450bfc7250c264eaae0583872e845c0c7cd578872b5"
+checksum = "2ee1708bef14716a11bae175f579062d4554d95be2c6829f518df847b7b3fdd0"
 dependencies = [
  "memchr",
 ]
