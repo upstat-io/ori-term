@@ -383,6 +383,12 @@ impl Grid {
 
         // Clean wide char pair at the cursor so stale flags don't persist.
         self.clear_wide_char_at(line, col);
+        // Strip the cursor cell's own wide flags so the shifted-in copy
+        // doesn't carry a stale WIDE_CHAR/WIDE_CHAR_SPACER to a new position.
+        // Mirrors the insert_blank pattern at the corresponding anchor.
+        self.rows[line][Column(col)]
+            .flags
+            .remove(CellFlags::WIDE_CHAR | CellFlags::WIDE_CHAR_SPACER);
         // Spacer at first shifted position: its base is in the delete zone.
         if col + count < right_bound
             && self.rows[line][Column(col + count)]
