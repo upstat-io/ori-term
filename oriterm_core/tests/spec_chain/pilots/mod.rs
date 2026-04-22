@@ -5,3 +5,4 @@
 //! the catalog row format.
 
 mod da1_query;
+mod notcurses_startup;
