@@ -71,6 +71,7 @@ impl<S: EffectSink> Term<S> {
                     format: ImageFormat::Rgba,
                     source: ImageSource::Direct,
                     last_accessed: 0,
+                    image_number: None,
                 };
                 match self.image_cache_mut().store_animated(
                     img_data,
@@ -109,6 +110,7 @@ impl<S: EffectSink> Term<S> {
             format: ImageFormat::Rgba,
             source: ImageSource::Direct,
             last_accessed: 0,
+            image_number: None,
         };
 
         if let Err(e) = self.image_cache_mut().store(img_data) {

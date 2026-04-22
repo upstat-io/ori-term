@@ -204,8 +204,8 @@ Scans `/tmp/ori-tpr-*/` run directories for failure patterns. Reports success ra
 ### tpr-liveness.sh — TPR Reviewer Liveness Probe
 
 ```bash
-diagnostics/tpr-liveness.sh /tmp/tpr-round-ori_lang-abc123 codex --human
-diagnostics/tpr-liveness.sh /tmp/tpr-round-ori_lang-abc123 gemini --json
+diagnostics/tpr-liveness.sh /tmp/tpr-round-ori_term-abc123 codex --human
+diagnostics/tpr-liveness.sh /tmp/tpr-round-ori_term-abc123 gemini --json
 diagnostics/tpr-liveness.sh "$scratch" codex --grace-seconds 300 --tail-lines 20
 ```
 

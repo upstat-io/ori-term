@@ -19,6 +19,7 @@ fn make_image(id: u32, bytes: usize) -> ImageData {
         format: ImageFormat::Rgba,
         source: ImageSource::Direct,
         last_accessed: 0,
+        image_number: None,
     }
 }
 
