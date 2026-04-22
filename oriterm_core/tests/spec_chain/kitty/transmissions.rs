@@ -32,7 +32,7 @@ fn kitty_transmission_direct_stores_inline_payload() {
 #[test]
 fn kitty_transmission_file_reads_from_disk_without_removing_source() {
     let dir = tmp_dir("file_read");
-    let path = dir.join("payload.raw");
+    let path = dir.path().join("payload.raw");
     std::fs::write(&path, rgba_4x4_red()).expect("write fixture");
 
     let mut h = SpecHarness::new();
@@ -47,16 +47,13 @@ fn kitty_transmission_file_reads_from_disk_without_removing_source() {
         path.exists(),
         "t=f MUST NOT remove the source file — t=t is the removing variant",
     );
-
-    std::fs::remove_file(&path).ok();
-    std::fs::remove_dir(&dir).ok();
 }
 
 /// Catalog row: `KG-TRANSMIT-TEMPFILE` (t=t reads AND removes source file per store.rs:100-106).
 #[test]
 fn kitty_transmission_tempfile_reads_and_removes_source() {
     let dir = tmp_dir("tempfile_read");
-    let path = dir.join("payload.raw");
+    let path = dir.path().join("payload.raw");
     std::fs::write(&path, rgba_4x4_red()).expect("write fixture");
     assert!(path.exists(), "precondition: fixture file exists");
 
@@ -72,8 +69,6 @@ fn kitty_transmission_tempfile_reads_and_removes_source() {
         !path.exists(),
         "t=t MUST remove the source file after reading it",
     );
-
-    std::fs::remove_dir(&dir).ok();
 }
 
 /// Catalog row: `KG-TRANSMIT-SHARED-MEM-REJECTED` (t=s rejected with EINVAL — verified-with-deviation).
