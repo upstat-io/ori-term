@@ -30,6 +30,14 @@ impl Grid {
             self.rows[line][Column(start - 1)]
                 .flags
                 .remove(CellFlags::WIDE_CHAR);
+            // Defense-in-depth: if the in-band spacer at `start` retains its
+            // flag, subsequent writes may treat it as owning a wide-char pair
+            // that no longer exists. Strip the spacer flag on the in-band side
+            // as well; the caller will overwrite `ch`/color via reset anyway.
+            self.rows[line][Column(start)]
+                .flags
+                .remove(CellFlags::WIDE_CHAR_SPACER);
+            self.dirty.mark_cols(line, start - 1, start);
         }
         if end > 0
             && end < cols
@@ -41,6 +49,13 @@ impl Grid {
             self.rows[line][Column(end)]
                 .flags
                 .remove(CellFlags::WIDE_CHAR_SPACER);
+            // Defense-in-depth: strip the in-band wide-char base flag so
+            // shifts/copies that pick up the cell without a subsequent
+            // reset don't carry a dangling WIDE_CHAR.
+            self.rows[line][Column(end - 1)]
+                .flags
+                .remove(CellFlags::WIDE_CHAR);
+            self.dirty.mark_cols(line, end - 1, end);
         }
     }
 
@@ -62,6 +77,7 @@ impl Grid {
             let prev = &mut self.rows[line][Column(col - 1)];
             prev.ch = ' ';
             prev.flags.remove(CellFlags::WIDE_CHAR);
+            self.dirty.mark_cols(line, col - 1, col - 1);
         }
 
         // Overwriting a wide char: clear its spacer.
@@ -69,6 +85,7 @@ impl Grid {
             let next = &mut self.rows[line][Column(col + 1)];
             next.ch = ' ';
             next.flags.remove(CellFlags::WIDE_CHAR_SPACER);
+            self.dirty.mark_cols(line, col + 1, col + 1);
         }
     }
 }

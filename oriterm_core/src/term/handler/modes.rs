@@ -96,7 +96,7 @@ impl<S: EffectSink> Term<S> {
             NamedPrivateMode::SixelCursorRight => {
                 self.mode.insert(TermMode::SIXEL_CURSOR_RIGHT);
             }
-            NamedPrivateMode::ReverseVideo => self.mode.insert(TermMode::REVERSE_VIDEO),
+            NamedPrivateMode::ReverseVideo => self.set_reverse_video(true),
             NamedPrivateMode::EnableMode3 => {
                 self.mode.insert(TermMode::ENABLE_MODE_3);
             }
@@ -180,7 +180,7 @@ impl<S: EffectSink> Term<S> {
             NamedPrivateMode::SixelCursorRight => {
                 self.mode.remove(TermMode::SIXEL_CURSOR_RIGHT);
             }
-            NamedPrivateMode::ReverseVideo => self.mode.remove(TermMode::REVERSE_VIDEO),
+            NamedPrivateMode::ReverseVideo => self.set_reverse_video(false),
             NamedPrivateMode::EnableMode3 => {
                 self.mode.remove(TermMode::ENABLE_MODE_3);
             }
@@ -212,6 +212,21 @@ impl<S: EffectSink> Term<S> {
     /// active, only the side effects run — the grid is not resized.
     /// This matches Ghostty's approach (Alacritty/WezTerm skip resize
     /// entirely; Ghostty gates it behind Mode 40).
+    /// DECSCNM (private mode 5) set/reset helper — extracted so the DECSET
+    /// and DECRST paths stay within the per-function line limit.
+    ///
+    /// DECSCNM flips fg/bg resolution for every visible cell. Force a full
+    /// viewport repaint so the GPU cached renderer picks up the new colors
+    /// instead of serving stale per-cell instances after the toggle.
+    fn set_reverse_video(&mut self, enable: bool) {
+        if enable {
+            self.mode.insert(TermMode::REVERSE_VIDEO);
+        } else {
+            self.mode.remove(TermMode::REVERSE_VIDEO);
+        }
+        self.grid_mut().dirty_mut().mark_all();
+    }
+
     fn apply_deccolm(&mut self, set: bool) {
         // Resize grid if Mode 40 is enabled.
         if self.mode.contains(TermMode::ENABLE_MODE_3) {
