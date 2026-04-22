@@ -27,29 +27,6 @@ use super::prepared_frame::PreparedFrame;
 use crate::font::{GlyphStyle, RasterKey};
 use crate::gpu::instance_writer::{CLIP_UNCLIPPED, ScreenRect};
 use dirty_skip::{BufferLengths, RowInstanceRanges, fill_frame_incremental};
-use oriterm_core::term::renderable::RenderableCell;
-
-/// Return `true` when the cell at `idx` carries `WIDE_CHAR` AND the next
-/// cell in the same row actually has `WIDE_CHAR_SPACER`.
-///
-/// The renderer extends background quads to `2 * cw` for wide-char cells so
-/// the pair paints as one contiguous region. A mis-paired `WIDE_CHAR`
-/// flag (no spacer at col+1) would cause the bg quad to bleed into the
-/// adjacent column — visible as a "black trail" in notcurses-demo's
-/// mojibake scene (BUG-06-016) because the adjacent stdplane text cell's
-/// own bg often equals `palette.background` and is therefore skipped
-/// (`push_rect` is elided for default bg). Verifying the spacer before
-/// extending prevents the bleed even when upstream paths leak an
-/// orphaned flag.
-pub(super) fn wide_char_has_spacer(cells: &[RenderableCell], idx: usize) -> bool {
-    let current = &cells[idx];
-    if !current.flags.contains(CellFlags::WIDE_CHAR) {
-        return false;
-    }
-    cells.get(idx + 1).is_some_and(|next| {
-        next.line == current.line && next.flags.contains(CellFlags::WIDE_CHAR_SPACER)
-    })
-}
 use emit::{GlyphEmitter, build_cursor, draw_prompt_markers, draw_url_hover_underline};
 use resolve::{resolve_cell_colors, resolve_cursor};
 
@@ -236,7 +213,7 @@ pub(crate) fn fill_frame_shaped(
     let mut row_start = BufferLengths::capture(frame);
     let mut row_off_screen = false;
 
-    for (idx, cell) in input.content.cells.iter().enumerate() {
+    for cell in &input.content.cells {
         if cell
             .flags
             .intersects(CellFlags::WIDE_CHAR_SPACER | CellFlags::LEADING_WIDE_CHAR_SPACER)
@@ -286,7 +263,7 @@ pub(crate) fn fill_frame_shaped(
         // window clear color (which carries the theme opacity for glass/acrylic)
         // shows through. Only cells with explicit non-default backgrounds
         // (selection, search, SGR colors) paint an opaque quad.
-        let bg_w = if wide_char_has_spacer(&input.content.cells, idx) {
+        let bg_w = if cell.flags.contains(CellFlags::WIDE_CHAR) {
             2.0 * cw
         } else {
             cw

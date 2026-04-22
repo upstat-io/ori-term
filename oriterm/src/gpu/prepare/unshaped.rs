@@ -80,7 +80,7 @@ fn fill_frame(
     let search = input.search.as_ref();
     let cursor = resolve_cursor(&input.content.cursor, input.mark_cursor.as_ref());
 
-    for (idx, cell) in input.content.cells.iter().enumerate() {
+    for cell in &input.content.cells {
         // Spacer cells are handled by their primary cell (or are padding).
         if cell
             .flags
@@ -98,9 +98,7 @@ fn fill_frame(
 
         // Background: skip default palette background so the window clear
         // color (with theme opacity for glass/acrylic) shows through.
-        // Verify the wide pair's spacer actually exists before extending
-        // bg to 2*cw (prevents BUG-06-016 black-strip bleed).
-        let bg_w = if super::wide_char_has_spacer(&input.content.cells, idx) {
+        let bg_w = if cell.flags.contains(CellFlags::WIDE_CHAR) {
             2.0 * cw
         } else {
             cw
