@@ -1,17 +1,16 @@
-//! Shared fixtures + helpers for kitty §13 spec_chain tests.
+//! Shared fixtures + helpers for kitty §13 `spec_chain` tests.
 //!
 //! SSOT for the APC framing, base64 encoding, fixed-payload constructors,
 //! temp-dir helper, and effect-sink observation primitives consumed by the
 //! per-action / per-format / per-transmission sibling files. Helpers are
 //! `pub(super)` — scoped to `tests/spec_chain/kitty/` only.
 
-use std::path::PathBuf;
-
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 
 use oriterm_core::effect::{Effect, PtyEffect, PtyWriteKind};
 use oriterm_test_support::spec_chain::SpecHarness;
+pub(super) use oriterm_test_support::spec_chain::TempDirGuard;
 pub(super) use oriterm_test_support::spec_chain::sixel_fixtures::placement_count;
 
 /// Build the full `\x1b_G<control>;<payload_b64>\x1b\\` APC command.
@@ -61,16 +60,12 @@ pub(super) fn png_1x1_red() -> Vec<u8> {
     buf
 }
 
-/// A parallel-safe tmp directory under $TMPDIR, keyed by PID + a per-test
-/// suffix so concurrent `cargo test` threads don't collide.
-pub(super) fn tmp_dir(suffix: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!(
-        "oriterm_spec13_1_{}_{}",
-        std::process::id(),
-        suffix
-    ));
-    std::fs::create_dir_all(&dir).expect("tmp dir create");
-    dir
+/// RAII tmp directory for per-test fixtures. The caller MUST hold the
+/// guard for the full test lifetime — `Drop` cleans up on every exit
+/// path including panic unwinding, which manual `fs::remove_*` tails
+/// cannot do.
+pub(super) fn tmp_dir(suffix: &str) -> TempDirGuard {
+    TempDirGuard::new(suffix)
 }
 
 /// Concatenation of every `ImageProtocolReply` write the harness saw

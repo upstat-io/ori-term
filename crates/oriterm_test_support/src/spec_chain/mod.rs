@@ -13,6 +13,7 @@ pub mod observers;
 mod recording_handler;
 mod scenario;
 pub mod sixel_fixtures;
+pub mod temp_dir_guard;
 pub mod uncataloged;
 
 pub use api::{RungResult, SpecHarness, SpecOutcome};
@@ -22,6 +23,7 @@ pub use scenario::{
     GpuInstanceExpectation, ParserExpectation, RenderableExpectation, RungName,
     ScenarioExpectations, SpecScenario, StateExpectation, TextureExpectation,
 };
+pub use temp_dir_guard::TempDirGuard;
 // PerformAction and PerformObserver live in the vendored VTE crate —
 // re-export for convenience.
 pub use vte::ansi::{PerformAction, PerformActionCollector, PerformObserver};
