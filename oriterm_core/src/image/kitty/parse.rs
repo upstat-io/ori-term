@@ -144,22 +144,36 @@ impl Default for KittyCommand {
 /// The control data section precedes the semicolon; the payload follows.
 pub fn parse_kitty_command(raw: &[u8]) -> Result<KittyCommand, KittyError> {
     let mut cmd = KittyCommand::default();
+    parse_kitty_command_into(&mut cmd, raw)?;
+    Ok(cmd)
+}
 
-    // Split at first `;` — control data vs payload.
+/// Parse an APC body into a caller-provided `KittyCommand`.
+///
+/// On `Err`, the `cmd` retains all control-data fields that parsed
+/// successfully before the error — load-bearing for error-reply paths
+/// that need to echo `i=` / `I=` / `q=` from a partially-parsed command
+/// (e.g., malformed-base64 reply at `handle_kitty_graphics`). `Ok`
+/// guarantees the full command including the decoded payload.
+///
+/// The function resets `*cmd` to `KittyCommand::default()` on entry so a
+/// reused buffer cannot carry stale keys from a prior parse — callers can
+/// safely pass a long-lived `cmd` across multiple APC bodies.
+pub fn parse_kitty_command_into(cmd: &mut KittyCommand, raw: &[u8]) -> Result<(), KittyError> {
+    *cmd = KittyCommand::default();
+
     let (control, payload_b64) = match raw.iter().position(|&b| b == b';') {
         Some(pos) => (&raw[..pos], &raw[pos + 1..]),
         None => (raw, &[] as &[u8]),
     };
 
-    // Parse control data: comma-separated key=value pairs.
-    parse_control_data(control, &mut cmd);
+    parse_control_data(control, cmd);
 
-    // Decode base64 payload.
     if !payload_b64.is_empty() {
         cmd.payload = decode_base64(payload_b64)?;
     }
 
-    Ok(cmd)
+    Ok(())
 }
 
 /// Parse comma-separated `key=value` pairs from control data.
