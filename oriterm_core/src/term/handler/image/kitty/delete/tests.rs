@@ -1063,19 +1063,21 @@ fn delete_f_root_frame_leaves_current_frame_pointing_at_same_logical_frame() {
 /// before dispatching the delete arm.
 #[test]
 fn delete_aborts_in_flight_chunked_upload() {
-    use crate::image::kitty::{KittyTransmission, LoadingImage};
+    use crate::image::kitty::{KittyCommand, KittyTransmission, LoadingImage};
 
     let mut t = term();
     // Simulate an in-flight chunk: loading_image populated but not yet stored.
-    t.loading_image = Some(LoadingImage {
-        image_id: 42,
-        image_number: None,
+    let start_cmd = KittyCommand {
         payload: vec![0u8; 64],
         format: 32,
-        width: 4,
-        height: 4,
-        compression: None,
+        source_width: 4,
+        source_height: 4,
         transmission: KittyTransmission::Direct,
+        ..Default::default()
+    };
+    t.loading_image = Some(LoadingImage {
+        image_id: 42,
+        start_cmd,
     });
     assert!(t.loading_image.is_some());
 

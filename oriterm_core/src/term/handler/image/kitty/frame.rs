@@ -9,6 +9,8 @@ use crate::image::kitty::KittyCommand;
 use crate::image::{CompositionMode, ImageId};
 use crate::term::Term;
 
+use super::KittyReplyContext;
+
 impl<S: EffectSink> Term<S> {
     /// Handle `a=f` — transmit an animation frame.
     ///
@@ -25,33 +27,34 @@ impl<S: EffectSink> Term<S> {
             return;
         }
 
-        let params = self.kitty_finalize_payload(&cmd);
-        let image_id = params.image_id;
+        let (image_id, mut merged) = self.kitty_finalize_payload(cmd);
+        let ctx = KittyReplyContext::from_cmd(&merged).with_image_id(image_id);
 
         if self.image_cache().get_no_touch(ImageId(image_id)).is_none() {
-            self.kitty_respond(image_id, cmd.quiet, "ENOENT");
+            self.kitty_respond(&ctx, "ENOENT");
             return;
         }
 
-        // Decode the frame pixel data.
+        // Decode the frame pixel data using first-chunk format/dimensions.
+        let payload = std::mem::take(&mut merged.payload);
         let (rgba_data, _w, _h) = match Self::kitty_decode_pixels(
-            params.payload,
-            params.format,
-            params.width,
-            params.height,
+            payload,
+            merged.format,
+            merged.source_width,
+            merged.source_height,
         ) {
             Ok(result) => result,
             Err(msg) => {
                 warn!("kitty frame decode failed: {msg}");
-                self.kitty_respond(image_id, cmd.quiet, &msg);
+                self.kitty_respond(&ctx, &msg);
                 return;
             }
         };
 
-        let gap_ms = cmd.z_index.max(0) as u64;
+        let gap_ms = merged.z_index.max(0) as u64;
         let gap = std::time::Duration::from_millis(gap_ms);
 
-        let composition_mode = if cmd.cell_x_offset == 1 {
+        let composition_mode = if merged.cell_x_offset == 1 {
             CompositionMode::Overwrite
         } else {
             CompositionMode::AlphaBlend
@@ -66,10 +69,10 @@ impl<S: EffectSink> Term<S> {
             composition_mode,
         ) {
             warn!("kitty frame add failed: {e}");
-            self.kitty_respond(image_id, cmd.quiet, &format!("ENOMEM: {e}"));
+            self.kitty_respond(&ctx, &format!("ENOMEM: {e}"));
             return;
         }
 
-        self.kitty_respond(image_id, cmd.quiet, "OK");
+        self.kitty_respond(&ctx, "OK");
     }
 }
