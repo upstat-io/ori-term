@@ -9,6 +9,7 @@
 
 mod api;
 pub mod coverage;
+pub mod effect_filters;
 pub mod observers;
 mod recording_handler;
 mod scenario;
@@ -17,6 +18,10 @@ pub mod temp_dir_guard;
 pub mod uncataloged;
 
 pub use api::{RungResult, SpecHarness, SpecOutcome};
+pub use effect_filters::{
+    assert_no_pty_writes, count_exact_pty_writes, expect_single_pty_write, last_pty_write,
+    pty_write_concat, pty_write_contains, pty_writes, pty_writes_of_kind,
+};
 pub use recording_handler::{DispatchArgs, DispatchCall, RecordingHandler};
 pub use scenario::{
     ApexLayer, DispatchExpectation, EffectExpectation, FrameInputExpectation, GoldenExpectation,

@@ -20,8 +20,8 @@
 //! SHINT-OSC-1337-REPORTCELLSIZE.
 //! Cross-refs: SHINT-OSC-1337-* rows in catalog/shell-integration.md.
 
-use oriterm_core::effect::{ClipboardSelection, Effect, HostEffect, PtyEffect};
-use oriterm_test_support::spec_chain::{DispatchArgs, SpecHarness};
+use oriterm_core::effect::{ClipboardSelection, Effect, HostEffect};
+use oriterm_test_support::spec_chain::{DispatchArgs, SpecHarness, expect_single_pty_write};
 
 /// Assert that `method` appears at least once in the recorded dispatch
 /// calls. Used to pin Handler-trait coverage when the state side-effect
@@ -62,20 +62,6 @@ fn assert_no_clipboard_store(harness: &SpecHarness) {
             panic!("unexpected ClipboardStore on transcript: {eff:?}");
         }
     }
-}
-
-/// Locate the single `PtyEffect::Write` on the transcript and return its
-/// bytes. Panics if there is not exactly one.
-fn expect_pty_write(harness: &SpecHarness) -> Vec<u8> {
-    let effects = &harness.outcome().effects_emitted;
-    let mut found = None;
-    for eff in effects {
-        if let Effect::Pty(PtyEffect::Write { bytes, .. }) = eff {
-            assert!(found.is_none(), "more than one PtyEffect::Write emitted");
-            found = Some(bytes.clone());
-        }
-    }
-    found.unwrap_or_else(|| panic!("expected one PtyEffect::Write; got {effects:?}"))
 }
 
 // ── SetMark ─────────────────────────────────────────────────────────
@@ -150,7 +136,7 @@ fn osc1337_report_cell_size() {
 
     harness.feed(b"\x1b]1337;ReportCellSize\x1b\\");
 
-    let bytes = expect_pty_write(&harness);
+    let bytes = expect_single_pty_write(&harness);
     let expected = format!("\x1b]1337;ReportCellSize={h:.1};{w:.1}\x1b\\");
     assert_eq!(String::from_utf8_lossy(&bytes), expected);
 }

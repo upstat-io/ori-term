@@ -370,18 +370,43 @@ fn kitty_action_frame_on_missing_image_emits_enoent_reply() {
 // Matrix completeness.
 
 /// Self-verifying matrix completeness per `.claude/rules/tests.md`
-/// §Self-Verifying Matrix Completeness — asserts `ACTIONS.len() *
-/// FORMATS.len() * TRANSMISSIONS.len()` cells were exercised and the
-/// product equals 7 × 3 × 4 = 84. Many cells produce error replies
-/// (e.g. `a=p,t=s,f=24` exercises Place dispatch on a shared-memory
-/// transmission with RGB format — the dispatch path is real even when
-/// the action rejects the combination). The load-bearing assertion is
-/// the cell count, not per-cell success.
+/// §Self-Verifying Matrix Completeness — asserts each (action, format,
+/// transmission) cell actually dispatched a typed `DispatchArgs::KittyApc`
+/// with matching `cmd.action` / `cmd.format` / `cmd.transmission`. This
+/// clamps per-cell dispatch identity (HYG-13.1-003 resolution): a cell
+/// that mis-parses, drops to the `Other` arm, or re-routes to the wrong
+/// action now fails the inner `assert!`, not just the outer count.
 #[test]
 fn action_format_transmission_matrix_completeness() {
+    use oriterm_core::image::kitty::{KittyAction, KittyTransmission};
+    use oriterm_test_support::spec_chain::DispatchArgs;
+
     const ACTIONS: &[u8] = b"tTpdfaq";
     const FORMATS: &[u32] = &[24, 32, 100];
     const TRANSMISSIONS: &[u8] = b"dfts";
+
+    fn expected_action(act: u8) -> KittyAction {
+        match act {
+            b't' => KittyAction::Transmit,
+            b'T' => KittyAction::TransmitAndPlace,
+            b'p' => KittyAction::Place,
+            b'd' => KittyAction::Delete,
+            b'f' => KittyAction::Frame,
+            b'a' => KittyAction::Animate,
+            b'q' => KittyAction::Query,
+            _ => unreachable!("unexpected action byte {act}"),
+        }
+    }
+
+    fn expected_transmission(trans: u8) -> KittyTransmission {
+        match trans {
+            b'd' => KittyTransmission::Direct,
+            b'f' => KittyTransmission::File,
+            b't' => KittyTransmission::TempFile,
+            b's' => KittyTransmission::SharedMemory,
+            _ => unreachable!("unexpected transmission byte {trans}"),
+        }
+    }
 
     let mut count = 0usize;
     for &act in ACTIONS {
@@ -394,6 +419,61 @@ fn action_format_transmission_matrix_completeness() {
                     trans_ch = trans as char,
                 );
                 h.feed(&kitty_apc(control.as_bytes(), &b64(&rgba_4x4_red())));
+
+                let command = h
+                    .outcome()
+                    .dispatched_calls
+                    .iter()
+                    .find_map(|c| match &c.args {
+                        DispatchArgs::KittyApc { command } => Some(command.as_ref()),
+                        _ => None,
+                    })
+                    .unwrap_or_else(|| {
+                        panic!(
+                            "cell (a={ac},f={fmt},t={tc}) did not record DispatchArgs::KittyApc",
+                            ac = act as char,
+                            tc = trans as char,
+                        )
+                    });
+                assert_eq!(
+                    command.action,
+                    expected_action(act),
+                    "cell (a={ac},f={fmt},t={tc}) — action mismatch",
+                    ac = act as char,
+                    tc = trans as char,
+                );
+                assert_eq!(
+                    command.format,
+                    fmt,
+                    "cell (a={ac},f={fmt},t={tc}) — format mismatch",
+                    ac = act as char,
+                    tc = trans as char,
+                );
+                assert_eq!(
+                    command.transmission,
+                    expected_transmission(trans),
+                    "cell (a={ac},f={fmt},t={tc}) — transmission mismatch",
+                    ac = act as char,
+                    tc = trans as char,
+                );
+                // Post-delegate clamp: `DispatchArgs::KittyApc` is recorded
+                // BEFORE `Handler::apc_dispatch` delegates to `Term`, so a
+                // dispatch-only assertion cannot catch a routing failure
+                // that lands AFTER the record. For actions that always
+                // produce an effect under `q=0` (success OK reply or error
+                // reply), clamp `effects_emitted.is_empty() == false`. The
+                // `a=d` delegate correctly emits nothing when `d=a` matches
+                // zero images in a fresh cache — that silent-no-op is the
+                // verified-with-deviation behavior per `KG-ACTION-DELETE`,
+                // so `a=d` cells rely on the dispatch-identity clamp above.
+                if act != b'd' {
+                    assert!(
+                        !h.outcome().effects_emitted.is_empty(),
+                        "cell (a={ac},f={fmt},t={tc}) — post-delegate effects_emitted is empty; dispatch was recorded but delegate produced no observable",
+                        ac = act as char,
+                        tc = trans as char,
+                    );
+                }
                 count += 1;
             }
         }

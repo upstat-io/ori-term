@@ -71,31 +71,19 @@ fn da1_reply_bytes_match_vt420_attributes() {
     let mut harness = SpecHarness::new();
     harness.feed(b"\x1b[c");
 
-    let outcome = harness.outcome();
-    let da1_effect = outcome
-        .effects_emitted
-        .iter()
-        .find(|eff| matches!(eff, oriterm_core::effect::Effect::Pty(_)))
+    let (bytes, kind) = oriterm_test_support::spec_chain::pty_writes(&harness)
+        .next()
         .expect("DA1 should emit a Pty effect");
-
-    match da1_effect {
-        oriterm_core::effect::Effect::Pty(oriterm_core::effect::PtyEffect::Write {
-            bytes,
-            kind,
-        }) => {
-            assert_eq!(
-                *kind,
-                oriterm_core::effect::PtyWriteKind::DeviceAttribute,
-                "DA1 reply should be PtyWriteKind::DeviceAttribute"
-            );
-            // VT420 conformance level (64) with ANSI color (6) and sixel (4).
-            assert_eq!(
-                bytes, b"\x1b[?64;6;4c",
-                "DA1 reply should be ESC [ ? 64 ; 6 ; 4 c"
-            );
-        }
-        _ => panic!("expected Pty effect, got: {da1_effect:?}"),
-    }
+    assert_eq!(
+        kind,
+        oriterm_core::effect::PtyWriteKind::DeviceAttribute,
+        "DA1 reply should be PtyWriteKind::DeviceAttribute"
+    );
+    // VT420 conformance level (64) with ANSI color (6) and sixel (4).
+    assert_eq!(
+        bytes, b"\x1b[?64;6;4c",
+        "DA1 reply should be ESC [ ? 64 ; 6 ; 4 c"
+    );
 }
 
 /// DA1 scenario with no parser expectation still passes dispatch + effect.

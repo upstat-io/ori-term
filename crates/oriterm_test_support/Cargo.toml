@@ -17,6 +17,9 @@ vte = { version = "0.15.0", features = ["ansi"] }
 clap = { version = "4", features = ["derive"] }
 syn = { version = "2", features = ["full", "extra-traits", "visit"] }
 
+[dev-dependencies]
+base64 = "0.22"
+
 [[bin]]
 name = "catalog_coverage_check"
 path = "src/bin/catalog_coverage_check.rs"

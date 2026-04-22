@@ -17,17 +17,13 @@ pub fn reseq_available() -> bool {
 
 /// Compile a `.teseq` file to raw bytes via `reseq` subprocess.
 ///
-/// `reseq` requires two positional arguments: `INPUT OUTPUT`.
-/// We write to a unique temp file (cross-platform, parallel-safe)
-/// and read back the bytes.
+/// `reseq` requires two positional arguments: `INPUT OUTPUT`. The output
+/// file lives inside a `TempDirGuard`-managed directory so panic-unwind
+/// and `?`-propagation paths both clean up — a manual `fs::remove_file`
+/// tail only runs on the happy path.
 pub fn compile_teseq(teseq_path: &Path) -> Result<Vec<u8>, String> {
-    use std::sync::atomic::{AtomicU64, Ordering};
-    static COUNTER: AtomicU64 = AtomicU64::new(0);
-
-    let id = COUNTER.fetch_add(1, Ordering::Relaxed);
-    let tid = std::thread::current().id();
-    let filename = format!("oriterm_reseq_{tid:?}_{id}.bin");
-    let tmp_out = std::env::temp_dir().join(filename);
+    let guard = oriterm_test_support::TempDirGuard::new("reseq_compile");
+    let tmp_out = guard.path().join("output.bin");
 
     let status = std::process::Command::new("reseq")
         .arg(teseq_path)
@@ -36,17 +32,11 @@ pub fn compile_teseq(teseq_path: &Path) -> Result<Vec<u8>, String> {
         .map_err(|e| format!("failed to run reseq: {e}"))?;
 
     if !status.success() {
-        let _ = std::fs::remove_file(&tmp_out);
         return Err(format!("reseq failed (exit {status})"));
     }
 
-    let bytes = std::fs::read(&tmp_out)
-        .map_err(|e| format!("failed to read reseq output {}: {e}", tmp_out.display()))?;
-
-    // Clean up temp file (best-effort).
-    let _ = std::fs::remove_file(&tmp_out);
-
-    Ok(bytes)
+    std::fs::read(&tmp_out)
+        .map_err(|e| format!("failed to read reseq output {}: {e}", tmp_out.display()))
 }
 
 /// Check if `teseq` is installed (for outbound response analysis in Section 03).
