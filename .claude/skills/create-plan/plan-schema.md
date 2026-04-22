@@ -30,7 +30,7 @@ supersedes:             # Plans this replaces (if any)
   - "plans/{old-plan}/"
 references:             # Design docs, proposals, prior art
   - "plans/{related-doc}.md"
-  - "docs/ori_lang/proposals/{proposal}.md"
+  - "proposals/{proposal}.md"
 ---
 
 # {Plan Title}: Exhaustive Implementation Plan

@@ -185,6 +185,10 @@ fn blink_animating_does_not_bypass_frame_budget() { ... }
 
 5. **Test file layout**: Rust tests live in sibling `tests.rs` files per `.claude/rules/test-organization.md`. `#[cfg(test)] mod tests;` at the bottom of the source file, body in `tests.rs`. No inline `#[cfg(test)] mod tests { ... }` blocks.
 
+6. **Integration tests inherit `[dependencies]`**: files under `<crate>/tests/*.rs` compile as separate test binaries that depend on the crate, and they can `use` any crate in the owning crate's `[dependencies]` directly — no need to redeclare those crates under `[dev-dependencies]`. Only add a dev-dep when the test needs a crate NOT in `[dependencies]`, or needs a feature combination the library build doesn't enable. Redundant dev-deps create a second sync point that drifts; Cargo resolves feature unification correctly without them.
+
+7. **Diagnosing silently-dropped catalog citations**: if the spec-coverage-report scanner flags a `FALSE VERIFIED` row whose test file uses `/// Catalog row: \`ID\`` citations, run `cargo run -p oriterm_test_support --bin spec-coverage-report -- --explain <path/to/test-file.rs>` to see per-piece normalizer trace — the scanner drops citation pieces that fail to reduce to a bare `[A-Za-z0-9_-]+` identifier (em-dashes, nested backticks, and prose inside the citation tail are the common causes). Put extra prose in `(parenthetical)` form which the normalizer strips cleanly.
+
 ## Flaky Tests Are Bugs
 
 Per CLAUDE.md §Bug Discipline, a test that passes sometimes and fails sometimes is a bug — not noise. Do NOT retry and move on. Research the root cause:

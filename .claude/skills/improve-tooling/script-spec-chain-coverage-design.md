@@ -86,6 +86,20 @@ This is exactly the "silent acceptance, not silent rejection" failure mode from 
 
 **Design lesson.** When adding a prefix-based scanner, think about the natural-English variants of the prefix up front. `row` vs `rows` is the obvious one for English count-agreement; future scanners might hit `path` vs `paths`, `file` vs `files`, `id` vs `ids`. The cost of supporting both at creation time is a comma-split loop. The cost of discovering the silent-miss after production use is a §4 entry like this one.
 
+### 2026-04-21 — em-dash inside citation tail caused silent drop, no diagnostic surface
+
+**Symptom.** During §13.1 (kitty graphics verification matrix) implementation, I wrote `/// Catalog row: \`KG-ACTION-TRANSMIT\` — \`a=t\`.` as the per-test citation form — embedding a short action-glyph reference after an em-dash for readability. `./test-all.sh` produced 11 `FALSE VERIFIED` findings (every row I had just flipped to `verified`). The scanner was picking up the citation prefix, matching `KG-ACTION-TRANSMIT`, but then silently dropping it because post-normalization the final text `KG-ACTION-TRANSMIT\` — \`a=t` contained whitespace + em-dash + backticks, which fail the `is_ascii_alphanumeric() || '-' || '_'` validator at `normalize_row_id:213-218`. No diagnostic; I had to read `scan.rs::normalize_row_id` to understand why the matches weren't landing. One round of format iteration to land on the working `\`ID\` (qualifier).` form.
+
+**Root cause.** The normalizer at `scan.rs::normalize_row_id` has 5 sequential reductions (`trim` → `. ` split → ` (` split → trailing-period trim → backtick trim). If the final reduced text still contains whitespace or non-identifier chars (em-dashes, nested backticks, stray periods), it's silently dropped — no log, no error, no way to tell from outside the function that a citation was present but unacceptable. Every failed citation becomes invisible at the `spec-coverage-report` surface.
+
+**Fix.** Added a new `--explain <file>` flag to `spec-coverage-report` (wired into `scan.rs::explain_file` and exported through `coverage/mod.rs`) that walks ONE file's citation lines and prints per-piece normalizer trace: each step's intermediate text, the outcome (ACCEPTED + resulting ID, or DROPPED with specific reason), and a hint pointing at common causes (em-dashes, nested backticks, prose in tail). Also documented the diagnostic in `.claude/rules/tests.md` §Test Hygiene item 7 so future authors hit the rule before the scanner.
+
+**Verification.** Ran `cargo run -p oriterm_test_support --bin spec-coverage-report -- --explain oriterm_core/tests/spec_chain/kitty/actions.rs` — output shows per-piece steps for every citation line, distinguishes accepted from dropped, and reveals exactly why `piece 2: "d=a smoke — per-specifier coverage is §13.0.5's delete/tests.rs matrix)."` fails (whitespace + em-dash after normalization). A future author hitting the same bug runs this command instead of reading source.
+
+**Why this matters beyond §13.1.** Every future kitty subsection (§13.2 through §13.6) adds tests that cite catalog rows; §14 will add iterm2 tests; other sections pile on. Each new test author is a candidate for the em-dash silent-miss. A single `--explain` diagnostic costs ~100 lines of code and saves every future author one round of source-reading. The rule entry in `tests.md` item 7 is the up-front hint; `--explain` is the debugger for when the hint is missed.
+
+**Design lesson.** A silent-drop path is not acceptable when the drop decision is non-trivial. If the normalizer has to reject prose-contaminated input (which it does — catalog IDs must be bare identifiers), the operator needs a way to see WHAT was dropped and WHY. The reactive fix was to add the diagnostic; the proactive version would have been to emit a stderr warning at every drop in normal mode. Chose reactive (`--explain`) because normal-mode stderr warnings would be noisy on legitimate dropped pieces (the catalog-row comment prefix is used by many false-positive paragraphs in the spec_chain source). A dedicated diagnostic flag keeps normal runs quiet while still providing the debug surface.
+
 ---
 
 ## §5 — Regressions To Watch For
@@ -109,6 +123,8 @@ Pre-edit sanity check for future changes to `scan.rs` or `coverage/mod.rs`:
 - [ ] [p3] **Consider accepting `Catalog-row:` (hyphen) and `CatalogRow:` (camelCase) variants?** The silent-miss fix only covers the `row` vs `rows` count-agreement variant. Other plausible typos exist. Deferred because no real case has surfaced yet — speculative work per §No Premature Abstraction.
 
 ### Recently closed
+
+- [x] **Add `--explain <file>` diagnostic flag to `spec-coverage-report`** (2026-04-21, pending commit). Walks one file's citation lines and prints per-piece normalizer trace (step-by-step intermediate values + accepted-or-dropped outcome + drop-reason hint). Also added `.claude/rules/tests.md` §Test Hygiene item 7 pointing authors at the diagnostic when `FALSE VERIFIED` surfaces on a test file with `/// Catalog row:` citations. Verified by running `--explain` on `oriterm_core/tests/spec_chain/kitty/actions.rs` — correctly identifies accepted citations AND the em-dash-contaminated piece that would otherwise silently drop. _Source: §13.1 retrospective 2026-04-21._
 
 - [x] **Accept plural `Catalog rows:` form** (2026-04-19, pending commit). Matrix-pinned across all three comment prefixes. Verified end-to-end by reverting §10.2 clipboard.rs doc to the plural form and confirming `catalog_coverage_check: OK`. _Source: §10.2 retrospective 2026-04-19._
 

@@ -16,7 +16,7 @@ pub use audit_files::{
     AuditFile, AuditFilesError, AuditFilesReport, AuditRow, Decision, Frontmatter,
     check_audit_files, parse_audit_file,
 };
-pub use scan::{Citation, scan_test_citations};
+pub use scan::{Citation, explain_file, scan_test_citations};
 
 use std::collections::BTreeMap;
 use std::path::Path;

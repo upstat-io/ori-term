@@ -272,7 +272,7 @@ NOT architectural — banned as `AskUserQuestion` subjects regardless of framing
 - Session runway, context budget, token usage, compression likelihood.
 - Whether to continue, pause, checkpoint, or commit now vs later.
 - Whether TPR/hygiene/commit-push should run (they are mandatory per Step 6.7).
-- Retry-vs-skip on reviewer timeouts (the reviewer-liveness probe decides).
+- Retry-vs-skip on reviewer timeouts (the reviewer sub-agent's internal §Step 3.5 retry gate decides — `/tpr-review §9` consumes the resulting `status: ok | partial | failed` and chooses survivor-mode or escalation).
 
 Test before any `AskUserQuestion` inside Step 6:
 1. Would the user's answer change a `.rs` / `.md` / `.ori` file's content, shape, or placement? → architectural, allowed.

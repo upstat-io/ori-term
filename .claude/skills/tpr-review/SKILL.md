@@ -515,7 +515,7 @@ The size of the fix is irrelevant. Cross-crate refactoring across 10 files is th
 
 ## §8 — Parallel dispatch (canonical template)
 
-**Step 8a — Create the orchestrator-owned scratch dir AND snapshot the working tree state (ONE per round, shared by both reviewer sub-agents) BEFORE dispatching.** The orchestrator owns this dir so it can recover reviewer output from disk even when a sub-agent's return message is truncated or the sub-agent auto-backgrounds its internal Bash call. Per-invocation `mktemp -d` prevents cross-session collision (invariant I1). Output files inside the shared dir are namespaced by reviewer (`codex-stdout.txt` / `gemini-stdout.txt` / `codex-report.txt` / `gemini-report.txt` / `codex-stderr.txt` / `gemini-stderr.txt`) so both sub-agents can write into the same dir without collision. The prefix embeds the **repo name** (basename of the git worktree root) so parallel sessions running in different repos produce visually distinguishable scratch dirs when listing `/tmp/` — e.g., `tpr-round-ori_lang-a1b2c3d4` vs. `tpr-round-warpkit-e5f6g7h8`.
+**Step 8a — Create the orchestrator-owned scratch dir AND snapshot the working tree state (ONE per round, shared by both reviewer sub-agents) BEFORE dispatching.** The orchestrator owns this dir so it can recover reviewer output from disk even when a sub-agent's return message is truncated or the sub-agent auto-backgrounds its internal Bash call. Per-invocation `mktemp -d` prevents cross-session collision (invariant I1). Output files inside the shared dir are namespaced by reviewer (`codex-stdout.txt` / `gemini-stdout.txt` / `codex-report.txt` / `gemini-report.txt` / `codex-stderr.txt` / `gemini-stderr.txt`) so both sub-agents can write into the same dir without collision. The prefix embeds the **repo name** (basename of the git worktree root) so parallel sessions running in different repos produce visually distinguishable scratch dirs when listing `/tmp/` — e.g., `tpr-round-ori_term-a1b2c3d4` vs. `tpr-round-warpkit-e5f6g7h8`.
 
 The pre-dispatch snapshot (`pre-dispatch-status.txt` + `pre-dispatch-head.txt`) is the baseline §8e diffs against to detect any source-tree edits made by the reviewer CLIs (codex `--full-auto` and gemini `--approval-mode yolo` both have file-write authority — the prompt forbids it per `compose-round-prompt.md` "Read and run, do NOT write" but prompts can be ignored; §8e is the enforcement).
 
@@ -549,7 +549,7 @@ This is editorial work — it requires judgment about what the prior round found
 **Step 8c — Dispatch BOTH reviewers as two `Agent()` tool calls in a SINGLE assistant message.** Foreground only on each Agent call — **`run_in_background: true` is FORBIDDEN** per the user's "foreground mandatory in sequential review pipelines" discipline (incident 2026-04-15). Multiple tool calls in one assistant message run concurrently per the Claude Code parallel-tool-call pattern — wall-clock per round is `max(codex, gemini)`, not the sum. Both sub-agents get the SAME `{SCRATCH_DIR}` (the per-round shared dir from step 8a); they differ only in their `{REVIEWER}` identity value. Trust tier is orchestrator-only metadata (codex HIGH, gemini LOWER) and MUST NOT appear as a placeholder, in the header, in the prompt, or in the return schema — per invariant I16.
 
 Sub-agents are thin CLI transports with split concerns:
-1. **CLI invocation is NOT in the sub-agent prompt.** The sub-agent runs `bash .claude/skills/tpr-review/invoke-{REVIEWER}.sh "$SCRATCH_DIR"` verbatim. The wrapper script owns the exact `codex exec …` / `gemini -m …` command including the pinned model `gemini-3.1-pro-preview` and all flags. The sub-agent CANNOT substitute a different model — the wrapper is opaque to it. Per invariant I21.
+1. **CLI invocation is NOT in the sub-agent prompt.** The sub-agent runs `bash .claude/skills/tpr-review/invoke-{REVIEWER}.sh "$SCRATCH_DIR"` verbatim. The wrapper script owns the exact `codex exec …` / `gemini -m …` command including the pinned model `gemini-3-flash-preview` and all flags. The sub-agent CANNOT substitute a different model — the wrapper is opaque to it. Per invariant I21.
 2. **Stream-json extraction + retry DOES live in the sub-agent.** Sub-agent uses tier 0 / 1 / 2 / 3 judgment to locate the `<<<TPR-REPORT … TPR-REPORT>>>` block in the JSON-streamed CLI output (both CLIs emit JSON events by default — `codex exec --json`, `gemini --output-format stream-json` — and raw `sed` cannot parse them). See `tp_agent_prompt.md` Step 3 for the tiered extraction protocol. Retry on non-zero extraction exit, up to N=2, before returning a failed-stub.
 
 ```
@@ -572,12 +572,12 @@ Agent({
 
 Note: the sub-agent prompt carries ONLY `{REVIEWER}` and `{SCRATCH_DIR}` placeholders. `{OBJECTIVE}` / `{SCOPE}` live in `$SCRATCH_DIR/prompt.md`, which the orchestrator wrote in step 8b. `{TRUST_TIER}` is orchestrator-only and never reaches the sub-agent prompt (I16). The sub-agent's Step 2 invokes the hardcoded wrapper `invoke-{REVIEWER}.sh` — it never constructs `codex exec …` or `gemini -m …` strings itself (I21).
 
-**Step 8d — Remember the path.** Keep the single `scratch` value in orchestrator state across the round so §9 stranded-report recovery can read `$scratch/codex-report.txt` or `$scratch/gemini-report.txt` if a sub-agent returns without an inline TPR-REPORT block. Both sub-agents write into the same scratch dir with per-reviewer file namespacing (`{codex,gemini}-{stdout,stderr,report}.txt`) so there is no collision. The scratch-dir inventory for a review-mode round is:
+**Step 8d — Remember the path.** Keep the single `scratch` value in orchestrator state across the round for postmortem visibility and shadow-edit detection (§8e). Both sub-agents write into the same scratch dir with per-reviewer file namespacing so there is no collision. The orchestrator does NOT read sub-agent scratch files to recover TPR-REPORT content — that content arrives inline per §9's three-status-shape contract, and the sub-agent's internal §Step 3.5 retry gate (`tp_agent_prompt.md`) handles any transport failure before the sub-agent returns. The scratch-dir inventory for a review-mode round is:
 
   - `prompt.md` — shared, identity-neutral, read by BOTH sub-agents.
   - `prompt-gemini-depth.md` — Gemini-only depth appendix (review mode only; absent in help mode).
   - `pre-dispatch-status.txt` / `pre-dispatch-head.txt` / `post-dispatch-status.txt` / `shadow-edit-diff.txt` / `shadow-edit-stat.txt` / `shadow-edits.patch` — §8a/§8e shadow-edit detection artifacts.
-  - `{codex,gemini}-{stdout,stderr,report}.txt` — per-reviewer CLI capture artifacts.
+  - `{codex,gemini}-stdout.txt` / `{codex,gemini}-stdout-attempt1.txt` / `{codex,gemini}-stderr.txt` / `{codex,gemini}-flattened.txt` / `{codex,gemini}-report.txt` / `{codex,gemini}-report-attempt1.txt` — per-reviewer CLI capture artifacts. The `-attempt1` files preserve first-attempt state when the sub-agent's §Step 3.5 retry fired; the `-flattened.txt` is the Tier 0 JSON-stream flattener target. All are sub-agent-owned — the orchestrator does not read them.
 
 **Step 8e — Detect shadow edits (post-dispatch, BEFORE §4 verification).** Reviewer CLIs run with file-write authority (`codex --full-auto`, `gemini --approval-mode yolo` — both required so reviewers can run `cargo test` / `cargo test --all` / _(intel-query not available in this project; use Grep/Glob)_ to verify their findings against actual behavior). The prompt forbids file edits per `compose-round-prompt.md` "Read and run, do NOT write", but prompts can be ignored. This step enforces the contract.
 
@@ -628,58 +628,43 @@ This protocol turns a contract violation into a documented contribution: the use
 
 ## §9 — Failure handling
 
-**Liveness probe (check BEFORE stranded-report recovery, BEFORE retry, BEFORE abort).** Silence from a reviewer sub-agent is ambiguous — it can mean the CLI hung OR that the reviewer is mid-investigation and waiting on a slow Bash / Read / Grep it dispatched. Treating every silence as death biases the orchestrator toward shallow reviewer work and kills agents doing deep analysis. Before any retry/abort decision, consult the liveness probe:
+Each reviewer sub-agent returns EXACTLY ONE of three status shapes. This is the entire transport-failure surface the orchestrator consumes. The sub-agent owns internal retry, liveness, stdout flattening, and partial-content recovery per `tp_agent_prompt.md` §Step 3 (Tier 0–5) + §Step 3.5 (bounded retry gate). The orchestrator does NOT inspect `$scratch/{REVIEWER}-{stdout,report,flattened,attempts}.txt`, does NOT probe reviewer liveness, and does NOT issue follow-up Bash calls on a reviewer's behalf.
 
-```
-Bash (foreground, timeout: 30000):
-  diagnostics/tpr-liveness.sh "$scratch" codex --human
-  diagnostics/tpr-liveness.sh "$scratch" gemini --human
-```
+| Status | Meaning | Orchestrator action |
+|---|---|---|
+| `ok` | Structured `<<<TPR-REPORT>>>` block with a `findings:` field (sub-agent Tier 1–4 extraction). | Normal flow: verify findings per §4, classify per §6, apply per §7. |
+| `partial` | CLI produced assistant-message content but the sub-agent's bounded retry never reached a structured report (sub-agent Tier 4.5 after 2 attempts). The returned block carries `progress_notes:` verbatim, NO `findings:` field. | Treat as reviewer-unavailable for findings. Log `reviewer: {R} partial_transport: true` in the round summary. Proceed with partner's findings (survivor mode). Do NOT retry. |
+| `failed` | Two sub-agent attempts produced no extractable content (Tier 5 twice). | Same action as `partial`: survivor mode with partner's findings. Distinct from `partial` only for postmortem diagnostics. |
+| **Sub-agent contract violation** (defensive default — NOT a valid return shape) | The sub-agent's return doesn't carry any of the three status shapes above. Concrete triggers: (a) the sub-agent emitted a banned I22 partial-status message (`"Waiting for ..."`, `"I'll process the output once it finishes"`, `"Continuing in the background"`, `"The monitor will notify me"`, or any prose equivalent); (b) the Agent() tool call returned with an error / sub-agent process crashed / harness timeout; (c) the TPR-REPORT block is syntactically malformed YAML; (d) the `status:` key is missing or carries an unrecognized value (anything other than `ok` / `partial` / `failed`); (e) no TPR-REPORT block present at all in the sub-agent's return. | Treat AS IF `status: failed` and apply survivor-mode / both-failed logic below. Log `reviewer: {R} sub_agent_contract_violation: "<one-line summary of what was returned instead>"` in the round summary so the violation is visible for postmortem and surfaces as a pattern across runs. Do NOT inspect `$scratch/{REVIEWER}-*.txt` to try to recover — I23 forbids scratch-file inspection, and the sub-agent failing to reach the retry gate is exactly the class the contract says stays a sub-agent problem. Do NOT retry the sub-agent — a sub-agent that bailed despite the updated I22 prose ban will bail again on retry. |
 
-The probe returns a three-state verdict by inspecting `$scratch/{REVIEWER}-stdout.txt` (the tee'd CLI output guaranteed by invariant I14):
+**One reviewer `status: partial`, `status: failed`, or sub-agent contract violation.** Survivor mode: use only the surviving report, set `survivor_mode: true` in the round summary, continue the round loop. Do NOT retry — the sub-agent has already exhausted its internal retry budget per §Step 3.5 (or never reached it, in the contract-violation case).
 
-- **`alive` (exit 0)** — the reviewer is still emitting, OR its tail contains a `tool_call` / `thinking` / `<<<TPR-REPORT` marker indicating in-flight work. DO NOT retry, DO NOT abort, DO NOT dispatch a replacement Agent. Wait at least one more probe cycle (~60-120s) before reassessing.
-- **`quiet` (exit 1)** — borderline; the file grew within the last `[grace, 2*grace)` window (default `[5min, 10min)`) OR an `[2*grace, 4*grace)` window with an in-flight `tool_call` signal (slow Bash suspected, e.g. `cargo build`, `cargo test --all`). Consult the probe once more ~60s later before deciding. Do NOT retry on the first `quiet` verdict.
-- **`dead` (exit 2)** — no emission for >= 2*grace seconds AND no strong alive signal in the tail. The CLI is genuinely hung or crashed. Stranded-report recovery (below) and the retry/survivor policy apply.
-
-The probe's 45-min worst-case ceiling is bounded externally by `block-banned-commands.sh` (upper-bound `timeout` on `codex exec` / `gemini -p`). The probe never extends that ceiling — it only prevents premature retry within it.
-
-**Stranded-report recovery (check AFTER the liveness verdict classifies a reviewer as `dead`, BEFORE classifying as failed).** A sub-agent's return message is the PRIMARY transport for its TPR-REPORT, but it is not the only one. Before declaring a reviewer `failed`, attempt disk recovery from the scratch dir created in §8 step 8a:
-
-1. Parse the reviewer's return message. If it contains a `<<<TPR-REPORT … TPR-REPORT>>>` block, use it directly — no recovery needed.
-2. If the return message has no report block (sub-agent truncated, auto-backgrounded its Bash call, or returned early for any reason), check `$scratch/{REVIEWER}-report.txt` on disk. The sub-agent is contractually required to write this file during Step 3 of `tp_agent_prompt.md`.
-3. If the disk file exists and contains a valid sentinel-delimited block, use it AS IF the sub-agent had returned it inline. Log the recovery path in the round summary so the coverage gap stays visible.
-4. If the disk file is missing or empty, fall back to `$scratch/{REVIEWER}-stdout.txt` (the teed CLI stdout) and attempt sentinel extraction directly. If that also lacks a sentinel, THEN the reviewer is `failed`.
-5. Only after all three recovery paths fail does the reviewer's `status` become `failed` and the retry/survivor policy below applies.
-
-The dual-path transport (inline return + disk persistence) eliminates the "stranded report" failure mode where a fully-completed reviewer CLI invocation produced a valid report that never reached the orchestrator because the sub-agent couldn't return inline. Recovery is NOT a retry — it's reading output that already exists.
-
-**One reviewer `status: failed`.** Consult the liveness probe for that reviewer FIRST. If `alive` or `quiet`, wait — do not retry. Only when the probe returns `dead` AND stranded-report recovery produces nothing do you retry that reviewer once (single tool call in a follow-up message; partner already completed). If retry fails, **survivor mode**: use only the surviving report, set `survivor_mode: true` in the round summary, continue.
-
-**Both reviewers `status: failed`.** Consult the probe for BOTH reviewers. If either is `alive` or `quiet`, do NOT retry — wait and reassess. Only when BOTH probes return `dead` AND neither has a stranded report on disk do you retry the parallel dispatch ONCE. If both fail a second time:
+**Both reviewers `status: partial` or `status: failed`.** The round produced no verified findings from either transport. Decision branches on invocation mode:
 
 - **Autonomous mode** (`autonomous_mode == True`): exit with `exit_reason = "autonomous_transport_failure"`, preserve the per-round scratch dir as the postmortem artifact, emit a final round summary, and return to the parent batch. No `AskUserQuestion` — no user present to answer. The parent collects the status and reports the failure in its end-of-run summary.
 - **Interactive mode**: escalate via `AskUserQuestion` — NEVER render these as prose-numbered bullets (§11.5 item 3):
 
 ```
 AskUserQuestion(questions=[{
-    "question": "Both reviewers failed twice in a row. What should I do?",
-    "header": "TPR both-reviewer failure",
+    "question": "Both reviewers returned status: partial or failed (each sub-agent already exhausted its bounded internal retry). What should I do?",
+    "header": "TPR both-reviewer transport failure",
     "multiSelect": False,
     "options": [
         {"key": "pause-and-resume",
          "label": "Pause here, clear context, resume with /continue-roadmap (Recommended)",
-         "description": "Recommended because back-to-back dual-failures are almost always transient "
+         "description": "Recommended because back-to-back transport failures across both reviewers "
+                        "(after each already retried once internally) usually indicate transient "
                         "infra problems (rate limits, cold-starts, network flakes) compounded by "
                         "context pressure. A fresh session both retries AND resets — preserving the "
                         "work this session already committed (prior rounds' fixes stay) while "
                         "restarting the review itself in a clean context the roadmap can pick up.",
          "recommended": True},
         {"key": "retry-once-more",
-         "label": "Retry once more (third attempt, parallel dispatch)",
-         "description": "Spends another ~25-40 min on a third parallel dispatch. Pick if you have "
-                        "specific evidence (e.g. rate-limit window has cleared) that the failure "
-                        "was transient and won't reproduce. Otherwise pause-and-resume is safer."},
+         "label": "Retry the round (fresh parallel dispatch; each sub-agent gets a fresh pair of attempts)",
+         "description": "Spends another ~25-40 min on a fresh parallel dispatch. Each sub-agent runs "
+                        "its own bounded retry internally (up to 2 CLI attempts per reviewer). Pick "
+                        "if you have specific evidence (rate-limit window cleared, auth restored) "
+                        "that the failure was transient. Otherwise pause-and-resume is safer."},
         {"key": "abort",
          "label": "Abort /tpr-review — code unchanged, no findings filed",
          "description": "Exits the review entirely. Findings from prior rounds stay fixed and "

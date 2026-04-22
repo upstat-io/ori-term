@@ -314,8 +314,10 @@ fn handler_delete_by_placement_id() {
     feed(&mut term, &place2);
     assert_eq!(term.image_cache().placement_count(), 2);
 
-    // Delete only placement 10.
-    let delete = kitty_apc("a=d,d=p,i=1,p=10,q=2");
+    // Delete only placement 10. Per kitty graphics-protocol.rst, the spec arm
+    // for placement-id scoping is `d=i,i=<id>,p=<pid>` (NOT `d=p`, which
+    // deletes by cell position per BUG-08-7's corrected semantics).
+    let delete = kitty_apc("a=d,d=i,i=1,p=10,q=2");
     feed(&mut term, &delete);
     assert_eq!(term.image_cache().placement_count(), 1);
 
@@ -517,4 +519,88 @@ fn handler_animate_set_current_frame() {
         .animation_state(ImageId(1))
         .expect("animated");
     assert_eq!(state.current_frame, 1);
+}
+
+// ---------------------------------------------------------------------------
+// Catalog row citations for §13.0 verified-with-deviation behaviors.
+// ---------------------------------------------------------------------------
+
+/// Catalog row: KG-ACTION-FALLBACK-TRANSMITANDPLACE
+///
+/// Unknown `a=<value>` silently falls back to `TransmitAndPlace` per
+/// `parse.rs::apply_key_value`. Pinned as `verified-with-deviation` in
+/// `plans/spec-conformance/catalog/kitty-graphics.md` — kitty's separate
+/// `a=c` (Compose Frame) action has NO matching `KittyAction` variant in
+/// ori_term, so `a=c` and any other unknown value dispatch as
+/// TransmitAndPlace. A test that pins this fallback is the regression
+/// guard against a future parser rewrite that returns Err on unknown `a=`.
+#[test]
+fn parse_unknown_action_value_falls_back_to_transmit_and_place() {
+    // a=c is kitty's compose-frame action; ori_term has no variant for it,
+    // so the parser falls back to TransmitAndPlace.
+    let cmd = parse_kitty_command(b"a=c,i=1").unwrap();
+    assert_eq!(cmd.action, KittyAction::TransmitAndPlace);
+
+    // Any other unknown value also falls back.
+    let cmd = parse_kitty_command(b"a=Z").unwrap();
+    assert_eq!(cmd.action, KittyAction::TransmitAndPlace);
+}
+
+/// Catalog row: KG-TRANSMIT-SHARED-MEM-REJECTED
+///
+/// `t=s` (shared-memory transmission) parses correctly but the handler
+/// rejects with `EINVAL: shared memory transmission not yet supported`
+/// per `store.rs`. Pinned as `verified-with-deviation` — rejection IS the
+/// spec-compliant response on a platform without shared-memory transport.
+#[test]
+fn handler_shared_memory_transmission_rejected_with_einval() {
+    let (mut term, listener) = term_with_recorder();
+    // a=T,t=s with a shared-memory name payload ("shm_xyz" in base64).
+    let apc = kitty_apc("a=T,i=1,t=s,f=32,s=1,v=1;c2htX3h5eg==");
+    feed(&mut term, &apc);
+
+    let writes = listener.pty_writes();
+    assert!(
+        !writes.is_empty(),
+        "expected EINVAL reply on SharedMemory transmission"
+    );
+    assert!(
+        writes
+            .iter()
+            .any(|w| w.contains("EINVAL") && w.contains("shared memory")),
+        "expected EINVAL: shared memory reply, got: {writes:?}"
+    );
+    // No placement should be created.
+    assert_eq!(term.image_cache().placement_count(), 0);
+}
+
+/// Catalog row: KG-COMPRESSION-OZ-IGNORED
+///
+/// `o=z` is parsed into `cmd.compression = Some(b'z')` but the transmit
+/// path never consults the field — payloads are stored verbatim without
+/// zlib decompression. Pinned as `verified-with-deviation` — clients
+/// sending compressed payloads see garbled pixels or decode failures.
+#[test]
+fn parse_compression_oz_populates_field_but_store_does_not_decompress() {
+    // Parser side: o=z populates the compression field.
+    let cmd = parse_kitty_command(b"a=t,i=1,f=32,s=1,v=1,o=z;AAAAAA==").unwrap();
+    assert_eq!(
+        cmd.compression,
+        Some(b'z'),
+        "o=z parses into compression = Some('z')"
+    );
+
+    // Handler side: feeding a raw uncompressed 4-byte RGBA payload with
+    // o=z still succeeds — proving the store path ignores compression and
+    // treats the payload as uncompressed.
+    let (mut term, listener) = term_with_recorder();
+    let apc = kitty_apc("a=t,i=1,f=32,s=1,v=1,o=z,q=2;AAAAAA==");
+    feed(&mut term, &apc);
+    assert_eq!(
+        term.image_cache().image_count(),
+        1,
+        "store succeeds despite o=z — compression field is ignored"
+    );
+    // No error reply should have been emitted (q=2 suppresses everything anyway).
+    let _ = listener;
 }
