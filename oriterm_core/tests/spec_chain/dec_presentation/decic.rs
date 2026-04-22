@@ -19,6 +19,9 @@ fn seed_abcdef(h: &mut SpecHarness) {
     h.feed(b"\x1b[1;1H");
 }
 
+/// Pins: DECIC Ps=2 at column 3 inserts 2 blanks on EVERY row of the
+/// scroll region; content from the cursor column shifts right.
+/// Anchor: catalog row `DECPRES-DECIC` (basic multi-row insert).
 #[test]
 fn decic_inserts_columns_at_cursor_on_every_row() {
     let mut h = SpecHarness::with_size(5, 10);
@@ -36,6 +39,10 @@ fn decic_inserts_columns_at_cursor_on_every_row() {
     }
 }
 
+/// Pins: DECIC Ps=1 at column 0 inserts a single blank at the left edge
+/// — proves the left-edge boundary is handled correctly rather than
+/// short-circuiting to no-op. Anchor: catalog row `DECPRES-DECIC`
+/// (column-zero boundary).
 #[test]
 fn decic_at_column_zero_inserts_at_left_edge() {
     let mut h = SpecHarness::with_size(3, 8);
@@ -50,6 +57,9 @@ fn decic_at_column_zero_inserts_at_left_edge() {
     }
 }
 
+/// Pins: DECIC with omitted Ps defaults to 1 — `CSI ' }` at col 1
+/// inserts a single blank, shifting 'A' right. Anchor: catalog row
+/// `DECPRES-DECIC` (default-count).
 #[test]
 fn decic_default_count_is_one() {
     let mut h = SpecHarness::with_size(3, 8);
@@ -61,6 +71,10 @@ fn decic_default_count_is_one() {
     assert_eq!(row[Column(1)].ch, 'A');
 }
 
+/// Pins: DECIC under DECLRMM inserts only within the margin band —
+/// cells outside the band are untouched, the rightmost band cell is
+/// pushed off. Anchor: catalog row `DECPRES-DECIC` (DECLRMM
+/// band-constrained).
 #[test]
 fn decic_declrmm_constrains_to_margin_band() {
     let mut h = SpecHarness::with_size(3, 10);
@@ -92,6 +106,9 @@ fn decic_declrmm_constrains_to_margin_band() {
     assert_eq!(row[Column(9)].ch, 'J');
 }
 
+/// Negative pin: DECIC with the cursor OUTSIDE the DECLRMM band is a
+/// no-op — every cell is byte-identical after the sequence.
+/// Anchor: catalog row `DECPRES-DECIC` (cursor-outside-band no-op).
 #[test]
 fn decic_cursor_outside_declrmm_band_is_noop() {
     let mut h = SpecHarness::with_size(3, 10);
@@ -108,6 +125,11 @@ fn decic_cursor_outside_declrmm_band_is_noop() {
     }
 }
 
+/// Negative pin: rows outside the active scroll region (DECSTBM) are
+/// NOT touched by DECIC — only rows inside the vertical region are
+/// affected. Guards against inserting on all rows regardless of
+/// DECSTBM. Anchor: catalog row `DECPRES-DECIC` (DECSTBM vertical-bound
+/// respected).
 #[test]
 fn decic_negative_pin_leaves_other_rows_alone() {
     // Constrain the scroll region to a single line and verify DECIC

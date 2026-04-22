@@ -20,6 +20,10 @@ fn seed_abcdef(h: &mut SpecHarness) {
     h.feed(b"\x1b[1;1H");
 }
 
+/// Pins: DECFI with the cursor NOT at the right margin moves the cursor
+/// right by one column and leaves every grid cell unchanged — matches
+/// xterm `util.c:803 xtermColIndex(toLeft=False)` cursor-move branch.
+/// Anchor: catalog row `DECPRES-DECFI` (move-branch).
 #[test]
 fn decfi_not_at_margin_moves_cursor_right_only() {
     let mut h = SpecHarness::with_size(3, 10);
@@ -33,6 +37,11 @@ fn decfi_not_at_margin_moves_cursor_right_only() {
     assert_eq!(h.term().grid().cursor().col().0, 3);
 }
 
+/// Pins: DECFI at the last column (no DECLRMM) scrolls every row of the
+/// scroll region left by one column — leftmost cell ('A') drops off,
+/// blanks fill the right edge; cursor stays at the last column (per
+/// xterm `xtermColScroll` which does not move the cursor).
+/// Anchor: catalog row `DECPRES-DECFI` (scroll-band-left branch).
 #[test]
 fn decfi_at_last_column_scrolls_band_left() {
     let mut h = SpecHarness::with_size(3, 10);
@@ -56,6 +65,10 @@ fn decfi_at_last_column_scrolls_band_left() {
     assert_eq!(h.term().grid().cursor().col().0, 9);
 }
 
+/// Pins: with DECLRMM active and cursor at the DECSLRM right margin,
+/// DECFI scrolls the margin band left by one — only cells within the
+/// band shift; cells outside the band are untouched.
+/// Anchor: catalog row `DECPRES-DECFI` (DECLRMM right-margin scroll).
 #[test]
 fn decfi_at_right_margin_under_declrmm_scrolls_band_left() {
     let mut h = SpecHarness::with_size(3, 10);
@@ -82,6 +95,11 @@ fn decfi_at_right_margin_under_declrmm_scrolls_band_left() {
     assert_eq!(row[Column(9)].ch, 'J');
 }
 
+/// Pins: with DECLRMM active and cursor inside the margin band but not
+/// at the right margin, DECFI takes the cursor-move branch (not the
+/// scroll branch) — proves the decision is "at right margin?" not
+/// "inside band?". Anchor: catalog row `DECPRES-DECFI`
+/// (inside-band-not-at-margin).
 #[test]
 fn decfi_inside_declrmm_band_but_not_at_right_margin_moves_cursor() {
     let mut h = SpecHarness::with_size(3, 10);
@@ -98,6 +116,11 @@ fn decfi_inside_declrmm_band_but_not_at_right_margin_moves_cursor() {
     assert_eq!(h.term().grid().cursor().col().0, 5);
 }
 
+/// Negative pin: the cursor-move branch must NOT touch any grid cell —
+/// a DECFI that takes the move path leaves every row's content byte-
+/// identical. Guards against a regression where the move branch
+/// accidentally calls the scroll path on one row.
+/// Anchor: catalog row `DECPRES-DECFI` (move-branch grid-immutable).
 #[test]
 fn decfi_negative_pin_other_rows_for_cursor_move_branch() {
     let mut h = SpecHarness::with_size(3, 6);

@@ -19,6 +19,10 @@ fn seed_abcdef(h: &mut SpecHarness) {
     h.feed(b"\x1b[1;1H");
 }
 
+/// Pins: DECBI with the cursor NOT at the left margin moves the cursor
+/// left by one column and leaves every grid cell unchanged — matches
+/// xterm `util.c:788 xtermColIndex(toLeft=True)` cursor-move branch.
+/// Anchor: catalog row `DECPRES-DECBI` (move-branch).
 #[test]
 fn decbi_not_at_margin_moves_cursor_left_only() {
     let mut h = SpecHarness::with_size(3, 10);
@@ -34,6 +38,10 @@ fn decbi_not_at_margin_moves_cursor_left_only() {
     assert_eq!(h.term().grid().cursor().col().0, 1);
 }
 
+/// Pins: DECBI with cursor at column 0 (no DECLRMM) inserts a blank at
+/// column 0 on every row of the scroll region, shifting existing content
+/// right by one column; cursor stays put (insert branch per xterm
+/// `util.c:795`). Anchor: catalog row `DECPRES-DECBI` (insert-branch).
 #[test]
 fn decbi_at_column_zero_inserts_blank_column_on_every_row() {
     let mut h = SpecHarness::with_size(3, 10);
@@ -56,6 +64,11 @@ fn decbi_at_column_zero_inserts_blank_column_on_every_row() {
     assert_eq!(h.term().grid().cursor().col().0, 0);
 }
 
+/// Pins: with DECLRMM active and cursor at the DECSLRM left margin,
+/// DECBI inserts a blank AT THE LEFT MARGIN (not column 0) and shifts
+/// cells right within the margin band only — cells outside the band are
+/// untouched, and the rightmost cell of the band is pushed off.
+/// Anchor: catalog row `DECPRES-DECBI` (insert-at-DECSLRM-margin branch).
 #[test]
 fn decbi_at_left_margin_under_declrmm_inserts_at_margin() {
     let mut h = SpecHarness::with_size(3, 10);
@@ -82,6 +95,10 @@ fn decbi_at_left_margin_under_declrmm_inserts_at_margin() {
     assert_eq!(row[Column(9)].ch, 'J');
 }
 
+/// Pins: with DECLRMM active and cursor inside the margin band but not
+/// at the left margin, DECBI takes the cursor-move branch (not the
+/// insert branch) — proves the decision is "at left margin?" not
+/// "inside band?". Anchor: catalog row `DECPRES-DECBI` (inside-band-not-at-margin).
 #[test]
 fn decbi_inside_declrmm_band_but_not_at_left_margin_moves_cursor() {
     let mut h = SpecHarness::with_size(3, 10);
@@ -100,6 +117,11 @@ fn decbi_inside_declrmm_band_but_not_at_left_margin_moves_cursor() {
     assert_eq!(h.term().grid().cursor().col().0, 3);
 }
 
+/// Negative pin: the cursor-move branch must NOT touch any grid cell —
+/// a DECBI that takes the move path leaves every row's content byte-
+/// identical. Guards against a regression where the move branch
+/// accidentally calls the insert path on one row.
+/// Anchor: catalog row `DECPRES-DECBI` (move-branch grid-immutable).
 #[test]
 fn decbi_negative_pin_other_rows_only_for_insert_branch() {
     // Non-insert branch (cursor move) must NOT touch any cell.

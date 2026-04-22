@@ -12,6 +12,9 @@
 use oriterm_core::effect::PtyWriteKind;
 use oriterm_test_support::spec_chain::{SpecHarness, last_pty_write};
 
+/// Pins: a fresh terminal with no DECSCUSR setter yet replies `DCS 1 $ r 1 q ST`
+/// to `DCS $ q q ST` — default cursor style is Ps=1 (blinking block).
+/// Anchor: catalog row `DECPRES-DECRQSS` (DECSCUSR branch).
 #[test]
 fn decrqss_decscusr_default_reports_ps1_blink_block() {
     let mut h = SpecHarness::with_size(24, 80);
@@ -22,6 +25,10 @@ fn decrqss_decscusr_default_reports_ps1_blink_block() {
     assert_eq!(bytes, b"\x1bP1$r1 q\x1b\\");
 }
 
+/// Pins: DECRQSS echoes the most-recent DECSCUSR setter — after `CSI 4 SP q`
+/// (steady underline) the reply carries Ps=4, proving the query reads the
+/// live cursor-style state rather than a cached default.
+/// Anchor: catalog row `DECPRES-DECRQSS` (DECSCUSR branch).
 #[test]
 fn decrqss_decscusr_tracks_csi_space_q_setter() {
     let mut h = SpecHarness::with_size(24, 80);
@@ -33,6 +40,10 @@ fn decrqss_decscusr_tracks_csi_space_q_setter() {
     assert_eq!(bytes, b"\x1bP1$r4 q\x1b\\");
 }
 
+/// Pins: DECSCUSR=6 (steady bar) is echoed verbatim by DECRQSS — matrix
+/// companion to `decrqss_decscusr_tracks_csi_space_q_setter` covering a
+/// different Ps value so the query cannot be passing by aliasing to a single
+/// constant. Anchor: catalog row `DECPRES-DECRQSS` (DECSCUSR branch).
 #[test]
 fn decrqss_decscusr_tracks_steady_bar() {
     let mut h = SpecHarness::with_size(24, 80);
@@ -44,6 +55,9 @@ fn decrqss_decscusr_tracks_steady_bar() {
     assert_eq!(bytes, b"\x1bP1$r6 q\x1b\\");
 }
 
+/// Pins: with no DECSCA setter, `DCS $ q " q ST` replies `DCS 1 $ r 2 " q ST`
+/// — Ps=2 is the VT525 default meaning "unprotected" (DECSCA baseline).
+/// Anchor: catalog row `DECPRES-DECRQSS` (DECSCA branch).
 #[test]
 fn decrqss_decsca_default_reports_unprotected() {
     let mut h = SpecHarness::with_size(24, 80);
@@ -54,6 +68,10 @@ fn decrqss_decsca_default_reports_unprotected() {
     assert_eq!(bytes, b"\x1bP1$r2\"q\x1b\\");
 }
 
+/// Pins: after `CSI 1 " q` sets DECSCA to protected, DECRQSS echoes Ps=1
+/// rather than the default Ps=2 — proves the DECSCA branch reads the live
+/// character-attribute mode, not a hardcoded default.
+/// Anchor: catalog row `DECPRES-DECRQSS` (DECSCA branch).
 #[test]
 fn decrqss_decsca_reports_protected_after_setter() {
     let mut h = SpecHarness::with_size(24, 80);
@@ -64,6 +82,10 @@ fn decrqss_decsca_reports_protected_after_setter() {
     assert_eq!(bytes, b"\x1bP1$r1\"q\x1b\\");
 }
 
+/// Negative pin: an unrecognized Pt (here, bare `Z`) replies with the
+/// invalid-request shape `DCS 0 $ r ST` — proves DECRQSS does NOT silently
+/// drop unknown targets and does NOT echo Pt back verbatim with Ps=1.
+/// Anchor: catalog row `DECPRES-DECRQSS` (invalid-Pt branch).
 #[test]
 fn decrqss_unknown_pt_reports_invalid() {
     let mut h = SpecHarness::with_size(24, 80);
@@ -74,6 +96,10 @@ fn decrqss_unknown_pt_reports_invalid() {
     assert_eq!(bytes, b"\x1bP0$r\x1b\\");
 }
 
+/// Negative pin: the baseline DECSCL (`" p`) branch continues to reply
+/// `DCS 1 $ r 64;1 " p ST` after §09A.9 widens the match table — guards
+/// against accidentally shadowing pre-existing targets when adding DECSCUSR /
+/// DECSCA branches. Anchor: catalog row `DECPRES-DECRQSS` (DECSCL branch).
 #[test]
 fn decrqss_decscl_baseline_still_replies() {
     // Negative pin: baseline DECSCL branch must continue to reply after §09A.9
