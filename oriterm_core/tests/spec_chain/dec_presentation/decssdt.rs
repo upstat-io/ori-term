@@ -8,6 +8,11 @@
 
 use oriterm_test_support::spec_chain::SpecHarness;
 
+/// Pins: DECSSDT stores the status-line type (Ps=0 off / Ps=1 indicator
+/// / Ps=2 host-writable) as observable state — ori_term does not render
+/// the status line, but the type is recorded verbatim per
+/// verified-with-deviation semantics. Covers all three recognized Ps
+/// values. Anchor: catalog row `DECPRES-DECSSDT`.
 #[test]
 fn decssdt_stores_line_type() {
     let mut h = SpecHarness::with_size(24, 80);

@@ -66,10 +66,13 @@ fn notcurses_startup_reply_stream_contains_no_stray_q_bytes() {
     );
 }
 
-/// Dump the reply stream to stderr — run with `-- --nocapture` to inspect.
-/// Not a pin; purely diagnostic for future BUG-06-017 / notcurses debugging.
+/// Pins: notcurses-demo startup must emit at least one PTY reply.
+/// A zero-reply run would indicate the VT parser silently dropped every
+/// identification query (DA1/DA2/DA3/DSR/XTVERSION/...) which is the same
+/// failure mode BUG-06-017 investigates. Run with `-- --nocapture` to
+/// inspect the per-effect dump. Anchor: BUG-06-017 / HYG-13.1-010.
 #[test]
-fn dump_notcurses_startup_reply_stream() {
+fn notcurses_startup_emits_at_least_one_pty_reply() {
     let mut h = SpecHarness::new();
     h.feed(NOTCURSES_STARTUP);
     let mut total = 0usize;
@@ -90,22 +93,45 @@ fn dump_notcurses_startup_reply_stream() {
         }
     }
     eprintln!("--- {pty_count} PTY replies, {total} total reply bytes ---");
+    assert!(
+        pty_count > 0,
+        "notcurses startup must emit at least one PTY reply ({total} total bytes)"
+    );
 }
 
-/// Scan the stream and return every byte index that falls outside a
-/// recognised escape-sequence frame. A byte is considered "in frame" if it
-/// sits between an opening `ESC [` / `ESC ]` / `ESC _` / `ESC P` and its
-/// terminator (final char for CSI, `\x07`/`ESC \\` for OSC, `ESC \\` for
-/// APC/DCS).
-fn find_out_of_frame_bytes(stream: &[u8]) -> Vec<(usize, u8)> {
-    let mut errs = Vec::new();
+/// Event emitted by [`scan_escape_stream`] for each boundary encountered
+/// outside a recognised escape frame.
+enum ScanEvent {
+    /// A byte at `index` that fell outside any escape sequence frame.
+    OutOfFrame { index: usize, byte: u8 },
+    /// A bare `ESC` (0x1b) at `index` with no discriminator byte because
+    /// the stream terminated. Reported once per stream at most.
+    DanglingEsc { index: usize },
+}
+
+/// Walk `stream` and invoke `visitor` for every byte that sits outside a
+/// recognised `ESC [` / `ESC ]` / `ESC _` / `ESC P` frame, plus a final
+/// `DanglingEsc` event if the stream terminates on a bare ESC.
+///
+/// Framing arms:
+/// - `ESC [` CSI — consume until the first 0x40..=0x7e final-byte (inclusive).
+/// - `ESC ]` OSC — consume until `BEL` (0x07) or `ESC \\` terminator.
+/// - `ESC _` APC / `ESC P` DCS — consume until `ESC \\` terminator.
+/// - `ESC <other>` — return to out-of-frame state without emitting events for
+///   the two framing bytes (matches the original scanners' behaviour for
+///   unrecognised two-byte ESC sequences).
+///
+/// Extracted at §13.1 close-out (HYG-13.1-008) to de-duplicate the identical
+/// walker skeleton that previously lived in `find_out_of_frame_bytes` and
+/// `find_stray_q_bytes`.
+fn scan_escape_stream<F: FnMut(ScanEvent)>(stream: &[u8], mut visitor: F) {
     let mut i = 0;
     while i < stream.len() {
         let b = stream[i];
         if b == 0x1b {
             i += 1;
             if i >= stream.len() {
-                errs.push((i - 1, 0x1b));
+                visitor(ScanEvent::DanglingEsc { index: i - 1 });
                 break;
             }
             let start_kind = stream[i];
@@ -144,10 +170,23 @@ fn find_out_of_frame_bytes(stream: &[u8]) -> Vec<(usize, u8)> {
                 _ => {}
             }
         } else {
-            errs.push((i, b));
+            visitor(ScanEvent::OutOfFrame { index: i, byte: b });
             i += 1;
         }
     }
+}
+
+/// Scan the stream and return every byte index that falls outside a
+/// recognised escape-sequence frame. A byte is considered "in frame" if it
+/// sits between an opening `ESC [` / `ESC ]` / `ESC _` / `ESC P` and its
+/// terminator (final char for CSI, `\x07`/`ESC \\` for OSC, `ESC \\` for
+/// APC/DCS). A trailing bare `ESC` is reported as `(index, 0x1b)`.
+fn find_out_of_frame_bytes(stream: &[u8]) -> Vec<(usize, u8)> {
+    let mut errs = Vec::new();
+    scan_escape_stream(stream, |evt| match evt {
+        ScanEvent::OutOfFrame { index, byte } => errs.push((index, byte)),
+        ScanEvent::DanglingEsc { index } => errs.push((index, 0x1b)),
+    });
     errs
 }
 
@@ -156,51 +195,171 @@ fn find_out_of_frame_bytes(stream: &[u8]) -> Vec<(usize, u8)> {
 /// or `\x1b[>0q` XTVERSION reply are fine; stray `q` in raw output is not.
 fn find_stray_q_bytes(stream: &[u8]) -> Vec<usize> {
     let mut stray = Vec::new();
-    let mut i = 0;
-    while i < stream.len() {
-        let b = stream[i];
-        if b == 0x1b && i + 1 < stream.len() {
-            let start_kind = stream[i + 1];
-            i += 2;
-            match start_kind {
-                b'[' => {
-                    while i < stream.len() && !(0x40..=0x7e).contains(&stream[i]) {
-                        i += 1;
-                    }
-                    if i < stream.len() {
-                        i += 1;
-                    }
-                }
-                b']' => {
-                    while i < stream.len() {
-                        if stream[i] == 0x07 {
-                            i += 1;
-                            break;
-                        }
-                        if stream[i] == 0x1b && i + 1 < stream.len() && stream[i + 1] == b'\\' {
-                            i += 2;
-                            break;
-                        }
-                        i += 1;
-                    }
-                }
-                b'_' | b'P' => {
-                    while i < stream.len() {
-                        if stream[i] == 0x1b && i + 1 < stream.len() && stream[i + 1] == b'\\' {
-                            i += 2;
-                            break;
-                        }
-                        i += 1;
-                    }
-                }
-                _ => {}
-            }
-        } else {
-            if b == b'q' {
-                stray.push(i);
-            }
-            i += 1;
+    scan_escape_stream(stream, |evt| {
+        if let ScanEvent::OutOfFrame { index, byte: b'q' } = evt {
+            stray.push(index);
         }
-    }
+    });
     stray
+}
+
+// ============================================================================
+// Unit tests for scan_escape_stream (HYG-13.1-008 extraction)
+// ============================================================================
+
+/// Pins: scan_escape_stream skips bytes inside a CSI frame (no OutOfFrame
+/// events emitted for parameter bytes or the final letter). Anchor: HYG-13.1-008.
+#[test]
+fn scan_escape_stream_skips_csi_frame_content() {
+    let stream = b"\x1b[2;3R"; // CSI 2;3R — a DSR cursor reply
+    let mut events = Vec::new();
+    scan_escape_stream(stream, |evt| match evt {
+        ScanEvent::OutOfFrame { index, byte } => events.push((index, byte)),
+        ScanEvent::DanglingEsc { .. } => panic!("unexpected dangling ESC"),
+    });
+    assert!(
+        events.is_empty(),
+        "CSI frame content should not emit events: {events:?}"
+    );
+}
+
+/// Pins: scan_escape_stream skips bytes inside an OSC frame terminated by
+/// BEL (0x07). Anchor: HYG-13.1-008.
+#[test]
+fn scan_escape_stream_skips_osc_bel_frame_content() {
+    let stream = b"\x1b]11;rgb:00/00/00\x07";
+    let mut events = Vec::new();
+    scan_escape_stream(stream, |evt| match evt {
+        ScanEvent::OutOfFrame { index, byte } => events.push((index, byte)),
+        ScanEvent::DanglingEsc { .. } => panic!("unexpected dangling ESC"),
+    });
+    assert!(
+        events.is_empty(),
+        "OSC BEL-terminated content should not emit events: {events:?}"
+    );
+}
+
+/// Pins: scan_escape_stream skips bytes inside an OSC frame terminated by
+/// ESC \\ (ST). Anchor: HYG-13.1-008.
+#[test]
+fn scan_escape_stream_skips_osc_st_frame_content() {
+    let stream = b"\x1b]10;rgb:ff/ff/ff\x1b\\";
+    let mut events = Vec::new();
+    scan_escape_stream(stream, |evt| match evt {
+        ScanEvent::OutOfFrame { index, byte } => events.push((index, byte)),
+        ScanEvent::DanglingEsc { .. } => panic!("unexpected dangling ESC"),
+    });
+    assert!(
+        events.is_empty(),
+        "OSC ST-terminated content should not emit events: {events:?}"
+    );
+}
+
+/// Pins: scan_escape_stream skips bytes inside an APC frame terminated by
+/// ESC \\. Anchor: HYG-13.1-008.
+#[test]
+fn scan_escape_stream_skips_apc_frame_content() {
+    let stream = b"\x1b_Gi=1;OK\x1b\\"; // kitty graphics reply shape
+    let mut events = Vec::new();
+    scan_escape_stream(stream, |evt| match evt {
+        ScanEvent::OutOfFrame { index, byte } => events.push((index, byte)),
+        ScanEvent::DanglingEsc { .. } => panic!("unexpected dangling ESC"),
+    });
+    assert!(
+        events.is_empty(),
+        "APC frame content should not emit events: {events:?}"
+    );
+}
+
+/// Pins: scan_escape_stream skips bytes inside a DCS frame terminated by
+/// ESC \\. Anchor: HYG-13.1-008.
+#[test]
+fn scan_escape_stream_skips_dcs_frame_content() {
+    let stream = b"\x1bP>|ori_term 0.1.0\x1b\\"; // XTVERSION-style reply shape
+    let mut events = Vec::new();
+    scan_escape_stream(stream, |evt| match evt {
+        ScanEvent::OutOfFrame { index, byte } => events.push((index, byte)),
+        ScanEvent::DanglingEsc { .. } => panic!("unexpected dangling ESC"),
+    });
+    assert!(
+        events.is_empty(),
+        "DCS frame content should not emit events: {events:?}"
+    );
+}
+
+/// Pins: scan_escape_stream emits OutOfFrame for every raw byte before the
+/// first ESC framing byte. Anchor: HYG-13.1-008.
+#[test]
+fn scan_escape_stream_emits_out_of_frame_for_raw_bytes() {
+    let stream = b"abc\x1b[0m";
+    let mut events = Vec::new();
+    scan_escape_stream(stream, |evt| match evt {
+        ScanEvent::OutOfFrame { index, byte } => events.push((index, byte)),
+        ScanEvent::DanglingEsc { .. } => panic!("unexpected dangling ESC"),
+    });
+    assert_eq!(events, vec![(0, b'a'), (1, b'b'), (2, b'c')]);
+}
+
+/// Pins: scan_escape_stream emits OutOfFrame for a stray `q` byte after a
+/// terminated CSI frame. Negative pin for find_stray_q_bytes. Anchor: HYG-13.1-008.
+#[test]
+fn scan_escape_stream_emits_out_of_frame_for_stray_q_after_csi() {
+    let stream = b"\x1b[0mq"; // CSI SGR reset, then stray q
+    let mut events = Vec::new();
+    scan_escape_stream(stream, |evt| match evt {
+        ScanEvent::OutOfFrame { index, byte } => events.push((index, byte)),
+        ScanEvent::DanglingEsc { .. } => panic!("unexpected dangling ESC"),
+    });
+    assert_eq!(events, vec![(4, b'q')]);
+}
+
+/// Pins: scan_escape_stream emits DanglingEsc for a trailing bare ESC and
+/// does NOT also emit an OutOfFrame for the ESC byte. Anchor: HYG-13.1-008.
+#[test]
+fn scan_escape_stream_emits_dangling_esc_at_end_of_stream() {
+    let stream = b"\x1b[0m\x1b";
+    let mut dangling = None;
+    let mut out_of_frame = Vec::new();
+    scan_escape_stream(stream, |evt| match evt {
+        ScanEvent::OutOfFrame { index, byte } => out_of_frame.push((index, byte)),
+        ScanEvent::DanglingEsc { index } => {
+            assert!(dangling.is_none(), "should emit at most one DanglingEsc");
+            dangling = Some(index);
+        }
+    });
+    assert_eq!(dangling, Some(4));
+    assert!(
+        out_of_frame.is_empty(),
+        "dangling ESC path should not also emit OutOfFrame: {out_of_frame:?}"
+    );
+}
+
+/// Pins: find_out_of_frame_bytes reports the dangling ESC as `(index, 0x1b)`
+/// — the `Vec<(usize, u8)>` shape must survive the HYG-13.1-008 refactor.
+#[test]
+fn find_out_of_frame_bytes_reports_dangling_esc_as_0x1b() {
+    let stream = b"\x1b[0m\x1b";
+    let errs = find_out_of_frame_bytes(stream);
+    assert_eq!(errs, vec![(4, 0x1b)]);
+}
+
+/// Pins: find_stray_q_bytes ignores a dangling ESC (not a q byte). Negative
+/// pin for the HYG-13.1-008 refactor — DanglingEsc must not leak into the
+/// stray-q output.
+#[test]
+fn find_stray_q_bytes_ignores_dangling_esc() {
+    let stream = b"\x1b[0m\x1b";
+    let stray = find_stray_q_bytes(stream);
+    assert!(stray.is_empty(), "dangling ESC is not a stray q: {stray:?}");
+}
+
+/// Pins: find_stray_q_bytes flags a bare `q` between frames but ignores a
+/// `q` inside a DCS frame. Regression pin for the HYG-13.1-008 refactor.
+#[test]
+fn find_stray_q_bytes_separates_in_frame_vs_out_of_frame_q() {
+    // DCS request `\x1bP+q...\x1b\\` carries an in-frame `q`; the trailing
+    // standalone `q` is the only stray byte.
+    let stream = b"\x1bP+qTN\x1b\\q";
+    let stray = find_stray_q_bytes(stream);
+    assert_eq!(stray, vec![stream.len() - 1]);
 }

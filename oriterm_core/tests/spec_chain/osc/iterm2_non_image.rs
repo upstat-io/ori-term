@@ -68,6 +68,7 @@ fn assert_no_clipboard_store(harness: &SpecHarness) {
 
 /// `OSC 1337 ; SetMark ST` records a navigation mark at the current
 /// cursor row, sharing the `prompt_markers` SSOT with OSC 133;A.
+/// Anchor: catalog row `ITERM2-1337-SETMARK`.
 #[test]
 fn osc1337_set_mark() {
     let mut harness = SpecHarness::new();
@@ -90,6 +91,10 @@ fn osc1337_set_mark() {
 
 // ── RemoteHost ──────────────────────────────────────────────────────
 
+/// Pins: `OSC 1337 ; RemoteHost=<host> ST` stores `<host>` as observable
+/// `Term::remote_host` state — the iTerm2 shell-integration hook that
+/// lets hosts track the current SSH destination.
+/// Anchor: catalog row `ITERM2-1337-REMOTEHOST`.
 #[test]
 fn osc1337_remote_host() {
     let mut harness = SpecHarness::new();
@@ -99,6 +104,10 @@ fn osc1337_remote_host() {
 
 // ── CurrentDir ──────────────────────────────────────────────────────
 
+/// Pins: `OSC 1337 ; CurrentDir=<path> ST` stores `<path>` as observable
+/// `Term::cwd` state — the iTerm2-flavoured CWD hook that shares its
+/// backing field with OSC 7 (see the SSOT direction-A / direction-B
+/// tests below). Anchor: catalog row `ITERM2-1337-CURRENTDIR`.
 #[test]
 fn osc1337_current_dir() {
     let mut harness = SpecHarness::new();
@@ -108,8 +117,9 @@ fn osc1337_current_dir() {
 
 // ── Copy ────────────────────────────────────────────────────────────
 
-/// `Copy=:<b64>` with empty selection stores the decoded UTF-8 in the
-/// default clipboard. Base64("Hello") = `SGVsbG8=`.
+/// Pins: `OSC 1337 ; Copy=:<b64> ST` with empty selection stores the
+/// decoded UTF-8 in the default clipboard. Base64("Hello") = `SGVsbG8=`.
+/// Anchor: catalog row `ITERM2-1337-COPY` (empty-selection default path).
 #[test]
 fn osc1337_copy() {
     let mut harness = SpecHarness::new();
@@ -128,6 +138,7 @@ fn osc1337_copy() {
 /// `wezterm-escape-parser/src/osc.rs:1351`:
 /// `ReportCellSize={height_pixels:.1};{width_pixels:.1}`.
 /// Harness defaults are 16×8 → "16.0;8.0".
+/// Anchor: catalog row `ITERM2-1337-REPORTCELLSIZE` (cross-reference WezTerm shape at wezterm-escape-parser/src/osc.rs:1351).
 #[test]
 fn osc1337_report_cell_size() {
     let mut harness = SpecHarness::new();
@@ -143,8 +154,9 @@ fn osc1337_report_cell_size() {
 
 // ── SetUserVar ──────────────────────────────────────────────────────
 
-/// `SetUserVar=MY_VAR=<b64>` decodes the value and records it.
-/// Base64("Hello") = `SGVsbG8=`.
+/// Pins: `OSC 1337 ; SetUserVar=<key>=<b64> ST` decodes the value and
+/// records it on `Term::user_vars`. Base64("Hello") = `SGVsbG8=`.
+/// Anchor: catalog row `ITERM2-1337-SETUSERVAR`.
 #[test]
 fn osc1337_set_user_var() {
     let mut harness = SpecHarness::new();
@@ -154,6 +166,10 @@ fn osc1337_set_user_var() {
 
 // ── ShellIntegrationVersion ─────────────────────────────────────────
 
+/// Pins: `OSC 1337 ; ShellIntegrationVersion=<n> ST` stores `<n>` as
+/// observable `Term::shell_integration_version` state — the iTerm2
+/// version handshake the shell sends on startup.
+/// Anchor: catalog row `ITERM2-1337-SHELLINTVERSION`.
 #[test]
 fn osc1337_shell_integration_version() {
     let mut harness = SpecHarness::new();
@@ -171,6 +187,11 @@ fn osc1337_shell_integration_version() {
 const MINIMAL_PNG_B64: &str =
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNgAAIAAAUAAeImBZsAAAAASUVORK5CYII=";
 
+/// Pins: the `File=` sub-op still routes to the `iterm2_file` handler —
+/// this is a Section 14 boundary pin. We only assert the dispatch reaches
+/// the handler, not that the image lands in the cache (Section 14 owns
+/// image-pipeline verification). Anchor: catalog row
+/// `ITERM2-1337` (File= dispatch boundary).
 #[test]
 fn osc1337_file_still_routes_to_iterm2_file() {
     let mut harness = SpecHarness::new();
@@ -181,6 +202,11 @@ fn osc1337_file_still_routes_to_iterm2_file() {
 
 // ── Unknown keys drop silently ──────────────────────────────────────
 
+/// Negative pin: an unrecognized `OSC 1337 ; NotARealKey=value ST`
+/// sub-op is silently dropped — baseline CWD / remote-host / prompt
+/// markers / user_vars state is untouched. Guards against the
+/// dispatcher accidentally mutating state for keys it does not
+/// recognize. Anchor: catalog row `ITERM2-1337` (unknown-key drop).
 #[test]
 fn osc1337_unknown_key_dropped() {
     let mut harness = SpecHarness::new();
@@ -201,6 +227,7 @@ fn osc1337_unknown_key_dropped() {
 /// that includes an unknown sub-key still routes to `iterm2_file`; the
 /// sub-dispatcher must not drop the entire payload because a newer
 /// iTerm2 attribute is present alongside the recognized ones.
+/// Anchor: catalog row `ITERM2-1337-FILE` (unknown-sub-key tolerance).
 #[test]
 fn osc1337_unknown_file_subop_safely_ignored() {
     let mut harness = SpecHarness::new();
@@ -212,8 +239,10 @@ fn osc1337_unknown_file_subop_safely_ignored() {
 
 // ── user_vars cap / RSS regression ──────────────────────────────────
 
-/// RSS REGRESSION PIN — 257 distinct `SetUserVar` keys must not blow
-/// through the default 256-entry cap; the oldest (KEY_0) is evicted.
+/// Pins: 257 distinct `SetUserVar` keys must not blow through the default
+/// 256-entry cap; the oldest (KEY_0) is evicted. RSS regression pin for
+/// the unbounded-growth vector. Anchor: catalog row `ITERM2-1337-SETUSERVAR`
+/// (cap-enforcement arm) / `oriterm_core/tests/rss_regression.rs` invariant.
 #[test]
 fn osc1337_user_vars_cap_evicts_oldest() {
     let mut harness = SpecHarness::new();
@@ -239,12 +268,13 @@ fn osc1337_user_vars_cap_evicts_oldest() {
     );
 }
 
-/// SEMANTIC PIN — re-inserting an existing key does NOT refresh its
-/// eviction position (non-LRU; matches `IndexMap::insert` semantics).
-/// After A/B/C fill the cap, re-inserting A keeps A at index 0 — so
-/// when D is inserted the FIFO evicts A (the oldest insertion), NOT B.
-/// A future implementer who changes `insert` to `shift_remove + insert`
-/// (refreshing position) would break this pin.
+/// Pins: re-inserting an existing key does NOT refresh its eviction
+/// position (non-LRU; matches `IndexMap::insert` semantics). After A/B/C
+/// fill the cap, re-inserting A keeps A at index 0 — so when D is inserted
+/// the FIFO evicts A (the oldest insertion), NOT B. A future implementer
+/// who changes `insert` to `shift_remove + insert` (refreshing position)
+/// would break this pin. Anchor: catalog row `ITERM2-1337-SETUSERVAR`
+/// (FIFO eviction semantics arm).
 #[test]
 fn osc1337_user_vars_reinsert_does_not_refresh_position() {
     let mut harness = SpecHarness::new();
@@ -270,6 +300,10 @@ fn osc1337_user_vars_reinsert_does_not_refresh_position() {
 
 // ── Negative pins (invalid base64) ──────────────────────────────────
 
+/// Negative pin: an `OSC 1337 ; Copy=:<garbage> ST` with invalid base64
+/// must NOT emit a `ClipboardStore` effect — the decoder rejects before
+/// reaching the clipboard handler. Anchor: catalog row
+/// `ITERM2-1337-COPY` (invalid-base64 drop).
 #[test]
 fn osc1337_copy_invalid_base64_dropped() {
     let mut harness = SpecHarness::new();
@@ -277,6 +311,11 @@ fn osc1337_copy_invalid_base64_dropped() {
     assert_no_clipboard_store(&harness);
 }
 
+/// Negative pin: an `OSC 1337 ; SetUserVar=KEY=<garbage> ST` with
+/// invalid base64 must NOT record the key in `user_vars` — the decoder
+/// rejects before reaching the set-user-var handler, keeping the map
+/// empty. Anchor: catalog row `ITERM2-1337-SETUSERVAR`
+/// (invalid-base64 drop).
 #[test]
 fn osc1337_set_user_var_invalid_base64_dropped() {
     let mut harness = SpecHarness::new();
@@ -293,8 +332,11 @@ fn osc1337_set_user_var_invalid_base64_dropped() {
 // was silently rejected at the parser — which would hide a real
 // dispatch regression (the negative pin passes for the wrong reason).
 
-/// `Copy=` with no `:` separator drops — the handler dispatches but
-/// short-circuits before base64 decode.
+/// Pins: `OSC 1337 ; Copy=<payload-without-colon> ST` drops — the handler
+/// dispatches but short-circuits before base64 decode because the
+/// selection-char separator is missing. Negative pin paired with
+/// `osc1337_copy`. Anchor: catalog row `ITERM2-1337-COPY` (malformed-payload
+/// drop path).
 #[test]
 fn osc1337_copy_missing_colon_dropped() {
     let mut harness = SpecHarness::new();
@@ -305,6 +347,7 @@ fn osc1337_copy_missing_colon_dropped() {
 
 /// Each recognized selection prefix (c/p/s) routes to the matching
 /// `ClipboardSelection` variant. Mirrors the OSC 52 store matrix.
+/// Anchor: catalog row `ITERM2-1337-COPY` (selection-prefix matrix).
 #[test]
 fn osc1337_copy_explicit_selection_chars() {
     for (ch, expected) in [
@@ -325,8 +368,11 @@ fn osc1337_copy_explicit_selection_chars() {
     }
 }
 
-/// Unknown selection characters dispatch but drop — the handler
-/// reaches the selection match but falls through to `_ => return`.
+/// Pins: unknown selection characters dispatch but drop — the handler
+/// reaches the selection match but falls through to `_ => return` rather
+/// than routing to a default variant. Negative pin paired with
+/// `osc1337_copy_explicit_selection_chars`. Anchor: catalog row
+/// `ITERM2-1337-COPY` (unknown-selection-char drop path).
 #[test]
 fn osc1337_copy_unknown_selection_char_dropped() {
     let mut harness = SpecHarness::new();
@@ -340,6 +386,7 @@ fn osc1337_copy_unknown_selection_char_dropped() {
 /// parameter, invalid UTF-8. Pre-populates state so an accidental
 /// mutation via the invalid path would be observable as a change
 /// from the baseline, not as first-set-to-bad-value.
+/// Anchor: catalog row `ITERM2-1337-COPY` + `ITERM2-1337-SETUSERVAR` (invalid-UTF-8 drop path).
 #[test]
 fn osc1337_invalid_utf8_dropped() {
     let mut harness = SpecHarness::new();
@@ -395,6 +442,7 @@ fn osc1337_invalid_utf8_dropped() {
 
 /// DIRECTION A: OSC 7 sets cwd first (via `set_cwd`, as the interceptor
 /// would); OSC 1337 CurrentDir overwrites it via the shared field.
+/// Anchor: catalog rows `ITERM2-1337-CURRENTDIR` + `OSC-7` (SSOT shared-field contract).
 #[test]
 fn osc1337_ssot_cwd_direction_a() {
     let mut harness = SpecHarness::new();
@@ -413,6 +461,7 @@ fn osc1337_ssot_cwd_direction_a() {
 /// path); OSC 7's `set_cwd` overwrites it.  Pins that BOTH directions
 /// flow through the SAME field — a future regression where either OSC
 /// writes a second field is caught here.
+/// Anchor: catalog rows `ITERM2-1337-CURRENTDIR` + `OSC-7` (SSOT shared-field contract).
 #[test]
 fn osc1337_ssot_cwd_direction_b() {
     let mut harness = SpecHarness::new();
