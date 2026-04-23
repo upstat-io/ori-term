@@ -2825,3 +2825,63 @@ fn multi_chunk_parse_drains_between_chunks() {
     drop(rig.child_exit_tx);
     rig.join.join().expect("IO thread joined cleanly");
 }
+
+/// Regression: a disconnected `child_exit_rx` must not turn the IO
+/// thread's `select!` into a tight CPU spin. `crossbeam_channel::recv`
+/// on a disconnected channel returns `Err` immediately; without the
+/// `never()` swap-out in the disconnected arm, `select!` would pick
+/// that arm every iteration and saturate a core until shutdown
+/// arrived.
+///
+/// We assert that after dropping `child_exit_tx`, a subsequent
+/// `Shutdown` command still joins quickly — the spin must not starve
+/// `cmd_rx` delivery or ballon wall-clock time via a multi-MHz loop.
+#[test]
+fn child_exit_disconnect_does_not_spin_loop() {
+    let rig = spawn_queueing_eof_rig();
+    drop(rig.child_exit_tx);
+    // Give the IO thread a moment to observe the disconnect through its
+    // `select!`. A spinning thread would burn CPU during this window; a
+    // correctly-handled one parks until the next real event.
+    std::thread::sleep(Duration::from_millis(100));
+    let start = std::time::Instant::now();
+    rig._keep_alive_cmd_tx
+        .send(PaneIoCommand::Shutdown)
+        .expect("Shutdown delivery");
+    rig.join.join().expect("IO thread joined cleanly");
+    let elapsed = start.elapsed();
+    assert!(
+        elapsed < Duration::from_secs(2),
+        "Shutdown after child_exit_rx disconnect took {elapsed:?} — \
+         IO thread likely spinning on the disconnected select! arm"
+    );
+    drop(rig.byte_tx);
+    drop(rig.mux_rx);
+    drop(rig._keep_alive_wake_tx);
+}
+
+/// Regression companion: `response_wake_rx` carries the same
+/// disconnect-then-spin hazard as `child_exit_rx`. The handle's
+/// `response_wake_tx` only drops at handle teardown, but a buggy IO
+/// thread that picked up the disconnected arm every iteration would
+/// saturate a core during the window between the drop and the join.
+#[test]
+fn response_wake_disconnect_does_not_spin_loop() {
+    let rig = spawn_queueing_eof_rig();
+    drop(rig._keep_alive_wake_tx);
+    std::thread::sleep(Duration::from_millis(100));
+    let start = std::time::Instant::now();
+    rig._keep_alive_cmd_tx
+        .send(PaneIoCommand::Shutdown)
+        .expect("Shutdown delivery");
+    rig.join.join().expect("IO thread joined cleanly");
+    let elapsed = start.elapsed();
+    assert!(
+        elapsed < Duration::from_secs(2),
+        "Shutdown after response_wake_rx disconnect took {elapsed:?} — \
+         IO thread likely spinning on the disconnected select! arm"
+    );
+    drop(rig.byte_tx);
+    drop(rig.mux_rx);
+    drop(rig.child_exit_tx);
+}
