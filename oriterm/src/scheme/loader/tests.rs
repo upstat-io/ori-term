@@ -173,9 +173,8 @@ fn unknown_fields_ignored() {
 /// `discover_themes` finds valid `.toml` files in a directory.
 #[test]
 fn discover_themes_finds_valid_files() {
-    let dir = std::env::temp_dir().join("oriterm_test_discover");
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).expect("create dir");
+    let guard = oriterm_test_support::TempDirGuard::new("scheme_discover");
+    let dir = guard.path();
 
     // Write two valid themes.
     std::fs::write(dir.join("alpha.toml"), VALID_TOML).expect("write alpha");
@@ -189,13 +188,11 @@ fn discover_themes_finds_valid_files() {
     std::fs::write(dir.join("bad.toml"), "not valid toml {{{{").expect("write bad");
     std::fs::write(dir.join("readme.txt"), "not a theme").expect("write txt");
 
-    let themes = super::discover_themes(&dir);
+    let themes = super::discover_themes(dir);
     assert_eq!(themes.len(), 2, "should find 2 valid themes");
 
     let names: Vec<&str> = themes.iter().map(|t| t.name.as_str()).collect();
     assert!(names.contains(&"Test Theme") || names.contains(&"Beta Theme"));
-
-    let _ = std::fs::remove_dir_all(&dir);
 }
 
 /// `discover_themes` returns empty vec for nonexistent directory.
@@ -208,14 +205,9 @@ fn discover_themes_nonexistent_dir() {
 /// `discover_themes` returns empty vec for a directory with no `.toml` files.
 #[test]
 fn discover_themes_empty_dir() {
-    let dir = std::env::temp_dir().join("oriterm_test_discover_empty");
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).expect("create dir");
-
-    let themes = super::discover_themes(&dir);
+    let guard = oriterm_test_support::TempDirGuard::new("scheme_discover_empty");
+    let themes = super::discover_themes(guard.path());
     assert!(themes.is_empty(), "empty dir should yield no themes");
-
-    let _ = std::fs::remove_dir_all(&dir);
 }
 
 // --- hex format edge cases ---

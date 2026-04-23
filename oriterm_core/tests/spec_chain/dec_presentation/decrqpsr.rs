@@ -7,30 +7,27 @@
 //! payload is a stub (line/col plus filler slots). Mode 2 serializes
 //! the real tab-stop vector.
 
-use oriterm_core::effect::{Effect, PtyEffect, PtyWriteKind};
-use oriterm_test_support::spec_chain::SpecHarness;
+use oriterm_core::effect::PtyWriteKind;
+use oriterm_test_support::spec_chain::{SpecHarness, last_pty_write, pty_writes};
 
-fn last_pty_write(h: &SpecHarness) -> (Vec<u8>, PtyWriteKind) {
-    h.outcome()
-        .effects_emitted
-        .iter()
-        .rev()
-        .find_map(|eff| match eff {
-            Effect::Pty(PtyEffect::Write { bytes, kind }) => Some((bytes.clone(), *kind)),
-            _ => None,
-        })
-        .expect("expected at least one PtyEffect::Write in the harness outcome")
-}
-
+/// Pins: DECRQPSR mode 2 serializes the default every-8-column tab-stop
+/// vector `1/9/17/25/33/41/49/57/65/73` for an 80-column terminal, framed
+/// by the `DCS 2 $ u ... ST` status-string envelope.
+/// Anchor: catalog row `DECPRES-DECRQPSR` (mode 2, tab stops).
 #[test]
 fn decrqpsr_mode2_serializes_default_tab_stops() {
     let mut h = SpecHarness::with_size(24, 80);
     h.feed(b"\x1b[2$w");
-    let (bytes, kind) = last_pty_write(&h);
+    let (bytes, kind) =
+        last_pty_write(&h).expect("expected at least one PtyEffect::Write in the harness outcome");
     assert_eq!(kind, PtyWriteKind::StatusString);
     assert_eq!(bytes, b"\x1bP2$u1/9/17/25/33/41/49/57/65/73\x1b\\");
 }
 
+/// Pins: after `TBC 3` clears all stops and `HTS` sets a single stop at
+/// column 4, mode-2 DECRQPSR replies `DCS 2 $ u 4 ST` — proves the query
+/// serializes the live tab-stop vector rather than a cached default.
+/// Anchor: catalog row `DECPRES-DECRQPSR` (mode 2, live mutation).
 #[test]
 fn decrqpsr_mode2_reflects_runtime_tab_stop_mutations() {
     let mut h = SpecHarness::with_size(5, 10);
@@ -38,15 +35,21 @@ fn decrqpsr_mode2_reflects_runtime_tab_stop_mutations() {
     h.feed(b"\x1b[3g");
     h.feed(b"\x1b[1;4H\x1bH"); // cursor to col 4, HTS
     h.feed(b"\x1b[2$w");
-    let (bytes, _) = last_pty_write(&h);
+    let (bytes, _) =
+        last_pty_write(&h).expect("expected at least one PtyEffect::Write in the harness outcome");
     assert_eq!(bytes, b"\x1bP2$u4\x1b\\");
 }
 
+/// Pins: mode-1 (cursor info, verified-with-deviation stub) still emits
+/// a well-framed `DCS 1 $ u ... ST` envelope — framing is the contract
+/// the host relies on, even when the payload slots are filler.
+/// Anchor: catalog row `DECPRES-DECRQPSR` (mode 1, cursor info).
 #[test]
 fn decrqpsr_mode1_emits_dcs_header_and_terminator() {
     let mut h = SpecHarness::with_size(24, 80);
     h.feed(b"\x1b[1$w");
-    let (bytes, kind) = last_pty_write(&h);
+    let (bytes, kind) =
+        last_pty_write(&h).expect("expected at least one PtyEffect::Write in the harness outcome");
     assert_eq!(kind, PtyWriteKind::StatusString);
     assert!(
         bytes.starts_with(b"\x1bP1$u"),
@@ -56,18 +59,13 @@ fn decrqpsr_mode1_emits_dcs_header_and_terminator() {
     assert!(bytes.ends_with(b"\x1b\\"));
 }
 
+/// Negative pin: `CSI 9 $ w` (unknown mode) emits zero PTY writes — the
+/// dispatcher must not fabricate a reply for unrecognized Ps values.
+/// Anchor: catalog row `DECPRES-DECRQPSR` (unknown-mode drop).
 #[test]
 fn decrqpsr_unknown_mode_does_not_reply() {
     let mut h = SpecHarness::with_size(24, 80);
     h.feed(b"\x1b[9$w"); // mode 9 unknown
-    let writes: Vec<_> = h
-        .outcome()
-        .effects_emitted
-        .iter()
-        .filter_map(|e| match e {
-            Effect::Pty(PtyEffect::Write { bytes, .. }) => Some(bytes.clone()),
-            _ => None,
-        })
-        .collect();
+    let writes: Vec<_> = pty_writes(&h).map(|(b, _)| b.to_vec()).collect();
     assert!(writes.is_empty(), "unknown DECRQPSR mode must not reply");
 }

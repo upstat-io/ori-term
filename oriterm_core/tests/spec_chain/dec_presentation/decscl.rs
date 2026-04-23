@@ -9,6 +9,10 @@
 use oriterm_core::term::TermMode;
 use oriterm_test_support::spec_chain::SpecHarness;
 
+/// Pins: DECSCL stores the conformance level (Pl) and C1 7-bit/8-bit
+/// mode (Pc) as observable `Term` state. Matrix covers VT200/7-bit and
+/// VT300/8-bit so neither field aliases to a hardcoded constant.
+/// Anchor: catalog row `DECPRES-DECSCL` (level + C1 mode).
 #[test]
 fn decscl_stores_level_and_c1_mode() {
     let mut h = SpecHarness::with_size(24, 80);
@@ -20,6 +24,10 @@ fn decscl_stores_level_and_c1_mode() {
     assert!(!h.term().c1_7bit());
 }
 
+/// Pins: DECSCL triggers a DECSTR soft reset — previously-set INSERT
+/// mode is cleared after DECSCL. Guards against the
+/// store-without-soft-reset regression. Anchor: catalog row
+/// `DECPRES-DECSCL` (soft-reset side effect).
 #[test]
 fn decscl_triggers_soft_reset_clears_insert_mode() {
     let mut h = SpecHarness::with_size(24, 80);
@@ -32,6 +40,10 @@ fn decscl_triggers_soft_reset_clears_insert_mode() {
     );
 }
 
+/// Pins: DECSCL's soft reset also resets the DECSTBM scroll region to
+/// full-screen — matrix companion to the INSERT-mode pin covering a
+/// second piece of state DECSTR must clear. Anchor: catalog row
+/// `DECPRES-DECSCL` (DECSTBM reset via soft-reset).
 #[test]
 fn decscl_resets_scroll_region() {
     let mut h = SpecHarness::with_size(24, 80);

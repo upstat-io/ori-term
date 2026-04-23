@@ -11,6 +11,8 @@ use oriterm_core::cell::CellFlags;
 use oriterm_core::index::{Column, Line};
 use oriterm_test_support::spec_chain::SpecHarness;
 
+/// Pins: DECSCA Ps=1 enables `Term::char_protection`. Anchor: catalog
+/// row `DECPRES-DECSCA` (Ps=1 protect-on).
 #[test]
 fn decsca_ps1_enables_protection() {
     let mut h = SpecHarness::with_size(5, 10);
@@ -18,6 +20,10 @@ fn decsca_ps1_enables_protection() {
     assert!(h.term().char_protection());
 }
 
+/// Pins: DECSCA Ps=0 and Ps=2 both disable protection after a prior
+/// Ps=1 enabled it — matrix covers the two "off" codes that VT525
+/// recognizes, ensuring neither aliases to "on". Anchor: catalog row
+/// `DECPRES-DECSCA` (Ps=0 and Ps=2 protect-off).
 #[test]
 fn decsca_ps0_and_ps2_disable_protection() {
     let mut h = SpecHarness::with_size(5, 10);
@@ -29,6 +35,11 @@ fn decsca_ps0_and_ps2_disable_protection() {
     assert!(!h.term().char_protection());
 }
 
+/// Pins: DECSCA state propagates onto the cursor template — cells written
+/// while `char_protection` is on carry `CellFlags::PROTECTED`; cells
+/// written after Ps=0 do not. This is the downstream hook that DECERA /
+/// DECSERA rect ops consume in §09A.6. Anchor: catalog row
+/// `DECPRES-DECSCA` (cursor-template flag propagation).
 #[test]
 fn decsca_protection_propagates_to_subsequent_writes() {
     let mut h = SpecHarness::with_size(5, 10);

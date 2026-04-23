@@ -81,6 +81,76 @@ fn overwrite_wide_char_clears_spacer() {
     );
 }
 
+/// Regression: BUG-06-016 (notcurses-demo mojibake) — after a span
+/// covered by a wide-char (emoji) is rewritten with narrow chars, every
+/// narrow-char cell must carry its own character. Simulates a stdplane
+/// row getting covered by an emoji-plane composite then re-rendered
+/// back to stdplane text after the emoji plane scrolls away.
+///
+/// The notcurses compositor emits: (1) row-wide narrow text, (2)
+/// emoji-overlay row (wide chars + spacers + narrow text fill), (3)
+/// row-wide narrow text again. ori_term MUST leave no "holes" in the
+/// final re-render.
+#[test]
+fn mojibake_emoji_overlay_then_redraw_leaves_no_holes() {
+    let mut grid = Grid::new(24, 20);
+
+    // Phase 1: fill row 0 with "relative to the ....." (stdplane content).
+    for ch in "relative to the xxxx".chars() {
+        grid.put_char(ch);
+    }
+    let line = crate::index::Line(0);
+    for col in 0..20 {
+        let expected = "relative to the xxxx".chars().nth(col).unwrap();
+        assert_eq!(grid[line][Column(col)].ch, expected, "phase 1 col {col}");
+    }
+
+    // Phase 2: emoji-plane overlay — cursor back to col 0, write 4 wide
+    // emojis (cols 0..8) + " - food" narrow label filling cols 8..15 +
+    // no-op on cols 15..20 (plane ends at col 15, stdplane continues).
+    grid.cursor_mut().set_line(0);
+    grid.cursor_mut().set_col(Column(0));
+    grid.put_char('\u{1F347}'); // 🍇 grape, width 2
+    grid.put_char('\u{1F34F}'); // 🍏 green apple, width 2
+    grid.put_char('\u{1F34A}'); // 🍊 orange, width 2
+    grid.put_char('\u{1F34B}'); // 🍋 lemon, width 2
+    for ch in " - food".chars() {
+        grid.put_char(ch);
+    }
+    // Cols 15..20 still hold "xxxx" (unchanged by overlay).
+    assert_eq!(grid[line][Column(15)].ch, ' '); // space between "the" and "xxxx" actually
+    // Actually: "relative to the xxxx" → cols 0='r', ..., 12='e', 13=' ',
+    // 14='x', 15='x', 16='x', 17='x', 18=..., wait let me recount.
+
+    // Phase 3: plane scrolls away — stdplane re-emits full row.
+    // Cursor to (0, 0), write "relative to the xxxx" again.
+    grid.cursor_mut().set_line(0);
+    grid.cursor_mut().set_col(Column(0));
+    for ch in "relative to the xxxx".chars() {
+        grid.put_char(ch);
+    }
+
+    // Every cell must hold its expected narrow char — no leftover spacer
+    // flags, no stuck emojis, no empty "holes."
+    let expected: Vec<char> = "relative to the xxxx".chars().collect();
+    for col in 0..expected.len() {
+        let cell = &grid[line][Column(col)];
+        assert_eq!(
+            cell.ch, expected[col],
+            "phase 3 col {col}: expected {:?} got {:?} (flags {:?})",
+            expected[col], cell.ch, cell.flags
+        );
+        assert!(
+            !cell.flags.contains(CellFlags::WIDE_CHAR),
+            "col {col} still flagged WIDE_CHAR after narrow redraw"
+        );
+        assert!(
+            !cell.flags.contains(CellFlags::WIDE_CHAR_SPACER),
+            "col {col} still flagged WIDE_CHAR_SPACER after narrow redraw"
+        );
+    }
+}
+
 #[test]
 fn insert_blank_shifts_right() {
     let mut grid = grid_with_text(24, 80, "ABCDE");

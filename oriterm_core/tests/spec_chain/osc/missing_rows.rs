@@ -24,36 +24,15 @@
 //! OSC-19-SET, OSC-19-QUERY, OSC-113, OSC-114, OSC-117, OSC-119, OSC-L,
 //! OSC-l.
 
-use oriterm_core::effect::{Effect, PtyEffect};
-use oriterm_test_support::spec_chain::SpecHarness;
+use oriterm_test_support::spec_chain::{
+    SpecHarness, assert_no_pty_writes, expect_single_pty_write,
+};
 use vte::ansi::Rgb;
-
-/// Locate the single `PtyEffect::Write` on the transcript and return its
-/// bytes. Panics if there is not exactly one.
-fn expect_pty_write(harness: &SpecHarness) -> Vec<u8> {
-    let effects = &harness.outcome().effects_emitted;
-    let mut found = None;
-    for eff in effects {
-        if let Effect::Pty(PtyEffect::Write { bytes, .. }) = eff {
-            assert!(found.is_none(), "more than one PtyEffect::Write emitted");
-            found = Some(bytes.clone());
-        }
-    }
-    found.unwrap_or_else(|| panic!("expected one PtyEffect::Write; got {effects:?}"))
-}
-
-/// Assert there are NO PTY write effects on the transcript.
-fn assert_no_pty_write(harness: &SpecHarness) {
-    for eff in &harness.outcome().effects_emitted {
-        if let Effect::Pty(PtyEffect::Write { .. }) = eff {
-            panic!("unexpected PtyEffect::Write on transcript: {eff:?}");
-        }
-    }
-}
 
 // ── OSC 3 — set X11 window property ─────────────────────────────────
 
 /// `OSC 3 ; FOO=bar ST` stores `FOO → bar` in the x11 properties map.
+/// Anchor: catalog row `OSC-3`.
 #[test]
 fn osc3_set_with_value() {
     let mut harness = SpecHarness::new();
@@ -65,6 +44,7 @@ fn osc3_set_with_value() {
 
 /// `OSC 3 ; FOO ST` (no `=`) deletes the `FOO` property. After a prior
 /// set + delete, the property is absent.
+/// Anchor: catalog row `OSC-3` (delete path).
 #[test]
 fn osc3_delete_without_value() {
     let mut harness = SpecHarness::new();
@@ -83,6 +63,7 @@ fn osc3_delete_without_value() {
 /// the sequence MUST NOT panic on any supported platform — the tests
 /// below cover macOS / Linux / Windows symmetrically because no platform
 /// branches touch the dispatch path.
+/// Anchor: catalog row `OSC-3` (negative pin).
 #[test]
 fn osc3_non_x11_platform_no_panic() {
     let mut harness = SpecHarness::new();
@@ -95,6 +76,7 @@ fn osc3_non_x11_platform_no_panic() {
 // ── OSC 5 — special color set / query ───────────────────────────────
 
 /// `OSC 5 ; 0 ; rgb:ab/cd/ef ST` sets special-color slot 0 (bold).
+/// Anchor: catalog row `OSC-5-SET`.
 #[test]
 fn osc5_sets_special_color_slot_0() {
     let mut harness = SpecHarness::new();
@@ -111,13 +93,14 @@ fn osc5_sets_special_color_slot_0() {
 }
 
 /// `OSC 5 ; 0 ; ? ST` replies with the current slot-0 value over PTY.
+/// Anchor: catalog row `OSC-5-QUERY`.
 #[test]
 fn osc5_query_slot_0_replies_via_pty() {
     let mut harness = SpecHarness::new();
     harness.feed(b"\x1b]5;0;rgb:ab/cd/ef\x1b\\");
     harness.feed(b"\x1b]5;0;?\x1b\\");
 
-    let reply = expect_pty_write(&harness);
+    let reply = expect_single_pty_write(&harness);
     assert_eq!(
         reply.as_slice(),
         b"\x1b]5;0;rgb:abab/cdcd/efef\x1b\\",
@@ -128,6 +111,7 @@ fn osc5_query_slot_0_replies_via_pty() {
 /// Negative pin: `OSC 5 ; NOT_A_COLOR ST` is malformed — only two params
 /// where the dispatch arm requires three (`5`, `Ps`, `spec`). The arm
 /// routes through `unhandled` without mutating any special-color slot.
+/// Anchor: catalog row `OSC-5-SET` (negative pin).
 #[test]
 fn osc5_invalid_color_dropped() {
     let mut harness = SpecHarness::new();
@@ -140,13 +124,14 @@ fn osc5_invalid_color_dropped() {
             "slot {idx} must remain empty after malformed OSC 5"
         );
     }
-    assert_no_pty_write(&harness);
+    assert_no_pty_writes(&harness);
 }
 
 // ── OSC 6 — iTerm2 tab title color ──────────────────────────────────
 
 /// `OSC 6 ; rgb:aa/bb/cc ST` sets the tab title color (iTerm2
 /// interpretation).
+/// Anchor: catalog row `OSC-6`.
 #[test]
 fn osc6_sets_tab_title_color() {
     let mut harness = SpecHarness::new();
@@ -166,6 +151,7 @@ fn osc6_sets_tab_title_color() {
 /// deliberate NON-implementation. ori_term follows iTerm2's OSC 6 (tab
 /// color) — the bare `0` does not parse as a color spec so the arm
 /// routes through `unhandled` without mutating state.
+/// Anchor: catalog row `OSC-6` (negative pin).
 #[test]
 fn osc6_xterm_disable_form_is_treated_as_color_parse_failure() {
     let mut harness = SpecHarness::new();
@@ -190,6 +176,7 @@ fn osc6_xterm_disable_form_is_treated_as_color_parse_failure() {
 // ── OSC 13 / 113 — mouse foreground color ───────────────────────────
 
 /// `OSC 13 ; rgb:11/22/33 ST` sets the mouse foreground color.
+/// Anchor: catalog row `OSC-13-SET`.
 #[test]
 fn osc13_sets_mouse_fg_color() {
     let mut harness = SpecHarness::new();
@@ -206,17 +193,19 @@ fn osc13_sets_mouse_fg_color() {
 }
 
 /// `OSC 13 ; ? ST` replies with the current mouse foreground color.
+/// Anchor: catalog row `OSC-13-QUERY`.
 #[test]
 fn osc13_query_replies_via_pty() {
     let mut harness = SpecHarness::new();
     harness.feed(b"\x1b]13;rgb:11/22/33\x1b\\");
     harness.feed(b"\x1b]13;?\x1b\\");
 
-    let reply = expect_pty_write(&harness);
+    let reply = expect_single_pty_write(&harness);
     assert_eq!(reply.as_slice(), b"\x1b]13;rgb:1111/2222/3333\x1b\\");
 }
 
 /// `OSC 113 ST` resets the mouse foreground color back to `None`.
+/// Anchor: catalog row `OSC-113` (reset path).
 #[test]
 fn osc113_resets_mouse_fg_color() {
     let mut harness = SpecHarness::new();
@@ -229,6 +218,7 @@ fn osc113_resets_mouse_fg_color() {
 }
 
 /// Negative pin: `OSC 13 ; GARBAGE ST` leaves the mouse fg color unchanged.
+/// Anchor: catalog row `OSC-13-SET` (negative pin).
 #[test]
 fn osc13_invalid_rgb_dropped() {
     let mut harness = SpecHarness::new();
@@ -242,6 +232,8 @@ fn osc13_invalid_rgb_dropped() {
 
 // ── OSC 14 / 114 — mouse background color ───────────────────────────
 
+/// Pins: `OSC 14 ; rgb:44/55/66 ST` sets the mouse background color on
+/// `Term`. Anchor: catalog row `OSC-14-SET`.
 #[test]
 fn osc14_sets_mouse_bg_color() {
     let mut harness = SpecHarness::new();
@@ -257,16 +249,22 @@ fn osc14_sets_mouse_bg_color() {
     );
 }
 
+/// Pins: `OSC 14 ; ? ST` emits a PTY reply echoing the current mouse
+/// background color in xterm 16-bit `rgb:RRRR/GGGG/BBBB` form. Anchor:
+/// catalog row `OSC-14-QUERY`.
 #[test]
 fn osc14_query_replies_via_pty() {
     let mut harness = SpecHarness::new();
     harness.feed(b"\x1b]14;rgb:44/55/66\x1b\\");
     harness.feed(b"\x1b]14;?\x1b\\");
 
-    let reply = expect_pty_write(&harness);
+    let reply = expect_single_pty_write(&harness);
     assert_eq!(reply.as_slice(), b"\x1b]14;rgb:4444/5555/6666\x1b\\");
 }
 
+/// Pins: `OSC 114 ST` clears the mouse background color back to `None`
+/// — the companion reset-only variant to OSC 14. Anchor: catalog row
+/// `OSC-114`.
 #[test]
 fn osc114_resets_mouse_bg_color() {
     let mut harness = SpecHarness::new();
@@ -278,6 +276,10 @@ fn osc114_resets_mouse_bg_color() {
     assert_eq!(harness.term().mouse_bg_color(), None);
 }
 
+/// Negative pin: `OSC 14 ; GARBAGE ST` (unparseable color spec) leaves
+/// the previously-set mouse background color unchanged — the rgb parser
+/// rejects before reaching the setter. Anchor: catalog row `OSC-14-SET`
+/// (invalid-rgb drop).
 #[test]
 fn osc14_invalid_rgb_dropped() {
     let mut harness = SpecHarness::new();
@@ -291,6 +293,8 @@ fn osc14_invalid_rgb_dropped() {
 
 // ── OSC 17 / 117 — highlight background color ───────────────────────
 
+/// Pins: `OSC 17 ; rgb:77/88/99 ST` sets the selection-highlight
+/// background color on `Term`. Anchor: catalog row `OSC-17-SET`.
 #[test]
 fn osc17_sets_highlight_bg_color() {
     let mut harness = SpecHarness::new();
@@ -306,16 +310,22 @@ fn osc17_sets_highlight_bg_color() {
     );
 }
 
+/// Pins: `OSC 17 ; ? ST` emits a PTY reply echoing the current selection
+/// highlight background color in xterm 16-bit `rgb:RRRR/GGGG/BBBB` form.
+/// Anchor: catalog row `OSC-17-QUERY`.
 #[test]
 fn osc17_query_replies_via_pty() {
     let mut harness = SpecHarness::new();
     harness.feed(b"\x1b]17;rgb:77/88/99\x1b\\");
     harness.feed(b"\x1b]17;?\x1b\\");
 
-    let reply = expect_pty_write(&harness);
+    let reply = expect_single_pty_write(&harness);
     assert_eq!(reply.as_slice(), b"\x1b]17;rgb:7777/8888/9999\x1b\\");
 }
 
+/// Pins: `OSC 117 ST` clears the selection-highlight background color
+/// back to `None` — the companion reset-only variant to OSC 17. Anchor:
+/// catalog row `OSC-117`.
 #[test]
 fn osc117_resets_highlight_bg_color() {
     let mut harness = SpecHarness::new();
@@ -327,6 +337,10 @@ fn osc117_resets_highlight_bg_color() {
     assert_eq!(harness.term().highlight_bg_color(), None);
 }
 
+/// Negative pin: `OSC 17 ; GARBAGE ST` leaves the previously-set
+/// highlight background color unchanged — the rgb parser rejects before
+/// reaching the setter. Anchor: catalog row `OSC-17-SET`
+/// (invalid-rgb drop).
 #[test]
 fn osc17_invalid_rgb_dropped() {
     let mut harness = SpecHarness::new();
@@ -340,6 +354,8 @@ fn osc17_invalid_rgb_dropped() {
 
 // ── OSC 19 / 119 — highlight foreground color ───────────────────────
 
+/// Pins: `OSC 19 ; rgb:aa/bb/cc ST` sets the selection-highlight
+/// foreground color on `Term`. Anchor: catalog row `OSC-19-SET`.
 #[test]
 fn osc19_sets_highlight_fg_color() {
     let mut harness = SpecHarness::new();
@@ -355,16 +371,22 @@ fn osc19_sets_highlight_fg_color() {
     );
 }
 
+/// Pins: `OSC 19 ; ? ST` emits a PTY reply echoing the current selection
+/// highlight foreground color in xterm 16-bit `rgb:RRRR/GGGG/BBBB` form.
+/// Anchor: catalog row `OSC-19-QUERY`.
 #[test]
 fn osc19_query_replies_via_pty() {
     let mut harness = SpecHarness::new();
     harness.feed(b"\x1b]19;rgb:aa/bb/cc\x1b\\");
     harness.feed(b"\x1b]19;?\x1b\\");
 
-    let reply = expect_pty_write(&harness);
+    let reply = expect_single_pty_write(&harness);
     assert_eq!(reply.as_slice(), b"\x1b]19;rgb:aaaa/bbbb/cccc\x1b\\");
 }
 
+/// Pins: `OSC 119 ST` clears the selection-highlight foreground color
+/// back to `None` — the companion reset-only variant to OSC 19. Anchor:
+/// catalog row `OSC-119`.
 #[test]
 fn osc119_resets_highlight_fg_color() {
     let mut harness = SpecHarness::new();
@@ -376,6 +398,10 @@ fn osc119_resets_highlight_fg_color() {
     assert_eq!(harness.term().highlight_fg_color(), None);
 }
 
+/// Negative pin: `OSC 19 ; GARBAGE ST` leaves the previously-set
+/// highlight foreground color unchanged — the rgb parser rejects before
+/// reaching the setter. Anchor: catalog row `OSC-19-SET`
+/// (invalid-rgb drop).
 #[test]
 fn osc19_invalid_rgb_dropped() {
     let mut harness = SpecHarness::new();
@@ -390,6 +416,7 @@ fn osc19_invalid_rgb_dropped() {
 // ── OSC L / OSC l — Sun console aliases ─────────────────────────────
 
 /// `OSC L ; myicon ST` sets ONLY the icon name (alias for OSC 1).
+/// Anchor: catalog row `OSC-L`.
 #[test]
 fn osc_l_sets_icon_name() {
     let mut harness = SpecHarness::new();
@@ -404,6 +431,7 @@ fn osc_l_sets_icon_name() {
 }
 
 /// `OSC l ; mytitle ST` sets ONLY the window title (alias for OSC 2).
+/// Anchor: catalog row `OSC-l`.
 #[test]
 fn osc_l_lower_sets_title() {
     let mut harness = SpecHarness::new();
@@ -420,6 +448,7 @@ fn osc_l_lower_sets_title() {
 /// Edge: `OSC l ; ST` (empty payload) stores the empty string without
 /// panicking — mirrors `osc0_empty_sets_empty_string` behavior for the
 /// alias.
+/// Anchor: catalog row `OSC-l` (empty-payload edge).
 #[test]
 fn osc_l_empty_sets_empty_title() {
     let mut harness = SpecHarness::new();
@@ -438,6 +467,7 @@ fn osc_l_empty_sets_empty_title() {
 /// every variant has a dedicated test function in this file (cheap
 /// structural guard; the real catalog-row completeness check lives in
 /// the `spec-coverage-report` binary).
+/// Anchor: catalog rows `OSC-3`, `OSC-5-SET`, `OSC-5-QUERY`, `OSC-6`, `OSC-13-SET`, `OSC-13-QUERY`, `OSC-14-SET`, `OSC-14-QUERY`, `OSC-17-SET`, `OSC-17-QUERY`, `OSC-19-SET`, `OSC-19-QUERY`, `OSC-113`, `OSC-114`, `OSC-117`, `OSC-119`, `OSC-L`, `OSC-l` (matrix completeness pin).
 #[test]
 fn osc_missing_rows_matrix_count() {
     // 7 "family" tests (set + query + reset for 13/14/17/19, plus set/query/reset

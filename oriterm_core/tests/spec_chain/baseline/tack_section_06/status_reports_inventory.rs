@@ -28,10 +28,10 @@
 //! duplicating the surface-level round-trip here would be
 //! `LEAK:algorithmic-duplication`.
 
-use oriterm_core::effect::{Effect, PtyEffect, PtyWriteKind};
+use oriterm_core::effect::PtyWriteKind;
 use oriterm_test_support::spec_chain::{
     ApexLayer, DispatchExpectation, EffectExpectation, ParserExpectation, ScenarioExpectations,
-    SpecHarness, SpecScenario,
+    SpecHarness, SpecScenario, pty_writes_of_kind,
 };
 
 // --- DA2 -------------------------------------------------------------------
@@ -124,34 +124,16 @@ fn da2_query_explicit_zero_param_drives_to_effect_apex() {
 fn da2_explicit_and_implicit_zero_replies_match() {
     let mut h_implicit = SpecHarness::new();
     h_implicit.feed(b"\x1b[>c");
-    let reply_implicit = h_implicit
-        .outcome()
-        .effects_emitted
-        .iter()
-        .find_map(|eff| match eff {
-            Effect::Pty(PtyEffect::Write { bytes, kind })
-                if *kind == PtyWriteKind::DeviceAttribute =>
-            {
-                Some(bytes.clone())
-            }
-            _ => None,
-        })
+    let reply_implicit = pty_writes_of_kind(&h_implicit, PtyWriteKind::DeviceAttribute)
+        .next()
+        .map(|b| b.to_vec())
         .expect("implicit-zero DA2 should emit a reply");
 
     let mut h_explicit = SpecHarness::new();
     h_explicit.feed(b"\x1b[>0c");
-    let reply_explicit = h_explicit
-        .outcome()
-        .effects_emitted
-        .iter()
-        .find_map(|eff| match eff {
-            Effect::Pty(PtyEffect::Write { bytes, kind })
-                if *kind == PtyWriteKind::DeviceAttribute =>
-            {
-                Some(bytes.clone())
-            }
-            _ => None,
-        })
+    let reply_explicit = pty_writes_of_kind(&h_explicit, PtyWriteKind::DeviceAttribute)
+        .next()
+        .map(|b| b.to_vec())
         .expect("explicit-zero DA2 should emit a reply");
 
     assert_eq!(
@@ -171,18 +153,9 @@ fn da2_reply_has_secondary_prefix() {
     let mut harness = SpecHarness::new();
     harness.feed(b"\x1b[>c");
 
-    let reply = harness
-        .outcome()
-        .effects_emitted
-        .iter()
-        .find_map(|eff| match eff {
-            Effect::Pty(PtyEffect::Write { bytes, kind })
-                if *kind == PtyWriteKind::DeviceAttribute =>
-            {
-                Some(bytes.clone())
-            }
-            _ => None,
-        })
+    let reply = pty_writes_of_kind(&harness, PtyWriteKind::DeviceAttribute)
+        .next()
+        .map(|b| b.to_vec())
         .expect("DA2 should emit a DeviceAttribute effect");
 
     assert!(
@@ -283,18 +256,9 @@ fn da3_reply_is_dcs_unit_id_frame() {
     let mut harness = SpecHarness::new();
     harness.feed(b"\x1b[=c");
 
-    let reply = harness
-        .outcome()
-        .effects_emitted
-        .iter()
-        .find_map(|eff| match eff {
-            Effect::Pty(PtyEffect::Write { bytes, kind })
-                if *kind == PtyWriteKind::DeviceAttribute =>
-            {
-                Some(bytes.clone())
-            }
-            _ => None,
-        })
+    let reply = pty_writes_of_kind(&harness, PtyWriteKind::DeviceAttribute)
+        .next()
+        .map(|b| b.to_vec())
         .expect("DA3 should emit a DeviceAttribute effect");
 
     assert_eq!(
@@ -345,18 +309,9 @@ fn dsr_5_reply_is_ready() {
     let mut harness = SpecHarness::new();
     harness.feed(b"\x1b[5n");
 
-    let reply = harness
-        .outcome()
-        .effects_emitted
-        .iter()
-        .find_map(|eff| match eff {
-            Effect::Pty(PtyEffect::Write { bytes, kind })
-                if *kind == PtyWriteKind::DeviceStatus =>
-            {
-                Some(bytes.clone())
-            }
-            _ => None,
-        })
+    let reply = pty_writes_of_kind(&harness, PtyWriteKind::DeviceStatus)
+        .next()
+        .map(|b| b.to_vec())
         .expect("DSR 5 should emit a DeviceStatus effect");
 
     assert_eq!(
@@ -413,18 +368,9 @@ fn dsr_6_reply_is_one_one_at_default_cursor() {
     let mut harness = SpecHarness::new();
     harness.feed(b"\x1b[6n");
 
-    let reply = harness
-        .outcome()
-        .effects_emitted
-        .iter()
-        .find_map(|eff| match eff {
-            Effect::Pty(PtyEffect::Write { bytes, kind })
-                if *kind == PtyWriteKind::CursorReport =>
-            {
-                Some(bytes.clone())
-            }
-            _ => None,
-        })
+    let reply = pty_writes_of_kind(&harness, PtyWriteKind::CursorReport)
+        .next()
+        .map(|b| b.to_vec())
         .expect("DSR 6 should emit a CursorReport effect");
 
     assert_eq!(
@@ -447,19 +393,8 @@ fn dsr_6_does_not_emit_device_status() {
     let mut harness = SpecHarness::new();
     harness.feed(b"\x1b[6n");
 
-    let device_status_replies: Vec<_> = harness
-        .outcome()
-        .effects_emitted
-        .iter()
-        .filter(|eff| {
-            matches!(
-                eff,
-                Effect::Pty(PtyEffect::Write {
-                    kind: PtyWriteKind::DeviceStatus,
-                    ..
-                })
-            )
-        })
+    let device_status_replies: Vec<_> = pty_writes_of_kind(&harness, PtyWriteKind::DeviceStatus)
+        .map(|b| b.to_vec())
         .collect();
 
     assert!(
@@ -478,19 +413,8 @@ fn dsr_5_does_not_emit_cursor_report() {
     let mut harness = SpecHarness::new();
     harness.feed(b"\x1b[5n");
 
-    let cursor_reports: Vec<_> = harness
-        .outcome()
-        .effects_emitted
-        .iter()
-        .filter(|eff| {
-            matches!(
-                eff,
-                Effect::Pty(PtyEffect::Write {
-                    kind: PtyWriteKind::CursorReport,
-                    ..
-                })
-            )
-        })
+    let cursor_reports: Vec<_> = pty_writes_of_kind(&harness, PtyWriteKind::CursorReport)
+        .map(|b| b.to_vec())
         .collect();
 
     assert!(
@@ -511,50 +435,23 @@ fn dsr_5_does_not_emit_cursor_report() {
 fn da_variants_emit_distinct_replies() {
     let mut harness_da1 = SpecHarness::new();
     harness_da1.feed(b"\x1b[c");
-    let da1_reply = harness_da1
-        .outcome()
-        .effects_emitted
-        .iter()
-        .find_map(|eff| match eff {
-            Effect::Pty(PtyEffect::Write { bytes, kind })
-                if *kind == PtyWriteKind::DeviceAttribute =>
-            {
-                Some(bytes.clone())
-            }
-            _ => None,
-        })
+    let da1_reply = pty_writes_of_kind(&harness_da1, PtyWriteKind::DeviceAttribute)
+        .next()
+        .map(|b| b.to_vec())
         .expect("DA1 should emit a reply");
 
     let mut harness_da2 = SpecHarness::new();
     harness_da2.feed(b"\x1b[>c");
-    let da2_reply = harness_da2
-        .outcome()
-        .effects_emitted
-        .iter()
-        .find_map(|eff| match eff {
-            Effect::Pty(PtyEffect::Write { bytes, kind })
-                if *kind == PtyWriteKind::DeviceAttribute =>
-            {
-                Some(bytes.clone())
-            }
-            _ => None,
-        })
+    let da2_reply = pty_writes_of_kind(&harness_da2, PtyWriteKind::DeviceAttribute)
+        .next()
+        .map(|b| b.to_vec())
         .expect("DA2 should emit a reply");
 
     let mut harness_da3 = SpecHarness::new();
     harness_da3.feed(b"\x1b[=c");
-    let da3_reply = harness_da3
-        .outcome()
-        .effects_emitted
-        .iter()
-        .find_map(|eff| match eff {
-            Effect::Pty(PtyEffect::Write { bytes, kind })
-                if *kind == PtyWriteKind::DeviceAttribute =>
-            {
-                Some(bytes.clone())
-            }
-            _ => None,
-        })
+    let da3_reply = pty_writes_of_kind(&harness_da3, PtyWriteKind::DeviceAttribute)
+        .next()
+        .map(|b| b.to_vec())
         .expect("DA3 should emit a reply");
 
     assert_ne!(da1_reply, da2_reply, "DA1 and DA2 must differ");

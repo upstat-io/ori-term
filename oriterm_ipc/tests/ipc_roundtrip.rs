@@ -17,26 +17,32 @@ use std::time::Duration;
 use mio::{Events, Interest, Poll, Token};
 
 use oriterm_ipc::{ClientStream, IpcListener, IpcStream};
+use tempfile::{Builder, TempDir};
 
 /// Monotonic counter for unique test socket paths.
 static TEST_ID: AtomicU32 = AtomicU32::new(0);
 
-/// Generate a unique IPC address for a test.
-fn test_addr() -> PathBuf {
+/// Generate a unique IPC address for a test. The returned `TempDir` MUST
+/// be held for the full test lifetime — dropping it removes the parent
+/// directory on every exit path including panic unwinding, covering the
+/// same RAII invariant `oriterm_test_support::TempDirGuard` provides
+/// (the wrapper is unavailable here per the `oriterm_ipc` standalone
+/// crate-boundary rule in `.claude/rules/crate-boundaries.md`).
+fn test_addr() -> (TempDir, PathBuf) {
     let id = TEST_ID.fetch_add(1, Ordering::Relaxed);
     let pid = std::process::id();
+    let dir = Builder::new()
+        .prefix(&format!("oriterm_ipc_{pid}_"))
+        .tempdir()
+        .expect("create ipc tempdir");
 
     #[cfg(unix)]
-    {
-        let dir = std::env::temp_dir().join(format!("oriterm-ipc-test-{pid}"));
-        let _ = std::fs::create_dir_all(&dir);
-        dir.join(format!("test-{id}.sock"))
-    }
+    let addr = dir.path().join(format!("test-{id}.sock"));
 
     #[cfg(windows)]
-    {
-        PathBuf::from(format!(r"\\.\pipe\oriterm-ipc-test-{pid}-{id}"))
-    }
+    let addr = PathBuf::from(format!(r"\\.\pipe\oriterm-ipc-test-{pid}-{id}"));
+
+    (dir, addr)
 }
 
 const LISTENER_TOKEN: Token = Token(0);
@@ -46,7 +52,7 @@ const STREAM_TOKEN: Token = Token(1);
 
 #[test]
 fn bind_and_accept() {
-    let addr = test_addr();
+    let (_dir, addr) = test_addr();
     let mut poll = Poll::new().unwrap();
     let mut events = Events::with_capacity(16);
 
@@ -70,7 +76,7 @@ fn bind_and_accept() {
 
 #[test]
 fn client_to_server() {
-    let addr = test_addr();
+    let (_dir, addr) = test_addr();
     let mut poll = Poll::new().unwrap();
     let mut events = Events::with_capacity(16);
 
@@ -104,7 +110,7 @@ fn client_to_server() {
 
 #[test]
 fn server_to_client() {
-    let addr = test_addr();
+    let (_dir, addr) = test_addr();
     let mut poll = Poll::new().unwrap();
     let mut events = Events::with_capacity(16);
 
@@ -154,7 +160,7 @@ fn server_to_client() {
 
 #[test]
 fn bidirectional_roundtrip() {
-    let addr = test_addr();
+    let (_dir, addr) = test_addr();
     let mut poll = Poll::new().unwrap();
     let mut events = Events::with_capacity(16);
 
@@ -205,7 +211,7 @@ fn bidirectional_roundtrip() {
 
 #[test]
 fn multiple_sequential_connections() {
-    let addr = test_addr();
+    let (_dir, addr) = test_addr();
     let mut poll = Poll::new().unwrap();
     let mut events = Events::with_capacity(16);
 
@@ -265,7 +271,7 @@ fn multiple_sequential_connections() {
 /// used for the Hello/HelloAck handshake in the daemon.
 #[test]
 fn write_after_accept_does_not_block() {
-    let addr = test_addr();
+    let (_dir, addr) = test_addr();
     let mut poll = Poll::new().unwrap();
     let mut events = Events::with_capacity(16);
 

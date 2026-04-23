@@ -30,6 +30,7 @@ impl Grid {
             self.rows[line][Column(start - 1)]
                 .flags
                 .remove(CellFlags::WIDE_CHAR);
+            self.dirty.mark_cols(line, start - 1, start - 1);
         }
         if end > 0
             && end < cols
@@ -41,6 +42,7 @@ impl Grid {
             self.rows[line][Column(end)]
                 .flags
                 .remove(CellFlags::WIDE_CHAR_SPACER);
+            self.dirty.mark_cols(line, end, end);
         }
     }
 
@@ -62,6 +64,7 @@ impl Grid {
             let prev = &mut self.rows[line][Column(col - 1)];
             prev.ch = ' ';
             prev.flags.remove(CellFlags::WIDE_CHAR);
+            self.dirty.mark_cols(line, col - 1, col - 1);
         }
 
         // Overwriting a wide char: clear its spacer.
@@ -69,6 +72,7 @@ impl Grid {
             let next = &mut self.rows[line][Column(col + 1)];
             next.ch = ' ';
             next.flags.remove(CellFlags::WIDE_CHAR_SPACER);
+            self.dirty.mark_cols(line, col + 1, col + 1);
         }
     }
 }

@@ -39,8 +39,10 @@ The kitty graphics protocol documentation at sw.kovidgoyal.net/kitty/graphics-pr
 | `f=<other>` | kitty graphics-protocol.rst §Pixel formats (validation) | `KG-FORMAT-UNSUPPORTED` | mapped |
 | `o=z` | kitty graphics-protocol.rst §Compression | `KG-COMPRESSION-OZ-IGNORED` | mapped |
 | `o=<other>` | kitty graphics-protocol.rst §Compression | — | not-targeted: kitty defines only `z` (zlib); no other compression codepoint documented and no real-world client uses one |
-| `m=0` | kitty graphics-protocol.rst §Chunked data | `KG-ACTION-TRANSMIT` | mapped |
-| `m=1` | kitty graphics-protocol.rst §Chunked data | `KG-ACTION-TRANSMIT` | mapped |
+| `m=0` | kitty graphics-protocol.rst §Chunked data | `KG-TRANSMIT-CHUNKED-COALESCE` | mapped |
+| `m=1` | kitty graphics-protocol.rst §Chunked data | `KG-TRANSMIT-CHUNKED-COALESCE` | mapped |
+| chunked size-limit discard | kitty graphics-protocol.rst §Chunked data (implementation-defined cap) | `KG-TRANSMIT-CHUNKED-SIZE-LIMIT` | mapped |
+| `KittyError::InvalidBase64` reply | kitty graphics-protocol.rst §Error handling | `KG-TRANSMIT-CHUNKED-MALFORMED-BASE64` | mapped |
 | `i=<u32>` | kitty graphics-protocol.rst §Keys for image transmission | `KG-ACTION-TRANSMIT` | mapped |
 | `I=<u32>` | kitty graphics-protocol.rst §Keys for image transmission | `KG-ACTION-TRANSMIT` | mapped |
 | `p=<u32>` (placement id) | kitty graphics-protocol.rst §Keys for image transmission | `KG-ACTION-PLACE` | mapped |
@@ -131,7 +133,6 @@ The kitty graphics protocol documentation at sw.kovidgoyal.net/kitty/graphics-pr
 | Kitty placement mixed with sixel raster (z-order) | kitty graphics-protocol.rst §Z-index + sixel layering | `KG-CROSS-STACK-SIXEL-MIXED-Z-ORDER` | mapped |
 | Kitty + sixel shared cache eviction | kitty graphics-protocol.rst §Memory budget | `KG-CROSS-STACK-SIXEL-MIXED-EVICTION` | mapped |
 | U=1 placeholder cells coexisting with sixel raster | kitty graphics-protocol.rst §Unicode placeholders (cross-stack) | `KG-CROSS-STACK-SIXEL-PLACEHOLDER-COEXIST` | mapped |
-| Chunked multi-APC envelope (`m=1` sequence then `m=0` terminal) | kitty graphics-protocol.rst §Chunked data | `KG-ACTION-TRANSMIT` | mapped |
 
 ## Decisions
 

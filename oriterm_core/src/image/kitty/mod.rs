@@ -6,31 +6,31 @@
 
 mod parse;
 
-pub use parse::{KittyAction, KittyCommand, KittyError, KittyTransmission, parse_kitty_command};
+pub use parse::{
+    KittyAction, KittyCommand, KittyError, KittyTransmission, parse_kitty_command,
+    parse_kitty_command_into,
+};
 
 /// In-progress chunked image transmission.
 ///
 /// Kitty protocol allows splitting large images across multiple APC
-/// sequences using `m=1` (more) / `m=0` (final). This struct
-/// accumulates the decoded payload and metadata across chunks.
+/// sequences using `m=1` (more) / `m=0` (final). Per kitty's protocol
+/// documentation, the FIRST chunk carries all control keys (format,
+/// dimensions, placement geometry, `q=`, `U=`, `C=`, `z=`, etc.) and
+/// subsequent chunks carry only `m=` and the payload bytes. `start_cmd`
+/// holds the first chunk's fully-parsed command; each non-first chunk
+/// appends its `cmd.payload` into `start_cmd.payload` so at finalize
+/// time the merged command carries first-chunk semantics with the
+/// coalesced payload.
 #[derive(Debug)]
 pub struct LoadingImage {
-    /// Image ID assigned to this transmission.
+    /// Resolved image id — `cmd.image_id` if provided, else auto-assigned
+    /// from `ImageCache::next_image_id`. Kept as a separate field because
+    /// `start_cmd.image_id` may be `None` (auto-id case) even after
+    /// resolution.
     pub image_id: u32,
-    /// Image number (alternative to ID).
-    pub image_number: Option<u32>,
-    /// Accumulated base64-decoded payload.
-    pub payload: Vec<u8>,
-    /// Expected pixel format (`f=` key).
-    pub format: u32,
-    /// Pixel width from first chunk (`s=` key).
-    pub width: u32,
-    /// Pixel height from first chunk (`v=` key).
-    pub height: u32,
-    /// Compression mode (`o=` key).
-    pub compression: Option<u8>,
-    /// Transmission method from first chunk.
-    pub transmission: KittyTransmission,
+    /// Full first-chunk command; `payload` is the running accumulator.
+    pub start_cmd: KittyCommand,
 }
 
 #[cfg(test)]
