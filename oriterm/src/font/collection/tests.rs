@@ -2499,7 +2499,7 @@ fn effective_bold_weight_clamped_to_range() {
     );
 }
 
-// ── BUG-04-006: subpixel bitmap gamma correction ──
+// BUG-04-006: subpixel bitmap gamma correction.
 //
 // Pin that `FontCollection::rasterize` / `rasterize_with_weight` do NOT apply
 // the gamma LUT to subpixel RGBA bitmaps. Per zeno `Format::Subpixel`, each of
