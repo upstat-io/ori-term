@@ -2498,3 +2498,260 @@ fn effective_bold_weight_clamped_to_range() {
         "bold_weight < 100 should be clamped",
     );
 }
+
+// ── BUG-04-006: subpixel bitmap gamma correction ──
+//
+// Pin that `FontCollection::rasterize` / `rasterize_with_weight` do NOT apply
+// the gamma LUT to subpixel RGBA bitmaps. Per zeno `Format::Subpixel`, each of
+// the R / G / B bytes is an independent per-channel LCD coverage value; applying
+// a per-byte gamma boost magnifies per-channel asymmetry (color fringing) and
+// over-thickens strokes. Only `GlyphFormat::Alpha` coverage is boosted.
+//
+// Construction for red-first pins: pair two collections identical except for
+// `gamma_lut` (default 1.8 vs test-only identity). On HEAD the guards at
+// `rasterize.rs:124` / `:184` route BOTH through `apply_alpha_correction`, so
+// gamma=1.8 and gamma=1.0 produce DIFFERENT subpixel bitmaps — test fails.
+// After the fix the guard is narrowed to `== GlyphFormat::Alpha` so neither
+// path touches subpixel bitmaps, making them byte-equal.
+
+/// Regression: BUG-04-006 — SubpixelRgb bitmap must not receive gamma LUT.
+/// See: plans/bug-tracker/fix-BUG-04-006.md §2 Red-first fail pins.
+#[test]
+fn subpixel_rgb_bitmap_not_gamma_boosted() {
+    let mut fc_gamma = embedded_only_collection(GlyphFormat::SubpixelRgb);
+    let mut fc_raw = embedded_only_collection(GlyphFormat::SubpixelRgb);
+    fc_raw.set_gamma_for_test(1.0);
+
+    let resolved = fc_gamma.resolve('H', GlyphStyle::Regular);
+    let key = RasterKey::from_resolved(resolved, super::size_key(fc_gamma.size_px()), true, 0);
+
+    let gamma_bitmap = fc_gamma
+        .rasterize(key)
+        .expect("rasterize 'H' SubpixelRgb (gamma=1.8)")
+        .bitmap
+        .clone();
+    let raw_bitmap = fc_raw
+        .rasterize(key)
+        .expect("rasterize 'H' SubpixelRgb (gamma=1.0)")
+        .bitmap
+        .clone();
+
+    assert_eq!(
+        gamma_bitmap, raw_bitmap,
+        "SubpixelRgb bitmap must be identical regardless of gamma \
+         (guard must skip apply_alpha_correction for subpixel formats)"
+    );
+}
+
+/// Regression: BUG-04-006 — SubpixelBgr bitmap must not receive gamma LUT.
+/// Covers the BGR sibling path via `Format::subpixel_bgra()`.
+#[test]
+fn subpixel_bgr_bitmap_not_gamma_boosted() {
+    let mut fc_gamma = embedded_only_collection(GlyphFormat::SubpixelBgr);
+    let mut fc_raw = embedded_only_collection(GlyphFormat::SubpixelBgr);
+    fc_raw.set_gamma_for_test(1.0);
+
+    let resolved = fc_gamma.resolve('H', GlyphStyle::Regular);
+    let key = RasterKey::from_resolved(resolved, super::size_key(fc_gamma.size_px()), true, 0);
+
+    let gamma_bitmap = fc_gamma
+        .rasterize(key)
+        .expect("rasterize 'H' SubpixelBgr (gamma=1.8)")
+        .bitmap
+        .clone();
+    let raw_bitmap = fc_raw
+        .rasterize(key)
+        .expect("rasterize 'H' SubpixelBgr (gamma=1.0)")
+        .bitmap
+        .clone();
+
+    assert_eq!(
+        gamma_bitmap, raw_bitmap,
+        "SubpixelBgr bitmap must be identical regardless of gamma",
+    );
+}
+
+/// Regression: BUG-04-006 — `rasterize_with_weight` subpixel path must not
+/// receive gamma LUT. The bug exists in both `rasterize` (terminal grid) and
+/// `rasterize_with_weight` (UI text); both need independent red-first coverage.
+#[test]
+fn subpixel_rgb_ui_text_path_bitmap_not_gamma_boosted() {
+    let mut fc_gamma = embedded_only_collection(GlyphFormat::SubpixelRgb);
+    let mut fc_raw = embedded_only_collection(GlyphFormat::SubpixelRgb);
+    fc_raw.set_gamma_for_test(1.0);
+
+    let resolved = fc_gamma.resolve('H', GlyphStyle::Regular);
+    let key = RasterKey::from_resolved(resolved, super::size_key(fc_gamma.size_px()), true, 0);
+    // requested_weight=400 avoids the 500..700 medium-face substitution (the
+    // embedded font set has no Medium face anyway, but the guard stays clear).
+    let requested_weight = 400u16;
+
+    let gamma_bitmap = fc_gamma
+        .rasterize_with_weight(key, requested_weight)
+        .expect("rasterize_with_weight 'H' SubpixelRgb (gamma=1.8)")
+        .bitmap
+        .clone();
+    let raw_bitmap = fc_raw
+        .rasterize_with_weight(key, requested_weight)
+        .expect("rasterize_with_weight 'H' SubpixelRgb (gamma=1.0)")
+        .bitmap
+        .clone();
+
+    assert_eq!(
+        gamma_bitmap, raw_bitmap,
+        "UI-text-path SubpixelRgb bitmap must be identical regardless of gamma \
+         (the rasterize_with_weight guard must also skip subpixel)"
+    );
+}
+
+/// Invariant guard: BUG-04-006 — Alpha bitmap still receives gamma LUT.
+/// Fires if someone widens the new Alpha-only guard to exclude Alpha.
+#[test]
+fn alpha_bitmap_still_gamma_boosted() {
+    let mut fc_gamma = embedded_only_collection(GlyphFormat::Alpha);
+    let mut fc_raw = embedded_only_collection(GlyphFormat::Alpha);
+    fc_raw.set_gamma_for_test(1.0);
+
+    let resolved = fc_gamma.resolve('H', GlyphStyle::Regular);
+    let key = RasterKey::from_resolved(resolved, super::size_key(fc_gamma.size_px()), true, 0);
+
+    let gamma_bitmap = fc_gamma
+        .rasterize(key)
+        .expect("rasterize 'H' Alpha (gamma=1.8)")
+        .bitmap
+        .clone();
+    let raw_bitmap = fc_raw
+        .rasterize(key)
+        .expect("rasterize 'H' Alpha (gamma=1.0)")
+        .bitmap
+        .clone();
+
+    assert_ne!(
+        gamma_bitmap, raw_bitmap,
+        "Alpha bitmap must differ between gamma=1.8 and gamma=1.0 \
+         (grayscale path must still apply gamma correction)"
+    );
+    assert!(
+        mean_alpha(&gamma_bitmap) > mean_alpha(&raw_bitmap),
+        "Alpha gamma-boosted mean ({:.4}) must strictly exceed raw mean ({:.4})",
+        mean_alpha(&gamma_bitmap),
+        mean_alpha(&raw_bitmap),
+    );
+}
+
+/// Invariant guard: BUG-04-006 — Alpha bitmap via `rasterize_with_weight`
+/// still receives gamma LUT. Pins the UI-text Alpha guard independently so
+/// a refactor that touches only `rasterize` cannot silently regress the UI
+/// path.
+#[test]
+fn alpha_ui_text_path_bitmap_still_gamma_boosted() {
+    let mut fc_gamma = embedded_only_collection(GlyphFormat::Alpha);
+    let mut fc_raw = embedded_only_collection(GlyphFormat::Alpha);
+    fc_raw.set_gamma_for_test(1.0);
+
+    let resolved = fc_gamma.resolve('H', GlyphStyle::Regular);
+    let key = RasterKey::from_resolved(resolved, super::size_key(fc_gamma.size_px()), true, 0);
+    let requested_weight = 400u16;
+
+    let gamma_bitmap = fc_gamma
+        .rasterize_with_weight(key, requested_weight)
+        .expect("rasterize_with_weight 'H' Alpha (gamma=1.8)")
+        .bitmap
+        .clone();
+    let raw_bitmap = fc_raw
+        .rasterize_with_weight(key, requested_weight)
+        .expect("rasterize_with_weight 'H' Alpha (gamma=1.0)")
+        .bitmap
+        .clone();
+
+    assert_ne!(
+        gamma_bitmap, raw_bitmap,
+        "UI-text-path Alpha bitmap must differ between gamma=1.8 and gamma=1.0",
+    );
+}
+
+/// Invariant guard: BUG-04-006 — `SubpixelRgb` A channel is zero because
+/// zeno never writes offset 3 of an RGBA pixel in subpixel mode. LUT[0] = 0
+/// so the invariant holds either way; the pin catches a regression where
+/// someone starts writing to the alpha channel or flips LUT[0].
+#[test]
+fn subpixel_rgb_bitmap_alpha_channel_is_zero() {
+    let mut fc = embedded_only_collection(GlyphFormat::SubpixelRgb);
+    let resolved = fc.resolve('H', GlyphStyle::Regular);
+    let key = RasterKey::from_resolved(resolved, super::size_key(fc.size_px()), true, 0);
+    let glyph = fc.rasterize(key).expect("rasterize 'H' SubpixelRgb");
+
+    assert_eq!(
+        glyph.bitmap.len() % 4,
+        0,
+        "SubpixelRgb bitmap length must be a multiple of 4 (RGBA pixels)",
+    );
+    let mut nonzero_alpha_positions = Vec::new();
+    for (pixel_index, rgba) in glyph.bitmap.chunks_exact(4).enumerate() {
+        if rgba[3] != 0 {
+            nonzero_alpha_positions.push((pixel_index, rgba[3]));
+            if nonzero_alpha_positions.len() >= 5 {
+                break;
+            }
+        }
+    }
+    assert!(
+        nonzero_alpha_positions.is_empty(),
+        "SubpixelRgb A channel must be zero in every pixel (found nonzero at: {:?})",
+        nonzero_alpha_positions,
+    );
+}
+
+/// Regression: BUG-04-006 interaction check — synthetic-bold subpixel 'H'
+/// remains heavier than regular weight after removing the gamma boost.
+/// `embolden_strength` at `face.rs:249-259` was tuned down (2.0 → 1.5) to
+/// compensate for the gamma correction. If synthetic-bold subpixel ends up
+/// visually lighter than regular post-fix, the remediation is a format-aware
+/// `embolden_strength` (larger multiplier for subpixel formats) — NOT a
+/// return to the per-channel gamma boost.
+#[test]
+fn synthetic_bold_subpixel_rgb_heavier_than_regular() {
+    let mut fc = embedded_only_collection(GlyphFormat::SubpixelRgb);
+    let resolved_regular = fc.resolve('H', GlyphStyle::Regular);
+    let resolved_bold = fc.resolve('H', GlyphStyle::Bold);
+
+    // Precondition: `embedded_only_collection` uses `FontSet::embedded()` which
+    // has no Bold face, so Bold resolution must fall through to synthetic
+    // bold on the Regular face. If the embedded asset ever gains a native
+    // Bold face this precondition catches it — the test would then be
+    // exercising native bold and the embolden_strength interaction would
+    // be unmonitored.
+    assert!(
+        resolved_bold.synthetic.contains(SyntheticFlags::BOLD),
+        "embedded font set must force synthetic bold for 'H' \
+         (resolved.synthetic = {:?}) — if a native Bold face is added, this \
+         test must be retargeted at a Regular-only corpus",
+        resolved_bold.synthetic,
+    );
+    assert!(
+        !resolved_regular.synthetic.contains(SyntheticFlags::BOLD),
+        "regular resolution must not carry BOLD synthetic flag",
+    );
+
+    let size_q6 = super::size_key(fc.size_px());
+    let key_regular = RasterKey::from_resolved(resolved_regular, size_q6, true, 0);
+    let key_bold = RasterKey::from_resolved(resolved_bold, size_q6, true, 0);
+
+    let regular_mean = mean_alpha(
+        &fc.rasterize(key_regular)
+            .expect("rasterize regular 'H' SubpixelRgb")
+            .bitmap,
+    );
+    let bold_mean = mean_alpha(
+        &fc.rasterize(key_bold)
+            .expect("rasterize bold 'H' SubpixelRgb")
+            .bitmap,
+    );
+
+    assert!(
+        bold_mean > regular_mean,
+        "synthetic-bold SubpixelRgb 'H' (mean={bold_mean:.4}) must be heavier \
+         than regular (mean={regular_mean:.4}) — if it isn't, embolden_strength \
+         must become format-aware per the §3 Implementation fallback plan",
+    );
+}
