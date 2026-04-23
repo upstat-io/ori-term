@@ -184,17 +184,26 @@ impl<S: EffectSink> PaneIoThread<S> {
                             if let Ok(status) = status {
                                 self.pending_child_exit = Some(status);
                             } else {
-                                // Watcher-thread sender dropped without sending
-                                // a status (watcher died unexpectedly). The EOF
-                                // path's recv_timeout fallback in handle_pty_eof
-                                // emits HostEffect::ChildExit { code: 0 } when
-                                // byte_rx subsequently closes — no action needed
-                                // here.
+                                // Watcher-thread sender dropped without sending a
+                                // status. Replace the receiver with `never()` so
+                                // `select!` does not pick this arm again on every
+                                // iteration — `recv` on a disconnected channel
+                                // returns `Err` immediately, which would burn a
+                                // CPU core in a tight loop until shutdown. The
+                                // EOF path in `handle_pty_eof` still emits
+                                // `HostEffect::ChildExit { code: 0 }` when
+                                // `byte_rx` subsequently closes.
+                                self.child_exit_rx = crossbeam_channel::never();
                             }
                         }
-                        recv(self.response_wake_rx) -> _ => {
-                            // Woken by response fulfillment — next loop
-                            // iteration drains commands which polls pending
+                        recv(self.response_wake_rx) -> msg => {
+                            if msg.is_err() {
+                                // Handle dropped its `response_wake_tx`. Same
+                                // spin hazard as the `child_exit_rx` arm above.
+                                self.response_wake_rx = crossbeam_channel::never();
+                            }
+                            // Otherwise: woken by response fulfillment — next
+                            // loop iteration drains commands which polls pending
                             // responses and emits PTY replies.
                         }
                         default(timeout) => {
@@ -227,13 +236,14 @@ impl<S: EffectSink> PaneIoThread<S> {
                             if let Ok(status) = status {
                                 self.pending_child_exit = Some(status);
                             } else {
-                                // Watcher-thread sender dropped — handled by
-                                // handle_pty_eof's recv_timeout fallback when
-                                // byte_rx closes. See sync-deadline arm above.
+                                // Spin guard — see sync-deadline arm above.
+                                self.child_exit_rx = crossbeam_channel::never();
                             }
                         }
-                        recv(self.response_wake_rx) -> _ => {
-                            // Woken by response fulfillment.
+                        recv(self.response_wake_rx) -> msg => {
+                            if msg.is_err() {
+                                self.response_wake_rx = crossbeam_channel::never();
+                            }
                         }
                     }
                 }
