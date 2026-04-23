@@ -80,6 +80,28 @@ fn apply_alpha_correction(glyph: &mut RasterizedGlyph, lut: &[u8; 256]) {
 }
 
 impl FontCollection {
+    /// Apply the per-format gamma correction and insert the glyph into the cache.
+    ///
+    /// Canonical home for the `GlyphFormat::Alpha`-only gamma rule (BUG-04-006).
+    /// Called by both `rasterize` and `rasterize_with_weight` after the raw
+    /// rasterizer produces the bitmap — keeping the correction guard in a single
+    /// place so any future protocol change lands once, not twice.
+    ///
+    /// Only `GlyphFormat::Alpha` (R8 coverage) receives the boost; `SubpixelRgb`,
+    /// `SubpixelBgr`, and `Color` pass through unchanged — see the module-level
+    /// doc for the rationale.
+    fn insert_corrected(
+        &mut self,
+        key: RasterKey,
+        mut glyph: RasterizedGlyph,
+    ) -> Option<&RasterizedGlyph> {
+        if glyph.format == GlyphFormat::Alpha {
+            apply_alpha_correction(&mut glyph, &self.gamma_lut);
+        }
+        self.cache_insert(key, glyph);
+        self.glyph_cache.get(&key)
+    }
+
     /// Rasterize a glyph and cache the result.
     ///
     /// Returns `None` for empty glyphs (e.g. space) or unsupported formats.
@@ -120,7 +142,7 @@ impl FontCollection {
         // sizing, preventing bottom/right edge clipping. Falls
         // through to swash for non-COLR glyphs or if compositing fails.
         let gid_u16 = key.glyph_id as u16;
-        let mut glyph = try_rasterize_colr_v1(fd, gid_u16, size).or_else(|| {
+        let glyph = try_rasterize_colr_v1(fd, gid_u16, size).or_else(|| {
             rasterize_from_face(
                 fd,
                 gid_u16,
@@ -135,17 +157,7 @@ impl FontCollection {
             )
         })?;
 
-        // Boost grayscale glyph coverage to match DirectWrite/browser visual
-        // weight. Subpixel bitmaps carry per-channel LCD coverage where a
-        // per-byte boost amplifies channel asymmetry into color fringes
-        // (BUG-04-006). Color emoji are premultiplied RGBA — boost would
-        // corrupt. Only `Alpha` receives the correction.
-        if glyph.format == GlyphFormat::Alpha {
-            apply_alpha_correction(&mut glyph, &self.gamma_lut);
-        }
-
-        self.cache_insert(key, glyph);
-        self.glyph_cache.get(&key)
+        self.insert_corrected(key, glyph)
     }
 
     /// Rasterize a glyph using a specific requested weight.
@@ -184,7 +196,7 @@ impl FontCollection {
         let subpx_x_offset = super::super::subpx_offset(key.subpx_x);
 
         let gid_u16 = key.glyph_id as u16;
-        let mut glyph = try_rasterize_colr_v1(fd, gid_u16, size).or_else(|| {
+        let glyph = try_rasterize_colr_v1(fd, gid_u16, size).or_else(|| {
             rasterize_from_face(
                 fd,
                 gid_u16,
@@ -199,14 +211,6 @@ impl FontCollection {
             )
         })?;
 
-        // Same Alpha-only gamma correction as the terminal grid path —
-        // subpixel bitmaps carry per-channel LCD coverage and must not be
-        // boosted per-byte (BUG-04-006). Color never boosted.
-        if glyph.format == GlyphFormat::Alpha {
-            apply_alpha_correction(&mut glyph, &self.gamma_lut);
-        }
-
-        self.cache_insert(key, glyph);
-        self.glyph_cache.get(&key)
+        self.insert_corrected(key, glyph)
     }
 }

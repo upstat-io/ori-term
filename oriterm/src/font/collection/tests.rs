@@ -5,9 +5,12 @@ use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
 use super::face::{
-    build_face, compute_metrics, embolden_strength, font_ref, has_glyph, validate_font,
+    AxisInfo, build_face, clamp_to_axis, compute_metrics, embolden_strength, font_ref, has_axis,
+    has_glyph, validate_font,
 };
-use super::loading::FontBytes;
+use super::loading::{FontByteCache, FontBytes};
+use super::metadata::{face_variations, face_variations_for_ui_weight, resolve_ui_weight};
+use super::rasterize::{TEXT_GAMMA, build_gamma_lut};
 use super::{FontCollection, FontSet};
 use crate::config::FontConfig;
 use crate::font::discovery::EMBEDDED_FONT_DATA;
@@ -1554,9 +1557,6 @@ fn raster_key_subpx_x_distinguishes_cache() {
 
 // ── Variable font axes (Section 6.19) ──
 
-use super::face::{AxisInfo, clamp_to_axis, has_axis};
-use super::metadata::face_variations;
-
 /// Helper: build a fake `AxisInfo` for unit tests.
 fn axis(tag: &[u8; 4], min: f32, default: f32, max: f32) -> AxisInfo {
     AxisInfo {
@@ -2045,11 +2045,7 @@ fn set_features_does_not_invalidate_cache() {
     );
 }
 
-// ---------------------------------------------------------------------------
 // FontByteCache deduplication tests
-// ---------------------------------------------------------------------------
-
-use super::loading::FontByteCache;
 
 /// Two `from_discovery()` calls with the same fallback paths share `Arc` pointers.
 #[test]
@@ -2113,8 +2109,6 @@ fn font_byte_cache_dropped_after_loading() {
 
 // ── UI Weight Resolution ──
 
-use super::metadata::resolve_ui_weight;
-
 #[test]
 fn resolve_ui_weight_variable_font_uses_regular_slot() {
     let res = resolve_ui_weight(400, true, true);
@@ -2170,8 +2164,6 @@ fn resolve_ui_weight_light_weights() {
 }
 
 // ── face_variations_for_ui_weight ──
-
-use super::metadata::face_variations_for_ui_weight;
 
 #[test]
 fn face_variations_for_ui_weight_sets_exact_wght() {
@@ -2253,8 +2245,6 @@ fn terminal_embedded_has_no_medium() {
 }
 
 // ── Gamma LUT and alpha correction ──
-
-use super::rasterize::{TEXT_GAMMA, build_gamma_lut};
 
 #[test]
 fn gamma_lut_identity_at_gamma_1() {
@@ -2406,6 +2396,53 @@ fn mean_alpha(bitmap: &[u8]) -> f64 {
     sum as f64 / (bitmap.len() as f64 * 255.0)
 }
 
+/// Rasterize `'H'` through two `embedded_only` collections that differ only in
+/// `gamma_lut`: one at default `TEXT_GAMMA` 1.8, one with gamma 1.0 (identity
+/// LUT via `set_gamma_for_test`). Returns `(gamma_1_8_bitmap, identity_bitmap)`.
+///
+/// Pair-fixture for the BUG-04-006 regression suite. Under the Alpha-only
+/// guard the two bitmaps are byte-equal for subpixel formats (neither path
+/// applies `apply_alpha_correction`) and differ for `Alpha` (only the
+/// gamma=1.8 collection applies the boost). Each caller owns its own
+/// eq/ne assertion polarity — the helper only produces the pair.
+fn rasterize_h_gamma_pair(format: GlyphFormat, ui_text_path: bool) -> (Vec<u8>, Vec<u8>) {
+    let mut fc_gamma = embedded_only_collection(format);
+    let mut fc_raw = embedded_only_collection(format);
+    fc_raw.set_gamma_for_test(1.0);
+
+    let resolved = fc_gamma.resolve('H', GlyphStyle::Regular);
+    let key = RasterKey::from_resolved(resolved, super::size_key(fc_gamma.size_px()), true, 0);
+
+    if ui_text_path {
+        // requested_weight=400 avoids the 500..700 medium-face substitution (the
+        // embedded font set has no Medium face anyway, but the guard stays clear).
+        let requested_weight = 400u16;
+        let gamma_bitmap = fc_gamma
+            .rasterize_with_weight(key, requested_weight)
+            .expect("rasterize_with_weight (gamma=1.8)")
+            .bitmap
+            .clone();
+        let raw_bitmap = fc_raw
+            .rasterize_with_weight(key, requested_weight)
+            .expect("rasterize_with_weight (gamma=1.0)")
+            .bitmap
+            .clone();
+        (gamma_bitmap, raw_bitmap)
+    } else {
+        let gamma_bitmap = fc_gamma
+            .rasterize(key)
+            .expect("rasterize (gamma=1.8)")
+            .bitmap
+            .clone();
+        let raw_bitmap = fc_raw
+            .rasterize(key)
+            .expect("rasterize (gamma=1.0)")
+            .bitmap
+            .clone();
+        (gamma_bitmap, raw_bitmap)
+    }
+}
+
 #[test]
 fn bold_glyph_heavier_than_regular() {
     // Verify that bold text produces heavier (higher mean alpha) glyphs.
@@ -2505,37 +2542,22 @@ fn effective_bold_weight_clamped_to_range() {
 // the gamma LUT to subpixel RGBA bitmaps. Per zeno `Format::Subpixel`, each of
 // the R / G / B bytes is an independent per-channel LCD coverage value; applying
 // a per-byte gamma boost magnifies per-channel asymmetry (color fringing) and
-// over-thickens strokes. Only `GlyphFormat::Alpha` coverage is boosted.
+// over-thickens strokes. Only `GlyphFormat::Alpha` coverage is boosted — see
+// the `rasterize.rs` module doc for the canonical per-format rule.
 //
-// Construction for red-first pins: pair two collections identical except for
-// `gamma_lut` (default 1.8 vs test-only identity). On HEAD the guards at
-// `rasterize.rs:124` / `:184` route BOTH through `apply_alpha_correction`, so
-// gamma=1.8 and gamma=1.0 produce DIFFERENT subpixel bitmaps — test fails.
-// After the fix the guard is narrowed to `== GlyphFormat::Alpha` so neither
-// path touches subpixel bitmaps, making them byte-equal.
+// Red-first construction: pair two `FontCollection` instances identical except
+// for `gamma_lut` (default `TEXT_GAMMA` 1.8 vs test-only identity via
+// `set_gamma_for_test(1.0)`). Under the Alpha-only guard, subpixel bitmaps are
+// byte-equal across gammas (neither gets boosted); Alpha bitmaps differ (only
+// the gamma=1.8 collection gets boosted). A regression that widens the guard
+// back to `!= GlyphFormat::Color` routes subpixel through
+// `apply_alpha_correction` and the subpixel equality pins fail.
 
 /// Regression: BUG-04-006 — SubpixelRgb bitmap must not receive gamma LUT.
 /// See: plans/bug-tracker/fix-BUG-04-006.md §2 Red-first fail pins.
 #[test]
 fn subpixel_rgb_bitmap_not_gamma_boosted() {
-    let mut fc_gamma = embedded_only_collection(GlyphFormat::SubpixelRgb);
-    let mut fc_raw = embedded_only_collection(GlyphFormat::SubpixelRgb);
-    fc_raw.set_gamma_for_test(1.0);
-
-    let resolved = fc_gamma.resolve('H', GlyphStyle::Regular);
-    let key = RasterKey::from_resolved(resolved, super::size_key(fc_gamma.size_px()), true, 0);
-
-    let gamma_bitmap = fc_gamma
-        .rasterize(key)
-        .expect("rasterize 'H' SubpixelRgb (gamma=1.8)")
-        .bitmap
-        .clone();
-    let raw_bitmap = fc_raw
-        .rasterize(key)
-        .expect("rasterize 'H' SubpixelRgb (gamma=1.0)")
-        .bitmap
-        .clone();
-
+    let (gamma_bitmap, raw_bitmap) = rasterize_h_gamma_pair(GlyphFormat::SubpixelRgb, false);
     assert_eq!(
         gamma_bitmap, raw_bitmap,
         "SubpixelRgb bitmap must be identical regardless of gamma \
@@ -2547,24 +2569,7 @@ fn subpixel_rgb_bitmap_not_gamma_boosted() {
 /// Covers the BGR sibling path via `Format::subpixel_bgra()`.
 #[test]
 fn subpixel_bgr_bitmap_not_gamma_boosted() {
-    let mut fc_gamma = embedded_only_collection(GlyphFormat::SubpixelBgr);
-    let mut fc_raw = embedded_only_collection(GlyphFormat::SubpixelBgr);
-    fc_raw.set_gamma_for_test(1.0);
-
-    let resolved = fc_gamma.resolve('H', GlyphStyle::Regular);
-    let key = RasterKey::from_resolved(resolved, super::size_key(fc_gamma.size_px()), true, 0);
-
-    let gamma_bitmap = fc_gamma
-        .rasterize(key)
-        .expect("rasterize 'H' SubpixelBgr (gamma=1.8)")
-        .bitmap
-        .clone();
-    let raw_bitmap = fc_raw
-        .rasterize(key)
-        .expect("rasterize 'H' SubpixelBgr (gamma=1.0)")
-        .bitmap
-        .clone();
-
+    let (gamma_bitmap, raw_bitmap) = rasterize_h_gamma_pair(GlyphFormat::SubpixelBgr, false);
     assert_eq!(
         gamma_bitmap, raw_bitmap,
         "SubpixelBgr bitmap must be identical regardless of gamma",
@@ -2576,27 +2581,7 @@ fn subpixel_bgr_bitmap_not_gamma_boosted() {
 /// `rasterize_with_weight` (UI text); both need independent red-first coverage.
 #[test]
 fn subpixel_rgb_ui_text_path_bitmap_not_gamma_boosted() {
-    let mut fc_gamma = embedded_only_collection(GlyphFormat::SubpixelRgb);
-    let mut fc_raw = embedded_only_collection(GlyphFormat::SubpixelRgb);
-    fc_raw.set_gamma_for_test(1.0);
-
-    let resolved = fc_gamma.resolve('H', GlyphStyle::Regular);
-    let key = RasterKey::from_resolved(resolved, super::size_key(fc_gamma.size_px()), true, 0);
-    // requested_weight=400 avoids the 500..700 medium-face substitution (the
-    // embedded font set has no Medium face anyway, but the guard stays clear).
-    let requested_weight = 400u16;
-
-    let gamma_bitmap = fc_gamma
-        .rasterize_with_weight(key, requested_weight)
-        .expect("rasterize_with_weight 'H' SubpixelRgb (gamma=1.8)")
-        .bitmap
-        .clone();
-    let raw_bitmap = fc_raw
-        .rasterize_with_weight(key, requested_weight)
-        .expect("rasterize_with_weight 'H' SubpixelRgb (gamma=1.0)")
-        .bitmap
-        .clone();
-
+    let (gamma_bitmap, raw_bitmap) = rasterize_h_gamma_pair(GlyphFormat::SubpixelRgb, true);
     assert_eq!(
         gamma_bitmap, raw_bitmap,
         "UI-text-path SubpixelRgb bitmap must be identical regardless of gamma \
@@ -2608,24 +2593,7 @@ fn subpixel_rgb_ui_text_path_bitmap_not_gamma_boosted() {
 /// Fires if someone widens the new Alpha-only guard to exclude Alpha.
 #[test]
 fn alpha_bitmap_still_gamma_boosted() {
-    let mut fc_gamma = embedded_only_collection(GlyphFormat::Alpha);
-    let mut fc_raw = embedded_only_collection(GlyphFormat::Alpha);
-    fc_raw.set_gamma_for_test(1.0);
-
-    let resolved = fc_gamma.resolve('H', GlyphStyle::Regular);
-    let key = RasterKey::from_resolved(resolved, super::size_key(fc_gamma.size_px()), true, 0);
-
-    let gamma_bitmap = fc_gamma
-        .rasterize(key)
-        .expect("rasterize 'H' Alpha (gamma=1.8)")
-        .bitmap
-        .clone();
-    let raw_bitmap = fc_raw
-        .rasterize(key)
-        .expect("rasterize 'H' Alpha (gamma=1.0)")
-        .bitmap
-        .clone();
-
+    let (gamma_bitmap, raw_bitmap) = rasterize_h_gamma_pair(GlyphFormat::Alpha, false);
     assert_ne!(
         gamma_bitmap, raw_bitmap,
         "Alpha bitmap must differ between gamma=1.8 and gamma=1.0 \
@@ -2645,25 +2613,7 @@ fn alpha_bitmap_still_gamma_boosted() {
 /// path.
 #[test]
 fn alpha_ui_text_path_bitmap_still_gamma_boosted() {
-    let mut fc_gamma = embedded_only_collection(GlyphFormat::Alpha);
-    let mut fc_raw = embedded_only_collection(GlyphFormat::Alpha);
-    fc_raw.set_gamma_for_test(1.0);
-
-    let resolved = fc_gamma.resolve('H', GlyphStyle::Regular);
-    let key = RasterKey::from_resolved(resolved, super::size_key(fc_gamma.size_px()), true, 0);
-    let requested_weight = 400u16;
-
-    let gamma_bitmap = fc_gamma
-        .rasterize_with_weight(key, requested_weight)
-        .expect("rasterize_with_weight 'H' Alpha (gamma=1.8)")
-        .bitmap
-        .clone();
-    let raw_bitmap = fc_raw
-        .rasterize_with_weight(key, requested_weight)
-        .expect("rasterize_with_weight 'H' Alpha (gamma=1.0)")
-        .bitmap
-        .clone();
-
+    let (gamma_bitmap, raw_bitmap) = rasterize_h_gamma_pair(GlyphFormat::Alpha, true);
     assert_ne!(
         gamma_bitmap, raw_bitmap,
         "UI-text-path Alpha bitmap must differ between gamma=1.8 and gamma=1.0",

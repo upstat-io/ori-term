@@ -137,9 +137,15 @@ impl FontConfig {
     /// Returns the bold weight: explicit `bold_weight` if set, else `min(900, weight + 150)`.
     ///
     /// The `+150` default accounts for the gamma-aware alpha correction
-    /// (`TEXT_GAMMA = 1.8`) which boosts all glyph coverage by ~100 visual
-    /// weight units. Without compensation, bold at `+200` or `+300` appears
-    /// over-heavy because the gamma boost compounds with the weight increase.
+    /// (`TEXT_GAMMA = 1.8`) that is applied to `GlyphFormat::Alpha` (grayscale)
+    /// coverage and boosts those glyphs by ~100 visual weight units. Without
+    /// compensation, bold at `+200` or `+300` appears over-heavy because the
+    /// gamma boost compounds with the weight increase. `SubpixelRgb` /
+    /// `SubpixelBgr` bitmaps do NOT receive the boost (see the
+    /// `oriterm::font::collection::rasterize` module doc for the canonical
+    /// per-format rule, BUG-04-006), so the `+150` default slightly
+    /// over-compensates in subpixel mode — an accepted tradeoff of a single
+    /// workspace-wide default.
     pub fn effective_bold_weight(&self) -> u16 {
         self.bold_weight.map_or_else(
             || (self.effective_weight() + 150).min(900),
