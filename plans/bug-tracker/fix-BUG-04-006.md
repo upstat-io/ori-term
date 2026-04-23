@@ -2,7 +2,7 @@
 bug: "BUG-04-006"
 title: "Subpixel/LCD glyph rendering shows heavy color fringing on regular text — looks \"too bold\""
 severity: "high"
-status: in-progress
+status: complete
 goal: "Subpixel (LCD) text rendering matches DirectWrite/browser visual weight without saturated per-channel halos, at parity with the grayscale path's DirectWrite match."
 success_criteria:
   - "Subpixel RGBA glyph bitmaps are emitted by `FontCollection::rasterize` / `rasterize_with_weight` WITHOUT a byte-wise gamma 1.8 LUT pass — per-channel coverage values are preserved as swash/zeno produced them."
