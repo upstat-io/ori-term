@@ -4,11 +4,22 @@
 //! 500-line limit. Both `rasterize()` (terminal grid) and
 //! `rasterize_with_weight()` (UI text) live here.
 //!
-//! Alpha correction: glyph coverage values receive a gamma-aware boost
-//! via [`apply_alpha_correction`] to compensate for the visual weight
-//! loss that occurs when raw coverage masks are composited in linear
-//! space with sRGB output. Without this, text appears ~100 CSS weight
-//! units lighter than DirectWrite/browser rendering at the same font weight.
+//! Alpha correction: `GlyphFormat::Alpha` (R8) coverage values receive a
+//! gamma-aware boost via [`apply_alpha_correction`] to compensate for the
+//! visual weight loss that occurs when raw coverage masks are composited
+//! in linear space with sRGB output. Without this, grayscale text appears
+//! ~100 CSS weight units lighter than DirectWrite/browser rendering at
+//! the same font weight.
+//!
+//! `GlyphFormat::SubpixelRgb` / `SubpixelBgr` bitmaps are NOT boosted —
+//! each of the R / G / B bytes is an independent per-channel LCD coverage
+//! value (zeno `Format::Subpixel` rasterizes each channel at a different
+//! subpixel X offset). Applying a concave gamma curve per-byte magnifies
+//! per-channel asymmetry into saturated color fringes and over-thickens
+//! strokes. Gamma compensation for subpixel, if needed, belongs at the
+//! shader blend step (already linear-space in oriterm; see
+//! `oriterm/src/gpu/instance_writer/mod.rs` `rgb_to_floats`), not at the
+//! rasterizer. `GlyphFormat::Color` is never boosted (premultiplied RGBA).
 
 use super::colr_v1::rasterize::try_rasterize_colr_v1;
 use super::face::rasterize_from_face;
@@ -52,11 +63,16 @@ pub(super) fn build_gamma_lut(gamma: f32) -> [u8; 256] {
     lut
 }
 
-/// Apply gamma-aware alpha correction to glyph coverage values.
+/// Apply gamma-aware alpha correction to 8-bit monochrome glyph coverage.
 ///
 /// Transforms each byte through the pre-built LUT: `byte = lut[byte]`.
-/// Applied to monochrome (`R8`) and subpixel (RGBA coverage) bitmaps.
-/// Must NOT be applied to color emoji (premultiplied RGBA color data).
+/// Applied to `GlyphFormat::Alpha` (`R8Unorm`) bitmaps only.
+///
+/// Must NOT be applied to `SubpixelRgb` / `SubpixelBgr` — each R / G / B
+/// byte is an independent per-channel LCD coverage value, and the concave
+/// gamma curve magnifies per-channel asymmetry into saturated color
+/// fringes (BUG-04-006). Must NOT be applied to `Color` — premultiplied
+/// RGBA would corrupt.
 fn apply_alpha_correction(glyph: &mut RasterizedGlyph, lut: &[u8; 256]) {
     for byte in &mut glyph.bitmap {
         *byte = lut[*byte as usize];
@@ -119,9 +135,12 @@ impl FontCollection {
             )
         })?;
 
-        // Boost glyph coverage to match DirectWrite/browser visual weight.
-        // Color emoji are premultiplied RGBA — correction would corrupt colors.
-        if glyph.format != GlyphFormat::Color {
+        // Boost grayscale glyph coverage to match DirectWrite/browser visual
+        // weight. Subpixel bitmaps carry per-channel LCD coverage where a
+        // per-byte boost amplifies channel asymmetry into color fringes
+        // (BUG-04-006). Color emoji are premultiplied RGBA — boost would
+        // corrupt. Only `Alpha` receives the correction.
+        if glyph.format == GlyphFormat::Alpha {
             apply_alpha_correction(&mut glyph, &self.gamma_lut);
         }
 
@@ -180,8 +199,10 @@ impl FontCollection {
             )
         })?;
 
-        // Same alpha correction as terminal grid path.
-        if glyph.format != GlyphFormat::Color {
+        // Same Alpha-only gamma correction as the terminal grid path —
+        // subpixel bitmaps carry per-channel LCD coverage and must not be
+        // boosted per-byte (BUG-04-006). Color never boosted.
+        if glyph.format == GlyphFormat::Alpha {
             apply_alpha_correction(&mut glyph, &self.gamma_lut);
         }
 
