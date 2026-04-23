@@ -46,6 +46,9 @@ Font discovery, collection, shaping, rasterization, COLRv1, emoji fallback.
   Subsystem: `oriterm/src/gpu/window_renderer/font_config.rs` (`clear_and_recache`), `oriterm/src/font/collection/mod.rs` (glyph cache), `oriterm/src/app/mod.rs` (`handle_dpi_change`)
   Found: 2026-03-31 | Source: manual — user report
 
+- [x] `[BUG-04-006][high]` **Subpixel/LCD glyph rendering shows heavy color fringing on regular text — looks "too bold"**
+  Resolved: fixed on 2026-04-22. Root cause: `apply_alpha_correction` in `oriterm/src/font/collection/rasterize.rs` applied the gamma=1.8 LUT byte-wise to the whole glyph bitmap whenever `format != Color`, including `SubpixelRgb` / `SubpixelBgr` where each byte is an independent per-channel LCD coverage value. The concave gamma curve boosted each subpixel channel independently, amplifying per-channel asymmetry into saturated red/blue/yellow halos and over-thickening strokes. Narrowed the guard in both `FontCollection::rasterize` and `rasterize_with_weight` to `format == GlyphFormat::Alpha`; extracted shared `insert_corrected` helper as SSOT for the format-aware rule; added `debug_assert!` in `apply_alpha_correction` to pin the Alpha-only contract at runtime. Fix commits: a7c49030 + 18c18503 (TPR drift) + 52f61d26 (hygiene SSOT/DRY) + 917fb235 (retrospective instrumentation). Fix section: `plans/bug-tracker/fix-BUG-04-006.md`. Re-baselined `oriterm/tests/references/subpixel_rgb.png` (visual review confirmed lighter weight + reduced per-channel fringing with no unrelated drift).
+
 ---
 
 ## 04.R Third Party Review Findings
