@@ -98,7 +98,10 @@ pub(super) fn compare_with_reference(
                 "{mismatches}/{total} pixels differ ({pct:.2}%, threshold {MAX_MISMATCH_PERCENT}%). \
                  tolerance=±{PIXEL_TOLERANCE}\n\
                  actual: {}\n\
-                 diff:   {}",
+                 diff:   {}\n\
+                 to accept the new golden: \
+                 ORITERM_UPDATE_GOLDEN=1 cargo test -p oriterm --features gpu-tests --lib \
+                 (reviews the diff PNG + re-runs the test against the updated reference)",
                 actual_path.display(),
                 diff_path.display(),
             ))
@@ -230,7 +233,10 @@ pub(crate) fn compare_with_reference_strict(
          per-channel max: R={} G={} B={} A={} (tolerance={})\n\
          mismatch %: {pct:.4}% (threshold={:.4}%)\n\
          actual: {}\n\
-         diff:   {}",
+         diff:   {}\n\
+         to accept the new golden: \
+         ORITERM_UPDATE_GOLDEN=1 cargo test -p oriterm --features gpu-tests --lib \
+         (reviews the diff PNG + re-runs the test against the updated reference)",
         stats.mismatch_count,
         stats.max_diff_r,
         stats.max_diff_g,

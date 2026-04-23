@@ -73,7 +73,21 @@ pub(super) fn build_gamma_lut(gamma: f32) -> [u8; 256] {
 /// gamma curve magnifies per-channel asymmetry into saturated color
 /// fringes (BUG-04-006). Must NOT be applied to `Color` — premultiplied
 /// RGBA would corrupt.
+///
+/// The `debug_assert!` below is the runtime guard that catches any caller
+/// slipping past the format-check at the call sites. Together with the
+/// per-site guards in `rasterize` and `rasterize_with_weight` it makes the
+/// Alpha-only invariant explicit at every layer — any future path that
+/// forgets the guard fires this panic in debug builds.
 fn apply_alpha_correction(glyph: &mut RasterizedGlyph, lut: &[u8; 256]) {
+    debug_assert_eq!(
+        glyph.format,
+        GlyphFormat::Alpha,
+        "apply_alpha_correction called on non-Alpha glyph ({:?}); per-byte gamma \
+         boost corrupts subpixel per-channel coverage and premultiplied color \
+         data — see BUG-04-006",
+        glyph.format,
+    );
     for byte in &mut glyph.bitmap {
         *byte = lut[*byte as usize];
     }
