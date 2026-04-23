@@ -8,34 +8,31 @@
 //! number. ori_term has no multi-page support → margin + page fields
 //! are the constant `1`.
 
-use oriterm_core::effect::{Effect, PtyEffect, PtyWriteKind};
-use oriterm_test_support::spec_chain::SpecHarness;
+use oriterm_core::effect::PtyWriteKind;
+use oriterm_test_support::spec_chain::{SpecHarness, last_pty_write};
 
-fn last_pty_write(h: &SpecHarness) -> (Vec<u8>, PtyWriteKind) {
-    h.outcome()
-        .effects_emitted
-        .iter()
-        .rev()
-        .find_map(|eff| match eff {
-            Effect::Pty(PtyEffect::Write { bytes, kind }) => Some((bytes.clone(), *kind)),
-            _ => None,
-        })
-        .expect("expected at least one PtyEffect::Write in the harness outcome")
-}
-
+/// Pins: DECRQDE reply for an 80x24 terminal is
+/// `CSI 24;80;1;1;1 " w` — rows/cols reflect the visible grid, the margin
+/// and page slots are the constant `1` (ori_term has no multi-page support).
+/// Anchor: catalog row `DECPRES-DECRQDE`.
 #[test]
 fn decrqde_reply_echoes_grid_dimensions() {
     let mut h = SpecHarness::with_size(24, 80);
     h.feed(b"\x1b[\"v");
-    let (bytes, kind) = last_pty_write(&h);
+    let (bytes, kind) =
+        last_pty_write(&h).expect("expected at least one PtyEffect::Write in the harness outcome");
     assert_eq!(kind, PtyWriteKind::StatusString);
     assert_eq!(bytes, b"\x1b[24;80;1;1;1\"w");
 }
 
+/// Pins: a non-default 40x10 harness replies `CSI 10;40;1;1;1 " w` — proves
+/// DECRQDE reads live grid dimensions rather than hardcoded 80x24 constants.
+/// Anchor: catalog row `DECPRES-DECRQDE`.
 #[test]
 fn decrqde_reply_tracks_custom_grid_size() {
     let mut h = SpecHarness::with_size(10, 40);
     h.feed(b"\x1b[\"v");
-    let (bytes, _) = last_pty_write(&h);
+    let (bytes, _) =
+        last_pty_write(&h).expect("expected at least one PtyEffect::Write in the harness outcome");
     assert_eq!(bytes, b"\x1b[10;40;1;1;1\"w");
 }

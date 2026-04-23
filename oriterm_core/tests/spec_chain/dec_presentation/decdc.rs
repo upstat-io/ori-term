@@ -18,6 +18,9 @@ fn seed_abcdef(h: &mut SpecHarness) {
     h.feed(b"\x1b[1;1H");
 }
 
+/// Pins: DECDC Ps=2 at column 3 deletes 2 columns on EVERY row of the
+/// scroll region — content shifts left, blanks fill the right edge.
+/// Anchor: catalog row `DECPRES-DECDC` (basic multi-row delete).
 #[test]
 fn decdc_deletes_columns_at_cursor_on_every_row() {
     let mut h = SpecHarness::with_size(5, 10);
@@ -36,6 +39,10 @@ fn decdc_deletes_columns_at_cursor_on_every_row() {
     }
 }
 
+/// Pins: DECDC Ps=1 at the last column erases only that column (nothing
+/// to shift in from the right). Proves the count is clamped to remaining
+/// columns rather than panicking on out-of-range shifts.
+/// Anchor: catalog row `DECPRES-DECDC` (last-column boundary).
 #[test]
 fn decdc_at_last_column_erases_only_that_column() {
     let mut h = SpecHarness::with_size(3, 6);
@@ -52,6 +59,9 @@ fn decdc_at_last_column_erases_only_that_column() {
     assert_eq!(row[Column(5)].ch, ' ');
 }
 
+/// Pins: DECDC with omitted Ps defaults to 1 — `CSI ' ~` at col 1 deletes
+/// a single column ('A'), shifting 'B' 'C' left. Anchor: catalog row
+/// `DECPRES-DECDC` (default-count).
 #[test]
 fn decdc_default_count_is_one() {
     let mut h = SpecHarness::with_size(3, 6);
@@ -63,6 +73,10 @@ fn decdc_default_count_is_one() {
     assert_eq!(row[Column(1)].ch, 'C');
 }
 
+/// Pins: DECDC under DECLRMM deletes only within the margin band — cells
+/// outside the band (cols 0..=1 and 7..=9 for a 2..=6 band) are
+/// untouched, the right margin is filled with a blank.
+/// Anchor: catalog row `DECPRES-DECDC` (DECLRMM band-constrained).
 #[test]
 fn decdc_declrmm_constrains_to_margin_band() {
     let mut h = SpecHarness::with_size(3, 10);
@@ -91,6 +105,9 @@ fn decdc_declrmm_constrains_to_margin_band() {
     assert_eq!(row[Column(9)].ch, 'J');
 }
 
+/// Negative pin: DECDC with the cursor OUTSIDE the DECLRMM band is a
+/// no-op — every cell in the row is byte-identical after the sequence.
+/// Anchor: catalog row `DECPRES-DECDC` (cursor-outside-band no-op).
 #[test]
 fn decdc_cursor_outside_declrmm_band_is_noop() {
     let mut h = SpecHarness::with_size(3, 10);
@@ -106,6 +123,11 @@ fn decdc_cursor_outside_declrmm_band_is_noop() {
     }
 }
 
+/// Negative pin: rows outside the active scroll region (DECSTBM) are
+/// NOT touched by DECDC — only rows inside the vertical region are
+/// affected. Guards against the common bug of deleting on all rows
+/// regardless of DECSTBM. Anchor: catalog row `DECPRES-DECDC`
+/// (DECSTBM vertical-bound respected).
 #[test]
 fn decdc_negative_pin_leaves_other_rows_alone() {
     let mut h = SpecHarness::with_size(4, 6);

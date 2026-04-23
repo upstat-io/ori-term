@@ -7,6 +7,8 @@ use crate::image::ImageId;
 use crate::image::kitty::KittyCommand;
 use crate::term::Term;
 
+use super::KittyReplyContext;
+
 impl<S: EffectSink> Term<S> {
     /// Handle `a=a` — control animation playback.
     ///
@@ -61,6 +63,7 @@ impl<S: EffectSink> Term<S> {
             }
         }
 
-        self.kitty_respond(image_id, cmd.quiet, "OK");
+        let ctx = KittyReplyContext::from_cmd(cmd).with_image_id(image_id);
+        self.kitty_respond(&ctx, "OK");
     }
 }

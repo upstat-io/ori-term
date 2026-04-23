@@ -6,7 +6,7 @@
 //! ColumnMode DECRQM deviation pins.
 
 use oriterm_core::TermMode;
-use oriterm_test_support::spec_chain::SpecHarness;
+use oriterm_test_support::spec_chain::{SpecHarness, pty_writes};
 
 // ── Variant table ──────────────────────────────────────────────────
 //
@@ -203,45 +203,19 @@ const EXPECTED_VARIANT_COUNT: usize = 32;
 fn query_decrqm(h: &mut SpecHarness, mode_num: u16) -> u8 {
     let query = format!("\x1b[?{}$p", mode_num);
     h.feed(query.as_bytes());
-
-    let expected_prefix = format!("\x1b[?{};", mode_num);
-    let effects = h.outcome().effects_emitted.clone();
-
-    for eff in &effects {
-        if let oriterm_core::effect::Effect::Pty(oriterm_core::effect::PtyEffect::Write {
-            bytes,
-            ..
-        }) = eff
-        {
-            let s = String::from_utf8_lossy(bytes);
-            if let Some(rest) = s.strip_prefix(&expected_prefix) {
-                if let Some(val_str) = rest.strip_suffix("$y") {
-                    if let Ok(val) = val_str.parse::<u8>() {
-                        return val;
-                    }
-                }
-            }
-        }
-    }
-    panic!("DECRQM ?{mode_num}: no valid response found in effects: {effects:?}");
+    extract_decrqm_from_effects(h, mode_num)
 }
 
 /// Extract a DECRQM response value from the already-collected effects
 /// (for modes like 2026 where DECRQM must be fed in the same call).
 fn extract_decrqm_from_effects(h: &SpecHarness, mode_num: u16) -> u8 {
     let expected_prefix = format!("\x1b[?{};", mode_num);
-    for eff in &h.outcome().effects_emitted {
-        if let oriterm_core::effect::Effect::Pty(oriterm_core::effect::PtyEffect::Write {
-            bytes,
-            ..
-        }) = eff
-        {
-            let s = String::from_utf8_lossy(bytes);
-            if let Some(rest) = s.strip_prefix(&expected_prefix) {
-                if let Some(val_str) = rest.strip_suffix("$y") {
-                    if let Ok(val) = val_str.parse::<u8>() {
-                        return val;
-                    }
+    for (bytes, _) in pty_writes(h) {
+        let s = String::from_utf8_lossy(bytes);
+        if let Some(rest) = s.strip_prefix(&expected_prefix) {
+            if let Some(val_str) = rest.strip_suffix("$y") {
+                if let Ok(val) = val_str.parse::<u8>() {
+                    return val;
                 }
             }
         }

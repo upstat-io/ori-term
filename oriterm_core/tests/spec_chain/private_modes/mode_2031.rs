@@ -15,9 +15,8 @@
 //!
 //! - `DEC-COLOR-SCHEME-UPDATE` — flag toggle + DECRQM + notification
 
-use oriterm_core::effect::{Effect, PtyEffect};
 use oriterm_core::{TermMode, Theme};
-use oriterm_test_support::spec_chain::SpecHarness;
+use oriterm_test_support::spec_chain::{SpecHarness, pty_writes};
 
 // ── Flag toggle ──────────────────────────────────────────────────────
 
@@ -77,9 +76,7 @@ fn mode_2031_decrqm_reports_correctly() {
     // Query while reset.
     harness.feed(b"\x1b[?2031$p");
     let reset_response = b"\x1b[?2031;2$y";
-    let found_reset = harness.outcome().effects_emitted.iter().any(
-        |e| matches!(e, Effect::Pty(PtyEffect::Write { bytes, .. }) if bytes == reset_response),
-    );
+    let found_reset = pty_writes(&harness).any(|(b, _)| b == reset_response);
     assert!(
         found_reset,
         "DECRQM ?2031 when reset should emit {:?}, got: {:?}",
@@ -91,10 +88,7 @@ fn mode_2031_decrqm_reports_correctly() {
     harness.feed(b"\x1b[?2031h");
     harness.feed(b"\x1b[?2031$p");
     let set_response = b"\x1b[?2031;1$y";
-    let found_set =
-        harness.outcome().effects_emitted.iter().any(
-            |e| matches!(e, Effect::Pty(PtyEffect::Write { bytes, .. }) if bytes == set_response),
-        );
+    let found_set = pty_writes(&harness).any(|(b, _)| b == set_response);
     assert!(
         found_set,
         "DECRQM ?2031 when set should emit {:?}, got: {:?}",
@@ -114,11 +108,7 @@ fn mode_2031_disabled_no_notification_on_scheme_change() {
     harness.term_mut().set_theme(Theme::Light);
     harness.drain_effects();
 
-    let has_notification = harness
-        .outcome()
-        .effects_emitted
-        .iter()
-        .any(|e| matches!(e, Effect::Pty(PtyEffect::Write { bytes, .. }) if bytes.starts_with(b"\x1b[?997")));
+    let has_notification = pty_writes(&harness).any(|(b, _)| b.starts_with(b"\x1b[?997"));
     assert!(
         !has_notification,
         "with mode 2031 disabled, set_theme() must not emit ?997 notification"
@@ -142,11 +132,7 @@ fn mode_2031_dark_scheme_emits_997_1_notification() {
     harness.drain_effects();
 
     let expected = b"\x1b[?997;1n";
-    let found = harness
-        .outcome()
-        .effects_emitted
-        .iter()
-        .any(|e| matches!(e, Effect::Pty(PtyEffect::Write { bytes, .. }) if bytes == expected));
+    let found = pty_writes(&harness).any(|(b, _)| b == expected);
     assert!(
         found,
         "set_theme(Dark) with mode 2031 enabled should emit {:?}, got: {:?}",
@@ -168,11 +154,7 @@ fn mode_2031_light_scheme_emits_997_2_notification() {
     harness.drain_effects();
 
     let expected = b"\x1b[?997;2n";
-    let found = harness
-        .outcome()
-        .effects_emitted
-        .iter()
-        .any(|e| matches!(e, Effect::Pty(PtyEffect::Write { bytes, .. }) if bytes == expected));
+    let found = pty_writes(&harness).any(|(b, _)| b == expected);
     assert!(
         found,
         "set_theme(Light) with mode 2031 enabled should emit {:?}, got: {:?}",
@@ -190,11 +172,7 @@ fn mode_2031_mode_toggle_does_not_emit_notification_by_itself() {
     harness.feed(b"\x1b[?2031h");
     harness.feed(b"\x1b[?2031l");
 
-    let has_notification = harness
-        .outcome()
-        .effects_emitted
-        .iter()
-        .any(|e| matches!(e, Effect::Pty(PtyEffect::Write { bytes, .. }) if bytes.starts_with(b"\x1b[?997")));
+    let has_notification = pty_writes(&harness).any(|(b, _)| b.starts_with(b"\x1b[?997"));
     assert!(
         !has_notification,
         "toggling mode 2031 on/off must not emit a ?997 notification"
@@ -213,11 +191,7 @@ fn mode_2031_same_theme_no_notification() {
     harness.term_mut().set_theme(Theme::Dark);
     harness.drain_effects();
 
-    let has_notification = harness
-        .outcome()
-        .effects_emitted
-        .iter()
-        .any(|e| matches!(e, Effect::Pty(PtyEffect::Write { bytes, .. }) if bytes.starts_with(b"\x1b[?997")));
+    let has_notification = pty_writes(&harness).any(|(b, _)| b.starts_with(b"\x1b[?997"));
     assert!(
         !has_notification,
         "set_theme(Dark) when already Dark must not emit notification, even with mode 2031 on"
@@ -238,11 +212,7 @@ fn mode_2031_unknown_theme_no_notification() {
     harness.term_mut().set_theme(Theme::Unknown);
     harness.drain_effects();
 
-    let has_any_pty = harness
-        .outcome()
-        .effects_emitted
-        .iter()
-        .any(|e| matches!(e, Effect::Pty(PtyEffect::Write { .. })));
+    let has_any_pty = pty_writes(&harness).next().is_some();
     assert!(
         !has_any_pty,
         "Theme::Unknown must produce zero PTY effects, not just zero ?997 bytes"
@@ -264,12 +234,7 @@ fn mode_2031_unknown_theme_zero_pty_effects() {
     harness.drain_effects();
 
     // Filter effects to only those after the DECSET (the DECSET doesn't emit PTY writes).
-    let pty_effects_after_unknown: Vec<_> = harness
-        .outcome()
-        .effects_emitted
-        .iter()
-        .filter(|e| matches!(e, Effect::Pty(PtyEffect::Write { .. })))
-        .collect();
+    let pty_effects_after_unknown: Vec<_> = pty_writes(&harness).collect();
     assert!(
         pty_effects_after_unknown.is_empty(),
         "Theme::Unknown transition must not push any PTY write effect: {:?}",
@@ -289,11 +254,7 @@ fn mode_2031_no_backfill_on_enable() {
     // Enable mode 2031 — must NOT synthesize a stale notification.
     harness.feed(b"\x1b[?2031h");
 
-    let has_notification = harness
-        .outcome()
-        .effects_emitted
-        .iter()
-        .any(|e| matches!(e, Effect::Pty(PtyEffect::Write { bytes, .. }) if bytes.starts_with(b"\x1b[?997")));
+    let has_notification = pty_writes(&harness).any(|(b, _)| b.starts_with(b"\x1b[?997"));
     assert!(
         !has_notification,
         "enabling mode 2031 must NOT back-fill a stale ?997 notification"
@@ -314,11 +275,8 @@ fn mode_2031_no_notification_on_repeated_same_theme() {
         harness.drain_effects();
     }
 
-    let notification_count = harness
-        .outcome()
-        .effects_emitted
-        .iter()
-        .filter(|e| matches!(e, Effect::Pty(PtyEffect::Write { bytes, .. }) if bytes.starts_with(b"\x1b[?997")))
+    let notification_count = pty_writes(&harness)
+        .filter(|(b, _)| b.starts_with(b"\x1b[?997"))
         .count();
     assert_eq!(
         notification_count, 0,
@@ -332,11 +290,7 @@ fn mode_2031_no_notification_on_construction() {
     // SpecHarness::new() creates a Term — verify no stale effects.
     let harness = SpecHarness::new();
 
-    let has_notification = harness
-        .outcome()
-        .effects_emitted
-        .iter()
-        .any(|e| matches!(e, Effect::Pty(PtyEffect::Write { bytes, .. }) if bytes.starts_with(b"\x1b[?997")));
+    let has_notification = pty_writes(&harness).any(|(b, _)| b.starts_with(b"\x1b[?997"));
     assert!(
         !has_notification,
         "Term::new() must not emit a ?997 notification"

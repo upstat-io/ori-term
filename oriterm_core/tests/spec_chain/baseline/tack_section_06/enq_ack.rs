@@ -48,17 +48,17 @@
 //! rustdoc describes. Without this pin, BUG-08-6 could be silently
 //! closed without the corresponding spec_chain coverage ever landing.
 
-/// Regression guard: ECMA48-C0-ENQ catalog row must stay `missing` until BUG-08-6 is fixed.
+/// Pins: the ECMA-48 C0 ENQ catalog row remains `missing` until BUG-08-6
+/// lands. Reads the catalog markdown directly and asserts the ENQ row's
+/// verification-status column still reads `missing`. When BUG-08-6 is
+/// resolved, the catalog row's status will flip (to `verified` or similar),
+/// this assertion will fail, and the failing test reminds the implementer
+/// that the spec_chain coverage for this family needs to land here — not
+/// just the implementation elsewhere.
 ///
-/// Reads the catalog markdown directly and asserts the ENQ row's
-/// verification-status column still reads `missing`. When BUG-08-6
-/// is resolved, the catalog row's status will flip (to `verified`
-/// or similar), this assertion will fail, and the failing test
-/// reminds the implementer that the spec_chain coverage for this
-/// family needs to land here — not just the implementation
-/// elsewhere.
+/// Anchor: BUG-08-6 / HYG-13.1-011.
 #[test]
-fn ecma48_c0_enq_catalog_row_still_missing_pending_bug_08_6() {
+fn ecma48_c0_enq_catalog_row_still_missing() {
     let catalog = std::fs::read_to_string(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../plans/spec-conformance/catalog/ecma-48.md"

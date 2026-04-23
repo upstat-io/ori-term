@@ -6,16 +6,20 @@ use crate::image::kitty::KittyCommand;
 use crate::image::{ImageId, ImagePlacement, PlacementSizing};
 use crate::term::Term;
 
+use super::KittyReplyContext;
+
 impl<S: EffectSink> Term<S> {
     /// Place a previously uploaded image.
     pub(super) fn kitty_place(&mut self, cmd: &KittyCommand) {
+        let ctx = KittyReplyContext::from_cmd(cmd);
+
         let Some(image_id) = cmd.image_id else {
-            self.kitty_respond(0, cmd.quiet, "ENOENT");
+            self.kitty_respond(&ctx, "ENOENT");
             return;
         };
 
         if self.image_cache().get_no_touch(ImageId(image_id)).is_none() {
-            self.kitty_respond(image_id, cmd.quiet, "ENOENT");
+            self.kitty_respond(&ctx, "ENOENT");
             return;
         }
 
@@ -23,7 +27,7 @@ impl<S: EffectSink> Term<S> {
         if !cmd.unicode_placeholder {
             self.kitty_create_placement(image_id, cmd);
         }
-        self.kitty_respond(image_id, cmd.quiet, "OK");
+        self.kitty_respond(&ctx, "OK");
     }
 
     /// Create a placement at the current cursor position.
