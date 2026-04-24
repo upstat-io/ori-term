@@ -2314,6 +2314,44 @@ fn kitty_mid_command_bit_mutation_survives_alt_roundtrip() {
     );
 }
 
+/// Regression: BUG-08-12 TPR round-5 — inactive-screen bit mutations
+/// during a shell command must be REVERTED by the shell's `;D` restore,
+/// not persisted. Previously restore discarded the inactive bits snap;
+/// now it applies the snap to `inactive_keyboard_mode_bits` so the alt
+/// screen's mid-command mutations are cleaned at the prompt boundary.
+/// See: plans/bug-tracker/fix-BUG-08-012.md §2.5 TPR round 5.
+#[test]
+fn inactive_screen_bit_mutation_during_command_restored_on_primary_d() {
+    let mut term = make_term();
+    // Shell on primary pushes DIS + ;C.
+    feed_mux_and_proc(&mut term, b"\x1b[>1u");
+    feed_mux_and_proc(&mut term, b"\x1b]133;C\x1b\\");
+
+    // Child enters alt, mutates alt-screen bits via CSI = 4 u (REPORT_ALTERNATE_KEYS),
+    // then exits alt back to primary.
+    feed_mux_and_proc(&mut term, b"\x1b[?1049h");
+    feed_mux_and_proc(&mut term, b"\x1b[=4u");
+    assert!(term.mode().contains(TermMode::REPORT_ALTERNATE_KEYS));
+    feed_mux_and_proc(&mut term, b"\x1b[?1049l");
+    // After exit, primary's live bits restored; alt's mutation is now
+    // in the inactive live field.
+    assert_eq!(
+        term.inactive_keyboard_mode_bits(),
+        KeyboardModes::REPORT_ALTERNATE_KEYS,
+        "alt's mid-command mutation carries in inactive_keyboard_mode_bits"
+    );
+
+    // Shell `;D` — restore should revert alt's inactive bits to the
+    // pre-command snapshot (NO_MODE).
+    feed_mux_and_proc(&mut term, b"\x1b]133;D\x1b\\");
+
+    assert_eq!(
+        term.inactive_keyboard_mode_bits(),
+        KeyboardModes::NO_MODE,
+        "inactive bits snapshot must revert alt's mid-command mutation at `;D`"
+    );
+}
+
 /// Regression: BUG-08-12 TPR round-4 — when `;A` fires on the ALT
 /// screen during a shell command, the paired bits snapshot must be
 /// swapped in `toggle_alt_common` so the active bits snap consumed by
