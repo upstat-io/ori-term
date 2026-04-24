@@ -368,9 +368,26 @@ The existing `enc_numpad(key, mods, mode)` is kept as a thin wrapper forwarding 
 **Findings this round:**
 - `[TPR-08-013-codex+gemini][high]` `oriterm/src/key_encoding/kitty.rs:98` — Named keys with unambiguous legacy (arrows, F-keys, Home/End, Insert, Delete, PageUp/Down) bypass release suppression in Kitty DISAMBIGUATE without REPORT_EVENT_TYPES. The `if !needs_csi_u && has_unambiguous_legacy: return legacy::encode_legacy(...)` at line 100 routes around `resolve_event_suffix` and would emit `b"\x1b[A"` for an ArrowUp release. Disposition: fixed in Phase 5 round-1 commit — moved release suppression to a single top-of-`encode_kitty` guard (SSOT). Removed redundant per-arm guards added in round 0 + the now-redundant Release check in `should_send_as_text`. Added 6 negative pins covering ArrowUp / F1 / Delete / Home releases under DISAMBIGUATE-without-REPORT_EVENT_TYPES + 1 positive pin (ArrowUp press still emits legacy) + 1 positive pin (ArrowUp release WITH REPORT_EVENT_TYPES emits CSI u).
 
-### Phase 5 Code TPR — Round 2 (convergence verification)
+### Phase 5 Code TPR — Round 2
 
-Runs after the round-1 fix commit. Goal: both reviewers clean.
+**Scratch dir:** `/tmp/tpr-round-ori_term-EvdhB7Wy`. Direct wrapper Bash dispatch.
+
+**Dispatch:** codex 0 findings (clean) / gemini 2 findings.
+**Verification:** verified 2 / dropped 0.
+**Classification:** actionable 2 / meta 0.
+**Fix commit:** Phase 5 round-2 commit below.
+
+**Findings this round:**
+- `[TPR-08-013-gemini][high]` `oriterm/src/key_encoding/kitty.rs:141` — Multi-char Character keys leak raw text on Release/Repeat when REPORT_EVENT_TYPES is active. The top-of-function guard only fires when `!report_events`; the multi-char else branch unconditionally returns text/ch bytes. Disposition: fixed in Phase 5 round-2 commit — added `if event_type != Press: return Vec::new()` guard to the multi-char else branch (multi-char has no codepoint to encode in CSI u, so suppression is the only correct behavior for non-Press).
+- `[TPR-08-013-gemini][high]` `oriterm/src/key_encoding/kitty.rs:147` — Same leak in the Unidentified `_` arm. Disposition: fixed in Phase 5 round-2 commit — same Press-only guard applied to the Unidentified arm. Added 5 negative pins (multi-char release with REPORT_EVENT_TYPES, multi-char repeat with REPORT_EVENT_TYPES, Unidentified release with REPORT_EVENT_TYPES) + 2 positive pins (multi-char press, Unidentified press both still emit text).
+
+**Codex (round 2):** clean. Summary: "Commit `5a64fe2a` places the `Release && !REPORT_EVENT_TYPES` suppression guard at the top of `encode_kitty` before the named-key legacy shortcut and before all Character / multi-char / Unidentified textual returns. I found no remaining release-suppression bypass path. … 212 tests with 0 failures."
+
+Codex's clean and gemini's findings cover orthogonal classes — codex audited the `!report_events` path (the original BUG-08-13 leak), gemini audited the `report_events == true` path (a separate latent leak surfaced by the wider review). Both fixes land in the same round-2 commit.
+
+### Phase 5 Code TPR — Round 3 (convergence verification)
+
+Runs after the round-2 fix commit. Goal: both reviewers clean.
 
 ---
 

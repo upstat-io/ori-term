@@ -135,8 +135,14 @@ pub(super) fn encode_kitty(input: &KeyInput<'_>) -> Vec<u8> {
                 }
                 cp
             } else {
-                // Multi-char (dead-key compositions, IME output) — same
-                // fallback rule.
+                // Multi-char (dead-key compositions, IME output). With
+                // REPORT_EVENT_TYPES active the top-of-function release
+                // guard does not fire, but multi-char input has no single
+                // codepoint to encode in CSI u — suppress non-Press events
+                // here rather than leak raw text on release/repeat.
+                if input.event_type != KeyEventType::Press {
+                    return Vec::new();
+                }
                 let bytes: &[u8] = input
                     .text
                     .map_or_else(|| ch.as_str().as_bytes(), str::as_bytes);
@@ -144,7 +150,15 @@ pub(super) fn encode_kitty(input: &KeyInput<'_>) -> Vec<u8> {
             }
         }
         // Unidentified keys (e.g. RDP/IME): send text as-is if available.
-        _ => return input.text.map_or_else(Vec::new, |t| t.as_bytes().to_vec()),
+        // Same protocol-shape gap as multi-char above — there is no
+        // codepoint to encode, so non-Press events must suppress rather
+        // than leak raw text when REPORT_EVENT_TYPES is active.
+        _ => {
+            if input.event_type != KeyEventType::Press {
+                return Vec::new();
+            }
+            return input.text.map_or_else(Vec::new, |t| t.as_bytes().to_vec());
+        }
     };
 
     // Build event type suffix (only when REPORT_EVENT_TYPES active).
