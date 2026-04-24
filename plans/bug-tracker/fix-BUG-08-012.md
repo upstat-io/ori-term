@@ -2,7 +2,7 @@
 bug: "BUG-08-12"
 title: "Kitty keyboard mode persists after program exit — shell renders raw CSI u sequences instead of typed characters"
 severity: "high"
-status: in-progress
+status: complete
 goal: "Kitty keyboard enhancement modes pushed by a subprocess (e.g. notcurses-demo) are automatically restored to their pre-command depth when the shell regains control via OSC 133, so the shell prompt accepts keystrokes in its native encoding without requiring a blind `reset`."
 success_criteria:
   - "After `CSI > 1 u` (push), `OSC 133 ; C ST` (command-start), child crash (no pop), `OSC 133 ; A ST` (next prompt): `keyboard_mode_stack` is truncated to its pre-command depth and `TermMode::KITTY_KEYBOARD_PROTOCOL` reflects the restored top — semantic pin test in `oriterm_mux/src/shell_integration/tests.rs`."
@@ -18,8 +18,10 @@ subsystem: "oriterm_core/src/term/mod.rs, oriterm_core/src/term/shell_state/mod.
 found: "2026-04-14"
 source: "manual"
 third_party_review:
-  status: none
-  updated: null
+  status: clean
+  updated: "2026-04-24"
+  rounds_completed: 8
+  notes: "8 TPR rounds to both-clean convergence (rounds 0-7 produced substantive findings, round 8 clean-clean); /impl-hygiene-review cleanup pass added; commits 14216106..d6fd619a + f01ac21c retrospective."
 ---
 
 # Fix: BUG-08-12 — Kitty keyboard mode persists after program exit
@@ -350,21 +352,21 @@ TPR findings raised against this fix are recorded here by the executor (Claude) 
 
 ## 4. Completion Checklist
 
-- [ ] All new tests pass unchanged after fix (no test modifications needed)
-- [ ] Matrix completeness verified — every cell in the OSC 133 / OSC 633 × alt-screen × snapshot-state grid has a test
-- [ ] Debug AND release builds pass
-- [ ] Windows cross-compile green (`cargo build --target x86_64-pc-windows-gnu`)
-- [ ] `timeout 150 ./test-all.sh` green — no regressions
-- [ ] `./clippy-all.sh` green
-- [ ] `./build-all.sh` green
-- [ ] `cargo test -p oriterm_core` + `cargo test -p oriterm_mux` + `cargo test -p oriterm` green
-- [ ] `/commit-push` — commit all changes before review
-- [ ] Plan TPR (Phase 2.5) completed — see §2.5 above
-- [ ] `/tpr-review` (Phase 5 — code review) passed
-- [ ] `/impl-hygiene-review` passed — after code TPR is clean
-- [ ] `/improve-tooling` retrospective completed
-- [ ] Bug entry in `plans/bug-tracker/section-08-core-terminal.md` updated: `- [x]` with `Resolved: fixed on {YYYY-MM-DD}. See plans/bug-tracker/fix-BUG-08-012.md.`
-- [ ] Fix section frontmatter `status` updated to `complete`
+- [x] All new tests pass unchanged after fix (no test modifications needed)
+- [x] Matrix completeness verified — every cell in the OSC 133 / OSC 633 × alt-screen × snapshot-state grid has a test
+- [x] Debug AND release builds pass
+- [x] Windows cross-compile green (`cargo build --target x86_64-pc-windows-gnu`)
+- [x] `timeout 150 ./test-all.sh` green — no regressions
+- [x] `./clippy-all.sh` green
+- [x] `./build-all.sh` green
+- [x] `cargo test -p oriterm_core` + `cargo test -p oriterm_mux` + `cargo test -p oriterm` green
+- [x] `/commit-push` — commit all changes before review (commits `14216106`..`d6fd619a`)
+- [x] Plan TPR (Phase 2.5) completed — see §2.5 above
+- [x] `/tpr-review` (Phase 5 — code review) passed — 8 rounds to both-clean convergence (rounds 0-7 produced substantive findings, round 8 clean-clean); commits `ce555bb8 95deba95 59610a01 5a357ea2 98d16d33 3246c478 a5702253`
+- [x] `/impl-hygiene-review` passed — after code TPR is clean. 10 findings (1 LEAK:algorithmic-duplication Major + 1 BLOAT + 1 GAP + 7 NOTEs); 5 fixed inline (F1 helper extraction + F3 stale comment + F6 round-trip test + F8 debug_assert + F9 missing CwdSet), 1 tracker update (F2 BUG-08-020 bump 586→639), 1 new bug filed (F10-exit-code → BUG-11-017); commit `d6fd619a`
+- [x] `/improve-tooling` retrospective completed — commit `f01ac21c`, `tpr-review-design.md` §4 Lessons + §6 p1 updated with today's I22 recurrence data
+- [x] Bug entry in `plans/bug-tracker/section-08-core-terminal.md` updated: `- [x]` with resolution note
+- [x] Fix section frontmatter `status` updated to `complete`
 - [ ] Bug-tracker `00-overview.md` Quick Reference open bug count decremented for section 08
 - [ ] Final `/commit-push` — commit closure artifacts
 
