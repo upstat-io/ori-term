@@ -162,7 +162,7 @@ impl<S: EffectSink> Term<S> {
 
         // Fill every visible cell with 'E' and default attributes.
         // DECALN cells are application-written per xterm semantics —
-        // set DRAWN so DECRQCRA treats them as drawn (BUG-08-17).
+        // set DRAWN so DECRQCRA treats them as drawn.
         let template = Cell::default();
         for line in 0..lines {
             for col in 0..cols {

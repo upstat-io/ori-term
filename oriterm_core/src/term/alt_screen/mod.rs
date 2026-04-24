@@ -130,6 +130,16 @@ impl<S: EffectSink> Term<S> {
         let new_active_bits = self.inactive_keyboard_mode_bits;
         self.inactive_keyboard_mode_bits = active_bits_before_swap;
         self.dcs_set_keyboard_mode(new_active_bits, KeyboardModesApplyBehavior::Replace);
+        // Both screens' keyboard-mode stacks are capped at the same max
+        // depth; the enforcement lives in `dcs_push_keyboard_mode`, which
+        // only runs against the active stack. This assert documents that
+        // the swap preserves the cap on both sides. BUG-08-12 F8.
+        debug_assert!(
+            self.keyboard_mode_stack.len() <= crate::term::KEYBOARD_MODE_STACK_MAX_DEPTH
+                && self.inactive_keyboard_mode_stack.len()
+                    <= crate::term::KEYBOARD_MODE_STACK_MAX_DEPTH,
+            "keyboard mode stacks exceed KEYBOARD_MODE_STACK_MAX_DEPTH after swap"
+        );
         self.grid_mut().dirty_mut().mark_all();
     }
 }
