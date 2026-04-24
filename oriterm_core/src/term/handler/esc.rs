@@ -7,6 +7,7 @@
 use std::collections::VecDeque;
 
 use log::debug;
+use vte::ansi::KeyboardModes;
 
 use crate::cell::{Cell, CellFlags};
 use crate::effect::sink::EffectSink;
@@ -51,9 +52,13 @@ impl<S: EffectSink> Term<S> {
         // Seed paired snapshots to `Some(empty)` (not `None`) so that if a
         // kitty-aware child later pushes keyboard modes and crashes before
         // popping, the next OSC 133 ; A / ; D still restores to an empty
-        // stack rather than leaving child-pushed modes active. BUG-08-12.
+        // stack rather than leaving child-pushed modes active. Paired bits
+        // snapshot matches: `Some(NO_MODE)` means "restore to no kitty
+        // bits set". BUG-08-12.
         self.pre_command_kb_stack_snapshot = Some(VecDeque::new());
         self.inactive_pre_command_kb_stack_snapshot = Some(VecDeque::new());
+        self.pre_command_kb_mode_bits_snapshot = Some(KeyboardModes::NO_MODE);
+        self.inactive_pre_command_kb_mode_bits_snapshot = Some(KeyboardModes::NO_MODE);
 
         // Shell integration state.
         self.prompt_state = PromptState::None;
@@ -117,6 +122,8 @@ impl<S: EffectSink> Term<S> {
         // Same paired-snapshot seeding as RIS — see BUG-08-12.
         self.pre_command_kb_stack_snapshot = Some(VecDeque::new());
         self.inactive_pre_command_kb_stack_snapshot = Some(VecDeque::new());
+        self.pre_command_kb_mode_bits_snapshot = Some(KeyboardModes::NO_MODE);
+        self.inactive_pre_command_kb_mode_bits_snapshot = Some(KeyboardModes::NO_MODE);
         // DECSTR clears the DECSCA protection state — cursor template
         // is reset above via `soft_reset_grid`, but `char_protection`
         // mirrors the same state on Term and must follow suit.

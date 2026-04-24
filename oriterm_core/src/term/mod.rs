@@ -124,6 +124,23 @@ pub struct Term<S: EffectSink> {
     /// modes, and exits without popping does not leak state into the
     /// non-visible stack. See BUG-08-12.
     inactive_pre_command_kb_stack_snapshot: Option<VecDeque<KeyboardModes>>,
+    /// Snapshot of the ACTIVE Kitty-keyboard-protocol `TermMode` bits
+    /// taken at OSC 133 ; C, paired with [`pre_command_kb_stack_snapshot`].
+    ///
+    /// Required because shells may use `CSI = Ps u` (SET without push) to
+    /// enable kitty modes — that path updates `TermMode` bits via
+    /// `dcs_set_keyboard_mode` WITHOUT pushing to the stack. Snapshotting
+    /// stack contents alone loses the set-only bits; at restore time the
+    /// top-of-stack would be `NO_MODE` and the shell's set bits would be
+    /// cleared. Taking a paired bits snapshot and applying it at restore
+    /// preserves shell-held kitty state for both push-path and set-path
+    /// integrations. See BUG-08-12 TPR round-1 F1.
+    pre_command_kb_mode_bits_snapshot: Option<KeyboardModes>,
+    /// Paired inactive-screen bits snapshot — same relation to
+    /// [`pre_command_kb_mode_bits_snapshot`] as the inactive stack
+    /// snapshot has to the active stack snapshot. Swapped alongside the
+    /// paired stack snapshots in `toggle_alt_common`.
+    inactive_pre_command_kb_mode_bits_snapshot: Option<KeyboardModes>,
     /// Effect sink for boundary-crossing side effects.
     effect_sink: S,
     /// Set by content-modifying VTE handler operations (character printing,
@@ -284,6 +301,8 @@ impl<S: EffectSink> Term<S> {
             inactive_keyboard_mode_stack: VecDeque::new(),
             pre_command_kb_stack_snapshot: None,
             inactive_pre_command_kb_stack_snapshot: None,
+            pre_command_kb_mode_bits_snapshot: None,
+            inactive_pre_command_kb_mode_bits_snapshot: None,
             effect_sink,
             selection_dirty: false,
             prompt_state: PromptState::None,

@@ -121,48 +121,78 @@ impl<S: EffectSink> Term<S> {
         self.inactive_pre_command_kb_stack_snapshot.as_ref()
     }
 
+    /// Pre-command snapshot of the active-screen Kitty-keyboard-protocol
+    /// `TermMode` bits. Paired with [`Self::pre_command_kb_stack_snapshot`]
+    /// — preserves shell-held kitty bits set via `CSI = Ps u` that never
+    /// enter the stack. See BUG-08-12 TPR round-1 F1.
+    pub fn pre_command_kb_mode_bits_snapshot(&self) -> Option<KeyboardModes> {
+        self.pre_command_kb_mode_bits_snapshot
+    }
+
+    /// Paired inactive-screen bits snapshot — see
+    /// [`Self::pre_command_kb_mode_bits_snapshot`].
+    pub fn inactive_pre_command_kb_mode_bits_snapshot(&self) -> Option<KeyboardModes> {
+        self.inactive_pre_command_kb_mode_bits_snapshot
+    }
+
     // -- Kitty keyboard mode stack snapshot / restore (OSC 133 C/A/D) --
 
-    /// Clone BOTH active and inactive keyboard-mode stack contents so a
+    /// Clone BOTH active and inactive keyboard-mode stack contents AND
+    /// capture the current Kitty-keyboard-protocol `TermMode` bits so a
     /// subsequent OSC 133 `;A` / `;D` (or OSC 633 `;A` / `;D`) can
     /// restore them verbatim.
     ///
     /// Contents-based (not just depth-based) so we recover shell-held
     /// modes even when the child over-pops via `CSI < N u` or pushes past
     /// [`crate::term::KEYBOARD_MODE_STACK_MAX_DEPTH`] and `pop_front`
-    /// evicts shell-held entries. Allocates up to
-    /// `2 × KEYBOARD_MODE_STACK_MAX_DEPTH × size_of::<KeyboardModes>()`
-    /// per command boundary — ~20 bytes, infrequent (once per command),
-    /// not a hot path. See BUG-08-12.
+    /// evicts shell-held entries. Paired bits snapshot (not derived from
+    /// stack top) so shells that set kitty modes via `CSI = Ps u` without
+    /// pushing are also restored — see BUG-08-12 TPR round-1 F1. Allocates
+    /// up to `2 × KEYBOARD_MODE_STACK_MAX_DEPTH × size_of::<KeyboardModes>()`
+    /// plus 2 bytes of bits snapshot per command boundary — infrequent
+    /// (once per command), not a hot path. See BUG-08-12.
     pub fn snapshot_keyboard_mode_stack(&mut self) {
         self.pre_command_kb_stack_snapshot = Some(self.keyboard_mode_stack.clone());
         self.inactive_pre_command_kb_stack_snapshot =
             Some(self.inactive_keyboard_mode_stack.clone());
+        let active_bits = KeyboardModes::from(self.mode);
+        self.pre_command_kb_mode_bits_snapshot = Some(active_bits);
+        // Inactive bits snapshot is always captured alongside so the
+        // paired invariant (both-or-neither) holds across `toggle_alt_common`
+        // swaps. The inactive screen's effective bits are `NO_MODE` while
+        // it is not the active screen; paired field lets the snapshot
+        // follow the primary stack through alt-screen swaps without
+        // dropping/leaking state.
+        self.inactive_pre_command_kb_mode_bits_snapshot = Some(KeyboardModes::NO_MODE);
     }
 
     /// If a snapshot is active, replace BOTH stacks with the snapshotted
-    /// contents and unconditionally reapply the top-of-active-stack mode.
+    /// contents and apply the snapshotted `TermMode` bits directly.
     ///
-    /// The unconditional reapply covers `CSI = Ps u` same-depth
-    /// mutations that modify `TermMode::KITTY_KEYBOARD_PROTOCOL` bits
-    /// via [`Self::dcs_set_keyboard_mode`] without touching the stack
-    /// (see `crates/vte/src/ansi/dispatch/csi/mod.rs` `set_keyboard_mode`
-    /// dispatch). The inactive stack is restored but NOT reapplied —
-    /// `toggle_alt_common` reapplies top when the user switches to that
-    /// screen. See BUG-08-12.
+    /// Applying the paired BITS snapshot (rather than deriving from
+    /// stack top) preserves shell-held kitty state set via `CSI = Ps u`
+    /// WITHOUT pushing — the top of an empty stack is `NO_MODE`, which
+    /// would silently clear a shell's set-only kitty mode at prompt
+    /// boundary. Also covers `CSI = Ps u` same-depth mutations during a
+    /// command (child changes bits without touching the stack; restore
+    /// reverts both stack AND bits). The inactive stack is restored but
+    /// not applied — `toggle_alt_common` applies its bits when the user
+    /// switches to that screen. See BUG-08-12.
     pub fn restore_keyboard_mode_stack(&mut self) {
         if let Some(saved) = self.pre_command_kb_stack_snapshot.take() {
             self.keyboard_mode_stack = saved;
-            let mode = self
-                .keyboard_mode_stack
-                .back()
-                .copied()
-                .unwrap_or(KeyboardModes::NO_MODE);
-            self.dcs_set_keyboard_mode(mode, KeyboardModesApplyBehavior::Replace);
+        }
+        if let Some(saved_bits) = self.pre_command_kb_mode_bits_snapshot.take() {
+            self.dcs_set_keyboard_mode(saved_bits, KeyboardModesApplyBehavior::Replace);
         }
         if let Some(saved) = self.inactive_pre_command_kb_stack_snapshot.take() {
             self.inactive_keyboard_mode_stack = saved;
         }
+        // Clear the inactive bits snapshot; `toggle_alt_common` applies
+        // top-of-new-active on screen swap rather than consuming this
+        // field. Clearing keeps the paired invariant clean between
+        // commands. See BUG-08-12 TPR round-1 F1.
+        self.inactive_pre_command_kb_mode_bits_snapshot = None;
     }
 
     // -- Prompt state --
