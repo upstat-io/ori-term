@@ -28,6 +28,13 @@ sections:
 
 ## 06.1 Active Bugs
 
+- [ ] `[BUG-06-020][medium]` **notcurses-demo bugs 016/018/019 cluster: identify which oriterm capability-probe reply flips notcurses into the non-Z-order-respecting render path** — found by 2026-04-24 trace investigation (BUG-06-018 root-cause analysis).
+  Repro: N/A (diagnostic investigation, not a visual bug). The cluster is BUG-06-016 (mojibake black strip, OBE), BUG-06-017 (yield escalated to §24.5), BUG-06-018 (whiteout cells destroyed — closed not-a-render-bug), BUG-06-019 (xray top marquee uncolored — closed not-a-render-bug). In all four, oriterm's PUT trace shows it faithfully renders the byte stream; the byte stream itself contains the defect. WezTerm/Windows Terminal render correctly — notcurses sends them different bytes based on runtime capability detection.
+  Subsystem: capability-probe reply path. Candidates: DA1 (`CSI c`), DA2 (`CSI > c`), DA3 (`DCS ! |`), kitty keyboard (`CSI ?u`), Mode 2026 sync output (`CSI ? 2026 $p`), kitty graphics query (`APC _Gi=<n>,a=Q,...`), XTGETTCAP, XTVERSION (`CSI > q`). Any one of these that oriterm answers differently from WezTerm/Windows Terminal would explain the split.
+  TDD matrix: (1) strace or PTY-capture notcurses-demo session startup against oriterm + WezTerm (same OS, same shell, same TERM=xterm-256color), diff the byte streams byte-for-byte, identify the first divergent response; (2) for each differing reply, check oriterm's implementation against the spec (vt100.net / XTerm ctlseqs) — either fix oriterm's reply or confirm it's spec-correct and file upstream notcurses with the finding; (3) cross-check whether oriterm's reply path for the differential query is tested (if not, add a spec-conformance test).
+  Found: 2026-04-24 | Source: BUG-06-018 trace investigation.
+  Note: This is a diagnostic task. Fixing it may close BUG-06-018 and BUG-06-019 as collateral — if the root cause is an oriterm capability reply that's wrong per spec. If oriterm's replies are all spec-correct, the investigation confirms the notcurses-upstream root cause and can file upstream. Either way the artifact is an authoritative byte-stream diff + decision.
+
 - [x] `[BUG-06-019][high]` **notcurses-demo `xray` demo (`x`): scrolling marquee text at top — only the lower rows of the 10-row ASCII art are colorized; upper rows render dark/colorless** — found by manual.
   Resolved: not-a-bug in oriterm on 2026-04-24. Trace instrumentation (`debug/bug-06-019-trace` branch, `ORITERM_XRAY_TRACE=1`) on the exact repro shows the emitted byte stream notcurses sends per frame:
   1. `SGR 0 m` (full reset to default FG/BG)
@@ -41,11 +48,16 @@ sections:
   Found: 2026-04-22 | Source: manual
   Note: Sibling to BUG-06-016 (mojibake erasure — closed OBE 2026-04-22 via WezTerm/Windows Terminal cross-reference), BUG-06-017 (yield early-exit — escalated to spec-conformance §24.5), BUG-06-018 (whiteout cell destruction — still open). This bug likely shares the same "not-a-bug / notcurses-compositor-artifact" shape as BUG-06-016 — the pattern of cross-terminal symptom reproduction is the canonical test.
 
-- [ ] `[BUG-06-018][high]` **notcurses-demo `whiteout` demo (`w`): cells get destroyed but never recreated — worm trails leave permanent holes** — found by manual.
-  Repro: run `notcurses-demo` in ori_term on Windows (release build, head `0c39c8e9` or later); observe the `w` (whiteout) scene. The demo's worms move across the grid overwriting cells, and the "lighting" effect should restore cells as worms pass. Observed: worms destroy cells and those cells stay erased instead of being re-rendered with the lighting effect. Reference: notcurses scene `whiteout.c` exercises `unicode-boxes`, `multiple-planes`, `rgb`, `text-attributes` — NO pixel graphics.
-  Subsystem: rendering pipeline OR grid mutation. Likely `oriterm/src/gpu/` cached render path (cells invalidated but never re-rastered) OR `oriterm_core/src/grid/editing/` (cell state cleared and not re-written). Fix location TBD via `/fix-bug` Phase 1 root-cause analysis.
+- [x] `[BUG-06-018][high]` **notcurses-demo `whiteout` demo (`w`): cells get destroyed but never recreated — worm trails leave permanent holes** — found by manual.
+  Resolved: not-a-bug in oriterm's render path on 2026-04-24. Trace instrumentation (`debug/bug-06-018-trace` branch, `ORITERM_XRAY_TRACE=1`, 30k-event cap covering PUT/EL/ECH/ICH/DCH/CLWC/ED) on the exact repro shows the emitted byte stream notcurses sends destroys the mathplane itself. Key trace evidence at grid row 38 col 118 (mathplane `⎧` position):
+  1. `PUT r=38 c=118 ch='⎧' w=1 fg=(212,175,55) bg=(0,0,0)` — math bracket drawn correctly
+  2. `PUT r=38 c=118 ch='수' w=2 fg=(100,146,137) bg=(20,20,20)` — Korean wide-char OVERWRITES the bracket
+  3. `PUT r=38 c=118 ch='m' w=1 fg=(124,31,193) bg=(20,20,20)` — random 'm' from worm activity overwrites that
+  notcurses is emitting the **stdplane** contents (CJK/Cyrillic fill + worm-lightened chars) on top of the mathplane, ignoring the plane Z-order. oriterm correctly renders every byte it receives. User confirmed 2026-04-24 that WezTerm and Windows Terminal render whiteout correctly — notcurses sends those terminals a different byte stream based on runtime capability detection.
+  oriterm's TERM is `xterm-256color` (same as WezTerm/Windows Terminal). The differential must be in a runtime probe reply (DA1/DA2/DA3, kitty keyboard `CSI ?u`, Mode 2026 sync output, kitty graphics probe, or similar). Identifying which probe reply flips notcurses into the buggy code path is a diagnostic task, not an oriterm render-path fix — filed as `BUG-06-020`.
+  Instrumentation branch: `debug/bug-06-018-trace` (HEAD `ad62e279`) — preserved on remote for reference; do not merge to dev.
   Found: 2026-04-22 | Source: manual
-  Note: Two sibling bugs filed from same repro session — BUG-06-016 (mojibake erasure), BUG-06-017 (yield flashing). May share root cause; investigate as a group.
+  Note: Fourth notcurses-demo scene bug in the cluster (016 mojibake OBE, 017 yield escalated to §24.5, 019 xray closed 2026-04-24 as not-oriterm-bug). All four share the same shape: oriterm faithfully renders the bytes it receives; the visual defect is in notcurses's compositor output, which differs per-terminal via capability detection.
 
 - [ ] `[BUG-06-017][high]` **notcurses-demo `yield` demo (`y`): entire demo blips on screen then vanishes — demo exits early before running** — found by manual.
   Escalated: 2026-04-22 — merged into `plans/spec-conformance/section-24-notcurses-demo-full-pass.md` §24.5 (`yield (y)` scene) per user decision (the spec-conformance plan already owns per-scene notcurses-demo correctness gating; a bug-tracker duplicate is noise). Bug entry stays open as the tracker pointer to the §24.5 subsection; §24.5 body carries the Phase 1 findings.
