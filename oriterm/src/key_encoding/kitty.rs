@@ -89,6 +89,18 @@ pub(super) fn encode_kitty(input: &KeyInput<'_>) -> Vec<u8> {
     let report_alternate = input.mode.contains(TermMode::REPORT_ALTERNATE_KEYS);
     let report_text = input.mode.contains(TermMode::REPORT_ASSOCIATED_TEXT);
 
+    // Release events without REPORT_EVENT_TYPES are suppressed across EVERY
+    // dispatch path in this function — the named-key legacy bypass below, the
+    // Character send-as-text / multi-char fallback, and the Unidentified text
+    // fallback all would otherwise leak release bytes. Keeping this guard as
+    // the single top-of-function check is the SSOT; the downstream
+    // `resolve_event_suffix` release-drop continues to catch anything that
+    // reaches the CSI u path with `report_events == true` but an
+    // otherwise-unsupported event type.
+    if input.event_type == KeyEventType::Release && !report_events {
+        return Vec::new();
+    }
+
     // DISAMBIGUATE_ESC_CODES (flags=1) only uses CSI u for keys that are
     // ambiguous in legacy encoding. Named functional keys (arrows, Home,
     // End, F-keys, etc.) have unambiguous legacy sequences and should use
@@ -108,14 +120,6 @@ pub(super) fn encode_kitty(input: &KeyInput<'_>) -> Vec<u8> {
             None => return Vec::new(),
         },
         Key::Character(ch) => {
-            // Release events without REPORT_EVENT_TYPES must be suppressed
-            // (Kitty protocol). Every textual fallback in this arm would
-            // otherwise leak release bytes — the fast-path guard in
-            // `should_send_as_text` only covers the single-char case, and
-            // the multi-char branch has no analogous check.
-            if input.event_type == KeyEventType::Release && !report_events {
-                return Vec::new();
-            }
             if let Some(cp) = resolve_char_codepoint(ch.as_str()) {
                 // Printable char, no mods, normal press → send as plain text.
                 if should_send_as_text(cp, input.mods, report_all, report_events, input.event_type)
@@ -140,14 +144,7 @@ pub(super) fn encode_kitty(input: &KeyInput<'_>) -> Vec<u8> {
             }
         }
         // Unidentified keys (e.g. RDP/IME): send text as-is if available.
-        // Release without REPORT_EVENT_TYPES is suppressed — mirrors the
-        // Character-arm guard above.
-        _ => {
-            if input.event_type == KeyEventType::Release && !report_events {
-                return Vec::new();
-            }
-            return input.text.map_or_else(Vec::new, |t| t.as_bytes().to_vec());
-        }
+        _ => return input.text.map_or_else(Vec::new, |t| t.as_bytes().to_vec()),
     };
 
     // Build event type suffix (only when REPORT_EVENT_TYPES active).
@@ -204,10 +201,10 @@ fn resolve_char_codepoint(s: &str) -> Option<u32> {
 /// True when: printable (cp >= 32, not DEL), no modifiers, normal press,
 /// and neither `REPORT_ALL_KEYS` nor non-press event type requires encoding.
 ///
-/// Release events always return false so the CSI u branch's release-suppression
-/// (via [`resolve_event_suffix`]) can drop them when `REPORT_EVENT_TYPES` is
-/// off. The send-as-text fast-path would bypass that suppression, which would
-/// leak release bytes after the BUG-08-13 logical-char fallback was added.
+/// Release-without-`REPORT_EVENT_TYPES` is suppressed at the top of
+/// [`encode_kitty`] (SSOT) so this function does not need to repeat the
+/// check. With `REPORT_EVENT_TYPES` active, `needs_event_type` already
+/// gates the fast-path off for release/repeat.
 fn should_send_as_text(
     cp: u32,
     mods: Modifiers,
@@ -215,9 +212,6 @@ fn should_send_as_text(
     report_events: bool,
     event_type: KeyEventType,
 ) -> bool {
-    if event_type == KeyEventType::Release {
-        return false;
-    }
     let needs_event_type = report_events && event_type != KeyEventType::Press;
     !report_all && !needs_event_type && mods.is_empty() && cp >= 32 && cp != 127
 }

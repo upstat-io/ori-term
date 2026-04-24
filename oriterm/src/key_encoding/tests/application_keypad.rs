@@ -410,3 +410,115 @@ fn multichar_character_kitty_disambiguate_press_emits_text() {
     });
     assert_eq!(r, b"ae");
 }
+
+// --- Named keys with unambiguous legacy in Kitty mode: release suppression ---
+//
+// Round-1 TPR finding (codex + gemini agreement): Named keys that fall
+// through the kitty.rs `has_unambiguous_legacy` shortcut to `legacy::encode_legacy`
+// were bypassing the release-suppression check. The top-of-`encode_kitty`
+// guard added in round-1 fix closes the leak. These pins guard against
+// regression.
+
+/// ArrowUp release in Kitty DISAMBIGUATE without REPORT_EVENT_TYPES must
+/// be suppressed. Pre-fix it leaked `b"\x1b[A"` via the legacy bypass.
+#[test]
+fn arrow_up_kitty_disambiguate_release_no_report_events_suppressed() {
+    use winit::keyboard::KeyLocation;
+    let r = super::encode_key(&super::KeyInput {
+        key: &Key::Named(NamedKey::ArrowUp),
+        mods: Modifiers::empty(),
+        mode: kitty_disambiguate_mode(),
+        text: None,
+        location: KeyLocation::Standard,
+        event_type: KeyEventType::Release,
+        alternate_key: None,
+    });
+    assert!(
+        r.is_empty(),
+        "ArrowUp release must be suppressed in DISAMBIGUATE"
+    );
+}
+
+/// F1 release in Kitty DISAMBIGUATE without REPORT_EVENT_TYPES must be
+/// suppressed (F1 has unambiguous legacy `\x1bOP`).
+#[test]
+fn f1_kitty_disambiguate_release_no_report_events_suppressed() {
+    use winit::keyboard::KeyLocation;
+    let r = super::encode_key(&super::KeyInput {
+        key: &Key::Named(NamedKey::F1),
+        mods: Modifiers::empty(),
+        mode: kitty_disambiguate_mode(),
+        text: None,
+        location: KeyLocation::Standard,
+        event_type: KeyEventType::Release,
+        alternate_key: None,
+    });
+    assert!(r.is_empty());
+}
+
+/// Delete release (tilde-terminated, also has unambiguous legacy).
+#[test]
+fn delete_kitty_disambiguate_release_no_report_events_suppressed() {
+    use winit::keyboard::KeyLocation;
+    let r = super::encode_key(&super::KeyInput {
+        key: &Key::Named(NamedKey::Delete),
+        mods: Modifiers::empty(),
+        mode: kitty_disambiguate_mode(),
+        text: None,
+        location: KeyLocation::Standard,
+        event_type: KeyEventType::Release,
+        alternate_key: None,
+    });
+    assert!(r.is_empty());
+}
+
+/// Home release (letter-terminated with `needs_app_cursor`, unambiguous).
+#[test]
+fn home_kitty_disambiguate_release_no_report_events_suppressed() {
+    use winit::keyboard::KeyLocation;
+    let r = super::encode_key(&super::KeyInput {
+        key: &Key::Named(NamedKey::Home),
+        mods: Modifiers::empty(),
+        mode: kitty_disambiguate_mode(),
+        text: None,
+        location: KeyLocation::Standard,
+        event_type: KeyEventType::Release,
+        alternate_key: None,
+    });
+    assert!(r.is_empty());
+}
+
+/// ArrowUp PRESS in DISAMBIGUATE still emits via legacy (regression pin —
+/// the new top-of-function guard must NOT block presses).
+#[test]
+fn arrow_up_kitty_disambiguate_press_emits_legacy() {
+    use winit::keyboard::KeyLocation;
+    let r = super::encode_key(&super::KeyInput {
+        key: &Key::Named(NamedKey::ArrowUp),
+        mods: Modifiers::empty(),
+        mode: kitty_disambiguate_mode(),
+        text: None,
+        location: KeyLocation::Standard,
+        event_type: KeyEventType::Press,
+        alternate_key: None,
+    });
+    assert_eq!(r, b"\x1b[A");
+}
+
+/// ArrowUp release WITH REPORT_EVENT_TYPES still emits via CSI u (the
+/// suppression guard must only fire when report_events is off).
+#[test]
+fn arrow_up_kitty_release_with_report_events_emits_csi_u() {
+    use winit::keyboard::KeyLocation;
+    let mode = kitty_disambiguate_mode() | oriterm_core::TermMode::REPORT_EVENT_TYPES;
+    let r = super::encode_key(&super::KeyInput {
+        key: &Key::Named(NamedKey::ArrowUp),
+        mods: Modifiers::empty(),
+        mode,
+        text: None,
+        location: KeyLocation::Standard,
+        event_type: KeyEventType::Release,
+        alternate_key: None,
+    });
+    assert_eq!(r, b"\x1b[1;1:3A");
+}
