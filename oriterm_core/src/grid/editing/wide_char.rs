@@ -61,6 +61,14 @@ impl Grid {
 
         // Overwriting a spacer: clear the wide char that owns it.
         if flags.contains(CellFlags::WIDE_CHAR_SPACER) && col > 0 {
+            if crate::xray_trace::next() {
+                let prev_ch = self.rows[line][Column(col - 1)].ch;
+                log::info!(
+                    target: "oriterm_core::xray",
+                    "CLWC-SP r={} col={} victim_prev_col={} prev_ch={:?} (clearing)",
+                    line, col, col - 1, prev_ch,
+                );
+            }
             let prev = &mut self.rows[line][Column(col - 1)];
             prev.ch = ' ';
             prev.flags.remove(CellFlags::WIDE_CHAR);
@@ -69,6 +77,14 @@ impl Grid {
 
         // Overwriting a wide char: clear its spacer.
         if flags.contains(CellFlags::WIDE_CHAR) && col + 1 < cols {
+            if crate::xray_trace::next() {
+                let wide_ch = self.rows[line][Column(col)].ch;
+                log::info!(
+                    target: "oriterm_core::xray",
+                    "CLWC-WC r={} col={} wide_ch={:?} spacer_col={} (clearing)",
+                    line, col, wide_ch, col + 1,
+                );
+            }
             let next = &mut self.rows[line][Column(col + 1)];
             next.ch = ' ';
             next.flags.remove(CellFlags::WIDE_CHAR_SPACER);

@@ -159,6 +159,20 @@ impl Grid {
             // Clear any wide char pair that we're overwriting.
             self.clear_wide_char_at(line, col);
 
+            if crate::xray_trace::next() {
+                log::info!(
+                    target: "oriterm_core::xray",
+                    "PUT  r={} c={} ch={:?} w={} fg={:?} bg={:?} flags={:?}",
+                    line,
+                    col,
+                    ch,
+                    width,
+                    self.cursor.template.fg,
+                    self.cursor.template.bg,
+                    self.cursor.template.flags,
+                );
+            }
+
             // Extract template fields before mutable row borrow. `rows` and
             // `cursor` are disjoint Grid fields, so this avoids a full Cell clone.
             let tmpl_fg = self.cursor.template.fg;
@@ -258,6 +272,13 @@ impl Grid {
         if count == 0 {
             return;
         }
+        if crate::xray_trace::next() {
+            log::info!(
+                target: "oriterm_core::xray",
+                "ICH count={} r={} c={}",
+                count, self.cursor.line(), self.cursor.col().0,
+            );
+        }
         debug_assert!(
             self.cursor.line() < self.lines,
             "cursor line {} out of bounds (lines={})",
@@ -344,6 +365,13 @@ impl Grid {
     pub fn delete_chars(&mut self, count: usize) {
         if count == 0 {
             return;
+        }
+        if crate::xray_trace::next() {
+            log::info!(
+                target: "oriterm_core::xray",
+                "DCH count={} r={} c={}",
+                count, self.cursor.line(), self.cursor.col().0,
+            );
         }
         debug_assert!(
             self.cursor.line() < self.lines,

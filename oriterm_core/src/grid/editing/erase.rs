@@ -18,6 +18,13 @@ impl Grid {
             self.cursor.line(),
             self.lines,
         );
+        if crate::xray_trace::next() {
+            log::info!(
+                target: "oriterm_core::xray",
+                "ED mode={:?} cursor=r{}c{}",
+                mode, self.cursor.line(), self.cursor.col().0,
+            );
+        }
         // BCE: erased cells get only the current background color.
         let template = Cell::from(self.cursor.template.bg);
         match mode {
@@ -73,6 +80,13 @@ impl Grid {
             self.cursor.line(),
             self.lines,
         );
+        if crate::xray_trace::next() {
+            log::info!(
+                target: "oriterm_core::xray",
+                "EL mode={:?} r={} c={}",
+                mode, self.cursor.line(), self.cursor.col().0,
+            );
+        }
         let template = Cell::from(self.cursor.template.bg);
         self.erase_line_with_template(mode, &template);
     }
@@ -142,6 +156,13 @@ impl Grid {
     pub fn erase_chars(&mut self, count: usize) {
         if count == 0 {
             return;
+        }
+        if crate::xray_trace::next() {
+            log::info!(
+                target: "oriterm_core::xray",
+                "ECH count={} r={} c={}",
+                count, self.cursor.line(), self.cursor.col().0,
+            );
         }
         debug_assert!(
             self.cursor.line() < self.lines,
