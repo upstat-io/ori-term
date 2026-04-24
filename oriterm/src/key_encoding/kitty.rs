@@ -113,57 +113,10 @@ pub(super) fn encode_kitty(input: &KeyInput<'_>) -> Vec<u8> {
         }
     }
 
-    // Determine the codepoint.
-    let codepoint = match input.key {
-        Key::Named(named) => match kitty_codepoint(*named) {
-            Some(cp) => cp,
-            None => return Vec::new(),
-        },
-        Key::Character(ch) => {
-            if let Some(cp) = resolve_char_codepoint(ch.as_str()) {
-                // Printable char, no mods, normal press → send as plain text.
-                if should_send_as_text(cp, input.mods, report_all, report_events, input.event_type)
-                    && !report_text
-                {
-                    // Prefer winit's `text`; fall back to the logical
-                    // `Key::Character` content. Robust to backends that
-                    // don't populate `text` for numpad keys (BUG-08-13).
-                    let bytes: &[u8] = input
-                        .text
-                        .map_or_else(|| ch.as_str().as_bytes(), str::as_bytes);
-                    return bytes.to_vec();
-                }
-                cp
-            } else {
-                // Multi-char (dead-key compositions, IME output). When
-                // REPORT_EVENT_TYPES is active there is no single codepoint
-                // to encode in CSI u, so non-Press events must suppress
-                // rather than leak raw text. When REPORT_EVENT_TYPES is
-                // off, `resolve_event_suffix` treats Repeat as press-
-                // equivalent (Release is already caught by the top-of-
-                // function guard), so let Repeat fall through to the text
-                // emission and match that behavior.
-                if input.event_type != KeyEventType::Press && report_events {
-                    return Vec::new();
-                }
-                let bytes: &[u8] = input
-                    .text
-                    .map_or_else(|| ch.as_str().as_bytes(), str::as_bytes);
-                return bytes.to_vec();
-            }
-        }
-        // Unidentified keys (e.g. RDP/IME): send text as-is if available.
-        // Same protocol-shape gap as multi-char above — there is no
-        // codepoint to encode, so non-Press events must suppress when
-        // REPORT_EVENT_TYPES is active. Without REPORT_EVENT_TYPES, Repeat
-        // falls through as press-equivalent (Release is caught by the
-        // top-of-function guard).
-        _ => {
-            if input.event_type != KeyEventType::Press && report_events {
-                return Vec::new();
-            }
-            return input.text.map_or_else(Vec::new, |t| t.as_bytes().to_vec());
-        }
+    // Resolve the codepoint OR short-circuit with bytes to return.
+    let codepoint = match resolve_codepoint(input, report_all, report_events, report_text) {
+        CodepointOrBytes::Codepoint(cp) => cp,
+        CodepointOrBytes::Bytes(bytes) => return bytes,
     };
 
     // Build event type suffix (only when REPORT_EVENT_TYPES active).
@@ -201,6 +154,91 @@ pub(super) fn encode_kitty(input: &KeyInput<'_>) -> Vec<u8> {
         named,
         alternate,
     )
+}
+
+/// Result of [`resolve_codepoint`]: either a CSI u codepoint to encode, or
+/// the final bytes to return directly (text fallback or suppression).
+enum CodepointOrBytes {
+    Codepoint(u32),
+    Bytes(Vec<u8>),
+}
+
+/// Resolve a `Key::Named`/`Key::Character`/Unidentified key into either a
+/// Kitty CSI u codepoint or the final bytes to return.
+///
+/// The Character / Unidentified arms have no proper CSI u encoding for
+/// multi-char compositions or unrecognized keys — they fall back to text
+/// (or to the logical `Key::Character` content per BUG-08-13). Non-Press
+/// events with `REPORT_EVENT_TYPES` active suppress in those arms because
+/// CSI u requires a codepoint and there is none to emit.
+fn resolve_codepoint(
+    input: &KeyInput<'_>,
+    report_all: bool,
+    report_events: bool,
+    report_text: bool,
+) -> CodepointOrBytes {
+    match input.key {
+        Key::Named(named) => match kitty_codepoint(*named) {
+            Some(cp) => CodepointOrBytes::Codepoint(cp),
+            None => CodepointOrBytes::Bytes(Vec::new()),
+        },
+        Key::Character(ch) => {
+            resolve_character_codepoint(input, ch.as_str(), report_all, report_events, report_text)
+        }
+        // Unidentified keys (e.g. RDP/IME): send text as-is if available.
+        // Same protocol-shape gap as multi-char Character — there is no
+        // codepoint to encode, so non-Press events must suppress when
+        // REPORT_EVENT_TYPES is active. Without REPORT_EVENT_TYPES, Repeat
+        // falls through as press-equivalent (Release is already caught by
+        // the top-of-`encode_kitty` guard).
+        _ => {
+            if input.event_type != KeyEventType::Press && report_events {
+                return CodepointOrBytes::Bytes(Vec::new());
+            }
+            CodepointOrBytes::Bytes(input.text.map_or_else(Vec::new, |t| t.as_bytes().to_vec()))
+        }
+    }
+}
+
+/// Resolve a `Key::Character` into either a single-codepoint (CSI u path)
+/// or the textual bytes to return directly (send-as-text or multi-char).
+fn resolve_character_codepoint(
+    input: &KeyInput<'_>,
+    ch: &str,
+    report_all: bool,
+    report_events: bool,
+    report_text: bool,
+) -> CodepointOrBytes {
+    if let Some(cp) = resolve_char_codepoint(ch) {
+        // Printable char, no mods, normal press → send as plain text.
+        if should_send_as_text(cp, input.mods, report_all, report_events, input.event_type)
+            && !report_text
+        {
+            // Prefer winit's `text`; fall back to the logical
+            // `Key::Character` content. Robust to backends that don't
+            // populate `text` for numpad keys (BUG-08-13).
+            let bytes: Vec<u8> = input
+                .text
+                .map_or_else(|| ch.as_bytes().to_vec(), |t| t.as_bytes().to_vec());
+            return CodepointOrBytes::Bytes(bytes);
+        }
+        CodepointOrBytes::Codepoint(cp)
+    } else {
+        // Multi-char (dead-key compositions, IME output). When
+        // REPORT_EVENT_TYPES is active there is no single codepoint to
+        // encode in CSI u, so non-Press events must suppress rather than
+        // leak raw text. When REPORT_EVENT_TYPES is off,
+        // `resolve_event_suffix` treats Repeat as press-equivalent
+        // (Release is already caught by the top-of-`encode_kitty` guard),
+        // so let Repeat fall through.
+        if input.event_type != KeyEventType::Press && report_events {
+            return CodepointOrBytes::Bytes(Vec::new());
+        }
+        let bytes: Vec<u8> = input
+            .text
+            .map_or_else(|| ch.as_bytes().to_vec(), |t| t.as_bytes().to_vec());
+        CodepointOrBytes::Bytes(bytes)
+    }
 }
 
 /// Extract the Unicode codepoint from a single-character string.
