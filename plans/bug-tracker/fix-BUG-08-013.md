@@ -385,9 +385,23 @@ The existing `enc_numpad(key, mods, mode)` is kept as a thin wrapper forwarding 
 
 Codex's clean and gemini's findings cover orthogonal classes — codex audited the `!report_events` path (the original BUG-08-13 leak), gemini audited the `report_events == true` path (a separate latent leak surfaced by the wider review). Both fixes land in the same round-2 commit.
 
-### Phase 5 Code TPR — Round 3 (convergence verification)
+### Phase 5 Code TPR — Round 3
 
-Runs after the round-2 fix commit. Goal: both reviewers clean.
+**Scratch dir:** `/tmp/tpr-round-ori_term-TjOue0O3`. Direct wrapper Bash dispatch.
+
+**Dispatch:** codex 1 finding / gemini 0 findings (clean).
+**Verification:** verified 1 / dropped 0.
+**Classification:** actionable 1 / meta 0.
+**Fix commit:** Phase 5 round-3 commit below.
+
+**Findings this round:**
+- `[TPR-08-013-codex][high]` `oriterm/src/key_encoding/kitty.rs:143` — Round-2 guard drops multi-char and Unidentified `Repeat` even when REPORT_EVENT_TYPES is off. `resolve_event_suffix(false, Repeat)` returns `Some("")` — i.e., Repeat is treated as press-equivalent outside Kitty event-type reporting. The unconditional `if event_type != Press: return Vec::new()` from round 2 over-suppresses, breaking the press-equivalent semantic for multi-char IME and Unidentified Repeat without REPORT_EVENT_TYPES. Disposition: fixed in Phase 5 round-3 commit — gated the non-Press suppression on `report_events`. Now: Release without report_events → caught by top guard; Release/Repeat WITH report_events → caught by per-arm guard; Repeat without report_events → falls through to text emission (matching `resolve_event_suffix` semantics). Added 3 pins: multi-char Repeat without report_events emits text, Unidentified Repeat without report_events emits text, multi-char Repeat WITH report_events still suppressed.
+
+**Gemini (round 3):** clean. Summary: "Phase 5 Code TPR round 3 complete. Fixes for BUG-08-13 are verified. Commit `61aa7329` successfully closes the multi-char Character and Unidentified key Release/Repeat leaks when `REPORT_EVENT_TYPES` is active. Top-level release guard and named-key legacy bypass are sound. Test matrix is complete with explicit semantic pins for all recently discovered leak paths. No new regressions or bypass paths identified."
+
+### Phase 5 Code TPR — Round 4 (convergence verification)
+
+Runs after the round-3 fix commit. Goal: both reviewers clean.
 
 ---
 
