@@ -457,8 +457,23 @@ pub(super) fn compute_control_flow(input: &ControlFlowInput) -> ControlFlowDecis
     // the coalesced MuxWakeup from the next PTY snapshot wakes us,
     // and winit's PeekMessage drains ALL pending messages (including
     // keyboard events) before calling about_to_wait().
+    //
+    // Exception: when a RenderScheduler wake (kitty / sixel animation
+    // frame deadline, cursor-blink deferred repaint) is queued earlier
+    // than the natural MuxWakeup from the next PTY snapshot, promote
+    // the `Wait` to `WaitUntil(scheduler_wake)` so the queued deadline
+    // is not masked by the 16 ms render gate. The scheduler_wake value
+    // is always in the future here (past-due entries were drained by
+    // `promote_deferred` before reaching this computation), so the
+    // Windows/WSL2 WaitUntil-returns-immediately failure mode does not
+    // apply — the wake instant is strictly > `now`.
     if input.still_dirty {
         if !input.budget_elapsed {
+            if let Some(wake) = input.scheduler_wake {
+                if wake > input.now {
+                    return ControlFlowDecision::WaitUntil(wake);
+                }
+            }
             return ControlFlowDecision::Wait;
         }
         return ControlFlowDecision::WaitUntil(input.now);
@@ -473,9 +488,14 @@ pub(super) fn compute_control_flow(input: &ControlFlowInput) -> ControlFlowDecis
         if input.blinking_active {
             wake_at = wake_at.min(input.next_blink_change);
         }
+        // Only honor `scheduler_wake` when it is strictly in the future.
+        // Past-due entries should already be drained by the `promote_deferred`
+        // sweep at the top of `about_to_wait`; this guard is belt-and-
+        // suspenders that keeps a stale past-due wake from producing
+        // `WaitUntil(past)` → immediate fire → event-loop spin.
         match input.scheduler_wake {
-            Some(wake) => ControlFlowDecision::WaitUntil(wake.min(wake_at)),
-            None => ControlFlowDecision::WaitUntil(wake_at),
+            Some(wake) if wake > input.now => ControlFlowDecision::WaitUntil(wake.min(wake_at)),
+            _ => ControlFlowDecision::WaitUntil(wake_at),
         }
     }
 }

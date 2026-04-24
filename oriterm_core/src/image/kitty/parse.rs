@@ -26,6 +26,17 @@ pub struct KittyCommand {
     pub source_width: u32,
     /// Source rect height in pixels (`v=`).
     pub source_height: u32,
+    /// Loop count for animation control (`v=` in `a=a` context).
+    ///
+    /// `v=` is overloaded by the kitty spec: for transmit/frame actions
+    /// (`a=t`, `a=T`, `a=f`) it is the source image height in pixels and
+    /// is stored in `source_height`; for animation control (`a=a`) it is
+    /// the loop count where `0` means infinite loops. `source_height`
+    /// cannot distinguish "absent" from "0", so `v=` is ALSO recorded
+    /// here as `Some(value)` when the key is present (including `v=0`).
+    /// Consumers that need the animate-loop-count semantic read this
+    /// field; consumers that need pixel height read `source_height`.
+    pub loop_count: Option<u32>,
     /// Source rect X offset (`x=`).
     pub source_x: u32,
     /// Source rect Y offset (`y=`).
@@ -121,6 +132,7 @@ impl Default for KittyCommand {
             compression: None,
             source_width: 0,
             source_height: 0,
+            loop_count: None,
             source_x: 0,
             source_y: 0,
             display_cols: None,
@@ -228,7 +240,10 @@ fn apply_key_value(key: u8, value: &[u8], cmd: &mut KittyCommand) {
         }
         b'o' => cmd.compression = value.first().copied(),
         b's' => cmd.source_width = parse_u32(value).unwrap_or(0),
-        b'v' => cmd.source_height = parse_u32(value).unwrap_or(0),
+        b'v' => {
+            cmd.source_height = parse_u32(value).unwrap_or(0);
+            cmd.loop_count = parse_u32(value);
+        }
         b'x' => cmd.source_x = parse_u32(value).unwrap_or(0),
         b'y' => cmd.source_y = parse_u32(value).unwrap_or(0),
         b'c' => cmd.display_cols = parse_u32(value),

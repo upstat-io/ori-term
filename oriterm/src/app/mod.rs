@@ -340,6 +340,36 @@ impl App {
         self.mark_all_windows_dirty();
     }
 
+    /// Register (or clear) an animation-frame deadline on the window
+    /// containing `pane_id`.
+    ///
+    /// Routes `MuxNotification::AnimationDeadlineChanged { deadline }` into
+    /// the owning window's `RenderScheduler` via `set_animation_deadline`.
+    /// `Some(t)` upserts — the scheduler wakes the winit event loop at `t`
+    /// via `ControlFlow::WaitUntil`. `None` clears the prior deadline so a
+    /// queued wake from an animation that has since stopped does NOT fire
+    /// spuriously — critical for honoring the "zero idle CPU beyond cursor
+    /// blink" invariant (`.claude/rules/oriterm.md`) across animation
+    /// start/stop cycles.
+    pub(super) fn request_pane_animation_frame_at(
+        &mut self,
+        pane_id: PaneId,
+        deadline: Option<Instant>,
+    ) {
+        let Some(session_wid) = self.session.window_for_pane(pane_id) else {
+            return;
+        };
+        let key = pane_id.raw();
+        for ctx in self.windows.values_mut() {
+            if ctx.window.session_window_id() == session_wid {
+                ctx.root
+                    .scheduler_mut()
+                    .set_animation_deadline(key, deadline);
+                return;
+            }
+        }
+    }
+
     /// Re-rasterize fonts and update rendering settings for a new DPI scale.
     ///
     /// Called when the window moves between monitors with different scale

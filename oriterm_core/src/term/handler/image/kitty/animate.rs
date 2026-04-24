@@ -32,10 +32,12 @@ impl<S: EffectSink> Term<S> {
                 .set_animation_action(id, cmd.source_width);
         }
 
-        // `v=` → loop count.
-        if cmd.source_height > 0 {
-            self.image_cache_mut()
-                .set_animation_loops(id, cmd.source_height);
+        // `v=` → loop count. `loop_count: Option<u32>` distinguishes "key
+        // absent" (None, leave unchanged) from "v=0" (Some(0), infinite
+        // loops per kitty graphics-protocol.rst §Animation control) —
+        // source_height: u32 alone cannot tell these apart.
+        if let Some(loops) = cmd.loop_count {
+            self.image_cache_mut().set_animation_loops(id, loops);
         }
 
         // `r=` → set current frame (1-based in Kitty protocol).
@@ -63,7 +65,13 @@ impl<S: EffectSink> Term<S> {
             }
         }
 
-        let ctx = KittyReplyContext::from_cmd(cmd).with_image_id(image_id);
+        // kitty finish_command_response (graphics.c:802-806) echoes `,r=<frame_num>`
+        // on a=a replies with the post-mutation current frame (1-based) so the
+        // client can correlate the OK to the resulting animation state.
+        let mut ctx = KittyReplyContext::from_cmd(cmd).with_image_id(image_id);
+        if let Some(state) = self.image_cache().animation_state(id) {
+            ctx = ctx.with_frame_num(state.current_frame as u32 + 1);
+        }
         self.kitty_respond(&ctx, "OK");
     }
 }

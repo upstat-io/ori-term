@@ -11,6 +11,14 @@ Terminal emulation behavior — VTE handler, bell, escape sequences, terminal mo
 
 ## Open Bugs
 
+- [ ] `[BUG-08-25][medium]` **Kitty `a=a,s=2` (run-wait) collapses with `s=3` (run) — the "wait for new frames on loop-end" semantic is not implemented** — found by §13.3 verification.
+  Repro: feed a finite-loop kitty animation with `a=a,s=2` and wait for loop completion. Expected per kitty graphics-protocol.rst §Animation control: when loops reach `v=<N>`, STOP and wait for `a=f` to append more frames; a later `a=a,s=3` would then run the extended animation. Actual: `ImageCache::set_animation_action` at `oriterm_core/src/image/cache/animation.rs:247-260` treats `s=2` and `s=3` identically (both `paused = false; loops_completed = 0`), so `s=2` behaves exactly like `s=3` — the animation stops when loops are exhausted (via `AnimationState::is_finished`) but there is no mechanism to "wait for new frames" and resume automatically when they arrive.
+  Subsystem: `oriterm_core/src/image/cache/animation.rs`, `oriterm_core/src/image/mod.rs` (`AnimationState`).
+  Analysis: GAP — spec-defined distinct semantic not yet in the codebase. Requires `AnimationState::wait_mode: bool` (or similar) to differentiate s=2 from s=3 at the `advance_animations` consumption site. When `wait_mode=true` and `is_finished()` is true, don't `pause` — stay in a "waiting" state; when a new frame lands via `add_animation_frame`, extend `total_frames`, reset `is_finished`, and resume.
+  TDD matrix: (1) `a=a,s=2` + `v=2` + wait beyond 2 loops — animation stops, current_frame stays at last frame; (2) same + later `a=f` appends frame — animation resumes and advances through the new frame; (3) `a=a,s=3` + `v=2` + wait beyond 2 loops — animation stops (same as s=2 today, but the wait-mode flag stays false so a later `a=f` does NOT resume); (4) negative pin: `s=3` after `v=2` exhaustion + `a=f` — animation does NOT resume (positive pin for s=2 behavior differentiation). Cross-platform: no platform gates — pure core logic.
+  Catalog row: `KG-ANIMATE-RUN-WAIT` (currently `verified-with-deviation` citing this bug).
+  Found: 2026-04-22 | Source: /continue-roadmap §13.3 verification
+
 - [ ] `[BUG-08-21][medium]` **`kitty_store_from_file` reads the whole file into memory before enforcing the `max_single_image_bytes` limit** — found by §13.1 TPR round 0 (gemini F3).
   Repro: a kitty `APC _Ga=t,t=f,f=32,s=W,v=H;<base64 file path> ST` pointing at a file larger than `ImageCache::max_single_image_bytes()`. Current code at `oriterm_core/src/term/handler/image/kitty/store.rs:95-103` calls `std::fs::read(path)` first, then checks `file_data.len() > max_bytes` and rejects — the allocation peak already matches the file size.
   Subsystem: `oriterm_core/src/term/handler/image/kitty/store.rs`.
@@ -46,11 +54,8 @@ Terminal emulation behavior — VTE handler, bell, escape sequences, terminal mo
   Analysis: Pre-existing BLOAT — file exceeds the `.claude/rules/code-hygiene.md §File Size` 500-line cap. `Term` struct carries the full terminal state: mode stacks, cursor save, alt-screen swap, image-cache routing, keyboard-mode stack, color palette, charsets, C1-7bit / conformance-level fields, tab stops, selection, snapshot buffers, effect sink wiring. Natural split points: cursor save/restore + alt-screen swap helpers into `term/screen_swap.rs`; snapshot/effect plumbing into `term/effects.rs`; leave `Term::new` and the top-level field definitions in `mod.rs`. `effective_background` is a one-screen accessor that naturally stays on the top-level `impl Term` alongside `palette()` / `palette_mut()`.
   TDD matrix: no new tests required — existing `term/tests/` directory (core.rs, modes.rs, osc.rs, etc.) covers the behavior. Split must preserve every test's observable behavior.
 
-- [ ] `[BUG-08-19-b][low]` **`oriterm_mux/src/pane/io_thread/mod.rs` is 566 lines, 66 over the 500-line limit** — found by §09A.N post-split file-size sweep. (Numbered `-b` to avoid colliding with the just-closed BUG-08-19.)
-  Repro: `wc -l oriterm_mux/src/pane/io_thread/mod.rs` prints `566`.
-  Subsystem: `oriterm_mux/src/pane/io_thread/mod.rs`.
-  Analysis: Pre-existing BLOAT — the IO thread loop (read-event dispatch, snapshot production, response-poll pump, PaneIoCommand dispatch, SetCellDimensions plumbing) mixes concerns. Natural split points: PaneIoCommand dispatch arms into `io_thread/commands.rs`; snapshot production + dirty-tracking into `io_thread/snapshot.rs`; keep the top-level `run()` loop in `mod.rs`.
-  TDD matrix: no new tests required — `oriterm_mux/tests/e2e.rs` + `oriterm_mux/tests/contract.rs` cover the IO thread behavior end-to-end.
+- [x] `[BUG-08-19-b][low]` **`oriterm_mux/src/pane/io_thread/mod.rs` is 566 lines, 66 over the 500-line limit** — found by §09A.N post-split file-size sweep.
+  Fixed: 2026-04-22 — Duplicate of `BUG-11-14`; resolved together as the broken-window precondition for spec-conformance §13.3. See `BUG-11-14` for the full resolution (run-loop extraction into `run_loop.rs`, select! branch unification via `IDLE_WAKE_CEILING` sentinel). `wc -l oriterm_mux/src/pane/io_thread/mod.rs` now returns 387. All mux tests green.
 
 - [x] `[BUG-08-19][low]` **`crates/vte/src/ansi/handler.rs` is 543 lines, 43 over the 500-line limit** — found while landing §09A.9 (DCS-path DECRQSS / DECRSPS).
   Found: 2026-04-19 | Source: §09A.9 close-out file-size audit.

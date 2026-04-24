@@ -149,6 +149,21 @@ pub enum MuxEvent {
         /// requested `Rgb` value.
         reply: ResponseToken<Rgb>,
     },
+    /// Next animation frame deadline for a pane.
+    ///
+    /// Emitted by the IO thread after `Term::advance_animations` runs and
+    /// the next-deadline changed. The main thread forwards the instant to
+    /// `RenderScheduler::request_frame_at` so the winit event loop's
+    /// `ControlFlow::WaitUntil` wakes at the right instant to render the
+    /// next frame. `None` means no animation is active (or none is
+    /// viewport-visible); consumers can drop any previously-tracked
+    /// deadline for the pane.
+    AnimationDeadlineChanged {
+        /// Originating pane.
+        pane_id: PaneId,
+        /// Next frame deadline, or `None` when no animation is active.
+        deadline: Option<std::time::Instant>,
+    },
 }
 
 impl fmt::Debug for MuxEvent {
@@ -197,6 +212,13 @@ impl fmt::Debug for MuxEvent {
                 index,
                 ..
             } => write!(f, "HostColorQuery({pane_id}, {prefix:?}, index={index})"),
+            Self::AnimationDeadlineChanged { pane_id, deadline } => {
+                write!(
+                    f,
+                    "AnimationDeadlineChanged({pane_id}, deadline={:?})",
+                    deadline.map(|d| d.saturating_duration_since(std::time::Instant::now())),
+                )
+            }
         }
     }
 }
@@ -324,6 +346,18 @@ pub enum MuxNotification {
     /// The receiving client should create a new tab in its active window
     /// using its own configuration.
     NewTab,
+    /// Next animation frame deadline for a pane (kitty graphics `a=f`/`a=a`
+    /// and future sixel-animation sources). The receiving client forwards
+    /// `deadline` to `RenderScheduler::request_frame_at` so the winit
+    /// event loop wakes at the right instant. `None` means no animation
+    /// is active; consumers drop any previously-tracked deadline for the
+    /// pane.
+    AnimationDeadlineChanged {
+        /// Originating pane.
+        pane_id: PaneId,
+        /// Next frame deadline, or `None` when no animation is active.
+        deadline: Option<std::time::Instant>,
+    },
 }
 
 impl fmt::Debug for MuxNotification {
@@ -362,6 +396,13 @@ impl fmt::Debug for MuxNotification {
                 ..
             } => write!(f, "HostColorQuery({pane_id}, {prefix:?}, index={index})"),
             Self::NewTab => write!(f, "NewTab"),
+            Self::AnimationDeadlineChanged { pane_id, deadline } => {
+                write!(
+                    f,
+                    "AnimationDeadlineChanged({pane_id}, deadline={:?})",
+                    deadline.map(|d| d.saturating_duration_since(std::time::Instant::now())),
+                )
+            }
         }
     }
 }

@@ -134,11 +134,24 @@ fn kitty_action_frame_on_prior_transmit_emits_ok_reply() {
 
     h.feed(&kitty_apc(b"a=f,i=5,f=32,s=4,v=4", &b64(&rgba_4x4_red())));
 
+    // §13.3 added the `,r=<frame_num>` qualifier per kitty
+    // finish_command_response (graphics.c:802-806). The a=f OK reply for
+    // the freshly-added frame carries `,r=2` (static-to-animated promotion
+    // places the new frame at 1-based index 2). The precondition a=t OK
+    // remains `i=5;OK` with no frame qualifier.
+    let ok_reply_frame2 = format!("\x1b_Gi=5,r=2;OK\x1b\\").into_bytes();
     assert_eq!(
         count_replies_exact(&h, &ok_reply_for(5)),
-        2,
-        "a=f MUST emit its OWN OK reply for i=5 (total should now be 2, \
-         not just the prior transmit's one) — transcript: {:?}",
+        1,
+        "a=t emits `i=5;OK` (unchanged); a=f emits `i=5,r=2;OK` (new \
+         ,r= qualifier), so the bare-i=5 form stays at 1 — transcript: {:?}",
+        String::from_utf8_lossy(&reply_bytes(&h)),
+    );
+    assert_eq!(
+        count_replies_exact(&h, &ok_reply_frame2),
+        1,
+        "a=f MUST emit its OWN OK reply with `,r=2` qualifier for the \
+         newly-added frame — transcript: {:?}",
         String::from_utf8_lossy(&reply_bytes(&h)),
     );
     // Dispatch-identity pin: a=f adds animation frames, NOT placements.
