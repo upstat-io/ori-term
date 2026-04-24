@@ -91,17 +91,18 @@ impl<S: EffectSink> Term<S> {
     }
 
     /// Report the current keyboard mode to the PTY (`CSI ? <mode> u`).
+    ///
+    /// Reports the live `TermMode::KITTY_KEYBOARD_PROTOCOL` bits rather
+    /// than the stack top. Set-only kitty modes enabled via `CSI = Ps u`
+    /// do NOT enter the stack (see BUG-08-12) — deriving the reply from
+    /// stack top would report `0` while the bits are actually live,
+    /// leaving shells unable to detect their own set-only kitty state.
     #[expect(
         clippy::needless_pass_by_ref_mut,
         reason = "Handler trait requires &mut self"
     )]
     pub(super) fn dcs_report_keyboard_mode(&mut self) {
-        let bits = self
-            .keyboard_mode_stack
-            .back()
-            .copied()
-            .unwrap_or(KeyboardModes::NO_MODE)
-            .bits();
+        let bits = KeyboardModes::from(self.mode).bits();
         let response = format!("\x1b[?{bits}u");
         self.effect_sink.push(Effect::Pty(PtyEffect::Write {
             bytes: response.into_bytes(),
