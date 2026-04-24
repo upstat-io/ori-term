@@ -678,3 +678,57 @@ fn multichar_character_kitty_repeat_with_report_events_suppressed_pin() {
     });
     assert!(r.is_empty());
 }
+
+// --- Round-4 TPR (codex): Unidentified matrix completeness — explicit
+// --- pins for the three cells codex identified as untested.
+
+/// Unidentified Press WITHOUT REPORT_EVENT_TYPES emits text (baseline).
+#[test]
+fn unidentified_kitty_press_no_report_events_emits_text() {
+    use winit::keyboard::{KeyLocation, NativeKey};
+    let r = super::encode_key(&super::KeyInput {
+        key: &Key::Unidentified(NativeKey::Unidentified),
+        mods: Modifiers::empty(),
+        mode: kitty_disambiguate_mode(),
+        text: Some("x"),
+        location: KeyLocation::Standard,
+        event_type: KeyEventType::Press,
+        alternate_key: None,
+    });
+    assert_eq!(r, b"x");
+}
+
+/// Unidentified Release WITHOUT REPORT_EVENT_TYPES is suppressed by the
+/// top-of-function guard.
+#[test]
+fn unidentified_kitty_release_no_report_events_suppressed() {
+    use winit::keyboard::{KeyLocation, NativeKey};
+    let r = super::encode_key(&super::KeyInput {
+        key: &Key::Unidentified(NativeKey::Unidentified),
+        mods: Modifiers::empty(),
+        mode: kitty_disambiguate_mode(),
+        text: Some("x"),
+        location: KeyLocation::Standard,
+        event_type: KeyEventType::Release,
+        alternate_key: None,
+    });
+    assert!(r.is_empty());
+}
+
+/// Unidentified Repeat WITH REPORT_EVENT_TYPES is suppressed by the
+/// per-arm guard (no codepoint to encode).
+#[test]
+fn unidentified_kitty_repeat_with_report_events_suppressed() {
+    use winit::keyboard::{KeyLocation, NativeKey};
+    let mode = kitty_disambiguate_mode() | oriterm_core::TermMode::REPORT_EVENT_TYPES;
+    let r = super::encode_key(&super::KeyInput {
+        key: &Key::Unidentified(NativeKey::Unidentified),
+        mods: Modifiers::empty(),
+        mode,
+        text: Some("x"),
+        location: KeyLocation::Standard,
+        event_type: KeyEventType::Repeat,
+        alternate_key: None,
+    });
+    assert!(r.is_empty());
+}
