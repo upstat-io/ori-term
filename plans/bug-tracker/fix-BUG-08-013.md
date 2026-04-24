@@ -356,9 +356,21 @@ The existing `enc_numpad(key, mods, mode)` is kept as a thin wrapper forwarding 
 
 **Gemini:** returned clean. Summary: "Correct and robust fix for BUG-08-13. The fallback to logical Key::Character content when KeyEvent::text is None restores numpad functionality across legacy and Kitty paths. The implementation includes necessary guards for Kitty release suppression and Alt-prefix encoding. Test coverage is comprehensive."
 
-### Phase 5 Code TPR — Round 1 (convergence check)
+### Phase 5 Code TPR — Round 1
 
-Runs after the Round-0 fix commit to verify both reviewers return clean. See commit log.
+**Scratch dir:** `/tmp/tpr-round-ori_term-9rrk7sOF`. Codex + gemini dispatched via direct wrapper Bash (Sonnet sub-agent billing gate persists).
+
+**Dispatch:** codex 1 finding / gemini 1 finding (agreement).
+**Verification:** verified 1 / dropped 0.
+**Classification:** actionable 1 / meta 0.
+**Fix commit:** Phase 5 round-1 commit below.
+
+**Findings this round:**
+- `[TPR-08-013-codex+gemini][high]` `oriterm/src/key_encoding/kitty.rs:98` — Named keys with unambiguous legacy (arrows, F-keys, Home/End, Insert, Delete, PageUp/Down) bypass release suppression in Kitty DISAMBIGUATE without REPORT_EVENT_TYPES. The `if !needs_csi_u && has_unambiguous_legacy: return legacy::encode_legacy(...)` at line 100 routes around `resolve_event_suffix` and would emit `b"\x1b[A"` for an ArrowUp release. Disposition: fixed in Phase 5 round-1 commit — moved release suppression to a single top-of-`encode_kitty` guard (SSOT). Removed redundant per-arm guards added in round 0 + the now-redundant Release check in `should_send_as_text`. Added 6 negative pins covering ArrowUp / F1 / Delete / Home releases under DISAMBIGUATE-without-REPORT_EVENT_TYPES + 1 positive pin (ArrowUp press still emits legacy) + 1 positive pin (ArrowUp release WITH REPORT_EVENT_TYPES emits CSI u).
+
+### Phase 5 Code TPR — Round 2 (convergence verification)
+
+Runs after the round-1 fix commit. Goal: both reviewers clean.
 
 ---
 
