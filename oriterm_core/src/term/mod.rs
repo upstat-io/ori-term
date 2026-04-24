@@ -136,11 +136,15 @@ pub struct Term<S: EffectSink> {
     /// preserves shell-held kitty state for both push-path and set-path
     /// integrations. See BUG-08-12 TPR round-1 F1.
     pre_command_kb_mode_bits_snapshot: Option<KeyboardModes>,
-    /// Paired inactive-screen bits snapshot — same relation to
-    /// [`pre_command_kb_mode_bits_snapshot`] as the inactive stack
-    /// snapshot has to the active stack snapshot. Swapped alongside the
-    /// paired stack snapshots in `toggle_alt_common`.
-    inactive_pre_command_kb_mode_bits_snapshot: Option<KeyboardModes>,
+    /// Live Kitty-keyboard-protocol bits for the INACTIVE screen.
+    ///
+    /// `TermMode::KITTY_KEYBOARD_PROTOCOL` inside `self.mode` reflects
+    /// only the active screen; the inactive screen's effective kitty
+    /// bits are stored here. Swapped alongside the paired stacks in
+    /// `toggle_alt_common` so set-only bits enabled via `CSI = Ps u`
+    /// survive alt-screen toggles even when no shell integration (no
+    /// OSC 133 snapshot) is present. See BUG-08-12 TPR round-3 F1/F2.
+    inactive_keyboard_mode_bits: KeyboardModes,
     /// Effect sink for boundary-crossing side effects.
     effect_sink: S,
     /// Set by content-modifying VTE handler operations (character printing,
@@ -302,7 +306,7 @@ impl<S: EffectSink> Term<S> {
             pre_command_kb_stack_snapshot: None,
             inactive_pre_command_kb_stack_snapshot: None,
             pre_command_kb_mode_bits_snapshot: None,
-            inactive_pre_command_kb_mode_bits_snapshot: None,
+            inactive_keyboard_mode_bits: KeyboardModes::NO_MODE,
             effect_sink,
             selection_dirty: false,
             prompt_state: PromptState::None,

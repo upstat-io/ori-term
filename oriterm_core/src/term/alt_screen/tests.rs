@@ -154,26 +154,36 @@ fn resize_on_alt_screen_then_snapshot() {
 #[test]
 fn toggle_alt_common_swaps_nonempty_stacks_reapplies_new_active_top() {
     let mut term = make_term();
-    // Primary stack carries DISAMBIGUATE; alt stack carries REPORT_ALL.
-    let mode_a = KeyboardModes::DISAMBIGUATE_ESC_CODES;
-    let mode_b = KeyboardModes::REPORT_ALL_KEYS_AS_ESC;
-    term.keyboard_mode_stack.push_back(mode_a);
-    term.inactive_keyboard_mode_stack.push_back(mode_b);
-    // Start with primary's mode bits active.
-    term.mode.insert(TermMode::DISAMBIGUATE_ESC_CODES);
+    // Shell pushes DISAMBIGUATE on primary; this path updates both the
+    // stack AND the live bits via the VTE handler — which is what real
+    // shell integrations do.
+    feed(&mut term, b"\x1b[>1u");
+    assert!(term.mode().contains(TermMode::DISAMBIGUATE_ESC_CODES));
+    // Simulate alt screen having a prior push of REPORT_ALL.
+    term.inactive_keyboard_mode_stack
+        .push_back(KeyboardModes::REPORT_ALL_KEYS_AS_ESC);
+    term.inactive_keyboard_mode_bits = KeyboardModes::REPORT_ALL_KEYS_AS_ESC;
 
-    // DECSET 1049 → alt screen; active stack becomes [mode_b].
+    // DECSET 1049 → alt screen: swap stacks + swap live bits.
     feed(&mut term, b"\x1b[?1049h");
 
     assert!(term.mode().contains(TermMode::ALT_SCREEN));
-    assert_eq!(term.keyboard_mode_stack, VecDeque::from(vec![mode_b]));
+    assert_eq!(
+        term.keyboard_mode_stack,
+        VecDeque::from(vec![KeyboardModes::REPORT_ALL_KEYS_AS_ESC])
+    );
     assert!(
         term.mode().contains(TermMode::REPORT_ALL_KEYS_AS_ESC),
-        "toggle_alt_common must reapply new-active-stack top mode bits"
+        "toggle_alt_common must reapply new-active-screen bits"
     );
     assert!(
         !term.mode().contains(TermMode::DISAMBIGUATE_ESC_CODES),
-        "old active-stack mode bits must be cleared after swap"
+        "old active-screen bits must be cleared after swap"
+    );
+    assert_eq!(
+        term.inactive_keyboard_mode_bits(),
+        KeyboardModes::DISAMBIGUATE_ESC_CODES,
+        "primary's bits are now held in the inactive slot"
     );
 }
 

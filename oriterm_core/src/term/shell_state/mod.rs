@@ -129,10 +129,12 @@ impl<S: EffectSink> Term<S> {
         self.pre_command_kb_mode_bits_snapshot
     }
 
-    /// Paired inactive-screen bits snapshot — see
-    /// [`Self::pre_command_kb_mode_bits_snapshot`].
-    pub fn inactive_pre_command_kb_mode_bits_snapshot(&self) -> Option<KeyboardModes> {
-        self.inactive_pre_command_kb_mode_bits_snapshot
+    /// Live Kitty-keyboard-protocol bits for the INACTIVE screen. Swapped
+    /// with the active bits (the `TermMode::KITTY_KEYBOARD_PROTOCOL`
+    /// subset of `self.mode`) in `toggle_alt_common` so set-only kitty
+    /// bits survive alt-screen toggles. See BUG-08-12 TPR round-3.
+    pub fn inactive_keyboard_mode_bits(&self) -> KeyboardModes {
+        self.inactive_keyboard_mode_bits
     }
 
     // -- Kitty keyboard mode stack snapshot / restore (OSC 133 C/A/D) --
@@ -155,15 +157,10 @@ impl<S: EffectSink> Term<S> {
         self.pre_command_kb_stack_snapshot = Some(self.keyboard_mode_stack.clone());
         self.inactive_pre_command_kb_stack_snapshot =
             Some(self.inactive_keyboard_mode_stack.clone());
-        let active_bits = KeyboardModes::from(self.mode);
-        self.pre_command_kb_mode_bits_snapshot = Some(active_bits);
-        // Inactive bits snapshot is always captured alongside so the
-        // paired invariant (both-or-neither) holds across `toggle_alt_common`
-        // swaps. The inactive screen's effective bits are `NO_MODE` while
-        // it is not the active screen; paired field lets the snapshot
-        // follow the primary stack through alt-screen swaps without
-        // dropping/leaking state.
-        self.inactive_pre_command_kb_mode_bits_snapshot = Some(KeyboardModes::NO_MODE);
+        self.pre_command_kb_mode_bits_snapshot = Some(KeyboardModes::from(self.mode));
+        // No inactive-bits snapshot: `inactive_keyboard_mode_bits` is
+        // live per-screen state, swapped on alt toggle. The snapshot
+        // captures only the active-screen bits for restore.
     }
 
     /// If a snapshot is active, replace BOTH stacks with the snapshotted
@@ -188,14 +185,8 @@ impl<S: EffectSink> Term<S> {
         if let Some(saved) = self.inactive_pre_command_kb_stack_snapshot.take() {
             self.inactive_keyboard_mode_stack = saved;
         }
-        // DO NOT clear `inactive_pre_command_kb_mode_bits_snapshot` —
-        // leaving it intact preserves set-only kitty bits that belong
-        // to the other screen when `;A` fires on a screen that is not
-        // the shell's screen (e.g. shell-integration emission during an
-        // alt-screen round-trip). `toggle_alt_common` consumes it on
-        // swap by preferring bits snapshot over stack-top for reapply,
-        // and the next `;C` overwrites it via `snapshot_keyboard_mode_stack`.
-        // See BUG-08-12 TPR round-2 F1.
+        // `inactive_keyboard_mode_bits` is live per-screen state — not
+        // a snapshot field — so restore doesn't touch it here.
     }
 
     // -- Prompt state --

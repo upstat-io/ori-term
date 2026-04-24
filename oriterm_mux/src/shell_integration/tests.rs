@@ -2263,6 +2263,57 @@ fn keyboard_mode_stack_shell_set_without_push_csi_equals_u_survives_restore() {
     assert!(term.keyboard_mode_stack().is_empty());
 }
 
+/// Regression: BUG-08-12 TPR round-3 F1 — shell sets kitty bits via
+/// set-only `CSI = Ps u` WITHOUT any shell integration (no OSC 133),
+/// then user enters/exits alt screen (e.g. pages a manpage). Bits
+/// must survive — live per-screen `inactive_keyboard_mode_bits` tracks
+/// the off-screen effective bits so alt toggles preserve set state.
+/// See: plans/bug-tracker/fix-BUG-08-012.md §2.5 TPR round 3.
+#[test]
+fn kitty_set_only_bits_without_shell_integration_survive_alt_roundtrip() {
+    let mut term = make_term();
+    feed_mux_and_proc(&mut term, b"\x1b[=1u"); // set-only, no ;C
+    assert!(term.mode().contains(TermMode::DISAMBIGUATE_ESC_CODES));
+
+    // Enter alt (e.g. `man foo`), exit alt — no OSC 133 in play.
+    feed_mux_and_proc(&mut term, b"\x1b[?1049h");
+    assert!(
+        !term.mode().intersects(TermMode::KITTY_KEYBOARD_PROTOCOL),
+        "alt screen starts fresh — shell's bits must not leak onto alt"
+    );
+    feed_mux_and_proc(&mut term, b"\x1b[?1049l");
+
+    assert!(
+        term.mode().contains(TermMode::DISAMBIGUATE_ESC_CODES),
+        "primary's set-only kitty bits must survive alt round-trip even \
+         without shell integration"
+    );
+}
+
+/// Regression: BUG-08-12 TPR round-3 F2 — child mid-command mutates
+/// kitty bits via `CSI = Ps u`, then user enters/exits alt. The child's
+/// mid-command bits must survive the round-trip and still be active on
+/// return to primary (shell's ;D will restore to pre-command state
+/// later). Live per-screen bits field preserves them.
+#[test]
+fn kitty_mid_command_bit_mutation_survives_alt_roundtrip() {
+    let mut term = make_term();
+    feed_mux_and_proc(&mut term, b"\x1b[>1u"); // shell push: stack=[DIS]
+    feed_mux_and_proc(&mut term, b"\x1b]133;C\x1b\\");
+    // Child mutates bits to REPORT_ALL mid-command.
+    feed_mux_and_proc(&mut term, b"\x1b[=8u");
+    assert!(term.mode().contains(TermMode::REPORT_ALL_KEYS_AS_ESC));
+
+    // User enters alt (e.g. less), exits alt.
+    feed_mux_and_proc(&mut term, b"\x1b[?1049h");
+    feed_mux_and_proc(&mut term, b"\x1b[?1049l");
+
+    assert!(
+        term.mode().contains(TermMode::REPORT_ALL_KEYS_AS_ESC),
+        "child's mid-command bits must survive the alt round-trip"
+    );
+}
+
 /// Regression: BUG-08-12 TPR round-2 F1 — shell set-only kitty bits
 /// survive an alt-screen round-trip that includes an `;A` firing on
 /// the alt side (misbehaving integration or background emission).
