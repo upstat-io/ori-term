@@ -617,3 +617,64 @@ fn unidentified_kitty_press_with_report_events_emits_text() {
     });
     assert_eq!(r, b"x");
 }
+
+// --- Round-3 TPR (codex): Repeat without REPORT_EVENT_TYPES is press-
+// --- equivalent per `resolve_event_suffix`. Multi-char and Unidentified
+// --- arms must NOT suppress Repeat unless REPORT_EVENT_TYPES is active.
+
+/// Multi-char Character Repeat WITHOUT REPORT_EVENT_TYPES is press-
+/// equivalent — must emit text. `resolve_event_suffix(false, Repeat)`
+/// returns `Some("")`, so the encoder treats Repeat as ordinary press
+/// emission outside Kitty event-type reporting.
+#[test]
+fn multichar_character_kitty_repeat_no_report_events_emits_text() {
+    use winit::keyboard::KeyLocation;
+    let r = super::encode_key(&super::KeyInput {
+        key: &Key::Character("ae".into()),
+        mods: Modifiers::empty(),
+        mode: kitty_disambiguate_mode(),
+        text: Some("ae"),
+        location: KeyLocation::Standard,
+        event_type: KeyEventType::Repeat,
+        alternate_key: None,
+    });
+    assert_eq!(
+        r, b"ae",
+        "repeat without REPORT_EVENT_TYPES = press-equivalent"
+    );
+}
+
+/// Unidentified Repeat WITHOUT REPORT_EVENT_TYPES is press-equivalent.
+#[test]
+fn unidentified_kitty_repeat_no_report_events_emits_text() {
+    use winit::keyboard::{KeyLocation, NativeKey};
+    let r = super::encode_key(&super::KeyInput {
+        key: &Key::Unidentified(NativeKey::Unidentified),
+        mods: Modifiers::empty(),
+        mode: kitty_disambiguate_mode(),
+        text: Some("x"),
+        location: KeyLocation::Standard,
+        event_type: KeyEventType::Repeat,
+        alternate_key: None,
+    });
+    assert_eq!(r, b"x");
+}
+
+/// Multi-char Character Repeat WITH REPORT_EVENT_TYPES is suppressed
+/// (no codepoint to encode in CSI u). Pin to keep the report-events-on
+/// branch suppressing.
+#[test]
+fn multichar_character_kitty_repeat_with_report_events_suppressed_pin() {
+    use winit::keyboard::KeyLocation;
+    let mode = kitty_disambiguate_mode() | oriterm_core::TermMode::REPORT_EVENT_TYPES;
+    let r = super::encode_key(&super::KeyInput {
+        key: &Key::Character("ae".into()),
+        mods: Modifiers::empty(),
+        mode,
+        text: Some("ae"),
+        location: KeyLocation::Standard,
+        event_type: KeyEventType::Repeat,
+        alternate_key: None,
+    });
+    assert!(r.is_empty());
+}

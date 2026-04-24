@@ -135,12 +135,15 @@ pub(super) fn encode_kitty(input: &KeyInput<'_>) -> Vec<u8> {
                 }
                 cp
             } else {
-                // Multi-char (dead-key compositions, IME output). With
-                // REPORT_EVENT_TYPES active the top-of-function release
-                // guard does not fire, but multi-char input has no single
-                // codepoint to encode in CSI u — suppress non-Press events
-                // here rather than leak raw text on release/repeat.
-                if input.event_type != KeyEventType::Press {
+                // Multi-char (dead-key compositions, IME output). When
+                // REPORT_EVENT_TYPES is active there is no single codepoint
+                // to encode in CSI u, so non-Press events must suppress
+                // rather than leak raw text. When REPORT_EVENT_TYPES is
+                // off, `resolve_event_suffix` treats Repeat as press-
+                // equivalent (Release is already caught by the top-of-
+                // function guard), so let Repeat fall through to the text
+                // emission and match that behavior.
+                if input.event_type != KeyEventType::Press && report_events {
                     return Vec::new();
                 }
                 let bytes: &[u8] = input
@@ -151,10 +154,12 @@ pub(super) fn encode_kitty(input: &KeyInput<'_>) -> Vec<u8> {
         }
         // Unidentified keys (e.g. RDP/IME): send text as-is if available.
         // Same protocol-shape gap as multi-char above — there is no
-        // codepoint to encode, so non-Press events must suppress rather
-        // than leak raw text when REPORT_EVENT_TYPES is active.
+        // codepoint to encode, so non-Press events must suppress when
+        // REPORT_EVENT_TYPES is active. Without REPORT_EVENT_TYPES, Repeat
+        // falls through as press-equivalent (Release is caught by the
+        // top-of-function guard).
         _ => {
-            if input.event_type != KeyEventType::Press {
+            if input.event_type != KeyEventType::Press && report_events {
                 return Vec::new();
             }
             return input.text.map_or_else(Vec::new, |t| t.as_bytes().to_vec());
