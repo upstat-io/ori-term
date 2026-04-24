@@ -74,13 +74,13 @@ pub(super) fn apply(template: &mut Cell, attr: &Attr) {
                 .remove(CellFlags::SUPERSCRIPT | CellFlags::SUBSCRIPT);
         }
         Attr::Foreground(color) => {
-            if crate::xray_trace::next() {
+            if crate::xray_trace::next_sgr() {
                 log::info!(target: "oriterm_core::xray", "SGR FG {:?}", color);
             }
             template.fg = *color;
         }
         Attr::Background(color) => {
-            if crate::xray_trace::next() {
+            if crate::xray_trace::next_sgr() {
                 log::info!(target: "oriterm_core::xray", "SGR BG {:?}", color);
             }
             template.bg = *color;

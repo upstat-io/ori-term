@@ -94,7 +94,7 @@ impl Grid {
             return false;
         }
 
-        if crate::xray_trace::next() {
+        if crate::xray_trace::next_at_row(line) {
             log::info!(
                 target: "oriterm_core::xray",
                 "ASCII r={} c={} ch={:?} fg={:?} bg={:?} flags={:?}",
@@ -172,7 +172,7 @@ impl Grid {
             // Clear any wide char pair that we're overwriting.
             self.clear_wide_char_at(line, col);
 
-            if crate::xray_trace::next() {
+            if crate::xray_trace::next_at_row(line) {
                 log::info!(
                     target: "oriterm_core::xray",
                     "SLOW  r={} c={} ch={:?} w={} fg={:?} bg={:?} flags={:?}",
