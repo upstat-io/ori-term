@@ -399,9 +399,23 @@ Codex's clean and gemini's findings cover orthogonal classes — codex audited t
 
 **Gemini (round 3):** clean. Summary: "Phase 5 Code TPR round 3 complete. Fixes for BUG-08-13 are verified. Commit `61aa7329` successfully closes the multi-char Character and Unidentified key Release/Repeat leaks when `REPORT_EVENT_TYPES` is active. Top-level release guard and named-key legacy bypass are sound. Test matrix is complete with explicit semantic pins for all recently discovered leak paths. No new regressions or bypass paths identified."
 
-### Phase 5 Code TPR — Round 4 (convergence verification)
+### Phase 5 Code TPR — Round 4
 
-Runs after the round-3 fix commit. Goal: both reviewers clean.
+**Scratch dir:** `/tmp/tpr-round-ori_term-c79JJCha`. Direct wrapper Bash dispatch.
+
+**Dispatch:** codex 1 finding (medium, tests-only) / gemini 0 findings (clean).
+**Verification:** verified 1 / dropped 0.
+**Classification:** actionable 1 / meta 0.
+**Fix commit:** Phase 5 round-4 commit below.
+
+**Findings this round:**
+- `[TPR-08-013-codex][medium]` `oriterm/src/key_encoding/tests/application_keypad.rs:587` — Unidentified arm test coverage missing 3 matrix cells (Press without REPORT_EVENT_TYPES, Release without REPORT_EVENT_TYPES, Repeat WITH REPORT_EVENT_TYPES). Disposition: fixed in Phase 5 round-4 commit — added the 3 missing pins. Now the Unidentified arm × {Press, Release, Repeat} × {report_events on, off} matrix has full explicit coverage.
+
+**Gemini (round 4):** clean. Summary: "Phase 5 Code TPR round 4 complete. Commit `ed37cadd` successfully restores press-equivalence for `Repeat` events without `REPORT_EVENT_TYPES` in multi-char and `Unidentified` arms while maintaining non-Press suppression when active. The top-of-function release guard and named-key legacy bypass remain sound. Semantic pins in `application_keypad.rs` and `kitty_precedence.rs` verify all matrix cells. No regressions or bypass paths identified."
+
+### Phase 5 Code TPR — Round 5 (convergence verification)
+
+Runs after the round-4 tests-only commit. Goal: both reviewers clean.
 
 ---
 
