@@ -2223,6 +2223,70 @@ fn csi_push_and_osc_133_c_same_chunk_snapshot_still_captures_pre_chunk_depth() {
     assert!(term.keyboard_mode_stack().is_empty());
 }
 
+/// Regression: BUG-08-12 TPR round-1 F1 — shell uses `CSI = Ps u` to
+/// set a kitty keyboard mode WITHOUT pushing (set-path integration).
+/// The bits live in `TermMode::KITTY_KEYBOARD_PROTOCOL` with an empty
+/// keyboard mode stack. A subsequent `;C → child → ;A` cycle must
+/// preserve the shell's set-only bits — prior to the paired bits
+/// snapshot, reapplying stack-top (`NO_MODE` for empty stack) would
+/// silently clear the shell's kitty state at every prompt boundary.
+/// See: plans/bug-tracker/fix-BUG-08-012.md §2.5 TPR round 1.
+#[test]
+fn keyboard_mode_stack_shell_set_without_push_csi_equals_u_survives_restore() {
+    let mut term = make_term();
+    // Shell sets kitty mode via `CSI = 1 u` — SET (Replace), no push.
+    feed_mux_and_proc(&mut term, b"\x1b[=1u");
+    assert!(term.mode().contains(TermMode::DISAMBIGUATE_ESC_CODES));
+    assert!(
+        term.keyboard_mode_stack().is_empty(),
+        "CSI = Ps u path does not touch the stack"
+    );
+
+    // Command boundary: ;C snapshots current bits + empty stack.
+    feed_mux_and_proc(&mut term, b"\x1b]133;C\x1b\\");
+    assert_eq!(
+        term.pre_command_kb_mode_bits_snapshot(),
+        Some(KeyboardModes::DISAMBIGUATE_ESC_CODES),
+        "paired bits snapshot captures shell-held set-only bits"
+    );
+
+    // Child runs and exits without interacting with the kitty stack.
+
+    // Next prompt ;A restores: stack stays empty, bits restored to
+    // shell's snapshotted DISAMBIGUATE_ESC_CODES.
+    feed_mux_and_proc(&mut term, b"\x1b]133;A\x1b\\");
+
+    assert!(
+        term.mode().contains(TermMode::DISAMBIGUATE_ESC_CODES),
+        "shell's set-only kitty mode must survive the command boundary"
+    );
+    assert!(term.keyboard_mode_stack().is_empty());
+}
+
+/// Regression: BUG-08-12 TPR round-1 F1 — child mutates bits via
+/// `CSI = Ps u` during a command while shell used set-only before ;C.
+/// Restore must return to shell's set-only bits even though stack is
+/// empty.
+#[test]
+fn keyboard_mode_stack_shell_set_then_child_set_mutation_then_a_reapplies_shell_bits() {
+    let mut term = make_term();
+    feed_mux_and_proc(&mut term, b"\x1b[=1u"); // shell_mode = DISAMBIGUATE
+    feed_mux_and_proc(&mut term, b"\x1b]133;C\x1b\\");
+
+    // Child mutates bits to REPORT_ALL_KEYS_AS_ESC via CSI = 8 u.
+    feed_mux_and_proc(&mut term, b"\x1b[=8u");
+    assert!(term.mode().contains(TermMode::REPORT_ALL_KEYS_AS_ESC));
+    assert!(!term.mode().contains(TermMode::DISAMBIGUATE_ESC_CODES));
+
+    feed_mux_and_proc(&mut term, b"\x1b]133;A\x1b\\");
+
+    assert!(
+        term.mode().contains(TermMode::DISAMBIGUATE_ESC_CODES),
+        "paired bits snapshot reverts child's CSI = Ps u mutation"
+    );
+    assert!(!term.mode().contains(TermMode::REPORT_ALL_KEYS_AS_ESC));
+}
+
 /// Regression: BUG-08-12 — pin the raw-first invariant for pop + ;D
 /// same-chunk. When a child emits `CSI < 1 u` immediately before
 /// `OSC 133 ; D` and both land in one PTY read, the raw interceptor
