@@ -584,35 +584,10 @@ impl<S: EffectSink> Term<S> {
         &self.title_stack
     }
 
-    /// Current keyboard mode stack (Kitty keyboard protocol).
-    pub fn keyboard_mode_stack(&self) -> &VecDeque<KeyboardModes> {
-        &self.keyboard_mode_stack
-    }
-
-    /// Inactive-screen keyboard mode stack (swapped on alt-screen toggle).
-    pub fn inactive_keyboard_mode_stack(&self) -> &VecDeque<KeyboardModes> {
-        &self.inactive_keyboard_mode_stack
-    }
-
-    /// Pre-command snapshot of the active-screen keyboard mode stack
-    /// (taken at OSC 133 ; C, consumed at OSC 133 ; A / ; D).
-    ///
-    /// `None` means no snapshot is active for this screen. `Some(deque)`
-    /// holds the verbatim contents of [`Self::keyboard_mode_stack`] at
-    /// the moment the pre-command snapshot was taken. See BUG-08-12.
-    pub fn pre_command_kb_stack_snapshot(&self) -> Option<&VecDeque<KeyboardModes>> {
-        self.pre_command_kb_stack_snapshot.as_ref()
-    }
-
-    /// Pre-command snapshot of the inactive-screen keyboard mode stack.
-    ///
-    /// See [`Self::pre_command_kb_stack_snapshot`] for semantics. Paired
-    /// with that field and swapped alongside the stacks on alt-screen
-    /// toggle so a snapshot taken on one screen only fires restore on
-    /// that screen.
-    pub fn inactive_pre_command_kb_stack_snapshot(&self) -> Option<&VecDeque<KeyboardModes>> {
-        self.inactive_pre_command_kb_stack_snapshot.as_ref()
-    }
+    // Keyboard-mode-stack accessors (pre-command snapshot + inactive
+    // stack) are in `shell_state.rs` alongside `snapshot_keyboard_mode_stack`
+    // / `restore_keyboard_mode_stack` — they are all part of the OSC 133 /
+    // OSC 633 shell-integration surface. See BUG-08-12.
 
     // Rendering snapshot methods (renderable_content, renderable_content_into,
     // damage, reset_damage) are in `snapshot.rs`.

@@ -7,6 +7,8 @@
 //! `Notification`, `PendingMarks`) also live here; `term/mod.rs`
 //! re-exports them for a stable public API.
 
+use std::collections::VecDeque;
+
 use vte::ansi::{KeyboardModes, KeyboardModesApplyBehavior};
 
 use super::Term;
@@ -87,6 +89,38 @@ pub fn cwd_short_path(cwd: &str) -> &str {
 }
 
 impl<S: EffectSink> Term<S> {
+    // -- Kitty keyboard mode stack accessors (BUG-08-12) --
+
+    /// Current keyboard mode stack (Kitty keyboard protocol).
+    pub fn keyboard_mode_stack(&self) -> &VecDeque<KeyboardModes> {
+        &self.keyboard_mode_stack
+    }
+
+    /// Inactive-screen keyboard mode stack (swapped on alt-screen toggle).
+    pub fn inactive_keyboard_mode_stack(&self) -> &VecDeque<KeyboardModes> {
+        &self.inactive_keyboard_mode_stack
+    }
+
+    /// Pre-command snapshot of the active-screen keyboard mode stack
+    /// (taken at OSC 133 ; C, consumed at OSC 133 ; A / ; D).
+    ///
+    /// `None` means no snapshot is active for this screen. `Some(deque)`
+    /// holds the verbatim contents of [`Self::keyboard_mode_stack`] at
+    /// the moment the pre-command snapshot was taken. See BUG-08-12.
+    pub fn pre_command_kb_stack_snapshot(&self) -> Option<&VecDeque<KeyboardModes>> {
+        self.pre_command_kb_stack_snapshot.as_ref()
+    }
+
+    /// Pre-command snapshot of the inactive-screen keyboard mode stack.
+    ///
+    /// See [`Self::pre_command_kb_stack_snapshot`] for semantics. Paired
+    /// with that field and swapped alongside the stacks on alt-screen
+    /// toggle so a snapshot taken on one screen only fires restore on
+    /// that screen.
+    pub fn inactive_pre_command_kb_stack_snapshot(&self) -> Option<&VecDeque<KeyboardModes>> {
+        self.inactive_pre_command_kb_stack_snapshot.as_ref()
+    }
+
     // -- Kitty keyboard mode stack snapshot / restore (OSC 133 C/A/D) --
 
     /// Clone BOTH active and inactive keyboard-mode stack contents so a
