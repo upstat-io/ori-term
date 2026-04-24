@@ -1776,9 +1776,7 @@ fn osc7_via_high_level_processor_drops() {
     );
 }
 
-// ============================================================================
 // BUG-08-12 — Kitty keyboard mode stack snapshot / restore via OSC 133 / 633
-// ============================================================================
 //
 // Shell-integration protocol tests for the BUG-08-12 fix:
 // - OSC 133 ; C (command-start) takes a paired contents-based snapshot.

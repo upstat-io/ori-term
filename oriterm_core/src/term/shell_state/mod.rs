@@ -1,11 +1,14 @@
 //! Shell integration state accessors and navigation.
 //!
-//! Extracted from `term/mod.rs` to keep the main file under the 500-line
-//! limit. These methods manage prompt state (OSC 133), CWD (OSC 7),
-//! title resolution, notifications, and prompt-based navigation. The
-//! shell-integration state types (`PromptState`, `PromptMarker`,
-//! `Notification`, `PendingMarks`) also live here; `term/mod.rs`
-//! re-exports them for a stable public API.
+//! Extracted from `term/mod.rs` to keep this slice of `Term`'s surface
+//! focused on OSC 133 / OSC 7 shell-integration concerns. These methods
+//! manage prompt state (OSC 133), CWD (OSC 7), title resolution,
+//! notifications, and prompt-based navigation. The shell-integration
+//! state types (`PromptState`, `PromptMarker`, `Notification`,
+//! `PendingMarks`) also live here; `term/mod.rs` re-exports them for a
+//! stable public API. Kitty keyboard snapshot / restore lives in
+//! `shell_state/kitty_keyboard.rs`. Note: `term/mod.rs` remains over
+//! the 500-line cap pending BUG-08-020's full split.
 
 mod kitty_keyboard;
 
