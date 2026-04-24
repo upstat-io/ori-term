@@ -118,17 +118,17 @@ impl<S: EffectSink> Term<S> {
             &mut self.saved_origin_mode,
             &mut self.inactive_saved_origin_mode,
         );
-        // Reapply the newly-active stack's top-of-mode so
-        // `TermMode::KITTY_KEYBOARD_PROTOCOL` reflects the active screen.
-        // Without this, kitty mode bits leak across `?1049h/l` toggles —
-        // the exact pathway by which BUG-08-12 manifests in alt-screen
-        // programs even when OSC 133 restore is also in place.
-        let new_top = self
-            .keyboard_mode_stack
-            .back()
-            .copied()
+        // Reapply kitty `TermMode::KITTY_KEYBOARD_PROTOCOL` bits to reflect
+        // the newly-active screen. Prefer the paired bits snapshot (covers
+        // shell set-only bits via `CSI = Ps u` — see BUG-08-12 TPR round-2
+        // F1) when one is active; fall back to top of the new-active stack
+        // (push-path shell integrations) then `NO_MODE`. Without this the
+        // kitty bits leaked across `?1049h/l` toggles.
+        let new_bits = self
+            .pre_command_kb_mode_bits_snapshot
+            .or_else(|| self.keyboard_mode_stack.back().copied())
             .unwrap_or(KeyboardModes::NO_MODE);
-        self.dcs_set_keyboard_mode(new_top, KeyboardModesApplyBehavior::Replace);
+        self.dcs_set_keyboard_mode(new_bits, KeyboardModesApplyBehavior::Replace);
         self.grid_mut().dirty_mut().mark_all();
     }
 }
