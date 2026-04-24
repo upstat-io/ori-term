@@ -1775,3 +1775,494 @@ fn osc7_via_high_level_processor_drops() {
          and cause double-handling in production"
     );
 }
+
+// ============================================================================
+// BUG-08-12 — Kitty keyboard mode stack snapshot / restore via OSC 133 / 633
+// ============================================================================
+//
+// Shell-integration protocol tests for the BUG-08-12 fix:
+// - OSC 133 ; C (command-start) takes a paired contents-based snapshot.
+// - OSC 133 ; A (next prompt) / ; D (command-done) restores verbatim
+//   AND unconditionally reapplies top-of-stack mode bits.
+// - OSC 633 A / C / D mirror OSC 133 (VS Code shell-integration superset).
+// - Alt-screen × paired per-screen snapshot.
+// - Over-pop / max-depth-eviction recovery.
+// - Same-chunk OSC-then-CSI vs CSI-then-OSC parser-pass ordering.
+// - Negative pins: no snapshot → no modification on ; A.
+
+#[cfg(test)]
+mod kitty_keyboard_restore_bug_08_012 {
+    use std::collections::VecDeque;
+
+    use oriterm_core::effect::QueueingEffectSink;
+    use oriterm_core::term::KEYBOARD_MODE_STACK_MAX_DEPTH;
+    use oriterm_core::{Term, TermMode, Theme};
+    use vte::ansi::KeyboardModes;
+
+    use super::spec_chain_helper::feed_mux_and_proc;
+
+    fn make_term() -> Term<QueueingEffectSink> {
+        Term::new(24, 80, 100, Theme::Dark, QueueingEffectSink::new())
+    }
+
+    // --- Exact failing case ---
+
+    /// Regression: BUG-08-12 — push one kitty mode, `;C` snapshot, child
+    /// crashes without popping, `;A` next prompt. Stack must restore to
+    /// snapshotted empty depth AND `KITTY_KEYBOARD_PROTOCOL` bits cleared.
+    /// This is the user-visible crash-during-command symptom.
+    /// See: plans/bug-tracker/fix-BUG-08-012.md
+    #[test]
+    fn keyboard_mode_stack_child_crash_on_osc_133_a_restores_to_snapshot_depth() {
+        let mut term = make_term();
+        // Shell emits `;C` before child runs — snapshot empty stack.
+        feed_mux_and_proc(&mut term, b"\x1b]133;C\x1b\\");
+        // Child pushes DISAMBIGUATE (parameter 1).
+        feed_mux_and_proc(&mut term, b"\x1b[>1u");
+        assert!(!term.keyboard_mode_stack().is_empty());
+        assert!(term.mode().contains(TermMode::DISAMBIGUATE_ESC_CODES));
+
+        // Child crashes (no pop); shell draws next prompt → `;A`.
+        feed_mux_and_proc(&mut term, b"\x1b]133;A\x1b\\");
+
+        assert!(
+            term.keyboard_mode_stack().is_empty(),
+            "restore must truncate to snapshot depth"
+        );
+        assert!(
+            !term.mode().intersects(TermMode::KITTY_KEYBOARD_PROTOCOL),
+            "KITTY bits must be cleared when restore top is NO_MODE"
+        );
+    }
+
+    // --- Edge cases ---
+
+    /// Regression: BUG-08-12 — `;D` is the clean-path restore trigger;
+    /// a well-behaved child emits `;D` before exiting.
+    #[test]
+    fn keyboard_mode_stack_child_clean_exit_on_osc_133_d_restores_to_snapshot_depth() {
+        let mut term = make_term();
+        feed_mux_and_proc(&mut term, b"\x1b]133;C\x1b\\");
+        feed_mux_and_proc(&mut term, b"\x1b[>1u");
+        assert!(!term.keyboard_mode_stack().is_empty());
+
+        feed_mux_and_proc(&mut term, b"\x1b]133;D\x1b\\");
+
+        assert!(term.keyboard_mode_stack().is_empty());
+        assert!(!term.mode().intersects(TermMode::KITTY_KEYBOARD_PROTOCOL));
+    }
+
+    /// Regression: BUG-08-12 — `;C` then `;A` with no pushes in between
+    /// must leave the stack empty.
+    #[test]
+    fn keyboard_mode_stack_empty_at_c_and_a_stays_empty() {
+        let mut term = make_term();
+        feed_mux_and_proc(&mut term, b"\x1b]133;C\x1b\\");
+        feed_mux_and_proc(&mut term, b"\x1b]133;A\x1b\\");
+
+        assert!(term.keyboard_mode_stack().is_empty());
+    }
+
+    /// Regression: BUG-08-12 — contents-based snapshot preserves
+    /// shell-held modes across command boundaries. Shell pushes 1 mode,
+    /// `;C`, child pushes 2 more and crashes, `;A` restores stack to
+    /// `[shell_mode]`.
+    #[test]
+    fn keyboard_mode_stack_shell_held_mode_at_c_preserved_after_a() {
+        let mut term = make_term();
+        // Shell integration pushes a mode on init.
+        feed_mux_and_proc(&mut term, b"\x1b[>1u");
+        assert_eq!(term.keyboard_mode_stack().len(), 1);
+        let shell_mode = KeyboardModes::from_bits_truncate(1);
+
+        feed_mux_and_proc(&mut term, b"\x1b]133;C\x1b\\");
+        // Child pushes two additional modes and crashes.
+        feed_mux_and_proc(&mut term, b"\x1b[>3u");
+        feed_mux_and_proc(&mut term, b"\x1b[>7u");
+        assert_eq!(term.keyboard_mode_stack().len(), 3);
+
+        feed_mux_and_proc(&mut term, b"\x1b]133;A\x1b\\");
+
+        assert_eq!(
+            term.keyboard_mode_stack(),
+            &VecDeque::from(vec![shell_mode]),
+            "shell-held modes below the snapshot depth must be preserved"
+        );
+    }
+
+    /// Regression: BUG-08-12 — snapshot/restore is reset each command
+    /// cycle. After three consecutive `;C → push → crash → ;A` cycles,
+    /// the stack returns to its shell-held state each time.
+    #[test]
+    fn keyboard_mode_stack_three_command_cycles_each_restores_independently() {
+        let mut term = make_term();
+        for _ in 0..3 {
+            feed_mux_and_proc(&mut term, b"\x1b]133;C\x1b\\");
+            feed_mux_and_proc(&mut term, b"\x1b[>1u");
+            feed_mux_and_proc(&mut term, b"\x1b]133;A\x1b\\");
+            assert!(term.keyboard_mode_stack().is_empty());
+        }
+    }
+
+    /// Regression: BUG-08-12 — in-band `CSI < u` pop without a prior
+    /// `;C` must take effect. Restore is snapshot-gated, so no snapshot
+    /// means no restore, and in-band pushes/pops operate normally.
+    #[test]
+    fn keyboard_mode_stack_in_band_csi_pop_without_prior_c_still_pops() {
+        let mut term = make_term();
+        feed_mux_and_proc(&mut term, b"\x1b[>1u");
+        feed_mux_and_proc(&mut term, b"\x1b[>3u");
+        assert_eq!(term.keyboard_mode_stack().len(), 2);
+
+        // Child pops one — no prior `;C`.
+        feed_mux_and_proc(&mut term, b"\x1b[<1u");
+        assert_eq!(term.keyboard_mode_stack().len(), 1);
+
+        // `;A` with no snapshot is a no-op.
+        feed_mux_and_proc(&mut term, b"\x1b]133;A\x1b\\");
+        assert_eq!(
+            term.keyboard_mode_stack().len(),
+            1,
+            "restore without snapshot must not modify the stack"
+        );
+    }
+
+    // --- OSC 633 parallel (VS Code shell integration superset) ---
+
+    /// Regression: BUG-08-12 — OSC 633 `;C` takes the same paired
+    /// contents-based snapshot as OSC 133 `;C`.
+    #[test]
+    fn osc_633_c_snapshots_both_paired_depths() {
+        let mut term = make_term();
+        feed_mux_and_proc(&mut term, b"\x1b[>1u");
+
+        feed_mux_and_proc(&mut term, b"\x1b]633;C\x1b\\");
+
+        assert!(term.pre_command_kb_stack_snapshot().is_some());
+        assert!(term.inactive_pre_command_kb_stack_snapshot().is_some());
+        assert_eq!(term.pre_command_kb_stack_snapshot().unwrap().len(), 1);
+    }
+
+    /// Regression: BUG-08-12 — OSC 633 `;A` restore mirrors OSC 133 `;A`.
+    #[test]
+    fn osc_633_a_restores_both_paired_depths() {
+        let mut term = make_term();
+        feed_mux_and_proc(&mut term, b"\x1b]633;C\x1b\\");
+        feed_mux_and_proc(&mut term, b"\x1b[>1u");
+        assert!(!term.keyboard_mode_stack().is_empty());
+
+        feed_mux_and_proc(&mut term, b"\x1b]633;A\x1b\\");
+
+        assert!(term.keyboard_mode_stack().is_empty());
+        assert!(!term.mode().intersects(TermMode::KITTY_KEYBOARD_PROTOCOL));
+    }
+
+    /// Regression: BUG-08-12 — OSC 633 `;D` restore mirrors OSC 133 `;D`.
+    #[test]
+    fn osc_633_d_restores_both_paired_depths() {
+        let mut term = make_term();
+        feed_mux_and_proc(&mut term, b"\x1b]633;C\x1b\\");
+        feed_mux_and_proc(&mut term, b"\x1b[>1u");
+
+        feed_mux_and_proc(&mut term, b"\x1b]633;D\x1b\\");
+
+        assert!(term.keyboard_mode_stack().is_empty());
+        assert!(!term.mode().intersects(TermMode::KITTY_KEYBOARD_PROTOCOL));
+    }
+
+    // --- alt-screen × paired per-screen snapshot ---
+
+    /// Regression: BUG-08-12 — snapshot on primary, toggle to alt, push
+    /// on alt, toggle back, `;A` on primary. Both stacks must be cleaned
+    /// — the inactive (alt) side too, so child pushes on the alt screen
+    /// before its crash don't leak.
+    #[test]
+    fn keyboard_mode_stack_snapshot_on_primary_then_alt_push_then_a_cleans_primary_not_alt() {
+        let mut term = make_term();
+        // `;C` on primary, both stacks currently empty.
+        feed_mux_and_proc(&mut term, b"\x1b]133;C\x1b\\");
+        // Enter alt, push on alt, exit alt (swap back to primary).
+        feed_mux_and_proc(&mut term, b"\x1b[?1049h");
+        feed_mux_and_proc(&mut term, b"\x1b[>1u");
+        feed_mux_and_proc(&mut term, b"\x1b[?1049l");
+
+        // Now on primary. Active stack is primary (empty). Inactive stack
+        // is alt ([mode_1]) because toggle_alt_common swapped them back.
+        assert_eq!(term.inactive_keyboard_mode_stack().len(), 1);
+
+        feed_mux_and_proc(&mut term, b"\x1b]133;A\x1b\\");
+
+        assert!(term.keyboard_mode_stack().is_empty());
+        assert!(
+            term.inactive_keyboard_mode_stack().is_empty(),
+            "inactive (alt) stack must also be restored — both-stack snapshot catches the alt-side leak"
+        );
+    }
+
+    /// Regression: BUG-08-12 Round 1 F1 — snapshot primary at depth 1
+    /// (shell-held mode), child enters alt, pushes mode on alt, exits
+    /// alt (swap back) before `;A`. Both stacks must restore to their
+    /// pre-command contents — shell_mode preserved on primary, alt cleared.
+    #[test]
+    fn keyboard_mode_stack_snapshot_on_primary_child_alt_push_exit_alt_before_a_restores_inactive_from_snapshot()
+     {
+        let mut term = make_term();
+        let shell_mode = KeyboardModes::from_bits_truncate(1);
+        feed_mux_and_proc(&mut term, b"\x1b[>1u"); // Shell push.
+        feed_mux_and_proc(&mut term, b"\x1b]133;C\x1b\\");
+
+        // Child goes to alt, pushes mode on alt.
+        feed_mux_and_proc(&mut term, b"\x1b[?1049h");
+        feed_mux_and_proc(&mut term, b"\x1b[>3u");
+        // Child exits alt before crashing.
+        feed_mux_and_proc(&mut term, b"\x1b[?1049l");
+        // Active=Primary=[shell_mode]; Inactive=Alt=[mode_3] (swap back).
+        assert_eq!(term.keyboard_mode_stack().len(), 1);
+        assert_eq!(term.inactive_keyboard_mode_stack().len(), 1);
+
+        feed_mux_and_proc(&mut term, b"\x1b]133;A\x1b\\");
+
+        assert_eq!(
+            term.keyboard_mode_stack(),
+            &VecDeque::from(vec![shell_mode]),
+            "active (primary) stack restored verbatim from snapshot"
+        );
+        assert!(
+            term.inactive_keyboard_mode_stack().is_empty(),
+            "inactive (alt) stack restored verbatim — child's alt push removed"
+        );
+        assert!(
+            term.mode().contains(TermMode::DISAMBIGUATE_ESC_CODES),
+            "TermMode bits reflect shell_mode (active-stack top after restore)"
+        );
+    }
+
+    /// Regression: BUG-08-12 — shell-held mode preserved across an
+    /// alt-screen command. Snapshot primary at depth 1, enter alt,
+    /// push 2 on alt, exit alt, `;A`. Primary stack restored.
+    #[test]
+    fn keyboard_mode_stack_snapshot_and_restore_across_one_toggle_preserves_primary() {
+        let mut term = make_term();
+        let shell_mode = KeyboardModes::from_bits_truncate(1);
+        feed_mux_and_proc(&mut term, b"\x1b[>1u");
+        feed_mux_and_proc(&mut term, b"\x1b]133;C\x1b\\");
+
+        feed_mux_and_proc(&mut term, b"\x1b[?1049h");
+        feed_mux_and_proc(&mut term, b"\x1b[>3u");
+        feed_mux_and_proc(&mut term, b"\x1b[>7u");
+        feed_mux_and_proc(&mut term, b"\x1b[?1049l");
+
+        feed_mux_and_proc(&mut term, b"\x1b]133;A\x1b\\");
+
+        assert_eq!(
+            term.keyboard_mode_stack(),
+            &VecDeque::from(vec![shell_mode])
+        );
+        assert!(term.mode().contains(TermMode::DISAMBIGUATE_ESC_CODES));
+    }
+
+    /// Regression: BUG-08-12 — child pops one legitimately then crashes.
+    /// Contents-based snapshot recovers the original stack verbatim.
+    #[test]
+    fn keyboard_mode_stack_child_pops_one_and_crashes_restores_from_snapshot() {
+        let mut term = make_term();
+        let mode_a = KeyboardModes::from_bits_truncate(1);
+        let mode_b = KeyboardModes::from_bits_truncate(3);
+        feed_mux_and_proc(&mut term, b"\x1b[>1u");
+        feed_mux_and_proc(&mut term, b"\x1b[>3u");
+        feed_mux_and_proc(&mut term, b"\x1b]133;C\x1b\\");
+
+        // Child pops one legitimately.
+        feed_mux_and_proc(&mut term, b"\x1b[<1u");
+        assert_eq!(term.keyboard_mode_stack().len(), 1);
+        // Child crashes.
+
+        feed_mux_and_proc(&mut term, b"\x1b]133;A\x1b\\");
+
+        assert_eq!(
+            term.keyboard_mode_stack(),
+            &VecDeque::from(vec![mode_a, mode_b]),
+            "contents-based snapshot restores verbatim including mode_b that was popped"
+        );
+    }
+
+    /// Regression: BUG-08-12 Round 2 F1 — child over-pops shell-held
+    /// modes via `CSI < 5 u`. Contents-based snapshot recovers shell state.
+    #[test]
+    fn keyboard_mode_stack_child_over_pops_shell_held_modes_restore_recovers_shell_state() {
+        let mut term = make_term();
+        let mode_a = KeyboardModes::from_bits_truncate(1);
+        let mode_b = KeyboardModes::from_bits_truncate(3);
+        feed_mux_and_proc(&mut term, b"\x1b[>1u");
+        feed_mux_and_proc(&mut term, b"\x1b[>3u");
+        feed_mux_and_proc(&mut term, b"\x1b]133;C\x1b\\");
+
+        // Child over-pops (pops 5 → truncates to empty).
+        feed_mux_and_proc(&mut term, b"\x1b[<5u");
+        assert!(term.keyboard_mode_stack().is_empty());
+
+        feed_mux_and_proc(&mut term, b"\x1b]133;A\x1b\\");
+
+        assert_eq!(
+            term.keyboard_mode_stack(),
+            &VecDeque::from(vec![mode_a, mode_b]),
+            "contents-based snapshot recovers shell modes that were over-popped"
+        );
+        assert!(
+            term.mode().intersects(TermMode::KITTY_KEYBOARD_PROTOCOL),
+            "TermMode bits reflect mode_b (active-stack top after restore)"
+        );
+    }
+
+    /// Regression: BUG-08-12 Round 2 F1 — child pushes past
+    /// `KEYBOARD_MODE_STACK_MAX_DEPTH`; `dcs_push_keyboard_mode`
+    /// ring-buffer evicts shell-held entries via `pop_front`.
+    /// Contents-based snapshot recovers the front-evicted shell state.
+    #[test]
+    fn keyboard_mode_stack_child_push_past_max_depth_evicts_shell_mode_then_a_recovers_evicted_mode()
+     {
+        let mut term = make_term();
+        let shell_held = KeyboardModes::from_bits_truncate(1);
+        feed_mux_and_proc(&mut term, b"\x1b[>1u");
+        feed_mux_and_proc(&mut term, b"\x1b]133;C\x1b\\");
+
+        // Child pushes MAX_DEPTH modes — oldest entry (shell_held) gets
+        // evicted via pop_front.
+        for _ in 0..KEYBOARD_MODE_STACK_MAX_DEPTH {
+            feed_mux_and_proc(&mut term, b"\x1b[>7u");
+        }
+        assert_eq!(
+            term.keyboard_mode_stack().len(),
+            KEYBOARD_MODE_STACK_MAX_DEPTH
+        );
+        assert!(!term.keyboard_mode_stack().contains(&shell_held));
+
+        feed_mux_and_proc(&mut term, b"\x1b]133;A\x1b\\");
+
+        assert_eq!(
+            term.keyboard_mode_stack(),
+            &VecDeque::from(vec![shell_held]),
+            "contents-based snapshot recovers front-evicted shell state"
+        );
+    }
+
+    /// Regression: BUG-08-12 Phase 1.75 — `CSI = Ps u` mutates the
+    /// TermMode bits via `dcs_set_keyboard_mode` with Replace behavior
+    /// WITHOUT pushing or popping the stack. On restore, top-of-stack
+    /// mode is unconditionally reapplied so dirty bits are reverted.
+    #[test]
+    fn keyboard_mode_stack_csi_equals_u_mutates_without_push_then_crash_then_a_reapplies_stack_top()
+    {
+        let mut term = make_term();
+        let shell_mode = KeyboardModes::from_bits_truncate(1);
+        feed_mux_and_proc(&mut term, b"\x1b[>1u"); // shell_mode = DISAMBIGUATE.
+        feed_mux_and_proc(&mut term, b"\x1b]133;C\x1b\\");
+
+        // Child mutates the active bits via CSI = u (Replace) — stack
+        // unchanged, but TermMode bits now reflect REPORT_ALL_KEYS_AS_ESC
+        // (bit 8 = 0b1000).
+        feed_mux_and_proc(&mut term, b"\x1b[=8u");
+        assert_eq!(term.keyboard_mode_stack().len(), 1);
+        assert!(term.mode().contains(TermMode::REPORT_ALL_KEYS_AS_ESC));
+        assert!(!term.mode().contains(TermMode::DISAMBIGUATE_ESC_CODES));
+
+        // Child crashes; `;A` restores.
+        feed_mux_and_proc(&mut term, b"\x1b]133;A\x1b\\");
+
+        assert_eq!(
+            term.keyboard_mode_stack(),
+            &VecDeque::from(vec![shell_mode])
+        );
+        assert!(
+            term.mode().contains(TermMode::DISAMBIGUATE_ESC_CODES),
+            "unconditional reapply reverts CSI = Ps u bit mutations"
+        );
+        assert!(!term.mode().contains(TermMode::REPORT_ALL_KEYS_AS_ESC));
+    }
+
+    // --- Same-chunk parser-pass ordering ---
+
+    /// Regression: BUG-08-12 Round 1 F2 — PTY chunk containing
+    /// `OSC 133 ; C` immediately followed by `CSI > u` in one byte
+    /// slice. Raw interceptor snapshots at pre-push depth, then the
+    /// high-level processor processes the push on top of the saved
+    /// snapshot. Next `;A` removes the push.
+    #[test]
+    fn osc_133_c_and_csi_push_same_chunk_snapshot_captures_pre_push_depth() {
+        let mut term = make_term();
+        // One chunk: `;C` then push.
+        feed_mux_and_proc(&mut term, b"\x1b]133;C\x1b\\\x1b[>1u");
+
+        assert_eq!(
+            term.pre_command_kb_stack_snapshot().unwrap().len(),
+            0,
+            "snapshot captured pre-push depth (empty)"
+        );
+        assert_eq!(
+            term.keyboard_mode_stack().len(),
+            1,
+            "high-level processor's push landed above the saved snapshot"
+        );
+
+        // Next `;A` truncates the push.
+        feed_mux_and_proc(&mut term, b"\x1b]133;A\x1b\\");
+        assert!(term.keyboard_mode_stack().is_empty());
+    }
+
+    /// Regression: BUG-08-12 — reverse same-chunk ordering (`CSI > u`
+    /// then `OSC 133 ; C`). Raw interceptor still runs first; snapshot
+    /// captures the pre-chunk depth (empty), then the push lands.
+    /// Subsequent `;A` removes the push.
+    #[test]
+    fn csi_push_and_osc_133_c_same_chunk_snapshot_still_captures_pre_chunk_depth() {
+        let mut term = make_term();
+        feed_mux_and_proc(&mut term, b"\x1b[>1u\x1b]133;C\x1b\\");
+
+        // Raw-first-then-high-level semantics: raw interceptor snapshots
+        // at pre-chunk depth (empty), then the processor processes the
+        // push on top.
+        assert_eq!(
+            term.pre_command_kb_stack_snapshot().unwrap().len(),
+            0,
+            "snapshot captures pre-chunk depth (raw interceptor fires before processor)"
+        );
+        assert_eq!(term.keyboard_mode_stack().len(), 1);
+
+        feed_mux_and_proc(&mut term, b"\x1b]133;A\x1b\\");
+        assert!(term.keyboard_mode_stack().is_empty());
+    }
+
+    // --- Negative pins ---
+
+    /// Regression: BUG-08-12 — without `;C` (no shell integration), `;A`
+    /// must NOT clear the stack. Restore is snapshot-gated.
+    #[test]
+    fn keyboard_mode_stack_osc_133_a_without_prior_c_does_not_modify_stack() {
+        let mut term = make_term();
+        feed_mux_and_proc(&mut term, b"\x1b[>1u");
+        feed_mux_and_proc(&mut term, b"\x1b[>3u");
+        assert_eq!(term.keyboard_mode_stack().len(), 2);
+
+        // `;A` without prior `;C`.
+        feed_mux_and_proc(&mut term, b"\x1b]133;A\x1b\\");
+
+        assert_eq!(
+            term.keyboard_mode_stack().len(),
+            2,
+            "`;A` with no snapshot must not modify the stack"
+        );
+    }
+
+    /// Regression: BUG-08-12 — `;A` without prior `;C` leaves BOTH
+    /// paired snapshot fields still `None`.
+    #[test]
+    fn keyboard_mode_stack_restore_without_snapshot_leaves_paired_fields_none() {
+        let mut term = make_term();
+        feed_mux_and_proc(&mut term, b"\x1b[>1u");
+
+        feed_mux_and_proc(&mut term, b"\x1b]133;A\x1b\\");
+
+        assert!(term.pre_command_kb_stack_snapshot().is_none());
+        assert!(term.inactive_pre_command_kb_stack_snapshot().is_none());
+    }
+}

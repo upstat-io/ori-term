@@ -4,6 +4,8 @@
 //! (cursor save/restore), and DECSLRM (left/right margin set).
 //! Methods are called by the `vte::ansi::Handler` trait impl on `Term<S>`.
 
+use std::collections::VecDeque;
+
 use log::debug;
 
 use crate::cell::{Cell, CellFlags};
@@ -46,6 +48,12 @@ impl<S: EffectSink> Term<S> {
         self.cwd = None;
         self.keyboard_mode_stack.clear();
         self.inactive_keyboard_mode_stack.clear();
+        // Seed paired snapshots to `Some(empty)` (not `None`) so that if a
+        // kitty-aware child later pushes keyboard modes and crashes before
+        // popping, the next OSC 133 ; A / ; D still restores to an empty
+        // stack rather than leaving child-pushed modes active. BUG-08-12.
+        self.pre_command_kb_stack_snapshot = Some(VecDeque::new());
+        self.inactive_pre_command_kb_stack_snapshot = Some(VecDeque::new());
 
         // Shell integration state.
         self.prompt_state = PromptState::None;
@@ -106,6 +114,9 @@ impl<S: EffectSink> Term<S> {
         self.cursor_shape = crate::grid::CursorShape::default();
         self.keyboard_mode_stack.clear();
         self.inactive_keyboard_mode_stack.clear();
+        // Same paired-snapshot seeding as RIS — see BUG-08-12.
+        self.pre_command_kb_stack_snapshot = Some(VecDeque::new());
+        self.inactive_pre_command_kb_stack_snapshot = Some(VecDeque::new());
         // DECSTR clears the DECSCA protection state — cursor template
         // is reset above via `soft_reset_grid`, but `char_protection`
         // mirrors the same state on Term and must follow suit.

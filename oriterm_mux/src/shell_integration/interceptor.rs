@@ -88,12 +88,21 @@ impl<S: EffectSink> RawInterceptor<'_, S> {
     }
 
     /// OSC 133: update prompt state machine and track command timing.
+    ///
+    /// `;A` / `;D` also restore the Kitty keyboard mode stack from any
+    /// prior `;C` snapshot; `;C` takes the snapshot. See BUG-08-12 —
+    /// prevents kitty modes pushed by a kitty-aware child from
+    /// persisting past the next shell prompt when the child crashes or
+    /// exits without popping cleanly.
     fn handle_osc133(&mut self, params: &[&[u8]]) {
         if params.len() < 2 || params[1].is_empty() {
             return;
         }
         match params[1][0] {
             b'A' => {
+                // `;A` is the safety-net restore path for children that
+                // crashed before `;D`.
+                self.term.restore_keyboard_mode_stack();
                 self.term.set_prompt_state(PromptState::PromptStart);
                 self.term.set_prompt_mark_pending(true);
             }
@@ -105,8 +114,13 @@ impl<S: EffectSink> RawInterceptor<'_, S> {
                 self.term.set_prompt_state(PromptState::OutputStart);
                 self.term.set_command_start(std::time::Instant::now());
                 self.term.set_output_start_mark_pending(true);
+                // Snapshot AFTER `set_command_start` so the snapshot
+                // captures the stack depth at command-start moment.
+                self.term.snapshot_keyboard_mode_stack();
             }
             b'D' => {
+                // `;D` is the clean-path restore — most programs reach it.
+                self.term.restore_keyboard_mode_stack();
                 self.term.set_prompt_state(PromptState::None);
                 if let Some(duration) = self.term.finish_command(None) {
                     self.term
@@ -139,6 +153,8 @@ impl<S: EffectSink> RawInterceptor<'_, S> {
         }
         match params[1][0] {
             b'A' => {
+                // Mirror OSC 133 ; A — see `handle_osc133` for rationale.
+                self.term.restore_keyboard_mode_stack();
                 self.term.set_prompt_state(PromptState::PromptStart);
                 self.term.set_prompt_mark_pending(true);
             }
@@ -150,8 +166,10 @@ impl<S: EffectSink> RawInterceptor<'_, S> {
                 self.term.set_prompt_state(PromptState::OutputStart);
                 self.term.set_command_start(std::time::Instant::now());
                 self.term.set_output_start_mark_pending(true);
+                self.term.snapshot_keyboard_mode_stack();
             }
             b'D' => {
+                self.term.restore_keyboard_mode_stack();
                 self.term.set_prompt_state(PromptState::None);
                 if let Some(duration) = self.term.finish_command(None) {
                     self.term

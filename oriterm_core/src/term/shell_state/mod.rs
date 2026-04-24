@@ -7,6 +7,8 @@
 //! `Notification`, `PendingMarks`) also live here; `term/mod.rs`
 //! re-exports them for a stable public API.
 
+use vte::ansi::{KeyboardModes, KeyboardModesApplyBehavior};
+
 use super::Term;
 use crate::effect::sink::EffectSink;
 
@@ -85,6 +87,50 @@ pub fn cwd_short_path(cwd: &str) -> &str {
 }
 
 impl<S: EffectSink> Term<S> {
+    // -- Kitty keyboard mode stack snapshot / restore (OSC 133 C/A/D) --
+
+    /// Clone BOTH active and inactive keyboard-mode stack contents so a
+    /// subsequent OSC 133 `;A` / `;D` (or OSC 633 `;A` / `;D`) can
+    /// restore them verbatim.
+    ///
+    /// Contents-based (not just depth-based) so we recover shell-held
+    /// modes even when the child over-pops via `CSI < N u` or pushes past
+    /// [`crate::term::KEYBOARD_MODE_STACK_MAX_DEPTH`] and `pop_front`
+    /// evicts shell-held entries. Allocates up to
+    /// `2 × KEYBOARD_MODE_STACK_MAX_DEPTH × size_of::<KeyboardModes>()`
+    /// per command boundary — ~20 bytes, infrequent (once per command),
+    /// not a hot path. See BUG-08-12.
+    pub fn snapshot_keyboard_mode_stack(&mut self) {
+        self.pre_command_kb_stack_snapshot = Some(self.keyboard_mode_stack.clone());
+        self.inactive_pre_command_kb_stack_snapshot =
+            Some(self.inactive_keyboard_mode_stack.clone());
+    }
+
+    /// If a snapshot is active, replace BOTH stacks with the snapshotted
+    /// contents and unconditionally reapply the top-of-active-stack mode.
+    ///
+    /// The unconditional reapply covers `CSI = Ps u` same-depth
+    /// mutations that modify `TermMode::KITTY_KEYBOARD_PROTOCOL` bits
+    /// via [`Self::dcs_set_keyboard_mode`] without touching the stack
+    /// (see `crates/vte/src/ansi/dispatch/csi/mod.rs` `set_keyboard_mode`
+    /// dispatch). The inactive stack is restored but NOT reapplied —
+    /// `toggle_alt_common` reapplies top when the user switches to that
+    /// screen. See BUG-08-12.
+    pub fn restore_keyboard_mode_stack(&mut self) {
+        if let Some(saved) = self.pre_command_kb_stack_snapshot.take() {
+            self.keyboard_mode_stack = saved;
+            let mode = self
+                .keyboard_mode_stack
+                .back()
+                .copied()
+                .unwrap_or(KeyboardModes::NO_MODE);
+            self.dcs_set_keyboard_mode(mode, KeyboardModesApplyBehavior::Replace);
+        }
+        if let Some(saved) = self.inactive_pre_command_kb_stack_snapshot.take() {
+            self.inactive_keyboard_mode_stack = saved;
+        }
+    }
+
     // -- Prompt state --
 
     /// Current shell integration prompt state (OSC 133).

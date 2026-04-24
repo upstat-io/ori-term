@@ -909,3 +909,54 @@ fn kitty_alternate_key_not_reported_without_flag() {
     // Ctrl+z = codepoint 122, mod 5. No alternate in output.
     assert_eq!(r, b"\x1b[122;5u");
 }
+
+// --- BUG-08-12 semantic pin: post-crash restore produces plain ASCII ---
+
+/// Regression: BUG-08-12 — headline user-visible symptom pin.
+///
+/// After a kitty-aware child program crashes mid-command and the shell
+/// emits its next OSC 133 ; A prompt, the `keyboard_mode_stack` must be
+/// restored to its pre-command snapshot. The `TermMode::KITTY_KEYBOARD_PROTOCOL`
+/// bits clear; `encode_key` takes the legacy branch; typing 'a' at the
+/// shell prompt produces plain ASCII `b"a"`, NOT the raw CSI u fragments
+/// (`0;1;100u7;1;97u`) that the shell doesn't understand.
+///
+/// See: plans/bug-tracker/fix-BUG-08-012.md §2 (Semantic pin).
+#[test]
+fn legacy_key_encoding_after_child_crash_produces_raw_ascii_not_csi_u() {
+    use oriterm_core::effect::VoidEffectSink;
+    use oriterm_core::{Term, Theme};
+
+    let mut term = Term::new(24, 80, 100, Theme::default(), VoidEffectSink);
+
+    // Shell emits OSC 133 ; C — command-boundary snapshot.
+    term.snapshot_keyboard_mode_stack();
+
+    // Child pushes a kitty keyboard mode via `CSI > 1 u` (high-level processor).
+    let mut processor = vte::ansi::Processor::<vte::ansi::StdSyncHandler>::new();
+    processor.advance(&mut term, b"\x1b[>1u");
+    assert!(
+        term.mode().contains(TermMode::DISAMBIGUATE_ESC_CODES),
+        "setup: kitty mode is active during the command"
+    );
+
+    // Child crashes. Shell emits OSC 133 ; A — restore.
+    term.restore_keyboard_mode_stack();
+
+    assert!(
+        !term.mode().intersects(TermMode::KITTY_KEYBOARD_PROTOCOL),
+        "KITTY bits must be cleared after OSC 133 ; A restore"
+    );
+
+    // Typing 'a' at the shell prompt goes through the legacy branch.
+    let r = enc_text(
+        Key::Character("a".into()),
+        Modifiers::empty(),
+        term.mode(),
+        "a",
+    );
+    assert_eq!(
+        r, b"a",
+        "post-crash restore: typing 'a' must produce plain ASCII, not a CSI u kitty fragment"
+    );
+}
