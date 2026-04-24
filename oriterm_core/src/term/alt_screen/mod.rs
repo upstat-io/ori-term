@@ -95,19 +95,12 @@ impl<S: EffectSink> Term<S> {
             &mut self.keyboard_mode_stack,
             &mut self.inactive_keyboard_mode_stack,
         );
-        // Swap the paired pre-command snapshots alongside the stacks so
-        // a command-boundary snapshot taken on one screen only fires
-        // restore on that screen. BUG-08-12.
+        // Swap the paired pre-command stack snapshots alongside the
+        // stacks so a command-boundary snapshot taken on one screen
+        // only fires restore on that screen. BUG-08-12.
         std::mem::swap(
             &mut self.pre_command_kb_stack_snapshot,
             &mut self.inactive_pre_command_kb_stack_snapshot,
-        );
-        // Swap paired bits snapshots in lockstep — see BUG-08-12 TPR
-        // round-1 F1. Preserves shell-held `CSI = Ps u` set-only bits
-        // across alt-screen toggles.
-        std::mem::swap(
-            &mut self.pre_command_kb_mode_bits_snapshot,
-            &mut self.inactive_pre_command_kb_mode_bits_snapshot,
         );
         // DECSC sidecar state is per-screen (VT220 spec). DECLRMM is
         // NOT in the DECSC save set (see `Grid::save_cursor`), so there
@@ -118,17 +111,17 @@ impl<S: EffectSink> Term<S> {
             &mut self.saved_origin_mode,
             &mut self.inactive_saved_origin_mode,
         );
-        // Reapply kitty `TermMode::KITTY_KEYBOARD_PROTOCOL` bits to reflect
-        // the newly-active screen. Prefer the paired bits snapshot (covers
-        // shell set-only bits via `CSI = Ps u` — see BUG-08-12 TPR round-2
-        // F1) when one is active; fall back to top of the new-active stack
-        // (push-path shell integrations) then `NO_MODE`. Without this the
-        // kitty bits leaked across `?1049h/l` toggles.
-        let new_bits = self
-            .pre_command_kb_mode_bits_snapshot
-            .or_else(|| self.keyboard_mode_stack.back().copied())
-            .unwrap_or(KeyboardModes::NO_MODE);
-        self.dcs_set_keyboard_mode(new_bits, KeyboardModesApplyBehavior::Replace);
+        // Swap live per-screen kitty bits: capture the active bits
+        // (subset of `self.mode`), install the inactive screen's live
+        // bits as the new active, and store the old active in the
+        // inactive slot. Covers set-only `CSI = Ps u` state that never
+        // enters the stack, and child mid-command mutations that would
+        // otherwise be lost by deriving reapply from stack top. See
+        // BUG-08-12 TPR round-3 F1/F2.
+        let active_bits_before_swap = KeyboardModes::from(self.mode);
+        let new_active_bits = self.inactive_keyboard_mode_bits;
+        self.inactive_keyboard_mode_bits = active_bits_before_swap;
+        self.dcs_set_keyboard_mode(new_active_bits, KeyboardModesApplyBehavior::Replace);
         self.grid_mut().dirty_mut().mark_all();
     }
 }
