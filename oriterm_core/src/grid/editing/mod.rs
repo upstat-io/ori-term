@@ -94,6 +94,19 @@ impl Grid {
             return false;
         }
 
+        if crate::xray_trace::next() {
+            log::info!(
+                target: "xray",
+                "ASCII r={} c={} ch={:?} fg={:?} bg={:?} flags={:?}",
+                line,
+                col,
+                ch,
+                self.cursor.template.fg,
+                self.cursor.template.bg,
+                self.cursor.template.flags,
+            );
+        }
+
         // Direct cell write — no width lookup, no wide char handling.
         let cell = &mut self.rows[line][Column(col)];
         cell.ch = ch;
@@ -158,6 +171,20 @@ impl Grid {
 
             // Clear any wide char pair that we're overwriting.
             self.clear_wide_char_at(line, col);
+
+            if crate::xray_trace::next() {
+                log::info!(
+                    target: "xray",
+                    "SLOW  r={} c={} ch={:?} w={} fg={:?} bg={:?} flags={:?}",
+                    line,
+                    col,
+                    ch,
+                    width,
+                    self.cursor.template.fg,
+                    self.cursor.template.bg,
+                    self.cursor.template.flags,
+                );
+            }
 
             // Extract template fields before mutable row borrow. `rows` and
             // `cursor` are disjoint Grid fields, so this avoids a full Cell clone.

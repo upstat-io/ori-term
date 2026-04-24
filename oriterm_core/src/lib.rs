@@ -20,6 +20,7 @@ pub mod selection;
 pub mod term;
 pub mod theme;
 pub mod unicode;
+pub mod xray_trace;
 
 pub use cell::{Cell, CellExtra, CellFlags, Hyperlink};
 pub use color::{Palette, Rgb, SelectionColors};

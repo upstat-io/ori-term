@@ -73,8 +73,18 @@ pub(super) fn apply(template: &mut Cell, attr: &Attr) {
                 .flags
                 .remove(CellFlags::SUPERSCRIPT | CellFlags::SUBSCRIPT);
         }
-        Attr::Foreground(color) => template.fg = *color,
-        Attr::Background(color) => template.bg = *color,
+        Attr::Foreground(color) => {
+            if crate::xray_trace::next() {
+                log::info!(target: "xray", "SGR FG {:?}", color);
+            }
+            template.fg = *color;
+        }
+        Attr::Background(color) => {
+            if crate::xray_trace::next() {
+                log::info!(target: "xray", "SGR BG {:?}", color);
+            }
+            template.bg = *color;
+        }
         Attr::UnderlineColor(color) => template.set_underline_color(*color),
     }
 }
