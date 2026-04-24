@@ -2263,6 +2263,35 @@ fn keyboard_mode_stack_shell_set_without_push_csi_equals_u_survives_restore() {
     assert!(term.keyboard_mode_stack().is_empty());
 }
 
+/// Regression: BUG-08-12 TPR round-2 F1 — shell set-only kitty bits
+/// survive an alt-screen round-trip that includes an `;A` firing on
+/// the alt side (misbehaving integration or background emission).
+/// `CSI = 1u; OSC 133;C; ?1049h; OSC 133;A; ?1049l` must end with
+/// `DISAMBIGUATE_ESC_CODES` still active on primary.
+/// See: plans/bug-tracker/fix-BUG-08-012.md §2.5 TPR round 2.
+#[test]
+fn kitty_set_only_bits_survive_alt_screen_roundtrip_with_a_on_alt() {
+    let mut term = make_term();
+    // Shell sets via set-only `CSI = 1 u` on primary.
+    feed_mux_and_proc(&mut term, b"\x1b[=1u");
+    assert!(term.mode().contains(TermMode::DISAMBIGUATE_ESC_CODES));
+
+    // Shell command-start snapshot.
+    feed_mux_and_proc(&mut term, b"\x1b]133;C\x1b\\");
+    // Enter alt screen.
+    feed_mux_and_proc(&mut term, b"\x1b[?1049h");
+    // `;A` fires on alt side.
+    feed_mux_and_proc(&mut term, b"\x1b]133;A\x1b\\");
+    // Exit alt screen back to primary.
+    feed_mux_and_proc(&mut term, b"\x1b[?1049l");
+
+    assert!(
+        term.mode().contains(TermMode::DISAMBIGUATE_ESC_CODES),
+        "set-only kitty bits must survive an alt-screen round-trip that \
+         consumes the paired snapshot on the wrong screen"
+    );
+}
+
 /// Regression: BUG-08-12 TPR round-1 F1 — child mutates bits via
 /// `CSI = Ps u` during a command while shell used set-only before ;C.
 /// Restore must return to shell's set-only bits even though stack is

@@ -188,11 +188,14 @@ impl<S: EffectSink> Term<S> {
         if let Some(saved) = self.inactive_pre_command_kb_stack_snapshot.take() {
             self.inactive_keyboard_mode_stack = saved;
         }
-        // Clear the inactive bits snapshot; `toggle_alt_common` applies
-        // top-of-new-active on screen swap rather than consuming this
-        // field. Clearing keeps the paired invariant clean between
-        // commands. See BUG-08-12 TPR round-1 F1.
-        self.inactive_pre_command_kb_mode_bits_snapshot = None;
+        // DO NOT clear `inactive_pre_command_kb_mode_bits_snapshot` —
+        // leaving it intact preserves set-only kitty bits that belong
+        // to the other screen when `;A` fires on a screen that is not
+        // the shell's screen (e.g. shell-integration emission during an
+        // alt-screen round-trip). `toggle_alt_common` consumes it on
+        // swap by preferring bits snapshot over stack-top for reapply,
+        // and the next `;C` overwrites it via `snapshot_keyboard_mode_stack`.
+        // See BUG-08-12 TPR round-2 F1.
     }
 
     // -- Prompt state --
