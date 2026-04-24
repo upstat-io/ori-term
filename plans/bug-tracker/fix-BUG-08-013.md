@@ -413,9 +413,49 @@ Codex's clean and gemini's findings cover orthogonal classes — codex audited t
 
 **Gemini (round 4):** clean. Summary: "Phase 5 Code TPR round 4 complete. Commit `ed37cadd` successfully restores press-equivalence for `Repeat` events without `REPORT_EVENT_TYPES` in multi-char and `Unidentified` arms while maintaining non-Press suppression when active. The top-of-function release guard and named-key legacy bypass remain sound. Semantic pins in `application_keypad.rs` and `kitty_precedence.rs` verify all matrix cells. No regressions or bypass paths identified."
 
-### Phase 5 Code TPR — Round 5 (convergence verification)
+### Phase 5 Code TPR — Round 5 (CLEAN)
 
-Runs after the round-4 tests-only commit. Goal: both reviewers clean.
+**Scratch dir:** `/tmp/tpr-round-ori_term-EC7L7USq`. Direct wrapper Bash dispatch.
+
+**Dispatch:** codex 0 findings (clean) / gemini 0 findings (clean).
+**Verification:** verified 0 / dropped 0.
+**Classification:** actionable 0 / meta 0.
+**Fix commit:** none — no actionable findings this round.
+
+**Findings this round:** (none — both reviewers returned clean)
+
+**Codex (round 5):** "Commit 4b3749da closes the round-4 coverage gap … Unidentified arm now covers Press/Release/Repeat × report_events off/on. The implementation matches that matrix: release without report_events is caught by the top-level Kitty guard, while non-Press with report_events is suppressed in the multi-char and Unidentified arms. Verified with `timeout 150 cargo test -p oriterm --lib key_encoding` and `timeout 150 cargo test -p oriterm --lib key_encoding --release`: both ran 223 tests, all passed."
+
+**Gemini (round 5):** "Phase 5 Round 5 verification complete. Commit 4b3749da closes the Unidentified arm matrix gap. Full 2x3 coverage pinned for Unidentified and Multi-char keys. Top-level release suppression correctly protects the legacy bypass. Implementation and test matrix are complete."
+
+**TPR loop exit:** clean after 6 rounds (round 0 + 1 + 2 + 3 + 4 + 5). Total findings across all rounds: 6 (1 codex round 0, 1 agreement round 1, 2 gemini round 2, 1 codex round 3, 1 codex round 4 tests-only). All fixed. Final commit: `4b3749da`.
+
+### Phase 5 Implementation Hygiene Review
+
+Ran static analysis (`hygiene-lint.py`, `enum-drift.py`) directly via Bash — same 1M-context billing gate blocks the full sub-agent pipeline. Manual multi-lens analysis of the touched files inline.
+
+**Static findings (1, fixed):**
+- `[BLOAT] fn-length` — `encode_kitty` at `oriterm/src/key_encoding/kitty.rs:86` was 119 lines (limit 100). Disposition: fixed by extracting `resolve_codepoint(input, …) -> CodepointOrBytes` and `resolve_character_codepoint(…) -> CodepointOrBytes` helpers. The `CodepointOrBytes` enum makes the early-return-vs-continue contract explicit. `encode_kitty` is now well under the limit; new helpers are each well under 50 lines.
+
+**Manual SSOT review:**
+- Release suppression: top-of-`encode_kitty` is the SSOT for the `!report_events` case; the per-arm guards in `resolve_character_codepoint` (multi-char branch) and `resolve_codepoint` (Unidentified arm) are SSOT for the orthogonal `report_events == true && non-Press && no-codepoint` case. Both intentional — different conditions, different handling.
+- Character fallback (`text → ch.as_str()` when text is None): canonical in `encode_character` (legacy.rs) and `resolve_character_codepoint` (kitty.rs). These are NOT shared because legacy and Kitty protocols compute byte sources differently — each owns its own SSOT.
+
+**Algorithmic DRY review:**
+- The idiom `text.map_or_else(|| ch.as_bytes().to_vec(), |t| t.as_bytes().to_vec())` appears in 3 sites (1 legacy, 2 kitty). Per `.claude/rules/impl-hygiene.md` §"What This Is NOT", a single-expression 2-line idiom across 3 sites doesn't meet the algorithmic-DRY threshold (no multi-step skeleton). Extracting would add indirection without saving complexity. SKIP.
+
+**File sizes:**
+- legacy.rs: 305 lines ✓
+- kitty.rs: 435 lines ✓ (post-refactor)
+- application_keypad.rs: ~734 lines (test file — exempt from 500-line limit per code-hygiene.md)
+- kitty_precedence.rs: ~966 lines (test file — exempt)
+- mod.rs: 132 lines ✓
+
+**Test naming:** new tests follow `<subject>_<scenario>_<expected>` convention per impl-hygiene.md §Test Function Naming.
+
+**Banner / single-responsibility / dead-code / unsafe:** no violations.
+
+**Hygiene findings: 0** (after BLOAT extraction commit).
 
 ---
 
