@@ -96,7 +96,7 @@ impl Grid {
 
         if crate::xray_trace::next() {
             log::info!(
-                target: "xray",
+                target: "oriterm_core::xray",
                 "ASCII r={} c={} ch={:?} fg={:?} bg={:?} flags={:?}",
                 line,
                 col,
@@ -174,7 +174,7 @@ impl Grid {
 
             if crate::xray_trace::next() {
                 log::info!(
-                    target: "xray",
+                    target: "oriterm_core::xray",
                     "SLOW  r={} c={} ch={:?} w={} fg={:?} bg={:?} flags={:?}",
                     line,
                     col,

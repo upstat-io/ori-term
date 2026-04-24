@@ -75,13 +75,13 @@ pub(super) fn apply(template: &mut Cell, attr: &Attr) {
         }
         Attr::Foreground(color) => {
             if crate::xray_trace::next() {
-                log::info!(target: "xray", "SGR FG {:?}", color);
+                log::info!(target: "oriterm_core::xray", "SGR FG {:?}", color);
             }
             template.fg = *color;
         }
         Attr::Background(color) => {
             if crate::xray_trace::next() {
-                log::info!(target: "xray", "SGR BG {:?}", color);
+                log::info!(target: "oriterm_core::xray", "SGR BG {:?}", color);
             }
             template.bg = *color;
         }

@@ -2,7 +2,7 @@
 //!
 //! Gated by the `ORITERM_XRAY_TRACE` env var at process start (checked
 //! once via `OnceLock`). When enabled, the first `LIMIT` events emit
-//! `log::info!` lines tagged with `target: "xray"`; subsequent events
+//! `log::info!` lines tagged with `target: "oriterm_core::xray"`; subsequent events
 //! are no-ops (single `AtomicUsize::fetch_add`).
 //!
 //! This module is intended to be deleted after BUG-06-019 diagnosis
