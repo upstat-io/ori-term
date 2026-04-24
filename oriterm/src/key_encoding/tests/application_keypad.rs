@@ -522,3 +522,98 @@ fn arrow_up_kitty_release_with_report_events_emits_csi_u() {
     });
     assert_eq!(r, b"\x1b[1;1:3A");
 }
+
+// --- Round-2 TPR (gemini): multi-char and Unidentified arms must suppress
+// --- non-Press events even when REPORT_EVENT_TYPES is active. There is no
+// --- codepoint to encode, so leaking raw text on release/repeat would be
+// --- a protocol violation.
+
+/// Multi-char Character on Release with REPORT_EVENT_TYPES active: must
+/// suppress (no codepoint for CSI u, so raw text would be a leak).
+#[test]
+fn multichar_character_kitty_release_with_report_events_suppressed() {
+    use winit::keyboard::KeyLocation;
+    let mode = kitty_disambiguate_mode() | oriterm_core::TermMode::REPORT_EVENT_TYPES;
+    let r = super::encode_key(&super::KeyInput {
+        key: &Key::Character("ae".into()),
+        mods: Modifiers::empty(),
+        mode,
+        text: Some("ae"),
+        location: KeyLocation::Standard,
+        event_type: KeyEventType::Release,
+        alternate_key: None,
+    });
+    assert!(
+        r.is_empty(),
+        "multi-char release with REPORT_EVENT_TYPES must not leak raw text"
+    );
+}
+
+/// Multi-char Character on Repeat with REPORT_EVENT_TYPES active: same.
+#[test]
+fn multichar_character_kitty_repeat_with_report_events_suppressed() {
+    use winit::keyboard::KeyLocation;
+    let mode = kitty_disambiguate_mode() | oriterm_core::TermMode::REPORT_EVENT_TYPES;
+    let r = super::encode_key(&super::KeyInput {
+        key: &Key::Character("ae".into()),
+        mods: Modifiers::empty(),
+        mode,
+        text: Some("ae"),
+        location: KeyLocation::Standard,
+        event_type: KeyEventType::Repeat,
+        alternate_key: None,
+    });
+    assert!(r.is_empty());
+}
+
+/// Multi-char Character on Press with REPORT_EVENT_TYPES still emits text.
+/// (Regression pin — guard must only fire on non-Press.)
+#[test]
+fn multichar_character_kitty_press_with_report_events_emits_text() {
+    use winit::keyboard::KeyLocation;
+    let mode = kitty_disambiguate_mode() | oriterm_core::TermMode::REPORT_EVENT_TYPES;
+    let r = super::encode_key(&super::KeyInput {
+        key: &Key::Character("ae".into()),
+        mods: Modifiers::empty(),
+        mode,
+        text: Some("ae"),
+        location: KeyLocation::Standard,
+        event_type: KeyEventType::Press,
+        alternate_key: None,
+    });
+    assert_eq!(r, b"ae");
+}
+
+/// Unidentified key on Release with REPORT_EVENT_TYPES active: must suppress.
+#[test]
+fn unidentified_kitty_release_with_report_events_suppressed() {
+    use winit::keyboard::{KeyLocation, NativeKey};
+    let mode = kitty_disambiguate_mode() | oriterm_core::TermMode::REPORT_EVENT_TYPES;
+    let r = super::encode_key(&super::KeyInput {
+        key: &Key::Unidentified(NativeKey::Unidentified),
+        mods: Modifiers::empty(),
+        mode,
+        text: Some("x"),
+        location: KeyLocation::Standard,
+        event_type: KeyEventType::Release,
+        alternate_key: None,
+    });
+    assert!(r.is_empty());
+}
+
+/// Unidentified key on Press with REPORT_EVENT_TYPES still emits text.
+#[test]
+fn unidentified_kitty_press_with_report_events_emits_text() {
+    use winit::keyboard::{KeyLocation, NativeKey};
+    let mode = kitty_disambiguate_mode() | oriterm_core::TermMode::REPORT_EVENT_TYPES;
+    let r = super::encode_key(&super::KeyInput {
+        key: &Key::Unidentified(NativeKey::Unidentified),
+        mods: Modifiers::empty(),
+        mode,
+        text: Some("x"),
+        location: KeyLocation::Standard,
+        event_type: KeyEventType::Press,
+        alternate_key: None,
+    });
+    assert_eq!(r, b"x");
+}
