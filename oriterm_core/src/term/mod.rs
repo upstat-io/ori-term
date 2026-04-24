@@ -52,7 +52,7 @@ const TITLE_STACK_MAX_DEPTH: usize = 4096;
 ///
 /// Prevents OOM from malicious PTY input. Matches Alacritty's cap.
 /// Enforced in the VTE handler's `push_keyboard_mode`.
-pub(crate) const KEYBOARD_MODE_STACK_MAX_DEPTH: usize = 4096;
+pub const KEYBOARD_MODE_STACK_MAX_DEPTH: usize = 4096;
 
 /// The terminal state machine.
 ///
@@ -105,6 +105,25 @@ pub struct Term<S: EffectSink> {
     /// Kitty keyboard enhancement mode stack (inactive screen).
     /// Capped at [`KEYBOARD_MODE_STACK_MAX_DEPTH`].
     inactive_keyboard_mode_stack: VecDeque<KeyboardModes>,
+    /// Full snapshot of `keyboard_mode_stack` taken at OSC 133 ; C
+    /// (command-start) on the ACTIVE screen. Restored on the next
+    /// OSC 133 ; A or ; D so kitty keyboard modes pushed, popped, OR
+    /// evicted (at `KEYBOARD_MODE_STACK_MAX_DEPTH`) by a subprocess
+    /// that exited without cleanly popping don't persist or erase shell
+    /// state. `None` means no snapshot active for this screen.
+    ///
+    /// Contents-based (not depth-based) so a child that over-pops
+    /// shell-held modes or pushes past max-depth (evicting shell modes
+    /// from the front) is fully reversed at the next prompt boundary.
+    /// Paired with [`inactive_pre_command_kb_stack_snapshot`]; swapped
+    /// alongside the stacks in `toggle_alt_common`. See BUG-08-12.
+    pre_command_kb_stack_snapshot: Option<VecDeque<KeyboardModes>>,
+    /// Paired snapshot for the inactive (non-visible) screen's keyboard
+    /// mode stack. Taken alongside [`pre_command_kb_stack_snapshot`] at
+    /// OSC 133 ; C so a child that enters the alt screen, pushes kitty
+    /// modes, and exits without popping does not leak state into the
+    /// non-visible stack. See BUG-08-12.
+    inactive_pre_command_kb_stack_snapshot: Option<VecDeque<KeyboardModes>>,
     /// Effect sink for boundary-crossing side effects.
     effect_sink: S,
     /// Set by content-modifying VTE handler operations (character printing,
@@ -263,6 +282,8 @@ impl<S: EffectSink> Term<S> {
             cursor_shape: CursorShape::default(),
             keyboard_mode_stack: VecDeque::new(),
             inactive_keyboard_mode_stack: VecDeque::new(),
+            pre_command_kb_stack_snapshot: None,
+            inactive_pre_command_kb_stack_snapshot: None,
             effect_sink,
             selection_dirty: false,
             prompt_state: PromptState::None,
@@ -564,9 +585,33 @@ impl<S: EffectSink> Term<S> {
     }
 
     /// Current keyboard mode stack (Kitty keyboard protocol).
-    #[cfg(test)]
-    pub(crate) fn keyboard_mode_stack(&self) -> &VecDeque<KeyboardModes> {
+    pub fn keyboard_mode_stack(&self) -> &VecDeque<KeyboardModes> {
         &self.keyboard_mode_stack
+    }
+
+    /// Inactive-screen keyboard mode stack (swapped on alt-screen toggle).
+    pub fn inactive_keyboard_mode_stack(&self) -> &VecDeque<KeyboardModes> {
+        &self.inactive_keyboard_mode_stack
+    }
+
+    /// Pre-command snapshot of the active-screen keyboard mode stack
+    /// (taken at OSC 133 ; C, consumed at OSC 133 ; A / ; D).
+    ///
+    /// `None` means no snapshot is active for this screen. `Some(deque)`
+    /// holds the verbatim contents of [`Self::keyboard_mode_stack`] at
+    /// the moment the pre-command snapshot was taken. See BUG-08-12.
+    pub fn pre_command_kb_stack_snapshot(&self) -> Option<&VecDeque<KeyboardModes>> {
+        self.pre_command_kb_stack_snapshot.as_ref()
+    }
+
+    /// Pre-command snapshot of the inactive-screen keyboard mode stack.
+    ///
+    /// See [`Self::pre_command_kb_stack_snapshot`] for semantics. Paired
+    /// with that field and swapped alongside the stacks on alt-screen
+    /// toggle so a snapshot taken on one screen only fires restore on
+    /// that screen.
+    pub fn inactive_pre_command_kb_stack_snapshot(&self) -> Option<&VecDeque<KeyboardModes>> {
+        self.inactive_pre_command_kb_stack_snapshot.as_ref()
     }
 
     // Rendering snapshot methods (renderable_content, renderable_content_into,

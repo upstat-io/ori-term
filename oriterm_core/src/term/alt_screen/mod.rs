@@ -8,6 +8,8 @@
 //! enter alt screen (only editors, pagers, etc.), so this avoids wasting
 //! memory.
 
+use vte::ansi::{KeyboardModes, KeyboardModesApplyBehavior};
+
 use crate::effect::sink::EffectSink;
 use crate::grid::Grid;
 use crate::image::ImageCache;
@@ -93,6 +95,13 @@ impl<S: EffectSink> Term<S> {
             &mut self.keyboard_mode_stack,
             &mut self.inactive_keyboard_mode_stack,
         );
+        // Swap the paired pre-command snapshots alongside the stacks so
+        // a command-boundary snapshot taken on one screen only fires
+        // restore on that screen. BUG-08-12.
+        std::mem::swap(
+            &mut self.pre_command_kb_stack_snapshot,
+            &mut self.inactive_pre_command_kb_stack_snapshot,
+        );
         // DECSC sidecar state is per-screen (VT220 spec). DECLRMM is
         // NOT in the DECSC save set (see `Grid::save_cursor`), so there
         // is nothing margin-related to swap here — the primary/alt grid
@@ -102,6 +111,20 @@ impl<S: EffectSink> Term<S> {
             &mut self.saved_origin_mode,
             &mut self.inactive_saved_origin_mode,
         );
+        // Reapply the newly-active stack's top-of-mode so
+        // `TermMode::KITTY_KEYBOARD_PROTOCOL` reflects the active screen.
+        // Without this, kitty mode bits leak across `?1049h/l` toggles —
+        // the exact pathway by which BUG-08-12 manifests in alt-screen
+        // programs even when OSC 133 restore is also in place.
+        let new_top = self
+            .keyboard_mode_stack
+            .back()
+            .copied()
+            .unwrap_or(KeyboardModes::NO_MODE);
+        self.dcs_set_keyboard_mode(new_top, KeyboardModesApplyBehavior::Replace);
         self.grid_mut().dirty_mut().mark_all();
     }
 }
+
+#[cfg(test)]
+mod tests;

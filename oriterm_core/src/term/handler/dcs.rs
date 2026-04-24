@@ -65,7 +65,14 @@ impl<S: EffectSink> Term<S> {
     }
 
     /// Apply keyboard mode flags with the given behavior (replace/union/difference).
-    pub(super) fn dcs_set_keyboard_mode(
+    ///
+    /// Widened to `pub(in crate::term)` so callers outside `term::handler`
+    /// — `term::alt_screen::toggle_alt_common` (reapply top after screen
+    /// swap) and `term::shell_state::restore_keyboard_mode_stack` (reapply
+    /// top after OSC 133 ; A / ; D) — can reassert `TermMode::KITTY_KEYBOARD_PROTOCOL`
+    /// bits against the active stack's top without reaching through the
+    /// `handler` submodule. See BUG-08-12.
+    pub(in crate::term) fn dcs_set_keyboard_mode(
         &mut self,
         mode: KeyboardModes,
         apply: KeyboardModesApplyBehavior,
