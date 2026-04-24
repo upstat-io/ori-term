@@ -58,6 +58,7 @@ impl<S: EffectSink> Term<S> {
         self.pre_command_kb_stack_snapshot = Some(VecDeque::new());
         self.inactive_pre_command_kb_stack_snapshot = Some(VecDeque::new());
         self.pre_command_kb_mode_bits_snapshot = Some(KeyboardModes::NO_MODE);
+        self.inactive_pre_command_kb_mode_bits_snapshot = Some(KeyboardModes::NO_MODE);
         self.inactive_keyboard_mode_bits = KeyboardModes::NO_MODE;
 
         // Shell integration state.
@@ -123,6 +124,7 @@ impl<S: EffectSink> Term<S> {
         self.pre_command_kb_stack_snapshot = Some(VecDeque::new());
         self.inactive_pre_command_kb_stack_snapshot = Some(VecDeque::new());
         self.pre_command_kb_mode_bits_snapshot = Some(KeyboardModes::NO_MODE);
+        self.inactive_pre_command_kb_mode_bits_snapshot = Some(KeyboardModes::NO_MODE);
         self.inactive_keyboard_mode_bits = KeyboardModes::NO_MODE;
         // DECSTR clears the DECSCA protection state — cursor template
         // is reset above via `soft_reset_grid`, but `char_protection`
