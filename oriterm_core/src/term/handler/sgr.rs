@@ -13,6 +13,9 @@ use crate::cell::{Cell, CellFlags};
 /// resets all attributes. Underline variants are mutually exclusive —
 /// setting one clears all others.
 pub(super) fn apply(template: &mut Cell, attr: &Attr) {
+    if crate::xray_trace::next_sgr() {
+        log::info!(target: "oriterm_core::xray", "SGR Attr::{:?}", attr);
+    }
     match attr {
         Attr::Reset => {
             template.fg = Color::Named(NamedColor::Foreground);
@@ -74,15 +77,9 @@ pub(super) fn apply(template: &mut Cell, attr: &Attr) {
                 .remove(CellFlags::SUPERSCRIPT | CellFlags::SUBSCRIPT);
         }
         Attr::Foreground(color) => {
-            if crate::xray_trace::next_sgr() {
-                log::info!(target: "oriterm_core::xray", "SGR FG {:?}", color);
-            }
             template.fg = *color;
         }
         Attr::Background(color) => {
-            if crate::xray_trace::next_sgr() {
-                log::info!(target: "oriterm_core::xray", "SGR BG {:?}", color);
-            }
             template.bg = *color;
         }
         Attr::UnderlineColor(color) => template.set_underline_color(*color),

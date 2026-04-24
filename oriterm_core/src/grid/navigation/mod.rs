@@ -241,6 +241,16 @@ impl Grid {
     /// not to the cursor save/restore pair, and is toggled via RIS, DECSTR,
     /// DECCOLM, DECALN, resize, or explicit mode reset.
     pub fn save_cursor(&mut self) {
+        if crate::xray_trace::next_sgr() {
+            log::info!(
+                target: "oriterm_core::xray",
+                "DECSC saving line={} col={} fg={:?} bg={:?}",
+                self.cursor.line(),
+                self.cursor.col().0,
+                self.cursor.template.fg,
+                self.cursor.template.bg,
+            );
+        }
         self.saved_cursor = Some(self.cursor.clone());
     }
 
@@ -248,6 +258,24 @@ impl Grid {
     /// reset to origin if nothing was saved. Does not touch margins or
     /// DECLRMM mode (see `save_cursor` for the save-set rationale).
     pub fn restore_cursor(&mut self) {
+        if crate::xray_trace::next_sgr() {
+            match &self.saved_cursor {
+                Some(saved) => log::info!(
+                    target: "oriterm_core::xray",
+                    "DECRC restoring to line={} col={} fg={:?} bg={:?} (had saved)",
+                    saved.line(),
+                    saved.col().0,
+                    saved.template.fg,
+                    saved.template.bg,
+                ),
+                None => log::info!(
+                    target: "oriterm_core::xray",
+                    "DECRC no-saved → reset to origin with DEFAULT template (was fg={:?} bg={:?})",
+                    self.cursor.template.fg,
+                    self.cursor.template.bg,
+                ),
+            }
+        }
         let old_line = self.cursor.line();
         self.dirty.mark(old_line);
         if let Some(saved) = &self.saved_cursor {
