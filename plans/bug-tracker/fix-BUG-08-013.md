@@ -342,7 +342,23 @@ The existing `enc_numpad(key, mods, mode)` is kept as a thin wrapper forwarding 
 
 ## R. Third Party Review Findings
 
-Initially empty — populated by the executor during Phase 5 completion checklist.
+### Phase 5 Code TPR — Round 0
+
+**Scratch dir:** `/tmp/tpr-round-ori_term-AV9PTy4z`. Codex + gemini dispatched via direct wrapper Bash calls (bypassing the Sonnet sub-agent 1M-context billing gate documented in §2.5).
+
+**Dispatch:** codex 1 finding / gemini 0 findings / survivor_mode: false.
+**Verification:** verified 1 / dropped 0.
+**Classification:** actionable 1 / meta 0.
+**Fix commit:** landed in the Phase 5 fix commit below.
+
+**Findings this round:**
+- `[TPR-08-013-codex][high]` `oriterm/src/key_encoding/kitty.rs:125` — Multi-char Kitty release can leak fallback text bytes. The Character arm's `resolve_char_codepoint` None branch (multi-char compositions, IME output) bypassed `should_send_as_text`'s release guard, so `Key::Character("ae")` + Release + DISAMBIGUATE without REPORT_EVENT_TYPES would have returned `b"ae"` instead of empty. My BUG-08-13 fix made this worse by adding a `ch` fallback on the same path. Disposition: fixed in Phase 5 commit — added an unconditional `if event_type == Release && !report_events: return Vec::new()` guard at the top of the Character arm AND mirrored the same guard in the Unidentified `_` arm. Added 3 negative pins: `multichar_character_kitty_disambiguate_release_no_report_events_suppressed` (text=Some), `multichar_character_kitty_disambiguate_release_no_text_suppressed` (text=None), `multichar_character_kitty_disambiguate_press_emits_text` (positive pin confirms press still works).
+
+**Gemini:** returned clean. Summary: "Correct and robust fix for BUG-08-13. The fallback to logical Key::Character content when KeyEvent::text is None restores numpad functionality across legacy and Kitty paths. The implementation includes necessary guards for Kitty release suppression and Alt-prefix encoding. Test coverage is comprehensive."
+
+### Phase 5 Code TPR — Round 1 (convergence check)
+
+Runs after the Round-0 fix commit to verify both reviewers return clean. See commit log.
 
 ---
 

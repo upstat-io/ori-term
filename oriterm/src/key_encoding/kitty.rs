@@ -108,6 +108,14 @@ pub(super) fn encode_kitty(input: &KeyInput<'_>) -> Vec<u8> {
             None => return Vec::new(),
         },
         Key::Character(ch) => {
+            // Release events without REPORT_EVENT_TYPES must be suppressed
+            // (Kitty protocol). Every textual fallback in this arm would
+            // otherwise leak release bytes — the fast-path guard in
+            // `should_send_as_text` only covers the single-char case, and
+            // the multi-char branch has no analogous check.
+            if input.event_type == KeyEventType::Release && !report_events {
+                return Vec::new();
+            }
             if let Some(cp) = resolve_char_codepoint(ch.as_str()) {
                 // Printable char, no mods, normal press → send as plain text.
                 if should_send_as_text(cp, input.mods, report_all, report_events, input.event_type)
@@ -132,7 +140,14 @@ pub(super) fn encode_kitty(input: &KeyInput<'_>) -> Vec<u8> {
             }
         }
         // Unidentified keys (e.g. RDP/IME): send text as-is if available.
-        _ => return input.text.map_or_else(Vec::new, |t| t.as_bytes().to_vec()),
+        // Release without REPORT_EVENT_TYPES is suppressed — mirrors the
+        // Character-arm guard above.
+        _ => {
+            if input.event_type == KeyEventType::Release && !report_events {
+                return Vec::new();
+            }
+            return input.text.map_or_else(Vec::new, |t| t.as_bytes().to_vec());
+        }
     };
 
     // Build event type suffix (only when REPORT_EVENT_TYPES active).

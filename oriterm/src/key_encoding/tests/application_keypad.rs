@@ -354,3 +354,59 @@ fn standard_char_kitty_disambiguate_release_no_report_events_suppressed() {
     });
     assert!(r.is_empty());
 }
+
+/// Multi-char Character (dead-key composition, IME output) on release in
+/// Kitty DISAMBIGUATE without REPORT_EVENT_TYPES must also be suppressed.
+/// The `resolve_char_codepoint` None branch bypassed `should_send_as_text`
+/// and would otherwise leak `"ae"` bytes — codex Phase 5 finding.
+#[test]
+fn multichar_character_kitty_disambiguate_release_no_report_events_suppressed() {
+    use winit::keyboard::KeyLocation;
+    let r = super::encode_key(&super::KeyInput {
+        key: &Key::Character("ae".into()),
+        mods: Modifiers::empty(),
+        mode: kitty_disambiguate_mode(),
+        text: Some("ae"),
+        location: KeyLocation::Standard,
+        event_type: KeyEventType::Release,
+        alternate_key: None,
+    });
+    assert!(
+        r.is_empty(),
+        "multi-char Character release must be suppressed"
+    );
+}
+
+/// Multi-char Character with text=None on release in Kitty DISAMBIGUATE
+/// must also be suppressed (fallback must not leak on release).
+#[test]
+fn multichar_character_kitty_disambiguate_release_no_text_suppressed() {
+    use winit::keyboard::KeyLocation;
+    let r = super::encode_key(&super::KeyInput {
+        key: &Key::Character("ae".into()),
+        mods: Modifiers::empty(),
+        mode: kitty_disambiguate_mode(),
+        text: None,
+        location: KeyLocation::Standard,
+        event_type: KeyEventType::Release,
+        alternate_key: None,
+    });
+    assert!(r.is_empty());
+}
+
+/// Multi-char Character on PRESS still emits the text (regression pin —
+/// release suppression must not affect press).
+#[test]
+fn multichar_character_kitty_disambiguate_press_emits_text() {
+    use winit::keyboard::KeyLocation;
+    let r = super::encode_key(&super::KeyInput {
+        key: &Key::Character("ae".into()),
+        mods: Modifiers::empty(),
+        mode: kitty_disambiguate_mode(),
+        text: Some("ae"),
+        location: KeyLocation::Standard,
+        event_type: KeyEventType::Press,
+        alternate_key: None,
+    });
+    assert_eq!(r, b"ae");
+}
