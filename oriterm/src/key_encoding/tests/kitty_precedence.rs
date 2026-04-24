@@ -233,15 +233,19 @@ fn kitty_plain_text() {
     assert_eq!(r, b"a");
 }
 
+/// Regression: BUG-08-13 — `Key::Character("a")` in Kitty DISAMBIGUATE with
+/// no `text` must fall back to the logical-char byte rather than returning
+/// empty. Prior to the fix this returned an empty vec and the shell silently
+/// dropped the keystroke on backends that don't populate `text`.
+/// See: plans/bug-tracker/fix-BUG-08-013.md
 #[test]
-fn kitty_plain_text_no_text_field() {
-    // No text field and no mods — empty (no encoding needed).
+fn kitty_plain_char_no_text_field_falls_back_to_logical_char() {
     let r = enc(
         Key::Character("a".into()),
         Modifiers::empty(),
         kitty_disambiguate(),
     );
-    assert!(r.is_empty());
+    assert_eq!(r, b"a");
 }
 
 // --- Kitty: REPORT_ALL_KEYS forces CSI u ---

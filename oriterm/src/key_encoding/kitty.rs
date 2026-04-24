@@ -107,20 +107,30 @@ pub(super) fn encode_kitty(input: &KeyInput<'_>) -> Vec<u8> {
             Some(cp) => cp,
             None => return Vec::new(),
         },
-        Key::Character(ch) => match resolve_char_codepoint(ch.as_str()) {
-            Some(cp) => {
+        Key::Character(ch) => {
+            if let Some(cp) = resolve_char_codepoint(ch.as_str()) {
                 // Printable char, no mods, normal press → send as plain text.
                 if should_send_as_text(cp, input.mods, report_all, report_events, input.event_type)
                     && !report_text
                 {
-                    return input.text.map_or_else(Vec::new, |t| t.as_bytes().to_vec());
+                    // Prefer winit's `text`; fall back to the logical
+                    // `Key::Character` content. Robust to backends that
+                    // don't populate `text` for numpad keys (BUG-08-13).
+                    let bytes: &[u8] = input
+                        .text
+                        .map_or_else(|| ch.as_str().as_bytes(), str::as_bytes);
+                    return bytes.to_vec();
                 }
                 cp
+            } else {
+                // Multi-char (dead-key compositions, IME output) — same
+                // fallback rule.
+                let bytes: &[u8] = input
+                    .text
+                    .map_or_else(|| ch.as_str().as_bytes(), str::as_bytes);
+                return bytes.to_vec();
             }
-            None => {
-                return input.text.map_or_else(Vec::new, |t| t.as_bytes().to_vec());
-            }
-        },
+        }
         // Unidentified keys (e.g. RDP/IME): send text as-is if available.
         _ => return input.text.map_or_else(Vec::new, |t| t.as_bytes().to_vec()),
     };
@@ -178,6 +188,11 @@ fn resolve_char_codepoint(s: &str) -> Option<u32> {
 ///
 /// True when: printable (cp >= 32, not DEL), no modifiers, normal press,
 /// and neither `REPORT_ALL_KEYS` nor non-press event type requires encoding.
+///
+/// Release events always return false so the CSI u branch's release-suppression
+/// (via [`resolve_event_suffix`]) can drop them when `REPORT_EVENT_TYPES` is
+/// off. The send-as-text fast-path would bypass that suppression, which would
+/// leak release bytes after the BUG-08-13 logical-char fallback was added.
 fn should_send_as_text(
     cp: u32,
     mods: Modifiers,
@@ -185,6 +200,9 @@ fn should_send_as_text(
     report_events: bool,
     event_type: KeyEventType,
 ) -> bool {
+    if event_type == KeyEventType::Release {
+        return false;
+    }
     let needs_event_type = report_events && event_type != KeyEventType::Press;
     !report_all && !needs_event_type && mods.is_empty() && cp >= 32 && cp != 127
 }
