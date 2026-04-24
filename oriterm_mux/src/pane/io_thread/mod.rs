@@ -13,19 +13,19 @@ mod effect_router;
 mod handle;
 mod handler;
 mod response_poll;
+mod run_loop;
 pub(crate) mod snapshot;
 
+use std::fmt;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc;
-use std::thread::{self, JoinHandle};
-use std::time::{Duration, Instant};
-use std::{fmt, io};
+use std::time::Duration;
 
 use crossbeam_channel::Receiver;
 
 use oriterm_core::effect::sink::EffectSink;
-use oriterm_core::effect::{Effect, HostEffect, PendingResponse};
+use oriterm_core::effect::{Effect, PendingResponse};
 use oriterm_core::{RenderableContent, Term};
 
 pub use commands::PaneIoCommand;
@@ -118,198 +118,17 @@ pub struct PaneIoThread<S: EffectSink + 'static> {
     /// Grows once and is cleared (not shrunk) between drains so the
     /// hot path stays zero-alloc once capacity stabilizes.
     pub(crate) effects_buf: Vec<Effect>,
+    /// Last animation-frame deadline sent via
+    /// `MuxEvent::AnimationDeadlineChanged`. The IO thread ticks
+    /// `Term::advance_animations` before each snapshot publication; when
+    /// the returned deadline differs from this cached value, a new event
+    /// is emitted so the main thread can update its `RenderScheduler`.
+    /// `None` means "no deadline currently in effect" — both the initial
+    /// state and the state after all animations finish/pause.
+    last_animation_deadline: Option<std::time::Instant>,
 }
 
 impl<S: EffectSink> PaneIoThread<S> {
-    /// Run the IO thread message loop.
-    ///
-    /// Priority: drain commands first, then process pending bytes with
-    /// bounded chunking. Blocks via `crossbeam_channel::select!` when both
-    /// channels are empty. Exits on `Shutdown` command or channel disconnect.
-    pub fn run(mut self) {
-        // Produce an initial snapshot so the main thread has valid content
-        // immediately — before any PTY output or commands arrive. Without
-        // this, freshly spawned panes expose PaneSnapshot::default() until
-        // the shell writes its first output.
-        self.grid_dirty.store(true, Ordering::Release);
-        self.produce_snapshot();
-
-        loop {
-            // 1. Drain all pending commands (priority over bytes).
-            self.drain_commands();
-            if self.shutdown.load(Ordering::Acquire) {
-                // Flush any parsed-but-unpublished state before exiting.
-                self.maybe_produce_snapshot();
-                return;
-            }
-
-            // 2. Process available bytes (non-blocking drain with chunking).
-            self.process_pending_bytes();
-
-            // 3. Produce snapshot if state changed and sync output allows it.
-            self.maybe_produce_snapshot();
-
-            // 4. Block on either channel when idle, with sync timeout if active.
-            //
-            // Mode 2026 (synchronized output): when a sync buffer is pending,
-            // the VTE processor's StdSyncHandler tracks a deadline. If no new
-            // bytes arrive before the deadline, we must call stop_sync to flush
-            // the buffer — otherwise an app that crashes mid-sync hangs the
-            // terminal forever.
-            let sync_deadline = self.processor.sync_timeout().sync_timeout();
-            match sync_deadline {
-                Some(deadline) => {
-                    let timeout = deadline.saturating_duration_since(Instant::now());
-                    crossbeam_channel::select! {
-                        recv(self.cmd_rx) -> msg => {
-                            match msg {
-                                Ok(PaneIoCommand::Shutdown) => {
-                                    self.shutdown.store(true, Ordering::Release);
-                                    self.maybe_produce_snapshot();
-                                    return;
-                                }
-                                Ok(cmd) => self.handle_command(cmd),
-                                Err(_) => return,
-                            }
-                        },
-                        recv(self.byte_rx) -> msg => {
-                            if let Ok(bytes) = msg {
-                                self.handle_bytes_chunked(&bytes);
-                            } else {
-                                self.handle_pty_eof();
-                                return;
-                            }
-                        },
-                        recv(self.child_exit_rx) -> status => {
-                            if let Ok(status) = status {
-                                self.pending_child_exit = Some(status);
-                            } else {
-                                // Watcher-thread sender dropped without sending a
-                                // status. Replace the receiver with `never()` so
-                                // `select!` does not pick this arm again on every
-                                // iteration — `recv` on a disconnected channel
-                                // returns `Err` immediately, which would burn a
-                                // CPU core in a tight loop until shutdown. The
-                                // EOF path in `handle_pty_eof` still emits
-                                // `HostEffect::ChildExit { code: 0 }` when
-                                // `byte_rx` subsequently closes.
-                                self.child_exit_rx = crossbeam_channel::never();
-                            }
-                        }
-                        recv(self.response_wake_rx) -> msg => {
-                            if msg.is_err() {
-                                // Handle dropped its `response_wake_tx`. Same
-                                // spin hazard as the `child_exit_rx` arm above.
-                                self.response_wake_rx = crossbeam_channel::never();
-                            }
-                            // Otherwise: woken by response fulfillment — next
-                            // loop iteration drains commands which polls pending
-                            // responses and emits PTY replies.
-                        }
-                        default(timeout) => {
-                            self.handle_sync_timeout();
-                        },
-                    }
-                }
-                None => {
-                    crossbeam_channel::select! {
-                        recv(self.cmd_rx) -> msg => {
-                            match msg {
-                                Ok(PaneIoCommand::Shutdown) => {
-                                    self.shutdown.store(true, Ordering::Release);
-                                    self.maybe_produce_snapshot();
-                                    return;
-                                }
-                                Ok(cmd) => self.handle_command(cmd),
-                                Err(_) => return,
-                            }
-                        },
-                        recv(self.byte_rx) -> msg => {
-                            if let Ok(bytes) = msg {
-                                self.handle_bytes_chunked(&bytes);
-                            } else {
-                                self.handle_pty_eof();
-                                return;
-                            }
-                        },
-                        recv(self.child_exit_rx) -> status => {
-                            if let Ok(status) = status {
-                                self.pending_child_exit = Some(status);
-                            } else {
-                                // Spin guard — see sync-deadline arm above.
-                                self.child_exit_rx = crossbeam_channel::never();
-                            }
-                        }
-                        recv(self.response_wake_rx) -> msg => {
-                            if msg.is_err() {
-                                self.response_wake_rx = crossbeam_channel::never();
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    /// Handle PTY end-of-file: flush pending effects, produce the final
-    /// snapshot, consume or wait for the child's exit status, emit
-    /// `HostEffect::ChildExit`, flush once more, then return.
-    ///
-    /// Sequence (per §17 of the effect-cutover plan blind-spot analysis):
-    ///
-    /// 1. Final `drain_effects_into_mux_events()` — flush any effects
-    ///    produced during the preceding parse cycle.
-    /// 2. `maybe_produce_snapshot()` — publish the PTY's final cell
-    ///    content to the main thread BEFORE `MuxEvent::PaneExited`
-    ///    arrives. Gated by Mode 2026 synchronized-output so sync-active
-    ///    panes defer the snapshot per the application's request.
-    /// 3. Exit-code source: cached `pending_child_exit` if the watcher
-    ///    already fired, otherwise `child_exit_rx.recv_timeout(5s)`.
-    /// 4. Emit `HostEffect::ChildExit { code }` through the sink.
-    /// 5. Final `drain_effects_into_mux_events()` — routes to
-    ///    `MuxEvent::PaneExited { pane_id, exit_code }`.
-    /// 6. Return from `run()`.
-    fn handle_pty_eof(&mut self) {
-        // (1) Flush in-flight effects from the last parse chunk.
-        self.drain_effects_into_mux_events();
-
-        // (2) Final snapshot BEFORE `PaneExited` fires.
-        self.grid_dirty.store(true, Ordering::Release);
-        self.maybe_produce_snapshot();
-
-        // (3) Determine the exit code.
-        let exit_code = if let Some(status) = self.pending_child_exit.take() {
-            status.exit_code() as i32
-        } else if let Ok(status) = self.child_exit_rx.recv_timeout(CHILD_EXIT_WAIT_TIMEOUT) {
-            status.exit_code() as i32
-        } else {
-            log::error!(
-                "PaneIoThread ({}): child exit not observed within {:?}; emitting \
-                 ChildExit {{ code: 0 }} as fallback",
-                self.pane_id,
-                CHILD_EXIT_WAIT_TIMEOUT,
-            );
-            0
-        };
-
-        // (4) Push the exit effect into the sink.
-        self.terminal
-            .effect_sink()
-            .push(Effect::Host(HostEffect::ChildExit { code: exit_code }));
-
-        // (5) Final drain — routes to `MuxEvent::PaneExited` via the
-        //     effect router (fires wakeup so the main thread sees the
-        //     pane close within one event loop iteration).
-        self.drain_effects_into_mux_events();
-    }
-
-    /// Spawn the IO thread.
-    pub fn spawn(self) -> io::Result<JoinHandle<()>> {
-        thread::Builder::new()
-            .name("terminal-io".into())
-            .spawn(move || self.run())
-    }
-
     /// Drain all pending commands from the command channel.
     ///
     /// Resize commands are coalesced — only the last one in the batch is

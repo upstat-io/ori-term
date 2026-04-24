@@ -148,6 +148,7 @@ fn make_sync_thread_with_term(term: Term<VoidEffectSink>) -> PaneIoThread<VoidEf
         selection_dirty: Arc::new(AtomicBool::new(false)),
         pending_responses: Vec::new(),
         effects_buf: Vec::new(),
+        last_animation_deadline: None,
     }
 }
 
@@ -185,6 +186,7 @@ fn make_sync_thread_with_wakeup() -> (PaneIoThread<VoidEffectSink>, Arc<AtomicU6
         selection_dirty: Arc::new(AtomicBool::new(false)),
         pending_responses: Vec::new(),
         effects_buf: Vec::new(),
+        last_animation_deadline: None,
     };
     (thread, wakeup_count)
 }
@@ -240,6 +242,7 @@ fn shutdown_via_channel_disconnect() {
         selection_dirty: Arc::new(AtomicBool::new(false)),
         pending_responses: Vec::new(),
         effects_buf: Vec::new(),
+        last_animation_deadline: None,
     };
     let join = thread.spawn().expect("failed to spawn IO thread");
 
@@ -334,6 +337,7 @@ fn byte_delivery_parses_vte() {
         selection_dirty: Arc::new(AtomicBool::new(false)),
         pending_responses: Vec::new(),
         effects_buf: Vec::new(),
+        last_animation_deadline: None,
     };
     let join = thread.spawn().expect("failed to spawn IO thread");
 
@@ -486,6 +490,7 @@ fn handle_bytes_chunked_drains_commands() {
         selection_dirty: Arc::new(AtomicBool::new(false)),
         pending_responses: Vec::new(),
         effects_buf: Vec::new(),
+        last_animation_deadline: None,
     };
 
     cmd_tx.send(PaneIoCommand::Shutdown).unwrap();
@@ -723,6 +728,7 @@ fn make_sync_thread_with_cmd_tx() -> (PaneIoThread<VoidEffectSink>, Sender<PaneI
         selection_dirty: Arc::new(AtomicBool::new(false)),
         pending_responses: Vec::new(),
         effects_buf: Vec::new(),
+        last_animation_deadline: None,
     };
     (thread, cmd_tx)
 }
@@ -1997,6 +2003,7 @@ fn make_sync_thread_generic<S: oriterm_core::effect::EffectSink + 'static>(
         selection_dirty: Arc::new(AtomicBool::new(false)),
         pending_responses: Vec::new(),
         effects_buf: Vec::new(),
+        last_animation_deadline: None,
     };
     (thread, wakeup_count)
 }
@@ -2537,6 +2544,7 @@ fn spawn_queueing_eof_rig() -> EofTestRig {
         selection_dirty: Arc::new(AtomicBool::new(false)),
         pending_responses: Vec::new(),
         effects_buf: Vec::new(),
+        last_animation_deadline: None,
     };
 
     let join = thread.spawn().expect("spawn IO thread");
@@ -2833,16 +2841,19 @@ fn multi_chunk_parse_drains_between_chunks() {
 /// that arm every iteration and saturate a core until shutdown
 /// arrived.
 ///
-/// We assert that after dropping `child_exit_tx`, a subsequent
-/// `Shutdown` command still joins quickly — the spin must not starve
-/// `cmd_rx` delivery or ballon wall-clock time via a multi-MHz loop.
+/// We assert two things after dropping `child_exit_tx`:
+/// 1. A subsequent `Shutdown` command still joins quickly (the spin
+///    must not starve `cmd_rx` delivery).
+/// 2. Iteration count between disconnect and shutdown is bounded —
+///    measured indirectly by total wall time, which would balloon if
+///    `select!` were spinning at multi-MHz.
 #[test]
 fn child_exit_disconnect_does_not_spin_loop() {
     let rig = spawn_queueing_eof_rig();
     drop(rig.child_exit_tx);
-    // Give the IO thread a moment to observe the disconnect through its
-    // `select!`. A spinning thread would burn CPU during this window; a
-    // correctly-handled one parks until the next real event.
+    // Give the IO thread a moment to observe the disconnect through
+    // its `select!`. A spinning thread would burn CPU during this
+    // window; a correctly-handled one parks on `IDLE_WAKE_CEILING`.
     std::thread::sleep(Duration::from_millis(100));
     let start = std::time::Instant::now();
     rig._keep_alive_cmd_tx
@@ -2860,11 +2871,11 @@ fn child_exit_disconnect_does_not_spin_loop() {
     drop(rig._keep_alive_wake_tx);
 }
 
-/// Regression companion: `response_wake_rx` carries the same
-/// disconnect-then-spin hazard as `child_exit_rx`. The handle's
-/// `response_wake_tx` only drops at handle teardown, but a buggy IO
-/// thread that picked up the disconnected arm every iteration would
-/// saturate a core during the window between the drop and the join.
+/// Regression companion: `response_wake_rx` carries the same disconnect-
+/// then-spin hazard as `child_exit_rx`. The handle's `response_wake_tx`
+/// only drops at handle teardown, but a buggy IO thread that picked up
+/// the disconnected arm every iteration would saturate a core during
+/// the window between the drop and the join.
 #[test]
 fn response_wake_disconnect_does_not_spin_loop() {
     let rig = spawn_queueing_eof_rig();

@@ -197,6 +197,17 @@ impl App {
                     self.new_tab_in_window(win_id);
                 }
             }
+            MuxNotification::AnimationDeadlineChanged { pane_id, deadline } => {
+                // Push the deadline onto the owning window's RenderScheduler so
+                // the event loop's ControlFlow::WaitUntil picks it up via
+                // `scheduler().next_wake_time()` at the `ControlFlowInput`
+                // construction site. Also mark the window dirty so the snapshot
+                // read on the next frame advances the visible image.
+                self.request_pane_animation_frame_at(pane_id, deadline);
+                if deadline.is_some() {
+                    self.mark_pane_window_dirty(pane_id);
+                }
+            }
         }
     }
 
@@ -325,6 +336,13 @@ impl App {
         }
         for ctx in self.windows.values_mut() {
             ctx.pane_cache.remove(id);
+            // Clear any queued animation deadline for this pane so the
+            // orphan entry does not linger in the scheduler's per-pane
+            // map (would accumulate across pane open/close cycles and
+            // keep firing spurious wakes).
+            ctx.root
+                .scheduler_mut()
+                .set_animation_deadline(id.raw(), None);
             ctx.root.mark_dirty();
         }
 

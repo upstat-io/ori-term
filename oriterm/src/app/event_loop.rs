@@ -443,6 +443,31 @@ impl ApplicationHandler<TermEvent> for App {
         self.show_primed_dialogs();
         self.drain_pending_destroy();
 
+        // Promote matured deferred repaints (cursor blink, kitty/sixel
+        // animation deadlines) into dirty-window state BEFORE the dirty
+        // check, then drain the matured entries from every scheduler.
+        // Without this step:
+        //   - matured widget deferred repaints (cursor blink) never flow
+        //     from the scheduler's deferred heap into `paint_requests`;
+        //   - matured animation-deadline entries in the scheduler's
+        //     `HashMap<u64, Instant>` leak, and `next_wake_time()` keeps
+        //     returning past-due instants that cause `ControlFlow::
+        //     WaitUntil(past)` to fire immediately — the event loop
+        //     spins, violating `.claude/rules/oriterm.md §Zero idle CPU
+        //     beyond cursor blink`.
+        // `has_pending_work(now)` covers both matured wake sources + any
+        // already-outstanding anim/paint requests, so marking the window
+        // dirty on that signal is the canonical repaint trigger.
+        {
+            let now_for_scheduler = std::time::Instant::now();
+            for ctx in self.windows.values_mut() {
+                if ctx.root.scheduler().has_pending_work(now_for_scheduler) {
+                    ctx.root.mark_dirty();
+                }
+                ctx.root.scheduler_mut().promote_deferred(now_for_scheduler);
+            }
+        }
+
         // Check if any window (terminal or dialog) is dirty and render it.
         let any_dirty = self.is_any_window_dirty();
         let now = std::time::Instant::now();
@@ -468,6 +493,17 @@ impl ApplicationHandler<TermEvent> for App {
         let still_dirty = self.is_any_window_dirty();
         let has_animations = self.has_active_animations();
 
+        // Next wake across all windows' RenderSchedulers (cursor blink
+        // deferred repaints + kitty/sixel animation deadlines fed via
+        // MuxNotification::AnimationDeadlineChanged). Minimum across
+        // windows: whichever wakes first is what `ControlFlow::WaitUntil`
+        // must honor.
+        let scheduler_wake = self
+            .windows
+            .values()
+            .filter_map(|ctx| ctx.root.scheduler().next_wake_time())
+            .min();
+
         let input = ControlFlowInput {
             still_dirty,
             budget_elapsed,
@@ -477,7 +513,7 @@ impl ApplicationHandler<TermEvent> for App {
             next_blink_change: self.cursor_blink.next_change(),
             next_text_blink_change: self.text_blink.next_change(),
             now,
-            scheduler_wake: None,
+            scheduler_wake,
         };
         match compute_control_flow(&input) {
             ControlFlowDecision::Wait => event_loop.set_control_flow(ControlFlow::Wait),
