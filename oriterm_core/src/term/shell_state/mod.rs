@@ -137,6 +137,14 @@ impl<S: EffectSink> Term<S> {
         self.inactive_keyboard_mode_bits
     }
 
+    /// Paired inactive-screen bits snapshot — see
+    /// [`Self::pre_command_kb_mode_bits_snapshot`]. Swapped alongside
+    /// the paired stacks in `toggle_alt_common` so the snapshot stays
+    /// with the screen where `;C` was emitted. BUG-08-12 TPR round-4.
+    pub fn inactive_pre_command_kb_mode_bits_snapshot(&self) -> Option<KeyboardModes> {
+        self.inactive_pre_command_kb_mode_bits_snapshot
+    }
+
     // -- Kitty keyboard mode stack snapshot / restore (OSC 133 C/A/D) --
 
     /// Clone BOTH active and inactive keyboard-mode stack contents AND
@@ -158,9 +166,12 @@ impl<S: EffectSink> Term<S> {
         self.inactive_pre_command_kb_stack_snapshot =
             Some(self.inactive_keyboard_mode_stack.clone());
         self.pre_command_kb_mode_bits_snapshot = Some(KeyboardModes::from(self.mode));
-        // No inactive-bits snapshot: `inactive_keyboard_mode_bits` is
-        // live per-screen state, swapped on alt toggle. The snapshot
-        // captures only the active-screen bits for restore.
+        // Inactive bits snapshot mirrors the live per-screen state so the
+        // command-boundary snapshot travels with its owning screen across
+        // alt-screen toggles. Runtime state is tracked in
+        // `inactive_keyboard_mode_bits`; the snapshot below is the restore
+        // target for the inactive screen's `;A`/`;D` if it ever fires.
+        self.inactive_pre_command_kb_mode_bits_snapshot = Some(self.inactive_keyboard_mode_bits);
     }
 
     /// If a snapshot is active, replace BOTH stacks with the snapshotted
@@ -185,8 +196,12 @@ impl<S: EffectSink> Term<S> {
         if let Some(saved) = self.inactive_pre_command_kb_stack_snapshot.take() {
             self.inactive_keyboard_mode_stack = saved;
         }
-        // `inactive_keyboard_mode_bits` is live per-screen state — not
-        // a snapshot field — so restore doesn't touch it here.
+        // Consume the inactive bits snapshot symmetrically with the
+        // other three paired snaps. The live `inactive_keyboard_mode_bits`
+        // carries the inactive screen's current bits independently; the
+        // snapshot is only a restore target, so discarding the taken
+        // value is correct. BUG-08-12 TPR round-4.
+        self.inactive_pre_command_kb_mode_bits_snapshot.take();
     }
 
     // -- Prompt state --

@@ -2314,6 +2314,49 @@ fn kitty_mid_command_bit_mutation_survives_alt_roundtrip() {
     );
 }
 
+/// Regression: BUG-08-12 TPR round-4 — when `;A` fires on the ALT
+/// screen during a shell command, the paired bits snapshot must be
+/// swapped in `toggle_alt_common` so the active bits snap consumed by
+/// alt's restore is alt's value (NO_MODE placeholder), not primary's
+/// shell-set bits. Without the paired swap, alt-side `;A` incorrectly
+/// applies primary's DISAMBIGUATE bits to the alt screen and then
+/// consumes/loses primary's paired snap.
+/// See: plans/bug-tracker/fix-BUG-08-012.md §2.5 TPR round 4.
+#[test]
+fn alt_side_a_restore_uses_alt_paired_snapshot_not_primary() {
+    let mut term = make_term();
+    // Shell on primary pushes DIS + emits ;C.
+    feed_mux_and_proc(&mut term, b"\x1b[>1u");
+    feed_mux_and_proc(&mut term, b"\x1b]133;C\x1b\\");
+    assert!(term.mode().contains(TermMode::DISAMBIGUATE_ESC_CODES));
+
+    // Enter alt screen.
+    feed_mux_and_proc(&mut term, b"\x1b[?1049h");
+    assert!(
+        !term.mode().intersects(TermMode::KITTY_KEYBOARD_PROTOCOL),
+        "alt screen starts with its own (empty) bits after swap"
+    );
+
+    // `;A` fires on alt — should apply alt's paired bits (NO_MODE),
+    // not primary's (DIS).
+    feed_mux_and_proc(&mut term, b"\x1b]133;A\x1b\\");
+    assert!(
+        !term.mode().intersects(TermMode::KITTY_KEYBOARD_PROTOCOL),
+        "alt-side `;A` restore must NOT apply primary's paired bits \
+         snapshot to the alt screen"
+    );
+
+    // Exit alt — live inactive_keyboard_mode_bits carries primary's
+    // original bits back via the swap, even though its paired snap was
+    // consumed during alt's `;A`.
+    feed_mux_and_proc(&mut term, b"\x1b[?1049l");
+    assert!(
+        term.mode().contains(TermMode::DISAMBIGUATE_ESC_CODES),
+        "primary's original kitty bits must survive the alt round-trip \
+         via the live per-screen bits field"
+    );
+}
+
 /// Regression: BUG-08-12 TPR round-2 F1 — shell set-only kitty bits
 /// survive an alt-screen round-trip that includes an `;A` firing on
 /// the alt side (misbehaving integration or background emission).

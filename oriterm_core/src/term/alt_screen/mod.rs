@@ -102,6 +102,14 @@ impl<S: EffectSink> Term<S> {
             &mut self.pre_command_kb_stack_snapshot,
             &mut self.inactive_pre_command_kb_stack_snapshot,
         );
+        // Paired bits snapshot swaps alongside the stack snapshot so
+        // the snapshot travels with its owning screen — without this
+        // swap, an alt-side `;A` restore applied primary's bits (wrong
+        // screen). BUG-08-12 TPR round-4.
+        std::mem::swap(
+            &mut self.pre_command_kb_mode_bits_snapshot,
+            &mut self.inactive_pre_command_kb_mode_bits_snapshot,
+        );
         // DECSC sidecar state is per-screen (VT220 spec). DECLRMM is
         // NOT in the DECSC save set (see `Grid::save_cursor`), so there
         // is nothing margin-related to swap here — the primary/alt grid

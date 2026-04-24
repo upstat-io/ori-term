@@ -145,6 +145,15 @@ pub struct Term<S: EffectSink> {
     /// survive alt-screen toggles even when no shell integration (no
     /// OSC 133 snapshot) is present. See BUG-08-12 TPR round-3 F1/F2.
     inactive_keyboard_mode_bits: KeyboardModes,
+    /// Paired inactive-screen bits snapshot — captured at OSC 133 ; C
+    /// alongside [`pre_command_kb_mode_bits_snapshot`]. Required because
+    /// the command-boundary snapshot belongs to the screen where `;C`
+    /// was emitted; an alt-screen toggle mid-command must carry the
+    /// snapshot along, so restore on the owning screen applies the
+    /// correct bits. Live `inactive_keyboard_mode_bits` tracks runtime
+    /// per-screen state; this field tracks the per-screen restore
+    /// target separately. See BUG-08-12 TPR round-4.
+    inactive_pre_command_kb_mode_bits_snapshot: Option<KeyboardModes>,
     /// Effect sink for boundary-crossing side effects.
     effect_sink: S,
     /// Set by content-modifying VTE handler operations (character printing,
@@ -307,6 +316,7 @@ impl<S: EffectSink> Term<S> {
             inactive_pre_command_kb_stack_snapshot: None,
             pre_command_kb_mode_bits_snapshot: None,
             inactive_keyboard_mode_bits: KeyboardModes::NO_MODE,
+            inactive_pre_command_kb_mode_bits_snapshot: None,
             effect_sink,
             selection_dirty: false,
             prompt_state: PromptState::None,
