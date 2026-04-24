@@ -233,18 +233,20 @@ fn encode_character(s: &str, mods: Modifiers, text: Option<&str>) -> Vec<u8> {
         }
     }
 
+    // Textual byte source: prefer winit's `text` (locale-aware; may reflect IME
+    // composition), fall back to the logical `Key::Character` content. Covers
+    // backends that don't populate `text` for numpad keys (BUG-08-13).
+    let bytes: &[u8] = text.map_or_else(|| s.as_bytes(), str::as_bytes);
+
     // Alt prefix for character keys (without Ctrl).
     if mods.contains(Modifiers::ALT) && !mods.contains(Modifiers::CONTROL) {
-        if let Some(t) = text {
-            let mut v = Vec::with_capacity(1 + t.len());
-            v.push(0x1b);
-            v.extend_from_slice(t.as_bytes());
-            return v;
-        }
+        let mut v = Vec::with_capacity(1 + bytes.len());
+        v.push(0x1b);
+        v.extend_from_slice(bytes);
+        return v;
     }
 
-    // Fallback: send the text as-is.
-    text.map_or_else(Vec::new, |t| t.as_bytes().to_vec())
+    bytes.to_vec()
 }
 
 /// Map a Ctrl+key combination to its C0 control byte.
