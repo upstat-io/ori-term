@@ -1895,6 +1895,184 @@ fn super_sub_offset_rounds_to_integer_for_fractional_cell_height() {
     // never sees both at once. Still test the happy-path edge values.
 }
 
+/// Regression: BUG-06-014 — shaped path applies super/sub offset to glyph y.
+/// Pinned via `prepare_frame_shaped` rather than the unshaped path so the
+/// production code path (`fill_frame_shaped`) is exercised directly.
+#[test]
+fn shaped_superscript_shifts_glyph_y_up_by_quarter_cell_height() {
+    let size_q6 = 768;
+    let mut input = FrameInput::test_grid(1, 1, "X");
+    input.content.cells[0].flags = CellFlags::SUPERSCRIPT;
+
+    let atlas = key_atlas_with(&[60], size_q6);
+    let glyphs = vec![ShapedGlyph {
+        glyph_id: 60,
+        face_index: 0,
+        synthetic: 0,
+        x_advance: 0.0,
+        x_offset: 0.0,
+        y_offset: 0.0,
+    }];
+    let col_starts = vec![0];
+    let shaped = shaped_one_row(1, &glyphs, &col_starts, size_q6);
+    let frame = prepare_frame_shaped(&input, &atlas, &shaped, (0.0, 0.0));
+
+    assert_eq!(frame.glyphs.len(), 1);
+    let fg = nth_instance(frame.glyphs.as_bytes(), 0);
+    let entry = test_entry_for_glyph(60);
+    // glyph_y = (y + super_offset) + baseline - bearing_y
+    //        = (0.0 + -4.0) + 12.0 - 12.0 = -4.0
+    let expected_y = -4.0 + 12.0 - entry.bearing_y as f32;
+    assert_eq!(
+        fg.pos.1, expected_y,
+        "shaped SUPERSCRIPT must shift glyph y up by 4.0; got {}",
+        fg.pos.1
+    );
+}
+
+/// Regression: BUG-06-014 — shaped path applies SUBSCRIPT offset (downward shift).
+#[test]
+fn shaped_subscript_shifts_glyph_y_down_by_quarter_cell_height() {
+    let size_q6 = 768;
+    let mut input = FrameInput::test_grid(1, 1, "X");
+    input.content.cells[0].flags = CellFlags::SUBSCRIPT;
+
+    let atlas = key_atlas_with(&[61], size_q6);
+    let glyphs = vec![ShapedGlyph {
+        glyph_id: 61,
+        face_index: 0,
+        synthetic: 0,
+        x_advance: 0.0,
+        x_offset: 0.0,
+        y_offset: 0.0,
+    }];
+    let col_starts = vec![0];
+    let shaped = shaped_one_row(1, &glyphs, &col_starts, size_q6);
+    let frame = prepare_frame_shaped(&input, &atlas, &shaped, (0.0, 0.0));
+
+    let fg = nth_instance(frame.glyphs.as_bytes(), 0);
+    let entry = test_entry_for_glyph(61);
+    let expected_y = 4.0 + 12.0 - entry.bearing_y as f32;
+    assert_eq!(fg.pos.1, expected_y);
+}
+
+/// Regression: BUG-06-014 — shaped path WITHOUT super/sub keeps glyph y unshifted.
+/// Pins that the offset only applies when the flag is set (no spurious shift).
+#[test]
+fn shaped_no_super_sub_keeps_glyph_y_unshifted() {
+    let size_q6 = 768;
+    let input = FrameInput::test_grid(1, 1, "X");
+    let atlas = key_atlas_with(&[62], size_q6);
+    let glyphs = vec![ShapedGlyph {
+        glyph_id: 62,
+        face_index: 0,
+        synthetic: 0,
+        x_advance: 0.0,
+        x_offset: 0.0,
+        y_offset: 0.0,
+    }];
+    let col_starts = vec![0];
+    let shaped = shaped_one_row(1, &glyphs, &col_starts, size_q6);
+    let frame = prepare_frame_shaped(&input, &atlas, &shaped, (0.0, 0.0));
+
+    let fg = nth_instance(frame.glyphs.as_bytes(), 0);
+    let entry = test_entry_for_glyph(62);
+    // No offset → glyph_y = 0.0 + 12.0 - 12.0 = 0.0.
+    let expected_y = 12.0 - entry.bearing_y as f32;
+    assert_eq!(fg.pos.1, expected_y);
+}
+
+/// Regression: BUG-06-014 — built-in glyph path (e.g. box-drawing chars in
+/// U+2500..=U+257F) shifts y when SUPERSCRIPT/SUBSCRIPT is set. The built-in
+/// branch is a separate emission site from `GlyphEmitter::emit`; both must
+/// honor the offset.
+#[test]
+fn shaped_builtin_glyph_with_superscript_shifts_y() {
+    let size_q6 = 768;
+    let mut input = FrameInput::test_grid(1, 1, "");
+    // U+2500 BOX DRAWINGS LIGHT HORIZONTAL — built-in geometric glyph.
+    input.content.cells[0].ch = '\u{2500}';
+    input.content.cells[0].flags = CellFlags::SUPERSCRIPT;
+
+    // Built-in glyphs use FaceIdx::BUILTIN with the codepoint as glyph_id.
+    let key = crate::gpu::builtin_glyphs::raster_key('\u{2500}', size_q6);
+    let mut map = HashMap::new();
+    map.insert(key, test_entry_for_glyph('\u{2500}' as u16));
+    let atlas = KeyTestAtlas(map);
+
+    // ShapedFrame is empty for built-ins (the prepare path takes the built-in
+    // branch BEFORE consulting the shaped frame).
+    let shaped = shaped_one_row(1, &[], &[], size_q6);
+    let frame = prepare_frame_shaped(&input, &atlas, &shaped, (0.0, 0.0));
+
+    assert_eq!(
+        frame.glyphs.len(),
+        1,
+        "built-in glyph should emit 1 fg instance"
+    );
+    let fg = nth_instance(frame.glyphs.as_bytes(), 0);
+    // Built-in glyph rect uses (x, glyph_y) directly — no baseline/bearing math.
+    // glyph_y = y + super_sub_offset = 0.0 + (-4.0) = -4.0.
+    assert_eq!(
+        fg.pos.1, -4.0,
+        "built-in glyph y must shift by SUPERSCRIPT offset"
+    );
+}
+
+/// Regression: BUG-06-014 — dirty-skip incremental path applies super/sub
+/// offset to dirty rows. Pin: a row with SUPERSCRIPT, after a dirty rebuild,
+/// emits a shifted glyph y.
+#[test]
+fn incremental_dirty_row_with_superscript_shifts_glyph_y() {
+    use crate::gpu::frame_input::ViewportSize;
+    use oriterm_core::Rgb;
+
+    let size_q6 = 768;
+    let cols = 1;
+    let rows = 1;
+    let mut input = FrameInput::test_grid(cols, rows, "X");
+    input.content.cells[0].flags = CellFlags::SUPERSCRIPT;
+
+    let atlas = key_atlas_with(&[70], size_q6);
+    let glyphs = vec![ShapedGlyph {
+        glyph_id: 70,
+        face_index: 0,
+        synthetic: 0,
+        x_advance: 0.0,
+        x_offset: 0.0,
+        y_offset: 0.0,
+    }];
+    let col_starts = vec![0];
+    let shaped = shaped_one_row(cols, &glyphs, &col_starts, size_q6);
+
+    // First pass: populate row_ranges via full rebuild (all_dirty true by default).
+    let mut frame = PreparedFrame::new(ViewportSize::new(1, 1), Rgb { r: 0, g: 0, b: 0 }, 1.0);
+    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+
+    // Second pass: mark row 0 as dirty so the incremental path regenerates it.
+    input.content.all_dirty = false;
+    input.content.damage.push(oriterm_core::DamageLine {
+        line: 0,
+        left: Column(0),
+        right: Column(0),
+    });
+    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+
+    // Even after the incremental rebuild, the SUPERSCRIPT cell's glyph y
+    // must be shifted. Find the glyph instance in the (post-incremental) frame.
+    assert!(
+        !frame.glyphs.as_bytes().is_empty(),
+        "dirty row must regenerate the glyph"
+    );
+    let fg = nth_instance(frame.glyphs.as_bytes(), 0);
+    let entry = test_entry_for_glyph(70);
+    let expected_y = -4.0 + 12.0 - entry.bearing_y as f32;
+    assert_eq!(
+        fg.pos.1, expected_y,
+        "incremental SUPERSCRIPT must produce shifted glyph y"
+    );
+}
+
 // ── Subpixel glyph routing (Section 6.16) ──
 
 #[test]

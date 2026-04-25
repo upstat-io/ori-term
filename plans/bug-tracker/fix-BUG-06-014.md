@@ -380,9 +380,28 @@ Classification: actionable 7 / meta 0.
 Fix commit: applied inline to `plans/bug-tracker/fix-BUG-06-014.md` (this file); see git log for the commit SHA after Phase 4 closure.
 Loop exited at iter_cap_reached (max_rounds=1 by design). Per `/fix-bug` Phase 2.5 contract ("re-run Plan TPR if findings were significant"), post-revision plan converges with reviewer consensus — no re-run.
 
-### Code TPR — Phase 5 (pending)
+### Code TPR — Phase 5 (2026-04-25, commit `777ce890` baseline)
 
-Will be populated during Phase 5 completion checklist when `/tpr-review` runs against the implementation (separate from this plan TPR).
+Round 0 (max_rounds=2). Scratch dir: `/tmp/tpr-round-ori_term-XYe6UUxO`.
+- Codex: `status: findings` (2). Gemini: `status: clean`.
+- Both findings verified against actual code, both actionable, both fixed inline before close.
+
+- [x] `[TPR-06-014-codex][low]` `oriterm_core/src/selection/html/mod.rs:508` — HTML module exceeds the 500-line source-file limit.
+  Evidence: `wc -l html/mod.rs` reported 508 lines after the BUG-06-014 implementation landed, 8 over the `.claude/rules/code-hygiene.md §File Size` hard limit.
+  Impact: low — file-size hygiene violation; no functional defect, but violates the stated invariant.
+  Resolution: extracted `CellStyle`, `UnderlineKind`, `VerticalAlign`, and the `from_cell` / `is_default` / `write_css` impl block into a sibling submodule `oriterm_core/src/selection/html/style.rs`. Mod.rs declares `mod style;` and imports `CellStyle` via `self::style::CellStyle`. `HtmlCtx` was promoted to `pub(super)` so the new submodule can borrow it. Final sizes: `mod.rs` = 338 lines, `style.rs` = 192 lines.
+  Disposition: fixed inline (commit forthcoming).
+  Basis: fresh_verification. Confidence: high.
+- [x] `[TPR-06-014-codex][medium]` `oriterm/src/gpu/prepare/tests.rs:1759` — Super/sub tests miss shaped and incremental glyph paths.
+  Evidence: original new tests used `prepare_frame` (unshaped) only; matrix gap on shaped GlyphEmitter, built-in glyph rect, and dirty-skip incremental rebuild paths.
+  Impact: medium — production rendering goes through `prepare_frame_shaped` / `fill_frame_incremental`; unshaped-only tests miss real-world regressions.
+  Resolution: added 5 new tests — `shaped_superscript_shifts_glyph_y_up_by_quarter_cell_height`, `shaped_subscript_shifts_glyph_y_down_by_quarter_cell_height`, `shaped_no_super_sub_keeps_glyph_y_unshifted`, `shaped_builtin_glyph_with_superscript_shifts_y` (uses U+2500 box-drawing char + `crate::gpu::builtin_glyphs::raster_key`), and `incremental_dirty_row_with_superscript_shifts_glyph_y` (exercises `prepare_frame_shaped_into` with a 2-pass dirty rebuild).
+  Disposition: fixed inline (commit forthcoming).
+  Basis: fresh_verification. Confidence: high.
+
+### Round Summary
+
+Dispatch: codex 2 / gemini 0 / survivor_mode: false. Verification: verified 2 / dropped 0. Classification: actionable 2 / meta 0. Fix commit: pending — code edits applied locally to `oriterm_core/src/selection/html/mod.rs`, `oriterm_core/src/selection/html/style.rs` (new), `oriterm/src/gpu/prepare/tests.rs`. `./build-all.sh` + `./clippy-all.sh` + `timeout 150 ./test-all.sh` green. Loop exited at iter_cap_reached (max_rounds=2 by design but only 1 round needed since both findings fixed inline before any re-dispatch).
 
 ---
 
