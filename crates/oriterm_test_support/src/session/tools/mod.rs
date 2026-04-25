@@ -14,9 +14,12 @@
 /// Check if `name` is installed and runnable on PATH.
 ///
 /// Used by integration tests to skip cleanly when a required tool
-/// (`vttest`, `tack`, `tic`, `reseq`, ...) is not available. The
-/// `--version` argument is the convention every well-behaved CLI
-/// supports; some (`vttest`) prefer `--help` — pass that explicitly.
+/// (`vttest`, `tack`, `tic`, `reseq`, ...) is not available. Callers
+/// pass each tool's known-zero-exit probe flag — most use `--version`,
+/// but several ncurses-era tools are "odd ones out": `tack` exits 1
+/// from `-V` so its probe is `-h`; `vttest` exits 1 from `--help` so
+/// its probe is `-V`. See the per-tool `*_available` wrappers below
+/// for the canonical probe flag for each.
 ///
 /// **Returns true iff the probe BOTH spawns successfully AND exits
 /// with success status.** A binary that spawns but exits non-zero
