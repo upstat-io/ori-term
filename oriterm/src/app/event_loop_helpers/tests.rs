@@ -240,3 +240,126 @@ fn control_flow_recovering_overrides_dirty() {
 // Section 06.5 Track B kxIN/kxOUT cross-crate xcheck tests
 // live in the `focus_events` sibling submodule — see
 // `oriterm/src/app/event_loop_helpers/focus_events/tests.rs`.
+
+/// A kitty-graphics animation deadline reaches `compute_control_flow` via
+/// `ControlFlowInput.scheduler_wake` and produces `WaitUntil(deadline)`
+/// when it is sooner than the text-blink wake. Pins the end-to-end wiring
+/// invariant: `IO thread → MuxEvent::AnimationDeadlineChanged →
+/// RenderScheduler::request_frame_at → scheduler.next_wake_time() →
+/// ControlFlowInput.scheduler_wake → ControlFlow::WaitUntil`.
+/// Regression: §13.3 TPR checkpoint anchor.
+#[test]
+fn scheduler_wake_populates_wait_until_when_sooner_than_text_blink() {
+    let mut input = idle_input();
+    let animation_deadline = input.now + Duration::from_millis(50);
+    input.scheduler_wake = Some(animation_deadline);
+    // Text blink is 1s out per idle_input() — animation deadline is sooner.
+
+    let result = compute_control_flow(&input);
+    assert_eq!(
+        result,
+        ControlFlowDecision::WaitUntil(animation_deadline),
+        "animation deadline 50ms < text blink 1s, so WaitUntil MUST honor \
+         the scheduler_wake value"
+    );
+}
+
+/// Text blink wins when it is sooner than the animation deadline — the
+/// `min` discipline in `compute_control_flow` must not drop the blink
+/// just because an animation is queued.
+#[test]
+fn text_blink_wins_when_sooner_than_scheduler_wake() {
+    let mut input = idle_input();
+    let text_blink = input.now + Duration::from_millis(20);
+    input.next_text_blink_change = text_blink;
+    input.scheduler_wake = Some(input.now + Duration::from_millis(500));
+
+    let result = compute_control_flow(&input);
+    assert_eq!(
+        result,
+        ControlFlowDecision::WaitUntil(text_blink),
+        "text blink 20ms < scheduler_wake 500ms — min MUST pick blink"
+    );
+}
+
+/// When `still_dirty && !budget_elapsed` coincides with a queued
+/// `scheduler_wake` (e.g. a kitty animation deadline that fires inside
+/// the 16ms render-budget window), the decision MUST promote to
+/// `WaitUntil(scheduler_wake)` instead of the naked `Wait` — otherwise
+/// the deadline is masked by the render gate and the animation stalls
+/// until the next unrelated MuxWakeup arrives.
+/// Regression: §13.3 TPR round 1 codex F1.
+#[test]
+fn still_dirty_budget_not_elapsed_honors_scheduler_wake_when_sooner() {
+    let mut input = idle_input();
+    input.still_dirty = true;
+    input.budget_elapsed = false;
+    let animation_deadline = input.now + Duration::from_millis(10);
+    input.scheduler_wake = Some(animation_deadline);
+
+    let result = compute_control_flow(&input);
+    assert_eq!(
+        result,
+        ControlFlowDecision::WaitUntil(animation_deadline),
+        "queued animation deadline inside the render budget MUST escape \
+         the still_dirty Wait gate — otherwise the frame stalls until an \
+         unrelated MuxWakeup"
+    );
+}
+
+/// Past-due scheduler_wake values are NOT promoted to WaitUntil in the
+/// still_dirty branch — those would trigger the Windows/WSL2 "WaitUntil
+/// returns immediately" failure mode that the `Wait` gate is designed to
+/// avoid. Past-due entries should already be drained by `promote_deferred`
+/// before reaching `compute_control_flow`; this guard is belt-and-suspenders.
+#[test]
+fn still_dirty_budget_not_elapsed_ignores_past_due_scheduler_wake() {
+    let mut input = idle_input();
+    input.still_dirty = true;
+    input.budget_elapsed = false;
+    input.scheduler_wake = Some(input.now - Duration::from_millis(1));
+
+    let result = compute_control_flow(&input);
+    assert_eq!(
+        result,
+        ControlFlowDecision::Wait,
+        "past-due scheduler_wake MUST NOT promote to WaitUntil — would \
+         trigger the Windows/WSL2 immediate-return failure mode"
+    );
+}
+
+/// Past-due `scheduler_wake` in the idle branch (!still_dirty && !has_animations)
+/// MUST fall through to the text-blink wake rather than producing
+/// `WaitUntil(past)` which fires immediately and spins the event loop. The
+/// canonical drain site is `about_to_wait`'s `promote_deferred` sweep; this
+/// guard inside `compute_control_flow` is belt-and-suspenders.
+/// Regression: §13.3 TPR round 2 codex F1 / gemini F3.
+#[test]
+fn idle_branch_ignores_past_due_scheduler_wake() {
+    let mut input = idle_input();
+    input.scheduler_wake = Some(input.now - Duration::from_millis(1));
+
+    let result = compute_control_flow(&input);
+    assert_eq!(
+        result,
+        ControlFlowDecision::WaitUntil(input.next_text_blink_change),
+        "past-due scheduler_wake in idle branch MUST fall through to \
+         text-blink wake — otherwise WaitUntil(past) spins the event loop"
+    );
+}
+
+/// `scheduler_wake == input.now` (exactly the moment) is NOT in the future
+/// — treat as past-due per the same guard. Pin the `>` boundary (not `>=`).
+#[test]
+fn idle_branch_ignores_scheduler_wake_equal_to_now() {
+    let mut input = idle_input();
+    input.scheduler_wake = Some(input.now);
+
+    let result = compute_control_flow(&input);
+    assert_eq!(
+        result,
+        ControlFlowDecision::WaitUntil(input.next_text_blink_change),
+        "scheduler_wake == now is NOT strictly in the future; MUST fall \
+         through to text-blink wake"
+    );
+}

@@ -72,6 +72,46 @@ pub(super) fn enc_numpad(key: Key, mods: Modifiers, mode: TermMode) -> Vec<u8> {
     })
 }
 
+/// Encode a key press at numpad location with explicit text.
+///
+/// Covers the realistic winit case where `KeyEvent::text` is populated for
+/// numpad digits/operators (NumLock on, standard Windows/Linux backends).
+pub(super) fn enc_numpad_text(
+    key: Key,
+    mods: Modifiers,
+    mode: TermMode,
+    text: Option<&str>,
+) -> Vec<u8> {
+    encode_key(&KeyInput {
+        key: &key,
+        mods,
+        mode,
+        text,
+        location: KeyLocation::Numpad,
+        event_type: KeyEventType::Press,
+        alternate_key: None,
+    })
+}
+
+/// Encode a key event at numpad location with full control over text and event type.
+pub(super) fn enc_numpad_full(
+    key: Key,
+    mods: Modifiers,
+    mode: TermMode,
+    text: Option<&str>,
+    event_type: KeyEventType,
+) -> Vec<u8> {
+    encode_key(&KeyInput {
+        key: &key,
+        mods,
+        mode,
+        text,
+        location: KeyLocation::Numpad,
+        event_type,
+        alternate_key: None,
+    })
+}
+
 /// Encode a key release at standard location.
 pub(super) fn enc_release(key: Key, mods: Modifiers, mode: TermMode) -> Vec<u8> {
     encode_key(&KeyInput {
@@ -83,4 +123,10 @@ pub(super) fn enc_release(key: Key, mods: Modifiers, mode: TermMode) -> Vec<u8> 
         event_type: KeyEventType::Release,
         alternate_key: None,
     })
+}
+
+/// Kitty DISAMBIGUATE_ESC_CODES mode (used by numpad tests that verify
+/// release-suppression interaction with the send-as-text fallback).
+pub(super) fn kitty_disambiguate_mode() -> TermMode {
+    TermMode::default() | TermMode::DISAMBIGUATE_ESC_CODES
 }

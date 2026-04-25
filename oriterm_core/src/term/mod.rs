@@ -52,7 +52,7 @@ const TITLE_STACK_MAX_DEPTH: usize = 4096;
 ///
 /// Prevents OOM from malicious PTY input. Matches Alacritty's cap.
 /// Enforced in the VTE handler's `push_keyboard_mode`.
-pub(crate) const KEYBOARD_MODE_STACK_MAX_DEPTH: usize = 4096;
+pub const KEYBOARD_MODE_STACK_MAX_DEPTH: usize = 4096;
 
 /// The terminal state machine.
 ///
@@ -105,6 +105,55 @@ pub struct Term<S: EffectSink> {
     /// Kitty keyboard enhancement mode stack (inactive screen).
     /// Capped at [`KEYBOARD_MODE_STACK_MAX_DEPTH`].
     inactive_keyboard_mode_stack: VecDeque<KeyboardModes>,
+    /// Full snapshot of `keyboard_mode_stack` taken at OSC 133 ; C
+    /// (command-start) on the ACTIVE screen. Restored on the next
+    /// OSC 133 ; A or ; D so kitty keyboard modes pushed, popped, OR
+    /// evicted (at `KEYBOARD_MODE_STACK_MAX_DEPTH`) by a subprocess
+    /// that exited without cleanly popping don't persist or erase shell
+    /// state. `None` means no snapshot active for this screen.
+    ///
+    /// Contents-based (not depth-based) so a child that over-pops
+    /// shell-held modes or pushes past max-depth (evicting shell modes
+    /// from the front) is fully reversed at the next prompt boundary.
+    /// Paired with [`inactive_pre_command_kb_stack_snapshot`]; swapped
+    /// alongside the stacks in `toggle_alt_common`. See BUG-08-12.
+    pre_command_kb_stack_snapshot: Option<VecDeque<KeyboardModes>>,
+    /// Paired snapshot for the inactive (non-visible) screen's keyboard
+    /// mode stack. Taken alongside [`pre_command_kb_stack_snapshot`] at
+    /// OSC 133 ; C so a child that enters the alt screen, pushes kitty
+    /// modes, and exits without popping does not leak state into the
+    /// non-visible stack. See BUG-08-12.
+    inactive_pre_command_kb_stack_snapshot: Option<VecDeque<KeyboardModes>>,
+    /// Snapshot of the ACTIVE Kitty-keyboard-protocol `TermMode` bits
+    /// taken at OSC 133 ; C, paired with [`pre_command_kb_stack_snapshot`].
+    ///
+    /// Required because shells may use `CSI = Ps u` (SET without push) to
+    /// enable kitty modes — that path updates `TermMode` bits via
+    /// `dcs_set_keyboard_mode` WITHOUT pushing to the stack. Snapshotting
+    /// stack contents alone loses the set-only bits; at restore time the
+    /// top-of-stack would be `NO_MODE` and the shell's set bits would be
+    /// cleared. Taking a paired bits snapshot and applying it at restore
+    /// preserves shell-held kitty state for both push-path and set-path
+    /// integrations. See BUG-08-12 TPR round-1 F1.
+    pre_command_kb_mode_bits_snapshot: Option<KeyboardModes>,
+    /// Live Kitty-keyboard-protocol bits for the INACTIVE screen.
+    ///
+    /// `TermMode::KITTY_KEYBOARD_PROTOCOL` inside `self.mode` reflects
+    /// only the active screen; the inactive screen's effective kitty
+    /// bits are stored here. Swapped alongside the paired stacks in
+    /// `toggle_alt_common` so set-only bits enabled via `CSI = Ps u`
+    /// survive alt-screen toggles even when no shell integration (no
+    /// OSC 133 snapshot) is present. See BUG-08-12 TPR round-3 F1/F2.
+    inactive_keyboard_mode_bits: KeyboardModes,
+    /// Paired inactive-screen bits snapshot — captured at OSC 133 ; C
+    /// alongside [`pre_command_kb_mode_bits_snapshot`]. Required because
+    /// the command-boundary snapshot belongs to the screen where `;C`
+    /// was emitted; an alt-screen toggle mid-command must carry the
+    /// snapshot along, so restore on the owning screen applies the
+    /// correct bits. Live `inactive_keyboard_mode_bits` tracks runtime
+    /// per-screen state; this field tracks the per-screen restore
+    /// target separately. See BUG-08-12 TPR round-4.
+    inactive_pre_command_kb_mode_bits_snapshot: Option<KeyboardModes>,
     /// Effect sink for boundary-crossing side effects.
     effect_sink: S,
     /// Set by content-modifying VTE handler operations (character printing,
@@ -263,6 +312,11 @@ impl<S: EffectSink> Term<S> {
             cursor_shape: CursorShape::default(),
             keyboard_mode_stack: VecDeque::new(),
             inactive_keyboard_mode_stack: VecDeque::new(),
+            pre_command_kb_stack_snapshot: None,
+            inactive_pre_command_kb_stack_snapshot: None,
+            pre_command_kb_mode_bits_snapshot: None,
+            inactive_keyboard_mode_bits: KeyboardModes::NO_MODE,
+            inactive_pre_command_kb_mode_bits_snapshot: None,
             effect_sink,
             selection_dirty: false,
             prompt_state: PromptState::None,
@@ -563,11 +617,10 @@ impl<S: EffectSink> Term<S> {
         &self.title_stack
     }
 
-    /// Current keyboard mode stack (Kitty keyboard protocol).
-    #[cfg(test)]
-    pub(crate) fn keyboard_mode_stack(&self) -> &VecDeque<KeyboardModes> {
-        &self.keyboard_mode_stack
-    }
+    // Keyboard-mode-stack accessors (pre-command snapshot + inactive
+    // stack) are in `shell_state.rs` alongside `snapshot_keyboard_mode_stack`
+    // / `restore_keyboard_mode_stack` — they are all part of the OSC 133 /
+    // OSC 633 shell-integration surface. See BUG-08-12.
 
     // Rendering snapshot methods (renderable_content, renderable_content_into,
     // damage, reset_damage) are in `snapshot.rs`.

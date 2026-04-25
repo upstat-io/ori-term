@@ -9,6 +9,7 @@
 mod fixtures;
 
 pub mod actions;
+pub mod animation;
 pub mod chunked;
 pub mod formats;
 pub mod transmissions;

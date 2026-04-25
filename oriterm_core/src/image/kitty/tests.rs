@@ -604,3 +604,56 @@ fn parse_compression_oz_populates_field_but_store_does_not_decompress() {
     // No error reply should have been emitted (q=2 suppresses everything anyway).
     let _ = listener;
 }
+
+/// `v=` present with value 0 sets `loop_count = Some(0)` — distinguishing the
+/// kitty-spec "infinite loops" case from "key absent". Pin for
+/// TPR-13.0.5-R1-F3-gemini: `source_height: u32` alone cannot tell these
+/// apart, so `loop_count: Option<u32>` must be populated independently.
+/// Catalog row: `KG-ANIMATE-LOOP-COUNT`.
+#[test]
+fn parse_kitty_command_v_zero_sets_loop_count_to_some_zero() {
+    let cmd = parse_kitty_command(b"a=a,i=7,v=0").unwrap();
+    assert_eq!(
+        cmd.loop_count,
+        Some(0),
+        "v=0 MUST set loop_count to Some(0) so kitty_animate can route to \
+         set_animation_loops(id, 0) → infinite loops per kitty graphics-protocol.rst \
+         §Animation control"
+    );
+}
+
+/// `v=N` (N > 0) sets both `source_height` (pixel semantic for transmit/frame
+/// actions) and `loop_count` (animation-loop semantic for `a=a`). Pin for the
+/// dual-role interpretation of the `v=` key.
+/// Catalog row: `KG-ANIMATE-LOOP-COUNT`.
+#[test]
+fn parse_kitty_command_v_nonzero_sets_both_source_height_and_loop_count() {
+    let cmd = parse_kitty_command(b"a=a,i=7,v=3").unwrap();
+    assert_eq!(
+        cmd.source_height, 3,
+        "v=3 MUST still populate source_height for transmit/frame-action consumers"
+    );
+    assert_eq!(
+        cmd.loop_count,
+        Some(3),
+        "v=3 MUST also populate loop_count so kitty_animate sees N=3 finite loops"
+    );
+}
+
+/// `v=` key absent leaves `loop_count` at its `None` default — the negative
+/// pin that keeps the animate path from overwriting loop_count on every
+/// transmit command that omits `v=`.
+/// Catalog row: `KG-ANIMATE-LOOP-COUNT` (negative pin).
+#[test]
+fn parse_kitty_command_v_absent_leaves_loop_count_none() {
+    let cmd = parse_kitty_command(b"a=a,i=7").unwrap();
+    assert_eq!(
+        cmd.loop_count, None,
+        "v= absent MUST leave loop_count at None so kitty_animate skips the \
+         set_animation_loops call"
+    );
+    assert_eq!(
+        cmd.source_height, 0,
+        "v= absent MUST also leave source_height at its default 0"
+    );
+}

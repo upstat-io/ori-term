@@ -191,3 +191,40 @@ fn term_mode_size_is_8_bytes() {
     // require explicit review.
     assert_eq!(size_of::<TermMode>(), 8, "TermMode should be 8 bytes (u64)");
 }
+
+/// Regression: BUG-08-12 TPR impl-hygiene F6 — the `From<KeyboardModes> for
+/// TermMode` and `From<TermMode> for KeyboardModes` impls must be exact
+/// inverses over the kitty-protocol subset. A divergence would silently
+/// corrupt `snapshot_keyboard_mode_stack` / `restore_keyboard_mode_stack`
+/// via the `KeyboardModes::from(self.mode)` capture at snapshot time.
+#[test]
+fn keyboard_modes_termmode_roundtrip_preserves_all_bits() {
+    use vte::ansi::KeyboardModes;
+
+    for bits in 0u8..=0b0001_1111 {
+        let km = KeyboardModes::from_bits_truncate(bits);
+        let tm = TermMode::from(km);
+        let round_trip = KeyboardModes::from(tm);
+        assert_eq!(
+            km, round_trip,
+            "KeyboardModes -> TermMode -> KeyboardModes must round-trip \
+             for bits {bits:#b}: got {round_trip:?} from {km:?}"
+        );
+    }
+}
+
+/// Regression: BUG-08-12 TPR impl-hygiene F6 — non-kitty TermMode bits
+/// must NOT appear in `KeyboardModes::from(TermMode)`. The inverse is
+/// scoped to the kitty-protocol subset.
+#[test]
+fn termmode_to_keyboard_modes_masks_non_kitty_bits() {
+    use vte::ansi::KeyboardModes;
+
+    let mode = TermMode::default() | TermMode::BRACKETED_PASTE | TermMode::ALT_SCREEN;
+    let km = KeyboardModes::from(mode);
+    assert_eq!(
+        km,
+        KeyboardModes::NO_MODE,
+        "non-kitty bits must be dropped by the TermMode -> KeyboardModes inverse"
+    );
+}

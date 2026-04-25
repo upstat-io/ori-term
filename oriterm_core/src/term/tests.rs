@@ -1,8 +1,6 @@
 //! Tests for Term<T> struct.
 
-use std::collections::VecDeque;
-
-use vte::ansi::{KeyboardModes, Processor};
+use vte::ansi::Processor;
 
 use crate::color::Rgb;
 use crate::effect::{
@@ -68,30 +66,6 @@ fn grid_returns_primary_by_default() {
 }
 
 #[test]
-fn swap_alt_switches_to_alt_grid_and_back() {
-    let mut term = make_term();
-    // Write 'A' on primary.
-    term.grid_mut().put_char('A');
-
-    // Switch to alt screen.
-    term.swap_alt();
-    assert!(term.mode().contains(TermMode::ALT_SCREEN));
-
-    // Alt grid should be clean.
-    assert_eq!(term.grid()[Line(0)][Column(0)].ch, ' ');
-
-    // Write 'B' on alt.
-    term.grid_mut().put_char('B');
-
-    // Switch back to primary.
-    term.swap_alt();
-    assert!(!term.mode().contains(TermMode::ALT_SCREEN));
-
-    // Primary still has 'A'.
-    assert_eq!(term.grid()[Line(0)][Column(0)].ch, 'A');
-}
-
-#[test]
 fn mode_defaults_include_show_cursor_and_line_wrap() {
     let term = make_term();
     let mode = term.mode();
@@ -122,28 +96,6 @@ fn alt_grid_has_no_scrollback() {
 fn primary_grid_has_scrollback() {
     let term = make_term();
     assert_eq!(term.grid().scrollback().max_scrollback(), 1000);
-}
-
-#[test]
-fn swap_alt_preserves_keyboard_mode_stacks() {
-    let mut term = make_term();
-    let mode1 = KeyboardModes::DISAMBIGUATE_ESC_CODES;
-    let mode3 = KeyboardModes::DISAMBIGUATE_ESC_CODES | KeyboardModes::REPORT_EVENT_TYPES;
-    term.keyboard_mode_stack.push_back(mode1);
-    term.keyboard_mode_stack.push_back(mode3);
-
-    // After swap, the active stack should be the (empty) inactive stack.
-    term.swap_alt();
-    assert!(term.keyboard_mode_stack.is_empty());
-    assert_eq!(
-        term.inactive_keyboard_mode_stack,
-        VecDeque::from(vec![mode1, mode3])
-    );
-
-    // Swap back: stacks return.
-    term.swap_alt();
-    assert_eq!(term.keyboard_mode_stack, VecDeque::from(vec![mode1, mode3]));
-    assert!(term.inactive_keyboard_mode_stack.is_empty());
 }
 
 // --- Damage tracking integration (Term::damage / Term::reset_damage) ---
@@ -626,32 +578,6 @@ fn damage_delete_lines() {
 // Full damage triggers
 
 #[test]
-fn damage_swap_alt_marks_all_dirty() {
-    let mut t = damage_term();
-
-    // Enter alt screen.
-    feed(&mut t, b"\x1b[?1049h");
-
-    let dmg = t.damage();
-    assert!(dmg.is_all_dirty(), "swap_alt should mark all dirty");
-    drop(dmg);
-}
-
-#[test]
-fn damage_swap_alt_back_marks_all_dirty() {
-    let mut t = damage_term();
-    feed(&mut t, b"\x1b[?1049h");
-    t.reset_damage();
-
-    // Leave alt screen.
-    feed(&mut t, b"\x1b[?1049l");
-
-    let dmg = t.damage();
-    assert!(dmg.is_all_dirty(), "swap_alt back should mark all dirty");
-    drop(dmg);
-}
-
-#[test]
 fn damage_palette_set_color_marks_all_dirty() {
     let mut t = damage_term();
 
@@ -1057,14 +983,6 @@ fn selection_dirty_set_by_reset() {
 }
 
 #[test]
-fn selection_dirty_set_by_swap_alt() {
-    let mut term = make_term();
-    term.clear_selection_dirty();
-    term.swap_alt();
-    assert!(term.is_selection_dirty());
-}
-
-#[test]
 fn selection_dirty_not_set_by_cursor_movement() {
     let mut term = make_term();
     term.clear_selection_dirty();
@@ -1192,15 +1110,6 @@ fn selection_dirty_cleared_then_resets_on_new_output() {
     assert!(!term.is_selection_dirty());
     // New output sets the flag again.
     feed(&mut term, b"B");
-    assert!(term.is_selection_dirty());
-}
-
-#[test]
-fn selection_dirty_set_by_alt_screen_via_decset() {
-    let mut term = make_term();
-    term.clear_selection_dirty();
-    // DECSET 1049 — switch to alt screen.
-    feed(&mut term, b"\x1b[?1049h");
     assert!(term.is_selection_dirty());
 }
 
@@ -2009,34 +1918,6 @@ fn alt_grid_survives_exit() {
     assert!(!term.mode().contains(TermMode::ALT_SCREEN));
 }
 
-#[test]
-fn resize_before_alt_screen_no_crash() {
-    let mut term = make_term();
-    assert!(term.alt_grid.is_none());
-
-    // Resize should not crash when alt grid is None.
-    term.resize(10, 40, true);
-    assert!(
-        term.alt_grid.is_none(),
-        "resize should not allocate alt grid"
-    );
-}
-
-#[test]
-fn alt_screen_reentry_correct() {
-    let mut term = make_term();
-    // Enter, write something, exit, re-enter.
-    feed(&mut term, b"\x1b[?1049h");
-    feed(&mut term, b"hello");
-    feed(&mut term, b"\x1b[?1049l");
-    feed(&mut term, b"\x1b[?1049h");
-
-    assert!(term.mode().contains(TermMode::ALT_SCREEN));
-    // Grid should be fresh (mode 1049 saves/restores cursor).
-    assert_eq!(term.grid().lines(), 24);
-    assert_eq!(term.grid().cols(), 80);
-}
-
 // Graceful fallback tests: ALT_SCREEN set without alt_grid allocated.
 //
 // In debug builds, `debug_assert!` fires to catch the inconsistency during
@@ -2199,21 +2080,6 @@ fn resize_reflow_unwrap_then_snapshot() {
     assert_eq!(snap.cells.len(), 5 * 20);
     assert_eq!(snap.cells[0].ch, 'a');
     assert_eq!(snap.cells[19].ch, 't');
-}
-
-#[test]
-fn resize_on_alt_screen_then_snapshot() {
-    let mut term = make_term();
-    feed(&mut term, b"primary content");
-    term.swap_alt();
-    feed(&mut term, b"alt content");
-
-    // Resize while on alt screen.
-    term.resize(10, 40, true);
-    let snap = term.renderable_content();
-    assert_eq!(snap.lines, 10);
-    assert_eq!(snap.cols, 40);
-    assert_eq!(snap.cells.len(), 10 * 40);
 }
 
 #[test]

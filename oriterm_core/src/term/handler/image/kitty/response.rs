@@ -47,8 +47,9 @@ impl KittyReplyContext {
         self
     }
 
-    /// Override the frame number (used by `a=f` replies).
-    #[allow(dead_code)]
+    /// Override the frame number — used by `a=f` (newly-added frame index,
+    /// 1-based) and `a=a` (current frame after state mutation, 1-based) per
+    /// kitty `finish_command_response` at `graphics.c:802-806`.
     pub(in crate::term::handler::image::kitty) fn with_frame_num(mut self, frame_num: u32) -> Self {
         self.frame_num = Some(frame_num);
         self

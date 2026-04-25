@@ -204,6 +204,7 @@ pub fn new_with_handle<S: EffectSink + 'static>(
         selection_dirty: config.selection_dirty,
         pending_responses: Vec::new(),
         effects_buf: Vec::new(),
+        last_animation_deadline: None,
     };
     let handle = PaneIoHandle {
         cmd_tx,

@@ -12,30 +12,35 @@ fn default_color_0_is_black() {
     assert_eq!(black, Rgb { r: 0, g: 0, b: 0 });
 }
 
+/// Regression: BUG-08-16 — pins the canonical xterm white (0xE5E5E5),
+/// not the Tango "Aluminium 2" value (0xD3D7CF) the palette had before.
+/// See: plans/bug-tracker/fix-BUG-08-016.md
 #[test]
-fn default_color_7_is_white() {
+fn default_color_7_is_xterm_white() {
     let p = Palette::default();
     let white = p.resolve(Color::Indexed(7));
     assert_eq!(
         white,
         Rgb {
-            r: 0xd3,
-            g: 0xd7,
-            b: 0xcf
+            r: 0xe5,
+            g: 0xe5,
+            b: 0xe5
         }
     );
 }
 
+/// Regression: BUG-08-16 — pins canonical xterm bright white (pure
+/// 0xFFFFFF), not Tango "Aluminium 1" (0xEEEEEC).
 #[test]
-fn default_color_15_is_bright_white() {
+fn default_color_15_is_xterm_bright_white() {
     let p = Palette::default();
     let bright_white = p.resolve(Color::Indexed(15));
     assert_eq!(
         bright_white,
         Rgb {
-            r: 0xee,
-            g: 0xee,
-            b: 0xec
+            r: 0xff,
+            g: 0xff,
+            b: 0xff
         }
     );
 }
@@ -119,6 +124,7 @@ fn grayscale_ramp_correct() {
     }
 }
 
+/// Pins canonical xterm red (0xCD0000) per BUG-08-16.
 #[test]
 fn resolve_named() {
     let p = Palette::default();
@@ -126,7 +132,7 @@ fn resolve_named() {
     assert_eq!(
         red,
         Rgb {
-            r: 0xcc,
+            r: 0xcd,
             g: 0x00,
             b: 0x00
         }
@@ -145,6 +151,7 @@ fn resolve_spec() {
     assert_eq!(resolved, rgb);
 }
 
+/// Pins canonical xterm red (0xCD0000) via index path.
 #[test]
 fn resolve_indexed() {
     let p = Palette::default();
@@ -152,7 +159,7 @@ fn resolve_indexed() {
     assert_eq!(
         c,
         Rgb {
-            r: 0xcc,
+            r: 0xcd,
             g: 0x00,
             b: 0x00
         }
@@ -226,7 +233,7 @@ fn dim_variants_are_darker() {
     assert!(dim.b <= normal.b);
 }
 
-// --- Theme-aware palette tests ---
+// Theme-aware palette tests.
 
 #[test]
 fn dark_theme_has_dark_background() {
@@ -346,7 +353,7 @@ fn default_palette_equals_dark_theme() {
     assert_eq!(default.cursor_color(), dark.cursor_color());
 }
 
-// --- Selection color tests ---
+// Selection color tests.
 
 #[test]
 fn selection_defaults_to_none() {
@@ -396,7 +403,7 @@ fn selection_colors_returns_pair() {
     assert_eq!(sel.bg, None);
 }
 
-// --- from_scheme_colors tests ---
+// from_scheme_colors tests.
 
 #[test]
 fn from_scheme_colors_sets_ansi() {
@@ -515,7 +522,7 @@ fn from_scheme_colors_selection_defaults_none() {
     assert_eq!(p.selection_bg(), None);
 }
 
-// --- OSC 4/104 multi-step sequence ---
+// OSC 4/104 multi-step sequence.
 
 /// set → verify → reset → verify returns to original default.
 #[test]
@@ -581,7 +588,7 @@ fn selection_does_not_affect_indexed() {
     assert_eq!(p.resolve(Color::Named(NamedColor::Foreground)), fg_before);
 }
 
-// --- from_scheme_colors: bright foreground matches fg ---
+// from_scheme_colors: bright foreground matches fg.
 
 #[test]
 fn from_scheme_colors_bright_foreground_matches_fg() {
@@ -604,7 +611,7 @@ fn from_scheme_colors_bright_foreground_matches_fg() {
     assert_eq!(p.resolve(Color::Named(NamedColor::BrightForeground)), fg);
 }
 
-// --- dim_rgb edge values ---
+// dim_rgb edge values.
 
 #[test]
 fn dim_rgb_black_stays_black() {
@@ -630,7 +637,7 @@ fn dim_rgb_white_produces_170() {
     );
 }
 
-// --- set_default vs set_indexed semantics ---
+// set_default vs set_indexed semantics.
 
 /// `set_default` updates the reset baseline so OSC 104 resets to it.
 #[test]
@@ -656,4 +663,134 @@ fn set_default_changes_reset_baseline() {
     // Reset via OSC 104 should return to config color, not xterm default.
     p.reset_indexed(1);
     assert_eq!(p.resolve(Color::Indexed(1)), config_color);
+}
+
+/// Regression: BUG-08-16 — `ANSI_COLORS` previously held the GNOME/Tango
+/// palette under a "Standard xterm" comment. Yellow must be 0xCDCD00 (the
+/// xterm `ttyDefaultColors` value), not 0xC4A000 (Tango "Butter Dark" —
+/// orange-tinged), the user-most-visible divergence.
+/// See: plans/bug-tracker/fix-BUG-08-016.md
+#[test]
+fn default_color_3_is_xterm_yellow() {
+    let p = Palette::default();
+    assert_eq!(
+        p.resolve(Color::Indexed(3)),
+        Rgb {
+            r: 0xcd,
+            g: 0xcd,
+            b: 0x00
+        }
+    );
+}
+
+/// Semantic pin: bright green must be pure 0x00FF00 (xterm), not 0x8AE234
+/// (Tango "Chameleon Light" — lime-tinged).
+#[test]
+fn default_color_10_is_xterm_bright_green() {
+    let p = Palette::default();
+    assert_eq!(
+        p.resolve(Color::Indexed(10)),
+        Rgb {
+            r: 0x00,
+            g: 0xff,
+            b: 0x00
+        }
+    );
+}
+
+/// Semantic pin: bright yellow must be pure 0xFFFF00 (xterm), not 0xFCE94F
+/// (Tango "Butter Light" — slightly desaturated).
+#[test]
+fn default_color_11_is_xterm_bright_yellow() {
+    let p = Palette::default();
+    assert_eq!(
+        p.resolve(Color::Indexed(11)),
+        Rgb {
+            r: 0xff,
+            g: 0xff,
+            b: 0x00
+        }
+    );
+}
+
+/// Negative pin: yellow must NOT be the Tango "Butter Dark" value, even
+/// though that value remains available via the named `Tango Dark` /
+/// `Tango Light` schemes in `oriterm/src/scheme/builtin/extended2.rs`.
+#[test]
+fn default_color_3_is_not_tango_yellow() {
+    let p = Palette::default();
+    let tango_yellow = Rgb {
+        r: 0xc4,
+        g: 0xa0,
+        b: 0x00,
+    };
+    assert_ne!(p.resolve(Color::Indexed(3)), tango_yellow);
+}
+
+/// Negative pin: bright green must NOT be Tango "Chameleon Light".
+#[test]
+fn default_color_10_is_not_tango_bright_green() {
+    let p = Palette::default();
+    let tango_bright_green = Rgb {
+        r: 0x8a,
+        g: 0xe2,
+        b: 0x34,
+    };
+    assert_ne!(p.resolve(Color::Indexed(10)), tango_bright_green);
+}
+
+/// Negative pin: bright yellow must NOT be Tango "Butter Light".
+#[test]
+fn default_color_11_is_not_tango_bright_yellow() {
+    let p = Palette::default();
+    let tango_bright_yellow = Rgb {
+        r: 0xfc,
+        g: 0xe9,
+        b: 0x4f,
+    };
+    assert_ne!(p.resolve(Color::Indexed(11)), tango_bright_yellow);
+}
+
+/// Regression: BUG-08-16 — full 16-entry matrix pin against the canonical
+/// xterm `ttyDefaultColors` table (`xterm/charproc.c`). Catches any
+/// single-entry drift the targeted pins above might miss.
+#[test]
+fn default_ansi_palette_xterm_reference_matches_all_entries() {
+    let p = Palette::default();
+    let xterm: [(u8, u8, u8); 16] = [
+        (0x00, 0x00, 0x00), // 0  Black
+        (0xcd, 0x00, 0x00), // 1  Red
+        (0x00, 0xcd, 0x00), // 2  Green
+        (0xcd, 0xcd, 0x00), // 3  Yellow
+        (0x00, 0x00, 0xee), // 4  Blue
+        (0xcd, 0x00, 0xcd), // 5  Magenta
+        (0x00, 0xcd, 0xcd), // 6  Cyan
+        (0xe5, 0xe5, 0xe5), // 7  White
+        (0x7f, 0x7f, 0x7f), // 8  Bright Black (gray)
+        (0xff, 0x00, 0x00), // 9  Bright Red
+        (0x00, 0xff, 0x00), // 10 Bright Green
+        (0xff, 0xff, 0x00), // 11 Bright Yellow
+        (0x5c, 0x5c, 0xff), // 12 Bright Blue
+        (0xff, 0x00, 0xff), // 13 Bright Magenta
+        (0x00, 0xff, 0xff), // 14 Bright Cyan
+        (0xff, 0xff, 0xff), // 15 Bright White
+    ];
+    let mut count = 0;
+    for (i, (r, g, b)) in xterm.iter().enumerate() {
+        let actual = p.resolve(Color::Indexed(i as u8));
+        assert_eq!(
+            actual,
+            Rgb {
+                r: *r,
+                g: *g,
+                b: *b
+            },
+            "ANSI color {i}: expected xterm Rgb({r:#04x}, {g:#04x}, {b:#04x}), got Rgb({:#04x}, {:#04x}, {:#04x})",
+            actual.r,
+            actual.g,
+            actual.b
+        );
+        count += 1;
+    }
+    assert_eq!(count, 16, "matrix must cover all 16 entries");
 }

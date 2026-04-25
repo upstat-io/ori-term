@@ -73,4 +73,15 @@ impl<S: EffectSink> Term<S> {
 
         self.image_cache_mut().advance_animations(now, top, bottom)
     }
+
+    /// Take the active screen's image-cache dirty flag.
+    ///
+    /// Returns `true` when the image cache has been mutated (frame applied,
+    /// placement added/removed, image stored) since the last call, and
+    /// clears the flag atomically. Wired into the IO thread's animation
+    /// tick so a frame advance forces `grid_dirty` → snapshot publication
+    /// even when no VTE bytes arrived in this loop iteration.
+    pub fn take_image_dirty(&mut self) -> bool {
+        self.image_cache_mut().take_dirty()
+    }
 }

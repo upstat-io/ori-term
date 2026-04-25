@@ -162,5 +162,37 @@ impl From<vte::ansi::KeyboardModes> for TermMode {
     }
 }
 
+impl From<TermMode> for vte::ansi::KeyboardModes {
+    /// Extract the Kitty-keyboard-protocol subset of a `TermMode` as the
+    /// corresponding `KeyboardModes` bitflags. Non-kitty bits are ignored.
+    /// Inverse of `impl From<KeyboardModes> for TermMode`; used by the
+    /// BUG-08-12 snapshot path to preserve shell-held kitty bits set via
+    /// `CSI = Ps u` (set without push), which do not enter the stack.
+    fn from(mode: TermMode) -> Self {
+        let mut result = Self::empty();
+        result.set(
+            Self::DISAMBIGUATE_ESC_CODES,
+            mode.contains(TermMode::DISAMBIGUATE_ESC_CODES),
+        );
+        result.set(
+            Self::REPORT_EVENT_TYPES,
+            mode.contains(TermMode::REPORT_EVENT_TYPES),
+        );
+        result.set(
+            Self::REPORT_ALTERNATE_KEYS,
+            mode.contains(TermMode::REPORT_ALTERNATE_KEYS),
+        );
+        result.set(
+            Self::REPORT_ALL_KEYS_AS_ESC,
+            mode.contains(TermMode::REPORT_ALL_KEYS_AS_ESC),
+        );
+        result.set(
+            Self::REPORT_ASSOCIATED_TEXT,
+            mode.contains(TermMode::REPORT_ASSOCIATED_TEXT),
+        );
+        result
+    }
+}
+
 #[cfg(test)]
 mod tests;

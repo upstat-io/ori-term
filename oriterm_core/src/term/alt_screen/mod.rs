@@ -8,6 +8,8 @@
 //! enter alt screen (only editors, pagers, etc.), so this avoids wasting
 //! memory.
 
+use vte::ansi::{KeyboardModes, KeyboardModesApplyBehavior};
+
 use crate::effect::sink::EffectSink;
 use crate::grid::Grid;
 use crate::image::ImageCache;
@@ -93,6 +95,21 @@ impl<S: EffectSink> Term<S> {
             &mut self.keyboard_mode_stack,
             &mut self.inactive_keyboard_mode_stack,
         );
+        // Swap the paired pre-command stack snapshots alongside the
+        // stacks so a command-boundary snapshot taken on one screen
+        // only fires restore on that screen. BUG-08-12.
+        std::mem::swap(
+            &mut self.pre_command_kb_stack_snapshot,
+            &mut self.inactive_pre_command_kb_stack_snapshot,
+        );
+        // Paired bits snapshot swaps alongside the stack snapshot so
+        // the snapshot travels with its owning screen — without this
+        // swap, an alt-side `;A` restore applied primary's bits (wrong
+        // screen). BUG-08-12 TPR round-4.
+        std::mem::swap(
+            &mut self.pre_command_kb_mode_bits_snapshot,
+            &mut self.inactive_pre_command_kb_mode_bits_snapshot,
+        );
         // DECSC sidecar state is per-screen (VT220 spec). DECLRMM is
         // NOT in the DECSC save set (see `Grid::save_cursor`), so there
         // is nothing margin-related to swap here — the primary/alt grid
@@ -102,6 +119,30 @@ impl<S: EffectSink> Term<S> {
             &mut self.saved_origin_mode,
             &mut self.inactive_saved_origin_mode,
         );
+        // Swap live per-screen kitty bits: capture the active bits
+        // (subset of `self.mode`), install the inactive screen's live
+        // bits as the new active, and store the old active in the
+        // inactive slot. Covers set-only `CSI = Ps u` state that never
+        // enters the stack, and child mid-command mutations that would
+        // otherwise be lost by deriving reapply from stack top. See
+        // BUG-08-12 TPR round-3 F1/F2.
+        let active_bits_before_swap = KeyboardModes::from(self.mode);
+        let new_active_bits = self.inactive_keyboard_mode_bits;
+        self.inactive_keyboard_mode_bits = active_bits_before_swap;
+        self.dcs_set_keyboard_mode(new_active_bits, KeyboardModesApplyBehavior::Replace);
+        // Both screens' keyboard-mode stacks are capped at the same max
+        // depth; the enforcement lives in `dcs_push_keyboard_mode`, which
+        // only runs against the active stack. This assert documents that
+        // the swap preserves the cap on both sides. BUG-08-12 F8.
+        debug_assert!(
+            self.keyboard_mode_stack.len() <= crate::term::KEYBOARD_MODE_STACK_MAX_DEPTH
+                && self.inactive_keyboard_mode_stack.len()
+                    <= crate::term::KEYBOARD_MODE_STACK_MAX_DEPTH,
+            "keyboard mode stacks exceed KEYBOARD_MODE_STACK_MAX_DEPTH after swap"
+        );
         self.grid_mut().dirty_mut().mark_all();
     }
 }
+
+#[cfg(test)]
+mod tests;
