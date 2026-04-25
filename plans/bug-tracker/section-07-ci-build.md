@@ -88,6 +88,7 @@ sections:
   Severity: low — no correctness impact, no runtime impact, no test impact. The index is usable as-is today. This is a plan-audit advisory that becomes actionable only if the file keeps growing.
 
 - [ ] `[BUG-07-010][medium]` **`./clippy-all.sh` does not lint test targets — 151 pre-existing clippy errors across 6 `oriterm_core` test targets (lib test + alloc_regression + rss_regression + tack + teseq + vttest)** — found by continue-roadmap (tack-conformance section 05.0).
+  Superseded by: plans/clippy-gate-hardening/ on 2026-04-25. Cluster co-escalation with BUG-07-005. Cleanup lands in clippy-gate-hardening Section 03; closure in Section 10.
   Repro: `cargo clippy -p oriterm_core --tests --target x86_64-unknown-linux-gnu -- -D warnings` produces **151 errors** that block compilation across 6 distinct test targets. `./clippy-all.sh` runs `cargo clippy --workspace -- -D warnings` which only checks lib + bin targets, so all 151 violations have been silently passing CI.
   Subsystem: `clippy-all.sh` + `oriterm_core/src/term/tests.rs` + `oriterm_core/tests/{alloc_regression,rss_regression,tack/main,teseq,vttest}/`
   Found: 2026-04-08 | Source: continue-roadmap
@@ -138,6 +139,7 @@ sections:
   Note: this bug was uncovered by `b6e99416`'s Windows compile fix (`fix(test-support): nightly CI macOS hashed-db panic + Windows -D warnings`). That commit fixed the legitimate Windows -D warnings errors so the test crate would compile cross-platform; the runtime failures it surfaced are pre-existing latent bugs in the recent (Apr 7-8) tack-conformance test additions, not regressions introduced by the compile fix. Filing — not deferral — per CLAUDE.md `/add-bug` discipline.
 
 - [ ] `[BUG-07-012][medium]` **`oriterm_test_support` has 14 clippy `--all-targets` warnings in test files — same gate gap as BUG-07-005/010**
+  Superseded by: plans/clippy-gate-hardening/ on 2026-04-25. Cluster co-escalation with BUG-07-005. Cleanup lands in clippy-gate-hardening Section 04; closure in Section 10.
   Repro: `cargo clippy -p oriterm_test_support --all-targets -- -D warnings` produces 14 errors (all in test files, lib target is clean). `./clippy-all.sh` only checks lib+bin targets so these never fire in CI.
   Subsystem: `crates/oriterm_test_support/src/{session,tack_framework}/` test files
   Found: 2026-04-11 | Source: continue-roadmap
@@ -186,6 +188,7 @@ sections:
   Note: discovered during the section 01 final hygiene pass. NOT introduced by section 01 — it's pre-deduplication code that the migration correctly preserved verbatim. Section 01 is closing out clean; this is a follow-up for `/fix-bug` (or rolled into a future section's "test infrastructure cleanup" subsection).
 
 - [ ] `[BUG-07-006][medium]` **`./clippy-all.sh` does not enable feature flags — 9 pre-existing clippy violations in `oriterm_ui/src/testing/`** — found by continue-roadmap.
+  Superseded by: plans/clippy-gate-hardening/ on 2026-04-25. Cluster co-escalation with BUG-07-005. Cleanup lands in clippy-gate-hardening Section 05; closure in Section 10.
   Repro: `cargo clippy -p oriterm --features gpu-tests --tests -- -D warnings` produces 9 errors. `./clippy-all.sh` runs `cargo clippy --workspace -- -D warnings` which uses the default feature set. The `oriterm_ui::testing` module is gated behind `#[cfg(feature = "testing")]`, so it's never linted by CI. Same root cause family as `[BUG-07-005]` (clippy-all scope is too narrow), different surface area (feature-gated lib code vs unconditional test target code).
   Subsystem: `clippy-all.sh` + `oriterm_ui/src/testing/`
   Found: 2026-04-07 | Source: continue-roadmap
