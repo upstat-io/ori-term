@@ -37,10 +37,19 @@ pub fn tool_available(name: &str, version_arg: &str) -> bool {
         .is_ok_and(|status| status.success())
 }
 
-/// Convenience: vttest specifically uses `--help` (it has no `--version`).
+/// Check if `vttest` is installed.
+///
+/// **Probe is `vttest -V`, NOT `vttest --help`.** vttest prints its
+/// usage banner to stdout when invoked with `--help` but EXITS with
+/// status 1 (not 0), so the `tool_available` `status.success()` check
+/// would report vttest as unavailable on every host that has it
+/// installed. `vttest -V` (capital, NOT `--version` — vttest does not
+/// recognize the long form) prints the version banner and exits 0.
+/// Same antipattern family as the prior tack `-h`/`-V` fix above.
+/// Closes BUG-07-020.
 #[must_use]
 pub fn vttest_available() -> bool {
-    tool_available("vttest", "--help")
+    tool_available("vttest", "-V")
 }
 
 /// Check if `tic` (terminfo compiler) is installed.
