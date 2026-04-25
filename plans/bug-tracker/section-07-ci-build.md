@@ -201,6 +201,7 @@ sections:
   Note: Active work in tack-conformance section 01.4 (GPU vttest migration) does not modify the lines flagged above. Discovered when running `cargo clippy --features gpu-tests --tests` to verify my changes were clean; my changes WERE clean — these errors come from the feature-gated `oriterm_ui::testing` module which my new dev-dep on `oriterm_test_support` had nothing to do with.
 
 - [ ] `[BUG-07-005][medium]` **`./clippy-all.sh` does not lint test targets — 11 pre-existing clippy violations in `oriterm_core/tests/vttest/`** — found by continue-roadmap.
+  Escalated to plan: plans/clippy-gate-hardening/ on 2026-04-25. /fix-bug Phase 1.5 escalation: scope grew from 11 vttest violations to ~1480 violations across 6 crates plus the gate-flip work for clippy-all.sh + ci.yml + lefthook.yml. Cluster co-escalated: BUG-07-005, BUG-07-006, BUG-07-010, BUG-07-012 + 3 new entries to be filed in clippy-gate-hardening Section 01.2 (oriterm_mux, oriterm_ipc, oriterm). Closure happens in clippy-gate-hardening Section 10.
   Repro: `cargo clippy -p oriterm_core --test vttest -- -D warnings` produces 11 errors. `./clippy-all.sh` runs `cargo clippy --workspace -- -D warnings` which only checks lib + bin targets, so test-target violations have been silently passing CI.
   Subsystem: `clippy-all.sh` + `oriterm_core/tests/vttest/menu*.rs`
   Found: 2026-04-07 | Source: continue-roadmap

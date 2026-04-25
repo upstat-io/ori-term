@@ -3,7 +3,7 @@ section: "13"
 title: "Kitty Graphics Protocol"
 status: in-progress
 
-reviewed: true
+reviewed: false
 goal: "Drive every catalog row in `catalog/kitty-graphics.md` from `implemented-unverified`/`missing`/`stub` to `verified` — full APC `_G` protocol including chunked transmission, animation, virtual placements, and unicode placeholders. This section is the canonical home for the kitty graphics verification chain AND for the unicode-placeholder rendering implementation (currently `missing` in the catalog)."
 success_criteria:
   - "Top-down spec audit committed at `plans/spec-conformance/audits/section-13-top-down-inventory.md`. Every sequence in the canonical spec source(s) for this stack (sw.kovidgoyal.net/kitty/graphics-protocol/ docs (primary, kitty source is the de facto SPEC for this protocol) + kitty source `kittens/icat/icat.py` cross-reference) maps to a catalog row ID OR carries an explicit `not-targeted` decision with rationale. `cargo run -p oriterm_test_support --bin spec-coverage-report -- --check audit-files` passes for this audit file. This is enforced PER `plans/spec-conformance/audits/README.md` lint contract — added by Section 09A as the SSOT for top-down catalog coverage to prevent the bottom-up gap that hid DECRQCRA from the catalog."
