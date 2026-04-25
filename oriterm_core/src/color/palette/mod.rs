@@ -13,13 +13,15 @@ pub use vte::ansi::Rgb;
 /// Total palette entries: 256 indexed + 14 named semantic slots.
 pub const NUM_COLORS: usize = 270;
 
-/// Canonical xterm ANSI colors (indices 0–15).
+/// xterm `ttyDefaultColors` ANSI palette (indices 0–15).
 ///
-/// Source: xterm `ttyDefaultColors` table from `xterm/charproc.c`. Matches
-/// the broad default across xterm, Alacritty, `WezTerm` (default), Windows
-/// Terminal Campbell, `iTerm2`, Ghostty, and Kitty. Tango remains available
-/// as an opt-in built-in scheme — see `oriterm/src/scheme/builtin/extended2.rs`
-/// `TANGO_DARK` / `TANGO_LIGHT`.
+/// Source: `xterm/charproc.c` — the historical xterm reference table that
+/// the comment shipped before BUG-08-16 mistakenly claimed for the Tango
+/// values. Other terminals (Alacritty, Windows Terminal Campbell, `iTerm2`,
+/// Ghostty, Kitty, `WezTerm`) ship their own non-Tango defaults — those are
+/// each different curated palettes, not byte-for-byte equal to xterm.
+/// Tango remains available as an opt-in built-in scheme — see
+/// `oriterm/src/scheme/builtin/extended2.rs` `TANGO_DARK` / `TANGO_LIGHT`.
 const ANSI_COLORS: [Rgb; 16] = [
     Rgb {
         r: 0x00,

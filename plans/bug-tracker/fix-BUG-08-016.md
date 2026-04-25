@@ -147,9 +147,22 @@ third_party_review:
 
 **Gemini (round 0):** clean. Summary: "All 16 RGB values match the reference verbatim. Tests in `oriterm_core` are updated and extended to include matrix pins and negative Tango pins. Visual regression tests pass because they either used local xterm-colored constants (`colors_16`), are text-only in the current version (`tack_color`), or use hardcoded foreground colors in the test helper, providing stability during the constant swap. Tango remains available as an opt-in scheme in `extended2.rs`."
 
-### Phase 5 Code TPR — Round 1 (convergence verification)
+### Phase 5 Code TPR — Round 1
 
-Pending after the round-0 fix commit.
+**Scratch dir:** `/tmp/tpr-round-ori_term-xYlSi4L3`. Direct wrapper Bash dispatch.
+
+**Dispatch:** codex 1 finding (low) / gemini 7 findings (low — pre-existing banner sweep).
+**Verification:** verified 8 / dropped 0.
+**Classification:** actionable 8 / meta 0.
+**Fix commit:** Phase 5 round-1 commit below.
+
+**Findings this round:**
+- `[TPR-08-016-codex][low]` `oriterm_core/src/color/palette/mod.rs:18-22` — Doc comment claimed the xterm `ttyDefaultColors` values match "the broad default across xterm, Alacritty, WezTerm, Windows Terminal Campbell, iTerm2, Ghostty, Kitty". Codex verified (cross-checked against `~/projects/reference_repos/console_repos/alacritty/alacritty/src/config/color.rs` and `terminal/src/cascadia/TerminalSettingsModel/defaults.json`) that those terminals ship their own curated defaults — Alacritty red is 0xac4242, Windows Terminal Campbell red is 0xC50F1F, neither matches xterm's 0xCD0000. Disposition: fixed in Phase 5 round-1 commit — narrowed the comment to state this is xterm-specific without claiming alignment with other terminals' curated defaults.
+- `[TPR-08-016-gemini × 7][low]` `oriterm_core/src/color/palette/tests.rs:236, 356, 406, 525, 591, 614, 640` — 7 `// --- ... ---` decorative banners (pre-existing in this file but in scope per CLAUDE.md "Broken Window Policy"). Disposition: fixed in Phase 5 round-1 commit — replaced all 7 with plain `// <text>.` per code-hygiene.md §Comments. Pattern: `// --- Theme-aware palette tests ---` → `// Theme-aware palette tests.`
+
+### Phase 5 Code TPR — Round 2 (convergence verification)
+
+Pending after the round-1 fix commit.
 
 ---
 
