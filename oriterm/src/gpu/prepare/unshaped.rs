@@ -152,7 +152,11 @@ fn fill_frame(
             let style = glyph_style(cell.flags);
             if let Some(entry) = atlas.lookup(cell.ch, style) {
                 let glyph_x = x + entry.bearing_x as f32;
-                let glyph_y = y + baseline - entry.bearing_y as f32;
+                // SGR 73/74 (superscript/subscript) glyph y-offset. See
+                // `super_sub_glyph_offset` in prepare/mod.rs for the
+                // integer-rounding invariant.
+                let glyph_y = y + super::super_sub_glyph_offset(cell.flags, ch) + baseline
+                    - entry.bearing_y as f32;
                 let uv = [entry.uv_x, entry.uv_y, entry.uv_w, entry.uv_h];
                 let rect = ScreenRect {
                     x: glyph_x,

@@ -318,7 +318,7 @@ fn append_cells_dual(
 
 /// Resolved cell style for HTML output.
 ///
-/// Bools map directly to CSS properties (bold, italic, strikethrough, dim).
+/// Bools map directly to CSS properties (bold, italic, strikethrough, dim, overline).
 #[allow(
     clippy::struct_excessive_bools,
     reason = "1:1 mapping to CSS properties"
@@ -332,6 +332,8 @@ struct CellStyle {
     underline: UnderlineKind,
     underline_color: Option<Rgb>,
     strikethrough: bool,
+    overline: bool,
+    vertical_align: VerticalAlign,
     dim: bool,
 }
 
@@ -347,6 +349,19 @@ enum UnderlineKind {
     Dashed,
 }
 
+/// Vertical-alignment variant for SGR 73 (superscript) and SGR 74 (subscript).
+///
+/// Mutually exclusive — `super` and `sub` cannot be set together. The SGR
+/// handler in `term/handler/sgr.rs` enforces this by clearing the opposite flag
+/// when one is set, so `from_cell` never sees both at once.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+enum VerticalAlign {
+    #[default]
+    None,
+    Super,
+    Sub,
+}
+
 impl CellStyle {
     /// Build a style from a terminal cell.
     fn from_cell(cell: &crate::cell::Cell, ctx: &HtmlCtx<'_>) -> Self {
@@ -357,6 +372,14 @@ impl CellStyle {
         if flags.contains(CellFlags::INVERSE) {
             std::mem::swap(&mut fg, &mut bg);
         }
+
+        let vertical_align = if flags.contains(CellFlags::SUPERSCRIPT) {
+            VerticalAlign::Super
+        } else if flags.contains(CellFlags::SUBSCRIPT) {
+            VerticalAlign::Sub
+        } else {
+            VerticalAlign::None
+        };
 
         Self {
             fg: if fg == ctx.default_fg { None } else { Some(fg) },
@@ -382,6 +405,8 @@ impl CellStyle {
                 .and_then(|e| e.underline_color)
                 .map(|c| ctx.palette.resolve(c)),
             strikethrough: flags.contains(CellFlags::STRIKETHROUGH),
+            overline: flags.contains(CellFlags::OVERLINE),
+            vertical_align,
             dim: flags.contains(CellFlags::DIM),
         }
     }
@@ -395,6 +420,8 @@ impl CellStyle {
             && self.underline == UnderlineKind::None
             && self.underline_color.is_none()
             && !self.strikethrough
+            && !self.overline
+            && self.vertical_align == VerticalAlign::None
             && !self.dim
     }
 
@@ -420,24 +447,32 @@ impl CellStyle {
             buf.push_str("opacity:0.5;");
         }
 
-        let text_dec = match (self.underline, self.strikethrough) {
-            (UnderlineKind::None, false) => None,
-            (UnderlineKind::None, true) => Some("line-through"),
-            (UnderlineKind::Single, false) => Some("underline"),
-            (UnderlineKind::Single, true) => Some("underline line-through"),
-            (UnderlineKind::Double, false) => Some("underline double"),
-            (UnderlineKind::Double, true) => Some("underline double line-through"),
-            (UnderlineKind::Curly, false) => Some("underline wavy"),
-            (UnderlineKind::Curly, true) => Some("underline wavy line-through"),
-            (UnderlineKind::Dotted, false) => Some("underline dotted"),
-            (UnderlineKind::Dotted, true) => Some("underline dotted line-through"),
-            (UnderlineKind::Dashed, false) => Some("underline dashed"),
-            (UnderlineKind::Dashed, true) => Some("underline dashed line-through"),
-        };
-        if let Some(dec) = text_dec {
+        // Build text-decoration via Vec join — scales linearly across
+        // underline / strikethrough / overline rather than 12+ match arms.
+        let mut decs: Vec<&str> = Vec::new();
+        match self.underline {
+            UnderlineKind::None => {}
+            UnderlineKind::Single => decs.push("underline"),
+            UnderlineKind::Double => decs.push("underline double"),
+            UnderlineKind::Curly => decs.push("underline wavy"),
+            UnderlineKind::Dotted => decs.push("underline dotted"),
+            UnderlineKind::Dashed => decs.push("underline dashed"),
+        }
+        if self.strikethrough {
+            decs.push("line-through");
+        }
+        if self.overline {
+            decs.push("overline");
+        }
+        if !decs.is_empty() {
             buf.push_str("text-decoration:");
-            buf.push_str(dec);
+            buf.push_str(&decs.join(" "));
             buf.push(';');
+            // Note: when underline_color is set AND overline is also set,
+            // CSS applies the same color to BOTH decorations (single
+            // text-decoration-color per element). The GPU renders overline
+            // in fg unconditionally; the divergence is a known minor drift
+            // tracked in BUG-06-014 §3.
             if let Some(uc) = self.underline_color {
                 let _ = write!(
                     buf,
@@ -445,6 +480,14 @@ impl CellStyle {
                     uc.r, uc.g, uc.b
                 );
             }
+        }
+        match self.vertical_align {
+            VerticalAlign::None => {}
+            // No font-size shrink: glyph-size reduction breaks the monospace
+            // grid inside <pre> AND diverges from the GPU which renders
+            // vertical offset only (no shrink). See fix-BUG-06-014 §1.5.
+            VerticalAlign::Super => buf.push_str("vertical-align:super;"),
+            VerticalAlign::Sub => buf.push_str("vertical-align:sub;"),
         }
     }
 }
