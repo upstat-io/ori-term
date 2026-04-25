@@ -1,9 +1,15 @@
 //! Runtime tool-availability probes for the test framework.
 //!
-//! Each helper shells out to the named binary with a `--version` (or
-//! `--help`) argument and reports whether the invocation succeeded.
-//! Used by integration tests to skip cleanly when a required tool
-//! (`vttest`, `tack`, `tic`, `infocmp`, ...) is not installed.
+//! Each per-tool helper (`vttest_available`, `tack_available`, etc.)
+//! shells out to the binary with that tool's known-zero-exit probe
+//! flag and reports whether the invocation both spawned successfully
+//! and exited with success status. Most tools accept `--version` or
+//! `-V`, but several ncurses-era binaries are "odd ones out": `tack`
+//! exits 1 from `-V` so its probe is `-h`; `vttest` exits 1 from
+//! `--help` so its probe is `-V`. See each per-tool wrapper below for
+//! the canonical probe flag — never invent your own probe at a call
+//! site, always use the wrapper. Integration tests use the wrappers
+//! to skip cleanly when a required tool is not installed.
 //!
 //! Extracted from `session/mod.rs` in the M1 TPR cleanup
 //! to keep `session/mod.rs` under the 500-line file

@@ -30,7 +30,7 @@ fn run_menu4_double_size(cols: u16, rows: u16) {
 #[test]
 fn vttest_menu4_80x24() {
     if !vttest_available() {
-        eprintln!("vttest not installed, skipping");
+        eprintln!("SKIP: vttest not installed");
         return;
     }
     run_menu4_double_size(80, 24);
@@ -39,7 +39,7 @@ fn vttest_menu4_80x24() {
 #[test]
 fn vttest_menu4_97x33() {
     if !vttest_available() {
-        eprintln!("vttest not installed, skipping");
+        eprintln!("SKIP: vttest not installed");
         return;
     }
     run_menu4_double_size(97, 33);
@@ -48,7 +48,7 @@ fn vttest_menu4_97x33() {
 #[test]
 fn vttest_menu4_120x40() {
     if !vttest_available() {
-        eprintln!("vttest not installed, skipping");
+        eprintln!("SKIP: vttest not installed");
         return;
     }
     run_menu4_double_size(120, 40);

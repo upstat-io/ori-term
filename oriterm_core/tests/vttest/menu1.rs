@@ -28,7 +28,7 @@ fn run_menu1_cursor_movement(cols: u16, rows: u16) {
 #[test]
 fn vttest_menu1_80x24() {
     if !vttest_available() {
-        eprintln!("vttest not installed, skipping");
+        eprintln!("SKIP: vttest not installed");
         return;
     }
     run_menu1_cursor_movement(80, 24);
@@ -37,7 +37,7 @@ fn vttest_menu1_80x24() {
 #[test]
 fn vttest_menu1_97x33() {
     if !vttest_available() {
-        eprintln!("vttest not installed, skipping");
+        eprintln!("SKIP: vttest not installed");
         return;
     }
     run_menu1_cursor_movement(97, 33);
@@ -46,7 +46,7 @@ fn vttest_menu1_97x33() {
 #[test]
 fn vttest_menu1_120x40() {
     if !vttest_available() {
-        eprintln!("vttest not installed, skipping");
+        eprintln!("SKIP: vttest not installed");
         return;
     }
     run_menu1_cursor_movement(120, 40);
@@ -159,7 +159,7 @@ fn capture_border_screen(cols: u16, rows: u16) -> Vec<Vec<char>> {
 #[test]
 fn vttest_border_fills_80x24() {
     if !vttest_available() {
-        eprintln!("vttest not installed, skipping");
+        eprintln!("SKIP: vttest not installed");
         return;
     }
     let grid = capture_border_screen(80, 24);
@@ -169,7 +169,7 @@ fn vttest_border_fills_80x24() {
 #[test]
 fn vttest_border_fills_97x33() {
     if !vttest_available() {
-        eprintln!("vttest not installed, skipping");
+        eprintln!("SKIP: vttest not installed");
         return;
     }
     let grid = capture_border_screen(97, 33);
@@ -179,7 +179,7 @@ fn vttest_border_fills_97x33() {
 #[test]
 fn vttest_border_fills_120x40() {
     if !vttest_available() {
-        eprintln!("vttest not installed, skipping");
+        eprintln!("SKIP: vttest not installed");
         return;
     }
     let grid = capture_border_screen(120, 40);
@@ -209,7 +209,7 @@ fn capture_deccolm_screen(cols: u16, rows: u16) -> Vec<Vec<char>> {
 #[test]
 fn vttest_deccolm_resizes_to_132_with_mode_40() {
     if !vttest_available() {
-        eprintln!("vttest not installed, skipping");
+        eprintln!("SKIP: vttest not installed");
         return;
     }
     let grid = capture_deccolm_screen(80, 24);
