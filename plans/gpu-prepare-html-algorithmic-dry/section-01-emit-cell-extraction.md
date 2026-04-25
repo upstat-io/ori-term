@@ -7,7 +7,7 @@ goal: "Eliminate the ~120-line per-cell emit body duplicated across `fill_frame_
 depends_on: []
 third_party_review:
   status: none
-  updated: null
+  updated: 2026-04-25
 sections:
   - id: "01.1"
     title: "Identify the per-cell emit skeleton"
@@ -316,11 +316,13 @@ block in place even when empty so tooling has a stable anchor.
 
 When findings exist, use this format:
 
-- [ ] `[TPR-01-001][high]` `path/to/file.rs:123` — Concrete finding summary.
+```
+- [ ] `[TPR-01-NNN][high]` `path/to/file.rs:123` — Concrete finding summary.
   Validation: {How the reviewer proved it.}
 
-- [x] `[TPR-01-002][medium]` `path/to/file.rs:456` — Concrete finding summary.
+- [x] `[TPR-01-NNN][medium]` `path/to/file.rs:456` — Concrete finding summary.
   Resolved: Accepted and integrated into 01.X on YYYY-MM-DD.
+```
 
 Rules:
 - Only reject findings that are factually incorrect.
