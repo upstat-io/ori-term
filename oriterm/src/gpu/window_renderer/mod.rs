@@ -142,17 +142,10 @@ impl WindowRenderer {
         let (mut atlas, mut subpixel_atlas, color_atlas) =
             create_atlases(device, queue, &mut font_collection);
 
-        // Inject terminal font's emoji fallback into UI font collections
-        // so emoji renders at the correct UI text size (not the terminal's).
-        if let Some(ref mut sizes) = ui_font_sizes {
-            let emoji_data = font_collection.fallback_font_data();
-            if !emoji_data.is_empty() {
-                sizes.inject_fallbacks(&emoji_data);
-            }
-        }
-
         // Pre-cache common UI font sizes so the first dialog/tab-bar frame
-        // doesn't hitch on glyph rasterization.
+        // doesn't hitch on glyph rasterization. Emoji fallback wiring runs
+        // after `Self` is constructed via `reinject_emoji_fallback` — the
+        // canonical home for terminal-font-emoji-into-UI-registry injection.
         if let Some(ref mut sizes) = ui_font_sizes {
             let t_ui = std::time::Instant::now();
             helpers::prewarm_ui_font_sizes(sizes, &mut atlas, &mut subpixel_atlas, device, queue);
@@ -174,7 +167,7 @@ impl WindowRenderer {
 
         log::info!("window renderer init: total={:?}", t0.elapsed());
 
-        Self {
+        let mut renderer = Self {
             mode: RendererMode::Terminal,
             uniform_buffer,
             atlas_bind_group,
@@ -215,7 +208,12 @@ impl WindowRenderer {
             content_cache: None,
             content_cache_view: None,
             content_cache_size: (0, 0),
-        }
+        };
+        // Canonical wiring: inject the terminal font's emoji fallback into
+        // the UI registry so emoji codepoints resolve via the UI-size
+        // fallback chain. Idempotent; safe if called twice.
+        renderer.reinject_emoji_fallback();
+        renderer
     }
 
     // Accessors

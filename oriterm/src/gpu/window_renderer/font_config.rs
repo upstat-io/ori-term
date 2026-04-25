@@ -25,8 +25,38 @@ impl WindowRenderer {
     /// Stores the new registry without clearing atlases — call
     /// [`replace_font_collection`] afterward to clear and re-prewarm both
     /// terminal and UI atlases in one pass.
+    ///
+    /// Re-injects the terminal font's emoji fallback into the new registry so
+    /// config reload (which rebuilds `UiFontSizes` from scratch in
+    /// `rebuild_ui_font_sizes`) does not drop emoji rendering in the tab bar,
+    /// dialogs, or any UI text path. See BUG-04-004.
     pub fn replace_ui_font_sizes(&mut self, sizes: UiFontSizes) {
         self.ui_font_sizes = Some(sizes);
+        self.reinject_emoji_fallback();
+    }
+
+    /// Inject the terminal font's emoji fallback into the current UI font
+    /// registry, if both sides are populated.
+    ///
+    /// Canonical wiring point between the terminal font (source of the
+    /// emoji fallback) and the UI font registry (consumer). Called by
+    /// [`WindowRenderer::new`] right after construction and by
+    /// [`replace_ui_font_sizes`] after a config-reload swap — so every
+    /// `ui_font_sizes` assignment carries the same emoji wiring without
+    /// duplicating the "extract from `font_collection`, call
+    /// `inject_fallbacks` if non-empty" sequence at the call sites.
+    ///
+    /// Relies on `UiFontSizes::inject_fallbacks` idempotency: calling this
+    /// helper twice with the same emoji data is safe even when the
+    /// underlying registry is the same one that was already populated.
+    pub(super) fn reinject_emoji_fallback(&mut self) {
+        let data = self.font_collection.fallback_font_data();
+        if data.is_empty() {
+            return;
+        }
+        if let Some(ref mut sizes) = self.ui_font_sizes {
+            sizes.inject_fallbacks(&data);
+        }
     }
 
     /// Change font size, recomputing metrics, clearing atlases, and re-caching.
