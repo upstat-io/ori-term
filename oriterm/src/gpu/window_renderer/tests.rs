@@ -541,6 +541,9 @@ mod font_config {
         // Step 2: install a new terminal font collection. This is the
         // canonical trigger for emoji reinject — the new collection's
         // fallback data must now land on the current (fresh) UI registry.
+        // Snapshot the new collection's fallback Arc BEFORE moving it
+        // so the identity assertion below can prove the UI registry's
+        // fallback came from THIS collection and not some unrelated source.
         let new_terminal_fc = FontCollection::new(
             FontSet::embedded(),
             TEST_FONT_SIZE_PT,
@@ -551,17 +554,32 @@ mod font_config {
             HintingMode::Full,
         )
         .expect("new terminal FontCollection must build");
+        let expected_fallback_arc = {
+            let exported = new_terminal_fc.fallback_font_data();
+            assert_eq!(
+                exported.len(),
+                1,
+                "new terminal FontCollection must have one emoji fallback"
+            );
+            std::sync::Arc::clone(&exported[0].data)
+        };
+
         renderer.replace_font_collection(new_terminal_fc, &gpu);
-        let after_replace_fc = renderer
+
+        let ui_fallback = renderer
             .ui_font_sizes()
             .unwrap()
             .default_collection()
             .unwrap()
-            .fallback_font_data()
-            .len();
+            .fallback_font_data();
         assert_eq!(
-            after_replace_fc, 1,
+            ui_fallback.len(),
+            1,
             "replace_font_collection must reinject emoji from the NEW terminal font (BUG-04-004)"
+        );
+        assert!(
+            std::sync::Arc::ptr_eq(&ui_fallback[0].data, &expected_fallback_arc),
+            "UI registry fallback must share the NEW terminal font's Arc — proves the reinject pulled from the newly-installed collection, not from a stale or unrelated source"
         );
     }
 }
