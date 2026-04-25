@@ -188,9 +188,20 @@ Imports needed: `crate::window_manager::types::{ManagedWindow, WindowKind}`.
 
 **Gemini (round 1):** clean (informational verification only). Summary: "Commit 09ed13aa correctly addresses round-0 findings ... Two new architecture tests provide robust regression pins ... Verified all 12 architecture tests pass."
 
-### Phase 5 Code TPR — Round 2 (convergence verification)
+### Phase 5 Code TPR — Round 2
 
-Pending after the round-1 fix commit.
+**Scratch dir:** `/tmp/tpr-round-ori_term-NWvT2uWj`. Direct wrapper Bash dispatch.
+
+**Dispatch:** codex 1 finding (medium) / gemini 0 findings (clean).
+
+**Findings this round:**
+- `[TPR-09-001-codex][medium]` `oriterm/tests/architecture.rs:272` — Round-1 ordered pin verified the `focused_window_id` swap but omitted the `active_window` swap. `handle_redraw` resolves the active pane through `active_window`, so BOTH swaps are load-bearing — `focused_id` alone leaves the redraw painting the source's pane on the new window's surface. Disposition: fixed in Phase 5 round-2 commit — added `self.active_window = Some(new_session_wid);` and `self.active_window = saved_active;` to the ordered list (between focused_id and handle_redraw, mirroring the production sequence).
+
+**Gemini (round 2):** clean. Summary: "BUG-09-1 fix is sound. `move_tab_to_new_window_embedded` now mirrors the working `tear_off_tab` sequence ... Commit `d16732a4` successfully refined the architecture pins by bounding scans to the function body and enforcing strict call-order verification."
+
+### Phase 5 Code TPR — Round 3 (convergence verification)
+
+Pending after the round-2 fix commit.
 
 ## 4. Completion Checklist
 
