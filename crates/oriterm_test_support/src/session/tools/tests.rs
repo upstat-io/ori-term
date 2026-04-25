@@ -76,17 +76,18 @@ fn vttest_available_pinned_to_capital_v_probe_via_direct_spawn() {
     // reflects whether vttest is RUNNABLE, not whether `--help`
     // happens to exit zero.
     //
-    // On hosts WITHOUT vttest installed, the test is silently a no-op
-    // via early return.
+    // On hosts WITHOUT vttest installed, the test emits a visible SKIP
+    // message (per .claude/rules/tests.md §Graceful Skip Protocol) and
+    // returns early.
     let v_succeeds = std::process::Command::new("vttest")
         .arg("-V")
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .status()
-        .map(|status| status.success())
-        .unwrap_or(false);
+        .is_ok_and(|status| status.success());
 
     if !v_succeeds {
+        eprintln!("SKIP: vttest -V did not exit 0 — vttest not installed or unavailable");
         return;
     }
 
@@ -107,8 +108,7 @@ fn vttest_available_pinned_to_capital_v_probe_via_direct_spawn() {
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .status()
-        .map(|status| status.success())
-        .unwrap_or(false);
+        .is_ok_and(|status| status.success());
 
     if !help_succeeds {
         debug_assert!(
@@ -174,21 +174,19 @@ fn tack_available_pinned_to_h_probe_via_direct_spawn() {
     // regression it catches: a future commit that "simplifies"
     // `tack_available()` back to `tool_available("tack", "-V")`.
     //
-    // On hosts WITHOUT tack installed, the test is silently a no-op
-    // via early return — same caveat as the existing tack probe
-    // tests. The dev environment (Linux/WSL) and Linux CI both have
-    // tack, which is where the regression is caught in practice.
+    // On hosts WITHOUT tack installed, the test emits a visible SKIP
+    // message (per .claude/rules/tests.md §Graceful Skip Protocol) and
+    // returns early. The dev environment (Linux/WSL) and Linux CI both
+    // have tack, which is where the regression is caught in practice.
     let h_succeeds = std::process::Command::new("tack")
         .arg("-h")
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .status()
-        .map(|status| status.success())
-        .unwrap_or(false);
+        .is_ok_and(|status| status.success());
 
     if !h_succeeds {
-        // tack not installed on this host (or `-h` doesn't exit 0
-        // for some reason); cannot pin the behavioral contract here.
+        eprintln!("SKIP: tack -h did not exit 0 — tack not installed or unavailable");
         return;
     }
 
@@ -213,8 +211,7 @@ fn tack_available_pinned_to_h_probe_via_direct_spawn() {
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .status()
-        .map(|status| status.success())
-        .unwrap_or(false);
+        .is_ok_and(|status| status.success());
 
     if !v_succeeds {
         // tack v1.08 reality: -V exits non-zero. Pin the contract
