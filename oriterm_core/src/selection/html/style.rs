@@ -146,26 +146,35 @@ impl CellStyle {
             buf.push_str("opacity:0.5;");
         }
 
-        // Build text-decoration via Vec join — scales linearly across
-        // underline / strikethrough / overline rather than 12+ match arms.
-        let mut decs: Vec<&str> = Vec::new();
+        // Build text-decoration value directly into `buf` — no intermediate
+        // `Vec<&str>` allocation. `decoration_count` tracks whether we've
+        // emitted any tokens yet so we know when to insert the leading
+        // `text-decoration:` and the inter-token spaces.
+        let mut decoration_count = 0usize;
+        let mut emit_dec = |buf: &mut String, token: &str| {
+            if decoration_count == 0 {
+                buf.push_str("text-decoration:");
+            } else {
+                buf.push(' ');
+            }
+            buf.push_str(token);
+            decoration_count += 1;
+        };
         match self.underline {
             UnderlineKind::None => {}
-            UnderlineKind::Single => decs.push("underline"),
-            UnderlineKind::Double => decs.push("underline double"),
-            UnderlineKind::Curly => decs.push("underline wavy"),
-            UnderlineKind::Dotted => decs.push("underline dotted"),
-            UnderlineKind::Dashed => decs.push("underline dashed"),
+            UnderlineKind::Single => emit_dec(buf, "underline"),
+            UnderlineKind::Double => emit_dec(buf, "underline double"),
+            UnderlineKind::Curly => emit_dec(buf, "underline wavy"),
+            UnderlineKind::Dotted => emit_dec(buf, "underline dotted"),
+            UnderlineKind::Dashed => emit_dec(buf, "underline dashed"),
         }
         if self.strikethrough {
-            decs.push("line-through");
+            emit_dec(buf, "line-through");
         }
         if self.overline {
-            decs.push("overline");
+            emit_dec(buf, "overline");
         }
-        if !decs.is_empty() {
-            buf.push_str("text-decoration:");
-            buf.push_str(&decs.join(" "));
+        if decoration_count > 0 {
             buf.push(';');
             // Note: when underline_color is set AND overline is also set,
             // CSS applies the same color to BOTH decorations (single

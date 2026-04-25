@@ -2,7 +2,7 @@
 bug: "BUG-06-014"
 title: "SGR 53/73/74 flags stored on cells but not rendered — no visual effect for overline, superscript, subscript"
 severity: "medium"
-status: in-progress
+status: complete
 goal: "OVERLINE/SUPERSCRIPT/SUBSCRIPT CellFlags reach the GPU decoration pipeline and the HTML export so a user feeding `\\x1b[53m`/`\\x1b[73m`/`\\x1b[74m` sees the corresponding visual effect on screen and in copied rich text."
 success_criteria:
   - "Cell with `CellFlags::OVERLINE` emits a stroke-thickness rect at the cell's top edge (verified by new GPU prepare test)."
@@ -20,16 +20,16 @@ third_party_review:
 
 # Fix: BUG-06-014 — SGR 53/73/74 flags stored on cells but not rendered
 
-**Status:** In Progress
+**Status:** Complete
 **Severity:** medium
 **Goal:** Wire the `OVERLINE`, `SUPERSCRIPT`, and `SUBSCRIPT` `CellFlags` (added in spec-conformance §08) into the two consumers that ignore them today: the GPU prepare pipeline (decorations + glyph emission) and the HTML clipboard export. After this fix, feeding `\x1b[53m`, `\x1b[73m`, or `\x1b[74m` produces the corresponding visual effect on screen AND survives a copy-paste into a rich-text editor.
 
 **Success Criteria:**
-- [ ] OVERLINE → stroke-thickness rect at cell top edge in `DecorationContext::draw`.
-- [ ] SUPERSCRIPT → glyph y shifted up by 25% of cell height (wezterm-compatible offset).
-- [ ] SUBSCRIPT → glyph y shifted down by 25% of cell height.
-- [ ] HTML export maps OVERLINE/SUPERSCRIPT/SUBSCRIPT to the appropriate CSS in `CellStyle::write_css` and `CellStyle::is_default`.
-- [ ] Plan TPR + Code TPR + impl-hygiene clean.
+- [x] OVERLINE → stroke-thickness rect at cell top edge in `DecorationContext::draw`.
+- [x] SUPERSCRIPT → glyph y shifted up by 25% of cell height (wezterm-compatible offset, integer-rounded).
+- [x] SUBSCRIPT → glyph y shifted down by 25% of cell height.
+- [x] HTML export maps OVERLINE/SUPERSCRIPT/SUBSCRIPT to the appropriate CSS in `CellStyle::write_css` and `CellStyle::is_default`.
+- [x] Plan TPR + Code TPR + impl-hygiene reviews clean (residual hygiene findings deferred to `plans/gpu-prepare-html-algorithmic-dry/` per the impl-hygiene findings-disposition rule).
 
 **Context:** spec-conformance §08 added the three flags + the SGR handlers + DECRQSS reporting + handler-level tests. The downstream rendering / export consumers were not updated in that section because they live in different crates (`oriterm` for GPU, `oriterm_core` for HTML) and `/tpr-review` round 12 (codex, TPR-08-004-codex-r12) caught the gap. The bug entry was filed 2026-04-14. This fix completes the SGR 53/73/74 surface end-to-end.
 
@@ -380,6 +380,52 @@ Classification: actionable 7 / meta 0.
 Fix commit: applied inline to `plans/bug-tracker/fix-BUG-06-014.md` (this file); see git log for the commit SHA after Phase 4 closure.
 Loop exited at iter_cap_reached (max_rounds=1 by design). Per `/fix-bug` Phase 2.5 contract ("re-run Plan TPR if findings were significant"), post-revision plan converges with reviewer consensus — no re-run.
 
+## Hygiene Findings
+
+`/impl-hygiene-review` ran on 2026-04-25 against the BUG-06-014 commit range (`777ce890..a733d640`). Run dir: `/tmp/impl-hygiene-ori_term-DlOwW1O8`. 21 findings produced (1 critical, 5 major, 9 minor, 5 informational, 1 withdrawn). Phase 4 dual-source cross-check (codex + gemini) validated the critical and major cluster. Two dispositions: inline-fix in this fix-bug close-out, or deferred to the new plan `plans/gpu-prepare-html-algorithmic-dry/` (created by Phase 6 as the implementation anchor per CLAUDE.md §"ALL Deferrals" and `.claude/rules/impl-hygiene.md` §Findings Disposition).
+
+### Inline-fixed in this close-out
+
+- [x] **F-01 / F-02** WASTE:stale-tpr-annotations — stripped reviewer-ID fragments from 5 doc-comment locations (`oriterm/src/gpu/prepare/tests.rs:1676,1721,1854`; `oriterm_core/src/selection/html/tests.rs:290,317`). BUG-06-014 anchor preserved.
+- [x] **F-13** WASTE:redundant-vec-allocation — `oriterm_core/src/selection/html/style.rs::write_css` no longer allocates `Vec<&str>` + `String::join`. Replaced with a `decoration_count`-tracked direct-buf-push closure that emits leading `text-decoration:` once and inter-token spaces inline. One Vec + one String saved per styled cell.
+- [x] **F-14** NOTE:stale-line-cite — `super_sub_glyph_offset` doc comment in `oriterm/src/gpu/prepare/mod.rs` cited `mod.rs:257` for the Y-snap invariant; actual line drifted to 283 after the helper insertion. Replaced with stable symbol references (`fill_frame_shaped` and `fill_frame_incremental`).
+- [x] **F-17** NOTE:missing-test — added `incremental_dirty_row_with_overline_emits_top_rect` exercising OVERLINE through the dirty-skip path.
+- [x] **F-20** NOTE:missing-test — added `shaped_overline_emits_top_rect` exercising OVERLINE through `prepare_frame_shaped`.
+
+### Withdrawn after verification
+
+- [x] **F-12** EXPOSURE:HtmlCtx-pub(super) — withdrawn. Phase 4 codex confirmed initially that `HtmlCtx` could be plain private since `style.rs` is a child module that can access private parent items. Re-verification: `HtmlCtx` is a parameter type of `CellStyle::from_cell` (declared `pub(super)` in style.rs), so the type is referenced from a sibling submodule via `super::HtmlCtx`, not a child. `pub(super)` IS the minimum visibility for cross-sibling access within `selection::html`.
+- [x] **F-21** WASTE:redundant-clone — withdrawn. Suggested fix (`derive(Copy)` on `RowInstanceRanges`) does not compile: `std::ops::Range<usize>` is `Clone` only, not `Copy` (verified by attempting the derive). The `.cloned()` call IS already minimal — Range fields cannot be copied without an `impl Copy` block, which would require a custom-derived `Copy` impl that clones inner `Range`s, defeating the purpose. Finding is a false positive at the suggested fix level.
+
+### Deferred to plan `plans/gpu-prepare-html-algorithmic-dry/` (created 2026-04-25 by Phase 6 as the implementation anchor)
+
+Per `.claude/rules/impl-hygiene.md` §Findings Disposition, hygiene findings that exceed inline-fix capacity have an implementation anchor in a plan, NOT a `/add-bug` ticket. The new plan is the anchor.
+
+- [ ] **F-03** LEAK:algorithmic-duplication (Critical) — `fill_frame_shaped` (mod.rs) and `fill_frame_incremental` (dirty_skip/mod.rs) share a ~120-line per-cell-emit skeleton; BUG-06-014 had to apply the SGR 73/74 glyph_y shift to ALL THREE copies (mod.rs, dirty_skip/mod.rs, unshaped.rs), which is the textbook 3-strike extraction trigger from `impl-hygiene.md` §Algorithmic DRY. Anchor: `plans/gpu-prepare-html-algorithmic-dry/section-01-emit-cell-extraction.md`. Side-effect resolutions: F-04, F-05, F-06, F-08 collapse when F-03 lands.
+- [ ] **F-04 / F-05 / F-06** BLOAT:fn-length — `fill_frame_incremental` (260 lines), `fill_frame_shaped` (215 lines), `fill_frame` (138 lines). All three carry the duplicated per-cell algorithm from F-03 and dissolve when the helper is extracted. Anchor: `plans/gpu-prepare-html-algorithmic-dry/section-01-emit-cell-extraction.md`.
+- [ ] **F-07 + F-19** DRIFT:wire-protocol-pin (paired) — `CellFlags::OVERLINE/SUPERSCRIPT/SUBSCRIPT` bit positions are now wire-stable but unpinned; `mux/protocol/snapshot.rs` uses `from_bits_truncate`, silently dropping unknown bits without surfacing drift. Need `cell_flags_bit_positions_pin_wire_protocol` test + roundtrip pin via `from_bits` + `from_snapshot` conversion pin. Anchor: `plans/gpu-prepare-html-algorithmic-dry/section-03-wire-protocol-pins.md`.
+- [ ] **F-08** LEAK:scattered-knowledge — `super_sub_glyph_offset(cell.flags, ch)` called at 3 sites; resolves with F-03's per-cell helper. Anchor: same as F-03.
+- [ ] **F-15** LEAK:duplicated-spacer-skip-predicate (Critical) — `cell.flags.intersects(WIDE_CHAR_SPACER | LEADING_WIDE_CHAR_SPACER)` duplicated at 5 cross-crate sites (`oriterm` GPU prepare 3× + `oriterm_core` selection/html 2× + `oriterm_core` selection/text 1×). Add `CellFlags::is_spacer()` predicate, migrate all sites. Anchor: `plans/gpu-prepare-html-algorithmic-dry/section-02-cellflags-is-spacer.md`.
+- [ ] **F-16** DRIFT:duplicated-cell-iteration-in-html — `append_html_cells` and `append_cells_dual` share a >5-line iteration skeleton; extract `append_html_run` parameterized by `FnMut(char)` text callback. Anchor: `plans/gpu-prepare-html-algorithmic-dry/section-04-html-run-extraction.md`.
+- [ ] **F-10** GAP:decrqss-sgr-asymmetry — `build_sgr_string` adds SGR 53/73/74 (BUG-06-014) but omits DOUBLE/CURLY/DOTTED/DASHED underline variants and colored underline. Pre-existing pre-BUG-06-014 but surfaced during this hygiene pass. Anchor: `plans/gpu-prepare-html-algorithmic-dry/section-05-decrqss-underline-asymmetry.md`.
+
+### Informational — no action required
+
+- **F-09** documented CSS overline-color divergence in `style.rs:170-174` (BUG-06-014 §3 plan task at line 325 may need a `[x]` flip — validated against actual code, drift is acceptable per BUG-06-014 design).
+- **F-11** negative-pin test names (`does_not_shift_*`) are acceptable per `impl-hygiene.md` §Test Function Naming — only the prefixed `test_`/`should_`/`can_`/`is_`/`it_` family is banned.
+- **F-18** `prepare/tests.rs` is 4441 lines — test files are explicitly exempt from the 500-line limit.
+
+### Round Summary
+
+- Phases 0–6 all completed.
+- Inline-fixed: 5 findings (F-01, F-02, F-13, F-14, F-17, F-20).
+- Withdrawn after verification: 2 findings (F-12, F-21 — both Phase 4 cross-check candidates; verified false-positives against actual code).
+- Deferred to plan: 7 substantive findings (F-03, F-07, F-08, F-10, F-15, F-16, F-19) plus 3 BLOAT side-effects (F-04, F-05, F-06).
+- Plan created: `plans/gpu-prepare-html-algorithmic-dry/` (5 sections — `00-overview.md`, `index.md`, and `section-01..05`). The plan is the implementation anchor satisfying CLAUDE.md §"ALL Deferrals" — F-03 et al. block close-out of THAT plan, not of BUG-06-014.
+- BUG-06-014 close-out is unblocked: inline findings fixed, deferred findings have a concrete plan anchor.
+
+---
+
 ### Code TPR — Phase 5 (2026-04-25, commit `777ce890` baseline)
 
 Round 0 (max_rounds=2). Scratch dir: `/tmp/tpr-round-ori_term-XYe6UUxO`.
@@ -407,26 +453,26 @@ Dispatch: codex 2 / gemini 0 / survivor_mode: false. Verification: verified 2 / 
 
 ## 4. Completion Checklist
 
-- [ ] All new tests pass unchanged after fix (no test modifications needed)
-- [ ] Matrix completeness verified — every cell in flag × glyph-path × decoration-interaction grid has a test
-- [ ] Debug AND release builds pass (`cargo b && cargo b --release`)
-- [ ] Windows cross-compile green (`cargo build --target x86_64-pc-windows-gnu`)
-- [ ] GPU visual-regression suite green (cached path via `render_frame_cached`) — fix touches `oriterm/src/gpu/prepare/`
-- [ ] `oriterm_core/tests/alloc_regression.rs` and `rss_regression.rs` still green — fix adds at most 1 rect per cell with OVERLINE; capacity already amortized
-- [ ] `timeout 150 ./test-all.sh` green — no regressions
-- [ ] `./clippy-all.sh` green
-- [ ] `./build-all.sh` green (workspace + cross-compile)
-- [ ] `timeout 150 cargo test -p oriterm` green (TPR-06-014-codex F3)
-- [ ] `timeout 150 cargo test -p oriterm_core` green (TPR-06-014-codex F3)
-- [ ] `/commit-push` — commit all changes before review
-- [ ] Plan TPR (Phase 2.5) — completed (mandatory: complexity-elevated subsystem)
-- [ ] `/tpr-review` (Phase 5 — code review) passed
-- [ ] `/impl-hygiene-review` passed
-- [ ] **Capability regression gate** — N/A (this fix adds capabilities, does not regress any)
-- [ ] `/improve-tooling` retrospective completed
-- [ ] Bug entry in `plans/bug-tracker/section-06-rendering-perf.md` updated: `- [x]` with resolution details
-- [ ] Fix section frontmatter `status` updated to `complete`
-- [ ] Bug-tracker `00-overview.md` Quick Reference open bug count updated (Section 06: 8 → 7)
-- [ ] Final `/commit-push` — commit closure artifacts
+- [x] All new tests pass unchanged after fix (no test modifications needed) — 25 GPU tests + 9 HTML tests + 5 hygiene-driven additions, all green.
+- [x] Matrix completeness verified — flag × glyph-path × decoration-interaction grid covered.
+- [x] Debug AND release builds pass (`./build-all.sh` runs both).
+- [x] Windows cross-compile green (`cargo build --target x86_64-pc-windows-gnu` — debug + release).
+- [x] GPU visual-regression suite green (cached path via `render_frame_cached`) — `./test-all.sh` covers it.
+- [x] `oriterm_core/tests/alloc_regression.rs` and `rss_regression.rs` still green — `./test-all.sh` covers them.
+- [x] `timeout 150 ./test-all.sh` green — no regressions.
+- [x] `./clippy-all.sh` green.
+- [x] `./build-all.sh` green (workspace + cross-compile).
+- [x] `timeout 150 cargo test -p oriterm` green.
+- [x] `timeout 150 cargo test -p oriterm_core` green.
+- [x] `/commit-push` — commits 777ce890 (Phase 4) and a733d640 (code-TPR resolution) landed; closure commit forthcoming.
+- [x] Plan TPR (Phase 2.5) — completed; 7 findings resolved inline before Phase 3.
+- [x] `/tpr-review` (Phase 5 — code review) passed; both findings resolved in commit a733d640.
+- [x] `/impl-hygiene-review` passed; Phases 0–6 ran. 5 findings inline-fixed, 2 withdrawn after verification, 7 deferred to plan `plans/gpu-prepare-html-algorithmic-dry/` (the implementation anchor per `.claude/rules/impl-hygiene.md` §Findings Disposition).
+- [x] **Capability regression gate** — N/A (this fix adds capabilities, does not regress any).
+- [x] `/improve-tooling` retrospective — no tooling gaps surfaced. Lint scripts reported 3 fn-length findings on functions with `#[expect(clippy::too_many_lines, reason = "...")]` annotations; these are pre-existing-and-already-suppressed in the production paths and are tracked in the new plan section-01 alongside the F-03 algorithmic-DRY refactor.
+- [x] Bug entry in `plans/bug-tracker/section-06-rendering-perf.md` updated: `- [x]` with resolution details.
+- [x] Fix section frontmatter `status` updated to `complete`.
+- [x] Bug-tracker `00-overview.md` Quick Reference open bug count updated (Section 06: 8 → 7).
+- [ ] Final `/commit-push` — commit closure artifacts (forthcoming).
 
 **Exit Criteria:** `printf '\x1b[53mO\x1b[0m'` produces a horizontal stroke at the top edge of the `O` cell on all three platforms; `printf '\x1b[73mS\x1b[0m'` shifts the `S` glyph upward by 25% of cell height; `printf '\x1b[74mS\x1b[0m'` shifts it downward by the same amount. Selecting these cells and pasting into a rich-text editor preserves the corresponding CSS attributes. `cargo test -p oriterm` and `cargo test -p oriterm_core` are green; Plan TPR + Code TPR + impl-hygiene clean.
