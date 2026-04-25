@@ -2,7 +2,7 @@
 bug: "BUG-08-013"
 title: "Numpad keys produce no output — Enter, digits, operators all dead"
 severity: "high"
-status: in-progress
+status: complete
 goal: "Numpad keys (digits 0-9, `+`, `-`, `*`, `/`, `.`, Enter) produce the correct bytes on the PTY in every terminal mode (normal, Kitty, APP_KEYPAD, LINE_FEED_NEW_LINE) regardless of whether winit populates `KeyEvent::text`."
 success_criteria:
   - "Matrix tests cover numpad digits / operators / decimal / Enter, with and without `text` populated, in both legacy and Kitty dispatch paths."
@@ -456,6 +456,24 @@ Ran static analysis (`hygiene-lint.py`, `enum-drift.py`) directly via Bash — s
 **Banner / single-responsibility / dead-code / unsafe:** no violations.
 
 **Hygiene findings: 0** (after BLOAT extraction commit).
+
+### Phase 5 /improve-tooling Retrospective
+
+**Tooling gaps surfaced during the bug-fix journey:**
+
+1. **Sub-agent 1M-context billing gate blocked the canonical TPR + hygiene-review pipelines.** Both `/tpr-review` and `/impl-hygiene-review` dispatch reviewer/analysis work through Sonnet sub-agents. In this session the sub-agents returned `API Error: Extra usage is required for 1M context · run /extra-usage to enable, or /model to switch to standard context` immediately on Agent() invocation, before reaching the wrapper script. **Workaround used:** run `bash .claude/skills/tpr-review/invoke-{codex,gemini}.sh "$RUN"` directly in the main-context Bash with `run_in_background: true`, then poll with `Monitor` until both wrappers exit. Output extraction (Python JSON-stream flattener + `sed` sentinel match) ran inline. **Improvement opportunity:** document the direct-Bash bypass pattern in `.claude/skills/tpr-review/SKILL.md` §1 (or in a `recovery.md` sibling) so future autopilot runs hitting the same gate don't have to discover the fallback. Filed inline in this retrospective rather than as a code change because it touches skill protocol, not source.
+
+2. **The original `enc_numpad` test helper hardcoded `text: None`** at `oriterm/src/key_encoding/tests/mod.rs`, which is unrealistic — winit populates `event.text` for numpad keys on most backends. The pre-fix test `numpad_5_no_app_keypad` USED this helper and asserted `r.is_empty()`, effectively pinning the broken behavior as correct. This made the bug invisible to the test suite even though the failure mode existed in production. **Improvement landed:** added `enc_numpad_text(key, mods, mode, text)` and `enc_numpad_full(key, mods, mode, text, event_type)` helpers in this fix's commit `7f73dba0` so future tests can drive the realistic and edge-case shapes without touching the original helper signature. **Pattern lesson** (worth surfacing to test-organization.md if generalized): test helpers that hardcode optional parameters silently bias the test matrix toward the hardcoded value — prefer accepting the parameter explicitly or providing parallel helpers for each interesting value.
+
+3. **5 rounds of /tpr-review on a single bug fix** is a long convergence loop. The original /tp-help round (Phase 1.75) caught codex's refinements (release suppression, Alt prefix) which landed in commit `7f73dba0`. But it did NOT catch the broader release-suppression class — that took rounds 1-3 of code TPR (legacy bypass, multi-char/Unidentified leak with REPORT_EVENT_TYPES, Repeat semantics). **Observation:** /tp-help's Phase 1.75 prompt focuses on the *proposed approach* but not on the *broader class of bugs the same root cause might enable*. A future improvement to /tp-help (or to the /fix-bug Phase 1.75 prompt) could explicitly ask reviewers "look for orthogonal cases of the same root-cause class — what other code paths share this gap?" The cost of asking is small; the savings (catching round-2/3 findings during Phase 1.75) is large. Filed inline; no code change.
+
+4. **`hygiene-lint.py --scope <files>` flag works correctly** but is undocumented in the script's help (the help string says `[--scope PATH [PATH ...]]` but doesn't describe behavior when files are passed instead of paths). Worked correctly in this session. No change needed.
+
+5. **`Monitor` + `run_in_background: true` + `pgrep` polling pattern** for waiting on long-running CLI wrappers worked smoothly. No improvement needed.
+
+**Items 1-3 are protocol-level observations** that warrant follow-ups but are out of scope for a bug-fix commit. Filing inline rather than spawning new artifacts to keep the retrospective lightweight.
+
+**Items implemented in this fix:** test helpers (item 2), via the fix's own commit chain.
 
 ---
 
