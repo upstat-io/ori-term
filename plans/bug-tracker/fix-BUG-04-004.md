@@ -225,20 +225,54 @@ Plan TPR: Skipped per gate — medium severity, non-elevated subsystem, determin
 
 ## R. Third Party Review Findings
 
-### Round 1 — 2026-04-24
+Code TPR (Phase 5) — 4 rounds, exit reason: **clean**.
 
-- **Dispatch**: codex 1 finding / gemini clean / survivor_mode: false
+### Round 0 — 2026-04-24 (initial review of `3c510928`)
+
+- **Dispatch**: codex 1 finding / gemini clean
 - **Verification**: verified 1 / dropped 0
 - **Classification**: actionable 1 / meta 0
+- **Fix commit**: `3528b508`
 
 - [x] `[TPR-04-004-codex][medium]` `oriterm/src/app/config_reload/mod.rs:187-197` — Config reload injects UI fallbacks from the OLD terminal font.
   Evidence: `rebuild_ui_font_sizes(renderer, ...)` (line 187) runs BEFORE `renderer.replace_font_collection(fc, gpu)` (line 197). Because `rebuild_ui_font_sizes` internally calls `renderer.replace_ui_font_sizes(new_ui_sizes)` which in the initial fix also called `self.reinject_emoji_fallback()`, the fresh UI registry picked up the OLD `self.font_collection`'s emoji fallback (the new `FontCollection` hadn't been installed yet). After config reload the UI would render emoji from the previous terminal font.
   Impact: config-reload path delivered stale emoji fallback when the terminal font family changed — a secondary path of the same SSOT violation BUG-04-004 targets.
   Resolution: moved `reinject_emoji_fallback()` from `replace_ui_font_sizes` (consumer-side trigger, fires before the source is ready) to `replace_font_collection` (source-side trigger, fires after the new terminal font is in place). `replace_ui_font_sizes` now only stores the new registry; `replace_font_collection` re-establishes the emoji wiring against the CURRENT `font_collection`. The invariant is order-independent: regardless of which of the two replace_* methods runs first during config reload, the reinject at the end of `replace_font_collection` pulls from the correct (newly installed) source.
 
-Round 2 — clean. Both reviewers returned clean after F1 was fixed.
+### Round 1 — 2026-04-24 (review of `3528b508`)
 
-**Exit reason**: clean after 1 fix + 1 confirmation round.
+- **Dispatch**: codex 1 finding / gemini clean
+- **Verification**: verified 1 / dropped 0
+- **Classification**: actionable 1 / meta 0
+- **Fix commit**: `73ac90c8`
+
+- [x] `[TPR-04-004-codex-r1][medium]` `oriterm/src/gpu/window_renderer/font_config.rs:27` — Source-side emoji reinjection lacks a regression test.
+  Evidence: the round-0 fix moved `reinject_emoji_fallback()` to `replace_font_collection` but no test pinned the new ordering semantic. A future refactor that reverted the move could silently re-introduce the config-reload stale-emoji bug.
+  Impact: without a regression pin, the source-side ordering invariant (`replace_ui_font_sizes` storage-only, `replace_font_collection` reinject trigger) depends on reviewer vigilance.
+  Resolution: added gpu-tests-gated test `replace_font_collection_reinjects_emoji_into_current_ui_registry` in `oriterm/src/gpu/window_renderer/tests.rs`. The test mirrors the production config-reload call sequence and pins both halves of the ordering invariant — `replace_ui_font_sizes` must NOT inject, `replace_font_collection` must inject the NEW terminal font's emoji.
+
+### Round 2 — 2026-04-24 (review of `73ac90c8`)
+
+- **Dispatch**: codex 1 finding / gemini clean
+- **Verification**: verified 1 / dropped 0
+- **Classification**: actionable 1 / meta 0
+- **Fix commit**: `e6fc75c8`
+
+- [x] `[TPR-04-004-codex-r2][medium]` `oriterm/src/gpu/window_renderer/tests.rs:562` — Round-1 test missed new-source fallback identity.
+  Evidence: the test asserted `after_replace_fc == 1` but did not verify the fallback came from the newly-installed `FontCollection`. A hypothetical broken reinject that left some unrelated fallback in the UI registry (carried from a previous source, loaded from a default chain) would still pass the count-only assertion.
+  Impact: count-only pin allowed alternative-A-style implementations (mutating `font_set.fallbacks`) and stale-source regressions to slip past the regression gate.
+  Resolution: captured the new terminal collection's fallback `Arc` BEFORE moving it into `replace_font_collection`, then assert `Arc::ptr_eq` between the captured Arc and the UI registry's post-reinject fallback. Turns count-smoke into source-identity semantic pin.
+
+### Round 3 — 2026-04-24 (review of `e6fc75c8`)
+
+- **Dispatch**: codex clean / gemini clean (1 informational — positive confirmation of the Arc::ptr_eq pin)
+- **Verification**: verified 0 actionable findings
+- **Classification**: 1 informational (no fix required)
+- **Fix commit**: none — loop exiting clean
+
+Both reviewers confirm the full chain `3c510928..e6fc75c8` is correct and comprehensive.
+
+**Exit reason**: clean after 3 fix rounds + 1 confirmation round. All findings fixed inline; zero findings remain outstanding.
 
 ---
 
