@@ -233,7 +233,7 @@ fn dim_variants_are_darker() {
     assert!(dim.b <= normal.b);
 }
 
-// --- Theme-aware palette tests ---
+// Theme-aware palette tests.
 
 #[test]
 fn dark_theme_has_dark_background() {
@@ -353,7 +353,7 @@ fn default_palette_equals_dark_theme() {
     assert_eq!(default.cursor_color(), dark.cursor_color());
 }
 
-// --- Selection color tests ---
+// Selection color tests.
 
 #[test]
 fn selection_defaults_to_none() {
@@ -403,7 +403,7 @@ fn selection_colors_returns_pair() {
     assert_eq!(sel.bg, None);
 }
 
-// --- from_scheme_colors tests ---
+// from_scheme_colors tests.
 
 #[test]
 fn from_scheme_colors_sets_ansi() {
@@ -522,7 +522,7 @@ fn from_scheme_colors_selection_defaults_none() {
     assert_eq!(p.selection_bg(), None);
 }
 
-// --- OSC 4/104 multi-step sequence ---
+// OSC 4/104 multi-step sequence.
 
 /// set → verify → reset → verify returns to original default.
 #[test]
@@ -588,7 +588,7 @@ fn selection_does_not_affect_indexed() {
     assert_eq!(p.resolve(Color::Named(NamedColor::Foreground)), fg_before);
 }
 
-// --- from_scheme_colors: bright foreground matches fg ---
+// from_scheme_colors: bright foreground matches fg.
 
 #[test]
 fn from_scheme_colors_bright_foreground_matches_fg() {
@@ -611,7 +611,7 @@ fn from_scheme_colors_bright_foreground_matches_fg() {
     assert_eq!(p.resolve(Color::Named(NamedColor::BrightForeground)), fg);
 }
 
-// --- dim_rgb edge values ---
+// dim_rgb edge values.
 
 #[test]
 fn dim_rgb_black_stays_black() {
@@ -637,7 +637,7 @@ fn dim_rgb_white_produces_170() {
     );
 }
 
-// --- set_default vs set_indexed semantics ---
+// set_default vs set_indexed semantics.
 
 /// `set_default` updates the reset baseline so OSC 104 resets to it.
 #[test]
