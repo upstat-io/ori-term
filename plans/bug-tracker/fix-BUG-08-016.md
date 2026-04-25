@@ -2,7 +2,7 @@
 bug: "BUG-08-016"
 title: "Default ANSI palette is Tango, not xterm — yellow looks orange, bright green looks lime, colors over-saturated"
 severity: "high"
-status: in-progress
+status: complete
 goal: "Default `ANSI_COLORS[0..16]` constant in `oriterm_core/src/color/palette/mod.rs` matches the classic xterm/VT100 defaults so users see standard colors out-of-the-box. Tango remains available as an opt-in built-in scheme (`scheme/builtin/extended2.rs`)."
 success_criteria:
   - "ANSI_COLORS[3] = Rgb { 0xCD, 0xCD, 0x00 } (xterm yellow), not Tango 0xC4A000."
@@ -160,9 +160,43 @@ third_party_review:
 - `[TPR-08-016-codex][low]` `oriterm_core/src/color/palette/mod.rs:18-22` — Doc comment claimed the xterm `ttyDefaultColors` values match "the broad default across xterm, Alacritty, WezTerm, Windows Terminal Campbell, iTerm2, Ghostty, Kitty". Codex verified (cross-checked against `~/projects/reference_repos/console_repos/alacritty/alacritty/src/config/color.rs` and `terminal/src/cascadia/TerminalSettingsModel/defaults.json`) that those terminals ship their own curated defaults — Alacritty red is 0xac4242, Windows Terminal Campbell red is 0xC50F1F, neither matches xterm's 0xCD0000. Disposition: fixed in Phase 5 round-1 commit — narrowed the comment to state this is xterm-specific without claiming alignment with other terminals' curated defaults.
 - `[TPR-08-016-gemini × 7][low]` `oriterm_core/src/color/palette/tests.rs:236, 356, 406, 525, 591, 614, 640` — 7 `// --- ... ---` decorative banners (pre-existing in this file but in scope per CLAUDE.md "Broken Window Policy"). Disposition: fixed in Phase 5 round-1 commit — replaced all 7 with plain `// <text>.` per code-hygiene.md §Comments. Pattern: `// --- Theme-aware palette tests ---` → `// Theme-aware palette tests.`
 
-### Phase 5 Code TPR — Round 2 (convergence verification)
+### Phase 5 Code TPR — Round 2 (CLEAN)
 
-Pending after the round-1 fix commit.
+**Scratch dir:** `/tmp/tpr-round-ori_term-Q4H5jDwg`. Direct wrapper Bash dispatch.
+
+**Dispatch:** codex 0 findings (clean) / gemini 0 findings (clean).
+**Fix commit:** none — no actionable findings this round.
+
+**Findings this round:** (none — both reviewers returned clean)
+
+**Codex (round 2):** "Commit 57b438f6 closes the round-1 items. The palette doc now describes the xterm table without claiming cross-terminal default equivalence, and local reference checks support the remaining differentiating statement. The decorative banner grep checks for palette/tests.rs returned no matches, and git diff --check was clean."
+
+**Gemini (round 2):** "Round 2 verification complete. Commit 57b438f6 correctly addresses all Round 1 findings. The doc comment in palette/mod.rs accurately describes xterm-specific defaults without overstated claims, and all seven banned decorative banners in palette/tests.rs have been replaced with compliant plain comments. All 52 palette tests passed, and cargo check is clean."
+
+**TPR loop exit:** clean after 3 rounds (0 + 1 + 2). Total findings: 11 (3 codex round 0, 1 codex round 1, 7 gemini round 1, all fixed). Final commit: `57b438f6`.
+
+### Phase 5 Implementation Hygiene Review
+
+Static analysis ran directly via `hygiene-lint.py` (sub-agent pipeline blocked).
+
+**Static findings (1, fixed):**
+- `[BLOAT] nesting-depth` — `fill_cube` at `oriterm_core/src/color/palette/mod.rs:389` had nesting depth 5 (limit 4). Pre-existing in this function but in scope per Broken Window Policy. Disposition: extracted `cube_rgb(r, g, b) -> Rgb` helper to flatten the inner Rgb construction. The `Rgb { r: cube_component(r), ... }` is now a 1-line builder; the inner `if n == 0 { 0 } else { 55 + n * 40 }` lives in a nested `cube_component` fn-in-fn. `fill_cube` itself is now nesting depth 4. No behavior change.
+
+**Manual SSOT review:** Palette is THE canonical home for ANSI colors per impl-hygiene.md SSOT table. The hardcoded `(211, 215, 207)` fixture in `frame_input_helper.rs` is now correctly labelled as fixture-specific (not "canonical"), with an SSOT note pointing at BUG-08-016 — addressed in TPR round 0.
+
+**Algorithmic DRY:** No duplication.
+
+**File sizes:** mod.rs 432 lines ✓ (under 500), tests.rs 796 lines (test file, exempt).
+
+**Hygiene findings: 0** (after cube_rgb extraction).
+
+### Phase 5 /improve-tooling Retrospective
+
+Same systemic gaps as documented in BUG-08-13's §R retrospective:
+- Sub-agent 1M-context billing gate continues to block both `/tpr-review` and `/impl-hygiene-review` canonical pipelines. Direct-Bash wrapper bypass works (used here for both).
+- New observation specific to BUG-08-16: when a constant table is intentionally documented as "the X reference", the doc comment should NOT also claim cross-terminal default equivalence for products whose defaults aren't byte-equal — codex correctly flagged this in round 1. The pattern: doc comments should cite their direct source, not transitively-implied alignment with adjacent tools.
+
+No code-level tooling changes filed in this run; observations are protocol-level.
 
 ---
 
