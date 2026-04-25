@@ -14,36 +14,45 @@ impl WindowRenderer {
 
     /// Replace the entire font collection (family, weight, features changed).
     ///
-    /// Clears all GPU atlases and re-caches ASCII glyphs with the new fonts.
+    /// Clears all GPU atlases and re-caches ASCII glyphs with the new fonts,
+    /// then re-injects the new terminal font's emoji fallback into the
+    /// current UI font registry so the tab bar, dialogs, and all UI text
+    /// paths pick up the new emoji source. This is the canonical trigger
+    /// for the terminal-font → UI-registry emoji rewire — config reload
+    /// calls [`replace_ui_font_sizes`] (fresh registry, no emoji) and
+    /// [`replace_font_collection`] (new terminal font) in sequence;
+    /// regardless of order, the reinject here pulls from the current
+    /// terminal font AFTER both installs are complete. See BUG-04-004.
     pub fn replace_font_collection(&mut self, collection: FontCollection, gpu: &GpuState) {
         self.font_collection = collection;
         self.clear_and_recache(gpu);
+        self.reinject_emoji_fallback();
     }
 
     /// Replace the UI font sizes registry (font family/weight/features changed).
     ///
     /// Stores the new registry without clearing atlases — call
     /// [`replace_font_collection`] afterward to clear and re-prewarm both
-    /// terminal and UI atlases in one pass.
-    ///
-    /// Re-injects the terminal font's emoji fallback into the new registry so
-    /// config reload (which rebuilds `UiFontSizes` from scratch in
-    /// `rebuild_ui_font_sizes`) does not drop emoji rendering in the tab bar,
-    /// dialogs, or any UI text path. See BUG-04-004.
+    /// terminal and UI atlases in one pass. `replace_font_collection` is
+    /// also the point at which the terminal font's emoji fallback is
+    /// re-injected into the new registry, so this method intentionally
+    /// does NOT inject: during config reload the fresh registry passed
+    /// here would otherwise pick up the OLD terminal font's emoji (since
+    /// the new `FontCollection` has not been installed yet). See
+    /// BUG-04-004 Codex F1 for the ordering gotcha.
     pub fn replace_ui_font_sizes(&mut self, sizes: UiFontSizes) {
         self.ui_font_sizes = Some(sizes);
-        self.reinject_emoji_fallback();
     }
 
-    /// Inject the terminal font's emoji fallback into the current UI font
-    /// registry, if both sides are populated.
+    /// Inject the current terminal font's emoji fallback into the current
+    /// UI font registry, if both sides are populated.
     ///
     /// Canonical wiring point between the terminal font (source of the
     /// emoji fallback) and the UI font registry (consumer). Called by
     /// [`WindowRenderer::new`] right after construction and by
-    /// [`replace_ui_font_sizes`] after a config-reload swap — so every
-    /// `ui_font_sizes` assignment carries the same emoji wiring without
-    /// duplicating the "extract from `font_collection`, call
+    /// [`replace_font_collection`] after the terminal font is swapped —
+    /// so every change to EITHER side converges on the same wiring step
+    /// without duplicating the "extract from `font_collection`, call
     /// `inject_fallbacks` if non-empty" sequence at the call sites.
     ///
     /// Relies on `UiFontSizes::inject_fallbacks` idempotency: calling this

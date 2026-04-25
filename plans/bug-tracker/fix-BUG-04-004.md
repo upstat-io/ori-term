@@ -225,7 +225,20 @@ Plan TPR: Skipped per gate — medium severity, non-elevated subsystem, determin
 
 ## R. Third Party Review Findings
 
-(populated during Phase 5)
+### Round 1 — 2026-04-24
+
+- **Dispatch**: codex 1 finding / gemini clean / survivor_mode: false
+- **Verification**: verified 1 / dropped 0
+- **Classification**: actionable 1 / meta 0
+
+- [x] `[TPR-04-004-codex][medium]` `oriterm/src/app/config_reload/mod.rs:187-197` — Config reload injects UI fallbacks from the OLD terminal font.
+  Evidence: `rebuild_ui_font_sizes(renderer, ...)` (line 187) runs BEFORE `renderer.replace_font_collection(fc, gpu)` (line 197). Because `rebuild_ui_font_sizes` internally calls `renderer.replace_ui_font_sizes(new_ui_sizes)` which in the initial fix also called `self.reinject_emoji_fallback()`, the fresh UI registry picked up the OLD `self.font_collection`'s emoji fallback (the new `FontCollection` hadn't been installed yet). After config reload the UI would render emoji from the previous terminal font.
+  Impact: config-reload path delivered stale emoji fallback when the terminal font family changed — a secondary path of the same SSOT violation BUG-04-004 targets.
+  Resolution: moved `reinject_emoji_fallback()` from `replace_ui_font_sizes` (consumer-side trigger, fires before the source is ready) to `replace_font_collection` (source-side trigger, fires after the new terminal font is in place). `replace_ui_font_sizes` now only stores the new registry; `replace_font_collection` re-establishes the emoji wiring against the CURRENT `font_collection`. The invariant is order-independent: regardless of which of the two replace_* methods runs first during config reload, the reinject at the end of `replace_font_collection` pulls from the correct (newly installed) source.
+
+Round 2 — clean. Both reviewers returned clean after F1 was fixed.
+
+**Exit reason**: clean after 1 fix + 1 confirmation round.
 
 ---
 
