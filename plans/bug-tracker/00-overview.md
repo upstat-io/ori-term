@@ -37,7 +37,7 @@ Track and fix all discovered bugs across the ori_term codebase. This is a living
 | 04 | Fonts | `section-04-fonts.md` | 16 | 3 |
 | 05 | Config | `section-05-config.md` | 5 | 1 |
 | 06 | Rendering & Perf | `section-06-rendering-perf.md` | 19 | 7 |
-| 07 | CI & Build | `section-07-ci-build.md` | 13 | 6 |
+| 07 | CI & Build | `section-07-ci-build.md` | 15 | 5 |
 | 08 | Core Terminal | `section-08-core-terminal.md` | 27 | 14 |
 | 09 | Session & Tab/Window | `section-09-session.md` | 3 | 1 |
 | 10 | Platform Windows | `section-10-platform-windows.md` | 2 | 2 |
