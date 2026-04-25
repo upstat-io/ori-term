@@ -34,6 +34,32 @@ pub use shaped_frame::ShapedFrame;
 #[cfg(test)]
 pub(crate) use unshaped::{prepare_frame, prepare_frame_into};
 
+/// Vertical glyph offset (in pixels) for SGR 73 (superscript) / SGR 74 (subscript).
+///
+/// Returns a SIGNED, INTEGER-ROUNDED pixel offset relative to the cell-top y:
+/// negative shifts the glyph upward (super), positive shifts downward (sub),
+/// `0.0` when neither flag is set. The `.round()` is load-bearing — it preserves
+/// the integer-Y-pixel-snap discipline applied at `fill_frame_shaped` (`mod.rs`)
+/// and `fill_frame_incremental` (`dirty_skip/mod.rs`) where
+/// `(oy + row * ch).round()` snaps the cell-top y to an integer; a fractional
+/// super/sub offset would defeat that snap and trigger bilinear-filtering blur
+/// on cells whose `cell_height * 0.25` is non-integer (e.g. `13.0 * 0.25 = 3.25`).
+///
+/// Backgrounds, decorations, and cursors keep the unshifted cell-top y so they
+/// remain anchored to the cell rectangle — only glyph y shifts. The 25% factor
+/// matches wezterm (`wezterm-gui/src/termwindow/render/screen_line.rs:437-445`).
+pub(super) fn super_sub_glyph_offset(flags: CellFlags, cell_height: f32) -> f32 {
+    const FACTOR: f32 = 0.25;
+    let raw = if flags.contains(CellFlags::SUPERSCRIPT) {
+        -cell_height * FACTOR
+    } else if flags.contains(CellFlags::SUBSCRIPT) {
+        cell_height * FACTOR
+    } else {
+        0.0
+    };
+    raw.round()
+}
+
 /// Abstracts glyph atlas lookup for testability.
 ///
 /// Production: the shaped path uses [`lookup_key`](Self::lookup_key) for
@@ -310,6 +336,11 @@ pub(crate) fn fill_frame_shaped(
             is_hovered,
         );
 
+        // SGR 73/74 (superscript/subscript) glyph y-offset. Affects ONLY
+        // glyph emission (built-in + shaped); backgrounds, decorations,
+        // and cursor stay anchored to the cell-top y.
+        let glyph_y = y + super_sub_glyph_offset(cell.flags, ch);
+
         // Built-in geometric glyphs: bypass shaping, render from atlas.
         if crate::font::is_builtin(cell.ch) {
             let key = super::builtin_glyphs::raster_key(cell.ch, shaped.size_q6());
@@ -317,7 +348,7 @@ pub(crate) fn fill_frame_shaped(
                 let uv = [entry.uv_x, entry.uv_y, entry.uv_w, entry.uv_h];
                 let rect = ScreenRect {
                     x,
-                    y,
+                    y: glyph_y,
                     w: entry.width as f32,
                     h: entry.height as f32,
                 };
@@ -345,7 +376,16 @@ pub(crate) fn fill_frame_shaped(
                 atlas,
                 frame,
             }
-            .emit(row_glyphs, row_col_starts, start_idx, col, x, y, fg, bg);
+            .emit(
+                row_glyphs,
+                row_col_starts,
+                start_idx,
+                col,
+                x,
+                glyph_y,
+                fg,
+                bg,
+            );
         }
     }
 

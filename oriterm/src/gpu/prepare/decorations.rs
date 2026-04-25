@@ -1,13 +1,14 @@
-//! Text decoration rendering: underlines (single, double, curly, dotted, dashed)
-//! and strikethrough.
+//! Text decoration rendering: underlines (single, double, curly, dotted, dashed),
+//! strikethrough, and overline.
 //!
-//! Simple decorations (single, double, strikethrough) are emitted as solid-color
-//! rectangles into the background buffer. Patterned decorations (curly, dotted,
-//! dashed) are rendered as atlas-cached glyph instances — one instance per cell
-//! instead of O(`cell_width`) rect instances.
+//! Simple decorations (single, double, strikethrough, overline) are emitted as
+//! solid-color rectangles into the background buffer. Patterned decorations
+//! (curly, dotted, dashed) are rendered as atlas-cached glyph instances — one
+//! instance per cell instead of O(`cell_width`) rect instances.
 //!
 //! Geometry is derived from font metrics in [`CellMetrics`] — underline
-//! position and thickness come from the font's OS/2 and post tables.
+//! position and thickness come from the font's OS/2 and post tables. Overline
+//! sits at the cell-top edge with the same stroke thickness as underline.
 
 use oriterm_core::{CellFlags, Rgb};
 
@@ -67,8 +68,9 @@ impl DecorationContext<'_> {
     ) {
         let has_explicit_underline = flags.intersects(CellFlags::ALL_UNDERLINES);
         let has_strikethrough = flags.contains(CellFlags::STRIKETHROUGH);
+        let has_overline = flags.contains(CellFlags::OVERLINE);
 
-        if !has_explicit_underline && !has_strikethrough && !has_hyperlink {
+        if !has_explicit_underline && !has_strikethrough && !has_hyperlink && !has_overline {
             return;
         }
 
@@ -115,6 +117,19 @@ impl DecorationContext<'_> {
             let rect = ScreenRect {
                 x,
                 y: strike_y,
+                w: cell_width,
+                h: t,
+            };
+            self.backgrounds.push_rect(rect, fg, self.alpha);
+        }
+
+        if has_overline {
+            // Stroke-thickness rect at the cell-top edge. Color = fg (no SGR
+            // for "colored overline"). Matches wezterm
+            // (wezterm-gui/src/glyphcache.rs:1312-1328).
+            let rect = ScreenRect {
+                x,
+                y,
                 w: cell_width,
                 h: t,
             };

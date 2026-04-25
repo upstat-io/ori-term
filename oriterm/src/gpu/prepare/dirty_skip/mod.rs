@@ -301,13 +301,18 @@ pub(crate) fn fill_frame_incremental(
             is_hovered,
         );
 
+        // SGR 73/74 (superscript/subscript) glyph y-offset. See
+        // `super_sub_glyph_offset` in prepare/mod.rs for the integer-rounding
+        // invariant. Backgrounds + decorations stay anchored to cell-top y.
+        let glyph_y = y + super::super_sub_glyph_offset(cell.flags, ch);
+
         if crate::font::is_builtin(cell.ch) {
             let key = crate::gpu::builtin_glyphs::raster_key(cell.ch, shaped.size_q6());
             if let Some(entry) = atlas.lookup_key(key) {
                 let uv = [entry.uv_x, entry.uv_y, entry.uv_w, entry.uv_h];
                 let rect = ScreenRect {
                     x,
-                    y,
+                    y: glyph_y,
                     w: entry.width as f32,
                     h: entry.height as f32,
                 };
@@ -333,7 +338,16 @@ pub(crate) fn fill_frame_incremental(
                 atlas,
                 frame,
             }
-            .emit(row_glyphs, row_col_starts, start_idx, col, x, y, fg, bg);
+            .emit(
+                row_glyphs,
+                row_col_starts,
+                start_idx,
+                col,
+                x,
+                glyph_y,
+                fg,
+                bg,
+            );
         }
     }
 
