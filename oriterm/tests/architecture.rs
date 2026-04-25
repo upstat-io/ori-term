@@ -266,14 +266,18 @@ fn move_to_new_window_embedded_mirrors_tear_off_sequence() {
         "seed_pane_with_window_cell_metrics",
         "sync_tab_bar_for_window",
         "refresh_platform_rects",
-        // The focused-id swap that forces handle_redraw to paint the new
-        // window. Without it, handle_redraw paints whatever is currently
-        // focused (the source) and the new window stays blank.
+        // The focused-id + active-window swap that forces handle_redraw
+        // to paint the new window. handle_redraw resolves the pane
+        // through `active_window`, so BOTH must be swapped — `focused_id`
+        // alone leaves the redraw painting the source's pane on the new
+        // window's surface.
         "self.focused_window_id = Some(new_winit_id);",
+        "self.active_window = Some(new_session_wid);",
         // The first handle_redraw — paints the new window with content.
         "self.handle_redraw();",
-        // Restore focused id.
+        // Restore both halves of the swap.
         "self.focused_window_id = saved_focused;",
+        "self.active_window = saved_active;",
         // Second handle_redraw — paints the source so its tab bar updates.
         "self.handle_redraw();",
         // Show the new window AFTER it has been pre-rendered.
