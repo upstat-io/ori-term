@@ -19,6 +19,7 @@ pub mod session;
 pub mod spec_chain;
 pub mod tack_framework;
 pub mod terminfo;
+pub mod vttest_walker;
 
 pub use spec_chain::TempDirGuard;
 
@@ -36,3 +37,4 @@ pub use terminfo::{
     TerminfoEnv, TerminfoVariant, decode_terminfo_string, infocmp_dump, infocmp_query,
     infocmp_respects_terminfo_env,
 };
+pub use vttest_walker::walk_vttest_screens;

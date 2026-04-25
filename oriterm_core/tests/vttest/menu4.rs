@@ -5,7 +5,7 @@
 //! normal size. Snapshots are captured as a baseline — when DECDHL/DECDWL
 //! support is added, the snapshots will change to reflect correct rendering.
 
-use super::session::{PtySession, vttest_available};
+use super::session::{PtySession, vttest_available, walk_vttest_screens};
 
 /// Run vttest menu 4 (double-size characters) at a given size.
 ///
@@ -20,28 +20,11 @@ fn run_menu4_double_size(cols: u16, rows: u16) {
     // Select menu 4.
     s.send(b"4\r");
 
-    let mut screen = 1;
-    loop {
-        let text = s.grid_text();
-
-        if text.contains("Enter choice number") {
-            break;
-        }
-
+    let count = walk_vttest_screens(&mut s, 20, &[], |_session, text, screen| {
         insta::assert_snapshot!(format!("{label}_04_dblsize_{screen:02}"), text);
+    });
 
-        s.send(b"\r");
-        screen += 1;
-
-        if screen > 20 {
-            break;
-        }
-    }
-
-    assert!(
-        screen > 1,
-        "{label}: menu 4 should have at least one screen"
-    );
+    assert!(count > 0, "{label}: menu 4 should have at least one screen");
 }
 
 #[test]
