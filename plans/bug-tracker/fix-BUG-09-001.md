@@ -160,7 +160,26 @@ Imports needed: `crate::window_manager::types::{ManagedWindow, WindowKind}`.
 
 ## R. Third Party Review Findings
 
-Pending — Phase 5 code TPR after implementation lands.
+### Phase 5 Code TPR — Round 0
+
+**Scratch dir:** `/tmp/tpr-round-ori_term-jcaUMzcW`. Direct wrapper Bash dispatch.
+
+**Dispatch:** codex 2 findings (medium) / gemini 0 findings (clean).
+**Verification:** verified 2 / dropped 0.
+**Classification:** actionable 2 / meta 0.
+**Fix commit:** Phase 5 round-0 commit below.
+
+**Findings this round:**
+- `[TPR-09-001-codex][medium]` `oriterm/src/app/tab_management/move_ops.rs:127` — Mirror omission: `tear_off_tab` calls `release_tab_width_lock()` after capturing source-window state and before mutating its tab list (so the layout cache stays consistent with the post-move tab count). My refactor missed this call. Disposition: fixed in Phase 5 round-0 commit — added `self.release_tab_width_lock();` immediately after `let source_winit_id = self.focused_window_id;`.
+- `[TPR-09-001-codex][medium]` `plans/bug-tracker/fix-BUG-09-001.md:51` — Per `tests.md` §Regression Discipline ("Every bug fix creates a permanent regression test"), the fix needs an automated regression pin even if a true behavioral test requires runtime. Disposition: fixed by adding 2 grep-based architecture tests in `oriterm/tests/architecture.rs`:
+  - `move_to_new_window_embedded_mirrors_tear_off_sequence` — asserts `move_tab_to_new_window_embedded` calls each of: `release_tab_width_lock`, `create_window_bare`, `insert_tab_at`, `pump_mux_events`, `seed_pane_with_window_cell_metrics`, `sync_tab_bar_for_window`, `refresh_platform_rects`, `self.handle_redraw()`, `set_visible(true)`, `remove_empty_window`. Catches accidental removal of any load-bearing step.
+  - `move_tab_to_window_helper_remains_removed` — asserts `fn move_tab_to_window(` is NOT present in `move_ops.rs`. Re-introducing it would re-introduce BUG-09-2 (the buggy resize path).
+
+**Gemini (round 0):** clean. Summary: "Phase 5 Code TPR for BUG-09-1 (commit 321a10ad) is clean. The refactor of move_tab_to_new_window_embedded correctly mirrors the working tear_off_tab pattern, utilizing create_window_bare and explicit pre-rendering (focused-id swap + handle_redraw) before show to eliminate blank flashes. BUG-09-2 is correctly OBE as the buggy move_tab_to_window helper was removed and replaced by surgical destination-targeted seeding."
+
+### Phase 5 Code TPR — Round 1 (convergence verification)
+
+Pending after the round-0 fix commit.
 
 ## 4. Completion Checklist
 

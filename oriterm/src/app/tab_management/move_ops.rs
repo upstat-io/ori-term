@@ -126,6 +126,11 @@ impl App {
     ) {
         let source_winit_id = self.focused_window_id;
 
+        // Release the source-window tab-width lock before mutating its tab
+        // list — mirrors `tear_off_tab` and prevents stale layout cached
+        // against the pre-move tab count.
+        self.release_tab_width_lock();
+
         // Bare window: hidden, no tabs. Caller (this function) inserts the
         // moved tab directly, pre-renders, then shows.
         let Some((new_winit_id, new_session_wid)) = self.create_window_bare(event_loop) else {

@@ -228,3 +228,63 @@ fn oriterm_ipc_is_standalone() {
         );
     }
 }
+
+// BUG-09-1: move_tab_to_new_window_embedded must mirror tear_off_tab's
+// working sequence (create_window_bare → release width lock → insert →
+// pump events → seed → sync → refresh → pre-render new (focused-id swap)
+// → pre-render source → set_visible). Without all of these, the new
+// window appears blank or with stale source-window dimensions. These
+// grep-based pins catch accidental removal.
+// See plans/bug-tracker/fix-BUG-09-001.md.
+
+/// `move_tab_to_new_window_embedded` must include the canonical call
+/// sequence from `tear_off_tab` (no visible-then-render flash).
+#[test]
+fn move_to_new_window_embedded_mirrors_tear_off_sequence() {
+    let body = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/app/tab_management/move_ops.rs"
+    ))
+    .unwrap();
+    let fn_start = body
+        .find("fn move_tab_to_new_window_embedded(")
+        .expect("move_tab_to_new_window_embedded must exist");
+    let fn_body = &body[fn_start..];
+    for required in [
+        "release_tab_width_lock",
+        "create_window_bare",
+        "insert_tab_at",
+        "pump_mux_events",
+        "seed_pane_with_window_cell_metrics",
+        "sync_tab_bar_for_window",
+        "refresh_platform_rects",
+        "self.handle_redraw()",
+        "set_visible(true)",
+        "remove_empty_window",
+    ] {
+        assert!(
+            fn_body.contains(required),
+            "move_tab_to_new_window_embedded must call `{required}` (BUG-09-1 mirror invariant)",
+        );
+    }
+}
+
+/// `move_tab_to_window` must NOT come back — it had a known correctness
+/// bug (BUG-09-2: used `resize_all_panes()` against the focused window
+/// instead of the destination) and was removed during the BUG-09-1 fix.
+/// Resurrecting it without first fixing `resize_all_panes` would
+/// re-introduce the bug.
+#[test]
+fn move_tab_to_window_helper_remains_removed() {
+    let body = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/app/tab_management/move_ops.rs"
+    ))
+    .unwrap();
+    assert!(
+        !body.contains("fn move_tab_to_window("),
+        "fn move_tab_to_window must remain removed; resurrecting it would re-introduce BUG-09-2 \
+         (resize_all_panes targets focused window, not destination). If a cross-window move \
+         helper is needed, design it with destination-targeted layout from day 1.",
+    );
+}
