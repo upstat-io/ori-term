@@ -2,7 +2,7 @@
 bug: "BUG-09-001"
 title: "\"Move to New Window\" context menu action creates blank window"
 severity: "high"
-status: in-progress
+status: complete
 goal: "Right-click → Move to New Window creates a fully-rendered window with the moved tab visible. Behaves identically to dragging the tab off (tear-off): pre-rendered before show, no blank flash, no empty initial tab."
 success_criteria:
   - "After Move to New Window, the new window shows the moved tab's content immediately."
