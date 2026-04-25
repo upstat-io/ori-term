@@ -7,6 +7,11 @@
 //! and not coincidentally hardcoded against `33×97`.
 
 #[cfg(any(unix, windows))]
+use std::io::Read;
+#[cfg(any(unix, windows))]
+use std::thread;
+
+#[cfg(any(unix, windows))]
 use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 
 #[cfg(any(unix, windows))]
@@ -16,9 +21,6 @@ fn assert_pty_reports_size(
     cmd: CommandBuilder,
     parse: impl FnOnce(&str) -> (u16, u16),
 ) {
-    use std::io::Read;
-    use std::thread;
-
     let pty_system = native_pty_system();
     let pair = pty_system
         .openpty(PtySize {
