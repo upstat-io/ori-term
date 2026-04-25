@@ -19,7 +19,7 @@ use crate::gpu::frame_input::{FrameInput, FramePalette, ViewportSize};
 /// Build a [`FrameInput`] from a live [`PtySession`] with the standard
 /// golden-test palette.
 ///
-/// Uses the canonical fg `(211, 215, 207)` / palette_bg `(1, 1, 1)`
+/// Uses the fixture-specific fg `(211, 215, 207)` / palette_bg `(1, 1, 1)`
 /// pair and all overlay fields (`selection`, `search`, `hovered_cell`,
 /// etc.) set to their neutral defaults. `subpixel_positioning` is
 /// caller-controlled: legacy vttest/tack goldens pass `true`;
@@ -27,6 +27,11 @@ use crate::gpu::frame_input::{FrameInput, FramePalette, ViewportSize};
 ///
 /// Both vttest and tack GPU goldens consume this — having two copies
 /// is `LEAK:algorithmic-duplication` per `impl-hygiene.md`.
+///
+/// **NOT** the canonical xterm/`oriterm_core::palette` foreground (`0xE5E5E5`
+/// after BUG-08-16); the value here is a stable historical baseline that
+/// existing golden snapshots were captured against. Re-baselining all
+/// goldens to query the live palette is a separate refactor.
 pub(in crate::gpu::visual_regression) fn frame_input(
     session: &PtySession,
     cell: CellMetrics,
@@ -39,6 +44,8 @@ pub(in crate::gpu::visual_regression) fn frame_input(
 
     let content = session.term().renderable_content();
 
+    // Stable fixture-specific foreground — see fn doc comment for the
+    // SSOT note re BUG-08-16.
     let fg = Rgb {
         r: 211,
         g: 215,

@@ -665,16 +665,11 @@ fn set_default_changes_reset_baseline() {
     assert_eq!(p.resolve(Color::Indexed(1)), config_color);
 }
 
-// --- BUG-08-16: default ANSI palette must match xterm ttyDefaultColors ---
-//
-// The historical `ANSI_COLORS` constant carried the GNOME/Tango palette under
-// a "Standard xterm" comment. These pins lock the canonical xterm reference
-// (xterm/charproc.c `ttyDefaultColors`) so any future drift is caught
-// immediately.
-// See: plans/bug-tracker/fix-BUG-08-016.md
-
-/// Semantic pin for the user-most-visible xterm divergence: yellow must be
-/// 0xCDCD00 (xterm), not 0xC4A000 (Tango "Butter Dark" — orange-tinged).
+/// Regression: BUG-08-16 — `ANSI_COLORS` previously held the GNOME/Tango
+/// palette under a "Standard xterm" comment. Yellow must be 0xCDCD00 (the
+/// xterm `ttyDefaultColors` value), not 0xC4A000 (Tango "Butter Dark" —
+/// orange-tinged), the user-most-visible divergence.
+/// See: plans/bug-tracker/fix-BUG-08-016.md
 #[test]
 fn default_color_3_is_xterm_yellow() {
     let p = Palette::default();
@@ -756,11 +751,11 @@ fn default_color_11_is_not_tango_bright_yellow() {
     assert_ne!(p.resolve(Color::Indexed(11)), tango_bright_yellow);
 }
 
-/// Full 16-entry matrix pin against the canonical xterm
-/// `ttyDefaultColors` table (`xterm/charproc.c`). Catches any
+/// Regression: BUG-08-16 — full 16-entry matrix pin against the canonical
+/// xterm `ttyDefaultColors` table (`xterm/charproc.c`). Catches any
 /// single-entry drift the targeted pins above might miss.
 #[test]
-fn xterm_palette_full_matrix() {
+fn default_ansi_palette_xterm_reference_matches_all_entries() {
     let p = Palette::default();
     let xterm: [(u8, u8, u8); 16] = [
         (0x00, 0x00, 0x00), // 0  Black

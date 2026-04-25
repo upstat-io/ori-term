@@ -131,7 +131,25 @@ third_party_review:
 
 ## R. Third Party Review Findings
 
-Pending — Phase 5 code TPR runs after implementation lands.
+### Phase 5 Code TPR — Round 0
+
+**Scratch dir:** `/tmp/tpr-round-ori_term-OOzyNu8s`. Direct wrapper Bash dispatch.
+
+**Dispatch:** codex 3 findings (1 medium, 2 low) / gemini 0 findings (clean).
+**Verification:** verified 3 / dropped 0.
+**Classification:** actionable 3 / meta 0.
+**Fix commit:** Phase 5 round-0 commit below.
+
+**Findings this round:**
+- `[TPR-08-016-codex][medium]` `oriterm/src/gpu/visual_regression/frame_input_helper.rs:22` — GPU golden harness still anchors its standard foreground to the OLD Tango white `(211, 215, 207)` and calls it "canonical fg" in the doc comment. After BUG-08-016 lands, the canonical foreground is xterm white `0xE5E5E5`; the comment is wrong. Disposition: fixed by relabelling the doc comment to "fixture-specific fg" (not canonical) and adding an SSOT note pointing at BUG-08-016. Re-baselining all visual-regression goldens to query the live palette is a separate refactor (out of scope for this bug). The fixture value remains stable so existing goldens still match.
+- `[TPR-08-016-codex][low]` `oriterm_core/src/color/palette/tests.rs:668` — Decorative `// ---` banner forbidden by code-hygiene.md §Comments ("Decorative banners (// ───, // ===, // ***, // ---)"). Disposition: removed banner; provenance moved into the existing `///` doc comments per impl-hygiene.md §Test Function Naming.
+- `[TPR-08-016-codex][low]` `oriterm_core/src/color/palette/tests.rs:763` — `xterm_palette_full_matrix` test name lacks the expected outcome per impl-hygiene.md §Test Function Naming (`subject_scenario_expected`). Disposition: renamed to `default_ansi_palette_xterm_reference_matches_all_entries`.
+
+**Gemini (round 0):** clean. Summary: "All 16 RGB values match the reference verbatim. Tests in `oriterm_core` are updated and extended to include matrix pins and negative Tango pins. Visual regression tests pass because they either used local xterm-colored constants (`colors_16`), are text-only in the current version (`tack_color`), or use hardcoded foreground colors in the test helper, providing stability during the constant swap. Tango remains available as an opt-in scheme in `extended2.rs`."
+
+### Phase 5 Code TPR — Round 1 (convergence verification)
+
+Pending after the round-0 fix commit.
 
 ---
 
