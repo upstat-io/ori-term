@@ -89,6 +89,7 @@ sections:
   - **Fix**: Add tooltip rendering when `hovered_footer == Some(HoveredFooterTarget::ConfigPath)` showing `self.config_path` in full. May require tooltip infrastructure (overlay or simple painted rect near cursor).
 
 - [ ] `[BUG-02-012][medium]` **Font family selector should be searchable with OS font enumeration** — found by manual.
+  Escalated: requires plan — investigated under /fix-bug --autopilot on 2026-04-24. Bug entry's own Note explicitly states the fix "requires platform font enumeration (DirectWrite on Windows, fontconfig on Linux, CoreText on macOS) and a searchable/filterable dropdown widget". Per Phase 1.5 escalation criteria: cross-platform feature implementation with new abstractions (font discovery API + searchable dropdown widget) belongs in a roadmap section, not a bug-tracker fix. The Source field also marks this as a "user feature request" rather than a defect — feature-scope work goes through plans, not /fix-bug.
   Repro: Open Settings > Font > Family dropdown. Currently a static list — should enumerate installed OS fonts and support type-to-filter.
   Subsystem: `oriterm/src/app/settings_overlay/form_builder/` (font dropdown), `oriterm/src/font/discovery/` (font enumeration)
   Found: 2026-04-01 | Source: manual — user feature request
