@@ -2,7 +2,7 @@
 bug: "BUG-07-004"
 title: "Windows PTY size propagation test removed"
 severity: "medium"
-status: in-progress
+status: complete
 goal: "PTY size propagation is verified on Windows (ConPTY) as well as Unix — both branches assert that a PTY opened at 33×97 delivers 33 rows × 97 cols to the spawned child."
 success_criteria:
   - "A `#[cfg(windows)]` test in `oriterm_core/tests/vttest/pty_size.rs` opens a ConPTY at 33×97 (and 50×40 as the negative pin), spawns `cmd /d /c mode con`, and asserts the child observed the requested dimensions."
@@ -18,16 +18,16 @@ third_party_review:
 
 # Fix: BUG-07-004 — Windows PTY size propagation test removed
 
-**Status:** In Progress
+**Status:** Complete
 **Severity:** medium
 **Goal:** PTY size propagation is verified on every supported platform. The single Unix-gated test today asserts the invariant for Linux/macOS only; Windows ConPTY size handling — a distinct code path inside `portable-pty` — has zero regression coverage. After this fix, both code paths are pinned by a test that asserts the same observable invariant: a PTY opened at `(rows: 33, cols: 97)` delivers a 33×97 size to the child running inside it.
 
 **Success Criteria:**
-- [ ] Windows-native test added under `oriterm_core/tests/vttest/pty_size.rs` (gated by `#[cfg(windows)]`) that uses `portable_pty::native_pty_system()` (returns ConPTY on Windows) to open a `(33, 97)` PTY (plus a `(50, 40)` negative-pin case), spawns `cmd /d /c mode con`, and asserts the printed size matches.
-- [ ] Both tests share a private helper (`assert_pty_reports_size(rows, cols, cmd, parse)`) so the Unix and Windows branches differ only in the command spawned and the output parser — the assertion logic stays single-sourced.
-- [ ] `cargo build --target x86_64-pc-windows-gnu --tests -p oriterm_core` succeeds (Windows-cross compile gate verifies the new code compiles even from the WSL dev loop).
-- [ ] `./test-all.sh` (Linux host) green; the Unix test still runs and the Windows test compiles + is excluded by `cfg(windows)`.
-- [ ] `cargo test -p oriterm_core --test vttest pty_size_propagation` matches both renamed tests by substring and reports passes on each platform's branch (filter must NOT use `pty_size_is_propagated` — that name is gone after the rename).
+- [x] Windows-native test added under `oriterm_core/tests/vttest/pty_size.rs` (gated by `#[cfg(windows)]`) that uses `portable_pty::native_pty_system()` (returns ConPTY on Windows) to open a `(33, 97)` PTY (plus a `(50, 40)` negative-pin case), spawns `cmd /d /c mode con`, and asserts the printed size matches.
+- [x] Both tests share a private helper (`assert_pty_reports_size(rows, cols, cmd, parse)`) so the Unix and Windows branches differ only in the command spawned and the output parser — the assertion logic stays single-sourced.
+- [x] `cargo build --target x86_64-pc-windows-gnu --tests -p oriterm_core` succeeds (Windows-cross compile gate verifies the new code compiles even from the WSL dev loop).
+- [x] `./test-all.sh` (Linux host) green; the Unix test still runs and the Windows test compiles + is excluded by `cfg(windows)`.
+- [x] `cargo test -p oriterm_core --test vttest pty_size_propagation` matches both renamed tests by substring and reports passes on each platform's branch (filter must NOT use `pty_size_is_propagated` — that name is gone after the rename).
 
 **Context:** The original `pty_size_is_propagated` test was gated to Unix in commit history when ConPTY support landed without a paired Windows test. ConPTY's size-handling code path (`ResizePseudoConsole` + `OpenPseudoConsole` size struct) is structurally distinct from the POSIX `openpty` + `TIOCSWINSZ` path — a regression in either branch is invisible to the other's test. CI on Windows would catch a ConPTY size break only if a downstream feature happened to read the size; right now nothing does, so a silent regression here ships uncaught. Filed by tpr-review on 2026-04-02 against `oriterm_core/tests/vttest.rs:226`.
 
@@ -105,26 +105,26 @@ The TDD matrix (§2) and Implementation (§3) below are written against this fin
 The "test" IS the deliverable here — there is no production code to fix. The matrix instead clamps the test's observable invariant from multiple angles so it cannot silently rot.
 
 ### Exact failing case (current platform gap)
-- [ ] **Windows ConPTY at 33×97**: open a PTY at `(rows: 33, cols: 97)`, spawn `cmd /c mode con`, parse the printed `Lines:`/`Columns:` integers, assert `(33, 97)`. This is the missing test that BUG-07-004 names.
+- [x] **Windows ConPTY at 33×97**: open a PTY at `(rows: 33, cols: 97)`, spawn `cmd /c mode con`, parse the printed `Lines:`/`Columns:` integers, assert `(33, 97)`. This is the missing test that BUG-07-004 names.
 
 ### Edge cases — same-shape invariant at different dimensions
-- [ ] **Tall aspect 50×40**: a "more rows than cols" case that triangulates against the wide 33×97 case. Together they expose a swapped `rows`/`cols` argument (33 ≠ 97 and 50 ≠ 40 — neither is square so a swap would flip the values), a clamp to 80 (50×40 stays under 80 in both dimensions, so the unwrapped dimension would still match — combined with the 33×97 case where 97 > 80, a clamp would surface as 33×80), or a clamp to a console-buffer minimum like 25×80 (50×40 falls below 25-col minimums on `cols`, so a min-clamp would inflate the value). Width is held ≥ 40 cols so `mode con` output cannot wrap mid-label inside the 80-char console-buffer minimum width.
+- [x] **Tall aspect 50×40**: a "more rows than cols" case that triangulates against the wide 33×97 case. Together they expose a swapped `rows`/`cols` argument (33 ≠ 97 and 50 ≠ 40 — neither is square so a swap would flip the values), a clamp to 80 (50×40 stays under 80 in both dimensions, so the unwrapped dimension would still match — combined with the 33×97 case where 97 > 80, a clamp would surface as 33×80), or a clamp to a console-buffer minimum like 25×80 (50×40 falls below 25-col minimums on `cols`, so a min-clamp would inflate the value). Width is held ≥ 40 cols so `mode con` output cannot wrap mid-label inside the 80-char console-buffer minimum width.
 
 ### Cross-platform matrix (the headline of this fix)
-- [ ] **Unix branch (existing)**: keep the current `#[cfg(unix)]` test using `stty size`. Refactored to call the shared helper.
-- [ ] **Windows branch (new)**: matching `#[cfg(windows)]` test using `cmd /c mode con`. Refactored to call the shared helper. Helper signature: `fn assert_pty_reports_size(rows: u16, cols: u16, cmd: CommandBuilder, parse: impl Fn(&str) -> (u16, u16))`.
+- [x] **Unix branch (existing)**: keep the current `#[cfg(unix)]` test using `stty size`. Refactored to call the shared helper.
+- [x] **Windows branch (new)**: matching `#[cfg(windows)]` test using `cmd /c mode con`. Refactored to call the shared helper. Helper signature: `fn assert_pty_reports_size(rows: u16, cols: u16, cmd: CommandBuilder, parse: impl Fn(&str) -> (u16, u16))`.
 
 ### Cross-feature interactions — none load-bearing
 The test exercises `portable_pty::native_pty_system().openpty(...)` end-to-end; that already integrates child-spawn, master/slave wiring, and reader I/O. No further interaction matrix needed beyond the platform branches above.
 
 ### Semantic pin
-- [ ] The Windows test would pass ONLY if ConPTY actually delivers the requested size to the child — a regression that drops `cols` when `cols > rows`, swaps `rows`/`cols`, or clamps to a default 80 would all flip the assertion. Test failure mode is direct and explainable: the printed integers do not match the requested `(33, 97)`.
+- [x] The Windows test would pass ONLY if ConPTY actually delivers the requested size to the child — a regression that drops `cols` when `cols > rows`, swaps `rows`/`cols`, or clamps to a default 80 would all flip the assertion. Test failure mode is direct and explainable: the printed integers do not match the requested `(33, 97)`.
 
 ### Negative pin
-- [ ] **Mismatched-size pin**: a second helper invocation in each test requesting `(50, 40)` and asserting `(50, 40)` — proves the test is not just hard-coded against `(33, 97)`. If portable-pty regressed to "always returns 33×97" the second case would fail. This is the boundary that proves the test actively pins behavior rather than coincidentally agreeing with one cell. `40` cols is wide enough to keep `mode con` output unwrapped under standard console-buffer minimums (80×25 default).
+- [x] **Mismatched-size pin**: a second helper invocation in each test requesting `(50, 40)` and asserting `(50, 40)` — proves the test is not just hard-coded against `(33, 97)`. If portable-pty regressed to "always returns 33×97" the second case would fail. This is the boundary that proves the test actively pins behavior rather than coincidentally agreeing with one cell. `40` cols is wide enough to keep `mode con` output unwrapped under standard console-buffer minimums (80×25 default).
 
 ### Verify tests fail before fix
-- [ ] **Compile-time fail**: `cargo build --target x86_64-pc-windows-gnu --tests -p oriterm_core` before the Windows test exists demonstrates that today nothing covers the ConPTY size path on the Windows cross-compile target. After the fix, the same command builds the new test successfully. (We cannot make the new test fail at runtime against current Linux because the Windows test is `#[cfg(windows)]`-gated and only runs on Windows — the "fail" here is "does not exist," and the proof of progress is "now it exists and compiles for Windows.")
+- [x] **Compile-time fail**: `cargo build --target x86_64-pc-windows-gnu --tests -p oriterm_core` before the Windows test exists demonstrates that today nothing covers the ConPTY size path on the Windows cross-compile target. After the fix, the same command builds the new test successfully. (We cannot make the new test fail at runtime against current Linux because the Windows test is `#[cfg(windows)]`-gated and only runs on Windows — the "fail" here is "does not exist," and the proof of progress is "now it exists and compiles for Windows.")
 
 ---
 
@@ -154,11 +154,11 @@ The test exercises `portable_pty::native_pty_system().openpty(...)` end-to-end; 
 
 ## 3. Implementation
 
-- [ ] Replace the current single-test body of `oriterm_core/tests/vttest/pty_size.rs` with a shared helper plus two `#[cfg]`-gated test functions per the §1.5 final agreed approach.
-- [ ] Helper `assert_pty_reports_size(rows, cols, cmd, parse)` opens the PTY, spawns the supplied `CommandBuilder`, drains the reader on a background thread (matching the existing EIO-on-slave-close pattern, which doubles as deadlock-avoidance for ConPTY pipes), then asserts via the supplied parser closure.
-- [ ] Unix test name: `pty_size_propagation_unix_stty_reports_correct_dimensions`. Helper called with `CommandBuilder::new("stty"); cmd.arg("size")` and a whitespace-split parser.
-- [ ] Windows test name: `pty_size_propagation_windows_mode_con_reports_correct_dimensions`. Helper called with `CommandBuilder::new("cmd"); cmd.arg("/d"); cmd.arg("/c"); cmd.arg("mode con")` (the `/d` skips AutoRun registry processing). Parser is case-insensitive, accepts `Lines:` / `Columns:` / `Cols:`, and pulls the first integer after the colon. Test assumes en-US locale (CI standard); a non-en-US Windows host would surface as a test failure with a clear `mode con output missing Lines: in {raw:?}` diagnostic, not silent skipping.
-- [ ] Each test carries a `///` doc comment of the form `/// Regression: BUG-07-004 — Windows PTY size propagation test removed.` per `.claude/rules/impl-hygiene.md` §Test Function Naming.
+- [x] Replace the current single-test body of `oriterm_core/tests/vttest/pty_size.rs` with a shared helper plus two `#[cfg]`-gated test functions per the §1.5 final agreed approach.
+- [x] Helper `assert_pty_reports_size(rows, cols, cmd, parse)` opens the PTY, spawns the supplied `CommandBuilder`, drains the reader on a background thread (matching the existing EIO-on-slave-close pattern, which doubles as deadlock-avoidance for ConPTY pipes), then asserts via the supplied parser closure.
+- [x] Unix test name: `pty_size_propagation_unix_stty_reports_correct_dimensions`. Helper called with `CommandBuilder::new("stty"); cmd.arg("size")` and a whitespace-split parser.
+- [x] Windows test name: `pty_size_propagation_windows_mode_con_reports_correct_dimensions`. Helper called with `CommandBuilder::new("cmd"); cmd.arg("/d"); cmd.arg("/c"); cmd.arg("mode con")` (the `/d` skips AutoRun registry processing). Parser is case-insensitive, accepts `Lines:` / `Columns:` / `Cols:`, and pulls the first integer after the colon. Test assumes en-US locale (CI standard); a non-en-US Windows host would surface as a test failure with a clear `mode con output missing Lines: in {raw:?}` diagnostic, not silent skipping.
+- [x] Each test carries a `///` doc comment of the form `/// Regression: BUG-07-004 — Windows PTY size propagation test removed.` per `.claude/rules/impl-hygiene.md` §Test Function Naming.
 
 ```rust
 // Final form (lands in pty_size.rs):
@@ -301,23 +301,23 @@ fn parse_mode_con_output(raw: &str) -> (u16, u16) {
 
 ## 4. Completion Checklist
 
-- [ ] All new tests pass unchanged after fix (Unix test still green on Linux/macOS; Windows test green on Windows CI / cross-compile-builds).
-- [ ] Matrix completeness verified — Unix branch + Windows branch both invoke `assert_pty_reports_size` with the same `(33, 97)` and a mismatched second case (e.g., `(50, 20)` if added) clamps the negative-pin requirement.
-- [ ] Debug AND release builds pass (`cargo b && cargo b --release`).
-- [ ] Windows cross-compile green (`cargo build --target x86_64-pc-windows-gnu --tests -p oriterm_core`).
-- [ ] `timeout 150 ./test-all.sh` green — no regressions.
-- [ ] `./clippy-all.sh` green.
-- [ ] `./build-all.sh` green (workspace + cross-compile).
-- [ ] `cargo test -p oriterm_core --test vttest pty_size_propagation` green on the host (Unix branch runs; Windows branch compile-only on Linux). Filter substring matches both renamed tests.
-- [ ] `/commit-push` — commit all changes before review.
-- [ ] Plan TPR (Phase 2.5) — completed; see §2.5.
-- [ ] `/tpr-review` (Phase 5 — code review) passed — independent dual-source review of the IMPLEMENTATION.
-- [ ] `/impl-hygiene-review` passed — MUST run AFTER code `/tpr-review` is clean.
-- [ ] **Capability regression gate** — N/A. The fix adds coverage; it disables nothing.
-- [ ] `/improve-tooling` retrospective completed.
-- [ ] Bug entry in `plans/bug-tracker/section-07-ci-build.md` updated: `- [x]` with resolution details.
-- [ ] Fix section frontmatter `status` updated to `complete`.
-- [ ] Bug-tracker `00-overview.md` Quick Reference open bug count updated (section 07: total stays, open 7→6).
-- [ ] Final `/commit-push` — commit closure artifacts.
+- [x] All new tests pass unchanged after fix (Unix test still green on Linux/macOS; Windows test green on Windows CI / cross-compile-builds).
+- [x] Matrix completeness verified — Unix branch + Windows branch both invoke `assert_pty_reports_size` with the same `(33, 97)` and a mismatched second case (e.g., `(50, 20)` if added) clamps the negative-pin requirement.
+- [x] Debug AND release builds pass (`cargo b && cargo b --release`).
+- [x] Windows cross-compile green (`cargo build --target x86_64-pc-windows-gnu --tests -p oriterm_core`).
+- [x] `timeout 150 ./test-all.sh` green — no regressions.
+- [x] `./clippy-all.sh` green.
+- [x] `./build-all.sh` green (workspace + cross-compile).
+- [x] `cargo test -p oriterm_core --test vttest pty_size_propagation` green on the host (Unix branch runs; Windows branch compile-only on Linux). Filter substring matches both renamed tests.
+- [x] `/commit-push` — commit all changes before review.
+- [x] Plan TPR (Phase 2.5) — completed; see §2.5.
+- [x] `/tpr-review` (Phase 5 — code review) passed — independent dual-source review of the IMPLEMENTATION.
+- [x] `/impl-hygiene-review` passed — MUST run AFTER code `/tpr-review` is clean.
+- [x] **Capability regression gate** — N/A. The fix adds coverage; it disables nothing.
+- [x] `/improve-tooling` retrospective completed.
+- [x] Bug entry in `plans/bug-tracker/section-07-ci-build.md` updated: `- [x]` with resolution details.
+- [x] Fix section frontmatter `status` updated to `complete`.
+- [x] Bug-tracker `00-overview.md` Quick Reference open bug count updated (section 07: total stays, open 7→6).
+- [x] Final `/commit-push` — commit closure artifacts.
 
 **Exit Criteria:** This fix is complete when (a) `cargo build --target x86_64-pc-windows-gnu --tests -p oriterm_core` builds the new `pty_size_propagation_windows_mode_con_reports_correct_dimensions` test cleanly from the WSL dev loop, (b) `cargo test -p oriterm_core --test vttest pty_size_propagation` reports passes on each platform's branch (the substring filter matches both renamed tests; `pty_size_is_propagated` is gone after the rename and a filter using that string would match zero tests — verifying with the new substring is mandatory), (c) the `assert_pty_reports_size` helper is the single source of truth for the invariant assertion (no duplicated `assert_eq!` across the two `#[cfg]` branches), (d) `./test-all.sh` and `./clippy-all.sh` are green, and (e) Phase 5 `/tpr-review` + `/impl-hygiene-review` + `/improve-tooling` retrospective all complete with no actionable findings.
