@@ -15,9 +15,7 @@ use oriterm_ui::widgets::button::ButtonWidget;
 use oriterm_ui::widgets::container::ContainerWidget;
 use oriterm_ui::window_root::WindowRoot;
 
-// ---------------------------------------------------------------------------
 // WindowRoot headless construction
-// ---------------------------------------------------------------------------
 
 /// `WindowRoot` must be constructable without GPU or platform dependencies.
 #[test]
@@ -36,9 +34,7 @@ fn harness_wraps_window_root() {
     );
 }
 
-// ---------------------------------------------------------------------------
 // Event propagation through WindowRoot
-// ---------------------------------------------------------------------------
 
 /// Events propagate through WindowRoot -> container -> button.
 #[test]
@@ -114,9 +110,7 @@ fn interaction_state_through_window_root() {
     );
 }
 
-// ---------------------------------------------------------------------------
 // Crate dependency direction validation
-// ---------------------------------------------------------------------------
 
 /// Extracts dependency crate names from a `Cargo.toml` string.
 ///
