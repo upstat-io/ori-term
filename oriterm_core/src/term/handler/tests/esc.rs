@@ -577,6 +577,110 @@ fn decaln_clears_cell_attributes() {
     );
 }
 
+// --- RIS / DECSTR paired keyboard-mode-snapshot invariant (BUG-08-12) ---
+
+/// Regression: BUG-08-12 — RIS fired mid-command must seed BOTH paired
+/// snapshots to `Some(VecDeque::new())` (not `None`) so a child that later
+/// pushes kitty modes and crashes can still have those pushes cleaned at
+/// the next OSC 133 ; A / ; D.
+/// See: plans/bug-tracker/fix-BUG-08-012.md
+#[test]
+fn keyboard_mode_stack_ris_during_command_sets_saved_to_empty_snapshot() {
+    use std::collections::VecDeque;
+    use vte::ansi::KeyboardModes;
+
+    let mut t = term();
+    // Simulate OSC 133 ; C command-boundary snapshot.
+    t.snapshot_keyboard_mode_stack();
+    // Child pushes a kitty mode.
+    feed(&mut t, b"\x1b[>1u");
+    assert!(!t.keyboard_mode_stack().is_empty());
+
+    // RIS fires mid-command.
+    feed(&mut t, b"\x1bc");
+
+    assert!(t.keyboard_mode_stack().is_empty());
+    assert!(t.inactive_keyboard_mode_stack().is_empty());
+    assert_eq!(
+        t.pre_command_kb_stack_snapshot(),
+        Some(&VecDeque::<KeyboardModes>::new()),
+        "RIS must set pre-command snapshot to Some(empty), not None"
+    );
+    assert_eq!(
+        t.inactive_pre_command_kb_stack_snapshot(),
+        Some(&VecDeque::<KeyboardModes>::new()),
+        "RIS must set inactive-pre-command snapshot to Some(empty), not None"
+    );
+}
+
+/// Regression: BUG-08-12 — DECSTR variant of RIS snapshot seeding.
+#[test]
+fn keyboard_mode_stack_decstr_during_command_sets_saved_to_empty_snapshot() {
+    use std::collections::VecDeque;
+    use vte::ansi::KeyboardModes;
+
+    let mut t = term();
+    t.snapshot_keyboard_mode_stack();
+    feed(&mut t, b"\x1b[>1u");
+    assert!(!t.keyboard_mode_stack().is_empty());
+
+    // DECSTR (CSI ! p).
+    feed(&mut t, b"\x1b[!p");
+
+    assert!(t.keyboard_mode_stack().is_empty());
+    assert!(t.inactive_keyboard_mode_stack().is_empty());
+    assert_eq!(
+        t.pre_command_kb_stack_snapshot(),
+        Some(&VecDeque::<KeyboardModes>::new())
+    );
+    assert_eq!(
+        t.inactive_pre_command_kb_stack_snapshot(),
+        Some(&VecDeque::<KeyboardModes>::new())
+    );
+}
+
+/// Regression: BUG-08-12 — RIS mid-command followed by child pushes then
+/// restore must clean the post-RIS child pushes. `Some(empty)` snapshot
+/// enables this; `None` would leave post-reset pushes live.
+#[test]
+fn keyboard_mode_stack_ris_mid_command_then_child_push_then_a_cleans_pushes() {
+    let mut t = term();
+    t.snapshot_keyboard_mode_stack();
+    feed(&mut t, b"\x1bc"); // RIS.
+    // Child (post-reset) pushes kitty modes and then crashes.
+    feed(&mut t, b"\x1b[>1u");
+    feed(&mut t, b"\x1b[>3u");
+    assert_eq!(t.keyboard_mode_stack().len(), 2);
+
+    // Restore (next OSC 133 ; A / ; D).
+    t.restore_keyboard_mode_stack();
+
+    assert!(
+        t.keyboard_mode_stack().is_empty(),
+        "RIS-seeded Some(empty) snapshot must clean post-RIS child pushes"
+    );
+    assert!(
+        !t.mode().intersects(TermMode::KITTY_KEYBOARD_PROTOCOL),
+        "KITTY bits must be cleared after restore to empty snapshot"
+    );
+}
+
+/// Regression: BUG-08-12 — DECSTR variant of the mid-command cleanup test.
+#[test]
+fn keyboard_mode_stack_decstr_mid_command_then_child_push_then_a_cleans_pushes() {
+    let mut t = term();
+    t.snapshot_keyboard_mode_stack();
+    feed(&mut t, b"\x1b[!p"); // DECSTR.
+    feed(&mut t, b"\x1b[>1u");
+    feed(&mut t, b"\x1b[>3u");
+    assert_eq!(t.keyboard_mode_stack().len(), 2);
+
+    t.restore_keyboard_mode_stack();
+
+    assert!(t.keyboard_mode_stack().is_empty());
+    assert!(!t.mode().intersects(TermMode::KITTY_KEYBOARD_PROTOCOL));
+}
+
 /// Regression: BUG-08-17. DECALN (`ESC # 8`) fills every visible cell
 /// with 'E'. Those cells are application-written and MUST carry
 /// `CellFlags::DRAWN` so DECRQCRA sees them as drawn. Before the fix,

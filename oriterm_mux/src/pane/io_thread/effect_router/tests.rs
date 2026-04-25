@@ -74,6 +74,7 @@ fn make_router_harness() -> (
         selection_dirty: Arc::new(AtomicBool::new(false)),
         pending_responses: Vec::new(),
         effects_buf: Vec::new(),
+        last_animation_deadline: None,
     };
     (thread, mux_rx, wakeup_count)
 }

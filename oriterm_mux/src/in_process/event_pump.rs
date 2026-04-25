@@ -131,6 +131,10 @@ impl InProcessMux {
                         reply,
                     });
                 }
+                MuxEvent::AnimationDeadlineChanged { pane_id, deadline } => {
+                    self.notifications
+                        .push(MuxNotification::AnimationDeadlineChanged { pane_id, deadline });
+                }
             }
         }
     }

@@ -92,12 +92,19 @@ pub fn notification_to_pdu(
         // today (process-local `Arc<Mutex<Option<T>>>`). Clients in embedded
         // mode receive them via `in_process::event_pump`; daemon mode drops
         // them here with a logged warning until the reply-PDU design lands.
+        // AnimationDeadlineChanged carries a process-local Instant and is
+        // consumed by the embedded-client event loop to update its
+        // RenderScheduler. It is NOT forwarded across the IPC boundary
+        // today — daemon-mode clients re-derive animation deadlines from
+        // their own snapshot consumption cadence. (A wire-format for
+        // cross-process animation clock sync would be §13.6 or later.)
         MuxNotification::PaneOutput(_)
         | MuxNotification::NewTab
         | MuxNotification::DesktopNotification { .. }
         | MuxNotification::ClearPendingDesktopNotifications(_)
         | MuxNotification::HostClipboardLoad { .. }
-        | MuxNotification::HostColorQuery { .. } => None,
+        | MuxNotification::HostColorQuery { .. }
+        | MuxNotification::AnimationDeadlineChanged { .. } => None,
     }
 }
 

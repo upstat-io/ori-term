@@ -177,7 +177,12 @@ impl ImageCache {
     }
 
     /// Get the animation state for an image (if animated).
-    pub(crate) fn animation_state(&self, id: ImageId) -> Option<&AnimationState> {
+    ///
+    /// Public so integration tests under `oriterm_core/tests/spec_chain/`
+    /// can observe `current_frame`, `loop_count`, and `frame_durations`
+    /// after `a=a` state mutations — the kitty animate-reply verification
+    /// chain needs a read-only window into `AnimationState`.
+    pub fn animation_state(&self, id: ImageId) -> Option<&AnimationState> {
         self.animations.get(&id)
     }
 
@@ -187,13 +192,18 @@ impl ImageCache {
     /// becomes frame 1 with a default gap, and the new data becomes frame 2.
     /// `gap` is the duration before displaying this frame.
     /// `composition_mode` controls how the frame is built from existing data.
+    ///
+    /// Returns the 1-based frame index of the newly added frame — kitty
+    /// `finish_command_response` (`graphics.c:802-806`) echoes this via the
+    /// `,r=<frame_num>` qualifier on the `a=f` OK reply so the client can
+    /// correlate the mutation to a specific frame.
     pub(crate) fn add_animation_frame(
         &mut self,
         id: ImageId,
         frame_data: Arc<Vec<u8>>,
         gap: Duration,
         composition_mode: CompositionMode,
-    ) -> Result<(), ImageError> {
+    ) -> Result<u32, ImageError> {
         let img = self.images.get(&id).ok_or(ImageError::InvalidFormat)?;
         let img_data = img.data.clone();
 
@@ -202,7 +212,7 @@ impl ImageCache {
             return Err(ImageError::OversizedImage);
         }
 
-        match self.animations.entry(id) {
+        let added_index_1based = match self.animations.entry(id) {
             Entry::Vacant(e) => {
                 // Promote static image to animated: frame 0 = existing data.
                 // Frame 0 (img_data) is already counted in memory_used from
@@ -212,6 +222,9 @@ impl ImageCache {
                 let durations = vec![gap, gap];
                 e.insert(AnimationState::new(durations, None));
                 self.animation_frames.insert(id, frames);
+                // The promotion pushes frame 0 (pre-existing) + frame 1 (new).
+                // kitty's 1-based index for the new frame is 2.
+                2
             }
             Entry::Occupied(mut e) => {
                 let anim_frames = self.animation_frames.entry(id).or_default();
@@ -234,11 +247,14 @@ impl ImageCache {
                 let state = e.get_mut();
                 state.frame_durations.push(gap);
                 state.total_frames = anim_frames.len();
+                // Newly-pushed frame is at 0-based index `len - 1`; kitty
+                // reports it 1-based.
+                anim_frames.len() as u32
             }
-        }
+        };
 
         self.dirty = true;
-        Ok(())
+        Ok(added_index_1based)
     }
 
     /// Set animation playback state (Kitty `a=a`, `s=` key).

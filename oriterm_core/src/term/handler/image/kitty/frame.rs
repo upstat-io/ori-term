@@ -62,17 +62,23 @@ impl<S: EffectSink> Term<S> {
 
         let frame_data = Arc::new(rgba_data);
 
-        if let Err(e) = self.image_cache_mut().add_animation_frame(
+        let frame_num = match self.image_cache_mut().add_animation_frame(
             ImageId(image_id),
             frame_data,
             gap,
             composition_mode,
         ) {
-            warn!("kitty frame add failed: {e}");
-            self.kitty_respond(&ctx, &format!("ENOMEM: {e}"));
-            return;
-        }
+            Ok(idx) => idx,
+            Err(e) => {
+                warn!("kitty frame add failed: {e}");
+                self.kitty_respond(&ctx, &format!("ENOMEM: {e}"));
+                return;
+            }
+        };
 
+        // kitty finish_command_response (graphics.c:802-806) echoes `,r=<frame_num>`
+        // on a=f replies so the client can correlate the OK to the added frame.
+        let ctx = ctx.with_frame_num(frame_num);
         self.kitty_respond(&ctx, "OK");
     }
 }

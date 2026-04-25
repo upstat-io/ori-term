@@ -88,12 +88,30 @@ impl<S: EffectSink> RawInterceptor<'_, S> {
     }
 
     /// OSC 133: update prompt state machine and track command timing.
+    ///
+    /// `;A` / `;D` also restore the Kitty keyboard mode stack from any
+    /// prior `;C` snapshot; `;C` takes the snapshot. See BUG-08-12 —
+    /// prevents kitty modes pushed by a kitty-aware child from
+    /// persisting past the next shell prompt when the child crashes or
+    /// exits without popping cleanly.
     fn handle_osc133(&mut self, params: &[&[u8]]) {
         if params.len() < 2 || params[1].is_empty() {
             return;
         }
-        match params[1][0] {
+        self.handle_prompt_action(params[1][0]);
+    }
+
+    /// Shared A/B/C/D dispatch for both OSC 133 (xterm/bash/zsh shell
+    /// integration) and OSC 633 (VS Code shell integration superset).
+    /// Byte-identical control-flow collapsed to one SSOT per
+    /// `impl-hygiene.md` §Algorithmic DRY — any future prompt-lifecycle
+    /// change lands in one place.
+    fn handle_prompt_action(&mut self, sub: u8) {
+        match sub {
             b'A' => {
+                // `;A` is the safety-net restore path for children that
+                // crashed before `;D`.
+                self.term.restore_keyboard_mode_stack();
                 self.term.set_prompt_state(PromptState::PromptStart);
                 self.term.set_prompt_mark_pending(true);
             }
@@ -105,8 +123,13 @@ impl<S: EffectSink> RawInterceptor<'_, S> {
                 self.term.set_prompt_state(PromptState::OutputStart);
                 self.term.set_command_start(std::time::Instant::now());
                 self.term.set_output_start_mark_pending(true);
+                // Snapshot AFTER `set_command_start` so the snapshot
+                // captures the stack depth at command-start moment.
+                self.term.snapshot_keyboard_mode_stack();
             }
             b'D' => {
+                // `;D` is the clean-path restore — most programs reach it.
+                self.term.restore_keyboard_mode_stack();
                 self.term.set_prompt_state(PromptState::None);
                 if let Some(duration) = self.term.finish_command(None) {
                     self.term
@@ -138,27 +161,7 @@ impl<S: EffectSink> RawInterceptor<'_, S> {
             return;
         }
         match params[1][0] {
-            b'A' => {
-                self.term.set_prompt_state(PromptState::PromptStart);
-                self.term.set_prompt_mark_pending(true);
-            }
-            b'B' => {
-                self.term.set_prompt_state(PromptState::CommandStart);
-                self.term.set_command_start_mark_pending(true);
-            }
-            b'C' => {
-                self.term.set_prompt_state(PromptState::OutputStart);
-                self.term.set_command_start(std::time::Instant::now());
-                self.term.set_output_start_mark_pending(true);
-            }
-            b'D' => {
-                self.term.set_prompt_state(PromptState::None);
-                if let Some(duration) = self.term.finish_command(None) {
-                    self.term
-                        .effect_sink()
-                        .push(Effect::Host(HostEffect::CommandComplete { duration }));
-                }
-            }
+            sub @ (b'A' | b'B' | b'C' | b'D') => self.handle_prompt_action(sub),
             b'E' => {
                 // OSC 633 ; E ; <command-line> — raw typed command text.
                 let line = params
@@ -169,7 +172,11 @@ impl<S: EffectSink> RawInterceptor<'_, S> {
             b'P' => {
                 // OSC 633 ; P ; <key>=<value> — property setting.
                 // Only `Cwd=<path>` is honoured; route through Term::set_cwd
-                // to keep the CWD SSOT aligned with OSC 7.
+                // to keep the CWD SSOT aligned with OSC 7. Also emits
+                // `HostEffect::CwdSet` so downstream consumers (tab title,
+                // status bar) receive CWD updates from VS Code shell
+                // integration identically to OSC 7. Previously only OSC 7
+                // pushed the effect — impl-hygiene F9 GAP.
                 if let Some(pair) = params.get(2)
                     && let Some((key, value)) = split_key_value(pair)
                     && key == b"Cwd"
@@ -179,6 +186,11 @@ impl<S: EffectSink> RawInterceptor<'_, S> {
                         self.term.set_cwd(Some(path.to_string()));
                         self.term.set_has_explicit_title(false);
                         self.term.mark_title_dirty();
+                        self.term
+                            .effect_sink()
+                            .push(Effect::Host(HostEffect::CwdSet {
+                                cwd: path.to_string(),
+                            }));
                     }
                 }
             }

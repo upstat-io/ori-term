@@ -34,11 +34,11 @@ Track and fix all discovered bugs across the ori_term codebase. This is a living
 | 01 | UI Widgets | `section-01-ui-widgets.md` | 13 | 0 |
 | 02 | Settings Dialog | `section-02-settings-dialog.md` | 12 | 2 |
 | 03 | UI Framework | `section-03-ui-framework.md` | 2 | 1 |
-| 04 | Fonts | `section-04-fonts.md` | 15 | 4 |
+| 04 | Fonts | `section-04-fonts.md` | 16 | 4 |
 | 05 | Config | `section-05-config.md` | 5 | 1 |
-| 06 | Rendering & Perf | `section-06-rendering-perf.md` | 16 | 9 |
+| 06 | Rendering & Perf | `section-06-rendering-perf.md` | 17 | 8 |
 | 07 | CI & Build | `section-07-ci-build.md` | 13 | 7 |
-| 08 | Core Terminal | `section-08-core-terminal.md` | 7 | 10 |
+| 08 | Core Terminal | `section-08-core-terminal.md` | 27 | 15 |
 | 09 | Session & Tab/Window | `section-09-session.md` | 3 | 3 |
 | 10 | Platform Windows | `section-10-platform-windows.md` | 2 | 2 |
-| 11 | Mux & Pane I/O | `section-11-mux.md` | 16 | 16 |
+| 11 | Mux & Pane I/O | `section-11-mux.md` | 16 | 17 |

@@ -83,6 +83,34 @@ fn query_keyboard_mode_responds_with_current() {
     );
 }
 
+/// Regression: BUG-08-12 TPR round-6 F1 — `CSI ? u` must report the
+/// live `TermMode::KITTY_KEYBOARD_PROTOCOL` bits, not the stack top.
+/// Set-only modes enabled via `CSI = Ps u` do not enter the stack; a
+/// stack-top-derived report would incorrectly reply `?0u` while the
+/// bits are actually live.
+/// See: plans/bug-tracker/fix-BUG-08-012.md §2.5 TPR round 6.
+#[test]
+fn query_keyboard_mode_set_only_via_csi_equals_u_reports_live_bits() {
+    let (mut t, listener) = term_with_recorder();
+    // Set mode via `CSI = 1 u` (Replace, no push) — bits live in
+    // `self.mode` only; stack remains empty.
+    feed(&mut t, b"\x1b[=1u");
+    assert!(t.mode().contains(TermMode::DISAMBIGUATE_ESC_CODES));
+    assert!(
+        t.keyboard_mode_stack().is_empty(),
+        "set-only path must not touch the stack"
+    );
+
+    feed(&mut t, b"\x1b[?u");
+
+    let events = listener.events();
+    let pty_writes: Vec<_> = events.iter().filter(|e| e.contains("PtyWrite")).collect();
+    assert!(
+        pty_writes.iter().any(|w| w.contains("[?1u")),
+        "query reply must reflect live bits (1), not stack top (0): {pty_writes:?}"
+    );
+}
+
 #[test]
 fn pop_from_empty_stack_is_noop() {
     let mut t = term();

@@ -4,11 +4,22 @@
 //! 500-line limit. Both `rasterize()` (terminal grid) and
 //! `rasterize_with_weight()` (UI text) live here.
 //!
-//! Alpha correction: glyph coverage values receive a gamma-aware boost
-//! via [`apply_alpha_correction`] to compensate for the visual weight
-//! loss that occurs when raw coverage masks are composited in linear
-//! space with sRGB output. Without this, text appears ~100 CSS weight
-//! units lighter than DirectWrite/browser rendering at the same font weight.
+//! Alpha correction: `GlyphFormat::Alpha` (R8) coverage values receive a
+//! gamma-aware boost via [`apply_alpha_correction`] to compensate for the
+//! visual weight loss that occurs when raw coverage masks are composited
+//! in linear space with sRGB output. Without this, grayscale text appears
+//! ~100 CSS weight units lighter than DirectWrite/browser rendering at
+//! the same font weight.
+//!
+//! `GlyphFormat::SubpixelRgb` / `SubpixelBgr` bitmaps are NOT boosted —
+//! each of the R / G / B bytes is an independent per-channel LCD coverage
+//! value (zeno `Format::Subpixel` rasterizes each channel at a different
+//! subpixel X offset). Applying a concave gamma curve per-byte magnifies
+//! per-channel asymmetry into saturated color fringes and over-thickens
+//! strokes. Gamma compensation for subpixel, if needed, belongs at the
+//! shader blend step (already linear-space in oriterm; see
+//! `oriterm/src/gpu/instance_writer/mod.rs` `rgb_to_floats`), not at the
+//! rasterizer. `GlyphFormat::Color` is never boosted (premultiplied RGBA).
 
 use super::colr_v1::rasterize::try_rasterize_colr_v1;
 use super::face::rasterize_from_face;
@@ -52,18 +63,59 @@ pub(super) fn build_gamma_lut(gamma: f32) -> [u8; 256] {
     lut
 }
 
-/// Apply gamma-aware alpha correction to glyph coverage values.
+/// Apply gamma-aware alpha correction to 8-bit monochrome glyph coverage.
 ///
 /// Transforms each byte through the pre-built LUT: `byte = lut[byte]`.
-/// Applied to monochrome (`R8`) and subpixel (RGBA coverage) bitmaps.
-/// Must NOT be applied to color emoji (premultiplied RGBA color data).
+/// Applied to `GlyphFormat::Alpha` (`R8Unorm`) bitmaps only.
+///
+/// Must NOT be applied to `SubpixelRgb` / `SubpixelBgr` — each R / G / B
+/// byte is an independent per-channel LCD coverage value, and the concave
+/// gamma curve magnifies per-channel asymmetry into saturated color
+/// fringes (BUG-04-006). Must NOT be applied to `Color` — premultiplied
+/// RGBA would corrupt.
+///
+/// The `debug_assert!` below is the runtime guard that catches any caller
+/// slipping past the format-check at the call sites. Together with the
+/// per-site guards in `rasterize` and `rasterize_with_weight` it makes the
+/// Alpha-only invariant explicit at every layer — any future path that
+/// forgets the guard fires this panic in debug builds.
 fn apply_alpha_correction(glyph: &mut RasterizedGlyph, lut: &[u8; 256]) {
+    debug_assert_eq!(
+        glyph.format,
+        GlyphFormat::Alpha,
+        "apply_alpha_correction called on non-Alpha glyph ({:?}); per-byte gamma \
+         boost corrupts subpixel per-channel coverage and premultiplied color \
+         data — see BUG-04-006",
+        glyph.format,
+    );
     for byte in &mut glyph.bitmap {
         *byte = lut[*byte as usize];
     }
 }
 
 impl FontCollection {
+    /// Apply the per-format gamma correction and insert the glyph into the cache.
+    ///
+    /// Canonical home for the `GlyphFormat::Alpha`-only gamma rule (BUG-04-006).
+    /// Called by both `rasterize` and `rasterize_with_weight` after the raw
+    /// rasterizer produces the bitmap — keeping the correction guard in a single
+    /// place so any future protocol change lands once, not twice.
+    ///
+    /// Only `GlyphFormat::Alpha` (R8 coverage) receives the boost; `SubpixelRgb`,
+    /// `SubpixelBgr`, and `Color` pass through unchanged — see the module-level
+    /// doc for the rationale.
+    fn insert_corrected(
+        &mut self,
+        key: RasterKey,
+        mut glyph: RasterizedGlyph,
+    ) -> Option<&RasterizedGlyph> {
+        if glyph.format == GlyphFormat::Alpha {
+            apply_alpha_correction(&mut glyph, &self.gamma_lut);
+        }
+        self.cache_insert(key, glyph);
+        self.glyph_cache.get(&key)
+    }
+
     /// Rasterize a glyph and cache the result.
     ///
     /// Returns `None` for empty glyphs (e.g. space) or unsupported formats.
@@ -104,7 +156,7 @@ impl FontCollection {
         // sizing, preventing bottom/right edge clipping. Falls
         // through to swash for non-COLR glyphs or if compositing fails.
         let gid_u16 = key.glyph_id as u16;
-        let mut glyph = try_rasterize_colr_v1(fd, gid_u16, size).or_else(|| {
+        let glyph = try_rasterize_colr_v1(fd, gid_u16, size).or_else(|| {
             rasterize_from_face(
                 fd,
                 gid_u16,
@@ -119,14 +171,7 @@ impl FontCollection {
             )
         })?;
 
-        // Boost glyph coverage to match DirectWrite/browser visual weight.
-        // Color emoji are premultiplied RGBA — correction would corrupt colors.
-        if glyph.format != GlyphFormat::Color {
-            apply_alpha_correction(&mut glyph, &self.gamma_lut);
-        }
-
-        self.cache_insert(key, glyph);
-        self.glyph_cache.get(&key)
+        self.insert_corrected(key, glyph)
     }
 
     /// Rasterize a glyph using a specific requested weight.
@@ -165,7 +210,7 @@ impl FontCollection {
         let subpx_x_offset = super::super::subpx_offset(key.subpx_x);
 
         let gid_u16 = key.glyph_id as u16;
-        let mut glyph = try_rasterize_colr_v1(fd, gid_u16, size).or_else(|| {
+        let glyph = try_rasterize_colr_v1(fd, gid_u16, size).or_else(|| {
             rasterize_from_face(
                 fd,
                 gid_u16,
@@ -180,12 +225,6 @@ impl FontCollection {
             )
         })?;
 
-        // Same alpha correction as terminal grid path.
-        if glyph.format != GlyphFormat::Color {
-            apply_alpha_correction(&mut glyph, &self.gamma_lut);
-        }
-
-        self.cache_insert(key, glyph);
-        self.glyph_cache.get(&key)
+        self.insert_corrected(key, glyph)
     }
 }

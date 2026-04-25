@@ -201,6 +201,10 @@ SPEC_CLAUSE_RE = re.compile(r"Spec:\s*Clause\s+\d+", re.IGNORECASE)
 # domain convention emerges (e.g., "VT Section N" for VT-conformance
 # clauses that anchor multiple plan entries).
 FIPS_PHASE_RE = re.compile(r"\bfip(?:s)?\s+Phase\s+[A-C]\b", re.IGNORECASE)
+# Stubs for ori_lang-specific patterns ported over but not applicable in
+# ori_term — defined as never-match so is_permanent_line() works safely.
+AIMS_SECTION_RE = re.compile(r"(?!)")  # never matches — ori_lang only
+EVAL_V2_SECTION_RE = re.compile(r"(?!)")  # never matches — ori_lang only
 
 # Architecture-internal directories — section references inside these are
 # ALWAYS internal design docs, never plan refs. ori_term has no such

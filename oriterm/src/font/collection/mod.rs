@@ -255,6 +255,20 @@ impl FontCollection {
         self.size_px
     }
 
+    /// Replace the gamma LUT for test-only glyph-coverage comparisons.
+    ///
+    /// Enables pairing two collections that differ only in gamma to prove
+    /// which formats receive `apply_alpha_correction`: gamma=1.0 yields the
+    /// identity LUT, so the rasterized bitmap equals the raw rasterizer
+    /// output. Invalidates the glyph cache since cached bitmaps were built
+    /// under the old LUT.
+    #[cfg(test)]
+    pub(super) fn set_gamma_for_test(&mut self, gamma: f32) {
+        self.gamma_lut = rasterize::build_gamma_lut(gamma);
+        self.glyph_cache.clear();
+        self.cache_bytes = 0;
+    }
+
     /// Family name of the primary font.
     pub fn family_name(&self) -> &str {
         &self.family_name
