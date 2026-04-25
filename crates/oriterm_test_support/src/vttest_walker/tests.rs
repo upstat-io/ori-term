@@ -8,7 +8,7 @@ use crate::session::{PtySession, vttest_available};
 #[test]
 fn walk_vttest_screens_walks_menu1_to_completion() {
     if !vttest_available() {
-        eprintln!("vttest not installed, skipping");
+        eprintln!("SKIP: vttest not installed");
         return;
     }
 
@@ -46,7 +46,7 @@ fn walk_vttest_screens_walks_menu1_to_completion() {
 #[test]
 fn walk_vttest_screens_zero_calls_when_sentinel_already_present() {
     if !vttest_available() {
-        eprintln!("vttest not installed, skipping");
+        eprintln!("SKIP: vttest not installed");
         return;
     }
 
@@ -77,7 +77,7 @@ fn walk_vttest_screens_zero_calls_when_sentinel_already_present() {
 #[test]
 fn walk_vttest_screens_max_screens_cap_terminates_loop() {
     if !vttest_available() {
-        eprintln!("vttest not installed, skipping");
+        eprintln!("SKIP: vttest not installed");
         return;
     }
 
@@ -105,7 +105,7 @@ fn walk_vttest_screens_max_screens_cap_terminates_loop() {
 #[test]
 fn walk_vttest_screens_passes_captured_text_to_closure() {
     if !vttest_available() {
-        eprintln!("vttest not installed, skipping");
+        eprintln!("SKIP: vttest not installed");
         return;
     }
 

@@ -48,7 +48,7 @@ fn run_menu5_keyboard(cols: u16, rows: u16) {
 #[test]
 fn vttest_menu5_80x24() {
     if !vttest_available() {
-        eprintln!("vttest not installed, skipping");
+        eprintln!("SKIP: vttest not installed");
         return;
     }
     run_menu5_keyboard(80, 24);
@@ -57,7 +57,7 @@ fn vttest_menu5_80x24() {
 #[test]
 fn vttest_menu5_97x33() {
     if !vttest_available() {
-        eprintln!("vttest not installed, skipping");
+        eprintln!("SKIP: vttest not installed");
         return;
     }
     run_menu5_keyboard(97, 33);
@@ -66,7 +66,7 @@ fn vttest_menu5_97x33() {
 #[test]
 fn vttest_menu5_120x40() {
     if !vttest_available() {
-        eprintln!("vttest not installed, skipping");
+        eprintln!("SKIP: vttest not installed");
         return;
     }
     run_menu5_keyboard(120, 40);
