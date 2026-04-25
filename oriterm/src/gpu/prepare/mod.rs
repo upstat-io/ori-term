@@ -39,11 +39,11 @@ pub(crate) use unshaped::{prepare_frame, prepare_frame_into};
 /// Returns a SIGNED, INTEGER-ROUNDED pixel offset relative to the cell-top y:
 /// negative shifts the glyph upward (super), positive shifts downward (sub),
 /// `0.0` when neither flag is set. The `.round()` is load-bearing — it preserves
-/// the integer-Y-pixel-snap discipline applied at `fill_frame_shaped` (`mod.rs`)
-/// and `fill_frame_incremental` (`dirty_skip/mod.rs`) where
-/// `(oy + row * ch).round()` snaps the cell-top y to an integer; a fractional
-/// super/sub offset would defeat that snap and trigger bilinear-filtering blur
-/// on cells whose `cell_height * 0.25` is non-integer (e.g. `13.0 * 0.25 = 3.25`).
+/// the integer-Y-pixel-snap discipline applied in `fill_frame_shaped` and
+/// `fill_frame_incremental`, where the cell-top y is computed as
+/// `(oy + row * ch).round()` and snapped to an integer; a fractional super/sub
+/// offset would defeat that snap and trigger bilinear-filtering blur on cells
+/// whose `cell_height * 0.25` is non-integer (e.g. `13.0 * 0.25 = 3.25`).
 ///
 /// Backgrounds, decorations, and cursors keep the unshifted cell-top y so they
 /// remain anchored to the cell rectangle — only glyph y shifts. The 25% factor

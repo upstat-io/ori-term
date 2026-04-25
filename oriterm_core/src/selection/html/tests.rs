@@ -287,7 +287,7 @@ fn overline_and_strikethrough_combined_in_single_text_decoration() {
 }
 
 /// Regression: BUG-06-014 — three-way decoration combination
-/// (TPR-06-014-codex F2 + TPR-06-014-gemini F2 — pins Vec-join correctness).
+/// Pins Vec-join correctness for combined-decoration CSS output (BUG-06-014).
 #[test]
 fn overline_underline_strikethrough_three_way_combined() {
     let mut grid = Grid::new(5, 20);
@@ -314,7 +314,7 @@ fn overline_underline_strikethrough_three_way_combined() {
 }
 
 /// Regression: BUG-06-014 — semantic pin for SGR 73 (superscript) HTML mapping.
-/// MUST emit `vertical-align:super` and MUST NOT emit `font-size` (TPR-06-014-gemini F1).
+/// MUST emit `vertical-align:super` and MUST NOT emit `font-size` (BUG-06-014).
 #[test]
 fn superscript_emits_vertical_align_super_without_font_size_change() {
     let mut grid = Grid::new(5, 20);

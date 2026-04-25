@@ -1673,7 +1673,7 @@ fn overline_absent_emits_no_top_rect() {
 }
 
 /// Regression: BUG-06-014 — OVERLINE-only cell triggers decoration emission
-/// (pins the early-return predicate update — TPR-06-014-codex F1).
+/// (pins the early-return predicate update).
 #[test]
 fn overline_only_cell_passes_decoration_fast_path_gate() {
     // Without the early-return predicate update, an OVERLINE-only cell would
@@ -1718,7 +1718,7 @@ fn overline_with_double_underline_emits_three_rects() {
 }
 
 /// Regression: BUG-06-014 — OVERLINE + DOUBLE_UNDERLINE + STRIKETHROUGH
-/// composition (TPR-06-014-codex F2 matrix gap).
+/// composition (matrix gap from BUG-06-014 close-out).
 #[test]
 fn overline_with_double_underline_and_strikethrough_emits_four_rects() {
     let flags = CellFlags::OVERLINE | CellFlags::DOUBLE_UNDERLINE | CellFlags::STRIKETHROUGH;
@@ -1851,7 +1851,7 @@ fn subscript_does_not_shift_overline_y() {
 }
 
 /// Regression: BUG-06-014 — SUPERSCRIPT + INVERSE: bg quad fills full cell rect
-/// (NOT shifted with glyph). TPR-06-014-codex F2 matrix gap.
+/// (NOT shifted with glyph).
 #[test]
 fn superscript_with_inverse_keeps_full_cell_background() {
     let input = frame_with_flags(CellFlags::SUPERSCRIPT | CellFlags::INVERSE);
@@ -2071,6 +2071,93 @@ fn incremental_dirty_row_with_superscript_shifts_glyph_y() {
         fg.pos.1, expected_y,
         "incremental SUPERSCRIPT must produce shifted glyph y"
     );
+}
+
+/// Regression: BUG-06-014 — shaped path emits OVERLINE rect at cell top
+/// (matrix gap closed during impl-hygiene Phase 5).
+#[test]
+fn shaped_overline_emits_top_rect() {
+    let size_q6 = 768;
+    let mut input = FrameInput::test_grid(1, 1, "X");
+    input.content.cells[0].flags = CellFlags::OVERLINE;
+
+    let atlas = key_atlas_with(&[80], size_q6);
+    let glyphs = vec![ShapedGlyph {
+        glyph_id: 80,
+        face_index: 0,
+        synthetic: 0,
+        x_advance: 0.0,
+        x_offset: 0.0,
+        y_offset: 0.0,
+    }];
+    let col_starts = vec![0];
+    let shaped = shaped_one_row(1, &glyphs, &col_starts, size_q6);
+    let frame = prepare_frame_shaped(&input, &atlas, &shaped, (0.0, 0.0));
+
+    // 1 base bg + 1 overline rect = 2 backgrounds; 1 fg glyph.
+    assert_eq!(
+        frame.backgrounds.len(),
+        2,
+        "shaped OVERLINE emits decoration rect"
+    );
+    let ol = nth_instance(frame.backgrounds.as_bytes(), 1);
+    assert_eq!(ol.pos.1, 0.0, "shaped overline y must be cell-top y");
+    assert_eq!(
+        ol.size,
+        (8.0, 1.0),
+        "shaped overline must span cell_width x stroke"
+    );
+}
+
+/// Regression: BUG-06-014 — dirty-skip incremental path emits OVERLINE rect
+/// for a dirty row with the OVERLINE flag (matrix gap closed during
+/// impl-hygiene Phase 5).
+#[test]
+fn incremental_dirty_row_with_overline_emits_top_rect() {
+    use crate::gpu::frame_input::ViewportSize;
+    use oriterm_core::Rgb;
+
+    let size_q6 = 768;
+    let cols = 1;
+    let rows = 1;
+    let mut input = FrameInput::test_grid(cols, rows, "X");
+    input.content.cells[0].flags = CellFlags::OVERLINE;
+
+    let atlas = key_atlas_with(&[81], size_q6);
+    let glyphs = vec![ShapedGlyph {
+        glyph_id: 81,
+        face_index: 0,
+        synthetic: 0,
+        x_advance: 0.0,
+        x_offset: 0.0,
+        y_offset: 0.0,
+    }];
+    let col_starts = vec![0];
+    let shaped = shaped_one_row(cols, &glyphs, &col_starts, size_q6);
+
+    // First pass: full rebuild to populate row_ranges.
+    let mut frame = PreparedFrame::new(ViewportSize::new(1, 1), Rgb { r: 0, g: 0, b: 0 }, 1.0);
+    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+
+    // Second pass: dirty-mark row 0 so the incremental path regenerates it.
+    input.content.all_dirty = false;
+    input.content.damage.push(oriterm_core::DamageLine {
+        line: 0,
+        left: Column(0),
+        right: Column(0),
+    });
+    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+
+    // Even after the incremental rebuild, the OVERLINE rect must be present.
+    // 1 base bg + 1 overline rect (cursor is in cursors buffer, not backgrounds).
+    assert_eq!(
+        frame.backgrounds.len(),
+        2,
+        "incremental dirty row with OVERLINE must emit decoration rect"
+    );
+    let ol = nth_instance(frame.backgrounds.as_bytes(), 1);
+    assert_eq!(ol.pos.1, 0.0);
+    assert_eq!(ol.size, (8.0, 1.0));
 }
 
 // ── Subpixel glyph routing (Section 6.16) ──
