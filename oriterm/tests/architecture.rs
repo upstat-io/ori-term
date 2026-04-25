@@ -238,7 +238,9 @@ fn oriterm_ipc_is_standalone() {
 // See plans/bug-tracker/fix-BUG-09-001.md.
 
 /// `move_tab_to_new_window_embedded` must include the canonical call
-/// sequence from `tear_off_tab` (no visible-then-render flash).
+/// sequence from `tear_off_tab` (no visible-then-render flash). Bounded
+/// to the target function body and ordered so reordering or relocating
+/// the canonical steps fails the test.
 #[test]
 fn move_to_new_window_embedded_mirrors_tear_off_sequence() {
     let body = std::fs::read_to_string(concat!(
@@ -246,11 +248,17 @@ fn move_to_new_window_embedded_mirrors_tear_off_sequence() {
         "/src/app/tab_management/move_ops.rs"
     ))
     .unwrap();
-    let fn_start = body
-        .find("fn move_tab_to_new_window_embedded(")
-        .expect("move_tab_to_new_window_embedded must exist");
-    let fn_body = &body[fn_start..];
-    for required in [
+    let fn_body = extract_fn_body(&body, "fn move_tab_to_new_window_embedded(");
+
+    // Each entry: a required step, asserted in order. The sequence below
+    // matches `tear_off_tab` (sans the OS-drag start at the end of
+    // tear-off) — release the source width lock, create bare hidden
+    // window, insert the moved tab directly, pump events from the move,
+    // seed pane cell metrics for the new window, sync + refresh both
+    // windows, then the critical pre-render-before-show ordering:
+    // focused-id swap → new-window redraw → restore focused → source
+    // redraw → set_visible(true).
+    let ordered: &[&str] = &[
         "release_tab_width_lock",
         "create_window_bare",
         "insert_tab_at",
@@ -258,15 +266,62 @@ fn move_to_new_window_embedded_mirrors_tear_off_sequence() {
         "seed_pane_with_window_cell_metrics",
         "sync_tab_bar_for_window",
         "refresh_platform_rects",
-        "self.handle_redraw()",
+        // The focused-id swap that forces handle_redraw to paint the new
+        // window. Without it, handle_redraw paints whatever is currently
+        // focused (the source) and the new window stays blank.
+        "self.focused_window_id = Some(new_winit_id);",
+        // The first handle_redraw — paints the new window with content.
+        "self.handle_redraw();",
+        // Restore focused id.
+        "self.focused_window_id = saved_focused;",
+        // Second handle_redraw — paints the source so its tab bar updates.
+        "self.handle_redraw();",
+        // Show the new window AFTER it has been pre-rendered.
         "set_visible(true)",
+        // Close the source if it's now empty.
         "remove_empty_window",
-    ] {
-        assert!(
-            fn_body.contains(required),
-            "move_tab_to_new_window_embedded must call `{required}` (BUG-09-1 mirror invariant)",
-        );
+    ];
+
+    let mut cursor = 0usize;
+    for required in ordered {
+        match fn_body[cursor..].find(required) {
+            Some(rel) => cursor += rel + required.len(),
+            None => panic!(
+                "move_tab_to_new_window_embedded must call `{required}` AFTER the prior step \
+                 (BUG-09-1 mirror invariant). Either the call is missing or the canonical \
+                 sequence has been reordered.",
+            ),
+        }
     }
+}
+
+/// Slice the body of a Rust function, bounded by its opening `{` and the
+/// matching `}` at the same brace-depth. Test-only helper.
+fn extract_fn_body<'a>(file_body: &'a str, fn_signature_prefix: &str) -> &'a str {
+    let fn_start = file_body
+        .find(fn_signature_prefix)
+        .unwrap_or_else(|| panic!("could not find `{fn_signature_prefix}` in file"));
+    let open_brace_rel = file_body[fn_start..]
+        .find('{')
+        .expect("function signature must be followed by an opening brace");
+    let body_start = fn_start + open_brace_rel;
+    let bytes = file_body.as_bytes();
+    let mut depth = 0i32;
+    let mut idx = body_start;
+    while idx < bytes.len() {
+        match bytes[idx] {
+            b'{' => depth += 1,
+            b'}' => {
+                depth -= 1;
+                if depth == 0 {
+                    return &file_body[body_start..=idx];
+                }
+            }
+            _ => {}
+        }
+        idx += 1;
+    }
+    panic!("unbalanced braces while bounding `{fn_signature_prefix}`");
 }
 
 /// `move_tab_to_window` must NOT come back — it had a known correctness
