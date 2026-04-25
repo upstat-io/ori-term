@@ -177,9 +177,20 @@ Imports needed: `crate::window_manager::types::{ManagedWindow, WindowKind}`.
 
 **Gemini (round 0):** clean. Summary: "Phase 5 Code TPR for BUG-09-1 (commit 321a10ad) is clean. The refactor of move_tab_to_new_window_embedded correctly mirrors the working tear_off_tab pattern, utilizing create_window_bare and explicit pre-rendering (focused-id swap + handle_redraw) before show to eliminate blank flashes. BUG-09-2 is correctly OBE as the buggy move_tab_to_window helper was removed and replaced by surgical destination-targeted seeding."
 
-### Phase 5 Code TPR — Round 1 (convergence verification)
+### Phase 5 Code TPR — Round 1
 
-Pending after the round-0 fix commit.
+**Scratch dir:** `/tmp/tpr-round-ori_term-xCRalLJj`. Direct wrapper Bash dispatch.
+
+**Dispatch:** codex 1 finding (medium) / gemini 0 actionable findings (1 informational verification).
+
+**Findings this round:**
+- `[TPR-09-001-codex][medium]` `oriterm/tests/architecture.rs:252` — The `move_to_new_window_embedded_mirrors_tear_off_sequence` test scanned `&body[fn_start..]` (function start to EOF) instead of bounding to the function body. Could false-positive if any of the required strings appear elsewhere in the file. Also didn't verify ORDER, so reordering the canonical steps would not be caught. Disposition: fixed in Phase 5 round-1 commit — added a `extract_fn_body` test helper that finds the matching closing `}` at brace-depth 0, bounds the scan to the function body, and re-implemented the assertion to walk the required steps IN ORDER (each step must be found AFTER the previous one's end position). Added explicit pins for the focused-id-swap-then-redraw sequence + `set_visible(true)` ordering — the test now catches both omission and reordering of the load-bearing pre-render-before-show ordering.
+
+**Gemini (round 1):** clean (informational verification only). Summary: "Commit 09ed13aa correctly addresses round-0 findings ... Two new architecture tests provide robust regression pins ... Verified all 12 architecture tests pass."
+
+### Phase 5 Code TPR — Round 2 (convergence verification)
+
+Pending after the round-1 fix commit.
 
 ## 4. Completion Checklist
 
