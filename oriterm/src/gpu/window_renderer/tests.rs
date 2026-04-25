@@ -437,4 +437,131 @@ mod font_config {
             "atlas should not have been cleared when hinting/format unchanged"
         );
     }
+
+    /// Regression: BUG-04-004 round-1 TPR finding TPR-04-004-codex.
+    ///
+    /// Pins the source-side emoji-reinject ordering that mirrors the
+    /// production config-reload call sequence
+    /// (`oriterm/src/app/config_reload/mod.rs:187-197`):
+    ///
+    /// - `WindowRenderer::replace_ui_font_sizes` is storage-only — it MUST
+    ///   NOT inject emoji, because `rebuild_ui_font_sizes` calls it BEFORE
+    ///   `replace_font_collection` installs the new terminal font. If
+    ///   injection fired here it would pull stale emoji from the previous
+    ///   terminal font.
+    /// - `WindowRenderer::replace_font_collection` is the canonical
+    ///   reinject trigger — it installs the new terminal font AND
+    ///   re-wires emoji into whatever UI registry is currently stored,
+    ///   so the post-reload state carries the NEW terminal font's emoji.
+    ///
+    /// Uses `FontSet::ui_embedded()` (empty fallbacks) for the UI side
+    /// to mirror production — the embedded test helper uses
+    /// `FontSet::embedded()` which has its own emoji fallback and would
+    /// mask the reinject path under a font_set-sourced fallback.
+    #[test]
+    fn replace_font_collection_reinjects_emoji_into_current_ui_registry() {
+        let Some(gpu) = GpuState::new_headless().ok() else {
+            eprintln!("skipped: no GPU adapter available");
+            return;
+        };
+        let pipelines = GpuPipelines::new(&gpu);
+
+        // Terminal font: FontSet::embedded() — carries TEST_EMOJI_DATA as
+        // its one fallback. Source of the emoji that reinject propagates.
+        let terminal_font_set = FontSet::embedded();
+        let terminal_fc = FontCollection::new(
+            terminal_font_set,
+            TEST_FONT_SIZE_PT,
+            TEST_DPI,
+            GlyphFormat::Alpha,
+            TEST_FONT_WEIGHT,
+            550,
+            HintingMode::Full,
+        )
+        .expect("terminal FontCollection must build");
+
+        // UI registry: FontSet::ui_embedded() — empty fallbacks. Mirrors
+        // production so the only emoji in the UI chain comes through
+        // reinject_emoji_fallback, not font_set.fallbacks.
+        let ui_sizes_initial = UiFontSizes::new(
+            FontSet::ui_embedded(),
+            TEST_DPI,
+            GlyphFormat::Alpha,
+            HintingMode::None,
+            TEST_FONT_WEIGHT,
+            550,
+            ui_font_sizes::PRELOAD_SIZES,
+        )
+        .expect("initial UiFontSizes must build");
+
+        let mut renderer =
+            WindowRenderer::new(&gpu, &pipelines, terminal_fc, Some(ui_sizes_initial));
+
+        // WindowRenderer::new calls reinject_emoji_fallback — UI registry
+        // should now carry the terminal font's emoji (count == 1).
+        let initial_count = renderer
+            .ui_font_sizes()
+            .unwrap()
+            .default_collection()
+            .unwrap()
+            .fallback_font_data()
+            .len();
+        assert_eq!(
+            initial_count, 1,
+            "WindowRenderer::new should have injected the terminal font's emoji fallback"
+        );
+
+        // Step 1 (config-reload sequence): install a fresh UI registry
+        // with NO fallbacks. `replace_ui_font_sizes` is storage-only —
+        // it MUST NOT inject emoji here, because the terminal font
+        // collection has not been replaced yet.
+        let fresh_ui = UiFontSizes::new(
+            FontSet::ui_embedded(),
+            TEST_DPI,
+            GlyphFormat::Alpha,
+            HintingMode::None,
+            TEST_FONT_WEIGHT,
+            550,
+            ui_font_sizes::PRELOAD_SIZES,
+        )
+        .expect("fresh UiFontSizes must build");
+        renderer.replace_ui_font_sizes(fresh_ui);
+        let after_replace_ui = renderer
+            .ui_font_sizes()
+            .unwrap()
+            .default_collection()
+            .unwrap()
+            .fallback_font_data()
+            .len();
+        assert_eq!(
+            after_replace_ui, 0,
+            "replace_ui_font_sizes must NOT inject — it is storage-only (BUG-04-004 round-1 fix)"
+        );
+
+        // Step 2: install a new terminal font collection. This is the
+        // canonical trigger for emoji reinject — the new collection's
+        // fallback data must now land on the current (fresh) UI registry.
+        let new_terminal_fc = FontCollection::new(
+            FontSet::embedded(),
+            TEST_FONT_SIZE_PT,
+            TEST_DPI,
+            GlyphFormat::Alpha,
+            TEST_FONT_WEIGHT,
+            550,
+            HintingMode::Full,
+        )
+        .expect("new terminal FontCollection must build");
+        renderer.replace_font_collection(new_terminal_fc, &gpu);
+        let after_replace_fc = renderer
+            .ui_font_sizes()
+            .unwrap()
+            .default_collection()
+            .unwrap()
+            .fallback_font_data()
+            .len();
+        assert_eq!(
+            after_replace_fc, 1,
+            "replace_font_collection must reinject emoji from the NEW terminal font (BUG-04-004)"
+        );
+    }
 }
