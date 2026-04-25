@@ -140,14 +140,20 @@ Agent({
            Write {run_id}/phase-3.json with the findings list.`
 })
 
-# ── PHASE 4 (Sonnet): Third-Party Cross-Check ───────────────
-Agent({
-  subagent_type: "general-purpose",
-  model: "sonnet",
-  description: "impl-hygiene phase 4 cross-check",
-  prompt: `Read .claude/skills/impl-hygiene-review/phase-4-cross-check.md
-           and execute. run_id: {run_id}. Write {run_id}/phase-4.json.`
-})
+# ── PHASE 4 (INLINE, main context / Opus): Third-Party Cross-Check ───────
+# Phase 4 runs INLINE in the coordinator's main context — NOT wrapped in a
+# Sonnet sub-agent. The phase invokes `/tp-help` or `/tpr-review` via the
+# Skill tool; both of those skills already dispatch their own reviewer
+# sub-agents (codex + gemini) internally. Wrapping them in another Sonnet
+# layer would mean Sonnet (not Opus) interprets reviewer responses, decides
+# which findings to validate, and judges per-reviewer trust — judgment work
+# that belongs in the main context. Mirrors `/review-plan` Step 4 and
+# `/continue-roadmap` Step 6.7, both of which invoke `/tpr-review` inline.
+Read: .claude/skills/impl-hygiene-review/phase-4-cross-check.md
+Skill: tp-help <focused validation question + top findings + scope>
+# (Repeat with a second `Skill: tp-help` for blind-spot probing per §4b.)
+Write {run_id}/phase-4.json with cross-check outcome, new findings surfaced,
+findings rejected, and reviewer attributions.
 
 # ── PHASE 5 (Sonnet): Compile & Present Findings ────────────
 Agent({

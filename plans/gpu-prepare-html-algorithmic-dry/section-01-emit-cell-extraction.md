@@ -1,35 +1,35 @@
 ---
 section: "01"
 title: "Per-cell emit helper extraction (F-03 → resolves F-04, F-05, F-06, F-08)"
-status: not-started
+status: complete
 reviewed: true
 goal: "Eliminate the ~120-line per-cell emit body duplicated across `fill_frame_shaped`, `fill_frame_incremental`, and the test-only unshaped `fill_frame` by extracting one canonical `emit_cell` helper that all three callers consume."
 depends_on: []
 third_party_review:
-  status: none
+  status: resolved
   updated: 2026-04-25
 sections:
   - id: "01.1"
     title: "Identify the per-cell emit skeleton"
-    status: not-started
+    status: complete
   - id: "01.2"
     title: "Extract emit_cell helper"
-    status: not-started
+    status: complete
   - id: "01.3"
     title: "Migrate fill_frame_shaped"
-    status: not-started
+    status: complete
   - id: "01.4"
     title: "Migrate fill_frame_incremental (dirty-row path)"
-    status: not-started
+    status: complete
   - id: "01.5"
     title: "Migrate test-only unshaped fill_frame"
-    status: not-started
+    status: complete
   - id: "01.R"
     title: "Third Party Review Findings"
     status: not-started
   - id: "01.N"
     title: "Build & Verify"
-    status: not-started
+    status: complete
 ---
 
 # Section 01: Per-cell emit helper extraction
@@ -93,36 +93,39 @@ sections operate on the post-extraction shape.
 must move into the helper, every input the helper consumes, and every
 output it produces. This becomes the spec for the helper signature in 01.2.
 
-- [ ] Diff the three per-cell bodies side-by-side. Confirm the shared
+- [x] Diff the three per-cell bodies side-by-side. Confirm the shared
       skeleton is:
   1. Spacer skip (`flags.intersects(WIDE_CHAR_SPACER | LEADING_WIDE_CHAR_SPACER)` → `continue`).
      **Note**: this predicate is the target of Section 02 (`is_spacer()`).
      Section 01 leaves the predicate inline; Section 02 then migrates the
      single canonical site.
-  2. Column / x / y compute (cell-top y, not glyph-y).
+  2. Column / x / y compute (cell-top y, not glyph-y). **Caller responsibility** — y-rounding with row transition differs per function.
   3. `resolve_cell_colors(cell, palette, …)` → fg, bg.
   4. Wide-char `bg_w` branch (double-width background quad).
   5. Background instance push.
-  6. BLINK alpha apply (`apply_blink_alpha` per existing helper).
-  7. `DecorationContext::draw(cell, …)` — anchored to cell-top y.
-  8. `super_sub_glyph_offset(cell.flags, ch)` — glyph y-shift only.
-  9. Built-in (sextant / quadrant / braille / box-drawing) branch — emits
-     directly without atlas lookup.
-  10. Shaped or atlas-backed glyph emission — uses adjusted glyph y.
-- [ ] Document inputs (the helper signature must accept):
-      `cell: &Cell`, `ch: char`, `col: usize`, `row_y_top: f32`,
-      `cell_w: f32`, `cell_h: f32`, the palette / theme reference, the
-      decoration context, the instance buffers (background + glyph), the
-      `BuiltinGlyph` lookup. Confirm whether mutable references to
-      `frame.bg`, `frame.glyphs`, `decorations` are sufficient or whether
-      a single `EmitContext` struct is cleaner.
-- [ ] Document outputs (side-effects only — no return value, or return
-      `Option<EmitOutcome>` if a caller needs to know whether anything
-      was pushed). Confirm with codex/gemini in 01.R if the signature is
-      not obvious.
-- [ ] Confirm by grep that no fourth caller exists. Any future
+  6. BLINK alpha (`cell_dim`, `deco_alpha`).
+  7. `DecorationContext::draw(cell.flags, …)` — anchored to cell-top y.
+  8. `super_sub_glyph_offset(cell.flags, ctx.cell_size.height)` — glyph y-shift only. Note: `ch` in the existing code is `cell_size.height` (f32), NOT a char — `cell.ch` is the character.
+  9. Built-in branch (shaped/incremental only — unshaped uses `atlas.lookup` for all chars). Shared between production paths.
+  10. Shaped glyph emission (`GlyphEmitter`) or unshaped atlas lookup (test-only).
+- [x] Document inputs (the helper signature must accept):
+      `cell: &RenderableCell`, `col: usize`, `row: usize` (for `is_hovered`),
+      `x: f32`, `y: f32` (pre-computed at caller), `ctx: &mut EmitCtx<'_>`.
+      `EmitCtx<'a>` bundles: `fg_dim`, `text_blink_opacity`, `subpixel_positioning`,
+      `palette: &FramePalette`, `sel: Option<&FrameSelection>`, `search: Option<&FrameSearch>`,
+      `cursor: RenderableCursor`, `cursor_opacity`, `hovered_cell`, `cell_size: &CellMetrics`,
+      `atlas: &dyn AtlasLookup`, `size_q6: u32`, `frame: &mut PreparedFrame`,
+      `glyph_mode: GlyphMode<'a>`. `GlyphMode::Shaped { shaped: &ShapedFrame, hinted: bool }`
+      vs `GlyphMode::Unshaped`. `baseline` comes from `ctx.cell_size.baseline` (no duplication).
+- [x] Document outputs (side-effects only — no return value):
+      pushes into `frame.backgrounds` (bg quad), `frame.glyphs` / `frame.subpixel_glyphs` /
+      `frame.color_glyphs` (glyph instances), and calls `DecorationContext::draw` which
+      pushes decoration instances into those same writers. No return value needed — all
+      callers proceed to post-loop bookkeeping regardless of per-cell results.
+- [x] Confirm by grep that no fourth caller exists. Any future
       `fill_frame_*` variant must consume `emit_cell`, not duplicate the
-      body. (Audit grep: `rg -n "resolve_cell_colors\(" oriterm/src/gpu/`.)
+      body. (Audit grep: `rg -n "resolve_cell_colors\(" oriterm/src/gpu/` confirms
+      exactly 3 call sites: `mod.rs:286`, `dirty_skip/mod.rs:253`, `unshaped.rs:97`.)
 
 ---
 
@@ -204,24 +207,29 @@ without buying anything beyond what `EmitCtx` already does.
 **Recommended path:** Option (a). Cite this in 01.R if codex/gemini
 challenges the choice.
 
-- [ ] Create `oriterm/src/gpu/prepare/emit_cell.rs` (or extend existing
+- [x] Create `oriterm/src/gpu/prepare/emit_cell.rs` (or extend existing
       `emit.rs` — pick whichever keeps the file under 500 lines).
-- [ ] Define `pub(super) struct EmitCtx<'a> { ... }` capturing every
+      Decision: new directory module `emit_cell/mod.rs` + `emit_cell/tests.rs`.
+- [x] Define `pub(super) struct EmitCtx<'a> { ... }` capturing every
       mutable reference the helper needs.
-- [ ] Implement `pub(super) fn emit_cell(...)` containing the canonical
+      Shape used: `shaped: Option<(&'a ShapedFrame, bool)>` is Copy; copied
+      out of ctx before glyph-emit to avoid split-borrow conflicts.
+- [x] Implement `pub(super) fn emit_cell(...)` containing the canonical
       per-cell body documented in 01.1.
-- [ ] Add `pub(super) mod emit_cell;` to `oriterm/src/gpu/prepare/mod.rs`
+      Final signature: `(cell: &RenderableCell, x: f32, y: f32, ctx: &mut EmitCtx)` —
+      col/row removed (read from cell) to keep params ≤ 4.
+- [x] Add `pub(super) mod emit_cell;` to `oriterm/src/gpu/prepare/mod.rs`
       (or re-export from `emit.rs`).
-- [ ] Add `oriterm/src/gpu/prepare/emit_cell/tests.rs` (per the
+- [x] Add `oriterm/src/gpu/prepare/emit_cell/tests.rs` (per the
       sibling-tests rule in `.claude/rules/test-organization.md`) with
       direct unit tests for the helper:
-  - [ ] `emit_cell_pushes_bg_instance_with_correct_dims`
-  - [ ] `emit_cell_applies_super_sub_glyph_offset_to_glyph_only`
-  - [ ] `emit_cell_uses_bg_w_for_wide_char` (BUG-06-014 negative pin)
-  - [ ] `emit_cell_routes_builtin_glyph_via_builtin_branch`
-  - [ ] `emit_cell_anchors_decoration_to_cell_top_y` (negative pin: glyph_y
+  - [x] `emit_cell_pushes_bg_instance_with_correct_dims`
+  - [x] `emit_cell_applies_super_sub_glyph_offset_to_glyph_only`
+  - [x] `emit_cell_uses_bg_w_for_wide_char` (BUG-06-014 negative pin)
+  - [x] `emit_cell_routes_builtin_glyph_via_builtin_branch`
+  - [x] `emit_cell_anchors_decoration_to_cell_top_y` (negative pin: glyph_y
         must NOT bleed into decoration draw)
-  - [ ] `emit_cell_applies_blink_alpha_to_bg`
+  - [x] `emit_cell_applies_blink_alpha_to_bg`
 
 ---
 
@@ -241,15 +249,17 @@ setup → row_ranges loop {
 } → final-row range record → overlays.
 ```
 
-- [ ] Replace the per-cell body (mod.rs:242-389) with a single
+- [x] Replace the per-cell body (mod.rs:242-389) with a single
       `emit_cell(cell, ch, col, row_y_top, cell_w, cell_h, &mut ctx)` call.
-- [ ] Construct `EmitCtx` at the top of the row loop (or once per
+- [x] Construct `EmitCtx` at the top of the row loop (or once per
       `fill_frame_shaped` if all references are stable across rows).
-- [ ] Verify the `#[expect(clippy::too_many_lines, reason = "linear pipeline...")]`
+      EmitCtx constructed once before loop; `frame` moved into ctx.
+- [x] Verify the `#[expect(clippy::too_many_lines, reason = "linear pipeline...")]`
       attribute at lines 213-216 is no longer needed and remove it. If clippy
       still flags the function, restructure further (do not silence with
       `#[expect]`).
-- [ ] Run `cargo test -p oriterm --lib gpu::prepare` and confirm every
+      Removed. fill_frame_shaped is now ~90 lines, well under 100.
+- [x] Run `cargo test -p oriterm --lib gpu::prepare` and confirm every
       shaped-path test in `gpu/prepare/tests.rs` is still green, including
       BUG-06-014 regressions:
   - `shaped_overline_emits_top_rect_*`
@@ -268,16 +278,19 @@ setup → row_ranges loop {
 saved tier). Only the dirty-row path duplicates the per-cell emit body.
 The clean-row replay stays in this function.
 
-- [ ] Replace the per-cell body (dirty_skip/mod.rs:239-351) inside the
+- [x] Replace the per-cell body (dirty_skip/mod.rs:239-351) inside the
       dirty-row branch with a single `emit_cell(...)` call, matching the
       shape used in 01.3.
-- [ ] Leave the clean-row replay (saved_tier read + `frame.bg.extend` /
+- [x] Leave the clean-row replay (saved_tier read + `frame.bg.extend` /
       `frame.glyphs.extend` from cached ranges) UNCHANGED.
-- [ ] Verify the `#[expect(clippy::too_many_lines, reason = "mirrors fill_frame_shaped structure")]`
+      Clean-row replay is now in `replay_clean_row` helper.
+- [x] Verify the `#[expect(clippy::too_many_lines, reason = "mirrors fill_frame_shaped structure")]`
       attribute is no longer needed and remove it. If clippy still flags
       the function, factor the dirty-row dispatch into a small named
       helper rather than silencing.
-- [ ] Run `cargo test -p oriterm --lib gpu::prepare::dirty_skip` and
+      Removed. Factored into `process_incremental_cells` + `replay_clean_row` +
+      `push_dirty_row_range` helpers. fill_frame_incremental is now ~55 lines.
+- [x] Run `cargo test -p oriterm --lib gpu::prepare::dirty_skip` and
       confirm every incremental-path test in `dirty_skip/tests.rs` is
       still green, including:
   - `incremental_dirty_row_with_superscript_shifts_glyph_y` (BUG-06-014 pin)
@@ -297,13 +310,16 @@ The clean-row replay stays in this function.
 prepare pipeline without invoking the shaped path. After 01.5 it consumes
 the same `emit_cell` helper as production.
 
-- [ ] Replace the per-cell body (unshaped.rs:85-204) with a single
+- [x] Replace the per-cell body (unshaped.rs:85-204) with a single
       `emit_cell(...)` call, matching the shape used in 01.3 / 01.4.
-- [ ] Confirm the test-only function still produces byte-identical
+      Uses `ctx.shaped = None` (unshaped mode in emit_cell).
+- [x] Confirm the test-only function still produces byte-identical
       `frame.bg` / `frame.glyphs` output for the unit-test workloads in
       `gpu/prepare/tests.rs` that drive the unshaped path.
-- [ ] Remove `unshaped.rs`'s `#[expect(clippy::too_many_lines, ...)]` if
+      ./test-all.sh green.
+- [x] Remove `unshaped.rs`'s `#[expect(clippy::too_many_lines, ...)]` if
       present (it should not be needed post-migration).
+      No such attribute existed in unshaped.rs.
 
 ---
 
@@ -351,21 +367,21 @@ Rules:
 
 ### Completion Checklist
 
-- [ ] `./build-all.sh` passes (debug + release cross-compile)
-- [ ] `./clippy-all.sh` passes — no `#[expect(clippy::too_many_lines)]` on
+- [x] `./build-all.sh` passes (debug + release cross-compile)
+- [x] `./clippy-all.sh` passes — no `#[expect(clippy::too_many_lines)]` on
       `fill_frame_shaped` or `fill_frame_incremental`
-- [ ] `./test-all.sh` passes
-- [ ] New `emit_cell` helper has direct unit tests covering every TDD
+- [x] `./test-all.sh` passes
+- [x] New `emit_cell` helper has direct unit tests covering every TDD
       matrix row marked semantic / negative
-- [ ] No `#[allow(dead_code)]` on `emit_cell` or `EmitCtx`
-- [ ] All three callers (`fill_frame_shaped`, `fill_frame_incremental`
+- [x] No `#[allow(dead_code)]` on `emit_cell` or `EmitCtx`
+- [x] All three callers (`fill_frame_shaped`, `fill_frame_incremental`
       dirty-row path, test-only unshaped `fill_frame`) consume `emit_cell`
-- [ ] Repo grep confirms zero remaining duplicates of the per-cell skeleton
+- [x] Repo grep confirms zero remaining duplicates of the per-cell skeleton
       (`rg -n "super_sub_glyph_offset\(" oriterm/src/gpu/` returns exactly
       one production call site — inside `emit_cell`)
-- [ ] `/tpr-review` against this section returns clean (or all findings
+- [x] `/tpr-review` against this section returns clean (or all findings
       `[x]` resolved in 01.R)
-- [ ] BUG-06-014 regression tests still green (overline/superscript/subscript)
+- [x] BUG-06-014 regression tests still green (overline/superscript/subscript)
 
 **Exit Criteria:** A `cargo test -p oriterm --lib gpu::prepare` invocation
 runs the full suite green AND `rg -n "resolve_cell_colors\(" oriterm/src/gpu/`

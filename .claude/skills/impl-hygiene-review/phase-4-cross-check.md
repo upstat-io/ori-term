@@ -1,8 +1,8 @@
 # Phase 4 — Third-Party Cross-Check
 
-Read by a Sonnet sub-agent dispatched from `/impl-hygiene-review`. Not a registered skill. Dispatches `/tp-help` or `/tpr-review` to probe blind spots and validate ambiguous findings from Phase 3. Orchestration-only — the cross-check itself runs inside the external reviewer contexts.
+Read INLINE by the `/impl-hygiene-review` coordinator (main context, Opus). NOT a Sonnet sub-agent — the coordinator invokes `/tp-help` (or `/tpr-review`) directly via the Skill tool, then interprets the responses in the main context. Wrapping this phase in a Sonnet sub-agent would push reviewer-response interpretation to the wrong model tier and add a useless layer over `/tp-help`'s own reviewer dispatch.
 
-Consumes `{run_id}/phase-3.json`. Writes `{run_id}/phase-4.json` (the orchestrator-owned scratch dir passed in via the sub-agent prompt) with: cross-check outcome, any new findings surfaced by reviewers, any Phase 3 findings reviewers rejected.
+Consumes `{run_id}/phase-3.json`. Writes `{run_id}/phase-4.json` with: cross-check outcome, any new findings surfaced by reviewers, any Phase 3 findings reviewers rejected, and per-reviewer attribution for each.
 
 ---
 
