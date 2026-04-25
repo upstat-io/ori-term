@@ -218,6 +218,12 @@ sections:
   Reviewer: codex
   Note: Active work in spec-conformance Section 08 added the flags but rendering is the GPU layer's responsibility (owned by oriterm crate, not oriterm_core). Overline requires a decoration line above the glyph baseline. Superscript/subscript require vertical glyph offset and size reduction — may need font pipeline changes.
 
+- [ ] `[BUG-06-021][low]` **`oriterm/src/gpu/window_renderer/render.rs` `render_frame_cached` (line 77) and `render_cached` (line 321) exceed 4-level nesting cap**
+  Repro: `bash .claude/skills/impl-hygiene-review/hygiene-lint.sh --scope oriterm/src/gpu/window_renderer/ --summary` reports `BLOAT: nesting-depth` findings at both sites with nesting depth 5 (limit 4). Flagged during BUG-04-004 hygiene review (2026-04-25).
+  Subsystem: `oriterm/src/gpu/window_renderer/render.rs`
+  Found: 2026-04-25 | Source: impl-hygiene-review (BUG-04-004 retrospective)
+  Note: `.claude/rules/code-hygiene.md` §Style targets ≤4-level nesting. Remediation per impl-hygiene.md §Nesting Depth & Guard Clauses: invert+return early, extract inner matches into named helpers, collapse `if let` chains into a helper returning `Option`. Both functions are in the GPU render hot path — any refactor must preserve the existing invariants (damage-region, frame-budget, cached-path routing).
+
 ---
 
 ## 06.R Third Party Review Findings

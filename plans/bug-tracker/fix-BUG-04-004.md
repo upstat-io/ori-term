@@ -2,7 +2,7 @@
 bug: "BUG-04-004"
 title: "Emoji in tab title vanishes after monitor transition"
 severity: "medium"
-status: in-progress
+status: complete
 goal: "After a DPI change (monitor transition with different scale factor), all UI font collections retain the terminal font's emoji fallback so emoji in tab titles continue to render."
 success_criteria:
   - "After `UiFontSizes::set_dpi` rebuilds collections, every collection in the registry still carries the injected emoji fallback face."
@@ -18,7 +18,7 @@ third_party_review:
 
 # Fix: BUG-04-004 — Emoji in tab title vanishes after monitor transition
 
-**Status:** In Progress
+**Status:** Complete (2026-04-25)
 **Severity:** medium
 **Goal:** After a DPI change, every UI font collection retains the terminal-font emoji fallback that was injected at renderer init, so emoji in tab titles continue to resolve to the color fallback face after the window moves between monitors with different scale factors.
 
@@ -273,6 +273,38 @@ Code TPR (Phase 5) — 4 rounds, exit reason: **clean**.
 Both reviewers confirm the full chain `3c510928..e6fc75c8` is correct and comprehensive.
 
 **Exit reason**: clean after 3 fix rounds + 1 confirmation round. All findings fixed inline; zero findings remain outstanding.
+
+---
+
+## H. Hygiene Review Findings
+
+Post-TPR `/impl-hygiene-review` (Phase 5 step 4), focused scope on touched files.
+
+**In-scope hygiene findings** (resolved inline):
+- [x] BLOAT:banners × 2 — `oriterm/src/font/ui_font_sizes/tests.rs:275,281` used decorative `// ───` banners violating `code-hygiene.md §Comments`. Replaced with plain comment prefix.
+- [x] BLOAT:fn-length — `oriterm/src/gpu/window_renderer/tests.rs:462` test function was 123 lines (limit 100). Extracted `build_terminal_fc`, `fresh_empty_ui_sizes`, and `ui_fallback_count` helpers; test body now well under the cap.
+
+**Out-of-scope findings** (pre-existing, filed separately — not introduced by this fix):
+- `BUG-06-015` — `oriterm/src/gpu/window_renderer/helpers.rs` 549 lines (already tracked).
+- `BUG-06-021` — `oriterm/src/gpu/window_renderer/render.rs` `render_frame_cached` (line 77) and `render_cached` (line 321) nesting depth 5 (limit 4) — filed during this review.
+
+No in-scope findings remain.
+
+---
+
+## I. Improve-Tooling Retrospective
+
+Reflection on the diagnostic journey during this fix (per `/fix-bug` Phase 5 step 5):
+
+- **Finding the root cause was fast** — reading `UiFontSizes::rebuild_all` + `inject_fallbacks` + the one-shot call site in `WindowRenderer::new` gave the full picture in ~15 minutes. The `inject_fallbacks` comment clearly said "inject into all collections in the registry" without mentioning rebuild-path persistence — the SSOT gap was visible from the doc comment alone once the question "what happens on rebuild?" was asked.
+
+- **/tp-help consensus was load-bearing** — Codex identified the algorithmic DRY collapse (three copies of "hook → append") that I would likely have landed as-is without consensus. The 15-minute round surfaced a real code-quality improvement that would have been hard to catch in self-review.
+
+- **/tpr-review round 0 caught the ordering bug (TPR-04-004-codex)** — the fix in `replace_ui_font_sizes` was local-optimum correct (it fixed the direct symptom — DPI change losing emoji) but globally wrong because the config-reload path had a different ordering constraint. This class of bug — "my fix for X subsystem broke Y subsystem" — is exactly what the mandatory code-review gate catches.
+
+- **Hygiene lint was valuable and fast** — `bash .claude/skills/impl-hygiene-review/hygiene-lint.sh --scope <paths> --summary` ran in under 2 seconds and caught real cleanup work. Running it earlier in the fix flow (pre-commit, not post-TPR) would have cut review churn.
+
+No tooling improvements actioned — the existing pipeline worked well for this fix. The hygiene lint's auto-fix mode (`--fix --apply`) is a resource I would reach for earlier next time.
 
 ---
 
