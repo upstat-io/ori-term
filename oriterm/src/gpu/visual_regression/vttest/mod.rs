@@ -14,7 +14,7 @@ mod menus_3_8;
 mod render;
 
 use oriterm_core::CellFlags;
-use oriterm_test_support::{PtySession, vttest_available};
+use oriterm_test_support::{PtySession, vttest_available, walk_vttest_screens};
 
 use self::render::{assert_golden, cell_brightness, frame_input_with_blink};
 use super::{headless_env, render_to_pixels};
@@ -42,29 +42,15 @@ fn run_menu1_golden(cols: u16, rows: u16) {
     // Select menu item 1.
     s.send(b"1\r");
 
-    let mut screen = 1;
-    loop {
-        let text = s.grid_text();
-
-        if text.contains("Enter choice number") {
-            break;
-        }
-
+    walk_vttest_screens(&mut s, 20, &[], |session, _text, screen| {
         assert_golden(
-            &s,
+            session,
             &format!("vttest_{label}_01_{screen:02}"),
             &gpu,
             &pipelines,
             &mut renderer,
         );
-
-        s.send(b"\r");
-        screen += 1;
-
-        if screen > 20 {
-            break;
-        }
-    }
+    });
 }
 
 /// Run vttest menu 2 (screen features) and capture golden images.
@@ -80,29 +66,15 @@ fn run_menu2_golden(cols: u16, rows: u16) {
     s.wait_for("Enter choice number", 5000);
     s.send(b"2\r");
 
-    let mut screen = 1;
-    loop {
-        let text = s.grid_text();
-
-        if text.contains("Enter choice number") {
-            break;
-        }
-
+    walk_vttest_screens(&mut s, 20, &[], |session, _text, screen| {
         assert_golden(
-            &s,
+            session,
             &format!("vttest_{label}_02_{screen:02}"),
             &gpu,
             &pipelines,
             &mut renderer,
         );
-
-        s.send(b"\r");
-        screen += 1;
-
-        if screen > 20 {
-            break;
-        }
-    }
+    });
 }
 
 // -- Menu 1: Cursor movements --
