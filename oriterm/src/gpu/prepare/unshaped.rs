@@ -7,15 +7,10 @@ use oriterm_core::CellFlags;
 
 use super::super::frame_input::FrameInput;
 use super::super::prepared_frame::PreparedFrame;
+use super::AtlasLookup;
 use super::emit::{build_cursor, draw_prompt_markers, draw_url_hover_underline};
-use super::{AtlasLookup, decorations, resolve_cell_colors, resolve_cursor};
-use crate::font::GlyphStyle;
-use crate::gpu::instance_writer::{CLIP_UNCLIPPED, ScreenRect};
-
-/// Convert cell flags to the corresponding glyph style.
-fn glyph_style(flags: CellFlags) -> GlyphStyle {
-    GlyphStyle::from_cell_flags(flags)
-}
+use super::emit_cell::EmitCtx;
+use super::resolve::resolve_cursor;
 
 /// Convert a [`FrameInput`] into a GPU-ready [`PreparedFrame`] using per-cell
 /// character lookups (unshaped path).
@@ -72,13 +67,24 @@ fn fill_frame(
 ) {
     let cw = input.cell_size.width;
     let ch = input.cell_size.height;
-    let baseline = input.cell_size.baseline;
-    let fg_dim = input.fg_dim;
-    let text_blink_opacity = input.text_blink_opacity;
     let (ox, oy) = origin;
-    let sel = input.selection.as_ref();
-    let search = input.search.as_ref();
-    let cursor = resolve_cursor(&input.content.cursor, input.mark_cursor.as_ref());
+
+    let mut ctx = EmitCtx {
+        fg_dim: input.fg_dim,
+        text_blink_opacity: input.text_blink_opacity,
+        subpixel_positioning: input.subpixel_positioning,
+        palette: &input.palette,
+        sel: input.selection.as_ref(),
+        search: input.search.as_ref(),
+        cursor: resolve_cursor(&input.content.cursor, input.mark_cursor.as_ref()),
+        cursor_opacity,
+        hovered_cell: input.hovered_cell,
+        cell_size: &input.cell_size,
+        atlas,
+        size_q6: 0,
+        frame,
+        shaped: None,
+    };
 
     for cell in &input.content.cells {
         // Spacer cells are handled by their primary cell (or are padding).
@@ -93,103 +99,25 @@ fn fill_frame(
         let x = ox + col as f32 * cw;
         let y = (oy + cell.line as f32 * ch).round();
 
-        let (fg, bg) =
-            resolve_cell_colors(cell, sel, search, &cursor, cursor_opacity, &input.palette);
-
-        // Background: skip default palette background so the window clear
-        // color (with theme opacity for glass/acrylic) shows through.
-        let bg_w = if cell.flags.contains(CellFlags::WIDE_CHAR) {
-            2.0 * cw
-        } else {
-            cw
-        };
-        if bg != input.palette.background {
-            frame.backgrounds.push_rect(
-                ScreenRect {
-                    x,
-                    y,
-                    w: bg_w,
-                    h: ch,
-                },
-                bg,
-                1.0,
-            );
-        }
-
-        // Per-cell alpha: BLINK cells fade with text_blink_opacity.
-        let is_blink = cell.flags.contains(CellFlags::BLINK);
-        let cell_dim = if is_blink {
-            fg_dim * text_blink_opacity
-        } else {
-            fg_dim
-        };
-        let deco_alpha = if is_blink { text_blink_opacity } else { 1.0 };
-
-        let is_hovered = input.hovered_cell == Some((cell.line, col));
-        decorations::DecorationContext {
-            backgrounds: &mut frame.backgrounds,
-            glyphs: &mut frame.glyphs,
-            atlas,
-            size_q6: 0,
-            metrics: &input.cell_size,
-            alpha: deco_alpha,
-        }
-        .draw(
-            cell.flags,
-            cell.underline_color,
-            fg,
-            x,
-            y,
-            bg_w,
-            cell.has_hyperlink,
-            is_hovered,
-        );
-
-        // Foreground glyph (skip spaces).
-        // Note: unshaped path is test-only and routes all glyphs to the mono
-        // writer — no subpixel rendering support (no AtlasKind dispatch).
-        if cell.ch != ' ' {
-            let style = glyph_style(cell.flags);
-            if let Some(entry) = atlas.lookup(cell.ch, style) {
-                let glyph_x = x + entry.bearing_x as f32;
-                // SGR 73/74 (superscript/subscript) glyph y-offset. See
-                // `super_sub_glyph_offset` in prepare/mod.rs for the
-                // integer-rounding invariant.
-                let glyph_y = y + super::super_sub_glyph_offset(cell.flags, ch) + baseline
-                    - entry.bearing_y as f32;
-                let uv = [entry.uv_x, entry.uv_y, entry.uv_w, entry.uv_h];
-                let rect = ScreenRect {
-                    x: glyph_x,
-                    y: glyph_y,
-                    w: entry.width as f32,
-                    h: entry.height as f32,
-                };
-                frame
-                    .glyphs
-                    .push_glyph(rect, uv, fg, cell_dim, entry.page, CLIP_UNCLIPPED);
-            }
-        }
+        super::emit_cell::emit_cell(cell, x, y, &mut ctx);
     }
 
-    // Implicit URL hover: one continuous underline rect per segment.
-    draw_url_hover_underline(input, frame, ox, oy);
-
-    // Visual prompt markers: thin colored bar at left margin of prompt rows.
-    draw_prompt_markers(input, frame, ox, oy);
+    draw_url_hover_underline(input, ctx.frame, ox, oy);
+    draw_prompt_markers(input, ctx.frame, ox, oy);
 
     // Cursor instances (gated by terminal visibility AND application blink state).
     // Unfocused windows always render a steady hollow block cursor.
-    if cursor.visible && cursor_opacity > 0.0 {
+    if ctx.cursor.visible && cursor_opacity > 0.0 {
         let shape = if input.window_focused {
-            cursor.shape
+            ctx.cursor.shape
         } else {
             oriterm_core::CursorShape::HollowBlock
         };
         build_cursor(
-            frame,
+            ctx.frame,
             shape,
-            cursor.column.0,
-            cursor.line,
+            ctx.cursor.column.0,
+            ctx.cursor.line,
             cw,
             ch,
             ox,
@@ -199,6 +127,5 @@ fn fill_frame(
         );
     }
 
-    // Emit image quads from RenderableContent, split by z-index.
-    super::emit::emit_image_quads(input, frame, ox, oy);
+    super::emit::emit_image_quads(input, ctx.frame, ox, oy);
 }
