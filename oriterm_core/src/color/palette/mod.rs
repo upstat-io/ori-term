@@ -391,13 +391,21 @@ fn fill_cube(colors: &mut [Rgb; NUM_COLORS]) {
         for g in 0..6u8 {
             for b in 0..6u8 {
                 let idx = 16 + (r as usize * 36) + (g as usize * 6) + b as usize;
-                colors[idx] = Rgb {
-                    r: if r == 0 { 0 } else { 55 + r * 40 },
-                    g: if g == 0 { 0 } else { 55 + g * 40 },
-                    b: if b == 0 { 0 } else { 55 + b * 40 },
-                };
+                colors[idx] = cube_rgb(r, g, b);
             }
         }
+    }
+}
+
+/// One xterm-256 cube cell: 0 → 0x00, otherwise `55 + n * 40`.
+fn cube_rgb(r: u8, g: u8, b: u8) -> Rgb {
+    fn cube_component(n: u8) -> u8 {
+        if n == 0 { 0 } else { 55 + n * 40 }
+    }
+    Rgb {
+        r: cube_component(r),
+        g: cube_component(g),
+        b: cube_component(b),
     }
 }
 
