@@ -13,7 +13,13 @@ pub use vte::ansi::Rgb;
 /// Total palette entries: 256 indexed + 14 named semantic slots.
 pub const NUM_COLORS: usize = 270;
 
-/// Standard xterm ANSI colors (indices 0–15).
+/// Canonical xterm ANSI colors (indices 0–15).
+///
+/// Source: xterm `ttyDefaultColors` table from `xterm/charproc.c`. Matches
+/// the broad default across xterm, Alacritty, `WezTerm` (default), Windows
+/// Terminal Campbell, `iTerm2`, Ghostty, and Kitty. Tango remains available
+/// as an opt-in built-in scheme — see `oriterm/src/scheme/builtin/extended2.rs`
+/// `TANGO_DARK` / `TANGO_LIGHT`.
 const ANSI_COLORS: [Rgb; 16] = [
     Rgb {
         r: 0x00,
@@ -21,79 +27,79 @@ const ANSI_COLORS: [Rgb; 16] = [
         b: 0x00,
     }, // 0  Black
     Rgb {
-        r: 0xcc,
+        r: 0xcd,
         g: 0x00,
         b: 0x00,
     }, // 1  Red
     Rgb {
-        r: 0x4e,
-        g: 0x9a,
-        b: 0x06,
+        r: 0x00,
+        g: 0xcd,
+        b: 0x00,
     }, // 2  Green
     Rgb {
-        r: 0xc4,
-        g: 0xa0,
+        r: 0xcd,
+        g: 0xcd,
         b: 0x00,
     }, // 3  Yellow
     Rgb {
-        r: 0x34,
-        g: 0x65,
-        b: 0xa4,
+        r: 0x00,
+        g: 0x00,
+        b: 0xee,
     }, // 4  Blue
     Rgb {
-        r: 0x75,
-        g: 0x50,
-        b: 0x7b,
+        r: 0xcd,
+        g: 0x00,
+        b: 0xcd,
     }, // 5  Magenta
     Rgb {
-        r: 0x06,
-        g: 0x98,
-        b: 0x9a,
+        r: 0x00,
+        g: 0xcd,
+        b: 0xcd,
     }, // 6  Cyan
     Rgb {
-        r: 0xd3,
-        g: 0xd7,
-        b: 0xcf,
+        r: 0xe5,
+        g: 0xe5,
+        b: 0xe5,
     }, // 7  White
     Rgb {
-        r: 0x55,
-        g: 0x57,
-        b: 0x53,
-    }, // 8  Bright Black
+        r: 0x7f,
+        g: 0x7f,
+        b: 0x7f,
+    }, // 8  Bright Black (gray)
     Rgb {
-        r: 0xef,
-        g: 0x29,
-        b: 0x29,
+        r: 0xff,
+        g: 0x00,
+        b: 0x00,
     }, // 9  Bright Red
     Rgb {
-        r: 0x8a,
-        g: 0xe2,
-        b: 0x34,
+        r: 0x00,
+        g: 0xff,
+        b: 0x00,
     }, // 10 Bright Green
     Rgb {
-        r: 0xfc,
-        g: 0xe9,
-        b: 0x4f,
+        r: 0xff,
+        g: 0xff,
+        b: 0x00,
     }, // 11 Bright Yellow
     Rgb {
-        r: 0x72,
-        g: 0x9f,
-        b: 0xcf,
+        r: 0x5c,
+        g: 0x5c,
+        b: 0xff,
     }, // 12 Bright Blue
     Rgb {
-        r: 0xad,
-        g: 0x7f,
-        b: 0xa8,
+        r: 0xff,
+        g: 0x00,
+        b: 0xff,
     }, // 13 Bright Magenta
     Rgb {
-        r: 0x34,
-        g: 0xe2,
-        b: 0xe2,
+        r: 0x00,
+        g: 0xff,
+        b: 0xff,
     }, // 14 Bright Cyan
     Rgb {
-        r: 0xee,
-        g: 0xee,
-        b: 0xec,
+        r: 0xff,
+        g: 0xff,
+        b: 0xff,
     }, // 15 Bright White
 ];
 
