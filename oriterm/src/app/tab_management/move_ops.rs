@@ -2,68 +2,12 @@
 //!
 //! Extracted from `tab_management/mod.rs` for file size compliance.
 
-use crate::session::{TabId, WindowId as SessionWindowId};
+use crate::session::TabId;
+use crate::window_manager::types::{ManagedWindow, WindowKind};
 
 use crate::app::App;
 
 impl App {
-    /// Move a tab to a different window.
-    ///
-    /// Preserves the tab's panes and split layout. If the source window
-    /// becomes empty, it is closed. Panes in the moved tab are resized to
-    /// fit the destination window dimensions.
-    pub(in crate::app) fn move_tab_to_window(
-        &mut self,
-        tab_id: TabId,
-        dest_window: SessionWindowId,
-    ) {
-        // Remove tab from source window.
-        let src_wid = self.session.window_for_tab(tab_id);
-        if let Some(wid) = src_wid {
-            if let Some(win) = self.session.get_window_mut(wid) {
-                win.remove_tab(tab_id);
-            }
-        }
-        // Add tab to destination window.
-        if let Some(win) = self.session.get_window_mut(dest_window) {
-            win.add_tab(tab_id);
-        }
-
-        self.release_tab_width_lock();
-        self.sync_tab_bar_from_mux();
-        if let Some(wid) = self.focused_window_id {
-            self.refresh_platform_rects(wid);
-        }
-
-        // Resize panes in the moved tab to fit the destination window.
-        self.resize_all_panes();
-
-        // Seed moved panes with the destination window's cell metrics.
-        // `broadcast_cell_metrics_to_window`'s short-circuit would
-        // skip these panes if the destination's cached dims match the
-        // newly-computed ones.
-        let moved_pane_ids: Vec<oriterm_mux::PaneId> = self
-            .session
-            .get_tab(tab_id)
-            .map(crate::session::Tab::all_panes)
-            .unwrap_or_default();
-        let dest_winit_id = self.windows.iter().find_map(|(winit_id, ctx)| {
-            (ctx.window.session_window_id() == dest_window).then_some(*winit_id)
-        });
-        if let Some(winit_id) = dest_winit_id {
-            for pid in moved_pane_ids {
-                self.seed_pane_with_window_cell_metrics(winit_id, pid);
-            }
-        }
-
-        // Mark the destination window dirty.
-        if let Some(ctx) = self.focused_ctx_mut() {
-            ctx.pane_cache.invalidate_all();
-            ctx.cached_dividers = None;
-            ctx.root.mark_dirty();
-        }
-    }
-
     /// Sends a deferred move-tab-to-new-window event through the event loop.
     ///
     /// The actual tab move happens in `user_event()` where `ActiveEventLoop`
@@ -162,62 +106,107 @@ impl App {
     }
 
     /// Embedded-mode: create in-process window, move tab there.
+    ///
+    /// Mirrors the working `tear_off_tab` sequence (see
+    /// `oriterm/src/app/tab_drag/tear_off.rs`): create a bare (hidden, no
+    /// tabs) window, insert the moved tab directly, pump mux notifications,
+    /// seed pane cell metrics, sync tab bars + refresh platform rects for
+    /// both windows, pre-render the new window with focused-id swap so its
+    /// content paints before show, pre-render the source so its tab bar
+    /// reflects the removal, then show the new window. Closes the source
+    /// window if it ended up empty.
+    ///
+    /// The previous implementation used `create_window()` (which spawned an
+    /// unwanted initial tab) and never explicitly pre-rendered the new
+    /// window — the result was a blank window flash (BUG-09-1).
     fn move_tab_to_new_window_embedded(
         &mut self,
         tab_id: TabId,
         event_loop: &winit::event_loop::ActiveEventLoop,
     ) {
-        // Create new window (GPU, surface, chrome, initial tab).
-        let Some(new_winit_id) = self.create_window(event_loop) else {
+        let source_winit_id = self.focused_window_id;
+
+        // Bare window: hidden, no tabs. Caller (this function) inserts the
+        // moved tab directly, pre-renders, then shows.
+        let Some((new_winit_id, new_session_wid)) = self.create_window_bare(event_loop) else {
             return;
         };
 
-        // The new window got a fresh initial tab. Find the mux window ID,
-        // then move the requested tab there BEFORE closing the initial tab.
-        let Some(ctx) = self.windows.get(&new_winit_id) else {
-            return;
-        };
-        let new_session_wid = ctx.window.session_window_id();
+        // Register as a primary Main window — no OS drag follows (unlike
+        // tear-off). The Main kind makes it eligible for context-menu
+        // operations on its own tabs.
+        self.window_manager
+            .register(ManagedWindow::new(new_winit_id, WindowKind::Main));
 
-        // Capture the initial tab ID before moving (the move changes active tab).
-        let initial_tab = self
-            .session
-            .get_window(new_session_wid)
-            .and_then(crate::session::Window::active_tab);
-
-        // Move the requested tab to the new window (now has 2 tabs).
-        self.move_tab_to_window(tab_id, new_session_wid);
-
-        // Close the initial (empty) tab that `create_window` spawned
-        // (window now has 1 tab — the moved one).
-        if let Some(initial) = initial_tab {
-            let pane_ids: Vec<oriterm_mux::PaneId> = self
-                .session
-                .get_tab(initial)
-                .map(crate::session::Tab::all_panes)
-                .unwrap_or_default();
-            if let Some(mux) = &mut self.mux {
-                for &pid in &pane_ids {
-                    mux.close_pane(pid);
-                    mux.cleanup_closed_pane(pid);
+        // Move tab from source window to new window (local session).
+        {
+            let src_wid = self.session.window_for_tab(tab_id);
+            if let Some(wid) = src_wid {
+                if let Some(win) = self.session.get_window_mut(wid) {
+                    win.remove_tab(tab_id);
                 }
             }
-            // Remove initial tab from local session.
-            self.session.remove_tab(initial);
             if let Some(win) = self.session.get_window_mut(new_session_wid) {
-                win.remove_tab(initial);
+                win.insert_tab_at(0, tab_id);
             }
         }
 
-        // Sync tab bars: old window lost a tab, new window gained one.
-        self.sync_tab_bar_from_mux();
-        self.sync_tab_bar_for_window(new_winit_id);
-        if let Some(wid) = self.focused_window_id {
-            self.refresh_platform_rects(wid);
+        // Drain mux notifications from the move.
+        self.pump_mux_events();
+
+        // Seed moved panes with the new window's cell metrics — the
+        // `broadcast_cell_metrics_to_window` short-circuit would skip these
+        // if the new window's cached dims happen to match the source's.
+        let moved_pane_ids: Vec<oriterm_mux::PaneId> = self
+            .session
+            .get_tab(tab_id)
+            .map(crate::session::Tab::all_panes)
+            .unwrap_or_default();
+        for pid in moved_pane_ids {
+            self.seed_pane_with_window_cell_metrics(new_winit_id, pid);
         }
+
+        // Sync tab bars + refresh platform rects on both windows.
+        if let Some(src_id) = source_winit_id {
+            self.sync_tab_bar_for_window(src_id);
+            self.refresh_platform_rects(src_id);
+        }
+        self.sync_tab_bar_for_window(new_winit_id);
         self.refresh_platform_rects(new_winit_id);
-        if let Some(ctx) = self.focused_ctx_mut() {
-            ctx.root.mark_dirty();
+
+        // Pre-render the new window with content before showing — the
+        // focused-id swap forces `handle_redraw` to paint the new window
+        // rather than the currently-focused source.
+        {
+            let saved_focused = self.focused_window_id;
+            let saved_active = self.active_window;
+            self.focused_window_id = Some(new_winit_id);
+            self.active_window = Some(new_session_wid);
+            self.handle_redraw();
+            self.focused_window_id = saved_focused;
+            self.active_window = saved_active;
+        }
+        // Pre-render the source so its tab bar shows the removed tab.
+        self.handle_redraw();
+
+        // Show the new window (it now has rendered content — no blank flash).
+        if let Some(ctx) = self.windows.get(&new_winit_id) {
+            ctx.window.set_visible(true);
+        }
+
+        // Close the source window if it's now empty.
+        if let Some(src_id) = source_winit_id {
+            let source_empty = self
+                .windows
+                .get(&src_id)
+                .and_then(|ctx| {
+                    let win = self.session.get_window(ctx.window.session_window_id())?;
+                    Some(win.tabs().is_empty())
+                })
+                .unwrap_or(false);
+            if source_empty {
+                self.remove_empty_window(src_id);
+            }
         }
     }
 

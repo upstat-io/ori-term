@@ -33,14 +33,8 @@ Bugs in tab lifecycle, window management, tab movement, split trees, floating pa
   Found: 2026-03-31 | Source: manual
   Note: Active work in roadmap section 32 (tab-window-mux) and section 44 (multi-process-windows) touches this area.
 
-- [ ] `[BUG-09-2][medium]` **`move_tab_to_window` resizes focused window's panes instead of destination window's** — found by tpr-review.
-  Repro: Move a tab from window A to unfocused window B. `resize_all_panes()` called from `move_tab_to_window` uses `focused_ctx()` via `compute_pane_layouts`, so it recomputes and resizes the FOCUSED window's active tab — not the moved tab in window B. The moved tab's panes retain window A's grid dimensions.
-  Detail: `oriterm/src/app/tab_management/move_ops.rs:39` calls `self.resize_all_panes()`. `resize_all_panes` (`oriterm/src/app/pane_ops/mod.rs:215`) calls `compute_pane_layouts()` which uses `self.active_window` + `self.focused_ctx()` (`oriterm/src/app/redraw/multi_pane/pane_layouts.rs:15-27`) — tied to the focused window, not the destination. If the destination window is unfocused at move time (cross-window moves from context menu or API), the moved tab's panes are not resized to fit the destination window's grid.
-  Impact: Latent correctness issue. Currently masked because most tab-move paths (tear-off, move-to-new-window) end up making the destination focused before it matters. But per TPR-07-002-gemini (Section 07 round 8), Section 32's planned multi-window support will exercise the background-window move path where this bug manifests as stale grid dimensions on the moved panes.
-  Proposed fix: Refactor `resize_all_panes` to take an explicit target window parameter, or add a `resize_panes_in_tab(tab_id, winit_id)` helper. `move_tab_to_window` then targets the destination window explicitly. Also audit `tear_off_tab` for the same pattern (it does its own session manipulation but still calls `resize_all_panes` implicitly via `handle_redraw`).
-  Subsystem: `oriterm/src/app/pane_ops/mod.rs`, `oriterm/src/app/redraw/multi_pane/pane_layouts.rs`, `oriterm/src/app/tab_management/move_ops.rs`
-  Found: 2026-04-13 | Source: tpr-review | Reviewer: gemini (TPR-07-002-gemini during spec-conformance Section 07 round 8 review)
-  Note: Pre-existing code pattern that Section 07 round 7 surfaced when adding `seed_pane_with_window_cell_metrics` (which DOES target the destination window correctly — the LEAK is that `resize_all_panes` does not).
+- [x] `[BUG-09-2][medium]` **`move_tab_to_window` resizes focused window's panes instead of destination window's**
+  Resolved: OBE on 2026-04-24. The `move_tab_to_window` helper itself was removed during the BUG-09-1 fix — its only caller (`move_tab_to_new_window_embedded`) was refactored to mirror the working `tear_off_tab` pattern (direct session insert + per-pane `seed_pane_with_window_cell_metrics(new_winit_id, pid)` + explicit pre-render of the new window via focused-id swap). The destination-targeted seed call replaces the broken `resize_all_panes()` flow this bug described. No remaining caller of the buggy resize path. See plans/bug-tracker/fix-BUG-09-001.md and the BUG-09-1 fix commit chain.
 
 - [ ] `[BUG-09-3][low]` **No integration test for cross-window pane seeding** — found by tpr-review.
   Repro: N/A — test-coverage gap, not a behavioral bug.
