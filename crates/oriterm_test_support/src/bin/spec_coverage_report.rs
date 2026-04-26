@@ -111,35 +111,7 @@ fn main() -> ExitCode {
         // don't trigger false failures.
         let spool_dir = workspace_root.join("target/spec-chain-uncataloged");
         let catalog_sigs = build_catalog_signature_set(&catalog_dir).unwrap_or_default();
-        let has_backlog = match uncataloged::read_accumulated_tuples(&spool_dir) {
-            Ok(tuples) => {
-                let unknown: Vec<_> = tuples
-                    .iter()
-                    .filter(|sig| !catalog_sigs.contains(*sig))
-                    .collect();
-                if unknown.is_empty() {
-                    false
-                } else {
-                    eprintln!(
-                        "UNCATALOGED BACKLOG ({} distinct tuples observed but not in catalog):",
-                        unknown.len()
-                    );
-                    for (cat, intermediates, final_byte) in &unknown {
-                        let hex: Vec<String> =
-                            intermediates.iter().map(|b| format!("{b:02x}")).collect();
-                        eprintln!(
-                            "  [{cat}] intermediates=[{}] final={final_byte}",
-                            hex.join(",")
-                        );
-                    }
-                    true
-                }
-            }
-            Err(e) => {
-                eprintln!("warning: failed to read uncataloged backlog: {e}");
-                false
-            }
-        };
+        let has_backlog = report_uncataloged_backlog(&spool_dir, &catalog_sigs);
 
         if has_false_verified || has_uncataloged || has_regression || has_backlog {
             return ExitCode::FAILURE;
@@ -147,6 +119,65 @@ fn main() -> ExitCode {
     }
 
     ExitCode::SUCCESS
+}
+
+/// Report the UNCATALOGED BACKLOG gate — sequences observed during
+/// test execution that have no matching catalog row. Returns `true`
+/// when the gate should fail the run.
+///
+/// Output shape: count line, per-category histogram (`BTreeMap` so
+/// categories are alphabetically ordered), then the full sorted list
+/// (by category, then `final_byte`). The histogram surfaces at a
+/// glance which categories drive the backlog; without it, an
+/// unsorted dump (BUG-07-019 retrospective: 49 entries pre-fix) is
+/// hard to scan.
+fn report_uncataloged_backlog(
+    spool_dir: &Path,
+    catalog_sigs: &std::collections::BTreeSet<oriterm_test_support::catalog::TupleSig>,
+) -> bool {
+    let tuples = match uncataloged::read_accumulated_tuples(&spool_dir.to_path_buf()) {
+        Ok(t) => t,
+        Err(e) => {
+            eprintln!("warning: failed to read uncataloged backlog: {e}");
+            return false;
+        }
+    };
+
+    let unknown: Vec<_> = tuples
+        .iter()
+        .filter(|sig| !catalog_sigs.contains(*sig))
+        .collect();
+    if unknown.is_empty() {
+        return false;
+    }
+
+    eprintln!(
+        "UNCATALOGED BACKLOG ({} distinct tuples observed but not in catalog):",
+        unknown.len()
+    );
+
+    let mut by_category: std::collections::BTreeMap<&str, usize> =
+        std::collections::BTreeMap::new();
+    for (cat, _, _) in &unknown {
+        *by_category.entry(cat.as_str()).or_insert(0) += 1;
+    }
+    eprintln!("  by category:");
+    for (cat, count) in &by_category {
+        eprintln!("    {cat}: {count}");
+    }
+
+    eprintln!("  full list (sorted by category, then final_byte):");
+    let mut sorted: Vec<_> = unknown.iter().collect();
+    sorted.sort_by(|a, b| a.0.cmp(&b.0).then(a.2.cmp(&b.2)));
+    for (cat, intermediates, final_byte) in sorted {
+        let hex: Vec<String> = intermediates.iter().map(|b| format!("{b:02x}")).collect();
+        eprintln!(
+            "    [{cat}] intermediates=[{}] final={final_byte}",
+            hex.join(",")
+        );
+    }
+
+    true
 }
 
 /// Resolve the `--explain <path>` flag and run the per-file citation
