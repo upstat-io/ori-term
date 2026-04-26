@@ -6,7 +6,9 @@
 //! size matches exactly — no nearest-pool approximation.
 
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
+use super::collection::loading::FontData;
 use super::collection::{FontCollection, FontSet, size_key};
 use super::{FontError, GlyphFormat, HintingMode};
 
@@ -52,6 +54,16 @@ pub(crate) struct UiFontSizes {
     /// mappings) so that [`rebuild_all`] preserves user font configuration
     /// across monitor DPI changes.
     post_rebuild_hook: Option<PostRebuildHook>,
+    /// Fallback faces that every collection in this registry must carry.
+    ///
+    /// Populated via [`inject_fallbacks`] — typically the terminal font's
+    /// emoji fallback, injected once at `WindowRenderer::new` so the UI path
+    /// can resolve emoji codepoints. Replayed by [`finalize_collection`] on
+    /// every rebuild path (`rebuild_all`, `ensure_size`,
+    /// `create_default_collection`) so the emoji fallback is never dropped
+    /// during a monitor-DPI change, a runtime size addition, or a standalone
+    /// default construction. Fixes BUG-04-004.
+    injected_fallbacks: Vec<FontData>,
 }
 
 impl UiFontSizes {
@@ -124,16 +136,55 @@ impl UiFontSizes {
             logical_sizes,
             default_q6,
             post_rebuild_hook: None,
+            injected_fallbacks: Vec::new(),
         })
     }
 
-    /// Inject fallback fonts into all collections in the registry.
+    /// Inject fallback fonts into all collections in the registry AND
+    /// record them so every future rebuild (DPI change, `ensure_size`,
+    /// `create_default_collection`) replays them onto the new collections.
     ///
     /// Used to add the terminal font's emoji fallback so emoji render at
-    /// the correct UI text size through `FontSource::Ui`.
-    pub(crate) fn inject_fallbacks(&mut self, data: &[super::collection::loading::FontData]) {
-        for fc in self.collections.values_mut() {
-            fc.append_fallback_data(data);
+    /// the correct UI text size through `FontSource::Ui`. See BUG-04-004
+    /// for the DPI-change regression this replay fixes.
+    ///
+    /// Idempotent: entries whose `Arc<FontBytes>` identity and face index
+    /// match an already-recorded entry are skipped (no double-append on
+    /// existing collections, no duplicate storage). This guards the
+    /// GPU-recovery re-init path (see `app/gpu_recovery.rs`) where the
+    /// same registry may be passed to a second `WindowRenderer::new`.
+    pub(crate) fn inject_fallbacks(&mut self, data: &[FontData]) {
+        for fd in data {
+            if self
+                .injected_fallbacks
+                .iter()
+                .any(|existing| Arc::ptr_eq(&existing.data, &fd.data) && existing.index == fd.index)
+            {
+                continue;
+            }
+            self.injected_fallbacks.push(fd.clone());
+            let slice = std::slice::from_ref(fd);
+            for fc in self.collections.values_mut() {
+                fc.append_fallback_data(slice);
+            }
+        }
+    }
+
+    /// Apply the post-rebuild hook and replay any injected fallbacks onto a
+    /// freshly constructed [`FontCollection`]. Canonical finalization step
+    /// shared by every code path that produces a new collection in this
+    /// registry: [`rebuild_all`], [`ensure_size`], and
+    /// [`create_default_collection`].
+    ///
+    /// Collapses the prior "run hook, then append injected fallbacks"
+    /// sequence out of three bodies into one canonical home — satisfies
+    /// `.claude/rules/impl-hygiene.md §Algorithmic DRY`.
+    fn finalize_collection(&self, fc: &mut FontCollection) {
+        if let Some(ref hook) = self.post_rebuild_hook {
+            hook(fc);
+        }
+        if !self.injected_fallbacks.is_empty() {
+            fc.append_fallback_data(&self.injected_fallbacks);
         }
     }
 
@@ -234,9 +285,7 @@ impl UiFontSizes {
                 self.bold_weight,
                 self.hinting,
             )?;
-            if let Some(ref hook) = self.post_rebuild_hook {
-                hook(&mut fc);
-            }
+            self.finalize_collection(&mut fc);
             self.collections.insert(q6, fc);
             self.logical_sizes.push(logical_size);
         }
@@ -283,9 +332,7 @@ impl UiFontSizes {
             self.bold_weight,
             self.hinting,
         )?;
-        if let Some(ref hook) = self.post_rebuild_hook {
-            hook(&mut fc);
-        }
+        self.finalize_collection(&mut fc);
         Ok(fc)
     }
 
@@ -310,9 +357,7 @@ impl UiFontSizes {
                 self.bold_weight,
                 self.hinting,
             )?;
-            if let Some(ref hook) = self.post_rebuild_hook {
-                hook(&mut fc);
-            }
+            self.finalize_collection(&mut fc);
             let q6 = size_key(fc.size_px());
             if (logical_px - DEFAULT_LOGICAL_SIZE).abs() < 0.01 {
                 new_default_q6 = q6;

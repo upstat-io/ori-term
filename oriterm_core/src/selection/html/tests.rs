@@ -229,6 +229,179 @@ fn underline_and_strikethrough_combined() {
     assert!(html.contains("text-decoration:underline line-through"));
 }
 
+// -- Overline / superscript / subscript (BUG-06-014) --
+
+/// Regression: BUG-06-014 — semantic pin for SGR 53 (overline) HTML mapping.
+#[test]
+fn overline_text_gets_text_decoration_overline() {
+    let mut grid = Grid::new(5, 20);
+    grid.move_to(0, Column(0));
+    grid.cursor_mut().template.flags = CellFlags::OVERLINE;
+    grid.put_char('O');
+
+    let palette = Palette::default();
+    let sel = char_selection(&grid, 0, 0);
+    let html = extract_html(&grid, &sel, &palette, "Mono", 10.0);
+
+    assert!(
+        html.contains("text-decoration:overline"),
+        "expected overline CSS in: {html}"
+    );
+}
+
+/// Regression: BUG-06-014 — OVERLINE + UNDERLINE combine in single text-decoration value.
+#[test]
+fn overline_and_underline_combined_in_single_text_decoration() {
+    let mut grid = Grid::new(5, 20);
+    grid.move_to(0, Column(0));
+    grid.cursor_mut().template.flags = CellFlags::OVERLINE | CellFlags::UNDERLINE;
+    grid.put_char('U');
+
+    let palette = Palette::default();
+    let sel = char_selection(&grid, 0, 0);
+    let html = extract_html(&grid, &sel, &palette, "Mono", 10.0);
+
+    // CSS spec allows multiple decoration tokens in one text-decoration value.
+    assert!(
+        html.contains("text-decoration:underline overline"),
+        "expected combined underline + overline in: {html}"
+    );
+}
+
+/// Regression: BUG-06-014 — OVERLINE + STRIKETHROUGH combine.
+#[test]
+fn overline_and_strikethrough_combined_in_single_text_decoration() {
+    let mut grid = Grid::new(5, 20);
+    grid.move_to(0, Column(0));
+    grid.cursor_mut().template.flags = CellFlags::OVERLINE | CellFlags::STRIKETHROUGH;
+    grid.put_char('X');
+
+    let palette = Palette::default();
+    let sel = char_selection(&grid, 0, 0);
+    let html = extract_html(&grid, &sel, &palette, "Mono", 10.0);
+
+    assert!(
+        html.contains("text-decoration:line-through overline"),
+        "expected combined line-through + overline in: {html}"
+    );
+}
+
+/// Regression: BUG-06-014 — three-way decoration combination
+/// Pins Vec-join correctness for combined-decoration CSS output (BUG-06-014).
+#[test]
+fn overline_underline_strikethrough_three_way_combined() {
+    let mut grid = Grid::new(5, 20);
+    grid.move_to(0, Column(0));
+    grid.cursor_mut().template.flags =
+        CellFlags::OVERLINE | CellFlags::UNDERLINE | CellFlags::STRIKETHROUGH;
+    grid.put_char('Z');
+
+    let palette = Palette::default();
+    let sel = char_selection(&grid, 0, 0);
+    let html = extract_html(&grid, &sel, &palette, "Mono", 10.0);
+
+    // Single text-decoration declaration with three tokens, space-joined.
+    assert!(
+        html.contains("text-decoration:underline line-through overline"),
+        "expected three-way decoration in: {html}"
+    );
+    // Pin: only ONE text-decoration: declaration, not three separate ones.
+    assert_eq!(
+        html.matches("text-decoration:").count(),
+        1,
+        "all three decorations must coalesce into ONE text-decoration value: {html}"
+    );
+}
+
+/// Regression: BUG-06-014 — semantic pin for SGR 73 (superscript) HTML mapping.
+/// MUST emit `vertical-align:super` and MUST NOT emit `font-size` (BUG-06-014).
+#[test]
+fn superscript_emits_vertical_align_super_without_font_size_change() {
+    let mut grid = Grid::new(5, 20);
+    grid.move_to(0, Column(0));
+    grid.cursor_mut().template.flags = CellFlags::SUPERSCRIPT;
+    grid.put_char('S');
+
+    let palette = Palette::default();
+    let sel = char_selection(&grid, 0, 0);
+    let html = extract_html(&grid, &sel, &palette, "Mono", 10.0);
+
+    assert!(
+        html.contains("vertical-align:super"),
+        "expected vertical-align:super in: {html}"
+    );
+    // Span CSS must not shrink the glyph — preserves monospace grid + matches GPU.
+    // (The outer <pre> font-size:10.0pt declaration is fine; only span-level
+    // font-size shrinkage is forbidden.)
+    let span_section = html
+        .split("<span")
+        .nth(1)
+        .map(|s| s.split("</span>").next().unwrap_or(""))
+        .unwrap_or("");
+    assert!(
+        !span_section.contains("font-size:"),
+        "span must not contain font-size override; got span: {span_section}"
+    );
+}
+
+/// Regression: BUG-06-014 — semantic pin for SGR 74 (subscript) HTML mapping.
+#[test]
+fn subscript_emits_vertical_align_sub_without_font_size_change() {
+    let mut grid = Grid::new(5, 20);
+    grid.move_to(0, Column(0));
+    grid.cursor_mut().template.flags = CellFlags::SUBSCRIPT;
+    grid.put_char('S');
+
+    let palette = Palette::default();
+    let sel = char_selection(&grid, 0, 0);
+    let html = extract_html(&grid, &sel, &palette, "Mono", 10.0);
+
+    assert!(
+        html.contains("vertical-align:sub"),
+        "expected vertical-align:sub in: {html}"
+    );
+    let span_section = html
+        .split("<span")
+        .nth(1)
+        .map(|s| s.split("</span>").next().unwrap_or(""))
+        .unwrap_or("");
+    assert!(
+        !span_section.contains("font-size:"),
+        "span must not contain font-size override; got span: {span_section}"
+    );
+}
+
+/// Regression: BUG-06-014 — SUPERSCRIPT + UNDERLINE compose (both attributes
+/// emit; vertical-align does not interfere with text-decoration).
+#[test]
+fn superscript_and_underline_combine_in_span_css() {
+    let mut grid = Grid::new(5, 20);
+    grid.move_to(0, Column(0));
+    grid.cursor_mut().template.flags = CellFlags::SUPERSCRIPT | CellFlags::UNDERLINE;
+    grid.put_char('U');
+
+    let palette = Palette::default();
+    let sel = char_selection(&grid, 0, 0);
+    let html = extract_html(&grid, &sel, &palette, "Mono", 10.0);
+
+    assert!(html.contains("text-decoration:underline"), "html: {html}");
+    assert!(html.contains("vertical-align:super"), "html: {html}");
+}
+
+/// Regression: BUG-06-014 — negative pin: cell with no OVERLINE/SUPER/SUB flags
+/// produces no related CSS in default span output.
+#[test]
+fn no_overline_super_sub_emits_no_related_css() {
+    let grid = grid_with_text("plain");
+    let palette = Palette::default();
+    let sel = char_selection(&grid, 0, 4);
+    let html = extract_html(&grid, &sel, &palette, "Mono", 10.0);
+
+    assert!(!html.contains("text-decoration:overline"), "html: {html}");
+    assert!(!html.contains("vertical-align:super"), "html: {html}");
+    assert!(!html.contains("vertical-align:sub"), "html: {html}");
+}
+
 // -- Dim styling --
 
 #[test]

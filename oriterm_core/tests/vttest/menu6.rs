@@ -5,40 +5,7 @@
 //! and capture their output with structural assertions verifying DA/DSR
 //! responses appear in the terminal output.
 
-use super::session::{PtySession, vttest_available};
-
-/// Walk screens for a menu 6 sub-item until returning to the sub-menu.
-/// Returns (screen_count, all_screen_text) for structural assertions.
-fn walk_menu6_subscreens(s: &mut PtySession, label: &str, tag: &str) -> (usize, String) {
-    let mut screen = 1;
-    let mut all_text = String::new();
-    loop {
-        let text = s.grid_text();
-
-        // Return to sub-menu or main menu means all screens captured.
-        if text.contains("Enter choice number") {
-            break;
-        }
-
-        // Verify screens are non-blank — report tests should produce output.
-        let has_content = text.lines().any(|line| line.trim().len() > 1);
-        assert!(
-            has_content,
-            "{label} menu 6 {tag} screen {screen}: report screen should not be blank"
-        );
-
-        all_text.push_str(&text);
-        insta::assert_snapshot!(format!("{label}_06_{tag}_{screen:02}"), text);
-
-        s.send(b"\r");
-        screen += 1;
-
-        if screen > 15 {
-            break;
-        }
-    }
-    (screen - 1, all_text)
-}
+use super::session::{PtySession, vttest_available, walk_vttest_screens};
 
 /// Run vttest menu 6 (terminal reports) at a given size.
 ///
@@ -74,8 +41,17 @@ fn run_menu6_reports(cols: u16, rows: u16) {
                     continue;
                 }
 
-                let (count, sub_text) =
-                    walk_menu6_subscreens(&mut s, &label, &format!("sub{item}"));
+                let tag = format!("sub{item}");
+                let mut sub_text = String::new();
+                let count = walk_vttest_screens(&mut s, 15, &[], |_session, text, screen| {
+                    let has_content = text.lines().any(|line| line.trim().len() > 1);
+                    assert!(
+                        has_content,
+                        "{label} menu 6 {tag} screen {screen}: report screen should not be blank"
+                    );
+                    sub_text.push_str(text);
+                    insta::assert_snapshot!(format!("{label}_06_{tag}_{screen:02}"), text);
+                });
                 total_screens += count;
 
                 // DA response: vttest echoes "Report is: ... VT" or "what are you".
@@ -108,29 +84,16 @@ fn run_menu6_reports(cols: u16, rows: u16) {
         );
     } else {
         // No sub-menu — screens run directly.
-        let mut screen = 1;
-        loop {
-            let t = s.grid_text();
-            if t.contains("Enter choice number") {
-                break;
-            }
-
-            insta::assert_snapshot!(format!("{label}_06_report_{screen:02}"), t);
-
-            s.send(b"\r");
-            screen += 1;
-
-            if screen > 20 {
-                break;
-            }
-        }
+        walk_vttest_screens(&mut s, 20, &[], |_session, text, screen| {
+            insta::assert_snapshot!(format!("{label}_06_report_{screen:02}"), text);
+        });
     }
 }
 
 #[test]
 fn vttest_menu6_80x24() {
     if !vttest_available() {
-        eprintln!("vttest not installed, skipping");
+        eprintln!("SKIP: vttest not installed");
         return;
     }
     run_menu6_reports(80, 24);
@@ -139,7 +102,7 @@ fn vttest_menu6_80x24() {
 #[test]
 fn vttest_menu6_97x33() {
     if !vttest_available() {
-        eprintln!("vttest not installed, skipping");
+        eprintln!("SKIP: vttest not installed");
         return;
     }
     run_menu6_reports(97, 33);
@@ -148,7 +111,7 @@ fn vttest_menu6_97x33() {
 #[test]
 fn vttest_menu6_120x40() {
     if !vttest_available() {
-        eprintln!("vttest not installed, skipping");
+        eprintln!("SKIP: vttest not installed");
         return;
     }
     run_menu6_reports(120, 40);

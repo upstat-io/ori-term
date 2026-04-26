@@ -12,7 +12,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use super::super::tuple::{Category, Tuple};
-use super::{DispatchExtractError, extract_handler_methods, parse_rust, read_rust};
+use super::{
+    DispatchExtractError, extract_handler_methods, parse_rust, read_rust, walk_match_exprs,
+};
 
 pub(super) fn extract_osc_arms_with_handlers(
     path: &Path,
@@ -32,24 +34,15 @@ pub(super) fn extract_osc_arms_with_handlers(
 }
 
 fn scan_osc_dispatch_fn(block: &syn::Block, map: &mut BTreeMap<Tuple, BTreeSet<String>>) {
-    struct OscVisitor<'a> {
-        map: &'a mut BTreeMap<Tuple, BTreeSet<String>>,
-    }
-
-    impl syn::visit::Visit<'_> for OscVisitor<'_> {
-        fn visit_expr_match(&mut self, m: &syn::ExprMatch) {
-            if is_params_zero_scrutinee(&m.expr) {
-                for arm in &m.arms {
-                    collect_osc_arm_with_handlers(&arm.pat, &arm.body, self.map);
-                }
-            } else {
-                syn::visit::visit_expr_match(self, m);
-            }
+    walk_match_exprs(block, |m| {
+        if !is_params_zero_scrutinee(&m.expr) {
+            return true; // not the OSC dispatch match — recurse into nested ones
         }
-    }
-
-    let mut v = OscVisitor { map };
-    syn::visit::Visit::visit_block(&mut v, block);
+        for arm in &m.arms {
+            collect_osc_arm_with_handlers(&arm.pat, &arm.body, map);
+        }
+        false // handled — don't descend
+    });
 }
 
 fn is_params_zero_scrutinee(expr: &syn::Expr) -> bool {
@@ -70,11 +63,29 @@ fn collect_osc_arm_with_handlers(
             ..
         }) => {
             let value = b.value();
-            if let Ok(id) = std::str::from_utf8(&value) {
-                if !id.is_empty() {
-                    let tuple = Tuple::new(Category::Osc, Vec::<u8>::new(), id.to_string(), "BEL");
+            match std::str::from_utf8(&value) {
+                Ok(id) if !id.is_empty() => {
+                    // SSOT: OSC selector in `final_byte`.
+                    // The dispatch arm only knows the selector — payload
+                    // shape lives in catalog/capture, so `params` is empty.
+                    let tuple = Tuple::new(Category::Osc, Vec::<u8>::new(), "", id);
                     let methods = extract_handler_methods(body);
                     map.entry(tuple).or_default().extend(methods);
+                }
+                Ok(_) => {
+                    // Empty selector — skip silently; an empty arm pattern
+                    // can never dispatch.
+                }
+                Err(e) => {
+                    // Non-UTF-8 selector in a ByteStr arm: the dispatch
+                    // arm exists in the AST but the catalog cannot map
+                    // it back. Surface to stderr so coverage gaps are
+                    // visible, not silently dropped.
+                    eprintln!(
+                        "warning: dispatch_extract::osc: skipped malformed arm selector \
+                         (bytes={:02x?}): {e}",
+                        value
+                    );
                 }
             }
         }

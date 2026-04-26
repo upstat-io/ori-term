@@ -90,7 +90,7 @@ impl<S: EffectSink> RawInterceptor<'_, S> {
     /// OSC 133: update prompt state machine and track command timing.
     ///
     /// `;A` / `;D` also restore the Kitty keyboard mode stack from any
-    /// prior `;C` snapshot; `;C` takes the snapshot. See BUG-08-12 —
+    /// prior `;C` snapshot; `;C` takes the snapshot. See BUG-08-012 —
     /// prevents kitty modes pushed by a kitty-aware child from
     /// persisting past the next shell prompt when the child crashes or
     /// exits without popping cleanly.

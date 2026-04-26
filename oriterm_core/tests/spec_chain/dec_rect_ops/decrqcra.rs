@@ -120,7 +120,7 @@ fn decrqcra_csattribs_flag_toggles_attribute_folding() {
     );
 }
 
-/// Regression: BUG-08-17. Application-written plain spaces with
+/// Regression: BUG-08-017. Application-written plain spaces with
 /// default SGR must count as drawn cells in the DECRQCRA checksum
 /// (xterm CHARDRAWN parity). On a 1×3 grid writing "A B":
 ///   trimmed = 'A'(0x41) + ' '(0x20) + 'B'(0x42) = 0xA3
@@ -136,7 +136,7 @@ fn decrqcra_explicit_spaces_match_xterm_ff5d() {
     assert_eq!(kind, PtyWriteKind::ChecksumReport);
     assert_eq!(
         bytes, b"\x1bP1!~FF5D\x1b\\",
-        "plain-space write must contribute to checksum — BUG-08-17 repro"
+        "plain-space write must contribute to checksum — BUG-08-017 repro"
     );
 }
 

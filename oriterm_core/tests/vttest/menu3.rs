@@ -3,7 +3,7 @@
 
 use std::collections::HashSet;
 
-use super::session::{PtySession, vttest_available};
+use super::session::{PtySession, vttest_available, walk_vttest_screens};
 
 /// DEC Special Graphics box-drawing characters used by vttest.
 const LINE_DRAWING_CHARS: &[char] = &[
@@ -39,52 +39,6 @@ pub fn assert_has_line_drawing_chars(grid: &[Vec<char>], min_count: usize, conte
     );
 }
 
-/// Walk sub-screens of a vttest menu-3 sub-item, returning the number
-/// of screens captured. Applies line-drawing structural assertions.
-fn walk_menu3_subscreens(
-    s: &mut PtySession,
-    label: &str,
-    sub_item: &str,
-    tag: &str,
-    check_line_drawing: bool,
-) -> (usize, bool) {
-    let mut screen = 1;
-    let mut saw_line_drawing = false;
-    loop {
-        let text = s.grid_text();
-
-        // Return to sub-menu means all screens captured.
-        if text.contains("Enter choice number") {
-            break;
-        }
-
-        if check_line_drawing {
-            let grid = s.grid_chars();
-            let has_drawing = grid
-                .iter()
-                .any(|row| row.iter().any(|ch| LINE_DRAWING_CHARS.contains(ch)));
-            if has_drawing {
-                saw_line_drawing = true;
-                assert_has_line_drawing_chars(
-                    &grid,
-                    3,
-                    &format!("{label} {sub_item} screen {screen}"),
-                );
-            }
-        }
-
-        insta::assert_snapshot!(format!("{label}_03_{tag}_{screen:02}"), text);
-
-        s.send(b"\r");
-        screen += 1;
-
-        if screen > 20 {
-            break;
-        }
-    }
-    (screen - 1, saw_line_drawing)
-}
-
 /// Run vttest menu 3 (character sets) at a given size, capturing all screens.
 ///
 /// Menu 3 has a sub-menu. We test sub-items 8 (VT100 character sets)
@@ -105,7 +59,18 @@ fn run_menu3_character_sets(cols: u16, rows: u16) {
 
     // Sub-item 8: Test VT100 Character Sets (DEC Special Graphics).
     s.send(b"8\r");
-    let (count_8, saw_drawing) = walk_menu3_subscreens(&mut s, &label, "sub8", "vt100cs", true);
+    let mut saw_drawing = false;
+    let count_8 = walk_vttest_screens(&mut s, 20, &[], |session, text, screen| {
+        let grid = session.grid_chars();
+        let has_drawing = grid
+            .iter()
+            .any(|row| row.iter().any(|ch| LINE_DRAWING_CHARS.contains(ch)));
+        if has_drawing {
+            saw_drawing = true;
+            assert_has_line_drawing_chars(&grid, 3, &format!("{label} sub8 screen {screen}"));
+        }
+        insta::assert_snapshot!(format!("{label}_03_vt100cs_{screen:02}"), text);
+    });
     assert!(
         count_8 > 0,
         "{label}: sub-item 8 should have at least one screen"
@@ -117,7 +82,9 @@ fn run_menu3_character_sets(cols: u16, rows: u16) {
 
     // Sub-item 9: Test Shift In/Shift Out (SI/SO).
     s.send(b"9\r");
-    let (count_9, _) = walk_menu3_subscreens(&mut s, &label, "sub9", "siso", false);
+    let count_9 = walk_vttest_screens(&mut s, 20, &[], |_session, text, screen| {
+        insta::assert_snapshot!(format!("{label}_03_siso_{screen:02}"), text);
+    });
     assert!(
         count_9 > 0,
         "{label}: sub-item 9 should have at least one screen"
@@ -130,7 +97,7 @@ fn run_menu3_character_sets(cols: u16, rows: u16) {
 #[test]
 fn vttest_menu3_80x24() {
     if !vttest_available() {
-        eprintln!("vttest not installed, skipping");
+        eprintln!("SKIP: vttest not installed");
         return;
     }
     run_menu3_character_sets(80, 24);
@@ -139,7 +106,7 @@ fn vttest_menu3_80x24() {
 #[test]
 fn vttest_menu3_97x33() {
     if !vttest_available() {
-        eprintln!("vttest not installed, skipping");
+        eprintln!("SKIP: vttest not installed");
         return;
     }
     run_menu3_character_sets(97, 33);
@@ -148,7 +115,7 @@ fn vttest_menu3_97x33() {
 #[test]
 fn vttest_menu3_120x40() {
     if !vttest_available() {
-        eprintln!("vttest not installed, skipping");
+        eprintln!("SKIP: vttest not installed");
         return;
     }
     run_menu3_character_sets(120, 40);

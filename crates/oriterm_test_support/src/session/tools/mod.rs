@@ -1,9 +1,15 @@
 //! Runtime tool-availability probes for the test framework.
 //!
-//! Each helper shells out to the named binary with a `--version` (or
-//! `--help`) argument and reports whether the invocation succeeded.
-//! Used by integration tests to skip cleanly when a required tool
-//! (`vttest`, `tack`, `tic`, `infocmp`, ...) is not installed.
+//! Each per-tool helper (`vttest_available`, `tack_available`, etc.)
+//! shells out to the binary with that tool's known-zero-exit probe
+//! flag and reports whether the invocation both spawned successfully
+//! and exited with success status. Most tools accept `--version` or
+//! `-V`, but several ncurses-era binaries are "odd ones out": `tack`
+//! exits 1 from `-V` so its probe is `-h`; `vttest` exits 1 from
+//! `--help` so its probe is `-V`. See each per-tool wrapper below for
+//! the canonical probe flag — never invent your own probe at a call
+//! site, always use the wrapper. Integration tests use the wrappers
+//! to skip cleanly when a required tool is not installed.
 //!
 //! Extracted from `session/mod.rs` in the M1 TPR cleanup
 //! to keep `session/mod.rs` under the 500-line file
@@ -14,9 +20,12 @@
 /// Check if `name` is installed and runnable on PATH.
 ///
 /// Used by integration tests to skip cleanly when a required tool
-/// (`vttest`, `tack`, `tic`, `reseq`, ...) is not available. The
-/// `--version` argument is the convention every well-behaved CLI
-/// supports; some (`vttest`) prefer `--help` — pass that explicitly.
+/// (`vttest`, `tack`, `tic`, `reseq`, ...) is not available. Callers
+/// pass each tool's known-zero-exit probe flag — most use `--version`,
+/// but several ncurses-era tools are "odd ones out": `tack` exits 1
+/// from `-V` so its probe is `-h`; `vttest` exits 1 from `--help` so
+/// its probe is `-V`. See the per-tool `*_available` wrappers below
+/// for the canonical probe flag for each.
 ///
 /// **Returns true iff the probe BOTH spawns successfully AND exits
 /// with success status.** A binary that spawns but exits non-zero
@@ -37,10 +46,19 @@ pub fn tool_available(name: &str, version_arg: &str) -> bool {
         .is_ok_and(|status| status.success())
 }
 
-/// Convenience: vttest specifically uses `--help` (it has no `--version`).
+/// Check if `vttest` is installed.
+///
+/// **Probe is `vttest -V`, NOT `vttest --help`.** vttest prints its
+/// usage banner to stdout when invoked with `--help` but EXITS with
+/// status 1 (not 0), so the `tool_available` `status.success()` check
+/// would report vttest as unavailable on every host that has it
+/// installed. `vttest -V` (capital, NOT `--version` — vttest does not
+/// recognize the long form) prints the version banner and exits 0.
+/// Same antipattern family as the prior tack `-h`/`-V` fix above.
+/// Closes BUG-07-020.
 #[must_use]
 pub fn vttest_available() -> bool {
-    tool_available("vttest", "--help")
+    tool_available("vttest", "-V")
 }
 
 /// Check if `tic` (terminfo compiler) is installed.

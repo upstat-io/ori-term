@@ -70,28 +70,57 @@ fn dcs_decrqss_canonicalizes_to_dcs_dollar_pt_q() {
     assert_eq!(t.final_byte, "q");
 }
 
+/// Regression: OSC selector lives in `final_byte`,
+/// payload placeholders live in `params`. See: bug-tracker/plans/completed/BUG-07-019/00-overview.md
 #[test]
-fn osc_title_canonicalizes_with_numeric_id_preserved() {
+fn osc_title_canonicalizes_with_selector_in_final_byte() {
     let t = canonical_tuple("`OSC 0 ; Pt BEL|ST`").expect("OSC 0 must canonicalize");
     assert_eq!(t.category, Category::Osc);
     assert!(t.intermediates.is_empty());
-    assert_eq!(t.params, "0;text");
-    assert_eq!(t.final_byte, "BEL");
+    assert_eq!(t.final_byte, "0");
+    assert_eq!(t.params, "text");
 }
 
+/// Regression:
 #[test]
-fn osc_4_palette_canonicalizes_with_index_placeholder() {
+fn osc_4_palette_canonicalizes_with_payload_only_in_params() {
     let t = canonical_tuple("`OSC 4 ; index ; rgb BEL|ST`").expect("OSC 4 must canonicalize");
-    assert_eq!(t.params, "4;index;rgb");
+    assert_eq!(t.final_byte, "4");
+    assert_eq!(t.params, "index;rgb");
+}
+
+/// Regression: selector must be the dispatch
+/// discriminator in `final_byte`, not a `Ps` placeholder.
+#[test]
+fn osc_selector_must_not_collapse_to_ps() {
+    let t = canonical_tuple("`OSC 52 ; Pc ; <b64> BEL|ST`").expect("OSC 52 must canonicalize");
+    assert_eq!(t.final_byte, "52");
+    assert_ne!(t.final_byte, "Ps");
+    assert!(!t.params.contains("52"));
+}
+
+/// Regression: DCS reset arms (`110`, `113`) carry an
+/// empty payload; the selector still lands in `final_byte`.
+#[test]
+fn osc_zero_payload_reset_lands_selector_in_final_byte() {
+    let t = canonical_tuple("`OSC 110 BEL|ST`").expect("OSC 110 must canonicalize");
+    assert_eq!(t.final_byte, "110");
+    assert!(t.params.is_empty());
+}
+
+/// Regression: Sun console aliases (vendored patch in
+/// `crates/vte/src/ansi/dispatch/osc.rs:317-330`) are nonnumeric
+/// selectors but follow the same SSOT shape.
+#[test]
+fn osc_sun_console_alias_l_canonicalizes_with_l_in_final_byte() {
+    let t = canonical_tuple("`OSC L ; Pt BEL|ST`").expect("OSC L must canonicalize");
+    assert_eq!(t.final_byte, "L");
 }
 
 #[test]
-fn osc_numeric_id_must_not_collapse_to_ps() {
-    // Negative pin: the numeric id is preserved literally; if it
-    // collapsed to `Ps` we would lose dispatch-level discrimination.
-    let t = canonical_tuple("`OSC 52 ; Pc ; <b64> BEL|ST`").expect("OSC 52 must canonicalize");
-    assert!(t.params.starts_with("52;"));
-    assert_ne!(t.params, "Ps;Ps;Ps");
+fn osc_sun_console_alias_lowercase_l_canonicalizes_with_l_in_final_byte() {
+    let t = canonical_tuple("`OSC l ; Pt BEL|ST`").expect("OSC l must canonicalize");
+    assert_eq!(t.final_byte, "l");
 }
 
 #[test]
@@ -137,18 +166,23 @@ fn tuple_sort_intermediates_on_construction() {
 
 // -------- Tuple::signature() -----------------------------------------------
 
+/// Regression: OSC `final_byte` is the dispatch
+/// selector after the SSOT alignment; the old ST→BEL terminator
+/// normalization is dead code and was removed.
 #[test]
-fn signature_normalizes_osc_st_to_bel() {
-    let t = Tuple::new(Category::Osc, Vec::<u8>::new(), "0;text", "ST");
+fn signature_preserves_osc_selector_verbatim() {
+    let t = Tuple::new(Category::Osc, Vec::<u8>::new(), "text", "0");
     let sig: TupleSig = t.signature();
-    assert_eq!(sig.2, "BEL");
+    assert_eq!(sig.2, "0");
 }
 
+/// Regression: distinct OSC selectors yield distinct
+/// signatures; the pre-fix collapse to `("OSC", [], "BEL")` is gone.
 #[test]
-fn signature_preserves_bel_for_osc() {
-    let t = Tuple::new(Category::Osc, Vec::<u8>::new(), "0;text", "BEL");
-    let sig: TupleSig = t.signature();
-    assert_eq!(sig.2, "BEL");
+fn signature_distinguishes_distinct_osc_selectors() {
+    let t52 = Tuple::new(Category::Osc, Vec::<u8>::new(), "mode;b64", "52");
+    let t1337 = Tuple::new(Category::Osc, Vec::<u8>::new(), "key=value", "1337");
+    assert_ne!(t52.signature(), t1337.signature());
 }
 
 #[test]

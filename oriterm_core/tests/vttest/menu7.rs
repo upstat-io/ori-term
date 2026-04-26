@@ -7,7 +7,7 @@
 //! VT52 escape sequences are not processed, leading to timing-dependent
 //! rendering artifacts.
 
-use super::session::{PtySession, vttest_available};
+use super::session::{PtySession, vttest_available, walk_vttest_screens};
 
 /// Run vttest menu 7 (VT52 mode) at a given size.
 ///
@@ -22,35 +22,17 @@ fn run_menu7_vt52(cols: u16, rows: u16) {
     // Select menu 7.
     s.send(b"7\r");
 
-    let mut screen = 1;
-    loop {
-        let text = s.grid_text();
+    // No-op closure: VT52 output is non-deterministic because the escape
+    // sequences are unimplemented. We verify navigation completes.
+    let count = walk_vttest_screens(&mut s, 20, &[], |_, _, _| {});
 
-        if text.contains("Enter choice number") {
-            break;
-        }
-
-        // No snapshot assertions — VT52 output is non-deterministic
-        // because the escape sequences are unimplemented.
-
-        s.send(b"\r");
-        screen += 1;
-
-        if screen > 20 {
-            break;
-        }
-    }
-
-    assert!(
-        screen > 1,
-        "{label}: menu 7 should have at least one screen"
-    );
+    assert!(count > 0, "{label}: menu 7 should have at least one screen");
 }
 
 #[test]
 fn vttest_menu7_80x24() {
     if !vttest_available() {
-        eprintln!("vttest not installed, skipping");
+        eprintln!("SKIP: vttest not installed");
         return;
     }
     run_menu7_vt52(80, 24);
@@ -59,7 +41,7 @@ fn vttest_menu7_80x24() {
 #[test]
 fn vttest_menu7_97x33() {
     if !vttest_available() {
-        eprintln!("vttest not installed, skipping");
+        eprintln!("SKIP: vttest not installed");
         return;
     }
     run_menu7_vt52(97, 33);
@@ -68,7 +50,7 @@ fn vttest_menu7_97x33() {
 #[test]
 fn vttest_menu7_120x40() {
     if !vttest_available() {
-        eprintln!("vttest not installed, skipping");
+        eprintln!("SKIP: vttest not installed");
         return;
     }
     run_menu7_vt52(120, 40);

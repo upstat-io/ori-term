@@ -1,6 +1,6 @@
 //! Dispatch-arm + `NamedPrivateMode` tuple extractors.
 //!
-//! Walks `crates/vte/src/ansi/dispatch/{csi,osc,mod}.rs` and
+//! Walks `crates/vte/src/ansi/dispatch/{csi/mod,osc,mod}.rs` and
 //! `crates/vte/src/ansi/types.rs` via the `syn` AST parser and
 //! emits one [`Tuple`] per output sequence (not per match arm —
 //! 1-to-many dispatch arms expand mechanically, per Phase 2
@@ -90,7 +90,7 @@ impl std::error::Error for DispatchExtractError {
 
 /// Walk the VTE dispatch tree and emit the canonical dispatch tuple set.
 ///
-/// Scans `crates/vte/src/ansi/dispatch/{csi,osc,mod}.rs` and
+/// Scans `crates/vte/src/ansi/dispatch/{csi/mod,osc,mod}.rs` and
 /// `crates/vte/src/lib.rs` relative to `workspace_root`. Filters
 /// out DECSET/DECRST pairs — those come exclusively from
 /// [`extract_namedprivatemode_tuples`] so the two extractors are
@@ -109,10 +109,12 @@ pub fn extract_dispatch_tuples(workspace_root: &Path) -> Result<Vec<Tuple>, Disp
 
     // Add SGR per-parameter tuples (needed for per-SGR catalog row matching
     // in `--check`; `extract_dispatch_map` only emits the bare arm tuple).
-    let csi_path = workspace_root.join("crates/vte/src/ansi/dispatch/csi.rs");
-    let csi_source = read_rust(&csi_path)?;
-    let csi_file = parse_rust(&csi_path, &csi_source)?;
-    sgr::extract_sgr_params(&csi_file, &mut tuples);
+    // `attrs_from_sgr_parameters` lives in the CSI sgr submodule after
+    // the CSI dispatch directory split.
+    let sgr_path = workspace_root.join("crates/vte/src/ansi/dispatch/csi/sgr.rs");
+    let sgr_source = read_rust(&sgr_path)?;
+    let sgr_file = parse_rust(&sgr_path, &sgr_source)?;
+    sgr::extract_sgr_params(&sgr_file, &mut tuples);
 
     // Filter out DECSET/DECRST tuples and normalize wildcard sentinel.
     Ok(tuples
@@ -242,7 +244,7 @@ pub fn extract_dispatch_map(
 ) -> Result<BTreeMap<Tuple, BTreeSet<String>>, DispatchExtractError> {
     let mut map: BTreeMap<Tuple, BTreeSet<String>> = BTreeMap::new();
 
-    let csi_path = workspace_root.join("crates/vte/src/ansi/dispatch/csi.rs");
+    let csi_path = workspace_root.join("crates/vte/src/ansi/dispatch/csi/mod.rs");
     let csi_source = read_rust(&csi_path)?;
     let csi_file = parse_rust(&csi_path, &csi_source)?;
     csi::extract_csi_arms_with_handlers(&csi_file, &mut map);
@@ -260,6 +262,37 @@ pub fn extract_dispatch_map(
         .insert("apc_dispatch".to_string());
 
     Ok(map)
+}
+
+// -------- Match-expression walker (shared by csi/osc/sgr) ----------------
+
+/// Walk `block` and invoke `callback` on every `ExprMatch` node.
+///
+/// The closure returns `true` to descend into the match expression's
+/// arms (continuing the walk into nested matches) and `false` to stop
+/// descent at this node. csi/osc walkers return `true` when their
+/// scrutinee predicate does NOT match (so nested matches still get
+/// visited); the sgr walker always returns `false` (the SGR
+/// `match param { ... }` is the single top-level match it cares about).
+///
+/// Replaces three identical inline `*Visitor` struct + impl blocks
+/// (csi/osc/sgr) per `impl-hygiene.md §Algorithmic DRY` (3+ instances).
+pub(super) fn walk_match_exprs<F>(block: &syn::Block, callback: F)
+where
+    F: FnMut(&syn::ExprMatch) -> bool,
+{
+    struct V<F>(F);
+
+    impl<F: FnMut(&syn::ExprMatch) -> bool> syn::visit::Visit<'_> for V<F> {
+        fn visit_expr_match(&mut self, m: &syn::ExprMatch) {
+            if (self.0)(m) {
+                syn::visit::visit_expr_match(self, m);
+            }
+        }
+    }
+
+    let mut v = V(callback);
+    syn::visit::Visit::visit_block(&mut v, block);
 }
 
 // -------- Handler method extraction from arm body AST --------------------

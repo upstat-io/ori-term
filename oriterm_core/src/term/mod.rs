@@ -116,13 +116,13 @@ pub struct Term<S: EffectSink> {
     /// shell-held modes or pushes past max-depth (evicting shell modes
     /// from the front) is fully reversed at the next prompt boundary.
     /// Paired with [`inactive_pre_command_kb_stack_snapshot`]; swapped
-    /// alongside the stacks in `toggle_alt_common`. See BUG-08-12.
+    /// alongside the stacks in `toggle_alt_common`. See BUG-08-012.
     pre_command_kb_stack_snapshot: Option<VecDeque<KeyboardModes>>,
     /// Paired snapshot for the inactive (non-visible) screen's keyboard
     /// mode stack. Taken alongside [`pre_command_kb_stack_snapshot`] at
     /// OSC 133 ; C so a child that enters the alt screen, pushes kitty
     /// modes, and exits without popping does not leak state into the
-    /// non-visible stack. See BUG-08-12.
+    /// non-visible stack. See BUG-08-012.
     inactive_pre_command_kb_stack_snapshot: Option<VecDeque<KeyboardModes>>,
     /// Snapshot of the ACTIVE Kitty-keyboard-protocol `TermMode` bits
     /// taken at OSC 133 ; C, paired with [`pre_command_kb_stack_snapshot`].
@@ -134,7 +134,7 @@ pub struct Term<S: EffectSink> {
     /// top-of-stack would be `NO_MODE` and the shell's set bits would be
     /// cleared. Taking a paired bits snapshot and applying it at restore
     /// preserves shell-held kitty state for both push-path and set-path
-    /// integrations. See BUG-08-12 TPR round-1 F1.
+    /// integrations. See BUG-08-012 TPR round-1 F1.
     pre_command_kb_mode_bits_snapshot: Option<KeyboardModes>,
     /// Live Kitty-keyboard-protocol bits for the INACTIVE screen.
     ///
@@ -143,7 +143,7 @@ pub struct Term<S: EffectSink> {
     /// bits are stored here. Swapped alongside the paired stacks in
     /// `toggle_alt_common` so set-only bits enabled via `CSI = Ps u`
     /// survive alt-screen toggles even when no shell integration (no
-    /// OSC 133 snapshot) is present. See BUG-08-12 TPR round-3 F1/F2.
+    /// OSC 133 snapshot) is present. See BUG-08-012 TPR round-3 F1/F2.
     inactive_keyboard_mode_bits: KeyboardModes,
     /// Paired inactive-screen bits snapshot — captured at OSC 133 ; C
     /// alongside [`pre_command_kb_mode_bits_snapshot`]. Required because
@@ -152,7 +152,7 @@ pub struct Term<S: EffectSink> {
     /// snapshot along, so restore on the owning screen applies the
     /// correct bits. Live `inactive_keyboard_mode_bits` tracks runtime
     /// per-screen state; this field tracks the per-screen restore
-    /// target separately. See BUG-08-12 TPR round-4.
+    /// target separately. See BUG-08-012 TPR round-4.
     inactive_pre_command_kb_mode_bits_snapshot: Option<KeyboardModes>,
     /// Effect sink for boundary-crossing side effects.
     effect_sink: S,
@@ -620,7 +620,7 @@ impl<S: EffectSink> Term<S> {
     // Keyboard-mode-stack accessors (pre-command snapshot + inactive
     // stack) are in `shell_state.rs` alongside `snapshot_keyboard_mode_stack`
     // / `restore_keyboard_mode_stack` — they are all part of the OSC 133 /
-    // OSC 633 shell-integration surface. See BUG-08-12.
+    // OSC 633 shell-integration surface. See BUG-08-012.
 
     // Rendering snapshot methods (renderable_content, renderable_content_into,
     // damage, reset_damage) are in `snapshot.rs`.

@@ -1,7 +1,7 @@
 //! Run-loop orchestration for `PaneIoThread` — the `select!` bodies and the
 //! PTY-EOF drain sequence.
 //!
-//! Extracted from `mod.rs` (§BUG-11-14 / §BUG-08-19-b split) so the struct
+//! Extracted from `mod.rs` (§BUG-11-014 / §BUG-08-019-b split) so the struct
 //! definition stays short and the loop bodies + EOF sequence each have a
 //! single-responsibility home. The loop arms remain duplicated between the
 //! sync-deadline and no-deadline branches because the `default(timeout)` arm

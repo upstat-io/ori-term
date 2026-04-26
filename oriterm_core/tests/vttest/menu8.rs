@@ -1,7 +1,7 @@
 //! vttest menu 8: VT102 features — ICH (insert character), DCH (delete
 //! character), IL (insert line), DL (delete line).
 
-use super::session::{PtySession, vttest_available};
+use super::session::{PtySession, vttest_available, walk_vttest_screens};
 
 /// Structural assertions for VT102 menu 8 screens.
 ///
@@ -167,39 +167,20 @@ fn run_menu8_vt102(cols: u16, rows: u16) {
     // Select menu 8: VT102 features.
     s.send(b"8\r");
 
-    // Walk through all sub-screens.
-    let mut screen = 1;
-    loop {
-        let text = s.grid_text();
-
-        if text.contains("Enter choice number") {
-            break;
-        }
-
+    let count = walk_vttest_screens(&mut s, 20, &[], |session, text, screen| {
         // Structural assertions for ICH/DCH/IL/DL screens.
-        let grid = s.grid_chars();
-        assert_vt102_screen_structure(&grid, &text, screen, &label);
-
+        let grid = session.grid_chars();
+        assert_vt102_screen_structure(&grid, text, screen, &label);
         insta::assert_snapshot!(format!("{label}_08_vt102_{screen:02}"), text);
+    });
 
-        s.send(b"\r");
-        screen += 1;
-
-        if screen > 20 {
-            break;
-        }
-    }
-
-    assert!(
-        screen > 1,
-        "{label}: menu 8 should have at least one screen"
-    );
+    assert!(count > 0, "{label}: menu 8 should have at least one screen");
 }
 
 #[test]
 fn vttest_menu8_80x24() {
     if !vttest_available() {
-        eprintln!("vttest not installed, skipping");
+        eprintln!("SKIP: vttest not installed");
         return;
     }
     run_menu8_vt102(80, 24);
@@ -208,7 +189,7 @@ fn vttest_menu8_80x24() {
 #[test]
 fn vttest_menu8_97x33() {
     if !vttest_available() {
-        eprintln!("vttest not installed, skipping");
+        eprintln!("SKIP: vttest not installed");
         return;
     }
     run_menu8_vt102(97, 33);
@@ -217,7 +198,7 @@ fn vttest_menu8_97x33() {
 #[test]
 fn vttest_menu8_120x40() {
     if !vttest_available() {
-        eprintln!("vttest not installed, skipping");
+        eprintln!("SKIP: vttest not installed");
         return;
     }
     run_menu8_vt102(120, 40);

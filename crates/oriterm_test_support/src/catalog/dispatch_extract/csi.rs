@@ -1,6 +1,6 @@
 //! CSI dispatch-arm walker.
 //!
-//! Walks `crates/vte/src/ansi/dispatch/csi.rs` — specifically the
+//! Walks `crates/vte/src/ansi/dispatch/csi/mod.rs` — specifically the
 //! top-level `match (action, intermediates) { ... }` in the
 //! `dispatch` function — and emits one [`Tuple`] per arm pattern.
 //!
@@ -12,7 +12,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use super::super::tuple::{Category, Tuple};
 use super::{
     extract_handler_methods, is_action_intermediates_scrutinee, pattern_byte_slice,
-    pattern_char_literal,
+    pattern_char_literal, walk_match_exprs,
 };
 
 pub(super) fn extract_csi_arms_with_handlers(
@@ -29,30 +29,22 @@ pub(super) fn extract_csi_arms_with_handlers(
 }
 
 fn scan_csi_dispatch_fn(block: &syn::Block, map: &mut BTreeMap<Tuple, BTreeSet<String>>) {
-    struct CsiVisitor<'a> {
-        map: &'a mut BTreeMap<Tuple, BTreeSet<String>>,
-    }
-
-    impl syn::visit::Visit<'_> for CsiVisitor<'_> {
-        fn visit_expr_match(&mut self, m: &syn::ExprMatch) {
-            if is_action_intermediates_scrutinee(&m.expr) {
-                for arm in &m.arms {
-                    let tuples = collect_csi_tuples_from_pat(&arm.pat);
-                    if !tuples.is_empty() {
-                        let methods = extract_handler_methods(&arm.body);
-                        for tuple in tuples {
-                            self.map.entry(tuple).or_default().extend(methods.clone());
-                        }
-                    }
-                }
-            } else {
-                syn::visit::visit_expr_match(self, m);
+    walk_match_exprs(block, |m| {
+        if !is_action_intermediates_scrutinee(&m.expr) {
+            return true; // not the CSI dispatch match — recurse into nested ones
+        }
+        for arm in &m.arms {
+            let tuples = collect_csi_tuples_from_pat(&arm.pat);
+            if tuples.is_empty() {
+                continue;
+            }
+            let methods = extract_handler_methods(&arm.body);
+            for tuple in tuples {
+                map.entry(tuple).or_default().extend(methods.clone());
             }
         }
-    }
-
-    let mut v = CsiVisitor { map };
-    syn::visit::Visit::visit_block(&mut v, block);
+        false // handled — don't descend
+    });
 }
 
 /// Collect CSI tuples from an arm pattern, handling OR patterns

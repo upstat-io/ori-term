@@ -4,4 +4,4 @@
 //!
 //! The session implementation lives in `crates/oriterm_test_support`.
 
-pub use oriterm_test_support::{PtySession, vttest_available};
+pub use oriterm_test_support::{PtySession, vttest_available, walk_vttest_screens};

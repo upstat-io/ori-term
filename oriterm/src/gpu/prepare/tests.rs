@@ -1627,6 +1627,539 @@ fn wide_char_underline_spans_double_width() {
     assert_eq!(ul.size.1, 1.0);
 }
 
+// ── Overline / superscript / subscript tests (BUG-06-014) ──
+// Cell metrics in test_grid: 8x16 cell, baseline=12, stroke=1, strikeout_offset=4.
+// Overline y = cell_top y = 0; thickness = stroke_size = 1.
+// Super offset = -16 * 0.25 = -4; Sub offset = +4. Both already integer.
+
+/// Regression: BUG-06-014 — semantic pin for SGR 53 (overline) GPU emission.
+#[test]
+fn overline_emits_rect_at_cell_top_with_stroke_size_thickness() {
+    let input = frame_with_flags(CellFlags::OVERLINE);
+    let atlas = atlas_with(&['A']);
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
+
+    // 1 base bg + 1 overline rect.
+    assert_eq!(decoration_bg_count(&frame), 1);
+
+    let ol = nth_instance(frame.backgrounds.as_bytes(), 1);
+    assert_eq!(ol.pos.1, 0.0, "overline y must be cell-top y (0.0)");
+    assert_eq!(
+        ol.size,
+        (8.0, 1.0),
+        "overline must span cell_width x stroke_size"
+    );
+}
+
+/// Regression: BUG-06-014 — overline uses fg color (no SGR for "colored overline").
+#[test]
+fn overline_uses_fg_color() {
+    let input = frame_with_flags(CellFlags::OVERLINE);
+    let fg = input.content.cells[0].fg;
+    let atlas = atlas_with(&['A']);
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
+
+    let ol = nth_instance(frame.backgrounds.as_bytes(), 1);
+    assert_eq!(ol.bg_color, rgb_f32(fg));
+}
+
+/// Regression: BUG-06-014 — negative pin: cell without OVERLINE produces no top rect.
+#[test]
+fn overline_absent_emits_no_top_rect() {
+    let input = frame_with_flags(CellFlags::empty());
+    let atlas = atlas_with(&['A']);
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
+    assert_eq!(decoration_bg_count(&frame), 0);
+}
+
+/// Regression: BUG-06-014 — OVERLINE-only cell triggers decoration emission
+/// (pins the early-return predicate update).
+#[test]
+fn overline_only_cell_passes_decoration_fast_path_gate() {
+    // Without the early-return predicate update, an OVERLINE-only cell would
+    // silently skip the entire DecorationContext::draw function.
+    let input = frame_with_flags(CellFlags::OVERLINE);
+    let atlas = atlas_with(&['A']);
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
+    // Decoration count > 0 proves the gate was reached.
+    assert!(decoration_bg_count(&frame) > 0);
+}
+
+/// Regression: BUG-06-014 — OVERLINE composes with UNDERLINE (top + bottom rects).
+#[test]
+fn overline_with_underline_emits_two_separate_rects() {
+    let input = frame_with_flags(CellFlags::OVERLINE | CellFlags::UNDERLINE);
+    let atlas = atlas_with(&['A']);
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
+
+    // 1 base bg + 1 underline + 1 overline = 2 decoration rects.
+    assert_eq!(decoration_bg_count(&frame), 2);
+}
+
+/// Regression: BUG-06-014 — OVERLINE composes with STRIKETHROUGH.
+#[test]
+fn overline_with_strikethrough_emits_two_separate_rects() {
+    let input = frame_with_flags(CellFlags::OVERLINE | CellFlags::STRIKETHROUGH);
+    let atlas = atlas_with(&['A']);
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
+
+    assert_eq!(decoration_bg_count(&frame), 2);
+}
+
+/// Regression: BUG-06-014 — OVERLINE composes with DOUBLE_UNDERLINE (1 + 2 = 3 rects).
+#[test]
+fn overline_with_double_underline_emits_three_rects() {
+    let input = frame_with_flags(CellFlags::OVERLINE | CellFlags::DOUBLE_UNDERLINE);
+    let atlas = atlas_with(&['A']);
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
+
+    // 1 base bg + 2 double-underline rects + 1 overline = 3 decoration rects.
+    assert_eq!(decoration_bg_count(&frame), 3);
+}
+
+/// Regression: BUG-06-014 — OVERLINE + DOUBLE_UNDERLINE + STRIKETHROUGH
+/// composition (matrix gap from BUG-06-014 close-out).
+#[test]
+fn overline_with_double_underline_and_strikethrough_emits_four_rects() {
+    let flags = CellFlags::OVERLINE | CellFlags::DOUBLE_UNDERLINE | CellFlags::STRIKETHROUGH;
+    let input = frame_with_flags(flags);
+    let atlas = atlas_with(&['A']);
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
+
+    // 1 base bg + 2 double-underline + 1 strikethrough + 1 overline = 4 decoration rects.
+    assert_eq!(decoration_bg_count(&frame), 4);
+}
+
+/// Regression: BUG-06-014 — OVERLINE on a wide char spans 2 cell-widths.
+#[test]
+fn overline_on_wide_char_spans_double_width() {
+    let mut input = FrameInput::test_grid(4, 1, "");
+    input.content.cells[0].ch = '\u{4E16}';
+    input.content.cells[0].flags = CellFlags::WIDE_CHAR | CellFlags::OVERLINE;
+    input.content.cells[1].ch = ' ';
+    input.content.cells[1].flags = CellFlags::WIDE_CHAR_SPACER;
+
+    let atlas = atlas_with(&['\u{4E16}']);
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
+
+    let ol = nth_instance(frame.backgrounds.as_bytes(), 1);
+    assert_eq!(ol.pos.1, 0.0);
+    assert_eq!(
+        ol.size.0, 16.0,
+        "overline must span 2 * cell_width on wide char"
+    );
+    assert_eq!(ol.size.1, 1.0);
+}
+
+/// Regression: BUG-06-014 — semantic pin for SGR 73 (superscript) glyph y shift.
+/// In test_grid: cell_height=16, FACTOR=0.25 → offset=-4. With baseline=12 and
+/// test atlas bearing_y=12, normal glyph_y = 0 + 12 - 12 = 0; super glyph_y = -4.
+#[test]
+fn superscript_shifts_glyph_y_up_by_quarter_cell_height() {
+    let input = frame_with_flags(CellFlags::SUPERSCRIPT);
+    let atlas = atlas_with(&['A']);
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
+
+    // The test atlas has bearing_y=12 == baseline, so a non-shifted glyph
+    // emits at y=0. SUPERSCRIPT shifts by `-cell_height * 0.25 = -4.0`.
+    let glyph = nth_instance(frame.glyphs.as_bytes(), 0);
+    assert_eq!(
+        glyph.pos.1, -4.0,
+        "SUPERSCRIPT must shift glyph y up by 4px (= 16 * 0.25); pinned y={}",
+        glyph.pos.1
+    );
+}
+
+/// Regression: BUG-06-014 — semantic pin for SGR 74 (subscript) glyph y shift.
+#[test]
+fn subscript_shifts_glyph_y_down_by_quarter_cell_height() {
+    let input = frame_with_flags(CellFlags::SUBSCRIPT);
+    let atlas = atlas_with(&['A']);
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
+
+    let glyph = nth_instance(frame.glyphs.as_bytes(), 0);
+    assert_eq!(
+        glyph.pos.1, 4.0,
+        "SUBSCRIPT must shift glyph y down by 4px; pinned y={}",
+        glyph.pos.1
+    );
+}
+
+/// Regression: BUG-06-014 — without super/sub flags, glyph y is unshifted.
+#[test]
+fn no_super_sub_flag_emits_unshifted_glyph_y() {
+    let input = frame_with_flags(CellFlags::empty());
+    let atlas = atlas_with(&['A']);
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
+
+    let glyph = nth_instance(frame.glyphs.as_bytes(), 0);
+    assert_eq!(glyph.pos.1, 0.0, "no super/sub flag => unshifted glyph y");
+}
+
+/// Regression: BUG-06-014 — negative pin: SUPERSCRIPT/SUBSCRIPT MUST NOT shift
+/// decoration y (underline, strikethrough, overline stay anchored to cell).
+#[test]
+fn decorations_y_unaffected_by_super_sub() {
+    // SUPERSCRIPT + UNDERLINE: glyph shifts up, underline stays at baseline+offset.
+    let input = frame_with_flags(CellFlags::SUPERSCRIPT | CellFlags::UNDERLINE);
+    let atlas = atlas_with(&['A']);
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
+
+    // Underline is the second bg (after the cell bg).
+    let ul = nth_instance(frame.backgrounds.as_bytes(), 1);
+    assert_eq!(
+        ul.pos.1, 14.0,
+        "underline y must remain at cell-anchored 14.0"
+    );
+
+    // Glyph y is shifted by SUPERSCRIPT.
+    let glyph = nth_instance(frame.glyphs.as_bytes(), 0);
+    assert_eq!(glyph.pos.1, -4.0, "glyph y must shift up");
+}
+
+/// Regression: BUG-06-014 — negative pin: SUBSCRIPT MUST NOT shift strikethrough y.
+#[test]
+fn subscript_does_not_shift_strikethrough_y() {
+    let input = frame_with_flags(CellFlags::SUBSCRIPT | CellFlags::STRIKETHROUGH);
+    let atlas = atlas_with(&['A']);
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
+
+    // Strikethrough at y = baseline - strikeout_offset = 12 - 4 = 8.
+    let st = nth_instance(frame.backgrounds.as_bytes(), 1);
+    assert_eq!(st.pos.1, 8.0, "strikethrough y must stay cell-anchored");
+
+    let glyph = nth_instance(frame.glyphs.as_bytes(), 0);
+    assert_eq!(glyph.pos.1, 4.0);
+}
+
+/// Regression: BUG-06-014 — negative pin: SUBSCRIPT MUST NOT shift overline y.
+#[test]
+fn subscript_does_not_shift_overline_y() {
+    let input = frame_with_flags(CellFlags::SUBSCRIPT | CellFlags::OVERLINE);
+    let atlas = atlas_with(&['A']);
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
+
+    // Overline at cell top y = 0 (NOT shifted with glyph).
+    let ol = nth_instance(frame.backgrounds.as_bytes(), 1);
+    assert_eq!(
+        ol.pos.1, 0.0,
+        "overline y stays at cell top regardless of SUBSCRIPT"
+    );
+
+    let glyph = nth_instance(frame.glyphs.as_bytes(), 0);
+    assert_eq!(glyph.pos.1, 4.0);
+}
+
+/// Regression: BUG-06-014 — SUPERSCRIPT + INVERSE: bg quad fills full cell rect
+/// (NOT shifted with glyph).
+#[test]
+fn superscript_with_inverse_keeps_full_cell_background() {
+    let input = frame_with_flags(CellFlags::SUPERSCRIPT | CellFlags::INVERSE);
+    let atlas = atlas_with(&['A']);
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
+
+    // Background is the FIRST bg instance (the cell bg quad). It must be at
+    // y=0 with the full cell height (16), regardless of SUPERSCRIPT.
+    let bg = nth_instance(frame.backgrounds.as_bytes(), 0);
+    assert_eq!(bg.pos.1, 0.0, "SUPERSCRIPT must NOT shift cell bg quad");
+    assert_eq!(bg.size, (8.0, 16.0), "bg fills full cell");
+
+    // Glyph still shifts up.
+    let glyph = nth_instance(frame.glyphs.as_bytes(), 0);
+    assert_eq!(glyph.pos.1, -4.0);
+}
+
+/// Regression: BUG-06-014 — fractional cell heights (e.g. 13px) must round
+/// to integer pixel offset, preserving Y-snap from `mod.rs:257`.
+#[test]
+fn super_sub_offset_rounds_to_integer_for_fractional_cell_height() {
+    use super::super_sub_glyph_offset;
+
+    // 13.0 * 0.25 = 3.25 → must round to 3.0.
+    assert_eq!(
+        super_sub_glyph_offset(CellFlags::SUBSCRIPT, 13.0),
+        3.0,
+        "SUBSCRIPT offset on 13px cell must round to integer 3.0, not 3.25"
+    );
+    assert_eq!(
+        super_sub_glyph_offset(CellFlags::SUPERSCRIPT, 13.0),
+        -3.0,
+        "SUPERSCRIPT offset on 13px cell must round to integer -3.0"
+    );
+    // 16.0 * 0.25 = 4.0 → already integer, no round artifact.
+    assert_eq!(super_sub_glyph_offset(CellFlags::SUBSCRIPT, 16.0), 4.0,);
+    // empty flags → 0.0 always.
+    assert_eq!(super_sub_glyph_offset(CellFlags::empty(), 16.0), 0.0,);
+    // Mutually exclusive: only one of SUPERSCRIPT/SUBSCRIPT is checked.
+    // SGR handler enforces mutual exclusion (sgr.rs:64-69), so the helper
+    // never sees both at once. Still test the happy-path edge values.
+}
+
+/// Regression: BUG-06-014 — shaped path applies super/sub offset to glyph y.
+/// Pinned via `prepare_frame_shaped` rather than the unshaped path so the
+/// production code path (`fill_frame_shaped`) is exercised directly.
+#[test]
+fn shaped_superscript_shifts_glyph_y_up_by_quarter_cell_height() {
+    let size_q6 = 768;
+    let mut input = FrameInput::test_grid(1, 1, "X");
+    input.content.cells[0].flags = CellFlags::SUPERSCRIPT;
+
+    let atlas = key_atlas_with(&[60], size_q6);
+    let glyphs = vec![ShapedGlyph {
+        glyph_id: 60,
+        face_index: 0,
+        synthetic: 0,
+        x_advance: 0.0,
+        x_offset: 0.0,
+        y_offset: 0.0,
+    }];
+    let col_starts = vec![0];
+    let shaped = shaped_one_row(1, &glyphs, &col_starts, size_q6);
+    let frame = prepare_frame_shaped(&input, &atlas, &shaped, (0.0, 0.0));
+
+    assert_eq!(frame.glyphs.len(), 1);
+    let fg = nth_instance(frame.glyphs.as_bytes(), 0);
+    let entry = test_entry_for_glyph(60);
+    // glyph_y = (y + super_offset) + baseline - bearing_y
+    //        = (0.0 + -4.0) + 12.0 - 12.0 = -4.0
+    let expected_y = -4.0 + 12.0 - entry.bearing_y as f32;
+    assert_eq!(
+        fg.pos.1, expected_y,
+        "shaped SUPERSCRIPT must shift glyph y up by 4.0; got {}",
+        fg.pos.1
+    );
+}
+
+/// Regression: BUG-06-014 — shaped path applies SUBSCRIPT offset (downward shift).
+#[test]
+fn shaped_subscript_shifts_glyph_y_down_by_quarter_cell_height() {
+    let size_q6 = 768;
+    let mut input = FrameInput::test_grid(1, 1, "X");
+    input.content.cells[0].flags = CellFlags::SUBSCRIPT;
+
+    let atlas = key_atlas_with(&[61], size_q6);
+    let glyphs = vec![ShapedGlyph {
+        glyph_id: 61,
+        face_index: 0,
+        synthetic: 0,
+        x_advance: 0.0,
+        x_offset: 0.0,
+        y_offset: 0.0,
+    }];
+    let col_starts = vec![0];
+    let shaped = shaped_one_row(1, &glyphs, &col_starts, size_q6);
+    let frame = prepare_frame_shaped(&input, &atlas, &shaped, (0.0, 0.0));
+
+    let fg = nth_instance(frame.glyphs.as_bytes(), 0);
+    let entry = test_entry_for_glyph(61);
+    let expected_y = 4.0 + 12.0 - entry.bearing_y as f32;
+    assert_eq!(fg.pos.1, expected_y);
+}
+
+/// Regression: BUG-06-014 — shaped path WITHOUT super/sub keeps glyph y unshifted.
+/// Pins that the offset only applies when the flag is set (no spurious shift).
+#[test]
+fn shaped_no_super_sub_keeps_glyph_y_unshifted() {
+    let size_q6 = 768;
+    let input = FrameInput::test_grid(1, 1, "X");
+    let atlas = key_atlas_with(&[62], size_q6);
+    let glyphs = vec![ShapedGlyph {
+        glyph_id: 62,
+        face_index: 0,
+        synthetic: 0,
+        x_advance: 0.0,
+        x_offset: 0.0,
+        y_offset: 0.0,
+    }];
+    let col_starts = vec![0];
+    let shaped = shaped_one_row(1, &glyphs, &col_starts, size_q6);
+    let frame = prepare_frame_shaped(&input, &atlas, &shaped, (0.0, 0.0));
+
+    let fg = nth_instance(frame.glyphs.as_bytes(), 0);
+    let entry = test_entry_for_glyph(62);
+    // No offset → glyph_y = 0.0 + 12.0 - 12.0 = 0.0.
+    let expected_y = 12.0 - entry.bearing_y as f32;
+    assert_eq!(fg.pos.1, expected_y);
+}
+
+/// Regression: BUG-06-014 — built-in glyph path (e.g. box-drawing chars in
+/// U+2500..=U+257F) shifts y when SUPERSCRIPT/SUBSCRIPT is set. The built-in
+/// branch is a separate emission site from `GlyphEmitter::emit`; both must
+/// honor the offset.
+#[test]
+fn shaped_builtin_glyph_with_superscript_shifts_y() {
+    let size_q6 = 768;
+    let mut input = FrameInput::test_grid(1, 1, "");
+    // U+2500 BOX DRAWINGS LIGHT HORIZONTAL — built-in geometric glyph.
+    input.content.cells[0].ch = '\u{2500}';
+    input.content.cells[0].flags = CellFlags::SUPERSCRIPT;
+
+    // Built-in glyphs use FaceIdx::BUILTIN with the codepoint as glyph_id.
+    let key = crate::gpu::builtin_glyphs::raster_key('\u{2500}', size_q6);
+    let mut map = HashMap::new();
+    map.insert(key, test_entry_for_glyph('\u{2500}' as u16));
+    let atlas = KeyTestAtlas(map);
+
+    // ShapedFrame is empty for built-ins (the prepare path takes the built-in
+    // branch BEFORE consulting the shaped frame).
+    let shaped = shaped_one_row(1, &[], &[], size_q6);
+    let frame = prepare_frame_shaped(&input, &atlas, &shaped, (0.0, 0.0));
+
+    assert_eq!(
+        frame.glyphs.len(),
+        1,
+        "built-in glyph should emit 1 fg instance"
+    );
+    let fg = nth_instance(frame.glyphs.as_bytes(), 0);
+    // Built-in glyph rect uses (x, glyph_y) directly — no baseline/bearing math.
+    // glyph_y = y + super_sub_offset = 0.0 + (-4.0) = -4.0.
+    assert_eq!(
+        fg.pos.1, -4.0,
+        "built-in glyph y must shift by SUPERSCRIPT offset"
+    );
+}
+
+/// Regression: BUG-06-014 — dirty-skip incremental path applies super/sub
+/// offset to dirty rows. Pin: a row with SUPERSCRIPT, after a dirty rebuild,
+/// emits a shifted glyph y.
+#[test]
+fn incremental_dirty_row_with_superscript_shifts_glyph_y() {
+    use crate::gpu::frame_input::ViewportSize;
+    use oriterm_core::Rgb;
+
+    let size_q6 = 768;
+    let cols = 1;
+    let rows = 1;
+    let mut input = FrameInput::test_grid(cols, rows, "X");
+    input.content.cells[0].flags = CellFlags::SUPERSCRIPT;
+
+    let atlas = key_atlas_with(&[70], size_q6);
+    let glyphs = vec![ShapedGlyph {
+        glyph_id: 70,
+        face_index: 0,
+        synthetic: 0,
+        x_advance: 0.0,
+        x_offset: 0.0,
+        y_offset: 0.0,
+    }];
+    let col_starts = vec![0];
+    let shaped = shaped_one_row(cols, &glyphs, &col_starts, size_q6);
+
+    // First pass: populate row_ranges via full rebuild (all_dirty true by default).
+    let mut frame = PreparedFrame::new(ViewportSize::new(1, 1), Rgb { r: 0, g: 0, b: 0 }, 1.0);
+    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+
+    // Second pass: mark row 0 as dirty so the incremental path regenerates it.
+    input.content.all_dirty = false;
+    input.content.damage.push(oriterm_core::DamageLine {
+        line: 0,
+        left: Column(0),
+        right: Column(0),
+    });
+    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+
+    // Even after the incremental rebuild, the SUPERSCRIPT cell's glyph y
+    // must be shifted. Find the glyph instance in the (post-incremental) frame.
+    assert!(
+        !frame.glyphs.as_bytes().is_empty(),
+        "dirty row must regenerate the glyph"
+    );
+    let fg = nth_instance(frame.glyphs.as_bytes(), 0);
+    let entry = test_entry_for_glyph(70);
+    let expected_y = -4.0 + 12.0 - entry.bearing_y as f32;
+    assert_eq!(
+        fg.pos.1, expected_y,
+        "incremental SUPERSCRIPT must produce shifted glyph y"
+    );
+}
+
+/// Regression: BUG-06-014 — shaped path emits OVERLINE rect at cell top
+/// (matrix gap closed during impl-hygiene Phase 5).
+#[test]
+fn shaped_overline_emits_top_rect() {
+    let size_q6 = 768;
+    let mut input = FrameInput::test_grid(1, 1, "X");
+    input.content.cells[0].flags = CellFlags::OVERLINE;
+
+    let atlas = key_atlas_with(&[80], size_q6);
+    let glyphs = vec![ShapedGlyph {
+        glyph_id: 80,
+        face_index: 0,
+        synthetic: 0,
+        x_advance: 0.0,
+        x_offset: 0.0,
+        y_offset: 0.0,
+    }];
+    let col_starts = vec![0];
+    let shaped = shaped_one_row(1, &glyphs, &col_starts, size_q6);
+    let frame = prepare_frame_shaped(&input, &atlas, &shaped, (0.0, 0.0));
+
+    // 1 base bg + 1 overline rect = 2 backgrounds; 1 fg glyph.
+    assert_eq!(
+        frame.backgrounds.len(),
+        2,
+        "shaped OVERLINE emits decoration rect"
+    );
+    let ol = nth_instance(frame.backgrounds.as_bytes(), 1);
+    assert_eq!(ol.pos.1, 0.0, "shaped overline y must be cell-top y");
+    assert_eq!(
+        ol.size,
+        (8.0, 1.0),
+        "shaped overline must span cell_width x stroke"
+    );
+}
+
+/// Regression: BUG-06-014 — dirty-skip incremental path emits OVERLINE rect
+/// for a dirty row with the OVERLINE flag (matrix gap closed during
+/// impl-hygiene Phase 5).
+#[test]
+fn incremental_dirty_row_with_overline_emits_top_rect() {
+    use crate::gpu::frame_input::ViewportSize;
+    use oriterm_core::Rgb;
+
+    let size_q6 = 768;
+    let cols = 1;
+    let rows = 1;
+    let mut input = FrameInput::test_grid(cols, rows, "X");
+    input.content.cells[0].flags = CellFlags::OVERLINE;
+
+    let atlas = key_atlas_with(&[81], size_q6);
+    let glyphs = vec![ShapedGlyph {
+        glyph_id: 81,
+        face_index: 0,
+        synthetic: 0,
+        x_advance: 0.0,
+        x_offset: 0.0,
+        y_offset: 0.0,
+    }];
+    let col_starts = vec![0];
+    let shaped = shaped_one_row(cols, &glyphs, &col_starts, size_q6);
+
+    // First pass: full rebuild to populate row_ranges.
+    let mut frame = PreparedFrame::new(ViewportSize::new(1, 1), Rgb { r: 0, g: 0, b: 0 }, 1.0);
+    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+
+    // Second pass: dirty-mark row 0 so the incremental path regenerates it.
+    input.content.all_dirty = false;
+    input.content.damage.push(oriterm_core::DamageLine {
+        line: 0,
+        left: Column(0),
+        right: Column(0),
+    });
+    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+
+    // Even after the incremental rebuild, the OVERLINE rect must be present.
+    // 1 base bg + 1 overline rect (cursor is in cursors buffer, not backgrounds).
+    assert_eq!(
+        frame.backgrounds.len(),
+        2,
+        "incremental dirty row with OVERLINE must emit decoration rect"
+    );
+    let ol = nth_instance(frame.backgrounds.as_bytes(), 1);
+    assert_eq!(ol.pos.1, 0.0);
+    assert_eq!(ol.size, (8.0, 1.0));
+}
+
 // ── Subpixel glyph routing (Section 6.16) ──
 
 #[test]

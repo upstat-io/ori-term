@@ -1,7 +1,7 @@
 //! vttest menu 1: Cursor movement tests, border fill assertions, and
 //! DECCOLM column mode verification.
 
-use super::session::{PtySession, vttest_available};
+use super::session::{PtySession, vttest_available, walk_vttest_screens};
 
 /// Run vttest menu 1 (cursor movement) at a given size, capturing all screens.
 fn run_menu1_cursor_movement(cols: u16, rows: u16) {
@@ -15,27 +15,12 @@ fn run_menu1_cursor_movement(cols: u16, rows: u16) {
     // Select menu item 1.
     s.send(b"1\r");
 
-    // Walk through all sub-screens.
-    let mut screen = 1;
-    loop {
-        let text = s.grid_text();
-
-        if text.contains("Enter choice number") {
-            break;
-        }
-
+    let count = walk_vttest_screens(&mut s, 20, &[], |_session, text, screen| {
         insta::assert_snapshot!(format!("{label}_01_cursor_{screen:02}"), text);
-
-        s.send(b"\r");
-        screen += 1;
-
-        if screen > 20 {
-            break;
-        }
-    }
+    });
 
     assert!(
-        screen > 1,
+        count > 0,
         "{label}: should have captured at least one screen"
     );
 }
@@ -43,7 +28,7 @@ fn run_menu1_cursor_movement(cols: u16, rows: u16) {
 #[test]
 fn vttest_menu1_80x24() {
     if !vttest_available() {
-        eprintln!("vttest not installed, skipping");
+        eprintln!("SKIP: vttest not installed");
         return;
     }
     run_menu1_cursor_movement(80, 24);
@@ -52,7 +37,7 @@ fn vttest_menu1_80x24() {
 #[test]
 fn vttest_menu1_97x33() {
     if !vttest_available() {
-        eprintln!("vttest not installed, skipping");
+        eprintln!("SKIP: vttest not installed");
         return;
     }
     run_menu1_cursor_movement(97, 33);
@@ -61,7 +46,7 @@ fn vttest_menu1_97x33() {
 #[test]
 fn vttest_menu1_120x40() {
     if !vttest_available() {
-        eprintln!("vttest not installed, skipping");
+        eprintln!("SKIP: vttest not installed");
         return;
     }
     run_menu1_cursor_movement(120, 40);
@@ -174,7 +159,7 @@ fn capture_border_screen(cols: u16, rows: u16) -> Vec<Vec<char>> {
 #[test]
 fn vttest_border_fills_80x24() {
     if !vttest_available() {
-        eprintln!("vttest not installed, skipping");
+        eprintln!("SKIP: vttest not installed");
         return;
     }
     let grid = capture_border_screen(80, 24);
@@ -184,7 +169,7 @@ fn vttest_border_fills_80x24() {
 #[test]
 fn vttest_border_fills_97x33() {
     if !vttest_available() {
-        eprintln!("vttest not installed, skipping");
+        eprintln!("SKIP: vttest not installed");
         return;
     }
     let grid = capture_border_screen(97, 33);
@@ -194,7 +179,7 @@ fn vttest_border_fills_97x33() {
 #[test]
 fn vttest_border_fills_120x40() {
     if !vttest_available() {
-        eprintln!("vttest not installed, skipping");
+        eprintln!("SKIP: vttest not installed");
         return;
     }
     let grid = capture_border_screen(120, 40);
@@ -224,7 +209,7 @@ fn capture_deccolm_screen(cols: u16, rows: u16) -> Vec<Vec<char>> {
 #[test]
 fn vttest_deccolm_resizes_to_132_with_mode_40() {
     if !vttest_available() {
-        eprintln!("vttest not installed, skipping");
+        eprintln!("SKIP: vttest not installed");
         return;
     }
     let grid = capture_deccolm_screen(80, 24);

@@ -12,6 +12,7 @@
 mod decorations;
 pub(crate) mod dirty_skip;
 mod emit;
+mod emit_cell;
 mod resolve;
 mod shaped_frame;
 #[cfg(test)]
@@ -25,14 +26,40 @@ use super::frame_input::FrameInput;
 use super::prepared_frame::PreparedFrame;
 
 use crate::font::{GlyphStyle, RasterKey};
-use crate::gpu::instance_writer::{CLIP_UNCLIPPED, ScreenRect};
 use dirty_skip::{BufferLengths, RowInstanceRanges, fill_frame_incremental};
-use emit::{GlyphEmitter, build_cursor, draw_prompt_markers, draw_url_hover_underline};
-use resolve::{resolve_cell_colors, resolve_cursor};
+use emit::{build_cursor, draw_prompt_markers, draw_url_hover_underline};
+use emit_cell::EmitCtx;
+use resolve::resolve_cursor;
 
 pub use shaped_frame::ShapedFrame;
 #[cfg(test)]
 pub(crate) use unshaped::{prepare_frame, prepare_frame_into};
+
+/// Vertical glyph offset (in pixels) for SGR 73 (superscript) / SGR 74 (subscript).
+///
+/// Returns a SIGNED, INTEGER-ROUNDED pixel offset relative to the cell-top y:
+/// negative shifts the glyph upward (super), positive shifts downward (sub),
+/// `0.0` when neither flag is set. The `.round()` is load-bearing — it preserves
+/// the integer-Y-pixel-snap discipline applied in `fill_frame_shaped` and
+/// `fill_frame_incremental`, where the cell-top y is computed as
+/// `(oy + row * ch).round()` and snapped to an integer; a fractional super/sub
+/// offset would defeat that snap and trigger bilinear-filtering blur on cells
+/// whose `cell_height * 0.25` is non-integer (e.g. `13.0 * 0.25 = 3.25`).
+///
+/// Backgrounds, decorations, and cursors keep the unshifted cell-top y so they
+/// remain anchored to the cell rectangle — only glyph y shifts. The 25% factor
+/// matches wezterm (`wezterm-gui/src/termwindow/render/screen_line.rs:437-445`).
+pub(super) fn super_sub_glyph_offset(flags: CellFlags, cell_height: f32) -> f32 {
+    const FACTOR: f32 = 0.25;
+    let raw = if flags.contains(CellFlags::SUPERSCRIPT) {
+        -cell_height * FACTOR
+    } else if flags.contains(CellFlags::SUBSCRIPT) {
+        cell_height * FACTOR
+    } else {
+        0.0
+    };
+    raw.round()
+}
 
 /// Abstracts glyph atlas lookup for testability.
 ///
@@ -184,10 +211,6 @@ pub fn update_cursor_only(
     clippy::too_many_arguments,
     reason = "origin + cursor opacity are pipeline context passed from renderer"
 )]
-#[expect(
-    clippy::too_many_lines,
-    reason = "linear pipeline: bg → decorations → builtins → shaped glyphs → cursors"
-)]
 pub(crate) fn fill_frame_shaped(
     input: &FrameInput,
     atlas: &dyn AtlasLookup,
@@ -198,20 +221,30 @@ pub(crate) fn fill_frame_shaped(
 ) {
     let cw = input.cell_size.width;
     let ch = input.cell_size.height;
-    let baseline = input.cell_size.baseline;
-    let fg_dim = input.fg_dim;
-    let text_blink_opacity = input.text_blink_opacity;
     let (ox, oy) = origin;
-    let sel = input.selection.as_ref();
-    let search = input.search.as_ref();
-    let cursor = resolve_cursor(&input.content.cursor, input.mark_cursor.as_ref());
 
+    // Row-range tracking: snapshot buffer lengths before frame is moved into ctx.
     let viewport_h = frame.viewport.height as f32;
-
-    // Track row boundaries for row_ranges (incremental update support).
     let mut current_row = usize::MAX;
     let mut row_start = BufferLengths::capture(frame);
     let mut row_off_screen = false;
+
+    let mut ctx = EmitCtx {
+        fg_dim: input.fg_dim,
+        text_blink_opacity: input.text_blink_opacity,
+        subpixel_positioning: input.subpixel_positioning,
+        palette: &input.palette,
+        sel: input.selection.as_ref(),
+        search: input.search.as_ref(),
+        cursor: resolve_cursor(&input.content.cursor, input.mark_cursor.as_ref()),
+        cursor_opacity,
+        hovered_cell: input.hovered_cell,
+        cell_size: &input.cell_size,
+        atlas,
+        size_q6: shaped.size_q6(),
+        frame,
+        shaped: Some((shaped, shaped.hinted())),
+    };
 
     for cell in &input.content.cells {
         if cell
@@ -227,15 +260,15 @@ pub(crate) fn fill_frame_shaped(
         // Record row range on row transition.
         if row != current_row {
             if current_row == usize::MAX {
-                row_start = BufferLengths::capture(frame);
+                row_start = BufferLengths::capture(ctx.frame);
             } else {
-                let now = BufferLengths::capture(frame);
+                let now = BufferLengths::capture(ctx.frame);
                 let ranges = now.range_since(&row_start);
                 // Fill gaps if rows were skipped (shouldn't happen but defensive).
-                while frame.row_ranges.len() < current_row {
-                    frame.row_ranges.push(RowInstanceRanges::default());
+                while ctx.frame.row_ranges.len() < current_row {
+                    ctx.frame.row_ranges.push(RowInstanceRanges::default());
                 }
-                frame.row_ranges.push(ranges);
+                ctx.frame.row_ranges.push(ranges);
                 row_start = now;
             }
             current_row = row;
@@ -256,128 +289,35 @@ pub(crate) fn fill_frame_shaped(
         // UI text already does this (scene_convert/text.rs:51).
         let y = (oy + row as f32 * ch).round();
 
-        let (fg, bg) =
-            resolve_cell_colors(cell, sel, search, &cursor, cursor_opacity, &input.palette);
-
-        // Background: skip cells with the default palette background so the
-        // window clear color (which carries the theme opacity for glass/acrylic)
-        // shows through. Only cells with explicit non-default backgrounds
-        // (selection, search, SGR colors) paint an opaque quad.
-        let bg_w = if cell.flags.contains(CellFlags::WIDE_CHAR) {
-            2.0 * cw
-        } else {
-            cw
-        };
-        if bg != input.palette.background {
-            frame.backgrounds.push_rect(
-                ScreenRect {
-                    x,
-                    y,
-                    w: bg_w,
-                    h: ch,
-                },
-                bg,
-                1.0,
-            );
-        }
-
-        // Per-cell alpha: BLINK cells fade with text_blink_opacity.
-        let is_blink = cell.flags.contains(CellFlags::BLINK);
-        let cell_dim = if is_blink {
-            fg_dim * text_blink_opacity
-        } else {
-            fg_dim
-        };
-        let deco_alpha = if is_blink { text_blink_opacity } else { 1.0 };
-
-        let is_hovered = input.hovered_cell == Some((row, col));
-        decorations::DecorationContext {
-            backgrounds: &mut frame.backgrounds,
-            glyphs: &mut frame.glyphs,
-            atlas,
-            size_q6: shaped.size_q6(),
-            metrics: &input.cell_size,
-            alpha: deco_alpha,
-        }
-        .draw(
-            cell.flags,
-            cell.underline_color,
-            fg,
-            x,
-            y,
-            bg_w,
-            cell.has_hyperlink,
-            is_hovered,
-        );
-
-        // Built-in geometric glyphs: bypass shaping, render from atlas.
-        if crate::font::is_builtin(cell.ch) {
-            let key = super::builtin_glyphs::raster_key(cell.ch, shaped.size_q6());
-            if let Some(entry) = atlas.lookup_key(key) {
-                let uv = [entry.uv_x, entry.uv_y, entry.uv_w, entry.uv_h];
-                let rect = ScreenRect {
-                    x,
-                    y,
-                    w: entry.width as f32,
-                    h: entry.height as f32,
-                };
-                frame
-                    .glyphs
-                    .push_glyph(rect, uv, fg, cell_dim, entry.page, CLIP_UNCLIPPED);
-            }
-            continue;
-        }
-
-        // Foreground: emit shaped glyphs via col-to-glyph map.
-        // Guard: viewport cells may exceed shaped frame during async resize.
-        if row >= shaped.rows() || col >= shaped.cols() {
-            continue;
-        }
-        if let Some(start_idx) = shaped.col_map(row, col) {
-            let row_glyphs = shaped.row_glyphs(row);
-            let row_col_starts = shaped.row_col_starts(row);
-            GlyphEmitter {
-                baseline,
-                size_q6: shaped.size_q6(),
-                hinted: shaped.hinted(),
-                fg_dim: cell_dim,
-                subpixel_positioning: input.subpixel_positioning,
-                atlas,
-                frame,
-            }
-            .emit(row_glyphs, row_col_starts, start_idx, col, x, y, fg, bg);
-        }
+        emit_cell::emit_cell(cell, x, y, &mut ctx);
     }
 
     // Record the final row's range.
     if current_row != usize::MAX {
-        let now = BufferLengths::capture(frame);
+        let now = BufferLengths::capture(ctx.frame);
         let ranges = now.range_since(&row_start);
-        while frame.row_ranges.len() < current_row {
-            frame.row_ranges.push(RowInstanceRanges::default());
+        while ctx.frame.row_ranges.len() < current_row {
+            ctx.frame.row_ranges.push(RowInstanceRanges::default());
         }
-        frame.row_ranges.push(ranges);
+        ctx.frame.row_ranges.push(ranges);
     }
 
-    // Implicit URL hover: one continuous underline rect per segment.
-    draw_url_hover_underline(input, frame, ox, oy);
-
-    // Visual prompt markers: thin colored bar at left margin of prompt rows.
-    draw_prompt_markers(input, frame, ox, oy);
+    draw_url_hover_underline(input, ctx.frame, ox, oy);
+    draw_prompt_markers(input, ctx.frame, ox, oy);
 
     // Cursor (gated by terminal visibility AND application blink state).
     // Unfocused windows always render a steady hollow block cursor.
-    if cursor.visible && cursor_opacity > 0.0 {
+    if ctx.cursor.visible && cursor_opacity > 0.0 {
         let shape = if input.window_focused {
-            cursor.shape
+            ctx.cursor.shape
         } else {
             CursorShape::HollowBlock
         };
         build_cursor(
-            frame,
+            ctx.frame,
             shape,
-            cursor.column.0,
-            cursor.line,
+            ctx.cursor.column.0,
+            ctx.cursor.line,
             cw,
             ch,
             ox,
@@ -387,8 +327,7 @@ pub(crate) fn fill_frame_shaped(
         );
     }
 
-    // Emit image quads from RenderableContent, split by z-index.
-    emit::emit_image_quads(input, frame, ox, oy);
+    emit::emit_image_quads(input, ctx.frame, ox, oy);
 }
 
 #[cfg(test)]

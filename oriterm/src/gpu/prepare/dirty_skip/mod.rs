@@ -9,13 +9,13 @@ mod selection_damage;
 
 use std::ops::Range;
 
-use oriterm_core::{CellFlags, CursorShape};
+use oriterm_core::{CellFlags, CursorShape, RenderableCell};
 
-use super::decorations::DecorationContext;
-use super::emit::{GlyphEmitter, build_cursor, draw_prompt_markers, draw_url_hover_underline};
+use super::emit::{build_cursor, draw_prompt_markers, draw_url_hover_underline};
+use super::emit_cell::EmitCtx;
+use super::resolve::resolve_cursor;
 use super::shaped_frame::ShapedFrame;
-use super::{AtlasLookup, FrameInput, resolve_cell_colors, resolve_cursor};
-use crate::gpu::instance_writer::{CLIP_UNCLIPPED, ScreenRect};
+use super::{AtlasLookup, FrameInput};
 use crate::gpu::prepared_frame::PreparedFrame;
 
 pub use selection_damage::build_dirty_set;
@@ -111,6 +111,129 @@ impl BufferLengths {
     }
 }
 
+/// Row-tracking state returned from the cell processing loop.
+struct RowLoopResult {
+    current_row: usize,
+    row_start: BufferLengths,
+    row_is_clean: bool,
+}
+
+/// Record a dirty row's instance range into `frame.row_ranges`.
+fn push_dirty_row_range(frame: &mut PreparedFrame, current_row: usize, row_start: &BufferLengths) {
+    let now = BufferLengths::capture(frame);
+    let ranges = now.range_since(row_start);
+    while frame.row_ranges.len() < current_row {
+        frame.row_ranges.push(RowInstanceRanges::default());
+    }
+    frame.row_ranges.push(ranges);
+}
+
+/// Copy saved-tier instances for a clean row and record its range.
+///
+/// Borrows `frame.saved_tier` (shared) and terminal-tier writers (mutable) as
+/// disjoint field projections — see the borrow note in `fill_frame_incremental`.
+fn replay_clean_row(frame: &mut PreparedFrame, row: usize) {
+    let row_start = BufferLengths::capture(frame);
+    if let Some(ranges) = frame.saved_tier.row_ranges(row).cloned() {
+        let saved = &frame.saved_tier;
+        frame.backgrounds.extend_from_byte_range(
+            &saved.backgrounds,
+            ranges.backgrounds.start,
+            ranges.backgrounds.end,
+        );
+        frame
+            .glyphs
+            .extend_from_byte_range(&saved.glyphs, ranges.glyphs.start, ranges.glyphs.end);
+        frame.subpixel_glyphs.extend_from_byte_range(
+            &saved.subpixel_glyphs,
+            ranges.subpixel_glyphs.start,
+            ranges.subpixel_glyphs.end,
+        );
+        frame.color_glyphs.extend_from_byte_range(
+            &saved.color_glyphs,
+            ranges.color_glyphs.start,
+            ranges.color_glyphs.end,
+        );
+    }
+    let now = BufferLengths::capture(frame);
+    let ranges = now.range_since(&row_start);
+    while frame.row_ranges.len() < row {
+        frame.row_ranges.push(RowInstanceRanges::default());
+    }
+    frame.row_ranges.push(ranges);
+}
+
+/// Core cell-iteration loop for the incremental path.
+///
+/// Iterates `cells`, maintaining row-transition state, skipping clean rows by
+/// replaying their saved-tier instances, and calling [`emit_cell`] for each
+/// dirty cell. Returns the final row-tracking state for post-loop range recording.
+fn process_incremental_cells(
+    ctx: &mut EmitCtx<'_>,
+    cells: &[RenderableCell],
+    ox: f32,
+    oy: f32,
+) -> RowLoopResult {
+    let cw = ctx.cell_size.width;
+    let ch = ctx.cell_size.height;
+    let viewport_h = ctx.frame.viewport.height as f32;
+
+    let mut current_row = usize::MAX;
+    let mut row_start = BufferLengths::capture(ctx.frame);
+    let mut row_is_clean = false;
+    let mut row_off_screen = false;
+
+    let mut i = 0;
+    while i < cells.len() {
+        let cell = &cells[i];
+        let row = cell.line;
+
+        if row != current_row {
+            if current_row != usize::MAX && !row_is_clean {
+                push_dirty_row_range(ctx.frame, current_row, &row_start);
+            }
+            current_row = row;
+            let is_dirty = ctx.frame.scratch_dirty.get(row).copied().unwrap_or(true);
+            if !is_dirty {
+                replay_clean_row(ctx.frame, row);
+                row_is_clean = true;
+                while i < cells.len() && cells[i].line == row {
+                    i += 1;
+                }
+                continue;
+            }
+            row_start = BufferLengths::capture(ctx.frame);
+            row_is_clean = false;
+            let row_y = (oy + row as f32 * ch).round();
+            row_off_screen = row_y + ch < 0.0 || row_y > viewport_h;
+        }
+
+        i += 1;
+
+        if row_off_screen {
+            continue;
+        }
+        if cell
+            .flags
+            .intersects(CellFlags::WIDE_CHAR_SPACER | CellFlags::LEADING_WIDE_CHAR_SPACER)
+        {
+            continue;
+        }
+
+        let col = cell.column.0;
+        let x = ox + col as f32 * cw;
+        // Round Y to integer pixels (see prepare/mod.rs for rationale).
+        let y = (oy + row as f32 * ch).round();
+        super::emit_cell::emit_cell(cell, x, y, ctx);
+    }
+
+    RowLoopResult {
+        current_row,
+        row_start,
+        row_is_clean,
+    }
+}
+
 /// Incremental prepare: skip clean rows, copy cached instances, regenerate dirty.
 ///
 /// Iterates cells row-by-row. For each row:
@@ -123,10 +246,6 @@ impl BufferLengths {
     clippy::too_many_arguments,
     reason = "origin + cursor blink are pipeline context passed from renderer"
 )]
-#[expect(
-    clippy::too_many_lines,
-    reason = "mirrors fill_frame_shaped structure with dirty-skip branching"
-)]
 pub(crate) fn fill_frame_incremental(
     input: &FrameInput,
     atlas: &dyn AtlasLookup,
@@ -137,231 +256,54 @@ pub(crate) fn fill_frame_incremental(
 ) {
     let cw = input.cell_size.width;
     let ch = input.cell_size.height;
-    let baseline = input.cell_size.baseline;
-    let fg_dim = input.fg_dim;
-    let text_blink_opacity = input.text_blink_opacity;
     let (ox, oy) = origin;
-    let sel = input.selection.as_ref();
-    let search = input.search.as_ref();
-    let cursor = resolve_cursor(&input.content.cursor, input.mark_cursor.as_ref());
 
-    let viewport_h = frame.viewport.height as f32;
+    // Setup that must read frame fields before frame is moved into ctx.
     let num_rows = input.rows();
     let prev_sel = frame.prev_selection_snapshot;
     build_dirty_set(input, num_rows, prev_sel, &mut frame.scratch_dirty);
 
-    // Track row boundaries for row_ranges.
-    let mut current_row = usize::MAX;
-    let mut row_start = BufferLengths::capture(frame);
-    let mut row_is_clean = false;
-    let mut row_off_screen = false;
+    let mut ctx = EmitCtx {
+        fg_dim: input.fg_dim,
+        text_blink_opacity: input.text_blink_opacity,
+        subpixel_positioning: input.subpixel_positioning,
+        palette: &input.palette,
+        sel: input.selection.as_ref(),
+        search: input.search.as_ref(),
+        cursor: resolve_cursor(&input.content.cursor, input.mark_cursor.as_ref()),
+        cursor_opacity,
+        hovered_cell: input.hovered_cell,
+        cell_size: &input.cell_size,
+        atlas,
+        size_q6: shaped.size_q6(),
+        frame,
+        shaped: Some((shaped, shaped.hinted())),
+    };
 
-    let cells = &input.content.cells;
-    let mut i = 0;
-    while i < cells.len() {
-        let cell = &cells[i];
+    let RowLoopResult {
+        current_row,
+        row_start,
+        row_is_clean,
+    } = process_incremental_cells(&mut ctx, &input.content.cells, ox, oy);
 
-        let row = cell.line;
-
-        // Row transition: record previous row and decide skip/process.
-        if row != current_row {
-            // Record the previous row's range.
-            if current_row != usize::MAX && !row_is_clean {
-                let now = BufferLengths::capture(frame);
-                let ranges = now.range_since(&row_start);
-                while frame.row_ranges.len() < current_row {
-                    frame.row_ranges.push(RowInstanceRanges::default());
-                }
-                frame.row_ranges.push(ranges);
-            }
-
-            current_row = row;
-            let is_dirty = frame.scratch_dirty.get(row).copied().unwrap_or(true);
-
-            if !is_dirty {
-                // Clean row: copy cached instances and skip all cells.
-                // Borrow saved_tier fields and frame writers separately to
-                // satisfy the borrow checker (can't pass &self + &mut frame).
-                row_start = BufferLengths::capture(frame);
-                if let Some(ranges) = frame.saved_tier.row_ranges(row).cloned() {
-                    let saved = &frame.saved_tier;
-                    frame.backgrounds.extend_from_byte_range(
-                        &saved.backgrounds,
-                        ranges.backgrounds.start,
-                        ranges.backgrounds.end,
-                    );
-                    frame.glyphs.extend_from_byte_range(
-                        &saved.glyphs,
-                        ranges.glyphs.start,
-                        ranges.glyphs.end,
-                    );
-                    frame.subpixel_glyphs.extend_from_byte_range(
-                        &saved.subpixel_glyphs,
-                        ranges.subpixel_glyphs.start,
-                        ranges.subpixel_glyphs.end,
-                    );
-                    frame.color_glyphs.extend_from_byte_range(
-                        &saved.color_glyphs,
-                        ranges.color_glyphs.start,
-                        ranges.color_glyphs.end,
-                    );
-                }
-                let now = BufferLengths::capture(frame);
-                let ranges = now.range_since(&row_start);
-                while frame.row_ranges.len() < row {
-                    frame.row_ranges.push(RowInstanceRanges::default());
-                }
-                frame.row_ranges.push(ranges);
-                row_is_clean = true;
-
-                // Skip all cells in this row.
-                while i < cells.len() && cells[i].line == row {
-                    i += 1;
-                }
-                continue;
-            }
-
-            row_start = BufferLengths::capture(frame);
-            row_is_clean = false;
-
-            // Skip rows entirely outside the render target.
-            // Round to match the integer-snapped Y used for rendering.
-            let row_y = (oy + row as f32 * ch).round();
-            row_off_screen = row_y + ch < 0.0 || row_y > viewport_h;
-        }
-
-        i += 1;
-
-        if row_off_screen {
-            continue;
-        }
-
-        // Skip spacer cells (handled by the base wide char cell).
-        if cell
-            .flags
-            .intersects(CellFlags::WIDE_CHAR_SPACER | CellFlags::LEADING_WIDE_CHAR_SPACER)
-        {
-            continue;
-        }
-
-        let col = cell.column.0;
-        let x = ox + col as f32 * cw;
-        // Round Y to integer pixels (see prepare/mod.rs for rationale).
-        let y = (oy + row as f32 * ch).round();
-
-        let (fg, bg) =
-            resolve_cell_colors(cell, sel, search, &cursor, cursor_opacity, &input.palette);
-
-        // Skip default palette background so the window clear color (with
-        // theme opacity for glass/acrylic) shows through.
-        let bg_w = if cell.flags.contains(CellFlags::WIDE_CHAR) {
-            2.0 * cw
-        } else {
-            cw
-        };
-        if bg != input.palette.background {
-            frame.backgrounds.push_rect(
-                ScreenRect {
-                    x,
-                    y,
-                    w: bg_w,
-                    h: ch,
-                },
-                bg,
-                1.0,
-            );
-        }
-
-        // Per-cell alpha: BLINK cells fade with text_blink_opacity.
-        let is_blink = cell.flags.contains(CellFlags::BLINK);
-        let cell_dim = if is_blink {
-            fg_dim * text_blink_opacity
-        } else {
-            fg_dim
-        };
-        let deco_alpha = if is_blink { text_blink_opacity } else { 1.0 };
-
-        let is_hovered = input.hovered_cell == Some((row, col));
-        DecorationContext {
-            backgrounds: &mut frame.backgrounds,
-            glyphs: &mut frame.glyphs,
-            atlas,
-            size_q6: shaped.size_q6(),
-            metrics: &input.cell_size,
-            alpha: deco_alpha,
-        }
-        .draw(
-            cell.flags,
-            cell.underline_color,
-            fg,
-            x,
-            y,
-            bg_w,
-            cell.has_hyperlink,
-            is_hovered,
-        );
-
-        if crate::font::is_builtin(cell.ch) {
-            let key = crate::gpu::builtin_glyphs::raster_key(cell.ch, shaped.size_q6());
-            if let Some(entry) = atlas.lookup_key(key) {
-                let uv = [entry.uv_x, entry.uv_y, entry.uv_w, entry.uv_h];
-                let rect = ScreenRect {
-                    x,
-                    y,
-                    w: entry.width as f32,
-                    h: entry.height as f32,
-                };
-                frame
-                    .glyphs
-                    .push_glyph(rect, uv, fg, cell_dim, entry.page, CLIP_UNCLIPPED);
-            }
-            continue;
-        }
-
-        if row >= shaped.rows() || col >= shaped.cols() {
-            continue;
-        }
-        if let Some(start_idx) = shaped.col_map(row, col) {
-            let row_glyphs = shaped.row_glyphs(row);
-            let row_col_starts = shaped.row_col_starts(row);
-            GlyphEmitter {
-                baseline,
-                size_q6: shaped.size_q6(),
-                hinted: shaped.hinted(),
-                fg_dim: cell_dim,
-                subpixel_positioning: input.subpixel_positioning,
-                atlas,
-                frame,
-            }
-            .emit(row_glyphs, row_col_starts, start_idx, col, x, y, fg, bg);
-        }
-    }
-
-    // Record the final row's range.
     if current_row != usize::MAX && !row_is_clean {
-        let now = BufferLengths::capture(frame);
-        let ranges = now.range_since(&row_start);
-        while frame.row_ranges.len() < current_row {
-            frame.row_ranges.push(RowInstanceRanges::default());
-        }
-        frame.row_ranges.push(ranges);
+        push_dirty_row_range(ctx.frame, current_row, &row_start);
     }
 
-    // URL hover, prompt markers, cursor, and images always regenerated.
-    draw_url_hover_underline(input, frame, ox, oy);
-    draw_prompt_markers(input, frame, ox, oy);
+    draw_url_hover_underline(input, ctx.frame, ox, oy);
+    draw_prompt_markers(input, ctx.frame, ox, oy);
 
-    if cursor.visible && cursor_opacity > 0.0 {
+    if ctx.cursor.visible && cursor_opacity > 0.0 {
         let shape = if input.window_focused {
-            cursor.shape
+            ctx.cursor.shape
         } else {
             CursorShape::HollowBlock
         };
         build_cursor(
-            frame,
+            ctx.frame,
             shape,
-            cursor.column.0,
-            cursor.line,
+            ctx.cursor.column.0,
+            ctx.cursor.line,
             cw,
             ch,
             ox,
@@ -371,7 +313,7 @@ pub(crate) fn fill_frame_incremental(
         );
     }
 
-    super::emit::emit_image_quads(input, frame, ox, oy);
+    super::emit::emit_image_quads(input, ctx.frame, ox, oy);
 }
 
 #[cfg(test)]

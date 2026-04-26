@@ -1,6 +1,6 @@
 //! vttest golden image tests for menus 3-8.
 
-use oriterm_test_support::{PtySession, vttest_available};
+use oriterm_test_support::{PtySession, vttest_available, walk_vttest_screens};
 
 use super::render::assert_golden;
 use crate::gpu::visual_regression::headless_env;
@@ -27,27 +27,15 @@ fn run_menu3_golden(cols: u16, rows: u16) {
     // Sub-item 8: VT100 Character Sets (DEC Special Graphics).
     s.send(b"8\r");
 
-    let mut screen = 1;
-    loop {
-        let text = s.grid_text();
-        if text.contains("Enter choice number") {
-            break;
-        }
-
+    walk_vttest_screens(&mut s, 10, &[], |session, _text, screen| {
         assert_golden(
-            &s,
+            session,
             &format!("vttest_{label}_03_cs_{screen:02}"),
             &gpu,
             &pipelines,
             &mut renderer,
         );
-
-        s.send(b"\r");
-        screen += 1;
-        if screen > 10 {
-            break;
-        }
-    }
+    });
 }
 
 #[test]
@@ -76,27 +64,15 @@ fn run_menu4_golden(cols: u16, rows: u16) {
     s.wait_for("Enter choice number", 5000);
     s.send(b"4\r");
 
-    let mut screen = 1;
-    loop {
-        let text = s.grid_text();
-        if text.contains("Enter choice number") {
-            break;
-        }
-
+    walk_vttest_screens(&mut s, 20, &[], |session, _text, screen| {
         assert_golden(
-            &s,
+            session,
             &format!("vttest_{label}_04_dblsize_{screen:02}"),
             &gpu,
             &pipelines,
             &mut renderer,
         );
-
-        s.send(b"\r");
-        screen += 1;
-        if screen > 20 {
-            break;
-        }
-    }
+    });
 }
 
 #[test]
@@ -143,25 +119,15 @@ fn run_menu6_golden(cols: u16, rows: u16) {
             }
             s.send(format!("{item}\r").as_bytes());
 
-            let mut screen = 1;
-            loop {
-                let t = s.grid_text();
-                if t.contains("Enter choice number") {
-                    break;
-                }
+            walk_vttest_screens(&mut s, 10, &[], |session, _text, screen| {
                 assert_golden(
-                    &s,
+                    session,
                     &format!("vttest_{label}_06_sub{item}_{screen:02}"),
                     &gpu,
                     &pipelines,
                     &mut renderer,
                 );
-                s.send(b"\r");
-                screen += 1;
-                if screen > 10 {
-                    break;
-                }
-            }
+            });
         }
         s.send(b"0\r");
     }
@@ -192,21 +158,8 @@ fn run_menu7_golden(cols: u16, rows: u16) {
     s.wait_for("Enter choice number", 5000);
     s.send(b"7\r");
 
-    let mut screen = 1;
-    loop {
-        let text = s.grid_text();
-        if text.contains("Enter choice number") {
-            break;
-        }
-
-        s.send(b"\r");
-        screen += 1;
-        if screen > 20 {
-            break;
-        }
-    }
-
-    assert!(screen > 1, "menu 7 should have at least one screen");
+    let count = walk_vttest_screens(&mut s, 20, &[], |_, _, _| {});
+    assert!(count > 0, "menu 7 should have at least one screen");
 }
 
 #[test]
@@ -232,27 +185,15 @@ fn run_menu8_golden(cols: u16, rows: u16) {
     // Enter menu 8: VT102 features.
     s.send(b"8\r");
 
-    let mut screen = 1;
-    loop {
-        let text = s.grid_text();
-        if text.contains("Enter choice number") {
-            break;
-        }
-
+    walk_vttest_screens(&mut s, 20, &[], |session, _text, screen| {
         assert_golden(
-            &s,
+            session,
             &format!("vttest_{label}_08_vt102_{screen:02}"),
             &gpu,
             &pipelines,
             &mut renderer,
         );
-
-        s.send(b"\r");
-        screen += 1;
-        if screen > 20 {
-            break;
-        }
-    }
+    });
 }
 
 #[test]

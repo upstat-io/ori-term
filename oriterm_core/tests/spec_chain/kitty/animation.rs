@@ -314,7 +314,7 @@ fn kitty_animate_r_two_sets_current_frame_and_reply_echoes_r_two() {
 /// `a=a,s=2` unpauses the animation — behaviorally identical to `s=3` in the
 /// current impl because `set_animation_action` at
 /// `oriterm_core/src/image/cache/animation.rs:247-260` routes both into the
-/// same match arm. Pins the current deviation while `BUG-08-25` tracks the
+/// same match arm. Pins the current deviation while `BUG-08-025` tracks the
 /// spec-compliant "wait for new frames on loop-end" semantic.
 /// Catalog row: `KG-ANIMATE-RUN-WAIT` (verified-with-deviation).
 #[test]
@@ -347,7 +347,7 @@ fn kitty_animate_s_two_unpauses_collapsing_with_s_three() {
     assert!(
         !state.paused,
         "a=a,s=2 MUST clear paused (collapses with s=3 in current impl — see \
-         BUG-08-25 for the spec-compliant wait-for-new-frames semantic)"
+         BUG-08-025 for the spec-compliant wait-for-new-frames semantic)"
     );
     assert_eq!(
         state.loops_completed, 0,

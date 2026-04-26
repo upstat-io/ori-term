@@ -54,7 +54,7 @@ impl<S: EffectSink> Term<S> {
         // popping, the next OSC 133 ; A / ; D still restores to an empty
         // stack rather than leaving child-pushed modes active. Bits
         // snapshot matches: `Some(NO_MODE)` means "restore to no kitty
-        // bits set". Inactive-screen live bits reset to NO_MODE. BUG-08-12.
+        // bits set". Inactive-screen live bits reset to NO_MODE. BUG-08-012.
         self.pre_command_kb_stack_snapshot = Some(VecDeque::new());
         self.inactive_pre_command_kb_stack_snapshot = Some(VecDeque::new());
         self.pre_command_kb_mode_bits_snapshot = Some(KeyboardModes::NO_MODE);
@@ -120,7 +120,7 @@ impl<S: EffectSink> Term<S> {
         self.cursor_shape = crate::grid::CursorShape::default();
         self.keyboard_mode_stack.clear();
         self.inactive_keyboard_mode_stack.clear();
-        // Same paired-snapshot seeding as RIS — see BUG-08-12.
+        // Same paired-snapshot seeding as RIS — see BUG-08-012.
         self.pre_command_kb_stack_snapshot = Some(VecDeque::new());
         self.inactive_pre_command_kb_stack_snapshot = Some(VecDeque::new());
         self.pre_command_kb_mode_bits_snapshot = Some(KeyboardModes::NO_MODE);

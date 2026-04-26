@@ -1,7 +1,7 @@
 //! SGR numeric-parameter walker.
 //!
 //! Walks `attrs_from_sgr_parameters` in
-//! `crates/vte/src/ansi/dispatch/csi.rs` and emits one
+//! `crates/vte/src/ansi/dispatch/csi/sgr.rs` and emits one
 //! `(CSI, [], <n>, m)` tuple per distinct SGR parameter code. The
 //! match is `match param { [0] => ..., [38] => ..., [38, params @ ..] => ..., ... }`
 //! — we take the FIRST numeric literal of each slice pattern as
@@ -10,6 +10,7 @@
 use std::collections::BTreeSet;
 
 use super::super::tuple::{Category, Tuple};
+use super::walk_match_exprs;
 
 pub(super) fn extract_sgr_params(file: &syn::File, out: &mut BTreeSet<Tuple>) {
     // Find the `attrs_from_sgr_parameters` function and walk its
@@ -25,22 +26,15 @@ pub(super) fn extract_sgr_params(file: &syn::File, out: &mut BTreeSet<Tuple>) {
 }
 
 fn collect_sgr_numeric_from_block(block: &syn::Block, out: &mut BTreeSet<Tuple>) {
-    struct SgrVisitor<'a> {
-        out: &'a mut BTreeSet<Tuple>,
-    }
-
-    impl syn::visit::Visit<'_> for SgrVisitor<'_> {
-        fn visit_expr_match(&mut self, m: &syn::ExprMatch) {
-            for arm in &m.arms {
-                collect_sgr_arm(&arm.pat, self.out);
-            }
-            // Don't descend further — the SGR match is the single
-            // top-level match we care about.
+    // The SGR `match param { ... }` is the single top-level match
+    // we care about — return false from the closure so the walker
+    // does not descend into nested matches.
+    walk_match_exprs(block, |m| {
+        for arm in &m.arms {
+            collect_sgr_arm(&arm.pat, out);
         }
-    }
-
-    let mut v = SgrVisitor { out };
-    syn::visit::Visit::visit_block(&mut v, block);
+        false
+    });
 }
 
 fn collect_sgr_arm(pat: &syn::Pat, out: &mut BTreeSet<Tuple>) {
