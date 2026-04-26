@@ -335,11 +335,20 @@ fn osc_ssot_matrix() -> Vec<(&'static str, Vec<&'static str>, Vec<&'static str>)
 /// `final_byte` after the SSOT alignment).
 #[test]
 fn osc_tuple_sig_aligns_across_all_four_producers() {
-    let mut visited = 0_usize;
+    let osc_path = workspace_root().join("crates/vte/src/ansi/dispatch/osc.rs");
+    let dispatch_source_present = osc_path.exists();
+
+    // Self-verifying matrix completeness counts each PRODUCER CELL
+    // exercised, not each selector. With dispatch source present:
+    // 9 selectors × 4 producers = 36 cells. Without it (cross-compiled
+    // / packaged builds): 9 × 3 = 27 cells (catalog, capture, runtime).
+    let mut producer_cells_exercised = 0_usize;
+
     for (selector, raw_payload, catalog_payload) in osc_ssot_matrix() {
         let p1 = catalog_signature(selector, &catalog_payload);
         let p3 = capture_signature(selector, &raw_payload);
         let p4 = runtime_observer_signature(selector, &raw_payload);
+        producer_cells_exercised += 3; // p1 + p3 + p4 always run
 
         assert_eq!(
             p1.2, selector,
@@ -367,8 +376,7 @@ fn osc_tuple_sig_aligns_across_all_four_producers() {
         // Producer 2 (dispatch) — every selector in this matrix has
         // an arm in `crates/vte/src/ansi/dispatch/osc.rs`, so the
         // lookup MUST succeed when the source file is present.
-        let osc_path = workspace_root().join("crates/vte/src/ansi/dispatch/osc.rs");
-        if osc_path.exists() {
+        if dispatch_source_present {
             let p2 = dispatch_signature(selector).unwrap_or_else(|| {
                 panic!(
                     "selector {selector}: dispatch_extract must yield a tuple with \
@@ -384,13 +392,16 @@ fn osc_tuple_sig_aligns_across_all_four_producers() {
                 p1, p2,
                 "selector {selector}: catalog and dispatch signatures must match"
             );
+            producer_cells_exercised += 1;
         }
-
-        visited += 1;
     }
+
+    let expected_cells = if dispatch_source_present { 36 } else { 27 };
+    let producer_count = if dispatch_source_present { 4 } else { 3 };
     assert_eq!(
-        visited, 9,
-        "self-verifying matrix completeness — expected 9 selectors visited"
+        producer_cells_exercised, expected_cells,
+        "self-verifying matrix completeness — expected {expected_cells} producer cells \
+         (9 selectors × {producer_count} producers), got {producer_cells_exercised}"
     );
 }
 
