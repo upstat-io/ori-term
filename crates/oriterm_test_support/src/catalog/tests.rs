@@ -21,17 +21,12 @@ use vte::ansi::PerformAction;
 
 use crate::spec_chain::uncataloged::{UncatalogedDetector, perform_action_to_tuple};
 
-/// Resolve the workspace root from `CARGO_MANIFEST_DIR`.
-fn workspace_root() -> std::path::PathBuf {
-    std::env::var("CARGO_MANIFEST_DIR")
-        .ok()
-        .and_then(|mpd| {
-            std::path::PathBuf::from(mpd)
-                .parent()?
-                .parent()
-                .map(std::path::Path::to_path_buf)
-        })
-        .unwrap_or_else(|| std::path::PathBuf::from("."))
+/// Resolve the term_repo workspace root via the canonical SSOT helper.
+/// All call sites in this file use term-repo-relative paths (vte source
+/// scanning); `paths::term_workspace_root()` is always available and has
+/// no wrapper concern. See `bug-tracker/plans/completed/BUG-08-028/`.
+fn workspace_root() -> &'static std::path::Path {
+    crate::paths::term_workspace_root()
 }
 
 // -------- walk_catalog_files -----------------------------------------------

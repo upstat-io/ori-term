@@ -984,7 +984,10 @@ fn enc_numpad(key: Key, mode: TermMode) -> Vec<u8> {
 #[test]
 fn kitty_numpad_one_emits_codepoint_57400() {
     let r = enc_numpad(Key::Character("1".into()), kitty_disambiguate());
-    assert_eq!(r, b"\x1b[57400u", "numpad 1 MUST emit CSI 57400 u — got {r:?}");
+    assert_eq!(
+        r, b"\x1b[57400u",
+        "numpad 1 MUST emit CSI 57400 u — got {r:?}"
+    );
 }
 
 /// BUG-08-026: numpad 0 → 57399 (low end of the codepoint range).

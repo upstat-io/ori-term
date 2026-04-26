@@ -15,52 +15,68 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use oriterm_test_support::catalog::build_catalog_signature_set;
+use oriterm_test_support::paths;
 use oriterm_test_support::spec_chain::coverage::{
     CoverageBaseline, CoverageReport, check_audit_files, explain_file,
 };
 use oriterm_test_support::spec_chain::uncataloged;
 
 fn main() -> ExitCode {
-    let workspace_root = find_workspace_root();
+    let term_root = paths::term_workspace_root();
     let args: Vec<String> = std::env::args().collect();
 
     // `--explain <path>` walks one file's citation lines and prints per-
     // piece normalizer trace (accepted vs. dropped, with drop reason).
-    // Diagnostic for silently-dropped citations — the scanner accepts
-    // only bare ASCII identifiers after normalization; em-dashes, nested
-    // backticks, and other prose in the citation tail cause silent drops.
+    // The path argument is term-repo-relative — test/source files live under
+    // term_repo/, NOT the wrapper.
     if let Some(explain_idx) = args.iter().position(|a| a == "--explain") {
-        return run_explain(&args, explain_idx, &workspace_root);
+        return run_explain(&args, explain_idx, term_root);
     }
+
+    // Wrapper-resident gate: catalog, baseline, audit-files all live at the
+    // wrapper root. Standalone term_repo checkout = graceful skip + exit 0
+    // per `.claude/rules/tests.md §Graceful Skip Protocol`. Explicit gates
+    // (catalog/baseline/audits) require the wrapper; without it there is
+    // nothing this binary can do.
+    let Some(wrapper) = paths::wrapper_root() else {
+        eprintln!(
+            "SKIP: spec-coverage-report — wrapper repo not discoverable from {}",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        eprintln!(
+            "       (standalone term_repo checkout — wrapper-only `plans/spec-conformance/` absent)"
+        );
+        return ExitCode::SUCCESS;
+    };
 
     // `--check audit-files` runs the top-down audit-file lint ONLY
     // (separate gate from the coverage report). Wire point for the
     // audits/ SSOT introduced in Section 09A.
     if args.iter().any(|a| a == "audit-files") && args.iter().any(|a| a == "--check") {
-        let plan_root = workspace_root.join("plans/spec-conformance");
+        let plan_root = wrapper.join("plans/spec-conformance");
         return run_audit_files_lint(&plan_root);
     }
 
-    let catalog_dir = workspace_root.join("plans/spec-conformance/catalog");
+    let catalog_dir = wrapper.join("plans/spec-conformance/catalog");
     let test_roots: Vec<PathBuf> = vec![
-        workspace_root.join("oriterm_core/tests"),
-        workspace_root.join("oriterm_core/src"),
-        workspace_root.join("oriterm/tests"),
-        workspace_root.join("oriterm/src"),
-        workspace_root.join("oriterm_ui/tests"),
-        workspace_root.join("oriterm_ui/src"),
-        workspace_root.join("oriterm_mux/tests"),
-        workspace_root.join("oriterm_mux/src"),
-        workspace_root.join("crates/oriterm_test_support/src"),
-        workspace_root.join("crates/oriterm_test_support/tests"),
-        workspace_root.join("crates/vte/src"),
+        term_root.join("oriterm_core/tests"),
+        term_root.join("oriterm_core/src"),
+        term_root.join("oriterm/tests"),
+        term_root.join("oriterm/src"),
+        term_root.join("oriterm_ui/tests"),
+        term_root.join("oriterm_ui/src"),
+        term_root.join("oriterm_mux/tests"),
+        term_root.join("oriterm_mux/src"),
+        term_root.join("crates/oriterm_test_support/src"),
+        term_root.join("crates/oriterm_test_support/tests"),
+        term_root.join("crates/vte/src"),
     ];
 
     // Exclude the scanner's own source and binary to prevent it from
     // reading doc-comment examples as real catalog citations.
     let exclude_dirs: Vec<PathBuf> = vec![
-        workspace_root.join("crates/oriterm_test_support/src/bin"),
-        workspace_root.join("crates/oriterm_test_support/src/spec_chain/coverage"),
+        term_root.join("crates/oriterm_test_support/src/bin"),
+        term_root.join("crates/oriterm_test_support/src/spec_chain/coverage"),
     ];
 
     let report = match CoverageReport::build(&catalog_dir, &test_roots, &exclude_dirs) {
@@ -74,7 +90,7 @@ fn main() -> ExitCode {
     report.print_table();
 
     if std::env::args().any(|a| a == "--check") {
-        let baseline_path = workspace_root.join("plans/spec-conformance/coverage-baseline.toml");
+        let baseline_path = wrapper.join("plans/spec-conformance/coverage-baseline.toml");
         let baseline = match CoverageBaseline::load(&baseline_path) {
             Ok(b) => b,
             Err(e) => {
@@ -109,7 +125,7 @@ fn main() -> ExitCode {
         // execution that have no matching catalog row. Subtracts the
         // known catalog signature set so already-cataloged sequences
         // don't trigger false failures.
-        let spool_dir = workspace_root.join("target/spec-chain-uncataloged");
+        let spool_dir = term_root.join("target/spec-chain-uncataloged");
         let catalog_sigs = build_catalog_signature_set(&catalog_dir).unwrap_or_default();
         let has_backlog = report_uncataloged_backlog(&spool_dir, &catalog_sigs);
 
@@ -223,16 +239,4 @@ fn run_audit_files_lint(plan_root: &Path) -> ExitCode {
     } else {
         ExitCode::SUCCESS
     }
-}
-
-/// Find the workspace root by walking up from `CARGO_MANIFEST_DIR`.
-fn find_workspace_root() -> PathBuf {
-    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    // oriterm_test_support is at crates/oriterm_test_support/
-    // workspace root is two levels up.
-    manifest_dir
-        .parent()
-        .and_then(|p| p.parent())
-        .map(Path::to_path_buf)
-        .unwrap_or(manifest_dir)
 }

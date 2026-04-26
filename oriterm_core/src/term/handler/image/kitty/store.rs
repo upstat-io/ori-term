@@ -40,16 +40,14 @@ impl Drop for TempFileGuard<'_> {
     }
 }
 
-/// Open `path` with O_NONBLOCK on Unix, fstat the OPENED descriptor, and
+/// Open `path` with `O_NONBLOCK` on Unix, fstat the OPENED descriptor, and
 /// reject non-regular files (FIFO, socket, char-device, dir, Windows
 /// reparse-point that doesn't resolve to a regular file). The returned
 /// metadata comes from the descriptor (not the path) so it's free of
-/// the path-based TOCTOU window between stat and open. O_NONBLOCK is
+/// the path-based TOCTOU window between stat and open. `O_NONBLOCK` is
 /// harmless on regular files post-fstat; on Unix it prevents indefinite
 /// blocking when the path resolves to a FIFO without a writer.
-fn open_regular_file(
-    path: &std::path::Path,
-) -> Result<(std::fs::File, std::fs::Metadata), String> {
+fn open_regular_file(path: &std::path::Path) -> Result<(std::fs::File, std::fs::Metadata), String> {
     let mut opts = std::fs::OpenOptions::new();
     opts.read(true);
     #[cfg(unix)]

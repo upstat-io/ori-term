@@ -426,7 +426,11 @@ fn kitty_decode_pixels_extreme_dimensions_returns_einval_no_panic() {
         &b64(b"AAAA"), // tiny payload — irrelevant; size check rejects first
     ));
 
-    assert_eq!(placement_count(&h), 0, "extreme dims MUST NOT produce a placement");
+    assert_eq!(
+        placement_count(&h),
+        0,
+        "extreme dims MUST NOT produce a placement"
+    );
     let replies = reply_bytes(&h);
     let s = String::from_utf8_lossy(&replies);
     assert!(
@@ -469,4 +473,3 @@ fn kitty_animate_missing_image_id_returns_enoent() {
         "a=a without i= MUST emit ENOENT (mirrors a=p) — got {s:?}",
     );
 }
-

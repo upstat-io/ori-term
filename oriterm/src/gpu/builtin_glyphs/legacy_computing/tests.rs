@@ -10,27 +10,26 @@ use super::octants::{OCTANT_END, OCTANT_MASKS, OCTANT_START};
 
 /// Path to the canonical octant bitmask artifact.
 ///
-/// The file lives in the workspace's `plans/spec-conformance/specs/`
-/// directory; the test resolves it relative to the crate's
-/// `CARGO_MANIFEST_DIR` so it works under `cargo test` regardless of
-/// the invoker's CWD.
-fn octant_mapping_artifact_path() -> PathBuf {
-    let crate_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    crate_root
-        .join("..")
-        .join("plans")
-        .join("spec-conformance")
-        .join("specs")
-        .join("octant-bitmask-mapping.md")
+/// The file lives in the wrapper repo at
+/// `plans/spec-conformance/specs/octant-bitmask-mapping.md`. Path discovery
+/// goes through the SSOT helper introduced in BUG-08-028 — never reintroduce
+/// ad-hoc `crate_root.join("..").join("plans")` arithmetic, which silently
+/// breaks under the wrapper/subrepo split.
+///
+/// Returns `None` when the wrapper repo is not discoverable (standalone
+/// term_repo checkout); consumers MUST graceful-skip per
+/// `.claude/rules/tests.md §Graceful Skip Protocol`.
+fn octant_mapping_artifact_path() -> Option<PathBuf> {
+    oriterm_test_support::paths::specs_dir().map(|d| d.join("octant-bitmask-mapping.md"))
 }
 
 /// Parse the canonical artifact's table into a `Vec<(u32, u8)>`.
 ///
 /// Each row has the shape `| U+1CDxx | 0xNN | 0b... | ... |`; the parser
 /// extracts the codepoint (hex after `U+`) and the mask (hex after `0x`).
-fn parse_canonical_mapping() -> Vec<(u32, u8)> {
-    let contents = fs::read_to_string(octant_mapping_artifact_path())
-        .expect("canonical octant bitmask artifact must exist for the guard test");
+fn parse_canonical_mapping(path: &std::path::Path) -> Vec<(u32, u8)> {
+    let contents = fs::read_to_string(path)
+        .unwrap_or_else(|e| panic!("read canonical artifact at {}: {e}", path.display()));
 
     let mut rows = Vec::new();
     for line in contents.lines() {
@@ -66,7 +65,14 @@ fn parse_canonical_mapping() -> Vec<(u32, u8)> {
 /// build. This is the regression guard §11.1 documents.
 #[test]
 fn octants_table_matches_canonical_artifact() {
-    let rows = parse_canonical_mapping();
+    let Some(path) = octant_mapping_artifact_path() else {
+        eprintln!(
+            "SKIP: canonical octant artifact — wrapper repo not discoverable \
+             (standalone term_repo checkout)"
+        );
+        return;
+    };
+    let rows = parse_canonical_mapping(&path);
     assert_eq!(
         rows.len(),
         230,

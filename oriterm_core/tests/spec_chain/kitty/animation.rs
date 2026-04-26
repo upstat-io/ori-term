@@ -345,7 +345,10 @@ fn kitty_animate_s_two_sets_wait_mode_and_s_three_clears_it() {
         .animation_state(ImageId::from_raw(67))
         .unwrap();
     assert!(!state.paused, "a=a,s=2 MUST clear paused");
-    assert_eq!(state.loops_completed, 0, "a=a,s=2 MUST reset loops_completed");
+    assert_eq!(
+        state.loops_completed, 0,
+        "a=a,s=2 MUST reset loops_completed"
+    );
     assert!(state.wait_mode, "a=a,s=2 MUST set wait_mode=true");
 
     // s=3 (run) — clears wait_mode.

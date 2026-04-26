@@ -59,19 +59,21 @@
 /// Anchor: BUG-08-006 / HYG-13.1-011.
 #[test]
 fn ecma48_c0_enq_catalog_row_still_missing() {
-    // BUG-08-028: the spec-conformance catalog lives in the wrapper repo
-    // (`plans/spec-conformance/catalog/`), not in `term_repo/`. When the
-    // test runs from a standalone term_repo checkout (no wrapper present),
-    // the file is absent — graceful skip per
-    // `.claude/rules/tests.md §Graceful Skip Protocol` rather than panic.
-    let catalog_path = concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../../plans/spec-conformance/catalog/ecma-48.md"
-    );
-    let Ok(catalog) = std::fs::read_to_string(catalog_path) else {
+    // The spec-conformance catalog lives in the wrapper repo. When the test
+    // runs from a standalone term_repo checkout (no wrapper present), the
+    // file is absent — graceful skip per `.claude/rules/tests.md §Graceful
+    // Skip Protocol`. Path discovery via the SSOT helper introduced in
+    // BUG-08-028; never reintroduce ad-hoc `manifest_dir.parent()` arithmetic.
+    let Some(catalog_dir) = oriterm_test_support::paths::catalog_dir() else {
+        eprintln!("SKIP: ECMA-48 catalog not present (term_repo running without wrapper)");
+        return;
+    };
+    let catalog_path = catalog_dir.join("ecma-48.md");
+    let Ok(catalog) = std::fs::read_to_string(&catalog_path) else {
         eprintln!(
-            "SKIP: catalog/ecma-48.md not found at {catalog_path} \
-             (term_repo running without wrapper layout)"
+            "SKIP: catalog/ecma-48.md not found at {} \
+             (wrapper present but file missing)",
+            catalog_path.display()
         );
         return;
     };

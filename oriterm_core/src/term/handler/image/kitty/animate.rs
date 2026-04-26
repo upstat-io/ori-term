@@ -23,19 +23,17 @@ impl<S: EffectSink> Term<S> {
         // given, try resolving via `newest_by_image_number(I)` before
         // emitting ENOENT.
         let ctx = KittyReplyContext::from_cmd(cmd);
-        let image_id = match cmd.image_id {
-            Some(id) => id,
-            None => match cmd.image_number.and_then(|n| {
-                self.image_cache()
-                    .newest_by_image_number(n)
-                    .map(|ImageId(id)| id)
-            }) {
-                Some(id) => id,
-                None => {
-                    self.kitty_respond(&ctx, "ENOENT");
-                    return;
-                }
-            },
+        let image_id = if let Some(id) = cmd.image_id {
+            id
+        } else if let Some(id) = cmd.image_number.and_then(|n| {
+            self.image_cache()
+                .newest_by_image_number(n)
+                .map(|ImageId(id)| id)
+        }) {
+            id
+        } else {
+            self.kitty_respond(&ctx, "ENOENT");
+            return;
         };
 
         let id = ImageId(image_id);

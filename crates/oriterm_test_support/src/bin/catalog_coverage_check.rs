@@ -19,6 +19,33 @@ use oriterm_test_support::catalog::{
     extract_namedprivatemode_tuples, format_report, load_all_catalog_rows, parse_catalog_markdown,
     reconcile, tuple_signature, walk_catalog_files,
 };
+use oriterm_test_support::paths;
+
+/// Resolve a wrapper-resident catalog dir argument: if user passed
+/// `--catalog-dir`, use it verbatim; otherwise fall back to the discovered
+/// wrapper layout. Returns None when neither is available — the caller
+/// graceful-skips per `tests.md §Graceful Skip Protocol`.
+fn resolve_catalog_dir(cli_arg: Option<PathBuf>) -> Option<PathBuf> {
+    cli_arg.or_else(paths::catalog_dir)
+}
+
+/// Resolve a wrapper-resident captures dir argument. Same shape as
+/// `resolve_catalog_dir`.
+fn resolve_captures_dir(cli_arg: Option<PathBuf>) -> Option<PathBuf> {
+    cli_arg.or_else(paths::captures_dir)
+}
+
+/// Emit a SKIP line and return successful exit when wrapper resources are
+/// absent and the user didn't override via CLI. Per `tests.md §Graceful
+/// Skip Protocol` for wrapper-conditional gates.
+fn skip_no_wrapper(arg_name: &str, command_name: &str) -> ExitCode {
+    eprintln!(
+        "SKIP: {command_name} — wrapper repo not discoverable from {} \
+         (standalone term_repo checkout — pass {arg_name} explicitly to override)",
+        env!("CARGO_MANIFEST_DIR"),
+    );
+    ExitCode::SUCCESS
+}
 
 #[derive(Parser)]
 #[command(
@@ -35,10 +62,11 @@ struct Cli {
 enum Command {
     /// Run the full check pass: schema, anti-LEAK, anti-drift.
     Check {
-        /// Path to `plans/spec-conformance/catalog/` (defaults to
-        /// the path relative to the workspace root).
-        #[arg(long, default_value = "plans/spec-conformance/catalog")]
-        catalog_dir: PathBuf,
+        /// Path to `plans/spec-conformance/catalog/`. Resolved via
+        /// `paths::catalog_dir()` (wrapper repo walk-up) when omitted.
+        /// Standalone `term_repo` without wrapper: SKIP + exit 0.
+        #[arg(long)]
+        catalog_dir: Option<PathBuf>,
 
         /// Enable bootstrap mode — reject `verified` rows. This is
         /// the CI gate for Section 01; it is retired after Section
@@ -69,8 +97,8 @@ enum Command {
     /// Extract catalog row tuples (the canonical form of every
     /// `Sequence` column).
     ExtractCatalogTuples {
-        #[arg(long, default_value = "plans/spec-conformance/catalog")]
-        catalog_dir: PathBuf,
+        #[arg(long)]
+        catalog_dir: Option<PathBuf>,
     },
 
     /// Extract capture-file tuples via `vte::Parser`.
@@ -94,8 +122,8 @@ enum Command {
     /// Extract top-down (spec-sourced) catalog tuples. Filters out
     /// rows with MISSING or wezterm in Spec source.
     ExtractTopDownTuples {
-        #[arg(long, default_value = "plans/spec-conformance/catalog")]
-        catalog_dir: PathBuf,
+        #[arg(long)]
+        catalog_dir: Option<PathBuf>,
     },
 
     /// Three-way reconciliation: bottom-up (dispatch) vs top-down
@@ -105,11 +133,11 @@ enum Command {
         #[arg(long, default_value = ".")]
         workspace_root: PathBuf,
 
-        #[arg(long, default_value = "plans/spec-conformance/catalog")]
-        catalog_dir: PathBuf,
+        #[arg(long)]
+        catalog_dir: Option<PathBuf>,
 
-        #[arg(long, default_value = "plans/spec-conformance/captures")]
-        captures_dir: PathBuf,
+        #[arg(long)]
+        captures_dir: Option<PathBuf>,
     },
 
     /// Assert that a capture's top 10 most-frequent tuples all have
@@ -119,8 +147,8 @@ enum Command {
         cap_file: PathBuf,
 
         /// Path to `plans/spec-conformance/catalog/`.
-        #[arg(long, default_value = "plans/spec-conformance/catalog")]
-        catalog_dir: PathBuf,
+        #[arg(long)]
+        catalog_dir: Option<PathBuf>,
     },
 }
 
@@ -131,27 +159,55 @@ fn main() -> ExitCode {
             catalog_dir,
             bootstrap_mode,
             workspace_root,
-        } => run_check(&catalog_dir, bootstrap_mode, workspace_root.as_deref()),
+        } => {
+            let Some(catalog_dir) = resolve_catalog_dir(catalog_dir) else {
+                return skip_no_wrapper("--catalog-dir", "catalog_coverage_check check");
+            };
+            run_check(&catalog_dir, bootstrap_mode, workspace_root.as_deref())
+        }
         Command::ExtractDispatchTuples { workspace_root } => run_extract_dispatch(&workspace_root),
         Command::ExtractNamedPrivateModeTuples { workspace_root } => {
             run_extract_namedprivatemode(&workspace_root)
         }
-        Command::ExtractCatalogTuples { catalog_dir } => run_extract_catalog(&catalog_dir),
+        Command::ExtractCatalogTuples { catalog_dir } => {
+            let Some(catalog_dir) = resolve_catalog_dir(catalog_dir) else {
+                return skip_no_wrapper("--catalog-dir", "extract-catalog-tuples");
+            };
+            run_extract_catalog(&catalog_dir)
+        }
         Command::ExtractCaptureTuples { cap_file } => run_extract_captures(&cap_file),
         Command::Classify {
             tuple,
             workspace_root,
         } => run_classify(&tuple, &workspace_root),
-        Command::ExtractTopDownTuples { catalog_dir } => run_extract_top_down(&catalog_dir),
+        Command::ExtractTopDownTuples { catalog_dir } => {
+            let Some(catalog_dir) = resolve_catalog_dir(catalog_dir) else {
+                return skip_no_wrapper("--catalog-dir", "extract-top-down-tuples");
+            };
+            run_extract_top_down(&catalog_dir)
+        }
         Command::Reconcile {
             workspace_root,
             catalog_dir,
             captures_dir,
-        } => run_reconcile(&workspace_root, &catalog_dir, &captures_dir),
+        } => {
+            let Some(catalog_dir) = resolve_catalog_dir(catalog_dir) else {
+                return skip_no_wrapper("--catalog-dir", "reconcile");
+            };
+            let Some(captures_dir) = resolve_captures_dir(captures_dir) else {
+                return skip_no_wrapper("--captures-dir", "reconcile");
+            };
+            run_reconcile(&workspace_root, &catalog_dir, &captures_dir)
+        }
         Command::CaptureTop10Covered {
             cap_file,
             catalog_dir,
-        } => run_capture_top10_covered(&cap_file, &catalog_dir),
+        } => {
+            let Some(catalog_dir) = resolve_catalog_dir(catalog_dir) else {
+                return skip_no_wrapper("--catalog-dir", "capture-top10-covered");
+            };
+            run_capture_top10_covered(&cap_file, &catalog_dir)
+        }
     }
 }
 

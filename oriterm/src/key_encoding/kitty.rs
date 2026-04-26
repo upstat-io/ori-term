@@ -18,7 +18,7 @@ use oriterm_core::TermMode;
 /// Returns `None` when the key isn't on the numpad or isn't one of the
 /// standard numpad keys. The caller MUST gate this on `input.location ==
 /// KeyLocation::Numpad` AND any kitty-keyboard-protocol flag being active
-/// — that gating happens at the encode_kitty entry, so this helper just
+/// — that gating happens at the `encode_kitty` entry, so this helper just
 /// performs the table lookup.
 ///
 /// Codepoint table mirrors alacritty's `try_build_numpad`
@@ -178,7 +178,14 @@ pub(super) fn encode_kitty(input: &KeyInput<'_>) -> Vec<u8> {
         } else {
             None
         };
-        return build_csi_sequence(cp, input.mods, event_suffix, text.as_deref(), None, alternate);
+        return build_csi_sequence(
+            cp,
+            input.mods,
+            event_suffix,
+            text.as_deref(),
+            None,
+            alternate,
+        );
     }
 
     // DISAMBIGUATE_ESC_CODES (flags=1) only uses CSI u for keys that are
