@@ -59,11 +59,22 @@
 /// Anchor: BUG-08-006 / HYG-13.1-011.
 #[test]
 fn ecma48_c0_enq_catalog_row_still_missing() {
-    let catalog = std::fs::read_to_string(concat!(
+    // BUG-08-028: the spec-conformance catalog lives in the wrapper repo
+    // (`plans/spec-conformance/catalog/`), not in `term_repo/`. When the
+    // test runs from a standalone term_repo checkout (no wrapper present),
+    // the file is absent — graceful skip per
+    // `.claude/rules/tests.md §Graceful Skip Protocol` rather than panic.
+    let catalog_path = concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../plans/spec-conformance/catalog/ecma-48.md"
-    ))
-    .expect("catalog/ecma-48.md must exist");
+        "/../../plans/spec-conformance/catalog/ecma-48.md"
+    );
+    let Ok(catalog) = std::fs::read_to_string(catalog_path) else {
+        eprintln!(
+            "SKIP: catalog/ecma-48.md not found at {catalog_path} \
+             (term_repo running without wrapper layout)"
+        );
+        return;
+    };
 
     let row = catalog
         .lines()
