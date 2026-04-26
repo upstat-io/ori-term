@@ -19,7 +19,7 @@ use super::{
 
 use vte::ansi::PerformAction;
 
-use crate::spec_chain::uncataloged::UncatalogedDetector;
+use crate::spec_chain::uncataloged::{UncatalogedDetector, perform_action_to_tuple};
 
 /// Resolve the workspace root from `CARGO_MANIFEST_DIR`.
 fn workspace_root() -> std::path::PathBuf {
@@ -249,11 +249,12 @@ fn catalog_sequence_string(selector: &str, payload_placeholders: &[&str]) -> Str
     s
 }
 
-/// Producer 4: feed a synthesized `PerformAction::OscDispatch` directly
-/// to `UncatalogedDetector`. Reconstruct the producing `Tuple` from the
-/// signature so callers can pin both the signature AND the per-producer
-/// `params` shape (the runtime observer leaves `params` empty by
-/// design — payload is not surfaced through `PerformAction`).
+/// Producer 4: feed a synthesized `PerformAction::OscDispatch` to
+/// `perform_action_to_tuple` and return the producer's actual `Tuple`
+/// (NOT a reconstructed proxy). Also exercise `UncatalogedDetector`
+/// with the same action and assert its signature matches the producer
+/// tuple's signature, so the observer-level invariant is verified
+/// alongside the producer-level shape.
 fn runtime_observer_tuple(selector: &str, payload: &[&str]) -> Tuple {
     let mut params: Vec<Vec<u8>> = vec![selector.as_bytes().to_vec()];
     for p in payload {
@@ -263,17 +264,27 @@ fn runtime_observer_tuple(selector: &str, payload: &[&str]) -> Tuple {
         params,
         bell_terminated: true,
     };
+
+    // Observe the producer's actual Tuple — `params` shape is what the
+    // producer constructs, not what the test reconstructs from a sig.
+    let producer_tuple = perform_action_to_tuple(&action).expect("OscDispatch must yield a Tuple");
+
+    // Also verify the UncatalogedDetector path produces the same signature.
     let mut detector = UncatalogedDetector::new();
     detector.feed_actions(&[action]);
-    let sig = detector
+    let detector_sig = detector
         .seen()
         .iter()
         .next()
         .cloned()
         .expect("UncatalogedDetector must produce one signature for OscDispatch");
-    // Runtime observer empties `params` by contract — see
-    // `spec_chain/uncataloged/mod.rs::perform_action_to_sig`.
-    Tuple::new(Category::Osc, sig.1, "", sig.2)
+    assert_eq!(
+        producer_tuple.signature(),
+        detector_sig,
+        "perform_action_to_tuple and UncatalogedDetector must agree on the signature"
+    );
+
+    producer_tuple
 }
 
 /// Producer 3: write the OSC byte stream to a tempfile, run

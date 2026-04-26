@@ -359,34 +359,37 @@ Phase 2 Finding G rejected manual coverage walks as human-error-prone. This subs
     - DCS with intermediate `$` and final `q` (DECRQSS — query selection/state): `(DCS, [$], Pt, q)` — the `$` intermediate is preserved, the payload text (e.g., the request identifier like `"r"` for DECSTBM query) collapses to `Pt`.
     - DCS with intermediate `!` and final `|` (DECUDK — user-defined keys): `(DCS, [!], Pt, |)` — same pattern.
     - Generic DCS fallback: `(DCS, [<sorted intermediates>], Pt, <final>)` — payload text always collapses to `Pt`; intermediates and final byte preserved. This rule is tested by `capture_normalizes_dcs_sixel_payload_to_pid_placeholder`, `capture_normalizes_dcs_decrqss_payload_to_pt_placeholder`, and a `dcs_generic_fallback_preserves_intermediates_and_final_byte` negative-pin test that rejects any DCS tuple with a non-placeholder payload.
-  - **OSC with numeric sub-op identifier (Phase 4 iteration-3 TPR-01-003-gemini + iteration-4 TPR-01-003-codex full mapping):** The first parameter of an OSC sequence is its NUMERIC IDENTIFIER (e.g., the `0` in `OSC 0 ; text BEL`, the `4` in `OSC 4 ; 1 ; rgb:ff/00/00 BEL`, etc.). This NUMBER MUST be preserved literally in the tuple — it IS the dispatch key. Only the text AFTER the numeric identifier collapses to a placeholder. Canonical OSC tuple form: `(OSC, [], <numeric-id>;<placeholder>, <terminator>)` where:
-    - `<numeric-id>` is the literal decimal number (e.g., `0`, `4`, `7`, `8`, `52`, `133`, `1337`)
-    - `<terminator>` is either `BEL` (0x07) or `ST` (0x9C or `ESC \\`)
-    - `<placeholder>` is MODE-dependent; the normalization function dispatches on `<numeric-id>` to pick the right placeholder shape.
+  - **OSC with numeric sub-op identifier (Phase 4 iteration-3 TPR-01-003-gemini + iteration-4 TPR-01-003-codex full mapping; SSOT alignment landed in BUG-07-019, commit 49ccb2e0):** The first parameter of an OSC sequence is its NUMERIC IDENTIFIER (e.g., the `0` in `OSC 0 ; text BEL`, the `4` in `OSC 4 ; 1 ; rgb:ff/00/00 BEL`, etc.). This NUMBER MUST be preserved literally in the tuple — it IS the dispatch key. The text AFTER the numeric identifier collapses to a placeholder. Canonical OSC tuple form: `(OSC, [], <placeholder>, <selector>)` where:
+    - `<selector>` is the literal OSC dispatch identifier in `final_byte` — decimal numbers (`0`, `4`, `52`, `1337`) OR Sun console aliases (`L`, `l`). The selector lives in `final_byte` (the dispatch-discriminator slot) so `Tuple::signature()` is per-selector-distinct; the OSC terminator (`BEL` / `ST`) is NOT in the tuple — the runtime observer doesn't see it and the catalog/capture canonicalizers drop it.
+    - `<placeholder>` is MODE-dependent; the normalization function dispatches on `<selector>` to pick the right placeholder shape.
 
     **Canonical placeholder mapping — exhaustive for every OSC number `crates/vte/src/ansi/dispatch/osc.rs` currently dispatches (iteration-5 TPR-01-002-codex / TPR-01-002-gemini fix — aligned to live dispatcher source):**
 
     The list below is derived from `crates/vte/src/ansi/dispatch/osc.rs:41-256` (verified 2026-04-11 against the actual match arms). Section 10 (OSC Suite) adds further OSC numbers (9, 133, 633, 777, and extended OSC 52 modes); those are NOT in Section 01's mapping because they are NOT dispatched yet — adding them to `catalog_coverage_check --check` would cause the check to fail on "missing dispatch arm" for every row. **When Section 10 lands**, new rows will be added to this table AND to the positive-pin test list in 01.3.b in the SAME commit that adds the dispatch arm (this is the live-source contract — the normalization table tracks the dispatcher, not the spec).
 
+    Tuple notation below uses the post-BUG-07-019 SSOT shape: `(OSC, [], <payload>, <selector>)` — selector in `final_byte` (the dispatch-discriminator slot), payload placeholders in `params`. Empty payload → `params` is the empty string.
+
     | OSC # | Purpose | Canonical tuple | Live dispatch arm |
     |---|---|---|---|
-    | 0 | Set window + icon title | `(OSC, [], 0;text, <term>)` | `osc.rs:43` |
-    | 1 | Set icon title only | `(OSC, [], 1;text, <term>)` | `osc.rs:43` (shared arm with 0, 2) |
-    | 2 | Set window title only | `(OSC, [], 2;text, <term>)` | `osc.rs:43` (shared arm with 0, 1) |
-    | 4 | Set/query palette index | set form: `(OSC, [], 4;index;rgb, <term>)`; query form: `(OSC, [], 4;index;?, <term>)` | `osc.rs:90` |
-    | 7 | Current working directory (URI) | `(OSC, [], 7;uri, <term>)` | `osc.rs:70` |
-    | 8 | Hyperlink (ID + URI) | `(OSC, [], 8;params;uri, <term>)` — `params` placeholder covers the `id=<id>` key-value sequence which the normalizer collapses | `osc.rs:117` |
-    | 10 | Set/query default foreground | set: `(OSC, [], 10;rgb, <term>)`; query: `(OSC, [], 10;?, <term>)` | `osc.rs:146` (shared arm with 11, 12) |
-    | 11 | Set/query default background | set: `(OSC, [], 11;rgb, <term>)`; query: `(OSC, [], 11;?, <term>)` | `osc.rs:146` (shared arm) |
-    | 12 | Set/query default cursor color | set: `(OSC, [], 12;rgb, <term>)`; query: `(OSC, [], 12;?, <term>)` | `osc.rs:146` (shared arm) |
-    | 22 | Set mouse cursor icon | `(OSC, [], 22;text, <term>)` | `osc.rs:180` |
-    | 50 | Set/query cursor shape (legacy) | `(OSC, [], 50;text, <term>)` | `osc.rs:189` |
-    | 52 | Clipboard (get/set base64) | set: `(OSC, [], 52;mode;b64, <term>)`; query: `(OSC, [], 52;mode;?, <term>)` | `osc.rs:207` |
-    | 104 | Reset palette entry (zero-arg form supported) | zero-arg: `(OSC, [], 104, <term>)`; index form: `(OSC, [], 104;index, <term>)` | `osc.rs:220` |
-    | 110 | Reset default foreground | `(OSC, [], 110, <term>)` (zero-arg — no payload) | `osc.rs:239` |
-    | 111 | Reset default background | `(OSC, [], 111, <term>)` (zero-arg) | `osc.rs:242` |
-    | 112 | Reset cursor color | `(OSC, [], 112, <term>)` (zero-arg) | `osc.rs:245` |
-    | 1337 | iTerm2 proprietary (File=, RemoteHost=, etc.) | `(OSC, [], 1337;key=value, <term>)` — the key-value pair structure collapses to the literal `key=value` placeholder | `osc.rs:248` |
+    | 0 | Set window + icon title | `(OSC, [], text, 0)` | `osc.rs:43` |
+    | 1 | Set icon title only | `(OSC, [], text, 1)` | `osc.rs:43` (shared arm with 0, 2) |
+    | 2 | Set window title only | `(OSC, [], text, 2)` | `osc.rs:43` (shared arm with 0, 1) |
+    | 4 | Set/query palette index | set form: `(OSC, [], index;rgb, 4)`; query form: `(OSC, [], index;?, 4)` | `osc.rs:90` |
+    | 7 | Current working directory (URI) | `(OSC, [], uri, 7)` | `osc.rs:70` |
+    | 8 | Hyperlink (ID + URI) | `(OSC, [], params;uri, 8)` — `params` placeholder covers the `id=<id>` key-value sequence which the normalizer collapses | `osc.rs:117` |
+    | 10 | Set/query default foreground | set: `(OSC, [], rgb, 10)`; query: `(OSC, [], ?, 10)` | `osc.rs:146` (shared arm with 11, 12) |
+    | 11 | Set/query default background | set: `(OSC, [], rgb, 11)`; query: `(OSC, [], ?, 11)` | `osc.rs:146` (shared arm) |
+    | 12 | Set/query default cursor color | set: `(OSC, [], rgb, 12)`; query: `(OSC, [], ?, 12)` | `osc.rs:146` (shared arm) |
+    | 22 | Set mouse cursor icon | `(OSC, [], text, 22)` | `osc.rs:180` |
+    | 50 | Set/query cursor shape (legacy) | `(OSC, [], text, 50)` | `osc.rs:189` |
+    | 52 | Clipboard (get/set base64) | set: `(OSC, [], mode;b64, 52)`; query: `(OSC, [], mode;?, 52)` | `osc.rs:207` |
+    | 104 | Reset palette entry (zero-arg form supported) | zero-arg: `(OSC, [], , 104)`; index form: `(OSC, [], index, 104)` | `osc.rs:220` |
+    | 110 | Reset default foreground | `(OSC, [], , 110)` (zero-arg — empty payload) | `osc.rs:239` |
+    | 111 | Reset default background | `(OSC, [], , 111)` (zero-arg) | `osc.rs:242` |
+    | 112 | Reset cursor color | `(OSC, [], , 112)` (zero-arg) | `osc.rs:245` |
+    | 1337 | iTerm2 proprietary (File=, RemoteHost=, etc.) | `(OSC, [], key=value, 1337)` — the key-value pair structure collapses to the literal `key=value` placeholder | `osc.rs:248` |
+    | L | Sun console alias for OSC 1 (icon title) | `(OSC, [], text, L)` | `osc.rs:317` (vendored Sun-console patch) |
+    | l | Sun console alias for OSC 2 (window title) | `(OSC, [], text, l)` | `osc.rs:324` (vendored Sun-console patch) |
 
     **Extensions when the dispatcher adds a new OSC number**: a new row MUST be appended to the table above (and a corresponding positive-pin test added to 01.3.b) in the SAME commit that adds the dispatch arm. This keeps the normalization contract in lockstep with the dispatcher. Known future additions:
 
