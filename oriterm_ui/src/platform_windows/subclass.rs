@@ -13,10 +13,10 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
     GetCursorPos, GetSystemMetrics, HTBOTTOM, HTBOTTOMLEFT, HTBOTTOMRIGHT, HTCAPTION, HTCLIENT,
     HTLEFT, HTRIGHT, HTTOP, HTTOPLEFT, HTTOPRIGHT, IsZoomed, KillTimer, NCCALCSIZE_PARAMS,
     SM_CXFRAME, SM_CXPADDEDBORDER, SM_CYFRAME, SW_HIDE, SWP_NOACTIVATE, SWP_NOZORDER, SetTimer,
-    SetWindowPos, ShowWindow, WM_DPICHANGED, WM_ENTERSIZEMOVE, WM_ERASEBKGND, WM_EXITSIZEMOVE,
-    WM_MOVING, WM_NCCALCSIZE, WM_NCDESTROY, WM_NCHITTEST, WM_SIZE, WM_SIZING, WM_TIMER,
-    WMSZ_BOTTOM, WMSZ_BOTTOMLEFT, WMSZ_BOTTOMRIGHT, WMSZ_LEFT, WMSZ_RIGHT, WMSZ_TOP, WMSZ_TOPLEFT,
-    WMSZ_TOPRIGHT,
+    SetWindowPos, ShowWindow, WA_INACTIVE, WM_ACTIVATE, WM_DPICHANGED, WM_DWMCOLORIZATIONCOLORCHANGED,
+    WM_ENTERSIZEMOVE, WM_ERASEBKGND, WM_EXITSIZEMOVE, WM_MOVING, WM_NCCALCSIZE, WM_NCDESTROY,
+    WM_NCHITTEST, WM_SIZE, WM_SIZING, WM_TIMER, WMSZ_BOTTOM, WMSZ_BOTTOMLEFT, WMSZ_BOTTOMRIGHT,
+    WMSZ_LEFT, WMSZ_RIGHT, WMSZ_TOP, WMSZ_TOPLEFT, WMSZ_TOPRIGHT,
 };
 
 use std::sync::atomic::Ordering;
@@ -292,6 +292,32 @@ pub(super) unsafe extern "system" fn subclass_proc(
             }
 
             WM_NCHITTEST => handle_nchittest(hwnd, lparam, data),
+
+            // BUG-10-001: focus-dependent accent border color. Swap between
+            // the system accent color (active) and `DWMWA_COLOR_NONE`
+            // (inactive) on focus changes — Microsoft Learn: "The
+            // application is responsible for changing the border color when
+            // the window state changes." Falls through to `DefSubclassProc`
+            // so winit + the rest of the app still receive the activation.
+            WM_ACTIVATE => {
+                // LOWORD(wParam): 0 = WA_INACTIVE, 1 = WA_ACTIVE, 2 = WA_CLICKACTIVE.
+                let activation = (wparam & 0xFFFF) as u32;
+                if activation == WA_INACTIVE {
+                    super::apply_inactive_border_color(hwnd);
+                } else {
+                    super::apply_active_border_color(hwnd);
+                }
+                DefSubclassProc(hwnd, msg, wparam, lparam)
+            }
+
+            // BUG-10-001: refresh the accent color when the user changes
+            // their accent color or theme via Settings. Without this, the
+            // border color stays stuck at whatever was current when the
+            // window was created.
+            WM_DWMCOLORIZATIONCOLORCHANGED => {
+                super::apply_active_border_color(hwnd);
+                DefSubclassProc(hwnd, msg, wparam, lparam)
+            }
 
             WM_DPICHANGED => {
                 // HIWORD(wParam) = new Y-axis DPI.
