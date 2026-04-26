@@ -37,8 +37,9 @@ fn main() -> ExitCode {
     // wrapper root. Standalone term_repo checkout = graceful skip + exit 0
     // per `.claude/rules/tests.md §Graceful Skip Protocol`. Explicit gates
     // (catalog/baseline/audits) require the wrapper; without it there is
-    // nothing this binary can do.
-    let Some(wrapper) = paths::wrapper_root() else {
+    // nothing this binary can do. `paths::catalog_dir()` is the SSOT entry
+    // point — every wrapper-relative subpath below derives from it.
+    let Some(catalog_dir) = paths::catalog_dir() else {
         eprintln!(
             "SKIP: spec-coverage-report — wrapper repo not discoverable from {}",
             env!("CARGO_MANIFEST_DIR")
@@ -53,11 +54,12 @@ fn main() -> ExitCode {
     // (separate gate from the coverage report). Wire point for the
     // audits/ SSOT introduced in Section 09A.
     if args.iter().any(|a| a == "audit-files") && args.iter().any(|a| a == "--check") {
-        let plan_root = wrapper.join("plans/spec-conformance");
+        let plan_root = paths::spec_conformance_dir()
+            .expect("wrapper present (catalog_dir resolved above)");
         return run_audit_files_lint(&plan_root);
     }
 
-    let catalog_dir = wrapper.join("plans/spec-conformance/catalog");
+
     let test_roots: Vec<PathBuf> = vec![
         term_root.join("oriterm_core/tests"),
         term_root.join("oriterm_core/src"),
@@ -90,7 +92,8 @@ fn main() -> ExitCode {
     report.print_table();
 
     if std::env::args().any(|a| a == "--check") {
-        let baseline_path = wrapper.join("plans/spec-conformance/coverage-baseline.toml");
+        let baseline_path = paths::coverage_baseline_path()
+            .expect("wrapper present (catalog_dir resolved above)");
         let baseline = match CoverageBaseline::load(&baseline_path) {
             Ok(b) => b,
             Err(e) => {

@@ -62,23 +62,6 @@ pub fn wrapper_root() -> Option<&'static Path> {
         .as_deref()
 }
 
-/// Strict variant of [`wrapper_root`] — returns the wrapper root or panics
-/// with a clear error message.
-///
-/// Use SPARINGLY. Only when the caller cannot graceful-skip (e.g., a
-/// command-line tool that genuinely requires the wrapper to do anything
-/// useful). The `spec-coverage-report` and `catalog_coverage_check` binaries
-/// invoked by `test-all.sh` use [`wrapper_root`] + graceful skip per the
-/// BUG-08-028 Plan TPR consensus, NOT this function.
-pub fn require_wrapper_root() -> &'static Path {
-    wrapper_root().unwrap_or_else(|| {
-        panic!(
-            "wrapper repo not discoverable: no `{SPEC_CONFORMANCE_MARKER}/` ancestor of {}",
-            env!("CARGO_MANIFEST_DIR"),
-        )
-    })
-}
-
 /// Wrapper-relative `plans/spec-conformance/`. Returns `None` when wrapper absent.
 pub fn spec_conformance_dir() -> Option<PathBuf> {
     wrapper_root().map(|r| r.join(SPEC_CONFORMANCE_MARKER))

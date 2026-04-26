@@ -20,12 +20,11 @@ use std::process::Command;
 /// top-level `Cargo.toml`). `cargo test` runs from each crate's
 /// directory, so we walk up two levels from this file's
 /// `CARGO_MANIFEST_DIR` (`oriterm_core`) to reach the workspace root.
+/// Resolve the term_repo workspace root via the canonical SSOT helper per
+/// `.claude/rules/test-organization.md §Wrapper/Subrepo Path Discovery` —
+/// never reintroduce ad-hoc `manifest_dir.parent()` arithmetic.
 fn workspace_root() -> PathBuf {
-    let crate_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    crate_dir
-        .parent()
-        .expect("workspace root must be the parent of CARGO_MANIFEST_DIR")
-        .to_path_buf()
+    oriterm_test_support::paths::term_workspace_root().to_path_buf()
 }
 
 /// Skip protocol for missing `grep`. Matches the `tack`/`reseq` pattern

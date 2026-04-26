@@ -69,14 +69,11 @@ fn ecma48_c0_enq_catalog_row_still_missing() {
         return;
     };
     let catalog_path = catalog_dir.join("ecma-48.md");
-    let Ok(catalog) = std::fs::read_to_string(&catalog_path) else {
-        eprintln!(
-            "SKIP: catalog/ecma-48.md not found at {} \
-             (wrapper present but file missing)",
-            catalog_path.display()
-        );
-        return;
-    };
+    // Wrapper is confirmed present (catalog_dir is Some); a read failure here
+    // is a real I/O error, not a graceful-skip case. Propagate per
+    // `.claude/rules/impl-hygiene.md §Error Handling at Boundaries`.
+    let catalog = std::fs::read_to_string(&catalog_path)
+        .unwrap_or_else(|e| panic!("read {}: {e}", catalog_path.display()));
 
     let row = catalog
         .lines()
