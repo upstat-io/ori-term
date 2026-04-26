@@ -9,11 +9,12 @@ export RUSTFLAGS="${RUSTFLAGS:+$RUSTFLAGS }-D warnings"
 # `UncatalogedDetector::serialize_to_dir`. Clear it so
 # `spec-coverage-report --check` runs against an empty spool and matches
 # CI's "lint-before-tests" ordering (where the rust-cache otherwise
-# restores stale spool entries across runs). This is load-bearing:
-# `build_catalog_signature_set` canonicalizes OSC rows with the BEL/ST
-# terminator in `final_byte`, while the runtime observer puts the OSC
-# numeric id there — every OSC tuple falsely reports as uncataloged
-# until that signature-alignment bug is fixed. See BUG-07-019.
+# restores stale spool entries across runs). The OSC TupleSig
+# canonicalization SSOT was fixed in BUG-07-019 (commit 49ccb2e0); the
+# remaining post-test `--check` BACKLOG categories (charset designation
+# Da/Esc, DCS, CSI', C0) are tracked separately and currently keep the
+# `--check` gate ordered before tests. Once those clear, the gate can
+# move post-test to detect genuine new sequences.
 rm -rf target/spec-chain-uncataloged
 
 # Spec-conformance coverage gates run FIRST — same ordering as CI's
