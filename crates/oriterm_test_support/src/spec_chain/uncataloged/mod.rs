@@ -100,7 +100,7 @@ impl UncatalogedDetector {
 /// the catalog's per-OSC `params` placeholder string is canonicalized
 /// via `osc_placeholder` in the catalog/capture path, not here).
 /// Made `pub` so the SSOT-alignment matrix can observe the producer's
-/// actual `Tuple` shape, not a reconstructed proxy (BUG-07-019 round-2).
+/// actual `Tuple` shape, not a reconstructed proxy (round-2).
 pub fn perform_action_to_tuple(action: &PerformAction) -> Option<Tuple> {
     match action {
         PerformAction::CsiDispatch {
@@ -141,14 +141,16 @@ pub fn perform_action_to_tuple(action: &PerformAction) -> Option<Tuple> {
             String::new(),
             action.to_string(),
         )),
-        PerformAction::Execute { byte } => Some(Tuple::new(
-            Category::C0,
-            Vec::new(),
-            String::new(),
-            format!("{byte:02x}"),
-        )),
-        // Data/framing actions are not catalogable sequence types.
-        PerformAction::Print { .. }
+        // C0 controls are dispatched per-byte through `Performer::execute`;
+        // neither the catalog (`canonical.rs:56`) nor the capture path
+        // (`capture_extract.rs::execute` is a no-op) emits a tuple for them.
+        // The runtime observer must agree — emitting C0 here would be the
+        // sole source of `Category::C0` tuples in the spool, producing
+        // false positives in `spec-coverage-report --check` BACKLOG for
+        // every test that triggers a newline / tab / bell.
+        // Data/framing actions are not catalogable sequence types either.
+        PerformAction::Execute { .. }
+        | PerformAction::Print { .. }
         | PerformAction::Put { .. }
         | PerformAction::Unhook
         | PerformAction::ApcStart

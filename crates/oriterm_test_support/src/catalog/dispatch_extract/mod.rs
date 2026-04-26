@@ -264,6 +264,37 @@ pub fn extract_dispatch_map(
     Ok(map)
 }
 
+// -------- Match-expression walker (shared by csi/osc/sgr) ----------------
+
+/// Walk `block` and invoke `callback` on every `ExprMatch` node.
+///
+/// The closure returns `true` to descend into the match expression's
+/// arms (continuing the walk into nested matches) and `false` to stop
+/// descent at this node. csi/osc walkers return `true` when their
+/// scrutinee predicate does NOT match (so nested matches still get
+/// visited); the sgr walker always returns `false` (the SGR
+/// `match param { ... }` is the single top-level match it cares about).
+///
+/// Replaces three identical inline `*Visitor` struct + impl blocks
+/// (csi/osc/sgr) per `impl-hygiene.md §Algorithmic DRY` (3+ instances).
+pub(super) fn walk_match_exprs<F>(block: &syn::Block, callback: F)
+where
+    F: FnMut(&syn::ExprMatch) -> bool,
+{
+    struct V<F>(F);
+
+    impl<F: FnMut(&syn::ExprMatch) -> bool> syn::visit::Visit<'_> for V<F> {
+        fn visit_expr_match(&mut self, m: &syn::ExprMatch) {
+            if (self.0)(m) {
+                syn::visit::visit_expr_match(self, m);
+            }
+        }
+    }
+
+    let mut v = V(callback);
+    syn::visit::Visit::visit_block(&mut v, block);
+}
+
 // -------- Handler method extraction from arm body AST --------------------
 
 /// Extract all `Handler::*` method names called in an AST

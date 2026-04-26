@@ -203,7 +203,7 @@ fn build_dispatch_map_includes_known_handler_names() {
     );
 }
 
-// -------- Cross-producer SSOT alignment matrix (BUG-07-019) ----------------
+// -------- Cross-producer SSOT alignment matrix ----------------
 //
 // Four producers construct OSC tuples that MUST yield identical
 // `TupleSig` for the same OSC sequence:
@@ -330,7 +330,7 @@ fn catalog_tuple(selector: &str, payload_placeholders: &[&str]) -> Tuple {
 /// The SSOT-alignment matrix. Each row is
 /// `(selector, raw_payload_args, catalog_payload_placeholders)`.
 /// Selectors are dispatched in `crates/vte/src/ansi/dispatch/osc.rs`
-/// and exercise the four producers per BUG-07-019 §2 TDD matrix.
+/// and exercise the four producers per §2 TDD matrix.
 fn osc_ssot_matrix() -> Vec<(&'static str, Vec<&'static str>, Vec<&'static str>)> {
     vec![
         // (selector, raw payload args for runtime/capture, catalog payload placeholders)
@@ -348,7 +348,7 @@ fn osc_ssot_matrix() -> Vec<(&'static str, Vec<&'static str>, Vec<&'static str>)
     ]
 }
 
-/// Regression: BUG-07-019 — all four OSC tuple producers MUST yield
+/// Regression: all four OSC tuple producers MUST yield
 /// identical `TupleSig` for the same OSC sequence (selector lives in
 /// `final_byte` after the SSOT alignment) AND each producer MUST
 /// emit the per-producer `params` shape its contract promises:
@@ -450,7 +450,7 @@ fn osc_tuple_sig_aligns_across_all_four_producers() {
     );
 }
 
-/// Regression: BUG-07-019 — distinct selectors yield distinct
+/// Regression: distinct selectors yield distinct
 /// signatures from each producer. Pre-fix all OSC TupleSig collapsed
 /// to `("OSC", [], "BEL")` regardless of selector — this pin would
 /// fail against the broken code.
@@ -464,7 +464,7 @@ fn osc_tuple_sig_distinct_per_selector() {
     assert_ne!(s1337, s4, "OSC 1337 and OSC 4 must have distinct sigs");
 }
 
-/// Regression: BUG-07-019 — no OSC TupleSig should carry "BEL" or
+/// Regression: no OSC TupleSig should carry "BEL" or
 /// "ST" in `final_byte` after the SSOT alignment (selector took the
 /// slot). Negative pin against the broken pre-fix shape.
 #[test]
@@ -486,7 +486,7 @@ fn osc_tuple_sig_does_not_collapse_to_terminator() {
     }
 }
 
-/// Regression: BUG-07-019 — after the SSOT alignment, the OSC
+/// Regression: after the SSOT alignment, the OSC
 /// normalization in `classify_from_map` (`classify/mod.rs:127-143`)
 /// drops `params` and matches on `(category, intermediates,
 /// final_byte)` — the simplest possible bridge between capture
