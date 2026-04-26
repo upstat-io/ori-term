@@ -411,3 +411,44 @@ fn kitty_store_from_file_empty_file_returns_einval() {
         "empty file with f=32,s=4,v=4 MUST emit EINVAL (0 != expected 64) — got {s:?}",
     );
 }
+
+/// BUG-08-029: `kitty_decode_pixels` `(w * h * 4)` overflow protection.
+/// Pin: feeding `s=u32::MAX,v=u32::MAX,f=32` MUST emit EINVAL without
+/// panic (debug build would have panicked on the bare multiplication;
+/// release build would have wrapped to 0 and corrupted the size check).
+#[test]
+fn kitty_decode_pixels_extreme_dimensions_returns_einval_no_panic() {
+    let mut h = SpecHarness::new();
+    // s=4294967295,v=4294967295 — u32::MAX × u32::MAX × 4 overflows usize on
+    // 64-bit (u32::MAX^2 is ~1.8e19, near u64::MAX; ×4 wraps).
+    h.feed(&kitty_apc(
+        b"a=T,i=89,t=d,f=32,s=4294967295,v=4294967295",
+        &b64(b"AAAA"), // tiny payload — irrelevant; size check rejects first
+    ));
+
+    assert_eq!(placement_count(&h), 0, "extreme dims MUST NOT produce a placement");
+    let replies = reply_bytes(&h);
+    let s = String::from_utf8_lossy(&replies);
+    assert!(
+        s.contains("EINVAL") && s.contains("overflow"),
+        "extreme dims MUST emit `EINVAL: ... overflow usize` — got {s:?}",
+    );
+}
+
+/// BUG-08-029: same overflow protection for `f=24` (RGB) format.
+#[test]
+fn kitty_decode_pixels_extreme_dimensions_rgb_returns_einval_no_panic() {
+    let mut h = SpecHarness::new();
+    h.feed(&kitty_apc(
+        b"a=T,i=90,t=d,f=24,s=4294967295,v=4294967295",
+        &b64(b"AAA"),
+    ));
+
+    assert_eq!(placement_count(&h), 0);
+    let replies = reply_bytes(&h);
+    let s = String::from_utf8_lossy(&replies);
+    assert!(
+        s.contains("EINVAL") && s.contains("overflow"),
+        "extreme RGB dims MUST emit `EINVAL: ... overflow usize` — got {s:?}",
+    );
+}

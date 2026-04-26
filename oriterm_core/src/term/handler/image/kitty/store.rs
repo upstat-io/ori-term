@@ -111,7 +111,16 @@ impl<S: EffectSink> Term<S> {
                 if width == 0 || height == 0 {
                     return Err("EINVAL: missing s= or v= for raw RGBA".to_string());
                 }
-                let expected = (width as usize) * (height as usize) * 4;
+                // BUG-08-029: width/height are u32 from the kitty APC parameter
+                // parser and attacker-controlled. `(w as usize) * (h as usize) * 4`
+                // panics in debug or wraps in release on extreme dimensions.
+                // Reject with EINVAL when the byte count cannot be represented.
+                let expected = (width as usize)
+                    .checked_mul(height as usize)
+                    .and_then(|wh| wh.checked_mul(4))
+                    .ok_or_else(|| {
+                        format!("EINVAL: RGBA dimensions {width}x{height} overflow usize")
+                    })?;
                 if payload.len() != expected {
                     return Err(format!(
                         "EINVAL: RGBA payload size {} != expected {expected}",
@@ -124,6 +133,15 @@ impl<S: EffectSink> Term<S> {
                 if width == 0 || height == 0 {
                     return Err("EINVAL: missing s= or v= for raw RGB".to_string());
                 }
+                // BUG-08-029: same overflow shape — pre-check the RGB byte count
+                // before passing the payload to `rgb_to_rgba` so an oversized
+                // `width * height * 3` cannot wrap silently.
+                let _expected = (width as usize)
+                    .checked_mul(height as usize)
+                    .and_then(|wh| wh.checked_mul(3))
+                    .ok_or_else(|| {
+                        format!("EINVAL: RGB dimensions {width}x{height} overflow usize")
+                    })?;
                 rgb_to_rgba(&payload)
                     .map(|rgba| (rgba, width, height))
                     .ok_or_else(|| "EINVAL: RGB payload length not a multiple of 3".to_string())
