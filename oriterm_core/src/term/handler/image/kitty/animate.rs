@@ -1,7 +1,5 @@
 //! Kitty graphics `a=a` (animation playback control) action.
 
-use log::debug;
-
 use crate::effect::sink::EffectSink;
 use crate::image::ImageId;
 use crate::image::kitty::KittyCommand;
@@ -19,9 +17,25 @@ impl<S: EffectSink> Term<S> {
     /// - `display_cols` (`c=`) → set displayed frame
     /// - `source_height` (`v=`) → loop count (0=infinite)
     pub(super) fn kitty_animate(&mut self, cmd: &KittyCommand) {
-        let Some(image_id) = cmd.image_id else {
-            debug!("kitty animate: no image_id");
-            return;
+        // BUG-08-024: missing `i=` MUST emit ENOENT, mirroring `kitty_place`
+        // (place.rs:16-19). Additionally support `I=` (image_number) fallback
+        // per kitty's graphics.c::handle_animate_command — when no `i=` is
+        // given, try resolving via `newest_by_image_number(I)` before
+        // emitting ENOENT.
+        let ctx = KittyReplyContext::from_cmd(cmd);
+        let image_id = match cmd.image_id {
+            Some(id) => id,
+            None => match cmd.image_number.and_then(|n| {
+                self.image_cache()
+                    .newest_by_image_number(n)
+                    .map(|ImageId(id)| id)
+            }) {
+                Some(id) => id,
+                None => {
+                    self.kitty_respond(&ctx, "ENOENT");
+                    return;
+                }
+            },
         };
 
         let id = ImageId(image_id);

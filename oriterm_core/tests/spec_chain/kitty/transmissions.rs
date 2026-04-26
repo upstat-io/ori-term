@@ -452,3 +452,20 @@ fn kitty_decode_pixels_extreme_dimensions_rgb_returns_einval_no_panic() {
         "extreme RGB dims MUST emit `EINVAL: ... overflow usize` — got {s:?}",
     );
 }
+
+/// BUG-08-024: `a=a` (animate) MUST emit ENOENT when `i=` is missing,
+/// mirroring `a=p` (place) which already does so at place.rs:16-19.
+/// Pin the cross-action consistency.
+#[test]
+fn kitty_animate_missing_image_id_returns_enoent() {
+    let mut h = SpecHarness::new();
+    // a=a without i= — both place and animate now return ENOENT.
+    h.feed(&kitty_apc(b"a=a", ""));
+
+    let replies = reply_bytes(&h);
+    let s = String::from_utf8_lossy(&replies);
+    assert!(
+        s.contains("ENOENT"),
+        "a=a without i= MUST emit ENOENT (mirrors a=p) — got {s:?}",
+    );
+}
