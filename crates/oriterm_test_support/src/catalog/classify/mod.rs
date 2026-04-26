@@ -124,15 +124,16 @@ pub fn classify_from_map(map: &BTreeMap<Tuple, BTreeSet<String>>, tuple: &Tuple)
         }
     }
 
-    // OSC normalization: capture tuples have params like `"0;text"` but
-    // dispatch tuples have just `"0"` (the numeric ID that the match
-    // arm pattern selects on). Strip everything after the first `;`.
+    // OSC normalization: after the BUG-07-019 SSOT alignment, capture
+    // tuples carry the payload in `params` while dispatch tuples have
+    // empty `params` (the dispatch arm only knows the selector). The
+    // lookup matches on `final_byte` (the selector) — drop `params` to
+    // bridge the two shapes.
     if tuple.category == Category::Osc {
-        let numeric_id = tuple.params.split(';').next().unwrap_or(&tuple.params);
         let normalized = Tuple::new(
             Category::Osc,
             tuple.intermediates.clone(),
-            numeric_id,
+            "",
             tuple.final_byte.clone(),
         );
         if let Some(handlers) = map.get(&normalized) {

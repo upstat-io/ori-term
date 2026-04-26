@@ -90,8 +90,12 @@ impl Category {
 /// - `category` — see [`Category`].
 /// - `intermediates` — sorted byte sequence (`?`, `>`, `$`, ...).
 /// - `params` — normalized parameter placeholder (`Ps`, `Ps;Ps`, `text`, …).
-/// - `final_byte` — the dispatch-triggering byte, or the canonical
-///   terminator for string-family sequences (`ST` for PM/SOS/APC).
+/// - `final_byte` — the dispatch-triggering byte for CSI/ESC/DCS,
+///   the OSC dispatch selector (numeric id like `"52"` or alias
+///   like `"L"`/`"l"`) for OSC, or the canonical terminator
+///   (`ST`) for PM/SOS/APC. The OSC SSOT alignment (BUG-07-019)
+///   places the dispatch discriminator in this slot for OSC so
+///   that `signature()` yields per-selector-distinct values.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Tuple {
     pub category: Category,
@@ -125,24 +129,17 @@ impl Tuple {
     /// Normalize this tuple to its comparison signature.
     ///
     /// `TupleSig` is `(category_string, sorted_intermediates, final_byte)`.
-    /// For OSC and DCS, `ST` terminators are normalized to `BEL` so that
-    /// `BEL`-vs-`ST` differences do not cause false mismatches.
+    /// `final_byte` is preserved verbatim — the OSC SSOT alignment
+    /// (BUG-07-019) places the OSC selector in `final_byte`, and DCS
+    /// `final_byte` is always a dispatch char (`q`/`p`/`r`/`z`/`|`),
+    /// so the prior OSC|DCS ST→BEL terminator normalization was
+    /// dead code and is gone.
     #[must_use]
     pub fn signature(&self) -> TupleSig {
-        let final_byte = match self.category {
-            Category::Osc | Category::Dcs => {
-                if self.final_byte == "ST" {
-                    "BEL".to_string()
-                } else {
-                    self.final_byte.clone()
-                }
-            }
-            _ => self.final_byte.clone(),
-        };
         (
             format!("{}", self.category),
             self.intermediates.clone(),
-            final_byte,
+            self.final_byte.clone(),
         )
     }
 
@@ -150,7 +147,7 @@ impl Tuple {
     ///
     /// ```text
     /// (CSI, [?], Ps, h)
-    /// (OSC, [], 4;index;rgb, BEL)
+    /// (OSC, [], index;rgb, 4)
     /// (CSI, [0x20], Ps, q)
     /// ```
     ///

@@ -1,7 +1,7 @@
 //! SGR numeric-parameter walker.
 //!
 //! Walks `attrs_from_sgr_parameters` in
-//! `crates/vte/src/ansi/dispatch/csi.rs` and emits one
+//! `crates/vte/src/ansi/dispatch/csi/sgr.rs` and emits one
 //! `(CSI, [], <n>, m)` tuple per distinct SGR parameter code. The
 //! match is `match param { [0] => ..., [38] => ..., [38, params @ ..] => ..., ... }`
 //! — we take the FIRST numeric literal of each slice pattern as

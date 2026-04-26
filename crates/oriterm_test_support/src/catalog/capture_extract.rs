@@ -17,8 +17,9 @@
 //!   NOT interpreted as a phantom intermediate.
 //! - DCS sixel (`q` final) collapses to `(DCS, [], Pid, q)`; all
 //!   other DCS forms collapse to `(DCS, [sorted ints], Pt, final)`.
-//! - OSC tuples preserve the numeric id literally (`OSC 4 ; 1 ;
-//!   rgb:ff/00/00` → `(OSC, [], 4;index;rgb, BEL)`).
+//! - OSC tuples place the dispatch selector in `final_byte` per the
+//!   BUG-07-019 SSOT alignment (`OSC 4 ; 1 ; rgb:ff/00/00` →
+//!   `(OSC, [], index;rgb, 4)`). Payload placeholders go in `params`.
 //! - CSI numeric params collapse to `Ps` / `Ps;Ps` per arity.
 
 use std::collections::BTreeMap;
@@ -127,25 +128,31 @@ impl vte::Perform for TupleSink {
         }
     }
 
-    fn osc_dispatch(&mut self, params: &[&[u8]], bell_terminated: bool) {
+    fn osc_dispatch(&mut self, params: &[&[u8]], _bell_terminated: bool) {
         if params.is_empty() || params[0].is_empty() {
             return;
         }
-        let numeric_id = match std::str::from_utf8(params[0]) {
+        let selector = match std::str::from_utf8(params[0]) {
             Ok(s) => s.to_string(),
             Err(_) => return,
         };
-        let terminator = if bell_terminated { "BEL" } else { "ST" };
-        let mut parts: Vec<String> = vec![numeric_id.clone()];
-        for (idx, raw) in params.iter().enumerate().skip(1) {
-            let raw_str = std::str::from_utf8(raw).unwrap_or("");
-            parts.push(osc_placeholder(&numeric_id, idx, raw_str));
-        }
+        // SSOT (BUG-07-019): selector → `final_byte`; payload
+        // placeholders → `params`. `osc_placeholder` is keyed on
+        // raw payload position (idx 1, 2, ...), unchanged.
+        let payload: Vec<String> = params
+            .iter()
+            .enumerate()
+            .skip(1)
+            .map(|(idx, raw)| {
+                let raw_str = std::str::from_utf8(raw).unwrap_or("");
+                osc_placeholder(&selector, idx, raw_str)
+            })
+            .collect();
         self.bump(Tuple::new(
             Category::Osc,
             Vec::<u8>::new(),
-            parts.join(";"),
-            terminator,
+            payload.join(";"),
+            selector,
         ));
     }
 

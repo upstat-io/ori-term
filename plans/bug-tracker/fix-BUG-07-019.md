@@ -47,9 +47,11 @@ third_party_review:
   - `crates/oriterm_test_support/src/catalog/tuple/canonical.rs` — `parse_osc` (lines 146-167): swap numeric id and terminator between `params`/`final_byte`
   - `crates/oriterm_test_support/src/catalog/tuple/mod.rs` — `signature()` (lines 130-147): drop the now-obsolete OSC ST→BEL final_byte normalization (DCS final_byte is never `ST` either, so the entire match arm becomes dead code)
   - `crates/oriterm_test_support/src/catalog/dispatch_extract/osc.rs` — `collect_osc_arm_with_handlers` (line 75): swap `id` and `"BEL"` between `params`/`final_byte`
+  - `crates/oriterm_test_support/src/catalog/dispatch_extract/mod.rs` — `csi_path` constant (lines 112, 245): update from `crates/vte/src/ansi/dispatch/csi.rs` (stale; file moved during the CSI submodule split) to `crates/vte/src/ansi/dispatch/csi/mod.rs`. Also update doc comments at lines 3 and 93. **SCOPE EXPANSION discovered during Phase 3 TDD**: producer 2 was silently broken — `extract_dispatch_tuples()` returned `Err(IoError("csi.rs not found"))` for any caller that didn't pre-skip on file existence. The pre-existing test `extract_dispatch_tuples_includes_known_csi_tuples` skipped silently. Without this fix, the SSOT alignment cannot be verified end-to-end because producer 2 cannot be walked. In scope per Phase 1.5 reclassification trigger ("blast radius wider than expected").
   - `crates/oriterm_test_support/src/catalog/capture_extract.rs` — `osc_dispatch` (lines 130-150): swap numeric id (parts[0]) and terminator
-  - `crates/oriterm_test_support/src/catalog/tuple/tests.rs` — update `osc_title_canonicalizes_with_numeric_id_preserved`, `osc_4_palette_canonicalizes_with_index_placeholder`, `osc_numeric_id_must_not_collapse_to_ps`, `signature_normalizes_osc_st_to_bel`, `signature_preserves_bel_for_osc` to pin the new SSOT shape
-  - `crates/oriterm_test_support/src/catalog/dispatch_extract/osc_tests.rs` (or wherever dispatch_extract OSC tests live — TBD during implementation)
+  - `crates/oriterm_test_support/src/catalog/classify/mod.rs` — `classify_from_map` OSC normalization branch (lines 127-143): rewrite (NOT delete — capture and dispatch tuples differ in `params`: capture has the payload, dispatch has empty payload because the arm only knows the selector). New normalization drops `params` and looks up `(Osc, intermediates, "", selector)` — much simpler than the pre-fix `params.split(';')` extraction. Discovered during Phase 4 implementation that delete-only fails because the two producers' tuples differ in `params` even after the SSOT alignment.
+  - `crates/oriterm_test_support/src/catalog/tuple/tests.rs` — update OSC pin tests + signature pins to assert the new SSOT shape
+  - `crates/oriterm_test_support/src/catalog/tests.rs` — add cross-producer SSOT-alignment matrix + negative pins (touches all four producers)
 
 **Reference implementations**: N/A — this is internal test-infrastructure SSOT, not a protocol question.
 
@@ -60,38 +62,46 @@ third_party_review:
 Independent dual-source design review of the proposed fix approach.
 
 - **Proposed approach (pre-consensus)**: For all four OSC tuple producers, place the OSC numeric id (e.g. `"0"`, `"4"`, `"52"`, `"1337"`) in `final_byte`, and the remaining canonical parameters (e.g. `"text"`, `"index;rgb"`, `"mode;b64"`, `"key=value"`) in `params`. Drop the OSC|DCS ST→BEL normalization in `Tuple::signature()` since `final_byte` is no longer a terminator for either category. Update existing OSC pin tests to assert the new shape and add an SSOT-alignment matrix that drives the same OSC sequence through all four producers and asserts identical signatures.
-- **tp-help run scratch dir**: pending
+- **tp-help run scratch dir**: `/tmp/tpr-round-ori_term-o5I1RPAl`
 
 ### Round 1
-- pending
+- **Codex (HIGH trust)** — agrees with the SSOT direction. Surfaces three grounded refinements (verified against code):
+  1. `classify_from_map` (`crates/oriterm_test_support/src/catalog/classify/mod.rs:127-143`) is explicitly pinned to the OLD shape — its OSC branch splits `tuple.params` on `;` to extract the numeric id and looks up `(Osc, [], "<id>", "BEL")`. After the SSOT fix, capture params are `index;rgb` and the selector is `final_byte == "4"`, so the current normalization would produce a wrong key. Fix: delete the OSC normalization branch entirely — after SSOT alignment, capture and dispatch tuples have the SAME shape, so the direct lookup at `classify/mod.rs:77` already succeeds.
+  2. OSC 7/9/99/133/633/777 are owned by `RawInterceptor` (`oriterm_mux/src/shell_integration/interceptor.rs:37-47`), NOT by the high-level VTE dispatch (`crates/vte/src/ansi/dispatch/osc.rs`). The dispatch-extract walker only sees high-level VTE arms. The catalog header at `plans/spec-conformance/catalog/osc.md:10-12` documents the two-path SSOT and the negative pin `osc7_via_high_level_processor_drops` that prevents double-dispatch regressions. Drop OSC 7 from the SSOT matrix. The matrix tests producers 1+2+3+4 alignment for OSC ids that have arms in `crates/vte/src/ansi/dispatch/osc.rs` only.
+  3. Add `L` and `l` arms (Sun console aliases for OSC 1/OSC 2, vendored patch at `osc.rs:317-330`) to the matrix to exercise nonnumeric selectors. Add a zero-payload reset arm such as `110` (`osc.rs:297`) or `113` (`osc.rs:307`) to exercise the empty-OSC-payload edge case where `params` will be empty and any accidental terminator-as-final fallback would surface.
+- **Gemini (LOWER trust)** — agrees with the SSOT direction independently. Three reasons converge with Codex: (a) SSOT alignment with the existing runtime observer, (b) signature discrimination requires the discriminator in `final_byte` because `params` is excluded, (c) ST→BEL normalization becomes dead code (DCS already uses dispatch chars `q|p|r|z||`, OSC will use the numeric id). Adds one implementation note: `osc_placeholder` indices in `capture_extract.rs` must remain unchanged — `idx: 1` → `index`, `idx: 2` → `rgb` — because `osc_placeholder` is keyed on the raw payload position, not the canonical-tuple slot.
 
 ### Final agreed approach
-pending
+
+Move the OSC dispatch selector (numeric id like `"52"` / `"1337"`, OR nonnumeric like `"L"` / `"l"`) from `params` to `final_byte` in all four producers (1, 2, 3 change; 4 already correct). Drop the OSC|DCS ST→BEL normalization in `Tuple::signature()` (dead code after the alignment). **Add a fifth concrete edit (Codex refinement #1)**: delete the OSC normalization branch in `classify_from_map` at `classify/mod.rs:127-143` — direct lookup at line 77 will already succeed after the SSOT alignment because capture and dispatch tuples will share the same shape. The TDD matrix tests producers 1+2+3+4 alignment over `{0, 4, 10, 52, 104, 110, 1337, L, l}` (drops OSC 7 per Codex refinement #2 since interceptor-owned; adds `110`, `L`, `l` per Codex refinement #3). `osc_placeholder` indices remain unchanged per Gemini's note (the placeholder is keyed on raw payload position, not canonical-tuple slot).
 
 ---
 
 ## 2. TDD — Test Matrix
 
-pending
+Matrix lives in `crates/oriterm_test_support/src/catalog/tuple/tests.rs` (positive/negative/semantic pins) and a new SSOT-alignment file at `crates/oriterm_test_support/src/catalog/tests.rs` or sibling (cross-producer matrix touching all four producers).
 
 ### Exact failing case
 - [ ] OSC-52 dispatched at runtime produces a TupleSig that matches the OSC-52 catalog row's TupleSig
 
 ### Edge cases
-- [ ] OSC-0 (empty payload) — `("OSC", [], "0")` from all four producers
-- [ ] OSC-1337 (multi-digit numeric id, key=value payload) — `("OSC", [], "1337")` from all four producers
-- [ ] OSC-7 (single param, no `;`) — `("OSC", [], "7")` from all four producers
-- [ ] OSC-4 (multi-param: index;rgb) — `("OSC", [], "4")` from all four producers
+- [ ] OSC-0 (empty payload) — `("OSC", [], "0")` from producers 1, 2, 3, 4
+- [ ] OSC-1337 (multi-digit numeric id, key=value payload) — `("OSC", [], "1337")` from producers 1, 2, 3, 4
+- [ ] OSC-4 (multi-param: index;rgb) — `("OSC", [], "4")` from producers 1, 2, 3, 4
+- [ ] OSC-110 (zero-payload reset) — `("OSC", [], "110")` from producers 1, 2, 3, 4 (exposes the empty-payload edge that would fall back to terminator-as-final if the fix were incomplete)
 - [ ] OSC with ST terminator (vs BEL) — same signature regardless of terminator (since terminator is no longer in final_byte)
+- [ ] OSC-L / OSC-l (Sun console aliases, vendored patch at `osc.rs:317-330`) — `("OSC", [], "L")` and `("OSC", [], "l")` from producers 1, 2, 3, 4 — exercises nonnumeric selectors
 
 ### Cross-producer SSOT matrix (the key new test)
-- [ ] For each OSC numeric id in {0, 4, 7, 10, 52, 104, 1337}: catalog `parse_osc` signature == dispatch `dispatch_extract` signature == capture `capture_extract` signature == runtime `perform_action_to_sig` signature
+- [ ] For each OSC selector in {0, 4, 10, 52, 104, 110, 1337, L, l}: catalog `parse_osc` signature == dispatch `dispatch_extract` signature == capture `capture_extract` signature == runtime `perform_action_to_sig` signature. (OSC 7/9/99/133/633/777 deliberately excluded — these are owned by `RawInterceptor` and have no high-level VTE dispatch arm; including them would assert against a producer-2 source that does not exist. Per Codex round-1 finding.)
+- [ ] Self-verifying completeness counter: assert visited count == 9 selectors × 4 producers = 36 cells
 
 ### Semantic pin
-- [ ] `osc_signature_is_per_numeric_id_distinct` — OSC-52 and OSC-7 produce DIFFERENT TupleSig values (would have failed pre-fix with both equal to `("OSC", [], "BEL")`)
+- [ ] `osc_signature_is_per_selector_distinct` — OSC-52 and OSC-1337 produce DIFFERENT TupleSig values (would have failed pre-fix with both equal to `("OSC", [], "BEL")`)
 
 ### Negative pin
-- [ ] `osc_signature_does_not_collapse_to_terminator` — assert NO OSC TupleSig has `final_byte == "BEL"` or `final_byte == "ST"` after the fix
+- [ ] `osc_signature_does_not_collapse_to_terminator` — assert NO OSC TupleSig in the matrix has `final_byte == "BEL"` or `final_byte == "ST"` after the fix
+- [ ] `classify_from_map_osc_uses_direct_lookup_only` — after the fix, the OSC normalization branch at `classify/mod.rs:127-143` is DELETED. Pin this by constructing a capture-shape OSC tuple, calling `classify_from_map`, and asserting `Classification::Dispatched` — proves the direct lookup at line 77 succeeds without the OSC normalization helper.
 
 ### Verify tests fail before fix
 - [ ] All new tests fail against current code
@@ -100,13 +110,30 @@ pending
 
 ## 2.5 Fix Plan TPR Findings
 
-**Gate:** Skipped — medium severity, non-elevated subsystem (oriterm_test_support is test-helper infrastructure, not in the GPU / VTE / mux / IPC / platform list). Pending /tp-help round-1 outcome — if round 1 doesn't converge, escalate.
+**Gate:** Skipped — medium severity (NOT critical/high), non-elevated subsystem (`oriterm_test_support` is test-helper infrastructure, not in the GPU / VTE / mux / IPC / platform-cfg complexity-elevated list per `/fix-bug` SKILL.md §2.5 trigger gate), `/tp-help` round-1 consensus converged with agreement (both reviewers agreed on the SSOT direction; Codex added three grounded refinements to the matrix shape and surfaced the `classify_from_map` LEAK; all adopted). All three "skip when ALL true" conditions met.
 
 ---
 
 ## 3. Implementation
 
-pending — finalized after Phase 1.75 consensus
+Concrete edits in dependency order:
+
+1. **`crates/oriterm_test_support/src/catalog/tuple/canonical.rs` `parse_osc` (lines 146-167)**: build `final_byte = parts[0].to_string()` (the selector). Build `params = parts[1..].iter().enumerate().map(|(i, p)| osc_placeholder(parts[0], i+1, p)).collect::<Vec<_>>().join(";")` — `idx: 1` corresponds to the FIRST payload arg per Gemini's note (placeholder is keyed on raw payload position, NOT canonical-tuple slot). Drop `terminator` from the `Tuple::new` call.
+2. **`crates/oriterm_test_support/src/catalog/dispatch_extract/osc.rs` `collect_osc_arm_with_handlers` (line 75)**: change to `Tuple::new(Category::Osc, Vec::<u8>::new(), "", id)` — params empty (dispatch arm only knows the selector; payload shape lives in catalog/capture).
+3. **`crates/oriterm_test_support/src/catalog/capture_extract.rs` `osc_dispatch` (lines 130-150)**: build `final_byte = numeric_id` (renamed conceptually to `selector` but the variable is fine). Build `params` from `parts[1..]` only (with `osc_placeholder` indices `1..N` unchanged per Gemini). Drop `bell_terminated` → `terminator` plumbing into `final_byte`; the `bell_terminated` parameter becomes unused — remove the local binding.
+4. **`crates/oriterm_test_support/src/catalog/tuple/mod.rs` `Tuple::signature()` (lines 130-147)**: collapse to `(format!("{}", self.category), self.intermediates.clone(), self.final_byte.clone())`. Drop the `match self.category { Osc | Dcs => ... }` arm entirely.
+5. **`crates/oriterm_test_support/src/catalog/classify/mod.rs` `classify_from_map` (lines 127-143)**: delete the `if tuple.category == Category::Osc { ... }` branch entirely. After the SSOT alignment, capture and dispatch tuples share the same shape, so the direct lookup at line 77 already succeeds.
+6. **`crates/oriterm_test_support/src/spec_chain/uncataloged/mod.rs` `perform_action_to_sig` (lines 111-119)**: NO CHANGE — already produces `Tuple::new(Osc, [], "", cmd)` with selector in `final_byte`.
+7. **Doc comment updates**:
+   - `canonical.rs:14-21` example line: change `(OSC, [], 4;index;rgb, BEL)` → `(OSC, [], index;rgb, 4)`
+   - `capture_extract.rs:14-22` paragraph about OSC normalization: rewrite to describe the new shape (selector in `final_byte`, payload placeholders in `params`)
+   - `tuple/mod.rs:88-101` `Tuple` doc comment about `final_byte` semantics: update to read "the dispatch-triggering byte for CSI/ESC/DCS, OR the OSC dispatch selector for OSC, OR the canonical terminator (`ST`) for PM/SOS string-family sequences"
+   - `tuple/mod.rs` `signature()` doc comment: drop the OSC|DCS ST→BEL line
+   - `tuple/mod.rs:149-159` `from_display_str` doc example: change `(OSC, [], 4;index;rgb, BEL)` → `(OSC, [], index;rgb, 4)`
+8. **Test file updates** per §2 TDD matrix (existing pin tests at `tuple/tests.rs:73-95, 140-159` need to assert the new shape).
+9. **Add cross-producer SSOT matrix test** per §2. Test file location: `crates/oriterm_test_support/src/catalog/tests.rs` (sibling of `mod.rs`) or a new submodule under `catalog/`. Test invokes the four producers via their public APIs and asserts `TupleSig` equality across rows.
+
+**No reflow / scrollback / GPU side effects** — entire fix is contained in `oriterm_test_support` (test-helper crate, dev-deps only). Production code paths in `oriterm`, `oriterm_core`, `oriterm_mux`, `oriterm_ui`, `oriterm_ipc` are NOT touched.
 
 ---
 

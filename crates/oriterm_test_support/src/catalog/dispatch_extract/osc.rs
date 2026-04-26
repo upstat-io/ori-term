@@ -72,7 +72,10 @@ fn collect_osc_arm_with_handlers(
             let value = b.value();
             if let Ok(id) = std::str::from_utf8(&value) {
                 if !id.is_empty() {
-                    let tuple = Tuple::new(Category::Osc, Vec::<u8>::new(), id.to_string(), "BEL");
+                    // SSOT (BUG-07-019): OSC selector in `final_byte`.
+                    // The dispatch arm only knows the selector — payload
+                    // shape lives in catalog/capture, so `params` is empty.
+                    let tuple = Tuple::new(Category::Osc, Vec::<u8>::new(), "", id);
                     let methods = extract_handler_methods(body);
                     map.entry(tuple).or_default().extend(methods);
                 }
