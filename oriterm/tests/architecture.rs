@@ -223,13 +223,13 @@ fn oriterm_ipc_is_standalone() {
     }
 }
 
-// BUG-09-1: move_tab_to_new_window_embedded must mirror tear_off_tab's
+// BUG-09-001: move_tab_to_new_window_embedded must mirror tear_off_tab's
 // working sequence (create_window_bare → release width lock → insert →
 // pump events → seed → sync → refresh → pre-render new (focused-id swap)
 // → pre-render source → set_visible). Without all of these, the new
 // window appears blank or with stale source-window dimensions. These
 // grep-based pins catch accidental removal.
-// See plans/bug-tracker/fix-BUG-09-001.md.
+// See bug-tracker/plans/completed/BUG-09-001/00-overview.md.
 
 /// `move_tab_to_new_window_embedded` must include the canonical call
 /// sequence from `tear_off_tab` (no visible-then-render flash). Bounded
@@ -286,7 +286,7 @@ fn move_to_new_window_embedded_mirrors_tear_off_sequence() {
             Some(rel) => cursor += rel + required.len(),
             None => panic!(
                 "move_tab_to_new_window_embedded must call `{required}` AFTER the prior step \
-                 (BUG-09-1 mirror invariant). Either the call is missing or the canonical \
+                 (BUG-09-001 mirror invariant). Either the call is missing or the canonical \
                  sequence has been reordered.",
             ),
         }
@@ -323,8 +323,8 @@ fn extract_fn_body<'a>(file_body: &'a str, fn_signature_prefix: &str) -> &'a str
 }
 
 /// `move_tab_to_window` must NOT come back — it had a known correctness
-/// bug (BUG-09-2: used `resize_all_panes()` against the focused window
-/// instead of the destination) and was removed during the BUG-09-1 fix.
+/// bug (BUG-09-002: used `resize_all_panes()` against the focused window
+/// instead of the destination) and was removed during the BUG-09-001 fix.
 /// Resurrecting it without first fixing `resize_all_panes` would
 /// re-introduce the bug.
 #[test]
@@ -336,7 +336,7 @@ fn move_tab_to_window_helper_remains_removed() {
     .unwrap();
     assert!(
         !body.contains("fn move_tab_to_window("),
-        "fn move_tab_to_window must remain removed; resurrecting it would re-introduce BUG-09-2 \
+        "fn move_tab_to_window must remain removed; resurrecting it would re-introduce BUG-09-002 \
          (resize_all_panes targets focused window, not destination). If a cross-window move \
          helper is needed, design it with destination-targeted layout from day 1.",
     );

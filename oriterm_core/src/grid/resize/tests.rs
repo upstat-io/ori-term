@@ -3129,7 +3129,7 @@ fn reflow_mapping_none_when_cols_unchanged() {
     );
 }
 
-// ---- BUG-08-17 regression tests: DRAWN preserved/restored on reflow ----
+// ---- BUG-08-017 regression tests: DRAWN preserved/restored on reflow ----
 
 /// `Grid::put_char` path sets DRAWN on every written cell. After a
 /// grow-resize (which triggers reflow), the cloned cells preserve

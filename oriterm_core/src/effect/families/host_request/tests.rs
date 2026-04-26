@@ -153,8 +153,8 @@ fn host_request_process_locality_is_documented() {
         "ResponseToken<T> doc comment must include the `Process-local — cannot cross IPC` warning"
     );
     assert!(
-        source.contains("BUG-11-11"),
-        "ResponseToken<T> doc comment must cite the daemon-mode follow-up artifact (BUG-11-11)"
+        source.contains("BUG-11-011"),
+        "ResponseToken<T> doc comment must cite the daemon-mode follow-up artifact (BUG-11-011)"
     );
     assert!(
         source.contains("§01.4"),

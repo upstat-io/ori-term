@@ -118,7 +118,7 @@ enum SlotState<T> {
 /// embedded mode (`oriterm` and `oriterm_mux::backend::embedded`) but
 /// are dropped at the daemon-client boundary today. The daemon
 /// request-ID + reply-PDU design is tracked in bug-tracker
-/// `BUG-11-11`; see `plans/effect-cutover/section-01-migrate-mux-consumer.md`
+/// `BUG-11-011`; see `plans/effect-cutover/section-01-migrate-mux-consumer.md`
 /// §01.4 for the deferral rationale (Path B — bug filing + cross-link,
 /// chosen over an in-scope daemon redesign).
 ///

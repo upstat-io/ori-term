@@ -523,7 +523,7 @@ mod transport_tests {
     /// `NotifyClipboardLoad` is dropped at the daemon-client wire boundary
     /// after effect-cutover §01.3 — the legacy `MuxNotification::ClipboardLoad`
     /// closure-carrier is gone and `HostRequest` IPC support is tracked
-    /// separately as bug-tracker BUG-11-11. Confirm the PDU produces no
+    /// separately as bug-tracker BUG-11-011. Confirm the PDU produces no
     /// notification today.
     #[test]
     fn notify_clipboard_load_dropped_until_bug_11_11() {
@@ -533,7 +533,7 @@ mod transport_tests {
         };
         assert!(
             pdu_to_notification(pdu).is_none(),
-            "daemon-mode OSC 52 load drops at the wire boundary until BUG-11-11 lands"
+            "daemon-mode OSC 52 load drops at the wire boundary until BUG-11-011 lands"
         );
     }
 

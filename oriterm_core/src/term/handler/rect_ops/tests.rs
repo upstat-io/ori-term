@@ -247,7 +247,7 @@ fn compute_rect_checksum_folds_combining_marks_in_notrim_mode() {
     let mut t = Term::new(1, 1, 0, Theme::default(), VoidEffectSink);
     // Install a cell with 'a' + combining acute accent (U+0301) at (0,0).
     // DRAWN set so the checksum treats this as an application-written
-    // cell per xterm CHARDRAWN semantics (BUG-08-17).
+    // cell per xterm CHARDRAWN semantics (BUG-08-017).
     let mut extra = CellExtra::new();
     extra.zerowidth.push('\u{0301}');
     let cell = Cell {
@@ -309,7 +309,7 @@ fn compute_rect_checksum_wide_char_spacer_not_trimmed() {
     use crate::cell::{Cell, CellFlags};
     let mut t = Term::new(1, 2, 0, Theme::default(), VoidEffectSink);
     // Both cells are application-written: 'A' with DRAWN, and a
-    // wide-char spacer (structurally drawn) with DRAWN (BUG-08-17).
+    // wide-char spacer (structurally drawn) with DRAWN (BUG-08-017).
     t.grid_mut()[crate::index::Line(0)][Column(0)] = Cell {
         ch: 'A',
         flags: CellFlags::DRAWN,

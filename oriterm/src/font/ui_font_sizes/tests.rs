@@ -276,7 +276,7 @@ fn create_default_collection_applies_post_rebuild_hook() {
 // rebuild path (set_dpi, ensure_size, create_default_collection) and
 // inject_fallbacks must be idempotent so DPI changes + GPU-recovery
 // re-injection cannot grow the fallback chain unboundedly.
-// See plans/bug-tracker/fix-BUG-04-004.md.
+// See bug-tracker/plans/completed/BUG-04-004/00-overview.md.
 
 /// Regression: BUG-04-004 — emoji vanishes from tab titles after DPI change.
 /// Pins that the default collection retains its injected fallback across

@@ -3,7 +3,7 @@
 #
 # Problem this exists to solve:
 #   Each fresh Claude session was rediscovering "is the tree in a known-failing
-#   state?" from scratch — running cargo test --all (~2-3 min), parsing 843
+#   state?" from scratch — running ./test-all.sh (~2-3 min), parsing 843
 #   failures, grepping file names, cross-referencing the Known Failing Tests
 #   table in whichever plan owned the remediation. That discovery cost was
 #   paid per-session because the information, despite existing in plan
@@ -56,7 +56,7 @@ Subcommands:
                         --sha-only          Update head_sha + updated_at only
                                             (fast; no test rerun). Use this
                                             from commit-push post-commit.
-                        --full              Run cargo test --all + cargo clippy --all -- -D warnings,
+                        --full              Run ./test-all.sh + ./clippy-all.sh,
                                             rewrite all sections. Slow (~3 min).
                         --hygiene-only      Run diagnostics/repo-hygiene.sh
                                             --check and update hygiene block.
@@ -345,7 +345,7 @@ cmd_refresh() {
             fi
             ;;
         full)
-            echo "Running cargo test --all + cargo clippy --all -- -D warnings (this takes ~3 minutes)..." >&2
+            echo "Running ./test-all.sh + ./clippy-all.sh (this takes ~3 minutes)..." >&2
             local test_log clippy_log test_status clippy_status
             test_log="$ROOT_DIR/build/state-refresh-test.log"
             clippy_log="$ROOT_DIR/build/state-refresh-clippy.log"

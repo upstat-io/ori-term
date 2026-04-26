@@ -240,7 +240,7 @@ diagnostics/state.sh refresh --hygiene-only                # Run repo-hygiene.sh
 diagnostics/state.sh refresh --full --by section-close     # Slow: re-run test-all.sh + clippy-all.sh
 ```
 
-Caches the result of `cargo test --all`, `cargo clippy --all -- -D warnings`, and `diagnostics/repo-hygiene.sh --check` in `.claude/state/known-state.json` (schema v1) so new sessions skip the rediscover-from-scratch loop.
+Caches the result of `./test-all.sh`, `./clippy-all.sh`, and `diagnostics/repo-hygiene.sh --check` in `.claude/state/known-state.json` (schema v1) so new sessions skip the rediscover-from-scratch loop.
 
 **When to use:**
 - **First query on any fresh session** — skills that need to know "is the tree known-failing?" should consult `state.sh show --json` before running tests.

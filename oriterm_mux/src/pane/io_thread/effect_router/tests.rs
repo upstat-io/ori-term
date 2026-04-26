@@ -623,7 +623,7 @@ fn no_cloned_host_clipboard_load_notification_in_staging() {
 /// Effect-cutover §01.N negative pin: `HostEffect::VisualBell` is
 /// LOGGED in the router (not silently dropped). The forwarding gap to
 /// a `MuxEvent::PaneVisualBell` variant is tracked separately as
-/// bug-tracker BUG-11-8 — until that lands, the router observes the
+/// bug-tracker BUG-11-008 — until that lands, the router observes the
 /// effect and emits an `info!` log so the gap is visible in
 /// production logs rather than swallowed.
 #[test]
@@ -634,13 +634,13 @@ fn visual_bell_is_logged_not_dropped_silently() {
         .push(Effect::Host(HostEffect::VisualBell));
     t.drain_effects_into_mux_events();
 
-    // No MuxEvent::PaneVisualBell variant exists yet (BUG-11-8). The
+    // No MuxEvent::PaneVisualBell variant exists yet (BUG-11-008). The
     // router must NOT panic on the unknown effect, and the only
     // observable side effect is the log line — verified by absence of
     // any MuxEvent on the channel.
     assert!(
         mux_rx.try_recv().is_err(),
-        "VisualBell currently has no MuxEvent counterpart (BUG-11-8); \
+        "VisualBell currently has no MuxEvent counterpart (BUG-11-008); \
          the router must drop-with-log, not panic, until forwarding lands"
     );
 }

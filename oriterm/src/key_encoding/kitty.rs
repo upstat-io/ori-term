@@ -168,7 +168,7 @@ enum CodepointOrBytes {
 ///
 /// The Character / Unidentified arms have no proper CSI u encoding for
 /// multi-char compositions or unrecognized keys — they fall back to text
-/// (or to the logical `Key::Character` content per BUG-08-13). Non-Press
+/// (or to the logical `Key::Character` content per BUG-08-013). Non-Press
 /// events with `REPORT_EVENT_TYPES` active suppress in those arms because
 /// CSI u requires a codepoint and there is none to emit.
 fn resolve_codepoint(
@@ -216,7 +216,7 @@ fn resolve_character_codepoint(
         {
             // Prefer winit's `text`; fall back to the logical
             // `Key::Character` content. Robust to backends that don't
-            // populate `text` for numpad keys (BUG-08-13).
+            // populate `text` for numpad keys (BUG-08-013).
             let bytes: Vec<u8> = input
                 .text
                 .map_or_else(|| ch.as_bytes().to_vec(), |t| t.as_bytes().to_vec());

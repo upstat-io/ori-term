@@ -4,7 +4,7 @@
 //! across `oriterm_core/tests/vttest/` and
 //! `oriterm/src/gpu/visual_regression/vttest/` with a single canonical
 //! algorithm that takes a per-screen closure for the variation. See
-//! `plans/bug-tracker/fix-BUG-07-007.md` for the design consensus and
+//! `bug-tracker/plans/completed/BUG-07-007/00-overview.md` for the design consensus and
 //! migration matrix.
 
 use crate::PtySession;

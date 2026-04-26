@@ -55,13 +55,13 @@ pub(super) fn pdu_to_notification(pdu: MuxPdu) -> Option<MuxNotification> {
         MuxPdu::NotifyClipboardLoad { pane_id, .. } => {
             // Daemon-mode HostRequest replies require a request-ID +
             // reply-PDU design that has not landed yet (tracked in
-            // bug-tracker BUG-11-11). The legacy `MuxNotification::ClipboardLoad`
+            // bug-tracker BUG-11-011). The legacy `MuxNotification::ClipboardLoad`
             // closure-carrier was deleted in effect-cutover §01.3 and there
             // is no in-process equivalent for daemon clients to drive a reply.
-            // Drop with a logged warning until BUG-11-11 is implemented.
+            // Drop with a logged warning until BUG-11-011 is implemented.
             log::warn!(
                 "daemon-mode OSC 52 clipboard load (pane {pane_id}) dropped — \
-                 BUG-11-11 (HostRequest IPC) not yet implemented"
+                 BUG-11-011 (HostRequest IPC) not yet implemented"
             );
             None
         }
