@@ -130,11 +130,12 @@ Terminal emulation behavior — VTE handler, bell, escape sequences, terminal mo
   Resolved: fixed on 2026-04-24. See plans/bug-tracker/fix-BUG-08-012.md. Paired per-screen stack and bits snapshots at OSC 133/633 `;C`, restored at `;A`/`;D`; live per-screen `inactive_keyboard_mode_bits` field for runtime state across alt-screen toggles; `toggle_alt_common` paired-snap swap + drift fix; RIS/DECSTR seed paired snaps; `dcs_report_keyboard_mode` reads live bits. 8 commits on dev (14216106..d6fd619a) including 8 rounds of /tpr-review to both-clean convergence + /impl-hygiene-review cleanup pass. 30+ regression tests across 4 files pin the full matrix.
 
 - [ ] `[BUG-08-11][medium]` **`term/tests.rs` combines tests for multiple submodules (2500+ lines) — violates test-organization.md**
+  Escalated: requires plan — 159 #[test] functions over 2546 lines must be sorted into 4-5 buckets (mod.rs core, image_config, snapshot, resize; alt_screen is already a directory module). Conversion of 3 file modules to directory modules + creation of 4 new sibling tests.rs files + careful test-categorization-by-source-symbol-coverage (~159 tests, ~1m each = 2.5h of mechanical work). Naturally phases per submodule (one phase per converted module: image_config, snapshot, resize, plus the post-split term/tests.rs slimming pass). Each phase is independently testable via `cargo test -p oriterm_core --lib term::<submodule>`. Escalated by /fix-bug --autopilot Phase 1.5 (2026-04-25). Plan creation needed: `plans/test-file-restructuring/` or absorbed into a broader test-organization plan. The user creates the plan after the autopilot run completes per /fix-bug autopilot escalation protocol.
   Repro: `wc -l oriterm_core/src/term/tests.rs` prints ~2570. Contains tests for `mod.rs`, `alt_screen.rs`, `image_config.rs`, `snapshot.rs`, and `resize.rs`.
   Subsystem: `oriterm_core/src/term/tests.rs`
   Found: 2026-04-14 | Source: tpr-review
   Reviewer: gemini (TPR-07-001-gemini round 15 during spec-conformance Section 07 close-out)
-  Proposed fix: Convert `alt_screen.rs`, `image_config.rs`, `snapshot.rs`, and `resize.rs` to directory modules. Extract their tests from `term/tests.rs` into per-module `tests.rs` files. Verify with `./test-all.sh`.
+  Proposed fix: Convert `image_config.rs`, `snapshot.rs`, and `resize.rs` to directory modules (alt_screen is already a directory). Extract their tests from `term/tests.rs` into per-module `tests.rs` files. Verify with `./test-all.sh`.
 
 - [ ] `[BUG-08-14][medium]` **Mode 1042 (urgency hints): flag toggle works but BEL-to-window-manager-hint path is missing**
   Repro: `printf '\x1b[?1042h'` then `printf '\a'` — expected: window manager urgency hint; actual: no effect beyond existing visual bell.
