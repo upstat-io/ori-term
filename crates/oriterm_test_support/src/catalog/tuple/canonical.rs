@@ -17,7 +17,9 @@ use super::{Category, Tuple};
 /// - `ESC ^ Pt ST` → `(PM, [], Pt, ST)`
 /// - `ESC X Pt ST` → `(SOS, [], Pt, ST)`
 /// - `DCS $ q Pt ST` → `(DCS, [$], Pt, q)`
-/// - `OSC 4 ; index ; spec BEL|ST` → `(OSC, [], 4;index;rgb, BEL)`
+/// - `OSC 4 ; index ; spec BEL|ST` → `(OSC, [], index;rgb, 4)` —
+///   the OSC selector lives in `final_byte` (the dispatch
+///   discriminator slot), not `params`. See BUG-07-019 SSOT alignment.
 ///
 /// Returns `None` for sequences the canonicalizer does not recognize.
 /// The `None` path is never taken by catalog rows that pass
@@ -144,25 +146,35 @@ fn normalize_csi_params(tokens: &[&str]) -> String {
 }
 
 fn parse_osc(rest: &str) -> Option<Tuple> {
-    let (payload, terminator) = split_terminator(rest);
+    let (payload, _terminator) = split_terminator(rest);
     let payload = payload.trim();
     let parts: Vec<&str> = payload.split(';').map(str::trim).collect();
-    if parts.is_empty() {
+    // Catalog Sequence column uses square-bracket Kleene-star
+    // notation for optional repetitions (e.g., `OSC 104 [; Ps]*`).
+    // Strip `[` / `]` / whitespace from the selector — they are
+    // grammar markers, not part of the dispatch id.
+    let raw_selector = *parts.first()?;
+    let selector: String = raw_selector
+        .chars()
+        .filter(|c| !c.is_whitespace() && *c != '[' && *c != ']')
+        .collect();
+    if selector.is_empty() {
         return None;
     }
-    let mut canonical_parts: Vec<String> = Vec::with_capacity(parts.len());
-    for (i, p) in parts.iter().enumerate() {
-        if i == 0 {
-            canonical_parts.push(p.to_string());
-        } else {
-            canonical_parts.push(osc_placeholder(parts[0], i, p));
-        }
-    }
+    // SSOT (BUG-07-019): OSC selector → `final_byte`; payload
+    // placeholders → `params`. Terminator is dropped from
+    // `final_byte` because BEL/ST is not a discriminator.
+    let canonical_payload: Vec<String> = parts
+        .iter()
+        .enumerate()
+        .skip(1)
+        .map(|(i, p)| osc_placeholder(&selector, i, p))
+        .collect();
     Some(Tuple::new(
         Category::Osc,
         Vec::<u8>::new(),
-        canonical_parts.join(";"),
-        terminator,
+        canonical_payload.join(";"),
+        selector,
     ))
 }
 

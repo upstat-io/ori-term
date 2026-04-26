@@ -1,6 +1,6 @@
 //! CSI dispatch-arm walker.
 //!
-//! Walks `crates/vte/src/ansi/dispatch/csi.rs` — specifically the
+//! Walks `crates/vte/src/ansi/dispatch/csi/mod.rs` — specifically the
 //! top-level `match (action, intermediates) { ... }` in the
 //! `dispatch` function — and emits one [`Tuple`] per arm pattern.
 //!

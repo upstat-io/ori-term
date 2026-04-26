@@ -10,9 +10,16 @@
 //! tests for extractors, and the `walk_catalog_files` function
 //! from `mod.rs`.
 
-use super::tuple::Category;
+use super::tuple::{Category, Tuple, TupleSig};
 use super::walk_catalog_files;
-use super::{build_dispatch_map, extract_dispatch_tuples, extract_namedprivatemode_tuples};
+use super::{
+    Classification, build_dispatch_map, canonical_tuple, classify_from_map, extract_capture_tuples,
+    extract_dispatch_tuples, extract_namedprivatemode_tuples,
+};
+
+use vte::ansi::PerformAction;
+
+use crate::spec_chain::uncataloged::UncatalogedDetector;
 
 /// Resolve the workspace root from `CARGO_MANIFEST_DIR`.
 fn workspace_root() -> std::path::PathBuf {
@@ -63,7 +70,7 @@ fn walk_catalog_files_skips_non_md_files() {
 #[test]
 fn extract_dispatch_tuples_includes_known_csi_tuples() {
     let root = workspace_root();
-    let csi_path = root.join("crates/vte/src/ansi/dispatch/csi.rs");
+    let csi_path = root.join("crates/vte/src/ansi/dispatch/csi/mod.rs");
     if !csi_path.exists() {
         eprintln!(
             "SKIP: VTE dispatch source not found at {}",
@@ -144,7 +151,7 @@ fn extract_namedprivatemode_tuples_includes_known_modes() {
 #[test]
 fn build_dispatch_map_includes_known_handler_names() {
     let root = workspace_root();
-    let csi_path = root.join("crates/vte/src/ansi/dispatch/csi.rs");
+    let csi_path = root.join("crates/vte/src/ansi/dispatch/csi/mod.rs");
     if !csi_path.exists() {
         eprintln!(
             "SKIP: VTE dispatch source not found at {}",
@@ -193,5 +200,285 @@ fn build_dispatch_map_includes_known_handler_names() {
     assert!(
         has_apc_handler,
         "dispatch map must contain apc_dispatch handler"
+    );
+}
+
+// -------- Cross-producer SSOT alignment matrix (BUG-07-019) ----------------
+//
+// Four producers construct OSC tuples that MUST yield identical
+// `TupleSig` for the same OSC sequence:
+//
+//   1. catalog `parse_osc` (`canonical_tuple`)            — `tuple/canonical.rs`
+//   2. dispatch `extract_dispatch_tuples`                  — `dispatch_extract/osc.rs`
+//   3. capture `extract_capture_tuples`                    — `capture_extract.rs`
+//   4. runtime `UncatalogedDetector::feed_actions`         — `spec_chain/uncataloged/mod.rs`
+//
+// Pre-fix, producer 4 alone placed the OSC selector in `final_byte`
+// and producers 1+2+3 placed it in `params` with the terminator in
+// `final_byte` (collapsing all OSCs to `("OSC", [], "BEL")`). After
+// the SSOT alignment, all four put the selector in `final_byte`.
+//
+// OSC 7/9/99/133/633/777 are owned by `oriterm_mux::shell_integration::
+// RawInterceptor` and have NO arm in `crates/vte/src/ansi/dispatch/osc.rs`.
+// The matrix excludes them — including them would assert against a
+// producer-2 source that does not exist.
+
+/// Synthesize an OSC byte stream for the given selector + payload args.
+/// Used to drive producers 3 (capture) and 4 (runtime).
+fn osc_bytes(selector: &str, payload: &[&str]) -> Vec<u8> {
+    let mut s = String::new();
+    s.push_str("\x1b]"); // ESC ]
+    s.push_str(selector);
+    for p in payload {
+        s.push(';');
+        s.push_str(p);
+    }
+    s.push('\x07'); // BEL
+    s.into_bytes()
+}
+
+/// Build a `Sequence`-column markdown string for the given selector +
+/// payload placeholders. Used to drive producer 1 (catalog parse_osc).
+fn catalog_sequence_string(selector: &str, payload_placeholders: &[&str]) -> String {
+    let mut s = format!("`OSC {selector}");
+    for p in payload_placeholders {
+        s.push_str(" ; ");
+        s.push_str(p);
+    }
+    s.push_str(" BEL|ST`");
+    s
+}
+
+/// Producer 4: feed a synthesized `PerformAction::OscDispatch` directly
+/// to `UncatalogedDetector` and return the resulting `TupleSig`.
+fn runtime_observer_signature(selector: &str, payload: &[&str]) -> TupleSig {
+    let mut params: Vec<Vec<u8>> = vec![selector.as_bytes().to_vec()];
+    for p in payload {
+        params.push(p.as_bytes().to_vec());
+    }
+    let action = PerformAction::OscDispatch {
+        params,
+        bell_terminated: true,
+    };
+    let mut detector = UncatalogedDetector::new();
+    detector.feed_actions(&[action]);
+    detector
+        .seen()
+        .iter()
+        .next()
+        .cloned()
+        .expect("UncatalogedDetector must produce one signature for OscDispatch")
+}
+
+/// Producer 3: write the OSC byte stream to a tempfile, run
+/// `extract_capture_tuples`, return the OSC tuple's signature.
+fn capture_signature(selector: &str, payload: &[&str]) -> TupleSig {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("osc.cap");
+    std::fs::write(&path, osc_bytes(selector, payload)).expect("write cap");
+    let tuples = extract_capture_tuples(&path).expect("extract");
+    let osc = tuples
+        .into_iter()
+        .find(|(t, _)| t.category == Category::Osc)
+        .map(|(t, _)| t)
+        .expect("capture must yield one OSC tuple");
+    osc.signature()
+}
+
+/// Producer 2: walk the VTE dispatch tree and find the OSC tuple
+/// whose `final_byte` matches `selector`. Returns `None` when no
+/// dispatch arm exists (e.g. interceptor-owned OSCs).
+fn dispatch_signature(selector: &str) -> Option<TupleSig> {
+    let root = workspace_root();
+    let osc_path = root.join("crates/vte/src/ansi/dispatch/osc.rs");
+    if !osc_path.exists() {
+        return None;
+    }
+    let tuples = extract_dispatch_tuples(&root).expect("dispatch extraction succeeds");
+    tuples
+        .into_iter()
+        .find(|t| t.category == Category::Osc && t.final_byte == selector)
+        .map(|t| t.signature())
+}
+
+/// Producer 1: canonicalize the catalog Sequence-column markdown
+/// for the given selector + payload placeholders.
+fn catalog_signature(selector: &str, payload_placeholders: &[&str]) -> TupleSig {
+    let seq = catalog_sequence_string(selector, payload_placeholders);
+    let t = canonical_tuple(&seq).expect("catalog parse_osc must canonicalize OSC sequence");
+    t.signature()
+}
+
+/// The SSOT-alignment matrix. Each row is
+/// `(selector, raw_payload_args, catalog_payload_placeholders)`.
+/// Selectors are dispatched in `crates/vte/src/ansi/dispatch/osc.rs`
+/// and exercise the four producers per BUG-07-019 §2 TDD matrix.
+fn osc_ssot_matrix() -> Vec<(&'static str, Vec<&'static str>, Vec<&'static str>)> {
+    vec![
+        // (selector, raw payload args for runtime/capture, catalog payload placeholders)
+        ("0", vec!["title"], vec!["Pt"]),
+        ("4", vec!["1", "rgb:ff/00/00"], vec!["index", "rgb"]),
+        ("10", vec!["rgb:ff/ff/ff"], vec!["spec"]),
+        ("52", vec!["c", "aGVsbG8="], vec!["mode", "b64"]),
+        ("104", vec!["1"], vec!["index"]),
+        // OSC 110 is a zero-payload reset arm (`osc.rs:297`).
+        ("110", vec![], vec![]),
+        ("1337", vec!["File=name=...:base64bytes"], vec!["key=value"]),
+        // Sun console aliases (`osc.rs:317-330`) — nonnumeric selectors.
+        ("L", vec!["icon-name"], vec!["Pt"]),
+        ("l", vec!["window-title"], vec!["Pt"]),
+    ]
+}
+
+/// Regression: BUG-07-019 — all four OSC tuple producers MUST yield
+/// identical `TupleSig` for the same OSC sequence (selector lives in
+/// `final_byte` after the SSOT alignment).
+#[test]
+fn osc_tuple_sig_aligns_across_all_four_producers() {
+    let mut visited = 0_usize;
+    for (selector, raw_payload, catalog_payload) in osc_ssot_matrix() {
+        let p1 = catalog_signature(selector, &catalog_payload);
+        let p3 = capture_signature(selector, &raw_payload);
+        let p4 = runtime_observer_signature(selector, &raw_payload);
+
+        assert_eq!(
+            p1.2, selector,
+            "selector {selector}: catalog must place selector in final_byte"
+        );
+        assert_eq!(
+            p3.2, selector,
+            "selector {selector}: capture must place selector in final_byte"
+        );
+        assert_eq!(
+            p4.2, selector,
+            "selector {selector}: runtime must place selector in final_byte"
+        );
+
+        // SSOT alignment: signatures must match across producers 1, 3, 4.
+        assert_eq!(
+            p1, p3,
+            "selector {selector}: catalog and capture signatures must match"
+        );
+        assert_eq!(
+            p1, p4,
+            "selector {selector}: catalog and runtime signatures must match"
+        );
+
+        // Producer 2 (dispatch) — every selector in this matrix has
+        // an arm in `crates/vte/src/ansi/dispatch/osc.rs`, so the
+        // lookup MUST succeed when the source file is present.
+        let osc_path = workspace_root().join("crates/vte/src/ansi/dispatch/osc.rs");
+        if osc_path.exists() {
+            let p2 = dispatch_signature(selector).unwrap_or_else(|| {
+                panic!(
+                    "selector {selector}: dispatch_extract must yield a tuple with \
+                     selector in final_byte (got dispatch tuples: {:?})",
+                    extract_dispatch_tuples(&workspace_root())
+                        .expect("extract")
+                        .into_iter()
+                        .filter(|t| t.category == Category::Osc)
+                        .collect::<Vec<_>>()
+                )
+            });
+            assert_eq!(
+                p1, p2,
+                "selector {selector}: catalog and dispatch signatures must match"
+            );
+        }
+
+        visited += 1;
+    }
+    assert_eq!(
+        visited, 9,
+        "self-verifying matrix completeness — expected 9 selectors visited"
+    );
+}
+
+/// Regression: BUG-07-019 — distinct selectors yield distinct
+/// signatures from each producer. Pre-fix all OSC TupleSig collapsed
+/// to `("OSC", [], "BEL")` regardless of selector — this pin would
+/// fail against the broken code.
+#[test]
+fn osc_tuple_sig_distinct_per_selector() {
+    let s52 = runtime_observer_signature("52", &["c", "aGVsbG8="]);
+    let s1337 = runtime_observer_signature("1337", &["File=..."]);
+    let s4 = runtime_observer_signature("4", &["1", "rgb:ff/00/00"]);
+    assert_ne!(s52, s1337, "OSC 52 and OSC 1337 must have distinct sigs");
+    assert_ne!(s52, s4, "OSC 52 and OSC 4 must have distinct sigs");
+    assert_ne!(s1337, s4, "OSC 1337 and OSC 4 must have distinct sigs");
+}
+
+/// Regression: BUG-07-019 — no OSC TupleSig should carry "BEL" or
+/// "ST" in `final_byte` after the SSOT alignment (selector took the
+/// slot). Negative pin against the broken pre-fix shape.
+#[test]
+fn osc_tuple_sig_does_not_collapse_to_terminator() {
+    for (selector, raw_payload, catalog_payload) in osc_ssot_matrix() {
+        let p1 = catalog_signature(selector, &catalog_payload);
+        let p3 = capture_signature(selector, &raw_payload);
+        let p4 = runtime_observer_signature(selector, &raw_payload);
+        for sig in [&p1, &p3, &p4] {
+            assert_ne!(
+                sig.2, "BEL",
+                "selector {selector}: signature must not collapse to BEL terminator"
+            );
+            assert_ne!(
+                sig.2, "ST",
+                "selector {selector}: signature must not collapse to ST terminator"
+            );
+        }
+    }
+}
+
+/// Regression: BUG-07-019 — after the SSOT alignment, the OSC
+/// normalization in `classify_from_map` (`classify/mod.rs:127-143`)
+/// drops `params` and matches on `(category, intermediates,
+/// final_byte)` — the simplest possible bridge between capture
+/// shape (`params = "<payload>"`) and dispatch shape (`params = ""`).
+/// The pre-fix `params.split(';')` extraction is gone.
+#[test]
+fn classify_from_map_osc_normalizes_via_final_byte_only() {
+    let root = workspace_root();
+    let osc_path = root.join("crates/vte/src/ansi/dispatch/osc.rs");
+    if !osc_path.exists() {
+        eprintln!("SKIP: VTE OSC dispatch source not found");
+        return;
+    }
+    let map = build_dispatch_map(&root).expect("dispatch map builds");
+
+    // Capture-shaped tuple for OSC 0 — selector in final_byte, payload
+    // placeholder in params. The classifier's OSC normalization must
+    // bridge this to the dispatch-shape tuple (empty params).
+    let capture_shape = Tuple::new(Category::Osc, Vec::<u8>::new(), "text", "0");
+    match classify_from_map(&map, &capture_shape) {
+        Classification::Dispatched { .. } => {}
+        Classification::NoDispatch => panic!(
+            "classify_from_map must dispatch capture-shape OSC 0; \
+             dispatch map has: {:?}",
+            map.keys()
+                .filter(|k| k.category == Category::Osc && k.final_byte == "0")
+                .collect::<Vec<_>>()
+        ),
+    }
+
+    // Capture-shape OSC 4 with multi-arg payload also bridges to dispatch.
+    let osc4_capture = Tuple::new(Category::Osc, Vec::<u8>::new(), "index;rgb", "4");
+    assert!(
+        matches!(
+            classify_from_map(&map, &osc4_capture),
+            Classification::Dispatched { .. }
+        ),
+        "OSC 4 capture-shape must bridge to dispatch via classify_from_map"
+    );
+
+    // Interceptor-owned selector (OSC 7) has no dispatch arm —
+    // classify_from_map correctly returns NoDispatch.
+    let osc7_capture = Tuple::new(Category::Osc, Vec::<u8>::new(), "file:///cwd", "7");
+    assert!(
+        matches!(
+            classify_from_map(&map, &osc7_capture),
+            Classification::NoDispatch
+        ),
+        "OSC 7 (interceptor-owned) must return NoDispatch from classify_from_map"
     );
 }
