@@ -124,7 +124,7 @@ pub fn classify_from_map(map: &BTreeMap<Tuple, BTreeSet<String>>, tuple: &Tuple)
         }
     }
 
-    // OSC normalization: after the BUG-07-019 SSOT alignment, capture
+    // OSC normalization: after the SSOT alignment, capture
     // tuples carry the payload in `params` while dispatch tuples have
     // empty `params` (the dispatch arm only knows the selector). The
     // lookup matches on `final_byte` (the selector) — drop `params` to

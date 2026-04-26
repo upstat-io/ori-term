@@ -70,7 +70,7 @@ fn dcs_decrqss_canonicalizes_to_dcs_dollar_pt_q() {
     assert_eq!(t.final_byte, "q");
 }
 
-/// Regression: BUG-07-019 — OSC selector lives in `final_byte`,
+/// Regression: OSC selector lives in `final_byte`,
 /// payload placeholders live in `params`. See: plans/bug-tracker/fix-BUG-07-019.md
 #[test]
 fn osc_title_canonicalizes_with_selector_in_final_byte() {
@@ -81,7 +81,7 @@ fn osc_title_canonicalizes_with_selector_in_final_byte() {
     assert_eq!(t.params, "text");
 }
 
-/// Regression: BUG-07-019.
+/// Regression:
 #[test]
 fn osc_4_palette_canonicalizes_with_payload_only_in_params() {
     let t = canonical_tuple("`OSC 4 ; index ; rgb BEL|ST`").expect("OSC 4 must canonicalize");
@@ -89,7 +89,7 @@ fn osc_4_palette_canonicalizes_with_payload_only_in_params() {
     assert_eq!(t.params, "index;rgb");
 }
 
-/// Regression: BUG-07-019 — selector must be the dispatch
+/// Regression: selector must be the dispatch
 /// discriminator in `final_byte`, not a `Ps` placeholder.
 #[test]
 fn osc_selector_must_not_collapse_to_ps() {
@@ -99,7 +99,7 @@ fn osc_selector_must_not_collapse_to_ps() {
     assert!(!t.params.contains("52"));
 }
 
-/// Regression: BUG-07-019 — DCS reset arms (`110`, `113`) carry an
+/// Regression: DCS reset arms (`110`, `113`) carry an
 /// empty payload; the selector still lands in `final_byte`.
 #[test]
 fn osc_zero_payload_reset_lands_selector_in_final_byte() {
@@ -108,7 +108,7 @@ fn osc_zero_payload_reset_lands_selector_in_final_byte() {
     assert!(t.params.is_empty());
 }
 
-/// Regression: BUG-07-019 — Sun console aliases (vendored patch in
+/// Regression: Sun console aliases (vendored patch in
 /// `crates/vte/src/ansi/dispatch/osc.rs:317-330`) are nonnumeric
 /// selectors but follow the same SSOT shape.
 #[test]
@@ -166,7 +166,7 @@ fn tuple_sort_intermediates_on_construction() {
 
 // -------- Tuple::signature() -----------------------------------------------
 
-/// Regression: BUG-07-019 — OSC `final_byte` is the dispatch
+/// Regression: OSC `final_byte` is the dispatch
 /// selector after the SSOT alignment; the old ST→BEL terminator
 /// normalization is dead code and was removed.
 #[test]
@@ -176,7 +176,7 @@ fn signature_preserves_osc_selector_verbatim() {
     assert_eq!(sig.2, "0");
 }
 
-/// Regression: BUG-07-019 — distinct OSC selectors yield distinct
+/// Regression: distinct OSC selectors yield distinct
 /// signatures; the pre-fix collapse to `("OSC", [], "BEL")` is gone.
 #[test]
 fn signature_distinguishes_distinct_osc_selectors() {

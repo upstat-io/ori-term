@@ -18,7 +18,7 @@
 //! - DCS sixel (`q` final) collapses to `(DCS, [], Pid, q)`; all
 //!   other DCS forms collapse to `(DCS, [sorted ints], Pt, final)`.
 //! - OSC tuples place the dispatch selector in `final_byte` per the
-//!   BUG-07-019 SSOT alignment (`OSC 4 ; 1 ; rgb:ff/00/00` →
+//!   SSOT alignment (`OSC 4 ; 1 ; rgb:ff/00/00` →
 //!   `(OSC, [], index;rgb, 4)`). Payload placeholders go in `params`.
 //! - CSI numeric params collapse to `Ps` / `Ps;Ps` per arity.
 
@@ -134,9 +134,21 @@ impl vte::Perform for TupleSink {
         }
         let selector = match std::str::from_utf8(params[0]) {
             Ok(s) => s.to_string(),
-            Err(_) => return,
+            Err(e) => {
+                // Non-UTF-8 OSC selector: real-world OSC selectors
+                // are ASCII per spec, but a malformed capture stream
+                // can carry garbage. Surface to stderr so the coverage
+                // gap is visible; do NOT emit a tuple (we have no
+                // canonical signature for non-UTF-8 selectors).
+                eprintln!(
+                    "warning: capture_extract::osc_dispatch: skipped malformed selector \
+                     (bytes={:02x?}): {e}",
+                    params[0]
+                );
+                return;
+            }
         };
-        // SSOT (BUG-07-019): selector → `final_byte`; payload
+        // SSOT: selector → `final_byte`; payload
         // placeholders → `params`. `osc_placeholder` is keyed on
         // raw payload position (idx 1, 2, ...), unchanged.
         let payload: Vec<String> = params

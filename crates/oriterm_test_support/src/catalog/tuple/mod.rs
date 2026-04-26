@@ -93,7 +93,7 @@ impl Category {
 /// - `final_byte` — the dispatch-triggering byte for CSI/ESC/DCS,
 ///   the OSC dispatch selector (numeric id like `"52"` or alias
 ///   like `"L"`/`"l"`) for OSC, or the canonical terminator
-///   (`ST`) for PM/SOS/APC. The OSC SSOT alignment (BUG-07-019)
+///   (`ST`) for PM/SOS/APC. The OSC SSOT alignment
 ///   places the dispatch discriminator in this slot for OSC so
 ///   that `signature()` yields per-selector-distinct values.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -130,7 +130,7 @@ impl Tuple {
     ///
     /// `TupleSig` is `(category_string, sorted_intermediates, final_byte)`.
     /// `final_byte` is preserved verbatim — the OSC SSOT alignment
-    /// (BUG-07-019) places the OSC selector in `final_byte`, and DCS
+    /// places the OSC selector in `final_byte`, and DCS
     /// `final_byte` is always a dispatch char (`q`/`p`/`r`/`z`/`|`),
     /// so the prior OSC|DCS ST→BEL terminator normalization was
     /// dead code and is gone.

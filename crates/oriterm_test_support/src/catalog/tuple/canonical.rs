@@ -19,7 +19,7 @@ use super::{Category, Tuple};
 /// - `DCS $ q Pt ST` → `(DCS, [$], Pt, q)`
 /// - `OSC 4 ; index ; spec BEL|ST` → `(OSC, [], index;rgb, 4)` —
 ///   the OSC selector lives in `final_byte` (the dispatch
-///   discriminator slot), not `params`. See BUG-07-019 SSOT alignment.
+///   discriminator slot), not `params`. See SSOT alignment.
 ///
 /// Returns `None` for sequences the canonicalizer does not recognize.
 /// The `None` path is never taken by catalog rows that pass
@@ -161,7 +161,7 @@ fn parse_osc(rest: &str) -> Option<Tuple> {
     if selector.is_empty() {
         return None;
     }
-    // SSOT (BUG-07-019): OSC selector → `final_byte`; payload
+    // SSOT: OSC selector → `final_byte`; payload
     // placeholders → `params`. Terminator is dropped from
     // `final_byte` because BEL/ST is not a discriminator.
     let canonical_payload: Vec<String> = parts

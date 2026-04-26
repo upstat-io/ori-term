@@ -59,6 +59,34 @@ fn print_and_put_are_not_catalogable() {
     );
 }
 
+/// Regression: `Execute` (C0 control bytes — newline, tab, bell, …)
+/// MUST NOT yield a tuple. Catalog (`canonical.rs:56`) and capture
+/// (`capture_extract.rs::execute` is a no-op) both contractually
+/// drop C0 — runtime must agree, otherwise every test that triggers
+/// a newline emits a false-positive C0 entry into
+/// `target/spec-chain-uncataloged/*.jsonl` and pollutes
+/// `spec-coverage-report --check` BACKLOG.
+#[test]
+fn execute_c0_actions_are_not_catalogable() {
+    let mut detector = UncatalogedDetector::new();
+    let actions = vec![
+        PerformAction::Execute { byte: 0x07 }, // BEL
+        PerformAction::Execute { byte: 0x08 }, // BS
+        PerformAction::Execute { byte: 0x0a }, // LF
+        PerformAction::Execute { byte: 0x0d }, // CR
+        PerformAction::Execute { byte: 0x0e }, // SO
+        PerformAction::Execute { byte: 0x0f }, // SI
+        PerformAction::Execute { byte: 0x18 }, // CAN
+        PerformAction::Execute { byte: 0x1a }, // SUB
+    ];
+    detector.feed_actions(&actions);
+    assert!(
+        detector.seen().is_empty(),
+        "Execute (C0 control) actions must not be catalogable — \
+         catalog and capture both drop C0 by contract"
+    );
+}
+
 #[test]
 fn osc_dispatch_extracts_command_number() {
     let mut detector = UncatalogedDetector::new();
@@ -98,6 +126,10 @@ fn serialize_and_read_round_trip() {
             ignore: false,
             action: 'h',
         },
+        // Execute (C0 control) is intentionally NOT catalogable —
+        // see `execute_c0_actions_are_not_catalogable`. Including it
+        // in this round-trip test pins that the serializer skips it,
+        // not that it appears as an extra tuple.
         PerformAction::Execute { byte: 0x0a },
     ]);
 
@@ -106,8 +138,8 @@ fn serialize_and_read_round_trip() {
     detector.serialize_to_dir(&output).unwrap();
 
     let read_back = super::read_accumulated_tuples(&output).unwrap();
-    assert_eq!(read_back.len(), 2);
-    // Verify the CSI ? h tuple round-trips.
+    // Only the CSI tuple round-trips; Execute is not catalogable.
+    assert_eq!(read_back.len(), 1);
     let has_csi = read_back
         .iter()
         .any(|(cat, _, fb)| cat == "CSI" && fb == "h");
