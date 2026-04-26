@@ -308,16 +308,19 @@ fn numpad_enter_named_linefeed_mode_no_text() {
 
 // --- Kitty DISAMBIGUATE path × numpad character ---
 
-/// Numpad digit in Kitty DISAMBIGUATE mode, Press, text=None: the
-/// send-as-text branch must fall back to the logical char.
+/// Numpad digit in Kitty DISAMBIGUATE mode, Press, text=None: per
+/// BUG-08-026 the numpad-disambiguation codepoint range fires (57404
+/// for numpad 5), distinguishing numpad input from main-row input at
+/// the application layer. Previously this emitted `b"5"` via the
+/// send-as-text fast-path — that was the bug.
 #[test]
-fn numpad_digit_kitty_disambiguate_press_no_text() {
+fn numpad_digit_kitty_disambiguate_press_emits_57404() {
     let r = enc_numpad(
         Key::Character("5".into()),
         Modifiers::empty(),
         kitty_disambiguate_mode(),
     );
-    assert_eq!(r, b"5");
+    assert_eq!(r, b"\x1b[57404u");
 }
 
 /// Negative pin (codex's refinement): numpad digit release in Kitty

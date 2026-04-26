@@ -964,3 +964,73 @@ fn legacy_key_encoding_after_child_crash_produces_raw_ascii_not_csi_u() {
         "post-crash restore: typing 'a' must produce plain ASCII, not a CSI u kitty fragment"
     );
 }
+
+// BUG-08-026: Kitty numpad disambiguation — codepoints 57399-57426.
+
+/// Encode helper with `KeyLocation::Numpad`.
+fn enc_numpad(key: Key, mode: TermMode) -> Vec<u8> {
+    encode_key(&KeyInput {
+        key: &key,
+        mods: Modifiers::empty(),
+        mode,
+        text: None,
+        location: KeyLocation::Numpad,
+        event_type: KeyEventType::Press,
+        alternate_key: None,
+    })
+}
+
+/// BUG-08-026: numpad 1 with kitty active emits CSI 57400 u, NOT `b"1"`.
+#[test]
+fn kitty_numpad_one_emits_codepoint_57400() {
+    let r = enc_numpad(Key::Character("1".into()), kitty_disambiguate());
+    assert_eq!(r, b"\x1b[57400u", "numpad 1 MUST emit CSI 57400 u — got {r:?}");
+}
+
+/// BUG-08-026: numpad 0 → 57399 (low end of the codepoint range).
+#[test]
+fn kitty_numpad_zero_emits_codepoint_57399() {
+    let r = enc_numpad(Key::Character("0".into()), kitty_disambiguate());
+    assert_eq!(r, b"\x1b[57399u");
+}
+
+/// BUG-08-026: numpad Enter → 57414 (transition between digits and arrows).
+#[test]
+fn kitty_numpad_enter_emits_codepoint_57414() {
+    let r = enc_numpad(Key::Named(NamedKey::Enter), kitty_disambiguate());
+    assert_eq!(r, b"\x1b[57414u");
+}
+
+/// BUG-08-026: numpad ArrowLeft → 57417 (start of named-key range).
+#[test]
+fn kitty_numpad_arrow_left_emits_codepoint_57417() {
+    let r = enc_numpad(Key::Named(NamedKey::ArrowLeft), kitty_disambiguate());
+    assert_eq!(r, b"\x1b[57417u");
+}
+
+/// BUG-08-026: numpad Delete → 57426 (high end of the codepoint range).
+#[test]
+fn kitty_numpad_delete_emits_codepoint_57426() {
+    let r = enc_numpad(Key::Named(NamedKey::Delete), kitty_disambiguate());
+    assert_eq!(r, b"\x1b[57426u");
+}
+
+/// BUG-08-026 negative pin: same key on Standard location MUST NOT use the
+/// numpad codepoint range. Distinguishes the BUG-08-026 fix from a blanket
+/// disambiguation that would also affect main-row digits.
+#[test]
+fn kitty_main_row_one_does_not_use_numpad_codepoint() {
+    let r = encode_key(&KeyInput {
+        key: &Key::Character("1".into()),
+        mods: Modifiers::empty(),
+        mode: kitty_disambiguate(),
+        text: Some("1"),
+        location: KeyLocation::Standard,
+        event_type: KeyEventType::Press,
+        alternate_key: None,
+    });
+    assert_eq!(
+        r, b"1",
+        "main-row 1 MUST emit `b\"1\"` (legacy text), NOT 57400 — got {r:?}",
+    );
+}
