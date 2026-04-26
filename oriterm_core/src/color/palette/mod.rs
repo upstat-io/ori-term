@@ -16,7 +16,7 @@ pub const NUM_COLORS: usize = 270;
 /// xterm `ttyDefaultColors` ANSI palette (indices 0–15).
 ///
 /// Source: `xterm/charproc.c` — the historical xterm reference table that
-/// the comment shipped before BUG-08-16 mistakenly claimed for the Tango
+/// the comment shipped before BUG-08-016 mistakenly claimed for the Tango
 /// values. Other terminals (Alacritty, Windows Terminal Campbell, `iTerm2`,
 /// Ghostty, Kitty, `WezTerm`) ship their own non-Tango defaults — those are
 /// each different curated palettes, not byte-for-byte equal to xterm.

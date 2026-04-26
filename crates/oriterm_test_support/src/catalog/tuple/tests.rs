@@ -71,7 +71,7 @@ fn dcs_decrqss_canonicalizes_to_dcs_dollar_pt_q() {
 }
 
 /// Regression: OSC selector lives in `final_byte`,
-/// payload placeholders live in `params`. See: plans/bug-tracker/fix-BUG-07-019.md
+/// payload placeholders live in `params`. See: bug-tracker/plans/completed/BUG-07-019/00-overview.md
 #[test]
 fn osc_title_canonicalizes_with_selector_in_final_byte() {
     let t = canonical_tuple("`OSC 0 ; Pt BEL|ST`").expect("OSC 0 must canonicalize");

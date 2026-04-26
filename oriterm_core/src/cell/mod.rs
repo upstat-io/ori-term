@@ -201,7 +201,7 @@ impl Cell {
     /// test needs to construct a cell that behaves like it was written
     /// by the application — so `compute_rect_checksum` and
     /// `Row::is_blank`/`content_len` see the correct write-history
-    /// state per BUG-08-17.
+    /// state per BUG-08-017.
     #[cfg(test)]
     #[must_use]
     pub fn drawn(ch: char) -> Self {

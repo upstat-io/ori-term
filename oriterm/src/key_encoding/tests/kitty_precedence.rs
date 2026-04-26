@@ -233,11 +233,11 @@ fn kitty_plain_text() {
     assert_eq!(r, b"a");
 }
 
-/// Regression: BUG-08-13 — `Key::Character("a")` in Kitty DISAMBIGUATE with
+/// Regression: BUG-08-013 — `Key::Character("a")` in Kitty DISAMBIGUATE with
 /// no `text` must fall back to the logical-char byte rather than returning
 /// empty. Prior to the fix this returned an empty vec and the shell silently
 /// dropped the keystroke on backends that don't populate `text`.
-/// See: plans/bug-tracker/fix-BUG-08-013.md
+/// See: bug-tracker/plans/completed/BUG-08-013/00-overview.md
 #[test]
 fn kitty_plain_char_no_text_field_falls_back_to_logical_char() {
     let r = enc(
@@ -914,9 +914,9 @@ fn kitty_alternate_key_not_reported_without_flag() {
     assert_eq!(r, b"\x1b[122;5u");
 }
 
-// --- BUG-08-12 semantic pin: post-crash restore produces plain ASCII ---
+// --- BUG-08-012 semantic pin: post-crash restore produces plain ASCII ---
 
-/// Regression: BUG-08-12 — headline user-visible symptom pin.
+/// Regression: BUG-08-012 — headline user-visible symptom pin.
 ///
 /// After a kitty-aware child program crashes mid-command and the shell
 /// emits its next OSC 133 ; A prompt, the `keyboard_mode_stack` must be
@@ -925,7 +925,7 @@ fn kitty_alternate_key_not_reported_without_flag() {
 /// shell prompt produces plain ASCII `b"a"`, NOT the raw CSI u fragments
 /// (`0;1;100u7;1;97u`) that the shell doesn't understand.
 ///
-/// See: plans/bug-tracker/fix-BUG-08-012.md §2 (Semantic pin).
+/// See: bug-tracker/plans/completed/BUG-08-012/00-overview.md §2 (Semantic pin).
 #[test]
 fn legacy_key_encoding_after_child_crash_produces_raw_ascii_not_csi_u() {
     use oriterm_core::effect::VoidEffectSink;

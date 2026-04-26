@@ -97,7 +97,7 @@ impl Grid {
     ///
     /// Every cell in `[top..=bot] × [left..=right]` is reset to
     /// `template` (carrying `DRAWN` so DECRQCRA treats them as written
-    /// per BUG-08-17) and marked dirty. Preserves grid invariants via
+    /// per BUG-08-017) and marked dirty. Preserves grid invariants via
     /// `Grid::clear_wide_char_at` for wide-char spacer cleanup along
     /// the left/right edges.
     #[expect(

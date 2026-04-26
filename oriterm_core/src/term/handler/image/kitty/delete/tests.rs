@@ -3,8 +3,8 @@
 //! Every test encodes protocol-spec behavior per kitty
 //! graphics-protocol.rst §Deleting images (§Deleting images, lines 742–788
 //! of `~/projects/reference_repos/console_repos/kitty/docs/graphics-protocol.rst`).
-//! Tests pin the CORRECT spec behavior — not the current BUG-08-7 /
-//! BUG-08-8 baseline. This is red-before-green TDD per
+//! Tests pin the CORRECT spec behavior — not the current BUG-08-007 /
+//! BUG-08-008 baseline. This is red-before-green TDD per
 //! `.claude/rules/tests.md` §TDD for Bugs.
 //!
 //! Catalog rows: KG-ACTION-DELETE, KG-DELETE-a, KG-DELETE-A, KG-DELETE-i,
@@ -115,7 +115,7 @@ fn delete_a_removes_visible_placement_only_keeps_image_data() {
 }
 
 /// KG-DELETE-a negative pin: d=a must NOT call cache.clear() (would drop the
-/// off-screen placement too). Regression guard for BUG-08-7.
+/// off-screen placement too). Regression guard for BUG-08-007.
 #[test]
 fn delete_a_negative_pin_does_not_clear_entire_cache() {
     let mut t = term();
@@ -127,7 +127,7 @@ fn delete_a_negative_pin_does_not_clear_entire_cache() {
     assert_eq!(
         placement_count(&t),
         1,
-        "BUG-08-7 regression: d=a cleared off-screen placement"
+        "BUG-08-007 regression: d=a cleared off-screen placement"
     );
     assert_eq!(image_count(&t), 1);
 }
@@ -243,7 +243,7 @@ fn delete_i_uppercase_removes_image_data_and_placements() {
 // ---------------------------------------------------------------------------
 
 /// KG-DELETE-p: `d=p,x=X,y=Y` deletes placements intersecting cell (X-1, Y-1).
-/// BUG-08-7 regression: current impl used `placement_id` instead of cell.
+/// BUG-08-007 regression: current impl used `placement_id` instead of cell.
 #[test]
 fn delete_p_uses_cell_position_not_placement_id() {
     let mut t = term();
@@ -268,7 +268,7 @@ fn delete_p_uses_cell_position_not_placement_id() {
 }
 
 /// KG-DELETE-p negative pin: d=p MUST NOT use placement_id. Regression for
-/// BUG-08-7 — old impl required i= and p= and silently dropped x=/y=.
+/// BUG-08-007 — old impl required i= and p= and silently dropped x=/y=.
 #[test]
 fn delete_p_negative_pin_ignores_placement_id_key() {
     let mut t = term();
@@ -285,7 +285,7 @@ fn delete_p_negative_pin_ignores_placement_id_key() {
     assert_eq!(
         placement_count(&t),
         0,
-        "BUG-08-7 regression: d=p consulted p= or i= instead of (x,y)"
+        "BUG-08-007 regression: d=p consulted p= or i= instead of (x,y)"
     );
 }
 
@@ -310,7 +310,7 @@ fn delete_p_uppercase_frees_orphaned_image_data() {
 // ---------------------------------------------------------------------------
 
 /// KG-DELETE-c: `d=c` uses CURSOR POSITION (col, row) — not column alone.
-/// BUG-08-7 regression: current impl only matched the column.
+/// BUG-08-007 regression: current impl only matched the column.
 #[test]
 fn delete_c_uses_cursor_row_not_column_only() {
     let mut t = term();
@@ -347,7 +347,7 @@ fn delete_c_negative_pin_does_not_delete_entire_cursor_column() {
     assert_eq!(
         placement_count(&t),
         3,
-        "BUG-08-7 regression: d=c deleted by column only, ignoring cursor row"
+        "BUG-08-007 regression: d=c deleted by column only, ignoring cursor row"
     );
 }
 
@@ -465,7 +465,7 @@ fn delete_z_uppercase_frees_orphaned_image_data() {
 // ---------------------------------------------------------------------------
 
 /// KG-DELETE-r: `d=r,x=lo,y=hi` deletes images (by id) in inclusive range.
-/// BUG-08-7 regression: current impl deleted by CURSOR POSITION.
+/// BUG-08-007 regression: current impl deleted by CURSOR POSITION.
 #[test]
 fn delete_r_uses_id_range_not_cursor_position() {
     let mut t = term();
@@ -490,7 +490,7 @@ fn delete_r_uses_id_range_not_cursor_position() {
 }
 
 /// KG-DELETE-r negative pin: d=r MUST NOT use cursor position.
-/// Regression for BUG-08-7 — old impl called `remove_by_position(cursor_col, cursor_row)`.
+/// Regression for BUG-08-007 — old impl called `remove_by_position(cursor_col, cursor_row)`.
 #[test]
 fn delete_r_negative_pin_does_not_use_cursor_position() {
     let mut t = term();
@@ -506,7 +506,7 @@ fn delete_r_negative_pin_does_not_use_cursor_position() {
     assert_eq!(
         placement_count(&t),
         1,
-        "BUG-08-7 regression: d=r deleted at cursor position instead of by id range"
+        "BUG-08-007 regression: d=r deleted at cursor position instead of by id range"
     );
 }
 

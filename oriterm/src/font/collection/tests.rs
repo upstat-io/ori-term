@@ -2554,7 +2554,7 @@ fn effective_bold_weight_clamped_to_range() {
 // `apply_alpha_correction` and the subpixel equality pins fail.
 
 /// Regression: BUG-04-006 — SubpixelRgb bitmap must not receive gamma LUT.
-/// See: plans/bug-tracker/fix-BUG-04-006.md §2 Red-first fail pins.
+/// See: bug-tracker/plans/completed/BUG-04-006/00-overview.md §2 Red-first fail pins.
 #[test]
 fn subpixel_rgb_bitmap_not_gamma_boosted() {
     let (gamma_bitmap, raw_bitmap) = rasterize_h_gamma_pair(GlyphFormat::SubpixelRgb, false);

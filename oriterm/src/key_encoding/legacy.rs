@@ -235,7 +235,7 @@ fn encode_character(s: &str, mods: Modifiers, text: Option<&str>) -> Vec<u8> {
 
     // Textual byte source: prefer winit's `text` (locale-aware; may reflect IME
     // composition), fall back to the logical `Key::Character` content. Covers
-    // backends that don't populate `text` for numpad keys (BUG-08-13).
+    // backends that don't populate `text` for numpad keys (BUG-08-013).
     let bytes: &[u8] = text.map_or_else(|| s.as_bytes(), str::as_bytes);
 
     // Alt prefix for character keys (without Ctrl).
