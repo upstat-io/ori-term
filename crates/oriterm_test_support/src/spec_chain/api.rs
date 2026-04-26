@@ -244,15 +244,11 @@ impl Default for SpecHarness {
 impl Drop for SpecHarness {
     fn drop(&mut self) {
         // Spool files go under `target/spec-chain-uncataloged/` (repo-local,
-        // cleaned by `cargo clean`). Uses CARGO_MANIFEST_DIR to locate the
-        // workspace `target/` directory regardless of cwd.
-        let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .and_then(|p| p.parent())
-            .map_or_else(
-                || std::env::temp_dir().join("oriterm-spec-uncataloged"),
-                |root| root.join("target/spec-chain-uncataloged"),
-            );
+        // cleaned by `cargo clean`). The reader is `spec-coverage-report`,
+        // which uses the same SSOT helper to find this dir — keep both ends
+        // routed through `paths::term_workspace_root()` per
+        // `.claude/rules/test-organization.md §Wrapper/Subrepo Path Discovery`.
+        let dir = crate::paths::term_workspace_root().join("target/spec-chain-uncataloged");
         if let Err(e) = self.uncataloged.serialize_to_dir(&dir) {
             eprintln!("warning: failed to serialize uncataloged tuples: {e}");
         }

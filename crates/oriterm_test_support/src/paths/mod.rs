@@ -38,6 +38,7 @@ const SPEC_CONFORMANCE_MARKER: &str = "plans/spec-conformance";
 // Note: `expect()` below is reachable only if oriterm_test_support is
 // relocated outside `crates/<name>/` — a structural change that would
 // invalidate the workspace layout. Acceptable failure mode.
+#[must_use]
 pub fn term_workspace_root() -> &'static Path {
     static CACHED: OnceLock<PathBuf> = OnceLock::new();
     CACHED.get_or_init(|| {
@@ -55,6 +56,7 @@ pub fn term_workspace_root() -> &'static Path {
 ///
 /// Cached per-process via `OnceLock`. The walk-up cost is a handful of
 /// `stat` calls, so caching is purely ergonomic.
+#[must_use]
 pub fn wrapper_root() -> Option<&'static Path> {
     static CACHED: OnceLock<Option<PathBuf>> = OnceLock::new();
     CACHED
@@ -63,32 +65,38 @@ pub fn wrapper_root() -> Option<&'static Path> {
 }
 
 /// Wrapper-relative `plans/spec-conformance/`. Returns `None` when wrapper absent.
+#[must_use]
 pub fn spec_conformance_dir() -> Option<PathBuf> {
     wrapper_root().map(|r| r.join(SPEC_CONFORMANCE_MARKER))
 }
 
 /// Wrapper-relative `plans/spec-conformance/catalog/`. Returns `None` when wrapper absent.
+#[must_use]
 pub fn catalog_dir() -> Option<PathBuf> {
     spec_conformance_dir().map(|d| d.join("catalog"))
 }
 
 /// Wrapper-relative `plans/spec-conformance/captures/`. Returns `None` when wrapper absent.
+#[must_use]
 pub fn captures_dir() -> Option<PathBuf> {
     spec_conformance_dir().map(|d| d.join("captures"))
 }
 
 /// Wrapper-relative `plans/spec-conformance/specs/`. Returns `None` when wrapper absent.
+#[must_use]
 pub fn specs_dir() -> Option<PathBuf> {
     spec_conformance_dir().map(|d| d.join("specs"))
 }
 
 /// Wrapper-relative `plans/spec-conformance/audits/`. Returns `None` when wrapper absent.
+#[must_use]
 pub fn audits_dir() -> Option<PathBuf> {
     spec_conformance_dir().map(|d| d.join("audits"))
 }
 
 /// Wrapper-relative `plans/spec-conformance/coverage-baseline.toml`.
 /// Returns `None` when wrapper absent.
+#[must_use]
 pub fn coverage_baseline_path() -> Option<PathBuf> {
     spec_conformance_dir().map(|d| d.join("coverage-baseline.toml"))
 }

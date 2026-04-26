@@ -19,7 +19,7 @@ fn temp_without_marker() -> TempDir {
     TempDir::new().expect("tempdir")
 }
 
-// ── walk_up_from — semantic pins ─────────────────────────────────────────
+// walk_up_from — semantic pins
 
 /// Pin: marker at the start dir → walk-up returns the start dir itself.
 #[test]
@@ -114,7 +114,7 @@ fn walk_up_ignores_partial_marker_subdir() {
     }
 }
 
-// ── public API smoke ─────────────────────────────────────────────────────
+// public API smoke
 
 /// Smoke: `term_workspace_root()` returns a path that ends with `term_repo`
 /// AND contains `crates/oriterm_test_support` as a child.
