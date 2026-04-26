@@ -14,7 +14,7 @@ use crate::term::Term;
 use super::KittyStoreParams;
 
 /// RAII guard that removes a file on Drop when armed. Used by
-/// `kitty_store_from_file` to enforce the kitty `t=t` (TempFile)
+/// `kitty_store_from_file` to enforce the kitty `t=t` (`TempFile`)
 /// "delete after consume" semantic on EVERY exit path — success,
 /// oversized rejection, IO error, non-regular rejection, stat
 /// failure — without duplicating the cleanup at each return site.
@@ -200,3 +200,6 @@ impl<S: EffectSink> Term<S> {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests;

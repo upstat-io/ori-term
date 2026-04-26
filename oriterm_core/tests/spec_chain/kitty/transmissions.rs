@@ -224,7 +224,7 @@ fn kitty_store_from_file_max_bytes_plus_one_rejects_via_preflight() {
     // 65 bytes, max_bytes = 64. Preflight `meta.len() > max_bytes`
     // fires (65 > 64) and returns ENOMEM before the bounded read.
     let mut data = rgba_4x4_red(); // 64 bytes
-    data.push(0u8);                // 65th byte
+    data.push(0u8); // 65th byte
     std::fs::write(&path, &data).expect("write fixture");
 
     let mut h = SpecHarness::new();
@@ -261,7 +261,11 @@ fn kitty_store_from_file_max_bytes_usize_max_does_not_panic() {
     ));
 
     // Under saturating_add, this scenario must succeed without panic.
-    assert_eq!(placement_count(&h), 1, "max_bytes=usize::MAX MUST not panic");
+    assert_eq!(
+        placement_count(&h),
+        1,
+        "max_bytes=usize::MAX MUST not panic"
+    );
     assert!(reply_contains(&h, &ok_reply_for(84)));
 }
 
@@ -289,7 +293,10 @@ fn kitty_store_from_file_directory_path_returns_einval() {
         s.contains("EINVAL") || s.contains("EIO"),
         "directory path MUST be rejected — got {s:?}",
     );
-    assert!(dir_path.exists(), "directory MUST persist (cannot be remove_file'd)");
+    assert!(
+        dir_path.exists(),
+        "directory MUST persist (cannot be remove_file'd)"
+    );
 }
 
 /// BUG-08-021 (Unix only): path is a FIFO → rejected without
