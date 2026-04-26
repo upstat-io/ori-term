@@ -88,70 +88,65 @@ impl UncatalogedDetector {
     }
 }
 
-/// Convert a `PerformAction` into a `TupleSig` (if it represents a
-/// catalogable sequence).
+/// Convert a `PerformAction` into a canonical `Tuple` (if it represents
+/// a catalogable sequence).
 ///
 /// Returns `None` for `Print`, `Put`, `Unhook`, `ApcStart`, `ApcPut`,
 /// `ApcEnd` — these are data/framing, not distinct sequence types.
-fn perform_action_to_sig(action: &PerformAction) -> Option<TupleSig> {
+///
+/// The runtime observer leaves `params` empty by contract — the
+/// `PerformAction` does not surface payload bytes (CSI carries
+/// `Vec<Vec<u16>>` numeric params, OSC carries `Vec<Vec<u8>>` parts;
+/// the catalog's per-OSC `params` placeholder string is canonicalized
+/// via `osc_placeholder` in the catalog/capture path, not here).
+/// Made `pub` so the SSOT-alignment matrix can observe the producer's
+/// actual `Tuple` shape, not a reconstructed proxy (BUG-07-019 round-2).
+pub fn perform_action_to_tuple(action: &PerformAction) -> Option<Tuple> {
     match action {
         PerformAction::CsiDispatch {
             intermediates,
             action,
             ..
-        } => {
-            let tuple = Tuple::new(
-                Category::Csi,
-                intermediates.clone(),
-                String::new(),
-                action.to_string(),
-            );
-            Some(tuple.signature())
-        }
+        } => Some(Tuple::new(
+            Category::Csi,
+            intermediates.clone(),
+            String::new(),
+            action.to_string(),
+        )),
         PerformAction::OscDispatch { params, .. } => {
-            // Extract OSC command number from first param.
+            // Extract OSC selector from first param.
             let cmd = params
                 .first()
                 .map(|p| String::from_utf8_lossy(p).to_string())
                 .unwrap_or_default();
-            let tuple = Tuple::new(Category::Osc, Vec::new(), String::new(), cmd);
-            Some(tuple.signature())
+            Some(Tuple::new(Category::Osc, Vec::new(), String::new(), cmd))
         }
         PerformAction::EscDispatch {
             intermediates,
             byte,
             ..
-        } => {
-            let tuple = Tuple::new(
-                Category::Esc,
-                intermediates.clone(),
-                String::new(),
-                String::from(*byte as char),
-            );
-            Some(tuple.signature())
-        }
+        } => Some(Tuple::new(
+            Category::Esc,
+            intermediates.clone(),
+            String::new(),
+            String::from(*byte as char),
+        )),
         PerformAction::Hook {
             intermediates,
             action,
             ..
-        } => {
-            let tuple = Tuple::new(
-                Category::Dcs,
-                intermediates.clone(),
-                String::new(),
-                action.to_string(),
-            );
-            Some(tuple.signature())
-        }
-        PerformAction::Execute { byte } => {
-            let tuple = Tuple::new(
-                Category::C0,
-                Vec::new(),
-                String::new(),
-                format!("{byte:02x}"),
-            );
-            Some(tuple.signature())
-        }
+        } => Some(Tuple::new(
+            Category::Dcs,
+            intermediates.clone(),
+            String::new(),
+            action.to_string(),
+        )),
+        PerformAction::Execute { byte } => Some(Tuple::new(
+            Category::C0,
+            Vec::new(),
+            String::new(),
+            format!("{byte:02x}"),
+        )),
         // Data/framing actions are not catalogable sequence types.
         PerformAction::Print { .. }
         | PerformAction::Put { .. }
@@ -160,6 +155,13 @@ fn perform_action_to_sig(action: &PerformAction) -> Option<TupleSig> {
         | PerformAction::ApcPut { .. }
         | PerformAction::ApcEnd => None,
     }
+}
+
+/// Convert a `PerformAction` into a `TupleSig` (if it represents a
+/// catalogable sequence). Thin wrapper over [`perform_action_to_tuple`]
+/// that projects to the comparison signature.
+fn perform_action_to_sig(action: &PerformAction) -> Option<TupleSig> {
+    perform_action_to_tuple(action).map(|t| t.signature())
 }
 
 /// Read all `.jsonl` files from a directory and parse them into tuples.
