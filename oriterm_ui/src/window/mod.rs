@@ -290,11 +290,26 @@ fn apply_platform_attributes(attrs: WindowAttributes, _config: &WindowConfig) ->
     attrs
 }
 
-/// Applies post-creation window style (sharp corners on Windows 11).
+/// Applies post-creation DWM attributes (sharp corners + system accent
+/// border on Windows 11).
+///
+/// Two attributes are set:
+/// - `DWMWA_WINDOW_CORNER_PREFERENCE = DWMWCP_DONOTROUND` — keep corners sharp,
+///   matching the frameless CSD aesthetic.
+/// - `DWMWA_BORDER_COLOR = DWMWA_COLOR_DEFAULT` — opt the window into the
+///   system accent color border. Frameless windows with `WS_THICKFRAME +
+///   DwmExtendFrameIntoClientArea` do not inherit the accent border by
+///   default; the `DWMWA_COLOR_DEFAULT (0xFFFFFFFF)` sentinel tells DWM
+///   "use the system theme" (i.e., follow the user's
+///   `Settings > Personalization > Colors > Show accent color on title bars
+///   and window borders` choice). This attribute is Windows 11 build 22000+;
+///   silently no-ops on older Windows. Reference: `WezTerm` + Alacritty both
+///   apply this exact pattern; Microsoft Learn documents
+///   `DWMWA_COLOR_DEFAULT` as the canonical accent-color opt-in.
 #[cfg(target_os = "windows")]
 #[allow(
     unsafe_code,
-    reason = "Win32 FFI: DwmSetWindowAttribute for sharp corners"
+    reason = "Win32 FFI: DwmSetWindowAttribute for sharp corners and accent border"
 )]
 fn apply_post_creation_style(window: &Window) {
     use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
@@ -309,15 +324,29 @@ fn apply_post_creation_style(window: &Window) {
 
     // DWMWA_WINDOW_CORNER_PREFERENCE = 33, DWMWCP_DONOTROUND = 1.
     let preference: i32 = windows_sys::Win32::Graphics::Dwm::DWMWCP_DONOTROUND;
-    let attr = windows_sys::Win32::Graphics::Dwm::DWMWA_WINDOW_CORNER_PREFERENCE;
-    // SAFETY: `hwnd` is a valid window handle from winit. The attribute and
-    // value are well-typed DWM constants. This is standard Win32 FFI.
+    let corner_attr = windows_sys::Win32::Graphics::Dwm::DWMWA_WINDOW_CORNER_PREFERENCE;
+    // DWMWA_BORDER_COLOR = 34, DWMWA_COLOR_DEFAULT = 0xFFFFFFFF (sentinel
+    // for "use system theme accent color" — Win11 build 22000+).
+    let border_color: u32 = windows_sys::Win32::Graphics::Dwm::DWMWA_COLOR_DEFAULT;
+    let border_attr = windows_sys::Win32::Graphics::Dwm::DWMWA_BORDER_COLOR;
+    // SAFETY: `hwnd` is a valid window handle from winit. Both attribute
+    // IDs and value pointers/sizes are well-typed DWM constants from
+    // windows-sys. `DwmSetWindowAttribute` is a standard Win32 FFI surface;
+    // HRESULT is intentionally ignored — silent no-op on Windows 10 /
+    // pre-22000 Win11 builds matches the WezTerm/Alacritty reference
+    // implementations.
     unsafe {
         windows_sys::Win32::Graphics::Dwm::DwmSetWindowAttribute(
             hwnd,
-            attr as u32,
+            corner_attr as u32,
             std::ptr::addr_of!(preference).cast(),
             size_of::<i32>() as u32,
+        );
+        windows_sys::Win32::Graphics::Dwm::DwmSetWindowAttribute(
+            hwnd,
+            border_attr as u32,
+            std::ptr::addr_of!(border_color).cast(),
+            size_of::<u32>() as u32,
         );
     }
 }
