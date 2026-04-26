@@ -15,7 +15,7 @@ use oriterm_core::effect::{Effect, PtyEffect};
 use oriterm_test_support::spec_chain::{SpecHarness, pty_writes};
 
 const NOTCURSES_STARTUP: &[u8] =
-    include_bytes!("../../../../plans/spec-conformance/captures/notcurses-demo-intro.cap");
+    include_bytes!("../../../../../plans/spec-conformance/captures/notcurses-demo-intro.cap");
 
 /// Feed the recorded notcurses startup bytes and return the concatenated
 /// PTY reply stream.

@@ -1,6 +1,10 @@
 //! Kitty graphics storage helpers — decode, direct-store, file-read.
 
+use std::io::Read;
 use std::sync::Arc;
+
+#[cfg(unix)]
+use std::os::unix::fs::OpenOptionsExt;
 
 use crate::effect::sink::EffectSink;
 use crate::image::kitty::KittyTransmission;
@@ -8,6 +12,33 @@ use crate::image::{ImageData, ImageId, ImageSource, decode_to_rgba, rgb_to_rgba}
 use crate::term::Term;
 
 use super::KittyStoreParams;
+
+/// RAII guard that removes a file on Drop when armed. Used by
+/// `kitty_store_from_file` to enforce the kitty `t=t` (TempFile)
+/// "delete after consume" semantic on EVERY exit path — success,
+/// oversized rejection, IO error, non-regular rejection, stat
+/// failure — without duplicating the cleanup at each return site.
+struct TempFileGuard<'a> {
+    path: &'a std::path::Path,
+    armed: bool,
+}
+
+impl<'a> TempFileGuard<'a> {
+    fn new(path: &'a std::path::Path, transmission: KittyTransmission) -> Self {
+        Self {
+            path,
+            armed: transmission == KittyTransmission::TempFile,
+        }
+    }
+}
+
+impl Drop for TempFileGuard<'_> {
+    fn drop(&mut self) {
+        if self.armed {
+            let _ = std::fs::remove_file(self.path);
+        }
+    }
+}
 
 impl<S: EffectSink> Term<S> {
     /// Decode and store image data in the cache.
@@ -92,18 +123,55 @@ impl<S: EffectSink> Term<S> {
         }
 
         let max_bytes = self.image_cache().max_single_image_bytes();
-        let file_data =
-            std::fs::read(path).map_err(|e| format!("EIO: failed to read file: {e}"))?;
 
-        if file_data.len() > max_bytes {
-            if p.transmission == KittyTransmission::TempFile {
-                let _ = std::fs::remove_file(path);
-            }
+        // RAII guard armed FIRST — covers stat-failure, non-regular
+        // rejection, IO-error, and oversized-rejection paths uniformly.
+        // Replaces the duplicated `if transmission == TempFile { remove_file }`
+        // calls and fixes the early-return temp-file leak that the original
+        // `?` on `std::fs::read` had.
+        let _guard = TempFileGuard::new(path, p.transmission);
+
+        // Open with O_NONBLOCK on Unix to prevent indefinite blocking on a
+        // FIFO-without-writer that the user's program may have planted at
+        // the path. After fstat confirms the descriptor is a regular file,
+        // O_NONBLOCK is harmless on regular file reads. On Windows, regular
+        // file opens cannot block this way.
+        let mut opts = std::fs::OpenOptions::new();
+        opts.read(true);
+        #[cfg(unix)]
+        opts.custom_flags(libc::O_NONBLOCK);
+        let file = opts
+            .open(path)
+            .map_err(|e| format!("EIO: failed to open file: {e}"))?;
+
+        // fstat the OPENED descriptor (NOT the path) — eliminates the
+        // path-based TOCTOU window between stat and open. Reject anything
+        // other than a regular file.
+        let meta = file
+            .metadata()
+            .map_err(|e| format!("EIO: failed to stat file: {e}"))?;
+        if !meta.file_type().is_file() {
+            return Err("EINVAL: path is not a regular file".to_string());
+        }
+
+        // Fast-path size preflight on the verified regular-file descriptor.
+        // The bounded read below remains as TOCTOU defense-in-depth (file
+        // can grow between this check and read).
+        if meta.len() > max_bytes as u64 {
             return Err("ENOMEM: file exceeds max image size".to_string());
         }
 
-        if p.transmission == KittyTransmission::TempFile {
-            let _ = std::fs::remove_file(path);
+        // Bounded read — caps at max_bytes + 1 bytes via Take. The +1 is
+        // the detection byte: if `file_data.len() > max_bytes` post-read,
+        // the file grew between the preflight and the read. saturating_add
+        // guards against the pathological max_bytes == usize::MAX config.
+        let mut file_data = Vec::with_capacity(meta.len() as usize);
+        file.take((max_bytes as u64).saturating_add(1))
+            .read_to_end(&mut file_data)
+            .map_err(|e| format!("EIO: failed to read file: {e}"))?;
+
+        if file_data.len() > max_bytes {
+            return Err("ENOMEM: file exceeds max image size".to_string());
         }
 
         let source = ImageSource::File(path.to_path_buf());
