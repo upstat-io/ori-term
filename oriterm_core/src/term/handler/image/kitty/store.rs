@@ -40,6 +40,32 @@ impl Drop for TempFileGuard<'_> {
     }
 }
 
+/// Open `path` with O_NONBLOCK on Unix, fstat the OPENED descriptor, and
+/// reject non-regular files (FIFO, socket, char-device, dir, Windows
+/// reparse-point that doesn't resolve to a regular file). The returned
+/// metadata comes from the descriptor (not the path) so it's free of
+/// the path-based TOCTOU window between stat and open. O_NONBLOCK is
+/// harmless on regular files post-fstat; on Unix it prevents indefinite
+/// blocking when the path resolves to a FIFO without a writer.
+fn open_regular_file(
+    path: &std::path::Path,
+) -> Result<(std::fs::File, std::fs::Metadata), String> {
+    let mut opts = std::fs::OpenOptions::new();
+    opts.read(true);
+    #[cfg(unix)]
+    opts.custom_flags(libc::O_NONBLOCK);
+    let file = opts
+        .open(path)
+        .map_err(|e| format!("EIO: failed to open file: {e}"))?;
+    let meta = file
+        .metadata()
+        .map_err(|e| format!("EIO: failed to stat file: {e}"))?;
+    if !meta.file_type().is_file() {
+        return Err("EINVAL: path is not a regular file".to_string());
+    }
+    Ok((file, meta))
+}
+
 impl<S: EffectSink> Term<S> {
     /// Decode and store image data in the cache.
     pub(super) fn kitty_store_image(&mut self, p: KittyStoreParams) -> Result<(), String> {
@@ -131,40 +157,16 @@ impl<S: EffectSink> Term<S> {
         // `?` on `std::fs::read` had.
         let _guard = TempFileGuard::new(path, p.transmission);
 
-        // Open with O_NONBLOCK on Unix to prevent indefinite blocking on a
-        // FIFO-without-writer that the user's program may have planted at
-        // the path. After fstat confirms the descriptor is a regular file,
-        // O_NONBLOCK is harmless on regular file reads. On Windows, regular
-        // file opens cannot block this way.
-        let mut opts = std::fs::OpenOptions::new();
-        opts.read(true);
-        #[cfg(unix)]
-        opts.custom_flags(libc::O_NONBLOCK);
-        let file = opts
-            .open(path)
-            .map_err(|e| format!("EIO: failed to open file: {e}"))?;
-
-        // fstat the OPENED descriptor (NOT the path) — eliminates the
-        // path-based TOCTOU window between stat and open. Reject anything
-        // other than a regular file.
-        let meta = file
-            .metadata()
-            .map_err(|e| format!("EIO: failed to stat file: {e}"))?;
-        if !meta.file_type().is_file() {
-            return Err("EINVAL: path is not a regular file".to_string());
-        }
+        let (file, meta) = open_regular_file(path)?;
 
         // Fast-path size preflight on the verified regular-file descriptor.
         // The bounded read below remains as TOCTOU defense-in-depth (file
-        // can grow between this check and read).
+        // can grow between this check and read). saturating_add guards
+        // against the pathological max_bytes == usize::MAX config.
         if meta.len() > max_bytes as u64 {
             return Err("ENOMEM: file exceeds max image size".to_string());
         }
 
-        // Bounded read — caps at max_bytes + 1 bytes via Take. The +1 is
-        // the detection byte: if `file_data.len() > max_bytes` post-read,
-        // the file grew between the preflight and the read. saturating_add
-        // guards against the pathological max_bytes == usize::MAX config.
         let mut file_data = Vec::with_capacity(meta.len() as usize);
         file.take((max_bytes as u64).saturating_add(1))
             .read_to_end(&mut file_data)

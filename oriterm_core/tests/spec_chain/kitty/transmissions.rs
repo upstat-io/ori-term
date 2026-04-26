@@ -287,11 +287,12 @@ fn kitty_store_from_file_directory_path_returns_einval() {
     assert_eq!(placement_count(&h), 0);
     let replies = reply_bytes(&h);
     let s = String::from_utf8_lossy(&replies);
-    // Either EINVAL (Unix fstat on directory descriptor returns dir type)
-    // or EIO (open succeeds but read fails). Both are correct rejections.
+    // On Unix, File::open succeeds for a directory and fstat reveals the
+    // dir file_type — we reject with the exact EINVAL message. Pin the
+    // exact string per Round 0 Code TPR Codex F2 (negative-test rigor).
     assert!(
-        s.contains("EINVAL") || s.contains("EIO"),
-        "directory path MUST be rejected — got {s:?}",
+        s.contains("EINVAL: path is not a regular file"),
+        "Unix directory path MUST emit `EINVAL: path is not a regular file` — got {s:?}",
     );
     assert!(
         dir_path.exists(),
@@ -336,10 +337,52 @@ fn kitty_store_from_file_fifo_path_returns_einval_no_block() {
     let replies = reply_bytes(&h);
     let s = String::from_utf8_lossy(&replies);
     // O_NONBLOCK on Unix: open() succeeds immediately, then fstat reveals
-    // FIFO file_type and we reject with EINVAL.
+    // FIFO file_type and we reject with the exact EINVAL message. Pin the
+    // exact string per Round 0 Code TPR Codex F2 (negative-test rigor).
     assert!(
-        s.contains("EINVAL") || s.contains("EIO"),
-        "FIFO path MUST be rejected — got {s:?}",
+        s.contains("EINVAL: path is not a regular file"),
+        "FIFO path MUST emit `EINVAL: path is not a regular file` — got {s:?}",
+    );
+}
+
+/// BUG-08-021: t=t with FIFO path. Pins the RAII-cleanup-on-EINVAL
+/// invariant — `remove_file` CAN remove FIFOs on Unix, so the guard's
+/// Drop should successfully unlink the FIFO when t=t requested deletion.
+/// Per Round 0 Code TPR Codex F3 (missing non-regular t=t cleanup matrix).
+#[cfg(unix)]
+#[test]
+fn kitty_store_from_file_fifo_t_eq_t_returns_einval_and_removes_source() {
+    use std::process::Command;
+
+    let dir = tmp_dir("fifo_t_t");
+    let fifo_path = dir.path().join("fifo_t_t");
+
+    let mkfifo_status = Command::new("mkfifo").arg(&fifo_path).status();
+    match mkfifo_status {
+        Ok(s) if s.success() => {}
+        _ => {
+            eprintln!("SKIP: mkfifo binary unavailable or failed");
+            return;
+        }
+    }
+    assert!(fifo_path.exists(), "precondition: FIFO created");
+
+    let mut h = SpecHarness::new();
+    h.feed(&kitty_apc(
+        b"a=T,i=88,t=t,f=32,s=4,v=4",
+        &b64(fifo_path.to_str().expect("utf-8 path").as_bytes()),
+    ));
+
+    assert_eq!(placement_count(&h), 0);
+    let replies = reply_bytes(&h);
+    let s = String::from_utf8_lossy(&replies);
+    assert!(
+        s.contains("EINVAL: path is not a regular file"),
+        "FIFO t=t MUST emit `EINVAL: path is not a regular file` — got {s:?}",
+    );
+    assert!(
+        !fifo_path.exists(),
+        "t=t MUST remove the FIFO via RAII guard even on EINVAL rejection",
     );
 }
 
