@@ -10,7 +10,7 @@
 //! tests for extractors, and the `walk_catalog_files` function
 //! from `mod.rs`.
 
-use super::tuple::{Category, Tuple, TupleSig};
+use super::tuple::{Category, Tuple};
 use super::walk_catalog_files;
 use super::{
     Classification, build_dispatch_map, canonical_tuple, classify_from_map, extract_capture_tuples,
@@ -250,8 +250,11 @@ fn catalog_sequence_string(selector: &str, payload_placeholders: &[&str]) -> Str
 }
 
 /// Producer 4: feed a synthesized `PerformAction::OscDispatch` directly
-/// to `UncatalogedDetector` and return the resulting `TupleSig`.
-fn runtime_observer_signature(selector: &str, payload: &[&str]) -> TupleSig {
+/// to `UncatalogedDetector`. Reconstruct the producing `Tuple` from the
+/// signature so callers can pin both the signature AND the per-producer
+/// `params` shape (the runtime observer leaves `params` empty by
+/// design — payload is not surfaced through `PerformAction`).
+fn runtime_observer_tuple(selector: &str, payload: &[&str]) -> Tuple {
     let mut params: Vec<Vec<u8>> = vec![selector.as_bytes().to_vec()];
     for p in payload {
         params.push(p.as_bytes().to_vec());
@@ -262,33 +265,38 @@ fn runtime_observer_signature(selector: &str, payload: &[&str]) -> TupleSig {
     };
     let mut detector = UncatalogedDetector::new();
     detector.feed_actions(&[action]);
-    detector
+    let sig = detector
         .seen()
         .iter()
         .next()
         .cloned()
-        .expect("UncatalogedDetector must produce one signature for OscDispatch")
+        .expect("UncatalogedDetector must produce one signature for OscDispatch");
+    // Runtime observer empties `params` by contract — see
+    // `spec_chain/uncataloged/mod.rs::perform_action_to_sig`.
+    Tuple::new(Category::Osc, sig.1, "", sig.2)
 }
 
 /// Producer 3: write the OSC byte stream to a tempfile, run
-/// `extract_capture_tuples`, return the OSC tuple's signature.
-fn capture_signature(selector: &str, payload: &[&str]) -> TupleSig {
+/// `extract_capture_tuples`, return the OSC tuple verbatim (full shape
+/// including `params` so callers can pin canonicalization).
+fn capture_tuple(selector: &str, payload: &[&str]) -> Tuple {
     let dir = tempfile::tempdir().expect("tempdir");
     let path = dir.path().join("osc.cap");
     std::fs::write(&path, osc_bytes(selector, payload)).expect("write cap");
     let tuples = extract_capture_tuples(&path).expect("extract");
-    let osc = tuples
+    tuples
         .into_iter()
         .find(|(t, _)| t.category == Category::Osc)
         .map(|(t, _)| t)
-        .expect("capture must yield one OSC tuple");
-    osc.signature()
+        .expect("capture must yield one OSC tuple")
 }
 
 /// Producer 2: walk the VTE dispatch tree and find the OSC tuple
-/// whose `final_byte` matches `selector`. Returns `None` when no
-/// dispatch arm exists (e.g. interceptor-owned OSCs).
-fn dispatch_signature(selector: &str) -> Option<TupleSig> {
+/// whose `final_byte` matches `selector`. Returns `None` when the VTE
+/// dispatch source file is absent (cross-compiled / packaged builds).
+/// The dispatch walker leaves `params` empty by contract — the arm
+/// only knows the selector, not the payload shape.
+fn dispatch_tuple(selector: &str) -> Option<Tuple> {
     let root = workspace_root();
     let osc_path = root.join("crates/vte/src/ansi/dispatch/osc.rs");
     if !osc_path.exists() {
@@ -298,15 +306,14 @@ fn dispatch_signature(selector: &str) -> Option<TupleSig> {
     tuples
         .into_iter()
         .find(|t| t.category == Category::Osc && t.final_byte == selector)
-        .map(|t| t.signature())
 }
 
 /// Producer 1: canonicalize the catalog Sequence-column markdown
-/// for the given selector + payload placeholders.
-fn catalog_signature(selector: &str, payload_placeholders: &[&str]) -> TupleSig {
+/// for the given selector + payload placeholders. Returns the full
+/// `Tuple` so callers can pin the canonical `params` shape.
+fn catalog_tuple(selector: &str, payload_placeholders: &[&str]) -> Tuple {
     let seq = catalog_sequence_string(selector, payload_placeholders);
-    let t = canonical_tuple(&seq).expect("catalog parse_osc must canonicalize OSC sequence");
-    t.signature()
+    canonical_tuple(&seq).expect("catalog parse_osc must canonicalize OSC sequence")
 }
 
 /// The SSOT-alignment matrix. Each row is
@@ -332,7 +339,10 @@ fn osc_ssot_matrix() -> Vec<(&'static str, Vec<&'static str>, Vec<&'static str>)
 
 /// Regression: BUG-07-019 — all four OSC tuple producers MUST yield
 /// identical `TupleSig` for the same OSC sequence (selector lives in
-/// `final_byte` after the SSOT alignment).
+/// `final_byte` after the SSOT alignment) AND each producer MUST
+/// emit the per-producer `params` shape its contract promises:
+/// catalog/capture carry the canonical payload placeholder string;
+/// dispatch/runtime leave `params` empty (arm only knows the selector).
 #[test]
 fn osc_tuple_sig_aligns_across_all_four_producers() {
     let osc_path = workspace_root().join("crates/vte/src/ansi/dispatch/osc.rs");
@@ -345,31 +355,50 @@ fn osc_tuple_sig_aligns_across_all_four_producers() {
     let mut producer_cells_exercised = 0_usize;
 
     for (selector, raw_payload, catalog_payload) in osc_ssot_matrix() {
-        let p1 = catalog_signature(selector, &catalog_payload);
-        let p3 = capture_signature(selector, &raw_payload);
-        let p4 = runtime_observer_signature(selector, &raw_payload);
-        producer_cells_exercised += 3; // p1 + p3 + p4 always run
+        let t1 = catalog_tuple(selector, &catalog_payload);
+        let t3 = capture_tuple(selector, &raw_payload);
+        let t4 = runtime_observer_tuple(selector, &raw_payload);
+        producer_cells_exercised += 3; // t1 + t3 + t4 always run
 
+        // Selector lands in `final_byte` for every producer (SSOT).
         assert_eq!(
-            p1.2, selector,
+            t1.final_byte, selector,
             "selector {selector}: catalog must place selector in final_byte"
         );
         assert_eq!(
-            p3.2, selector,
+            t3.final_byte, selector,
             "selector {selector}: capture must place selector in final_byte"
         );
         assert_eq!(
-            p4.2, selector,
+            t4.final_byte, selector,
             "selector {selector}: runtime must place selector in final_byte"
         );
 
-        // SSOT alignment: signatures must match across producers 1, 3, 4.
+        // Per-producer `params` shape contract:
+        // - catalog and capture canonicalize the payload via `osc_placeholder`,
+        //   joined by `;`. They MUST agree byte-for-byte (both call the
+        //   same SSOT canonicalization).
+        // - runtime leaves `params` empty (the observer fast-path).
         assert_eq!(
-            p1, p3,
+            t1.params, t3.params,
+            "selector {selector}: catalog and capture must agree on canonical params shape"
+        );
+        assert_eq!(
+            t4.params, "",
+            "selector {selector}: runtime observer params must be empty by contract"
+        );
+
+        // SSOT alignment: signatures (cat, ints, final) must match
+        // across all producers regardless of `params` divergence —
+        // this is what `spec-coverage-report --check` consumes.
+        assert_eq!(
+            t1.signature(),
+            t3.signature(),
             "selector {selector}: catalog and capture signatures must match"
         );
         assert_eq!(
-            p1, p4,
+            t1.signature(),
+            t4.signature(),
             "selector {selector}: catalog and runtime signatures must match"
         );
 
@@ -377,7 +406,7 @@ fn osc_tuple_sig_aligns_across_all_four_producers() {
         // an arm in `crates/vte/src/ansi/dispatch/osc.rs`, so the
         // lookup MUST succeed when the source file is present.
         if dispatch_source_present {
-            let p2 = dispatch_signature(selector).unwrap_or_else(|| {
+            let t2 = dispatch_tuple(selector).unwrap_or_else(|| {
                 panic!(
                     "selector {selector}: dispatch_extract must yield a tuple with \
                      selector in final_byte (got dispatch tuples: {:?})",
@@ -389,7 +418,12 @@ fn osc_tuple_sig_aligns_across_all_four_producers() {
                 )
             });
             assert_eq!(
-                p1, p2,
+                t2.params, "",
+                "selector {selector}: dispatch arm params must be empty by contract"
+            );
+            assert_eq!(
+                t1.signature(),
+                t2.signature(),
                 "selector {selector}: catalog and dispatch signatures must match"
             );
             producer_cells_exercised += 1;
@@ -411,9 +445,9 @@ fn osc_tuple_sig_aligns_across_all_four_producers() {
 /// fail against the broken code.
 #[test]
 fn osc_tuple_sig_distinct_per_selector() {
-    let s52 = runtime_observer_signature("52", &["c", "aGVsbG8="]);
-    let s1337 = runtime_observer_signature("1337", &["File=..."]);
-    let s4 = runtime_observer_signature("4", &["1", "rgb:ff/00/00"]);
+    let s52 = runtime_observer_tuple("52", &["c", "aGVsbG8="]).signature();
+    let s1337 = runtime_observer_tuple("1337", &["File=..."]).signature();
+    let s4 = runtime_observer_tuple("4", &["1", "rgb:ff/00/00"]).signature();
     assert_ne!(s52, s1337, "OSC 52 and OSC 1337 must have distinct sigs");
     assert_ne!(s52, s4, "OSC 52 and OSC 4 must have distinct sigs");
     assert_ne!(s1337, s4, "OSC 1337 and OSC 4 must have distinct sigs");
@@ -425,9 +459,9 @@ fn osc_tuple_sig_distinct_per_selector() {
 #[test]
 fn osc_tuple_sig_does_not_collapse_to_terminator() {
     for (selector, raw_payload, catalog_payload) in osc_ssot_matrix() {
-        let p1 = catalog_signature(selector, &catalog_payload);
-        let p3 = capture_signature(selector, &raw_payload);
-        let p4 = runtime_observer_signature(selector, &raw_payload);
+        let p1 = catalog_tuple(selector, &catalog_payload).signature();
+        let p3 = capture_tuple(selector, &raw_payload).signature();
+        let p4 = runtime_observer_tuple(selector, &raw_payload).signature();
         for sig in [&p1, &p3, &p4] {
             assert_ne!(
                 sig.2, "BEL",
