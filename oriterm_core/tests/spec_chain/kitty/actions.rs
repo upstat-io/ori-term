@@ -331,24 +331,23 @@ fn kitty_action_query_without_image_id_emits_ok_for_id_zero() {
     );
 }
 
-/// Catalog row: `KG-ACTION-ANIMATE` (dispatch-identity pin — silent-on-missing-id signature).
+/// Catalog row: `KG-ACTION-ANIMATE` (dispatch-identity pin — ENOENT-on-missing-id signature).
 ///
-/// `a=a` without `i=` returns early with NO reply (per `animate.rs:20-23`).
-/// Every other KittyAction either emits a reply or mutates placement
-/// state — asserting zero reply bytes uniquely pins animate.
+/// `a=a` without `i=` (and without `I=` fallback) emits `ENOENT` per
+/// BUG-08-024 fix — mirrors `kitty_place`'s missing-identifier path
+/// (`place.rs:16-19`). Every kitty action handler now returns a reply
+/// on error; silent drop is no longer a valid distinguishing signature.
 #[test]
-fn kitty_action_animate_without_image_id_emits_no_reply() {
+fn kitty_action_animate_without_image_id_emits_enoent() {
     let mut h = SpecHarness::new();
     h.feed(&kitty_apc(b"a=a", ""));
 
-    assert_eq!(
-        reply_bytes(&h).len(),
-        0,
-        "a=a without i= MUST emit zero reply bytes — got {:?}. \
-         This distinguishes animate from query (which emits OK for i=0), \
-         from place (ENOENT for i=0), and from transmit/frame (EINVAL \
-         or auto-assigned id OK).",
-        String::from_utf8_lossy(&reply_bytes(&h)),
+    let replies = reply_bytes(&h);
+    let s = String::from_utf8_lossy(&replies);
+    assert!(
+        s.contains("ENOENT"),
+        "a=a without i= MUST emit ENOENT (per BUG-08-024) — got {s:?}. \
+         Mirrors kitty_place's missing-identifier path."
     );
 }
 

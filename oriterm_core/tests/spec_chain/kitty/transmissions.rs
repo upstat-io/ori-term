@@ -469,3 +469,4 @@ fn kitty_animate_missing_image_id_returns_enoent() {
         "a=a without i= MUST emit ENOENT (mirrors a=p) — got {s:?}",
     );
 }
+

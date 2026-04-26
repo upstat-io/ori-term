@@ -223,6 +223,12 @@ pub struct AnimationState {
     pub loops_completed: u32,
     /// Whether animation is paused (Kitty `a=s`).
     pub paused: bool,
+    /// Whether the animation is in `s=2` wait-mode: when loops exhaust,
+    /// the animation halts at the last frame and waits for new frames
+    /// (via `a=f`) before resuming. `s=3` (run) clears this flag so a
+    /// later `add_animation_frame` does NOT auto-resume — distinguishing
+    /// "wait for new frames" (BUG-08-025) from "play once and stop."
+    pub wait_mode: bool,
 }
 
 impl AnimationState {
@@ -236,6 +242,7 @@ impl AnimationState {
             loop_count,
             loops_completed: 0,
             paused: false,
+            wait_mode: false,
         }
     }
 

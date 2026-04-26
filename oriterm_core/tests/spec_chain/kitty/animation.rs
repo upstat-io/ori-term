@@ -311,14 +311,14 @@ fn kitty_animate_r_two_sets_current_frame_and_reply_echoes_r_two() {
     );
 }
 
-/// `a=a,s=2` unpauses the animation — behaviorally identical to `s=3` in the
-/// current impl because `set_animation_action` at
-/// `oriterm_core/src/image/cache/animation.rs:247-260` routes both into the
-/// same match arm. Pins the current deviation while `BUG-08-025` tracks the
-/// spec-compliant "wait for new frames on loop-end" semantic.
-/// Catalog row: `KG-ANIMATE-RUN-WAIT` (verified-with-deviation).
+/// `a=a,s=2` (run-wait) and `a=a,s=3` (run) BOTH unpause and reset
+/// loops_completed=0. They differ in `wait_mode`: s=2 sets it true, s=3
+/// clears it. wait_mode governs whether `add_animation_frame` resumes a
+/// finished animation (s=2 yes; s=3 no).
+/// BUG-08-025 fix: previously these collapsed via a shared match arm.
+/// Catalog row: `KG-ANIMATE-RUN-WAIT`.
 #[test]
-fn kitty_animate_s_two_unpauses_collapsing_with_s_three() {
+fn kitty_animate_s_two_sets_wait_mode_and_s_three_clears_it() {
     let base = b64(&rgba_4x4_red());
     let frame = b64(&rgba_4x4_red());
 
@@ -337,21 +337,27 @@ fn kitty_animate_s_two_unpauses_collapsing_with_s_three() {
         "a=a,s=1 MUST pause"
     );
 
-    // s=2 (run-wait) MUST unpause — today identical to s=3.
+    // s=2 (run-wait) — unpauses, resets loops, AND sets wait_mode.
     h.feed(&kitty_apc(b"a=a,i=67,s=2", ""));
     let state = h
         .term()
         .image_cache()
         .animation_state(ImageId::from_raw(67))
         .unwrap();
+    assert!(!state.paused, "a=a,s=2 MUST clear paused");
+    assert_eq!(state.loops_completed, 0, "a=a,s=2 MUST reset loops_completed");
+    assert!(state.wait_mode, "a=a,s=2 MUST set wait_mode=true");
+
+    // s=3 (run) — clears wait_mode.
+    h.feed(&kitty_apc(b"a=a,i=67,s=3", ""));
+    let state = h
+        .term()
+        .image_cache()
+        .animation_state(ImageId::from_raw(67))
+        .unwrap();
     assert!(
-        !state.paused,
-        "a=a,s=2 MUST clear paused (collapses with s=3 in current impl — see \
-         BUG-08-025 for the spec-compliant wait-for-new-frames semantic)"
-    );
-    assert_eq!(
-        state.loops_completed, 0,
-        "a=a,s=2 MUST also reset loops_completed to 0 (same reset as s=3)"
+        !state.wait_mode,
+        "a=a,s=3 MUST clear wait_mode (distinguishing it from s=2 run-wait)"
     );
 }
 
