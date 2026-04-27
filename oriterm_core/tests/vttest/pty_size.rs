@@ -48,6 +48,21 @@ fn assert_pty_reports_size(
     });
 
     child.wait().expect("child wait failed");
+
+    // Drop the master AFTER the child exits so the reader sees EOF.
+    //
+    // Windows ConPTY: the master's `PsuedoCon` owns the slave-side
+    // stdout-write handle inside `Inner`; the cloned reader cannot
+    // see EOF until ALL writers close, which requires
+    // `ClosePseudoConsole` to fire — and that only happens when the
+    // master drops. Without this, `reader.read()` blocks forever after
+    // the child has exited, deadlocking the join below.
+    //
+    // POSIX: defensive — slave was already dropped so the master read
+    // would already EOF, but the explicit drop keeps cross-platform
+    // teardown ordering uniform.
+    drop(pair.master);
+
     let raw = reader_handle.join().expect("reader thread panicked");
     let (got_rows, got_cols) = parse(&raw);
     assert_eq!(
