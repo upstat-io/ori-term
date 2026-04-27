@@ -8,6 +8,8 @@
 
 #[cfg(any(unix, windows))]
 use std::io::Read;
+#[cfg(windows)]
+use std::io::Write;
 #[cfg(any(unix, windows))]
 use std::thread;
 
@@ -66,12 +68,59 @@ fn assert_pty_reports_size(
         let _ = tx.send(String::from_utf8_lossy(&output).into_owned());
     });
 
-    // Take the writer so its handle lives in this scope — we hold it
-    // open for the duration of the child's run, then drop in cleanup
-    // ordering after the child has exited.
+    // Take the stdin writer so its handle lives in this scope. Windows
+    // ConPTY needs a CPR response written here BEFORE child.wait;
+    // POSIX must NOT write to the writer because the slave TTY would
+    // echo the bytes back into stty's output stream and corrupt the
+    // parse.
     let writer = pair.master.take_writer().expect("take stdin writer");
-    child.wait().expect("child wait failed");
-    drop(writer);
+
+    // Windows ConPTY: answer ConPTY's DSR cursor-position query.
+    //
+    // `crates/portable-pty/src/win/psuedocon.rs:87` sets
+    // `PSUEDOCONSOLE_INHERIT_CURSOR` on `CreatePseudoConsole`. ConPTY
+    // emits `\x1b[6n` (cursor-position request) at startup AND blocks
+    // every subsequent byte of master output until the response lands
+    // on the writer. Without a responder the child's actual output
+    // never reaches the reader — only the unconditional init handshake
+    // (focus reporting toggle, screen clear, title set) does. The
+    // failure mode depends entirely on writer-drop timing:
+    //
+    //   * writer dropped early → ConPTY abandons the DSR wait via stdin
+    //     EOF, but kills `cmd /c` mid-startup so `mode con` never runs;
+    //     parser sees only the init handshake and panics on missing
+    //     `Lines:`.
+    //   * writer held until after `child.wait` → ConPTY blocks forever
+    //     waiting for DSR; child never produces output; child.wait
+    //     blocks; the CI job hits its 10-minute kill.
+    //
+    // Writing any well-formed CPR response (`\x1b[r;cR`, 1-indexed) is
+    // sufficient — ConPTY only needs the protocol question answered.
+    //
+    // POSIX intentionally skips this write: TTYs echo input characters
+    // by default, so writing `\x1b[1;1R` to the master would echo back
+    // through the slave's output stream and prepend literal escape
+    // bytes to `stty size`'s `33 97\n`, breaking the parse with
+    // `ParseIntError`. POSIX `openpty` does not have ConPTY's DSR
+    // gate; nothing waits on a CPR response.
+    //
+    // Source: third-party-review consensus 2026-04-27 (codex + gemini)
+    // verified the DSR origin against `psuedocon.rs:87`.
+    #[cfg(windows)]
+    {
+        let mut writer = writer;
+        writer
+            .write_all(b"\x1b[1;1R")
+            .expect("write CPR response to stdin");
+        writer.flush().expect("flush CPR response");
+        child.wait().expect("child wait failed");
+        drop(writer);
+    }
+    #[cfg(unix)]
+    {
+        child.wait().expect("child wait failed");
+        drop(writer);
+    }
     drop(pair.master);
 
     let raw = rx.recv().expect("reader channel closed without sending");
