@@ -54,11 +54,10 @@ fn main() -> ExitCode {
     // (separate gate from the coverage report). Wire point for the
     // audits/ SSOT introduced in Section 09A.
     if args.iter().any(|a| a == "audit-files") && args.iter().any(|a| a == "--check") {
-        let plan_root = paths::spec_conformance_dir()
-            .expect("wrapper present (catalog_dir resolved above)");
+        let plan_root =
+            paths::spec_conformance_dir().expect("wrapper present (catalog_dir resolved above)");
         return run_audit_files_lint(&plan_root);
     }
-
 
     let test_roots: Vec<PathBuf> = vec![
         term_root.join("oriterm_core/tests"),
@@ -92,8 +91,8 @@ fn main() -> ExitCode {
     report.print_table();
 
     if std::env::args().any(|a| a == "--check") {
-        let baseline_path = paths::coverage_baseline_path()
-            .expect("wrapper present (catalog_dir resolved above)");
+        let baseline_path =
+            paths::coverage_baseline_path().expect("wrapper present (catalog_dir resolved above)");
         let baseline = match CoverageBaseline::load(&baseline_path) {
             Ok(b) => b,
             Err(e) => {
