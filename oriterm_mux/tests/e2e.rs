@@ -247,6 +247,15 @@ fn client_spawn_pane_type_see_output() {
 
 /// 44.3: Push notification flow — daemon PaneOutput → client PaneOutput
 /// → snapshot refresh → rendered content.
+///
+/// Regression: BUG-11-006 — earlier version asserted on the FIRST observed
+/// dirty flag and required `PUSH_TEST` to be present in that snapshot.
+/// The dirty flag fires multiple times (input echo, prompt redraw, real
+/// output) and the FIRST snapshot may predate `PUSH_TEST`. The correct
+/// invariant is: dirty flag MUST fire at some point AND the snapshot MUST
+/// eventually contain `PUSH_TEST`. Tracking the dirty observation across
+/// the wait, then asserting on the awaited content, removes the race.
+/// See `.claude/rules/tests.md §Wall-Clock-Free Testing`.
 #[test]
 fn push_notification_triggers_dirty_flag() {
     let daemon = TestDaemon::start();
@@ -263,30 +272,36 @@ fn push_notification_triggers_dirty_flag() {
     // Send input to generate new output.
     client.send_input(pane_id, b"echo PUSH_TEST\n");
 
-    // Wait for PaneOutput notification.
+    // Wait for the awaited content to appear, observing the dirty flag
+    // along the way. Either condition alone is necessary; both together
+    // are sufficient. Polling stops as soon as content arrives — no
+    // wall-clock dependence on event ordering.
     let deadline = Instant::now() + Duration::from_secs(30);
+    let mut saw_dirty_flag = false;
     loop {
         client.poll_events();
         notifs.clear();
         client.drain_notifications(&mut notifs);
 
         if client.is_pane_snapshot_dirty(pane_id) {
-            client.refresh_pane_snapshot(pane_id);
-            let snap = client
-                .pane_snapshot(pane_id)
-                .expect("refresh should cache snapshot")
-                .clone();
-            client.clear_pane_snapshot_dirty(pane_id);
-            assert!(
-                snapshot_contains(&snap, "PUSH_TEST"),
-                "refreshed snapshot should contain the new output"
-            );
-            return;
+            saw_dirty_flag = true;
+        }
+
+        if let Some(snap) = client.refresh_pane_snapshot(pane_id) {
+            if snapshot_contains(snap, "PUSH_TEST") {
+                assert!(
+                    saw_dirty_flag,
+                    "PaneOutput notification must have triggered the dirty flag at \
+                     some point during the wait"
+                );
+                return;
+            }
         }
 
         assert!(
             Instant::now() < deadline,
-            "timed out waiting for PaneOutput notification"
+            "timed out waiting for PUSH_TEST to appear in pane snapshot \
+             (saw_dirty_flag={saw_dirty_flag})"
         );
         thread::sleep(Duration::from_millis(20));
     }
