@@ -7,10 +7,65 @@
 
 use std::fmt::Write;
 
-use winit::keyboard::{Key, NamedKey};
+use winit::keyboard::{Key, KeyLocation, NamedKey};
 
 use super::{KeyEventType, KeyInput, Modifiers};
 use oriterm_core::TermMode;
+
+/// Map a numpad key to its kitty disambiguation codepoint per
+/// kitty-keyboard-protocol §Functional key definitions.
+///
+/// Returns `None` when the key isn't on the numpad or isn't one of the
+/// standard numpad keys. The caller MUST gate this on `input.location ==
+/// KeyLocation::Numpad` AND any kitty-keyboard-protocol flag being active
+/// — that gating happens at the `encode_kitty` entry, so this helper just
+/// performs the table lookup.
+///
+/// Codepoint table mirrors alacritty's `try_build_numpad`
+/// (alacritty/src/input/keyboard.rs:434-466) and wezterm's `Numpad(n)`
+/// mapping. Without this disambiguation, numpad keys are indistinguishable
+/// from their main-row counterparts at the application layer (BUG-08-026).
+fn resolve_numpad_codepoint(input: &KeyInput<'_>) -> Option<u32> {
+    if input.location != KeyLocation::Numpad {
+        return None;
+    }
+    match input.key {
+        Key::Character(s) => match s.as_ref() {
+            "0" => Some(57399),
+            "1" => Some(57400),
+            "2" => Some(57401),
+            "3" => Some(57402),
+            "4" => Some(57403),
+            "5" => Some(57404),
+            "6" => Some(57405),
+            "7" => Some(57406),
+            "8" => Some(57407),
+            "9" => Some(57408),
+            "." => Some(57409),
+            "/" => Some(57410),
+            "*" => Some(57411),
+            "-" => Some(57412),
+            "+" => Some(57413),
+            "=" => Some(57415),
+            _ => None,
+        },
+        Key::Named(named) => match named {
+            NamedKey::Enter => Some(57414),
+            NamedKey::ArrowLeft => Some(57417),
+            NamedKey::ArrowRight => Some(57418),
+            NamedKey::ArrowUp => Some(57419),
+            NamedKey::ArrowDown => Some(57420),
+            NamedKey::PageUp => Some(57421),
+            NamedKey::PageDown => Some(57422),
+            NamedKey::Home => Some(57423),
+            NamedKey::End => Some(57424),
+            NamedKey::Insert => Some(57425),
+            NamedKey::Delete => Some(57426),
+            _ => None,
+        },
+        _ => None,
+    }
+}
 
 /// Kitty-defined codepoints for functional keys.
 ///
@@ -99,6 +154,38 @@ pub(super) fn encode_kitty(input: &KeyInput<'_>) -> Vec<u8> {
     // otherwise-unsupported event type.
     if input.event_type == KeyEventType::Release && !report_events {
         return Vec::new();
+    }
+
+    // BUG-08-026: numpad disambiguation. When the key is on the numpad AND
+    // any kitty flag is active (we're already inside encode_kitty), map to
+    // the dedicated 57399-57426 codepoint range so applications can tell
+    // numpad-1 from main-row-1. This MUST run ahead of the legacy bypass
+    // (numpad arrows would otherwise route to legacy CSI A/B/C/D) and
+    // ahead of the standard `resolve_codepoint` (which would hit the
+    // `should_send_as_text` fast-path and emit `b"1"` instead of CSI u).
+    if let Some(cp) = resolve_numpad_codepoint(input) {
+        let event_suffix = match resolve_event_suffix(report_events, input.event_type) {
+            Some(s) => s,
+            None => return Vec::new(),
+        };
+        let text = if report_text && input.event_type != KeyEventType::Release {
+            input.text.and_then(encode_associated_text)
+        } else {
+            None
+        };
+        let alternate = if report_alternate {
+            input.alternate_key.filter(|&alt| alt != cp)
+        } else {
+            None
+        };
+        return build_csi_sequence(
+            cp,
+            input.mods,
+            event_suffix,
+            text.as_deref(),
+            None,
+            alternate,
+        );
     }
 
     // DISAMBIGUATE_ESC_CODES (flags=1) only uses CSI u for keys that are

@@ -20,7 +20,10 @@ use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Mutex, OnceLock};
 
 use windows_sys::Win32::Foundation::{HWND, POINT};
-use windows_sys::Win32::Graphics::Dwm::DwmExtendFrameIntoClientArea;
+use windows_sys::Win32::Graphics::Dwm::{
+    DWMWA_BORDER_COLOR, DwmExtendFrameIntoClientArea, DwmGetColorizationColor,
+    DwmSetWindowAttribute,
+};
 use windows_sys::Win32::UI::Controls::MARGINS;
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::ReleaseCapture;
 use windows_sys::Win32::UI::Shell::SetWindowSubclass;
@@ -199,14 +202,27 @@ fn install_chrome_subclass(window: &Window, border_width: f32, caption_height: f
     };
 
     unsafe {
-        // Hide OS title bar — 1px top margin keeps DWM shadow + snap preview.
+        // Hide OS title bar AND give DWM 1px glass on all four sides so it
+        // can composite the system accent border (set immediately below via
+        // `DWMWA_BORDER_COLOR = DWMWA_COLOR_DEFAULT`) when the user has
+        // "Show accent color on title bars and window borders" enabled in
+        // Settings > Personalization > Colors. Closing BUG-10-001.
         let margins = MARGINS {
-            cxLeftWidth: 0,
-            cxRightWidth: 0,
+            cxLeftWidth: 1,
+            cxRightWidth: 1,
             cyTopHeight: 1,
-            cyBottomHeight: 0,
+            cyBottomHeight: 1,
         };
         DwmExtendFrameIntoClientArea(hwnd, &raw const margins);
+
+        // BUG-10-001: paint the active-window border with the system accent
+        // color. `DWMWA_COLOR_DEFAULT` does NOT auto-track focus on
+        // custom-framed windows, so we read the accent color explicitly via
+        // `DwmGetColorizationColor` and apply it here. The chrome subclass
+        // handles `WM_ACTIVATE` to swap to the inactive color on focus-out
+        // (Microsoft Learn: "The application is responsible for changing the
+        // border color when the window state changes").
+        apply_active_border_color(hwnd);
 
         // Install `WndProc` subclass with per-window data.
         let data = Box::new(SnapData {
@@ -346,6 +362,63 @@ pub fn cursor_screen_pos() -> (i32, i32) {
     let mut pt = POINT { x: 0, y: 0 };
     unsafe { GetCursorPos(&raw mut pt) };
     (pt.x, pt.y)
+}
+
+/// Read the system accent color via DWM colorization and convert it to a
+/// `COLORREF` (`0x00BBGGRR` byte order) for `DWMWA_BORDER_COLOR`.
+///
+/// Returns `None` when DWM colorization is unavailable (DWM disabled, or
+/// pre-Win11 builds without colorization support).
+///
+/// `DwmGetColorizationColor` returns `0xAARRGGBB`; `DWMWA_BORDER_COLOR`
+/// expects `COLORREF` which is `0x00BBGGRR`. Reorder the channels.
+fn read_accent_colorref() -> Option<u32> {
+    let mut argb: u32 = 0;
+    let mut opaque: i32 = 0;
+    let hr = unsafe { DwmGetColorizationColor(&raw mut argb, &raw mut opaque) };
+    if hr != 0 {
+        return None;
+    }
+    let r = (argb >> 16) & 0xFF;
+    let g = (argb >> 8) & 0xFF;
+    let b = argb & 0xFF;
+    Some((b << 16) | (g << 8) | r)
+}
+
+/// Apply the system accent color to the window border (active state).
+///
+/// Called on window creation and on `WM_ACTIVATE` focus-in. Falls back to
+/// the documented `DWMWA_COLOR_DEFAULT` sentinel (Win11 22000+) when DWM
+/// colorization is unavailable.
+pub(crate) fn apply_active_border_color(hwnd: HWND) {
+    let color = read_accent_colorref().unwrap_or(0xFFFF_FFFF); // DWMWA_COLOR_DEFAULT
+    unsafe {
+        DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_BORDER_COLOR as u32,
+            (&raw const color).cast(),
+            size_of::<u32>() as u32,
+        );
+    }
+}
+
+/// Apply the inactive (unfocused) window border color.
+///
+/// Called on `WM_ACTIVATE` focus-out. Uses `DWMWA_COLOR_NONE` (`0xFFFFFFFE`)
+/// to fully suppress the border on inactive windows, matching the visual
+/// behavior of native Win11 frames when the accent setting is enabled
+/// (active = accent, inactive = no visible border).
+pub(crate) fn apply_inactive_border_color(hwnd: HWND) {
+    // DWMWA_COLOR_NONE = 0xFFFFFFFE — "draw no border".
+    let color: u32 = 0xFFFF_FFFE;
+    unsafe {
+        DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_BORDER_COLOR as u32,
+            (&raw const color).cast(),
+            size_of::<u32>() as u32,
+        );
+    }
 }
 
 /// Returns the visible frame bounds excluding the invisible DWM extended

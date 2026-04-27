@@ -247,6 +247,13 @@ impl ImageCache {
                 let state = e.get_mut();
                 state.frame_durations.push(gap);
                 state.total_frames = anim_frames.len();
+                // BUG-08-025: in s=2 wait-mode, an animation that has
+                // exhausted its loops resumes when a new frame arrives.
+                // Reset loops_completed so is_finished() returns false
+                // and advance() can tick into the newly-appended frames.
+                if state.wait_mode && state.is_finished() {
+                    state.loops_completed = 0;
+                }
                 // Newly-pushed frame is at 0-based index `len - 1`; kitty
                 // reports it 1-based.
                 anim_frames.len() as u32
@@ -264,9 +271,22 @@ impl ImageCache {
         if let Some(state) = self.animations.get_mut(&id) {
             match action {
                 1 => state.paused = true,
-                2 | 3 => {
+                // BUG-08-025: s=2 is run-wait — animation runs through its
+                // loop count then halts at the last frame waiting for new
+                // frames (via a=f) to extend it. s=3 is run — same loop
+                // playthrough but stops permanently when loops exhaust.
+                // The distinguishing behavior is in `add_animation_frame`,
+                // which auto-resumes only when wait_mode is set.
+                2 => {
                     state.paused = false;
                     state.loops_completed = 0;
+                    state.wait_mode = true;
+                    self.frame_starts.insert(id, Instant::now());
+                }
+                3 => {
+                    state.paused = false;
+                    state.loops_completed = 0;
+                    state.wait_mode = false;
                     self.frame_starts.insert(id, Instant::now());
                 }
                 _ => {}

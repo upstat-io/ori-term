@@ -45,23 +45,24 @@ cargo test --workspace --features oriterm/gpu-tests
 # via the fixture-injection smoke test below.
 echo ""
 echo "=== catalog_coverage_check --check (real catalog, Normal mode) ==="
-if [ -d plans/spec-conformance/catalog ]; then
-    cargo run --quiet -p oriterm_test_support --bin catalog_coverage_check -- check
+# The binary handles its own graceful-skip when the wrapper repo isn't
+# discoverable (post-BUG-08-028 — uses `oriterm_test_support::paths`).
+# Don't gate on cwd-relative `plans/spec-conformance/catalog` here — that
+# path arithmetic is broken under the wrapper/subrepo layout (plans/ lives
+# at the wrapper root, not under term_repo/).
+cargo run --quiet -p oriterm_test_support --bin catalog_coverage_check -- check
 
-    echo ""
-    echo "=== sanity check: catalog::tests module is present in the runnable set ==="
-    # `cargo test --list` writes test names to STDOUT but also writes a
-    # "Running ..." progress line to STDERR. We merge stderr so that
-    # tooling emitting progress noise does not starve the pipe.
-    catalog_tests=$(cargo test -p oriterm_test_support --lib -- --list 2>&1 | grep -c '^catalog::tests::' || true)
-    if [ "${catalog_tests}" -eq 0 ]; then
-        echo "ERROR: catalog::tests module has zero runnable tests — regression in 01.3"
-        exit 1
-    fi
-    echo "Found ${catalog_tests} catalog::tests::* test(s)."
-else
-    echo "SKIP catalog_coverage_check: plans/spec-conformance/catalog not present"
+echo ""
+echo "=== sanity check: catalog::tests module is present in the runnable set ==="
+# `cargo test --list` writes test names to STDOUT but also writes a
+# "Running ..." progress line to STDERR. We merge stderr so that
+# tooling emitting progress noise does not starve the pipe.
+catalog_tests=$(cargo test -p oriterm_test_support --lib -- --list 2>&1 | grep -c '^catalog::tests::' || true)
+if [ "${catalog_tests}" -eq 0 ]; then
+    echo "ERROR: catalog::tests module has zero runnable tests — regression in 01.3"
+    exit 1
 fi
+echo "Found ${catalog_tests} catalog::tests::* test(s)."
 
 # Section 01.3 fixture-injection smoke test — proves the --bootstrap-mode
 # gate rejects deliberately-bad rows. Uses the committed `.md` fixtures

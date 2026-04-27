@@ -126,17 +126,19 @@ fn check_rejects_duplicate_row_id() {
 
 #[test]
 fn check_with_workspace_root_runs_dispatch_coverage() {
-    let repo_root = std::env::var("CARGO_MANIFEST_DIR")
-        .ok()
-        .and_then(|mpd| {
-            std::path::PathBuf::from(mpd)
-                .parent()?
-                .parent()
-                .map(std::path::Path::to_path_buf)
-        })
-        .unwrap_or_else(|| std::path::PathBuf::from("."));
-    let catalog_dir = repo_root.join("plans/spec-conformance/catalog");
-    let vte_dispatch = repo_root.join("crates/vte/src/ansi/dispatch");
+    // Two ownership domains: catalog lives at the wrapper root, vte source
+    // lives at the term workspace root. Use the canonical SSOT helpers per
+    // `bug-tracker/plans/completed/BUG-08-028/`.
+    let term_root = crate::paths::term_workspace_root();
+    let Some(catalog_dir) = crate::paths::catalog_dir() else {
+        eprintln!(
+            "SKIP check_with_workspace_root_runs_dispatch_coverage: \
+             wrapper repo not discoverable from {} (standalone term_repo checkout)",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        return;
+    };
+    let vte_dispatch = term_root.join("crates/vte/src/ansi/dispatch");
     if !catalog_dir.exists() || !vte_dispatch.exists() {
         eprintln!(
             "SKIP check_with_workspace_root_runs_dispatch_coverage: {} or {} missing",
@@ -146,7 +148,7 @@ fn check_with_workspace_root_runs_dispatch_coverage() {
         return;
     }
     let report =
-        check(&catalog_dir, CheckMode::Normal, Some(&repo_root)).expect("real catalog parses");
+        check(&catalog_dir, CheckMode::Normal, Some(term_root)).expect("real catalog parses");
     assert!(
         report.files_scanned > 0,
         "expected at least one catalog file scanned"

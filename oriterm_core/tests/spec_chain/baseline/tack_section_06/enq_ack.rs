@@ -59,11 +59,21 @@
 /// Anchor: BUG-08-006 / HYG-13.1-011.
 #[test]
 fn ecma48_c0_enq_catalog_row_still_missing() {
-    let catalog = std::fs::read_to_string(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../plans/spec-conformance/catalog/ecma-48.md"
-    ))
-    .expect("catalog/ecma-48.md must exist");
+    // The spec-conformance catalog lives in the wrapper repo. When the test
+    // runs from a standalone term_repo checkout (no wrapper present), the
+    // file is absent — graceful skip per `.claude/rules/tests.md §Graceful
+    // Skip Protocol`. Path discovery via the SSOT helper introduced in
+    // BUG-08-028; never reintroduce ad-hoc `manifest_dir.parent()` arithmetic.
+    let Some(catalog_dir) = oriterm_test_support::paths::catalog_dir() else {
+        eprintln!("SKIP: ECMA-48 catalog not present (term_repo running without wrapper)");
+        return;
+    };
+    let catalog_path = catalog_dir.join("ecma-48.md");
+    // Wrapper is confirmed present (catalog_dir is Some); a read failure here
+    // is a real I/O error, not a graceful-skip case. Propagate per
+    // `.claude/rules/impl-hygiene.md §Error Handling at Boundaries`.
+    let catalog = std::fs::read_to_string(&catalog_path)
+        .unwrap_or_else(|e| panic!("read {}: {e}", catalog_path.display()));
 
     let row = catalog
         .lines()

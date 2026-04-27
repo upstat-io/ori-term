@@ -14,19 +14,44 @@
 use oriterm_core::effect::{Effect, PtyEffect};
 use oriterm_test_support::spec_chain::{SpecHarness, pty_writes};
 
-const NOTCURSES_STARTUP: &[u8] =
-    include_bytes!("../../../../plans/spec-conformance/captures/notcurses-demo-intro.cap");
+/// Load the recorded notcurses startup bytes from the wrapper repo.
+///
+/// Three-state return distinguishes (a) wrapper absent → graceful skip
+/// (`Ok(None)` per `.claude/rules/tests.md §Graceful Skip Protocol`) from
+/// (b) wrapper present + file readable (`Ok(Some(bytes))`) from (c) wrapper
+/// present + file unreadable (`Err(e)` propagating the I/O error). Per
+/// `.claude/rules/impl-hygiene.md §Error Handling at Boundaries` —
+/// silencing real I/O errors as graceful skip is forbidden.
+///
+/// Path discovery via the SSOT helper introduced in BUG-08-028 — never
+/// reintroduce `include_bytes!` against wrapper-resident files (compile-time
+/// bake breaks standalone term_repo checkout).
+fn notcurses_startup_bytes() -> std::io::Result<Option<Vec<u8>>> {
+    let Some(captures) = oriterm_test_support::paths::captures_dir() else {
+        return Ok(None);
+    };
+    let path = captures.join("notcurses-demo-intro.cap");
+    std::fs::read(&path).map(Some)
+}
 
 /// Feed the recorded notcurses startup bytes and return the concatenated
-/// PTY reply stream.
-fn replay_notcurses_startup() -> Vec<u8> {
+/// PTY reply stream. Returns `None` when wrapper absent (graceful skip).
+fn replay_notcurses_startup() -> Option<Vec<u8>> {
+    let bytes = match notcurses_startup_bytes() {
+        Ok(Some(b)) => b,
+        Ok(None) => {
+            eprintln!("SKIP: notcurses-demo-intro.cap not present (no wrapper)");
+            return None;
+        }
+        Err(e) => panic!("failed to read notcurses-demo-intro.cap: {e}"),
+    };
     let mut h = SpecHarness::new();
-    h.feed(NOTCURSES_STARTUP);
+    h.feed(&bytes);
     let mut out = Vec::new();
     for (bytes, _) in pty_writes(&h) {
         out.extend_from_slice(bytes);
     }
-    out
+    Some(out)
 }
 
 /// Every byte ori_term writes back in response to the notcurses startup
@@ -39,7 +64,9 @@ fn replay_notcurses_startup() -> Vec<u8> {
 /// ("malformed reply interpreted by demo_getc as spurious user input").
 #[test]
 fn notcurses_startup_reply_stream_has_no_bare_printable_bytes() {
-    let stream = replay_notcurses_startup();
+    let Some(stream) = replay_notcurses_startup() else {
+        return;
+    };
     let framing_errors = find_out_of_frame_bytes(&stream);
     assert!(
         framing_errors.is_empty(),
@@ -55,7 +82,9 @@ fn notcurses_startup_reply_stream_has_no_bare_printable_bytes() {
 /// A stray `q` in a CSI reply would be parsed by notcurses as a key press.
 #[test]
 fn notcurses_startup_reply_stream_contains_no_stray_q_bytes() {
-    let stream = replay_notcurses_startup();
+    let Some(stream) = replay_notcurses_startup() else {
+        return;
+    };
     let stray = find_stray_q_bytes(&stream);
     assert!(
         stray.is_empty(),
@@ -73,8 +102,16 @@ fn notcurses_startup_reply_stream_contains_no_stray_q_bytes() {
 /// inspect the per-effect dump. Anchor: BUG-06-017 / HYG-13.1-010.
 #[test]
 fn notcurses_startup_emits_at_least_one_pty_reply() {
+    let bytes = match notcurses_startup_bytes() {
+        Ok(Some(b)) => b,
+        Ok(None) => {
+            eprintln!("SKIP: notcurses-demo-intro.cap not present (no wrapper)");
+            return;
+        }
+        Err(e) => panic!("failed to read notcurses-demo-intro.cap: {e}"),
+    };
     let mut h = SpecHarness::new();
-    h.feed(NOTCURSES_STARTUP);
+    h.feed(&bytes);
     let mut total = 0usize;
     let mut pty_count = 0usize;
     eprintln!("--- notcurses startup reply stream ---");

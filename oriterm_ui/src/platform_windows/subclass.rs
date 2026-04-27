@@ -13,9 +13,10 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
     GetCursorPos, GetSystemMetrics, HTBOTTOM, HTBOTTOMLEFT, HTBOTTOMRIGHT, HTCAPTION, HTCLIENT,
     HTLEFT, HTRIGHT, HTTOP, HTTOPLEFT, HTTOPRIGHT, IsZoomed, KillTimer, NCCALCSIZE_PARAMS,
     SM_CXFRAME, SM_CXPADDEDBORDER, SM_CYFRAME, SW_HIDE, SWP_NOACTIVATE, SWP_NOZORDER, SetTimer,
-    SetWindowPos, ShowWindow, WM_DPICHANGED, WM_ENTERSIZEMOVE, WM_ERASEBKGND, WM_EXITSIZEMOVE,
-    WM_MOVING, WM_NCCALCSIZE, WM_NCDESTROY, WM_NCHITTEST, WM_SIZE, WM_SIZING, WM_TIMER,
-    WMSZ_BOTTOM, WMSZ_BOTTOMLEFT, WMSZ_BOTTOMRIGHT, WMSZ_LEFT, WMSZ_RIGHT, WMSZ_TOP, WMSZ_TOPLEFT,
+    SetWindowPos, ShowWindow, WA_INACTIVE, WM_ACTIVATE, WM_DPICHANGED,
+    WM_DWMCOLORIZATIONCOLORCHANGED, WM_ENTERSIZEMOVE, WM_ERASEBKGND, WM_EXITSIZEMOVE, WM_MOVING,
+    WM_NCCALCSIZE, WM_NCDESTROY, WM_NCHITTEST, WM_SIZE, WM_SIZING, WM_TIMER, WMSZ_BOTTOM,
+    WMSZ_BOTTOMLEFT, WMSZ_BOTTOMRIGHT, WMSZ_LEFT, WMSZ_RIGHT, WMSZ_TOP, WMSZ_TOPLEFT,
     WMSZ_TOPRIGHT,
 };
 
@@ -253,6 +254,78 @@ fn handle_sizing(wparam: usize, lparam: isize, data: &SnapData) -> bool {
     true
 }
 
+/// `WM_NCCALCSIZE` (wparam==1): no OS frame; inset on maximize to prevent
+/// adjacent-monitor bleed (Chrome's `GetClientAreaInsets` pattern).
+unsafe fn handle_nccalcsize(hwnd: HWND, lparam: isize) -> LRESULT {
+    unsafe {
+        if IsZoomed(hwnd) != 0 {
+            let params = &mut *(lparam as *mut NCCALCSIZE_PARAMS);
+            let fx = GetSystemMetrics(SM_CXFRAME) + GetSystemMetrics(SM_CXPADDEDBORDER);
+            let fy = GetSystemMetrics(SM_CYFRAME) + GetSystemMetrics(SM_CXPADDEDBORDER);
+            params.rgrc[0].left += fx;
+            params.rgrc[0].top += fy;
+            params.rgrc[0].right -= fx;
+            params.rgrc[0].bottom -= fy;
+        }
+    }
+    0
+}
+
+/// `WM_DPICHANGED`: store the new DPI and apply the OS-suggested rect
+/// to prevent oscillation.
+unsafe fn handle_dpichanged(hwnd: HWND, wparam: usize, lparam: isize, data: &SnapData) -> LRESULT {
+    unsafe {
+        let new_dpi = ((wparam >> 16) & 0xFFFF) as u32;
+        data.last_dpi.store(new_dpi, Ordering::Relaxed);
+        let suggested = &*(lparam as *const RECT);
+        SetWindowPos(
+            hwnd,
+            std::ptr::null_mut(),
+            suggested.left,
+            suggested.top,
+            suggested.right - suggested.left,
+            suggested.bottom - suggested.top,
+            SWP_NOZORDER | SWP_NOACTIVATE,
+        );
+    }
+    0
+}
+
+/// `WM_EXITSIZEMOVE`: leave the modal-loop fast-paint mode and synthesize
+/// a `DragEnded` result if the OS drag tracker did not produce one.
+unsafe fn handle_exitsizemove(hwnd: HWND, data: &SnapData) {
+    unsafe {
+        KillTimer(hwnd, MODAL_TIMER_ID);
+    }
+    IN_MODAL_LOOP.store(false, Ordering::Relaxed);
+    MODAL_LOOP_ENDED.store(true, Ordering::Relaxed);
+    if let Ok(mut lock) = data.os_drag.lock() {
+        if let Some(state) = lock.as_mut() {
+            if state.result.is_none() {
+                let mut pt = POINT { x: 0, y: 0 };
+                unsafe {
+                    GetCursorPos(&raw mut pt);
+                }
+                state.result = Some(OsDragResult::DragEnded {
+                    cursor: (pt.x, pt.y),
+                });
+            }
+        }
+    }
+}
+
+/// `WM_NCDESTROY`: tear down the subclass installation and drop the
+/// `SnapData` allocation made in `enable_snap`.
+unsafe fn handle_ncdestroy(hwnd: HWND, ref_data: usize) {
+    unsafe {
+        RemoveWindowSubclass(hwnd, Some(subclass_proc), SUBCLASS_ID);
+        if let Ok(mut map) = snap_ptrs().lock() {
+            map.remove(&(hwnd as usize));
+        }
+        drop(Box::from_raw(ref_data as *mut SnapData));
+    }
+}
+
 /// `WndProc` subclass callback installed by [`super::enable_snap()`].
 ///
 /// `ref_data` is a valid `*const SnapData` allocated in `enable_snap` and
@@ -275,42 +348,34 @@ pub(super) unsafe extern "system" fn subclass_proc(
             // visible flicker during resize (WezTerm, Chrome do the same).
             WM_ERASEBKGND => 1,
 
-            // Return 0 so the entire window is client area (no OS frame).
-            // When maximized, inset by frame thickness to prevent
-            // adjacent-monitor bleed (Chrome's GetClientAreaInsets pattern).
-            WM_NCCALCSIZE if wparam == 1 => {
-                if IsZoomed(hwnd) != 0 {
-                    let params = &mut *(lparam as *mut NCCALCSIZE_PARAMS);
-                    let fx = GetSystemMetrics(SM_CXFRAME) + GetSystemMetrics(SM_CXPADDEDBORDER);
-                    let fy = GetSystemMetrics(SM_CYFRAME) + GetSystemMetrics(SM_CXPADDEDBORDER);
-                    params.rgrc[0].left += fx;
-                    params.rgrc[0].top += fy;
-                    params.rgrc[0].right -= fx;
-                    params.rgrc[0].bottom -= fy;
-                }
-                0
-            }
+            WM_NCCALCSIZE if wparam == 1 => handle_nccalcsize(hwnd, lparam),
 
             WM_NCHITTEST => handle_nchittest(hwnd, lparam, data),
 
-            WM_DPICHANGED => {
-                // HIWORD(wParam) = new Y-axis DPI.
-                let new_dpi = ((wparam >> 16) & 0xFFFF) as u32;
-                data.last_dpi.store(new_dpi, Ordering::Relaxed);
-
-                // Apply OS-suggested rect to prevent DPI oscillation.
-                let suggested = &*(lparam as *const RECT);
-                SetWindowPos(
-                    hwnd,
-                    std::ptr::null_mut(),
-                    suggested.left,
-                    suggested.top,
-                    suggested.right - suggested.left,
-                    suggested.bottom - suggested.top,
-                    SWP_NOZORDER | SWP_NOACTIVATE,
-                );
-                0
+            // BUG-10-001: focus-dependent accent border color. Swap between
+            // the system accent color (active) and `DWMWA_COLOR_NONE`
+            // (inactive) on focus changes — Microsoft Learn: "The
+            // application is responsible for changing the border color when
+            // the window state changes." Falls through to `DefSubclassProc`
+            // so winit + the rest of the app still receive the activation.
+            WM_ACTIVATE => {
+                let activation = (wparam & 0xFFFF) as u32;
+                if activation == WA_INACTIVE {
+                    super::apply_inactive_border_color(hwnd);
+                } else {
+                    super::apply_active_border_color(hwnd);
+                }
+                DefSubclassProc(hwnd, msg, wparam, lparam)
             }
+
+            // BUG-10-001: refresh the accent color when the user changes
+            // their accent color or theme via Settings.
+            WM_DWMCOLORIZATIONCOLORCHANGED => {
+                super::apply_active_border_color(hwnd);
+                DefSubclassProc(hwnd, msg, wparam, lparam)
+            }
+
+            WM_DPICHANGED => handle_dpichanged(hwnd, wparam, lparam, data),
 
             WM_ENTERSIZEMOVE => {
                 IN_MODAL_LOOP.store(true, Ordering::Relaxed);
@@ -336,19 +401,17 @@ pub(super) unsafe extern "system" fn subclass_proc(
 
             WM_SIZING => {
                 if handle_sizing(wparam, lparam, data) {
-                    1 // TRUE — rect was modified
+                    1
                 } else {
                     DefSubclassProc(hwnd, msg, wparam, lparam)
                 }
             }
 
             WM_SIZE => {
-                // Force an immediate paint after each size change so the
-                // compositor (DWM) gets a correctly-sized frame before it
-                // composites. Without this, DWM stretches the previous
-                // frame to the new window size, causing visible text jitter
-                // during drag resize. InvalidateRect queues WM_PAINT which
-                // the modal message pump processes before the next vsync.
+                // Force an immediate paint after each size change so DWM
+                // gets a correctly-sized frame before it composites. Without
+                // this, DWM stretches the previous frame, causing text
+                // jitter during drag resize.
                 let result = DefSubclassProc(hwnd, msg, wparam, lparam);
                 if IN_MODAL_LOOP.load(Ordering::Relaxed) {
                     InvalidateRect(hwnd, std::ptr::null(), 0);
@@ -357,29 +420,12 @@ pub(super) unsafe extern "system" fn subclass_proc(
             }
 
             WM_EXITSIZEMOVE => {
-                KillTimer(hwnd, MODAL_TIMER_ID);
-                IN_MODAL_LOOP.store(false, Ordering::Relaxed);
-                MODAL_LOOP_ENDED.store(true, Ordering::Relaxed);
-                if let Ok(mut lock) = data.os_drag.lock() {
-                    if let Some(state) = lock.as_mut() {
-                        if state.result.is_none() {
-                            let mut pt = POINT { x: 0, y: 0 };
-                            GetCursorPos(&raw mut pt);
-                            state.result = Some(OsDragResult::DragEnded {
-                                cursor: (pt.x, pt.y),
-                            });
-                        }
-                    }
-                }
+                handle_exitsizemove(hwnd, data);
                 DefSubclassProc(hwnd, msg, wparam, lparam)
             }
 
             WM_NCDESTROY => {
-                RemoveWindowSubclass(hwnd, Some(subclass_proc), SUBCLASS_ID);
-                if let Ok(mut map) = snap_ptrs().lock() {
-                    map.remove(&(hwnd as usize));
-                }
-                drop(Box::from_raw(ref_data as *mut SnapData));
+                handle_ncdestroy(hwnd, ref_data);
                 DefSubclassProc(hwnd, msg, wparam, lparam)
             }
 
