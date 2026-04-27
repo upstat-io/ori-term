@@ -31,23 +31,25 @@ fn assert_pty_reports_size(
         })
         .expect("open PTY");
 
-    // Mirror `crates/portable-pty/examples/whoami.rs` end-to-end —
-    // the canonical reference for this exact dance. The ordering matters:
+    // ConPTY teardown is platform-divergent enough that the Unix and
+    // Windows branches use different writer-drop ordering:
     //
-    //   1. spawn child
-    //   2. drop slave (we no longer need it)
-    //   3. start reader thread (so the pipe drains as output arrives)
-    //   4. take + drop the stdin writer in an inner block (macOS needs
-    //      a 20 ms grace period BEFORE the writer drops — quoting the
-    //      example: "the data we send to the kernel to trigger EOF is
-    //      interleaved with the data read by the reader! WTF!?")
-    //   5. child.wait()
-    //   6. drop pair.master (fires ClosePseudoConsole on Windows)
-    //   7. recv reader output
+    //   * POSIX (Unix path, used on Linux + macOS): mirror the
+    //     `crates/portable-pty/examples/whoami.rs` shape — drop the
+    //     stdin writer BEFORE child.wait so the child sees stdin EOF
+    //     and exits naturally. macOS needs a 20 ms grace period before
+    //     the writer drops (whoami.rs's documented race; "data we send
+    //     to the kernel to trigger EOF is interleaved with the data
+    //     read by the reader").
     //
-    // Earlier versions diverged from this ordering and hung on Windows
-    // (no take_writer at all → child stdin stayed open) and panicked on
-    // macOS (writer dropped too soon → stty output got truncated).
+    //   * Windows ConPTY: keep the stdin writer alive until AFTER
+    //     child.wait. Closing stdin mid-startup causes `cmd /d /c
+    //     mode con` to exit before executing the inner command — only
+    //     the cmd.exe init handshake (DSR query, focus mode toggle,
+    //     title set) reaches the reader; mode con's own output never
+    //     fires. After child.wait the child has already produced its
+    //     output and exited; drop-writer-then-drop-master then drains
+    //     ConPTY cleanly via ClosePseudoConsole.
     let mut reader = pair.master.try_clone_reader().expect("reader");
     let mut child = pair.slave.spawn_command(cmd).expect("spawn command");
     drop(pair.slave);
@@ -65,21 +67,27 @@ fn assert_pty_reports_size(
         let _ = tx.send(String::from_utf8_lossy(&output).into_owned());
     });
 
-    {
-        let _writer = pair.master.take_writer().expect("take stdin writer");
+    let writer = pair.master.take_writer().expect("take stdin writer");
 
-        // macOS quirk per whoami.rs: short-lived children race with
-        // the kernel's EOF synthesis, interleaving stdin-EOF data with
-        // the reader's stdout drain. The 20 ms grace lets the reader
-        // make progress before the writer drops. Replace with a
-        // deterministic seam if portable_pty ever ships one.
+    #[cfg(unix)]
+    {
+        // macOS race grace period (whoami.rs).
         if cfg!(target_os = "macos") {
             thread::sleep(std::time::Duration::from_millis(20));
         }
-        // _writer drops here, sending stdin EOF to the child.
+        drop(writer);
+        child.wait().expect("child wait failed");
     }
 
-    child.wait().expect("child wait failed");
+    #[cfg(windows)]
+    {
+        // Don't drop the writer mid-startup — cmd /c quits early on
+        // stdin EOF and never runs mode con. Hold the writer until
+        // the child exits naturally, then drop in cleanup ordering.
+        child.wait().expect("child wait failed");
+        drop(writer);
+    }
+
     drop(pair.master);
 
     let raw = rx.recv().expect("reader channel closed without sending");
