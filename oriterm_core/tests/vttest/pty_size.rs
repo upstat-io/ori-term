@@ -31,27 +31,29 @@ fn assert_pty_reports_size(
         })
         .expect("open PTY");
 
+    // Mirror `crates/portable-pty/examples/whoami.rs` end-to-end —
+    // the canonical reference for this exact dance. The ordering matters:
+    //
+    //   1. spawn child
+    //   2. drop slave (we no longer need it)
+    //   3. start reader thread (so the pipe drains as output arrives)
+    //   4. take + drop the stdin writer in an inner block (macOS needs
+    //      a 20 ms grace period BEFORE the writer drops — quoting the
+    //      example: "the data we send to the kernel to trigger EOF is
+    //      interleaved with the data read by the reader! WTF!?")
+    //   5. child.wait()
+    //   6. drop pair.master (fires ClosePseudoConsole on Windows)
+    //   7. recv reader output
+    //
+    // Earlier versions diverged from this ordering and hung on Windows
+    // (no take_writer at all → child stdin stayed open) and panicked on
+    // macOS (writer dropped too soon → stty output got truncated).
     let mut reader = pair.master.try_clone_reader().expect("reader");
-
-    // Take the stdin writer BEFORE spawning the child so it's available
-    // for the post-spawn drop. Per portable_pty's `whoami.rs` example:
-    // "It is important to take the writer even if you don't send anything
-    // to its stdin so that EOF can be generated, otherwise you risk
-    // deadlocking yourself." On ConPTY the master holds `Some(stdin.write)`
-    // inside `Inner`; without taking + dropping it the child's stdin
-    // stays open and `mode con` (and other Windows tools) can deadlock
-    // waiting on stdin handle close before printing terminal-size info.
-    let stdin_writer = pair.master.take_writer().expect("take stdin writer");
-
     let mut child = pair.slave.spawn_command(cmd).expect("spawn command");
     drop(pair.slave);
 
-    // Send EOF to child stdin immediately — `mode con` and `stty size`
-    // don't read stdin, but ConPTY/openpty can still gate the child's
-    // stdout flush on stdin closure.
-    drop(stdin_writer);
-
-    let reader_handle = thread::spawn(move || {
+    let (tx, rx) = std::sync::mpsc::channel();
+    thread::spawn(move || {
         let mut output = Vec::new();
         let mut buf = [0u8; 1024];
         loop {
@@ -60,20 +62,27 @@ fn assert_pty_reports_size(
                 Ok(n) => output.extend_from_slice(&buf[..n]),
             }
         }
-        String::from_utf8_lossy(&output).into_owned()
+        let _ = tx.send(String::from_utf8_lossy(&output).into_owned());
     });
 
-    child.wait().expect("child wait failed");
+    {
+        let _writer = pair.master.take_writer().expect("take stdin writer");
 
-    // Drop the master AFTER the child exits so the reader sees EOF.
-    // Per portable_pty's `whoami.rs`: "Take care to drop the master after
-    // our processes are done, as some platforms get unhappy if it is
-    // dropped sooner than that." On Windows ConPTY this is what fires
-    // `ClosePseudoConsole`, releasing the slave-side stdout-write handle
-    // and unblocking the cloned reader from `read()` → EOF.
+        // macOS quirk per whoami.rs: short-lived children race with
+        // the kernel's EOF synthesis, interleaving stdin-EOF data with
+        // the reader's stdout drain. The 20 ms grace lets the reader
+        // make progress before the writer drops. Replace with a
+        // deterministic seam if portable_pty ever ships one.
+        if cfg!(target_os = "macos") {
+            thread::sleep(std::time::Duration::from_millis(20));
+        }
+        // _writer drops here, sending stdin EOF to the child.
+    }
+
+    child.wait().expect("child wait failed");
     drop(pair.master);
 
-    let raw = reader_handle.join().expect("reader thread panicked");
+    let raw = rx.recv().expect("reader channel closed without sending");
     let (got_rows, got_cols) = parse(&raw);
     assert_eq!(
         (got_rows, got_cols),
