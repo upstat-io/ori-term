@@ -32,8 +32,24 @@ fn assert_pty_reports_size(
         .expect("open PTY");
 
     let mut reader = pair.master.try_clone_reader().expect("reader");
+
+    // Take the stdin writer BEFORE spawning the child so it's available
+    // for the post-spawn drop. Per portable_pty's `whoami.rs` example:
+    // "It is important to take the writer even if you don't send anything
+    // to its stdin so that EOF can be generated, otherwise you risk
+    // deadlocking yourself." On ConPTY the master holds `Some(stdin.write)`
+    // inside `Inner`; without taking + dropping it the child's stdin
+    // stays open and `mode con` (and other Windows tools) can deadlock
+    // waiting on stdin handle close before printing terminal-size info.
+    let stdin_writer = pair.master.take_writer().expect("take stdin writer");
+
     let mut child = pair.slave.spawn_command(cmd).expect("spawn command");
     drop(pair.slave);
+
+    // Send EOF to child stdin immediately — `mode con` and `stty size`
+    // don't read stdin, but ConPTY/openpty can still gate the child's
+    // stdout flush on stdin closure.
+    drop(stdin_writer);
 
     let reader_handle = thread::spawn(move || {
         let mut output = Vec::new();
@@ -50,17 +66,11 @@ fn assert_pty_reports_size(
     child.wait().expect("child wait failed");
 
     // Drop the master AFTER the child exits so the reader sees EOF.
-    //
-    // Windows ConPTY: the master's `PsuedoCon` owns the slave-side
-    // stdout-write handle inside `Inner`; the cloned reader cannot
-    // see EOF until ALL writers close, which requires
-    // `ClosePseudoConsole` to fire — and that only happens when the
-    // master drops. Without this, `reader.read()` blocks forever after
-    // the child has exited, deadlocking the join below.
-    //
-    // POSIX: defensive — slave was already dropped so the master read
-    // would already EOF, but the explicit drop keeps cross-platform
-    // teardown ordering uniform.
+    // Per portable_pty's `whoami.rs`: "Take care to drop the master after
+    // our processes are done, as some platforms get unhappy if it is
+    // dropped sooner than that." On Windows ConPTY this is what fires
+    // `ClosePseudoConsole`, releasing the slave-side stdout-write handle
+    // and unblocking the cloned reader from `read()` → EOF.
     drop(pair.master);
 
     let raw = reader_handle.join().expect("reader thread panicked");
