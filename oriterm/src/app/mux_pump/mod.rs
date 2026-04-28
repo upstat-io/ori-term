@@ -161,7 +161,10 @@ impl App {
                 body,
                 ..
             } => {
-                notify::send(&title, &body);
+                let mode = self.config.behavior.notification;
+                if mode.is_visual() {
+                    notify::send(&title, &body, mode.is_audible());
+                }
             }
             MuxNotification::ClearPendingDesktopNotifications(_pane_id) => {
                 // Desktop notifications are dispatched to the platform
@@ -299,7 +302,10 @@ impl App {
                 },
             );
         let body = format_duration_body(duration);
-        notify::send(&title, &body);
+        let mode = self.config.behavior.notification;
+        if mode.is_visual() {
+            notify::send(&title, &body, mode.is_audible());
+        }
     }
 }
 
