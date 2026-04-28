@@ -1,9 +1,11 @@
 //! Tests for `WindowRoot`.
 
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use super::WindowRoot;
 
+use crate::animation::Easing;
+use crate::color::Color;
 use crate::geometry::Rect;
 use crate::input::{InputEvent, Modifiers};
 use crate::invalidation::DirtyKind;
@@ -825,6 +827,240 @@ fn rebuild_gcs_stale_registrations() {
         !root.interaction().is_registered(id_b),
         "old child B should be deregistered"
     );
+}
+
+// -- Visual bell tests (BUG-11-008) --
+
+/// Returns the current opacity of the in-flight flash overlay layer, or
+/// `None` if no flash is present. Tests use this to probe the fade curve.
+fn flash_opacity(root: &WindowRoot) -> Option<f32> {
+    root.overlays()
+        .flash_overlay_opacity_for_test(root.layer_tree())
+}
+
+/// Advances the layer animator by `delta` from `start` and runs cleanup.
+fn tick(root: &mut WindowRoot, start: Instant, delta: Duration) {
+    root.tick_overlay_animations(start + delta);
+}
+
+/// Regression: BUG-11-008 — `ring_visual_bell` pushes a single full-viewport
+/// flash overlay at full intensity (opacity 1.0) and marks the window dirty.
+/// Pins the entry-point invariant: a configured BEL produces an observable
+/// overlay before the fade-out tween begins.
+/// See: bug-tracker/plans/BUG-11-008/section-03-tdd-matrix.md test 1.
+#[test]
+fn ring_visual_bell_starts_flash_overlay_at_full_intensity() {
+    let mut root = WindowRoot::new(LabelWidget::new("bell"));
+    root.clear_dirty();
+
+    let now = Instant::now();
+    root.ring_visual_bell(now, 200, Color::WHITE, Easing::EaseOut);
+
+    assert!(root.overlays().has_flash_overlay());
+    assert_eq!(root.overlays().flash_overlay_count(), 1);
+    assert_eq!(flash_opacity(&root), Some(1.0));
+    assert!(root.is_dirty(), "ring_visual_bell must mark window dirty");
+}
+
+/// Regression: BUG-11-008 — flash opacity decreases monotonically over the
+/// configured `duration_ms`, computed by `Easing::EaseOut.apply(t)`.
+/// Pins the fade-out tween: the overlay does not stay at full opacity, and
+/// each successive sample is strictly less than the prior.
+/// See: bug-tracker/plans/BUG-11-008/section-03-tdd-matrix.md test 2.
+#[test]
+fn ring_visual_bell_fades_monotonically_over_duration() {
+    let mut root = WindowRoot::new(LabelWidget::new("bell"));
+    let now = Instant::now();
+    root.ring_visual_bell(now, 200, Color::WHITE, Easing::EaseOut);
+
+    let probe = |root: &mut WindowRoot, ms: u64| -> f32 {
+        tick(root, now, Duration::from_millis(ms));
+        flash_opacity(root).unwrap_or(0.0)
+    };
+
+    let o0 = flash_opacity(&root).expect("flash present at t=0");
+    let o50 = probe(&mut root, 50);
+    let o100 = probe(&mut root, 100);
+    let o150 = probe(&mut root, 150);
+
+    assert!(
+        o0 > o50 && o50 > o100 && o100 > o150,
+        "fade must be strictly decreasing: t=0:{o0} t=50:{o50} t=100:{o100} t=150:{o150}",
+    );
+    assert!(o0 >= 0.99, "opacity at t=0 should be ~1.0, got {o0}");
+
+    // At t=100ms (phase=0.5), Easing::EaseOut.apply(0.5) = 0.875, so
+    // animated opacity = 1.0 - 0.875 = 0.125. Allow ±0.01 slack.
+    let expected_at_100 = 1.0 - Easing::EaseOut.apply(0.5);
+    assert!(
+        (o100 - expected_at_100).abs() < 0.05,
+        "t=100 opacity {o100} differs from expected {expected_at_100} > 0.05"
+    );
+}
+
+/// Regression: BUG-11-008 — `duration_ms == 0` is a no-op: no overlay is
+/// pushed, no animation scheduled, the window is not marked dirty.
+/// Pins the defense-in-depth zero-duration gate. The caller
+/// (`mux_pump`) is also expected to gate on `BellConfig::is_enabled()`,
+/// but `WindowRoot::ring_visual_bell` defends in depth so the API is
+/// safe to call unconditionally.
+/// See: bug-tracker/plans/BUG-11-008/section-03-tdd-matrix.md test 3.
+#[test]
+fn ring_visual_bell_with_zero_duration_is_a_noop() {
+    let mut root = WindowRoot::new(LabelWidget::new("bell"));
+    root.clear_dirty();
+
+    let now = Instant::now();
+    root.ring_visual_bell(now, 0, Color::WHITE, Easing::EaseOut);
+
+    assert!(!root.overlays().has_flash_overlay());
+    assert_eq!(root.overlays().flash_overlay_count(), 0);
+    assert!(
+        !root.is_dirty(),
+        "zero-duration ring_visual_bell must not mark dirty"
+    );
+}
+
+/// Regression: BUG-11-008 — the flash overlay never captures input. It
+/// lives on the dismissing list (not the active overlays list) and event
+/// routing iterates `overlays` only, so `process_mouse_event` returns
+/// `PassThrough` even with a flash in flight. Pins the "does not
+/// intercept input" contract per CLAUDE.md visual-bell distinguishability.
+/// See: bug-tracker/plans/BUG-11-008/section-03-tdd-matrix.md test 4.
+#[test]
+fn ring_visual_bell_does_not_intercept_input() {
+    let mut root = WindowRoot::new(LabelWidget::new("bell"));
+    let now = Instant::now();
+    root.ring_visual_bell(now, 1000, Color::WHITE, Easing::EaseOut);
+
+    // Flash on dismissing means active overlays are still empty, which
+    // means OverlayManager::process_mouse_event returns PassThrough on
+    // the early-return path before any hit-testing.
+    assert!(root.overlays().has_flash_overlay());
+    assert!(
+        root.overlays().is_active_empty(),
+        "flash overlay must not appear on active overlays list"
+    );
+}
+
+/// Regression: BUG-11-008 — the flash overlay's bounds always equal the
+/// current viewport. Distinguishability from the per-tab pulse: visual
+/// bell covers the whole window, audible bell flashes one tab.
+/// See: bug-tracker/plans/BUG-11-008/section-03-tdd-matrix.md test 5.
+#[test]
+fn ring_visual_bell_overlay_covers_full_viewport() {
+    let mut root = WindowRoot::new(LabelWidget::new("bell"));
+    let now = Instant::now();
+    root.ring_visual_bell(now, 200, Color::WHITE, Easing::EaseOut);
+
+    assert_eq!(
+        root.overlays().flash_overlay_bounds(),
+        Some(root.viewport())
+    );
+}
+
+/// Regression: BUG-11-008 — `Easing::Linear` produces a proportional fade.
+/// At t=50ms of 200ms (phase=0.25), `Easing::Linear.apply(0.25) = 0.25`,
+/// so opacity = 1.0 - 0.25 = 0.75 ± 0.01.
+/// See: bug-tracker/plans/BUG-11-008/section-03-tdd-matrix.md test 6.
+#[test]
+fn ring_visual_bell_linear_curve_fades_proportionally() {
+    let mut root = WindowRoot::new(LabelWidget::new("bell"));
+    let now = Instant::now();
+    root.ring_visual_bell(now, 200, Color::WHITE, Easing::Linear);
+
+    tick(&mut root, now, Duration::from_millis(50));
+    let o50 = flash_opacity(&root).unwrap_or(0.0);
+    assert!(
+        (o50 - 0.75).abs() < 0.05,
+        "linear fade at t=50/200 should be ~0.75, got {o50}"
+    );
+
+    tick(&mut root, now, Duration::from_millis(150));
+    let o150 = flash_opacity(&root).unwrap_or(0.0);
+    assert!(
+        (o150 - 0.25).abs() < 0.05,
+        "linear fade at t=150/200 should be ~0.25, got {o150}"
+    );
+}
+
+/// Regression: BUG-11-008 — a second `ring_visual_bell` while the first is
+/// still in flight REPLACES the first overlay (single-flash invariant).
+/// `flash_overlay_count` stays at 1 — the overlay does not stack. Prevents
+/// heap accumulation under bell-storm scenarios.
+/// See: bug-tracker/plans/BUG-11-008/section-03-tdd-matrix.md test 7.
+#[test]
+fn ring_visual_bell_replaces_in_flight_animation() {
+    let mut root = WindowRoot::new(LabelWidget::new("bell"));
+    let t0 = Instant::now();
+    root.ring_visual_bell(t0, 1000, Color::WHITE, Easing::EaseOut);
+    assert_eq!(root.overlays().flash_overlay_count(), 1);
+
+    // Halfway through the first flash, ring again with a fresh duration.
+    let t1 = t0 + Duration::from_millis(500);
+    root.ring_visual_bell(t1, 1000, Color::WHITE, Easing::EaseOut);
+    assert_eq!(
+        root.overlays().flash_overlay_count(),
+        1,
+        "second ring must replace the in-flight overlay, not stack"
+    );
+
+    // 100ms into the second flash, opacity reflects the NEW phase
+    // (0.1 of 1000ms), not the combined opacity of two animations.
+    tick(&mut root, t1, Duration::from_millis(100));
+    let o = flash_opacity(&root).unwrap_or(0.0);
+    let expected = 1.0 - Easing::EaseOut.apply(0.1);
+    assert!(
+        (o - expected).abs() < 0.05,
+        "after replace, opacity should reflect new animation phase 0.1, expected {expected}, got {o}"
+    );
+}
+
+/// Regression: BUG-11-008 — when the viewport changes during an in-flight
+/// flash, the overlay's bounds update to the new viewport. Without this,
+/// an interactive resize during a bell would leave a flash overlay covering
+/// only part of the new window.
+/// See: bug-tracker/plans/BUG-11-008/section-03-tdd-matrix.md test 14.
+#[test]
+fn ring_visual_bell_during_resize_repositions_overlay() {
+    let small = Rect::new(0.0, 0.0, 800.0, 600.0);
+    let large = Rect::new(0.0, 0.0, 1200.0, 800.0);
+    let mut root = WindowRoot::with_viewport(LabelWidget::new("bell"), small);
+    let now = Instant::now();
+    root.ring_visual_bell(now, 1000, Color::WHITE, Easing::EaseOut);
+
+    assert_eq!(root.overlays().flash_overlay_bounds(), Some(small));
+
+    root.set_viewport(large);
+    assert_eq!(
+        root.overlays().flash_overlay_bounds(),
+        Some(large),
+        "set_viewport must refresh in-flight flash overlay bounds"
+    );
+}
+
+/// Regression: BUG-11-008 — 10 back-to-back `ring_visual_bell` calls under
+/// a bell storm produce exactly one in-flight overlay; each call replaces
+/// the previous. Prevents heap growth under shell-emitted BEL storms.
+/// See: bug-tracker/plans/BUG-11-008/section-03-tdd-matrix.md test 15.
+#[test]
+fn ring_visual_bell_storm_replaces_overlay_each_time_no_accumulation() {
+    let mut root = WindowRoot::new(LabelWidget::new("bell"));
+    let base = Instant::now();
+    for i in 0..10 {
+        root.ring_visual_bell(
+            base + Duration::from_millis(i),
+            500,
+            Color::WHITE,
+            Easing::EaseOut,
+        );
+        assert_eq!(
+            root.overlays().flash_overlay_count(),
+            1,
+            "after {} ring calls, count must remain 1",
+            i + 1
+        );
+    }
 }
 
 /// `compute_layout` GCs stale interaction registrations after structural

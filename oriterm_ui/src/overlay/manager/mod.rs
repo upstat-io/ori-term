@@ -13,6 +13,7 @@ use winit::window::CursorIcon;
 
 use crate::action::WidgetAction;
 use crate::color::Color;
+use crate::compositor::layer::LayerType;
 use crate::compositor::layer_tree::LayerTree;
 use crate::draw::RectStyle;
 use crate::geometry::LayerId;
@@ -32,13 +33,18 @@ const MODAL_DIM_COLOR: Color = Color::rgba(0.0, 0.0, 0.0, 0.5);
 /// Duration for overlay fade-in and fade-out animations.
 const FADE_DURATION: Duration = Duration::from_millis(150);
 
-/// Discriminates overlay behavior: popup vs. modal.
+/// Discriminates overlay behavior: popup vs. modal vs. transient flash.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(in crate::overlay) enum OverlayKind {
     /// Non-modal popup — dismissed on click outside.
     Popup,
     /// Modal dialog — blocks interaction below, not dismissable by click outside.
     Modal,
+    /// Transient full-viewport color flash — never captures input, lives on
+    /// `self.dismissing` from creation, reaped by `cleanup_dismissed` after the
+    /// opacity tween completes. Rendered as a manual `push_quad` from
+    /// `draw_overlay_at`'s Flash arm; the widget body emits no scene primitives.
+    Flash,
 }
 
 /// A floating overlay containing a widget.
@@ -151,6 +157,36 @@ impl OverlayManager {
         if self.viewport != viewport {
             self.viewport = viewport;
             self.layout_dirty = true;
+            // Flash overlays cover the full viewport — keep their stored
+            // bounds in sync so a resize during a flash repositions the
+            // colored quad. Any non-Flash overlays repaint via
+            // `layout_overlays` driven by `layout_dirty` above.
+            for overlay in &mut self.dismissing {
+                if overlay.kind == OverlayKind::Flash {
+                    overlay.computed_rect = viewport;
+                }
+            }
+        }
+    }
+
+    /// Updates the viewport bounds AND refreshes the flash layer's compositor
+    /// bounds.
+    ///
+    /// Use when a flash overlay is in flight and the viewport changes (e.g.
+    /// interactive resize): the manager's internal bookkeeping stays in sync
+    /// via [`set_viewport`](Self::set_viewport), but the layer tree also
+    /// needs the new bounds applied to the flash layer so the GPU side
+    /// picks up the resize. Provided as a separate method so the common
+    /// `set_viewport` path doesn't require borrowing the tree.
+    pub fn set_viewport_with_tree(&mut self, viewport: Rect, tree: &mut LayerTree) {
+        let changed = self.viewport != viewport;
+        self.set_viewport(viewport);
+        if changed {
+            for overlay in &self.dismissing {
+                if overlay.kind == OverlayKind::Flash {
+                    tree.set_bounds(overlay.layer_id, viewport);
+                }
+            }
         }
     }
 
@@ -208,6 +244,48 @@ impl OverlayManager {
         self.overlays
             .last()
             .is_some_and(|o| o.kind == OverlayKind::Modal)
+    }
+
+    /// Returns `true` if a transient flash overlay is in flight.
+    ///
+    /// Flash overlays live exclusively on the dismissing list (created and
+    /// reaped via `push_flash` + `cleanup_dismissed`); they never appear on
+    /// the active `overlays` list, so this predicate scans `dismissing` only.
+    pub fn has_flash_overlay(&self) -> bool {
+        self.dismissing
+            .iter()
+            .any(|o| o.kind == OverlayKind::Flash)
+    }
+
+    /// Returns the number of in-flight flash overlays.
+    ///
+    /// `push_flash` enforces a single-flash invariant by replacing any
+    /// existing flash, so this is `0` or `1` in normal operation.
+    pub fn flash_overlay_count(&self) -> usize {
+        self.dismissing
+            .iter()
+            .filter(|o| o.kind == OverlayKind::Flash)
+            .count()
+    }
+
+    /// Returns the bounds of the in-flight flash overlay, if any.
+    ///
+    /// Always equals the current viewport — flash overlays cover the
+    /// whole window. `set_viewport` keeps this in sync on resize.
+    pub fn flash_overlay_bounds(&self) -> Option<Rect> {
+        self.has_flash_overlay().then_some(self.viewport)
+    }
+
+    /// Test seam: returns the layer-tree opacity of the in-flight flash
+    /// overlay. Used by `WindowRoot` tests to probe the fade-out curve at
+    /// known time samples.
+    #[cfg(test)]
+    pub(crate) fn flash_overlay_opacity_for_test(&self, tree: &LayerTree) -> Option<f32> {
+        self.dismissing
+            .iter()
+            .find(|o| o.kind == OverlayKind::Flash)
+            .and_then(|o| tree.get(o.layer_id))
+            .map(|l| l.properties().opacity)
     }
 
     /// Returns the computed screen-space rectangle for an overlay.
@@ -305,6 +383,24 @@ impl OverlayManager {
         let opacity = tree
             .get(overlay.layer_id)
             .map_or(1.0, |l| l.properties().opacity);
+
+        // Flash — transient full-viewport color quad with animated opacity.
+        // The widget body is a no-op `FlashWidget`; the visual is the
+        // SolidColor layer's color × the layer's animated opacity. Emit a
+        // single quad and return early; nothing else to paint.
+        if overlay.kind == OverlayKind::Flash {
+            let color = match tree
+                .get(overlay.layer_id)
+                .map(crate::compositor::layer::Layer::kind)
+            {
+                Some(LayerType::SolidColor(c)) => c,
+                _ => Color::WHITE,
+            };
+            let flash_color = Color::rgba(color.r, color.g, color.b, color.a * opacity);
+            ctx.scene
+                .push_quad(self.viewport, RectStyle::filled(flash_color));
+            return opacity;
+        }
 
         // Modal dim — apply dim layer's own opacity to the color alpha.
         if overlay.kind == OverlayKind::Modal {

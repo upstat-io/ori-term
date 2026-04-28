@@ -120,11 +120,32 @@ impl App {
                 if let Some(mux) = self.mux.as_mut() {
                     mux.set_bell(id);
                 }
+                let now = Instant::now();
                 if let Some(idx) = self.tab_index_for_pane(id) {
                     if let Some(ctx) = self.focused_ctx_mut() {
-                        ctx.tab_bar.ring_bell(idx, Instant::now());
+                        ctx.tab_bar.ring_bell(idx, now);
                     }
                 }
+
+                // Visual-bell flash on the pane's OWNING window — not the
+                // focused window. A bell from a background pane flashes its
+                // own window. Mirrors `mark_pane_window_dirty`'s
+                // owning-window walk (`oriterm/src/app/mod.rs` ~line 330).
+                if self.config.bell.is_enabled() {
+                    let bell = &self.config.bell;
+                    let color = crate::config::parse_bell_color_as_ui(bell.color.as_deref());
+                    let easing = crate::config::bell_animation_to_easing(bell.animation);
+                    let duration_ms = bell.duration_ms;
+                    if let Some(session_wid) = self.session.window_for_pane(id) {
+                        for ctx in self.windows.values_mut() {
+                            if ctx.window.session_window_id() == session_wid {
+                                ctx.root.ring_visual_bell(now, duration_ms, color, easing);
+                                break;
+                            }
+                        }
+                    }
+                }
+
                 self.mark_pane_window_dirty(id);
             }
             MuxNotification::ClipboardStore {

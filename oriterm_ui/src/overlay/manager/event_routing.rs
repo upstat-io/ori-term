@@ -252,6 +252,11 @@ impl OverlayManager {
                     OverlayEventResult::PassThrough
                 }
             }
+            // Flash overlays live exclusively on `self.dismissing`; they never
+            // appear on `self.overlays`, so `overlays.last()` cannot return one.
+            OverlayKind::Flash => unreachable!(
+                "OverlayKind::Flash must live on dismissing list, not active overlays"
+            ),
         }
     }
 

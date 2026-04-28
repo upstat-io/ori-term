@@ -4,15 +4,17 @@
 //! These methods are called from the application layer at specific points
 //! (push on user action, dismiss on click-outside/Escape).
 
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use crate::animation::Easing;
+use crate::color::Color;
 use crate::compositor::layer::{LayerProperties, LayerType};
 use crate::compositor::layer_animator::{AnimationParams, LayerAnimator};
 use crate::compositor::layer_tree::LayerTree;
-use crate::geometry::Rect;
+use crate::geometry::{Point, Rect};
 
 use super::{FADE_DURATION, MODAL_DIM_COLOR, Overlay, OverlayId, OverlayKind, OverlayManager};
+use crate::overlay::flash_widget::FlashWidget;
 use crate::overlay::placement::Placement;
 use crate::widgets::Widget;
 
@@ -138,6 +140,86 @@ impl OverlayManager {
             dim_layer_id: Some(dim_layer_id),
         });
         self.layout_dirty = true;
+        id
+    }
+
+    /// Pushes a transient full-viewport color flash that fades out.
+    ///
+    /// The flash overlay is placed directly on `self.dismissing` so the
+    /// existing `cleanup_dismissed` reaping flow handles its lifecycle —
+    /// no separate code path needed. A 1.0 → 0.0 opacity tween of length
+    /// `duration` is scheduled on the layer with `easing`. Once the tween
+    /// finishes (`is_animating(layer_id, Opacity) == false`), the next
+    /// `cleanup_dismissed` call drops the layer.
+    ///
+    /// Single-flash invariant: any existing `OverlayKind::Flash` on the
+    /// dismissing list is canceled and removed before the new one is
+    /// pushed. Bell-storm scenarios cannot accumulate flash overlays.
+    ///
+    /// The flash visual is rendered manually by the `Flash` arm of
+    /// [`OverlayManager::draw_overlay_at`](super::OverlayManager::draw_overlay_at)
+    /// using `self.viewport` and the layer's animated opacity. The widget
+    /// body is a no-op `FlashWidget` placeholder.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "lifecycle: color, duration, easing, tree, animator, now — all distinct concerns"
+    )]
+    pub fn push_flash(
+        &mut self,
+        color: Color,
+        duration: Duration,
+        easing: Easing,
+        tree: &mut LayerTree,
+        animator: &mut LayerAnimator,
+        now: Instant,
+    ) -> OverlayId {
+        // Single-flash invariant: cancel and remove any in-flight flash.
+        self.dismissing.retain(|overlay| {
+            if overlay.kind == OverlayKind::Flash {
+                animator.cancel_all(overlay.layer_id);
+                tree.remove_subtree(overlay.layer_id);
+                false
+            } else {
+                true
+            }
+        });
+
+        let id = OverlayId::next();
+        let root = tree.root();
+
+        // SolidColor layer carries both the flash color and the animated
+        // opacity. The actual quad emit happens manually in `draw_overlay_at`.
+        let layer_id = tree.add(
+            root,
+            LayerType::SolidColor(color),
+            LayerProperties {
+                bounds: self.viewport,
+                opacity: 1.0,
+                ..LayerProperties::default()
+            },
+        );
+
+        // Schedule fade-out 1.0 → 0.0 over `duration` so `cleanup_dismissed`
+        // reaps the layer when the tween completes.
+        let params = AnimationParams {
+            duration,
+            easing,
+            tree,
+            now,
+        };
+        animator.animate_opacity(layer_id, 0.0, &params);
+
+        self.dismissing.push(Overlay {
+            id,
+            widget: Box::new(FlashWidget::new()),
+            anchor: self.viewport,
+            placement: Placement::AtPoint(Point::new(0.0, 0.0)),
+            kind: OverlayKind::Flash,
+            computed_rect: self.viewport,
+            layout_node: None,
+            layer_id,
+            dim_layer_id: None,
+        });
         id
     }
 

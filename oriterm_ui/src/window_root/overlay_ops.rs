@@ -4,8 +4,10 @@
 //! require simultaneous mutable access to `OverlayManager`, `LayerTree`,
 //! and `LayerAnimator` — all of which live inside `WindowRoot`.
 
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
+use crate::animation::Easing;
+use crate::color::Color;
 use crate::geometry::Rect;
 use crate::overlay::{OverlayId, Placement};
 use crate::widget_id::WidgetId;
@@ -66,6 +68,39 @@ impl WindowRoot {
             &mut self.layer_animator,
             now,
         )
+    }
+
+    /// Pushes a transient full-viewport color flash that fades to transparent.
+    ///
+    /// Used by the `MuxNotification::PaneBell` consumer in `oriterm`'s
+    /// `mux_pump` to render the visual bell when `BellConfig::is_enabled()`.
+    /// A `duration_ms` of `0` is a no-op (caller is expected to gate on
+    /// `BellConfig::is_enabled()`, but defending in depth here makes the
+    /// API safe to call unconditionally).
+    ///
+    /// The flash overlay never captures input — clicks pass through to the
+    /// underlying widget tree. A subsequent call replaces any in-flight
+    /// flash so bell-storm scenarios cannot accumulate overlays.
+    pub fn ring_visual_bell(
+        &mut self,
+        now: Instant,
+        duration_ms: u16,
+        color: Color,
+        easing: Easing,
+    ) {
+        if duration_ms == 0 {
+            return;
+        }
+        let duration = Duration::from_millis(u64::from(duration_ms));
+        self.overlays.push_flash(
+            color,
+            duration,
+            easing,
+            &mut self.layer_tree,
+            &mut self.layer_animator,
+            now,
+        );
+        self.mark_dirty();
     }
 
     /// Begins dismissing the topmost overlay with a fade-out animation.

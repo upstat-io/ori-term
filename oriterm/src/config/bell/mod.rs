@@ -39,10 +39,6 @@ impl Default for BellConfig {
 
 impl BellConfig {
     /// Returns true when the visual bell is enabled.
-    #[allow(
-        dead_code,
-        reason = "wired in subsequent step within BUG-11-008 Commit 2 — mux_pump PaneBell arm"
-    )]
     pub fn is_enabled(&self) -> bool {
         self.duration_ms > 0 && self.animation != BellAnimation::None
     }
@@ -52,22 +48,20 @@ impl BellConfig {
 /// malformed values; consumers fall back to a sensible default (white).
 pub(crate) fn parse_bell_color(color_str: Option<&str>) -> Option<Rgb> {
     let s = color_str?.strip_prefix('#')?;
-    if s.len() != 6 {
+    let bytes = s.as_bytes();
+    if bytes.len() != 6 {
         return None;
     }
-    let r = u8::from_str_radix(&s[0..2], 16).ok()?;
-    let g = u8::from_str_radix(&s[2..4], 16).ok()?;
-    let b = u8::from_str_radix(&s[4..6], 16).ok()?;
+    let r = u8::from_str_radix(std::str::from_utf8(&bytes[0..2]).ok()?, 16).ok()?;
+    let g = u8::from_str_radix(std::str::from_utf8(&bytes[2..4]).ok()?, 16).ok()?;
+    let b = u8::from_str_radix(std::str::from_utf8(&bytes[4..6]).ok()?, 16).ok()?;
     Some(Rgb { r, g, b })
 }
 
 /// Parses a `"#RRGGBB"` config color string into the UI-side `Color`
-/// type, defaulting to white when absent or malformed. The mux_pump
-/// consumer uses this when invoking `WindowRoot::ring_visual_bell`.
-#[allow(
-    dead_code,
-    reason = "wired in subsequent step within BUG-11-008 Commit 2 — mux_pump PaneBell arm"
-)]
+/// type, defaulting to white when absent or malformed. The
+/// `mux_pump::handle_mux_notification` consumer uses this when invoking
+/// `WindowRoot::ring_visual_bell`.
 pub(crate) fn parse_bell_color_as_ui(color_str: Option<&str>) -> Color {
     let rgb = parse_bell_color(color_str).unwrap_or(Rgb {
         r: 255,
@@ -81,15 +75,10 @@ pub(crate) fn parse_bell_color_as_ui(color_str: Option<&str>) -> Color {
 /// curve enum. `BellAnimation::None` is the "disabled" sentinel — when
 /// `BellConfig::is_enabled()` returns false the caller skips the call
 /// entirely; this mapping falls through to `Linear` defensively.
-#[allow(
-    dead_code,
-    reason = "wired in subsequent step within BUG-11-008 Commit 2 — mux_pump PaneBell arm"
-)]
 pub(crate) fn bell_animation_to_easing(anim: BellAnimation) -> Easing {
     match anim {
         BellAnimation::EaseOut => Easing::EaseOut,
-        BellAnimation::Linear => Easing::Linear,
-        BellAnimation::None => Easing::Linear,
+        BellAnimation::Linear | BellAnimation::None => Easing::Linear,
     }
 }
 
