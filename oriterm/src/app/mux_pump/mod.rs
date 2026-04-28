@@ -194,13 +194,28 @@ impl App {
                     }
                 }
             }
-            MuxNotification::HostColorQuery { pane_id, reply, .. } => {
-                // Placeholder color until we wire theme lookup through the
-                // main-thread MuxBackend (tracked as a cleanup item —
-                // the OSC 10/11/12 reply flow is unblocked structurally,
-                // the actual color source is a separate bug).
-                let color = oriterm_core::color::Rgb { r: 0, g: 0, b: 0 };
+            MuxNotification::HostColorQuery {
+                pane_id,
+                index,
+                reply,
+                ..
+            } => {
                 if let Some(mux) = self.mux.as_mut() {
+                    // sync_pane_snapshot drains in-flight IO commands and
+                    // forces a fresh snapshot — required for protocol
+                    // replies because the IO thread emits
+                    // MuxEvent::HostColorQuery BEFORE publishing the
+                    // post-mutation snapshot via maybe_produce_snapshot
+                    // (effect drain at oriterm_mux/src/pane/io_thread/mod.rs
+                    // happens inside handle_bytes; snapshot publish
+                    // happens after handle_bytes returns). refresh_pane_snapshot
+                    // would race and return the pre-SET palette for OSC 4
+                    // SET-then-QUERY in the same byte batch.
+                    let snapshot = mux.sync_pane_snapshot(pane_id);
+                    let color = resolve_host_color_query(
+                        snapshot.as_ref().map(|s| s.palette.as_slice()),
+                        index,
+                    );
                     if let Err(err) = mux.fulfill_host_request(
                         pane_id,
                         oriterm_mux::HostReply::ColorQuery {
@@ -318,6 +333,26 @@ fn purge_pending_desktop_notifications(buf: &mut Vec<MuxNotification>) {
         }
         i += 1;
     }
+}
+
+/// Resolve an OSC 4 / OSC 10 / OSC 11 / OSC 12 color query against the
+/// pane's palette snapshot.
+///
+/// `palette` is a slice of pre-resolved RGB triplets from
+/// `PaneSnapshot::palette` — 270 entries covering 0..=255 (indexed
+/// palette) and 256..=269 (named semantic slots: Foreground,
+/// Background, Cursor, dim variants, etc.). `index` is the
+/// pre-computed slot the VTE OSC dispatch resolved.
+///
+/// Returns black (`Rgb { r:0, g:0, b:0 }`) when the snapshot is
+/// missing (`None`) OR the index is out of range — matches
+/// `Palette::color()` contract at
+/// `oriterm_core/src/color/palette/mod.rs:286-296`.
+fn resolve_host_color_query(palette: Option<&[[u8; 3]]>, index: usize) -> oriterm_core::color::Rgb {
+    palette.and_then(|p| p.get(index).copied()).map_or(
+        oriterm_core::color::Rgb { r: 0, g: 0, b: 0 },
+        |[r, g, b]| oriterm_core::color::Rgb { r, g, b },
+    )
 }
 
 /// Format a human-readable duration string for notification body.
