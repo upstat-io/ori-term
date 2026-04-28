@@ -153,38 +153,20 @@ impl OverlayManager {
     // Accessors
 
     /// Updates the viewport bounds (e.g. on window resize).
+    ///
+    /// In-flight flash overlays' `computed_rect` is refreshed so
+    /// [`flash_overlay_bounds`](Self::flash_overlay_bounds) reflects the
+    /// new viewport. The flash layer's `LayerTree` bounds are NOT
+    /// updated — Flash rendering reads `self.viewport` directly in
+    /// `draw_overlay_at`, so the layer's stored bounds don't drive
+    /// rendering and don't need to track viewport changes.
     pub fn set_viewport(&mut self, viewport: Rect) {
         if self.viewport != viewport {
             self.viewport = viewport;
             self.layout_dirty = true;
-            // Flash overlays cover the full viewport — keep their stored
-            // bounds in sync so a resize during a flash repositions the
-            // colored quad. Any non-Flash overlays repaint via
-            // `layout_overlays` driven by `layout_dirty` above.
             for overlay in &mut self.dismissing {
                 if overlay.kind == OverlayKind::Flash {
                     overlay.computed_rect = viewport;
-                }
-            }
-        }
-    }
-
-    /// Updates the viewport bounds AND refreshes the flash layer's compositor
-    /// bounds.
-    ///
-    /// Use when a flash overlay is in flight and the viewport changes (e.g.
-    /// interactive resize): the manager's internal bookkeeping stays in sync
-    /// via [`set_viewport`](Self::set_viewport), but the layer tree also
-    /// needs the new bounds applied to the flash layer so the GPU side
-    /// picks up the resize. Provided as a separate method so the common
-    /// `set_viewport` path doesn't require borrowing the tree.
-    pub fn set_viewport_with_tree(&mut self, viewport: Rect, tree: &mut LayerTree) {
-        let changed = self.viewport != viewport;
-        self.set_viewport(viewport);
-        if changed {
-            for overlay in &self.dismissing {
-                if overlay.kind == OverlayKind::Flash {
-                    tree.set_bounds(overlay.layer_id, viewport);
                 }
             }
         }
@@ -386,8 +368,11 @@ impl OverlayManager {
 
         // Flash — transient full-viewport color quad with animated opacity.
         // The widget body is a no-op `FlashWidget`; the visual is the
-        // SolidColor layer's color × the layer's animated opacity. Emit a
-        // single quad and return early; nothing else to paint.
+        // SolidColor layer's color. Push the raw color and return the
+        // layer's animated opacity — `scene_convert` multiplies the
+        // returned opacity into every quad in the overlay's scene block
+        // (`oriterm/src/gpu/scene_convert/mod.rs:67`), so baking the
+        // opacity into alpha here would double-apply it.
         if overlay.kind == OverlayKind::Flash {
             let color = match tree
                 .get(overlay.layer_id)
@@ -396,9 +381,8 @@ impl OverlayManager {
                 Some(LayerType::SolidColor(c)) => c,
                 _ => Color::WHITE,
             };
-            let flash_color = Color::rgba(color.r, color.g, color.b, color.a * opacity);
             ctx.scene
-                .push_quad(self.viewport, RectStyle::filled(flash_color));
+                .push_quad(self.viewport, RectStyle::filled(color));
             return opacity;
         }
 
