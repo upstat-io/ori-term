@@ -386,20 +386,15 @@ impl OverlayManager {
             return opacity;
         }
 
-        // Modal dim — apply dim layer's own opacity to the color alpha.
+        // Modal dim — push raw `MODAL_DIM_COLOR`. `scene_convert` multiplies
+        // the returned `opacity` (content layer's animated opacity) into
+        // every quad in this overlay's scene block (matches Flash above).
+        // `dim_layer_id` and `layer_id` are animated together with identical
+        // params via `start_fade_out`, so a single multiplication produces
+        // the same fade curve as the dim layer's own opacity.
         if overlay.kind == OverlayKind::Modal {
-            let dim_opacity = overlay
-                .dim_layer_id
-                .and_then(|id| tree.get(id))
-                .map_or(1.0, |l| l.properties().opacity);
-            let dim_color = Color::rgba(
-                MODAL_DIM_COLOR.r,
-                MODAL_DIM_COLOR.g,
-                MODAL_DIM_COLOR.b,
-                MODAL_DIM_COLOR.a * dim_opacity,
-            );
             ctx.scene
-                .push_quad(self.viewport, RectStyle::filled(dim_color));
+                .push_quad(self.viewport, RectStyle::filled(MODAL_DIM_COLOR));
         }
 
         // Content widget draws at full alpha — the returned opacity is
