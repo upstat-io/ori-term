@@ -76,7 +76,9 @@ fn void_sink_drops_effects_silently() {
 fn drain_into_appends_to_existing_vec() {
     let sink = QueueingEffectSink::new();
     sink.push(Effect::Host(HostEffect::Bell));
-    sink.push(Effect::Host(HostEffect::VisualBell));
+    sink.push(Effect::Host(HostEffect::TitleSet {
+        value: Some("test".to_owned()),
+    }));
     sink.push(Effect::Ui(UiEffect::MouseCursorDirty));
 
     // Start with a vec that already has 2 items.

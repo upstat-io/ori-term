@@ -620,28 +620,59 @@ fn no_cloned_host_clipboard_load_notification_in_staging() {
     }
 }
 
-/// Effect-cutover §01.N negative pin: `HostEffect::VisualBell` is
-/// LOGGED in the router (not silently dropped). The forwarding gap to
-/// a `MuxEvent::PaneVisualBell` variant is tracked separately as
-/// bug-tracker BUG-11-008 — until that lands, the router observes the
-/// effect and emits an `info!` log so the gap is visible in
-/// production logs rather than swallowed.
+/// BUG-11-008 preservation pin (§03 test 19): after the router-arm
+/// split removes `HostEffect::VisualBell` and routes
+/// `HostEffect::AudioRequest` to a dedicated log-only arm,
+/// `AudioRequest` MUST NOT emit any `MuxEvent` — BUG-11-009 stays open
+/// and the audio-pipeline producer-side gap remains tracked.
+///
+/// Regression: BUG-11-008 — split combined VisualBell|AudioRequest|PrintRequest arm
+/// See: bug-tracker/plans/BUG-11-008/00-overview.md
 #[test]
-fn visual_bell_is_logged_not_dropped_silently() {
+fn audio_request_remains_log_only() {
+    use oriterm_core::effect::{AudioKind, AudioRequest as AudioReq};
+
     let (mut t, mux_rx, _wake) = make_router_harness();
     t.terminal
         .effect_sink()
-        .push(Effect::Host(HostEffect::VisualBell));
+        .push(Effect::Host(HostEffect::AudioRequest(AudioReq {
+            kind: AudioKind::Tone,
+            volume: 4,
+            duration_ms: 100,
+            note: 12,
+        })));
     t.drain_effects_into_mux_events();
 
-    // No MuxEvent::PaneVisualBell variant exists yet (BUG-11-008). The
-    // router must NOT panic on the unknown effect, and the only
-    // observable side effect is the log line — verified by absence of
-    // any MuxEvent on the channel.
     assert!(
         mux_rx.try_recv().is_err(),
-        "VisualBell currently has no MuxEvent counterpart (BUG-11-008); \
-         the router must drop-with-log, not panic, until forwarding lands"
+        "AudioRequest must not emit a MuxEvent (BUG-11-009 stays log-only); \
+         the router's split arm preserves the pre-fix log-only behavior"
+    );
+}
+
+/// BUG-11-008 preservation pin (§03 test 20): after the router-arm
+/// split, `HostEffect::PrintRequest` MUST NOT emit any `MuxEvent` —
+/// BUG-11-010 stays open.
+///
+/// Regression: BUG-11-008 — split combined VisualBell|AudioRequest|PrintRequest arm
+/// See: bug-tracker/plans/BUG-11-008/00-overview.md
+#[test]
+fn print_request_remains_log_only() {
+    use oriterm_core::effect::{PrintKind, PrintRequest as PrintReq};
+
+    let (mut t, mux_rx, _wake) = make_router_harness();
+    t.terminal
+        .effect_sink()
+        .push(Effect::Host(HostEffect::PrintRequest(PrintReq {
+            kind: PrintKind::Screen,
+            data: b"hello".to_vec(),
+        })));
+    t.drain_effects_into_mux_events();
+
+    assert!(
+        mux_rx.try_recv().is_err(),
+        "PrintRequest must not emit a MuxEvent (BUG-11-010 stays log-only); \
+         the router's split arm preserves the pre-fix log-only behavior"
     );
 }
 
