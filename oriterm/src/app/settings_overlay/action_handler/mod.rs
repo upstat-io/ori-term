@@ -7,8 +7,8 @@
 use oriterm_ui::widgets::WidgetAction;
 
 use crate::config::{
-    BellAnimation, Config, CursorStyle, Decorations, GpuBackend, PasteWarning, TabBarPosition,
-    TabBarStyle,
+    BellAnimation, Config, CursorStyle, Decorations, GpuBackend, NotificationMode,
+    NotifyOnCommandFinish, PasteWarning, TabBarPosition, TabBarStyle,
 };
 
 use super::form_builder::{BELL_DURATION_VALUES, FONT_FAMILIES, SettingsIds};
@@ -307,7 +307,7 @@ fn apply_default_terminal_state(enabled: bool) {
 #[cfg(any(not(target_os = "windows"), test))]
 fn apply_default_terminal_state(_enabled: bool) {}
 
-/// Bell page: animation, duration.
+/// Bell page: animation, duration, desktop notification settings (BUG-11-016).
 fn handle_bell(action: &WidgetAction, ids: &SettingsIds, config: &mut Config) -> bool {
     match action {
         WidgetAction::Selected { id, index } if *id == ids.bell_animation_dropdown => {
@@ -322,6 +322,31 @@ fn handle_bell(action: &WidgetAction, ids: &SettingsIds, config: &mut Config) ->
             if let Some(&v) = BELL_DURATION_VALUES.get(*index) {
                 config.bell.duration_ms = v;
             }
+            true
+        }
+        WidgetAction::Selected { id, index } if *id == ids.notification_mode_dropdown => {
+            config.behavior.notification = match index {
+                0 => NotificationMode::None,
+                1 => NotificationMode::Visual,
+                2 => NotificationMode::Sound,
+                _ => NotificationMode::Both,
+            };
+            true
+        }
+        WidgetAction::Selected { id, index } if *id == ids.notify_on_command_finish_dropdown => {
+            config.behavior.notify_on_command_finish = match index {
+                0 => NotifyOnCommandFinish::Never,
+                1 => NotifyOnCommandFinish::Unfocused,
+                _ => NotifyOnCommandFinish::Always,
+            };
+            true
+        }
+        WidgetAction::ValueChanged { id, value } if *id == ids.notify_command_threshold_input => {
+            config.behavior.notify_command_threshold_secs = (*value as u64).clamp(1, 3600);
+            true
+        }
+        WidgetAction::Toggled { id, value } if *id == ids.notify_command_bell_toggle => {
+            config.behavior.notify_command_bell = *value;
             true
         }
         _ => false,

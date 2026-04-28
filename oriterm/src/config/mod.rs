@@ -293,13 +293,15 @@ impl WindowConfig {
 
 mod rendering;
 
-pub(crate) use behavior::{BehaviorConfig, NotifyOnCommandFinish};
+pub(crate) use behavior::{BehaviorConfig, NotificationMode, NotifyOnCommandFinish};
 pub(crate) use paste_warning::PasteWarning;
 #[allow(unused_imports, reason = "used in settings panel rebuild (Section 10)")]
 pub(crate) use rendering::GpuBackend;
 pub(crate) use rendering::RenderingConfig;
 
-pub(crate) use bell::{BellAnimation, BellConfig, bell_animation_to_easing, parse_bell_color_as_ui};
+pub(crate) use bell::{
+    BellAnimation, BellConfig, bell_animation_to_easing, parse_bell_color_as_ui,
+};
 
 /// Pane splitting and layout configuration.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
