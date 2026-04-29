@@ -68,3 +68,48 @@ fn selection_dirty_swap_clear() {
     assert!(was_dirty);
     assert!(!flag.load(Ordering::Acquire));
 }
+
+/// Regression: BUG-11-005 — `resolve_target_pgid` with no master fd must fall
+/// back to the shell PID and report `resolved_via_tcgetpgrp = false` so the
+/// caller does NOT apply ESRCH-as-success on the fallback path.
+/// See: bug-tracker/plans/BUG-11-005/00-overview.md
+#[cfg(unix)]
+#[test]
+fn resolve_target_pgid_with_no_master_fd_returns_shell_pid() {
+    let (pgid, resolved_via_tcgetpgrp) = super::resolve_target_pgid(12345, None);
+    assert_eq!(pgid, 12345);
+    assert!(
+        !resolved_via_tcgetpgrp,
+        "no master_fd must report resolved_via_tcgetpgrp = false"
+    );
+}
+
+/// Regression: BUG-11-005 — `resolve_target_pgid` with a non-TTY master fd
+/// (a pipe) must fall back to the shell PID. `tcgetpgrp` on a pipe returns
+/// -1 with `ENOTTY`; the helper must report `resolved_via_tcgetpgrp = false`
+/// so the caller does NOT apply ESRCH-as-success on the fallback path.
+/// See: bug-tracker/plans/BUG-11-005/00-overview.md
+#[cfg(unix)]
+#[test]
+#[allow(
+    unsafe_code,
+    reason = "libc::pipe + OwnedFd::from_raw_fd require unsafe"
+)]
+fn resolve_target_pgid_with_non_tty_master_fd_falls_back_to_shell_pid() {
+    use std::io;
+    use std::os::unix::io::{FromRawFd, OwnedFd};
+    let mut fds = [0_i32; 2];
+    // SAFETY: pipe() is a standard POSIX syscall; we own both fds and
+    // immediately wrap them in OwnedFd which closes on drop.
+    let result = unsafe { libc::pipe(fds.as_mut_ptr()) };
+    assert_eq!(result, 0, "pipe() failed: {}", io::Error::last_os_error());
+    // SAFETY: OwnedFd takes ownership of both fds and drops them.
+    let read_end = unsafe { OwnedFd::from_raw_fd(fds[0]) };
+    let _write_end = unsafe { OwnedFd::from_raw_fd(fds[1]) };
+    let (pgid, resolved_via_tcgetpgrp) = super::resolve_target_pgid(12345, Some(&read_end));
+    assert_eq!(pgid, 12345, "non-TTY fd must fall back to shell PID");
+    assert!(
+        !resolved_via_tcgetpgrp,
+        "non-TTY fd must report fallback, not tcgetpgrp success"
+    );
+}

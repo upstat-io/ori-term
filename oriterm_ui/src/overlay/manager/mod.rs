@@ -234,9 +234,7 @@ impl OverlayManager {
     /// reaped via `push_flash` + `cleanup_dismissed`); they never appear on
     /// the active `overlays` list, so this predicate scans `dismissing` only.
     pub fn has_flash_overlay(&self) -> bool {
-        self.dismissing
-            .iter()
-            .any(|o| o.kind == OverlayKind::Flash)
+        self.dismissing.iter().any(|o| o.kind == OverlayKind::Flash)
     }
 
     /// Returns the number of in-flight flash overlays.
@@ -381,8 +379,7 @@ impl OverlayManager {
                 Some(LayerType::SolidColor(c)) => c,
                 _ => Color::WHITE,
             };
-            ctx.scene
-                .push_quad(self.viewport, RectStyle::filled(color));
+            ctx.scene.push_quad(self.viewport, RectStyle::filled(color));
             return opacity;
         }
 

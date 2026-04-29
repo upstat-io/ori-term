@@ -310,8 +310,7 @@ pub trait MuxBackend {
     /// embedded + daemon backends — the bell flag travels in
     /// [`PaneSnapshot::has_bell`] just like `has_unseen_output`).
     fn has_bell(&self, pane_id: PaneId) -> bool {
-        self.pane_snapshot(pane_id)
-            .is_some_and(|s| s.has_bell)
+        self.pane_snapshot(pane_id).is_some_and(|s| s.has_bell)
     }
 
     /// Mark a pane as having unseen output.

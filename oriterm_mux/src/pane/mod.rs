@@ -183,10 +183,12 @@ pub struct Pane {
     /// Dup'd PTY master fd for `tcgetpgrp()` (Unix only).
     ///
     /// The original master fd is owned by the IO thread via `PtyControl`.
-    /// This is a `dup()`'d copy so we can query the foreground process
-    /// group from the main thread without locking the IO thread.
+    /// This is a `dup()`'d copy so we can query the PTY's foreground
+    /// process group from the main thread without locking the IO thread.
+    /// Used by [`signal_child`](Self::signal_child) on Unix to route
+    /// SIGINT to the foreground job (e.g. `yes`, `cat`) rather than the
+    /// shell's process group.
     #[cfg(unix)]
-    #[allow(dead_code, reason = "will be used for tcgetpgrp-based signal delivery")]
     master_fd: Option<std::os::unix::io::OwnedFd>,
 }
 
@@ -443,17 +445,20 @@ impl Pane {
 
     /// Send a signal directly to the child process group.
     ///
-    /// Bypasses the PTY writer when it's stalled. On Unix, sends the signal
-    /// to the process group (kills the foreground job, e.g. `yes`). On
-    /// Windows, uses `GenerateConsoleCtrlEvent` for `CTRL_C_EVENT`.
+    /// Bypasses the PTY writer when it's stalled. On Unix, queries the
+    /// PTY's foreground process group via `tcgetpgrp(master_fd)` so the
+    /// signal kills the foreground job (e.g. `yes`, `cat`) — matching
+    /// the kernel's behavior for keyboard Ctrl+C through a non-stalled
+    /// PTY. Falls back to the shell's process group when no master fd
+    /// is available (handoff/adopted PTY) or `tcgetpgrp` returns no
+    /// foreground group. On Windows, uses `GenerateConsoleCtrlEvent`
+    /// for `CTRL_C_EVENT`.
     ///
-    /// Returns `true` if the signal was sent, `false` if the child PID is
-    /// unknown or the platform doesn't support direct signal delivery.
+    /// Returns `true` if the signal was sent (or the foreground job
+    /// already exited between lookup and delivery), `false` if the
+    /// child PID is unknown or the syscall failed.
     pub fn signal_child(&self, signal: Signal) -> bool {
-        let Some(pid) = self.child_pid else {
-            return false;
-        };
-        send_signal_to_child(pid, signal)
+        self.send_signal_platform(signal)
     }
 }
 
@@ -464,56 +469,104 @@ pub enum Signal {
     Interrupt,
 }
 
-/// Send a signal to a child process group.
+/// Resolve the target process group for a signal delivery (Unix only).
 ///
-/// On Unix, uses `kill(-pid, sig)` to signal the entire process group.
-/// On Windows, uses `GenerateConsoleCtrlEvent` for Ctrl+C delivery.
-fn send_signal_to_child(pid: u32, signal: Signal) -> bool {
-    send_signal_platform(pid, signal)
+/// Returns `(pgid, resolved_via_tcgetpgrp)`. The boolean indicates whether
+/// the PGID came from a positive `tcgetpgrp` result (`true`) or from the
+/// shell-PID fallback (`false`). Callers gate ESRCH-as-success behavior
+/// on the boolean AND on `pgid != shell_pid`: a distinct foreground job
+/// that exited between lookup and signal IS the desired outcome (`true`);
+/// a missing shell — whether reached via tcgetpgrp returning the shell
+/// PID (no job control) or via the fallback path — IS a real failure
+/// (`false`).
+#[cfg(unix)]
+#[allow(unsafe_code, reason = "libc::tcgetpgrp requires unsafe FFI call")]
+fn resolve_target_pgid(
+    pid: u32,
+    master_fd: Option<&std::os::unix::io::OwnedFd>,
+) -> (libc::pid_t, bool) {
+    use std::os::unix::io::AsRawFd;
+    if let Some(fd) = master_fd {
+        // SAFETY: tcgetpgrp is a standard POSIX syscall. The dup'd master
+        // fd is owned by Pane for its full lifetime (per
+        // domain/local.rs:111-121). Result <= 0 means no foreground group
+        // is set on the PTY.
+        let pgid = unsafe { libc::tcgetpgrp(fd.as_raw_fd()) };
+        if pgid > 0 {
+            return (pgid, true);
+        }
+    }
+    (pid as libc::pid_t, false)
 }
 
 #[cfg(unix)]
-#[allow(unsafe_code, reason = "libc::kill requires unsafe FFI call")]
-fn send_signal_platform(pid: u32, signal: Signal) -> bool {
-    let sig = match signal {
-        Signal::Interrupt => libc::SIGINT,
-    };
-    // Negative PID sends to the entire process group.
-    // SAFETY: kill() is a standard POSIX syscall. Negative PID targets the
-    // process group. The PID comes from portable-pty's Child::process_id().
-    let result = unsafe { libc::kill(-(pid as libc::pid_t), sig) };
-    if result != 0 {
-        log::warn!(
-            "kill(-{pid}, {sig}) failed: {}",
-            std::io::Error::last_os_error()
-        );
-        return false;
+impl Pane {
+    /// Unix signal delivery via tcgetpgrp-resolved foreground PGID.
+    #[allow(unsafe_code, reason = "libc::kill requires unsafe FFI call")]
+    fn send_signal_platform(&self, signal: Signal) -> bool {
+        let Some(pid) = self.child_pid else {
+            return false;
+        };
+        let sig = match signal {
+            Signal::Interrupt => libc::SIGINT,
+        };
+        let (target_pgid, resolved_via_tcgetpgrp) =
+            resolve_target_pgid(pid, self.master_fd.as_ref());
+        // SAFETY: kill() is a standard POSIX syscall. Negative PID targets
+        // the process group identified by target_pgid.
+        let result = unsafe { libc::kill(-target_pgid, sig) };
+        if result == 0 {
+            return true;
+        }
+        let err = std::io::Error::last_os_error();
+        // ESRCH-as-success applies ONLY when the resolved PGID is BOTH
+        // sourced from a positive tcgetpgrp call AND distinct from the
+        // shell PID. That distinguishes "the foreground job we wanted to
+        // interrupt has already exited" (success) from "the shell itself
+        // is gone" (failure — covers both the no-job-control case where
+        // tcgetpgrp returned the shell PID and the no-master-fd fallback
+        // path). EPERM and other errno values fall through to log::warn +
+        // false; we never retry against the shell PID.
+        let pgid_distinct_from_shell = target_pgid != pid as libc::pid_t;
+        if resolved_via_tcgetpgrp
+            && pgid_distinct_from_shell
+            && err.raw_os_error() == Some(libc::ESRCH)
+        {
+            return true;
+        }
+        log::warn!("kill(-{target_pgid}, {sig}) failed: {err}");
+        false
     }
-    true
 }
 
 #[cfg(windows)]
-#[allow(
-    unsafe_code,
-    reason = "GenerateConsoleCtrlEvent requires unsafe FFI call"
-)]
-fn send_signal_platform(pid: u32, signal: Signal) -> bool {
-    use windows_sys::Win32::System::Console::{CTRL_C_EVENT, GenerateConsoleCtrlEvent};
+impl Pane {
+    /// Windows signal delivery via `GenerateConsoleCtrlEvent`.
+    #[allow(
+        unsafe_code,
+        reason = "GenerateConsoleCtrlEvent requires unsafe FFI call"
+    )]
+    fn send_signal_platform(&self, signal: Signal) -> bool {
+        use windows_sys::Win32::System::Console::{CTRL_C_EVENT, GenerateConsoleCtrlEvent};
 
-    let event = match signal {
-        Signal::Interrupt => CTRL_C_EVENT,
-    };
-    // SAFETY: GenerateConsoleCtrlEvent is a standard Win32 console API.
-    // The PID comes from portable-pty's Child::process_id().
-    let result = unsafe { GenerateConsoleCtrlEvent(event, pid) };
-    if result == 0 {
-        log::warn!(
-            "GenerateConsoleCtrlEvent({event}, {pid}) failed: {}",
-            std::io::Error::last_os_error()
-        );
-        return false;
+        let Some(pid) = self.child_pid else {
+            return false;
+        };
+        let event = match signal {
+            Signal::Interrupt => CTRL_C_EVENT,
+        };
+        // SAFETY: GenerateConsoleCtrlEvent is a standard Win32 console API.
+        // The PID comes from portable-pty's Child::process_id().
+        let result = unsafe { GenerateConsoleCtrlEvent(event, pid) };
+        if result == 0 {
+            log::warn!(
+                "GenerateConsoleCtrlEvent({event}, {pid}) failed: {}",
+                std::io::Error::last_os_error()
+            );
+            return false;
+        }
+        true
     }
-    true
 }
 
 #[cfg(test)]

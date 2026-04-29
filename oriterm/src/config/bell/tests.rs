@@ -1,6 +1,8 @@
 use oriterm_ui::animation::Easing;
 
-use super::{BellAnimation, BellConfig, bell_animation_to_easing, parse_bell_color, parse_bell_color_as_ui};
+use super::{
+    BellAnimation, BellConfig, bell_animation_to_easing, parse_bell_color, parse_bell_color_as_ui,
+};
 
 /// Regression: BUG-11-008 — `BellConfig::is_enabled()` is the gate that
 /// `mux_pump` uses to decide whether to ring the visual flash overlay.
@@ -65,9 +67,18 @@ fn parse_bell_color_as_ui_defaults_to_white_on_missing() {
 /// receives the right curve. Verifies the mapping is correct.
 #[test]
 fn bell_animation_to_easing_maps_curves_correctly() {
-    assert_eq!(bell_animation_to_easing(BellAnimation::EaseOut), Easing::EaseOut);
-    assert_eq!(bell_animation_to_easing(BellAnimation::Linear), Easing::Linear);
+    assert_eq!(
+        bell_animation_to_easing(BellAnimation::EaseOut),
+        Easing::EaseOut
+    );
+    assert_eq!(
+        bell_animation_to_easing(BellAnimation::Linear),
+        Easing::Linear
+    );
     // None defensively falls through to Linear; mux_pump's is_enabled() gate
     // means this branch never fires in production.
-    assert_eq!(bell_animation_to_easing(BellAnimation::None), Easing::Linear);
+    assert_eq!(
+        bell_animation_to_easing(BellAnimation::None),
+        Easing::Linear
+    );
 }

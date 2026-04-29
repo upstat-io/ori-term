@@ -257,9 +257,8 @@ impl TabBarWidget {
         let icon_size_f = SIDEBAR_NAV_ICON_SIZE as f32;
         // Right edge of the bell icon sits one BELL_ICON_GAP to the left
         // of the close-button left edge.
-        let close_left = tab_x + self.layout.tab_width_at(index)
-            - CLOSE_BUTTON_RIGHT_PAD
-            - CLOSE_BUTTON_WIDTH;
+        let close_left =
+            tab_x + self.layout.tab_width_at(index) - CLOSE_BUTTON_RIGHT_PAD - CLOSE_BUTTON_WIDTH;
         let icon_x = close_left - BELL_ICON_GAP - icon_size_f;
         let icon_y = strip.y + (strip.h - icon_size_f) / 2.0;
         let icon_rect = Rect::new(icon_x, icon_y, icon_size_f, icon_size_f);
