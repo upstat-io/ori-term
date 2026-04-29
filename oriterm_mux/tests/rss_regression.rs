@@ -18,7 +18,7 @@
 
 #![cfg(target_os = "linux")]
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
 use oriterm_core::Theme;
@@ -28,6 +28,31 @@ use oriterm_mux::domain::SpawnConfig;
 
 const MB: usize = 1_048_576;
 const NOISE_TOLERANCE: usize = 256 * 1024;
+
+/// Process-wide serialization guard for every RSS-sensitive test in this
+/// file. `cargo test` runs integration tests in parallel by default, so
+/// sibling tests spawning their own panes (and their own per-pane
+/// `EmbeddedMux` + IO threads + bounded queues) would contribute to each
+/// other's `/proc/self/statm` reads and pollute the trend assertion. The
+/// mutex enforces single-test execution structurally — matching the
+/// `MEASURE_LOCK` pattern in `oriterm_core/tests/alloc_regression.rs`.
+/// Poisoning is ignored: each test resets its own measurement state, so
+/// a prior panic cannot corrupt our samples.
+/// Regression: BUG-11-002 / Code TPR Round 2 — codex F1.
+static RSS_LOCK: Mutex<()> = Mutex::new(());
+
+#[must_use]
+struct RssTestGuard {
+    _lock: MutexGuard<'static, ()>,
+}
+
+impl RssTestGuard {
+    fn new() -> Self {
+        Self {
+            _lock: RSS_LOCK.lock().unwrap_or_else(|e| e.into_inner()),
+        }
+    }
+}
 
 /// Read the current process RSS in bytes via `/proc/self/statm`.
 fn rss_bytes() -> usize {
@@ -96,6 +121,7 @@ fn fmt_mb(samples: &[usize]) -> Vec<String> {
 /// `BYTE_CHANNEL_MEMORY_BUDGET = 1 MiB` and producing a stable plateau.
 #[test]
 fn mux_rss_plateaus_under_sustained_flood() {
+    let _guard = RssTestGuard::new();
     let wakeup: Arc<dyn Fn() + Send + Sync> = Arc::new(|| {});
     let mut mux = EmbeddedMux::new(wakeup);
 
@@ -143,6 +169,7 @@ fn mux_rss_plateaus_under_sustained_flood() {
 /// well under that range.
 #[test]
 fn mux_rss_negative_no_unbounded_growth() {
+    let _guard = RssTestGuard::new();
     let wakeup: Arc<dyn Fn() + Send + Sync> = Arc::new(|| {});
     let mut mux = EmbeddedMux::new(wakeup);
     let _pane_id = mux
@@ -183,6 +210,7 @@ fn mux_rss_negative_no_unbounded_growth() {
 /// shape is sensitive to actual workload, not test harness overhead.
 #[test]
 fn mux_rss_bounded_empty_pane() {
+    let _guard = RssTestGuard::new();
     let wakeup: Arc<dyn Fn() + Send + Sync> = Arc::new(|| {});
     let mut mux = EmbeddedMux::new(wakeup);
     let _pane_id = mux
@@ -215,6 +243,7 @@ fn mux_rss_bounded_empty_pane() {
 /// with pane count, not with input volume.
 #[test]
 fn mux_rss_plateaus_with_multiple_panes() {
+    let _guard = RssTestGuard::new();
     let wakeup: Arc<dyn Fn() + Send + Sync> = Arc::new(|| {});
     let mut mux = EmbeddedMux::new(wakeup);
 
@@ -256,6 +285,7 @@ fn mux_rss_plateaus_with_multiple_panes() {
 /// (BUG-11-025 owns the Resize-coalescing-via-AtomicU64 follow-up).
 #[test]
 fn mux_rss_plateaus_through_resize() {
+    let _guard = RssTestGuard::new();
     let wakeup: Arc<dyn Fn() + Send + Sync> = Arc::new(|| {});
     let mut mux = EmbeddedMux::new(wakeup);
 
