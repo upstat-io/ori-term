@@ -8,7 +8,7 @@ use crate::animation::{AnimProperty, Lerp};
 use crate::color::Color;
 use crate::draw::RectStyle;
 use crate::geometry::{Point, Rect};
-use crate::icons::IconId;
+use crate::icons::{IconId, SIDEBAR_NAV_ICON_SIZE};
 use crate::layout::LayoutBox;
 use crate::sense::Sense;
 use crate::text::{TextOverflow, TextStyle};
@@ -168,12 +168,16 @@ impl TabBarWidget {
         // alert is more important than a decorative favicon, matching the
         // iTerm2 / Windows Terminal UX pattern.
         let text_offset = if tab.has_bell {
-            let icon_size_f = ctx.theme.font_size_small * 1.1;
-            let icon_size = icon_size_f.round() as u32;
+            // Render at SIDEBAR_NAV_ICON_SIZE (16 logical px) — the pre-
+            // resolved size for `IconId::Bell` per
+            // `oriterm/src/gpu/window_renderer/icons.rs::ICON_SIZES`. Using
+            // any other size makes `draw_icon` silently no-op because the
+            // atlas entry isn't resolved at that size.
+            let icon_size_f = SIDEBAR_NAV_ICON_SIZE as f32;
             let icon_x = x + self.metrics.tab_padding;
             let icon_y = strip.y + (strip.h - icon_size_f) / 2.0;
             let icon_rect = Rect::new(icon_x, icon_y, icon_size_f, icon_size_f);
-            draw_icon(ctx, IconId::Bell, icon_rect, icon_size, color);
+            draw_icon(ctx, IconId::Bell, icon_rect, SIDEBAR_NAV_ICON_SIZE, color);
             icon_size_f + ICON_TEXT_GAP
         } else if let Some(TabIcon::Emoji(ref emoji)) = tab.icon {
             let icon_size = ctx.theme.font_size_small * 1.5;
