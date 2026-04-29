@@ -4,12 +4,12 @@
 //! implementations. Follows Chromium's pattern of thin platform glue
 //! behind a shared interface.
 
+pub(crate) mod audio;
 pub(crate) mod config_paths;
 #[cfg(target_os = "windows")]
 pub(crate) mod default_terminal;
 pub(crate) mod jump_list;
 pub(crate) mod memory;
-pub(crate) mod notify;
 pub(crate) mod scroll;
 pub(crate) mod shutdown;
 pub(crate) mod theme;

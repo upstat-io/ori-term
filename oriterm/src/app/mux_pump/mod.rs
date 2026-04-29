@@ -4,14 +4,13 @@
 //! Processes `MuxEvent`s from PTY reader threads via `MuxBackend::poll_events`,
 //! then handles resulting `MuxNotification`s (dirty, close, clipboard, etc.).
 
-use std::fmt::Write as _;
 use std::time::{Duration, Instant};
 
 use oriterm_mux::MuxNotification;
 use oriterm_mux::PaneId;
 
 use crate::config::NotifyOnCommandFinish;
-use crate::platform::notify;
+use crate::platform::audio;
 
 use super::App;
 
@@ -127,6 +126,15 @@ impl App {
                     }
                 }
 
+                // Audible bell — closes BUG-08-001 by absorbing the BEL `\a`
+                // audio path into BUG-11-016. Native OS APIs respect the
+                // user's system mute / sound-effects settings; gating here
+                // is on the same audible-mode flag that governs OSC 9 / 99 /
+                // 777 / command-complete (single-knob bell-sound config).
+                if self.config.behavior.notification.is_audible() {
+                    audio::play_bell();
+                }
+
                 // Visual-bell flash on the pane's OWNING window — not the
                 // focused window. A bell from a background pane flashes its
                 // own window. Mirrors `mark_pane_window_dirty`'s
@@ -156,14 +164,27 @@ impl App {
                 self.clipboard.store(clipboard_type, &text);
             }
             MuxNotification::DesktopNotification {
-                pane_id: _pane_id,
-                title,
-                body,
+                pane_id,
+                title: _title,
+                body: _body,
                 ..
             } => {
+                // Bell-focused dispatch (BUG-11-016 scope reset 2026-04-28):
+                // OSC 9 / OSC 99 / OSC 777 fire the bell sound + tab-bell
+                // pulse on the owning pane's tab. Visual = tab pulse;
+                // Audible = native OS bell. notify-rust toast pipeline
+                // removed; native toast-banner is a deferred follow-up.
                 let mode = self.config.behavior.notification;
+                if mode.is_audible() {
+                    audio::play_bell();
+                }
                 if mode.is_visual() {
-                    notify::send(&title, &body, mode.is_audible());
+                    if let Some(idx) = self.tab_index_for_pane(pane_id) {
+                        if let Some(ctx) = self.focused_ctx_mut() {
+                            ctx.tab_bar.ring_bell(idx, Instant::now());
+                        }
+                    }
+                    self.mark_pane_window_dirty(pane_id);
                 }
             }
             MuxNotification::ClearPendingDesktopNotifications(_pane_id) => {
@@ -286,25 +307,13 @@ impl App {
             }
         }
 
-        // Build and dispatch OS notification.
-        let title = self
-            .mux
-            .as_ref()
-            .and_then(|m| m.pane_snapshot(pane_id))
-            .map_or_else(
-                || "Command finished".to_owned(),
-                |s| {
-                    if s.title.is_empty() {
-                        "Command finished".to_owned()
-                    } else {
-                        s.title.clone()
-                    }
-                },
-            );
-        let body = format_duration_body(duration);
-        let mode = self.config.behavior.notification;
-        if mode.is_visual() {
-            notify::send(&title, &body, mode.is_audible());
+        // Bell-focused dispatch (BUG-11-016 scope reset 2026-04-28):
+        // command-complete (OSC 133;D) fires the native bell sound; the
+        // tab-bell pulse above already handles the visual feedback. The
+        // notify-rust toast pipeline was removed; native toast-banner is
+        // a deferred follow-up if/when wanted.
+        if self.config.behavior.notification.is_audible() {
+            audio::play_bell();
         }
     }
 }
@@ -359,26 +368,6 @@ fn resolve_host_color_query(palette: Option<&[[u8; 3]]>, index: usize) -> oriter
         oriterm_core::color::Rgb { r: 0, g: 0, b: 0 },
         |[r, g, b]| oriterm_core::color::Rgb { r, g, b },
     )
-}
-
-/// Format a human-readable duration string for notification body.
-///
-/// Examples: `"Completed in 12s"`, `"Completed in 2m 30s"`, `"Completed in 1h 5m"`.
-fn format_duration_body(duration: Duration) -> String {
-    let secs = duration.as_secs();
-    let mut buf = String::from("Completed in ");
-    if secs >= 3600 {
-        let h = secs / 3600;
-        let m = (secs % 3600) / 60;
-        let _ = write!(buf, "{h}h {m}m");
-    } else if secs >= 60 {
-        let m = secs / 60;
-        let s = secs % 60;
-        let _ = write!(buf, "{m}m {s}s");
-    } else {
-        let _ = write!(buf, "{secs}s");
-    }
-    buf
 }
 
 impl App {

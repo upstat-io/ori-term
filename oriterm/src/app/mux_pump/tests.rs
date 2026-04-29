@@ -1,13 +1,11 @@
 //! Unit tests for mux pump helpers.
 
-use std::time::Duration;
-
 use oriterm_core::effect::NotificationSource;
 use oriterm_mux::{MuxNotification, PaneId};
 
 use oriterm_core::color::Rgb;
 
-use super::{format_duration_body, purge_pending_desktop_notifications, resolve_host_color_query};
+use super::{purge_pending_desktop_notifications, resolve_host_color_query};
 
 fn dn(pane_id: PaneId, title: &str) -> MuxNotification {
     MuxNotification::DesktopNotification {
@@ -90,51 +88,6 @@ fn purge_handles_multiple_clear_markers() {
         &buf[2],
         MuxNotification::DesktopNotification { title, .. } if title == "C"
     ));
-}
-
-#[test]
-fn format_seconds_only() {
-    assert_eq!(
-        format_duration_body(Duration::from_secs(12)),
-        "Completed in 12s"
-    );
-}
-
-#[test]
-fn format_minutes_and_seconds() {
-    assert_eq!(
-        format_duration_body(Duration::from_secs(150)),
-        "Completed in 2m 30s"
-    );
-}
-
-#[test]
-fn format_hours_and_minutes() {
-    assert_eq!(
-        format_duration_body(Duration::from_secs(3900)),
-        "Completed in 1h 5m"
-    );
-}
-
-#[test]
-fn format_exactly_one_minute() {
-    assert_eq!(
-        format_duration_body(Duration::from_secs(60)),
-        "Completed in 1m 0s"
-    );
-}
-
-#[test]
-fn format_exactly_one_hour() {
-    assert_eq!(
-        format_duration_body(Duration::from_secs(3600)),
-        "Completed in 1h 0m"
-    );
-}
-
-#[test]
-fn format_zero_seconds() {
-    assert_eq!(format_duration_body(Duration::ZERO), "Completed in 0s");
 }
 
 /// Effect-cutover §01.1 success-criterion 24 canonical-name pin:
