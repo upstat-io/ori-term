@@ -2494,9 +2494,7 @@ fn bridge_decnkm_propagates_to_mode_cache() {
     );
 }
 
-// ============================================================================
 // EOF + ordering + multi-chunk pins (effect-cutover §01.1 Phase J)
-// ============================================================================
 //
 // These tests pin the load-bearing invariants of `handle_pty_eof` and
 // `handle_bytes_chunked` against the production code path (not the
