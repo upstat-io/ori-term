@@ -41,7 +41,7 @@ fn rss_bytes() -> usize {
     resident_pages * 4096
 }
 
-/// SpawnConfig that runs a flooding command directly (no shell integration).
+/// `SpawnConfig` that runs a flooding command directly (no shell integration).
 fn flood_spawn_config() -> SpawnConfig {
     SpawnConfig {
         cols: 80,
@@ -56,7 +56,7 @@ fn flood_spawn_config() -> SpawnConfig {
     }
 }
 
-/// SpawnConfig for a quiet pane — `cat` blocks reading from PTY stdin.
+/// `SpawnConfig` for a quiet pane — `cat` blocks reading from PTY stdin.
 fn quiet_spawn_config() -> SpawnConfig {
     SpawnConfig {
         cols: 80,

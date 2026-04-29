@@ -144,8 +144,7 @@ fn reader_send_returns_err_on_disconnect() {
         .expect("first send fits within capacity");
 
     // Spawn a sender that blocks on send (capacity is full).
-    let tx_blocked = byte_tx.clone();
-    let join = std::thread::spawn(move || tx_blocked.send(Vec::new()));
+    let join = std::thread::spawn(move || byte_tx.send(Vec::new()));
 
     // Drop the receiver — blocked sender unblocks with SendError.
     // (If the sender hadn't yet entered send(), it sees the disconnected
