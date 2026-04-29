@@ -23,6 +23,30 @@ use super::adopt::{AdoptedPtyHandle, ExitSignal};
 /// doesn't use `ConPTY` (it uses non-blocking I/O with polling).
 const READ_BUFFER_SIZE: usize = 0x2_0000; // 128 KB
 
+/// Per-pane memory budget for the reader → IO thread byte queue heap.
+///
+/// `BYTE_CHANNEL_CAPACITY` is derived from this so the cap stays in
+/// lockstep with `READ_BUFFER_SIZE` if either changes. 1 MiB per pane
+/// is the back-pressure trigger point: tighter starves the child via
+/// kernel PTY back-pressure; looser defeats the bounded-growth invariant
+/// pinned by §03 Pin 1 in `bug-tracker/plans/BUG-11-002/`.
+pub(crate) const BYTE_CHANNEL_MEMORY_BUDGET: usize = 1024 * 1024; // 1 MiB
+
+/// Bounded capacity for the reader → IO thread byte channel, in messages.
+///
+/// `BYTE_CHANNEL_MEMORY_BUDGET / READ_BUFFER_SIZE` = 1 MiB / 128 KiB =
+/// 8 messages. The reader's `byte_tx.send(...)` blocks when the queue
+/// is full, propagating back-pressure through the kernel PTY buffer to
+/// the child process. On Windows (`ConPTY`), the existing 1 ms inter-read
+/// sleep below is now secondary back-pressure — the bounded `send()` is
+/// the primary mechanism. Regression: BUG-11-002.
+pub(crate) const BYTE_CHANNEL_CAPACITY: usize = BYTE_CHANNEL_MEMORY_BUDGET / READ_BUFFER_SIZE;
+
+const _: () = assert!(
+    BYTE_CHANNEL_CAPACITY >= 1,
+    "BYTE_CHANNEL_MEMORY_BUDGET too small relative to READ_BUFFER_SIZE",
+);
+
 /// PTY byte forwarder — reads shell output and sends to the IO thread.
 ///
 /// Runs on a dedicated thread spawned by [`PtyReader::spawn`]. The main

@@ -24,6 +24,7 @@ use crate::PaneId;
 use crate::mux_event::MuxEvent;
 use crate::pty::PtyControl;
 use crate::pty::adopt::AdoptedSignal;
+use crate::pty::reader::BYTE_CHANNEL_CAPACITY;
 use crate::pty::spawn::ExitStatus;
 
 /// Main-thread handle to a Terminal IO thread.
@@ -50,6 +51,12 @@ pub struct PaneIoHandle {
     /// `select!` wakes within one iteration without requiring unrelated
     /// PTY or command activity.
     pub(crate) response_wake_tx: Sender<()>,
+    /// Test-only Drop sentinel — counter incremented after `shutdown()`
+    /// returns inside the existing `Drop` impl. Production builds carry
+    /// zero overhead — the field is `#[cfg(test)]`. Used by §03 Pin 4
+    /// in `bug-tracker/plans/BUG-11-002/section-03-tdd-matrix.md`.
+    #[cfg(test)]
+    pub(crate) drop_counter: Option<Arc<std::sync::atomic::AtomicUsize>>,
 }
 
 impl PaneIoHandle {
@@ -111,11 +118,26 @@ impl PaneIoHandle {
     pub fn set_join(&mut self, handle: JoinHandle<()>) {
         self.join = Some(handle);
     }
+
+    /// Test-only — install a shared Drop counter.
+    ///
+    /// The counter is incremented inside the existing `Drop` impl after
+    /// `shutdown()` returns, so observers can pin the "every Drop runs
+    /// to completion" invariant without a flaky wall-clock budget.
+    /// Used by §03 Pin 4 in `bug-tracker/plans/BUG-11-002/`.
+    #[cfg(test)]
+    pub(crate) fn set_drop_counter(&mut self, counter: Arc<std::sync::atomic::AtomicUsize>) {
+        self.drop_counter = Some(counter);
+    }
 }
 
 impl Drop for PaneIoHandle {
     fn drop(&mut self) {
         self.shutdown();
+        #[cfg(test)]
+        if let Some(ref counter) = self.drop_counter {
+            counter.fetch_add(1, std::sync::atomic::Ordering::Release);
+        }
     }
 }
 
@@ -174,7 +196,10 @@ pub fn new_with_handle<S: EffectSink + 'static>(
     config: IoThreadConfig<S>,
 ) -> (PaneIoThread<S>, PaneIoHandle) {
     let (cmd_tx, cmd_rx) = crossbeam_channel::unbounded();
-    let (byte_tx, byte_rx) = crossbeam_channel::unbounded();
+    // Bounded byte channel — caps the per-pane reader→IO queue heap at
+    // BYTE_CHANNEL_MEMORY_BUDGET, propagating back-pressure through the
+    // kernel PTY buffer to the child process. Regression: BUG-11-002.
+    let (byte_tx, byte_rx) = crossbeam_channel::bounded(BYTE_CHANNEL_CAPACITY);
     // Bounded(1) wake channel: `try_send` coalesces N fulfills between
     // wakes into a single signal. One wake drains ALL ready tokens on
     // the IO thread side (see `response_poll::poll_pending_responses`).
@@ -205,6 +230,8 @@ pub fn new_with_handle<S: EffectSink + 'static>(
         pending_responses: Vec::new(),
         effects_buf: Vec::new(),
         last_animation_deadline: None,
+        #[cfg(test)]
+        shrink_call_count: std::sync::atomic::AtomicUsize::new(0),
     };
     let handle = PaneIoHandle {
         cmd_tx,
@@ -212,6 +239,8 @@ pub fn new_with_handle<S: EffectSink + 'static>(
         join: None,
         double_buffer,
         response_wake_tx,
+        #[cfg(test)]
+        drop_counter: None,
     };
     (thread, handle)
 }
