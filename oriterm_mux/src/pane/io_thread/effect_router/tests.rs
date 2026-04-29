@@ -75,7 +75,7 @@ fn make_router_harness() -> (
         pending_responses: Vec::new(),
         effects_buf: Vec::new(),
         last_animation_deadline: None,
-        shrink_call_count: std::sync::atomic::AtomicUsize::new(0),
+        shrink_call_count: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
     };
     (thread, mux_rx, wakeup_count)
 }

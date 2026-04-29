@@ -249,11 +249,11 @@ fn mux_rss_plateaus_with_multiple_panes() {
 /// Resize during flood — bounded channels do not deadlock the resize path.
 ///
 /// Regression: BUG-11-002 §03 cross-feature interaction "resize during
-/// flood". Sends a Resize command mid-flood; verifies the IO thread is
-/// still alive (poll_events succeeds) and RSS still plateaus. Pins that
-/// the bounded byte channel doesn't block the resize command path —
-/// `cmd_tx` remains unbounded by design (BUG-11-025 owns the
-/// Resize-coalescing-via-AtomicU64 follow-up).
+/// flood". Sends a Resize command mid-flood; verifies the IO thread
+/// completes the resize (snapshot reports rows=30, cols=100) AND RSS
+/// still plateaus. Pins that the bounded byte channel doesn't block
+/// the resize command path — `cmd_tx` remains unbounded by design
+/// (BUG-11-025 owns the Resize-coalescing-via-AtomicU64 follow-up).
 #[test]
 fn mux_rss_plateaus_through_resize() {
     let wakeup: Arc<dyn Fn() + Send + Sync> = Arc::new(|| {});
@@ -264,8 +264,8 @@ fn mux_rss_plateaus_through_resize() {
         .expect("spawn pane");
 
     let mut measurements = Vec::with_capacity(5);
+    let mut resize_observed = false;
     for i in 0..5 {
-        // Mid-flood resize at i=2.
         if i == 2 {
             mux.resize_pane_grid(pane_id, 30, 100);
         }
@@ -275,8 +275,28 @@ fn mux_rss_plateaus_through_resize() {
             Duration::from_millis(700)
         };
         pump_for(&mut mux, win);
+
+        // After the resize, poll the snapshot (per pump tick) until it
+        // reports the new dimensions. Sets `resize_observed` once seen
+        // so the assertion at the end of the test fails fast if the
+        // resize was silently dropped.
+        if i >= 2 && !resize_observed {
+            if let Some(snap) = mux.refresh_pane_snapshot(pane_id) {
+                if snap.cells.len() == 30 && snap.cols == 100 {
+                    resize_observed = true;
+                }
+            }
+        }
+
         measurements.push(rss_bytes());
     }
+
+    assert!(
+        resize_observed,
+        "Mid-flood resize never landed in a published snapshot — IO thread \
+         may be deadlocked or the resize command was dropped. samples: {:?}",
+        measurements,
+    );
 
     let post_warmup = &measurements[1..];
     let all_increasing = post_warmup

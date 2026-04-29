@@ -132,8 +132,10 @@ pub struct PaneIoThread<S: EffectSink + 'static> {
     /// per §03 negative pin 3 in
     /// `bug-tracker/plans/BUG-11-002/section-03-tdd-matrix.md`.
     /// Production builds carry zero overhead — the field is `#[cfg(test)]`.
+    /// Shared with the spawning test thread via `Arc` so the test can
+    /// observe the counter while the IO thread runs.
     #[cfg(test)]
-    pub(crate) shrink_call_count: std::sync::atomic::AtomicUsize,
+    pub(crate) shrink_call_count: Arc<std::sync::atomic::AtomicUsize>,
 }
 
 impl<S: EffectSink> PaneIoThread<S> {

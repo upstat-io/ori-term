@@ -150,7 +150,7 @@ fn make_sync_thread_with_term(term: Term<VoidEffectSink>) -> PaneIoThread<VoidEf
         pending_responses: Vec::new(),
         effects_buf: Vec::new(),
         last_animation_deadline: None,
-        shrink_call_count: AtomicUsize::new(0),
+        shrink_call_count: Arc::new(AtomicUsize::new(0)),
     }
 }
 
@@ -189,7 +189,7 @@ fn make_sync_thread_with_wakeup() -> (PaneIoThread<VoidEffectSink>, Arc<AtomicU6
         pending_responses: Vec::new(),
         effects_buf: Vec::new(),
         last_animation_deadline: None,
-        shrink_call_count: AtomicUsize::new(0),
+        shrink_call_count: Arc::new(AtomicUsize::new(0)),
     };
     (thread, wakeup_count)
 }
@@ -246,7 +246,7 @@ fn shutdown_via_channel_disconnect() {
         pending_responses: Vec::new(),
         effects_buf: Vec::new(),
         last_animation_deadline: None,
-        shrink_call_count: AtomicUsize::new(0),
+        shrink_call_count: Arc::new(AtomicUsize::new(0)),
     };
     let join = thread.spawn().expect("failed to spawn IO thread");
 
@@ -342,7 +342,7 @@ fn byte_delivery_parses_vte() {
         pending_responses: Vec::new(),
         effects_buf: Vec::new(),
         last_animation_deadline: None,
-        shrink_call_count: AtomicUsize::new(0),
+        shrink_call_count: Arc::new(AtomicUsize::new(0)),
     };
     let join = thread.spawn().expect("failed to spawn IO thread");
 
@@ -496,7 +496,7 @@ fn handle_bytes_chunked_drains_commands() {
         pending_responses: Vec::new(),
         effects_buf: Vec::new(),
         last_animation_deadline: None,
-        shrink_call_count: AtomicUsize::new(0),
+        shrink_call_count: Arc::new(AtomicUsize::new(0)),
     };
 
     cmd_tx.send(PaneIoCommand::Shutdown).unwrap();
@@ -735,7 +735,7 @@ fn make_sync_thread_with_cmd_tx() -> (PaneIoThread<VoidEffectSink>, Sender<PaneI
         pending_responses: Vec::new(),
         effects_buf: Vec::new(),
         last_animation_deadline: None,
-        shrink_call_count: AtomicUsize::new(0),
+        shrink_call_count: Arc::new(AtomicUsize::new(0)),
     };
     (thread, cmd_tx)
 }
@@ -1518,9 +1518,14 @@ fn test_io_thread_panic_does_not_crash_app() {
         drop_counter: None,
     };
 
-    // Trigger the panic.
+    // Trigger the panic. `MarkAllDirty` lands in cmd_rx; the spawned
+    // thread's `let _ = rx.recv(); panic!(...)` runs as soon as the OS
+    // schedules it. shutdown() either races ahead of the panic (joining
+    // the panicked thread when it lands) or arrives after (joining
+    // cleanly) — both paths satisfy "shutdown does not hang on panic",
+    // which is the only invariant this test pins. Wall-clock sleep is
+    // forbidden per `.claude/rules/tests.md §Wall-Clock-Free Testing`.
     handle.send_command(PaneIoCommand::MarkAllDirty);
-    std::thread::sleep(Duration::from_millis(50));
 
     // shutdown() must complete without hanging (join catches the panic).
     let start = Instant::now();
@@ -2012,7 +2017,7 @@ fn make_sync_thread_generic<S: oriterm_core::effect::EffectSink + 'static>(
         pending_responses: Vec::new(),
         effects_buf: Vec::new(),
         last_animation_deadline: None,
-        shrink_call_count: AtomicUsize::new(0),
+        shrink_call_count: Arc::new(AtomicUsize::new(0)),
     };
     (thread, wakeup_count)
 }
@@ -2554,7 +2559,7 @@ fn spawn_queueing_eof_rig() -> EofTestRig {
         pending_responses: Vec::new(),
         effects_buf: Vec::new(),
         last_animation_deadline: None,
-        shrink_call_count: AtomicUsize::new(0),
+        shrink_call_count: Arc::new(AtomicUsize::new(0)),
     };
 
     let join = thread.spawn().expect("spawn IO thread");
@@ -2965,7 +2970,7 @@ fn byte_channel_capacity_blocks_at_bound() {
 /// (an unbounded `Sender::capacity` returns `None`).
 /// See: bug-tracker/plans/BUG-11-002/section-03-tdd-matrix.md §"Semantic pins" Pin 2.
 #[test]
-fn byte_tx_is_bounded_at_capacity() {
+fn byte_tx_capacity_reports_bound() {
     let (_thread, handle) = make_pair();
     let byte_tx = handle.byte_sender();
     assert_eq!(
@@ -3116,22 +3121,67 @@ fn effect_sink_remains_lifecycle_pure() {
 /// Regression: BUG-11-002. /tp-help round 1 (codex + opencode) rejected
 /// anchoring the shrink call to the `select!` default arm: on an idle
 /// pane that arm fires once per `IDLE_WAKE_CEILING = 24h`, so a default-
-/// arm anchor would never trigger in observable time. Pin uses the
-/// cfg(test) `shrink_call_count` counter incremented at the top of
-/// `maybe_shrink_buffers()` to verify the OUTER-loop call path fires.
+/// arm anchor would never trigger in observable time. Pin spawns a real
+/// IO thread, polls the cfg(test) `shrink_call_count` counter (shared
+/// via `Arc<AtomicUsize>` between thread and test), and asserts the
+/// OUTER-loop call path fires within a 5 s safety deadline. If a future
+/// refactor moves `maybe_shrink_buffers()` to the `default(timeout)`
+/// arm or removes the call entirely, the counter stays at 0 and this
+/// test fails.
 /// See: bug-tracker/plans/BUG-11-002/section-03-tdd-matrix.md §"Negative pins" pin 3.
 #[test]
-fn maybe_shrink_runs_outside_idle_arm() {
-    let mut t = make_sync_thread();
+fn maybe_shrink_runs_in_run_loop() {
+    let shutdown = Arc::new(AtomicBool::new(false));
+    let (thread, mut handle) = new_with_handle(IoThreadConfig {
+        terminal: make_term(),
+        pane_id: {
+            let (p, _, _, _) = test_dummy_channels();
+            p
+        },
+        mux_tx: {
+            let (_, t, _, _) = test_dummy_channels();
+            t
+        },
+        child_exit_rx: {
+            let (_, _, r, _) = test_dummy_channels();
+            r
+        },
+        mode_cache: Arc::new(AtomicU64::new(TermMode::default().bits())),
+        shutdown: Arc::clone(&shutdown),
+        wakeup: Arc::new(|| {}),
+        grid_dirty: Arc::new(AtomicBool::new(false)),
+        pty_control: None,
+        adopted_signal: None,
+        initial_rows: 24,
+        initial_cols: 80,
+        selection_dirty: Arc::new(AtomicBool::new(false)),
+    });
+    // Capture the shared counter BEFORE spawn moves the thread.
+    let counter = Arc::clone(&thread.shrink_call_count);
+    let join = thread.spawn().expect("failed to spawn IO thread");
+    handle.set_join(join);
 
-    let count_before = t.shrink_call_count.load(Ordering::Acquire);
-    t.maybe_shrink_buffers();
-    let count_after = t.shrink_call_count.load(Ordering::Acquire);
+    // Poll for the run loop to call maybe_shrink_buffers — the call
+    // happens every iteration after maybe_produce_snapshot. The loop's
+    // first iteration runs drain_commands → process_pending_bytes →
+    // tick_animations → maybe_produce_snapshot → maybe_shrink_buffers
+    // → select! BEFORE blocking on the 24h default-arm timeout, so the
+    // counter must increment within milliseconds.
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while counter.load(Ordering::Acquire) == 0 {
+        assert!(
+            Instant::now() < deadline,
+            "maybe_shrink_buffers never fired in the run loop within 5 s"
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    }
 
-    assert_eq!(
-        count_after,
-        count_before + 1,
-        "maybe_shrink_buffers must increment shrink_call_count exactly once per call"
+    // Cleanly shut down so handle::Drop doesn't have to wait for join.
+    handle.send_command(PaneIoCommand::Shutdown);
+    drop(handle);
+    assert!(
+        counter.load(Ordering::Acquire) >= 1,
+        "shrink_call_count must be ≥ 1 after the run loop ran"
     );
 }
 

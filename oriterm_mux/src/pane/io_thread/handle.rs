@@ -231,7 +231,7 @@ pub fn new_with_handle<S: EffectSink + 'static>(
         effects_buf: Vec::new(),
         last_animation_deadline: None,
         #[cfg(test)]
-        shrink_call_count: std::sync::atomic::AtomicUsize::new(0),
+        shrink_call_count: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
     };
     let handle = PaneIoHandle {
         cmd_tx,
