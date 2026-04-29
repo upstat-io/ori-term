@@ -339,19 +339,27 @@ impl MuxBackend for EmbeddedMux {
         if let Some(pane) = self.panes.get_mut(&pane_id) {
             pane.set_bell();
         }
+        // Patch the cached snapshot in-place so the trait-default
+        // `has_bell()` (which reads from the cached snapshot, single SSOT
+        // across embedded + daemon backends) sees the fresh value
+        // immediately, without waiting for the IO thread to publish a new
+        // snapshot.
+        if let Some(snap) = self.snapshot_cache.get_mut(&pane_id) {
+            snap.has_bell = true;
+        }
     }
 
     fn clear_bell(&mut self, pane_id: PaneId) {
         if let Some(pane) = self.panes.get_mut(&pane_id) {
             pane.clear_bell();
         }
+        if let Some(snap) = self.snapshot_cache.get_mut(&pane_id) {
+            snap.has_bell = false;
+        }
     }
 
-    fn has_bell(&self, pane_id: PaneId) -> bool {
-        self.panes
-            .get(&pane_id)
-            .is_some_and(Pane::has_bell)
-    }
+    // `has_bell` uses the `MuxBackend` trait default which reads from
+    // the cached snapshot — same code path as the daemon client.
 
     fn set_unseen_output(&mut self, pane_id: PaneId) {
         if let Some(pane) = self.panes.get_mut(&pane_id) {

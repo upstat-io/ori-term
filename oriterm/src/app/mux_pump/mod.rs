@@ -116,27 +116,38 @@ impl App {
                 self.handle_command_complete(pane_id, duration);
             }
             MuxNotification::PaneBell(id) => {
+                // Bells on the focused pane are silent: the user is already
+                // looking at it, so the sound + bell icon would just be noise.
+                // The IO thread's `event_pump` already set `pane.has_bell`
+                // before this arm fires; clear it here so the icon never
+                // appears on the focused tab.
+                let is_focused = self.active_pane_id() == Some(id);
                 if let Some(mux) = self.mux.as_mut() {
-                    mux.set_bell(id);
+                    if is_focused {
+                        mux.clear_bell(id);
+                    } else {
+                        mux.set_bell(id);
+                    }
                 }
                 let now = Instant::now();
-                if let Some(idx) = self.tab_index_for_pane(id) {
-                    if let Some(ctx) = self.focused_ctx_mut() {
-                        ctx.tab_bar.ring_bell(idx, now);
+                if !is_focused {
+                    if let Some(idx) = self.tab_index_for_pane(id) {
+                        if let Some(ctx) = self.focused_ctx_mut() {
+                            ctx.tab_bar.ring_bell(idx, now);
+                        }
                     }
                 }
                 // Refresh tab-bar entries from mux state so the persistent
                 // bell icon (sourced from `mux.has_bell` in build_tab_entries)
-                // appears immediately after `set_bell` above. Without this
-                // sync the icon waits for the next unrelated tab-bar refresh.
+                // appears / clears immediately.
                 self.sync_tab_bar_from_mux();
 
                 // Audible bell — closes BUG-08-001 by absorbing the BEL `\a`
                 // audio path into BUG-11-016. Native OS APIs respect the
-                // user's system mute / sound-effects settings; gating here
-                // is on the same audible-mode flag that governs OSC 9 / 99 /
-                // 777 / command-complete (single-knob bell-sound config).
-                if self.config.behavior.notification.is_audible() {
+                // user's system mute / sound-effects settings. Skip the
+                // audible bell entirely when the bell-ringing pane is
+                // already the user's focus.
+                if !is_focused && self.config.behavior.notification.is_audible() {
                     audio::play_bell();
                 }
 
@@ -176,22 +187,27 @@ impl App {
             } => {
                 // Bell-focused dispatch (BUG-11-016 scope reset 2026-04-28):
                 // OSC 9 / OSC 99 / OSC 777 fire the bell sound + tab bell
-                // icon on the owning pane's tab. Audible = native OS bell;
-                // Visual = persistent bell icon (cleared on tab focus via
-                // mux.clear_bell in tab_management focus handlers).
-                // notify-rust toast pipeline removed; native toast-banner
-                // is a deferred follow-up.
+                // icon on the owning pane's tab. Skip both when the
+                // bell-ringing pane is already focused — user is looking
+                // at it.
+                let is_focused = self.active_pane_id() == Some(pane_id);
                 let mode = self.config.behavior.notification;
-                if mode.is_audible() {
+                if !is_focused && mode.is_audible() {
                     audio::play_bell();
                 }
                 if mode.is_visual() {
                     if let Some(mux) = self.mux.as_mut() {
-                        mux.set_bell(pane_id);
+                        if is_focused {
+                            mux.clear_bell(pane_id);
+                        } else {
+                            mux.set_bell(pane_id);
+                        }
                     }
-                    if let Some(idx) = self.tab_index_for_pane(pane_id) {
-                        if let Some(ctx) = self.focused_ctx_mut() {
-                            ctx.tab_bar.ring_bell(idx, Instant::now());
+                    if !is_focused {
+                        if let Some(idx) = self.tab_index_for_pane(pane_id) {
+                            if let Some(ctx) = self.focused_ctx_mut() {
+                                ctx.tab_bar.ring_bell(idx, Instant::now());
+                            }
                         }
                     }
                     self.sync_tab_bar_from_mux();
@@ -309,7 +325,8 @@ impl App {
         );
 
         // Flash the tab bar (reuse bell pulse) if configured.
-        if behavior.notify_command_bell {
+        let is_focused = self.active_pane_id() == Some(pane_id);
+        if behavior.notify_command_bell && !is_focused {
             if let Some(mux) = self.mux.as_mut() {
                 mux.set_bell(pane_id);
             }
@@ -324,10 +341,10 @@ impl App {
 
         // Bell-focused dispatch (BUG-11-016 scope reset 2026-04-28):
         // command-complete (OSC 133;D) fires the native bell sound; the
-        // tab-bell pulse above already handles the visual feedback. The
-        // notify-rust toast pipeline was removed; native toast-banner is
-        // a deferred follow-up if/when wanted.
-        if self.config.behavior.notification.is_audible() {
+        // tab-bell pulse above already handles the visual feedback. Skip
+        // entirely when the command's pane is already focused — user
+        // is looking at it.
+        if !is_focused && self.config.behavior.notification.is_audible() {
             audio::play_bell();
         }
     }

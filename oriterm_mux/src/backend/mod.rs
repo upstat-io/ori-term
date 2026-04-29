@@ -304,14 +304,14 @@ pub trait MuxBackend {
     /// a no-op — the client manages bell state locally.
     fn clear_bell(&mut self, _pane_id: PaneId) {}
 
-    /// Whether the bell is currently active for a pane.
+    /// Whether the bell has fired for a pane since it was last focused.
     ///
-    /// Embedded mode reads `Pane::has_bell()` directly. Daemon-mode default
-    /// returns `false` because the bell flag is not yet propagated through
-    /// the snapshot wire protocol — daemon-mode tab-bar bell icons would
-    /// need a snapshot-side carrier; tracked as a follow-up to BUG-11-016.
-    fn has_bell(&self, _pane_id: PaneId) -> bool {
-        false
+    /// Reads from the pane's snapshot (single source of truth across
+    /// embedded + daemon backends — the bell flag travels in
+    /// [`PaneSnapshot::has_bell`] just like `has_unseen_output`).
+    fn has_bell(&self, pane_id: PaneId) -> bool {
+        self.pane_snapshot(pane_id)
+            .is_some_and(|s| s.has_bell)
     }
 
     /// Mark a pane as having unseen output.
