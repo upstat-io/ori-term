@@ -125,6 +125,11 @@ impl App {
                         ctx.tab_bar.ring_bell(idx, now);
                     }
                 }
+                // Refresh tab-bar entries from mux state so the persistent
+                // bell icon (sourced from `mux.has_bell` in build_tab_entries)
+                // appears immediately after `set_bell` above. Without this
+                // sync the icon waits for the next unrelated tab-bar refresh.
+                self.sync_tab_bar_from_mux();
 
                 // Audible bell — closes BUG-08-001 by absorbing the BEL `\a`
                 // audio path into BUG-11-016. Native OS APIs respect the
@@ -170,20 +175,26 @@ impl App {
                 ..
             } => {
                 // Bell-focused dispatch (BUG-11-016 scope reset 2026-04-28):
-                // OSC 9 / OSC 99 / OSC 777 fire the bell sound + tab-bell
-                // pulse on the owning pane's tab. Visual = tab pulse;
-                // Audible = native OS bell. notify-rust toast pipeline
-                // removed; native toast-banner is a deferred follow-up.
+                // OSC 9 / OSC 99 / OSC 777 fire the bell sound + tab bell
+                // icon on the owning pane's tab. Audible = native OS bell;
+                // Visual = persistent bell icon (cleared on tab focus via
+                // mux.clear_bell in tab_management focus handlers).
+                // notify-rust toast pipeline removed; native toast-banner
+                // is a deferred follow-up.
                 let mode = self.config.behavior.notification;
                 if mode.is_audible() {
                     audio::play_bell();
                 }
                 if mode.is_visual() {
+                    if let Some(mux) = self.mux.as_mut() {
+                        mux.set_bell(pane_id);
+                    }
                     if let Some(idx) = self.tab_index_for_pane(pane_id) {
                         if let Some(ctx) = self.focused_ctx_mut() {
                             ctx.tab_bar.ring_bell(idx, Instant::now());
                         }
                     }
+                    self.sync_tab_bar_from_mux();
                     self.mark_pane_window_dirty(pane_id);
                 }
             }
@@ -299,12 +310,16 @@ impl App {
 
         // Flash the tab bar (reuse bell pulse) if configured.
         if behavior.notify_command_bell {
+            if let Some(mux) = self.mux.as_mut() {
+                mux.set_bell(pane_id);
+            }
             if let Some(idx) = self.tab_index_for_pane(pane_id) {
                 if let Some(ctx) = self.focused_ctx_mut() {
                     ctx.tab_bar.ring_bell(idx, Instant::now());
                     ctx.root.mark_dirty();
                 }
             }
+            self.sync_tab_bar_from_mux();
         }
 
         // Bell-focused dispatch (BUG-11-016 scope reset 2026-04-28):

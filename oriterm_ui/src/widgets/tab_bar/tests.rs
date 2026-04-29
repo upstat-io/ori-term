@@ -519,6 +519,7 @@ fn bell_phase_positive_right_after_bell() {
         icon: None,
         bell_start: Some(now - Duration::from_millis(100)),
         modified: false,
+        has_bell: false,
     };
     let phase = TabBarWidget::bell_phase_for_test(&entry, now);
     // Phase should be > 0 shortly after bell fires.
@@ -533,6 +534,7 @@ fn bell_phase_zero_after_duration() {
         icon: None,
         bell_start: Some(now - Duration::from_secs(5)),
         modified: false,
+        has_bell: false,
     };
     let phase = TabBarWidget::bell_phase_for_test(&entry, now);
     assert!((phase - 0.0).abs() < f32::EPSILON);

@@ -157,11 +157,25 @@ impl TabBarWidget {
     ) {
         let color = strip.text_color;
 
-        // Icon rendering: shape and draw emoji before the title.
-        // Emoji fallback is injected into UI font collections from the terminal
-        // font at renderer init, so emoji renders at the correct UI text size.
-        // Emoji sized ~30% larger than text for visual prominence.
-        let text_offset = if let Some(TabIcon::Emoji(ref emoji)) = tab.icon {
+        // Icon priority on the left of the title:
+        //   1. Bell icon (highest) — persistent alert glyph rendered
+        //      whenever `tab.has_bell` is true. Cleared by mux.clear_bell
+        //      when the tab is focused (per oriterm/src/app/tab_management).
+        //   2. Emoji TabIcon — falls back to the existing tab icon when no
+        //      bell is active.
+        //   3. No icon — title rendered flush against tab_padding.
+        // The bell icon supersedes the tab's own emoji icon by design — an
+        // alert is more important than a decorative favicon, matching the
+        // iTerm2 / Windows Terminal UX pattern.
+        let text_offset = if tab.has_bell {
+            let icon_size_f = ctx.theme.font_size_small * 1.1;
+            let icon_size = icon_size_f.round() as u32;
+            let icon_x = x + self.metrics.tab_padding;
+            let icon_y = strip.y + (strip.h - icon_size_f) / 2.0;
+            let icon_rect = Rect::new(icon_x, icon_y, icon_size_f, icon_size_f);
+            draw_icon(ctx, IconId::Bell, icon_rect, icon_size, color);
+            icon_size_f + ICON_TEXT_GAP
+        } else if let Some(TabIcon::Emoji(ref emoji)) = tab.icon {
             let icon_size = ctx.theme.font_size_small * 1.5;
             let icon_style = TextStyle::new(icon_size, color);
             let icon_shaped = ctx.measurer.shape(emoji, &icon_style, f32::INFINITY);

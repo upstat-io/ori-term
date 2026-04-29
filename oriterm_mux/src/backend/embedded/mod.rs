@@ -347,6 +347,12 @@ impl MuxBackend for EmbeddedMux {
         }
     }
 
+    fn has_bell(&self, pane_id: PaneId) -> bool {
+        self.panes
+            .get(&pane_id)
+            .is_some_and(Pane::has_bell)
+    }
+
     fn set_unseen_output(&mut self, pane_id: PaneId) {
         if let Some(pane) = self.panes.get_mut(&pane_id) {
             pane.set_unseen_output();
