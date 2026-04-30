@@ -58,17 +58,23 @@ fn bench_enumerate_synthetic_500(c: &mut Criterion) {
 /// a synthetic `.ttc` fixture in the repo. Skips silently when no system
 /// font dirs exist on the runner (CI sandbox without `/usr/share/fonts`).
 fn bench_enumerate_system_fonts(c: &mut Criterion) {
-    let candidate_roots: Vec<PathBuf> = vec![
+    // Linux + macOS standard font directories. The `is_dir()` filter drops
+    // platform-irrelevant paths automatically — running on Linux skips the
+    // `/Library/Fonts` and `/System/Library/Fonts` paths, and vice versa on
+    // macOS, with no platform `cfg` needed.
+    let mut candidate_roots: Vec<PathBuf> = Vec::new();
+    if let Some(home) = std::env::var_os("HOME") {
+        candidate_roots.push(PathBuf::from(home.clone()).join(".local/share/fonts"));
+        candidate_roots.push(PathBuf::from(home).join("Library/Fonts"));
+    }
+    candidate_roots.extend([
         PathBuf::from("/usr/share/fonts"),
         PathBuf::from("/usr/local/share/fonts"),
-        std::env::var_os("HOME")
-            .map(PathBuf::from)
-            .map(|h| h.join(".local/share/fonts"))
-            .unwrap_or_default(),
-    ]
-    .into_iter()
-    .filter(|p| p.is_dir())
-    .collect();
+        PathBuf::from("/Library/Fonts"),
+        PathBuf::from("/System/Library/Fonts"),
+        PathBuf::from("/System/Library/Fonts/Supplemental"),
+    ]);
+    candidate_roots.retain(|p| p.is_dir());
     if candidate_roots.is_empty() {
         eprintln!(
             "SKIP bench_enumerate_system_fonts: no system font directories found on this runner"

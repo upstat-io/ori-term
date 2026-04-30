@@ -10,7 +10,7 @@
 use winit::window::CursorIcon;
 
 use crate::color::Color;
-use crate::controllers::{ClickController, EventController, HoverController};
+use crate::controllers::{ClickController, EventController, FocusController, HoverController};
 use crate::draw::RectStyle;
 use crate::geometry::{Insets, Point, Rect};
 use crate::icons::IconId;
@@ -140,6 +140,11 @@ impl DropdownWidget {
             controllers: vec![
                 Box::new(HoverController::new()),
                 Box::new(ClickController::new()),
+                // Click-to-focus so subsequent keymap actions (Confirm, NavigateUp/Down)
+                // dispatch to this widget. Without `FocusController`, clicking the
+                // trigger does NOT move focus and the keyboard nav is wedged
+                // behind the prior focus owner — codex F1 finding from §06 Round 1.
+                Box::new(FocusController::new()),
             ],
             animator: VisualStateAnimator::new(vec![common_states(
                 style.bg,

@@ -102,6 +102,12 @@ pub struct SearchableDropdownPopupWidget {
     filtered_indices: Vec<usize>,
     /// Index INTO `filtered_indices` for the highlighted row (NOT canonical).
     highlighted: Option<usize>,
+    /// First row drawn in the visible window. Adjusted by `move_highlight`
+    /// to keep the highlighted row inside `[scroll_offset, scroll_offset +
+    /// max_visible_rows)` so arrow-key navigation never targets unrendered
+    /// rows (closes Round 1 codex F2 GAP per
+    /// `bug-tracker/plans/BUG-02-012/section-06-tpr-findings.md`).
+    scroll_offset: usize,
     /// Visual style.
     style: SearchableDropdownStyle,
     /// No event controllers — popup handles input directly via `on_input`.
@@ -123,6 +129,7 @@ impl SearchableDropdownPopupWidget {
         let highlighted = highlight_canonical
             .and_then(|c| filtered_indices.iter().position(|&i| i == c))
             .or_else(|| (!filtered_indices.is_empty()).then_some(0));
+        let scroll_offset = scroll_to_keep_visible(highlighted, 0, style.max_visible_rows);
         Self {
             id: WidgetId::next(),
             trigger_id,
@@ -130,6 +137,7 @@ impl SearchableDropdownPopupWidget {
             query: String::new(),
             filtered_indices,
             highlighted,
+            scroll_offset,
             style,
             controllers: Vec::new(),
         }
@@ -155,7 +163,7 @@ impl SearchableDropdownPopupWidget {
         self.highlighted
     }
 
-    /// Rebuilds `filtered_indices` from `query` and resets highlight.
+    /// Rebuilds `filtered_indices` from `query` and resets highlight + scroll.
     /// Public so tests can assert filter behavior in isolation.
     pub fn rebuild_filter(&mut self) {
         let q = self.query.to_lowercase();
@@ -171,6 +179,12 @@ impl SearchableDropdownPopupWidget {
         } else {
             Some(0)
         };
+        self.scroll_offset = 0;
+    }
+
+    /// Returns the first visible row index — used by paint and click-routing.
+    pub fn scroll_offset(&self) -> usize {
+        self.scroll_offset
     }
 
     fn row_height(&self) -> f32 {
@@ -206,12 +220,22 @@ impl SearchableDropdownPopupWidget {
     fn move_highlight(&mut self, delta: i32) {
         if self.filtered_indices.is_empty() {
             self.highlighted = None;
+            self.scroll_offset = 0;
             return;
         }
         let len = self.filtered_indices.len() as i32;
         let cur = self.highlighted.map_or(0, |h| h as i32);
         let next = ((cur + delta) % len + len) % len;
-        self.highlighted = Some(next as usize);
+        let next_usize = next as usize;
+        self.highlighted = Some(next_usize);
+        // Adjust scroll_offset so the highlighted row stays inside the
+        // visible window. Required by codex F2 — without this the highlight
+        // can move into rows the popup never renders.
+        self.scroll_offset = scroll_to_keep_visible(
+            self.highlighted,
+            self.scroll_offset,
+            self.style.max_visible_rows,
+        );
     }
 
     fn select_highlighted(&self) -> Option<WidgetAction> {
@@ -231,12 +255,38 @@ impl SearchableDropdownPopupWidget {
             return None;
         }
         let row_h = self.row_height();
-        let row_idx = ((pos.y - list_top) / row_h) as usize;
-        if row_idx < self.filtered_indices.len() {
+        let visible_idx = ((pos.y - list_top) / row_h) as usize;
+        // Translate visible-window index back to filtered-index space.
+        let row_idx = self.scroll_offset + visible_idx;
+        if row_idx < self.filtered_indices.len() && visible_idx < self.style.max_visible_rows {
             Some(row_idx)
         } else {
             None
         }
+    }
+}
+
+/// Compute the new scroll offset that keeps `highlighted` inside the visible
+/// window `[scroll_offset, scroll_offset + max_visible_rows)`. Standard
+/// scroll-to-show-cursor pattern; pulled out as a free function so the
+/// constructor and `move_highlight` both call the same logic.
+fn scroll_to_keep_visible(
+    highlighted: Option<usize>,
+    current_offset: usize,
+    max_visible_rows: usize,
+) -> usize {
+    let Some(h) = highlighted else {
+        return 0;
+    };
+    if max_visible_rows == 0 {
+        return 0;
+    }
+    if h < current_offset {
+        h
+    } else if h >= current_offset + max_visible_rows {
+        h + 1 - max_visible_rows
+    } else {
+        current_offset
     }
 }
 
@@ -249,6 +299,7 @@ impl std::fmt::Debug for SearchableDropdownPopupWidget {
             .field("query", &self.query)
             .field("filtered_count", &self.filtered_indices.len())
             .field("highlighted", &self.highlighted)
+            .field("scroll_offset", &self.scroll_offset)
             .field("style", &self.style)
             .field("controllers_len", &self.controllers.len())
             .finish()
@@ -343,15 +394,22 @@ impl Widget for SearchableDropdownPopupWidget {
         }
 
         let row_h = self.row_height();
-        for (i, &canonical) in self
+        for (visible_i, &canonical) in self
             .filtered_indices
             .iter()
+            .skip(self.scroll_offset)
             .take(s.max_visible_rows)
             .enumerate()
         {
-            let row_y = list_top + (i as f32) * row_h;
+            // `visible_i` is the screen-space slot (0..max_visible_rows);
+            // `filter_i` is the index into `filtered_indices` (canonical-
+            // index space). Highlight comparison uses filter_i so the right
+            // row in the visible window draws the highlight even when
+            // scrolled past the top.
+            let filter_i = self.scroll_offset + visible_i;
+            let row_y = list_top + (visible_i as f32) * row_h;
             let row_rect = Rect::new(inner.x(), row_y, inner.width(), row_h);
-            let is_highlighted = self.highlighted == Some(i);
+            let is_highlighted = self.highlighted == Some(filter_i);
             if is_highlighted {
                 let hl_style = RectStyle::filled(s.highlight_bg).with_radius(s.corner_radius * 0.5);
                 ctx.scene.push_quad(row_rect, hl_style);

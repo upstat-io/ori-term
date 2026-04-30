@@ -1,19 +1,15 @@
 //! macOS font discovery via recursive directory scanning.
 //!
-//! Owns only the platform-specific bits — `font_dirs()`, the platform-default
-//! fallback list, and `resolve_user_fallback`. Enumeration, parsing, grouping,
-//! and the resolution-bridge logic live in the shared `super::unix` module
+//! Owns only the platform-specific bit — `font_dirs()`. Enumeration, parsing,
+//! grouping, the resolution-bridge logic, the platform-default fallback walk,
+//! and the user-fallback resolver all live in the shared `super::unix` module
 //! per `LEAK:algorithmic-duplication` SSOT discipline. Future enhancement:
 //! `CoreText` `CTFontCreateWithName` API for better matching.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use super::families::PRIMARY_FAMILIES;
-use super::{
-    DiscoveryResult, FallbackDiscovery, FamilyEntry, FontOrigin, resolve_fallback_chain,
-    try_families_from_specs,
-};
+use super::{DiscoveryResult, FallbackDiscovery, FamilyEntry};
 
 /// Standard font directories on macOS, in priority order.
 ///
@@ -44,43 +40,22 @@ pub(super) fn try_user_family(
     super::unix::try_user_family_with_bridge(name, index)
 }
 
-/// Try platform default families in priority order.
+/// Try platform default families — delegates to the shared
+/// `try_platform_defaults_with_index` in `super::unix`.
 pub(super) fn try_platform_defaults(
     _weight: u16,
     index: &HashMap<String, PathBuf>,
 ) -> Option<DiscoveryResult> {
-    let lookup = |filename: &str| -> Option<PathBuf> { index.get(filename).cloned() };
-
-    let primary = try_families_from_specs(PRIMARY_FAMILIES, &lookup, FontOrigin::DirectoryScan)?;
-    let fallbacks = resolve_fallback_chain(&lookup, FontOrigin::DirectoryScan);
-    Some(DiscoveryResult { primary, fallbacks })
+    super::unix::try_platform_defaults_with_index(index)
 }
 
-/// Resolve a user-configured fallback font name to a path.
-///
-/// Accepts a pre-built font index to avoid rescanning font directories.
+/// Resolve a user-configured fallback font name — delegates to
+/// `super::unix::resolve_user_fallback_with_index`.
 pub(super) fn resolve_user_fallback(
     family: &str,
     index: &HashMap<String, PathBuf>,
 ) -> Option<FallbackDiscovery> {
-    if let Some(path) = index.get(family) {
-        return Some(FallbackDiscovery {
-            path: path.clone(),
-            face_index: 0,
-            origin: FontOrigin::UserConfig,
-        });
-    }
-
-    let path = PathBuf::from(family);
-    if path.is_absolute() && path.exists() {
-        return Some(FallbackDiscovery {
-            path,
-            face_index: 0,
-            origin: FontOrigin::UserConfig,
-        });
-    }
-
-    None
+    super::unix::resolve_user_fallback_with_index(family, index)
 }
 
 /// Enumerate every monospace font family found under `roots` — delegates to

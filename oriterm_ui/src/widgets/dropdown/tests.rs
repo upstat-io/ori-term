@@ -1,5 +1,6 @@
 use winit::window::CursorIcon;
 
+use crate::geometry::Rect;
 use crate::layout::BoxContent;
 use crate::sense::Sense;
 use crate::widgets::tests::MockMeasurer;
@@ -45,9 +46,12 @@ fn sense_returns_click() {
 }
 
 #[test]
-fn has_two_controllers() {
+fn has_three_controllers() {
+    // Hover + Click + Focus — the focus controller was added per Round 1
+    // codex F1 to ensure click-to-focus so subsequent keymap actions
+    // dispatch to this widget (was 2 before, hence the rename).
     let dd = DropdownWidget::new(items());
-    assert_eq!(dd.controllers().len(), 2);
+    assert_eq!(dd.controllers().len(), 3);
 }
 
 #[test]
@@ -257,7 +261,7 @@ fn dropdown_open_close_cycle_stable_scene_size() {
 #[test]
 fn click_emits_open_dropdown_when_not_searchable() {
     let mut dd = DropdownWidget::new(items());
-    let bounds = crate::geometry::Rect::new(0.0, 0.0, 100.0, 30.0);
+    let bounds = Rect::new(0.0, 0.0, 100.0, 30.0);
     let action = dd
         .on_action(WidgetAction::Clicked(dd.id()), bounds)
         .expect("click must emit an action");
@@ -271,7 +275,7 @@ fn click_emits_open_dropdown_when_not_searchable() {
 #[test]
 fn click_emits_open_searchable_when_searchable() {
     let mut dd = DropdownWidget::new(items()).with_searchable(true);
-    let bounds = crate::geometry::Rect::new(0.0, 0.0, 100.0, 30.0);
+    let bounds = Rect::new(0.0, 0.0, 100.0, 30.0);
     let action = dd
         .on_action(WidgetAction::Clicked(dd.id()), bounds)
         .expect("click must emit an action");
@@ -301,7 +305,7 @@ fn searchable_navigate_down_opens_popup_does_not_cycle() {
     let mut dd = DropdownWidget::new(items())
         .with_searchable(true)
         .with_selected(0);
-    let bounds = crate::geometry::Rect::new(0.0, 0.0, 100.0, 30.0);
+    let bounds = Rect::new(0.0, 0.0, 100.0, 30.0);
     let action = dd
         .handle_keymap_action(&NavigateDown, bounds)
         .expect("NavigateDown must emit an action");
@@ -325,7 +329,7 @@ fn searchable_navigate_down_opens_popup_does_not_cycle() {
 fn plain_navigate_down_cycles_inline() {
     use crate::action::keymap_action::NavigateDown;
     let mut dd = DropdownWidget::new(items()).with_selected(0);
-    let bounds = crate::geometry::Rect::new(0.0, 0.0, 100.0, 30.0);
+    let bounds = Rect::new(0.0, 0.0, 100.0, 30.0);
     let action = dd
         .handle_keymap_action(&NavigateDown, bounds)
         .expect("NavigateDown must emit an action");

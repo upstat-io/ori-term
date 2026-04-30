@@ -192,6 +192,89 @@ fn click_on_filtered_row_emits_selected_with_canonical_index() {
     }
 }
 
+/// Scroll regression: `move_highlight` must keep the highlighted row inside
+/// the rendered window (`max_visible_rows`). Without scroll-offset tracking,
+/// pressing ArrowDown enough times moves `highlighted` past the rendered
+/// slice — codex F2 GAP per `bug-tracker/plans/BUG-02-012/section-06-tpr-findings.md` Round 1.
+#[test]
+fn arrow_down_advances_scroll_offset_when_highlight_passes_visible_window() {
+    let items: Vec<&str> = (0..30)
+        .map(|i| Box::leak(format!("Item{i:02}").into_boxed_str()) as &str)
+        .collect();
+    let mut popup = popup_with(items);
+    let max_rows = popup.style_for_test().max_visible_rows;
+    assert_eq!(
+        popup.scroll_offset(),
+        0,
+        "fresh popup starts at scroll_offset 0"
+    );
+
+    // Press ArrowDown until just past the visible window.
+    for _ in 0..max_rows {
+        let _ = popup.on_input(&key(Key::ArrowDown), Rect::new(0.0, 0.0, 200.0, 200.0));
+    }
+    assert_eq!(
+        popup.highlighted(),
+        Some(max_rows),
+        "highlight advanced into row {max_rows}"
+    );
+    assert_eq!(
+        popup.scroll_offset(),
+        1,
+        "scroll_offset must advance to 1 to keep row {max_rows} inside window"
+    );
+}
+
+/// Scroll regression: ArrowUp from the top wraps the highlight to the last
+/// filtered row AND scroll_offset jumps to keep that row visible.
+#[test]
+fn arrow_up_wraps_to_last_row_and_scrolls_to_show_it() {
+    let items: Vec<&str> = (0..30)
+        .map(|i| Box::leak(format!("Item{i:02}").into_boxed_str()) as &str)
+        .collect();
+    let mut popup = popup_with(items);
+    let max_rows = popup.style_for_test().max_visible_rows;
+
+    // ArrowUp at row 0 wraps to row 29 (last of 30).
+    let _ = popup.on_input(&key(Key::ArrowUp), Rect::new(0.0, 0.0, 200.0, 200.0));
+    assert_eq!(
+        popup.highlighted(),
+        Some(29),
+        "ArrowUp at top wraps to last"
+    );
+    let expected_offset = 29 + 1 - max_rows; // standard "h+1-max_visible" formula
+    assert_eq!(
+        popup.scroll_offset(),
+        expected_offset,
+        "scroll_offset must put row 29 at the bottom of the visible window"
+    );
+}
+
+/// Filter rebuild resets scroll back to top — keeps the popup intuitive
+/// (typing always shows results from the start).
+#[test]
+fn rebuild_filter_resets_scroll_offset() {
+    let items: Vec<&str> = (0..30)
+        .map(|i| Box::leak(format!("Item{i:02}").into_boxed_str()) as &str)
+        .collect();
+    let mut popup = popup_with(items);
+    let max_rows = popup.style_for_test().max_visible_rows;
+    for _ in 0..(max_rows + 3) {
+        let _ = popup.on_input(&key(Key::ArrowDown), Rect::new(0.0, 0.0, 200.0, 200.0));
+    }
+    assert!(
+        popup.scroll_offset() > 0,
+        "preconditions: scroll has advanced"
+    );
+    // Type a character — rebuild_filter fires.
+    let _ = popup.on_input(&key(Key::Character('1')), Rect::new(0.0, 0.0, 200.0, 200.0));
+    assert_eq!(
+        popup.scroll_offset(),
+        0,
+        "filter rebuild must reset scroll_offset to top"
+    );
+}
+
 #[test]
 fn rebuild_filter_directly_for_unit_isolation() {
     let mut popup = popup_with(vec!["Alpha", "Beta", "Gamma"]);

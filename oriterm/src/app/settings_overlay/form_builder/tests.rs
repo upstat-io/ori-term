@@ -240,3 +240,68 @@ fn collect_ids(ids: &SettingsIds) -> HashSet<u64> {
     set.insert(ids.gpu_backend_dropdown.raw());
     set
 }
+
+/// Configured-but-uninstalled font family — when `Config.font.family` names a
+/// family the host system does not have installed, the dropdown still includes
+/// the configured name (prepended at index 1, after "Default (System)"), so the
+/// open dialog reflects the saved configuration faithfully rather than silently
+/// snapping to "Default (System)" (closes opencode F2 GAP per
+/// `bug-tracker/plans/BUG-02-012/section-06-tpr-findings.md` Round 1).
+#[test]
+fn font_family_dropdown_prepends_configured_uninstalled_family() {
+    let mut config = Config::default();
+    let bogus = "ZZZ_NotInstalled_Family_For_Testing";
+    config.font.family = Some(bogus.to_owned());
+    let theme = UiTheme::default();
+    let (_content, ids, _footer) = build_settings_dialog(&config, &theme, 0, 1.0, 1.0, None);
+
+    assert!(
+        ids.font_family_items.len() >= 2,
+        "items must always have Default + at least one more (the configured family) — got {}",
+        ids.font_family_items.len()
+    );
+    assert_eq!(
+        ids.font_family_items[0], "Default (System)",
+        "index 0 is always the Default sentinel"
+    );
+    assert_eq!(
+        ids.font_family_items[1], bogus,
+        "configured-but-uninstalled family must be prepended at index 1"
+    );
+    let count = ids
+        .font_family_items
+        .iter()
+        .filter(|s| s.eq_ignore_ascii_case(bogus))
+        .count();
+    assert_eq!(
+        count, 1,
+        "configured family must appear exactly once (no double-insert if also enumerated)"
+    );
+}
+
+/// When the configured family IS installed (or matches an enumerated family),
+/// the dropdown does NOT prepend a duplicate entry.
+#[test]
+fn font_family_dropdown_skips_prepend_when_family_is_enumerated() {
+    let catalog = crate::font::discovery::enumerate_mono_families();
+    let Some(installed) = catalog.first().map(|fe| fe.display_name.clone()) else {
+        eprintln!(
+            "SKIP: no enumerated families on this host — prepend skip path is host-dependent"
+        );
+        return;
+    };
+    let mut config = Config::default();
+    config.font.family = Some(installed.clone());
+    let theme = UiTheme::default();
+    let (_content, ids, _footer) = build_settings_dialog(&config, &theme, 0, 1.0, 1.0, None);
+
+    let count = ids
+        .font_family_items
+        .iter()
+        .filter(|s| s.eq_ignore_ascii_case(&installed))
+        .count();
+    assert_eq!(
+        count, 1,
+        "installed family appears exactly once (the enumeration entry); no prepend duplicate"
+    );
+}

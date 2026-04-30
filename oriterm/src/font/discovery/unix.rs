@@ -21,8 +21,12 @@ use skrifa::raw::tables::os2::SelectionFlags;
 use skrifa::raw::{FileRef, TableProvider};
 use skrifa::string::StringId;
 
+use super::families::PRIMARY_FAMILIES;
 use super::walk::walk_font_dirs;
-use super::{DiscoveryResult, FamilyEntry, FamilySlots, FontOrigin, resolve_fallback_chain};
+use super::{
+    DiscoveryResult, FallbackDiscovery, FamilyEntry, FamilySlots, FontOrigin,
+    resolve_fallback_chain, try_families_from_specs,
+};
 
 /// Per-file shape collected during enumeration before grouping into families.
 struct RawFaceInfo {
@@ -298,5 +302,45 @@ pub(super) fn variant_from_index(
             return Some(path.clone());
         }
     }
+    None
+}
+
+/// Try platform default families in priority order. Identical for Linux and
+/// macOS — both walk `PRIMARY_FAMILIES` against the filename index. Closes
+/// the gemini F1 LEAK:algorithmic-duplication finding from §06 Round 1.
+pub(super) fn try_platform_defaults_with_index(
+    index: &HashMap<String, PathBuf>,
+) -> Option<DiscoveryResult> {
+    let lookup = |filename: &str| -> Option<PathBuf> { index.get(filename).cloned() };
+
+    let primary = try_families_from_specs(PRIMARY_FAMILIES, &lookup, FontOrigin::DirectoryScan)?;
+    let fallbacks = resolve_fallback_chain(&lookup, FontOrigin::DirectoryScan);
+    Some(DiscoveryResult { primary, fallbacks })
+}
+
+/// Resolve a user-configured fallback font name to a path. Identical for
+/// Linux and macOS — try filename in index, then absolute path. Closes the
+/// gemini F1 LEAK:algorithmic-duplication finding from §06 Round 1.
+pub(super) fn resolve_user_fallback_with_index(
+    family: &str,
+    index: &HashMap<String, PathBuf>,
+) -> Option<FallbackDiscovery> {
+    if let Some(path) = index.get(family) {
+        return Some(FallbackDiscovery {
+            path: path.clone(),
+            face_index: 0,
+            origin: FontOrigin::UserConfig,
+        });
+    }
+
+    let path = PathBuf::from(family);
+    if path.is_absolute() && path.exists() {
+        return Some(FallbackDiscovery {
+            path,
+            face_index: 0,
+            origin: FontOrigin::UserConfig,
+        });
+    }
+
     None
 }
