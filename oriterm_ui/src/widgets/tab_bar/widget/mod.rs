@@ -63,6 +63,12 @@ pub struct TabEntry {
     pub bell_start: Option<Instant>,
     /// Whether the tab content has been modified (shows accent dot).
     pub modified: bool,
+    /// Whether the bell is currently active for this tab (shows persistent
+    /// bell icon until the user focuses the tab). Sourced from the mux's
+    /// `has_bell` query in `build_tab_entries`. Cleared via
+    /// `mux.clear_bell` on tab focus change. Independent of `bell_start`'s
+    /// 3-second pulse animation.
+    pub has_bell: bool,
 }
 
 impl TabEntry {
@@ -73,6 +79,7 @@ impl TabEntry {
             icon: None,
             bell_start: None,
             modified: false,
+            has_bell: false,
         }
     }
 
@@ -87,6 +94,13 @@ impl TabEntry {
     #[must_use]
     pub fn with_modified(mut self, modified: bool) -> Self {
         self.modified = modified;
+        self
+    }
+
+    /// Sets the persistent bell-icon state.
+    #[must_use]
+    pub fn with_bell(mut self, has_bell: bool) -> Self {
+        self.has_bell = has_bell;
         self
     }
 }

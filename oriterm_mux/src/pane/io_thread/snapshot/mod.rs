@@ -92,6 +92,24 @@ impl SnapshotDoubleBuffer {
         slot.seqno > slot.consumed_seqno
     }
 
+    /// Shrink the front buffer's `Vec` capacities at quiescence.
+    ///
+    /// Called from the IO thread's `maybe_shrink_buffers()` after a
+    /// flood quiesces. Locks `inner` for nanoseconds (`parking_lot`,
+    /// uncontested-fast) and delegates to
+    /// [`RenderableContent::maybe_shrink`] (cap-gated:
+    /// `cap > 4*len && cap > 4096`). Does NOT touch `seqno` /
+    /// `consumed_seqno` — sync-suppression invariants pinned by
+    /// callers of [`Self::seqno`] and [`Self::consumed_seqno`] are
+    /// preserved. Required because the front buffer at quiescence
+    /// (no further `flip_swap` activity) holds the most-recent
+    /// peak-flood content; without this helper the front capacity
+    /// persists indefinitely. Regression: BUG-11-002.
+    pub fn maybe_shrink_front(&self) {
+        let mut slot = self.inner.lock();
+        slot.front.maybe_shrink();
+    }
+
     /// Current publication sequence number.
     ///
     /// Incremented atomically by `flip_swap()`. During Mode 2026 sync

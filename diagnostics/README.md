@@ -1,6 +1,6 @@
 # Diagnostic Scripts
 
-Quick-access debugging tools for the ori_term's AOT/codegen pipeline. These scripts extract more signal in seconds than manual investigation in minutes.
+Quick-access debugging tools for the Ori compiler's AOT/codegen pipeline. These scripts extract more signal in seconds than manual investigation in minutes.
 
 **Prerequisite**: An LLVM-enabled `ori` binary. Build with `cargo b` (debug) or `cargo b --release` (release).
 
@@ -204,8 +204,8 @@ Scans `/tmp/ori-tpr-*/` run directories for failure patterns. Reports success ra
 ### tpr-liveness.sh — TPR Reviewer Liveness Probe
 
 ```bash
-diagnostics/tpr-liveness.sh /tmp/tpr-round-ori_term-abc123 codex --human
-diagnostics/tpr-liveness.sh /tmp/tpr-round-ori_term-abc123 gemini --json
+diagnostics/tpr-liveness.sh /tmp/tpr-round-ori_lang-abc123 codex --human
+diagnostics/tpr-liveness.sh /tmp/tpr-round-ori_lang-abc123 gemini --json
 diagnostics/tpr-liveness.sh "$scratch" codex --grace-seconds 300 --tail-lines 20
 ```
 
@@ -237,10 +237,10 @@ diagnostics/state.sh known-failing                # List expected-failing files
 diagnostics/state.sh known-failing --json         # Same as JSON array
 diagnostics/state.sh refresh --sha-only --by commit-push   # Cheap: update HEAD SHA only
 diagnostics/state.sh refresh --hygiene-only                # Run repo-hygiene.sh + update notes
-diagnostics/state.sh refresh --full --by section-close     # Slow: re-run test-all.sh + clippy-all.sh
+diagnostics/state.sh refresh --full --by section-close     # Slow: re-run cargo test --all + cargo clippy --all -- -D warnings
 ```
 
-Caches the result of `./test-all.sh`, `./clippy-all.sh`, and `diagnostics/repo-hygiene.sh --check` in `.claude/state/known-state.json` (schema v1) so new sessions skip the rediscover-from-scratch loop.
+Caches the result of `cargo test --all`, `cargo clippy --all -- -D warnings`, and `diagnostics/repo-hygiene.sh --check` in `.claude/state/known-state.json` (schema v1) so new sessions skip the rediscover-from-scratch loop.
 
 **When to use:**
 - **First query on any fresh session** — skills that need to know "is the tree known-failing?" should consult `state.sh show --json` before running tests.

@@ -91,7 +91,6 @@ fn record_effect(effect: Effect) -> Option<RecordedEvent> {
         }
         Effect::Host(HostEffect::DesktopNotification { .. })
         | Effect::Host(HostEffect::ClearPendingNotifications)
-        | Effect::Host(HostEffect::VisualBell)
         | Effect::Host(HostEffect::AudioRequest(_))
         | Effect::Host(HostEffect::PrintRequest(_))
         | Effect::Presentation(_) => return None,

@@ -17,6 +17,41 @@ pub(crate) enum NotifyOnCommandFinish {
     Always,
 }
 
+/// How desktop notifications (OSC 9 / 99 / 777, command-complete, Lua
+/// `SendNotification`) are presented to the user.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum NotificationMode {
+    /// Suppress all desktop notifications.
+    None,
+    /// Show the OS notification toast with no sound.
+    Visual,
+    /// Show the OS notification toast with the platform's default
+    /// notification sound (`message-new-instant` on Linux `freedesktop`,
+    /// `'Default'` on Windows `BurntToast` / `<audio>` element in raw
+    /// `WinRT`, `with sound name "default"` on macOS `osascript`). The
+    /// `Sound` and `Both` variants produce identical behavior today
+    /// — OS notification APIs bundle visual + audio. Reserved for
+    /// future audio-only backends (e.g., system bell on `Sound` only).
+    Sound,
+    /// Show the OS notification toast with the platform's default
+    /// notification sound (default).
+    #[default]
+    Both,
+}
+
+impl NotificationMode {
+    /// Whether the OS notification toast should appear.
+    pub(crate) fn is_visual(self) -> bool {
+        matches!(self, Self::Visual | Self::Sound | Self::Both)
+    }
+
+    /// Whether the platform's default notification sound should play.
+    pub(crate) fn is_audible(self) -> bool {
+        matches!(self, Self::Sound | Self::Both)
+    }
+}
+
 /// User interaction behavior configuration.
 #[allow(
     clippy::struct_excessive_bools,
@@ -58,6 +93,11 @@ pub(crate) struct BehaviorConfig {
     pub notify_command_threshold_secs: u64,
     /// Flash the tab bar when a long-running command completes (reuses bell pulse).
     pub notify_command_bell: bool,
+    /// How desktop notifications (OSC 9 / 99 / 777, command-complete) are
+    /// presented: `"none"` (suppressed), `"visual"` (silent toast),
+    /// `"sound"` (toast + system notification sound; same as `"both"` today),
+    /// `"both"` (toast + system notification sound — default).
+    pub notification: NotificationMode,
     /// Show visual prompt markers in the left margin at prompt lines (OSC 133;A).
     ///
     /// When `true`, a thin colored bar is drawn at the left edge of each prompt
@@ -84,6 +124,7 @@ impl Default for BehaviorConfig {
             notify_on_command_finish: NotifyOnCommandFinish::default(),
             notify_command_threshold_secs: 10,
             notify_command_bell: true,
+            notification: NotificationMode::default(),
             prompt_markers: false,
             hide_mouse_when_typing: true,
         }

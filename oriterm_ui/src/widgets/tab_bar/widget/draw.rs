@@ -8,7 +8,11 @@ use crate::animation::{AnimProperty, Lerp};
 use crate::color::Color;
 use crate::draw::RectStyle;
 use crate::geometry::{Point, Rect};
-use crate::icons::IconId;
+use crate::icons::{IconId, SIDEBAR_NAV_ICON_SIZE};
+
+/// Logical-pixel gap between the bell icon and the close button on tabs
+/// where the bell is active.
+const BELL_ICON_GAP: f32 = 4.0;
 use crate::layout::LayoutBox;
 use crate::sense::Sense;
 use crate::text::{TextOverflow, TextStyle};
@@ -97,8 +101,20 @@ impl TabBarWidget {
 
             let hovered = self.is_tab_hovered(index);
 
-            // Modified dot: shown on non-active, non-hovered tabs.
-            if tab.modified && !strip.active && !hovered {
+            // Bell icon: drawn just left of the close-button zone whenever
+            // the tab has an unseen bell (mux-sourced via `has_bell`).
+            // Coexists with the close button so users can dismiss the tab
+            // even when the bell is active. Active-tab + hovered cases are
+            // gated upstream (the consumer arms in `mux_pump` clear the
+            // bell flag when the bell-ringing pane is already focused), so
+            // this branch is effectively inactive-only.
+            if tab.has_bell {
+                self.draw_bell_icon(ctx, index, x, strip);
+            }
+
+            // Modified dot: shown on non-active, non-hovered tabs that have
+            // no bell active (bell takes priority as the stronger alert).
+            if tab.modified && !strip.active && !hovered && !tab.has_bell {
                 self.draw_modified_dot(ctx, index, x, strip);
             } else if strip.active {
                 // Active tab: close at 0.6 opacity (1.0 when hovered).
@@ -157,10 +173,9 @@ impl TabBarWidget {
     ) {
         let color = strip.text_color;
 
-        // Icon rendering: shape and draw emoji before the title.
-        // Emoji fallback is injected into UI font collections from the terminal
-        // font at renderer init, so emoji renders at the correct UI text size.
-        // Emoji sized ~30% larger than text for visual prominence.
+        // Left-of-title icon: emoji `TabIcon` only. The bell alert glyph is
+        // drawn on the RIGHT side of the tab next to the close button, not
+        // here — see `draw_bell_icon`.
         let text_offset = if let Some(TabIcon::Emoji(ref emoji)) = tab.icon {
             let icon_size = ctx.theme.font_size_small * 1.5;
             let icon_style = TextStyle::new(icon_size, color);
@@ -191,7 +206,14 @@ impl TabBarWidget {
         } else {
             &tab.title
         };
-        let max_w = (self.layout.max_text_width() - text_offset).max(0.0);
+        // Reserve right-side space for the bell icon (drawn just left of
+        // the close button) so the title doesn't overflow into it.
+        let right_reserve = if tab.has_bell {
+            SIDEBAR_NAV_ICON_SIZE as f32 + BELL_ICON_GAP
+        } else {
+            0.0
+        };
+        let max_w = (self.layout.max_text_width() - text_offset - right_reserve).max(0.0);
 
         // Measure for cursor/selection before consuming text_style with overflow.
         let text_style = TextStyle::new(ctx.theme.font_size_small, color);
@@ -224,6 +246,29 @@ impl TabBarWidget {
         );
         ctx.scene
             .push_text(Point::new(text_x, text_y), clamped, color);
+    }
+
+    /// Draws the bell-alert icon just left of the close-button zone.
+    ///
+    /// Vertically centered. Sized at `SIDEBAR_NAV_ICON_SIZE` (16 logical
+    /// px) — the only size for which `IconId::Bell` is pre-resolved in
+    /// `oriterm/src/gpu/window_renderer/icons.rs::ICON_SIZES`.
+    fn draw_bell_icon(&self, ctx: &mut DrawCtx<'_>, index: usize, tab_x: f32, strip: &TabStrip) {
+        let icon_size_f = SIDEBAR_NAV_ICON_SIZE as f32;
+        // Right edge of the bell icon sits one BELL_ICON_GAP to the left
+        // of the close-button left edge.
+        let close_left =
+            tab_x + self.layout.tab_width_at(index) - CLOSE_BUTTON_RIGHT_PAD - CLOSE_BUTTON_WIDTH;
+        let icon_x = close_left - BELL_ICON_GAP - icon_size_f;
+        let icon_y = strip.y + (strip.h - icon_size_f) / 2.0;
+        let icon_rect = Rect::new(icon_x, icon_y, icon_size_f, icon_size_f);
+        draw_icon(
+            ctx,
+            IconId::Bell,
+            icon_rect,
+            SIDEBAR_NAV_ICON_SIZE,
+            strip.text_color,
+        );
     }
 
     /// Draws a 6px accent-colored square dot indicating a modified tab.

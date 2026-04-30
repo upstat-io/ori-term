@@ -66,6 +66,67 @@ bold_is_bright = false
     assert!(!parsed.behavior.bold_is_bright);
 }
 
+/// Regression: BUG-11-016 — `behavior.notification` parses the four
+/// modes ("none", "visual", "sound", "both") and `is_visual` /
+/// `is_audible` predicates correctly classify each mode for the
+/// `mux_pump` consumer arm.
+#[test]
+fn notification_mode_from_toml_and_predicates() {
+    use crate::config::behavior::NotificationMode;
+
+    let cases = [
+        (
+            r#"[behavior]
+notification = "none""#,
+            NotificationMode::None,
+            false,
+            false,
+        ),
+        (
+            r#"[behavior]
+notification = "visual""#,
+            NotificationMode::Visual,
+            true,
+            false,
+        ),
+        (
+            r#"[behavior]
+notification = "sound""#,
+            NotificationMode::Sound,
+            true,
+            true,
+        ),
+        (
+            r#"[behavior]
+notification = "both""#,
+            NotificationMode::Both,
+            true,
+            true,
+        ),
+    ];
+
+    for (toml_str, expected_mode, expected_visual, expected_audible) in cases {
+        let parsed: Config = toml::from_str(toml_str).expect("deserialize");
+        assert_eq!(parsed.behavior.notification, expected_mode);
+        assert_eq!(parsed.behavior.notification.is_visual(), expected_visual);
+        assert_eq!(parsed.behavior.notification.is_audible(), expected_audible);
+    }
+}
+
+/// Regression: BUG-11-016 — default `behavior.notification` is `Both`
+/// (notification + sound). Confirms users who don't set the field get
+/// audible notifications by default, matching the pre-existing bell
+/// configuration's preference for sensory feedback.
+#[test]
+fn notification_mode_default_is_both() {
+    use crate::config::behavior::NotificationMode;
+
+    let parsed: Config = toml::from_str("").expect("deserialize empty config");
+    assert_eq!(parsed.behavior.notification, NotificationMode::Both);
+    assert!(parsed.behavior.notification.is_visual());
+    assert!(parsed.behavior.notification.is_audible());
+}
+
 #[test]
 fn cursor_style_from_toml() {
     let toml_str = r#"

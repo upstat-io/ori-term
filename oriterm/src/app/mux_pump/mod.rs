@@ -4,14 +4,13 @@
 //! Processes `MuxEvent`s from PTY reader threads via `MuxBackend::poll_events`,
 //! then handles resulting `MuxNotification`s (dirty, close, clipboard, etc.).
 
-use std::fmt::Write as _;
 use std::time::{Duration, Instant};
 
 use oriterm_mux::MuxNotification;
 use oriterm_mux::PaneId;
 
 use crate::config::NotifyOnCommandFinish;
-use crate::platform::notify;
+use crate::platform::audio;
 
 use super::App;
 
@@ -117,14 +116,60 @@ impl App {
                 self.handle_command_complete(pane_id, duration);
             }
             MuxNotification::PaneBell(id) => {
+                // Bells on the focused pane are silent: the user is already
+                // looking at it, so the sound + bell icon would just be noise.
+                // The IO thread's `event_pump` already set `pane.has_bell`
+                // before this arm fires; clear it here so the icon never
+                // appears on the focused tab.
+                let is_focused = self.active_pane_id() == Some(id);
                 if let Some(mux) = self.mux.as_mut() {
-                    mux.set_bell(id);
-                }
-                if let Some(idx) = self.tab_index_for_pane(id) {
-                    if let Some(ctx) = self.focused_ctx_mut() {
-                        ctx.tab_bar.ring_bell(idx, Instant::now());
+                    if is_focused {
+                        mux.clear_bell(id);
+                    } else {
+                        mux.set_bell(id);
                     }
                 }
+                let now = Instant::now();
+                if !is_focused {
+                    if let Some(idx) = self.tab_index_for_pane(id) {
+                        if let Some(ctx) = self.focused_ctx_mut() {
+                            ctx.tab_bar.ring_bell(idx, now);
+                        }
+                    }
+                }
+                // Refresh tab-bar entries from mux state so the persistent
+                // bell icon (sourced from `mux.has_bell` in build_tab_entries)
+                // appears / clears immediately.
+                self.sync_tab_bar_from_mux();
+
+                // Audible bell — closes BUG-08-001 by absorbing the BEL `\a`
+                // audio path into BUG-11-016. Native OS APIs respect the
+                // user's system mute / sound-effects settings. Skip the
+                // audible bell entirely when the bell-ringing pane is
+                // already the user's focus.
+                if !is_focused && self.config.behavior.notification.is_audible() {
+                    audio::play_bell();
+                }
+
+                // Visual-bell flash on the pane's OWNING window — not the
+                // focused window. A bell from a background pane flashes its
+                // own window. Mirrors `mark_pane_window_dirty`'s
+                // owning-window walk (`oriterm/src/app/mod.rs` ~line 330).
+                if self.config.bell.is_enabled() {
+                    let bell = &self.config.bell;
+                    let color = crate::config::parse_bell_color_as_ui(bell.color.as_deref());
+                    let easing = crate::config::bell_animation_to_easing(bell.animation);
+                    let duration_ms = bell.duration_ms;
+                    if let Some(session_wid) = self.session.window_for_pane(id) {
+                        for ctx in self.windows.values_mut() {
+                            if ctx.window.session_window_id() == session_wid {
+                                ctx.root.ring_visual_bell(now, duration_ms, color, easing);
+                                break;
+                            }
+                        }
+                    }
+                }
+
                 self.mark_pane_window_dirty(id);
             }
             MuxNotification::ClipboardStore {
@@ -135,12 +180,39 @@ impl App {
                 self.clipboard.store(clipboard_type, &text);
             }
             MuxNotification::DesktopNotification {
-                pane_id: _pane_id,
-                title,
-                body,
+                pane_id,
+                title: _title,
+                body: _body,
                 ..
             } => {
-                notify::send(&title, &body);
+                // Bell-focused dispatch (BUG-11-016 scope reset 2026-04-28):
+                // OSC 9 / OSC 99 / OSC 777 fire the bell sound + tab bell
+                // icon on the owning pane's tab. Skip both when the
+                // bell-ringing pane is already focused — user is looking
+                // at it.
+                let is_focused = self.active_pane_id() == Some(pane_id);
+                let mode = self.config.behavior.notification;
+                if !is_focused && mode.is_audible() {
+                    audio::play_bell();
+                }
+                if mode.is_visual() {
+                    if let Some(mux) = self.mux.as_mut() {
+                        if is_focused {
+                            mux.clear_bell(pane_id);
+                        } else {
+                            mux.set_bell(pane_id);
+                        }
+                    }
+                    if !is_focused {
+                        if let Some(idx) = self.tab_index_for_pane(pane_id) {
+                            if let Some(ctx) = self.focused_ctx_mut() {
+                                ctx.tab_bar.ring_bell(idx, Instant::now());
+                            }
+                        }
+                    }
+                    self.sync_tab_bar_from_mux();
+                    self.mark_pane_window_dirty(pane_id);
+                }
             }
             MuxNotification::ClearPendingDesktopNotifications(_pane_id) => {
                 // Desktop notifications are dispatched to the platform
@@ -173,13 +245,28 @@ impl App {
                     }
                 }
             }
-            MuxNotification::HostColorQuery { pane_id, reply, .. } => {
-                // Placeholder color until we wire theme lookup through the
-                // main-thread MuxBackend (tracked as a cleanup item —
-                // the OSC 10/11/12 reply flow is unblocked structurally,
-                // the actual color source is a separate bug).
-                let color = oriterm_core::color::Rgb { r: 0, g: 0, b: 0 };
+            MuxNotification::HostColorQuery {
+                pane_id,
+                index,
+                reply,
+                ..
+            } => {
                 if let Some(mux) = self.mux.as_mut() {
+                    // sync_pane_snapshot drains in-flight IO commands and
+                    // forces a fresh snapshot — required for protocol
+                    // replies because the IO thread emits
+                    // MuxEvent::HostColorQuery BEFORE publishing the
+                    // post-mutation snapshot via maybe_produce_snapshot
+                    // (effect drain at oriterm_mux/src/pane/io_thread/mod.rs
+                    // happens inside handle_bytes; snapshot publish
+                    // happens after handle_bytes returns). refresh_pane_snapshot
+                    // would race and return the pre-SET palette for OSC 4
+                    // SET-then-QUERY in the same byte batch.
+                    let snapshot = mux.sync_pane_snapshot(pane_id);
+                    let color = resolve_host_color_query(
+                        snapshot.as_ref().map(|s| s.palette.as_slice()),
+                        index,
+                    );
                     if let Err(err) = mux.fulfill_host_request(
                         pane_id,
                         oriterm_mux::HostReply::ColorQuery {
@@ -238,32 +325,28 @@ impl App {
         );
 
         // Flash the tab bar (reuse bell pulse) if configured.
-        if behavior.notify_command_bell {
+        let is_focused = self.active_pane_id() == Some(pane_id);
+        if behavior.notify_command_bell && !is_focused {
+            if let Some(mux) = self.mux.as_mut() {
+                mux.set_bell(pane_id);
+            }
             if let Some(idx) = self.tab_index_for_pane(pane_id) {
                 if let Some(ctx) = self.focused_ctx_mut() {
                     ctx.tab_bar.ring_bell(idx, Instant::now());
                     ctx.root.mark_dirty();
                 }
             }
+            self.sync_tab_bar_from_mux();
         }
 
-        // Build and dispatch OS notification.
-        let title = self
-            .mux
-            .as_ref()
-            .and_then(|m| m.pane_snapshot(pane_id))
-            .map_or_else(
-                || "Command finished".to_owned(),
-                |s| {
-                    if s.title.is_empty() {
-                        "Command finished".to_owned()
-                    } else {
-                        s.title.clone()
-                    }
-                },
-            );
-        let body = format_duration_body(duration);
-        notify::send(&title, &body);
+        // Bell-focused dispatch (BUG-11-016 scope reset 2026-04-28):
+        // command-complete (OSC 133;D) fires the native bell sound; the
+        // tab-bell pulse above already handles the visual feedback. Skip
+        // entirely when the command's pane is already focused — user
+        // is looking at it.
+        if !is_focused && self.config.behavior.notification.is_audible() {
+            audio::play_bell();
+        }
     }
 }
 
@@ -299,24 +382,24 @@ fn purge_pending_desktop_notifications(buf: &mut Vec<MuxNotification>) {
     }
 }
 
-/// Format a human-readable duration string for notification body.
+/// Resolve an OSC 4 / OSC 10 / OSC 11 / OSC 12 color query against the
+/// pane's palette snapshot.
 ///
-/// Examples: `"Completed in 12s"`, `"Completed in 2m 30s"`, `"Completed in 1h 5m"`.
-fn format_duration_body(duration: Duration) -> String {
-    let secs = duration.as_secs();
-    let mut buf = String::from("Completed in ");
-    if secs >= 3600 {
-        let h = secs / 3600;
-        let m = (secs % 3600) / 60;
-        let _ = write!(buf, "{h}h {m}m");
-    } else if secs >= 60 {
-        let m = secs / 60;
-        let s = secs % 60;
-        let _ = write!(buf, "{m}m {s}s");
-    } else {
-        let _ = write!(buf, "{secs}s");
-    }
-    buf
+/// `palette` is a slice of pre-resolved RGB triplets from
+/// `PaneSnapshot::palette` — 270 entries covering 0..=255 (indexed
+/// palette) and 256..=269 (named semantic slots: Foreground,
+/// Background, Cursor, dim variants, etc.). `index` is the
+/// pre-computed slot the VTE OSC dispatch resolved.
+///
+/// Returns black (`Rgb { r:0, g:0, b:0 }`) when the snapshot is
+/// missing (`None`) OR the index is out of range — matches
+/// `Palette::color()` contract at
+/// `oriterm_core/src/color/palette/mod.rs:286-296`.
+fn resolve_host_color_query(palette: Option<&[[u8; 3]]>, index: usize) -> oriterm_core::color::Rgb {
+    palette.and_then(|p| p.get(index).copied()).map_or(
+        oriterm_core::color::Rgb { r: 0, g: 0, b: 0 },
+        |[r, g, b]| oriterm_core::color::Rgb { r, g, b },
+    )
 }
 
 impl App {

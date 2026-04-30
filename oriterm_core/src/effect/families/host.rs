@@ -7,12 +7,13 @@
 #[derive(Debug, Clone)]
 pub enum HostEffect {
     /// Audible bell (BEL, U+0007).
+    ///
+    /// Visual-bell presentation is a UI policy gated on `BellConfig::is_enabled()`
+    /// in the `mux_pump` consumer of `MuxNotification::PaneBell` — there is no
+    /// separate `VisualBell` effect variant. The `BellConfig` decides whether a
+    /// whole-window flash overlay fires alongside the audible-bell tab-bar pulse.
+    /// Mode 12 is `TermMode::CURSOR_BLINKING` (ATT610), not DECVB.
     Bell,
-    /// Visual bell (DECVB) — separate variant, not a flag on Bell.
-    /// Audible and visual bells route to different host consumers
-    /// (audio adapter vs UI flash animator); dispatching on the variant
-    /// is cleaner than forcing every consumer to check a flag.
-    VisualBell,
     /// Desktop notification emitted by OSC 9 / OSC 99 / OSC 777.
     DesktopNotification {
         source: NotificationSource,

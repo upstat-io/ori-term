@@ -18,12 +18,6 @@ fn host_bell_constructs() {
 }
 
 #[test]
-fn host_visual_bell_constructs() {
-    let effect = Effect::Host(HostEffect::VisualBell);
-    assert!(matches!(effect, Effect::Host(HostEffect::VisualBell)));
-}
-
-#[test]
 fn host_desktop_notification_constructs() {
     let effect = Effect::Host(HostEffect::DesktopNotification {
         source: NotificationSource::Osc99,

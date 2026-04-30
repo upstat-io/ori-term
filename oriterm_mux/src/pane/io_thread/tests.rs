@@ -1,19 +1,20 @@
 //! Tests for PaneIoThread and PaneIoHandle.
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::mpsc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crossbeam_channel::Receiver;
 
 use oriterm_core::effect::{PollResult, VoidEffectSink};
-use oriterm_core::{Column, Line, Term, TermMode, Theme};
+use oriterm_core::{Column, Line, RenderableContent, Term, TermMode, Theme};
 
 use super::snapshot::SnapshotDoubleBuffer;
 use super::{IoThreadConfig, PaneIoCommand, PaneIoHandle, PaneIoThread, new_with_handle};
 use crate::PaneId;
 use crate::mux_event::MuxEvent;
+use crate::pty::reader::BYTE_CHANNEL_CAPACITY;
 use crate::pty::spawn::ExitStatus;
 
 /// Test helper: dummy pane_id + live channels for constructing
@@ -149,6 +150,7 @@ fn make_sync_thread_with_term(term: Term<VoidEffectSink>) -> PaneIoThread<VoidEf
         pending_responses: Vec::new(),
         effects_buf: Vec::new(),
         last_animation_deadline: None,
+        shrink_call_count: Arc::new(AtomicUsize::new(0)),
     }
 }
 
@@ -187,6 +189,7 @@ fn make_sync_thread_with_wakeup() -> (PaneIoThread<VoidEffectSink>, Arc<AtomicU6
         pending_responses: Vec::new(),
         effects_buf: Vec::new(),
         last_animation_deadline: None,
+        shrink_call_count: Arc::new(AtomicUsize::new(0)),
     };
     (thread, wakeup_count)
 }
@@ -243,6 +246,7 @@ fn shutdown_via_channel_disconnect() {
         pending_responses: Vec::new(),
         effects_buf: Vec::new(),
         last_animation_deadline: None,
+        shrink_call_count: Arc::new(AtomicUsize::new(0)),
     };
     let join = thread.spawn().expect("failed to spawn IO thread");
 
@@ -338,6 +342,7 @@ fn byte_delivery_parses_vte() {
         pending_responses: Vec::new(),
         effects_buf: Vec::new(),
         last_animation_deadline: None,
+        shrink_call_count: Arc::new(AtomicUsize::new(0)),
     };
     let join = thread.spawn().expect("failed to spawn IO thread");
 
@@ -491,6 +496,7 @@ fn handle_bytes_chunked_drains_commands() {
         pending_responses: Vec::new(),
         effects_buf: Vec::new(),
         last_animation_deadline: None,
+        shrink_call_count: Arc::new(AtomicUsize::new(0)),
     };
 
     cmd_tx.send(PaneIoCommand::Shutdown).unwrap();
@@ -562,7 +568,7 @@ fn produce_snapshot_fills_cells() {
     t.grid_dirty.store(true, Ordering::Release);
     t.produce_snapshot();
 
-    let mut consumer = oriterm_core::RenderableContent::default();
+    let mut consumer = RenderableContent::default();
     assert!(t.double_buffer.swap_front(&mut consumer));
 
     // Find the 'h', 'e', 'l', 'l', 'o' characters in the snapshot.
@@ -663,7 +669,7 @@ fn shutdown_flushes_final_snapshot() {
     // Simulate that here:
     t.maybe_produce_snapshot();
 
-    let mut consumer = oriterm_core::RenderableContent::default();
+    let mut consumer = RenderableContent::default();
     assert!(
         t.double_buffer.swap_front(&mut consumer),
         "final snapshot should be published even on shutdown"
@@ -729,6 +735,7 @@ fn make_sync_thread_with_cmd_tx() -> (PaneIoThread<VoidEffectSink>, Sender<PaneI
         pending_responses: Vec::new(),
         effects_buf: Vec::new(),
         last_animation_deadline: None,
+        shrink_call_count: Arc::new(AtomicUsize::new(0)),
     };
     (thread, cmd_tx)
 }
@@ -790,7 +797,7 @@ fn test_resize_produces_snapshot() {
     // process_resize sets grid_dirty — produce_snapshot should fire.
     t.maybe_produce_snapshot();
 
-    let mut consumer = oriterm_core::RenderableContent::default();
+    let mut consumer = RenderableContent::default();
     assert!(
         t.double_buffer.swap_front(&mut consumer),
         "snapshot should be available after resize"
@@ -921,7 +928,7 @@ fn test_resize_interleaved_with_bytes() {
     // The grid should contain both pieces of text.
     t.grid_dirty.store(true, Ordering::Release);
     t.maybe_produce_snapshot();
-    let mut snap = oriterm_core::RenderableContent::default();
+    let mut snap = RenderableContent::default();
     t.double_buffer.swap_front(&mut snap);
 
     let text: String = snap
@@ -1321,7 +1328,7 @@ fn test_search_results_in_snapshot() {
     t.grid_dirty.store(true, Ordering::Release);
     t.produce_snapshot();
 
-    let mut snap = oriterm_core::RenderableContent::default();
+    let mut snap = RenderableContent::default();
     assert!(t.double_buffer.swap_front(&mut snap));
 
     assert!(
@@ -1476,7 +1483,7 @@ fn handle_bytes_chunked_publishes_intermediate_snapshots() {
     );
 
     // Verify the final snapshot is consumable.
-    let mut snap = oriterm_core::RenderableContent::default();
+    let mut snap = RenderableContent::default();
     assert!(
         t.double_buffer.swap_front(&mut snap),
         "snapshot should be available after chunked parsing"
@@ -1508,14 +1515,20 @@ fn test_io_thread_panic_does_not_crash_app() {
         join: Some(join),
         double_buffer: SnapshotDoubleBuffer::new(),
         response_wake_tx: _wake_tx,
+        drop_counter: None,
     };
 
-    // Trigger the panic.
+    // Trigger the panic. `MarkAllDirty` lands in cmd_rx; the spawned
+    // thread's `let _ = rx.recv(); panic!(...)` runs as soon as the OS
+    // schedules it. shutdown() either races ahead of the panic (joining
+    // the panicked thread when it lands) or arrives after (joining
+    // cleanly) — both paths satisfy "shutdown does not hang on panic",
+    // which is the only invariant this test pins. Wall-clock sleep is
+    // forbidden per `.claude/rules/tests.md §Wall-Clock-Free Testing`.
     handle.send_command(PaneIoCommand::MarkAllDirty);
-    std::thread::sleep(Duration::from_millis(50));
 
     // shutdown() must complete without hanging (join catches the panic).
-    let start = std::time::Instant::now();
+    let start = Instant::now();
     handle.shutdown();
     let elapsed = start.elapsed();
 
@@ -1557,7 +1570,7 @@ fn test_concurrent_resize_and_pty_output() {
     std::thread::sleep(Duration::from_millis(200));
 
     // Verify snapshot is producible (IO thread still alive).
-    let mut snap = oriterm_core::RenderableContent::default();
+    let mut snap = RenderableContent::default();
     handle.double_buffer().swap_front(&mut snap);
 
     // Shutdown cleanly.
@@ -1589,7 +1602,7 @@ fn test_pane_close_during_flood_output() {
     std::thread::sleep(Duration::from_millis(50));
 
     // Shutdown the IO thread (drops cmd_tx on PaneIoHandle::shutdown).
-    let start = std::time::Instant::now();
+    let start = Instant::now();
     handle.shutdown();
     let elapsed = start.elapsed();
 
@@ -1631,7 +1644,7 @@ fn test_multiple_panes_concurrent_resize() {
 
     // Verify each pane's snapshot has correct dimensions.
     for (i, (handle, _)) in handles.iter().enumerate() {
-        let mut snap = oriterm_core::RenderableContent::default();
+        let mut snap = RenderableContent::default();
         handle.double_buffer().swap_front(&mut snap);
         let (exp_rows, exp_cols) = expected_dims[i];
         assert_eq!(snap.lines, exp_rows as usize, "pane {i} rows mismatch");
@@ -1663,7 +1676,7 @@ fn test_command_channel_flood() {
     });
     std::thread::sleep(Duration::from_millis(50));
 
-    let mut snap = oriterm_core::RenderableContent::default();
+    let mut snap = RenderableContent::default();
     handle.double_buffer().swap_front(&mut snap);
     assert_eq!(snap.cols, 100, "should respond after 1000-command flood");
 
@@ -1690,7 +1703,7 @@ fn test_snapshot_swap_under_contention() {
 
     // Producer thread: flip as fast as possible.
     let producer = std::thread::spawn(move || {
-        let mut buf = oriterm_core::RenderableContent::default();
+        let mut buf = RenderableContent::default();
         let mut count = 0u64;
         while !stop_clone.load(Ordering::Relaxed) {
             buf.cells.clear();
@@ -1701,9 +1714,9 @@ fn test_snapshot_swap_under_contention() {
     });
 
     // Consumer thread: swap_front as fast as possible.
-    let mut consumer_buf = oriterm_core::RenderableContent::default();
+    let mut consumer_buf = RenderableContent::default();
     let mut consume_count = 0u64;
-    let start = std::time::Instant::now();
+    let start = Instant::now();
     while start.elapsed() < Duration::from_millis(500) {
         if db.swap_front(&mut consumer_buf) {
             consume_count += 1;
@@ -1769,7 +1782,7 @@ fn test_rapid_resize_50_cycles() {
     // Produce snapshot and verify dimensions match.
     t.grid_dirty.store(true, Ordering::Release);
     t.maybe_produce_snapshot();
-    let mut snap = oriterm_core::RenderableContent::default();
+    let mut snap = RenderableContent::default();
     assert!(t.double_buffer.swap_front(&mut snap));
     assert_eq!(snap.cols, 89, "snapshot cols after rapid resize");
     assert_eq!(snap.lines, 29, "snapshot rows after rapid resize");
@@ -1800,7 +1813,7 @@ fn test_resize_during_sustained_output() {
     // Verify snapshot is producible and has correct dimensions.
     t.grid_dirty.store(true, Ordering::Release);
     t.maybe_produce_snapshot();
-    let mut snap = oriterm_core::RenderableContent::default();
+    let mut snap = RenderableContent::default();
     assert!(t.double_buffer.swap_front(&mut snap));
     assert_eq!(snap.cols, 69, "snapshot cols");
     assert_eq!(snap.lines, 24, "snapshot rows");
@@ -2004,6 +2017,7 @@ fn make_sync_thread_generic<S: oriterm_core::effect::EffectSink + 'static>(
         pending_responses: Vec::new(),
         effects_buf: Vec::new(),
         last_animation_deadline: None,
+        shrink_call_count: Arc::new(AtomicUsize::new(0)),
     };
     (thread, wakeup_count)
 }
@@ -2034,7 +2048,7 @@ fn sync_timeout_aborts_and_flushes_buffered_writes() {
     );
 
     // 2. Snapshot must contain the buffered "hello" (replayed, not discarded).
-    let mut consumer = oriterm_core::RenderableContent::default();
+    let mut consumer = RenderableContent::default();
     assert!(
         t.double_buffer.swap_front(&mut consumer),
         "snapshot must be published"
@@ -2147,7 +2161,7 @@ fn resize_during_sync_timeout() {
     t.handle_sync_timeout();
 
     // Snapshot must be coherent — no crash, grid dimensions match resize.
-    let mut consumer = oriterm_core::RenderableContent::default();
+    let mut consumer = RenderableContent::default();
     assert!(t.double_buffer.swap_front(&mut consumer));
 
     assert_eq!(t.terminal.grid().lines(), 40);
@@ -2237,7 +2251,7 @@ fn nested_bsu_in_sync_buffer() {
     );
 
     // Snapshot must contain both "before" and "after".
-    let mut consumer = oriterm_core::RenderableContent::default();
+    let mut consumer = RenderableContent::default();
     assert!(t.double_buffer.swap_front(&mut consumer));
     let text: String = consumer
         .cells
@@ -2288,7 +2302,7 @@ fn run_loop_sync_timeout_fires() {
     std::thread::sleep(Duration::from_millis(300));
 
     // The pane's snapshot should now reflect the buffered content.
-    let mut consumer = oriterm_core::RenderableContent::default();
+    let mut consumer = RenderableContent::default();
     // Give the IO thread a moment to publish.
     for _ in 0..10 {
         if handle.double_buffer().swap_front(&mut consumer) {
@@ -2480,9 +2494,7 @@ fn bridge_decnkm_propagates_to_mode_cache() {
     );
 }
 
-// ============================================================================
 // EOF + ordering + multi-chunk pins (effect-cutover §01.1 Phase J)
-// ============================================================================
 //
 // These tests pin the load-bearing invariants of `handle_pty_eof` and
 // `handle_bytes_chunked` against the production code path (not the
@@ -2545,6 +2557,7 @@ fn spawn_queueing_eof_rig() -> EofTestRig {
         pending_responses: Vec::new(),
         effects_buf: Vec::new(),
         last_animation_deadline: None,
+        shrink_call_count: Arc::new(AtomicUsize::new(0)),
     };
 
     let join = thread.spawn().expect("spawn IO thread");
@@ -2569,7 +2582,7 @@ fn make_exit_status(code: u32) -> ExitStatus {
 /// Drain `mux_rx` until `MuxEvent::PaneExited` arrives, returning the
 /// exit code. Skips intermediate metadata events.
 fn await_pane_exited(rx: &mpsc::Receiver<MuxEvent>, deadline: Duration) -> i32 {
-    let start = std::time::Instant::now();
+    let start = Instant::now();
     loop {
         let remaining = deadline
             .checked_sub(start.elapsed())
@@ -2711,7 +2724,7 @@ fn final_snapshot_precedes_pane_exited() {
     // Read the latest snapshot. By happens-before from the IO thread's
     // mux_tx.send → main-thread mux_rx.recv pairing, the snapshot
     // produced in step (2) is visible to swap_front.
-    let mut snapshot = oriterm_core::RenderableContent::default();
+    let mut snapshot = RenderableContent::default();
     let _ = rig.double_buffer.swap_front(&mut snapshot);
 
     let row0_text: String = snapshot
@@ -2756,10 +2769,10 @@ fn pane_exited_does_not_precede_final_snapshot() {
 
     // Lockstep poll: tracks whether the marker-bearing snapshot was
     // observed BEFORE the first PaneExited recv.
-    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    let deadline = Instant::now() + Duration::from_secs(5);
     let mut snapshot_observed_with_marker = false;
-    while std::time::Instant::now() < deadline {
-        let mut snapshot = oriterm_core::RenderableContent::default();
+    while Instant::now() < deadline {
+        let mut snapshot = RenderableContent::default();
         let _ = rig.double_buffer.swap_front(&mut snapshot);
         if snapshot
             .cells
@@ -2810,10 +2823,10 @@ fn multi_chunk_parse_drains_between_chunks() {
     // handle_bytes_chunked loop, intermediate effects would be invisible
     // to mux_rx until the whole 65 KB completed parsing (and the
     // unbounded sink would briefly spike).
-    let deadline = std::time::Instant::now() + Duration::from_secs(15);
+    let deadline = Instant::now() + Duration::from_secs(15);
     let mut bell_count = 0usize;
-    while std::time::Instant::now() < deadline && bell_count < BELL_COUNT {
-        let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+    while Instant::now() < deadline && bell_count < BELL_COUNT {
+        let remaining = deadline.saturating_duration_since(Instant::now());
         match rig
             .mux_rx
             .recv_timeout(remaining.min(Duration::from_millis(500)))
@@ -2855,7 +2868,7 @@ fn child_exit_disconnect_does_not_spin_loop() {
     // its `select!`. A spinning thread would burn CPU during this
     // window; a correctly-handled one parks on `IDLE_WAKE_CEILING`.
     std::thread::sleep(Duration::from_millis(100));
-    let start = std::time::Instant::now();
+    let start = Instant::now();
     rig._keep_alive_cmd_tx
         .send(PaneIoCommand::Shutdown)
         .expect("Shutdown delivery");
@@ -2881,7 +2894,7 @@ fn response_wake_disconnect_does_not_spin_loop() {
     let rig = spawn_queueing_eof_rig();
     drop(rig._keep_alive_wake_tx);
     std::thread::sleep(Duration::from_millis(100));
-    let start = std::time::Instant::now();
+    let start = Instant::now();
     rig._keep_alive_cmd_tx
         .send(PaneIoCommand::Shutdown)
         .expect("Shutdown delivery");
@@ -2895,4 +2908,310 @@ fn response_wake_disconnect_does_not_spin_loop() {
     drop(rig.byte_tx);
     drop(rig.mux_rx);
     drop(rig.child_exit_tx);
+}
+
+// --- BUG-11-002: bounded byte channel + symmetric IO-thread shrink ---
+
+/// Helper: fill a `RenderableContent` with `n` placeholder cells.
+///
+/// Mirrors `snapshot/tests.rs::content_with_cells`. Used to drive the
+/// `RenderableContent::maybe_shrink` capacity gate (`cap > 4*len &&
+/// cap > 4096`).
+fn populate_renderable(buf: &mut RenderableContent, n: usize) {
+    buf.cells.clear();
+    buf.cells.reserve(n);
+    for i in 0..n {
+        buf.cells.push(oriterm_core::RenderableCell {
+            line: 0,
+            column: Column(i),
+            ch: ' ',
+            fg: Default::default(),
+            bg: Default::default(),
+            flags: oriterm_core::CellFlags::empty(),
+            underline_color: None,
+            has_hyperlink: false,
+            hyperlink_uri: None,
+            zerowidth: Vec::new(),
+        });
+    }
+}
+
+/// Pin 1 — bounded byte-channel capacity.
+///
+/// Regression: BUG-11-002 — pre-fix the byte channel was
+/// `crossbeam_channel::unbounded()`, so a flooded reader could grow the
+/// queue heap without bound. Pins that `try_send` returns
+/// `TrySendError::Full` exactly when the queue holds
+/// `BYTE_CHANNEL_CAPACITY` messages.
+/// See: bug-tracker/plans/BUG-11-002/section-03-tdd-matrix.md §"Semantic pins" Pin 1.
+#[test]
+fn byte_channel_capacity_blocks_at_bound() {
+    let (_thread, handle) = make_pair();
+    let byte_tx = handle.byte_sender();
+
+    for i in 0..BYTE_CHANNEL_CAPACITY {
+        byte_tx
+            .try_send(Vec::new())
+            .unwrap_or_else(|e| panic!("send {i} within capacity should succeed: {e}"));
+    }
+
+    let r = byte_tx.try_send(Vec::new());
+    assert!(
+        matches!(r, Err(crossbeam_channel::TrySendError::Full(_))),
+        "expected TrySendError::Full at capacity, got {r:?}"
+    );
+}
+
+/// Pin 2 — `byte_tx` reports `BYTE_CHANNEL_CAPACITY` via `Sender::capacity`.
+///
+/// Regression: BUG-11-002. Pins both the cap value AND the bounded shape
+/// (an unbounded `Sender::capacity` returns `None`).
+/// See: bug-tracker/plans/BUG-11-002/section-03-tdd-matrix.md §"Semantic pins" Pin 2.
+#[test]
+fn byte_tx_capacity_reports_bound() {
+    let (_thread, handle) = make_pair();
+    let byte_tx = handle.byte_sender();
+    assert_eq!(
+        byte_tx.capacity(),
+        Some(BYTE_CHANNEL_CAPACITY),
+        "byte_tx must be bounded at BYTE_CHANNEL_CAPACITY"
+    );
+}
+
+/// Pin 4 — Drop counter increments on pane close within deadline.
+///
+/// Regression: BUG-11-002. Spawns N IO threads, drops their handles, and
+/// polls the cfg-gated `drop_counter` until it reaches N within a 5 s
+/// safety deadline (per `.claude/rules/tests.md §Wall-Clock-Free Testing`
+/// — poll the condition, not the clock). Pins that `PaneIoHandle::Drop`
+/// runs `shutdown()` then increments the counter.
+/// See: bug-tracker/plans/BUG-11-002/section-03-tdd-matrix.md §"Semantic pins" Pin 4.
+#[test]
+fn drop_counter_reaches_n_within_deadline() {
+    let n = 4usize;
+    let counter = Arc::new(AtomicUsize::new(0));
+
+    for _ in 0..n {
+        let (mut handle, _shutdown) = spawn_pair_with_flag();
+        handle.set_drop_counter(Arc::clone(&counter));
+        // Handle drops here at end of loop body — Drop -> shutdown() -> counter += 1.
+    }
+
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        if counter.load(Ordering::Acquire) >= n {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "drop_counter only reached {} after {n} drops within deadline",
+            counter.load(Ordering::Acquire)
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert_eq!(counter.load(Ordering::Acquire), n);
+}
+
+/// Pin 3a — `maybe_shrink_buffers` shrinks `snapshot_buf`.
+///
+/// Regression: BUG-11-002. Pre-fix the IO thread had no symmetric
+/// `maybe_shrink` discipline against the main-thread side; after a
+/// flood, `snapshot_buf` retained peak capacity indefinitely. Populates
+/// the buffer past the shrink-gate threshold (cap > 4*len && cap > 4096),
+/// truncates to a small viewport, calls the helper, and asserts capacity
+/// reduces without losing content.
+/// See: bug-tracker/plans/BUG-11-002/section-03-tdd-matrix.md §"Semantic pins" Pin 3.
+#[test]
+fn maybe_shrink_buffers_shrinks_snapshot_buf() {
+    let mut t = make_sync_thread();
+
+    populate_renderable(&mut t.snapshot_buf, 10_000);
+    let cap_before = t.snapshot_buf.cells.capacity();
+    assert!(
+        cap_before > 4096,
+        "setup: snapshot_buf needs cap > 4096 to exercise the shrink gate, got {cap_before}"
+    );
+
+    // Truncate to a typical viewport (80×24=1920) — len << cap, gate fires.
+    t.snapshot_buf.cells.truncate(1920);
+
+    t.maybe_shrink_buffers();
+
+    let cap_after = t.snapshot_buf.cells.capacity();
+    assert!(
+        cap_after < cap_before,
+        "snapshot_buf capacity must shrink: {cap_before} → {cap_after}"
+    );
+    assert!(
+        cap_after >= 1920,
+        "shrink must preserve current content: cap={cap_after}, len=1920"
+    );
+}
+
+/// Negative pin — `effects_buf` capacity is preserved by `maybe_shrink_buffers`.
+///
+/// Regression: BUG-11-002. The drain pattern in
+/// `oriterm_mux/src/pane/io_thread/effect_router/mod.rs` always leaves
+/// `effects_buf.len() == 0` with retained capacity. A naïve
+/// `maybe_shrink_vec` would gate-fire (cap > 4*0 && cap > 4096) and
+/// `shrink_to(0)`, forcing reallocation on every effect push during the
+/// next flood. Pins that the helper deliberately excludes effects_buf —
+/// gemini /tpr-review round 1 critical finding.
+/// See: bug-tracker/plans/BUG-11-002/section-03-tdd-matrix.md §"Negative pins" pin "effects_buf preserved".
+#[test]
+fn effects_buf_capacity_preserved_after_shrink() {
+    let mut t = make_sync_thread();
+
+    t.effects_buf.reserve(8192);
+    let cap_before = t.effects_buf.capacity();
+    assert!(
+        cap_before > 4096,
+        "setup: effects_buf cap must exceed shrink-gate threshold, got {cap_before}"
+    );
+    assert_eq!(t.effects_buf.len(), 0, "setup: effects_buf must be drained");
+
+    t.maybe_shrink_buffers();
+
+    assert_eq!(
+        t.effects_buf.capacity(),
+        cap_before,
+        "effects_buf capacity MUST NOT shrink (drained len=0 would shrink_to(0))"
+    );
+}
+
+/// Negative pin 2 — Drop accounting lives on `PaneIoHandle`, not on `EffectSink`.
+///
+/// Regression: BUG-11-002. /tp-help round 1 (codex + opencode) rejected
+/// gemini's proposal to track lifecycle via the `EffectSink` trait —
+/// per-pane lifecycle accounting in a generic effect-routing abstraction
+/// is `LEAK:layer-bleeding` per `.claude/rules/impl-hygiene.md
+/// §Finding Categories`. This pin is type-level: a minimal `EffectSink`
+/// impl with only `push` and `drain_into` compiles unchanged — proving
+/// no required lifecycle method leaked into the trait. Drop accounting
+/// is installed via `PaneIoHandle::set_drop_counter` (cfg(test) field).
+/// See: bug-tracker/plans/BUG-11-002/section-03-tdd-matrix.md §"Negative pins" pin 2.
+#[test]
+fn effect_sink_remains_lifecycle_pure() {
+    use oriterm_core::effect::Effect;
+    use oriterm_core::effect::sink::EffectSink;
+
+    struct MinimalSink;
+    impl EffectSink for MinimalSink {
+        fn push(&self, _effect: Effect) {}
+        fn drain_into(&self, _out: &mut Vec<Effect>) {}
+    }
+
+    // Construction proves the trait shape (push + drain_into) hasn't
+    // grown new required lifecycle methods.
+    let _ = MinimalSink;
+
+    // PaneIoHandle owns drop accounting via `set_drop_counter` (cfg(test)):
+    fn _drop_counter_lives_on_handle() {
+        let counter = Arc::new(AtomicUsize::new(0));
+        let (_t, mut h) = make_pair();
+        h.set_drop_counter(counter);
+    }
+}
+
+/// Negative pin 3 — `maybe_shrink_buffers` runs from the OUTER run loop,
+/// not from the `select!` `default(timeout)` arm.
+///
+/// Regression: BUG-11-002. /tp-help round 1 (codex + opencode) rejected
+/// anchoring the shrink call to the `select!` default arm: on an idle
+/// pane that arm fires once per `IDLE_WAKE_CEILING = 24h`, so a default-
+/// arm anchor would never trigger in observable time. Pin spawns a real
+/// IO thread, polls the cfg(test) `shrink_call_count` counter (shared
+/// via `Arc<AtomicUsize>` between thread and test), and asserts the
+/// OUTER-loop call path fires within a 5 s safety deadline. If a future
+/// refactor moves `maybe_shrink_buffers()` to the `default(timeout)`
+/// arm or removes the call entirely, the counter stays at 0 and this
+/// test fails.
+/// See: bug-tracker/plans/BUG-11-002/section-03-tdd-matrix.md §"Negative pins" pin 3.
+#[test]
+fn maybe_shrink_runs_in_run_loop() {
+    let shutdown = Arc::new(AtomicBool::new(false));
+    let (thread, mut handle) = new_with_handle(IoThreadConfig {
+        terminal: make_term(),
+        pane_id: {
+            let (p, _, _, _) = test_dummy_channels();
+            p
+        },
+        mux_tx: {
+            let (_, t, _, _) = test_dummy_channels();
+            t
+        },
+        child_exit_rx: {
+            let (_, _, r, _) = test_dummy_channels();
+            r
+        },
+        mode_cache: Arc::new(AtomicU64::new(TermMode::default().bits())),
+        shutdown: Arc::clone(&shutdown),
+        wakeup: Arc::new(|| {}),
+        grid_dirty: Arc::new(AtomicBool::new(false)),
+        pty_control: None,
+        adopted_signal: None,
+        initial_rows: 24,
+        initial_cols: 80,
+        selection_dirty: Arc::new(AtomicBool::new(false)),
+    });
+    // Capture the shared counter BEFORE spawn moves the thread.
+    let counter = Arc::clone(&thread.shrink_call_count);
+    let join = thread.spawn().expect("failed to spawn IO thread");
+    handle.set_join(join);
+
+    // Poll for the run loop to call maybe_shrink_buffers — the call
+    // happens every iteration after maybe_produce_snapshot. The loop's
+    // first iteration runs drain_commands → process_pending_bytes →
+    // tick_animations → maybe_produce_snapshot → maybe_shrink_buffers
+    // → select! BEFORE blocking on the 24h default-arm timeout, so the
+    // counter must increment within milliseconds.
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while counter.load(Ordering::Acquire) == 0 {
+        assert!(
+            Instant::now() < deadline,
+            "maybe_shrink_buffers never fired in the run loop within 5 s"
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    }
+
+    // Cleanly shut down so handle::Drop doesn't have to wait for join.
+    handle.send_command(PaneIoCommand::Shutdown);
+    drop(handle);
+    assert!(
+        counter.load(Ordering::Acquire) >= 1,
+        "shrink_call_count must be ≥ 1 after the run loop ran"
+    );
+}
+
+/// Edge case — `maybe_shrink_buffers` runs cleanly while sync output is active.
+///
+/// Regression: BUG-11-002. Mode 2026 sync (BSU pending, ESU not yet)
+/// holds bytes inside the VTE `processor` and forces
+/// `maybe_produce_snapshot()` to defer. The shrink helper touches
+/// IO-thread-owned `snapshot_buf` + the lock-protected `slot.front`,
+/// never the VTE processor's internal sync buffer — so it must be safe
+/// to call mid-sync without mutating sync state or flushing buffered
+/// bytes.
+/// See: bug-tracker/plans/BUG-11-002/section-03-tdd-matrix.md §"Edge cases" — sync-active.
+#[test]
+fn maybe_shrink_during_sync_active() {
+    let (mut t, _wakeup_count) = make_sync_thread_with_wakeup();
+
+    // Enter Mode 2026 sync mode (BSU) and push bytes into the sync buffer.
+    t.handle_bytes(b"\x1b[?2026h");
+    t.processor.advance(&mut t.terminal, b"buffered content");
+    let sync_bytes_before = t.processor.sync_bytes_count();
+    assert!(
+        sync_bytes_before > 0 || t.terminal.mode().contains(TermMode::SYNC_UPDATE),
+        "BSU + content should activate sync mode"
+    );
+
+    // Shrink while sync is active — must NOT mutate sync state or panic.
+    t.maybe_shrink_buffers();
+
+    assert_eq!(
+        t.processor.sync_bytes_count(),
+        sync_bytes_before,
+        "maybe_shrink must NOT alter sync_bytes_count"
+    );
 }

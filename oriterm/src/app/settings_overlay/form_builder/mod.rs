@@ -69,9 +69,14 @@ pub(crate) struct SettingsIds {
     /// only built into the dialog on Windows where the toggle widget
     /// reflects the current `registry::is_registered()` state.
     pub default_terminal_toggle: WidgetId,
-    // Bell page.
+    // Bell page — Visual Bell section.
     pub bell_animation_dropdown: WidgetId,
     pub bell_duration_dropdown: WidgetId,
+    // Bell page — Desktop Notifications section (BUG-11-016).
+    pub notification_mode_dropdown: WidgetId,
+    pub notify_on_command_finish_dropdown: WidgetId,
+    pub notify_command_bell_toggle: WidgetId,
+    pub notify_command_threshold_input: WidgetId,
     // Font page — Advanced section.
     pub hinting_dropdown: WidgetId,
     pub subpixel_aa_dropdown: WidgetId,
@@ -186,6 +191,10 @@ impl SettingsIds {
             default_terminal_toggle: WidgetId::placeholder(),
             bell_animation_dropdown: WidgetId::placeholder(),
             bell_duration_dropdown: WidgetId::placeholder(),
+            notification_mode_dropdown: WidgetId::placeholder(),
+            notify_on_command_finish_dropdown: WidgetId::placeholder(),
+            notify_command_bell_toggle: WidgetId::placeholder(),
+            notify_command_threshold_input: WidgetId::placeholder(),
             hinting_dropdown: WidgetId::placeholder(),
             subpixel_aa_dropdown: WidgetId::placeholder(),
             subpixel_positioning_dropdown: WidgetId::placeholder(),

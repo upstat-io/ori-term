@@ -120,6 +120,46 @@ fn pty_reader_large_buffer_forwarding() {
     assert_eq!(received, data);
 }
 
+// --- BUG-11-002: bounded-channel disconnect-unblock contract ---
+
+/// Pin 5 — bounded-channel disconnect unblocks blocked sender.
+///
+/// Regression: BUG-11-002. The bounded byte-channel back-pressure design
+/// relies on `crossbeam_channel`'s disconnect-unblock contract: when the
+/// receiver is dropped, a blocked or pending `send()` on the sender
+/// returns `Err(SendError)` rather than hanging. This UNIT-tests the
+/// crossbeam contract directly so the bounded-channel design can rely on
+/// it without spinning up a `PaneIoThread` (whose IO thread would
+/// deadlock when the byte queue saturates — verified during /tpr-review
+/// round 3, opencode F1/F2 + gemini F1 + codex F4).
+/// See: bug-tracker/plans/BUG-11-002/section-03-tdd-matrix.md §"Semantic pins" Pin 5.
+#[test]
+fn reader_send_returns_err_on_disconnect() {
+    // Bounded channel of capacity 1 — easy to fill.
+    let (byte_tx, byte_rx) = crossbeam_channel::bounded::<Vec<u8>>(1);
+
+    // Saturate the bounded channel so the next send must block.
+    byte_tx
+        .send(Vec::new())
+        .expect("first send fits within capacity");
+
+    // Spawn a sender that blocks on send (capacity is full).
+    let join = std::thread::spawn(move || byte_tx.send(Vec::new()));
+
+    // Drop the receiver — blocked sender unblocks with SendError.
+    // (If the sender hadn't yet entered send(), it sees the disconnected
+    // channel on entry and returns SendError immediately. Either branch
+    // satisfies the assertion — wall-clock-free per
+    // `.claude/rules/tests.md §Wall-Clock-Free Testing`.)
+    drop(byte_rx);
+
+    let result = join.join().expect("sender thread joined cleanly");
+    assert!(
+        result.is_err(),
+        "byte_tx.send must return Err(SendError) after byte_rx drops, got {result:?}"
+    );
+}
+
 /// Interrupted reads (EINTR) are retried, not treated as fatal.
 #[test]
 fn pty_reader_interrupted_read_retries() {

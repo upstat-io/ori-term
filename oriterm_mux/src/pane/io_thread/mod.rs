@@ -126,6 +126,16 @@ pub struct PaneIoThread<S: EffectSink + 'static> {
     /// `None` means "no deadline currently in effect" — both the initial
     /// state and the state after all animations finish/pause.
     last_animation_deadline: Option<std::time::Instant>,
+    /// Test-only counter — incremented at the top of
+    /// [`Self::maybe_shrink_buffers`]. Pins that the OUTER run loop
+    /// (not the `select!` `default(timeout)` arm) is the call path,
+    /// per §03 negative pin 3 in
+    /// `bug-tracker/plans/BUG-11-002/section-03-tdd-matrix.md`.
+    /// Production builds carry zero overhead — the field is `#[cfg(test)]`.
+    /// Shared with the spawning test thread via `Arc` so the test can
+    /// observe the counter while the IO thread runs.
+    #[cfg(test)]
+    pub(crate) shrink_call_count: Arc<std::sync::atomic::AtomicUsize>,
 }
 
 impl<S: EffectSink> PaneIoThread<S> {
@@ -321,6 +331,45 @@ impl<S: EffectSink> PaneIoThread<S> {
             self.terminal.clear_selection_dirty();
             self.selection_dirty.store(true, Ordering::Release);
         }
+    }
+
+    /// Shrink IO-thread-owned grow-only buffers at quiescence.
+    ///
+    /// Called from `run_loop` AFTER `process_pending_bytes` +
+    /// `drain_commands` + `maybe_produce_snapshot` complete and BEFORE
+    /// the IO thread re-enters `select!`. This is the canonical "about
+    /// to block waiting for work" boundary — see §02 fix-consensus
+    /// agreement against the `select!` default-arm anchor in
+    /// `bug-tracker/plans/BUG-11-002/`.
+    ///
+    /// Two surfaces shrink:
+    /// 1. `snapshot_buf` — IO-thread scratch buffer. Receives the OLD
+    ///    front via `flip_swap`. Do NOT `clear()` before shrinking —
+    ///    `clear()` zeros `len`, making `maybe_shrink`'s gate
+    ///    `cap > 4*len` always fire (since `cap > 0`), which would
+    ///    `shrink_to(0)` and force a full reallocation on the next
+    ///    `renderable_content_into()`. Mirrors the main-thread pattern
+    ///    at `oriterm_mux/src/backend/embedded/mod.rs` which calls
+    ///    `content.maybe_shrink()` directly without clearing.
+    /// 2. `double_buffer.front` — the resting front buffer. Under
+    ///    quiescence, rotation does not run, so the front holds peak-
+    ///    flood capacity until explicitly shrunk.
+    ///
+    /// **`effects_buf` is intentionally NOT shrunk here.** The drain
+    /// pattern in `effect_router/mod.rs` always leaves
+    /// `effects_buf.len() == 0` with capacity preserved. Calling
+    /// `maybe_shrink_vec(&mut effects_buf)` here would gate-fire
+    /// (`cap > 4*0 && cap > 4096`) and `shrink_to(0)`, forcing
+    /// reallocation on every effect push during the next flood. Pinned
+    /// by §03 negative pin "`effects_buf` preserved".
+    ///
+    /// Regression: BUG-11-002.
+    fn maybe_shrink_buffers(&mut self) {
+        #[cfg(test)]
+        self.shrink_call_count.fetch_add(1, Ordering::Release);
+
+        self.snapshot_buf.maybe_shrink();
+        self.double_buffer.maybe_shrink_front();
     }
 
     /// Produce a snapshot if state changed and synchronized output allows it.

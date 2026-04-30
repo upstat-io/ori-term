@@ -21,7 +21,7 @@ set -euo pipefail
 GRACE_SECONDS=300   # Under grace = alive; grace..2*grace = quiet; >=2*grace = dead.
                     # A fresh tool_call signal extends the dead threshold to 4*grace
                     # (default 20 min) so slow Bash invocations inside reviewers
-                    # (cargo build, ./test-all.sh) don't get classified as dead
+                    # (cargo build, cargo test --all) don't get classified as dead
                     # while the reviewer is legitimately waiting on them.
 TAIL_LINES=20       # How many trailing lines to scan for alive-signal patterns.
 OUTPUT=json         # Default output format.
@@ -59,8 +59,8 @@ Exit codes:
   3   usage or infrastructure error (missing args, missing stdout file, etc.).
 
 Example:
-  tpr-liveness.sh /tmp/tpr-round-ori_term-abc123 codex --human
-  tpr-liveness.sh /tmp/tpr-round-ori_term-abc123 gemini --grace-seconds 120 --json
+  tpr-liveness.sh /tmp/tpr-round-ori_lang-abc123 codex --human
+  tpr-liveness.sh /tmp/tpr-round-ori_lang-abc123 gemini --grace-seconds 120 --json
 
 See also:
   .claude/skills/tpr-review/SKILL.md §9 — retry/abort decision path.
@@ -244,7 +244,7 @@ elif [[ $MTIME_AGE -lt $DOUBLE_GRACE ]]; then
     fi
 elif [[ "$TAIL_SIGNAL" == "tool_call" ]] && [[ $MTIME_AGE -lt $QUAD_GRACE ]]; then
     # Extended window: an in-flight tool_call is strong evidence the reviewer
-    # is blocked on a slow external process (cargo build, ./test-all.sh,
+    # is blocked on a slow external process (cargo build, cargo test --all,
     # grep over a large corpus) rather than hung. Hold the verdict at quiet
     # through 4*grace (20 min at default) before giving up. The 45-min hook
     # ceiling (block-banned-commands.sh) still caps the absolute worst case.

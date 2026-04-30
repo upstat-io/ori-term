@@ -29,6 +29,7 @@ impl MuxPdu {
             Self::SetCursorShape { .. } => MsgType::SetCursorShape,
             Self::SetBoldIsBright { .. } => MsgType::SetBoldIsBright,
             Self::MarkAllDirty { .. } => MsgType::MarkAllDirty,
+            Self::ClearBell { .. } => MsgType::ClearBell,
             Self::OpenSearch { .. } => MsgType::OpenSearch,
             Self::CloseSearch { .. } => MsgType::CloseSearch,
             Self::SearchSetQuery { .. } => MsgType::SearchSetQuery,
@@ -82,6 +83,7 @@ impl MuxPdu {
                 | Self::SetCursorShape { .. }
                 | Self::SetBoldIsBright { .. }
                 | Self::MarkAllDirty { .. }
+                | Self::ClearBell { .. }
                 | Self::OpenSearch { .. }
                 | Self::CloseSearch { .. }
                 | Self::SearchSetQuery { .. }

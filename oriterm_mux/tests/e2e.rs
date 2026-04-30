@@ -102,6 +102,17 @@ fn spawn_test_pane(client: &mut MuxClient) -> PaneId {
         .expect("spawn_pane should succeed")
 }
 
+/// Check whether `python3` is on PATH. Returns true iff the binary is
+/// invocable. Used by tests that drive a python wrapper through the PTY
+/// to gate cleanly per `.claude/rules/tests.md §Graceful Skip Protocol`.
+fn python3_available() -> bool {
+    std::process::Command::new("python3")
+        .arg("--version")
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
 /// Spawn a pane and wait for the shell to be ready.
 ///
 /// Sends a fence command and waits for its output to appear, replacing
@@ -214,6 +225,65 @@ fn poll_until(
         thread::sleep(Duration::from_millis(50));
     }
 }
+
+/// Python wrapper that puts `yes` in the PTY's foreground process group,
+/// gates the actual `yes` exec on a pipe (so `tcsetpgrp` is guaranteed to
+/// complete before any flood begins), and gates the pipe-unblock on a stdin
+/// ack (so the test is guaranteed to have *observed* `FG_READY` before the
+/// flood begins).
+///
+/// Sequence (parent ⟂ child are scheduled independently after `fork`):
+/// 1. Child: `setpgid(0, 0)` → blocks on `read(pipe_r)`. No output yet.
+/// 2. Parent: redundant `setpgid(pid, pid)` (covers race). Parent is still
+///    in the shell's PGID, which is the PTY's foreground PGID — parent
+///    can still read from stdin without `SIGTTIN`-suspending itself.
+/// 3. Parent prints `FG_READY` — sentinel that proves the parent has
+///    reached the ack point.
+/// 4. Parent reads one line from stdin — blocks until the test acks via
+///    `send_input(b"\n")`. Reading stdin BEFORE `tcsetpgrp` is critical:
+///    after `tcsetpgrp(0, pid)` the parent is no longer in the foreground
+///    PGID and any stdin read would `SIGTTIN`-suspend it.
+/// 5. Parent calls `tcsetpgrp(0, pid)` — fg PGID is now `yes`'s PGID. The
+///    pipe unblock that follows is the load-bearing sync that ensures
+///    `tcsetpgrp` completed before `yes` floods.
+/// 6. Parent writes 1 byte to `pipe_w`; child unblocks, `execvp('yes')`.
+/// 7. Parent `waitpid`s; on `yes` death prints `FG_GONE`.
+///
+/// Without the pipe gate (step 1 + step 6), on a slow CI runner the child
+/// could run far enough to `execvp('yes')` and start flooding output
+/// BEFORE the parent's `tcsetpgrp` completed — at which point `\x03`
+/// (kernel ISIG) and `signal_child` (`tcgetpgrp`) both resolved to the
+/// SHELL's PGID, killing python and orphaning `yes`. That broke nightly
+/// CI run 25106848046.
+///
+/// Without the stdin ack (step 4), `yes` started flooding microseconds
+/// after `FG_READY` was printed, scrolling the sentinel off the visible
+/// 24-row snapshot before the test's 50ms-poll observation window caught
+/// it. The screen stayed full of `y` and the test panicked waiting for
+/// `FG_READY`. That broke nightly CI run 25140980371.
+///
+/// Tests using this wrapper MUST:
+/// 1. Poll for `FG_READY` in the snapshot.
+/// 2. Send `b"\n"` via `send_input` to ack — unblocks the parent's stdin
+///    read; parent then calls `tcsetpgrp` and unblocks the child.
+/// 3. Wait for `y` flooding to start (proves `tcsetpgrp` completed).
+/// 4. Send Ctrl+C / `signal_child` to kill the foreground job.
+/// 5. Wait for `FG_GONE` to confirm the parent regained control.
+///
+/// See `.claude/rules/tests.md §Wall-Clock-Free Testing`.
+const YES_FOREGROUND_WRAPPER: &str = "python3 -uc \"\
+import os, sys; \
+r, w = os.pipe(); \
+pid = os.fork(); \
+0 == pid and (os.setpgid(0, 0), os.close(w), os.read(r, 1), os.close(r), os.execvp('yes', ['yes'])); \
+os.close(r); \
+exec('try: os.setpgid(pid, pid)\\nexcept PermissionError: pass'); \
+sys.stdout.write('FG_READY\\n'); sys.stdout.flush(); \
+sys.stdin.readline(); \
+os.tcsetpgrp(0, pid); \
+os.write(w, b'x'); os.close(w); \
+os.waitpid(pid, 0); \
+print('FG_GONE'); sys.stdout.flush()\"\n";
 
 // ---------------------------------------------------------------------------
 // Tests: Section 44.3 — Window-as-Client Model
@@ -1489,22 +1559,50 @@ fn multi_client_independent_panes() {
     client_b.close_pane(pane_b);
 }
 
-/// Ctrl+C + signal_child during flooding.
+/// Combined Ctrl+C path: send `\x03` via PTY input AND `signal_child` so both
+/// the kernel ISIG path and the programmatic SIGINT path get exercised together.
+/// The canonical signal-only regression pin lives in
+/// `signal_child_alone_kills_flooding_process` below — this test acts as a
+/// smoke test that the combined path doesn't regress.
 ///
-/// Note: signal_child currently sends to shell PGID, not foreground PGID.
-/// Disabled until tcgetpgrp-based delivery is implemented.
+/// Regression: BUG-11-005 — `signal_child` now uses `tcgetpgrp(master_fd)` to
+/// route SIGINT to the foreground PGID instead of the shell PGID.
+/// See: bug-tracker/plans/completed/BUG-11-005/00-overview.md
+///
+/// Flake fix (nightly run 25106848046, 2026-04-29): the previous wrapper let
+/// the child `execvp('yes')` BEFORE the parent's `tcsetpgrp` completed; on
+/// slow CI Ctrl+C then routed SIGINT to the shell PGID, killing python and
+/// orphaning `yes`. `YES_FOREGROUND_WRAPPER` now pipe-gates the child until
+/// the parent has set the fg PGID and printed `FG_READY`.
 #[test]
-#[ignore = "signal_child sends to shell PGID, not foreground PGID — needs tcgetpgrp fix"]
 fn ctrl_c_during_flood_via_signal_child() {
+    if !python3_available() {
+        eprintln!("SKIP: python3 not available, skipping (job-control wrapper requires it)");
+        return;
+    }
     let daemon = TestDaemon::start();
     let mut client = daemon.connect_client();
 
     let pane_id = spawn_test_pane_ready(&mut client);
 
-    // Start `yes` — produces infinite "y\n" output, never reads stdin.
-    client.send_input(pane_id, b"yes\n");
+    // Spawn `yes` in its own foreground process group, gated on the parent's
+    // `tcsetpgrp` completion. See `YES_FOREGROUND_WRAPPER` doc for the race
+    // this avoids and why `FG_READY` is the load-bearing sync point.
+    client.send_input(pane_id, YES_FOREGROUND_WRAPPER.as_bytes());
 
-    // Wait for flooding to start — snapshot should contain "y" lines.
+    // Wait for `FG_READY` — proves `tcsetpgrp(0, yes_pgid)` ran. Until this
+    // sentinel appears, the kernel's foreground PGID is still the shell's,
+    // and Ctrl+C would route SIGINT to the wrong group.
+    wait_for_text_in_snapshot(&mut client, pane_id, "FG_READY", Duration::from_secs(30));
+
+    // Ack — unblocks the wrapper so the child can `execvp('yes')` and start
+    // flooding. Without this, the wrapper still blocks on `sys.stdin.readline()`
+    // and `yes` never runs. With it, the wrapper has *observed* the test
+    // observe `FG_READY` before any flood begins — sentinel can no longer
+    // scroll off-screen mid-poll.
+    client.send_input(pane_id, b"\n");
+
+    // Wait for flooding to start — snapshot should contain a "y" line.
     let deadline = Instant::now() + Duration::from_secs(10);
     loop {
         client.poll_events();
@@ -1526,33 +1624,37 @@ fn ctrl_c_during_flood_via_signal_child() {
         thread::sleep(Duration::from_millis(50));
     }
 
-    // Let `yes` flood for a bit so the PTY writer stalls.
-    thread::sleep(Duration::from_millis(500));
-
-    // Send Ctrl+C through the normal input path (may be stuck).
+    // Send Ctrl+C through the normal input path AND signal_child — this
+    // is the combined-path smoke test. Either the kernel ISIG path
+    // (\x03 → SIGINT to fg PGID) or signal_child (tcgetpgrp → SIGINT to
+    // fg PGID) must kill `yes`. Without `MuxClient::is_write_stalled`
+    // RPC we cannot deterministically force the writer to stall, so this
+    // acts as a smoke test rather than a stall-specific regression pin.
+    // The canonical signal-only pin is
+    // `signal_child_alone_kills_flooding_process` below.
     client.send_input(pane_id, b"\x03");
-
-    // Also send SIGINT directly — this is the fix path.
     client.signal_child(pane_id, oriterm_mux::Signal::Interrupt);
 
-    // The shell prompt should return after `yes` dies.
-    // Look for the `$` prompt character within 5 seconds.
-    let deadline = Instant::now() + Duration::from_secs(5);
-    let mut saw_prompt = false;
+    // The python wrapper prints FG_GONE after waitpid returns. Generous
+    // 30-second deadline — the assertion is on the *condition*, not the
+    // wall clock, per `.claude/rules/tests.md §Wall-Clock-Free Testing`.
+    // The deadline is a safety valve to surface a hang, not a flake source.
+    let deadline = Instant::now() + Duration::from_secs(30);
+    let mut saw_fg_gone = false;
     while Instant::now() < deadline {
         client.poll_events();
         let mut n = Vec::new();
         client.drain_notifications(&mut n);
         if let Some(snap) = client.refresh_pane_snapshot(pane_id) {
-            if snapshot_has_prompt(&snap) {
-                saw_prompt = true;
+            if snapshot_contains(snap, "FG_GONE") {
+                saw_fg_gone = true;
                 break;
             }
         }
         thread::sleep(Duration::from_millis(50));
     }
 
-    if !saw_prompt {
+    if !saw_fg_gone {
         if let Some(snap) = client.refresh_pane_snapshot(pane_id) {
             eprintln!("=== Snapshot after Ctrl+C + signal_child ===");
             for (i, row) in snap.cells.iter().enumerate() {
@@ -1566,8 +1668,8 @@ fn ctrl_c_during_flood_via_signal_child() {
     }
 
     assert!(
-        saw_prompt,
-        "shell prompt must return after Ctrl+C kills `yes`"
+        saw_fg_gone,
+        "Ctrl+C + signal_child must kill the foreground `yes` job"
     );
 
     client.close_pane(pane_id);
@@ -1648,21 +1750,45 @@ fn plain_ctrl_c_without_signal_child() {
     client.close_pane(pane_id);
 }
 
-/// Verify that `signal_child` alone can kill a flooding process.
+/// Canonical regression pin for BUG-11-005: `signal_child(Interrupt)` alone
+/// (no `\x03` via PTY input) must kill the foreground job (`yes`) and return
+/// the prompt. Pre-fix, `kill(-shell_pid, SIGINT)` did not reach the `yes`
+/// process group; post-fix, `tcgetpgrp(master_fd)` routes SIGINT to the
+/// PTY's foreground PGID.
 ///
-/// Disabled: same tcgetpgrp issue as above.
+/// Regression: BUG-11-005.
+/// See: bug-tracker/plans/completed/BUG-11-005/00-overview.md
+///
+/// Uses `YES_FOREGROUND_WRAPPER` (pipe-gated) so the parent's `tcsetpgrp`
+/// is observed via the `FG_READY` sentinel before `signal_child` is called.
+/// The same race that broke the combined-path test on nightly (run
+/// 25106848046) was latent here — fixing both keeps them deterministic.
 #[test]
-#[ignore = "signal_child sends to shell PGID, not foreground PGID — needs tcgetpgrp fix"]
 fn signal_child_alone_kills_flooding_process() {
+    if !python3_available() {
+        eprintln!("SKIP: python3 not available, skipping (job-control wrapper requires it)");
+        return;
+    }
     let daemon = TestDaemon::start();
     let mut client = daemon.connect_client();
 
     let pane_id = spawn_test_pane_ready(&mut client);
 
-    // Start `yes`.
-    client.send_input(pane_id, b"yes\n");
+    client.send_input(pane_id, YES_FOREGROUND_WRAPPER.as_bytes());
 
-    // Wait for output to start.
+    // Wait for FG_READY — proves `tcsetpgrp(0, yes_pgid)` ran before
+    // `yes` was unblocked. Until this sentinel appears, the kernel's
+    // foreground PGID is still the shell's, and `signal_child`'s
+    // `tcgetpgrp(master_fd)` would resolve to the shell.
+    wait_for_text_in_snapshot(&mut client, pane_id, "FG_READY", Duration::from_secs(30));
+
+    // Ack — unblocks the wrapper so the child can `execvp('yes')`. See
+    // `YES_FOREGROUND_WRAPPER` doc for why the stdin ack is required: without
+    // it, `yes` starts flooding microseconds after `FG_READY` is printed and
+    // the sentinel scrolls off the visible snapshot before the next poll.
+    client.send_input(pane_id, b"\n");
+
+    // Then wait for `yes` flooding to start.
     let deadline = Instant::now() + Duration::from_secs(10);
     loop {
         client.poll_events();
@@ -1682,30 +1808,32 @@ fn signal_child_alone_kills_flooding_process() {
         thread::sleep(Duration::from_millis(50));
     }
 
-    // Let it flood.
-    thread::sleep(Duration::from_millis(500));
-
-    // Send ONLY signal_child — no send_input. The signal must bypass the
-    // PTY writer entirely.
+    // Send ONLY signal_child — no send_input. The signal must reach the
+    // foreground PGID via tcgetpgrp(master_fd) and kill `yes`. The python
+    // wrapper above prints FG_GONE after waitpid returns, which proves
+    // the foreground job died and the parent regained control.
     client.signal_child(pane_id, oriterm_mux::Signal::Interrupt);
 
-    // Shell prompt should return.
-    let deadline = Instant::now() + Duration::from_secs(5);
-    let mut saw_prompt = false;
+    // The python wrapper's parent prints FG_GONE after waitpid returns —
+    // that's the load-bearing assertion: the foreground job (yes) died,
+    // and the parent regained control. Generous 30-second deadline; the
+    // assertion is on the condition, the deadline is the safety valve.
+    let deadline = Instant::now() + Duration::from_secs(30);
+    let mut saw_fg_gone = false;
     while Instant::now() < deadline {
         client.poll_events();
         let mut n = Vec::new();
         client.drain_notifications(&mut n);
         if let Some(snap) = client.refresh_pane_snapshot(pane_id) {
-            if snapshot_has_prompt(&snap) {
-                saw_prompt = true;
+            if snapshot_contains(snap, "FG_GONE") {
+                saw_fg_gone = true;
                 break;
             }
         }
         thread::sleep(Duration::from_millis(50));
     }
 
-    if !saw_prompt {
+    if !saw_fg_gone {
         // Dump snapshot for diagnosis.
         if let Some(snap) = client.refresh_pane_snapshot(pane_id) {
             eprintln!("=== Snapshot after signal_child ===");
@@ -1720,8 +1848,8 @@ fn signal_child_alone_kills_flooding_process() {
     }
 
     assert!(
-        saw_prompt,
-        "signal_child(Interrupt) alone must kill `yes` and return the prompt"
+        saw_fg_gone,
+        "signal_child(Interrupt) alone must kill the foreground `yes` job"
     );
 
     client.close_pane(pane_id);

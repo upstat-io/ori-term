@@ -4,6 +4,7 @@
 //! main widget tree. Used by context menus, dropdown popups, command palette,
 //! tooltips, and modal dialogs.
 
+mod flash_widget;
 mod manager;
 mod overlay_id;
 mod placement;

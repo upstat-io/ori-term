@@ -1,11 +1,11 @@
 //! Unit tests for mux pump helpers.
 
-use std::time::Duration;
-
 use oriterm_core::effect::NotificationSource;
 use oriterm_mux::{MuxNotification, PaneId};
 
-use super::{format_duration_body, purge_pending_desktop_notifications};
+use oriterm_core::color::Rgb;
+
+use super::{purge_pending_desktop_notifications, resolve_host_color_query};
 
 fn dn(pane_id: PaneId, title: &str) -> MuxNotification {
     MuxNotification::DesktopNotification {
@@ -90,51 +90,6 @@ fn purge_handles_multiple_clear_markers() {
     ));
 }
 
-#[test]
-fn format_seconds_only() {
-    assert_eq!(
-        format_duration_body(Duration::from_secs(12)),
-        "Completed in 12s"
-    );
-}
-
-#[test]
-fn format_minutes_and_seconds() {
-    assert_eq!(
-        format_duration_body(Duration::from_secs(150)),
-        "Completed in 2m 30s"
-    );
-}
-
-#[test]
-fn format_hours_and_minutes() {
-    assert_eq!(
-        format_duration_body(Duration::from_secs(3900)),
-        "Completed in 1h 5m"
-    );
-}
-
-#[test]
-fn format_exactly_one_minute() {
-    assert_eq!(
-        format_duration_body(Duration::from_secs(60)),
-        "Completed in 1m 0s"
-    );
-}
-
-#[test]
-fn format_exactly_one_hour() {
-    assert_eq!(
-        format_duration_body(Duration::from_secs(3600)),
-        "Completed in 1h 0m"
-    );
-}
-
-#[test]
-fn format_zero_seconds() {
-    assert_eq!(format_duration_body(Duration::ZERO), "Completed in 0s");
-}
-
 /// Effect-cutover §01.1 success-criterion 24 canonical-name pin:
 /// `ClearPendingDesktopNotifications` purges every staging buffer in
 /// the pipeline. Matrix that combines same-pane purge, cross-pane
@@ -181,4 +136,201 @@ fn clear_pending_notifications_purges_all_staging_buffers() {
         .filter(|n| matches!(n, MuxNotification::ClearPendingDesktopNotifications(_)))
         .count();
     assert_eq!(clear_count, 2, "both clear markers must be retained");
+}
+
+// ── BUG-11-013: resolve_host_color_query helper tests ──────────────
+//
+// The helper resolves OSC 4 / OSC 10 / OSC 11 / OSC 12 color queries
+// against the pane's palette snapshot. Layer 1 of the BUG-11-013 TDD
+// matrix per `bug-tracker/plans/BUG-11-013/section-03-tdd-matrix.md`.
+// VTE dispatch index space:
+//   - OSC 4 ; Pn ; ?      → index = u8 (0..=255), per
+//                           crates/vte/src/ansi/colors.rs:197-209
+//   - OSC 10 ; ?          → index = NamedColor::Foreground = 256
+//   - OSC 11 ; ?           → index = NamedColor::Background = 257
+//   - OSC 12 ; ?           → index = NamedColor::Cursor    = 258
+// Indices 259..=269 (DimBlack..DimForeground) are NOT reachable via
+// current OSC dispatch but the helper handles them defensively.
+
+fn palette_with(index: usize, color: [u8; 3]) -> Vec<[u8; 3]> {
+    let mut p = vec![[0u8; 3]; 270];
+    p[index] = color;
+    p
+}
+
+/// Regression: BUG-11-013 — semantic pin for OSC 10 returning configured
+/// foreground color (NamedColor::Foreground = 256). Before BUG-11-013
+/// the consumer arm always returned black.
+#[test]
+fn resolve_host_color_query_returns_named_foreground_when_index_is_256() {
+    let palette = palette_with(256, [0xab, 0xcd, 0xef]);
+    let result = resolve_host_color_query(Some(palette.as_slice()), 256);
+    assert_eq!(
+        result,
+        Rgb {
+            r: 0xab,
+            g: 0xcd,
+            b: 0xef
+        }
+    );
+}
+
+/// Regression: BUG-11-013 — OSC 11 (background) query.
+#[test]
+fn resolve_host_color_query_returns_named_background_when_index_is_257() {
+    let palette = palette_with(257, [0x10, 0x20, 0x30]);
+    let result = resolve_host_color_query(Some(palette.as_slice()), 257);
+    assert_eq!(
+        result,
+        Rgb {
+            r: 0x10,
+            g: 0x20,
+            b: 0x30
+        }
+    );
+}
+
+/// Regression: BUG-11-013 — OSC 12 (cursor) query.
+#[test]
+fn resolve_host_color_query_returns_named_cursor_when_index_is_258() {
+    let palette = palette_with(258, [0xff, 0xa5, 0x00]);
+    let result = resolve_host_color_query(Some(palette.as_slice()), 258);
+    assert_eq!(
+        result,
+        Rgb {
+            r: 0xff,
+            g: 0xa5,
+            b: 0x00
+        }
+    );
+}
+
+/// Regression: BUG-11-013 — OSC 4 indexed query at u8 minimum (boundary).
+#[test]
+fn resolve_host_color_query_returns_indexed_color_for_osc_4_zero_index() {
+    let palette = palette_with(0, [0x00, 0x00, 0x01]); // not literal black, to detect the lookup
+    let result = resolve_host_color_query(Some(palette.as_slice()), 0);
+    assert_eq!(
+        result,
+        Rgb {
+            r: 0x00,
+            g: 0x00,
+            b: 0x01
+        }
+    );
+}
+
+/// Regression: BUG-11-013 — OSC 4 indexed query at low index (xterm white).
+#[test]
+fn resolve_host_color_query_returns_indexed_color_for_osc_4_low_index() {
+    let palette = palette_with(7, [0xe5, 0xe5, 0xe5]);
+    let result = resolve_host_color_query(Some(palette.as_slice()), 7);
+    assert_eq!(
+        result,
+        Rgb {
+            r: 0xe5,
+            g: 0xe5,
+            b: 0xe5
+        }
+    );
+}
+
+/// Regression: BUG-11-013 — OSC 4 indexed query in the 6×6×6 cube.
+#[test]
+fn resolve_host_color_query_returns_indexed_color_for_osc_4_mid_index() {
+    let palette = palette_with(200, [0x12, 0x34, 0x56]);
+    let result = resolve_host_color_query(Some(palette.as_slice()), 200);
+    assert_eq!(
+        result,
+        Rgb {
+            r: 0x12,
+            g: 0x34,
+            b: 0x56
+        }
+    );
+}
+
+/// Regression: BUG-11-013 — OSC 4 indexed query at u8 maximum (boundary
+/// at parse_number's u8 cap).
+#[test]
+fn resolve_host_color_query_returns_indexed_color_for_osc_4_max_index() {
+    let palette = palette_with(255, [0xff, 0xff, 0xff]);
+    let result = resolve_host_color_query(Some(palette.as_slice()), 255);
+    assert_eq!(
+        result,
+        Rgb {
+            r: 0xff,
+            g: 0xff,
+            b: 0xff
+        }
+    );
+}
+
+/// Regression: BUG-11-013 — defensive pin at the last valid palette
+/// slot (NamedColor::DimForeground = 269). Not reachable via current
+/// OSC dispatch but the helper must handle it correctly if VTE
+/// dispatch ever changes.
+#[test]
+fn resolve_host_color_query_returns_palette_value_for_index_269() {
+    let palette = palette_with(269, [0x80, 0x80, 0x80]);
+    let result = resolve_host_color_query(Some(palette.as_slice()), 269);
+    assert_eq!(
+        result,
+        Rgb {
+            r: 0x80,
+            g: 0x80,
+            b: 0x80
+        }
+    );
+}
+
+/// Regression: BUG-11-013 — out-of-range index (one past palette
+/// length) falls back to black per Palette::color() contract at
+/// `oriterm_core/src/color/palette/mod.rs:286-296`.
+#[test]
+fn resolve_host_color_query_returns_black_when_index_is_out_of_range() {
+    let palette = vec![[0xffu8, 0xff, 0xff]; 270];
+    let result = resolve_host_color_query(Some(palette.as_slice()), 270);
+    assert_eq!(result, Rgb { r: 0, g: 0, b: 0 });
+}
+
+/// Regression: BUG-11-013 — None palette (snapshot unavailable, e.g.
+/// pane closed mid-query) falls back to black. Helper owns the None
+/// case so callers can use `map_or` without re-stating the fallback.
+#[test]
+fn resolve_host_color_query_returns_black_when_palette_is_none() {
+    let result = resolve_host_color_query(None, 7);
+    assert_eq!(result, Rgb { r: 0, g: 0, b: 0 });
+}
+
+/// Regression: BUG-11-013 — empty palette slice (defensive — never
+/// expected in practice).
+#[test]
+fn resolve_host_color_query_returns_black_when_palette_is_empty() {
+    let palette: Vec<[u8; 3]> = Vec::new();
+    let result = resolve_host_color_query(Some(palette.as_slice()), 0);
+    assert_eq!(result, Rgb { r: 0, g: 0, b: 0 });
+}
+
+/// Regression: BUG-11-013 — negative pin. Configures palette[256] to a
+/// non-black color and asserts the helper does NOT return the
+/// pre-fix placeholder black. Catches regressions that re-introduce
+/// hardcoded `Rgb { r:0, g:0, b:0 }` at the consumer arm.
+#[test]
+fn resolve_host_color_query_does_not_return_black_for_valid_in_range_index() {
+    let palette = palette_with(256, [0x10, 0x20, 0x30]);
+    let result = resolve_host_color_query(Some(palette.as_slice()), 256);
+    assert_eq!(
+        result,
+        Rgb {
+            r: 0x10,
+            g: 0x20,
+            b: 0x30
+        }
+    );
+    assert_ne!(
+        result,
+        Rgb { r: 0, g: 0, b: 0 },
+        "must reject placeholder regression"
+    );
 }

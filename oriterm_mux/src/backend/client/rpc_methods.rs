@@ -36,10 +36,25 @@ impl MuxBackend for MuxClient {
             transport.poll_notifications(&mut self.notifications);
         }
 
-        // Scan buffered notifications to mark panes dirty for rendering.
+        // Scan buffered notifications to mark panes dirty for rendering AND
+        // patch the cached snapshot's `has_bell` flag for instant tab-bell-
+        // icon feedback. The daemon also pushes the bell flag in the next
+        // snapshot, but that may lag the PaneBell / CommandComplete PDU by
+        // a tick — patching here gives the consumer arms (which read
+        // `has_bell` via the trait default → cached snapshot) fresh state
+        // immediately.
         for notif in &self.notifications {
-            if let MuxNotification::PaneOutput(pane_id) = notif {
-                self.dirty_panes.insert(*pane_id);
+            match notif {
+                MuxNotification::PaneOutput(pane_id) => {
+                    self.dirty_panes.insert(*pane_id);
+                }
+                MuxNotification::PaneBell(pane_id)
+                | MuxNotification::CommandComplete { pane_id, .. } => {
+                    if let Some(snap) = self.pane_snapshots.get_mut(pane_id) {
+                        snap.has_bell = true;
+                    }
+                }
+                _ => {}
             }
         }
     }
@@ -324,6 +339,32 @@ impl MuxBackend for MuxClient {
                 pane_id,
                 data: data.to_vec(),
             });
+        }
+    }
+
+    fn set_bell(&mut self, pane_id: PaneId) {
+        // Patch the locally-cached snapshot so the trait-default
+        // `has_bell()` (which reads from the cached snapshot, single SSOT
+        // across embedded + daemon backends) sees the fresh value
+        // immediately. The daemon's IO thread also sets the flag on its
+        // own pane via `event_pump.rs` and will include it in the next
+        // pushed snapshot — this local patch just removes the inter-tick
+        // latency.
+        if let Some(snap) = self.pane_snapshots.get_mut(&pane_id) {
+            snap.has_bell = true;
+        }
+    }
+
+    fn clear_bell(&mut self, pane_id: PaneId) {
+        // Patch the local cache for instant icon dismiss on tab focus.
+        if let Some(snap) = self.pane_snapshots.get_mut(&pane_id) {
+            snap.has_bell = false;
+        }
+        // Forward to the daemon so its `Pane.has_bell` clears too —
+        // otherwise the next pushed snapshot would re-introduce
+        // `has_bell = true` after the client cleared it locally.
+        if let Some(transport) = &mut self.transport {
+            transport.fire_and_forget(MuxPdu::ClearBell { pane_id });
         }
     }
 

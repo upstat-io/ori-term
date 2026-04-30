@@ -108,7 +108,6 @@ fn legacy_format_effect(effect: &Effect) -> Option<String> {
         Effect::Host(HostEffect::ChildExit { code }) => format!("ChildExit({code})"),
         Effect::Host(HostEffect::DesktopNotification { .. })
         | Effect::Host(HostEffect::ClearPendingNotifications)
-        | Effect::Host(HostEffect::VisualBell)
         | Effect::Host(HostEffect::AudioRequest(_))
         | Effect::Host(HostEffect::PrintRequest(_)) => return None,
         Effect::Pty(PtyEffect::Write { bytes, .. }) => {

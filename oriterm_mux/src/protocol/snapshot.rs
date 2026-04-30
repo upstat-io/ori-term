@@ -216,6 +216,10 @@ pub struct PaneSnapshot {
     pub stable_row_base: u64,
     /// Whether the pane has output the user hasn't seen (background tab).
     pub has_unseen_output: bool,
+    /// Whether the bell has fired since the pane was last focused.
+    /// Drives the persistent bell icon on the tab. Cleared by
+    /// `mux.clear_bell()` on tab focus change.
+    pub has_bell: bool,
     /// Grid column count.
     ///
     /// Explicit to avoid fragile `cells[0].len()` inference.

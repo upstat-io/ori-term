@@ -166,14 +166,10 @@ impl<S: EffectSink> PaneIoThread<S> {
                     // before this clear arrived.
                     self.send_mux_event(MuxEvent::ClearPendingDesktopNotifications(self.pane_id));
                 }
-                Effect::Host(
-                    HostEffect::VisualBell
-                    | HostEffect::AudioRequest(_)
-                    | HostEffect::PrintRequest(_),
-                ) => {
+                Effect::Host(HostEffect::AudioRequest(_) | HostEffect::PrintRequest(_)) => {
                     log::info!(
                         "PaneIoThread ({}): dropping fire-and-forget host effect (no MuxEvent \
-                         variant yet — tracked as effect-cutover 01.1 cleanup bugs)",
+                         variant yet — tracked as BUG-11-009 / BUG-11-010)",
                         self.pane_id,
                     );
                 }

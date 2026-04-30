@@ -252,6 +252,17 @@ impl OverlayManager {
                     OverlayEventResult::PassThrough
                 }
             }
+            // Flash overlays live exclusively on `self.dismissing`; they
+            // never appear on `self.overlays`. `debug_assert!` documents the
+            // invariant + catches violations in debug builds; release falls
+            // through to `PassThrough` so user-input handlers never panic.
+            OverlayKind::Flash => {
+                debug_assert!(
+                    false,
+                    "OverlayKind::Flash must live on dismissing list, not active overlays"
+                );
+                OverlayEventResult::PassThrough
+            }
         }
     }
 

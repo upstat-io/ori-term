@@ -54,6 +54,17 @@ impl<S: EffectSink> PaneIoThread<S> {
 
             // 2. Process available bytes (non-blocking drain with chunking).
             self.process_pending_bytes();
+            if self.shutdown.load(Ordering::Acquire) {
+                // Shutdown observed during a chunked-byte drain — `drain_commands`
+                // is called between chunks per `handle_bytes_chunked`, and that
+                // path can set the shutdown flag. Without this check the loop
+                // would fall through to tick_animations + maybe_produce_snapshot
+                // + maybe_shrink_buffers + select! (timeout up to
+                // IDLE_WAKE_CEILING = 24h), delaying shutdown by an arbitrary
+                // wait. Regression: BUG-11-002 / /tpr-review round 4 codex F1.
+                self.maybe_produce_snapshot();
+                return;
+            }
 
             // 3. Tick animations — advances any viewport-visible kitty/sixel
             //    animations whose frame deadline has passed and emits
@@ -64,6 +75,16 @@ impl<S: EffectSink> PaneIoThread<S> {
 
             // 4. Produce snapshot if state changed and sync output allows it.
             self.maybe_produce_snapshot();
+
+            // 4b. Quiescence boundary — about to block waiting for work.
+            //     Runs every loop iteration; cap-gated `maybe_shrink` is
+            //     ~O(1) when capacity is already tight, so cost is
+            //     negligible during active parsing and only does real
+            //     work after a flood quiesces. Increments
+            //     `shrink_call_count` (cfg(test)) so §03 negative pin 3
+            //     can verify the OUTER-loop call path fires (not the
+            //     `select!` `default(timeout)` arm). Regression: BUG-11-002.
+            self.maybe_shrink_buffers();
 
             // 5. Block until the next event.
             //

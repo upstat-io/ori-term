@@ -13,6 +13,7 @@ use winit::window::CursorIcon;
 
 use crate::action::WidgetAction;
 use crate::color::Color;
+use crate::compositor::layer::LayerType;
 use crate::compositor::layer_tree::LayerTree;
 use crate::draw::RectStyle;
 use crate::geometry::LayerId;
@@ -32,13 +33,18 @@ const MODAL_DIM_COLOR: Color = Color::rgba(0.0, 0.0, 0.0, 0.5);
 /// Duration for overlay fade-in and fade-out animations.
 const FADE_DURATION: Duration = Duration::from_millis(150);
 
-/// Discriminates overlay behavior: popup vs. modal.
+/// Discriminates overlay behavior: popup vs. modal vs. transient flash.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(in crate::overlay) enum OverlayKind {
     /// Non-modal popup — dismissed on click outside.
     Popup,
     /// Modal dialog — blocks interaction below, not dismissable by click outside.
     Modal,
+    /// Transient full-viewport color flash — never captures input, lives on
+    /// `self.dismissing` from creation, reaped by `cleanup_dismissed` after the
+    /// opacity tween completes. Rendered as a manual `push_quad` from
+    /// `draw_overlay_at`'s Flash arm; the widget body emits no scene primitives.
+    Flash,
 }
 
 /// A floating overlay containing a widget.
@@ -147,10 +153,22 @@ impl OverlayManager {
     // Accessors
 
     /// Updates the viewport bounds (e.g. on window resize).
+    ///
+    /// In-flight flash overlays' `computed_rect` is refreshed so
+    /// [`flash_overlay_bounds`](Self::flash_overlay_bounds) reflects the
+    /// new viewport. The flash layer's `LayerTree` bounds are NOT
+    /// updated — Flash rendering reads `self.viewport` directly in
+    /// `draw_overlay_at`, so the layer's stored bounds don't drive
+    /// rendering and don't need to track viewport changes.
     pub fn set_viewport(&mut self, viewport: Rect) {
         if self.viewport != viewport {
             self.viewport = viewport;
             self.layout_dirty = true;
+            for overlay in &mut self.dismissing {
+                if overlay.kind == OverlayKind::Flash {
+                    overlay.computed_rect = viewport;
+                }
+            }
         }
     }
 
@@ -208,6 +226,46 @@ impl OverlayManager {
         self.overlays
             .last()
             .is_some_and(|o| o.kind == OverlayKind::Modal)
+    }
+
+    /// Returns `true` if a transient flash overlay is in flight.
+    ///
+    /// Flash overlays live exclusively on the dismissing list (created and
+    /// reaped via `push_flash` + `cleanup_dismissed`); they never appear on
+    /// the active `overlays` list, so this predicate scans `dismissing` only.
+    pub fn has_flash_overlay(&self) -> bool {
+        self.dismissing.iter().any(|o| o.kind == OverlayKind::Flash)
+    }
+
+    /// Returns the number of in-flight flash overlays.
+    ///
+    /// `push_flash` enforces a single-flash invariant by replacing any
+    /// existing flash, so this is `0` or `1` in normal operation.
+    pub fn flash_overlay_count(&self) -> usize {
+        self.dismissing
+            .iter()
+            .filter(|o| o.kind == OverlayKind::Flash)
+            .count()
+    }
+
+    /// Returns the bounds of the in-flight flash overlay, if any.
+    ///
+    /// Always equals the current viewport — flash overlays cover the
+    /// whole window. `set_viewport` keeps this in sync on resize.
+    pub fn flash_overlay_bounds(&self) -> Option<Rect> {
+        self.has_flash_overlay().then_some(self.viewport)
+    }
+
+    /// Test seam: returns the layer-tree opacity of the in-flight flash
+    /// overlay. Used by `WindowRoot` tests to probe the fade-out curve at
+    /// known time samples.
+    #[cfg(test)]
+    pub(crate) fn flash_overlay_opacity_for_test(&self, tree: &LayerTree) -> Option<f32> {
+        self.dismissing
+            .iter()
+            .find(|o| o.kind == OverlayKind::Flash)
+            .and_then(|o| tree.get(o.layer_id))
+            .map(|l| l.properties().opacity)
     }
 
     /// Returns the computed screen-space rectangle for an overlay.
@@ -306,20 +364,34 @@ impl OverlayManager {
             .get(overlay.layer_id)
             .map_or(1.0, |l| l.properties().opacity);
 
-        // Modal dim — apply dim layer's own opacity to the color alpha.
+        // Flash — transient full-viewport color quad with animated opacity.
+        // The widget body is a no-op `FlashWidget`; the visual is the
+        // SolidColor layer's color. Push the raw color and return the
+        // layer's animated opacity — `scene_convert` multiplies the
+        // returned opacity into every quad in the overlay's scene block
+        // (`oriterm/src/gpu/scene_convert/mod.rs:67`), so baking the
+        // opacity into alpha here would double-apply it.
+        if overlay.kind == OverlayKind::Flash {
+            let color = match tree
+                .get(overlay.layer_id)
+                .map(crate::compositor::layer::Layer::kind)
+            {
+                Some(LayerType::SolidColor(c)) => c,
+                _ => Color::WHITE,
+            };
+            ctx.scene.push_quad(self.viewport, RectStyle::filled(color));
+            return opacity;
+        }
+
+        // Modal dim — push raw `MODAL_DIM_COLOR`. `scene_convert` multiplies
+        // the returned `opacity` (content layer's animated opacity) into
+        // every quad in this overlay's scene block (matches Flash above).
+        // `dim_layer_id` and `layer_id` are animated together with identical
+        // params via `start_fade_out`, so a single multiplication produces
+        // the same fade curve as the dim layer's own opacity.
         if overlay.kind == OverlayKind::Modal {
-            let dim_opacity = overlay
-                .dim_layer_id
-                .and_then(|id| tree.get(id))
-                .map_or(1.0, |l| l.properties().opacity);
-            let dim_color = Color::rgba(
-                MODAL_DIM_COLOR.r,
-                MODAL_DIM_COLOR.g,
-                MODAL_DIM_COLOR.b,
-                MODAL_DIM_COLOR.a * dim_opacity,
-            );
             ctx.scene
-                .push_quad(self.viewport, RectStyle::filled(dim_color));
+                .push_quad(self.viewport, RectStyle::filled(MODAL_DIM_COLOR));
         }
 
         // Content widget draws at full alpha — the returned opacity is
