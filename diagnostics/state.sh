@@ -1,9 +1,9 @@
 #!/bin/bash
-# state.sh — Global state indicator for the ori_term repo.
+# state.sh — Global state indicator for the Ori compiler repo.
 #
 # Problem this exists to solve:
 #   Each fresh Claude session was rediscovering "is the tree in a known-failing
-#   state?" from scratch — running ./test-all.sh (~2-3 min), parsing 843
+#   state?" from scratch — running cargo test --all (~2-3 min), parsing 843
 #   failures, grepping file names, cross-referencing the Known Failing Tests
 #   table in whichever plan owned the remediation. That discovery cost was
 #   paid per-session because the information, despite existing in plan
@@ -37,7 +37,7 @@ usage() {
     cat <<'EOF'
 Usage: state.sh <subcommand> [options]
 
-Global state indicator for the ori_term repo. Caches test-suite status,
+Global state indicator for the Ori compiler repo. Caches test-suite status,
 clippy status, and repo-hygiene status in .claude/state/known-state.json so
 skills don't re-run expensive discovery every session.
 
@@ -56,7 +56,7 @@ Subcommands:
                         --sha-only          Update head_sha + updated_at only
                                             (fast; no test rerun). Use this
                                             from commit-push post-commit.
-                        --full              Run ./test-all.sh + ./clippy-all.sh,
+                        --full              Run cargo test --all + cargo clippy --all -- -D warnings,
                                             rewrite all sections. Slow (~3 min).
                         --hygiene-only      Run diagnostics/repo-hygiene.sh
                                             --check and update hygiene block.
@@ -142,7 +142,7 @@ cmd_show() {
     tree_dirty="no"
     if is_tree_dirty; then tree_dirty="yes"; fi
 
-    echo "=== ori_term state (cache @ .claude/state/known-state.json) ==="
+    echo "=== Ori compiler state (cache @ .claude/state/known-state.json) ==="
     echo
     echo "Cache SHA:         $head_sha"
     echo "Current HEAD SHA:  $current_sha"
@@ -345,25 +345,25 @@ cmd_refresh() {
             fi
             ;;
         full)
-            echo "Running ./test-all.sh + ./clippy-all.sh (this takes ~3 minutes)..." >&2
+            echo "Running cargo test --all + cargo clippy --all -- -D warnings (this takes ~3 minutes)..." >&2
             local test_log clippy_log test_status clippy_status
             test_log="$ROOT_DIR/build/state-refresh-test.log"
             clippy_log="$ROOT_DIR/build/state-refresh-clippy.log"
             mkdir -p "$ROOT_DIR/build"
 
-            if timeout 150 "$ROOT_DIR/test-all.sh" > "$test_log" 2>&1; then
+            if timeout 150 "$ROOT_DIR/cargo test --all" > "$test_log" 2>&1; then
                 test_status="clean"
             else
                 test_status="known-failing"
             fi
-            if timeout 150 "$ROOT_DIR/clippy-all.sh" > "$clippy_log" 2>&1; then
+            if timeout 150 "$ROOT_DIR/cargo clippy --all -- -D warnings" > "$clippy_log" 2>&1; then
                 clippy_status="clean"
             else
                 clippy_status="warnings"
             fi
 
-            # Parse test-all.sh SUMMARY totals from the log.
-            # Format lives in test-all.sh; look for the TOTAL row.
+            # Parse cargo test --all SUMMARY totals from the log.
+            # Format lives in cargo test --all; look for the TOTAL row.
             local passed failed skipped
             passed=$(awk '/^TOTAL/ {print $2}' "$test_log" | tail -1)
             failed=$(awk '/^TOTAL/ {print $3}' "$test_log" | tail -1)
@@ -383,7 +383,7 @@ cmd_refresh() {
                      | .test_suite.status = $tstatus
                      | .test_suite.last_run_sha = $sha
                      | .test_suite.last_run_at = $at
-                     | .test_suite.last_run_kind = "test-all.sh"
+                     | .test_suite.last_run_kind = "cargo test --all"
                      | .test_suite.totals.passed = $passed
                      | .test_suite.totals.failed = $failed
                      | .test_suite.totals.skipped = $skipped
@@ -397,7 +397,7 @@ cmd_refresh() {
             else
                 echo "full refresh complete: tests=$test_status clippy=$clippy_status totals=$passed/$failed/$skipped"
             fi
-            echo "Note: known_failing_files list is NOT auto-populated from test-all.sh — it reflects plan intent." >&2
+            echo "Note: known_failing_files list is NOT auto-populated from cargo test --all — it reflects plan intent." >&2
             echo "      If the failing set changed, update plan Known Failing Tests + edit state file accordingly." >&2
             ;;
         *)

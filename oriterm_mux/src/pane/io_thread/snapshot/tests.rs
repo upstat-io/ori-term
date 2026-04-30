@@ -269,7 +269,10 @@ fn front_buffer_shrinks_at_quiescence() {
 
     // Capacity shrunk; content preserved. Inspect via swap_front.
     let mut consumer = RenderableContent::default();
-    assert!(db.swap_front(&mut consumer), "front should still be available");
+    assert!(
+        db.swap_front(&mut consumer),
+        "front should still be available"
+    );
     assert_eq!(consumer.cells.len(), 100, "shrink must preserve content");
     assert!(
         consumer.cells.capacity() < cap_grown,

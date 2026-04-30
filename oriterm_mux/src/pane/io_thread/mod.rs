@@ -366,8 +366,7 @@ impl<S: EffectSink> PaneIoThread<S> {
     /// Regression: BUG-11-002.
     fn maybe_shrink_buffers(&mut self) {
         #[cfg(test)]
-        self.shrink_call_count
-            .fetch_add(1, Ordering::Release);
+        self.shrink_call_count.fetch_add(1, Ordering::Release);
 
         self.snapshot_buf.maybe_shrink();
         self.double_buffer.maybe_shrink_front();

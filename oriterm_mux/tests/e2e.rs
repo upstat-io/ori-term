@@ -226,6 +226,42 @@ fn poll_until(
     }
 }
 
+/// Python wrapper that puts `yes` in the PTY's foreground process group, then
+/// gates the actual `yes` exec on a pipe so the parent can guarantee
+/// `tcsetpgrp(0, pid)` has completed BEFORE any output appears.
+///
+/// Sequence (parent ⟂ child are scheduled independently after `fork`):
+/// 1. Child: `setpgid(0, 0)` → blocks on `read(pipe_r)`. No output yet.
+/// 2. Parent: redundant `setpgid(pid, pid)` (covers race), then
+///    `tcsetpgrp(0, pid)` — fg PGID is now `yes`'s PGID.
+/// 3. Parent prints `FG_READY` — sentinel that proves fg PGID is set.
+/// 4. Parent writes 1 byte to `pipe_w`; child unblocks, `execvp('yes')`.
+/// 5. Parent `waitpid`s; on `yes` death prints `FG_GONE`.
+///
+/// Without the pipe gate, on a slow CI runner the child can run far enough to
+/// `execvp('yes')` and start flooding output BEFORE the parent's `tcsetpgrp`
+/// completes — at which point `\x03` (kernel ISIG) and `signal_child`
+/// (`tcgetpgrp`) both resolve to the SHELL's PGID, killing python and
+/// orphaning `yes`. The screen stays full of `y` and `FG_GONE` is never
+/// printed. This is the failure mode that broke nightly CI on 2026-04-29 in
+/// run 25106848046.
+///
+/// Tests using this wrapper MUST poll for `FG_READY` BEFORE sending Ctrl+C —
+/// that is the load-bearing synchronization point. See
+/// `.claude/rules/tests.md §Wall-Clock-Free Testing`.
+const YES_FOREGROUND_WRAPPER: &str = "python3 -uc \"\
+import os, sys; \
+r, w = os.pipe(); \
+pid = os.fork(); \
+0 == pid and (os.setpgid(0, 0), os.close(w), os.read(r, 1), os.close(r), os.execvp('yes', ['yes'])); \
+os.close(r); \
+exec('try: os.setpgid(pid, pid)\\nexcept PermissionError: pass'); \
+os.tcsetpgrp(0, pid); \
+sys.stdout.write('FG_READY\\n'); sys.stdout.flush(); \
+os.write(w, b'x'); os.close(w); \
+os.waitpid(pid, 0); \
+print('FG_GONE'); sys.stdout.flush()\"\n";
+
 // ---------------------------------------------------------------------------
 // Tests: Section 44.3 — Window-as-Client Model
 // ---------------------------------------------------------------------------
@@ -1509,6 +1545,12 @@ fn multi_client_independent_panes() {
 /// Regression: BUG-11-005 — `signal_child` now uses `tcgetpgrp(master_fd)` to
 /// route SIGINT to the foreground PGID instead of the shell PGID.
 /// See: bug-tracker/plans/completed/BUG-11-005/00-overview.md
+///
+/// Flake fix (nightly run 25106848046, 2026-04-29): the previous wrapper let
+/// the child `execvp('yes')` BEFORE the parent's `tcsetpgrp` completed; on
+/// slow CI Ctrl+C then routed SIGINT to the shell PGID, killing python and
+/// orphaning `yes`. `YES_FOREGROUND_WRAPPER` now pipe-gates the child until
+/// the parent has set the fg PGID and printed `FG_READY`.
 #[test]
 fn ctrl_c_during_flood_via_signal_child() {
     if !python3_available() {
@@ -1520,25 +1562,17 @@ fn ctrl_c_during_flood_via_signal_child() {
 
     let pane_id = spawn_test_pane_ready(&mut client);
 
-    // Spawn `yes` in its own foreground process group (see
-    // `signal_child_alone_kills_flooding_process` for the rationale —
-    // without explicit job-control setup, the test shell's
-    // non-interactive mode would put `yes` in the shell's PGID).
-    // The parent's redundant setpgid(pid, pid) covers the race where the
-    // child hasn't run yet. If the child wins (already called setpgid + execvp),
-    // parent's setpgid raises PermissionError — swallow it via exec'd try/except;
-    // the child has already done the work.
-    let setup = "python3 -uc \"\
-import os, sys; \
-pid = os.fork(); \
-0 == pid and (os.setpgid(0, 0), os.execvp('yes', ['yes'])); \
-exec('try: os.setpgid(pid, pid)\\nexcept PermissionError: pass'); \
-os.tcsetpgrp(0, pid); \
-os.waitpid(pid, 0); \
-print('FG_GONE'); sys.stdout.flush()\"\n";
-    client.send_input(pane_id, setup.as_bytes());
+    // Spawn `yes` in its own foreground process group, gated on the parent's
+    // `tcsetpgrp` completion. See `YES_FOREGROUND_WRAPPER` doc for the race
+    // this avoids and why `FG_READY` is the load-bearing sync point.
+    client.send_input(pane_id, YES_FOREGROUND_WRAPPER.as_bytes());
 
-    // Wait for flooding to start — snapshot should contain "y" lines.
+    // Wait for `FG_READY` — proves `tcsetpgrp(0, yes_pgid)` ran. Until this
+    // sentinel appears, the kernel's foreground PGID is still the shell's,
+    // and Ctrl+C would route SIGINT to the wrong group.
+    wait_for_text_in_snapshot(&mut client, pane_id, "FG_READY", Duration::from_secs(30));
+
+    // Wait for flooding to start — snapshot should contain a "y" line.
     let deadline = Instant::now() + Duration::from_secs(10);
     loop {
         client.poll_events();
@@ -1571,8 +1605,11 @@ print('FG_GONE'); sys.stdout.flush()\"\n";
     client.send_input(pane_id, b"\x03");
     client.signal_child(pane_id, oriterm_mux::Signal::Interrupt);
 
-    // The python wrapper prints FG_GONE after waitpid returns.
-    let deadline = Instant::now() + Duration::from_secs(5);
+    // The python wrapper prints FG_GONE after waitpid returns. Generous
+    // 30-second deadline — the assertion is on the *condition*, not the
+    // wall clock, per `.claude/rules/tests.md §Wall-Clock-Free Testing`.
+    // The deadline is a safety valve to surface a hang, not a flake source.
+    let deadline = Instant::now() + Duration::from_secs(30);
     let mut saw_fg_gone = false;
     while Instant::now() < deadline {
         client.poll_events();
@@ -1691,6 +1728,11 @@ fn plain_ctrl_c_without_signal_child() {
 ///
 /// Regression: BUG-11-005.
 /// See: bug-tracker/plans/completed/BUG-11-005/00-overview.md
+///
+/// Uses `YES_FOREGROUND_WRAPPER` (pipe-gated) so the parent's `tcsetpgrp`
+/// is observed via the `FG_READY` sentinel before `signal_child` is called.
+/// The same race that broke the combined-path test on nightly (run
+/// 25106848046) was latent here — fixing both keeps them deterministic.
 #[test]
 fn signal_child_alone_kills_flooding_process() {
     if !python3_available() {
@@ -1702,31 +1744,15 @@ fn signal_child_alone_kills_flooding_process() {
 
     let pane_id = spawn_test_pane_ready(&mut client);
 
-    // Spawn `yes` in its own foreground process group so the BUG-11-005 fix
-    // (tcgetpgrp-based SIGINT routing) is actually exercised. We do this
-    // explicitly via a Python one-liner because the test pane runs a
-    // non-interactive shell where `set -m` / `bash -i` don't reliably
-    // engage job control in this environment. The python wrapper:
-    //   1. forks
-    //   2. child: setpgid(0, 0) — new process group
-    //   3. parent: tcsetpgrp(0, yes_pgid) — make yes the foreground
-    //   4. child: exec yes
-    //   5. parent: wait, then print FG_GONE
-    // The parent's redundant setpgid(pid, pid) covers the race where the
-    // child hasn't run yet. If the child wins (already called setpgid + execvp),
-    // parent's setpgid raises PermissionError — swallow it via exec'd try/except;
-    // the child has already done the work.
-    let setup = "python3 -uc \"\
-import os, sys; \
-pid = os.fork(); \
-0 == pid and (os.setpgid(0, 0), os.execvp('yes', ['yes'])); \
-exec('try: os.setpgid(pid, pid)\\nexcept PermissionError: pass'); \
-os.tcsetpgrp(0, pid); \
-os.waitpid(pid, 0); \
-print('FG_GONE'); sys.stdout.flush()\"\n";
-    client.send_input(pane_id, setup.as_bytes());
+    client.send_input(pane_id, YES_FOREGROUND_WRAPPER.as_bytes());
 
-    // Wait for output to start.
+    // Wait for FG_READY — proves `tcsetpgrp(0, yes_pgid)` ran before
+    // `yes` was unblocked. Until this sentinel appears, the kernel's
+    // foreground PGID is still the shell's, and `signal_child`'s
+    // `tcgetpgrp(master_fd)` would resolve to the shell.
+    wait_for_text_in_snapshot(&mut client, pane_id, "FG_READY", Duration::from_secs(30));
+
+    // Then wait for `yes` flooding to start.
     let deadline = Instant::now() + Duration::from_secs(10);
     loop {
         client.poll_events();
@@ -1754,8 +1780,9 @@ print('FG_GONE'); sys.stdout.flush()\"\n";
 
     // The python wrapper's parent prints FG_GONE after waitpid returns —
     // that's the load-bearing assertion: the foreground job (yes) died,
-    // and the parent regained control.
-    let deadline = Instant::now() + Duration::from_secs(5);
+    // and the parent regained control. Generous 30-second deadline; the
+    // assertion is on the condition, the deadline is the safety valve.
+    let deadline = Instant::now() + Duration::from_secs(30);
     let mut saw_fg_gone = false;
     while Instant::now() < deadline {
         client.poll_events();
