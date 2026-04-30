@@ -61,6 +61,55 @@ impl App {
         ctx.request_urgent_redraw();
     }
 
+    /// Open a searchable-dropdown popup within a dialog window's overlay manager.
+    ///
+    /// Constructs a [`SearchableDropdownPopupWidget`] with the trigger's items
+    /// and current selection, then mounts it via the same `replace_popup`
+    /// path that [`Self::open_dialog_dropdown`] uses for `MenuWidget`. Selection
+    /// flows back through [`Self::handle_dialog_overlay_result`] like the
+    /// plain dropdown case — no separate routing channel required.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "forwarding OpenSearchableDropdown fields + window ID"
+    )]
+    pub(in crate::app) fn open_dialog_searchable_dropdown(
+        &mut self,
+        window_id: WindowId,
+        trigger_id: oriterm_ui::widget_id::WidgetId,
+        items: Vec<String>,
+        selected: Option<usize>,
+        anchor: Rect,
+        initial_highlight: Option<usize>,
+    ) {
+        use oriterm_ui::overlay::Placement;
+        use oriterm_ui::widgets::searchable_dropdown::{
+            SearchableDropdownPopupWidget, SearchableDropdownStyle,
+        };
+
+        let mut style = SearchableDropdownStyle::from_theme(&self.ui_theme);
+        // Match the plain-dropdown popup width to the trigger anchor for
+        // visual continuity with non-searchable dropdowns in the same dialog.
+        style.min_width = anchor.width();
+
+        let widget = SearchableDropdownPopupWidget::new(
+            trigger_id,
+            items,
+            selected,
+            initial_highlight,
+            style,
+        );
+
+        let now = Instant::now();
+        self.pending_dropdown_id = Some(trigger_id);
+
+        let Some(ctx) = self.dialogs.get_mut(&window_id) else {
+            return;
+        };
+        ctx.root
+            .replace_popup(Box::new(widget), anchor, Placement::BelowFlush, now);
+        ctx.request_urgent_redraw();
+    }
+
     /// Process an overlay event result from a dialog window.
     pub(in crate::app) fn handle_dialog_overlay_result(
         &mut self,

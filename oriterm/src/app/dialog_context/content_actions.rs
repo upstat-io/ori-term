@@ -42,6 +42,22 @@ impl App {
             } => {
                 self.open_dialog_dropdown(window_id, id, options, selected, anchor);
             }
+            WidgetAction::OpenSearchableDropdown {
+                id,
+                items,
+                selected,
+                anchor,
+                initial_highlight,
+            } => {
+                self.open_dialog_searchable_dropdown(
+                    window_id,
+                    id,
+                    items,
+                    selected,
+                    anchor,
+                    initial_highlight,
+                );
+            }
             WidgetAction::Toggled { .. }
             | WidgetAction::Selected { .. }
             | WidgetAction::ValueChanged { .. }

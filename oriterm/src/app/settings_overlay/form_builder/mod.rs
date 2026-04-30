@@ -25,8 +25,6 @@ use oriterm_ui::widgets::sidebar_nav::{NavItem, NavSection, SidebarNavWidget};
 
 use crate::config::Config;
 
-pub(in crate::app) use font::FONT_FAMILIES;
-
 /// Bell duration dropdown values in milliseconds.
 pub(in crate::app) const BELL_DURATION_VALUES: [u16; 7] = [0, 50, 100, 150, 200, 300, 500];
 
@@ -46,6 +44,11 @@ pub(crate) struct SettingsIds {
     pub scheme_card_ids: Vec<WidgetId>,
     // Font page.
     pub font_family_dropdown: WidgetId,
+    /// Sidecar list mirroring the family dropdown's items at construction
+    /// time. The action handler indexes back through this to resolve the
+    /// selected index into a family name (replaces the static `FONT_FAMILIES`
+    /// table that lived here before OS enumeration).
+    pub font_family_items: Vec<String>,
     pub font_size_input: WidgetId,
     pub font_weight_dropdown: WidgetId,
     pub ligatures_toggle: WidgetId,
@@ -172,6 +175,7 @@ impl SettingsIds {
             tab_bar_style_dropdown: WidgetId::placeholder(),
             scheme_card_ids: Vec::new(),
             font_family_dropdown: WidgetId::placeholder(),
+            font_family_items: Vec::new(),
             font_size_input: WidgetId::placeholder(),
             font_weight_dropdown: WidgetId::placeholder(),
             ligatures_toggle: WidgetId::placeholder(),

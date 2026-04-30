@@ -410,4 +410,3 @@ fn flag_clears_on_poll_events() {
         );
     }
 }
-

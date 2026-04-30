@@ -31,6 +31,7 @@ pub mod rich_label;
 pub mod scheme_card;
 pub mod scroll;
 pub mod scrollbar;
+pub mod searchable_dropdown;
 pub mod separator;
 pub mod setting_row;
 pub mod settings_footer;

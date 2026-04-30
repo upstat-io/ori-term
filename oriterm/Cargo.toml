@@ -82,5 +82,9 @@ tempfile = "3"
 name = "rendering"
 harness = false
 
+[[bench]]
+name = "font_enumerate"
+harness = false
+
 [lints]
 workspace = true

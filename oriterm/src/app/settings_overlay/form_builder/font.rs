@@ -12,37 +12,46 @@ use oriterm_ui::widgets::code_preview::CodePreviewWidget;
 use oriterm_ui::widgets::container::ContainerWidget;
 use oriterm_ui::widgets::dropdown::DropdownWidget;
 use oriterm_ui::widgets::number_input::NumberInputWidget;
+use oriterm_ui::widgets::searchable_dropdown::SearchableDropdownWidget;
 use oriterm_ui::widgets::setting_row::SettingRowWidget;
 use oriterm_ui::widgets::toggle::ToggleWidget;
 
 use crate::config::Config;
+use crate::font::discovery::enumerate_mono_families;
 
 use super::SettingsIds;
 use super::shared::{
     build_section_header, build_section_header_with_description, build_settings_page,
 };
 
-/// Common monospace font families offered in the dropdown.
-///
-/// "Default" maps to `None` in config (uses platform default).
-/// Index 0 is always the system default; action handler uses `None` for it.
-pub(in crate::app) const FONT_FAMILIES: &[&str] = &[
-    "Default (System)",
-    "JetBrains Mono",
-    "Cascadia Code",
-    "Fira Code",
-    "Source Code Pro",
-    "Hack",
-    "Inconsolata",
-    "Menlo",
-    "Consolas",
-    "DejaVu Sans Mono",
-    "Ubuntu Mono",
-    "SF Mono",
-];
+/// Sentinel string for the "use platform default" entry at index 0 of the
+/// font-family dropdown. Resolves to `Config.font.family = None` in the
+/// action handler.
+const DEFAULT_FAMILY_LABEL: &str = "Default (System)";
 
 /// Font weight labels matching their numeric value by position.
 const WEIGHT_VALUES: &[u16] = &[100, 200, 300, 400, 500, 600, 700, 800, 900];
+
+/// Build the font-family dropdown's item list: `[Default (System)]` followed
+/// by every enumerated monospace family on the host system. If the user has
+/// configured a family that is no longer installed, prepend it after the
+/// default sentinel so the dropdown faithfully shows the configured value
+/// (rather than silently snapping to "Default (System)" on next open).
+fn build_family_items(config: &Config) -> Vec<String> {
+    let mut items: Vec<String> = std::iter::once(DEFAULT_FAMILY_LABEL.to_owned())
+        .chain(
+            enumerate_mono_families()
+                .iter()
+                .map(|fe| fe.display_name.clone()),
+        )
+        .collect();
+    if let Some(configured) = config.font.family.as_deref() {
+        if !items.iter().any(|s| s.eq_ignore_ascii_case(configured)) {
+            items.insert(1, configured.to_owned());
+        }
+    }
+    items
+}
 
 /// Builds the Font page content widget.
 ///
@@ -76,22 +85,20 @@ fn build_typeface_section(
     ids: &mut SettingsIds,
     theme: &UiTheme,
 ) -> Box<dyn Widget> {
-    // Font family dropdown.
-    let items: Vec<String> = FONT_FAMILIES.iter().map(|s| (*s).to_owned()).collect();
+    // Font family dropdown — searchable, OS-enumerated monospace families.
+    let items = build_family_items(config);
     let family_idx = config
         .font
         .family
         .as_ref()
-        .and_then(|fam| {
-            FONT_FAMILIES
-                .iter()
-                .position(|f| f.eq_ignore_ascii_case(fam))
-        })
+        .and_then(|fam| items.iter().position(|f| f.eq_ignore_ascii_case(fam)))
         .unwrap_or(0); // "Default (System)" if not found.
-    let family_dropdown = DropdownWidget::new(items)
+    let family_dropdown = SearchableDropdownWidget::new(items.clone())
         .with_selected(family_idx)
         .with_min_width(180.0);
     ids.font_family_dropdown = family_dropdown.id();
+    // Sidecar lookup: action handler reads back the canonical label by index.
+    ids.font_family_items = items;
 
     let family_row = SettingRowWidget::new(
         "Font family",

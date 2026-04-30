@@ -7,7 +7,8 @@ use std::path::PathBuf;
 
 use super::families::{DWRITE_FALLBACK_FAMILIES, DWRITE_FAMILY_NAMES, PRIMARY_FAMILIES};
 use super::{
-    DiscoveryResult, FallbackDiscovery, FontOrigin, resolve_fallback_chain, try_families_from_specs,
+    DiscoveryResult, FallbackDiscovery, FamilyEntry, FontOrigin, resolve_fallback_chain,
+    try_families_from_specs,
 };
 
 /// Resolve a single font variant via DirectWrite by family name, weight, and style.
@@ -155,6 +156,16 @@ pub(super) fn try_user_family(
         return Some(DiscoveryResult { primary, fallbacks });
     }
 
+    // Bridge: enumerated catalog might know this family even if DirectWrite's
+    // synchronous lookup didn't pick it up (e.g., font installed after process
+    // start, system collection re-index lag). Transient-state safety net.
+    if let Some((paths, face_indices)) = super::family_paths(name) {
+        let mut primary = super::family_from_paths(name, paths, FontOrigin::DirectWrite);
+        primary.face_indices = face_indices;
+        let fallbacks = resolve_fallbacks_dwrite(&collection);
+        return Some(DiscoveryResult { primary, fallbacks });
+    }
+
     // Try as an absolute path or filename in C:\Windows\Fonts\.
     let path = if std::path::Path::new(name).is_absolute() {
         PathBuf::from(name)
@@ -233,4 +244,48 @@ pub(super) fn resolve_user_fallback(family: &str) -> Option<FallbackDiscovery> {
     }
 
     None
+}
+
+/// Enumerate every monospace font family in the DirectWrite system collection.
+///
+/// Iterates `dwrote::FontCollection::system().families_iter()`, probes each
+/// family's Regular face, and keeps only families whose Regular face reports
+/// `is_monospace() == Some(true)`. `None` and `Some(false)` are both rejected
+/// — a font that can't prove it's monospace stays out of the catalog.
+///
+/// For each kept family, calls [`resolve_family_dwrite`] with the production
+/// default weights (Regular=400, Bold=700) so the catalog carries the same
+/// 4-variant slot set that `discover_fonts` produces. This means selecting
+/// an enumerated family from the searchable dropdown resolves to identical
+/// file paths whether DirectWrite hits at lookup time or the bridge fires.
+pub(super) fn enumerate_mono_families_inner() -> Vec<FamilyEntry> {
+    let collection = dwrote::FontCollection::system();
+    let mut entries = Vec::new();
+    for family in collection.families_iter() {
+        let Ok(regular) = family.first_matching_font(
+            dwrote::FontWeight::Regular,
+            dwrote::FontStretch::Normal,
+            dwrote::FontStyle::Normal,
+        ) else {
+            continue;
+        };
+        if !matches!(regular.is_monospace(), Some(true)) {
+            continue;
+        }
+        let Ok(name) = family.family_name() else {
+            continue;
+        };
+        if name.trim().is_empty() {
+            continue;
+        }
+        let Some(paths) = resolve_family_dwrite(&collection, &name, 400, 700) else {
+            continue;
+        };
+        entries.push(FamilyEntry {
+            display_name: name,
+            paths,
+            face_indices: [0; 4],
+        });
+    }
+    entries
 }
