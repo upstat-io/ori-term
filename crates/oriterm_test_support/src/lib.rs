@@ -14,6 +14,7 @@
 //! byte-for-byte between two `VtTestSession` definitions.
 
 pub mod catalog;
+pub mod event_proxy_stub;
 pub mod fixtures;
 pub mod paths;
 pub mod session;

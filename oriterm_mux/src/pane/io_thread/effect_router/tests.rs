@@ -769,7 +769,10 @@ fn da3_byte_parse_emits_pty_write_response() {
         .expect("expected MuxEvent::PtyWrite for DA3 response");
     match event {
         MuxEvent::PtyWrite { data, .. } => {
-            assert_eq!(data, b"\x1bP!|00000000\x1b\\", "DA3 response bytes mismatch");
+            assert_eq!(
+                data, b"\x1bP!|00000000\x1b\\",
+                "DA3 response bytes mismatch"
+            );
         }
         other => panic!("expected PtyWrite, got {other:?}"),
     }
@@ -801,7 +804,10 @@ fn dsr6_byte_parse_at_default_cursor_emits_position_one_one() {
         .expect("expected MuxEvent::PtyWrite for DSR 6 response");
     match event {
         MuxEvent::PtyWrite { data, .. } => {
-            assert_eq!(data, b"\x1b[1;1R", "DSR 6 default-cursor response bytes mismatch");
+            assert_eq!(
+                data, b"\x1b[1;1R",
+                "DSR 6 default-cursor response bytes mismatch"
+            );
         }
         other => panic!("expected PtyWrite, got {other:?}"),
     }
@@ -817,7 +823,10 @@ fn csi_18t_byte_parse_at_default_grid_emits_size_24_80() {
         .expect("expected MuxEvent::PtyWrite for CSI 18t response");
     match event {
         MuxEvent::PtyWrite { data, .. } => {
-            assert_eq!(data, b"\x1b[8;24;80t", "CSI 18t default-grid response bytes mismatch");
+            assert_eq!(
+                data, b"\x1b[8;24;80t",
+                "CSI 18t default-grid response bytes mismatch"
+            );
         }
         other => panic!("expected PtyWrite, got {other:?}"),
     }
@@ -856,7 +865,10 @@ fn decrqm_set_byte_parse_emits_value_one() {
         .expect("expected MuxEvent::PtyWrite for DECRQM mode 25 response");
     match event {
         MuxEvent::PtyWrite { data, .. } => {
-            assert_eq!(data, b"\x1b[?25;1$y", "DECRQM mode 25 default response bytes mismatch");
+            assert_eq!(
+                data, b"\x1b[?25;1$y",
+                "DECRQM mode 25 default response bytes mismatch"
+            );
         }
         other => panic!("expected PtyWrite, got {other:?}"),
     }
@@ -891,9 +903,11 @@ fn decrqm_unknown_mode_emits_value_zero() {
         .expect("expected MuxEvent::PtyWrite for DECRQM unknown-mode response");
     match event {
         MuxEvent::PtyWrite { data, .. } => {
-            assert_eq!(data, b"\x1b[?9999;0$y", "DECRQM unknown-mode response bytes mismatch");
+            assert_eq!(
+                data, b"\x1b[?9999;0$y",
+                "DECRQM unknown-mode response bytes mismatch"
+            );
         }
         other => panic!("expected PtyWrite, got {other:?}"),
     }
 }
-

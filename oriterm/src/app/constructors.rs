@@ -42,10 +42,7 @@ impl App {
         profiling: bool,
         latency_log: bool,
     ) -> Self {
-        let proxy_for_mux = event_proxy.clone();
-        let mux_wakeup: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
-            let _ = proxy_for_mux.send_event(TermEvent::MuxWakeup);
-        });
+        let mux_wakeup = make_mux_wakeup(&event_proxy);
 
         let mux: Option<Box<dyn MuxBackend>> =
             match oriterm_mux::MuxClient::connect(socket_path, mux_wakeup) {
@@ -90,10 +87,7 @@ impl App {
             user_count,
         );
 
-        let proxy_for_mux = event_proxy.clone();
-        let mux_wakeup: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
-            let _ = proxy_for_mux.send_event(TermEvent::MuxWakeup);
-        });
+        let mux_wakeup = make_mux_wakeup(&event_proxy);
         let mux = oriterm_mux::EmbeddedMux::new(mux_wakeup);
 
         Self::build_common(
@@ -202,4 +196,25 @@ impl App {
             handoff_pending: None,
         }
     }
+}
+
+/// Build the mux-wakeup callback used by both [`App::new`] (embedded mode)
+/// and [`App::new_daemon`] (daemon mode).
+///
+/// Returns the `Arc<dyn Fn() + Send + Sync>` shape that
+/// `EmbeddedMux::new` and `MuxClient::connect` accept. The closure
+/// signals the winit event loop via `EventLoopProxy::send_event(TermEvent::MuxWakeup)`,
+/// which the App's `about_to_wait` handler then drains via `pump_mux_events`.
+///
+/// `let _ = proxy.send_event(...)` is intentional: the wakeup is a
+/// performance hint (skip `try_recv` on idle iterations), NOT a
+/// correctness primitive — if the event loop is closed, the next
+/// `pump_mux_events` cycle still drains the underlying channel via
+/// `poll_events`. Byte-loss safety lives at the `MuxEvent` channel
+/// layer, not at the wakeup signal.
+fn make_mux_wakeup(proxy: &EventLoopProxy<TermEvent>) -> Arc<dyn Fn() + Send + Sync> {
+    let proxy = proxy.clone();
+    Arc::new(move || {
+        let _ = proxy.send_event(TermEvent::MuxWakeup);
+    })
 }

@@ -30,6 +30,7 @@ windows-sys = { version = "0.59", features = [
 ] }
 
 [dev-dependencies]
+oriterm_test_support = { path = "../crates/oriterm_test_support" }
 tempfile = "3"
 
 [[bin]]
