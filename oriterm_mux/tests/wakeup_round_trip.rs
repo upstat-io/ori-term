@@ -29,7 +29,6 @@
 
 #![cfg(unix)]
 
-use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -223,7 +222,7 @@ fn gate_passes_after_io_emit() {
 /// reaches the recorder.
 ///
 /// Uses an `echo` command rather than a device-query because shell-
-/// prompt-framework consumption (see BUG-11-028 in section-11-mux.md)
+/// prompt-framework consumption (see BUG-11-029 in section-11-mux.md)
 /// can suppress query-response wakeups in the user's interactive
 /// shell environment. `echo` produces shell-stdout bytes that ALWAYS
 /// flow through the IO thread → fire the wakeup callback regardless
@@ -412,10 +411,3 @@ fn flag_clears_on_poll_events() {
     }
 }
 
-// Suppress unused-import warning: Arc is conventional in the doc-cited
-// pattern even though this file consumes it indirectly through
-// `RecordedProxy::make_mux_wakeup()` returning `Arc<dyn Fn()...>`.
-#[allow(dead_code)]
-fn _arc_used_via_make_mux_wakeup() {
-    let _: Arc<dyn Fn() + Send + Sync> = RecordedProxy::new().make_mux_wakeup();
-}

@@ -902,7 +902,7 @@ macro_rules! muxbackend_contract_tests {
         }
 
         #[test]
-        #[ignore = "BUG-11-028: DA2 response consumed by interactive shell prompt-framework (zsh + starship/p10k); Layer-1 test in oriterm_mux/src/pane/io_thread/effect_router/tests.rs::da2_byte_parse_emits_pty_write_response_with_version pins the byte-parse → MuxEvent emission contract; un-ignore once a portable test seam (Rust helper binary or non-shell PTY harness) lands per the §07 follow-up bug filing."]
+        #[ignore = "BUG-11-029: DA2 response consumed by interactive shell prompt-framework (zsh + starship/p10k); Layer-1 test in oriterm_mux/src/pane/io_thread/effect_router/tests.rs::da2_byte_parse_emits_pty_write_response_with_version pins the byte-parse → MuxEvent emission contract; un-ignore once a portable test seam (Rust helper binary or non-shell PTY harness) lands per the §07 follow-up bug filing."]
         fn da2_gated_round_trip() {
             let mut ctx = $factory();
             // DA2: \x1b[>c → \x1b[>0;<version>;1c — variable version length.
@@ -956,7 +956,7 @@ macro_rules! muxbackend_contract_tests {
         }
 
         #[test]
-        #[ignore = "BUG-11-028: CSI 18t response consumed by interactive shell prompt-framework (zsh + starship/p10k); Layer-1 test in oriterm_mux/src/pane/io_thread/effect_router/tests.rs::csi_18t_byte_parse_at_default_grid_emits_size_24_80 pins the byte-parse → MuxEvent emission contract; un-ignore once a portable test seam (Rust helper binary or non-shell PTY harness) lands per the §07 follow-up bug filing."]
+        #[ignore = "BUG-11-029: CSI 18t response consumed by interactive shell prompt-framework (zsh + starship/p10k); Layer-1 test in oriterm_mux/src/pane/io_thread/effect_router/tests.rs::csi_18t_byte_parse_at_default_grid_emits_size_24_80 pins the byte-parse → MuxEvent emission contract; un-ignore once a portable test seam (Rust helper binary or non-shell PTY harness) lands per the §07 follow-up bug filing."]
         fn csi_18t_gated_round_trip() {
             let mut ctx = $factory();
             // CSI 18t: \x1b[18t → \x1b[8;<lines>;<cols>t. Default test grid
