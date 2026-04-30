@@ -12,7 +12,6 @@ use oriterm_ui::widgets::code_preview::CodePreviewWidget;
 use oriterm_ui::widgets::container::ContainerWidget;
 use oriterm_ui::widgets::dropdown::DropdownWidget;
 use oriterm_ui::widgets::number_input::NumberInputWidget;
-use oriterm_ui::widgets::searchable_dropdown::SearchableDropdownWidget;
 use oriterm_ui::widgets::setting_row::SettingRowWidget;
 use oriterm_ui::widgets::toggle::ToggleWidget;
 
@@ -85,7 +84,8 @@ fn build_typeface_section(
     ids: &mut SettingsIds,
     theme: &UiTheme,
 ) -> Box<dyn Widget> {
-    // Font family dropdown — searchable, OS-enumerated monospace families.
+    // Font family dropdown — searchable mode of the regular DropdownWidget,
+    // backed by the OS-enumerated monospace family list.
     let items = build_family_items(config);
     let family_idx = config
         .font
@@ -93,9 +93,10 @@ fn build_typeface_section(
         .as_ref()
         .and_then(|fam| items.iter().position(|f| f.eq_ignore_ascii_case(fam)))
         .unwrap_or(0); // "Default (System)" if not found.
-    let family_dropdown = SearchableDropdownWidget::new(items.clone())
+    let family_dropdown = DropdownWidget::new(items.clone())
         .with_selected(family_idx)
-        .with_min_width(180.0);
+        .with_min_width(180.0)
+        .with_searchable(true);
     ids.font_family_dropdown = family_dropdown.id();
     // Sidecar lookup: action handler reads back the canonical label by index.
     ids.font_family_items = items;

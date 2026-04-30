@@ -250,3 +250,105 @@ fn dropdown_open_close_cycle_stable_scene_size() {
         "scene primitive count grew from {first} to {last} over 10 cycles — possible leak"
     );
 }
+
+// -- Searchable mode --
+
+/// Plain dropdown emits OpenDropdown on Clicked.
+#[test]
+fn click_emits_open_dropdown_when_not_searchable() {
+    let mut dd = DropdownWidget::new(items());
+    let bounds = crate::geometry::Rect::new(0.0, 0.0, 100.0, 30.0);
+    let action = dd
+        .on_action(WidgetAction::Clicked(dd.id()), bounds)
+        .expect("click must emit an action");
+    assert!(
+        matches!(action, WidgetAction::OpenDropdown { .. }),
+        "non-searchable dropdown emits OpenDropdown, got {action:?}"
+    );
+}
+
+/// Searchable dropdown emits OpenSearchableDropdown on Clicked.
+#[test]
+fn click_emits_open_searchable_when_searchable() {
+    let mut dd = DropdownWidget::new(items()).with_searchable(true);
+    let bounds = crate::geometry::Rect::new(0.0, 0.0, 100.0, 30.0);
+    let action = dd
+        .on_action(WidgetAction::Clicked(dd.id()), bounds)
+        .expect("click must emit an action");
+    match action {
+        WidgetAction::OpenSearchableDropdown {
+            id,
+            items: emitted_items,
+            selected,
+            anchor,
+            initial_highlight,
+        } => {
+            assert_eq!(id, dd.id());
+            assert_eq!(emitted_items, items());
+            assert_eq!(selected, Some(0));
+            assert_eq!(anchor, bounds);
+            assert_eq!(initial_highlight, None);
+        }
+        other => panic!("searchable dropdown must emit OpenSearchableDropdown, got {other:?}"),
+    }
+}
+
+/// Searchable mode: NavigateDown opens popup with initial_highlight=Some(0)
+/// instead of cycling inline (which would emit Selected and update self.selected).
+#[test]
+fn searchable_navigate_down_opens_popup_does_not_cycle() {
+    use crate::action::keymap_action::NavigateDown;
+    let mut dd = DropdownWidget::new(items())
+        .with_searchable(true)
+        .with_selected(0);
+    let bounds = crate::geometry::Rect::new(0.0, 0.0, 100.0, 30.0);
+    let action = dd
+        .handle_keymap_action(&NavigateDown, bounds)
+        .expect("NavigateDown must emit an action");
+    match action {
+        WidgetAction::OpenSearchableDropdown {
+            initial_highlight, ..
+        } => {
+            assert_eq!(initial_highlight, Some(0));
+        }
+        other => panic!("searchable NavigateDown must open popup, got {other:?}"),
+    }
+    assert_eq!(
+        dd.selected(),
+        0,
+        "searchable trigger must NOT cycle selected on NavigateDown — popup owns navigation"
+    );
+}
+
+/// Plain mode: NavigateDown still cycles inline as before.
+#[test]
+fn plain_navigate_down_cycles_inline() {
+    use crate::action::keymap_action::NavigateDown;
+    let mut dd = DropdownWidget::new(items()).with_selected(0);
+    let bounds = crate::geometry::Rect::new(0.0, 0.0, 100.0, 30.0);
+    let action = dd
+        .handle_keymap_action(&NavigateDown, bounds)
+        .expect("NavigateDown must emit an action");
+    assert!(
+        matches!(action, WidgetAction::Selected { .. }),
+        "plain dropdown cycles inline (emits Selected), got {action:?}"
+    );
+    assert_eq!(dd.selected(), 1, "plain dropdown advances selected by one");
+}
+
+/// is_searchable() reflects the builder.
+#[test]
+fn is_searchable_reflects_builder() {
+    assert!(!DropdownWidget::new(items()).is_searchable());
+    assert!(
+        DropdownWidget::new(items())
+            .with_searchable(true)
+            .is_searchable()
+    );
+    assert!(
+        !DropdownWidget::new(items())
+            .with_searchable(true)
+            .with_searchable(false)
+            .is_searchable()
+    );
+}

@@ -101,11 +101,23 @@ impl Default for DropdownStyle {
 /// mouse click emit `WidgetAction::OpenDropdown` for the app layer
 /// to open a popup overlay with the options list. Hover transitions
 /// use [`VisualStateAnimator`] with `common_states()`.
+///
+/// Set `searchable = true` (via [`Self::with_searchable`]) to swap the
+/// emitted action to [`WidgetAction::OpenSearchableDropdown`] and route
+/// arrow keys to the popup instead of cycling inline. The trigger shape,
+/// styling, and rendering stay identical — only the open-action variant +
+/// arrow-key behaviour differ. The App layer mounts the matching popup
+/// widget (plain `MenuWidget` for non-searchable, `SearchableDropdownPopupWidget`
+/// for searchable) in response to whichever action variant fires.
 pub struct DropdownWidget {
     id: WidgetId,
     items: Vec<String>,
     selected: usize,
     disabled: bool,
+    /// When `true`, emit `OpenSearchableDropdown` on click/Confirm/Arrow and
+    /// open a filterable popup. When `false` (default), emit `OpenDropdown`
+    /// on click/Confirm and cycle items inline on Arrow.
+    searchable: bool,
     style: DropdownStyle,
     controllers: Vec<Box<dyn EventController>>,
     /// Animator for bg state transitions (Normal/Hovered/Pressed/Disabled).
@@ -124,6 +136,7 @@ impl DropdownWidget {
             items,
             selected: 0,
             disabled: false,
+            searchable: false,
             controllers: vec![
                 Box::new(HoverController::new()),
                 Box::new(ClickController::new()),
@@ -202,6 +215,44 @@ impl DropdownWidget {
         self
     }
 
+    /// Promotes the trigger to searchable mode. In searchable mode the
+    /// open-action variant becomes [`WidgetAction::OpenSearchableDropdown`]
+    /// and arrow keys open the popup with the first item highlighted (rather
+    /// than cycling inline). The App layer constructs and mounts the
+    /// `SearchableDropdownPopupWidget` in response.
+    #[must_use]
+    pub fn with_searchable(mut self, searchable: bool) -> Self {
+        self.searchable = searchable;
+        self
+    }
+
+    /// Returns whether searchable mode is enabled.
+    pub fn is_searchable(&self) -> bool {
+        self.searchable
+    }
+
+    /// Returns the action variant emitted on click / Confirm / arrow-open
+    /// per the trigger's `searchable` mode. `initial_highlight` is forwarded
+    /// only when `searchable == true` (plain dropdowns ignore the hint).
+    fn open_action(&self, bounds: Rect, initial_highlight: Option<usize>) -> WidgetAction {
+        if self.searchable {
+            WidgetAction::OpenSearchableDropdown {
+                id: self.id,
+                items: self.items.clone(),
+                selected: Some(self.selected),
+                anchor: bounds,
+                initial_highlight,
+            }
+        } else {
+            WidgetAction::OpenDropdown {
+                id: self.id,
+                options: self.items.clone(),
+                selected: self.selected,
+                anchor: bounds,
+            }
+        }
+    }
+
     /// Returns the current text color based on state.
     fn current_fg(&self) -> Color {
         if self.disabled {
@@ -224,6 +275,7 @@ impl std::fmt::Debug for DropdownWidget {
             .field("items", &self.items)
             .field("selected", &self.selected)
             .field("disabled", &self.disabled)
+            .field("searchable", &self.searchable)
             .field("style", &self.style)
             .field("controller_count", &self.controllers.len())
             .field("animator", &self.animator)
@@ -342,15 +394,7 @@ impl Widget for DropdownWidget {
 
     fn on_action(&mut self, action: WidgetAction, bounds: Rect) -> Option<WidgetAction> {
         match action {
-            WidgetAction::Clicked(_) => {
-                // Transform generic click into dropdown open with widget state.
-                Some(WidgetAction::OpenDropdown {
-                    id: self.id,
-                    options: self.items.clone(),
-                    selected: self.selected,
-                    anchor: bounds,
-                })
-            }
+            WidgetAction::Clicked(_) => Some(self.open_action(bounds, None)),
             other => Some(other),
         }
     }
@@ -376,29 +420,34 @@ impl Widget for DropdownWidget {
     ) -> Option<WidgetAction> {
         match action.name() {
             "widget::NavigateDown" => {
-                self.selected = (self.selected + 1) % self.items.len();
-                Some(WidgetAction::Selected {
-                    id: self.id,
-                    index: self.selected,
-                })
+                if self.searchable {
+                    // Searchable mode: arrow keys open the popup with the
+                    // first item highlighted instead of cycling inline.
+                    Some(self.open_action(bounds, Some(0)))
+                } else {
+                    self.selected = (self.selected + 1) % self.items.len();
+                    Some(WidgetAction::Selected {
+                        id: self.id,
+                        index: self.selected,
+                    })
+                }
             }
             "widget::NavigateUp" => {
-                self.selected = if self.selected == 0 {
-                    self.items.len() - 1
+                if self.searchable {
+                    Some(self.open_action(bounds, Some(0)))
                 } else {
-                    self.selected - 1
-                };
-                Some(WidgetAction::Selected {
-                    id: self.id,
-                    index: self.selected,
-                })
+                    self.selected = if self.selected == 0 {
+                        self.items.len() - 1
+                    } else {
+                        self.selected - 1
+                    };
+                    Some(WidgetAction::Selected {
+                        id: self.id,
+                        index: self.selected,
+                    })
+                }
             }
-            "widget::Confirm" => Some(WidgetAction::OpenDropdown {
-                id: self.id,
-                options: self.items.clone(),
-                selected: self.selected,
-                anchor: bounds,
-            }),
+            "widget::Confirm" => Some(self.open_action(bounds, None)),
             // Dismiss (Escape) intentionally falls through to the wildcard.
             // When the popup is open, Escape is handled by the MenuWidget, not
             // the trigger. When closed, Escape on the trigger is a no-op — it
