@@ -226,29 +226,51 @@ fn poll_until(
     }
 }
 
-/// Python wrapper that puts `yes` in the PTY's foreground process group, then
-/// gates the actual `yes` exec on a pipe so the parent can guarantee
-/// `tcsetpgrp(0, pid)` has completed BEFORE any output appears.
+/// Python wrapper that puts `yes` in the PTY's foreground process group,
+/// gates the actual `yes` exec on a pipe (so `tcsetpgrp` is guaranteed to
+/// complete before any flood begins), and gates the pipe-unblock on a stdin
+/// ack (so the test is guaranteed to have *observed* `FG_READY` before the
+/// flood begins).
 ///
 /// Sequence (parent ⟂ child are scheduled independently after `fork`):
 /// 1. Child: `setpgid(0, 0)` → blocks on `read(pipe_r)`. No output yet.
-/// 2. Parent: redundant `setpgid(pid, pid)` (covers race), then
-///    `tcsetpgrp(0, pid)` — fg PGID is now `yes`'s PGID.
-/// 3. Parent prints `FG_READY` — sentinel that proves fg PGID is set.
-/// 4. Parent writes 1 byte to `pipe_w`; child unblocks, `execvp('yes')`.
-/// 5. Parent `waitpid`s; on `yes` death prints `FG_GONE`.
+/// 2. Parent: redundant `setpgid(pid, pid)` (covers race). Parent is still
+///    in the shell's PGID, which is the PTY's foreground PGID — parent
+///    can still read from stdin without `SIGTTIN`-suspending itself.
+/// 3. Parent prints `FG_READY` — sentinel that proves the parent has
+///    reached the ack point.
+/// 4. Parent reads one line from stdin — blocks until the test acks via
+///    `send_input(b"\n")`. Reading stdin BEFORE `tcsetpgrp` is critical:
+///    after `tcsetpgrp(0, pid)` the parent is no longer in the foreground
+///    PGID and any stdin read would `SIGTTIN`-suspend it.
+/// 5. Parent calls `tcsetpgrp(0, pid)` — fg PGID is now `yes`'s PGID. The
+///    pipe unblock that follows is the load-bearing sync that ensures
+///    `tcsetpgrp` completed before `yes` floods.
+/// 6. Parent writes 1 byte to `pipe_w`; child unblocks, `execvp('yes')`.
+/// 7. Parent `waitpid`s; on `yes` death prints `FG_GONE`.
 ///
-/// Without the pipe gate, on a slow CI runner the child can run far enough to
-/// `execvp('yes')` and start flooding output BEFORE the parent's `tcsetpgrp`
-/// completes — at which point `\x03` (kernel ISIG) and `signal_child`
-/// (`tcgetpgrp`) both resolve to the SHELL's PGID, killing python and
-/// orphaning `yes`. The screen stays full of `y` and `FG_GONE` is never
-/// printed. This is the failure mode that broke nightly CI on 2026-04-29 in
-/// run 25106848046.
+/// Without the pipe gate (step 1 + step 6), on a slow CI runner the child
+/// could run far enough to `execvp('yes')` and start flooding output
+/// BEFORE the parent's `tcsetpgrp` completed — at which point `\x03`
+/// (kernel ISIG) and `signal_child` (`tcgetpgrp`) both resolved to the
+/// SHELL's PGID, killing python and orphaning `yes`. That broke nightly
+/// CI run 25106848046.
 ///
-/// Tests using this wrapper MUST poll for `FG_READY` BEFORE sending Ctrl+C —
-/// that is the load-bearing synchronization point. See
-/// `.claude/rules/tests.md §Wall-Clock-Free Testing`.
+/// Without the stdin ack (step 4), `yes` started flooding microseconds
+/// after `FG_READY` was printed, scrolling the sentinel off the visible
+/// 24-row snapshot before the test's 50ms-poll observation window caught
+/// it. The screen stayed full of `y` and the test panicked waiting for
+/// `FG_READY`. That broke nightly CI run 25140980371.
+///
+/// Tests using this wrapper MUST:
+/// 1. Poll for `FG_READY` in the snapshot.
+/// 2. Send `b"\n"` via `send_input` to ack — unblocks the parent's stdin
+///    read; parent then calls `tcsetpgrp` and unblocks the child.
+/// 3. Wait for `y` flooding to start (proves `tcsetpgrp` completed).
+/// 4. Send Ctrl+C / `signal_child` to kill the foreground job.
+/// 5. Wait for `FG_GONE` to confirm the parent regained control.
+///
+/// See `.claude/rules/tests.md §Wall-Clock-Free Testing`.
 const YES_FOREGROUND_WRAPPER: &str = "python3 -uc \"\
 import os, sys; \
 r, w = os.pipe(); \
@@ -256,8 +278,9 @@ pid = os.fork(); \
 0 == pid and (os.setpgid(0, 0), os.close(w), os.read(r, 1), os.close(r), os.execvp('yes', ['yes'])); \
 os.close(r); \
 exec('try: os.setpgid(pid, pid)\\nexcept PermissionError: pass'); \
-os.tcsetpgrp(0, pid); \
 sys.stdout.write('FG_READY\\n'); sys.stdout.flush(); \
+sys.stdin.readline(); \
+os.tcsetpgrp(0, pid); \
 os.write(w, b'x'); os.close(w); \
 os.waitpid(pid, 0); \
 print('FG_GONE'); sys.stdout.flush()\"\n";
@@ -1572,6 +1595,13 @@ fn ctrl_c_during_flood_via_signal_child() {
     // and Ctrl+C would route SIGINT to the wrong group.
     wait_for_text_in_snapshot(&mut client, pane_id, "FG_READY", Duration::from_secs(30));
 
+    // Ack — unblocks the wrapper so the child can `execvp('yes')` and start
+    // flooding. Without this, the wrapper still blocks on `sys.stdin.readline()`
+    // and `yes` never runs. With it, the wrapper has *observed* the test
+    // observe `FG_READY` before any flood begins — sentinel can no longer
+    // scroll off-screen mid-poll.
+    client.send_input(pane_id, b"\n");
+
     // Wait for flooding to start — snapshot should contain a "y" line.
     let deadline = Instant::now() + Duration::from_secs(10);
     loop {
@@ -1751,6 +1781,12 @@ fn signal_child_alone_kills_flooding_process() {
     // foreground PGID is still the shell's, and `signal_child`'s
     // `tcgetpgrp(master_fd)` would resolve to the shell.
     wait_for_text_in_snapshot(&mut client, pane_id, "FG_READY", Duration::from_secs(30));
+
+    // Ack — unblocks the wrapper so the child can `execvp('yes')`. See
+    // `YES_FOREGROUND_WRAPPER` doc for why the stdin ack is required: without
+    // it, `yes` starts flooding microseconds after `FG_READY` is printed and
+    // the sentinel scrolls off the visible snapshot before the next poll.
+    client.send_input(pane_id, b"\n");
 
     // Then wait for `yes` flooding to start.
     let deadline = Instant::now() + Duration::from_secs(10);
