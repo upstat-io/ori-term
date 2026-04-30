@@ -257,6 +257,22 @@ impl Widget for SearchableDropdownWidget {
         }
     }
 
+    fn accept_action(&mut self, action: &WidgetAction) -> bool {
+        // Accept the popup-emitted Selected action so the closed trigger label
+        // tracks the user's pick. The form_builder still rebuilds the page
+        // on next config-change cycle for the form-level state, but the
+        // trigger needs to update its own `selected` BEFORE that rebuild so
+        // the dropdown doesn't render stale text in the meantime — matches
+        // `DropdownWidget::accept_action` (`widgets/dropdown/mod.rs:358`).
+        if let WidgetAction::Selected { id, index } = action {
+            if *id == self.id {
+                self.selected = (*index < self.items.len()).then_some(*index);
+                return true;
+            }
+        }
+        false
+    }
+
     fn key_context(&self) -> Option<&'static str> {
         // Reuse the Dropdown context so default keybindings (Confirm /
         // NavigateDown / NavigateUp) fire on this widget too.

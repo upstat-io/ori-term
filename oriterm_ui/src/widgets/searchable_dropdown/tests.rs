@@ -3,6 +3,7 @@ use super::SearchableDropdownWidget;
 use crate::action::keymap_action::Confirm;
 use crate::action::keymap_action::NavigateDown;
 use crate::geometry::Rect;
+use crate::widget_id::WidgetId;
 use crate::widgets::{Widget, WidgetAction};
 
 fn trigger_with(items: Vec<&str>) -> SearchableDropdownWidget {
@@ -86,4 +87,52 @@ fn trigger_with_selected_clamps_out_of_range_to_none() {
 fn trigger_with_selected_in_range_records_index() {
     let t = trigger_with(vec!["A", "B", "C"]).with_selected(2);
     assert_eq!(t.selected(), Some(2));
+}
+
+#[test]
+fn accept_action_selected_updates_self_selected() {
+    let mut t = trigger_with(vec!["Alpha", "Beta", "Gamma"]);
+    assert_eq!(t.selected(), None);
+    let accepted = t.accept_action(&WidgetAction::Selected {
+        id: t.id(),
+        index: 2,
+    });
+    assert!(accepted, "Selected for self.id must be accepted");
+    assert_eq!(
+        t.selected(),
+        Some(2),
+        "trigger label must track popup pick post-Selected"
+    );
+}
+
+#[test]
+fn accept_action_selected_for_other_id_ignored() {
+    let mut t = trigger_with(vec!["Alpha", "Beta"]).with_selected(0);
+    let accepted = t.accept_action(&WidgetAction::Selected {
+        id: WidgetId::next(), // different id
+        index: 1,
+    });
+    assert!(
+        !accepted,
+        "Selected targeting another widget must be ignored"
+    );
+    assert_eq!(t.selected(), Some(0), "self.selected must not change");
+}
+
+#[test]
+fn accept_action_selected_clamps_out_of_range() {
+    let mut t = trigger_with(vec!["A", "B"]).with_selected(0);
+    let accepted = t.accept_action(&WidgetAction::Selected {
+        id: t.id(),
+        index: 99,
+    });
+    assert!(
+        accepted,
+        "matching id is accepted even with out-of-range index"
+    );
+    assert_eq!(
+        t.selected(),
+        None,
+        "out-of-range index clamps selected to None"
+    );
 }

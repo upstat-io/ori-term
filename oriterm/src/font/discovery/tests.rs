@@ -533,36 +533,71 @@ fn enumerate_mono_families_returns_slice_no_panic() {
 // Mono"), …)` must resolve to a real file — not fall through to embedded
 // fallback. On systems where JBM isn't installed at all the test skips.
 
-/// Bridge integration: when the catalog knows a family, `discover_fonts`
-/// resolves it via the family-name → path map (Pin 2 in §03).
+/// Bridge integration (Pin 2): when the catalog knows a family, the bridge
+/// in `try_user_family_with_bridge_using` resolves it via the family-name →
+/// path map. Deterministic — uses the injectable lookup seam to seed a
+/// fixture catalog so the test does not depend on the host system having
+/// `JetBrains` Mono installed (closes codex F2 INVERTED-TDD per §06 Round 0).
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
-fn discover_fonts_resolves_enumerated_family() {
-    let catalog = enumerate_mono_families();
-    let Some(jbm) = catalog
-        .iter()
-        .find(|fe| fe.display_name == "JetBrains Mono")
-    else {
-        eprintln!(
-            "SKIP: 'JetBrains Mono' not in system font catalog — bridge integration covered by enumerate_jbm_fixture_yields_jetbrains_mono_display_name"
-        );
-        return;
-    };
-    let result = discover_fonts(Some("JetBrains Mono"), 400, 550);
+fn try_user_family_with_bridge_resolves_enumerated_family() {
+    use std::collections::HashMap;
+
+    let dir = tempfile::tempdir().unwrap();
+    let jbm_path = write_fixture(dir.path(), "JetBrainsMono-Regular.ttf", JBM_REGULAR);
+
+    // Seed an in-memory catalog mapping "JetBrains Mono" → the fixture path.
+    let mut catalog: HashMap<String, ([Option<PathBuf>; 4], [u32; 4])> = HashMap::new();
+    catalog.insert(
+        "JetBrains Mono".to_owned(),
+        ([Some(jbm_path.clone()), None, None, None], [0; 4]),
+    );
+
+    // Empty filename index — bridge returns Some without filename probing.
+    let index: HashMap<String, PathBuf> = HashMap::new();
+
+    let result = super::unix::try_user_family_with_bridge_using("JetBrains Mono", &index, |name| {
+        catalog.get(name).cloned()
+    })
+    .expect("bridge must resolve when catalog has the family");
+
     let resolved = result.primary.paths[0]
         .as_ref()
-        .expect("Regular slot must be populated for an enumerated family");
-    let catalog_path = jbm.paths[0]
-        .as_ref()
-        .expect("catalog Regular path must be Some for an enumerated family");
+        .expect("Regular slot must be populated when catalog had a Regular");
     assert_eq!(
-        resolved, catalog_path,
-        "discover_fonts must resolve the same Regular path the catalog recorded"
+        resolved, &jbm_path,
+        "bridge must thread the catalog-recorded path through to DiscoveryResult.primary"
     );
-    assert_ne!(
+    assert_eq!(
         result.primary.origin,
-        FontOrigin::Embedded,
-        "bridge fired correctly — origin must not fall through to Embedded"
+        FontOrigin::UserConfig,
+        "bridge fires under user-config origin"
+    );
+    assert_eq!(
+        result.primary.family_name, "JetBrains Mono",
+        "bridge preserves the family name passed in"
+    );
+}
+
+/// Bridge negative pin (Pin 2 fall-through): when the catalog does NOT know
+/// the family AND filename heuristics also miss, the bridge returns `None`
+/// — never silently succeeds for genuinely uninstalled families.
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[test]
+fn try_user_family_with_bridge_returns_none_when_catalog_misses() {
+    use std::collections::HashMap;
+
+    let empty_catalog: HashMap<String, ([Option<PathBuf>; 4], [u32; 4])> = HashMap::new();
+    let empty_index: HashMap<String, PathBuf> = HashMap::new();
+
+    let result = super::unix::try_user_family_with_bridge_using(
+        "TotallyNotInstalledFontFamily",
+        &empty_index,
+        |name| empty_catalog.get(name).cloned(),
+    );
+    assert!(
+        result.is_none(),
+        "bridge must return None when neither catalog nor heuristics match"
     );
 }
 

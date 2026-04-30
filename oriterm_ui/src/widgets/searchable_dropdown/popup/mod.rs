@@ -343,7 +343,6 @@ impl Widget for SearchableDropdownPopupWidget {
         }
 
         let row_h = self.row_height();
-        let item_text_style = TextStyle::new(s.font_size, s.item_fg);
         for (i, &canonical) in self
             .filtered_indices
             .iter()
@@ -370,9 +369,6 @@ impl Widget for SearchableDropdownPopupWidget {
             let ty = row_rect.y() + (row_rect.height() - shaped.height) / 2.0;
             ctx.scene
                 .push_text(Point::new(row_rect.x() + 6.0, ty), shaped, fg);
-            // Suppress the unused-binding warning when item_text_style happens
-            // to be unused at the call boundary on certain feature combinations.
-            let _ = &item_text_style;
         }
     }
 

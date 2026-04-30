@@ -51,9 +51,42 @@ fn bench_enumerate_synthetic_500(c: &mut Criterion) {
     });
 }
 
+/// Real-system-fonts benchmark — exercises the same hot path against the
+/// host's actual font directories. On Linux this typically includes one or
+/// more `.ttc` collection files (Noto CJK, DejaVu fallback chains), so this
+/// covers the "large-TTC" perf surface called out in §03 without requiring
+/// a synthetic `.ttc` fixture in the repo. Skips silently when no system
+/// font dirs exist on the runner (CI sandbox without `/usr/share/fonts`).
+fn bench_enumerate_system_fonts(c: &mut Criterion) {
+    let candidate_roots: Vec<PathBuf> = vec![
+        PathBuf::from("/usr/share/fonts"),
+        PathBuf::from("/usr/local/share/fonts"),
+        std::env::var_os("HOME")
+            .map(PathBuf::from)
+            .map(|h| h.join(".local/share/fonts"))
+            .unwrap_or_default(),
+    ]
+    .into_iter()
+    .filter(|p| p.is_dir())
+    .collect();
+    if candidate_roots.is_empty() {
+        eprintln!(
+            "SKIP bench_enumerate_system_fonts: no system font directories found on this runner"
+        );
+        return;
+    }
+    c.bench_function("enumerate_mono_families_real_system_fonts", |b| {
+        b.iter(|| {
+            let entries = enumerate_mono_families_from_roots(black_box(&candidate_roots));
+            black_box(entries);
+        });
+    });
+}
+
 criterion_group!(
     benches,
     bench_enumerate_synthetic_50,
-    bench_enumerate_synthetic_500
+    bench_enumerate_synthetic_500,
+    bench_enumerate_system_fonts,
 );
 criterion_main!(benches);
