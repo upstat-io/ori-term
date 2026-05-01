@@ -23,10 +23,9 @@
 //! the inline `Escape` short-circuit is acceptable as a fallback (mutually
 //! exclusive runtime paths after keymap-first).
 
-use std::collections::HashMap;
 use std::time::Instant;
 
-use crate::action::{Keymap, Keystroke, build_context_stack};
+use crate::action::{Keymap, Keystroke};
 use crate::compositor::layer_animator::LayerAnimator;
 use crate::compositor::layer_tree::LayerTree;
 use crate::geometry::Rect;
@@ -166,28 +165,27 @@ impl OverlayManager {
 
         // Phase 1: extract immutable data from topmost. The borrow on
         // `topmost` must die before Phase 3a/3b re-borrows `self`.
-        let (id, root_id, bounds, ctx_map): (
-            OverlayId,
-            WidgetId,
-            Rect,
-            HashMap<WidgetId, &'static str>,
-        ) = {
+        // Overlay focus path is `[root_id]` (no focused-child plumbing per
+        // §02 design constraint), so the context stack is at most one entry —
+        // skip the HashMap + `build_context_stack` walk that the main-tree
+        // path uses (those exist to resolve a multi-level focus path against
+        // a many-entry map).
+        let (id, root_id, bounds, root_ctx): (OverlayId, WidgetId, Rect, Option<&'static str>) = {
             let topmost = self.overlays.last().expect("checked non-empty above");
-            let id = topmost.id;
-            let root_id = topmost.widget.id();
-            let bounds = topmost.computed_rect;
-            let mut ctx_map: HashMap<WidgetId, &'static str> = HashMap::new();
-            if let Some(ctx) = topmost.widget.key_context() {
-                ctx_map.insert(root_id, ctx);
-            }
-            (id, root_id, bounds, ctx_map)
+            (
+                topmost.id,
+                topmost.widget.id(),
+                topmost.computed_rect,
+                topmost.widget.key_context(),
+            )
         };
 
         // Phase 2: keymap lookup (borrows only `keymap`, not `self`).
-        let focus_path = [root_id];
-        let ctx_stack = build_context_stack(&ctx_map, &focus_path);
+        // `Option::as_slice` returns `&[T]` of length 0 or 1 from `&Option<T>`
+        // — no allocation, exactly the shape `keymap.lookup` consumes.
+        let ctx_stack: &[&str] = root_ctx.as_slice();
         let keystroke = Keystroke::new(event.key, event.modifiers);
-        let action = match keymap.lookup(keystroke, &ctx_stack) {
+        let action = match keymap.lookup(keystroke, ctx_stack) {
             Some(a) => a,
             None => {
                 // No keymap match — fall through to legacy on_input pipeline
