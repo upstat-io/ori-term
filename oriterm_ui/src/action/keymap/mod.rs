@@ -99,7 +99,9 @@ impl Keymap {
     // and each action is a different concrete type — monomorphization prevents
     // unifying them in a single `vec![]` expression.
     pub fn defaults() -> Self {
-        let mut b = Vec::with_capacity(26);
+        // 25 = button(2) + focus(2) + list*2 (Dropdown 5 + Menu 5) +
+        // searchable_menu(4) + dialog(1) + slider(6).
+        let mut b = Vec::with_capacity(25);
         Self::push_button_bindings(&mut b);
         Self::push_focus_bindings(&mut b);
         Self::push_list_bindings(&mut b, "Dropdown");

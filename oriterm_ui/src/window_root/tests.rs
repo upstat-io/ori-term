@@ -1134,8 +1134,13 @@ fn key_event(k: Key) -> KeyEvent {
 /// on_input which returns ignored() for non-searchable mode, so hovered
 /// stays at 0. Post-fix: routes through keymap-first dispatch.
 ///
+/// Asserts on observable navigation: send ArrowDown, then Enter, and
+/// verify Enter emits `Selected { index: 1 }` (advanced from 0). If the
+/// keymap path is broken, ArrowDown is swallowed without state change
+/// and Enter would emit `Selected { index: 0 }` — the assertion fails.
+///
 /// Regression: BUG-03-003 — overlay key dispatch bypassed keymap for
-/// non-Escape keys. See bug-tracker/plans/BUG-03-003/.
+/// non-Escape keys. See bug-tracker/plans/completed/BUG-03-003/.
 #[test]
 fn arrow_down_on_menu_overlay_advances_hover_via_keymap() {
     let menu = menu_with_items(&["Alpha", "Beta", "Gamma"]);
@@ -1147,30 +1152,62 @@ fn arrow_down_on_menu_overlay_advances_hover_via_keymap() {
     root.push_overlay(Box::new(menu), anchor, Placement::Below, now);
     assert!(root.has_overlays());
 
-    let result = root.process_overlay_key_event(
-        key_event(Key::ArrowDown),
+    // Non-searchable MenuWidget starts with `hovered = None`; the first
+    // ArrowDown sets hover to index 0. To prove keymap-routed navigation
+    // ADVANCED PAST the initial hover, send ArrowDown TWICE: first ArrowDown
+    // sets hovered=0, second ArrowDown advances to hovered=1. Then Enter
+    // confirms — Selected{index:1} proves both ArrowDowns landed via keymap.
+    // If the keymap path is broken, neither ArrowDown registers and Enter
+    // emits no Selected action (or an unrelated one).
+    for label in ["first ArrowDown", "second ArrowDown"] {
+        let down_result = root.process_overlay_key_event(
+            key_event(Key::ArrowDown),
+            &measurer(),
+            &theme(),
+            None,
+            now,
+        );
+        match down_result {
+            OverlayEventResult::Delivered { response, .. } => {
+                assert!(
+                    response.handled,
+                    "{label} on Menu overlay must be handled via keymap"
+                );
+                assert!(
+                    response.action.is_none(),
+                    "{label}: NavigateDown emits no WidgetAction"
+                );
+            }
+            other => panic!("expected Delivered for {label}, got {other:?}"),
+        }
+    }
+
+    // Confirm the advanced entry. After two ArrowDowns the menu's
+    // internal hovered MUST be index 1 (advanced from None → 0 → 1);
+    // Enter triggers Confirm → try_select_hovered → emits Selected{1}.
+    let enter_result = root.process_overlay_key_event(
+        key_event(Key::Enter),
         &measurer(),
         &theme(),
         None,
         now,
     );
-
-    // The overlay must have consumed the event via the keymap path.
-    // We assert on the result shape: Delivered with handled=true.
-    match result {
-        OverlayEventResult::Delivered { response, .. } => {
-            assert!(
-                response.handled,
-                "non-searchable Menu ArrowDown must be handled via keymap"
-            );
-            // No WidgetAction — NavigateDown returns None from handle_keymap_action,
-            // it just mutates the menu's internal hovered state.
-            assert!(
-                response.action.is_none(),
-                "NavigateDown emits no WidgetAction (mutates hovered)"
-            );
-        }
-        other => panic!("expected Delivered, got {other:?}"),
+    match enter_result {
+        OverlayEventResult::Delivered { response, .. } => match response.action {
+            Some(crate::action::WidgetAction::Selected { index, .. }) => {
+                assert_eq!(
+                    index, 1,
+                    "ArrowDown twice then Enter must select index 1 \
+                     (proves keymap-path navigation advanced through both \
+                     None→0 and 0→1 transitions); other indices indicate \
+                     one or both ArrowDowns were silently swallowed"
+                );
+            }
+            other => {
+                panic!("expected Selected after Enter, got action={other:?}")
+            }
+        },
+        other => panic!("expected Delivered for Enter, got {other:?}"),
     }
 }
 
@@ -1230,42 +1267,69 @@ fn space_on_searchable_menu_overlay_does_not_confirm() {
     }
 }
 
-/// Codex Round 0 finding regression test: pressing Escape on a Dialog
-/// overlay must produce `OverlayEventResult::Dismissed(id)` directly,
-/// NOT `Delivered { action: Some(DismissOverlay) }` that would be silently
-/// dropped by `App::handle_dialog_overlay_result` (which only matches on
-/// the `Dismissed` variant). The `OverlayManager` translates a matched
-/// `widget::Dismiss` action into `Dismissed(id)` itself so Dialog windows
-/// dismiss correctly.
+/// Codex Round 0 finding regression test: a `widget::Dismiss` keymap
+/// match for a Dialog overlay must produce `OverlayEventResult::Dismissed(id)`
+/// directly, NOT `Delivered { action: Some(DismissOverlay) }` that would
+/// be silently dropped by `App::handle_dialog_overlay_result` (which only
+/// matches on the `Dismissed` variant). The `OverlayManager` translates
+/// a matched `widget::Dismiss` action into `Dismissed(id)` itself so
+/// Dialog windows dismiss correctly even though `DialogWidget` does not
+/// implement `handle_keymap_action`.
 ///
-/// Regression: BUG-03-003 codex Round 0 finding — DialogWidget does not
-/// implement handle_keymap_action; without the manager-level Dismiss→
-/// Dismissed translation, a Dialog popup with Escape via keymap would
-/// emit no WidgetAction and stay mounted on Dialog windows.
+/// Test isolates the keymap translation from the legacy inline Escape
+/// short-circuit by REBINDING `Dismiss` to a non-Escape key (`F1`) for
+/// the `"Dialog"` context, then pressing F1. The legacy inline path
+/// only matches `Key::Escape`, so F1 cannot reach it — the only way for
+/// this test to produce `Dismissed(id)` is via the keymap path's
+/// `widget::Dismiss → Dismissed(id)` translation.
+///
+/// Regression: BUG-03-003 codex Round 0 + Phase 5 code TPR Round 0
+/// (codex F3 + gemini F2 agreement).
 #[test]
 fn dialog_escape_dismisses_via_keymap_translation() {
+    use crate::action::{KeyBinding, Keystroke, keymap_action::Dismiss};
+
     let dialog = DialogWidget::new("Confirm");
     let mut root = WindowRoot::new(LabelWidget::new("bg"));
     root.compute_layout(&measurer(), &theme());
 
+    // Rebind Dismiss to a non-Escape key (`Character('q')`) for the
+    // "Dialog" context. The inline Escape short-circuit only matches
+    // `Key::Escape`, so `Character('q')` cannot reach it — a Dismissed
+    // result here can ONLY come from the keymap-first dispatch path's
+    // manager-level `widget::Dismiss → Dismissed` translation.
+    root.keymap_mut().rebind(KeyBinding::new(
+        Keystroke::new(Key::Character('q'), Modifiers::NONE),
+        Dismiss,
+        Some("Dialog"),
+    ));
+
     let now = Instant::now();
     let anchor = Rect::new(300.0, 200.0, 500.0, 400.0);
-    let id = root.push_modal(Box::new(dialog), anchor, Placement::AtPoint(crate::geometry::Point::new(300.0, 200.0)), now);
+    let id = root.push_modal(
+        Box::new(dialog),
+        anchor,
+        Placement::AtPoint(crate::geometry::Point::new(300.0, 200.0)),
+        now,
+    );
 
     let result = root.process_overlay_key_event(
-        key_event(Key::Escape),
+        key_event(Key::Character('q')),
         &measurer(),
         &theme(),
         None,
         now,
     );
 
-    // The result MUST be Dismissed(id), NOT Delivered with DismissOverlay
-    // action. This is the manager-level translation that prevents the
-    // Dialog regression.
+    // The result MUST be Dismissed(id) via the keymap translation path.
+    // If the manager-level translation is missing, the result would be
+    // Delivered with action=None (DialogWidget doesn't impl
+    // handle_keymap_action) — the test distinguishes Dismissed from
+    // Delivered to prove the manager-level translation fired.
     assert!(
         matches!(result, OverlayEventResult::Dismissed(d_id) if d_id == id),
-        "Dialog Escape must produce Dismissed(id), got {result:?}"
+        "Dialog 'q'->Dismiss must produce Dismissed(id) via keymap \
+         translation, got {result:?}"
     );
 }
 

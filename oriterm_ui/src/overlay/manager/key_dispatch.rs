@@ -205,7 +205,32 @@ impl OverlayManager {
             }
         };
 
-        // Phase 3a: Dismiss is a manager-level concern (touches the overlay
+        // Phase 3a: Focus traversal (Tab / Shift+Tab) is bound globally in
+        // `Keymap::defaults()` (no `key_context()` scope), so `keymap.lookup`
+        // matches it on EVERY overlay regardless of context. Overlays do
+        // not currently have a per-overlay focus model registered with
+        // `WindowRoot::InteractionManager` (per BUG-03-003 §02 design
+        // constraint), so dispatching `widget::FocusNext`/`widget::FocusPrev`
+        // via `dispatch_keymap_action` on the overlay's root would emit
+        // no widget action AND no focus would move — silently swallowing
+        // Tab. Fall through to the legacy `on_input` pipeline so widgets
+        // that implement custom Tab handling (`DialogWidget::on_input` at
+        // `widgets/dialog/mod.rs:303` for OkCancel buttons) continue to
+        // receive Tab events. Future work: plumb a per-overlay focus
+        // model through and dispatch FocusNext/FocusPrev natively here.
+        if matches!(action.name(), "widget::FocusNext" | "widget::FocusPrev") {
+            return self.process_key_event(
+                event,
+                measurer,
+                theme,
+                focused_widget,
+                tree,
+                animator,
+                now,
+            );
+        }
+
+        // Phase 3b: Dismiss is a manager-level concern (touches the overlay
         // stack). Translate to `Dismissed` directly so dialog-window
         // handlers (which match on `Dismissed`, not `DismissOverlay`)
         // dismiss correctly without widget cooperation. `DialogWidget`
@@ -218,7 +243,7 @@ impl OverlayManager {
             return OverlayEventResult::Dismissed(id);
         }
 
-        // Phase 3b: dispatch to the overlay root widget. Re-borrow
+        // Phase 3c: dispatch to the overlay root widget. Re-borrow
         // `self.overlays.last_mut()` now that the Phase 1 borrow is dead.
         let topmost = self.overlays.last_mut().expect("checked non-empty above");
         let widget_action =
