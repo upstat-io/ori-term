@@ -31,5 +31,7 @@ pub enum PtyWriteKind {
     FocusEvent,
     /// DECRQCRA (CSI * y) checksum reply — DCS Pi ! ~ XXXX ST.
     ChecksumReport,
+    /// XTSMGRAPHICS (CSI ? Pi ; Pa ; Pv S) reply — `CSI ? Pi ; Ps [;Pv [;Pv2]] S`.
+    GraphicsAttributeReport,
     Other,
 }

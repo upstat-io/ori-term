@@ -75,6 +75,7 @@ fn pty_sub_name(pty: &PtyEffect) -> &'static str {
             PtyWriteKind::KeyboardEvent => "KeyboardEvent",
             PtyWriteKind::FocusEvent => "FocusEvent",
             PtyWriteKind::ChecksumReport => "ChecksumReport",
+            PtyWriteKind::GraphicsAttributeReport => "GraphicsAttributeReport",
             PtyWriteKind::Other => "Other",
         },
     }

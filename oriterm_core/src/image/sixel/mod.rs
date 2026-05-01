@@ -36,6 +36,15 @@ pub enum SixelBgMode {
     SetToBg,
 }
 
+/// Canonical sixel color-register count.
+///
+/// Tied to the palette size at the decoder layer; XTSMGRAPHICS protocol
+/// replies (CSI ? 1 ; Ps [;Pv] S) use this same value for the `Pv`
+/// field on Pi=1 read/set/reset/max queries. Both the decoder palette
+/// allocation and `Term::color_register_count` initialization import
+/// this constant — single source of truth for our sixel color depth.
+pub(crate) const COLOR_REGISTERS_MAX: u16 = 256;
+
 /// Streaming sixel parser state machine.
 ///
 /// Feed bytes via `feed()` one at a time. When the DCS sequence ends,
@@ -102,7 +111,7 @@ impl SixelParser {
         // Initialize palette with VT340 defaults.
         // Note: the `BYPASS_VT340_RESET` branch exists solely for the
         // negative-pin palette-leak test — production always rebuilds.
-        let mut palette = vec![[0u8; 3]; 256];
+        let mut palette = vec![[0u8; 3]; COLOR_REGISTERS_MAX as usize];
         #[cfg(test)]
         let bypass = BYPASS_VT340_RESET.with(std::cell::Cell::get);
         #[cfg(not(test))]

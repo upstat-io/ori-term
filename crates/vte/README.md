@@ -120,3 +120,31 @@ These patches are oriterm-specific protocol coverage and are NOT upstreamable
 the non-image OSC 1337 sub-ops are not in scope for upstream. Expect rebase
 work on every upstream `vte` sync; the `VENDORED PATCH (oriterm)` breadcrumbs
 identify every oriterm-owned divergence.
+
+### Section 39 — XTSMGRAPHICS (2026-05)
+
+Added `Handler::graphics_attribute(pi, pa, pv)` trait method and the
+`('S', [b'?'])` CSI dispatch arm to support XTSMGRAPHICS (xterm ctlseqs
+`CSI ? Pi ; Pa ; Pv S`). Standard xterm protocol — peer to existing
+`text_area_size_pixels` / `text_area_size_chars`. Required by sixel-aware
+applications (notcurses, mlterm, libsixel) for graphics-area negotiation.
+
+- **`Handler::graphics_attribute`** (`src/ansi/handler/core_methods.rs`):
+  default empty stub; consumers (oriterm `Term`) override to emit the
+  reply per xterm `charproc.c:5153-5279` semantics.
+- **`('S', [b'?'])` dispatch arm** (`src/ansi/dispatch/csi/mod.rs`):
+  parses `Pi`, `Pa`, `Pv` from the param list and calls
+  `handler.graphics_attribute(pi, pa, pv)`. Malformed-arity queries
+  (param count != 3) are silently dropped per xterm `charproc.c:5159`.
+  Arity check uses `params.iter().count()` (parameter groups), NOT
+  `params.len()` (groups + subparams) — `params.len()` returns the
+  total values including subparams and would incorrectly reject queries
+  like `\x1b[?1:2;1;0S` whose 3 top-level params include one subparam.
+
+#### Upstreaming
+
+Possibly upstreamable. XTSMGRAPHICS is a standard xterm protocol —
+the `Handler::graphics_attribute` trait method is generally useful for
+any consumer of vte that wants sixel-area negotiation. If the upstream
+maintainers accept the addition, this patch can be dropped on the next
+sync.

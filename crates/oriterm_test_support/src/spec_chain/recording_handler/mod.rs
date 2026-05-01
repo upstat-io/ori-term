@@ -283,6 +283,7 @@ impl<S: EffectSink> Handler for RecordingHandler<S> {
     delegate_other!(pop_title);
     delegate_other!(text_area_size_pixels);
     delegate_other!(text_area_size_chars);
+    delegate_other!(graphics_attribute, pi: u16, pa: u16, pv: u16);
 
     fn set_hyperlink(&mut self, hyperlink: Option<vte::ansi::Hyperlink>) {
         self.record_other("set_hyperlink");

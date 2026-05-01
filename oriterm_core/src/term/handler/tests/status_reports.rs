@@ -1,6 +1,9 @@
+use crate::effect::{Effect, PtyEffect, PtyWriteKind};
 use crate::term::TermMode;
 
-use super::super::test_helpers::{feed, term_with_recorder, term_with_recorder_sized};
+use super::super::test_helpers::{
+    feed, term_with_effect_sink, term_with_recorder, term_with_recorder_sized,
+};
 
 // --- CSI device status tests ---
 
@@ -527,4 +530,724 @@ fn decrqm_verifies_default_mode_flags() {
     assert_decrqm_private(b"", 7, 1);
     // CURSOR_BLINKING (mode 12) should be set by default.
     assert_decrqm_private(b"", 12, 1);
+}
+
+// --- XTSMGRAPHICS (CSI ? Pi ; Pa ; Pv S) ---
+//
+// XTSMGRAPHICS is xterm's set-or-request graphics attribute query. Apps
+// using sixel (notcurses, mlterm, libsixel) send these at startup to
+// negotiate color-register count and graphics-area geometry. Without
+// replies, those apps default to conservative sizes or skip sixel.
+//
+// Pi values per xterm ctlseqs / `charproc.c:5153-5279`:
+//   1 = number of color registers
+//   2 = sixel graphics geometry (pixels)
+//   3 = ReGIS graphics geometry (unsupported — Ps=3 failure)
+//
+// Pa values:
+//   1 = read, 2 = reset, 3 = set, 4 = read maximum
+//
+// Reply format: `CSI ? Pi ; Ps [; Pv [; Pv2]] S`. Ps=0 success, Ps=1
+// bad-value (unknown Pi), Ps=2 bad-item (unknown Pa), Ps=3 failure.
+//
+// Test grid: default 24x80 with cell_pixel_width=8, cell_pixel_height=16,
+// so Pi=2 geometry replies report 640x384 pixels.
+//
+// Regression: BUG-06-022 — XTSMGRAPHICS query had no reply path before
+// this fix; vte CSI dispatch had no `('S', [b'?'])` arm and Handler
+// trait had no `graphics_attribute` method.
+
+// --- Pi=1 (color registers) Pa matrix ---
+
+#[test]
+fn xtsmgraphics_pi1_pa1_read_returns_count() {
+    // Pa=1 read: reply with the current color-register count (default 256).
+    let (mut t, listener) = term_with_recorder();
+    feed(&mut t, b"\x1b[?1;1;0S");
+
+    let events = listener.events();
+    assert!(
+        events.iter().any(|e| e == "PtyWrite(\x1b[?1;0;256S)"),
+        "Pi=1 Pa=1 read should reply ?1;0;256S, got: {events:?}"
+    );
+}
+
+#[test]
+fn xtsmgraphics_pi1_pa2_reset_returns_count() {
+    // Pa=2 reset: reset to default and reply with default count (256).
+    let (mut t, listener) = term_with_recorder();
+    feed(&mut t, b"\x1b[?1;2;0S");
+
+    let events = listener.events();
+    assert!(
+        events.iter().any(|e| e == "PtyWrite(\x1b[?1;0;256S)"),
+        "Pi=1 Pa=2 reset should reply ?1;0;256S, got: {events:?}"
+    );
+}
+
+#[test]
+fn xtsmgraphics_pi1_pa3_set_within_max_succeeds() {
+    // Pa=3 set: succeed when 1 < Pv <= MAX, reply reflects the set state
+    // per xterm `charproc.c:5181-5185`.
+    let (mut t, listener) = term_with_recorder();
+    feed(&mut t, b"\x1b[?1;3;100S");
+
+    let events = listener.events();
+    assert!(
+        events.iter().any(|e| e == "PtyWrite(\x1b[?1;0;100S)"),
+        "Pi=1 Pa=3 set Pv=100 should reply ?1;0;100S, got: {events:?}"
+    );
+}
+
+#[test]
+fn xtsmgraphics_pi1_pa3_set_at_max_succeeds() {
+    // notcurses startup repro: `\x1b[?1;3;256S` is the first XTSMGRAPHICS
+    // query notcurses sends. Without this reply, notcurses zeros
+    // initdata->color_registers and disables sixel entirely.
+    let (mut t, listener) = term_with_recorder();
+    feed(&mut t, b"\x1b[?1;3;256S");
+
+    let events = listener.events();
+    assert!(
+        events.iter().any(|e| e == "PtyWrite(\x1b[?1;0;256S)"),
+        "Pi=1 Pa=3 set Pv=256 (notcurses startup repro) should reply ?1;0;256S, got: {events:?}"
+    );
+}
+
+#[test]
+fn xtsmgraphics_pi1_pa3_set_at_min_boundary_succeeds() {
+    // Pv=2 is the smallest accepted value per xterm `Pv > 1`. Reply
+    // reflects the SET state (2), not the MAX (256).
+    let (mut t, listener) = term_with_recorder();
+    feed(&mut t, b"\x1b[?1;3;2S");
+
+    let events = listener.events();
+    assert!(
+        events.iter().any(|e| e == "PtyWrite(\x1b[?1;0;2S)"),
+        "Pi=1 Pa=3 set Pv=2 should reply ?1;0;2S, got: {events:?}"
+    );
+}
+
+#[test]
+fn xtsmgraphics_pi1_pa4_read_max_returns_count() {
+    // Pa=4 read max: always MAX, regardless of any prior set.
+    let (mut t, listener) = term_with_recorder();
+    feed(&mut t, b"\x1b[?1;3;100S"); // set to 100
+    feed(&mut t, b"\x1b[?1;4;0S"); // read max
+
+    let events = listener.events();
+    assert!(
+        events.iter().any(|e| e == "PtyWrite(\x1b[?1;0;256S)"),
+        "Pi=1 Pa=4 read max should always reply ?1;0;256S, got: {events:?}"
+    );
+}
+
+#[test]
+fn xtsmgraphics_pi1_set_then_read_returns_set_value() {
+    // Pa=3 set mutates `Term::color_register_count`. Subsequent Pa=1
+    // read reflects the SET state per xterm `charproc.c:5181-5185`.
+    let (mut t, listener) = term_with_recorder();
+    feed(&mut t, b"\x1b[?1;3;100S");
+    feed(&mut t, b"\x1b[?1;1;0S");
+
+    let events = listener.events();
+    let read_replies: Vec<_> = events
+        .iter()
+        .filter(|e| e.starts_with("PtyWrite(\x1b[?1;0;"))
+        .collect();
+    assert!(
+        read_replies
+            .iter()
+            .any(|e| **e == "PtyWrite(\x1b[?1;0;100S)"),
+        "Pi=1 Pa=1 read after set Pv=100 should reflect 100, got: {events:?}"
+    );
+}
+
+#[test]
+fn xtsmgraphics_pi1_set_then_reset_returns_default() {
+    // Pa=2 reset restores default (256). Subsequent Pa=1 reads return MAX.
+    let (mut t, listener) = term_with_recorder();
+    feed(&mut t, b"\x1b[?1;3;100S"); // set to 100
+    feed(&mut t, b"\x1b[?1;2;0S"); // reset
+    feed(&mut t, b"\x1b[?1;1;0S"); // read
+
+    let events = listener.events();
+    let final_read_count = events
+        .iter()
+        .filter(|e| **e == "PtyWrite(\x1b[?1;0;256S)")
+        .count();
+    assert!(
+        final_read_count >= 2,
+        "Pa=2 reset followed by Pa=1 read should produce two ;0;256S replies (the reset + the read), got: {events:?}"
+    );
+}
+
+// --- Pi=1 negative pins (Pv boundary failures) ---
+
+#[test]
+fn xtsmgraphics_pi1_pa3_set_pv_zero_replies_status3_no_pv() {
+    // Pv=0 fails `Pv > 1`; status=3, no Pv field per xterm.
+    let (mut t, listener) = term_with_recorder();
+    feed(&mut t, b"\x1b[?1;3;0S");
+
+    let events = listener.events();
+    assert!(
+        events.iter().any(|e| e == "PtyWrite(\x1b[?1;3S)"),
+        "Pi=1 Pa=3 Pv=0 should reply ?1;3S (no Pv), got: {events:?}"
+    );
+}
+
+#[test]
+fn xtsmgraphics_pi1_pa3_set_pv_one_replies_status3_no_pv() {
+    // Pv=1 fails `Pv > 1` (boundary).
+    let (mut t, listener) = term_with_recorder();
+    feed(&mut t, b"\x1b[?1;3;1S");
+
+    let events = listener.events();
+    assert!(
+        events.iter().any(|e| e == "PtyWrite(\x1b[?1;3S)"),
+        "Pi=1 Pa=3 Pv=1 should reply ?1;3S, got: {events:?}"
+    );
+}
+
+#[test]
+fn xtsmgraphics_pi1_pa3_set_pv_above_max_replies_status3_no_pv() {
+    // Pv > MAX fails (Pv=257 > 256).
+    let (mut t, listener) = term_with_recorder();
+    feed(&mut t, b"\x1b[?1;3;257S");
+
+    let events = listener.events();
+    assert!(
+        events.iter().any(|e| e == "PtyWrite(\x1b[?1;3S)"),
+        "Pi=1 Pa=3 Pv=257 should reply ?1;3S, got: {events:?}"
+    );
+}
+
+#[test]
+fn xtsmgraphics_pi1_unknown_pa_replies_status2() {
+    // Unknown Pa → Ps=2 (bad-item).
+    let (mut t, listener) = term_with_recorder();
+    feed(&mut t, b"\x1b[?1;99;0S");
+
+    let events = listener.events();
+    assert!(
+        events.iter().any(|e| e == "PtyWrite(\x1b[?1;2S)"),
+        "Pi=1 unknown Pa should reply ?1;2S, got: {events:?}"
+    );
+}
+
+// --- Pi=2 (sixel graphics geometry) Pa matrix ---
+
+#[test]
+fn xtsmgraphics_pi2_pa1_read_returns_width_height() {
+    // Pa=1 read: `cols * cell_pixel_width` = 80*8 = 640;
+    // `lines * cell_pixel_height` = 24*16 = 384.
+    let (mut t, listener) = term_with_recorder();
+    feed(&mut t, b"\x1b[?2;1;0S");
+
+    let events = listener.events();
+    assert!(
+        events.iter().any(|e| e == "PtyWrite(\x1b[?2;0;640;384S)"),
+        "Pi=2 Pa=1 read should reply ?2;0;640;384S (80*8 x 24*16), got: {events:?}"
+    );
+}
+
+#[test]
+fn xtsmgraphics_pi2_pa4_read_max_returns_width_height() {
+    // For oriterm, current geometry == max geometry (no separate max).
+    // xterm separates them via screen->graphics_max_wide; oriterm
+    // dynamically reports the current grid pixel size for both.
+    let (mut t, listener) = term_with_recorder();
+    feed(&mut t, b"\x1b[?2;4;0S");
+
+    let events = listener.events();
+    assert!(
+        events.iter().any(|e| e == "PtyWrite(\x1b[?2;0;640;384S)"),
+        "Pi=2 Pa=4 read max should reply ?2;0;640;384S (current==max for oriterm), got: {events:?}"
+    );
+}
+
+#[test]
+fn xtsmgraphics_pi2_pa2_reset_replies_status3_no_geometry() {
+    // xterm `charproc.c:5211` Pa=2 falls through to empty-block; status=3.
+    let (mut t, listener) = term_with_recorder();
+    feed(&mut t, b"\x1b[?2;2;0S");
+
+    let events = listener.events();
+    assert!(
+        events.iter().any(|e| e == "PtyWrite(\x1b[?2;3S)"),
+        "Pi=2 Pa=2 reset should reply ?2;3S (xterm rejects geometry mutation), got: {events:?}"
+    );
+}
+
+#[test]
+fn xtsmgraphics_pi2_pa3_set_replies_status3_no_geometry() {
+    // xterm rejects geometry set (empty block, status=3).
+    let (mut t, listener) = term_with_recorder();
+    feed(&mut t, b"\x1b[?2;3;0S");
+
+    let events = listener.events();
+    assert!(
+        events.iter().any(|e| e == "PtyWrite(\x1b[?2;3S)"),
+        "Pi=2 Pa=3 set should reply ?2;3S, got: {events:?}"
+    );
+}
+
+#[test]
+fn xtsmgraphics_pi2_unknown_pa_replies_status2() {
+    let (mut t, listener) = term_with_recorder();
+    feed(&mut t, b"\x1b[?2;99;0S");
+
+    let events = listener.events();
+    assert!(
+        events.iter().any(|e| e == "PtyWrite(\x1b[?2;2S)"),
+        "Pi=2 unknown Pa should reply ?2;2S, got: {events:?}"
+    );
+}
+
+// --- Pi=3 (ReGIS — unsupported) Pa matrix ---
+
+#[test]
+fn xtsmgraphics_pi3_pa1_read_replies_status3() {
+    // ReGIS unsupported regardless of Pa, status stays 3.
+    let (mut t, listener) = term_with_recorder();
+    feed(&mut t, b"\x1b[?3;1;0S");
+
+    let events = listener.events();
+    assert!(
+        events.iter().any(|e| e == "PtyWrite(\x1b[?3;3S)"),
+        "Pi=3 Pa=1 (ReGIS read) should reply ?3;3S, got: {events:?}"
+    );
+}
+
+#[test]
+fn xtsmgraphics_pi3_pa2_reset_replies_status3() {
+    let (mut t, listener) = term_with_recorder();
+    feed(&mut t, b"\x1b[?3;2;0S");
+
+    let events = listener.events();
+    assert!(
+        events.iter().any(|e| e == "PtyWrite(\x1b[?3;3S)"),
+        "Pi=3 Pa=2 (ReGIS reset) should reply ?3;3S, got: {events:?}"
+    );
+}
+
+#[test]
+fn xtsmgraphics_pi3_pa3_set_replies_status3() {
+    let (mut t, listener) = term_with_recorder();
+    feed(&mut t, b"\x1b[?3;3;0S");
+
+    let events = listener.events();
+    assert!(
+        events.iter().any(|e| e == "PtyWrite(\x1b[?3;3S)"),
+        "Pi=3 Pa=3 (ReGIS set) should reply ?3;3S, got: {events:?}"
+    );
+}
+
+#[test]
+fn xtsmgraphics_pi3_pa4_read_max_replies_status3() {
+    let (mut t, listener) = term_with_recorder();
+    feed(&mut t, b"\x1b[?3;4;0S");
+
+    let events = listener.events();
+    assert!(
+        events.iter().any(|e| e == "PtyWrite(\x1b[?3;3S)"),
+        "Pi=3 Pa=4 (ReGIS read max) should reply ?3;3S, got: {events:?}"
+    );
+}
+
+#[test]
+fn xtsmgraphics_pi3_unknown_pa_replies_status2() {
+    let (mut t, listener) = term_with_recorder();
+    feed(&mut t, b"\x1b[?3;99;0S");
+
+    let events = listener.events();
+    assert!(
+        events.iter().any(|e| e == "PtyWrite(\x1b[?3;2S)"),
+        "Pi=3 unknown Pa should reply ?3;2S, got: {events:?}"
+    );
+}
+
+// --- Unknown Pi × Pa matrix (outer-match short-circuit invariant) ---
+//
+// Per xterm `charproc.c:5258`, unknown Pi → status=1 regardless of Pa
+// (the outer Pi switch fails before the inner Pa branches execute).
+// These cells pin the outer-match short-circuit invariant — if a
+// future refactor moves the Pa check ahead of the Pi check, all five
+// cells would diverge.
+
+#[test]
+fn xtsmgraphics_unknown_pi_pa1_replies_status1() {
+    let (mut t, listener) = term_with_recorder();
+    feed(&mut t, b"\x1b[?99;1;0S");
+
+    let events = listener.events();
+    assert!(
+        events.iter().any(|e| e == "PtyWrite(\x1b[?99;1S)"),
+        "unknown Pi Pa=1 should reply ?99;1S (Ps=1 unknown-Pi), got: {events:?}"
+    );
+}
+
+#[test]
+fn xtsmgraphics_unknown_pi_pa2_replies_status1() {
+    let (mut t, listener) = term_with_recorder();
+    feed(&mut t, b"\x1b[?99;2;0S");
+
+    let events = listener.events();
+    assert!(
+        events.iter().any(|e| e == "PtyWrite(\x1b[?99;1S)"),
+        "unknown Pi Pa=2 should reply ?99;1S (unknown-Pi short-circuits Pa), got: {events:?}"
+    );
+}
+
+#[test]
+fn xtsmgraphics_unknown_pi_pa3_replies_status1() {
+    let (mut t, listener) = term_with_recorder();
+    feed(&mut t, b"\x1b[?99;3;100S");
+
+    let events = listener.events();
+    assert!(
+        events.iter().any(|e| e == "PtyWrite(\x1b[?99;1S)"),
+        "unknown Pi Pa=3 (set) should reply ?99;1S — Pv ignored, got: {events:?}"
+    );
+}
+
+#[test]
+fn xtsmgraphics_unknown_pi_pa4_replies_status1() {
+    let (mut t, listener) = term_with_recorder();
+    feed(&mut t, b"\x1b[?99;4;0S");
+
+    let events = listener.events();
+    assert!(
+        events.iter().any(|e| e == "PtyWrite(\x1b[?99;1S)"),
+        "unknown Pi Pa=4 should reply ?99;1S, got: {events:?}"
+    );
+}
+
+#[test]
+fn xtsmgraphics_unknown_pi_unknown_pa_replies_status1() {
+    // Outer-match precedence: unknown Pi outranks unknown Pa.
+    let (mut t, listener) = term_with_recorder();
+    feed(&mut t, b"\x1b[?99;99;0S");
+
+    let events = listener.events();
+    assert!(
+        events.iter().any(|e| e == "PtyWrite(\x1b[?99;1S)"),
+        "unknown Pi + unknown Pa should reply ?99;1S (Pi outranks Pa), got: {events:?}"
+    );
+}
+
+// --- RIS-reset regression pin ---
+
+#[test]
+fn xtsmgraphics_ris_resets_color_register_count_to_default() {
+    // RIS (`ESC c`) → `esc_reset_state` MUST reset
+    // `Term::color_register_count` to `COLOR_REGISTERS_MAX` (256).
+    // Without the reset wiring, this test fails with `?1;0;100S` after
+    // RIS — indicating the field was not added to the canonical reset
+    // path.
+    let (mut t, listener) = term_with_recorder();
+    feed(&mut t, b"\x1b[?1;3;100S"); // set to 100
+    feed(&mut t, b"\x1bc"); // RIS — full reset
+    feed(&mut t, b"\x1b[?1;1;0S"); // read
+
+    let events = listener.events();
+    // After RIS, the Pa=1 read MUST reflect 256 (default), NOT 100.
+    assert!(
+        events
+            .iter()
+            .filter(|e| **e == "PtyWrite(\x1b[?1;0;256S)")
+            .count()
+            >= 1,
+        "Pa=1 read after RIS should reply ?1;0;256S (default restored), got: {events:?}"
+    );
+    // Negative pin: the post-RIS read MUST NOT reflect the pre-RIS set value.
+    let post_ris_set_value = events
+        .iter()
+        .filter(|e| **e == "PtyWrite(\x1b[?1;0;100S)")
+        .count();
+    assert_eq!(
+        post_ris_set_value, 1,
+        "should be exactly one ?1;0;100S (the original set's reply), not two — RIS leaked the set value, events: {events:?}"
+    );
+}
+
+// --- Arity edge cases (silent drop per xterm `charproc.c:5159`) ---
+//
+// xterm checks `nparam != 3` and silently drops malformed-arity
+// queries — no reply is constructed. The vte dispatch arm enforces
+// this; the handler tests verify no `\x1b[?...S` reply lands on the
+// effect sink for malformed arity inputs.
+
+#[test]
+fn xtsmgraphics_empty_params_emits_no_reply() {
+    let (mut t, listener) = term_with_recorder();
+    feed(&mut t, b"\x1b[?S");
+
+    let events = listener.events();
+    let xtsmgraphics_replies: Vec<_> = events
+        .iter()
+        .filter(|e| e.starts_with("PtyWrite(\x1b[?") && e.ends_with("S)"))
+        .collect();
+    assert!(
+        xtsmgraphics_replies.is_empty(),
+        "empty params should emit no XTSMGRAPHICS reply, got: {xtsmgraphics_replies:?}"
+    );
+}
+
+#[test]
+fn xtsmgraphics_one_param_emits_no_reply() {
+    let (mut t, listener) = term_with_recorder();
+    feed(&mut t, b"\x1b[?1S");
+
+    let events = listener.events();
+    let xtsmgraphics_replies: Vec<_> = events
+        .iter()
+        .filter(|e| e.starts_with("PtyWrite(\x1b[?") && e.ends_with("S)"))
+        .collect();
+    assert!(
+        xtsmgraphics_replies.is_empty(),
+        "one param should emit no XTSMGRAPHICS reply, got: {xtsmgraphics_replies:?}"
+    );
+}
+
+#[test]
+fn xtsmgraphics_two_params_emits_no_reply() {
+    let (mut t, listener) = term_with_recorder();
+    feed(&mut t, b"\x1b[?1;1S");
+
+    let events = listener.events();
+    let xtsmgraphics_replies: Vec<_> = events
+        .iter()
+        .filter(|e| e.starts_with("PtyWrite(\x1b[?") && e.ends_with("S)"))
+        .collect();
+    assert!(
+        xtsmgraphics_replies.is_empty(),
+        "two params should emit no XTSMGRAPHICS reply, got: {xtsmgraphics_replies:?}"
+    );
+}
+
+#[test]
+fn xtsmgraphics_four_params_emits_no_reply() {
+    let (mut t, listener) = term_with_recorder();
+    feed(&mut t, b"\x1b[?1;1;0;0S");
+
+    let events = listener.events();
+    let xtsmgraphics_replies: Vec<_> = events
+        .iter()
+        .filter(|e| e.starts_with("PtyWrite(\x1b[?") && e.ends_with("S)"))
+        .collect();
+    assert!(
+        xtsmgraphics_replies.is_empty(),
+        "four params should emit no XTSMGRAPHICS reply, got: {xtsmgraphics_replies:?}"
+    );
+}
+
+#[test]
+fn xtsmgraphics_subparam_in_first_param_uses_first_subvalue() {
+    // 3 top-level params (the first has subparam `:2` which is silently
+    // ignored by `next_param_or`). vte's `params.iter().count()` counts
+    // PARAMETER GROUPS, so this passes the arity check (count=3).
+    // `next_param_or` takes the first sub-value per param, so this
+    // dispatches as `graphics_attribute(1, 1, 0)`.
+    let (mut t, listener) = term_with_recorder();
+    feed(&mut t, b"\x1b[?1:2;1;0S");
+
+    let events = listener.events();
+    assert!(
+        events.iter().any(|e| e == "PtyWrite(\x1b[?1;0;256S)"),
+        "subparam in first should dispatch as Pi=1 Pa=1 → ?1;0;256S, got: {events:?}"
+    );
+}
+
+// --- Dispatch isolation negative pins ---
+
+#[test]
+fn csi_ps_s_without_question_mark_invokes_scroll_up_no_xtsmgraphics_reply() {
+    // Critical regression guard: ('S', []) (scroll-up) and ('S', [b'?'])
+    // (XTSMGRAPHICS) must dispatch correctly without bleeding into each
+    // other. SU `\x1b[3S` must NOT trigger a GraphicsAttributeReport.
+    let (mut t, listener) = term_with_recorder();
+    feed(&mut t, b"\x1b[3S");
+
+    let events = listener.events();
+    let xtsmgraphics_replies: Vec<_> = events
+        .iter()
+        .filter(|e| e.starts_with("PtyWrite(\x1b[?") && e.ends_with("S)"))
+        .collect();
+    assert!(
+        xtsmgraphics_replies.is_empty(),
+        "plain SU should not emit any XTSMGRAPHICS reply, got: {xtsmgraphics_replies:?}"
+    );
+}
+
+#[test]
+fn csi_question_pi_pa_pv_s_invokes_xtsmgraphics_no_scroll() {
+    // Inverse pin: `\x1b[?1;1;0S` MUST emit a GraphicsAttributeReport
+    // and MUST NOT trigger SU. We verify the reply landed; the absence
+    // of scroll is implicit (SU emits no PTY reply).
+    let (mut t, listener) = term_with_recorder();
+    feed(&mut t, b"\x1b[?1;1;0S");
+
+    let events = listener.events();
+    assert!(
+        events.iter().any(|e| e == "PtyWrite(\x1b[?1;0;256S)"),
+        "XTSMGRAPHICS should emit a reply, got: {events:?}"
+    );
+}
+
+// --- PtyWriteKind sync pin (registration sync point) ---
+
+#[test]
+fn xtsmgraphics_reply_uses_graphics_attribute_report_kind() {
+    // Verifies the new `PtyWriteKind::GraphicsAttributeReport` variant
+    // is wired correctly and not silently fallback to a peer (e.g.,
+    // DeviceAttribute or Other). Uses `term_with_effect_sink` to
+    // inspect raw `Effect` variants — `RecordingListener`'s legacy
+    // string format drops the kind.
+    use crate::effect::sink::EffectSink;
+    let mut t = term_with_effect_sink();
+    feed(&mut t, b"\x1b[?1;1;0S");
+
+    let mut effects = Vec::new();
+    t.effect_sink().drain_into(&mut effects);
+
+    let xtsm_writes: Vec<_> = effects
+        .iter()
+        .filter_map(|e| match e {
+            Effect::Pty(PtyEffect::Write { bytes, kind }) => {
+                let s = String::from_utf8_lossy(bytes);
+                if s.starts_with("\x1b[?1;0;") && s.ends_with('S') {
+                    Some(*kind)
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        })
+        .collect();
+
+    assert!(
+        !xtsm_writes.is_empty(),
+        "expected at least one XTSMGRAPHICS PtyEffect::Write, got effects: {effects:?}"
+    );
+    assert!(
+        xtsm_writes
+            .iter()
+            .all(|k| *k == PtyWriteKind::GraphicsAttributeReport),
+        "XTSMGRAPHICS replies must use GraphicsAttributeReport kind, got: {xtsm_writes:?}"
+    );
+    // Negative pin: must NOT use DeviceAttribute (which is for DA1/DA2/DA3).
+    assert!(
+        xtsm_writes
+            .iter()
+            .all(|k| *k != PtyWriteKind::DeviceAttribute),
+        "XTSMGRAPHICS must NOT use DeviceAttribute kind, got: {xtsm_writes:?}"
+    );
+}
+
+// --- Image-protocol-disabled gate (3-of-3 reviewer agreement) ---
+//
+// Per xterm `charproc.c:5198-5200` (Pi=1) + `:5226-5227` (Pi=2): when
+// sixel/ReGIS is disabled, success replies downgrade to Ps=3 and drop
+// the Pv field. oriterm's `image_protocol_enabled` field is the
+// canonical sixel-disabled gate (peer pattern at
+// `term/handler/image/sixel.rs:28`, `iterm2.rs:35`,
+// `kitty/mod.rs:61`).
+
+#[test]
+fn xtsmgraphics_pi1_pa1_replies_status3_when_image_protocol_disabled() {
+    let (mut t, listener) = term_with_recorder();
+    t.set_image_protocol_enabled(false);
+    feed(&mut t, b"\x1b[?1;1;0S");
+
+    let events = listener.events();
+    assert!(
+        events.iter().any(|e| e == "PtyWrite(\x1b[?1;3S)"),
+        "Pi=1 Pa=1 with image protocol disabled should reply ?1;3S (no Pv), got: {events:?}"
+    );
+}
+
+#[test]
+fn xtsmgraphics_pi1_pa3_set_replies_status3_when_image_protocol_disabled() {
+    let (mut t, listener) = term_with_recorder();
+    t.set_image_protocol_enabled(false);
+    feed(&mut t, b"\x1b[?1;3;256S");
+
+    let events = listener.events();
+    assert!(
+        events.iter().any(|e| e == "PtyWrite(\x1b[?1;3S)"),
+        "Pi=1 Pa=3 set with image protocol disabled should reply ?1;3S (set is gated), got: {events:?}"
+    );
+}
+
+#[test]
+fn xtsmgraphics_pi2_pa1_replies_status3_when_image_protocol_disabled() {
+    let (mut t, listener) = term_with_recorder();
+    t.set_image_protocol_enabled(false);
+    feed(&mut t, b"\x1b[?2;1;0S");
+
+    let events = listener.events();
+    assert!(
+        events.iter().any(|e| e == "PtyWrite(\x1b[?2;3S)"),
+        "Pi=2 Pa=1 with image protocol disabled should reply ?2;3S (no W;H), got: {events:?}"
+    );
+}
+
+#[test]
+fn xtsmgraphics_pi2_pa4_replies_status3_when_image_protocol_disabled() {
+    let (mut t, listener) = term_with_recorder();
+    t.set_image_protocol_enabled(false);
+    feed(&mut t, b"\x1b[?2;4;0S");
+
+    let events = listener.events();
+    assert!(
+        events.iter().any(|e| e == "PtyWrite(\x1b[?2;3S)"),
+        "Pi=2 Pa=4 with image protocol disabled should reply ?2;3S, got: {events:?}"
+    );
+}
+
+#[test]
+fn xtsmgraphics_pi3_unaffected_by_image_protocol_disabled() {
+    // Pi=3 is already always Ps=3 since ReGIS isn't implemented; verify
+    // behavior is the same regardless of `image_protocol_enabled`.
+    let (mut t, listener) = term_with_recorder();
+    t.set_image_protocol_enabled(false);
+    feed(&mut t, b"\x1b[?3;1;0S");
+
+    let events = listener.events();
+    assert!(
+        events.iter().any(|e| e == "PtyWrite(\x1b[?3;3S)"),
+        "Pi=3 with image protocol disabled should still reply ?3;3S, got: {events:?}"
+    );
+}
+
+#[test]
+fn xtsmgraphics_set_image_protocol_enabled_re_enables_replies() {
+    // Toggle true → false → true; verify reply behavior tracks the
+    // gate (idempotency / state-restore).
+    let (mut t, listener) = term_with_recorder();
+    feed(&mut t, b"\x1b[?1;1;0S"); // enabled (default) → ?1;0;256S
+    t.set_image_protocol_enabled(false);
+    feed(&mut t, b"\x1b[?1;1;0S"); // disabled → ?1;3S
+    t.set_image_protocol_enabled(true);
+    feed(&mut t, b"\x1b[?1;1;0S"); // re-enabled → ?1;0;256S
+
+    let events = listener.events();
+    let success_count = events
+        .iter()
+        .filter(|e| **e == "PtyWrite(\x1b[?1;0;256S)")
+        .count();
+    let downgrade_count = events
+        .iter()
+        .filter(|e| **e == "PtyWrite(\x1b[?1;3S)")
+        .count();
+    assert_eq!(
+        success_count, 2,
+        "should be 2 success replies (initial + re-enable), got: {events:?}"
+    );
+    assert_eq!(
+        downgrade_count, 1,
+        "should be 1 downgrade reply (during disabled), got: {events:?}"
+    );
 }

@@ -90,6 +90,9 @@ impl<S: EffectSink> Term<S> {
         self.status_line_type = 0;
         // §09A.6: DECSACE attribute-change extent mode.
         self.ace_mode = crate::term::AceMode::default();
+
+        // BUG-06-022: XTSMGRAPHICS Pi=1 color-register count back to default.
+        self.color_register_count = crate::image::sixel::COLOR_REGISTERS_MAX;
     }
 
     /// DECSTR (CSI ! p): Soft Terminal Reset.

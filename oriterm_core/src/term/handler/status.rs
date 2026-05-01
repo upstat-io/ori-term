@@ -211,6 +211,118 @@ impl<S: EffectSink> Term<S> {
         }));
     }
 
+    /// XTSMGRAPHICS reply per xterm ctlseqs / `charproc.c:5153-5279`.
+    ///
+    /// Reply format: `CSI ? Pi ; Ps [; Pv [; Pv2]] S`. `Pv` fields are
+    /// emitted only on `Ps=0` (success).
+    ///
+    /// - `Pi=1`: number of color registers (single `Pv`).
+    /// - `Pi=2`: sixel graphics geometry (`Pv=width`, `Pv2=height`).
+    /// - `Pi=3`: `ReGIS` graphics geometry — unsupported, always `Ps=3`.
+    ///
+    /// `Pa` semantics:
+    /// - `Pa=1` read, `Pa=2` reset, `Pa=3` set, `Pa=4` read max.
+    /// - `Pi=1 Pa=3` succeeds only when `1 < Pv <= COLOR_REGISTERS_MAX`.
+    /// - `Pi=2 Pa=2/3` always `Ps=3` (xterm refuses geometry mutation).
+    /// - Unknown `Pi` → `Ps=1`; unknown `Pa` → `Ps=2`.
+    /// - When `image_protocol_enabled == false` for `Pi=1` or `Pi=2`,
+    ///   success replies downgrade to `Ps=3` and drop the `Pv` field
+    ///   (xterm `charproc.c:5198-5200` Pi=1 + `:5226-5227` Pi=2 sixel
+    ///   gate).
+    pub(super) fn status_graphics_attribute(&mut self, pi: u16, pa: u16, pv: u16) {
+        let max = crate::image::sixel::COLOR_REGISTERS_MAX;
+        let mut status: u16 = 3;
+        let mut result: Option<u32> = None;
+        let mut result2: Option<u32> = None;
+
+        match pi {
+            1 => match pa {
+                // Pa=1 read: reflect the CURRENT count (may have been
+                // mutated by a prior Pa=3 set).
+                1 => {
+                    status = 0;
+                    result = Some(u32::from(self.color_register_count));
+                }
+                // Pa=2 reset: restore default and reply with new value.
+                2 => {
+                    self.color_register_count = max;
+                    status = 0;
+                    result = Some(u32::from(self.color_register_count));
+                }
+                // Pa=3 set: mutate iff 1 < pv <= MAX, then reply with
+                // the SET state per xterm `charproc.c:5181-5185`.
+                3 => {
+                    if pv > 1 && pv <= max {
+                        self.color_register_count = pv;
+                        status = 0;
+                        result = Some(u32::from(self.color_register_count));
+                    }
+                    // else: status stays 3 (failure)
+                }
+                // Pa=4 read max: always MAX, regardless of any prior set.
+                4 => {
+                    status = 0;
+                    result = Some(u32::from(max));
+                }
+                _ => status = 2,
+            },
+            2 => match pa {
+                // For oriterm, current geometry == max geometry — no
+                // separate max distinct from the current grid. xterm
+                // separates them via `screen->graphics_max_wide`;
+                // oriterm dynamically tracks the current grid pixel size.
+                1 | 4 => {
+                    let grid = self.grid();
+                    status = 0;
+                    result = Some(grid.cols() as u32 * u32::from(self.cell_pixel_width));
+                    result2 = Some(grid.lines() as u32 * u32::from(self.cell_pixel_height));
+                }
+                // Pa=2 reset / Pa=3 set: xterm rejects geometry mutation
+                // (empty block in xterm, status stays 3).
+                2 | 3 => {}
+                _ => status = 2,
+            },
+            3 => match pa {
+                1..=4 => {} // ReGIS unsupported regardless of Pa.
+                _ => status = 2,
+            },
+            _ => status = 1,
+        }
+
+        // Capability gate per xterm `charproc.c:5198-5200` (Pi=1)
+        // + `:5226-5227` (Pi=2): when sixel/ReGIS is disabled, downgrade
+        // success replies to Ps=3 and drop the Pv field. oriterm gates
+        // all image-protocol handling on `image_protocol_enabled` (peer
+        // pattern at `term/handler/image/sixel.rs:28`,
+        // `iterm2.rs:35`, `kitty/mod.rs:61`). Pi=3 is unaffected
+        // (already always status=3 since ReGIS isn't implemented).
+        if status == 0 && (pi == 1 || pi == 2) && !self.image_protocol_enabled {
+            status = 3;
+            result = None;
+            result2 = None;
+        }
+
+        debug_assert!(
+            status == 0 || (result.is_none() && result2.is_none()),
+            "non-zero status MUST NOT carry Pv fields per xterm `charproc.c:5267-5271`"
+        );
+
+        let response = if status == 0 {
+            match (result, result2) {
+                (Some(r1), Some(r2)) => format!("\x1b[?{pi};{status};{r1};{r2}S"),
+                (Some(r1), None) => format!("\x1b[?{pi};{status};{r1}S"),
+                _ => format!("\x1b[?{pi};{status}S"),
+            }
+        } else {
+            format!("\x1b[?{pi};{status}S")
+        };
+
+        self.effect_sink.push(Effect::Pty(PtyEffect::Write {
+            bytes: response.into_bytes(),
+            kind: PtyWriteKind::GraphicsAttributeReport,
+        }));
+    }
+
     /// DECRQSS: Request Status String.
     ///
     /// Responds to DCS $ q ... ST queries. Each query type requests the

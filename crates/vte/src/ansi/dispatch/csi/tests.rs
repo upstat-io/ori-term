@@ -49,6 +49,7 @@ enum Call {
     Decssdt(u16),
     Decic(u16),
     Decdc(u16),
+    GraphicsAttribute { pi: u16, pa: u16, pv: u16 },
 }
 
 #[derive(Default)]
@@ -123,6 +124,9 @@ impl Handler for RecordingHandler {
     }
     fn decdc(&mut self, count: u16) {
         self.calls.push(Call::Decdc(count));
+    }
+    fn graphics_attribute(&mut self, pi: u16, pa: u16, pv: u16) {
+        self.calls.push(Call::GraphicsAttribute { pi, pa, pv });
     }
 }
 
@@ -362,5 +366,78 @@ fn decdc_dispatches_count() {
 #[test]
 fn decdc_unhandled_with_other_intermediate() {
     let calls = run(b"\x1b[3%~");
+    assert!(calls.is_empty());
+}
+
+// ── XTSMGRAPHICS (CSI ? Pi ; Pa ; Pv S) ─────────────────────────────
+//
+// xterm graphics-attribute query. Dispatch arm `('S', [b'?'])` routes
+// 3-param queries to `Handler::graphics_attribute(pi, pa, pv)`.
+// Malformed-arity queries are silently dropped per xterm
+// `charproc.c:5159` (`if nparam != 3`).
+//
+// CRITICAL invariant: arity check uses `params.iter().count()` (groups)
+// not `params.len()` (groups + subparams). See dispatch/csi/mod.rs.
+
+#[test]
+fn csi_question_xtsmgraphics_pi1_pa1_dispatches_graphics_attribute_1_1_0() {
+    let calls = run(b"\x1b[?1;1;0S");
+    assert_eq!(calls, vec![Call::GraphicsAttribute { pi: 1, pa: 1, pv: 0 }]);
+}
+
+#[test]
+fn csi_question_xtsmgraphics_pi2_pa3_dispatches_graphics_attribute_2_3_256() {
+    let calls = run(b"\x1b[?2;3;256S");
+    assert_eq!(
+        calls,
+        vec![Call::GraphicsAttribute { pi: 2, pa: 3, pv: 256 }]
+    );
+}
+
+#[test]
+fn csi_question_xtsmgraphics_subparam_in_first_uses_first_subvalue() {
+    // 3 top-level params (first has subparam `:2`). `next_param_or`
+    // takes the first sub-value; subsequent subs are ignored.
+    let calls = run(b"\x1b[?1:2;1;0S");
+    assert_eq!(calls, vec![Call::GraphicsAttribute { pi: 1, pa: 1, pv: 0 }]);
+}
+
+#[test]
+fn csi_question_xtsmgraphics_one_param_falls_through_unhandled() {
+    let calls = run(b"\x1b[?1S");
+    assert!(calls.is_empty());
+}
+
+#[test]
+fn csi_question_xtsmgraphics_two_params_falls_through_unhandled() {
+    let calls = run(b"\x1b[?1;1S");
+    assert!(calls.is_empty());
+}
+
+#[test]
+fn csi_question_xtsmgraphics_four_params_falls_through_unhandled() {
+    let calls = run(b"\x1b[?1;1;0;0S");
+    assert!(calls.is_empty());
+}
+
+#[test]
+fn csi_question_with_subparam_arity_check_uses_iter_count_not_len() {
+    // `\x1b[?1:2:3;1;0S` has 1 top-level param (with 2 subparams),
+    // then 2 more top-level params = 3 groups total. `params.len()`
+    // would return 5 (all values), incorrectly rejecting this query.
+    // `params.iter().count()` returns 3, correctly dispatching.
+    let calls = run(b"\x1b[?1:2:3;1;0S");
+    assert_eq!(
+        calls,
+        vec![Call::GraphicsAttribute { pi: 1, pa: 1, pv: 0 }],
+        "arity check must use iter().count() (groups), not len() (groups+subparams)"
+    );
+}
+
+#[test]
+fn csi_other_intermediate_s_does_not_dispatch_graphics_attribute() {
+    // `\x1b[$S` has intermediate `$` (not `?`) — must NOT dispatch
+    // graphics_attribute.
+    let calls = run(b"\x1b[$S");
     assert!(calls.is_empty());
 }
