@@ -1,7 +1,7 @@
 //! Tests for the `tuple` module: canonical tuple parsing,
 //! `Tuple` construction and equality, and `Category` display.
 
-use super::{Category, Tuple, TupleSig, canonical_tuple};
+use super::{Category, Tuple, TupleSig, canonical_tuple, csi_params_placeholder};
 
 // -------- Positive pins: canonical_tuple -----------------------------------
 
@@ -190,6 +190,33 @@ fn signature_preserves_csi_final_byte() {
     let t = Tuple::new(Category::Csi, Vec::<u8>::new(), "Ps", "H");
     let sig: TupleSig = t.signature();
     assert_eq!(sig.2, "H");
+}
+
+// -------- csi_params_placeholder SSOT helper -------------------------------
+//
+// `csi_params_placeholder` is the canonical home for CSI arity-driven
+// placeholder normalization (mirrors `osc_placeholder` for OSC). Capture
+// extraction calls it via `csi_params_placeholder(params.len())`. These
+// pins guard the contract for arity 0 (`-`), arity N>=1 (`Ps;Ps;...;Ps`).
+
+#[test]
+fn csi_params_placeholder_arity_zero_returns_dash() {
+    assert_eq!(csi_params_placeholder(0), "-");
+}
+
+#[test]
+fn csi_params_placeholder_arity_one_returns_ps() {
+    assert_eq!(csi_params_placeholder(1), "Ps");
+}
+
+#[test]
+fn csi_params_placeholder_arity_two_returns_ps_semicolon_ps() {
+    assert_eq!(csi_params_placeholder(2), "Ps;Ps");
+}
+
+#[test]
+fn csi_params_placeholder_arity_three_returns_three_ps() {
+    assert_eq!(csi_params_placeholder(3), "Ps;Ps;Ps");
 }
 
 // -------- Self-verifying completeness counter ------------------------------

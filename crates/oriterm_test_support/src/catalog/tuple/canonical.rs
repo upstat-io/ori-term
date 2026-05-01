@@ -178,6 +178,28 @@ fn parse_osc(rest: &str) -> Option<Tuple> {
     ))
 }
 
+/// Normalize a CSI numeric-parameter list to its canonical placeholder string.
+///
+/// Mirrors [`osc_placeholder`] as the SSOT for parameter-shape normalization:
+/// catalog's `parse_csi` (via `normalize_csi_params`) and capture's
+/// `csi_dispatch` both produce arity-driven placeholders; this helper
+/// keeps the rule in one place.
+///
+/// The signature takes `arity: usize` so the `tuple` submodule does NOT
+/// pull in `vte::Params` (call sites pass `params.len()`). Catalog's
+/// `normalize_csi_params` works on tokens, not arity, so it stays
+/// separate — two input shapes, same output format, same canonical home.
+///
+/// - `arity == 0` → `"-"` (no parameters).
+/// - `arity == N` → `"Ps;Ps;...;Ps"` joined by `;`.
+pub fn csi_params_placeholder(arity: usize) -> String {
+    if arity == 0 {
+        "-".to_string()
+    } else {
+        vec!["Ps"; arity].join(";")
+    }
+}
+
 /// Normalize an OSC payload part to a canonical placeholder string.
 ///
 /// This is the SSOT for OSC parameter normalization — used by both

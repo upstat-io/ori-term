@@ -28,7 +28,7 @@ use std::path::{Path, PathBuf};
 
 use vte::Parser;
 
-use super::tuple::{Category, Tuple, osc_placeholder};
+use super::tuple::{Category, Tuple, csi_params_placeholder, osc_placeholder};
 
 /// Capture-extraction error.
 #[derive(Debug)]
@@ -175,7 +175,7 @@ impl vte::Perform for TupleSink {
         _ignore: bool,
         action: char,
     ) {
-        let params_placeholder = csi_params_placeholder(params);
+        let params_placeholder = csi_params_placeholder(params.len());
         self.bump(Tuple::new(
             Category::Csi,
             intermediates.to_vec(),
@@ -224,10 +224,3 @@ impl vte::Perform for TupleSink {
     }
 }
 
-fn csi_params_placeholder(params: &vte::Params) -> String {
-    if params.is_empty() {
-        "-".to_string()
-    } else {
-        vec!["Ps"; params.len()].join(";")
-    }
-}
