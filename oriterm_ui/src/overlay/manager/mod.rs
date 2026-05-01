@@ -5,6 +5,7 @@
 //! layout after the main tree, drawing after the main tree.
 
 pub(in crate::overlay) mod event_routing;
+pub(in crate::overlay) mod key_dispatch;
 mod lifecycle;
 
 use std::time::Duration;

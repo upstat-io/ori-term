@@ -18,7 +18,7 @@ use crate::controllers::{ControllerRequests, DispatchOutput};
 use crate::geometry::{Point, Rect};
 use crate::input::dispatch::tree::{TreeDispatchResult, dispatch_to_widget_tree};
 use crate::input::{
-    HitEntry, InputEvent, Key, KeyEvent, MouseEvent, MouseEventKind, WidgetHitTestResult,
+    HitEntry, InputEvent, MouseEvent, MouseEventKind, WidgetHitTestResult,
     layout_hit_test_path, plan_propagation,
 };
 use crate::layout::LayoutNode;
@@ -40,7 +40,7 @@ use super::{OverlayEventResult, OverlayKind, OverlayManager, OverlayResponse};
     clippy::too_many_arguments,
     reason = "pipeline dispatch: widget, event, rect, layout, captured, now"
 )]
-fn deliver_via_pipeline(
+pub(in crate::overlay::manager) fn deliver_via_pipeline(
     widget: &mut dyn Widget,
     event: &InputEvent,
     overlay_rect: Rect,
@@ -337,79 +337,6 @@ impl OverlayManager {
         OverlayEventResult::Delivered {
             overlay_id: id,
             response,
-        }
-    }
-
-    /// Routes a key event through the overlay stack.
-    ///
-    /// Escape dismisses the topmost overlay with a fade-out animation.
-    /// Modal overlays never pass through. The `focused_widget` parameter
-    /// indicates which widget currently has keyboard focus (from the app
-    /// layer's `FocusManager`).
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "event routing: event, measurer, theme, focus, tree, animator, now"
-    )]
-    pub fn process_key_event(
-        &mut self,
-        event: KeyEvent,
-        _measurer: &dyn crate::widgets::TextMeasurer,
-        _theme: &UiTheme,
-        _focused_widget: Option<WidgetId>,
-        tree: &mut LayerTree,
-        animator: &mut LayerAnimator,
-        now: Instant,
-    ) -> OverlayEventResult {
-        if self.overlays.is_empty() {
-            return OverlayEventResult::PassThrough;
-        }
-
-        // Escape always dismisses topmost.
-        if event.key == Key::Escape {
-            let id = self
-                .begin_dismiss_topmost(tree, animator, now)
-                .expect("checked non-empty above");
-            return OverlayEventResult::Dismissed(id);
-        }
-
-        let topmost = self.overlays.last_mut().expect("checked non-empty above");
-        let id = topmost.id;
-        let is_modal = topmost.kind == OverlayKind::Modal;
-        let input_event = InputEvent::from_key_event(event);
-        let pipeline_result = deliver_via_pipeline(
-            topmost.widget.as_mut(),
-            &input_event,
-            topmost.computed_rect,
-            topmost.layout_node.as_ref(),
-            false,
-            now,
-        );
-
-        let (is_handled, response) = match pipeline_result {
-            Some((output, _source)) => {
-                let handled = output.handled || !output.actions.is_empty();
-                let resp = OverlayResponse {
-                    action: output.actions.into_iter().next(),
-                    handled: output.handled,
-                };
-                (handled, resp)
-            }
-            None => (
-                false,
-                OverlayResponse {
-                    action: None,
-                    handled: false,
-                },
-            ),
-        };
-
-        if is_handled || is_modal {
-            OverlayEventResult::Delivered {
-                overlay_id: id,
-                response,
-            }
-        } else {
-            OverlayEventResult::PassThrough
         }
     }
 

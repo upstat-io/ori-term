@@ -99,11 +99,12 @@ impl Keymap {
     // and each action is a different concrete type — monomorphization prevents
     // unifying them in a single `vec![]` expression.
     pub fn defaults() -> Self {
-        let mut b = Vec::with_capacity(22);
+        let mut b = Vec::with_capacity(26);
         Self::push_button_bindings(&mut b);
         Self::push_focus_bindings(&mut b);
         Self::push_list_bindings(&mut b, "Dropdown");
         Self::push_list_bindings(&mut b, "Menu");
+        Self::push_searchable_menu_bindings(&mut b);
         Self::push_dialog_bindings(&mut b);
         Self::push_slider_bindings(&mut b);
         Self { bindings: b }
@@ -222,6 +223,26 @@ impl Keymap {
             Dismiss,
             Some(ctx),
         ));
+    }
+
+    // Searchable Menu navigation — same actions as `Menu` but **without**
+    // `Space` so printable filter input reaches `MenuWidget::on_input` for
+    // the searchable popup's filter-character handling. See BUG-03-003.
+    fn push_searchable_menu_bindings(b: &mut Vec<KeyBinding>) {
+        let m = Modifiers::NONE;
+        let ctx = Some("MenuSearchable");
+        b.push(KeyBinding::new(
+            Keystroke::new(Key::ArrowDown, m),
+            NavigateDown,
+            ctx,
+        ));
+        b.push(KeyBinding::new(
+            Keystroke::new(Key::ArrowUp, m),
+            NavigateUp,
+            ctx,
+        ));
+        b.push(KeyBinding::new(Keystroke::new(Key::Enter, m), Confirm, ctx));
+        b.push(KeyBinding::new(Keystroke::new(Key::Escape, m), Dismiss, ctx));
     }
 
     fn push_dialog_bindings(b: &mut Vec<KeyBinding>) {

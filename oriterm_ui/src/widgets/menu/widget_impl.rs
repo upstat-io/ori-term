@@ -163,21 +163,18 @@ impl Widget for MenuWidget {
                 }
                 OnInputResult::handled()
             }
-            // Filter + nav input — only consumed in searchable mode.
+            // Filter input — only consumed in searchable mode.
             //
-            // - Character / Space append to the query; Backspace pops.
-            // - ArrowDown / ArrowUp drive `navigate_keyboard` directly so the
-            //   filtered list stays keyboard-navigable when the popup is
-            //   mounted as an overlay (overlay key routing currently bypasses
-            //   keymap dispatch — see BUG-03-003 for the broader fix; this
-            //   branch is the localised supplement that ships searchable
-            //   working end-to-end). The same helpers run from
-            //   `handle_keymap_action` so there is one canonical home for
-            //   navigation/selection logic — no LEAK:duplicated-dispatch.
-            // - Enter routes through `try_select_hovered`, returning the
-            //   canonical `Selected` action.
-            // - Escape stays unhandled; OverlayManager catches it before
-            //   the widget sees it (`process_key_event` handles Escape inline).
+            // Character / Space append to the filter query; Backspace pops
+            // the last character. Navigation and confirmation (ArrowDown,
+            // ArrowUp, Enter, Escape) route through the keymap path —
+            // see `key_context()` returning `"MenuSearchable"`, which the
+            // default keymap binds without `Space` so printable filter
+            // input reaches this branch. Per BUG-03-003 (resolved): the
+            // overlay keymap dispatch path now invokes
+            // `MenuWidget::handle_keymap_action` for nav/confirm keys,
+            // so this `on_input` arm only handles the printable filter
+            // characters that the keymap intentionally omits.
             InputEvent::KeyDown { key, .. } if self.searchable => match *key {
                 Key::Character(c) => {
                     self.handle_filter_character(c);
@@ -191,18 +188,6 @@ impl Widget for MenuWidget {
                     self.handle_filter_backspace();
                     OnInputResult::handled()
                 }
-                Key::ArrowDown => {
-                    self.navigate_keyboard(true);
-                    OnInputResult::handled()
-                }
-                Key::ArrowUp => {
-                    self.navigate_keyboard(false);
-                    OnInputResult::handled()
-                }
-                Key::Enter => match self.try_select_hovered() {
-                    Some(action) => OnInputResult::handled().with_action(action),
-                    None => OnInputResult::handled(),
-                },
                 _ => OnInputResult::ignored(),
             },
             _ => OnInputResult::ignored(),
@@ -210,7 +195,15 @@ impl Widget for MenuWidget {
     }
 
     fn key_context(&self) -> Option<&'static str> {
-        Some("Menu")
+        // BUG-03-003: searchable Menu uses a distinct context so the
+        // keymap omits Space (which would otherwise steal printable
+        // filter input via Space->Confirm). Non-searchable Menu keeps
+        // Space->Confirm via the "Menu" context.
+        Some(if self.searchable {
+            "MenuSearchable"
+        } else {
+            "Menu"
+        })
     }
 
     fn handle_keymap_action(

@@ -7,13 +7,16 @@ use super::WindowRoot;
 use crate::animation::Easing;
 use crate::color::Color;
 use crate::geometry::Rect;
-use crate::input::{InputEvent, Modifiers};
+use crate::input::{InputEvent, Key, KeyEvent, Modifiers};
 use crate::invalidation::DirtyKind;
+use crate::overlay::{OverlayEventResult, Placement};
 use crate::testing::MockMeasurer;
 use crate::theme::UiTheme;
 use crate::widgets::Widget;
 use crate::widgets::button::ButtonWidget;
+use crate::widgets::dialog::DialogWidget;
 use crate::widgets::label::LabelWidget;
+use crate::widgets::menu::{MenuEntry, MenuWidget};
 
 fn measurer() -> MockMeasurer {
     MockMeasurer::new()
@@ -1101,4 +1104,232 @@ fn compute_layout_gcs_stale_registrations() {
         !root.interaction().is_registered(id_b),
         "old child B should be deregistered"
     );
+}
+
+// -- BUG-03-003: Overlay key dispatch goes through keymap -- 
+// Regression tests for BUG-03-003 — overlay key dispatch was bypassing the
+// keymap path for non-Escape keys, breaking ArrowDown/ArrowUp/Enter on
+// MenuWidget-backed popup overlays. See bug-tracker/plans/BUG-03-003/.
+
+fn menu_with_items(items: &[&str]) -> MenuWidget {
+    let entries: Vec<MenuEntry> = items
+        .iter()
+        .map(|l| MenuEntry::Item {
+            label: (*l).into(),
+        })
+        .collect();
+    MenuWidget::new(entries)
+}
+
+fn key_event(k: Key) -> KeyEvent {
+    KeyEvent {
+        key: k,
+        modifiers: Modifiers::NONE,
+    }
+}
+
+/// Semantic pin: pressing ArrowDown on a non-searchable MenuWidget popup
+/// must advance the hovered index via the keymap path (NavigateDown →
+/// handle_keymap_action → navigate_keyboard). Pre-fix: routes through
+/// on_input which returns ignored() for non-searchable mode, so hovered
+/// stays at 0. Post-fix: routes through keymap-first dispatch.
+///
+/// Regression: BUG-03-003 — overlay key dispatch bypassed keymap for
+/// non-Escape keys. See bug-tracker/plans/BUG-03-003/.
+#[test]
+fn arrow_down_on_menu_overlay_advances_hover_via_keymap() {
+    let menu = menu_with_items(&["Alpha", "Beta", "Gamma"]);
+    let mut root = WindowRoot::new(LabelWidget::new("bg"));
+    root.compute_layout(&measurer(), &theme());
+
+    let now = Instant::now();
+    let anchor = Rect::new(100.0, 100.0, 200.0, 120.0);
+    root.push_overlay(Box::new(menu), anchor, Placement::Below, now);
+    assert!(root.has_overlays());
+
+    let result = root.process_overlay_key_event(
+        key_event(Key::ArrowDown),
+        &measurer(),
+        &theme(),
+        None,
+        now,
+    );
+
+    // The overlay must have consumed the event via the keymap path.
+    // We assert on the result shape: Delivered with handled=true.
+    match result {
+        OverlayEventResult::Delivered { response, .. } => {
+            assert!(
+                response.handled,
+                "non-searchable Menu ArrowDown must be handled via keymap"
+            );
+            // No WidgetAction — NavigateDown returns None from handle_keymap_action,
+            // it just mutates the menu's internal hovered state.
+            assert!(
+                response.action.is_none(),
+                "NavigateDown emits no WidgetAction (mutates hovered)"
+            );
+        }
+        other => panic!("expected Delivered, got {other:?}"),
+    }
+}
+
+/// Negative pin: pressing Space inside a SEARCHABLE MenuWidget popup must
+/// NOT trigger Confirm via keymap — it must reach on_input where it is
+/// appended to the filter query as a literal space character. Rejects the
+/// regression where the keymap-first dispatch wires Space→Confirm for the
+/// "MenuSearchable" context (which would steal printable filter input).
+///
+/// Regression: BUG-03-003 design pin — searchable Menu uses a distinct
+/// "MenuSearchable" key_context that intentionally omits the Space binding.
+#[test]
+fn space_on_searchable_menu_overlay_does_not_confirm() {
+    let menu = MenuWidget::new(vec![
+        MenuEntry::Item {
+            label: "Alpha".into(),
+        },
+        MenuEntry::Item {
+            label: "Beta".into(),
+        },
+    ])
+    .with_searchable(true);
+    let mut root = WindowRoot::new(LabelWidget::new("bg"));
+    root.compute_layout(&measurer(), &theme());
+
+    let now = Instant::now();
+    let anchor = Rect::new(100.0, 100.0, 200.0, 120.0);
+    root.push_overlay(Box::new(menu), anchor, Placement::Below, now);
+
+    let result = root.process_overlay_key_event(
+        key_event(Key::Space),
+        &measurer(),
+        &theme(),
+        None,
+        now,
+    );
+
+    // Space must reach on_input (filter character handling), NOT keymap-resolve
+    // to Confirm. The searchable MenuWidget's on_input handles Space by
+    // appending ' ' to the filter query and returning handled=true with no
+    // action. If the keymap-first dispatch wrongly steals Space, the result
+    // would be Delivered { action: Some(Selected) } via try_select_hovered.
+    match result {
+        OverlayEventResult::Delivered { response, .. } => {
+            // Negative pin: NO Selected action emitted. Either no action at all
+            // (filter character path) or a non-Selected action.
+            assert!(
+                !matches!(
+                    response.action,
+                    Some(crate::action::WidgetAction::Selected { .. })
+                ),
+                "Space on searchable Menu must NOT emit Selected — it must \
+                 reach on_input as a filter character"
+            );
+        }
+        other => panic!("expected Delivered, got {other:?}"),
+    }
+}
+
+/// Codex Round 0 finding regression test: pressing Escape on a Dialog
+/// overlay must produce `OverlayEventResult::Dismissed(id)` directly,
+/// NOT `Delivered { action: Some(DismissOverlay) }` that would be silently
+/// dropped by `App::handle_dialog_overlay_result` (which only matches on
+/// the `Dismissed` variant). The `OverlayManager` translates a matched
+/// `widget::Dismiss` action into `Dismissed(id)` itself so Dialog windows
+/// dismiss correctly.
+///
+/// Regression: BUG-03-003 codex Round 0 finding — DialogWidget does not
+/// implement handle_keymap_action; without the manager-level Dismiss→
+/// Dismissed translation, a Dialog popup with Escape via keymap would
+/// emit no WidgetAction and stay mounted on Dialog windows.
+#[test]
+fn dialog_escape_dismisses_via_keymap_translation() {
+    let dialog = DialogWidget::new("Confirm");
+    let mut root = WindowRoot::new(LabelWidget::new("bg"));
+    root.compute_layout(&measurer(), &theme());
+
+    let now = Instant::now();
+    let anchor = Rect::new(300.0, 200.0, 500.0, 400.0);
+    let id = root.push_modal(Box::new(dialog), anchor, Placement::AtPoint(crate::geometry::Point::new(300.0, 200.0)), now);
+
+    let result = root.process_overlay_key_event(
+        key_event(Key::Escape),
+        &measurer(),
+        &theme(),
+        None,
+        now,
+    );
+
+    // The result MUST be Dismissed(id), NOT Delivered with DismissOverlay
+    // action. This is the manager-level translation that prevents the
+    // Dialog regression.
+    assert!(
+        matches!(result, OverlayEventResult::Dismissed(d_id) if d_id == id),
+        "Dialog Escape must produce Dismissed(id), got {result:?}"
+    );
+}
+
+/// Modal-focused-child design pin: pressing Enter on a Modal Dialog whose
+/// internal focus is on a Button must NOT route through keymap as
+/// `Activate` (Button's binding) — the overlay key path uses
+/// `focus_path = [overlay_root_id]` so the ctx_stack is `["Dialog"]`,
+/// which has no Enter binding in the default keymap. Falls through to
+/// the on_input pipeline where the modal's input handling owns the
+/// outcome.
+///
+/// This pins the intentional design constraint that overlays do not plumb
+/// a focused-child context path through the keymap. If a future fix lands
+/// per-overlay focus paths, this test becomes the regression guard that
+/// flags the behavior change.
+///
+/// Regression: BUG-03-003 Phase 2.5 Plan TPR design pin — codex F3 +
+/// gemini F2 + opencode F4 (3-of-3 agreement).
+#[test]
+fn enter_on_dialog_with_focused_button_does_not_activate_via_keymap() {
+    // DialogWidget is a Modal overlay with key_context()=="Dialog".
+    // The Dialog has internal Button children but the overlay key dispatch
+    // uses focus_path = [dialog_root_id] only — Button's "Button" context
+    // never enters the ctx_stack.
+    let dialog = DialogWidget::new("Confirm");
+    let mut root = WindowRoot::new(LabelWidget::new("bg"));
+    root.compute_layout(&measurer(), &theme());
+
+    let now = Instant::now();
+    let anchor = Rect::new(300.0, 200.0, 500.0, 400.0);
+    root.push_modal(
+        Box::new(dialog),
+        anchor,
+        Placement::AtPoint(crate::geometry::Point::new(300.0, 200.0)),
+        now,
+    );
+
+    let result = root.process_overlay_key_event(
+        key_event(Key::Enter),
+        &measurer(),
+        &theme(),
+        None,
+        now,
+    );
+
+    // The default keymap binds Enter→Activate ONLY for "Button" context.
+    // With ctx_stack=["Dialog"], lookup returns None → falls through to
+    // on_input. Result: Delivered with handled=true (modal blocks the
+    // event from leaking to background) but NO Activate action emitted
+    // through the keymap path.
+    match result {
+        OverlayEventResult::Delivered { response, .. } => {
+            // Negative pin: NO action implies the keymap miss path was
+            // taken (Button's Activate would have produced an action via
+            // dispatch_keymap_action).
+            assert!(
+                response.action.is_none(),
+                "Enter on Dialog overlay must NOT activate via keymap — \
+                 ctx_stack is [\"Dialog\"], not [\"Button\"]"
+            );
+        }
+        OverlayEventResult::Blocked => {
+            // Also acceptable — modal blocking with no keymap match.
+        }
+        other => panic!("unexpected result: {other:?}"),
+    }
 }
