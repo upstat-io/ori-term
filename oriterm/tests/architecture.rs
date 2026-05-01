@@ -348,31 +348,28 @@ fn move_tab_to_window_helper_remains_removed() {
 ///
 /// Touched-set (10 paths total):
 /// - `oriterm/src/app/mod.rs` (574 → < 500 after relocation)
-/// - 5 existing destinations that absorbed methods (pane_accessors, redraw, mux_pump,
-///   config_reload, mouse_input) — all must stay under 500 after the additions.
-/// - `oriterm/src/app/tab_management/mod.rs` (gains `mod width_lock;` line) — must stay under 500.
-/// - 3 new submodules created by the refactor (focus_accessors, dpi_change,
-///   tab_management/width_lock) — must each be under 500 from creation.
+/// - 5 existing destinations that absorbed methods (`pane_accessors.rs`, `redraw/mod.rs`,
+///   `mux_pump/mod.rs`, `config_reload/mod.rs`, `mouse_input.rs`) — all must stay under
+///   500 after the additions.
+/// - `oriterm/src/app/tab_management/mod.rs` (gains `mod width_lock;` line) — must stay
+///   under 500.
+/// - 3 new submodules created by the refactor (`focus_accessors.rs`, `dpi_change.rs`,
+///   `tab_management/width_lock.rs`) — must each be under 500 from creation.
 ///
 /// Path discovery uses `oriterm_test_support::paths::term_workspace_root()` per
-/// `.claude/rules/test-organization.md §Wrapper/Subrepo Path Discovery`. Files that
-/// do not yet exist on disk (i.e., this test runs before relocation) are skipped
-/// with a SKIP message rather than failing — pre-fix the pin only fails on
-/// `mod.rs` (574); post-fix all 9 paths exist and all must satisfy the size cap.
+/// `.claude/rules/test-organization.md §Wrapper/Subrepo Path Discovery`. Every touched
+/// file MUST exist post-fix — a missing file means the relocation regressed and the
+/// pin fails immediately (no silent skip). The pin's correctness depends on every path
+/// in the touched-set being checked.
 ///
 /// Other over-budget files in `oriterm/src/app/` (`event_loop.rs` 532,
 /// `init/mod.rs` 611, `event_loop_helpers/mod.rs` 504) are tracked separately
-/// (BUG-09-004, BUG-09-005, etc.) and are out of scope for this pin.
+/// (BUG-09-004, BUG-09-005, etc.) and are not in this refactor's touched-set.
 ///
 /// See: bug-tracker/plans/BUG-03-004/
 #[test]
 fn app_module_touched_set_under_500_lines() {
-    const FILE_SIZE_LIMIT: usize = 500;
-
-    let workspace_root = oriterm_test_support::paths::term_workspace_root();
-    let oriterm_src = workspace_root.join("oriterm").join("src");
-
-    // The 9 files this refactor touches. Paths are relative to oriterm/src/.
+    // The 10 files this refactor touches. Paths are relative to oriterm/src/.
     const TOUCHED_FILES: &[&str] = &[
         "app/mod.rs",
         "app/pane_accessors.rs",
@@ -385,15 +382,25 @@ fn app_module_touched_set_under_500_lines() {
         "app/dpi_change.rs",
         "app/tab_management/width_lock.rs",
     ];
+    const FILE_SIZE_LIMIT: usize = 500;
+
+    // Self-check: array length must match the documented touched-set count.
+    assert_eq!(
+        TOUCHED_FILES.len(),
+        10,
+        "self-check: TOUCHED_FILES count must equal 10 (mod.rs + 6 existing destinations + 3 new files)",
+    );
+
+    let workspace_root = oriterm_test_support::paths::term_workspace_root();
+    let oriterm_src = workspace_root.join("oriterm").join("src");
 
     let mut over_budget: Vec<(String, usize)> = Vec::new();
+    let mut missing: Vec<String> = Vec::new();
     let mut checked = 0;
     for rel_path in TOUCHED_FILES {
         let full_path = oriterm_src.join(rel_path);
         if !full_path.exists() {
-            // Pre-fix state: new files don't exist yet. Skip — the size pin is
-            // forward-looking; post-fix all paths exist and the pin enforces ≤ 500.
-            eprintln!("SKIP: {rel_path} not yet created (pre-fix state)");
+            missing.push((*rel_path).to_string());
             continue;
         }
         let body = std::fs::read_to_string(&full_path)
@@ -405,14 +412,19 @@ fn app_module_touched_set_under_500_lines() {
         }
     }
 
-    assert_eq!(
-        TOUCHED_FILES.len(),
-        10,
-        "self-check: TOUCHED_FILES count must equal 10 (mod.rs + 6 existing destinations + 3 new files)",
-    );
+    // Strict enforcement: every touched-set path MUST exist on disk and MUST be
+    // checked. A skip-on-missing would let a regression that deletes one of the
+    // new submodules (e.g., reverting just `focus_accessors.rs`) silently pass.
     assert!(
-        checked > 0,
-        "no files in the touched-set existed — pin would silently pass; check oriterm_test_support::paths::term_workspace_root() resolution",
+        missing.is_empty(),
+        "BUG-03-004 file-size pin: required touched-set files missing on disk: {missing:?}. \
+         See bug-tracker/plans/BUG-03-004/ for the expected file layout.",
+    );
+    assert_eq!(
+        checked,
+        TOUCHED_FILES.len(),
+        "every touched-set path must be checked; checked={checked}, expected={}",
+        TOUCHED_FILES.len(),
     );
 
     if !over_budget.is_empty() {
