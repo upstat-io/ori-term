@@ -10,7 +10,7 @@
 
 use crate::draw::RectStyle;
 use crate::geometry::{Point, Rect};
-use crate::input::{InputEvent, ScrollDelta};
+use crate::input::{InputEvent, Key, ScrollDelta};
 use crate::interaction::LifecycleEvent;
 use crate::layout::LayoutBox;
 use crate::sense::Sense;
@@ -38,6 +38,9 @@ impl Widget for MenuWidget {
         let style = self.text_style();
         let left_margin = self.label_left_margin();
 
+        // Width is computed against the canonical entry list — searchable
+        // mode hides separators at runtime but the popup must still fit any
+        // entry the user could type-filter to.
         let max_label_w: f32 = self
             .entries
             .iter()
@@ -79,14 +82,22 @@ impl Widget for MenuWidget {
 
         self.draw_chrome(ctx, bounds);
 
-        // Clip content area when scrolling.
+        // The query row sits above the scrolling region so it stays pinned
+        // while entries scroll. Draw it before pushing the clip rect.
+        if self.searchable {
+            self.draw_query_row(ctx, bounds);
+        }
+
+        // Clip the entries region when scrolling. The query row is excluded
+        // from the clip so its rendering remains crisp.
         if scrollable {
             let inset = s.border_width;
+            let qh = self.query_row_height();
             let clip = Rect::new(
                 bounds.x() + inset,
-                bounds.y() + inset,
+                bounds.y() + inset + qh,
                 bounds.width() - inset * 2.0,
-                bounds.height() - inset * 2.0,
+                bounds.height() - inset * 2.0 - qh,
             );
             ctx.scene.push_clip(clip);
         }
@@ -156,6 +167,26 @@ impl Widget for MenuWidget {
                 }
                 OnInputResult::handled()
             }
+            // Filter input — only consumed in searchable mode. Character /
+            // Space append to the query; Backspace pops. Other keys
+            // (Enter, Arrow*, Escape, Tab) flow through `handle_keymap_action`
+            // so existing keymap bindings continue to govern selection,
+            // navigation, and dismissal.
+            InputEvent::KeyDown { key, .. } if self.searchable => match *key {
+                Key::Character(c) => {
+                    self.handle_filter_character(c);
+                    OnInputResult::handled()
+                }
+                Key::Space => {
+                    self.handle_filter_character(' ');
+                    OnInputResult::handled()
+                }
+                Key::Backspace => {
+                    self.handle_filter_backspace();
+                    OnInputResult::handled()
+                }
+                _ => OnInputResult::ignored(),
+            },
             _ => OnInputResult::ignored(),
         }
     }
@@ -299,14 +330,23 @@ impl MenuWidget {
         );
     }
 
-    /// Draws all visible entries, accounting for scroll offset.
+    /// Draws all visible entries, accounting for scroll offset and any
+    /// pinned search row above the entries region.
     fn draw_entries(&self, ctx: &mut DrawCtx<'_>, bounds: Rect) {
         let s = &self.style;
         let left_margin = self.label_left_margin();
         let text_style = self.text_style();
-        let mut y = bounds.y() + s.padding_y - self.scroll_offset;
+        let entries_top = bounds.y() + s.padding_y + self.query_row_height();
 
-        for (i, entry) in self.entries.iter().enumerate() {
+        if self.searchable && self.display_indices.is_empty() {
+            self.draw_no_matches_row(ctx, bounds, entries_top);
+            return;
+        }
+
+        let mut y = entries_top - self.scroll_offset;
+
+        for &i in &self.display_indices {
+            let entry = &self.entries[i];
             let item_h = match entry {
                 MenuEntry::Separator => s.separator_height,
                 _ => s.item_height,
@@ -330,6 +370,54 @@ impl MenuWidget {
             }
             y += item_h;
         }
+    }
+
+    /// Draws the pinned type-to-filter row at the top of a searchable menu.
+    fn draw_query_row(&self, ctx: &mut DrawCtx<'_>, bounds: Rect) {
+        let s = &self.style;
+        let qh = self.query_row_height();
+        let inset = s.border_width;
+        let row = Rect::new(
+            bounds.x() + inset,
+            bounds.y() + inset,
+            bounds.width() - inset * 2.0,
+            qh,
+        );
+        ctx.scene.push_quad(
+            row,
+            RectStyle::filled(s.bg).with_radius(s.corner_radius * 0.5),
+        );
+
+        let placeholder = self.query.is_empty();
+        let display_text = if placeholder {
+            "Search\u{2026}"
+        } else {
+            self.query.as_str()
+        };
+        let fg = if placeholder {
+            s.fg.with_alpha(0.55)
+        } else {
+            s.fg
+        };
+        let text_style = TextStyle::new(s.font_size, fg);
+        let inner_w = (row.width() - s.padding_x * 2.0).max(0.0);
+        let shaped = ctx.measurer.shape(display_text, &text_style, inner_w);
+        let tx = row.x() + s.padding_x;
+        let ty = row.y() + (row.height() - shaped.height) / 2.0;
+        ctx.scene.push_text(Point::new(tx, ty), shaped, fg);
+    }
+
+    /// Draws the "No matches" indicator row when a searchable menu has no
+    /// visible entries. Mirrors the legacy popup behaviour.
+    fn draw_no_matches_row(&self, ctx: &mut DrawCtx<'_>, bounds: Rect, entries_top: f32) {
+        let s = &self.style;
+        let text_style = TextStyle::new(s.font_size, s.fg.with_alpha(0.55));
+        let inner_w = (bounds.width() - self.label_left_margin() - s.padding_x).max(0.0);
+        let shaped = ctx.measurer.shape("No matches", &text_style, inner_w);
+        let tx = bounds.x() + self.label_left_margin();
+        let ty = entries_top + (s.item_height - shaped.height) / 2.0;
+        ctx.scene
+            .push_text(Point::new(tx, ty), shaped, s.fg.with_alpha(0.55));
     }
 
     /// Draws a separator line.

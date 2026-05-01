@@ -271,29 +271,31 @@ fn click_emits_open_dropdown_when_not_searchable() {
     );
 }
 
-/// Searchable dropdown emits OpenSearchableDropdown on Clicked.
+/// Searchable dropdown emits OpenDropdown { searchable: true, .. } on Clicked.
 #[test]
-fn click_emits_open_searchable_when_searchable() {
+fn click_emits_open_dropdown_with_searchable_flag_when_searchable() {
     let mut dd = DropdownWidget::new(items()).with_searchable(true);
     let bounds = Rect::new(0.0, 0.0, 100.0, 30.0);
     let action = dd
         .on_action(WidgetAction::Clicked(dd.id()), bounds)
         .expect("click must emit an action");
     match action {
-        WidgetAction::OpenSearchableDropdown {
+        WidgetAction::OpenDropdown {
             id,
-            items: emitted_items,
+            options,
             selected,
             anchor,
+            searchable,
             initial_highlight,
         } => {
             assert_eq!(id, dd.id());
-            assert_eq!(emitted_items, items());
-            assert_eq!(selected, Some(0));
+            assert_eq!(options, items());
+            assert_eq!(selected, 0);
             assert_eq!(anchor, bounds);
+            assert!(searchable, "searchable trigger must set searchable: true");
             assert_eq!(initial_highlight, None);
         }
-        other => panic!("searchable dropdown must emit OpenSearchableDropdown, got {other:?}"),
+        other => panic!("searchable dropdown must emit OpenDropdown, got {other:?}"),
     }
 }
 
@@ -310,9 +312,15 @@ fn searchable_navigate_down_opens_popup_does_not_cycle() {
         .handle_keymap_action(&NavigateDown, bounds)
         .expect("NavigateDown must emit an action");
     match action {
-        WidgetAction::OpenSearchableDropdown {
-            initial_highlight, ..
+        WidgetAction::OpenDropdown {
+            searchable,
+            initial_highlight,
+            ..
         } => {
+            assert!(
+                searchable,
+                "searchable NavigateDown must set searchable: true"
+            );
             assert_eq!(initial_highlight, Some(0));
         }
         other => panic!("searchable NavigateDown must open popup, got {other:?}"),

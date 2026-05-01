@@ -15,6 +15,12 @@ use crate::app::App;
 
 impl App {
     /// Open a dropdown popup within a dialog window's overlay manager.
+    ///
+    /// Mounts a [`MenuWidget`] sized to the trigger anchor. When `searchable`
+    /// is `true` the menu also runs in filterable mode (search row + filter
+    /// state); `initial_highlight` overrides the popup's first highlighted
+    /// entry (used for the `ArrowDown`-from-trigger case where the user
+    /// expects the first item highlighted regardless of `selected`).
     #[expect(
         clippy::too_many_arguments,
         reason = "forwarding OpenDropdown fields + window ID"
@@ -26,6 +32,8 @@ impl App {
         options: Vec<String>,
         selected: usize,
         anchor: Rect,
+        searchable: bool,
+        initial_highlight: Option<usize>,
     ) {
         use oriterm_ui::overlay::Placement;
         use oriterm_ui::widgets::menu::{MenuEntry, MenuStyle, MenuWidget};
@@ -45,6 +53,16 @@ impl App {
         let mut widget = MenuWidget::new(entries).with_style(style);
         if selected < widget.entries().len() {
             widget = widget.with_selected_index(selected);
+        }
+        if searchable {
+            widget = widget.with_searchable(true);
+            if let Some(idx) = initial_highlight {
+                widget = widget.with_initial_highlight(idx);
+            }
+        }
+        // ensure_visible is a no-op when the entry isn't currently displayed,
+        // so it's safe to call regardless of mode.
+        if selected < widget.entries().len() {
             widget.ensure_visible(selected);
         }
 
@@ -52,55 +70,6 @@ impl App {
 
         // Store the dropdown ID so we can route the selection back.
         self.pending_dropdown_id = Some(dropdown_id);
-
-        let Some(ctx) = self.dialogs.get_mut(&window_id) else {
-            return;
-        };
-        ctx.root
-            .replace_popup(Box::new(widget), anchor, Placement::BelowFlush, now);
-        ctx.request_urgent_redraw();
-    }
-
-    /// Open a searchable-dropdown popup within a dialog window's overlay manager.
-    ///
-    /// Constructs a [`SearchableDropdownPopupWidget`] with the trigger's items
-    /// and current selection, then mounts it via the same `replace_popup`
-    /// path that [`Self::open_dialog_dropdown`] uses for `MenuWidget`. Selection
-    /// flows back through [`Self::handle_dialog_overlay_result`] like the
-    /// plain dropdown case — no separate routing channel required.
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "forwarding OpenSearchableDropdown fields + window ID"
-    )]
-    pub(in crate::app) fn open_dialog_searchable_dropdown(
-        &mut self,
-        window_id: WindowId,
-        trigger_id: oriterm_ui::widget_id::WidgetId,
-        items: Vec<String>,
-        selected: Option<usize>,
-        anchor: Rect,
-        initial_highlight: Option<usize>,
-    ) {
-        use oriterm_ui::overlay::Placement;
-        use oriterm_ui::widgets::searchable_dropdown::{
-            SearchableDropdownPopupWidget, SearchableDropdownStyle,
-        };
-
-        let mut style = SearchableDropdownStyle::from_theme(&self.ui_theme);
-        // Match the plain-dropdown popup width to the trigger anchor for
-        // visual continuity with non-searchable dropdowns in the same dialog.
-        style.min_width = anchor.width();
-
-        let widget = SearchableDropdownPopupWidget::new(
-            trigger_id,
-            items,
-            selected,
-            initial_highlight,
-            style,
-        );
-
-        let now = Instant::now();
-        self.pending_dropdown_id = Some(trigger_id);
 
         let Some(ctx) = self.dialogs.get_mut(&window_id) else {
             return;

@@ -45,6 +45,13 @@ pub enum WidgetAction {
     /// An item was selected by index (dropdown, menu).
     Selected { id: WidgetId, index: usize },
     /// A dropdown trigger requests opening its popup list.
+    ///
+    /// `searchable = true` opens the popup with `MenuWidget::with_searchable(true)` —
+    /// the same `MenuWidget` extended with a type-to-filter input row at the
+    /// top. `initial_highlight` overrides the popup's first highlighted entry
+    /// (used when the trigger was opened via `ArrowDown` to land on the first
+    /// item rather than the currently-selected one); `None` defers to
+    /// `selected`. Plain dropdowns ignore the override.
     OpenDropdown {
         /// The dropdown widget's ID (for routing selection back).
         id: WidgetId,
@@ -54,30 +61,11 @@ pub enum WidgetAction {
         selected: usize,
         /// Screen-space anchor rect for popup placement.
         anchor: Rect,
-    },
-    /// A searchable-dropdown trigger requests opening its filterable popup.
-    ///
-    /// Distinct from `OpenDropdown` because the popup widget consumes
-    /// type-to-filter input and tracks ephemeral filter state — the App
-    /// layer constructs a `SearchableDropdownPopupWidget` (rather than a
-    /// plain `MenuWidget`) in response.
-    OpenSearchableDropdown {
-        /// The trigger widget's ID — popup-emitted `Selected` actions route
-        /// back via this id so the form-builder can write the choice into
-        /// `Config` and rebuild the trigger on the next frame.
-        id: WidgetId,
-        /// Canonical item list copied at open time. The popup owns its own
-        /// view; the trigger remains the source of truth for the persistent
-        /// list.
-        items: Vec<String>,
-        /// Current selection (highlighted on first paint when no
-        /// `initial_highlight` override is provided).
-        selected: Option<usize>,
-        /// Screen-space anchor rect for popup placement.
-        anchor: Rect,
-        /// Override for the popup's initial highlighted index. `Some(0)` is
-        /// emitted when the trigger was opened via `ArrowDown` ("highlight
-        /// first item on mount"); `None` defers to `selected`.
+        /// When `true`, mount the popup in searchable mode (filterable list).
+        searchable: bool,
+        /// Override for the initial highlighted entry (canonical index).
+        /// Forwarded only when `searchable` is `true`; `None` defers to
+        /// `selected`.
         initial_highlight: Option<usize>,
     },
     /// An overlay content widget requests its own dismissal.

@@ -1,6 +1,7 @@
+use crate::action::keymap_action::{Confirm, Dismiss, NavigateDown, NavigateUp};
 use crate::controllers::ControllerRequests;
 use crate::geometry::{Point, Rect};
-use crate::input::{InputEvent, Modifiers, ScrollDelta};
+use crate::input::{InputEvent, Key, Modifiers, ScrollDelta};
 use crate::interaction::LifecycleEvent;
 use crate::layout::BoxContent;
 use crate::widgets::scrollbar::ScrollbarVisualState;
@@ -777,4 +778,381 @@ fn harness_scrollbar_track_click_captures_via_scrub() {
         !h.is_active(menu_id),
         "capture should release after track click"
     );
+}
+
+// Searchable mode tests — migrated from the deleted `searchable_dropdown`
+// widget per BUG-02-012 (architectural correction: searchable popup is
+// `MenuWidget::with_searchable(true)`, not a parallel widget).
+
+fn key(k: Key) -> InputEvent {
+    InputEvent::KeyDown {
+        key: k,
+        modifiers: Modifiers::NONE,
+    }
+}
+
+fn searchable_menu(items: Vec<&str>) -> MenuWidget {
+    let entries: Vec<MenuEntry> = items
+        .into_iter()
+        .map(|label| MenuEntry::Item {
+            label: label.into(),
+        })
+        .collect();
+    MenuWidget::new(entries).with_searchable(true)
+}
+
+fn searchable_menu_with_max_height(items: Vec<&str>, max: f32) -> MenuWidget {
+    let entries: Vec<MenuEntry> = items
+        .into_iter()
+        .map(|label| MenuEntry::Item {
+            label: label.into(),
+        })
+        .collect();
+    let mut style = MenuStyle::default();
+    style.max_height = Some(max);
+    MenuWidget::new(entries)
+        .with_style(style)
+        .with_searchable(true)
+}
+
+#[test]
+fn searchable_default_has_no_query_and_first_item_highlighted() {
+    let menu = searchable_menu(vec!["Alpha", "Beta", "Gamma"]);
+    assert!(menu.is_searchable());
+    assert_eq!(menu.query(), "");
+    assert_eq!(menu.display_indices(), &[0, 1, 2]);
+    assert_eq!(
+        menu.hovered(),
+        Some(0),
+        "with_searchable highlights first display entry by default"
+    );
+}
+
+#[test]
+fn searchable_character_input_filters_to_matching_entries() {
+    let mut menu = searchable_menu(vec!["Alpha", "Beta", "Gamma"]);
+    let r = menu.on_input(&key(Key::Character('B')), Rect::new(0.0, 0.0, 200.0, 200.0));
+    assert!(
+        r.handled,
+        "Character input must be consumed in searchable mode"
+    );
+    assert_eq!(menu.query(), "B");
+    assert_eq!(menu.display_indices(), &[1]);
+    assert_eq!(
+        menu.hovered(),
+        Some(1),
+        "filter rebuild lands hover on the canonical match index"
+    );
+}
+
+#[test]
+fn searchable_filter_is_case_insensitive() {
+    let mut menu = searchable_menu(vec!["Alpha", "Beta", "Cherry"]);
+    let _ = menu.on_input(&key(Key::Character('a')), Rect::new(0.0, 0.0, 200.0, 200.0));
+    // Lowercased 'a' matches Alpha (capital A) and Beta (lowercase a at end).
+    // "Cherry" has no 'a' — pinning the rejection of unrelated rows.
+    assert_eq!(menu.display_indices(), &[0, 1]);
+}
+
+#[test]
+fn searchable_substring_filter_matches_internal_chars() {
+    let mut menu = searchable_menu(vec!["Alpha", "Beta", "Gamma"]);
+    let bounds = Rect::new(0.0, 0.0, 200.0, 200.0);
+    let _ = menu.on_input(&key(Key::Character('e')), bounds);
+    let _ = menu.on_input(&key(Key::Character('t')), bounds);
+    assert_eq!(menu.display_indices(), &[1]); // only Beta has "et"
+}
+
+#[test]
+fn searchable_backspace_pops_query_and_re_filters() {
+    let mut menu = searchable_menu(vec!["Alpha", "Beta", "Gamma"]);
+    let bounds = Rect::new(0.0, 0.0, 200.0, 200.0);
+    let _ = menu.on_input(&key(Key::Character('B')), bounds);
+    assert_eq!(menu.display_indices(), &[1]);
+    let r = menu.on_input(&key(Key::Backspace), bounds);
+    assert!(r.handled);
+    assert_eq!(menu.query(), "");
+    assert_eq!(menu.display_indices(), &[0, 1, 2]);
+    assert_eq!(menu.hovered(), Some(0));
+}
+
+#[test]
+fn searchable_no_match_query_yields_empty_display_set() {
+    let mut menu = searchable_menu(vec!["Alpha", "Beta", "Gamma"]);
+    let _ = menu.on_input(&key(Key::Character('z')), Rect::new(0.0, 0.0, 200.0, 200.0));
+    assert!(menu.display_indices().is_empty());
+    assert_eq!(menu.hovered(), None);
+}
+
+#[test]
+fn searchable_navigate_down_advances_through_filtered_entries_only() {
+    let mut menu = searchable_menu(vec!["Alpha", "Beta", "Gamma"]);
+    let bounds = Rect::new(0.0, 0.0, 200.0, 200.0);
+    // Filter to entries containing 'a' → Alpha (0), Beta (1), Gamma (2).
+    let _ = menu.on_input(&key(Key::Character('a')), bounds);
+    assert_eq!(menu.display_indices(), &[0, 1, 2]);
+    assert_eq!(menu.hovered(), Some(0));
+    menu.handle_keymap_action(&NavigateDown, bounds);
+    assert_eq!(menu.hovered(), Some(1));
+    menu.handle_keymap_action(&NavigateDown, bounds);
+    assert_eq!(menu.hovered(), Some(2));
+    menu.handle_keymap_action(&NavigateDown, bounds);
+    assert_eq!(menu.hovered(), Some(0), "wrap from bottom to top");
+}
+
+#[test]
+fn searchable_navigate_up_at_top_wraps_to_last_filtered_entry() {
+    let mut menu = searchable_menu(vec!["Alpha", "Beta", "Gamma"]);
+    let bounds = Rect::new(0.0, 0.0, 200.0, 200.0);
+    assert_eq!(menu.hovered(), Some(0));
+    menu.handle_keymap_action(&NavigateUp, bounds);
+    assert_eq!(menu.hovered(), Some(2));
+}
+
+#[test]
+fn searchable_confirm_emits_canonical_index_not_filter_relative() {
+    // Semantic pin: filter to a single entry whose canonical index is non-zero,
+    // confirm, and assert the emitted Selected index is the canonical index.
+    let entries: Vec<MenuEntry> = ["Alpha", "Beta", "Charlie", "Delta"]
+        .iter()
+        .map(|l| MenuEntry::Item { label: (*l).into() })
+        .collect();
+    let mut menu = MenuWidget::new(entries).with_searchable(true);
+    let bounds = Rect::new(0.0, 0.0, 200.0, 200.0);
+    let _ = menu.on_input(&key(Key::Character('C')), bounds);
+    assert_eq!(menu.display_indices(), &[2]);
+    assert_eq!(menu.hovered(), Some(2));
+    let action = menu
+        .handle_keymap_action(&Confirm, bounds)
+        .expect("Confirm with hovered entry must emit Selected");
+    match action {
+        WidgetAction::Selected { id, index } => {
+            assert_eq!(id, menu.id());
+            assert_eq!(
+                index, 2,
+                "Selected.index must be canonical 'Charlie' (2), not filtered 0"
+            );
+        }
+        other => panic!("expected Selected, got {other:?}"),
+    }
+}
+
+#[test]
+fn searchable_confirm_with_no_match_emits_no_action() {
+    let mut menu = searchable_menu(vec!["Alpha", "Beta", "Gamma"]);
+    let bounds = Rect::new(0.0, 0.0, 200.0, 200.0);
+    let _ = menu.on_input(&key(Key::Character('z')), bounds);
+    assert!(
+        menu.handle_keymap_action(&Confirm, bounds).is_none(),
+        "no match → Confirm emits no action"
+    );
+}
+
+#[test]
+fn searchable_space_input_appends_to_query_not_select() {
+    let mut menu = searchable_menu(vec!["Two Words", "Single"]);
+    let r = menu.on_input(&key(Key::Space), Rect::new(0.0, 0.0, 200.0, 200.0));
+    assert!(r.handled);
+    assert!(r.action.is_none(), "Space must not emit Selected");
+    assert_eq!(menu.query(), " ");
+    assert_eq!(menu.display_indices(), &[0]);
+}
+
+#[test]
+fn searchable_dismiss_emits_dismiss_overlay() {
+    let mut menu = searchable_menu(vec!["Alpha"]);
+    let bounds = Rect::new(0.0, 0.0, 200.0, 200.0);
+    let action = menu
+        .handle_keymap_action(&Dismiss, bounds)
+        .expect("Dismiss must emit DismissOverlay");
+    match action {
+        WidgetAction::DismissOverlay(id) => assert_eq!(id, menu.id()),
+        other => panic!("expected DismissOverlay, got {other:?}"),
+    }
+}
+
+#[test]
+fn non_searchable_does_not_consume_character_keys() {
+    // Negative pin: turning searchable OFF means typing letters falls through
+    // to whatever else might handle them (e.g. parent overlay manager).
+    let entries = vec![MenuEntry::Item {
+        label: "Alpha".into(),
+    }];
+    let mut menu = MenuWidget::new(entries);
+    let bounds = Rect::new(0.0, 0.0, 200.0, 200.0);
+    let r = menu.on_input(&key(Key::Character('a')), bounds);
+    assert!(
+        !r.handled,
+        "non-searchable menu must not swallow Character — Phase 0 distillation pin"
+    );
+}
+
+#[test]
+fn searchable_excludes_separators_from_display() {
+    let entries = vec![
+        MenuEntry::Item {
+            label: "Copy".into(),
+        },
+        MenuEntry::Separator,
+        MenuEntry::Item {
+            label: "Paste".into(),
+        },
+    ];
+    let menu = MenuWidget::new(entries).with_searchable(true);
+    assert_eq!(
+        menu.display_indices(),
+        &[0, 2],
+        "searchable mode hides separators (only clickable entries can be filtered)"
+    );
+}
+
+#[test]
+fn non_searchable_keeps_separators_in_display() {
+    let entries = vec![
+        MenuEntry::Item {
+            label: "Copy".into(),
+        },
+        MenuEntry::Separator,
+        MenuEntry::Item {
+            label: "Paste".into(),
+        },
+    ];
+    let menu = MenuWidget::new(entries);
+    assert_eq!(
+        menu.display_indices(),
+        &[0, 1, 2],
+        "non-searchable mode includes separators so they render between items"
+    );
+}
+
+#[test]
+fn with_initial_highlight_overrides_default_when_in_display_set() {
+    let menu = searchable_menu(vec!["Alpha", "Beta", "Gamma"]).with_initial_highlight(2);
+    assert_eq!(
+        menu.hovered(),
+        Some(2),
+        "with_initial_highlight overrides the with_searchable default"
+    );
+}
+
+#[test]
+fn with_initial_highlight_falls_back_when_index_filtered_out() {
+    // Filter to "B" first by composing the fluent API: with_searchable() →
+    // populate query → call with_initial_highlight(2). 2 is not in [1] so
+    // it must fall back to the first display entry.
+    let entries: Vec<MenuEntry> = ["Alpha", "Beta", "Gamma"]
+        .iter()
+        .map(|l| MenuEntry::Item { label: (*l).into() })
+        .collect();
+    let mut menu = MenuWidget::new(entries).with_searchable(true);
+    let _ = menu.on_input(&key(Key::Character('B')), Rect::new(0.0, 0.0, 200.0, 200.0));
+    assert_eq!(menu.display_indices(), &[1]);
+    let menu = menu.with_initial_highlight(2);
+    assert_eq!(
+        menu.hovered(),
+        Some(1),
+        "out-of-display index falls back to first clickable display entry"
+    );
+}
+
+#[test]
+fn searchable_navigate_down_keeps_highlight_visible_when_passing_window() {
+    // Scroll regression: NavigateDown past the visible window must scroll the
+    // entries region so the highlighted row stays rendered. With max_height
+    // 200 and 32px items, ~5–6 items are visible at once.
+    let labels: Vec<String> = (0..30).map(|i| format!("Item{i:02}")).collect();
+    let mut menu =
+        searchable_menu_with_max_height(labels.iter().map(String::as_str).collect(), 200.0);
+    let bounds = Rect::new(0.0, 0.0, 200.0, 200.0);
+    assert_eq!(menu.hovered(), Some(0));
+    let initial_offset = menu.scroll_offset;
+    assert_eq!(initial_offset, 0.0, "fresh menu starts at scroll_offset 0");
+
+    // Press NavigateDown enough times that the highlight must scroll into view.
+    for _ in 0..15 {
+        menu.handle_keymap_action(&NavigateDown, bounds);
+    }
+    assert_eq!(
+        menu.hovered(),
+        Some(15),
+        "highlight advances through the filter list"
+    );
+    assert!(
+        menu.scroll_offset > initial_offset,
+        "scroll_offset must advance to keep highlight visible (got {})",
+        menu.scroll_offset
+    );
+}
+
+#[test]
+fn searchable_navigate_up_at_top_wraps_and_scrolls_to_show_last() {
+    let labels: Vec<String> = (0..30).map(|i| format!("Item{i:02}")).collect();
+    let mut menu =
+        searchable_menu_with_max_height(labels.iter().map(String::as_str).collect(), 200.0);
+    let bounds = Rect::new(0.0, 0.0, 200.0, 200.0);
+    menu.handle_keymap_action(&NavigateUp, bounds);
+    assert_eq!(menu.hovered(), Some(29), "ArrowUp at top wraps to last");
+    assert!(
+        menu.scroll_offset > 0.0,
+        "scroll_offset must put row 29 inside the visible window (got {})",
+        menu.scroll_offset
+    );
+}
+
+#[test]
+fn searchable_filter_rebuild_resets_scroll_offset() {
+    let labels: Vec<String> = (0..30).map(|i| format!("Item{i:02}")).collect();
+    let mut menu =
+        searchable_menu_with_max_height(labels.iter().map(String::as_str).collect(), 200.0);
+    let bounds = Rect::new(0.0, 0.0, 200.0, 200.0);
+    for _ in 0..12 {
+        menu.handle_keymap_action(&NavigateDown, bounds);
+    }
+    assert!(
+        menu.scroll_offset > 0.0,
+        "preconditions: scroll has advanced (got {})",
+        menu.scroll_offset
+    );
+    let _ = menu.on_input(&key(Key::Character('1')), bounds);
+    assert_eq!(
+        menu.scroll_offset, 0.0,
+        "filter rebuild must reset scroll_offset to 0 — typing always shows top results"
+    );
+}
+
+#[test]
+fn rebuild_display_indices_directly_for_unit_isolation() {
+    let mut menu = searchable_menu(vec!["Alpha", "Beta", "Gamma"]);
+    menu.query = "eta".into();
+    menu.rebuild_display_indices();
+    assert_eq!(menu.display_indices(), &[1]);
+}
+
+#[test]
+fn searchable_layout_height_includes_query_row() {
+    // Pin: total_height grows by the query-row contribution when searchable,
+    // so the popup is tall enough to render the search input above entries.
+    let entries = vec![MenuEntry::Item {
+        label: "Alpha".into(),
+    }];
+    let plain = MenuWidget::new(entries.clone());
+    let searchable = MenuWidget::new(entries).with_searchable(true);
+    let qrh = searchable.query_row_height();
+    assert!(
+        qrh > 0.0,
+        "searchable mode must report a non-zero query_row_height"
+    );
+    assert!(
+        (searchable.total_height() - plain.total_height() - qrh).abs() < 0.001,
+        "searchable total_height = plain total_height + query_row_height"
+    );
+}
+
+#[test]
+fn non_searchable_query_row_height_is_zero() {
+    // Negative pin paired with the previous test.
+    let menu = MenuWidget::new(vec![MenuEntry::Item {
+        label: "Alpha".into(),
+    }]);
+    assert_eq!(menu.query_row_height(), 0.0);
 }

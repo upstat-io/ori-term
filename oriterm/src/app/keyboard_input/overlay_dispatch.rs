@@ -65,8 +65,17 @@ impl App {
                         options,
                         selected,
                         anchor,
+                        searchable,
+                        initial_highlight,
                     } => {
-                        self.open_dropdown_popup(id, options, selected, anchor);
+                        self.open_dropdown_popup(
+                            id,
+                            options,
+                            selected,
+                            anchor,
+                            searchable,
+                            initial_highlight,
+                        );
                     }
                     WidgetAction::Selected { index, .. } if self.pending_dropdown_id.is_some() => {
                         self.dispatch_dropdown_selection(index);
@@ -228,12 +237,23 @@ impl App {
     }
 
     /// Open a dropdown popup overlay below the trigger widget.
+    ///
+    /// `searchable = true` mounts the menu in filterable mode (search row +
+    /// filter state). `initial_highlight` overrides the first highlighted
+    /// entry (used when the trigger was opened via `ArrowDown`); ignored
+    /// when `searchable = false`.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "forwarding OpenDropdown fields + searchable mount config"
+    )]
     fn open_dropdown_popup(
         &mut self,
         dropdown_id: WidgetId,
         options: Vec<String>,
         selected: usize,
         anchor: Rect,
+        searchable: bool,
+        initial_highlight: Option<usize>,
     ) {
         let entries: Vec<MenuEntry> = options
             .into_iter()
@@ -251,7 +271,14 @@ impl App {
         let mut widget = MenuWidget::new(entries).with_style(style);
         if selected < widget.entries().len() {
             widget = widget.with_selected_index(selected);
-            // Pre-scroll to show the selected item.
+        }
+        if searchable {
+            widget = widget.with_searchable(true);
+            if let Some(idx) = initial_highlight {
+                widget = widget.with_initial_highlight(idx);
+            }
+        }
+        if selected < widget.entries().len() {
             widget.ensure_visible(selected);
         }
 

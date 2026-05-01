@@ -39,22 +39,16 @@ impl App {
                 options,
                 selected,
                 anchor,
-            } => {
-                self.open_dialog_dropdown(window_id, id, options, selected, anchor);
-            }
-            WidgetAction::OpenSearchableDropdown {
-                id,
-                items,
-                selected,
-                anchor,
+                searchable,
                 initial_highlight,
             } => {
-                self.open_dialog_searchable_dropdown(
+                self.open_dialog_dropdown(
                     window_id,
                     id,
-                    items,
+                    options,
                     selected,
                     anchor,
+                    searchable,
                     initial_highlight,
                 );
             }

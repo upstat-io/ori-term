@@ -102,20 +102,21 @@ impl Default for DropdownStyle {
 /// to open a popup overlay with the options list. Hover transitions
 /// use [`VisualStateAnimator`] with `common_states()`.
 ///
-/// Set `searchable = true` (via [`Self::with_searchable`]) to swap the
-/// emitted action to [`WidgetAction::OpenSearchableDropdown`] and route
-/// arrow keys to the popup instead of cycling inline. The trigger shape,
-/// styling, and rendering stay identical — only the open-action variant +
-/// arrow-key behaviour differ. The App layer mounts the matching popup
-/// widget (plain `MenuWidget` for non-searchable, `SearchableDropdownPopupWidget`
-/// for searchable) in response to whichever action variant fires.
+/// Set `searchable = true` (via [`Self::with_searchable`]) to make the
+/// emitted `OpenDropdown` carry `searchable: true` and route arrow keys
+/// to the popup (with the first item highlighted) instead of cycling
+/// inline. The trigger shape, styling, and rendering stay identical;
+/// only the popup variant + arrow-key behaviour differ. The App layer
+/// mounts a `MenuWidget`, optionally with `with_searchable(true)`, in
+/// response.
 pub struct DropdownWidget {
     id: WidgetId,
     items: Vec<String>,
     selected: usize,
     disabled: bool,
-    /// When `true`, emit `OpenSearchableDropdown` on click/Confirm/Arrow and
-    /// open a filterable popup. When `false` (default), emit `OpenDropdown`
+    /// When `true`, emit `OpenDropdown { searchable: true, .. }` on
+    /// click/Confirm/Arrow and route arrow keys to the popup. When
+    /// `false` (default), emit `OpenDropdown { searchable: false, .. }`
     /// on click/Confirm and cycle items inline on Arrow.
     searchable: bool,
     style: DropdownStyle,
@@ -221,10 +222,10 @@ impl DropdownWidget {
     }
 
     /// Promotes the trigger to searchable mode. In searchable mode the
-    /// open-action variant becomes [`WidgetAction::OpenSearchableDropdown`]
-    /// and arrow keys open the popup with the first item highlighted (rather
-    /// than cycling inline). The App layer constructs and mounts the
-    /// `SearchableDropdownPopupWidget` in response.
+    /// emitted `OpenDropdown` carries `searchable: true` and arrow keys open
+    /// the popup with the first item highlighted (rather than cycling inline).
+    /// The App layer mounts a `MenuWidget` with `with_searchable(true)` in
+    /// response.
     #[must_use]
     pub fn with_searchable(mut self, searchable: bool) -> Self {
         self.searchable = searchable;
@@ -236,25 +237,21 @@ impl DropdownWidget {
         self.searchable
     }
 
-    /// Returns the action variant emitted on click / Confirm / arrow-open
-    /// per the trigger's `searchable` mode. `initial_highlight` is forwarded
-    /// only when `searchable == true` (plain dropdowns ignore the hint).
+    /// Returns the `OpenDropdown` action emitted on click / Confirm / arrow.
+    /// `initial_highlight` is forwarded only when `searchable == true`
+    /// (plain dropdowns ignore the hint).
     fn open_action(&self, bounds: Rect, initial_highlight: Option<usize>) -> WidgetAction {
-        if self.searchable {
-            WidgetAction::OpenSearchableDropdown {
-                id: self.id,
-                items: self.items.clone(),
-                selected: Some(self.selected),
-                anchor: bounds,
-                initial_highlight,
-            }
-        } else {
-            WidgetAction::OpenDropdown {
-                id: self.id,
-                options: self.items.clone(),
-                selected: self.selected,
-                anchor: bounds,
-            }
+        WidgetAction::OpenDropdown {
+            id: self.id,
+            options: self.items.clone(),
+            selected: self.selected,
+            anchor: bounds,
+            searchable: self.searchable,
+            initial_highlight: if self.searchable {
+                initial_highlight
+            } else {
+                None
+            },
         }
     }
 
