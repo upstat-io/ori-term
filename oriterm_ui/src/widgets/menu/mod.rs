@@ -14,8 +14,6 @@ use crate::geometry::Point;
 use crate::text::TextStyle;
 use crate::widget_id::WidgetId;
 
-use super::DrawCtx;
-
 mod paint;
 mod style;
 mod widget_impl;
@@ -471,30 +469,6 @@ impl MenuWidget {
         self.hovered = self.display_indices.first().copied();
     }
 
-    /// Draws a checkmark at the given position.
-    pub(super) fn draw_checkmark(&self, ctx: &mut DrawCtx<'_>, x: f32, y: f32) {
-        let s = self.style.checkmark_size;
-        let inset = s * 0.2;
-        let x0 = x + inset;
-        let y0 = y + s * 0.5;
-        let x1 = x + s * 0.4;
-        let y1 = y + s - inset;
-        let x2 = x + s - inset;
-        let y2 = y + inset;
-
-        ctx.scene.push_line(
-            Point::new(x0, y0),
-            Point::new(x1, y1),
-            2.0,
-            self.style.check_color,
-        );
-        ctx.scene.push_line(
-            Point::new(x1, y1),
-            Point::new(x2, y2),
-            2.0,
-            self.style.check_color,
-        );
-    }
 }
 
 #[cfg(test)]

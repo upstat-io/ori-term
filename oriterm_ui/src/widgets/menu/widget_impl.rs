@@ -17,11 +17,9 @@ use crate::sense::Sense;
 use super::super::scrollbar::{
     compute_rects, drag_delta_to_offset, pointer_to_offset, should_show,
 };
-use super::super::{LayoutCtx, LifecycleCtx, OnInputResult, Widget, WidgetAction};
+use super::super::{DrawCtx, LayoutCtx, LifecycleCtx, OnInputResult, Widget, WidgetAction};
 use super::MenuWidget;
 use super::style::{DragMode, SCROLL_LINE_HEIGHT};
-
-use super::DrawCtx;
 
 impl Widget for MenuWidget {
     fn id(&self) -> crate::widget_id::WidgetId {

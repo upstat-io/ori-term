@@ -193,6 +193,33 @@ impl MenuWidget {
             .push_text(Point::new(text_x, text_y), shaped, s.fg);
     }
 
+    /// Draws a checkmark glyph at the given position. Used by `draw_item`
+    /// for `MenuEntry::Check` rows; also exported because the search-input
+    /// row may surface check affordances in future variants.
+    pub(super) fn draw_checkmark(&self, ctx: &mut DrawCtx<'_>, x: f32, y: f32) {
+        let s = self.style.checkmark_size;
+        let inset = s * 0.2;
+        let x0 = x + inset;
+        let y0 = y + s * 0.5;
+        let x1 = x + s * 0.4;
+        let y1 = y + s - inset;
+        let x2 = x + s - inset;
+        let y2 = y + inset;
+
+        ctx.scene.push_line(
+            Point::new(x0, y0),
+            Point::new(x1, y1),
+            2.0,
+            self.style.check_color,
+        );
+        ctx.scene.push_line(
+            Point::new(x1, y1),
+            Point::new(x2, y2),
+            2.0,
+            self.style.check_color,
+        );
+    }
+
     /// Draws a thin overlay scrollbar on the right edge using the shared helper.
     pub(super) fn draw_scrollbar(&self, ctx: &mut DrawCtx<'_>, bounds: Rect) {
         let (m, inner) = self.scrollbar_context(bounds);
