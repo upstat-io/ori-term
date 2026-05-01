@@ -377,10 +377,12 @@ impl MenuWidget {
         }
 
         let Some(start) = self.hovered else {
+            // `clickable.is_empty()` was checked above, so first/last are
+            // guaranteed Some — `.expect` documents the invariant.
             let idx = if forward {
-                *clickable.first().unwrap()
+                *clickable.first().expect("clickable is non-empty (checked above)")
             } else {
-                *clickable.last().unwrap()
+                *clickable.last().expect("clickable is non-empty (checked above)")
             };
             self.hovered = Some(idx);
             self.ensure_visible(idx);
@@ -391,7 +393,9 @@ impl MenuWidget {
         // (e.g. user typed a query that excludes the current hover), restart
         // from the first clickable entry.
         let Some(pos) = clickable.iter().position(|&i| i == start) else {
-            let fallback = *clickable.first().unwrap();
+            let fallback = *clickable
+                .first()
+                .expect("clickable is non-empty (checked above)");
             self.hovered = Some(fallback);
             self.ensure_visible(fallback);
             return;
