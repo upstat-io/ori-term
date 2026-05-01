@@ -6,7 +6,6 @@ use oriterm_ui::geometry::Rect;
 use oriterm_ui::overlay::{OverlayEventResult, Placement};
 use oriterm_ui::widget_id::WidgetId;
 use oriterm_ui::widgets::WidgetAction;
-use oriterm_ui::widgets::menu::{MenuEntry, MenuStyle, MenuWidget};
 
 use crate::config::Config;
 
@@ -244,7 +243,7 @@ impl App {
     /// when `searchable = false`.
     #[expect(
         clippy::too_many_arguments,
-        reason = "forwarding OpenDropdown fields + searchable mount config"
+        reason = "fields forwarded from WidgetAction::OpenDropdown destructuring"
     )]
     fn open_dropdown_popup(
         &mut self,
@@ -255,36 +254,16 @@ impl App {
         searchable: bool,
         initial_highlight: Option<usize>,
     ) {
-        let entries: Vec<MenuEntry> = options
-            .into_iter()
-            .map(|label| MenuEntry::Item { label })
-            .collect();
-
-        // Dropdown list style: flush below trigger, matching width, scrollable.
-        let mut style = MenuStyle::from_theme(&self.ui_theme);
-        style.min_width = anchor.width();
-        style.extra_width = 24.0;
-        style.shadow_color = self.ui_theme.shadow;
-        style.max_height = Some(300.0);
-        style.selected_bg = self.ui_theme.accent.with_alpha(0.12);
-
-        let mut widget = MenuWidget::new(entries).with_style(style);
-        if selected < widget.entries().len() {
-            widget = widget.with_selected_index(selected);
-        }
-        if searchable {
-            widget = widget.with_searchable(true);
-            if let Some(idx) = initial_highlight {
-                widget = widget.with_initial_highlight(idx);
-            }
-        }
-        // Scroll the visible target to the highlighted entry so an explicit
-        // `with_initial_highlight` stays on-screen; fall back to `selected`
-        // for non-searchable triggers where `hovered` starts None.
-        let scroll_target = widget.hovered().unwrap_or(selected);
-        if scroll_target < widget.entries().len() {
-            widget.ensure_visible(scroll_target);
-        }
+        let widget = crate::app::dropdown_popup::build_dropdown_menu_widget(
+            crate::app::dropdown_popup::DropdownPopupConfig {
+                options,
+                selected,
+                anchor,
+                searchable,
+                initial_highlight,
+                theme: &self.ui_theme,
+            },
+        );
 
         let now = Instant::now();
         self.pending_dropdown_id = Some(dropdown_id);

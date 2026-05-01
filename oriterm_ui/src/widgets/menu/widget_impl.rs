@@ -165,11 +165,21 @@ impl Widget for MenuWidget {
                 }
                 OnInputResult::handled()
             }
-            // Filter input — only consumed in searchable mode. Character /
-            // Space append to the query; Backspace pops. Other keys
-            // (Enter, Arrow*, Escape, Tab) flow through `handle_keymap_action`
-            // so existing keymap bindings continue to govern selection,
-            // navigation, and dismissal.
+            // Filter + nav input — only consumed in searchable mode.
+            //
+            // - Character / Space append to the query; Backspace pops.
+            // - ArrowDown / ArrowUp drive `navigate_keyboard` directly so the
+            //   filtered list stays keyboard-navigable when the popup is
+            //   mounted as an overlay (overlay key routing currently bypasses
+            //   keymap dispatch — see BUG-03-003 for the broader fix; this
+            //   branch is the localised supplement that ships searchable
+            //   working end-to-end). The same helpers run from
+            //   `handle_keymap_action` so there is one canonical home for
+            //   navigation/selection logic — no LEAK:duplicated-dispatch.
+            // - Enter routes through `try_select_hovered`, returning the
+            //   canonical `Selected` action.
+            // - Escape stays unhandled; OverlayManager catches it before
+            //   the widget sees it (`process_key_event` handles Escape inline).
             InputEvent::KeyDown { key, .. } if self.searchable => match *key {
                 Key::Character(c) => {
                     self.handle_filter_character(c);
@@ -183,6 +193,18 @@ impl Widget for MenuWidget {
                     self.handle_filter_backspace();
                     OnInputResult::handled()
                 }
+                Key::ArrowDown => {
+                    self.navigate_keyboard(true);
+                    OnInputResult::handled()
+                }
+                Key::ArrowUp => {
+                    self.navigate_keyboard(false);
+                    OnInputResult::handled()
+                }
+                Key::Enter => match self.try_select_hovered() {
+                    Some(action) => OnInputResult::handled().with_action(action),
+                    None => OnInputResult::handled(),
+                },
                 _ => OnInputResult::ignored(),
             },
             _ => OnInputResult::ignored(),
@@ -207,19 +229,24 @@ impl Widget for MenuWidget {
                 self.navigate_keyboard(false);
                 None
             }
-            "widget::Confirm" => {
-                if let Some(idx) = self.hovered {
-                    if self.entries[idx].is_clickable() {
-                        return Some(WidgetAction::Selected {
-                            id: self.id,
-                            index: idx,
-                        });
-                    }
-                }
-                None
-            }
+            "widget::Confirm" => self.try_select_hovered(),
             "widget::Dismiss" => Some(WidgetAction::DismissOverlay(self.id)),
             _ => None,
+        }
+    }
+}
+
+// Selection helper shared across keymap dispatch (`handle_keymap_action`)
+// and the searchable-mode `on_input` Enter branch.
+impl MenuWidget {
+    /// Returns a `Selected` action for the currently hovered entry, or `None`
+    /// when no entry is hovered or the hovered entry is non-clickable.
+    pub(super) fn try_select_hovered(&self) -> Option<WidgetAction> {
+        let idx = self.hovered?;
+        if self.entries[idx].is_clickable() {
+            Some(WidgetAction::Selected { id: self.id, index: idx })
+        } else {
+            None
         }
     }
 }

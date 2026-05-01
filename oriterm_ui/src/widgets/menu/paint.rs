@@ -48,8 +48,6 @@ impl MenuWidget {
     /// pinned search row above the entries region.
     pub(super) fn draw_entries(&self, ctx: &mut DrawCtx<'_>, bounds: Rect) {
         let s = &self.style;
-        let left_margin = self.label_left_margin();
-        let text_style = self.text_style();
         let entries_top = bounds.y() + s.padding_y + self.query_row_height();
 
         if self.searchable && self.display_indices.is_empty() {
@@ -78,8 +76,8 @@ impl MenuWidget {
                 MenuEntry::Separator => {
                     self.draw_separator(ctx, bounds, y);
                 }
-                MenuEntry::Item { label } | MenuEntry::Check { label, .. } => {
-                    self.draw_item(ctx, i, entry, label, &text_style, left_margin, bounds, y);
+                MenuEntry::Item { .. } | MenuEntry::Check { .. } => {
+                    self.draw_item(ctx, i, bounds, y);
                 }
             }
             y += item_h;
@@ -146,20 +144,14 @@ impl MenuWidget {
         );
     }
 
-    /// Draws a single clickable item (Item or Check).
-    #[expect(clippy::too_many_arguments, reason = "drawing: entry state + layout")]
-    fn draw_item(
-        &self,
-        ctx: &mut DrawCtx<'_>,
-        index: usize,
-        entry: &MenuEntry,
-        label: &str,
-        text_style: &TextStyle,
-        left_margin: f32,
-        bounds: Rect,
-        y: f32,
-    ) {
+    /// Draws a single clickable item (Item or Check) at the given y offset.
+    /// Caller guarantees `index` points at a clickable entry.
+    fn draw_item(&self, ctx: &mut DrawCtx<'_>, index: usize, bounds: Rect, y: f32) {
         let s = &self.style;
+        let entry = &self.entries[index];
+        let label = entry.label().unwrap_or("");
+        let left_margin = self.label_left_margin();
+        let text_style = self.text_style();
 
         if self.selected_index == Some(index) && self.hovered != Some(index) {
             let rect = Rect::new(
@@ -195,7 +187,7 @@ impl MenuWidget {
 
         let text_x = bounds.x() + left_margin;
         let text_w = bounds.width() - left_margin - s.padding_x;
-        let shaped = ctx.measurer.shape(label, text_style, text_w);
+        let shaped = ctx.measurer.shape(label, &text_style, text_w);
         let text_y = y + (s.item_height - shaped.height) / 2.0;
         ctx.scene
             .push_text(Point::new(text_x, text_y), shaped, s.fg);

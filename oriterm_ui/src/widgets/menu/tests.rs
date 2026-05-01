@@ -987,6 +987,84 @@ fn searchable_escape_via_on_input_passes_through() {
 }
 
 #[test]
+fn searchable_arrow_down_via_on_input_advances_highlight() {
+    // Pin: the searchable popup is mounted as an overlay; overlay key
+    // routing bypasses keymap dispatch (BUG-03-003) and only invokes
+    // on_input. on_input MUST drive navigate_keyboard via ArrowDown so
+    // the filtered list is keyboard-navigable end-to-end.
+    let mut menu = searchable_menu(vec!["Alpha", "Beta", "Gamma"]);
+    let bounds = Rect::new(0.0, 0.0, 200.0, 200.0);
+    assert_eq!(menu.hovered(), Some(0));
+    let r = menu.on_input(&key(Key::ArrowDown), bounds);
+    assert!(r.handled, "ArrowDown via on_input must be consumed");
+    assert_eq!(menu.hovered(), Some(1));
+    let _ = menu.on_input(&key(Key::ArrowDown), bounds);
+    let _ = menu.on_input(&key(Key::ArrowDown), bounds);
+    assert_eq!(menu.hovered(), Some(0), "wraps from bottom to top");
+}
+
+#[test]
+fn searchable_arrow_up_via_on_input_at_top_wraps_to_last() {
+    let mut menu = searchable_menu(vec!["Alpha", "Beta", "Gamma"]);
+    let bounds = Rect::new(0.0, 0.0, 200.0, 200.0);
+    let r = menu.on_input(&key(Key::ArrowUp), bounds);
+    assert!(r.handled);
+    assert_eq!(menu.hovered(), Some(2));
+}
+
+#[test]
+fn searchable_enter_via_on_input_emits_canonical_selected() {
+    // Pin: pressing Enter in the searchable popup (after typing a filter)
+    // must emit Selected with the canonical entry index. Same helper as
+    // handle_keymap_action's Confirm so there is one source of truth.
+    let entries: Vec<MenuEntry> = ["Alpha", "Beta", "Charlie"]
+        .iter()
+        .map(|l| MenuEntry::Item {
+            label: (*l).into(),
+        })
+        .collect();
+    let mut menu = MenuWidget::new(entries).with_searchable(true);
+    let bounds = Rect::new(0.0, 0.0, 200.0, 200.0);
+    let _ = menu.on_input(&key(Key::Character('C')), bounds);
+    assert_eq!(menu.display_indices(), &[2]);
+    let r = menu.on_input(&key(Key::Enter), bounds);
+    assert!(r.handled);
+    match r.action {
+        Some(WidgetAction::Selected { id, index }) => {
+            assert_eq!(id, menu.id());
+            assert_eq!(index, 2, "Enter via on_input must emit canonical index");
+        }
+        other => panic!("expected Selected, got {other:?}"),
+    }
+}
+
+#[test]
+fn searchable_enter_via_on_input_with_no_match_emits_no_action() {
+    let mut menu = searchable_menu(vec!["Alpha", "Beta", "Gamma"]);
+    let bounds = Rect::new(0.0, 0.0, 200.0, 200.0);
+    let _ = menu.on_input(&key(Key::Character('z')), bounds);
+    let r = menu.on_input(&key(Key::Enter), bounds);
+    assert!(r.handled);
+    assert!(r.action.is_none(), "no match → Enter emits no action");
+}
+
+#[test]
+fn non_searchable_does_not_consume_arrow_keys_via_on_input() {
+    // Negative pin: outside searchable mode, arrow keys must NOT be swallowed
+    // by on_input — the keymap dispatch path owns NavigateDown/NavigateUp.
+    let entries = vec![MenuEntry::Item {
+        label: "Alpha".into(),
+    }];
+    let mut menu = MenuWidget::new(entries);
+    let bounds = Rect::new(0.0, 0.0, 200.0, 200.0);
+    let r = menu.on_input(&key(Key::ArrowDown), bounds);
+    assert!(
+        !r.handled,
+        "non-searchable on_input must propagate ArrowDown for keymap routing"
+    );
+}
+
+#[test]
 fn searchable_click_on_filtered_row_emits_canonical_index() {
     // INVERTED-TDD positive pin: post-filter mouse click must emit the
     // canonical entry index, not the filtered display position. Migrated

@@ -18,6 +18,7 @@ pub(crate) mod dialog_context;
 pub(crate) mod dialog_management;
 mod dialog_rendering;
 mod divider_drag;
+mod dropdown_popup;
 mod event_loop;
 mod event_loop_helpers;
 mod floating_drag;
