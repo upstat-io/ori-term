@@ -338,3 +338,6 @@ impl<S: EffectSink> Term<S> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

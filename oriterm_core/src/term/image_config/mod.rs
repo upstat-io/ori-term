@@ -85,3 +85,6 @@ impl<S: EffectSink> Term<S> {
         self.image_cache_mut().take_dirty()
     }
 }
+
+#[cfg(test)]
+mod tests;
