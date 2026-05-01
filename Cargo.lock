@@ -2001,6 +2001,7 @@ dependencies = [
  "mio",
  "oriterm_core",
  "oriterm_ipc",
+ "oriterm_test_support",
  "parking_lot",
  "portable-pty",
  "serde",

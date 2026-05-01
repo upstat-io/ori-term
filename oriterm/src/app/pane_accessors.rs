@@ -2,13 +2,57 @@
 //!
 //! Extracted from `mod.rs` to keep the parent under the 500-line limit.
 
-use oriterm_core::{Selection, SelectionPoint};
+use oriterm_core::{Selection, SelectionPoint, TermMode};
 use oriterm_mux::{MarkCursor, PaneId};
 use winit::window::WindowId;
 
 use crate::app::App;
 
 impl App {
+    // Active-pane resolution
+
+    /// The active pane's ID for a specific winit window.
+    ///
+    /// Resolves the session window from the winit window context, then walks
+    /// the local session model (window → active tab → active pane) to find
+    /// the `PaneId`. Used by window-specific operations (resize, DPI change).
+    pub(super) fn active_pane_id_for_window(&self, winit_id: WindowId) -> Option<PaneId> {
+        let ctx = self.windows.get(&winit_id)?;
+        let session_wid = ctx.window.session_window_id();
+        let win = self.session.get_window(session_wid)?;
+        let tab_id = win.active_tab()?;
+        let tab = self.session.get_tab(tab_id)?;
+        Some(tab.active_pane())
+    }
+
+    /// The active pane's ID, derived from the local session model.
+    pub(super) fn active_pane_id(&self) -> Option<PaneId> {
+        let win_id = self.active_window?;
+        let win = self.session.get_window(win_id)?;
+        let tab_id = win.active_tab()?;
+        let tab = self.session.get_tab(tab_id)?;
+        Some(tab.active_pane())
+    }
+
+    /// Terminal mode flags for a pane.
+    ///
+    /// Delegates to [`MuxBackend::pane_mode`] — embedded mode reads the
+    /// lock-free atomic cache, daemon mode reads the cached snapshot.
+    pub(super) fn pane_mode(&self, pane_id: PaneId) -> Option<TermMode> {
+        self.mux
+            .as_ref()?
+            .pane_mode(pane_id)
+            .map(TermMode::from_bits_truncate)
+    }
+
+    /// Read the terminal mode, locking briefly.
+    ///
+    /// Returns `None` if no active pane is present.
+    pub(super) fn terminal_mode(&self) -> Option<TermMode> {
+        let id = self.active_pane_id()?;
+        self.pane_mode(id)
+    }
+
     // Per-pane selection accessors
 
     /// The active selection for a pane, if any.

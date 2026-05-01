@@ -6,6 +6,7 @@
 use std::time::Instant;
 
 use winit::event::{ElementState, MouseButton};
+use winit::window::WindowId;
 
 use oriterm_ui::geometry::{Point, Rect};
 use oriterm_ui::overlay::Placement;
@@ -15,6 +16,20 @@ use super::{App, context_menu, mouse_report, mouse_selection};
 use crate::gpu::WindowRenderer;
 
 impl App {
+    /// Restore the mouse cursor if it was hidden by typing auto-hide.
+    ///
+    /// Called on mouse move, cursor leave, and focus loss to ensure the
+    /// OS cursor is visible again. Skips the winit call when the cursor
+    /// is already visible to avoid redundant system calls.
+    pub(super) fn restore_mouse_cursor(&mut self, winit_id: WindowId) {
+        if self.mouse_cursor_hidden {
+            self.mouse_cursor_hidden = false;
+            if let Some(ctx) = self.windows.get(&winit_id) {
+                ctx.window.window().set_cursor_visible(true);
+            }
+        }
+    }
+
     /// Get the overlay scale factor if active overlays exist.
     ///
     /// Returns `None` if no overlays are active (callers should return

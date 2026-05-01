@@ -226,6 +226,13 @@ fn defaults_cover_all_expected_bindings() {
     );
     assert_eq!(
         keymap
+            .lookup(Keystroke::new(Key::ArrowUp, m), &["Menu"])
+            .unwrap()
+            .name(),
+        "widget::NavigateUp"
+    );
+    assert_eq!(
+        keymap
             .lookup(Keystroke::new(Key::Enter, m), &["Menu"])
             .unwrap()
             .name(),
@@ -244,6 +251,47 @@ fn defaults_cover_all_expected_bindings() {
             .unwrap()
             .name(),
         "widget::Dismiss"
+    );
+
+    // MenuSearchable — distinct context for searchable Menu (BUG-03-003).
+    // Bindings mirror `Menu` EXCEPT Space is intentionally omitted so it
+    // reaches `MenuWidget::on_input` as a filter character.
+    assert_eq!(
+        keymap
+            .lookup(Keystroke::new(Key::ArrowDown, m), &["MenuSearchable"])
+            .unwrap()
+            .name(),
+        "widget::NavigateDown"
+    );
+    assert_eq!(
+        keymap
+            .lookup(Keystroke::new(Key::ArrowUp, m), &["MenuSearchable"])
+            .unwrap()
+            .name(),
+        "widget::NavigateUp"
+    );
+    assert_eq!(
+        keymap
+            .lookup(Keystroke::new(Key::Enter, m), &["MenuSearchable"])
+            .unwrap()
+            .name(),
+        "widget::Confirm"
+    );
+    assert_eq!(
+        keymap
+            .lookup(Keystroke::new(Key::Escape, m), &["MenuSearchable"])
+            .unwrap()
+            .name(),
+        "widget::Dismiss"
+    );
+    // Negative pin: Space is intentionally NOT bound for "MenuSearchable"
+    // so searchable filter input reaches on_input as a printable character.
+    assert!(
+        keymap
+            .lookup(Keystroke::new(Key::Space, m), &["MenuSearchable"])
+            .is_none(),
+        "Space must NOT be bound for MenuSearchable — it must reach on_input \
+         as a filter character"
     );
 
     // Dialog.
@@ -265,7 +313,21 @@ fn defaults_cover_all_expected_bindings() {
     );
     assert_eq!(
         keymap
+            .lookup(Keystroke::new(Key::ArrowUp, m), &["Slider"])
+            .unwrap()
+            .name(),
+        "widget::IncrementValue"
+    );
+    assert_eq!(
+        keymap
             .lookup(Keystroke::new(Key::ArrowLeft, m), &["Slider"])
+            .unwrap()
+            .name(),
+        "widget::DecrementValue"
+    );
+    assert_eq!(
+        keymap
+            .lookup(Keystroke::new(Key::ArrowDown, m), &["Slider"])
             .unwrap()
             .name(),
         "widget::DecrementValue"

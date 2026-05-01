@@ -25,3 +25,12 @@ pub(crate) mod window;
 pub(crate) mod window_manager;
 
 pub use entry::run;
+
+/// Re-exports for benches and integration tests. Not part of the stable public
+/// API; gated `#[doc(hidden)]` so they don't surface in rustdoc.
+#[doc(hidden)]
+pub mod bench_seam {
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    pub use crate::font::discovery::enumerate_mono_families_from_roots;
+    pub use crate::font::discovery::{FamilyEntry, enumerate_mono_families};
+}

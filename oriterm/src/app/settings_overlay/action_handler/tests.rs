@@ -194,7 +194,7 @@ fn scheme_card_selected_updates_scheme() {
 #[test]
 fn font_family_selected_updates_config() {
     let (mut config, ids) = default_ids();
-    // Index 0 = "Default (System)" → None.
+    // Index 0 = "Default (System)" sentinel → config.font.family = None.
     let action = WidgetAction::Selected {
         id: ids.font_family_dropdown,
         index: 0,
@@ -202,13 +202,30 @@ fn font_family_selected_updates_config() {
     assert!(handle_settings_action(&action, &ids, &mut config));
     assert!(config.font.family.is_none());
 
-    // Index 1 = "JetBrains Mono" → Some.
+    // Any non-zero index resolves to the family name in the sidecar items
+    // list (which the form builder populated from `enumerate_mono_families`).
+    // Pick a real index from the sidecar so the test is robust against
+    // host font catalog variations rather than hardcoding a family name
+    // that may or may not be installed on every CI runner.
+    let Some((sample_idx, expected_family)) = ids
+        .font_family_items
+        .iter()
+        .enumerate()
+        .find(|(i, _)| *i > 0)
+    else {
+        // No enumerated families on this host — exercising index 0 above
+        // already covers the only reachable code path.
+        return;
+    };
     let action = WidgetAction::Selected {
         id: ids.font_family_dropdown,
-        index: 1,
+        index: sample_idx,
     };
     assert!(handle_settings_action(&action, &ids, &mut config));
-    assert_eq!(config.font.family.as_deref(), Some("JetBrains Mono"));
+    assert_eq!(
+        config.font.family.as_deref(),
+        Some(expected_family.as_str())
+    );
 }
 
 #[test]

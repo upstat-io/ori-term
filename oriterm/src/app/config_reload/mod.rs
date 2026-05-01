@@ -18,6 +18,7 @@ pub(crate) use font_config::{
 
 use std::sync::atomic::Ordering;
 
+use super::event_loop_helpers::resolve_ui_theme_with;
 use super::{App, DEFAULT_DPI};
 use crate::config::{Config, FontConfig};
 use crate::font::{FontByteCache, FontCollection, FontSet};
@@ -251,6 +252,31 @@ impl App {
         self.font_set = Some(font_set.clone());
         self.user_fallback_map.clone_from(&fallback_map);
         Some((font_set, fallback_map))
+    }
+
+    /// Handle system dark/light theme change.
+    ///
+    /// Updates the terminal palette and UI chrome colors. Respects
+    /// [`ThemeOverride`]: if the user forced dark/light, the system
+    /// notification is ignored — only `Auto` delegates to the system.
+    pub(in crate::app) fn handle_theme_changed(&mut self, winit_theme: winit::window::Theme) {
+        let system_theme = match winit_theme {
+            winit::window::Theme::Dark => oriterm_core::Theme::Dark,
+            winit::window::Theme::Light => oriterm_core::Theme::Light,
+        };
+        let theme = self.config.colors.resolve_theme(|| system_theme);
+        let palette = build_palette_from_config(&self.config.colors, theme);
+
+        // Apply to all panes via MuxBackend.
+        if let Some(mux) = self.mux.as_mut() {
+            for pane_id in mux.pane_ids() {
+                mux.set_pane_theme(pane_id, theme, palette.clone());
+            }
+        }
+
+        // Update UI chrome theme (tab bar, status bar, window controls).
+        self.ui_theme = resolve_ui_theme_with(&self.config, system_theme);
+        self.apply_theme_to_chrome();
     }
 
     /// Detect and apply color config changes.

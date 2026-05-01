@@ -6,7 +6,6 @@ use oriterm_ui::geometry::Rect;
 use oriterm_ui::overlay::{OverlayEventResult, Placement};
 use oriterm_ui::widget_id::WidgetId;
 use oriterm_ui::widgets::WidgetAction;
-use oriterm_ui::widgets::menu::{MenuEntry, MenuStyle, MenuWidget};
 
 use crate::config::Config;
 
@@ -65,8 +64,17 @@ impl App {
                         options,
                         selected,
                         anchor,
+                        searchable,
+                        initial_highlight,
                     } => {
-                        self.open_dropdown_popup(id, options, selected, anchor);
+                        self.open_dropdown_popup(
+                            id,
+                            options,
+                            selected,
+                            anchor,
+                            searchable,
+                            initial_highlight,
+                        );
                     }
                     WidgetAction::Selected { index, .. } if self.pending_dropdown_id.is_some() => {
                         self.dispatch_dropdown_selection(index);
@@ -228,32 +236,34 @@ impl App {
     }
 
     /// Open a dropdown popup overlay below the trigger widget.
+    ///
+    /// `searchable = true` mounts the menu in filterable mode (search row +
+    /// filter state). `initial_highlight` overrides the first highlighted
+    /// entry (used when the trigger was opened via `ArrowDown`); ignored
+    /// when `searchable = false`.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "fields forwarded from WidgetAction::OpenDropdown destructuring"
+    )]
     fn open_dropdown_popup(
         &mut self,
         dropdown_id: WidgetId,
         options: Vec<String>,
         selected: usize,
         anchor: Rect,
+        searchable: bool,
+        initial_highlight: Option<usize>,
     ) {
-        let entries: Vec<MenuEntry> = options
-            .into_iter()
-            .map(|label| MenuEntry::Item { label })
-            .collect();
-
-        // Dropdown list style: flush below trigger, matching width, scrollable.
-        let mut style = MenuStyle::from_theme(&self.ui_theme);
-        style.min_width = anchor.width();
-        style.extra_width = 24.0;
-        style.shadow_color = self.ui_theme.shadow;
-        style.max_height = Some(300.0);
-        style.selected_bg = self.ui_theme.accent.with_alpha(0.12);
-
-        let mut widget = MenuWidget::new(entries).with_style(style);
-        if selected < widget.entries().len() {
-            widget = widget.with_selected_index(selected);
-            // Pre-scroll to show the selected item.
-            widget.ensure_visible(selected);
-        }
+        let widget = crate::app::dropdown_popup::build_dropdown_menu_widget(
+            crate::app::dropdown_popup::DropdownPopupConfig {
+                options,
+                selected,
+                anchor,
+                searchable,
+                initial_highlight,
+                theme: &self.ui_theme,
+            },
+        );
 
         let now = Instant::now();
         self.pending_dropdown_id = Some(dropdown_id);

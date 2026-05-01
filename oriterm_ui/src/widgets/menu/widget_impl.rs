@@ -8,22 +8,18 @@
 //! zone discrimination (scrollbar thumb, scrollbar track, or menu item).
 //! Idle hover and scroll wheel remain in `on_input()`.
 
-use crate::draw::RectStyle;
 use crate::geometry::{Point, Rect};
-use crate::input::{InputEvent, ScrollDelta};
+use crate::input::{InputEvent, Key, ScrollDelta};
 use crate::interaction::LifecycleEvent;
 use crate::layout::LayoutBox;
 use crate::sense::Sense;
-use crate::text::TextStyle;
 
 use super::super::scrollbar::{
-    ScrollbarAxis, ScrollbarMetrics, compute_rects, drag_delta_to_offset, draw_overlay,
-    pointer_to_offset, should_show,
+    compute_rects, drag_delta_to_offset, pointer_to_offset, should_show,
 };
-use super::super::{LayoutCtx, LifecycleCtx, OnInputResult, Widget, WidgetAction};
-use super::{DragMode, MenuEntry, MenuWidget, SCROLL_LINE_HEIGHT};
-
-use super::DrawCtx;
+use super::super::{DrawCtx, LayoutCtx, LifecycleCtx, OnInputResult, Widget, WidgetAction};
+use super::MenuWidget;
+use super::style::{DragMode, SCROLL_LINE_HEIGHT};
 
 impl Widget for MenuWidget {
     fn id(&self) -> crate::widget_id::WidgetId {
@@ -38,6 +34,9 @@ impl Widget for MenuWidget {
         let style = self.text_style();
         let left_margin = self.label_left_margin();
 
+        // Width is computed against the canonical entry list — searchable
+        // mode hides separators at runtime but the popup must still fit any
+        // entry the user could type-filter to.
         let max_label_w: f32 = self
             .entries
             .iter()
@@ -79,14 +78,22 @@ impl Widget for MenuWidget {
 
         self.draw_chrome(ctx, bounds);
 
-        // Clip content area when scrolling.
+        // The query row sits above the scrolling region so it stays pinned
+        // while entries scroll. Draw it before pushing the clip rect.
+        if self.searchable {
+            self.draw_query_row(ctx, bounds);
+        }
+
+        // Clip the entries region when scrolling. The query row is excluded
+        // from the clip so its rendering remains crisp.
         if scrollable {
             let inset = s.border_width;
+            let qh = self.query_row_height();
             let clip = Rect::new(
                 bounds.x() + inset,
-                bounds.y() + inset,
+                bounds.y() + inset + qh,
                 bounds.width() - inset * 2.0,
-                bounds.height() - inset * 2.0,
+                bounds.height() - inset * 2.0 - qh,
             );
             ctx.scene.push_clip(clip);
         }
@@ -156,12 +163,47 @@ impl Widget for MenuWidget {
                 }
                 OnInputResult::handled()
             }
+            // Filter input — only consumed in searchable mode.
+            //
+            // Character / Space append to the filter query; Backspace pops
+            // the last character. Navigation and confirmation (ArrowDown,
+            // ArrowUp, Enter, Escape) route through the keymap path —
+            // see `key_context()` returning `"MenuSearchable"`, which the
+            // default keymap binds without `Space` so printable filter
+            // input reaches this branch. Per BUG-03-003 (resolved): the
+            // overlay keymap dispatch path now invokes
+            // `MenuWidget::handle_keymap_action` for nav/confirm keys,
+            // so this `on_input` arm only handles the printable filter
+            // characters that the keymap intentionally omits.
+            InputEvent::KeyDown { key, .. } if self.searchable => match *key {
+                Key::Character(c) => {
+                    self.handle_filter_character(c);
+                    OnInputResult::handled()
+                }
+                Key::Space => {
+                    self.handle_filter_character(' ');
+                    OnInputResult::handled()
+                }
+                Key::Backspace => {
+                    self.handle_filter_backspace();
+                    OnInputResult::handled()
+                }
+                _ => OnInputResult::ignored(),
+            },
             _ => OnInputResult::ignored(),
         }
     }
 
     fn key_context(&self) -> Option<&'static str> {
-        Some("Menu")
+        // BUG-03-003: searchable Menu uses a distinct context so the
+        // keymap omits Space (which would otherwise steal printable
+        // filter input via Space->Confirm). Non-searchable Menu keeps
+        // Space->Confirm via the "Menu" context.
+        Some(if self.searchable {
+            "MenuSearchable"
+        } else {
+            "Menu"
+        })
     }
 
     fn handle_keymap_action(
@@ -178,19 +220,27 @@ impl Widget for MenuWidget {
                 self.navigate_keyboard(false);
                 None
             }
-            "widget::Confirm" => {
-                if let Some(idx) = self.hovered {
-                    if self.entries[idx].is_clickable() {
-                        return Some(WidgetAction::Selected {
-                            id: self.id,
-                            index: idx,
-                        });
-                    }
-                }
-                None
-            }
+            "widget::Confirm" => self.try_select_hovered(),
             "widget::Dismiss" => Some(WidgetAction::DismissOverlay(self.id)),
             _ => None,
+        }
+    }
+}
+
+// Selection helper shared across keymap dispatch (`handle_keymap_action`)
+// and the searchable-mode `on_input` Enter branch.
+impl MenuWidget {
+    /// Returns a `Selected` action for the currently hovered entry, or `None`
+    /// when no entry is hovered or the hovered entry is non-clickable.
+    pub(super) fn try_select_hovered(&self) -> Option<WidgetAction> {
+        let idx = self.hovered?;
+        if self.entries[idx].is_clickable() {
+            Some(WidgetAction::Selected {
+                id: self.id,
+                index: idx,
+            })
+        } else {
+            None
         }
     }
 }
@@ -270,185 +320,8 @@ impl MenuWidget {
     }
 }
 
-// Drawing helpers.
-impl MenuWidget {
-    /// Draws shadow, background layer, and border.
-    fn draw_chrome(&self, ctx: &mut DrawCtx<'_>, bounds: Rect) {
-        let s = &self.style;
-
-        if s.shadow_color.a > 0.0 {
-            let shadow_rect = Rect::new(
-                bounds.x() + 2.0,
-                bounds.y() + 2.0,
-                bounds.width(),
-                bounds.height(),
-            );
-            ctx.scene.push_quad(
-                shadow_rect,
-                RectStyle::filled(s.shadow_color).with_radius(s.corner_radius),
-            );
-        }
-
-        ctx.scene.push_layer_bg(s.bg);
-
-        ctx.scene.push_quad(
-            bounds,
-            RectStyle::filled(s.bg)
-                .with_border(s.border_width, s.border_color)
-                .with_radius(s.corner_radius),
-        );
-    }
-
-    /// Draws all visible entries, accounting for scroll offset.
-    fn draw_entries(&self, ctx: &mut DrawCtx<'_>, bounds: Rect) {
-        let s = &self.style;
-        let left_margin = self.label_left_margin();
-        let text_style = self.text_style();
-        let mut y = bounds.y() + s.padding_y - self.scroll_offset;
-
-        for (i, entry) in self.entries.iter().enumerate() {
-            let item_h = match entry {
-                MenuEntry::Separator => s.separator_height,
-                _ => s.item_height,
-            };
-
-            if y + item_h < bounds.y() {
-                y += item_h;
-                continue;
-            }
-            if y > bounds.bottom() {
-                break;
-            }
-
-            match entry {
-                MenuEntry::Separator => {
-                    self.draw_separator(ctx, bounds, y);
-                }
-                MenuEntry::Item { label } | MenuEntry::Check { label, .. } => {
-                    self.draw_item(ctx, i, entry, label, &text_style, left_margin, bounds, y);
-                }
-            }
-            y += item_h;
-        }
-    }
-
-    /// Draws a separator line.
-    fn draw_separator(&self, ctx: &mut DrawCtx<'_>, bounds: Rect, y: f32) {
-        let s = &self.style;
-        let sep_y = y + s.separator_height / 2.0;
-        ctx.scene.push_line(
-            Point::new(bounds.x() + s.hover_inset, sep_y),
-            Point::new(bounds.right() - s.hover_inset, sep_y),
-            1.0,
-            s.separator_color,
-        );
-    }
-
-    /// Draws a single clickable item (Item or Check).
-    #[expect(clippy::too_many_arguments, reason = "drawing: entry state + layout")]
-    fn draw_item(
-        &self,
-        ctx: &mut DrawCtx<'_>,
-        index: usize,
-        entry: &MenuEntry,
-        label: &str,
-        text_style: &TextStyle,
-        left_margin: f32,
-        bounds: Rect,
-        y: f32,
-    ) {
-        let s = &self.style;
-
-        // Selected-item accent tint (beneath hover).
-        if self.selected_index == Some(index) && self.hovered != Some(index) {
-            let rect = Rect::new(
-                bounds.x() + s.hover_inset,
-                y,
-                bounds.width() - s.hover_inset * 2.0,
-                s.item_height,
-            );
-            ctx.scene.push_quad(
-                rect,
-                RectStyle::filled(s.selected_bg).with_radius(s.hover_radius),
-            );
-        }
-
-        // Hover highlight.
-        if self.hovered == Some(index) {
-            let rect = Rect::new(
-                bounds.x() + s.hover_inset,
-                y,
-                bounds.width() - s.hover_inset * 2.0,
-                s.item_height,
-            );
-            ctx.scene.push_quad(
-                rect,
-                RectStyle::filled(s.hover_bg).with_radius(s.hover_radius),
-            );
-        }
-
-        // Checkmark (Check entries only).
-        if let MenuEntry::Check { checked: true, .. } = entry {
-            let check_x = bounds.x() + s.padding_x;
-            let check_y = y + (s.item_height - s.checkmark_size) / 2.0;
-            self.draw_checkmark(ctx, check_x, check_y);
-        }
-
-        // Label text.
-        let text_x = bounds.x() + left_margin;
-        let text_w = bounds.width() - left_margin - s.padding_x;
-        let shaped = ctx.measurer.shape(label, text_style, text_w);
-        let text_y = y + (s.item_height - shaped.height) / 2.0;
-        ctx.scene
-            .push_text(Point::new(text_x, text_y), shaped, s.fg);
-    }
-
-    /// Draws a thin overlay scrollbar on the right edge using the shared helper.
-    fn draw_scrollbar(&self, ctx: &mut DrawCtx<'_>, bounds: Rect) {
-        let (m, inner) = self.scrollbar_context(bounds);
-        if !should_show(&m) {
-            return;
-        }
-        let rects = compute_rects(inner, &m, &self.style.scrollbar, 0.0);
-        draw_overlay(
-            ctx.scene,
-            &rects,
-            &self.style.scrollbar,
-            self.scrollbar_state.visual_state(),
-        );
-    }
-}
-
-// Scrollbar helpers.
-impl MenuWidget {
-    /// Scrollbar metrics and border-inset viewport for shared geometry helpers.
-    fn scrollbar_context(&self, bounds: Rect) -> (ScrollbarMetrics, Rect) {
-        let bw = self.style.border_width;
-        let inner = Rect::new(
-            bounds.x() + bw,
-            bounds.y() + bw,
-            bounds.width() - bw * 2.0,
-            bounds.height() - bw * 2.0,
-        );
-        let m = ScrollbarMetrics {
-            axis: ScrollbarAxis::Vertical,
-            content_extent: self.total_height(),
-            view_extent: self.visible_height(),
-            scroll_offset: self.scroll_offset,
-        };
-        (m, inner)
-    }
-
-    /// Updates scrollbar hover state for idle mouse moves (no drag active).
-    fn update_scrollbar_hover(&mut self, pos: Point, bounds: Rect) {
-        let (m, inner) = self.scrollbar_context(bounds);
-        if !should_show(&m) {
-            self.scrollbar_state.track_hovered = false;
-            self.scrollbar_state.thumb_hovered = false;
-            return;
-        }
-        let rects = compute_rects(inner, &m, &self.style.scrollbar, 0.0);
-        self.scrollbar_state.track_hovered = rects.track_hit.contains(pos);
-        self.scrollbar_state.thumb_hovered = rects.thumb_hit.contains(pos);
-    }
-}
+// Drawing helpers (`draw_chrome` / `draw_entries` / `draw_query_row` /
+// `draw_no_matches_row` / `draw_item` / `draw_separator` / `draw_scrollbar`)
+// + scrollbar geometry helpers (`scrollbar_context`, `update_scrollbar_hover`)
+// live in the sibling `paint` module so this file stays under the 500-line
+// budget per `code-hygiene.md §File Size`.

@@ -1,20 +1,20 @@
 //! macOS font discovery via recursive directory scanning.
 //!
-//! Same scanning approach as Linux but with macOS-specific font directories.
-//! Future enhancement: CoreText `CTFontCreateWithName` API for better matching.
+//! Owns only the platform-specific bit — `font_dirs()`. Enumeration, parsing,
+//! grouping, the resolution-bridge logic, the platform-default fallback walk,
+//! and the user-fallback resolver all live in the shared `super::unix` module
+//! per `LEAK:algorithmic-duplication` SSOT discipline. Future enhancement:
+//! `CoreText` `CTFontCreateWithName` API for better matching.
 
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
-use super::families::PRIMARY_FAMILIES;
-use super::{
-    DiscoveryResult, FallbackDiscovery, FontOrigin, resolve_fallback_chain, try_families_from_specs,
-};
+use super::{DiscoveryResult, FallbackDiscovery, FamilyEntry};
 
 /// Standard font directories on macOS, in priority order.
 ///
 /// User fonts take precedence, then system-wide, then Apple system fonts.
-fn font_dirs() -> Vec<PathBuf> {
+pub(super) fn font_dirs() -> Vec<PathBuf> {
     let mut dirs = Vec::with_capacity(4);
     if let Some(home) = std::env::var_os("HOME") {
         dirs.push(PathBuf::from(home).join("Library/Fonts"));
@@ -27,115 +27,39 @@ fn font_dirs() -> Vec<PathBuf> {
 
 /// Build a filename → full path index by scanning all font directories once.
 pub(crate) fn build_font_index() -> HashMap<String, PathBuf> {
-    let mut index = HashMap::new();
-    for dir in font_dirs() {
-        index_font_dir(&dir, &mut index);
-    }
-    index
+    super::unix::build_font_index_from_roots(&font_dirs())
 }
 
-/// Recursively index a font directory, mapping filenames to full paths.
-fn index_font_dir(dir: &Path, index: &mut HashMap<String, PathBuf>) {
-    let entries = match std::fs::read_dir(dir) {
-        Ok(e) => e,
-        Err(_) => return,
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.is_dir() {
-            index_font_dir(&path, index);
-        } else if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-            index.entry(name.to_owned()).or_insert(path);
-        } else {
-            // Non-UTF-8 filename — skip.
-        }
-    }
-}
-
-/// Try to find a user-specified family by scanning for filenames.
+/// Try to find a user-specified family — delegates to the shared bridge +
+/// filename heuristics in `super::unix`.
 pub(super) fn try_user_family(
     name: &str,
     _weight: u16,
     index: &HashMap<String, PathBuf>,
 ) -> Option<DiscoveryResult> {
-    let lookup = |filename: &str| -> Option<PathBuf> { index.get(filename).cloned() };
-
-    // Try the name as a filename directly.
-    if let Some(path) = index.get(name) {
-        let primary = super::family_from_paths(
-            name,
-            [Some(path.clone()), None, None, None],
-            FontOrigin::UserConfig,
-        );
-        let fallbacks = resolve_fallback_chain(&lookup, FontOrigin::DirectoryScan);
-        return Some(DiscoveryResult { primary, fallbacks });
-    }
-
-    // Try common naming patterns.
-    for ext in &["ttf", "otf"] {
-        let candidate = format!("{name}-Regular.{ext}");
-        if let Some(path) = index.get(&candidate) {
-            let bold = index.get(&format!("{name}-Bold.{ext}")).cloned();
-            let italic = index.get(&format!("{name}-Italic.{ext}")).cloned();
-            let bold_italic = index.get(&format!("{name}-BoldItalic.{ext}")).cloned();
-
-            let primary = super::family_from_paths(
-                name,
-                [Some(path.clone()), bold, italic, bold_italic],
-                FontOrigin::UserConfig,
-            );
-            let fallbacks = resolve_fallback_chain(&lookup, FontOrigin::DirectoryScan);
-            return Some(DiscoveryResult { primary, fallbacks });
-        }
-    }
-
-    // Try as absolute path.
-    let path = PathBuf::from(name);
-    if path.is_absolute() && path.exists() {
-        let primary =
-            super::family_from_paths(name, [Some(path), None, None, None], FontOrigin::UserConfig);
-        let fallbacks = resolve_fallback_chain(&lookup, FontOrigin::DirectoryScan);
-        return Some(DiscoveryResult { primary, fallbacks });
-    }
-
-    None
+    super::unix::try_user_family_with_bridge(name, index)
 }
 
-/// Try platform default families in priority order.
+/// Try platform default families — delegates to the shared
+/// `try_platform_defaults_with_index` in `super::unix`.
 pub(super) fn try_platform_defaults(
     _weight: u16,
     index: &HashMap<String, PathBuf>,
 ) -> Option<DiscoveryResult> {
-    let lookup = |filename: &str| -> Option<PathBuf> { index.get(filename).cloned() };
-
-    let primary = try_families_from_specs(PRIMARY_FAMILIES, &lookup, FontOrigin::DirectoryScan)?;
-    let fallbacks = resolve_fallback_chain(&lookup, FontOrigin::DirectoryScan);
-    Some(DiscoveryResult { primary, fallbacks })
+    super::unix::try_platform_defaults_with_index(index)
 }
 
-/// Resolve a user-configured fallback font name to a path.
-///
-/// Accepts a pre-built font index to avoid rescanning font directories.
+/// Resolve a user-configured fallback font name — delegates to
+/// `super::unix::resolve_user_fallback_with_index`.
 pub(super) fn resolve_user_fallback(
     family: &str,
     index: &HashMap<String, PathBuf>,
 ) -> Option<FallbackDiscovery> {
-    if let Some(path) = index.get(family) {
-        return Some(FallbackDiscovery {
-            path: path.clone(),
-            face_index: 0,
-            origin: FontOrigin::UserConfig,
-        });
-    }
+    super::unix::resolve_user_fallback_with_index(family, index)
+}
 
-    let path = PathBuf::from(family);
-    if path.is_absolute() && path.exists() {
-        return Some(FallbackDiscovery {
-            path,
-            face_index: 0,
-            origin: FontOrigin::UserConfig,
-        });
-    }
-
-    None
+/// Enumerate every monospace font family found under `roots` — delegates to
+/// the shared parser in `super::unix`.
+pub(super) fn enumerate_mono_families_from_roots(roots: &[PathBuf]) -> Vec<FamilyEntry> {
+    super::unix::enumerate_mono_families_from_roots(roots)
 }

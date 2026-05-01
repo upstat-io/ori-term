@@ -98,6 +98,167 @@ impl TestContext {
             thread::sleep(Duration::from_millis(50));
         }
     }
+
+    /// Wait until the snapshot contains `text` — but only call `poll_events`
+    /// when `mux.has_pending_wakeup()` returns true, mirroring the gate logic
+    /// in `oriterm/src/app/mux_pump/mod.rs:35-43`.
+    ///
+    /// This is the BUG-11-026 §05 Step 3 helper: the gated drain pins the
+    /// MUX-LAYER CONTRACT that `App::pump_mux_events` relies on (early-exit
+    /// when no wakeup pending, drain when set, flag-clear after poll). The
+    /// existing [`wait_for_text`] polls unconditionally and is the right
+    /// helper for general backend-progress contract tests where the gate's
+    /// performance-optimization role doesn't apply.
+    fn wait_for_text_via_gated_drain(&mut self, text: &str, timeout: Duration) -> PaneSnapshot {
+        let deadline = Instant::now() + timeout;
+        let pid = self.pane_id;
+        loop {
+            // Mirror App::pump_mux_events's exact gate logic:
+            //   if mux.has_pending_wakeup() { mux.poll_events(); drain_notifications(); }
+            if self.b().has_pending_wakeup() {
+                self.b().poll_events();
+                let mut notifs = Vec::new();
+                self.b().drain_notifications(&mut notifs);
+            }
+
+            if let Some(snap) = self.b().refresh_pane_snapshot(pid) {
+                if snapshot_contains(snap, text) {
+                    return snap.clone();
+                }
+            }
+
+            assert!(
+                Instant::now() < deadline,
+                "timed out waiting for text {text:?} via gated drain in pane {pid}"
+            );
+            thread::sleep(Duration::from_millis(20));
+        }
+    }
+}
+
+/// Compose the shell command for a gated round-trip test.
+///
+/// Disables prompt-framework hooks BEFORE sending the query, then unsets the
+/// shell prompt to a bare `$ ` and runs the query/capture/print sequence.
+/// User shells (zsh + starship/p10k) install async stdin readers in their
+/// `precmd` hooks that consume DA2/CSI 18t/DECRQM responses asynchronously
+/// — the disable+unset step neutralizes those hooks so `head -c` is the
+/// only reader competing for the PTY response bytes.
+///
+/// Per BUG-11-004 §02 consensus pattern: `stty raw -echo` disables ICANON +
+/// ECHOCTL so response bytes pass byte-exact AND command echo doesn't
+/// pre-trigger the parser; an inline `perl` reader reads up to N response
+/// bytes within a 1-second SIGALRM budget (POSIX-portable, macOS / Linux /
+/// BSD all ship `/usr/bin/perl` by default — unlike GNU coreutils `timeout`
+/// which is absent from default macOS PATH on GitHub runners, and unlike
+/// backgrounded `head -c N` which loses controlling-terminal access via
+/// SIGTTIN); `od -An -tx1` emits the captured bytes in lowercase hex with
+/// no spaces or newlines. Filename uses `$$` (shell PID) for uniqueness so
+/// parallel tests in `cargo test` do not collide on /tmp.
+///
+/// `cup_to_origin: true` prepends `\x1b[1;1H` (CUP to row 1 col 1) so
+/// cursor-position-dependent responses (DSR 6) report a deterministic
+/// `\x1b[1;1R` regardless of where the shell prompt left the cursor.
+///
+/// **Sentinel discipline**: the `TPR_RESP=` marker on the printed line is
+/// constructed via shell concatenation (`"TPR""_RESP="`) so the literal
+/// substring `TPR_RESP=` never appears in the SHELL ECHO of this command
+/// (which renders BEFORE `stty raw -echo` takes effect). The `TPR_RESP=`
+/// substring appears in the snapshot ONLY after the printf runs at the end
+/// of the pipeline, guaranteeing the wait-loop synchronizes on the actual
+/// response, not on the command echo.
+///
+/// Uses octal escapes (`\033`) instead of hex (`\x1b`) — POSIX-portable
+/// across `/bin/sh`, `bash`, and `zsh` (POSIX `printf` is not required to
+/// support `\xNN`, but `\NNN` is mandated).
+fn gated_round_trip_cmd(query: &str, n: usize, label: &str, cup_to_origin: bool) -> String {
+    let cup = if cup_to_origin {
+        "printf '\\033[1;1H'; "
+    } else {
+        ""
+    };
+    // Portable 1-second-bounded reader: perl with SIGALRM. `/usr/bin/perl`
+    // ships on macOS, Linux, and BSD by default. Avoids GNU coreutils
+    // `timeout` (missing on macOS GitHub runners) and the SIGTTIN trap that
+    // breaks `( head -c N ) &` in interactive shells. Reads one byte at a
+    // time and writes immediately so any bytes that arrived before the
+    // alarm fired are still captured.
+    let reader = format!(
+        "perl -e '$| = 1; eval {{ local $SIG{{ALRM}} = sub {{ exit 0 }}; alarm 1; \
+         my $g = 0; while ($g < {n}) {{ my $r = sysread(STDIN, my $c, 1); last unless $r; \
+         syswrite(STDOUT, $c); $g++; }} }}' > /tmp/tpr-{label}-$$"
+    );
+    format!(
+        "stty raw -echo; {cup}printf '{query}'; \
+         {reader}; \
+         printf '%s_RESP=BYTES=%s|HEX=%s\\n' 'TPR' \"$(wc -c < /tmp/tpr-{label}-$$)\" \
+         \"$(od -An -tx1 -v /tmp/tpr-{label}-$$ | tr -d ' \\n')\"; \
+         rm -f /tmp/tpr-{label}-$$; stty -raw echo\n"
+    )
+}
+
+/// Drive a gated round-trip for one device-query response kind.
+///
+/// Sends the composed shell command via `send_input`, then waits via
+/// [`TestContext::wait_for_text_via_gated_drain`] for any `BYTES=N|HEX=...`
+/// summary to appear in the snapshot. Returns the captured snapshot for
+/// per-test assertions on the hex bytes. The caller asserts the exact
+/// byte count via [`extract_hex_response`] which also serves as the
+/// negative pin (an empty / 0-byte response renders as `BYTES=0|HEX=`).
+///
+/// `cup_to_origin: true` for cursor-position-dependent responses (DSR 6)
+/// so the shell-prompt cursor placement does not pollute the response.
+fn assert_gated_round_trip(
+    ctx: &mut TestContext,
+    query: &str,
+    n: usize,
+    label: &str,
+    cup_to_origin: bool,
+) -> PaneSnapshot {
+    let pid = ctx.pane_id;
+    let cmd = gated_round_trip_cmd(query, n, label, cup_to_origin);
+    ctx.b().send_input(pid, cmd.as_bytes());
+    // Wait for the runtime-constructed `TPR_RESP=` sentinel — see
+    // `gated_round_trip_cmd` doc for why this never appears in the
+    // command echo. Synchronizes on the actual printf output, not on
+    // the shell's pre-`stty -echo` line echo.
+    let snap = ctx.wait_for_text_via_gated_drain("TPR_RESP=BYTES=", Duration::from_secs(30));
+    // Negative pin per BUG-11-026 §03: response bytes must NOT be empty.
+    let line = snapshot_find_line_with(&snap, "TPR_RESP=BYTES=").unwrap_or_default();
+    assert!(
+        !line.contains("BYTES=0|"),
+        "negative pin: response did not arrive (label={label}, line={line:?})"
+    );
+    snap
+}
+
+/// Find the first row in the snapshot that contains `needle`; return the
+/// row text trimmed of trailing spaces.
+fn snapshot_find_line_with(snapshot: &PaneSnapshot, needle: &str) -> Option<String> {
+    for row in &snapshot.cells {
+        let line: String = row.iter().map(|c| c.ch).collect();
+        if line.contains(needle) {
+            return Some(line.trim_end().to_string());
+        }
+    }
+    None
+}
+
+/// Extract the hex blob from the first `TPR_RESP=BYTES=N|HEX=<hex>` line in
+/// the snapshot. Returns the hex blob with no leading/trailing whitespace.
+fn extract_hex_response(snapshot: &PaneSnapshot) -> String {
+    let line = snapshot_find_line_with(snapshot, "TPR_RESP=BYTES=").unwrap_or_default();
+    line.split("HEX=").nth(1).unwrap_or("").trim().to_string()
+}
+
+/// Extract the byte-count from the `TPR_RESP=BYTES=N|HEX=...` line.
+fn extract_byte_count(snapshot: &PaneSnapshot) -> usize {
+    let line = snapshot_find_line_with(snapshot, "TPR_RESP=BYTES=").unwrap_or_default();
+    line.split("BYTES=")
+        .nth(1)
+        .and_then(|s| s.split('|').next())
+        .and_then(|s| s.trim().parse::<usize>().ok())
+        .unwrap_or(0)
 }
 
 // ---------------------------------------------------------------------------
@@ -727,6 +888,191 @@ macro_rules! muxbackend_contract_tests {
                 .extract_text(pid, &selection)
                 .expect("extract_text should return text");
             assert_eq!(text.trim(), "CXTR_MARKER");
+        }
+
+        // ───────────────────────────────────────────────────────────────
+        // BUG-11-026 §03 Cross-kind matrix: gated round-trip per kind
+        //
+        // Each test sends a device-query (DA/DSR/CSI 18t/DECRQM/DECRQSS)
+        // through a real PTY via `stty raw -echo + printf + head -c`,
+        // then drives the gated drain (`if mux.has_pending_wakeup()
+        // { mux.poll_events(); }`) until the BYTES=N|HEX=... summary
+        // appears in the snapshot. Pins the FULL CONTRACT
+        // App::pump_mux_events relies on at oriterm/src/app/mux_pump/mod.rs:35-43:
+        // gate-flag transitions, response-bytes path through poll_events,
+        // wakeup-callback shape, coalescing guard.
+        // ───────────────────────────────────────────────────────────────
+
+        #[test]
+        fn da1_gated_round_trip() {
+            let mut ctx = $factory();
+            // DA1: \x1b[c → \x1b[?64;6;4c (10 bytes)
+            let snap = assert_gated_round_trip(&mut ctx, "\\033[c", 10, "da1", false);
+            assert_eq!(extract_byte_count(&snap), 10, "DA1 byte count mismatch");
+            let hex = extract_hex_response(&snap);
+            // ESC [ ? 6 4 ; 6 ; 4 c → 1b 5b 3f 36 34 3b 36 3b 34 63
+            assert_eq!(hex, "1b5b3f36343b363b3463", "DA1 response bytes mismatch");
+        }
+
+        #[test]
+        #[ignore = "BUG-11-029: DA2 response consumed by interactive shell prompt-framework (zsh + starship/p10k); Layer-1 test in oriterm_mux/src/pane/io_thread/effect_router/tests.rs::da2_byte_parse_emits_pty_write_response_with_version pins the byte-parse → MuxEvent emission contract; un-ignore once a portable test seam (Rust helper binary or non-shell PTY harness) lands per the §07 follow-up bug filing."]
+        fn da2_gated_round_trip() {
+            let mut ctx = $factory();
+            // DA2: \x1b[>c → \x1b[>0;<version>;1c — variable version length.
+            // version_number for "0.2.0" → 200, so realistic response is
+            // \x1b[>0;200;1c = 11 bytes. Use n=14 max with timeout-bounded
+            // read; pattern match prefix/suffix on captured bytes.
+            let snap = assert_gated_round_trip(&mut ctx, "\\033[>c", 14, "da2", false);
+            let bytes = extract_byte_count(&snap);
+            assert!(bytes >= 9 && bytes <= 14, "DA2 byte count out of range: {bytes}");
+            let hex = extract_hex_response(&snap);
+            // Prefix: ESC [ > 0 ; → 1b5b3e303b
+            // Suffix: ; 1 c → 3b3163 (last 6 hex chars)
+            assert!(hex.starts_with("1b5b3e303b"), "DA2 prefix mismatch: {hex}");
+            assert!(hex.ends_with("3b3163"), "DA2 suffix mismatch: {hex}");
+        }
+
+        #[test]
+        fn da3_gated_round_trip() {
+            let mut ctx = $factory();
+            // DA3: \x1b[=c → \x1bP!|00000000\x1b\\ (14 bytes)
+            let snap = assert_gated_round_trip(&mut ctx, "\\033[=c", 14, "da3", false);
+            assert_eq!(extract_byte_count(&snap), 14, "DA3 byte count mismatch");
+            let hex = extract_hex_response(&snap);
+            // ESC P ! | 0 0 0 0 0 0 0 0 ESC \ → 1b 50 21 7c 30303030 30303030 1b 5c
+            assert_eq!(hex, "1b50217c30303030303030301b5c", "DA3 response bytes mismatch");
+        }
+
+        #[test]
+        fn dsr5_gated_round_trip() {
+            let mut ctx = $factory();
+            // DSR 5: \x1b[5n → \x1b[0n (4 bytes)
+            let snap = assert_gated_round_trip(&mut ctx, "\\033[5n", 4, "dsr5", false);
+            assert_eq!(extract_byte_count(&snap), 4, "DSR 5 byte count mismatch");
+            let hex = extract_hex_response(&snap);
+            // ESC [ 0 n → 1b5b306e
+            assert_eq!(hex, "1b5b306e", "DSR 5 response bytes mismatch");
+        }
+
+        #[test]
+        fn dsr6_gated_round_trip() {
+            let mut ctx = $factory();
+            // DSR 6: \x1b[6n → \x1b[<line>;<col>R. cup_to_origin=true forces
+            // cursor to row 1 col 1 BEFORE the query so the response is
+            // deterministically \x1b[1;1R = 6 bytes regardless of where the
+            // shell prompt left the cursor.
+            let snap = assert_gated_round_trip(&mut ctx, "\\033[6n", 6, "dsr6", true);
+            assert_eq!(extract_byte_count(&snap), 6, "DSR 6 byte count mismatch");
+            let hex = extract_hex_response(&snap);
+            // ESC [ 1 ; 1 R → 1b 5b 31 3b 31 52
+            assert_eq!(hex, "1b5b313b3152", "DSR 6 response bytes mismatch");
+        }
+
+        #[test]
+        #[ignore = "BUG-11-029: CSI 18t response consumed by interactive shell prompt-framework (zsh + starship/p10k); Layer-1 test in oriterm_mux/src/pane/io_thread/effect_router/tests.rs::csi_18t_byte_parse_at_default_grid_emits_size_24_80 pins the byte-parse → MuxEvent emission contract; un-ignore once a portable test seam (Rust helper binary or non-shell PTY harness) lands per the §07 follow-up bug filing."]
+        fn csi_18t_gated_round_trip() {
+            let mut ctx = $factory();
+            // CSI 18t: \x1b[18t → \x1b[8;<lines>;<cols>t. Default test grid
+            // dimensions vary by PTY environment; use timeout-bounded read
+            // and pattern match the prefix/suffix on captured bytes.
+            let snap = assert_gated_round_trip(&mut ctx, "\\033[18t", 14, "csi18t", false);
+            let bytes = extract_byte_count(&snap);
+            assert!(bytes >= 8 && bytes <= 14, "CSI 18t byte count out of range: {bytes}");
+            let hex = extract_hex_response(&snap);
+            // Prefix: ESC [ 8 ; → 1b5b383b
+            // Suffix: t → 74 (last 2 hex chars)
+            assert!(hex.starts_with("1b5b383b"), "CSI 18t prefix mismatch: {hex}");
+            assert!(hex.ends_with("74"), "CSI 18t suffix mismatch: {hex}");
+        }
+
+        #[test]
+        fn decrqm_set_gated_round_trip() {
+            let mut ctx = $factory();
+            // DECRQM ?25$p → \x1b[?25;1$y — cursor visible by default = set.
+            // Response: ESC [ ? 2 5 ; 1 $ y = 9 bytes.
+            let snap = assert_gated_round_trip(&mut ctx, "\\033[?25\\044p", 9, "decrqm-set", false);
+            assert_eq!(extract_byte_count(&snap), 9, "DECRQM ?25 byte count mismatch");
+            let hex = extract_hex_response(&snap);
+            assert_eq!(hex, "1b5b3f32353b312479", "DECRQM ?25 response bytes mismatch");
+        }
+
+        #[test]
+        fn decrqm_reset_gated_round_trip() {
+            let mut ctx = $factory();
+            // DECRQM ?1049$p → \x1b[?1049;2$y — alt screen off by default = reset.
+            // Response: ESC [ ? 1 0 4 9 ; 2 $ y = 11 bytes.
+            let snap = assert_gated_round_trip(&mut ctx, "\\033[?1049\\044p", 11, "decrqm-reset", false);
+            assert_eq!(extract_byte_count(&snap), 11, "DECRQM ?1049 byte count mismatch");
+            let hex = extract_hex_response(&snap);
+            assert_eq!(hex, "1b5b3f313034393b322479", "DECRQM ?1049 response bytes mismatch");
+        }
+
+        #[test]
+        fn decrqm_unknown_gated_round_trip() {
+            let mut ctx = $factory();
+            // DECRQM ?9999$p → \x1b[?9999;0$y → unknown mode = 0.
+            // Response: ESC [ ? 9 9 9 9 ; 0 $ y = 11 bytes.
+            let snap = assert_gated_round_trip(&mut ctx, "\\033[?9999\\044p", 11, "decrqm-unknown", false);
+            assert_eq!(extract_byte_count(&snap), 11, "DECRQM ?9999 byte count mismatch");
+            let hex = extract_hex_response(&snap);
+            assert_eq!(hex, "1b5b3f393939393b302479", "DECRQM ?9999 response bytes mismatch");
+        }
+
+        #[test]
+        fn decrqss_decscl_gated_round_trip() {
+            let mut ctx = $factory();
+            // DECRQSS DECSCL: \x1bP$q"p\x1b\\ → \x1bP1$r64;1"p\x1b\\
+            // Response: ESC P 1 $ r 6 4 ; 1 " p ESC \ = 13 bytes.
+            let snap = assert_gated_round_trip(
+                &mut ctx,
+                "\\033P\\044q\\042p\\033\\\\",
+                13,
+                "decrqss-decscl",
+                false,
+            );
+            assert_eq!(extract_byte_count(&snap), 13, "DECRQSS DECSCL byte count mismatch");
+            let hex = extract_hex_response(&snap);
+            // ESC P 1 $ r 6 4 ; 1 " p ESC \ → 1b 50 31 24 72 36 34 3b 31 22 70 1b 5c
+            assert_eq!(
+                hex, "1b5031247236343b3122701b5c",
+                "DECRQSS DECSCL response bytes mismatch"
+            );
+        }
+
+        #[test]
+        fn decrqss_sgr_gated_round_trip() {
+            let mut ctx = $factory();
+            // DECRQSS SGR: \x1bP$qm\x1b\\ → \x1bP1$r0m\x1b\\ at default cursor template.
+            // Response: ESC P 1 $ r 0 m ESC \ = 9 bytes.
+            let snap = assert_gated_round_trip(
+                &mut ctx,
+                "\\033P\\044qm\\033\\\\",
+                9,
+                "decrqss-sgr",
+                false,
+            );
+            assert_eq!(extract_byte_count(&snap), 9, "DECRQSS SGR byte count mismatch");
+            let hex = extract_hex_response(&snap);
+            // ESC P 1 $ r 0 m ESC \ → 1b 50 31 24 72 30 6d 1b 5c
+            assert_eq!(hex, "1b50312472306d1b5c", "DECRQSS SGR response bytes mismatch");
+        }
+
+        #[test]
+        fn decrqss_unknown_gated_round_trip() {
+            let mut ctx = $factory();
+            // DECRQSS unknown: \x1bP$qXX\x1b\\ → \x1bP0$r\x1b\\
+            // Response: ESC P 0 $ r ESC \ = 7 bytes.
+            let snap = assert_gated_round_trip(
+                &mut ctx,
+                "\\033P\\044qXX\\033\\\\",
+                7,
+                "decrqss-unknown",
+                false,
+            );
+            assert_eq!(extract_byte_count(&snap), 7, "DECRQSS unknown byte count mismatch");
+            let hex = extract_hex_response(&snap);
+            // ESC P 0 $ r ESC \ → 1b 50 30 24 72 1b 5c
+            assert_eq!(hex, "1b503024721b5c", "DECRQSS unknown response bytes mismatch");
         }
     };
 }

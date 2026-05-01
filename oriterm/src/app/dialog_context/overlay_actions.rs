@@ -15,6 +15,12 @@ use crate::app::App;
 
 impl App {
     /// Open a dropdown popup within a dialog window's overlay manager.
+    ///
+    /// Mounts a `MenuWidget` sized to the trigger anchor. When `searchable`
+    /// is `true` the menu also runs in filterable mode (search row + filter
+    /// state); `initial_highlight` overrides the popup's first highlighted
+    /// entry (used for the `ArrowDown`-from-trigger case where the user
+    /// expects the first item highlighted regardless of `selected`).
     #[expect(
         clippy::too_many_arguments,
         reason = "forwarding OpenDropdown fields + window ID"
@@ -26,27 +32,21 @@ impl App {
         options: Vec<String>,
         selected: usize,
         anchor: Rect,
+        searchable: bool,
+        initial_highlight: Option<usize>,
     ) {
         use oriterm_ui::overlay::Placement;
-        use oriterm_ui::widgets::menu::{MenuEntry, MenuStyle, MenuWidget};
 
-        let entries: Vec<MenuEntry> = options
-            .into_iter()
-            .map(|label| MenuEntry::Item { label })
-            .collect();
-
-        let mut style = MenuStyle::from_theme(&self.ui_theme);
-        style.min_width = anchor.width();
-        style.extra_width = 24.0;
-        style.shadow_color = self.ui_theme.shadow;
-        style.max_height = Some(300.0);
-        style.selected_bg = self.ui_theme.accent.with_alpha(0.12);
-
-        let mut widget = MenuWidget::new(entries).with_style(style);
-        if selected < widget.entries().len() {
-            widget = widget.with_selected_index(selected);
-            widget.ensure_visible(selected);
-        }
+        let widget = crate::app::dropdown_popup::build_dropdown_menu_widget(
+            crate::app::dropdown_popup::DropdownPopupConfig {
+                options,
+                selected,
+                anchor,
+                searchable,
+                initial_highlight,
+                theme: &self.ui_theme,
+            },
+        );
 
         let now = Instant::now();
 

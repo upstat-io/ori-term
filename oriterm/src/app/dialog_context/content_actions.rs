@@ -39,8 +39,18 @@ impl App {
                 options,
                 selected,
                 anchor,
+                searchable,
+                initial_highlight,
             } => {
-                self.open_dialog_dropdown(window_id, id, options, selected, anchor);
+                self.open_dialog_dropdown(
+                    window_id,
+                    id,
+                    options,
+                    selected,
+                    anchor,
+                    searchable,
+                    initial_highlight,
+                );
             }
             WidgetAction::Toggled { .. }
             | WidgetAction::Selected { .. }

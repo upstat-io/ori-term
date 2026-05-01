@@ -733,3 +733,181 @@ fn clear_pending_notifications_does_not_retro_collapse_across_drains() {
         "batch 2 ClearPendingNotifications must surface as a MuxEvent for downstream staging purge"
     );
 }
+
+// --- BUG-11-004 — DA/DSR/CSI 18t/DECRQM byte-parse → MuxEvent round-trip ---
+//
+// These tests pin the byte-parse → effect-emit → router → MuxEvent leg for
+// every response kind handled in oriterm_core/src/term/handler/status.rs.
+// Each test calls handle_bytes() with the canonical query bytes and asserts
+// mux_rx receives MuxEvent::PtyWrite with the byte-exact response.
+// See bug-tracker/plans/completed/BUG-11-004/.
+
+/// Regression: BUG-11-004 — DA1 (CSI c) emits VT420-class device attributes.
+/// See: bug-tracker/plans/completed/BUG-11-004/section-03-tdd-matrix.md
+#[test]
+fn da1_byte_parse_emits_pty_write_response() {
+    let (mut t, mux_rx, _wake) = make_router_harness();
+    t.handle_bytes(b"\x1b[c");
+    let event = mux_rx
+        .recv_timeout(Duration::from_millis(100))
+        .expect("expected MuxEvent::PtyWrite for DA1 response");
+    match event {
+        MuxEvent::PtyWrite { data, .. } => {
+            assert_eq!(data, b"\x1b[?64;6;4c", "DA1 response bytes mismatch");
+        }
+        other => panic!("expected PtyWrite, got {other:?}"),
+    }
+}
+
+/// Regression: BUG-11-004 — DA3 (CSI = c) emits DCS unit-ID response.
+#[test]
+fn da3_byte_parse_emits_pty_write_response() {
+    let (mut t, mux_rx, _wake) = make_router_harness();
+    t.handle_bytes(b"\x1b[=c");
+    let event = mux_rx
+        .recv_timeout(Duration::from_millis(100))
+        .expect("expected MuxEvent::PtyWrite for DA3 response");
+    match event {
+        MuxEvent::PtyWrite { data, .. } => {
+            assert_eq!(
+                data, b"\x1bP!|00000000\x1b\\",
+                "DA3 response bytes mismatch"
+            );
+        }
+        other => panic!("expected PtyWrite, got {other:?}"),
+    }
+}
+
+/// Regression: BUG-11-004 — DSR 5 (CSI 5 n) emits terminal-OK status.
+#[test]
+fn dsr5_byte_parse_emits_pty_write_response() {
+    let (mut t, mux_rx, _wake) = make_router_harness();
+    t.handle_bytes(b"\x1b[5n");
+    let event = mux_rx
+        .recv_timeout(Duration::from_millis(100))
+        .expect("expected MuxEvent::PtyWrite for DSR 5 response");
+    match event {
+        MuxEvent::PtyWrite { data, .. } => {
+            assert_eq!(data, b"\x1b[0n", "DSR 5 response bytes mismatch");
+        }
+        other => panic!("expected PtyWrite, got {other:?}"),
+    }
+}
+
+/// Regression: BUG-11-004 — DSR 6 (CSI 6 n) at default cursor reports (1,1).
+#[test]
+fn dsr6_byte_parse_at_default_cursor_emits_position_one_one() {
+    let (mut t, mux_rx, _wake) = make_router_harness();
+    t.handle_bytes(b"\x1b[6n");
+    let event = mux_rx
+        .recv_timeout(Duration::from_millis(100))
+        .expect("expected MuxEvent::PtyWrite for DSR 6 response");
+    match event {
+        MuxEvent::PtyWrite { data, .. } => {
+            assert_eq!(
+                data, b"\x1b[1;1R",
+                "DSR 6 default-cursor response bytes mismatch"
+            );
+        }
+        other => panic!("expected PtyWrite, got {other:?}"),
+    }
+}
+
+/// Regression: BUG-11-004 — CSI 18t at default 24x80 grid reports `\x1b[8;24;80t`.
+#[test]
+fn csi_18t_byte_parse_at_default_grid_emits_size_24_80() {
+    let (mut t, mux_rx, _wake) = make_router_harness();
+    t.handle_bytes(b"\x1b[18t");
+    let event = mux_rx
+        .recv_timeout(Duration::from_millis(100))
+        .expect("expected MuxEvent::PtyWrite for CSI 18t response");
+    match event {
+        MuxEvent::PtyWrite { data, .. } => {
+            assert_eq!(
+                data, b"\x1b[8;24;80t",
+                "CSI 18t default-grid response bytes mismatch"
+            );
+        }
+        other => panic!("expected PtyWrite, got {other:?}"),
+    }
+}
+
+/// Regression: BUG-11-004 — DA2 (CSI > c) emits versioned response prefix `\x1b[>0;` + version + `;1c`.
+#[test]
+fn da2_byte_parse_emits_pty_write_response_with_version() {
+    let (mut t, mux_rx, _wake) = make_router_harness();
+    t.handle_bytes(b"\x1b[>c");
+    let event = mux_rx
+        .recv_timeout(Duration::from_millis(100))
+        .expect("expected MuxEvent::PtyWrite for DA2 response");
+    match event {
+        MuxEvent::PtyWrite { data, .. } => {
+            assert!(
+                data.starts_with(b"\x1b[>0;"),
+                "DA2 response must start with \\x1b[>0;, got {data:?}"
+            );
+            assert!(
+                data.ends_with(b";1c"),
+                "DA2 response must end with ;1c, got {data:?}"
+            );
+        }
+        other => panic!("expected PtyWrite, got {other:?}"),
+    }
+}
+
+/// Regression: BUG-11-004 — DECRQM SET (mode 25 cursor visible) reports value 1.
+#[test]
+fn decrqm_set_byte_parse_emits_value_one() {
+    let (mut t, mux_rx, _wake) = make_router_harness();
+    t.handle_bytes(b"\x1b[?25$p");
+    let event = mux_rx
+        .recv_timeout(Duration::from_millis(100))
+        .expect("expected MuxEvent::PtyWrite for DECRQM mode 25 response");
+    match event {
+        MuxEvent::PtyWrite { data, .. } => {
+            assert_eq!(
+                data, b"\x1b[?25;1$y",
+                "DECRQM mode 25 default response bytes mismatch"
+            );
+        }
+        other => panic!("expected PtyWrite, got {other:?}"),
+    }
+}
+
+/// Regression: BUG-11-004 — DECRQM RESET (mode 1049 alt screen off by default) reports value 2.
+#[test]
+fn decrqm_reset_byte_parse_emits_value_two() {
+    let (mut t, mux_rx, _wake) = make_router_harness();
+    t.handle_bytes(b"\x1b[?1049$p");
+    let event = mux_rx
+        .recv_timeout(Duration::from_millis(100))
+        .expect("expected MuxEvent::PtyWrite for DECRQM mode 1049 response");
+    match event {
+        MuxEvent::PtyWrite { data, .. } => {
+            assert_eq!(
+                data, b"\x1b[?1049;2$y",
+                "DECRQM mode 1049 default response bytes mismatch"
+            );
+        }
+        other => panic!("expected PtyWrite, got {other:?}"),
+    }
+}
+
+/// Regression: BUG-11-004 — DECRQM unknown mode reports value 0 (unrecognized).
+#[test]
+fn decrqm_unknown_mode_emits_value_zero() {
+    let (mut t, mux_rx, _wake) = make_router_harness();
+    t.handle_bytes(b"\x1b[?9999$p");
+    let event = mux_rx
+        .recv_timeout(Duration::from_millis(100))
+        .expect("expected MuxEvent::PtyWrite for DECRQM unknown-mode response");
+    match event {
+        MuxEvent::PtyWrite { data, .. } => {
+            assert_eq!(
+                data, b"\x1b[?9999;0$y",
+                "DECRQM unknown-mode response bytes mismatch"
+            );
+        }
+        other => panic!("expected PtyWrite, got {other:?}"),
+    }
+}

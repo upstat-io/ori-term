@@ -146,9 +146,14 @@ impl WindowRoot {
         )
     }
 
-    /// Routes a key event through the overlay manager.
+    /// Routes a key event through the overlay manager with keymap-first
+    /// dispatch (BUG-03-003).
     ///
-    /// Returns `PassThrough` if no overlay consumed the event.
+    /// Resolves the topmost overlay's `key_context()` against
+    /// `self.keymap` and dispatches via `dispatch_keymap_action` when a
+    /// binding matches. Falls through to the legacy `on_input` pipeline +
+    /// inline-Escape backstop on a keymap miss. Returns `PassThrough` if
+    /// no overlay consumed the event.
     #[expect(
         clippy::too_many_arguments,
         reason = "forwarding overlay manager params with borrow splitting"
@@ -161,8 +166,9 @@ impl WindowRoot {
         focused_widget: Option<WidgetId>,
         now: Instant,
     ) -> crate::overlay::OverlayEventResult {
-        self.overlays.process_key_event(
+        self.overlays.process_key_event_with_keymap(
             event,
+            &self.keymap,
             measurer,
             theme,
             focused_widget,

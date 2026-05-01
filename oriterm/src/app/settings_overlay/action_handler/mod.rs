@@ -11,7 +11,7 @@ use crate::config::{
     NotifyOnCommandFinish, PasteWarning, TabBarPosition, TabBarStyle,
 };
 
-use super::form_builder::{BELL_DURATION_VALUES, FONT_FAMILIES, SettingsIds};
+use super::form_builder::{BELL_DURATION_VALUES, SettingsIds};
 
 /// Weight values matching the dropdown items in the font page builder.
 const FONT_WEIGHTS: [u16; 9] = [100, 200, 300, 400, 500, 600, 700, 800, 900];
@@ -115,7 +115,7 @@ fn handle_font(action: &WidgetAction, ids: &SettingsIds, config: &mut Config) ->
             config.font.family = if *index == 0 {
                 None
             } else {
-                FONT_FAMILIES.get(*index).map(|s| (*s).to_owned())
+                ids.font_family_items.get(*index).cloned()
             };
             true
         }

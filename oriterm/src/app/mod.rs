@@ -18,9 +18,12 @@ pub(crate) mod dialog_context;
 pub(crate) mod dialog_management;
 mod dialog_rendering;
 mod divider_drag;
+mod dpi_change;
+mod dropdown_popup;
 mod event_loop;
 mod event_loop_helpers;
 mod floating_drag;
+mod focus_accessors;
 mod gpu_recovery;
 mod init;
 mod keyboard_input;
@@ -54,14 +57,14 @@ use std::time::{Duration, Instant};
 use winit::keyboard::ModifiersState;
 use winit::window::WindowId;
 
-use oriterm_core::{Selection, TermMode};
+use oriterm_core::Selection;
 use oriterm_mux::{MarkCursor, PaneId};
 
 use crate::session::{SessionRegistry, WindowId as SessionWindowId};
 use crate::window_manager::WindowManager;
 
 use self::dialog_context::DialogWindowContext;
-use self::event_loop_helpers::{resolve_ui_theme, resolve_ui_theme_with, winit_mods_to_ui};
+use self::event_loop_helpers::{resolve_ui_theme, winit_mods_to_ui};
 use self::keyboard_input::ImeState;
 use self::mouse_selection::MouseState;
 use self::perf_stats::PerfStats;
@@ -71,7 +74,7 @@ use crate::config::Config;
 use crate::config::monitor::ConfigMonitor;
 use crate::event::TermEvent;
 use crate::font::FontSet;
-use crate::gpu::{GpuPipelines, GpuState, WindowRenderer};
+use crate::gpu::{GpuPipelines, GpuState};
 use crate::keybindings::KeyBinding;
 use oriterm_mux::MuxNotification;
 use oriterm_mux::backend::MuxBackend;
@@ -289,284 +292,6 @@ pub(crate) struct App {
     // `None` on Linux/macOS and on the normal Windows startup path.
     #[cfg(target_os = "windows")]
     handoff_pending: Option<crate::platform::default_terminal::handoff::HandoffData>,
-}
-
-impl App {
-    // -- Window context accessors --
-
-    /// The focused window's context, if any.
-    fn focused_ctx(&self) -> Option<&WindowContext> {
-        self.focused_window_id.and_then(|id| self.windows.get(&id))
-    }
-
-    /// The focused window's context (mutable), if any.
-    fn focused_ctx_mut(&mut self) -> Option<&mut WindowContext> {
-        self.focused_window_id
-            .and_then(|id| self.windows.get_mut(&id))
-    }
-
-    /// The focused window's renderer, if any.
-    fn focused_renderer(&self) -> Option<&WindowRenderer> {
-        self.focused_window_id
-            .and_then(|id| self.windows.get(&id))
-            .and_then(|ctx| ctx.renderer.as_ref())
-    }
-
-    /// Mark all windows as needing a redraw.
-    ///
-    /// Used when mux notifications (PTY output, layout changes) may affect
-    /// any window — not just the focused one. In multi-window setups, pane
-    /// output in the unfocused window must still trigger a render.
-    fn mark_all_windows_dirty(&mut self) {
-        for ctx in self.windows.values_mut() {
-            ctx.root.mark_dirty();
-        }
-    }
-
-    /// Mark only the window containing `pane_id` as dirty.
-    ///
-    /// Falls back to [`mark_all_windows_dirty`] if the pane's window cannot
-    /// be resolved (orphan pane during close, or session out of sync).
-    fn mark_pane_window_dirty(&mut self, pane_id: PaneId) {
-        if let Some(session_wid) = self.session.window_for_pane(pane_id) {
-            for ctx in self.windows.values_mut() {
-                if ctx.window.session_window_id() == session_wid {
-                    ctx.root.mark_dirty();
-                    return;
-                }
-            }
-        }
-        // Fallback: pane not found in session → mark all dirty.
-        self.mark_all_windows_dirty();
-    }
-
-    /// Register (or clear) an animation-frame deadline on the window
-    /// containing `pane_id`.
-    ///
-    /// Routes `MuxNotification::AnimationDeadlineChanged { deadline }` into
-    /// the owning window's `RenderScheduler` via `set_animation_deadline`.
-    /// `Some(t)` upserts — the scheduler wakes the winit event loop at `t`
-    /// via `ControlFlow::WaitUntil`. `None` clears the prior deadline so a
-    /// queued wake from an animation that has since stopped does NOT fire
-    /// spuriously — critical for honoring the "zero idle CPU beyond cursor
-    /// blink" invariant (`.claude/rules/oriterm.md`) across animation
-    /// start/stop cycles.
-    pub(super) fn request_pane_animation_frame_at(
-        &mut self,
-        pane_id: PaneId,
-        deadline: Option<Instant>,
-    ) {
-        let Some(session_wid) = self.session.window_for_pane(pane_id) else {
-            return;
-        };
-        let key = pane_id.raw();
-        for ctx in self.windows.values_mut() {
-            if ctx.window.session_window_id() == session_wid {
-                ctx.root
-                    .scheduler_mut()
-                    .set_animation_deadline(key, deadline);
-                return;
-            }
-        }
-    }
-
-    /// Re-rasterize fonts and update rendering settings for a new DPI scale.
-    ///
-    /// Called when the window moves between monitors with different scale
-    /// factors. Recalculates font size at physical DPI, updates hinting
-    /// and subpixel mode, and clears/recaches glyph atlases.
-    ///
-    /// `winit_id` identifies the window whose DPI changed. Only that
-    /// window's renderer is affected — other windows keep their DPI.
-    fn handle_dpi_change(&mut self, winit_id: WindowId, scale_factor: f64) {
-        let Some(gpu) = &self.gpu else { return };
-        let Some(ctx) = self.windows.get_mut(&winit_id) else {
-            return;
-        };
-        let Some(renderer) = ctx.renderer.as_mut() else {
-            return;
-        };
-        let scale = scale_factor as f32;
-        let physical_dpi = DEFAULT_DPI * scale;
-
-        // Re-rasterize at new physical DPI. This recomputes cell metrics
-        // and clears the glyph cache + GPU atlases.
-        renderer.set_font_size(self.config.font.size, physical_dpi, gpu);
-
-        // Update hinting and subpixel mode for the new scale factor.
-        let hinting = config_reload::resolve_hinting(&self.config.font, scale_factor);
-        let opacity = f64::from(self.config.window.effective_opacity());
-        let format = config_reload::resolve_subpixel_mode(&self.config.font, scale_factor, opacity)
-            .glyph_format();
-        renderer.set_hinting_and_format(hinting, format, gpu);
-
-        // Re-resolve atlas filtering (may change with scale factor).
-        let atlas_filter = config_reload::resolve_atlas_filtering(&self.config.font, scale_factor);
-        if let Some(pipelines) = &self.pipelines {
-            renderer.set_atlas_filtering(atlas_filter, gpu, &pipelines.atlas_layout);
-        }
-
-        ctx.pane_cache.invalidate_all();
-        ctx.text_cache.clear();
-        ctx.root.invalidation_mut().invalidate_all();
-        ctx.root.damage_mut().reset();
-        ctx.root.mark_dirty();
-
-        // Mark all grid lines dirty so the frame extraction re-reads every
-        // cell with the new cell metrics. Without this, the terminal content
-        // appears stale until PTY output marks individual lines dirty.
-        if let Some(pane_id) = self.active_pane_id_for_window(winit_id) {
-            if let Some(mux) = self.mux.as_mut() {
-                mux.mark_all_dirty(pane_id);
-            }
-        }
-
-        // Propagate the new cell metrics to every pane in the
-        // affected window so `FixedPixels` image placements refresh
-        // their cell coverage. Re-read through `self.windows` because
-        // we no longer hold the `ctx` borrow (mux access above
-        // required relinquishing it).
-        if let Some(ctx) = self.windows.get(&winit_id) {
-            if let Some(renderer) = ctx.renderer.as_ref() {
-                let cell = renderer.cell_metrics();
-                let cell_w = cell.width.round().max(1.0) as u16;
-                let cell_h = cell.height.round().max(1.0) as u16;
-                self.broadcast_cell_metrics_to_window(winit_id, cell_w, cell_h);
-            }
-        }
-    }
-
-    /// Handle system dark/light theme change.
-    ///
-    /// Updates the terminal palette and UI chrome colors. Respects
-    /// [`ThemeOverride`]: if the user forced dark/light, the system
-    /// notification is ignored — only `Auto` delegates to the system.
-    fn handle_theme_changed(&mut self, winit_theme: winit::window::Theme) {
-        let system_theme = match winit_theme {
-            winit::window::Theme::Dark => oriterm_core::Theme::Dark,
-            winit::window::Theme::Light => oriterm_core::Theme::Light,
-        };
-        let theme = self.config.colors.resolve_theme(|| system_theme);
-        let palette = config_reload::build_palette_from_config(&self.config.colors, theme);
-
-        // Apply to all panes via MuxBackend.
-        if let Some(mux) = self.mux.as_mut() {
-            for pane_id in mux.pane_ids() {
-                mux.set_pane_theme(pane_id, theme, palette.clone());
-            }
-        }
-
-        // Update UI chrome theme (tab bar, status bar, window controls).
-        self.ui_theme = resolve_ui_theme_with(&self.config, system_theme);
-        self.apply_theme_to_chrome();
-    }
-
-    /// Read the terminal mode, locking briefly.
-    ///
-    /// Returns `None` if no active pane is present.
-    fn terminal_mode(&self) -> Option<TermMode> {
-        let id = self.active_pane_id()?;
-        self.pane_mode(id)
-    }
-
-    // -- Mux pane accessors --
-
-    /// The active pane's ID for a specific winit window.
-    ///
-    /// Resolves the session window from the winit window context, then walks
-    /// the local session model (window → active tab → active pane) to find
-    /// the `PaneId`. Used by window-specific operations (resize, DPI change).
-    fn active_pane_id_for_window(&self, winit_id: WindowId) -> Option<PaneId> {
-        let ctx = self.windows.get(&winit_id)?;
-        let session_wid = ctx.window.session_window_id();
-        let win = self.session.get_window(session_wid)?;
-        let tab_id = win.active_tab()?;
-        let tab = self.session.get_tab(tab_id)?;
-        Some(tab.active_pane())
-    }
-
-    /// The active pane's ID, derived from the local session model.
-    fn active_pane_id(&self) -> Option<PaneId> {
-        let win_id = self.active_window?;
-        let win = self.session.get_window(win_id)?;
-        let tab_id = win.active_tab()?;
-        let tab = self.session.get_tab(tab_id)?;
-        Some(tab.active_pane())
-    }
-
-    /// Terminal mode flags for a pane.
-    ///
-    /// Delegates to [`MuxBackend::pane_mode`] — embedded mode reads the
-    /// lock-free atomic cache, daemon mode reads the cached snapshot.
-    fn pane_mode(&self, pane_id: PaneId) -> Option<TermMode> {
-        self.mux
-            .as_ref()?
-            .pane_mode(pane_id)
-            .map(TermMode::from_bits_truncate)
-    }
-
-    /// Drain the notification buffer and invoke `handler` on each notification.
-    ///
-    /// Takes the buffer from `self` to avoid borrow conflicts (the handler
-    /// gets `&mut Self` without conflicting with the buffer), then restores
-    /// it afterward to preserve `Vec` capacity across frames.
-    fn with_drained_notifications(&mut self, mut handler: impl FnMut(&mut Self, MuxNotification)) {
-        let mut buf = std::mem::take(&mut self.notification_buf);
-        let count = buf.len();
-        #[allow(
-            clippy::iter_with_drain,
-            reason = "drain preserves Vec capacity; into_iter drops it"
-        )]
-        for n in buf.drain(..) {
-            handler(self, n);
-        }
-        // Shrink if capacity vastly exceeds typical usage.
-        let cap = buf.capacity();
-        if cap > 4 * count && cap > 4096 {
-            buf.shrink_to(count * 2);
-        }
-        self.notification_buf = buf;
-    }
-
-    /// Current tab width lock value, if active.
-    ///
-    /// Delegates to the tab bar widget — the widget is the single source
-    /// of truth for this value.
-    pub(super) fn tab_width_lock(&self) -> Option<f32> {
-        self.focused_ctx()
-            .and_then(|ctx| ctx.tab_bar.tab_width_lock())
-    }
-
-    /// Freeze tab widths at `width` to prevent layout jitter.
-    pub(super) fn acquire_tab_width_lock(&mut self, width: f32) {
-        if let Some(ctx) = self.focused_ctx_mut() {
-            ctx.tab_bar.set_tab_width_lock(Some(width));
-        }
-    }
-
-    /// Restore the mouse cursor if it was hidden by typing auto-hide.
-    ///
-    /// Called on mouse move, cursor leave, and focus loss to ensure the
-    /// OS cursor is visible again. Skips the winit call when the cursor
-    /// is already visible to avoid redundant system calls.
-    fn restore_mouse_cursor(&mut self, winit_id: WindowId) {
-        if self.mouse_cursor_hidden {
-            self.mouse_cursor_hidden = false;
-            if let Some(ctx) = self.windows.get(&winit_id) {
-                ctx.window.window().set_cursor_visible(true);
-            }
-        }
-    }
-
-    /// Release the tab width lock, allowing tabs to recompute widths.
-    pub(super) fn release_tab_width_lock(&mut self) {
-        if self.tab_width_lock().is_some() {
-            if let Some(ctx) = self.focused_ctx_mut() {
-                ctx.tab_bar.set_tab_width_lock(None);
-                ctx.root.mark_dirty();
-            }
-        }
-    }
 }
 
 #[cfg(test)]

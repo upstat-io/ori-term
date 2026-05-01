@@ -15,6 +15,32 @@ use crate::platform::audio;
 use super::App;
 
 impl App {
+    /// Drain the notification buffer and invoke `handler` on each notification.
+    ///
+    /// Takes the buffer from `self` to avoid borrow conflicts (the handler
+    /// gets `&mut Self` without conflicting with the buffer), then restores
+    /// it afterward to preserve `Vec` capacity across frames.
+    pub(super) fn with_drained_notifications(
+        &mut self,
+        mut handler: impl FnMut(&mut Self, MuxNotification),
+    ) {
+        let mut buf = std::mem::take(&mut self.notification_buf);
+        let count = buf.len();
+        #[allow(
+            clippy::iter_with_drain,
+            reason = "drain preserves Vec capacity; into_iter drops it"
+        )]
+        for n in buf.drain(..) {
+            handler(self, n);
+        }
+        // Shrink if capacity vastly exceeds typical usage.
+        let cap = buf.capacity();
+        if cap > 4 * count && cap > 4096 {
+            buf.shrink_to(count * 2);
+        }
+        self.notification_buf = buf;
+    }
+
     /// Pump mux events and process resulting notifications.
     ///
     /// Drains PTY reader thread messages via the mux, then handles each
@@ -154,7 +180,7 @@ impl App {
                 // Visual-bell flash on the pane's OWNING window — not the
                 // focused window. A bell from a background pane flashes its
                 // own window. Mirrors `mark_pane_window_dirty`'s
-                // owning-window walk (`oriterm/src/app/mod.rs` ~line 330).
+                // owning-window walk (`oriterm/src/app/redraw/mod.rs`).
                 if self.config.bell.is_enabled() {
                     let bell = &self.config.bell;
                     let color = crate::config::parse_bell_color_as_ui(bell.color.as_deref());

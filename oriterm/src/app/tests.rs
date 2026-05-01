@@ -9,7 +9,7 @@ use oriterm_mux::PaneId;
 use crate::config::{Config, ThemeOverride};
 use crate::session::{SessionRegistry, Tab, TabId, Window, WindowId};
 
-use super::resolve_ui_theme_with;
+use super::event_loop_helpers::resolve_ui_theme_with;
 
 /// Mirror of `App::active_pane_id()` — same query chain, testable without App.
 ///

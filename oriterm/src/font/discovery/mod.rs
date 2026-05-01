@@ -10,7 +10,17 @@
 //!    scanning on Linux/macOS) against the default priority list.
 //! 3. Fall back to the embedded `JetBrains` Mono regular as a last resort.
 
+mod catalog;
 mod families;
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+mod unix;
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+mod walk;
+
+pub use catalog::enumerate_mono_families;
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+pub use catalog::enumerate_mono_families_from_roots;
+pub(in crate::font::discovery) use catalog::family_paths;
 
 #[cfg(target_os = "linux")]
 mod linux;
@@ -96,6 +106,30 @@ pub struct DiscoveryResult {
     /// Ordered fallback fonts for missing-glyph coverage.
     pub fallbacks: Vec<FallbackDiscovery>,
 }
+
+/// One enumerated monospace family plus the per-variant file backing.
+///
+/// `display_name` is the family name extracted from the `OpenType` `name`
+/// table (Linux/macOS via `skrifa`) or `DirectWrite` (`IDWriteFont::GetFamilyName`
+/// on Windows). `paths` carries `Regular`/`Bold`/`Italic`/`BoldItalic` file
+/// paths in fixed slot order — slot 0 is `Regular` and is always populated for
+/// enumerated families; slots 1/2/3 are populated when the `Bold`/`Italic`/
+/// `BoldItalic` variant is found via the existing filename index (Linux/macOS)
+/// or `DirectWrite`'s full 4-variant resolution (Windows). `face_indices`
+/// carries face indices into `.ttc` collections per slot — for v1 always 0.
+#[derive(Debug, Clone)]
+pub struct FamilyEntry {
+    /// Family name as it appears in the `OpenType` `name` table or `DirectWrite`.
+    pub display_name: String,
+    /// Per-variant file paths: `[Regular, Bold, Italic, BoldItalic]`.
+    pub paths: [Option<PathBuf>; 4],
+    /// Per-variant face indices into `.ttc` collections (v1: always 0).
+    pub face_indices: [u32; 4],
+}
+
+/// `(paths, face_indices)` bundle stored in the family-name → paths catalog.
+/// Type-aliased to keep the static signature readable.
+type FamilySlots = ([Option<PathBuf>; 4], [u32; 4]);
 
 /// Discover fonts for the terminal, trying multiple sources in priority order.
 ///
