@@ -244,7 +244,11 @@ impl Keymap {
             ctx,
         ));
         b.push(KeyBinding::new(Keystroke::new(Key::Enter, m), Confirm, ctx));
-        b.push(KeyBinding::new(Keystroke::new(Key::Escape, m), Dismiss, ctx));
+        b.push(KeyBinding::new(
+            Keystroke::new(Key::Escape, m),
+            Dismiss,
+            ctx,
+        ));
     }
 
     fn push_dialog_bindings(b: &mut Vec<KeyBinding>) {

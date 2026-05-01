@@ -1231,3 +1231,46 @@ fn non_searchable_query_row_height_is_zero() {
     }]);
     assert_eq!(menu.query_row_height(), 0.0);
 }
+
+// MenuWidget::key_context() differentiation pin (BUG-03-003 §03 TDD matrix
+// line 25, Phase 5 code TPR Round 1 R1-F2). Searchable Menu must report the
+// `"MenuSearchable"` context so the keymap binds Arrow/Enter/Escape but NOT
+// Space (Space stays as filter input via `on_input`); non-searchable Menu
+// keeps the legacy `"Menu"` context where Space activates Confirm. Without
+// this differentiation, the searchable popup loses keyboard navigation
+// (BUG-03-003 root symptom) or breaks filter typing (Space confirms).
+
+#[test]
+fn key_context_returns_menu_when_not_searchable() {
+    let menu = MenuWidget::new(sample_entries());
+    assert_eq!(
+        Widget::key_context(&menu),
+        Some("Menu"),
+        "non-searchable MenuWidget must report key_context() == Some(\"Menu\")"
+    );
+}
+
+#[test]
+fn key_context_returns_menu_searchable_when_searchable() {
+    let menu = MenuWidget::new(sample_entries()).with_searchable(true);
+    assert_eq!(
+        Widget::key_context(&menu),
+        Some("MenuSearchable"),
+        "searchable MenuWidget must report key_context() == Some(\"MenuSearchable\") \
+         so the keymap routes Arrow/Enter/Escape via handle_keymap_action while \
+         leaving Space for filter input"
+    );
+}
+
+#[test]
+fn with_searchable_false_returns_menu_context() {
+    // Negative pin: `with_searchable(false)` (or default) must preserve the
+    // legacy `"Menu"` context. Guards against an asymmetric edit that would
+    // make BOTH modes report `"MenuSearchable"`.
+    let menu = MenuWidget::new(sample_entries()).with_searchable(false);
+    assert_eq!(
+        Widget::key_context(&menu),
+        Some("Menu"),
+        "MenuWidget::with_searchable(false) must keep key_context() == Some(\"Menu\")"
+    );
+}

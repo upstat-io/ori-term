@@ -235,7 +235,10 @@ impl MenuWidget {
     pub(super) fn try_select_hovered(&self) -> Option<WidgetAction> {
         let idx = self.hovered?;
         if self.entries[idx].is_clickable() {
-            Some(WidgetAction::Selected { id: self.id, index: idx })
+            Some(WidgetAction::Selected {
+                id: self.id,
+                index: idx,
+            })
         } else {
             None
         }

@@ -378,9 +378,13 @@ impl MenuWidget {
             // `clickable.is_empty()` was checked above, so first/last are
             // guaranteed Some — `.expect` documents the invariant.
             let idx = if forward {
-                *clickable.first().expect("clickable is non-empty (checked above)")
+                *clickable
+                    .first()
+                    .expect("clickable is non-empty (checked above)")
             } else {
-                *clickable.last().expect("clickable is non-empty (checked above)")
+                *clickable
+                    .last()
+                    .expect("clickable is non-empty (checked above)")
             };
             self.hovered = Some(idx);
             self.ensure_visible(idx);
@@ -468,7 +472,6 @@ impl MenuWidget {
         self.rebuild_display_indices();
         self.hovered = self.display_indices.first().copied();
     }
-
 }
 
 #[cfg(test)]

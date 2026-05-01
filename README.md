@@ -16,15 +16,15 @@
   <a href="https://oriterm.com/roadmap">Roadmap</a>
 </p>
 
-> **Status: alpha.** Daily-driver-capable on Linux, Windows, and macOS. Core terminal emulation, GPU rendering, splits, floating panes, and the multiplexer foundation are functional. Daemon mode is the default `ProcessModel` with auto-start. Session persistence, remote attach, and the headless TUI client are still landing — see [Roadmap](#roadmap).
+> **Status: alpha.** Daily-driver-capable on Linux, Windows, and macOS. Core terminal emulation, GPU-accelerated rendering, splits, floating panes, tabs, themes, ligatures, and inline images all work today. Sessions that survive after the window closes, remote shells over SSH/WSL, and a headless terminal-in-terminal client are still landing — see [Roadmap](#roadmap).
 
 ## About
 
-ori-term is a terminal emulator that collapses three layers — terminal + multiplexer + UI shell — into a single coherent application:
+ori-term is a terminal emulator that bundles three things normally stacked together — a terminal, a multiplexer, and a window shell — into one application:
 
-- **GPU-rendered cells** through wgpu (Vulkan / DX12 / Metal). Per-row damage tracking, instance buffer caching, and skip-present when idle keep idle CPU near the cursor blink rate.
-- **Native multiplexing.** Splits, tabs, floating panes, and cross-window tab movement live in `oriterm_mux`. A separate daemon process is the default; embedded mode is the fallback.
-- **Cross-platform from day one.** Same source tree builds and runs on Windows, Linux, and macOS — ConPTY, fontconfig, CoreText, no platform left behind.
+- **GPU-accelerated rendering.** Smooth scrolling under heavy output. Idle CPU drops to almost nothing when nothing is changing, so battery and fans stay quiet.
+- **Splits, tabs, and floating panes built in.** No tmux required. Drag tabs between windows; nested splits and floating panes layer freely.
+- **Cross-platform from day one.** Windows, Linux, and macOS get the same terminal — same features, same keybindings, same look. No platform was an afterthought.
 
 Full feature list and screenshots live on the website: [oriterm.com/features](https://oriterm.com/features).
 
@@ -63,14 +63,14 @@ cargo build --release --target x86_64-pc-windows-gnu
 
 | Step | Status |
 |------|--------|
-| Standards-compliant terminal emulation (VTE, modes, palette, SGR, OSC, DCS, CSI) | Complete |
-| GPU pipeline (Extract → Prepare → Render, atlas, font shaping, damage tracking) | Complete |
-| Cross-platform window chrome (frameless, Aero Snap, vibrancy) | Complete |
+| Standards-compliant terminal emulation (full escape-sequence support, modes, palette, SGR, OSC, DCS) | Complete |
+| GPU-accelerated rendering with smooth scrolling and near-zero idle CPU | Complete |
+| Cross-platform window chrome (frameless, Aero Snap, transparent blur, vibrancy) | Complete |
 | Splits, floating panes, tabs, multi-window | Complete |
-| Multiplexer foundation (mux daemon binary, IPC transport, pane lifecycle, embedded fallback) | Complete |
-| Image protocols (Kitty Graphics, Sixel, iTerm2) — decoding shipped, animation/z-index hardening in progress | Partial |
-| Multi-process window architecture — process-per-window topology over the mux daemon | Partial |
-| Terminal protocol extensions (XTGETTCAP, broader CSI t window manipulation) | Partial |
+| Multiplexer foundation (background process for shell sessions, embedded fallback for sandboxes) | Complete |
+| Image protocols (Kitty graphics, Sixel, iTerm2 inline images) — decoding shipped, animation/z-index hardening in progress | Partial |
+| Multi-process window architecture — separate process per window for crash isolation and shared sessions | Partial |
+| Terminal protocol extensions (terminfo query, broader window manipulation reports) | Partial |
 | Session persistence + remote domains (SSH, WSL) | Todo |
 | Remote attach + network transport (TCP+TLS, Mosh-style predictive echo) | Todo |
 | Headless TUI client (`oriterm-tui` — tmux replacement) | Todo |
@@ -81,7 +81,7 @@ Live roadmap: [oriterm.com/roadmap](https://oriterm.com/roadmap).
 
 ## Inspiration
 
-ori-term borrows ideas from many terminal emulators and UI frameworks: Alacritty (`Term<T>`, `FairMutex`, VTE crate), Ghostty (cell-by-cell reflow, comptime mode tables), WezTerm (multiplexer domain model, portable PTY), Chrome (tab drag state machine, GPU UI), VS Code (frameless chrome), Bevy (staged render pipeline), tmux (daemon architecture), Mosh (predictive echo), Catppuccin (default palette), Ratatui (clippy lint configuration), termenv / lipgloss (color profile detection cascade).
+ori-term borrows ideas from many terminal emulators and UI projects: Alacritty (terminal state model, lock discipline), Ghostty (cell-by-cell reflow, fast mode tables), WezTerm (multiplexer domain model, portable PTY abstraction), Chrome (tab drag-and-drop, GPU UI), VS Code (frameless window chrome), tmux (daemon architecture), Mosh (predictive echo), Catppuccin (default palette), and Ratatui / termenv / lipgloss (testing and color-detection patterns).
 
 ## The Name
 

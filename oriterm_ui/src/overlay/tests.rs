@@ -2322,3 +2322,192 @@ fn modal_dim_rect_opacity_tracks_dim_layer() {
         fill.a,
     );
 }
+
+// FocusNext/FocusPrev fall-through gate regression — pins the BUG-03-003
+// Phase 5 code TPR Round 0 R0-F1 fix at
+// `oriterm_ui/src/overlay/manager/key_dispatch.rs:221`. Tab/Shift+Tab are
+// bound globally in `Keymap::defaults()` (no `key_context` scope), so they
+// match on every overlay's keymap lookup. Without the fall-through gate,
+// `process_key_event_with_keymap` would dispatch them through
+// `dispatch_keymap_action`, which silently returns `None` on widgets like
+// `DialogWidget` that do not implement `handle_keymap_action`, and Tab
+// would never reach the legacy `on_input` path where Dialog's OkCancel
+// focus toggle lives. The gate routes FocusNext/FocusPrev through the
+// legacy `process_key_event` so `on_input` continues to receive Tab.
+
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+use crate::action::Keymap;
+use crate::input::InputEvent;
+use crate::layout::LayoutBox;
+use crate::sense::Sense;
+use crate::widget_id::WidgetId;
+use crate::widgets::{LayoutCtx, OnInputResult};
+
+/// Test-only widget that records each `KeyDown` it receives via `on_input`.
+///
+/// Returns `key_context() == Some("FocusFallthroughProbe")` (a context with
+/// no keymap binding, so only the global Tab/Shift+Tab → FocusNext/FocusPrev
+/// bindings can match). Does NOT override `handle_keymap_action`, so the
+/// trait default returning `None` applies — the same shape as `DialogWidget`.
+struct FocusFallthroughProbe {
+    id: WidgetId,
+    on_input_keys: Arc<AtomicUsize>,
+}
+
+impl FocusFallthroughProbe {
+    fn new() -> (Self, Arc<AtomicUsize>) {
+        let counter = Arc::new(AtomicUsize::new(0));
+        let probe = Self {
+            id: WidgetId::next(),
+            on_input_keys: Arc::clone(&counter),
+        };
+        (probe, counter)
+    }
+}
+
+impl Widget for FocusFallthroughProbe {
+    fn id(&self) -> WidgetId {
+        self.id
+    }
+
+    fn layout(&self, _ctx: &LayoutCtx<'_>) -> LayoutBox {
+        LayoutBox::leaf(120.0, 40.0).with_widget_id(self.id)
+    }
+
+    fn key_context(&self) -> Option<&'static str> {
+        Some("FocusFallthroughProbe")
+    }
+
+    fn on_input(&mut self, event: &InputEvent, _bounds: Rect) -> OnInputResult {
+        if matches!(event, InputEvent::KeyDown { .. }) {
+            self.on_input_keys.fetch_add(1, Ordering::SeqCst);
+        }
+        OnInputResult::handled()
+    }
+
+    fn sense(&self) -> Sense {
+        Sense::none()
+    }
+}
+
+#[test]
+fn tab_on_overlay_falls_through_to_on_input_via_focus_gate() {
+    let mut mgr = OverlayManager::new(viewport());
+    let mut tree = test_tree();
+    let mut animator = LayerAnimator::new();
+    let now = Instant::now();
+    let keymap = Keymap::defaults();
+
+    let (probe, on_input_calls) = FocusFallthroughProbe::new();
+    mgr.push_modal(
+        Box::new(probe),
+        anchor(),
+        Placement::Center,
+        &mut tree,
+        &mut animator,
+        now,
+    );
+    mgr.layout_overlays(&MockMeasurer::STANDARD, &TEST_THEME);
+
+    // Tab matches the global FocusNext binding; the gate must redirect to
+    // the legacy `on_input` pipeline. If the gate is removed, Tab would be
+    // dispatched via `dispatch_keymap_action` (which returns `None` for the
+    // probe) and `on_input` would NEVER be called.
+    let result = mgr.process_key_event_with_keymap(
+        key_event(Key::Tab),
+        &keymap,
+        &MockMeasurer::STANDARD,
+        &TEST_THEME,
+        None,
+        &mut tree,
+        &mut animator,
+        now,
+    );
+
+    assert!(
+        matches!(result, OverlayEventResult::Delivered { .. }),
+        "Tab on a modal overlay must Deliver, got {result:?}",
+    );
+    assert_eq!(
+        on_input_calls.load(Ordering::SeqCst),
+        1,
+        "Tab MUST reach widget.on_input via the FocusNext fall-through gate \
+         (key_dispatch.rs:221). 0 calls means the gate was removed and Tab \
+         was silently swallowed by dispatch_keymap_action.",
+    );
+}
+
+#[test]
+fn shift_tab_on_overlay_falls_through_to_on_input_via_focus_gate() {
+    let mut mgr = OverlayManager::new(viewport());
+    let mut tree = test_tree();
+    let mut animator = LayerAnimator::new();
+    let now = Instant::now();
+    let keymap = Keymap::defaults();
+
+    let (probe, on_input_calls) = FocusFallthroughProbe::new();
+    mgr.push_modal(
+        Box::new(probe),
+        anchor(),
+        Placement::Center,
+        &mut tree,
+        &mut animator,
+        now,
+    );
+    mgr.layout_overlays(&MockMeasurer::STANDARD, &TEST_THEME);
+
+    // Shift+Tab matches the global FocusPrev binding; the gate paired with
+    // the FocusNext branch must redirect both. Pinning Shift+Tab as a peer
+    // of Tab guards against an asymmetric edit that drops one but not the
+    // other from the matches!() arm at key_dispatch.rs:221.
+    let event = KeyEvent {
+        key: Key::Tab,
+        modifiers: Modifiers::SHIFT_ONLY,
+    };
+    let result = mgr.process_key_event_with_keymap(
+        event,
+        &keymap,
+        &MockMeasurer::STANDARD,
+        &TEST_THEME,
+        None,
+        &mut tree,
+        &mut animator,
+        now,
+    );
+
+    assert!(
+        matches!(result, OverlayEventResult::Delivered { .. }),
+        "Shift+Tab on a modal overlay must Deliver, got {result:?}",
+    );
+    assert_eq!(
+        on_input_calls.load(Ordering::SeqCst),
+        1,
+        "Shift+Tab MUST reach widget.on_input via the FocusPrev fall-through \
+         gate (key_dispatch.rs:221). 0 calls means the gate was removed.",
+    );
+}
+
+#[test]
+fn focus_fallthrough_probe_handle_keymap_action_returns_none() {
+    use crate::action::keymap_action::FocusNext;
+
+    // Pin the contract that makes the fall-through gate necessary: the probe
+    // (and any overlay-root widget without a `handle_keymap_action` override
+    // — DialogWidget, ButtonWidget for non-Activate, etc.) MUST return None
+    // when dispatch_keymap_action runs against it. Without this contract, a
+    // future widget could "rescue" FocusNext via handle_keymap_action and
+    // make the gate appear redundant, hiding a regression for the widgets
+    // that genuinely depend on it.
+    let (mut probe, _) = FocusFallthroughProbe::new();
+    let action = FocusNext;
+    let result =
+        <FocusFallthroughProbe as Widget>::handle_keymap_action(&mut probe, &action, anchor());
+    assert!(
+        result.is_none(),
+        "FocusFallthroughProbe must NOT impl handle_keymap_action — the \
+         FocusNext fall-through gate exists precisely because widgets without \
+         this impl would otherwise see Tab silently consumed.",
+    );
+}

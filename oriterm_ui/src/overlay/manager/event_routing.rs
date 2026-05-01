@@ -18,8 +18,8 @@ use crate::controllers::{ControllerRequests, DispatchOutput};
 use crate::geometry::{Point, Rect};
 use crate::input::dispatch::tree::{TreeDispatchResult, dispatch_to_widget_tree};
 use crate::input::{
-    HitEntry, InputEvent, MouseEvent, MouseEventKind, WidgetHitTestResult,
-    layout_hit_test_path, plan_propagation,
+    HitEntry, InputEvent, MouseEvent, MouseEventKind, WidgetHitTestResult, layout_hit_test_path,
+    plan_propagation,
 };
 use crate::layout::LayoutNode;
 use crate::theme::UiTheme;
