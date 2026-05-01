@@ -29,7 +29,17 @@ impl<S: EffectSink> Term<S> {
             return;
         }
         let bg = self.effective_background();
-        self.sixel_parser = Some(SixelParser::new(params, [bg.r, bg.g, bg.b]));
+        // Snapshot the negotiated color-register count at DCS-hook time —
+        // mirrors xterm's `init_graphic` (`graphics.c:802-812`) so
+        // in-flight XTSMGRAPHICS mutations during this DCS do NOT
+        // retroactively change the active parser. The decoder honors
+        // the count by wrapping `#idx` register indices modulo this
+        // value in `apply_color` (BUG-06-024).
+        self.sixel_parser = Some(SixelParser::new(
+            params,
+            [bg.r, bg.g, bg.b],
+            self.color_register_count,
+        ));
     }
 
     /// Feed one byte to the active sixel parser.

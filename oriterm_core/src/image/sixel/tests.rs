@@ -19,18 +19,29 @@ fn feed_all(parser: &mut SixelParser, data: &[u8]) {
 }
 
 /// Create a parser with default params and a black terminal bg.
+///
+/// Threads `COLOR_REGISTERS_MAX` (256, the protocol default) so existing
+/// tests preserve their original 256-register palette semantics. New
+/// wrap-semantics tests use [`parser_with_count`] to negotiate a smaller
+/// register count.
 fn default_parser() -> SixelParser {
-    SixelParser::new(&[0, 0, 0], [0, 0, 0])
+    SixelParser::new(&[0, 0, 0], [0, 0, 0], COLOR_REGISTERS_MAX)
 }
 
 /// Create a transparent-background parser (P2=1).
 fn transparent_parser() -> SixelParser {
-    SixelParser::new(&[0, 1, 0], [0, 0, 0])
+    SixelParser::new(&[0, 1, 0], [0, 0, 0], COLOR_REGISTERS_MAX)
 }
 
 /// Create a `SetToBg` parser (P2=2) with an explicit terminal bg.
 fn set_to_bg_parser(terminal_bg: [u8; 3]) -> SixelParser {
-    SixelParser::new(&[0, 2, 0], terminal_bg)
+    SixelParser::new(&[0, 2, 0], terminal_bg, COLOR_REGISTERS_MAX)
+}
+
+/// Create a parser with an explicit `color_registers` count (XTSMGRAPHICS
+/// Pi=1 Pa=3 negotiation snapshot). Used by §06 wrap-semantics tests.
+fn parser_with_count(color_registers: u16) -> SixelParser {
+    SixelParser::new(&[0, 0, 0], [0, 0, 0], color_registers)
 }
 
 #[test]
@@ -150,16 +161,23 @@ fn oversized_sixel_rejected() {
     assert!(result.is_err());
 }
 
+/// Catalog row: SIXEL-COLOR-REGISTER-WRAP. Regression: BUG-06-024 — sixel decoder
+/// MUST wrap color register indices modulo the negotiated count (matches xterm
+/// `graphics_sixel.c:697-698` `s_Pregister %= valid_registers;`). With the default
+/// count (256), `#300` wraps to register 44 (`300 % 256`) and a definition+select
+/// at index 300 lands red on palette[44].
 #[test]
-fn palette_index_over_256_ignored() {
+fn palette_index_over_count_wraps_modulo_register_count() {
     let mut p = default_parser();
-    // Define color 300 — should be silently ignored (palette is 256).
-    feed_all(&mut p, b"#300;2;100;0;0");
-    // Select color 300 and draw — should use fallback white.
-    feed_all(&mut p, b"#300@");
+    // count = COLOR_REGISTERS_MAX = 256. `#300;2;100;0;0` defines palette[44]
+    // as red (300 % 256 = 44); `#300@` selects palette[44]; draws red.
+    feed_all(&mut p, b"#300;2;100;0;0#300@");
     let (pixels, _, _) = p.finish().unwrap();
-    // Should still produce a valid image (no crash).
-    assert_eq!(pixels[3], 255);
+    assert_eq!(
+        &pixels[0..4],
+        &[255, 0, 0, 255],
+        "palette[44] must be red after `#300;2;100;0;0#300@` (300 % 256 = 44)",
+    );
 }
 
 #[test]
@@ -256,11 +274,11 @@ fn set_to_bg_uses_terminal_background_not_black() {
 fn device_default_and_set_to_bg_diverge_under_non_black_terminal_bg() {
     let terminal_bg: [u8; 3] = [12, 34, 56];
 
-    let mut default = SixelParser::new(&[0, 0, 0], terminal_bg);
+    let mut default = SixelParser::new(&[0, 0, 0], terminal_bg, COLOR_REGISTERS_MAX);
     feed_all(&mut default, b"#0;2;100;0;0@");
     let (default_pixels, ..) = default.finish().unwrap();
 
-    let mut set_bg = SixelParser::new(&[0, 2, 0], terminal_bg);
+    let mut set_bg = SixelParser::new(&[0, 2, 0], terminal_bg, COLOR_REGISTERS_MAX);
     feed_all(&mut set_bg, b"#0;2;100;0;0@");
     let (set_bg_pixels, ..) = set_bg.finish().unwrap();
 
@@ -325,5 +343,169 @@ fn palette_reset_per_dcs_negative_pin_bypass_breaks_vt340_fingerprint() {
         &baseline_pixels[0..4],
         &bypassed_pixels[0..4],
         "baseline and bypassed pixels must diverge — the VT340 rebuild is load-bearing",
+    );
+}
+
+// BUG-06-024 — color-register-wrap matrix tests.
+//
+// Pin xterm-style modulo wrap on color register indices in `apply_color`
+// (`graphics_sixel.c:697-698`: `s_Pregister %= valid_registers;`). The
+// `color_registers` value is snapshotted into `SixelParser::new` at DCS-hook
+// time; in-flight XTSMGRAPHICS mutations do NOT retroactively affect the
+// active parser. See `bug-tracker/plans/BUG-06-024/section-03-tdd-matrix.md`
+// for the full matrix; the tests below cover the `idx-class × count × op-class`
+// dimensions called out there.
+
+/// No-wrap edge: count=256, idx=0 (the floor).
+#[test]
+fn count_default_idx_zero_no_wrap() {
+    let mut p = parser_with_count(COLOR_REGISTERS_MAX);
+    feed_all(&mut p, b"#0;2;100;0;0#0@");
+    let (pixels, _, _) = p.finish().unwrap();
+    assert_eq!(&pixels[0..4], &[255, 0, 0, 255], "palette[0] must be red");
+}
+
+/// No-wrap edge: count=256, idx=255 (top-of-256 register).
+#[test]
+fn count_default_idx_max_no_wrap() {
+    let mut p = parser_with_count(COLOR_REGISTERS_MAX);
+    feed_all(&mut p, b"#255;2;0;100;0#255@");
+    let (pixels, _, _) = p.finish().unwrap();
+    assert_eq!(
+        &pixels[0..4],
+        &[0, 255, 0, 255],
+        "palette[255] must be green (no wrap at idx == count - 1 == 255)",
+    );
+}
+
+/// Boundary: count=256, idx=256 wraps to 0. Proves modulo engages at the max
+/// legal bound (256 % 256 = 0). Plan TPR Round 0 F4 (gemini) addition.
+#[test]
+fn count_default_idx_at_count_wraps_to_zero() {
+    let mut p = parser_with_count(COLOR_REGISTERS_MAX);
+    feed_all(&mut p, b"#256;2;100;0;0#256@");
+    let (pixels, _, _) = p.finish().unwrap();
+    assert_eq!(
+        &pixels[0..4],
+        &[255, 0, 0, 255],
+        "256 % 256 = 0; palette[0] must be red after `#256;2;100;0;0#256@`",
+    );
+}
+
+/// No-wrap edge: count=16, idx=15 (top-of-range, no wrap).
+#[test]
+fn count_mid_idx_at_count_minus_one_no_wrap() {
+    let mut p = parser_with_count(16);
+    feed_all(&mut p, b"#15;2;0;0;100#15@");
+    let (pixels, _, _) = p.finish().unwrap();
+    assert_eq!(
+        &pixels[0..4],
+        &[0, 0, 255, 255],
+        "palette[15] must be blue (no wrap at idx == count - 1 == 15)",
+    );
+}
+
+/// Wrap boundary: count=16, idx=16 wraps to 0.
+#[test]
+fn count_mid_idx_at_count_wraps_to_zero() {
+    let mut p = parser_with_count(16);
+    feed_all(&mut p, b"#16;2;100;0;0#16@");
+    let (pixels, _, _) = p.finish().unwrap();
+    assert_eq!(
+        &pixels[0..4],
+        &[255, 0, 0, 255],
+        "16 % 16 = 0; palette[0] must be red after `#16;2;100;0;0#16@`",
+    );
+}
+
+/// Wrap above boundary: count=16, idx=17 wraps to 1.
+#[test]
+fn count_mid_idx_at_count_plus_one_wraps_to_one() {
+    let mut p = parser_with_count(16);
+    feed_all(&mut p, b"#17;2;100;0;0#17@");
+    let (pixels, _, _) = p.finish().unwrap();
+    assert_eq!(
+        &pixels[0..4],
+        &[255, 0, 0, 255],
+        "17 % 16 = 1; palette[1] must be red after `#17;2;100;0;0#17@`",
+    );
+}
+
+/// Wrap multiple: count=16, idx=32 wraps to 0.
+#[test]
+fn count_mid_idx_at_double_count_wraps_to_zero() {
+    let mut p = parser_with_count(16);
+    feed_all(&mut p, b"#32;2;100;0;0#32@");
+    let (pixels, _, _) = p.finish().unwrap();
+    assert_eq!(
+        &pixels[0..4],
+        &[255, 0, 0, 255],
+        "32 % 16 = 0; palette[0] must be red after `#32;2;100;0;0#32@`",
+    );
+}
+
+/// Wrap with non-power-of-2 prime count: distinguishes correct
+/// `params[0] % u32::from(count)` from buggy `(params[0] as u16) % count`.
+/// Buggy impl: `(999_999 as u16) = 16959; 16959 % 17 = 10` (palette[10]).
+/// Correct impl: `999_999 % 17 = 8` (palette[8]).
+/// Plan TPR Round 0 F1 (codex+gemini+opencode 3-of-3 agreement).
+#[test]
+fn count_prime_idx_huge_wraps_correctly() {
+    let mut p = parser_with_count(17);
+    feed_all(&mut p, b"#999999;2;100;0;0#999999@");
+    let (pixels, _, _) = p.finish().unwrap();
+    assert_eq!(
+        &pixels[0..4],
+        &[255, 0, 0, 255],
+        "999_999 % 17 = 8; palette[8] must be red. Buggy u16-truncate-then-mod \
+         would put red at palette[10] (16959 % 17 = 10) — different palette slot.",
+    );
+}
+
+/// Minimum legal count: count=2 (per `status.rs:265` accepts `pv > 1`).
+/// idx=3 wraps to 1.
+#[test]
+fn count_minimum_two_wrap_works() {
+    let mut p = parser_with_count(2);
+    feed_all(&mut p, b"#3;2;100;0;0#3@");
+    let (pixels, _, _) = p.finish().unwrap();
+    assert_eq!(
+        &pixels[0..4],
+        &[255, 0, 0, 255],
+        "3 % 2 = 1; palette[1] must be red",
+    );
+}
+
+/// Bare-selection (no prior definition): count=16, `#17@` wraps to palette[1]
+/// which is VT340 default register 1 = `[51, 51, 204]` blue. NEGATIVE PIN
+/// against the wrap-only-on-definition bug — without wrap on selection,
+/// `current_color = 17` would draw palette[17] = `[0, 0, 0]` (zeroed default
+/// beyond the 16-entry VT340 table) → black, distinguishable from blue.
+/// Plan TPR Round 0 F2 (codex+opencode agreement).
+#[test]
+fn bare_selection_under_count_wraps_to_vt340_register_one() {
+    let mut p = parser_with_count(16);
+    feed_all(&mut p, b"#17@");
+    let (pixels, _, _) = p.finish().unwrap();
+    assert_eq!(
+        &pixels[0..4],
+        &[51, 51, 204, 255],
+        "17 % 16 = 1; palette[1] must be VT340 default blue. \
+         Old impl would draw palette[17] = zeroed default = black.",
+    );
+}
+
+/// Coherent definition+selection identity under wrap: count=16, define
+/// register 20 (wraps to 4) red, then select register 36 (also wraps to 4),
+/// draw — must be red. Both ops use the same wrap rule.
+#[test]
+fn definition_then_selection_coherent_under_wrap() {
+    let mut p = parser_with_count(16);
+    feed_all(&mut p, b"#20;2;100;0;0#36@");
+    let (pixels, _, _) = p.finish().unwrap();
+    assert_eq!(
+        &pixels[0..4],
+        &[255, 0, 0, 255],
+        "20 % 16 = 4 = 36 % 16; both ops must wrap to palette[4] = red",
     );
 }
