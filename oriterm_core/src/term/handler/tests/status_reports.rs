@@ -1223,6 +1223,65 @@ fn xtsmgraphics_pi3_unaffected_by_image_protocol_disabled() {
 }
 
 #[test]
+fn xtsmgraphics_disabled_pa3_set_does_not_leak_color_register_count() {
+    // Regression: round-0 TPR (opencode F1 high-severity finding) — state
+    // mutation MUST NOT execute when image_protocol_enabled is false.
+    // Per xterm `charproc.c:5198-5200`, the gate sits at the TOP of the
+    // Pi=1 block, BEFORE any Pa dispatch. If the gate fires AFTER the
+    // match, Pa=3 set leaks `color_register_count` even though the reply
+    // is downgraded to Ps=3.
+    //
+    // Repro: disable image protocol → Pa=3 set Pv=100 → re-enable →
+    // Pa=1 read MUST return 256 (default), NOT 100 (the leaked value).
+    let (mut t, listener) = term_with_recorder();
+    t.set_image_protocol_enabled(false);
+    feed(&mut t, b"\x1b[?1;3;100S"); // attempted set under disabled gate
+    t.set_image_protocol_enabled(true);
+    feed(&mut t, b"\x1b[?1;1;0S"); // read
+
+    let events = listener.events();
+    assert!(
+        events.iter().any(|e| e == "PtyWrite(\x1b[?1;0;256S)"),
+        "Pa=1 read after disabled-set + re-enable must return default 256, got: {events:?}"
+    );
+    let leaked_replies: Vec<_> = events
+        .iter()
+        .filter(|e| **e == "PtyWrite(\x1b[?1;0;100S)")
+        .collect();
+    assert!(
+        leaked_replies.is_empty(),
+        "no reply may carry leaked Pv=100 — state mutation under disabled gate violates xterm `charproc.c:5198-5200`, got: {events:?}"
+    );
+}
+
+#[test]
+fn xtsmgraphics_disabled_pa2_reset_does_not_leak_color_register_count() {
+    // Companion to the Pa=3 leak test — Pa=2 reset also mutates state
+    // and must be gated. Repro: set to 100 (enabled) → disable → Pa=2
+    // reset (gated) → re-enable → Pa=1 read MUST return 100, NOT 256.
+    // The Pa=2 reset under disabled gate must be a no-op; only the
+    // re-enabled read should reflect the prior set state.
+    let (mut t, listener) = term_with_recorder();
+    feed(&mut t, b"\x1b[?1;3;100S"); // enabled set to 100
+    t.set_image_protocol_enabled(false);
+    feed(&mut t, b"\x1b[?1;2;0S"); // attempted reset under disabled gate
+    t.set_image_protocol_enabled(true);
+    feed(&mut t, b"\x1b[?1;1;0S"); // read — must reflect 100, not 256
+
+    let events = listener.events();
+    let final_read = events
+        .iter()
+        .filter(|e| e.starts_with("PtyWrite(\x1b[?1;0;"))
+        .last()
+        .map(|s| s.as_str())
+        .unwrap_or("(no read reply)");
+    assert_eq!(
+        final_read, "PtyWrite(\x1b[?1;0;100S)",
+        "Pa=1 read after disabled-reset + re-enable must reflect prior set (100), got: {final_read}"
+    );
+}
+
+#[test]
 fn xtsmgraphics_set_image_protocol_enabled_re_enables_replies() {
     // Toggle true → false → true; verify reply behavior tracks the
     // gate (idempotency / state-restore).

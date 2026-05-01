@@ -235,8 +235,18 @@ impl<S: EffectSink> Term<S> {
         let mut result: Option<u32> = None;
         let mut result2: Option<u32> = None;
 
+        // Capability gate per xterm `charproc.c:5198-5200` (Pi=1) +
+        // `:5226-5227` (Pi=2): the gate sits at the TOP of each item's
+        // block, BEFORE any Pa dispatch. When sixel is disabled the Pa
+        // branches NEVER execute, so neither state mutation nor Pv-field
+        // emission can leak — status stays 3 (failure default). oriterm
+        // gates all image-protocol handling on `image_protocol_enabled`
+        // (peer pattern at `term/handler/image/sixel.rs:28`,
+        // `iterm2.rs:35`, `kitty/mod.rs:61`). Pi=3 is unaffected
+        // (already always status=3 since ReGIS isn't implemented).
+        let sixel_enabled = self.image_protocol_enabled;
         match pi {
-            1 => match pa {
+            1 if sixel_enabled => match pa {
                 // Pa=1 read: reflect the CURRENT count (may have been
                 // mutated by a prior Pa=3 set).
                 1 => {
@@ -266,7 +276,7 @@ impl<S: EffectSink> Term<S> {
                 }
                 _ => status = 2,
             },
-            2 => match pa {
+            2 if sixel_enabled => match pa {
                 // For oriterm, current geometry == max geometry — no
                 // separate max distinct from the current grid. xterm
                 // separates them via `screen->graphics_max_wide`;
@@ -282,24 +292,14 @@ impl<S: EffectSink> Term<S> {
                 2 | 3 => {}
                 _ => status = 2,
             },
+            // Pi=1 / Pi=2 with sixel disabled: gate falls through to here
+            // — no state mutation, no Pa dispatch, status stays 3.
+            1 | 2 => {}
             3 => match pa {
                 1..=4 => {} // ReGIS unsupported regardless of Pa.
                 _ => status = 2,
             },
             _ => status = 1,
-        }
-
-        // Capability gate per xterm `charproc.c:5198-5200` (Pi=1)
-        // + `:5226-5227` (Pi=2): when sixel/ReGIS is disabled, downgrade
-        // success replies to Ps=3 and drop the Pv field. oriterm gates
-        // all image-protocol handling on `image_protocol_enabled` (peer
-        // pattern at `term/handler/image/sixel.rs:28`,
-        // `iterm2.rs:35`, `kitty/mod.rs:61`). Pi=3 is unaffected
-        // (already always status=3 since ReGIS isn't implemented).
-        if status == 0 && (pi == 1 || pi == 2) && !self.image_protocol_enabled {
-            status = 3;
-            result = None;
-            result2 = None;
         }
 
         debug_assert!(
