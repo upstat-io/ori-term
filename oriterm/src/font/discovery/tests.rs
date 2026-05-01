@@ -1,3 +1,4 @@
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 use std::path::PathBuf;
 
 use super::families::{FALLBACK_FONTS, PRIMARY_FAMILIES};
@@ -6,12 +7,17 @@ use super::{
     resolve_user_fallback,
 };
 
-/// Embedded `JetBrains` Mono Regular bytes — re-exported here so tests can write
-/// the fixture into a tempdir for deterministic enumeration runs without
-/// depending on the host system's font catalog.
+/// Embedded font fixtures — only consumed by `_from_roots` enumeration tests
+/// gated to Linux/macOS. Windows has no `_from_roots` analogue (DirectWrite has
+/// no path-roots concept), so the constants are dead on Windows under
+/// `-D dead_code`.
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 const JBM_REGULAR: &[u8] = include_bytes!("../../../fonts/JetBrainsMono-Regular.ttf");
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 const IBM_PLEX_REGULAR: &[u8] = include_bytes!("../../../fonts/IBMPlexMono-Regular.ttf");
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 const IBM_PLEX_BOLD: &[u8] = include_bytes!("../../../fonts/IBMPlexMono-Bold.ttf");
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 const NOTO_EMOJI: &[u8] = include_bytes!("../../../fonts/test-emoji.ttf");
 
 /// The embedded `JetBrains` Mono bytes parse as a valid font.

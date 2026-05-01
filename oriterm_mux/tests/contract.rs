@@ -145,14 +145,16 @@ impl TestContext {
 /// — the disable+unset step neutralizes those hooks so `head -c` is the
 /// only reader competing for the PTY response bytes.
 ///
-/// Per BUG-11-004 §02 consensus pattern (`bug-tracker/plans/completed/BUG-11-004/section-02-fix-consensus.md`
-/// line 103): `stty raw -echo` disables ICANON + ECHOCTL so response bytes
-/// pass byte-exact AND command echo doesn't pre-trigger the parser; `timeout
-/// 1 head -c N` reads up to N response bytes within a 1-second budget
-/// (POSIX-portable, no `read -N` shell-builtin dependency); `od -An -tx1`
-/// emits the captured bytes in lowercase hex with no spaces or newlines.
-/// Filename uses `$$` (shell PID) for uniqueness so parallel tests in
-/// `cargo test` do not collide on /tmp.
+/// Per BUG-11-004 §02 consensus pattern: `stty raw -echo` disables ICANON +
+/// ECHOCTL so response bytes pass byte-exact AND command echo doesn't
+/// pre-trigger the parser; an inline `perl` reader reads up to N response
+/// bytes within a 1-second SIGALRM budget (POSIX-portable, macOS / Linux /
+/// BSD all ship `/usr/bin/perl` by default — unlike GNU coreutils `timeout`
+/// which is absent from default macOS PATH on GitHub runners, and unlike
+/// backgrounded `head -c N` which loses controlling-terminal access via
+/// SIGTTIN); `od -An -tx1` emits the captured bytes in lowercase hex with
+/// no spaces or newlines. Filename uses `$$` (shell PID) for uniqueness so
+/// parallel tests in `cargo test` do not collide on /tmp.
 ///
 /// `cup_to_origin: true` prepends `\x1b[1;1H` (CUP to row 1 col 1) so
 /// cursor-position-dependent responses (DSR 6) report a deterministic
@@ -175,9 +177,20 @@ fn gated_round_trip_cmd(query: &str, n: usize, label: &str, cup_to_origin: bool)
     } else {
         ""
     };
+    // Portable 1-second-bounded reader: perl with SIGALRM. `/usr/bin/perl`
+    // ships on macOS, Linux, and BSD by default. Avoids GNU coreutils
+    // `timeout` (missing on macOS GitHub runners) and the SIGTTIN trap that
+    // breaks `( head -c N ) &` in interactive shells. Reads one byte at a
+    // time and writes immediately so any bytes that arrived before the
+    // alarm fired are still captured.
+    let reader = format!(
+        "perl -e '$| = 1; eval {{ local $SIG{{ALRM}} = sub {{ exit 0 }}; alarm 1; \
+         my $g = 0; while ($g < {n}) {{ my $r = sysread(STDIN, my $c, 1); last unless $r; \
+         syswrite(STDOUT, $c); $g++; }} }}' > /tmp/tpr-{label}-$$"
+    );
     format!(
         "stty raw -echo; {cup}printf '{query}'; \
-         timeout 1 head -c {n} > /tmp/tpr-{label}-$$ || true; \
+         {reader}; \
          printf '%s_RESP=BYTES=%s|HEX=%s\\n' 'TPR' \"$(wc -c < /tmp/tpr-{label}-$$)\" \
          \"$(od -An -tx1 -v /tmp/tpr-{label}-$$ | tr -d ' \\n')\"; \
          rm -f /tmp/tpr-{label}-$$; stty -raw echo\n"
