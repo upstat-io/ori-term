@@ -446,19 +446,35 @@ fn count_mid_idx_at_double_count_wraps_to_zero() {
 
 /// Wrap with non-power-of-2 prime count: distinguishes correct
 /// `params[0] % u32::from(count)` from buggy `(params[0] as u16) % count`.
-/// Buggy impl: `(999_999 as u16) = 16959; 16959 % 17 = 10` (palette[10]).
-/// Correct impl: `999_999 % 17 = 8` (palette[8]).
-/// Plan TPR Round 0 F1 (codex+gemini+opencode 3-of-3 agreement).
+///
+/// Pre-defines palette[8] = red AND palette[10] = green BEFORE issuing
+/// the bare wide-index selection, so the test SEES which palette slot
+/// the bare selection lands on:
+/// - Correct impl: `999_999 % 17 = 8` → `current_color = 8` → palette[8] = red.
+/// - Buggy impl `(params[0] as u16) % count`: `(999999 as u16) = 16959;
+///   16959 % 17 = 10` → `current_color = 10` → palette[10] = green.
+///
+/// Without the pre-defined distinct colors at the two competing slots,
+/// the original `#999999;...;#999999@` shape would route both define
+/// AND select through the same buggy idx and the test would coincide
+/// (both impls draw "red", just at different palette slots, with the
+/// final pixel still red — no observable difference). Plan Code TPR
+/// Round 0 F1 (codex singleton).
 #[test]
 fn count_prime_idx_huge_wraps_correctly() {
     let mut p = parser_with_count(17);
-    feed_all(&mut p, b"#999999;2;100;0;0#999999@");
+    // Pre-define distinct colors at the two competing palette slots —
+    // both indices < count so no wrap on these definitions.
+    feed_all(&mut p, b"#8;2;100;0;0");
+    feed_all(&mut p, b"#10;2;0;100;0");
+    // Bare wide-index selection — the wrap site decides which slot we read.
+    feed_all(&mut p, b"#999999@");
     let (pixels, _, _) = p.finish().unwrap();
     assert_eq!(
         &pixels[0..4],
         &[255, 0, 0, 255],
-        "999_999 % 17 = 8; palette[8] must be red. Buggy u16-truncate-then-mod \
-         would put red at palette[10] (16959 % 17 = 10) — different palette slot.",
+        "999_999 % 17 = 8; bare `#999999@` must select palette[8] = red. \
+         Buggy `(999999 as u16) % 17 = 10` would select palette[10] = green.",
     );
 }
 
