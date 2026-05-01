@@ -278,8 +278,12 @@ impl App {
                 widget = widget.with_initial_highlight(idx);
             }
         }
-        if selected < widget.entries().len() {
-            widget.ensure_visible(selected);
+        // Scroll the visible target to the highlighted entry so an explicit
+        // `with_initial_highlight` stays on-screen; fall back to `selected`
+        // for non-searchable triggers where `hovered` starts None.
+        let scroll_target = widget.hovered().unwrap_or(selected);
+        if scroll_target < widget.entries().len() {
+            widget.ensure_visible(scroll_target);
         }
 
         let now = Instant::now();

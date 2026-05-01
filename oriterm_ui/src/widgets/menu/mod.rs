@@ -9,17 +9,19 @@
 //! non-matching items; `Selected` continues to emit the canonical index
 //! (the index into the original `entries`), not the filter-relative position.
 
-use crate::color::Color;
 use crate::controllers::{EventController, HoverController, ScrubController};
 use crate::geometry::Point;
 use crate::text::TextStyle;
-use crate::theme::UiTheme;
 use crate::widget_id::WidgetId;
 
 use super::DrawCtx;
-use super::scrollbar::{ScrollbarStyle, ScrollbarVisualState};
 
+mod paint;
+mod style;
 mod widget_impl;
+
+pub use style::MenuStyle;
+use style::{DragMode, MenuScrollbarState};
 
 /// A single entry in a menu.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -45,132 +47,6 @@ impl MenuEntry {
     pub(super) fn is_clickable(&self) -> bool {
         !matches!(self, Self::Separator)
     }
-}
-
-/// Visual style for a [`MenuWidget`].
-#[derive(Debug, Clone, PartialEq)]
-pub struct MenuStyle {
-    /// Height of each item row.
-    pub item_height: f32,
-    /// Vertical padding above and below items.
-    pub padding_y: f32,
-    /// Horizontal padding for item text.
-    pub padding_x: f32,
-    /// Minimum menu width.
-    pub min_width: f32,
-    /// Extra width beyond the widest label.
-    pub extra_width: f32,
-    /// Height of a separator entry.
-    pub separator_height: f32,
-    /// Background corner radius.
-    pub corner_radius: f32,
-    /// Hover highlight inset from menu edges.
-    pub hover_inset: f32,
-    /// Hover highlight corner radius.
-    pub hover_radius: f32,
-    /// Check mark size (width/height of the check area).
-    pub checkmark_size: f32,
-    /// Gap between check mark and label text.
-    pub checkmark_gap: f32,
-    /// Menu background color.
-    pub bg: Color,
-    /// Item text color.
-    pub fg: Color,
-    /// Hover highlight background color.
-    pub hover_bg: Color,
-    /// Background tint for the selected item (before hover).
-    pub selected_bg: Color,
-    /// Separator line color.
-    pub separator_color: Color,
-    /// Border color.
-    pub border_color: Color,
-    /// Border width.
-    pub border_width: f32,
-    /// Check mark color.
-    pub check_color: Color,
-    /// Shadow color.
-    pub shadow_color: Color,
-    /// Font size for item labels.
-    pub font_size: f32,
-    /// Maximum visible height before scrolling. `None` shows all items.
-    pub max_height: Option<f32>,
-    /// Scrollbar appearance for long menus.
-    pub scrollbar: ScrollbarStyle,
-}
-
-impl MenuStyle {
-    /// Derives a menu style from the given theme.
-    pub fn from_theme(theme: &UiTheme) -> Self {
-        Self {
-            item_height: 32.0,
-            padding_y: 4.0,
-            padding_x: 12.0,
-            min_width: 180.0,
-            extra_width: 48.0,
-            separator_height: 9.0,
-            corner_radius: theme.corner_radius,
-            hover_inset: 4.0,
-            hover_radius: theme.corner_radius,
-            checkmark_size: 10.0,
-            checkmark_gap: 4.0,
-            bg: theme.bg_input,
-            fg: theme.fg_primary,
-            hover_bg: theme.bg_hover,
-            selected_bg: Color::TRANSPARENT,
-            separator_color: theme.border,
-            border_color: theme.border,
-            border_width: 2.0,
-            check_color: theme.accent,
-            shadow_color: theme.shadow,
-            font_size: 12.0,
-            max_height: None,
-            scrollbar: ScrollbarStyle::from_theme(theme),
-        }
-    }
-}
-
-impl Default for MenuStyle {
-    fn default() -> Self {
-        Self::from_theme(&UiTheme::dark())
-    }
-}
-
-/// Vertical scrollbar interaction state for scrollable menus.
-#[derive(Debug, Default)]
-pub(super) struct MenuScrollbarState {
-    dragging: bool,
-    /// Scroll offset at drag start.
-    drag_start_offset: f32,
-    /// Cursor over the track/thumb hit area.
-    track_hovered: bool,
-    /// Cursor specifically over the thumb hit area.
-    thumb_hovered: bool,
-}
-
-impl MenuScrollbarState {
-    fn visual_state(&self) -> ScrollbarVisualState {
-        if self.dragging {
-            ScrollbarVisualState::Dragging
-        } else if self.track_hovered || self.thumb_hovered {
-            ScrollbarVisualState::Hovered
-        } else {
-            ScrollbarVisualState::Rest
-        }
-    }
-}
-
-/// Pixels per scroll wheel line.
-const SCROLL_LINE_HEIGHT: f32 = 32.0;
-
-/// What was pressed during a scrub/drag interaction.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum DragMode {
-    /// Scrollbar thumb — update scroll offset during drag.
-    ScrollbarThumb,
-    /// Scrollbar track — offset was jumped on press, no ongoing drag.
-    ScrollbarTrack,
-    /// Menu item — select the hovered item on release.
-    ItemPress,
 }
 
 /// A menu widget with optional scrolling.
@@ -339,12 +215,19 @@ impl MenuWidget {
     }
 
     /// Total height — search row (when searchable) + display entries + padding.
+    /// In searchable mode with zero matches, reserves `style.item_height`
+    /// for the "No matches" indicator so it renders inside the menu chrome.
     pub(super) fn total_height(&self) -> f32 {
         self.query_row_height() + self.entries_height() + self.style.padding_y * 2.0
     }
 
-    /// Height of just the entries section (excluding search row and padding).
+    /// Height of the entries region. In searchable mode with zero matches,
+    /// returns `style.item_height` so `total_height` reserves space for the
+    /// "No matches" indicator (drawn by `draw_no_matches_row`).
     fn entries_height(&self) -> f32 {
+        if self.searchable && self.display_indices.is_empty() {
+            return self.style.item_height;
+        }
         self.display_indices
             .iter()
             .map(|&i| self.entry_height(i))
@@ -362,7 +245,7 @@ impl MenuWidget {
     /// Height of the search-input row when `searchable`, else 0.
     pub(super) fn query_row_height(&self) -> f32 {
         if self.searchable {
-            self.style.font_size + self.style.padding_y * 2.0 + 8.0
+            self.style.font_size + self.style.padding_y * 2.0 + self.style.query_row_extra_height
         } else {
             0.0
         }

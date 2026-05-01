@@ -60,10 +60,13 @@ impl App {
                 widget = widget.with_initial_highlight(idx);
             }
         }
-        // ensure_visible is a no-op when the entry isn't currently displayed,
-        // so it's safe to call regardless of mode.
-        if selected < widget.entries().len() {
-            widget.ensure_visible(selected);
+        // Scroll the visible target to the highlighted entry so an explicit
+        // `with_initial_highlight` (e.g. ArrowDown landing on entry 0) stays
+        // on-screen even when `selected` is deep in a long list. Falls back
+        // to `selected` for non-searchable mode where `hovered` starts None.
+        let scroll_target = widget.hovered().unwrap_or(selected);
+        if scroll_target < widget.entries().len() {
+            widget.ensure_visible(scroll_target);
         }
 
         let now = Instant::now();

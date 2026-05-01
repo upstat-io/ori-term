@@ -972,6 +972,56 @@ fn searchable_dismiss_emits_dismiss_overlay() {
 }
 
 #[test]
+fn searchable_escape_via_on_input_passes_through() {
+    // Pin: when Escape arrives via on_input (NOT via keymap dispatch),
+    // a searchable MenuWidget must NOT swallow it. The OverlayManager
+    // owns dismissal and must see the unhandled flag to react.
+    let mut menu = searchable_menu(vec!["Alpha"]);
+    let bounds = Rect::new(0.0, 0.0, 200.0, 200.0);
+    let r = menu.on_input(&key(Key::Escape), bounds);
+    assert!(
+        !r.handled,
+        "Escape must propagate up through on_input — OverlayManager handles dismissal"
+    );
+    assert!(r.action.is_none());
+}
+
+#[test]
+fn searchable_click_on_filtered_row_emits_canonical_index() {
+    // INVERTED-TDD positive pin: post-filter mouse click must emit the
+    // canonical entry index, not the filtered display position. Migrated
+    // from the deleted SearchableDropdownPopupWidget test of the same name
+    // and adapted to MenuWidget's ScrubController-mediated click path
+    // (DragStart on press, DragEnd on release).
+    let entries: Vec<MenuEntry> = ["Alpha", "Beta", "Charlie"]
+        .iter()
+        .map(|l| MenuEntry::Item { label: (*l).into() })
+        .collect();
+    let mut menu = MenuWidget::new(entries).with_searchable(true);
+    let bounds = Rect::new(0.0, 0.0, 200.0, 200.0);
+    let _ = menu.on_input(&key(Key::Character('B')), bounds);
+    assert_eq!(menu.display_indices(), &[1]);
+
+    // Click on the only filtered row. The row sits below the query row
+    // and the top padding; pick a y-coordinate inside it.
+    let s = MenuStyle::default();
+    let row_y = bounds.y() + s.padding_y + menu.query_row_height() + s.item_height * 0.5;
+    let pos = Point::new(bounds.x() + 50.0, row_y);
+    menu.on_action(WidgetAction::DragStart { id: menu.id(), pos }, bounds);
+    let result = menu.on_action(WidgetAction::DragEnd { id: menu.id(), pos }, bounds);
+    match result {
+        Some(WidgetAction::Selected { id, index }) => {
+            assert_eq!(id, menu.id());
+            assert_eq!(
+                index, 1,
+                "Selected.index must be canonical 'Beta' (1), not filtered position 0"
+            );
+        }
+        other => panic!("expected Selected from filtered click, got {other:?}"),
+    }
+}
+
+#[test]
 fn non_searchable_does_not_consume_character_keys() {
     // Negative pin: turning searchable OFF means typing letters falls through
     // to whatever else might handle them (e.g. parent overlay manager).
