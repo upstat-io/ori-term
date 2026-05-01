@@ -341,3 +341,88 @@ fn move_tab_to_window_helper_remains_removed() {
          helper is needed, design it with destination-targeted layout from day 1.",
     );
 }
+
+/// File-size pin for the BUG-03-004 refactor — ensures `oriterm/src/app/mod.rs`
+/// stays under the 500-line hard limit per `.claude/rules/code-hygiene.md §File Size`,
+/// and that the relocation didn't regress any of the 10 touched files.
+///
+/// Touched-set (10 paths total):
+/// - `oriterm/src/app/mod.rs` (574 → < 500 after relocation)
+/// - 5 existing destinations that absorbed methods (pane_accessors, redraw, mux_pump,
+///   config_reload, mouse_input) — all must stay under 500 after the additions.
+/// - `oriterm/src/app/tab_management/mod.rs` (gains `mod width_lock;` line) — must stay under 500.
+/// - 3 new submodules created by the refactor (focus_accessors, dpi_change,
+///   tab_management/width_lock) — must each be under 500 from creation.
+///
+/// Path discovery uses `oriterm_test_support::paths::term_workspace_root()` per
+/// `.claude/rules/test-organization.md §Wrapper/Subrepo Path Discovery`. Files that
+/// do not yet exist on disk (i.e., this test runs before relocation) are skipped
+/// with a SKIP message rather than failing — pre-fix the pin only fails on
+/// `mod.rs` (574); post-fix all 9 paths exist and all must satisfy the size cap.
+///
+/// Other over-budget files in `oriterm/src/app/` (`event_loop.rs` 532,
+/// `init/mod.rs` 611, `event_loop_helpers/mod.rs` 504) are tracked separately
+/// (BUG-09-004, BUG-09-005, etc.) and are out of scope for this pin.
+///
+/// See: bug-tracker/plans/BUG-03-004/
+#[test]
+fn app_module_touched_set_under_500_lines() {
+    const FILE_SIZE_LIMIT: usize = 500;
+
+    let workspace_root = oriterm_test_support::paths::term_workspace_root();
+    let oriterm_src = workspace_root.join("oriterm").join("src");
+
+    // The 9 files this refactor touches. Paths are relative to oriterm/src/.
+    const TOUCHED_FILES: &[&str] = &[
+        "app/mod.rs",
+        "app/pane_accessors.rs",
+        "app/redraw/mod.rs",
+        "app/mux_pump/mod.rs",
+        "app/config_reload/mod.rs",
+        "app/mouse_input.rs",
+        "app/tab_management/mod.rs",
+        "app/focus_accessors.rs",
+        "app/dpi_change.rs",
+        "app/tab_management/width_lock.rs",
+    ];
+
+    let mut over_budget: Vec<(String, usize)> = Vec::new();
+    let mut checked = 0;
+    for rel_path in TOUCHED_FILES {
+        let full_path = oriterm_src.join(rel_path);
+        if !full_path.exists() {
+            // Pre-fix state: new files don't exist yet. Skip — the size pin is
+            // forward-looking; post-fix all paths exist and the pin enforces ≤ 500.
+            eprintln!("SKIP: {rel_path} not yet created (pre-fix state)");
+            continue;
+        }
+        let body = std::fs::read_to_string(&full_path)
+            .unwrap_or_else(|e| panic!("failed to read {}: {e}", full_path.display()));
+        let line_count = body.lines().count();
+        checked += 1;
+        if line_count > FILE_SIZE_LIMIT {
+            over_budget.push((rel_path.to_string(), line_count));
+        }
+    }
+
+    assert_eq!(
+        TOUCHED_FILES.len(),
+        10,
+        "self-check: TOUCHED_FILES count must equal 10 (mod.rs + 6 existing destinations + 3 new files)",
+    );
+    assert!(
+        checked > 0,
+        "no files in the touched-set existed — pin would silently pass; check oriterm_test_support::paths::term_workspace_root() resolution",
+    );
+
+    if !over_budget.is_empty() {
+        let detail = over_budget
+            .iter()
+            .map(|(p, n)| format!("  {p} = {n} lines (limit {FILE_SIZE_LIMIT})"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        panic!(
+            "BUG-03-004 file-size pin violated. The following files exceed the {FILE_SIZE_LIMIT}-line hard limit:\n{detail}\n\nSee bug-tracker/plans/BUG-03-004/ for the relocation plan."
+        );
+    }
+}

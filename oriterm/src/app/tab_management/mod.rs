@@ -5,6 +5,7 @@
 //! (tab bar layout, animation offsets).
 
 mod move_ops;
+mod width_lock;
 
 use std::path::PathBuf;
 

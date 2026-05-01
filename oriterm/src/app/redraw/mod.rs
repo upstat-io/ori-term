@@ -19,8 +19,66 @@ use crate::gpu::{
     extract_frame_from_snapshot_into, snapshot_palette,
 };
 use oriterm_core::{Column, CursorShape, TermMode};
+use oriterm_mux::PaneId;
 
 impl App {
+    /// Mark all windows as needing a redraw.
+    ///
+    /// Used when mux notifications (PTY output, layout changes) may affect
+    /// any window — not just the focused one. In multi-window setups, pane
+    /// output in the unfocused window must still trigger a render.
+    pub(super) fn mark_all_windows_dirty(&mut self) {
+        for ctx in self.windows.values_mut() {
+            ctx.root.mark_dirty();
+        }
+    }
+
+    /// Mark only the window containing `pane_id` as dirty.
+    ///
+    /// Falls back to [`mark_all_windows_dirty`] if the pane's window cannot
+    /// be resolved (orphan pane during close, or session out of sync).
+    pub(super) fn mark_pane_window_dirty(&mut self, pane_id: PaneId) {
+        if let Some(session_wid) = self.session.window_for_pane(pane_id) {
+            for ctx in self.windows.values_mut() {
+                if ctx.window.session_window_id() == session_wid {
+                    ctx.root.mark_dirty();
+                    return;
+                }
+            }
+        }
+        // Fallback: pane not found in session → mark all dirty.
+        self.mark_all_windows_dirty();
+    }
+
+    /// Register (or clear) an animation-frame deadline on the window
+    /// containing `pane_id`.
+    ///
+    /// Routes `MuxNotification::AnimationDeadlineChanged { deadline }` into
+    /// the owning window's `RenderScheduler` via `set_animation_deadline`.
+    /// `Some(t)` upserts — the scheduler wakes the winit event loop at `t`
+    /// via `ControlFlow::WaitUntil`. `None` clears the prior deadline so a
+    /// queued wake from an animation that has since stopped does NOT fire
+    /// spuriously — critical for honoring the "zero idle CPU beyond cursor
+    /// blink" invariant (`.claude/rules/oriterm.md`) across animation
+    /// start/stop cycles.
+    pub(super) fn request_pane_animation_frame_at(
+        &mut self,
+        pane_id: PaneId,
+        deadline: Option<Instant>,
+    ) {
+        let Some(session_wid) = self.session.window_for_pane(pane_id) else {
+            return;
+        };
+        let key = pane_id.raw();
+        for ctx in self.windows.values_mut() {
+            if ctx.window.session_window_id() == session_wid {
+                ctx.root
+                    .scheduler_mut()
+                    .set_animation_deadline(key, deadline);
+                return;
+            }
+        }
+    }
     /// Execute the three-phase rendering pipeline: Extract → Prepare → Render.
     #[expect(
         clippy::too_many_lines,
