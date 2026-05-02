@@ -157,6 +157,10 @@ pub(super) trait MarkModeSink {
 /// Returns `true` when:
 /// - Released event with mark mode active (consume-all);
 /// - Pressed event after successful key dispatch.
+///
+/// The return value drives the caller's `if x { return; }` short-circuit
+/// — ignoring it would silently mis-route every key event.
+#[must_use]
 pub(super) fn dispatch_mark_mode<S: MarkModeSink>(input: MarkModeDispatch, sink: &mut S) -> bool {
     let Some(pane_id) = input.active_pane_id else {
         return false;

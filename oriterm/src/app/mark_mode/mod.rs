@@ -135,14 +135,7 @@ pub(crate) fn handle_mark_mode_key(ctx: &MarkModeKeyContext<'_>) -> MarkModeResu
             }
             _ => {
                 if let Some(m) = resolve_motion(*named, ctx.mods) {
-                    return apply_motion(
-                        ctx.grid,
-                        ctx.cursor,
-                        ctx.selection,
-                        m,
-                        ctx.mods.shift_key(),
-                        ctx.word_delimiters,
-                    );
+                    return apply_motion(ctx, m);
                 }
             }
         }
@@ -183,18 +176,13 @@ fn resolve_motion(named: NamedKey, mods: ModifiersState) -> Option<Motion> {
 ///
 /// Returns a [`MarkModeResult`] with the new cursor, selection update,
 /// and scroll delta needed to keep the mark cursor visible.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "motion apply: grid, cursor, selection, motion, shift, delimiters"
-)]
-fn apply_motion(
-    grid: &SnapshotGrid<'_>,
-    old_cursor: MarkCursor,
-    selection: Option<&Selection>,
-    m: Motion,
-    shift: bool,
-    word_delimiters: &str,
-) -> MarkModeResult {
+fn apply_motion(ctx: &MarkModeKeyContext<'_>, m: Motion) -> MarkModeResult {
+    let grid = ctx.grid;
+    let old_cursor = ctx.cursor;
+    let selection = ctx.selection;
+    let shift = ctx.mods.shift_key();
+    let word_delimiters = ctx.word_delimiters;
+
     let Some(abs_row) = grid.stable_to_absolute(old_cursor.row) else {
         return MarkModeResult {
             action: MarkAction::Handled { scroll_delta: None },
