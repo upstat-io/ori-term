@@ -167,8 +167,16 @@ impl App {
     ///
     /// Returns `true` if mark mode consumed the event (caller should return).
     fn try_dispatch_mark_mode(&mut self, event: &winit::event::KeyEvent) -> bool {
-        let active_pane_id = self.active_pane_id();
-        let mark_mode_active = active_pane_id.is_some_and(|id| self.is_mark_mode(id));
+        // Boundary fast-path: skip MarkModeKeyEvent construction (which clones
+        // event.logical_key) on the common case where mark mode is inactive.
+        // The internal early returns in dispatch_mark_mode are preserved for
+        // test reachability and defense-in-depth.
+        let Some(pane_id) = self.active_pane_id() else {
+            return false;
+        };
+        if !self.is_mark_mode(pane_id) {
+            return false;
+        }
         let modifiers = self.modifiers;
         dispatch_mark_mode(
             MarkModeDispatch {
@@ -176,8 +184,8 @@ impl App {
                 event_state: event.state,
                 event_repeat: event.repeat,
                 modifiers,
-                active_pane_id,
-                mark_mode_active,
+                active_pane_id: Some(pane_id),
+                mark_mode_active: true,
             },
             self,
         )

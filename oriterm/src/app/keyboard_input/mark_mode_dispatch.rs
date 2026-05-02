@@ -16,7 +16,9 @@ use oriterm_core::Selection;
 use oriterm_mux::{MarkCursor, PaneId};
 
 use super::super::App;
-use super::super::mark_mode::{MarkAction, MarkModeKeyEvent, MarkModeResult, SelectionUpdate};
+use super::super::mark_mode::{
+    MarkAction, MarkModeKeyContext, MarkModeKeyEvent, MarkModeResult, SelectionUpdate,
+};
 
 /// Snapshot of which mark-mode resources are currently available.
 ///
@@ -276,13 +278,13 @@ impl MarkModeSink for App {
             .and_then(|m| m.pane_snapshot(input.pane_id))
             .expect("snapshot_present validated by mark_mode_should_exit guard");
         let grid = super::super::snapshot_grid::SnapshotGrid::new(snapshot);
-        super::super::mark_mode::handle_mark_mode_key(
-            &grid,
-            input.cursor,
-            input.selection.as_ref(),
-            &input.event,
-            input.modifiers,
-            &self.config.behavior.word_delimiters,
-        )
+        super::super::mark_mode::handle_mark_mode_key(&MarkModeKeyContext {
+            grid: &grid,
+            cursor: input.cursor,
+            selection: input.selection.as_ref(),
+            event: &input.event,
+            mods: input.modifiers,
+            word_delimiters: &self.config.behavior.word_delimiters,
+        })
     }
 }

@@ -67,23 +67,24 @@ pub(crate) struct MarkModeResult {
     pub new_selection: Option<SelectionUpdate>,
 }
 
+/// Bundled inputs to [`handle_mark_mode_key`] — bundles the six dispatch
+/// inputs (grid, cursor, selection, event, mods, delimiters) per
+/// `impl-hygiene.md §Parameter Hygiene` (>4 params → struct).
+pub(crate) struct MarkModeKeyContext<'a> {
+    pub grid: &'a SnapshotGrid<'a>,
+    pub cursor: MarkCursor,
+    pub selection: Option<&'a Selection>,
+    pub event: &'a MarkModeKeyEvent,
+    pub mods: ModifiersState,
+    pub word_delimiters: &'a str,
+}
+
 /// Dispatch a key event while mark mode is active.
 ///
 /// Pure function: reads grid state from `SnapshotGrid`, mark cursor and
 /// selection from parameters. Returns a [`MarkModeResult`] describing
 /// state mutations for the caller to apply.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "mark mode dispatch: grid, cursor, selection, event, mods, delimiters"
-)]
-pub(crate) fn handle_mark_mode_key(
-    grid: &SnapshotGrid<'_>,
-    cursor: MarkCursor,
-    selection: Option<&Selection>,
-    event: &MarkModeKeyEvent,
-    mods: ModifiersState,
-    word_delimiters: &str,
-) -> MarkModeResult {
+pub(crate) fn handle_mark_mode_key(ctx: &MarkModeKeyContext<'_>) -> MarkModeResult {
     let noop = MarkModeResult {
         action: MarkAction::Ignored,
         new_cursor: None,
@@ -91,9 +92,9 @@ pub(crate) fn handle_mark_mode_key(
     };
 
     // Ctrl+Shift+M toggles mark mode off.
-    if mods.control_key()
-        && mods.shift_key()
-        && matches!(event.physical_key, PhysicalKey::Code(KeyCode::KeyM))
+    if ctx.mods.control_key()
+        && ctx.mods.shift_key()
+        && matches!(ctx.event.physical_key, PhysicalKey::Code(KeyCode::KeyM))
     {
         return MarkModeResult {
             action: MarkAction::Exit { copy: false },
@@ -103,11 +104,11 @@ pub(crate) fn handle_mark_mode_key(
     }
 
     // Ctrl+A selects the entire buffer.
-    if mods.control_key()
-        && !mods.shift_key()
-        && matches!(event.physical_key, PhysicalKey::Code(KeyCode::KeyA))
+    if ctx.mods.control_key()
+        && !ctx.mods.shift_key()
+        && matches!(ctx.event.physical_key, PhysicalKey::Code(KeyCode::KeyA))
     {
-        let sel = select_all(grid);
+        let sel = select_all(ctx.grid);
         return MarkModeResult {
             action: MarkAction::Handled { scroll_delta: None },
             new_cursor: None,
@@ -116,7 +117,7 @@ pub(crate) fn handle_mark_mode_key(
     }
 
     // Named keys: Escape, Enter, arrow/page/home/end navigation.
-    if let Key::Named(named) = &event.logical_key {
+    if let Key::Named(named) = &ctx.event.logical_key {
         match named {
             NamedKey::Escape => {
                 return MarkModeResult {
@@ -133,14 +134,14 @@ pub(crate) fn handle_mark_mode_key(
                 };
             }
             _ => {
-                if let Some(m) = resolve_motion(*named, mods) {
+                if let Some(m) = resolve_motion(*named, ctx.mods) {
                     return apply_motion(
-                        grid,
-                        cursor,
-                        selection,
+                        ctx.grid,
+                        ctx.cursor,
+                        ctx.selection,
                         m,
-                        mods.shift_key(),
-                        word_delimiters,
+                        ctx.mods.shift_key(),
+                        ctx.word_delimiters,
                     );
                 }
             }

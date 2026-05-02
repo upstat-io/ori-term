@@ -1,5 +1,6 @@
 //! Unit tests for IME handling, preedit overlay, and mark-mode dispatch wiring.
 
+use std::cell::RefCell;
 use std::collections::HashMap;
 
 use winit::event::{ElementState, Ime};
@@ -693,10 +694,16 @@ fn mark_mode_exit_decision_truth_table_complete() {
 // See: bug-tracker/plans/BUG-08-034/00-overview.md.
 
 /// Distinguishable record of every `MarkModeSink` method invocation. Stored
-/// in `RecordingSink::call_log` so ordering and skip-detection are pinnable.
+/// in `RecordingSink::call_log` (RefCell — &self query methods record too).
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum MethodCall {
     MarkModeResources {
+        pane_id: PaneId,
+    },
+    PaneMarkCursor {
+        pane_id: PaneId,
+    },
+    PaneSelection {
         pane_id: PaneId,
     },
     RefreshPaneSnapshot {
@@ -732,7 +739,8 @@ enum MethodCall {
 }
 
 /// Test fixture for `dispatch_mark_mode`. Records every sink-method call
-/// and lets each test configure resource presence + the dispatch result.
+/// (including `&self` query methods via RefCell) and lets each test
+/// configure resource presence + the dispatch result.
 #[derive(Default)]
 struct RecordingSink {
     cursor_for_pane: HashMap<PaneId, MarkCursor>,
@@ -741,7 +749,7 @@ struct RecordingSink {
     mux_present: bool,
     dispatch_result: Option<MarkModeResult>,
     refresh_makes_snapshot_present: bool,
-    call_log: Vec<MethodCall>,
+    call_log: RefCell<Vec<MethodCall>>,
     exit_mark_mode_calls: Vec<PaneId>,
     mark_dirty_calls: usize,
     refresh_snapshot_calls: usize,
@@ -765,15 +773,40 @@ impl RecordingSink {
     /// SSOT (the call log) for query/mutation accounting.
     fn mark_mode_resources_calls(&self, pane_id: PaneId) -> usize {
         self.call_log
+            .borrow()
             .iter()
             .filter(|c| matches!(c, MethodCall::MarkModeResources { pane_id: p } if *p == pane_id))
             .count()
+    }
+
+    /// Count of `pane_mark_cursor()` queries for a specific pane.
+    fn pane_mark_cursor_calls(&self, pane_id: PaneId) -> usize {
+        self.call_log
+            .borrow()
+            .iter()
+            .filter(|c| matches!(c, MethodCall::PaneMarkCursor { pane_id: p } if *p == pane_id))
+            .count()
+    }
+
+    /// Count of `pane_selection()` queries for a specific pane.
+    fn pane_selection_calls(&self, pane_id: PaneId) -> usize {
+        self.call_log
+            .borrow()
+            .iter()
+            .filter(|c| matches!(c, MethodCall::PaneSelection { pane_id: p } if *p == pane_id))
+            .count()
+    }
+
+    /// Snapshot of the call log for ordering / structural assertions.
+    fn call_log_snapshot(&self) -> Vec<MethodCall> {
+        self.call_log.borrow().clone()
     }
 }
 
 impl MarkModeSink for RecordingSink {
     fn mark_mode_resources(&mut self, pane_id: PaneId) -> MarkModeResources {
         self.call_log
+            .borrow_mut()
             .push(MethodCall::MarkModeResources { pane_id });
         MarkModeResources {
             mux_present: self.mux_present,
@@ -782,13 +815,20 @@ impl MarkModeSink for RecordingSink {
         }
     }
     fn pane_mark_cursor(&self, pane_id: PaneId) -> Option<MarkCursor> {
+        self.call_log
+            .borrow_mut()
+            .push(MethodCall::PaneMarkCursor { pane_id });
         self.cursor_for_pane.get(&pane_id).copied()
     }
     fn pane_selection(&self, pane_id: PaneId) -> Option<Selection> {
+        self.call_log
+            .borrow_mut()
+            .push(MethodCall::PaneSelection { pane_id });
         self.selection_for_pane.get(&pane_id).copied()
     }
     fn refresh_pane_snapshot(&mut self, pane_id: PaneId) {
         self.call_log
+            .borrow_mut()
             .push(MethodCall::RefreshPaneSnapshot { pane_id });
         self.refresh_snapshot_calls += 1;
         if self.refresh_makes_snapshot_present {
@@ -796,45 +836,53 @@ impl MarkModeSink for RecordingSink {
         }
     }
     fn exit_mark_mode(&mut self, pane_id: PaneId) {
-        self.call_log.push(MethodCall::ExitMarkMode { pane_id });
+        self.call_log
+            .borrow_mut()
+            .push(MethodCall::ExitMarkMode { pane_id });
         self.exit_mark_mode_calls.push(pane_id);
     }
     fn set_mark_cursor(&mut self, pane_id: PaneId, cursor: MarkCursor) {
         self.call_log
+            .borrow_mut()
             .push(MethodCall::SetMarkCursor { pane_id, cursor });
         self.set_mark_cursor_calls.push((pane_id, cursor));
     }
     fn set_pane_selection(&mut self, pane_id: PaneId, sel: Selection) {
         self.call_log
+            .borrow_mut()
             .push(MethodCall::SetPaneSelection { pane_id, sel });
         self.set_pane_selection_calls.push((pane_id, sel));
     }
     fn clear_pane_selection(&mut self, pane_id: PaneId) {
         self.call_log
+            .borrow_mut()
             .push(MethodCall::ClearPaneSelection { pane_id });
         self.clear_pane_selection_calls.push(pane_id);
     }
     fn scroll_display(&mut self, pane_id: PaneId, lines: isize) {
         self.call_log
+            .borrow_mut()
             .push(MethodCall::ScrollDisplay { pane_id, lines });
         self.scroll_display_calls.push((pane_id, lines));
     }
     fn copy_selection(&mut self) {
-        self.call_log.push(MethodCall::CopySelection);
+        self.call_log.borrow_mut().push(MethodCall::CopySelection);
         self.copy_selection_calls += 1;
     }
     fn mark_dirty(&mut self) {
-        self.call_log.push(MethodCall::MarkDirty);
+        self.call_log.borrow_mut().push(MethodCall::MarkDirty);
         self.mark_dirty_calls += 1;
     }
     fn dispatch_mark_mode_key(&mut self, input: MarkKeyInput) -> MarkModeResult {
-        self.call_log.push(MethodCall::DispatchMarkModeKey {
-            pane_id: input.pane_id,
-            cursor: input.cursor,
-            selection: input.selection,
-            event: input.event.clone(),
-            modifiers: input.modifiers,
-        });
+        self.call_log
+            .borrow_mut()
+            .push(MethodCall::DispatchMarkModeKey {
+                pane_id: input.pane_id,
+                cursor: input.cursor,
+                selection: input.selection,
+                event: input.event.clone(),
+                modifiers: input.modifiers,
+            });
         self.dispatch_key_calls += 1;
         self.last_dispatch_args = Some((
             input.pane_id,
@@ -879,25 +927,26 @@ fn make_handled_no_motion() -> MarkModeResult {
     }
 }
 
-/// Wrapper around `dispatch_mark_mode(MarkModeDispatch { ... }, sink)` that
-/// hides struct construction noise from each test body. The 5 cell-axis args
-/// (state, repeat, active_pane_id, mark_mode_active) group naturally for the
-/// truth-table loops.
-fn dispatch_with(
-    sink: &mut RecordingSink,
+/// Bundled cell axes for the matrix loops, per `impl-hygiene.md
+/// §Parameter Hygiene` (>4 params → struct).
+struct DispatchCell {
     state: ElementState,
     repeat: bool,
     active_pane_id: Option<PaneId>,
     mark_mode_active: bool,
-) -> bool {
+}
+
+/// Wrapper around `dispatch_mark_mode(MarkModeDispatch { ... }, sink)` that
+/// hides struct construction noise from each test body.
+fn dispatch_with(sink: &mut RecordingSink, cell: DispatchCell) -> bool {
     dispatch_mark_mode(
         MarkModeDispatch {
             event: make_mark_key_event(),
-            event_state: state,
-            event_repeat: repeat,
+            event_state: cell.state,
+            event_repeat: cell.repeat,
             modifiers: ModifiersState::empty(),
-            active_pane_id,
-            mark_mode_active,
+            active_pane_id: cell.active_pane_id,
+            mark_mode_active: cell.mark_mode_active,
         },
         sink,
     )
@@ -935,10 +984,12 @@ fn dispatch_mark_mode_pressed_truth_table_pins_exit_on_missing_resource() {
                     }
                     let result = dispatch_with(
                         &mut sink,
-                        ElementState::Pressed,
-                        repeat,
-                        Some(pane_id),
-                        true,
+                        DispatchCell {
+                            state: ElementState::Pressed,
+                            repeat,
+                            active_pane_id: Some(pane_id),
+                            mark_mode_active: true,
+                        },
                     );
                     if all_present {
                         assert!(
@@ -1008,10 +1059,12 @@ fn dispatch_mark_mode_released_event_consumes_regardless_of_resources() {
                 sink.snapshot_present.insert(pane_id, snapshot);
                 let result = dispatch_with(
                     &mut sink,
-                    ElementState::Released,
-                    false,
-                    Some(pane_id),
-                    true,
+                    DispatchCell {
+                        state: ElementState::Released,
+                        repeat: false,
+                        active_pane_id: Some(pane_id),
+                        mark_mode_active: true,
+                    },
                 );
                 assert!(
                     result,
@@ -1021,6 +1074,16 @@ fn dispatch_mark_mode_released_event_consumes_regardless_of_resources() {
                     sink.mark_mode_resources_calls(pane_id),
                     0,
                     "({mux}, {cursor}, {snapshot}) Released → must NOT query resources"
+                );
+                assert_eq!(
+                    sink.pane_mark_cursor_calls(pane_id),
+                    0,
+                    "({mux}, {cursor}, {snapshot}) Released → must NOT query mark cursor"
+                );
+                assert_eq!(
+                    sink.pane_selection_calls(pane_id),
+                    0,
+                    "({mux}, {cursor}, {snapshot}) Released → must NOT query selection"
                 );
                 assert_eq!(
                     sink.refresh_snapshot_calls, 0,
@@ -1068,7 +1131,15 @@ fn dispatch_mark_mode_inactive_returns_false_without_side_effects() {
                         sink.cursor_for_pane.insert(pane_id, make_mark_cursor());
                     }
                     sink.snapshot_present.insert(pane_id, snapshot);
-                    let result = dispatch_with(&mut sink, state, false, Some(pane_id), false);
+                    let result = dispatch_with(
+                        &mut sink,
+                        DispatchCell {
+                            state,
+                            repeat: false,
+                            active_pane_id: Some(pane_id),
+                            mark_mode_active: false,
+                        },
+                    );
                     assert!(
                         !result,
                         "({state:?}, {mux}, {cursor}, {snapshot}) inactive → must passthrough false"
@@ -1078,6 +1149,16 @@ fn dispatch_mark_mode_inactive_returns_false_without_side_effects() {
                         0,
                         "inactive must NOT query resources"
                     );
+                    assert_eq!(
+                        sink.pane_mark_cursor_calls(pane_id),
+                        0,
+                        "inactive must NOT query mark cursor"
+                    );
+                    assert_eq!(
+                        sink.pane_selection_calls(pane_id),
+                        0,
+                        "inactive must NOT query selection"
+                    );
                     assert_eq!(sink.refresh_snapshot_calls, 0);
                     assert!(sink.exit_mark_mode_calls.is_empty());
                     assert_eq!(sink.dispatch_key_calls, 0);
@@ -1085,6 +1166,7 @@ fn dispatch_mark_mode_inactive_returns_false_without_side_effects() {
                     assert!(
                         !sink
                             .call_log
+                            .borrow()
                             .iter()
                             .any(|c| matches!(c, MethodCall::MarkModeResources { .. })),
                         "call_log must contain NO MarkModeResources entries"
@@ -1111,17 +1193,26 @@ fn dispatch_mark_mode_no_active_pane_returns_false_without_side_effects() {
     for state in [ElementState::Pressed, ElementState::Released] {
         for mark_active in [false, true] {
             let mut sink = RecordingSink::default();
-            let result = dispatch_with(&mut sink, state, false, None, mark_active);
+            let result = dispatch_with(
+                &mut sink,
+                DispatchCell {
+                    state,
+                    repeat: false,
+                    active_pane_id: None,
+                    mark_mode_active: mark_active,
+                },
+            );
             assert!(
                 !result,
                 "({state:?}, mark_active={mark_active}) None pane → must passthrough false"
             );
             assert!(
-                sink.call_log.is_empty(),
+                sink.call_log.borrow().is_empty(),
                 "({state:?}, mark_active={mark_active}) None pane → no sink method must fire"
             );
             assert!(
                 sink.call_log
+                    .borrow()
                     .iter()
                     .all(|c| !matches!(c, MethodCall::MarkModeResources { .. })),
                 "no resource query"
@@ -1152,7 +1243,7 @@ fn dispatch_mark_mode_handled_with_scroll_delta_calls_scroll_display() {
         new_cursor: None,
         new_selection: None,
     });
-    let result = dispatch_with(&mut sink, ElementState::Pressed, false, Some(pane_id), true);
+    let result = dispatch_with(&mut sink, DispatchCell { state: ElementState::Pressed, repeat: false, active_pane_id: Some(pane_id), mark_mode_active: true });
     assert!(result);
     assert_eq!(sink.scroll_display_calls, vec![(pane_id, 5)]);
     assert_eq!(sink.mark_dirty_calls, 1);
@@ -1172,7 +1263,7 @@ fn dispatch_mark_mode_handled_without_scroll_delta_skips_scroll_display() {
     sink.cursor_for_pane.insert(pane_id, make_mark_cursor());
     sink.snapshot_present.insert(pane_id, true);
     sink.dispatch_result = Some(make_handled_no_motion());
-    let result = dispatch_with(&mut sink, ElementState::Pressed, false, Some(pane_id), true);
+    let result = dispatch_with(&mut sink, DispatchCell { state: ElementState::Pressed, repeat: false, active_pane_id: Some(pane_id), mark_mode_active: true });
     assert!(result);
     assert!(sink.scroll_display_calls.is_empty());
     assert_eq!(sink.mark_dirty_calls, 1);
@@ -1196,7 +1287,7 @@ fn dispatch_mark_mode_exit_with_copy_calls_exit_mark_mode_and_copy_selection() {
         new_cursor: None,
         new_selection: None,
     });
-    let result = dispatch_with(&mut sink, ElementState::Pressed, false, Some(pane_id), true);
+    let result = dispatch_with(&mut sink, DispatchCell { state: ElementState::Pressed, repeat: false, active_pane_id: Some(pane_id), mark_mode_active: true });
     assert!(result);
     assert_eq!(sink.exit_mark_mode_calls, vec![pane_id]);
     assert_eq!(sink.copy_selection_calls, 1);
@@ -1220,7 +1311,7 @@ fn dispatch_mark_mode_exit_without_copy_calls_exit_mark_mode_only() {
         new_cursor: None,
         new_selection: None,
     });
-    let result = dispatch_with(&mut sink, ElementState::Pressed, false, Some(pane_id), true);
+    let result = dispatch_with(&mut sink, DispatchCell { state: ElementState::Pressed, repeat: false, active_pane_id: Some(pane_id), mark_mode_active: true });
     assert!(result);
     assert_eq!(sink.exit_mark_mode_calls, vec![pane_id]);
     assert_eq!(sink.copy_selection_calls, 0);
@@ -1243,7 +1334,7 @@ fn dispatch_mark_mode_ignored_action_only_marks_dirty() {
         new_cursor: None,
         new_selection: None,
     });
-    let result = dispatch_with(&mut sink, ElementState::Pressed, false, Some(pane_id), true);
+    let result = dispatch_with(&mut sink, DispatchCell { state: ElementState::Pressed, repeat: false, active_pane_id: Some(pane_id), mark_mode_active: true });
     assert!(result);
     assert!(sink.exit_mark_mode_calls.is_empty());
     assert!(sink.scroll_display_calls.is_empty());
@@ -1272,7 +1363,7 @@ fn dispatch_mark_mode_with_new_cursor_calls_set_mark_cursor() {
         new_cursor: Some(new_cursor),
         new_selection: None,
     });
-    let _ = dispatch_with(&mut sink, ElementState::Pressed, false, Some(pane_id), true);
+    let _ = dispatch_with(&mut sink, DispatchCell { state: ElementState::Pressed, repeat: false, active_pane_id: Some(pane_id), mark_mode_active: true });
     assert_eq!(sink.set_mark_cursor_calls, vec![(pane_id, new_cursor)]);
 }
 
@@ -1289,7 +1380,7 @@ fn dispatch_mark_mode_without_new_cursor_skips_set_mark_cursor() {
     sink.cursor_for_pane.insert(pane_id, make_mark_cursor());
     sink.snapshot_present.insert(pane_id, true);
     sink.dispatch_result = Some(make_handled_no_motion());
-    let _ = dispatch_with(&mut sink, ElementState::Pressed, false, Some(pane_id), true);
+    let _ = dispatch_with(&mut sink, DispatchCell { state: ElementState::Pressed, repeat: false, active_pane_id: Some(pane_id), mark_mode_active: true });
     assert!(sink.set_mark_cursor_calls.is_empty());
 }
 
@@ -1311,7 +1402,7 @@ fn dispatch_mark_mode_with_selection_set_calls_set_pane_selection() {
         new_cursor: None,
         new_selection: Some(SelectionUpdate::Set(sel)),
     });
-    let _ = dispatch_with(&mut sink, ElementState::Pressed, false, Some(pane_id), true);
+    let _ = dispatch_with(&mut sink, DispatchCell { state: ElementState::Pressed, repeat: false, active_pane_id: Some(pane_id), mark_mode_active: true });
     assert_eq!(sink.set_pane_selection_calls, vec![(pane_id, sel)]);
     assert!(sink.clear_pane_selection_calls.is_empty());
 }
@@ -1333,7 +1424,7 @@ fn dispatch_mark_mode_with_selection_clear_calls_clear_pane_selection() {
         new_cursor: None,
         new_selection: Some(SelectionUpdate::Clear),
     });
-    let _ = dispatch_with(&mut sink, ElementState::Pressed, false, Some(pane_id), true);
+    let _ = dispatch_with(&mut sink, DispatchCell { state: ElementState::Pressed, repeat: false, active_pane_id: Some(pane_id), mark_mode_active: true });
     assert_eq!(sink.clear_pane_selection_calls, vec![pane_id]);
     assert!(sink.set_pane_selection_calls.is_empty());
 }
@@ -1352,7 +1443,7 @@ fn dispatch_mark_mode_with_selection_none_skips_set_and_clear() {
     sink.cursor_for_pane.insert(pane_id, make_mark_cursor());
     sink.snapshot_present.insert(pane_id, true);
     sink.dispatch_result = Some(make_handled_no_motion());
-    let _ = dispatch_with(&mut sink, ElementState::Pressed, false, Some(pane_id), true);
+    let _ = dispatch_with(&mut sink, DispatchCell { state: ElementState::Pressed, repeat: false, active_pane_id: Some(pane_id), mark_mode_active: true });
     assert!(sink.set_pane_selection_calls.is_empty());
     assert!(sink.clear_pane_selection_calls.is_empty());
 }
@@ -1372,26 +1463,23 @@ fn dispatch_mark_mode_pressed_refreshes_snapshot_before_mark_mode_resources_quer
     sink.cursor_for_pane.insert(pane_id, make_mark_cursor());
     sink.snapshot_present.insert(pane_id, true);
     sink.dispatch_result = Some(make_handled_no_motion());
-    let _ = dispatch_with(&mut sink, ElementState::Pressed, false, Some(pane_id), true);
-    let refresh_idx = sink
-        .call_log
+    let _ = dispatch_with(&mut sink, DispatchCell { state: ElementState::Pressed, repeat: false, active_pane_id: Some(pane_id), mark_mode_active: true });
+    let log = sink.call_log_snapshot();
+    let refresh_idx = log
         .iter()
         .position(|c| matches!(c, MethodCall::RefreshPaneSnapshot { .. }));
-    let resources_idx = sink
-        .call_log
+    let resources_idx = log
         .iter()
         .position(|c| matches!(c, MethodCall::MarkModeResources { .. }));
     assert_eq!(
-        sink.call_log
-            .iter()
+        log.iter()
             .filter(|c| matches!(c, MethodCall::RefreshPaneSnapshot { .. }))
             .count(),
         1,
         "must refresh exactly once"
     );
     assert_eq!(
-        sink.call_log
-            .iter()
+        log.iter()
             .filter(|c| matches!(c, MethodCall::MarkModeResources { .. }))
             .count(),
         1,
@@ -1418,7 +1506,7 @@ fn dispatch_mark_mode_pressed_refresh_can_promote_snapshot_present() {
     sink.cursor_for_pane.insert(pane_id, make_mark_cursor());
     sink.snapshot_present.insert(pane_id, false);
     sink.dispatch_result = Some(make_handled_no_motion());
-    let result = dispatch_with(&mut sink, ElementState::Pressed, false, Some(pane_id), true);
+    let result = dispatch_with(&mut sink, DispatchCell { state: ElementState::Pressed, repeat: false, active_pane_id: Some(pane_id), mark_mode_active: true });
     assert!(result, "refresh promoted snapshot → must proceed");
     assert!(sink.exit_mark_mode_calls.is_empty());
     assert_eq!(sink.dispatch_key_calls, 1);
@@ -1441,7 +1529,7 @@ fn dispatch_mark_mode_missing_mux_does_not_silently_consume_keystroke() {
     };
     sink.cursor_for_pane.insert(pane_id, make_mark_cursor());
     sink.snapshot_present.insert(pane_id, true);
-    let result = dispatch_with(&mut sink, ElementState::Pressed, false, Some(pane_id), true);
+    let result = dispatch_with(&mut sink, DispatchCell { state: ElementState::Pressed, repeat: false, active_pane_id: Some(pane_id), mark_mode_active: true });
     assert!(
         !result,
         "missing mux must return false (NOT silently consume)"
@@ -1460,7 +1548,10 @@ fn dispatch_mark_mode_missing_mux_does_not_silently_consume_keystroke() {
 
 /// PIN 16a — Dispatch-key argument propagation. Pins that all 5 inputs
 /// (pane, cursor, selection, event, modifiers) flow unchanged into
-/// `dispatch_mark_mode_key`.
+/// `dispatch_mark_mode_key`. Drives non-trivial modifiers
+/// (CONTROL | SHIFT) so a regression that drops modifiers would fail —
+/// passing `ModifiersState::empty()` would produce a tautological in==out
+/// match.
 ///
 /// See: bug-tracker/plans/BUG-08-034/section-03-tdd-matrix.md (Pin 16).
 #[test]
@@ -1471,6 +1562,7 @@ fn dispatch_mark_mode_propagates_args_to_dispatch_mark_mode_key() {
         col: 9,
     };
     let known_selection = make_selection();
+    let known_modifiers = ModifiersState::CONTROL | ModifiersState::SHIFT;
     let mut sink = RecordingSink {
         mux_present: true,
         ..Default::default()
@@ -1479,7 +1571,17 @@ fn dispatch_mark_mode_propagates_args_to_dispatch_mark_mode_key() {
     sink.selection_for_pane.insert(pane_id, known_selection);
     sink.snapshot_present.insert(pane_id, true);
     sink.dispatch_result = Some(make_handled_no_motion());
-    let _ = dispatch_with(&mut sink, ElementState::Pressed, false, Some(pane_id), true);
+    let _ = dispatch_mark_mode(
+        MarkModeDispatch {
+            event: make_mark_key_event(),
+            event_state: ElementState::Pressed,
+            event_repeat: false,
+            modifiers: known_modifiers,
+            active_pane_id: Some(pane_id),
+            mark_mode_active: true,
+        },
+        &mut sink,
+    );
     assert_eq!(
         sink.last_dispatch_args,
         Some((
@@ -1487,7 +1589,7 @@ fn dispatch_mark_mode_propagates_args_to_dispatch_mark_mode_key() {
             known_cursor,
             Some(known_selection),
             make_mark_key_event(),
-            ModifiersState::empty(),
+            known_modifiers,
         )),
         "all 5 inputs must propagate unchanged"
     );
@@ -1507,7 +1609,7 @@ fn dispatch_mark_mode_propagates_none_selection() {
     sink.cursor_for_pane.insert(pane_id, make_mark_cursor());
     sink.snapshot_present.insert(pane_id, true);
     sink.dispatch_result = Some(make_handled_no_motion());
-    let _ = dispatch_with(&mut sink, ElementState::Pressed, false, Some(pane_id), true);
+    let _ = dispatch_with(&mut sink, DispatchCell { state: ElementState::Pressed, repeat: false, active_pane_id: Some(pane_id), mark_mode_active: true });
     assert_eq!(
         sink.last_dispatch_args.as_ref().unwrap().2,
         None,
