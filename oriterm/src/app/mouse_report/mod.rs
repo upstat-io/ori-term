@@ -60,6 +60,39 @@ struct AltScrollPayload {
     repeat: usize,
 }
 
+/// Side-effect surface consumed by [`dispatch_wheel`].
+///
+/// Extracted so the wheel-event wiring can be matrix-tested headlessly
+/// (a `RecordingSink` impl in `tests.rs` records calls; production uses
+/// `impl WheelSink for App`). Per `impl-hygiene.md §Platform & External
+/// Resource Abstraction` — the logic layer must not embed concrete
+/// runtime resources, so the side effects flow through this trait.
+pub(super) trait WheelSink {
+    /// Write `bytes` to the PTY of `pane_id`.
+    fn write_pane_input(&mut self, pane_id: PaneId, bytes: &[u8]);
+    /// Scroll the viewport of `pane_id` by `lines` (positive = up).
+    fn scroll_pane(&mut self, pane_id: PaneId, lines: isize);
+    /// Mark the focused window as needing a redraw.
+    fn mark_dirty(&mut self);
+}
+
+/// Inputs to [`dispatch_wheel`] — grouped per `impl-hygiene.md
+/// §Parameter Hygiene` (>4 parameters → config struct).
+///
+/// `pane_id` is `Option<PaneId>` so the "no active pane → no dispatch"
+/// early return is exercised by the dispatcher itself, keeping the
+/// matrix cell testable without going through `App`.
+#[derive(Debug, Clone, Copy)]
+pub(super) struct WheelDispatch {
+    pub delta: MouseScrollDelta,
+    pub cell_height: f32,
+    pub mode: TermMode,
+    pub shift_held: bool,
+    pub pane_id: Option<PaneId>,
+    pub cell_for_report: Option<(usize, usize)>,
+    pub mods: MouseModifiers,
+}
+
 /// Pure decision function: should mouse events be reported to the PTY for
 /// the given mode + Shift state?
 ///
@@ -150,6 +183,101 @@ fn tier2_alt_scroll_payload(
     })
 }
 
+/// Wire a wheel event through the 3-tier dispatcher to the side-effect
+/// sink. Generic over the sink type for static dispatch per
+/// `impl-hygiene.md §Dispatch Choice`.
+///
+/// The dispatcher exits early (without firing `mark_dirty`) on three
+/// conditions:
+/// - [`parse_wheel_delta`] returned `None` (delta below threshold);
+/// - `input.pane_id == None` (no active pane);
+/// - Tier-1 path with `input.cell_for_report == None` (cursor outside
+///   grid, mouse-report mode set).
+///
+/// On any other path, exactly one of the three tier arms runs, then
+/// `sink.mark_dirty()` fires once. Tier-1 + Tier-2 issue
+/// `sink.write_pane_input` `lines` (or `payload.repeat`) times when the
+/// resulting bytes are nonempty; Tier-3 issues a single `sink.scroll_pane`
+/// with the signed `lines` count.
+pub(super) fn dispatch_wheel<S: WheelSink>(input: WheelDispatch, sink: &mut S) {
+    let Some((lines, scroll_up)) = parse_wheel_delta(input.delta, input.cell_height) else {
+        return;
+    };
+    let Some(pane_id) = input.pane_id else {
+        return;
+    };
+    let direction = if scroll_up {
+        ScrollDirection::Up
+    } else {
+        ScrollDirection::Down
+    };
+
+    match classify_wheel_event(input.mode, input.shift_held) {
+        WheelTier::MouseReport => {
+            let button = match direction {
+                ScrollDirection::Up => MouseButton::ScrollUp,
+                ScrollDirection::Down => MouseButton::ScrollDown,
+            };
+            let Some((col, line)) = input.cell_for_report else {
+                return;
+            };
+            let event = MouseEvent {
+                button,
+                kind: MouseEventKind::Press,
+                col,
+                line,
+                mods: input.mods,
+            };
+            let report = encode_mouse_event(&event, input.mode);
+            let bytes = report.as_bytes();
+            if !bytes.is_empty() {
+                for _ in 0..lines {
+                    sink.write_pane_input(pane_id, bytes);
+                }
+            }
+        }
+        WheelTier::AltScroll => {
+            // tier2_alt_scroll_payload re-checks should_translate_wheel_to_arrows
+            // even though classify_wheel_event already confirmed it returned true
+            // here; the re-check preserves the helper's standalone-testability
+            // contract.
+            if let Some(payload) =
+                tier2_alt_scroll_payload(input.mode, input.shift_held, lines, direction)
+                && !payload.bytes.is_empty()
+            {
+                for _ in 0..payload.repeat {
+                    sink.write_pane_input(pane_id, payload.bytes);
+                }
+            }
+        }
+        WheelTier::ViewportScroll => {
+            let scroll_lines = match direction {
+                ScrollDirection::Up => lines as isize,
+                ScrollDirection::Down => -(lines as isize),
+            };
+            sink.scroll_pane(pane_id, scroll_lines);
+        }
+    }
+
+    sink.mark_dirty();
+}
+
+impl WheelSink for App {
+    fn write_pane_input(&mut self, pane_id: PaneId, bytes: &[u8]) {
+        Self::write_pane_input(self, pane_id, bytes);
+    }
+    fn scroll_pane(&mut self, pane_id: PaneId, lines: isize) {
+        if let Some(mux) = self.mux.as_mut() {
+            mux.scroll_display(pane_id, lines);
+        }
+    }
+    fn mark_dirty(&mut self) {
+        if let Some(ctx) = self.focused_ctx_mut() {
+            ctx.root.mark_dirty();
+        }
+    }
+}
+
 impl App {
     /// Whether mouse events should be reported to the PTY for the given mode.
     ///
@@ -163,18 +291,6 @@ impl App {
     /// Thin `&self` wrapper over the free [`should_report_mouse`] function.
     pub(super) fn should_report_mouse(&self, mode: TermMode) -> bool {
         should_report_mouse(mode, self.modifiers.shift_key())
-    }
-
-    /// Write `bytes` to the active pane `repeat` times. No-op when `bytes`
-    /// is empty (mirrors the original Tier-1 `if !bytes.is_empty()` guard
-    /// to avoid sending zero-length input PDUs over the mux). Caller is
-    /// responsible for marking the focused window dirty after dispatch.
-    fn write_repeated(&mut self, pane_id: PaneId, bytes: &[u8], repeat: usize) {
-        if !bytes.is_empty() {
-            for _ in 0..repeat {
-                self.write_pane_input(pane_id, bytes);
-            }
-        }
     }
 
     /// Encode and send a mouse button event to the PTY.
@@ -276,76 +392,31 @@ impl App {
 
     /// Handle mouse wheel with 3-tier priority dispatched via [`WheelTier`].
     ///
-    /// Tier ordering is enforced by exhaustive `match` over [`WheelTier`] —
-    /// regressions are compile-time errors rather than doc-comment violations.
-    /// See [`classify_wheel_event`] for the dispatch decision and BUG-08-015
-    /// for the design history.
+    /// Extracts pure context (cell height, pane id, cell-for-report, mods,
+    /// shift state) from `&mut self` and delegates the wiring to
+    /// [`dispatch_wheel`]. Side effects flow through `WheelSink for App`
+    /// so the wiring is matrix-testable headlessly with a `RecordingSink`
+    /// in `tests.rs`.
     pub(super) fn handle_mouse_wheel(&mut self, delta: MouseScrollDelta, mode: TermMode) {
         let cell_height = self
             .focused_renderer()
             .map_or(16.0, |r| r.cell_metrics().height);
-        let Some((lines, scroll_up)) = parse_wheel_delta(delta, cell_height) else {
-            return;
-        };
-
-        let Some(pane_id) = self.active_pane_id() else {
-            return;
-        };
-
-        let direction = if scroll_up {
-            ScrollDirection::Up
-        } else {
-            ScrollDirection::Down
-        };
-
-        match classify_wheel_event(mode, self.modifiers.shift_key()) {
-            WheelTier::MouseReport => {
-                let button = match direction {
-                    ScrollDirection::Up => MouseButton::ScrollUp,
-                    ScrollDirection::Down => MouseButton::ScrollDown,
-                };
-                let Some((col, line)) = self.mouse_cell_clamped() else {
-                    return;
-                };
-                let event = MouseEvent {
-                    button,
-                    kind: MouseEventKind::Press,
-                    col,
-                    line,
-                    mods: self.mouse_modifiers(),
-                };
-                let report = encode_mouse_event(&event, mode);
-                let bytes = report.as_bytes();
-                self.write_repeated(pane_id, bytes, lines);
-            }
-            WheelTier::AltScroll => {
-                // tier2_alt_scroll_payload re-checks should_translate_wheel_to_arrows
-                // even though classify_wheel_event already confirmed it returned true here.
-                // The re-check is intentional — it preserves tier2_alt_scroll_payload's
-                // standalone-testability contract (the helper can be matrix-tested with
-                // the full (mode × shift × direction × DECCKM) grid without depending on
-                // classify_wheel_event's pre-classification).
-                if let Some(payload) =
-                    tier2_alt_scroll_payload(mode, self.modifiers.shift_key(), lines, direction)
-                {
-                    self.write_repeated(pane_id, payload.bytes, payload.repeat);
-                }
-            }
-            WheelTier::ViewportScroll => {
-                let scroll_lines = match direction {
-                    ScrollDirection::Up => lines as isize,
-                    ScrollDirection::Down => -(lines as isize),
-                };
-                if let Some(mux) = self.mux.as_mut() {
-                    mux.scroll_display(pane_id, scroll_lines);
-                }
-            }
-        }
-
-        // mark_dirty hoisted to single post-match call covering all three tiers.
-        if let Some(ctx) = self.focused_ctx_mut() {
-            ctx.root.mark_dirty();
-        }
+        let pane_id = self.active_pane_id();
+        let cell_for_report = self.mouse_cell_clamped();
+        let mods = self.mouse_modifiers();
+        let shift_held = self.modifiers.shift_key();
+        dispatch_wheel(
+            WheelDispatch {
+                delta,
+                cell_height,
+                mode,
+                shift_held,
+                pane_id,
+                cell_for_report,
+                mods,
+            },
+            self,
+        );
     }
 
     /// Convert the current cursor position to a grid cell.

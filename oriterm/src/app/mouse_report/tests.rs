@@ -1864,3 +1864,422 @@ fn classify_wheel_event_any_mouse_member_count_assertion() {
         "ANY_MOUSE flag set may have grown — extend the dispatcher matrix"
     );
 }
+
+// --- BUG-08-032: dispatch_wheel wiring matrix ---
+//
+// Tests pin the wiring layer extracted from `App::handle_mouse_wheel`:
+// `dispatch_wheel<S: WheelSink>(WheelDispatch, &mut S)` consumes a sink
+// trait so the side-effect surface (PTY writes, viewport scroll, mark-dirty)
+// can be matrix-tested without constructing the unconstructible-in-#[test]
+// `App`. BUG-08-015 already pinned the pure decision functions
+// (parse_wheel_delta, classify_wheel_event, tier2_alt_scroll_payload);
+// these tests pin that the dispatcher's match arms call those decisions'
+// implications on the sink in the right order, with the right operand
+// counts, with the right bytes, and with the right post-match mark-dirty
+// invariant.
+
+use oriterm_mux::PaneId;
+
+use super::{WheelDispatch, WheelSink, dispatch_wheel};
+
+/// Test sink that records every call. Lives in tests.rs (single consumer
+/// per `impl-hygiene.md §No Premature Abstraction`); promote to
+/// `oriterm_test_support` only when a second sink type (e.g., BUG-08-034's
+/// keyboard-wiring sink) creates a second concrete consumer.
+#[derive(Default)]
+struct RecordingSink {
+    writes: Vec<(PaneId, Vec<u8>)>,
+    scrolls: Vec<(PaneId, isize)>,
+    mark_dirty_calls: usize,
+}
+
+impl WheelSink for RecordingSink {
+    fn write_pane_input(&mut self, pane_id: PaneId, bytes: &[u8]) {
+        self.writes.push((pane_id, bytes.to_vec()));
+    }
+    fn scroll_pane(&mut self, pane_id: PaneId, lines: isize) {
+        self.scrolls.push((pane_id, lines));
+    }
+    fn mark_dirty(&mut self) {
+        self.mark_dirty_calls += 1;
+    }
+}
+
+/// Test pane id used by every dispatch_wheel cell. Constructed via
+/// `from_raw` per `id/mod.rs:117` (the documented test-construction path).
+const TEST_PANE_ID: u64 = 42;
+
+fn pane() -> PaneId {
+    PaneId::from_raw(TEST_PANE_ID)
+}
+
+/// `MouseScrollDelta::PixelDelta` for exactly `lines` cells in the Up
+/// direction. Cell height is 16.0 — y=16 → ceil(1) = 1 line, y=48 → 3 lines.
+/// Used instead of `LineDelta` because `LineDelta` consults
+/// `platform::scroll::wheel_scroll_lines()` (3 on Windows, 1 on Linux),
+/// which would couple test assertions to host platform configuration.
+fn px_up(lines: usize) -> MouseScrollDelta {
+    MouseScrollDelta::PixelDelta(PhysicalPosition::new(0.0, (lines as f64) * 16.0))
+}
+
+fn px_down(lines: usize) -> MouseScrollDelta {
+    MouseScrollDelta::PixelDelta(PhysicalPosition::new(0.0, -(lines as f64) * 16.0))
+}
+
+fn dispatch_with(
+    mode: TermMode,
+    shift_held: bool,
+    pane_id: Option<PaneId>,
+    cell_for_report: Option<(usize, usize)>,
+    delta: MouseScrollDelta,
+) -> WheelDispatch {
+    WheelDispatch {
+        delta,
+        cell_height: 16.0,
+        mode,
+        shift_held,
+        pane_id,
+        cell_for_report,
+        mods: MouseModifiers {
+            shift: shift_held,
+            alt: false,
+            ctrl: false,
+        },
+    }
+}
+
+// --- Tier 1 (mouse-report) wiring cells ---
+
+/// Regression: BUG-08-032 — Tier-1 single-line dispatch.
+/// Pins `lines=1` produces exactly one `write_pane_input` call and one
+/// `mark_dirty`. Catches a regression that drops the per-line loop
+/// entirely (would produce zero writes).
+#[test]
+fn dispatch_wheel_mouse_report_lines_eq_1_writes_once_marks_dirty() {
+    let mut sink = RecordingSink::default();
+    let input = dispatch_with(
+        TermMode::MOUSE_REPORT_CLICK,
+        false,
+        Some(pane()),
+        Some((10, 5)),
+        px_up(1),
+    );
+    dispatch_wheel(input, &mut sink);
+    assert_eq!(sink.writes.len(), 1, "Tier-1 lines=1 must produce 1 write");
+    assert!(sink.scrolls.is_empty(), "Tier-1 must not call scroll_pane");
+    assert_eq!(
+        sink.mark_dirty_calls, 1,
+        "mark_dirty fires once per dispatch"
+    );
+}
+
+/// Regression: BUG-08-032 — Tier-1 fan-out semantic pin.
+/// `lines=3` MUST produce exactly 3 writes (not 0, not 1, not 6). This is
+/// the headline negative pin: a dispatcher that drops the loop, mishandles
+/// payload.repeat, or double-writes per iteration would all fail this cell.
+#[test]
+fn dispatch_wheel_mouse_report_lines_eq_3_writes_thrice_marks_dirty_once() {
+    let mut sink = RecordingSink::default();
+    let input = dispatch_with(
+        TermMode::MOUSE_REPORT_CLICK,
+        false,
+        Some(pane()),
+        Some((10, 5)),
+        px_up(3),
+    );
+    dispatch_wheel(input, &mut sink);
+    assert_eq!(
+        sink.writes.len(),
+        3,
+        "Tier-1 lines=3 must produce 3 writes (write count == lines)"
+    );
+    assert_eq!(sink.mark_dirty_calls, 1, "mark_dirty fires exactly once");
+}
+
+/// Regression: BUG-08-032 — Tier-1 ScrollUp byte payload.
+/// Recomputes the expected payload via the canonical `encode_mouse_event`
+/// path and asserts the wiring writes those exact bytes — pinning that the
+/// dispatcher passes the right `MouseButton::ScrollUp` to the encoder.
+#[test]
+fn dispatch_wheel_mouse_report_carries_scroll_up_bytes() {
+    let mut sink = RecordingSink::default();
+    let mode = TermMode::MOUSE_REPORT_CLICK;
+    let input = dispatch_with(mode, false, Some(pane()), Some((7, 3)), px_up(1));
+    dispatch_wheel(input, &mut sink);
+    let event = MouseEvent {
+        button: MouseButton::ScrollUp,
+        kind: MouseEventKind::Press,
+        col: 7,
+        line: 3,
+        mods: MouseModifiers::default(),
+    };
+    let expected = encode_mouse_event(&event, mode);
+    assert_eq!(sink.writes.len(), 1);
+    assert_eq!(sink.writes[0].0, pane());
+    assert_eq!(sink.writes[0].1, expected.as_bytes().to_vec());
+}
+
+/// Regression: BUG-08-032 — Tier-1 ScrollDown byte payload.
+#[test]
+fn dispatch_wheel_mouse_report_carries_scroll_down_bytes() {
+    let mut sink = RecordingSink::default();
+    let mode = TermMode::MOUSE_REPORT_CLICK;
+    let input = dispatch_with(mode, false, Some(pane()), Some((7, 3)), px_down(1));
+    dispatch_wheel(input, &mut sink);
+    let event = MouseEvent {
+        button: MouseButton::ScrollDown,
+        kind: MouseEventKind::Press,
+        col: 7,
+        line: 3,
+        mods: MouseModifiers::default(),
+    };
+    let expected = encode_mouse_event(&event, mode);
+    assert_eq!(sink.writes[0].1, expected.as_bytes().to_vec());
+}
+
+/// Regression: BUG-08-032 — Tier-1 cell_for_report=None early-return.
+/// When `mouse_cell_clamped` returns None, Tier-1 returns BEFORE
+/// `mark_dirty`. This cell pins `mark_dirty_calls == 0` so a regression
+/// that hoists `sink.mark_dirty()` ahead of the cell_for_report check
+/// (firing dirty unconditionally) would fail.
+#[test]
+fn dispatch_wheel_mouse_report_cell_for_report_none_writes_nothing_no_mark_dirty() {
+    let mut sink = RecordingSink::default();
+    let input = dispatch_with(
+        TermMode::MOUSE_REPORT_CLICK,
+        false,
+        Some(pane()),
+        None, // cell_for_report
+        px_up(3),
+    );
+    dispatch_wheel(input, &mut sink);
+    assert!(sink.writes.is_empty());
+    assert!(sink.scrolls.is_empty());
+    assert_eq!(
+        sink.mark_dirty_calls, 0,
+        "early-return on cell_for_report=None must not fire mark_dirty"
+    );
+}
+
+// --- Tier 2 (alt-scroll) wiring cells ---
+
+const ALT_SCROLL_MODE: TermMode = TermMode::ALT_SCREEN.union(TermMode::ALTERNATE_SCROLL);
+
+/// Regression: BUG-08-032 — Tier-2 lines=1 wiring.
+#[test]
+fn dispatch_wheel_alt_scroll_lines_eq_1_writes_once_csi_a() {
+    let mut sink = RecordingSink::default();
+    let input = dispatch_with(ALT_SCROLL_MODE, false, Some(pane()), None, px_up(1));
+    dispatch_wheel(input, &mut sink);
+    assert_eq!(sink.writes.len(), 1);
+    assert_eq!(sink.writes[0].1, b"\x1b[A".to_vec());
+    assert_eq!(sink.mark_dirty_calls, 1);
+}
+
+/// Regression: BUG-08-032 — Tier-2 fan-out semantic pin.
+/// `payload.repeat == lines` MUST produce exactly that many writes. Catches
+/// a regression that drops the loop or double-writes.
+#[test]
+fn dispatch_wheel_alt_scroll_lines_eq_3_writes_thrice_csi_a() {
+    let mut sink = RecordingSink::default();
+    let input = dispatch_with(ALT_SCROLL_MODE, false, Some(pane()), None, px_up(3));
+    dispatch_wheel(input, &mut sink);
+    assert_eq!(
+        sink.writes.len(),
+        3,
+        "Tier-2 lines=3 must produce 3 writes (payload.repeat fan-out)"
+    );
+    for (pid, bytes) in &sink.writes {
+        assert_eq!(*pid, pane());
+        assert_eq!(bytes, &b"\x1b[A".to_vec());
+    }
+    assert_eq!(sink.mark_dirty_calls, 1);
+}
+
+/// Regression: BUG-08-032 — DECCKM × direction byte selection wiring
+/// (BUG-08-015 made the decision SS3-vs-CSI; this pins the wiring writes
+/// the chosen bytes through the loop).
+#[test]
+fn dispatch_wheel_alt_scroll_app_cursor_set_up_emits_ss3_a() {
+    let mut sink = RecordingSink::default();
+    let mode = ALT_SCROLL_MODE | TermMode::APP_CURSOR;
+    let input = dispatch_with(mode, false, Some(pane()), None, px_up(3));
+    dispatch_wheel(input, &mut sink);
+    assert_eq!(sink.writes.len(), 3);
+    for (_, bytes) in &sink.writes {
+        assert_eq!(bytes, &b"\x1bOA".to_vec());
+    }
+}
+
+#[test]
+fn dispatch_wheel_alt_scroll_app_cursor_set_down_emits_ss3_b() {
+    let mut sink = RecordingSink::default();
+    let mode = ALT_SCROLL_MODE | TermMode::APP_CURSOR;
+    let input = dispatch_with(mode, false, Some(pane()), None, px_down(3));
+    dispatch_wheel(input, &mut sink);
+    assert_eq!(sink.writes.len(), 3);
+    for (_, bytes) in &sink.writes {
+        assert_eq!(bytes, &b"\x1bOB".to_vec());
+    }
+}
+
+#[test]
+fn dispatch_wheel_alt_scroll_app_cursor_clear_up_emits_csi_a() {
+    let mut sink = RecordingSink::default();
+    let input = dispatch_with(ALT_SCROLL_MODE, false, Some(pane()), None, px_up(3));
+    dispatch_wheel(input, &mut sink);
+    for (_, bytes) in &sink.writes {
+        assert_eq!(bytes, &b"\x1b[A".to_vec());
+    }
+}
+
+#[test]
+fn dispatch_wheel_alt_scroll_app_cursor_clear_down_emits_csi_b() {
+    let mut sink = RecordingSink::default();
+    let input = dispatch_with(ALT_SCROLL_MODE, false, Some(pane()), None, px_down(3));
+    dispatch_wheel(input, &mut sink);
+    for (_, bytes) in &sink.writes {
+        assert_eq!(bytes, &b"\x1b[B".to_vec());
+    }
+}
+
+// --- Tier 3 (viewport-scroll) wiring cells ---
+
+/// Regression: BUG-08-032 — viewport scroll up positive sign.
+#[test]
+fn dispatch_wheel_viewport_scroll_up_calls_scroll_pane_positive_lines() {
+    let mut sink = RecordingSink::default();
+    let input = dispatch_with(TermMode::empty(), false, Some(pane()), None, px_up(3));
+    dispatch_wheel(input, &mut sink);
+    assert!(sink.writes.is_empty());
+    assert_eq!(sink.scrolls, vec![(pane(), 3)]);
+    assert_eq!(sink.mark_dirty_calls, 1);
+}
+
+/// Regression: BUG-08-032 — viewport scroll down negative sign pin.
+/// Catches a regression that flips the sign or always passes positive.
+#[test]
+fn dispatch_wheel_viewport_scroll_down_calls_scroll_pane_negative_lines() {
+    let mut sink = RecordingSink::default();
+    let input = dispatch_with(TermMode::empty(), false, Some(pane()), None, px_down(3));
+    dispatch_wheel(input, &mut sink);
+    assert!(sink.writes.is_empty());
+    assert_eq!(sink.scrolls, vec![(pane(), -3)]);
+    assert_eq!(sink.mark_dirty_calls, 1);
+}
+
+// --- Cross-tier precedence wiring ---
+
+/// Regression: BUG-08-032 — when MOUSE_REPORT and ALT_SCROLL flags are
+/// BOTH set, `classify_wheel_event` returns Tier 1; this pins the WIRING
+/// follows that verdict (writes mouse-report bytes, NOT SS3/CSI arrows).
+/// Counterpart to the pure-classifier test at tests.rs ~1732.
+#[test]
+fn dispatch_wheel_mouse_report_takes_priority_over_alt_scroll() {
+    let mut sink = RecordingSink::default();
+    let mode = TermMode::MOUSE_REPORT_CLICK | ALT_SCROLL_MODE;
+    let input = dispatch_with(mode, false, Some(pane()), Some((4, 2)), px_up(3));
+    dispatch_wheel(input, &mut sink);
+    assert_eq!(
+        sink.writes.len(),
+        3,
+        "Tier-1 wins precedence; lines=3 → 3 mouse-report writes"
+    );
+    // Bytes must NOT be SS3/CSI arrows (would prove Tier-2 stole the path).
+    for (_, bytes) in &sink.writes {
+        assert_ne!(bytes, &b"\x1b[A".to_vec(), "must NOT be CSI A");
+        assert_ne!(bytes, &b"\x1bOA".to_vec(), "must NOT be SS3 A");
+    }
+}
+
+// --- Shift-bypass × all three tiers ---
+
+/// Regression: BUG-08-032 — Shift bypasses Tier-1 mouse-report → Tier-3.
+/// Catches a regression where the shift gate stops working for mouse-report
+/// alone (only working when alt-scroll is also set).
+#[test]
+fn dispatch_wheel_shift_held_with_mouse_report_routes_to_viewport_scroll() {
+    let mut sink = RecordingSink::default();
+    let input = dispatch_with(
+        TermMode::MOUSE_REPORT_CLICK,
+        true, // shift_held
+        Some(pane()),
+        Some((4, 2)),
+        px_up(3),
+    );
+    dispatch_wheel(input, &mut sink);
+    assert!(sink.writes.is_empty(), "shift bypass → no PTY writes");
+    assert_eq!(sink.scrolls, vec![(pane(), 3)]);
+    assert_eq!(sink.mark_dirty_calls, 1);
+}
+
+/// Regression: BUG-08-032 — Shift bypasses Tier-2 alt-scroll → Tier-3.
+#[test]
+fn dispatch_wheel_shift_held_with_alt_scroll_routes_to_viewport_scroll() {
+    let mut sink = RecordingSink::default();
+    let input = dispatch_with(ALT_SCROLL_MODE, true, Some(pane()), None, px_up(3));
+    dispatch_wheel(input, &mut sink);
+    assert!(sink.writes.is_empty(), "shift bypass → no PTY writes");
+    assert_eq!(sink.scrolls, vec![(pane(), 3)]);
+    assert_eq!(sink.mark_dirty_calls, 1);
+}
+
+/// Regression: BUG-08-032 — Shift bypass on plain mouse-report (no
+/// ALT_SCREEN) preserves direction sign through Tier-3.
+#[test]
+fn dispatch_wheel_shift_held_with_mouse_report_no_alt_screen_direction_preserved() {
+    let mut sink = RecordingSink::default();
+    let input = dispatch_with(
+        TermMode::MOUSE_REPORT_CLICK,
+        true,
+        Some(pane()),
+        Some((4, 2)),
+        px_down(3),
+    );
+    dispatch_wheel(input, &mut sink);
+    assert_eq!(
+        sink.scrolls,
+        vec![(pane(), -3)],
+        "down direction preserved through shift bypass"
+    );
+}
+
+// --- Cross-tier early-return invariants ---
+
+/// Regression: BUG-08-032 — parse_wheel_delta=None → no dispatch at all.
+/// Zero-magnitude line delta produces no writes / scrolls / mark_dirty.
+#[test]
+fn dispatch_wheel_parse_wheel_delta_none_no_dispatch() {
+    let mut sink = RecordingSink::default();
+    let input = dispatch_with(
+        TermMode::MOUSE_REPORT_CLICK,
+        false,
+        Some(pane()),
+        Some((4, 2)),
+        MouseScrollDelta::LineDelta(0.0, 0.0), // returns None from parse_wheel_delta
+    );
+    dispatch_wheel(input, &mut sink);
+    assert!(sink.writes.is_empty());
+    assert!(sink.scrolls.is_empty());
+    assert_eq!(sink.mark_dirty_calls, 0);
+}
+
+/// Regression: BUG-08-032 — pane_id=None → no dispatch at all.
+/// The `Option<PaneId>` lift in WheelDispatch (codex's catch — the
+/// `let Some(pane_id) = ... else { return }` gate exists in the dispatcher,
+/// not just on the App side) makes this seam testable headlessly.
+#[test]
+fn dispatch_wheel_pane_id_none_no_dispatch() {
+    let mut sink = RecordingSink::default();
+    let input = dispatch_with(
+        TermMode::MOUSE_REPORT_CLICK,
+        false,
+        None, // pane_id
+        Some((4, 2)),
+        px_up(3),
+    );
+    dispatch_wheel(input, &mut sink);
+    assert!(sink.writes.is_empty());
+    assert!(sink.scrolls.is_empty());
+    assert_eq!(sink.mark_dirty_calls, 0);
+}
