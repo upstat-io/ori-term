@@ -47,15 +47,18 @@ pub(super) fn function_key_terminator(key: NamedKey) -> Option<u8> {
 /// Named key with a tilde terminator (`ESC [ {num} ~`).
 ///
 /// With modifiers: `ESC [ {num} ; {mod} ~`.
-struct TildeKey {
+pub(super) struct TildeKey {
     /// Numeric parameter before the tilde.
-    num: u8,
+    pub(super) num: u8,
 }
 
 /// Look up a tilde-terminated named key.
 ///
 /// Returns the numeric parameter for Insert, Delete, PageUp/Down, and F5-F12.
-fn tilde_key(key: NamedKey) -> Option<TildeKey> {
+/// `pub(super)` because `kitty.rs` consumes the same SSOT for its CSI-u
+/// `legacy_csi_info` lookup.
+#[must_use]
+pub(super) fn tilde_key(key: NamedKey) -> Option<TildeKey> {
     Some(match key {
         NamedKey::Insert => TildeKey { num: 2 },
         NamedKey::Delete => TildeKey { num: 3 },

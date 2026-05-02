@@ -9,7 +9,8 @@ use std::fmt::Write;
 
 use winit::keyboard::{Key, KeyLocation, NamedKey};
 
-use super::legacy::{cursor_key_for_named, function_key_terminator};
+use super::cursor_keys::CursorKey;
+use super::legacy::{cursor_key_for_named, function_key_terminator, tilde_key};
 use super::{KeyEventType, KeyInput, Modifiers};
 use oriterm_core::TermMode;
 
@@ -434,12 +435,13 @@ struct LegacyCsiInfo {
 /// Returns `None` for keys that have no legacy terminator (they use `u`).
 /// The terminator-byte selection routes through the SSOT helpers in
 /// `super::legacy` (cursor keys → [`cursor_key_for_named`] / [`CursorKey::terminator`];
-/// F1-F4 → [`function_key_terminator`]) so all three protocol paths
-/// (legacy keyboard, alt-scroll, Kitty CSI-u) share one canonical table.
+/// F1-F4 → [`function_key_terminator`]; tilde keys → [`tilde_key`]) so all
+/// protocol paths (legacy keyboard, alt-scroll, Kitty CSI-u) share one
+/// canonical table per key category.
 fn legacy_csi_info(named: NamedKey) -> Option<LegacyCsiInfo> {
     // Letter-terminated keys: base = 1.
     let letter = cursor_key_for_named(named)
-        .map(super::cursor_keys::CursorKey::terminator)
+        .map(CursorKey::terminator)
         .or_else(|| function_key_terminator(named));
     if let Some(term) = letter {
         return Some(LegacyCsiInfo {
@@ -448,24 +450,9 @@ fn legacy_csi_info(named: NamedKey) -> Option<LegacyCsiInfo> {
         });
     }
 
-    // Tilde-terminated keys: base = traditional numeric parameter.
-    let num = match named {
-        NamedKey::Insert => Some(2),
-        NamedKey::Delete => Some(3),
-        NamedKey::PageUp => Some(5),
-        NamedKey::PageDown => Some(6),
-        NamedKey::F5 => Some(15),
-        NamedKey::F6 => Some(17),
-        NamedKey::F7 => Some(18),
-        NamedKey::F8 => Some(19),
-        NamedKey::F9 => Some(20),
-        NamedKey::F10 => Some(21),
-        NamedKey::F11 => Some(23),
-        NamedKey::F12 => Some(24),
-        _ => None,
-    };
-    num.map(|n| LegacyCsiInfo {
-        base: n,
+    // Tilde-terminated keys: base = traditional numeric parameter (SSOT in `legacy::tilde_key`).
+    tilde_key(named).map(|tk| LegacyCsiInfo {
+        base: u32::from(tk.num),
         terminator: b'~',
     })
 }
