@@ -33,6 +33,11 @@ pub(super) trait WheelSink {
     fn scroll_pane(&mut self, pane_id: PaneId, lines: isize);
     /// Mark the focused window as needing a redraw.
     fn mark_dirty(&mut self);
+    /// Return the grid cell to report for a Tier-1 mouse-report event,
+    /// clamped to grid edges. Called only from the Tier-1 arm of
+    /// [`dispatch_wheel`] so non-Tier-1 dispatches don't pay the
+    /// hit-testing cost (pre-fix lazy semantics).
+    fn cell_for_report(&mut self) -> Option<(usize, usize)>;
 }
 
 /// Inputs to [`dispatch_wheel`] — grouped per `impl-hygiene.md
@@ -48,7 +53,6 @@ pub(super) struct WheelDispatch {
     pub mode: TermMode,
     pub shift_held: bool,
     pub pane_id: Option<PaneId>,
-    pub cell_for_report: Option<(usize, usize)>,
     pub mods: MouseModifiers,
 }
 
@@ -87,7 +91,7 @@ pub(super) fn dispatch_wheel<S: WheelSink>(input: WheelDispatch, sink: &mut S) {
                 ScrollDirection::Up => MouseButton::ScrollUp,
                 ScrollDirection::Down => MouseButton::ScrollDown,
             };
-            let Some((col, line)) = input.cell_for_report else {
+            let Some((col, line)) = sink.cell_for_report() else {
                 return;
             };
             let event = MouseEvent {
@@ -133,6 +137,12 @@ pub(super) fn dispatch_wheel<S: WheelSink>(input: WheelDispatch, sink: &mut S) {
 
 impl WheelSink for App {
     fn write_pane_input(&mut self, pane_id: PaneId, bytes: &[u8]) {
+        // SAFETY: `Self::write_pane_input` resolves to the inherent
+        // `App::write_pane_input` (pane_accessors.rs), not the trait
+        // method — Rust's UFCS prefers inherent methods when both exist
+        // with the same name. Renaming the inherent method without
+        // updating this call site would silently route through the
+        // trait and recurse.
         Self::write_pane_input(self, pane_id, bytes);
     }
     fn scroll_pane(&mut self, pane_id: PaneId, lines: isize) {
@@ -144,5 +154,8 @@ impl WheelSink for App {
         if let Some(ctx) = self.focused_ctx_mut() {
             ctx.root.mark_dirty();
         }
+    }
+    fn cell_for_report(&mut self) -> Option<(usize, usize)> {
+        Self::mouse_cell_clamped(self)
     }
 }

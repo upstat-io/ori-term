@@ -1886,11 +1886,20 @@ use super::wheel_dispatch::{WheelDispatch, WheelSink, dispatch_wheel};
 /// per `impl-hygiene.md §No Premature Abstraction`); promote to
 /// `oriterm_test_support` only when a second sink type (e.g., BUG-08-034's
 /// keyboard-wiring sink) creates a second concrete consumer.
+///
+/// `cell_for_report_value` is the value `dispatch_wheel`'s Tier-1 arm
+/// receives when it asks the sink for the cell coordinate (None matches
+/// pre-fix `mouse_cell_clamped() == None` semantics).
+/// `cell_for_report_calls` counts how many times the dispatcher consulted
+/// the sink — non-Tier-1 dispatches MUST leave this at 0 (pre-fix lazy
+/// semantics; Round 1 WASTE finding fix).
 #[derive(Default)]
 struct RecordingSink {
     writes: Vec<(PaneId, Vec<u8>)>,
     scrolls: Vec<(PaneId, isize)>,
     mark_dirty_calls: usize,
+    cell_for_report_value: Option<(usize, usize)>,
+    cell_for_report_calls: usize,
 }
 
 impl WheelSink for RecordingSink {
@@ -1902,6 +1911,10 @@ impl WheelSink for RecordingSink {
     }
     fn mark_dirty(&mut self) {
         self.mark_dirty_calls += 1;
+    }
+    fn cell_for_report(&mut self) -> Option<(usize, usize)> {
+        self.cell_for_report_calls += 1;
+        self.cell_for_report_value
     }
 }
 
@@ -1930,7 +1943,6 @@ fn dispatch_with(
     mode: TermMode,
     shift_held: bool,
     pane_id: Option<PaneId>,
-    cell_for_report: Option<(usize, usize)>,
     delta: MouseScrollDelta,
 ) -> WheelDispatch {
     WheelDispatch {
@@ -1939,12 +1951,22 @@ fn dispatch_with(
         mode,
         shift_held,
         pane_id,
-        cell_for_report,
         mods: MouseModifiers {
             shift: shift_held,
             alt: false,
             ctrl: false,
         },
+    }
+}
+
+/// Construct a `RecordingSink` pre-loaded with a Tier-1 cell value.
+/// Tier-1 tests pre-load the cell here; non-Tier-1 tests use
+/// `RecordingSink::default()` and assert the sink's
+/// `cell_for_report_calls` stayed at 0 (lazy semantics).
+fn sink_with_cell(cell: Option<(usize, usize)>) -> RecordingSink {
+    RecordingSink {
+        cell_for_report_value: cell,
+        ..Default::default()
     }
 }
 
@@ -1956,14 +1978,8 @@ fn dispatch_with(
 /// entirely (would produce zero writes).
 #[test]
 fn dispatch_wheel_mouse_report_lines_eq_1_writes_once_marks_dirty() {
-    let mut sink = RecordingSink::default();
-    let input = dispatch_with(
-        TermMode::MOUSE_REPORT_CLICK,
-        false,
-        Some(pane()),
-        Some((10, 5)),
-        px_up(1),
-    );
+    let mut sink = sink_with_cell(Some((10, 5)));
+    let input = dispatch_with(TermMode::MOUSE_REPORT_CLICK, false, Some(pane()), px_up(1));
     dispatch_wheel(input, &mut sink);
     assert_eq!(sink.writes.len(), 1, "Tier-1 lines=1 must produce 1 write");
     assert!(sink.scrolls.is_empty(), "Tier-1 must not call scroll_pane");
@@ -1979,14 +1995,8 @@ fn dispatch_wheel_mouse_report_lines_eq_1_writes_once_marks_dirty() {
 /// payload.repeat, or double-writes per iteration would all fail this cell.
 #[test]
 fn dispatch_wheel_mouse_report_lines_eq_3_writes_thrice_marks_dirty_once() {
-    let mut sink = RecordingSink::default();
-    let input = dispatch_with(
-        TermMode::MOUSE_REPORT_CLICK,
-        false,
-        Some(pane()),
-        Some((10, 5)),
-        px_up(3),
-    );
+    let mut sink = sink_with_cell(Some((10, 5)));
+    let input = dispatch_with(TermMode::MOUSE_REPORT_CLICK, false, Some(pane()), px_up(3));
     dispatch_wheel(input, &mut sink);
     assert_eq!(
         sink.writes.len(),
@@ -2002,9 +2012,9 @@ fn dispatch_wheel_mouse_report_lines_eq_3_writes_thrice_marks_dirty_once() {
 /// dispatcher passes the right `MouseButton::ScrollUp` to the encoder.
 #[test]
 fn dispatch_wheel_mouse_report_carries_scroll_up_bytes() {
-    let mut sink = RecordingSink::default();
+    let mut sink = sink_with_cell(Some((7, 3)));
     let mode = TermMode::MOUSE_REPORT_CLICK;
-    let input = dispatch_with(mode, false, Some(pane()), Some((7, 3)), px_up(1));
+    let input = dispatch_with(mode, false, Some(pane()), px_up(1));
     dispatch_wheel(input, &mut sink);
     let event = MouseEvent {
         button: MouseButton::ScrollUp,
@@ -2022,9 +2032,9 @@ fn dispatch_wheel_mouse_report_carries_scroll_up_bytes() {
 /// Regression: BUG-08-032 — Tier-1 ScrollDown byte payload.
 #[test]
 fn dispatch_wheel_mouse_report_carries_scroll_down_bytes() {
-    let mut sink = RecordingSink::default();
+    let mut sink = sink_with_cell(Some((7, 3)));
     let mode = TermMode::MOUSE_REPORT_CLICK;
-    let input = dispatch_with(mode, false, Some(pane()), Some((7, 3)), px_down(1));
+    let input = dispatch_with(mode, false, Some(pane()), px_down(1));
     dispatch_wheel(input, &mut sink);
     let event = MouseEvent {
         button: MouseButton::ScrollDown,
@@ -2045,19 +2055,19 @@ fn dispatch_wheel_mouse_report_carries_scroll_down_bytes() {
 #[test]
 fn dispatch_wheel_mouse_report_cell_for_report_none_writes_nothing_no_mark_dirty() {
     let mut sink = RecordingSink::default();
-    let input = dispatch_with(
-        TermMode::MOUSE_REPORT_CLICK,
-        false,
-        Some(pane()),
-        None, // cell_for_report
-        px_up(3),
-    );
+    // Sink left at default (cell_for_report_value: None) — Tier-1 arm
+    // queries the sink and gets None back.
+    let input = dispatch_with(TermMode::MOUSE_REPORT_CLICK, false, Some(pane()), px_up(3));
     dispatch_wheel(input, &mut sink);
     assert!(sink.writes.is_empty());
     assert!(sink.scrolls.is_empty());
     assert_eq!(
         sink.mark_dirty_calls, 0,
         "early-return on cell_for_report=None must not fire mark_dirty"
+    );
+    assert_eq!(
+        sink.cell_for_report_calls, 1,
+        "Tier-1 arm asks the sink exactly once before the early return"
     );
 }
 
@@ -2069,7 +2079,7 @@ const ALT_SCROLL_MODE: TermMode = TermMode::ALT_SCREEN.union(TermMode::ALTERNATE
 #[test]
 fn dispatch_wheel_alt_scroll_lines_eq_1_writes_once_csi_a() {
     let mut sink = RecordingSink::default();
-    let input = dispatch_with(ALT_SCROLL_MODE, false, Some(pane()), None, px_up(1));
+    let input = dispatch_with(ALT_SCROLL_MODE, false, Some(pane()), px_up(1));
     dispatch_wheel(input, &mut sink);
     assert_eq!(sink.writes.len(), 1);
     assert_eq!(sink.writes[0].1, b"\x1b[A".to_vec());
@@ -2082,7 +2092,7 @@ fn dispatch_wheel_alt_scroll_lines_eq_1_writes_once_csi_a() {
 #[test]
 fn dispatch_wheel_alt_scroll_lines_eq_3_writes_thrice_csi_a() {
     let mut sink = RecordingSink::default();
-    let input = dispatch_with(ALT_SCROLL_MODE, false, Some(pane()), None, px_up(3));
+    let input = dispatch_with(ALT_SCROLL_MODE, false, Some(pane()), px_up(3));
     dispatch_wheel(input, &mut sink);
     assert_eq!(
         sink.writes.len(),
@@ -2103,7 +2113,7 @@ fn dispatch_wheel_alt_scroll_lines_eq_3_writes_thrice_csi_a() {
 fn dispatch_wheel_alt_scroll_app_cursor_set_up_emits_ss3_a() {
     let mut sink = RecordingSink::default();
     let mode = ALT_SCROLL_MODE | TermMode::APP_CURSOR;
-    let input = dispatch_with(mode, false, Some(pane()), None, px_up(3));
+    let input = dispatch_with(mode, false, Some(pane()), px_up(3));
     dispatch_wheel(input, &mut sink);
     assert_eq!(sink.writes.len(), 3);
     for (_, bytes) in &sink.writes {
@@ -2117,7 +2127,7 @@ fn dispatch_wheel_alt_scroll_app_cursor_set_up_emits_ss3_a() {
 fn dispatch_wheel_alt_scroll_app_cursor_set_down_emits_ss3_b() {
     let mut sink = RecordingSink::default();
     let mode = ALT_SCROLL_MODE | TermMode::APP_CURSOR;
-    let input = dispatch_with(mode, false, Some(pane()), None, px_down(3));
+    let input = dispatch_with(mode, false, Some(pane()), px_down(3));
     dispatch_wheel(input, &mut sink);
     assert_eq!(sink.writes.len(), 3);
     for (_, bytes) in &sink.writes {
@@ -2131,7 +2141,7 @@ fn dispatch_wheel_alt_scroll_app_cursor_set_down_emits_ss3_b() {
 #[test]
 fn dispatch_wheel_alt_scroll_app_cursor_clear_up_emits_csi_a() {
     let mut sink = RecordingSink::default();
-    let input = dispatch_with(ALT_SCROLL_MODE, false, Some(pane()), None, px_up(3));
+    let input = dispatch_with(ALT_SCROLL_MODE, false, Some(pane()), px_up(3));
     dispatch_wheel(input, &mut sink);
     for (_, bytes) in &sink.writes {
         assert_eq!(bytes, &b"\x1b[A".to_vec());
@@ -2143,7 +2153,7 @@ fn dispatch_wheel_alt_scroll_app_cursor_clear_up_emits_csi_a() {
 #[test]
 fn dispatch_wheel_alt_scroll_app_cursor_clear_down_emits_csi_b() {
     let mut sink = RecordingSink::default();
-    let input = dispatch_with(ALT_SCROLL_MODE, false, Some(pane()), None, px_down(3));
+    let input = dispatch_with(ALT_SCROLL_MODE, false, Some(pane()), px_down(3));
     dispatch_wheel(input, &mut sink);
     for (_, bytes) in &sink.writes {
         assert_eq!(bytes, &b"\x1b[B".to_vec());
@@ -2156,7 +2166,7 @@ fn dispatch_wheel_alt_scroll_app_cursor_clear_down_emits_csi_b() {
 #[test]
 fn dispatch_wheel_viewport_scroll_up_calls_scroll_pane_positive_lines() {
     let mut sink = RecordingSink::default();
-    let input = dispatch_with(TermMode::empty(), false, Some(pane()), None, px_up(3));
+    let input = dispatch_with(TermMode::empty(), false, Some(pane()), px_up(3));
     dispatch_wheel(input, &mut sink);
     assert!(sink.writes.is_empty());
     assert_eq!(sink.scrolls, vec![(pane(), 3)]);
@@ -2168,7 +2178,7 @@ fn dispatch_wheel_viewport_scroll_up_calls_scroll_pane_positive_lines() {
 #[test]
 fn dispatch_wheel_viewport_scroll_down_calls_scroll_pane_negative_lines() {
     let mut sink = RecordingSink::default();
-    let input = dispatch_with(TermMode::empty(), false, Some(pane()), None, px_down(3));
+    let input = dispatch_with(TermMode::empty(), false, Some(pane()), px_down(3));
     dispatch_wheel(input, &mut sink);
     assert!(sink.writes.is_empty());
     assert_eq!(sink.scrolls, vec![(pane(), -3)]);
@@ -2183,9 +2193,9 @@ fn dispatch_wheel_viewport_scroll_down_calls_scroll_pane_negative_lines() {
 /// Counterpart to the pure-classifier test at tests.rs ~1732.
 #[test]
 fn dispatch_wheel_mouse_report_takes_priority_over_alt_scroll() {
-    let mut sink = RecordingSink::default();
     let mode = TermMode::MOUSE_REPORT_CLICK | ALT_SCROLL_MODE;
-    let input = dispatch_with(mode, false, Some(pane()), Some((4, 2)), px_up(3));
+    let mut sink = sink_with_cell(Some((4, 2)));
+    let input = dispatch_with(mode, false, Some(pane()), px_up(3));
     dispatch_wheel(input, &mut sink);
     assert_eq!(
         sink.writes.len(),
@@ -2206,25 +2216,26 @@ fn dispatch_wheel_mouse_report_takes_priority_over_alt_scroll() {
 /// alone (only working when alt-scroll is also set).
 #[test]
 fn dispatch_wheel_shift_held_with_mouse_report_routes_to_viewport_scroll() {
-    let mut sink = RecordingSink::default();
-    let input = dispatch_with(
-        TermMode::MOUSE_REPORT_CLICK,
-        true, // shift_held
-        Some(pane()),
-        Some((4, 2)),
-        px_up(3),
-    );
+    // Shift bypass routes Tier-1 → Tier-3; sink_with_cell's value is
+    // unused because Tier-3 doesn't consult `cell_for_report`. Asserting
+    // `cell_for_report_calls == 0` pins the lazy semantics.
+    let mut sink = sink_with_cell(Some((4, 2)));
+    let input = dispatch_with(TermMode::MOUSE_REPORT_CLICK, true, Some(pane()), px_up(3));
     dispatch_wheel(input, &mut sink);
     assert!(sink.writes.is_empty(), "shift bypass → no PTY writes");
     assert_eq!(sink.scrolls, vec![(pane(), 3)]);
     assert_eq!(sink.mark_dirty_calls, 1);
+    assert_eq!(
+        sink.cell_for_report_calls, 0,
+        "shift bypass routes to Tier-3 — cell_for_report MUST stay lazy"
+    );
 }
 
 /// Regression: BUG-08-032 — Shift bypasses Tier-2 alt-scroll → Tier-3.
 #[test]
 fn dispatch_wheel_shift_held_with_alt_scroll_routes_to_viewport_scroll() {
     let mut sink = RecordingSink::default();
-    let input = dispatch_with(ALT_SCROLL_MODE, true, Some(pane()), None, px_up(3));
+    let input = dispatch_with(ALT_SCROLL_MODE, true, Some(pane()), px_up(3));
     dispatch_wheel(input, &mut sink);
     assert!(sink.writes.is_empty(), "shift bypass → no PTY writes");
     assert_eq!(sink.scrolls, vec![(pane(), 3)]);
@@ -2235,14 +2246,8 @@ fn dispatch_wheel_shift_held_with_alt_scroll_routes_to_viewport_scroll() {
 /// ALT_SCREEN) preserves direction sign through Tier-3.
 #[test]
 fn dispatch_wheel_shift_held_with_mouse_report_no_alt_screen_direction_preserved() {
-    let mut sink = RecordingSink::default();
-    let input = dispatch_with(
-        TermMode::MOUSE_REPORT_CLICK,
-        true,
-        Some(pane()),
-        Some((4, 2)),
-        px_down(3),
-    );
+    let mut sink = sink_with_cell(Some((4, 2)));
+    let input = dispatch_with(TermMode::MOUSE_REPORT_CLICK, true, Some(pane()), px_down(3));
     dispatch_wheel(input, &mut sink);
     assert_eq!(
         sink.scrolls,
@@ -2257,18 +2262,21 @@ fn dispatch_wheel_shift_held_with_mouse_report_no_alt_screen_direction_preserved
 /// Zero-magnitude line delta produces no writes / scrolls / mark_dirty.
 #[test]
 fn dispatch_wheel_parse_wheel_delta_none_no_dispatch() {
-    let mut sink = RecordingSink::default();
+    let mut sink = sink_with_cell(Some((4, 2)));
     let input = dispatch_with(
         TermMode::MOUSE_REPORT_CLICK,
         false,
         Some(pane()),
-        Some((4, 2)),
         MouseScrollDelta::LineDelta(0.0, 0.0), // returns None from parse_wheel_delta
     );
     dispatch_wheel(input, &mut sink);
     assert!(sink.writes.is_empty());
     assert!(sink.scrolls.is_empty());
     assert_eq!(sink.mark_dirty_calls, 0);
+    assert_eq!(
+        sink.cell_for_report_calls, 0,
+        "parse_wheel_delta=None must return BEFORE the Tier-1 sink query"
+    );
 }
 
 /// Regression: BUG-08-032 — pane_id=None → no dispatch at all.
@@ -2277,18 +2285,21 @@ fn dispatch_wheel_parse_wheel_delta_none_no_dispatch() {
 /// not just on the App side) makes this seam testable headlessly.
 #[test]
 fn dispatch_wheel_pane_id_none_no_dispatch() {
-    let mut sink = RecordingSink::default();
+    let mut sink = sink_with_cell(Some((4, 2)));
     let input = dispatch_with(
         TermMode::MOUSE_REPORT_CLICK,
         false,
         None, // pane_id
-        Some((4, 2)),
         px_up(3),
     );
     dispatch_wheel(input, &mut sink);
     assert!(sink.writes.is_empty());
     assert!(sink.scrolls.is_empty());
     assert_eq!(sink.mark_dirty_calls, 0);
+    assert_eq!(
+        sink.cell_for_report_calls, 0,
+        "pane_id=None must return BEFORE the Tier-1 sink query"
+    );
 }
 
 /// Regression: BUG-08-032 — Tier-1 mods (Alt/Ctrl/Shift, with Shift NOT
@@ -2298,7 +2309,7 @@ fn dispatch_wheel_pane_id_none_no_dispatch() {
 /// than hardcoding `MouseModifiers::default()`.
 #[test]
 fn dispatch_wheel_mouse_report_propagates_alt_ctrl_modifiers_to_encoded_bytes() {
-    let mut sink = RecordingSink::default();
+    let mut sink = sink_with_cell(Some((11, 7)));
     let mode = TermMode::MOUSE_REPORT_CLICK | TermMode::MOUSE_SGR;
     let mods = MouseModifiers {
         shift: false,
@@ -2311,7 +2322,6 @@ fn dispatch_wheel_mouse_report_propagates_alt_ctrl_modifiers_to_encoded_bytes() 
         mode,
         shift_held: false,
         pane_id: Some(pane()),
-        cell_for_report: Some((11, 7)),
         mods,
     };
     dispatch_wheel(input, &mut sink);
@@ -2349,9 +2359,9 @@ fn dispatch_wheel_mouse_report_propagates_alt_ctrl_modifiers_to_encoded_bytes() 
 /// returns; only the side-effect bytes were elided).
 #[test]
 fn dispatch_wheel_mouse_report_empty_bytes_skips_writes_but_marks_dirty() {
-    let mut sink = RecordingSink::default();
-    // Normal mode (no SGR / UTF-8 / URXVT flags) — encode_normal returns
-    // empty bytes for col > 222 per encode.rs:199.
+    // col > 222 → encode_normal returns empty bytes per encode.rs:199.
+    let mut sink = sink_with_cell(Some((300, 0)));
+    // Normal mode (no SGR / UTF-8 / URXVT flags).
     let mode = TermMode::MOUSE_REPORT_CLICK;
     let input = WheelDispatch {
         delta: px_up(2),
@@ -2359,7 +2369,6 @@ fn dispatch_wheel_mouse_report_empty_bytes_skips_writes_but_marks_dirty() {
         mode,
         shift_held: false,
         pane_id: Some(pane()),
-        cell_for_report: Some((300, 0)), // col > 222 → empty bytes
         mods: MouseModifiers::default(),
     };
     dispatch_wheel(input, &mut sink);
@@ -2371,5 +2380,36 @@ fn dispatch_wheel_mouse_report_empty_bytes_skips_writes_but_marks_dirty() {
     assert_eq!(
         sink.mark_dirty_calls, 1,
         "mark_dirty must still fire — dispatch reached past early returns"
+    );
+}
+
+/// Regression: BUG-08-032 TPR R1 — Tier-2 alt-scroll dispatch MUST NOT
+/// query `WheelSink::cell_for_report`. Restores pre-fix lazy semantics
+/// where `mouse_cell_clamped()` was scoped to the Tier-1 arm; a regression
+/// that re-introduces eager hit-testing would land here.
+#[test]
+fn dispatch_wheel_alt_scroll_does_not_query_cell_for_report() {
+    let mut sink = sink_with_cell(Some((4, 2)));
+    let input = dispatch_with(ALT_SCROLL_MODE, false, Some(pane()), px_up(3));
+    dispatch_wheel(input, &mut sink);
+    assert_eq!(sink.writes.len(), 3, "Tier-2 still writes lines × bytes");
+    assert_eq!(
+        sink.cell_for_report_calls, 0,
+        "Tier-2 alt-scroll MUST NOT consult sink.cell_for_report"
+    );
+}
+
+/// Regression: BUG-08-032 TPR R1 — Tier-3 viewport-scroll dispatch MUST
+/// NOT query `WheelSink::cell_for_report`. Counterpart to the Tier-2 lazy
+/// pin; pins the cell-extraction is gated by tier classification.
+#[test]
+fn dispatch_wheel_viewport_scroll_does_not_query_cell_for_report() {
+    let mut sink = sink_with_cell(Some((4, 2)));
+    let input = dispatch_with(TermMode::empty(), false, Some(pane()), px_up(3));
+    dispatch_wheel(input, &mut sink);
+    assert_eq!(sink.scrolls, vec![(pane(), 3)]);
+    assert_eq!(
+        sink.cell_for_report_calls, 0,
+        "Tier-3 viewport scroll MUST NOT consult sink.cell_for_report"
     );
 }

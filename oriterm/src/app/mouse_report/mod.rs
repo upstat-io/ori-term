@@ -271,17 +271,14 @@ impl App {
     /// so the wiring is matrix-testable headlessly with a `RecordingSink`
     /// in `tests.rs`.
     pub(super) fn handle_mouse_wheel(&mut self, delta: MouseScrollDelta, mode: TermMode) {
+        // Cheap context only — `mouse_cell_clamped` (the expensive hit-test)
+        // is queried lazily by `dispatch_wheel` via `WheelSink::cell_for_report`,
+        // and only on the Tier-1 path. `parse_wheel_delta` runs once inside
+        // the dispatcher.
         let cell_height = self
             .focused_renderer()
             .map_or(16.0, |r| r.cell_metrics().height);
-        // Short-circuit sub-threshold deltas before any further context
-        // extraction (notably mouse_cell_clamped's hit-testing). Pre-refactor
-        // lazy semantics: parse_wheel_delta guarded ALL downstream work.
-        if parse_wheel_delta(delta, cell_height).is_none() {
-            return;
-        }
         let pane_id = self.active_pane_id();
-        let cell_for_report = self.mouse_cell_clamped();
         let mods = self.mouse_modifiers();
         let shift_held = self.modifiers.shift_key();
         dispatch_wheel(
@@ -291,7 +288,6 @@ impl App {
                 mode,
                 shift_held,
                 pane_id,
-                cell_for_report,
                 mods,
             },
             self,
