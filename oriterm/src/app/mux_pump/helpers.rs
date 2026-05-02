@@ -12,10 +12,6 @@ use oriterm_mux::MuxNotification;
 /// buffer. For each clear marker at position `i` for pane `P`,
 /// removes every `DesktopNotification { pane_id: P, .. }` at
 /// positions `< i`. Iteration order preserves remaining markers.
-///
-/// Surfaced by `[high]` — the §01 fix only emitted
-/// the clear marker but did not act on it in the main-thread staging
-/// buffer.
 pub(super) fn purge_pending_desktop_notifications(buf: &mut Vec<MuxNotification>) {
     let mut i = 0;
     while i < buf.len() {
@@ -48,16 +44,16 @@ pub(super) fn purge_pending_desktop_notifications(buf: &mut Vec<MuxNotification>
 /// Background, Cursor, dim variants, etc.). `index` is the
 /// pre-computed slot the VTE OSC dispatch resolved.
 ///
-/// Returns black (`Rgb { r:0, g:0, b:0 }`) when the snapshot is
-/// missing (`None`) OR the index is out of range — matches
-/// `Palette::color()` contract at
-/// `oriterm_core/src/color/palette/mod.rs:286-296`.
+/// Returns `oriterm_core::color::FALLBACK_COLOR` (black) when the
+/// snapshot is missing (`None`) OR the index is out of range —
+/// shares the SSOT fallback constant with `Palette::color()`.
 pub(super) fn resolve_host_color_query(
     palette: Option<&[[u8; 3]]>,
     index: usize,
 ) -> oriterm_core::color::Rgb {
-    palette.and_then(|p| p.get(index).copied()).map_or(
-        oriterm_core::color::Rgb { r: 0, g: 0, b: 0 },
-        |[r, g, b]| oriterm_core::color::Rgb { r, g, b },
-    )
+    palette
+        .and_then(|p| p.get(index).copied())
+        .map_or(oriterm_core::color::FALLBACK_COLOR, |[r, g, b]| {
+            oriterm_core::color::Rgb { r, g, b }
+        })
 }

@@ -13,6 +13,14 @@ pub use vte::ansi::Rgb;
 /// Total palette entries: 256 indexed + 14 named semantic slots.
 pub const NUM_COLORS: usize = 270;
 
+/// Fallback color for out-of-range palette queries.
+///
+/// Returned by `Palette::color()` for indices `>= NUM_COLORS`, and by
+/// OSC 4 / OSC 10 / OSC 11 / OSC 12 host-query responders when the
+/// pane snapshot is unavailable or the queried index is out of range.
+/// Single source of truth so both sites cannot drift.
+pub const FALLBACK_COLOR: Rgb = Rgb { r: 0, g: 0, b: 0 };
+
 /// xterm `ttyDefaultColors` ANSI palette (indices 0–15).
 ///
 /// Source: `xterm/charproc.c` — the historical xterm reference table that
@@ -285,13 +293,13 @@ impl Palette {
 
     /// Look up a color by palette index.
     ///
-    /// Returns black for out-of-range indices. Used by OSC 4/10/11/12
-    /// color query responses.
+    /// Returns `FALLBACK_COLOR` (black) for out-of-range indices. Used
+    /// by OSC 4/10/11/12 color query responses.
     pub fn color(&self, index: usize) -> Rgb {
         if index < NUM_COLORS {
             self.colors[index]
         } else {
-            Rgb { r: 0, g: 0, b: 0 }
+            FALLBACK_COLOR
         }
     }
 
