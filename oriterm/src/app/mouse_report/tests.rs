@@ -1668,7 +1668,7 @@ fn tier2_alt_scroll_payload_does_not_hardcode_ss3_when_decckm_clear() {
     assert_eq!(payload.bytes, b"\x1b[A");
 }
 
-// --- classify_wheel_event dispatcher matrix (per Plan-TPR R1 [TPR-04-006-codex]) ---
+// --- classify_wheel_event dispatcher matrix ---
 
 /// Catalog row: DEC-ALT-SCROLL
 #[test]

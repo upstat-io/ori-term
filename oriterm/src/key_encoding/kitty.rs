@@ -140,6 +140,45 @@ fn kitty_codepoint(key: NamedKey) -> Option<u32> {
 /// Format: `ESC [ codepoint ; modifiers [: event_type] [; text] u`
 ///
 /// Returns an empty `Vec` for unhandled keys or suppressed release events.
+/// Numpad-disambiguation early-return path for `encode_kitty`.
+///
+/// When the key is on the numpad AND any kitty flag is active, map to the
+/// dedicated 57399-57426 codepoint range so applications can distinguish
+/// numpad-1 from main-row-1 (BUG-08-026). MUST run ahead of the legacy
+/// bypass (numpad arrows would otherwise route to legacy CSI A/B/C/D) and
+/// ahead of the standard `resolve_codepoint` (which would hit the
+/// `should_send_as_text` fast-path and emit `b"1"` instead of CSI u).
+///
+/// Returns `Some(bytes)` when the path fires; `None` when the key isn't on
+/// the numpad and `encode_kitty` should continue to the main encoding path.
+fn numpad_disambiguation_path(input: &KeyInput<'_>) -> Option<Vec<u8>> {
+    let cp = resolve_numpad_codepoint(input)?;
+    let report_events = input.mode.contains(TermMode::REPORT_EVENT_TYPES);
+    let report_alternate = input.mode.contains(TermMode::REPORT_ALTERNATE_KEYS);
+    let report_text = input.mode.contains(TermMode::REPORT_ASSOCIATED_TEXT);
+    // Release without REPORT_EVENT_TYPES is suppressed by the caller; this
+    // call still maps the event type to the suffix (or short-circuits).
+    let event_suffix = resolve_event_suffix(report_events, input.event_type)?;
+    let text = if report_text && input.event_type != KeyEventType::Release {
+        input.text.and_then(encode_associated_text)
+    } else {
+        None
+    };
+    let alternate = if report_alternate {
+        input.alternate_key.filter(|&alt| alt != cp)
+    } else {
+        None
+    };
+    Some(build_csi_sequence(
+        cp,
+        input.mods,
+        event_suffix,
+        text.as_deref(),
+        None,
+        alternate,
+    ))
+}
+
 pub(super) fn encode_kitty(input: &KeyInput<'_>) -> Vec<u8> {
     let report_all = input.mode.contains(TermMode::REPORT_ALL_KEYS_AS_ESC);
     let report_events = input.mode.contains(TermMode::REPORT_EVENT_TYPES);
@@ -158,36 +197,8 @@ pub(super) fn encode_kitty(input: &KeyInput<'_>) -> Vec<u8> {
         return Vec::new();
     }
 
-    // BUG-08-026: numpad disambiguation. When the key is on the numpad AND
-    // any kitty flag is active (we're already inside encode_kitty), map to
-    // the dedicated 57399-57426 codepoint range so applications can tell
-    // numpad-1 from main-row-1. This MUST run ahead of the legacy bypass
-    // (numpad arrows would otherwise route to legacy CSI A/B/C/D) and
-    // ahead of the standard `resolve_codepoint` (which would hit the
-    // `should_send_as_text` fast-path and emit `b"1"` instead of CSI u).
-    if let Some(cp) = resolve_numpad_codepoint(input) {
-        let event_suffix = match resolve_event_suffix(report_events, input.event_type) {
-            Some(s) => s,
-            None => return Vec::new(),
-        };
-        let text = if report_text && input.event_type != KeyEventType::Release {
-            input.text.and_then(encode_associated_text)
-        } else {
-            None
-        };
-        let alternate = if report_alternate {
-            input.alternate_key.filter(|&alt| alt != cp)
-        } else {
-            None
-        };
-        return build_csi_sequence(
-            cp,
-            input.mods,
-            event_suffix,
-            text.as_deref(),
-            None,
-            alternate,
-        );
+    if let Some(bytes) = numpad_disambiguation_path(input) {
+        return bytes;
     }
 
     // DISAMBIGUATE_ESC_CODES (flags=1) only uses CSI u for keys that are
