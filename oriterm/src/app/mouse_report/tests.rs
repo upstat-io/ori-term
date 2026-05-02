@@ -1437,14 +1437,10 @@ fn bridge_parser_to_alt_scroll_decision() {
     assert!(!should_translate_wheel_to_arrows(mode, false));
 }
 
-// =====================================================================
-// BUG-08-015: tier2_alt_scroll_payload + classify_wheel_event matrix
-//
-// Verifies the DECCKM-aware Tier-2 alt-scroll byte selection, the
-// WheelTier dispatcher, and the ANY_MOUSE_ENCODING isolation per
-// xterm spec (ctlseqs.txt:2465-2473 + scrollbar.c:711-727).
-// See bug-tracker/plans/BUG-08-015/ for the full plan.
-// =====================================================================
+// BUG-08-015: tier2_alt_scroll_payload + classify_wheel_event matrix.
+// Verifies DECCKM-aware Tier-2 alt-scroll byte selection, the WheelTier
+// dispatcher, and ANY_MOUSE_ENCODING isolation per xterm spec
+// (ctlseqs.txt:2465-2473 + scrollbar.c:711-727).
 
 use super::{
     AltScrollPayload, ScrollDirection, WheelTier, classify_wheel_event, should_report_mouse,
