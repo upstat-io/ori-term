@@ -5,6 +5,7 @@
 
 mod action_dispatch;
 pub(super) mod ime;
+mod mark_mode_dispatch;
 mod overlay_dispatch;
 
 use winit::event::ElementState;
@@ -17,6 +18,7 @@ use crate::key_encoding::{self, KeyEventType, KeyInput};
 use crate::keybindings;
 
 pub(super) use ime::ImeState;
+use mark_mode_dispatch::{MarkModeDispatch, dispatch_mark_mode};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct PtyInputRedrawState {
@@ -32,43 +34,6 @@ fn should_redraw_after_pty_input(state: PtyInputRedrawState) -> bool {
             Some(offset) => offset > 0,
             None => true,
         }
-}
-
-/// Snapshot of which mark-mode resources are currently available.
-///
-/// Mark mode requires three resources to process a key: a mux to route
-/// scroll/refresh, a per-pane mark cursor, and a pane snapshot to read
-/// the grid contents. Any of these can become `None` during a race
-/// (pane init, mark cursor eviction, mux disconnect mid-mark-mode).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct MarkModeResources {
-    mux_present: bool,
-    cursor_present: bool,
-    snapshot_present: bool,
-}
-
-/// Pure decision predicate. Returns `true` when mark mode must be exited
-/// because a required resource is missing.
-///
-/// The caller (`try_dispatch_mark_mode`) responds by calling
-/// `exit_mark_mode` and returning `false` so the keystroke flows on to
-/// normal key dispatch (keybinding lookup, then `encode_key_to_pty`)
-/// instead of being silently swallowed.
-///
-/// Returns `false` only when all three resources are present.
-///
-/// Note: the cursor-missing path is technically unreachable in the
-/// single-threaded `App` context (no mutation of `mark_cursors` between
-/// `is_mark_mode` and `pane_mark_cursor`). The recovery path is
-/// intentional defense-in-depth, deliberately diverging from
-/// `.claude/rules/impl-hygiene.md §Defensive Code for Impossible States`
-/// — silently swallowing keystrokes when an "unreachable" precondition
-/// fails is the bug this guard exists to prevent. See
-/// `bug-tracker/plans/BUG-08-031/section-02-fix-consensus.md`
-/// "Reviewer notes adopted" for the full justification.
-#[must_use]
-fn mark_mode_should_exit(resources: MarkModeResources) -> bool {
-    !resources.mux_present || !resources.cursor_present || !resources.snapshot_present
 }
 
 impl App {
@@ -202,96 +167,20 @@ impl App {
     ///
     /// Returns `true` if mark mode consumed the event (caller should return).
     fn try_dispatch_mark_mode(&mut self, event: &winit::event::KeyEvent) -> bool {
-        let Some(pane_id) = self.active_pane_id() else {
-            return false;
-        };
-        if !self.is_mark_mode(pane_id) {
-            return false;
-        }
-        if event.state == ElementState::Pressed {
-            // Refresh snapshot first if mux exists. Must precede the
-            // snapshot presence check so a stale-snapshot cycle has a
-            // chance to refill before we conclude there is nothing to
-            // draw on.
-            if let Some(mux) = self.mux.as_mut() {
-                if mux.pane_snapshot(pane_id).is_none() || mux.is_pane_snapshot_dirty(pane_id) {
-                    mux.refresh_pane_snapshot(pane_id);
-                }
-            }
-
-            // BUG-08-031: if any required resource is missing, exit mark
-            // mode cleanly and signal not-consumed so the caller forwards
-            // the keystroke to PTY (instead of silently swallowing it).
-            let cursor_opt = self.pane_mark_cursor(pane_id);
-            let resources = MarkModeResources {
-                mux_present: self.mux.is_some(),
-                cursor_present: cursor_opt.is_some(),
-                snapshot_present: self
-                    .mux
-                    .as_ref()
-                    .and_then(|m| m.pane_snapshot(pane_id))
-                    .is_some(),
-            };
-            if mark_mode_should_exit(resources) {
-                self.exit_mark_mode(pane_id);
-                return false;
-            }
-
-            // All resources confirmed present by the guard above.
-            let cursor =
-                cursor_opt.expect("cursor_present validated by mark_mode_should_exit guard");
-            let selection = self.pane_selection(pane_id).copied();
-            let result = {
-                let snapshot = self
-                    .mux
-                    .as_ref()
-                    .and_then(|m| m.pane_snapshot(pane_id))
-                    .expect("snapshot_present validated by mark_mode_should_exit guard");
-                let grid = super::snapshot_grid::SnapshotGrid::new(snapshot);
-                mark_mode::handle_mark_mode_key(
-                    &grid,
-                    cursor,
-                    selection.as_ref(),
-                    event,
-                    self.modifiers,
-                    &self.config.behavior.word_delimiters,
-                )
-            };
-
-            // Apply state mutations from the result.
-            if let Some(mc) = result.new_cursor {
-                self.mark_cursors.insert(pane_id, mc);
-            }
-            if let Some(sel_update) = result.new_selection {
-                match sel_update {
-                    mark_mode::SelectionUpdate::Set(sel) => {
-                        self.set_pane_selection(pane_id, sel);
-                    }
-                    mark_mode::SelectionUpdate::Clear => {
-                        self.clear_pane_selection(pane_id);
-                    }
-                }
-            }
-
-            match result.action {
-                mark_mode::MarkAction::Handled { scroll_delta } => {
-                    if let (Some(delta), Some(mux)) = (scroll_delta, self.mux.as_mut()) {
-                        mux.scroll_display(pane_id, delta);
-                    }
-                }
-                mark_mode::MarkAction::Exit { copy } => {
-                    self.exit_mark_mode(pane_id);
-                    if copy {
-                        self.copy_selection();
-                    }
-                }
-                mark_mode::MarkAction::Ignored => {}
-            }
-            if let Some(ctx) = self.focused_ctx_mut() {
-                ctx.root.mark_dirty();
-            }
-        }
-        true
+        let active_pane_id = self.active_pane_id();
+        let mark_mode_active = active_pane_id.is_some_and(|id| self.is_mark_mode(id));
+        let modifiers = self.modifiers;
+        dispatch_mark_mode(
+            MarkModeDispatch {
+                event: mark_mode::MarkModeKeyEvent::from_winit(event),
+                event_state: event.state,
+                event_repeat: event.repeat,
+                modifiers,
+                active_pane_id,
+                mark_mode_active,
+            },
+            self,
+        )
     }
 
     /// Encode a key event and send the result to the PTY.

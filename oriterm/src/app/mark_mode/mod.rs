@@ -7,7 +7,6 @@
 //! All grid queries operate on [`SnapshotGrid`] — no terminal lock required.
 //! Mark cursor and selection state live on [`App`](super::App), not on `Pane`.
 
-use winit::event::KeyEvent;
 use winit::keyboard::{Key, KeyCode, ModifiersState, NamedKey, PhysicalKey};
 
 use oriterm_core::{Selection, SelectionMode, SelectionPoint, Side};
@@ -16,6 +15,28 @@ use oriterm_ui::interaction::mark_mode::motion::{self, AbsCursor, GridBounds, Wo
 pub(crate) use oriterm_ui::interaction::mark_mode::{MarkAction, SelectionUpdate};
 
 use super::snapshot_grid::SnapshotGrid;
+
+/// Project-owned view of the `winit::event::KeyEvent` fields mark-mode
+/// key handling needs.
+///
+/// Constructed at the App boundary via [`from_winit`](Self::from_winit);
+/// constructed directly in tests so mark-mode dispatch is unit-testable
+/// without a real winit `KeyEvent` (whose `pub(crate) platform_specific`
+/// field blocks external struct-literal construction).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct MarkModeKeyEvent {
+    pub physical_key: PhysicalKey,
+    pub logical_key: Key,
+}
+
+impl MarkModeKeyEvent {
+    pub(crate) fn from_winit(event: &winit::event::KeyEvent) -> Self {
+        Self {
+            physical_key: event.physical_key,
+            logical_key: event.logical_key.clone(),
+        }
+    }
+}
 
 /// Cursor motion direction.
 #[derive(Clone, Copy)]
@@ -59,7 +80,7 @@ pub(crate) fn handle_mark_mode_key(
     grid: &SnapshotGrid<'_>,
     cursor: MarkCursor,
     selection: Option<&Selection>,
-    event: &KeyEvent,
+    event: &MarkModeKeyEvent,
     mods: ModifiersState,
     word_delimiters: &str,
 ) -> MarkModeResult {
