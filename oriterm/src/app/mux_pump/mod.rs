@@ -4,7 +4,8 @@
 //! Processes `MuxEvent`s from PTY reader threads via `MuxBackend::poll_events`,
 //! then handles resulting `MuxNotification`s (dirty, close, clipboard, etc.).
 
-mod helpers;
+mod host_color_query;
+mod notification_purge;
 
 use std::time::{Duration, Instant};
 
@@ -14,7 +15,8 @@ use oriterm_mux::PaneId;
 use crate::config::NotifyOnCommandFinish;
 use crate::platform::audio;
 
-use self::helpers::{purge_pending_desktop_notifications, resolve_host_color_query};
+use self::host_color_query::resolve_host_color_query;
+use self::notification_purge::purge_pending_desktop_notifications;
 use super::App;
 
 impl App {

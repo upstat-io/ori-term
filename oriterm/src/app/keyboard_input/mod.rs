@@ -60,9 +60,12 @@ struct MarkModeResources {
 /// Note: the cursor-missing path is technically unreachable in the
 /// single-threaded `App` context (no mutation of `mark_cursors` between
 /// `is_mark_mode` and `pane_mark_cursor`). The recovery path is
-/// intentional defense-in-depth — silently swallowing keystrokes when an
-/// "unreachable" precondition fails is the bug this guard exists to
-/// prevent.
+/// intentional defense-in-depth, deliberately diverging from
+/// `.claude/rules/impl-hygiene.md §Defensive Code for Impossible States`
+/// — silently swallowing keystrokes when an "unreachable" precondition
+/// fails is the bug this guard exists to prevent. See
+/// `bug-tracker/plans/BUG-08-031/section-02-fix-consensus.md`
+/// "Reviewer notes adopted" for the full justification.
 #[must_use]
 fn mark_mode_should_exit(resources: MarkModeResources) -> bool {
     !resources.mux_present || !resources.cursor_present || !resources.snapshot_present
