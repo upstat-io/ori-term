@@ -9,7 +9,9 @@ use oriterm_core::{
 
 use super::super::redraw::preedit::overlay_preedit_cells;
 use super::ime::{ImeEffect, ImeState};
-use super::{PtyInputRedrawState, should_redraw_after_pty_input};
+use super::{
+    MarkModeResources, PtyInputRedrawState, mark_mode_should_exit, should_redraw_after_pty_input,
+};
 
 const FG: Rgb = Rgb {
     r: 211,
@@ -559,5 +561,117 @@ fn ctrl_c_smart_copy_falls_through_to_pty_without_selection() {
         copy_action,
         Some(&Action::Copy),
         "Ctrl+Shift+C should bind to Copy (always consumes)"
+    );
+}
+
+// --- Mark mode exit decision (BUG-08-031) ---
+
+/// Regression: BUG-08-031 — try_dispatch_mark_mode swallowed keypresses
+/// when mux/cursor/snapshot was None during mark mode. The pure decision
+/// predicate `mark_mode_should_exit` returns false ONLY when all three
+/// resources are present, so the caller proceeds into mark-mode dispatch.
+/// See: bug-tracker/plans/BUG-08-031/00-overview.md
+#[test]
+fn mark_mode_exit_decision_with_all_resources_present_returns_false() {
+    let resources = MarkModeResources {
+        mux_present: true,
+        cursor_present: true,
+        snapshot_present: true,
+    };
+    assert!(
+        !mark_mode_should_exit(resources),
+        "all resources present → proceed into mark-mode dispatch (do NOT exit)"
+    );
+}
+
+/// Regression: BUG-08-031 — pins the mux-None recovery path. The original
+/// bug returned `true` (silent swallow) at `mod.rs:177`; the fix routes
+/// through `mark_mode_should_exit → true → caller exits mark mode +
+/// returns false → keystroke flows to keybinding then PTY`.
+/// See: bug-tracker/plans/BUG-08-031/00-overview.md
+#[test]
+fn mark_mode_exit_decision_with_mux_missing_returns_true() {
+    let resources = MarkModeResources {
+        mux_present: false,
+        cursor_present: true,
+        snapshot_present: true,
+    };
+    assert!(
+        mark_mode_should_exit(resources),
+        "mux missing → exit mark mode (recover from missing-resource state)"
+    );
+}
+
+/// Regression: BUG-08-031 — pins the cursor-None recovery path. The
+/// original bug returned `true` (silent swallow) at `mod.rs:183`; the fix
+/// routes the keystroke through normal dispatch instead.
+/// See: bug-tracker/plans/BUG-08-031/00-overview.md
+#[test]
+fn mark_mode_exit_decision_with_cursor_missing_returns_true() {
+    let resources = MarkModeResources {
+        mux_present: true,
+        cursor_present: false,
+        snapshot_present: true,
+    };
+    assert!(
+        mark_mode_should_exit(resources),
+        "cursor missing → exit mark mode (recover from missing-resource state)"
+    );
+}
+
+/// Regression: BUG-08-031 — pins the snapshot-None recovery path. The
+/// original bug returned `true` (silent swallow) at `mod.rs:189`; the fix
+/// routes the keystroke through normal dispatch instead.
+/// See: bug-tracker/plans/BUG-08-031/00-overview.md
+#[test]
+fn mark_mode_exit_decision_with_snapshot_missing_returns_true() {
+    let resources = MarkModeResources {
+        mux_present: true,
+        cursor_present: true,
+        snapshot_present: false,
+    };
+    assert!(
+        mark_mode_should_exit(resources),
+        "snapshot missing → exit mark mode (recover from missing-resource state)"
+    );
+}
+
+/// Regression: BUG-08-031 — matrix completeness pin. Enumerates all 8
+/// truth-table cells over `(mux_present, cursor_present, snapshot_present)`
+/// and asserts that exactly one cell (`true, true, true`) returns false
+/// while the other 7 return true. The `count == 8` assertion proves no
+/// cells were skipped per `tests.md §Matrix Testing Rule` self-verifying
+/// completeness pattern.
+/// See: bug-tracker/plans/BUG-08-031/00-overview.md
+#[test]
+fn mark_mode_exit_decision_truth_table_complete() {
+    let mut count = 0;
+    let mut proceed_cells = 0;
+    for mux in [false, true] {
+        for cursor in [false, true] {
+            for snapshot in [false, true] {
+                let resources = MarkModeResources {
+                    mux_present: mux,
+                    cursor_present: cursor,
+                    snapshot_present: snapshot,
+                };
+                let exit = mark_mode_should_exit(resources);
+                let all_present = mux && cursor && snapshot;
+                assert_eq!(
+                    exit, !all_present,
+                    "({mux}, {cursor}, {snapshot}) — exit should be {} (proceed iff all present)",
+                    !all_present
+                );
+                if !exit {
+                    proceed_cells += 1;
+                }
+                count += 1;
+            }
+        }
+    }
+    assert_eq!(count, 8, "truth table must enumerate all 2³ = 8 cells");
+    assert_eq!(
+        proceed_cells, 1,
+        "exactly one cell (all-present) must proceed; all 7 missing-resource cells must exit"
     );
 }
