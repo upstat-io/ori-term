@@ -9,6 +9,7 @@ use std::fmt::Write;
 
 use winit::keyboard::{Key, KeyLocation, NamedKey};
 
+use super::legacy::{cursor_key_for_named, function_key_terminator};
 use super::{KeyEventType, KeyInput, Modifiers};
 use oriterm_core::TermMode;
 
@@ -431,21 +432,15 @@ struct LegacyCsiInfo {
 /// Look up legacy CSI info for a named key.
 ///
 /// Returns `None` for keys that have no legacy terminator (they use `u`).
+/// The terminator-byte selection routes through the SSOT helpers in
+/// `super::legacy` (cursor keys → [`cursor_key_for_named`] / [`CursorKey::terminator`];
+/// F1-F4 → [`function_key_terminator`]) so all three protocol paths
+/// (legacy keyboard, alt-scroll, Kitty CSI-u) share one canonical table.
 fn legacy_csi_info(named: NamedKey) -> Option<LegacyCsiInfo> {
     // Letter-terminated keys: base = 1.
-    let letter = match named {
-        NamedKey::ArrowUp => Some(b'A'),
-        NamedKey::ArrowDown => Some(b'B'),
-        NamedKey::ArrowRight => Some(b'C'),
-        NamedKey::ArrowLeft => Some(b'D'),
-        NamedKey::Home => Some(b'H'),
-        NamedKey::End => Some(b'F'),
-        NamedKey::F1 => Some(b'P'),
-        NamedKey::F2 => Some(b'Q'),
-        NamedKey::F3 => Some(b'R'),
-        NamedKey::F4 => Some(b'S'),
-        _ => None,
-    };
+    let letter = cursor_key_for_named(named)
+        .map(super::cursor_keys::CursorKey::terminator)
+        .or_else(|| function_key_terminator(named));
     if let Some(term) = letter {
         return Some(LegacyCsiInfo {
             base: 1,

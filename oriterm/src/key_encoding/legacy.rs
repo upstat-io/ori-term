@@ -7,22 +7,41 @@
 use winit::keyboard::{Key, NamedKey};
 
 use super::Modifiers;
+use super::cursor_keys::{CursorKey, cursor_key_bytes};
 use oriterm_core::TermMode;
 
-/// Named key with a letter terminator (SS3 / CSI variant).
+/// Look up a DECCKM-controlled cursor-style key.
 ///
-/// With modifiers, all letter keys use CSI format: `ESC [ 1 ; {mod} {term}`.
-/// Without modifiers, the SS3 behavior depends on the key type:
-/// - F1-F4: always SS3 (`ESC O P/Q/R/S`), matching xterm/Ghostty.
-/// - Arrows, Home, End: SS3 only in application cursor mode (DECCKM).
-struct LetterKey {
-    /// Terminator byte (e.g. `b'A'` for Up).
-    term: u8,
-    /// Whether SS3 requires application cursor mode.
-    ///
-    /// `true` = arrows, Home, End — SS3 only when DECCKM is active.
-    /// `false` = F1-F4 — always SS3 when unmodified.
-    needs_app_cursor: bool,
+/// Returns `Some(CursorKey)` for Up/Down/Right/Left/Home/End — the keys whose
+/// SS3-vs-CSI prefix flips with the `APP_CURSOR` mode flag. F1-F4 are NOT in
+/// this set; see [`function_key_terminator`].
+#[must_use]
+pub(super) fn cursor_key_for_named(key: NamedKey) -> Option<CursorKey> {
+    Some(match key {
+        NamedKey::ArrowUp => CursorKey::Up,
+        NamedKey::ArrowDown => CursorKey::Down,
+        NamedKey::ArrowRight => CursorKey::Right,
+        NamedKey::ArrowLeft => CursorKey::Left,
+        NamedKey::Home => CursorKey::Home,
+        NamedKey::End => CursorKey::End,
+        _ => return None,
+    })
+}
+
+/// Look up a function-key terminator byte (F1-F4).
+///
+/// F1-F4 always use SS3 when unmodified (`ESC O P/Q/R/S`) and CSI with
+/// modifiers — they do NOT depend on DECCKM, so they are kept separate from
+/// [`CursorKey`] / [`cursor_key_bytes`].
+#[must_use]
+pub(super) fn function_key_terminator(key: NamedKey) -> Option<u8> {
+    Some(match key {
+        NamedKey::F1 => b'P',
+        NamedKey::F2 => b'Q',
+        NamedKey::F3 => b'R',
+        NamedKey::F4 => b'S',
+        _ => return None,
+    })
 }
 
 /// Named key with a tilde terminator (`ESC [ {num} ~`).
@@ -31,59 +50,6 @@ struct LetterKey {
 struct TildeKey {
     /// Numeric parameter before the tilde.
     num: u8,
-}
-
-/// Look up a letter-terminated named key.
-///
-/// Returns the terminator byte and SS3/CSI variant flag for arrow keys,
-/// Home, End, and F1-F4.
-fn letter_key(key: NamedKey) -> Option<LetterKey> {
-    Some(match key {
-        // Arrows: SS3 only in app cursor mode (DECCKM).
-        NamedKey::ArrowUp => LetterKey {
-            term: b'A',
-            needs_app_cursor: true,
-        },
-        NamedKey::ArrowDown => LetterKey {
-            term: b'B',
-            needs_app_cursor: true,
-        },
-        NamedKey::ArrowRight => LetterKey {
-            term: b'C',
-            needs_app_cursor: true,
-        },
-        NamedKey::ArrowLeft => LetterKey {
-            term: b'D',
-            needs_app_cursor: true,
-        },
-        // Home/End: SS3 only in app cursor mode (DECCKM).
-        NamedKey::Home => LetterKey {
-            term: b'H',
-            needs_app_cursor: true,
-        },
-        NamedKey::End => LetterKey {
-            term: b'F',
-            needs_app_cursor: true,
-        },
-        // F1-F4: always SS3 when unmodified (xterm behavior).
-        NamedKey::F1 => LetterKey {
-            term: b'P',
-            needs_app_cursor: false,
-        },
-        NamedKey::F2 => LetterKey {
-            term: b'Q',
-            needs_app_cursor: false,
-        },
-        NamedKey::F3 => LetterKey {
-            term: b'R',
-            needs_app_cursor: false,
-        },
-        NamedKey::F4 => LetterKey {
-            term: b'S',
-            needs_app_cursor: false,
-        },
-        _ => return None,
-    })
 }
 
 /// Look up a tilde-terminated named key.
@@ -122,17 +88,23 @@ pub(super) fn encode_legacy(
 
     // Named keys.
     if let Key::Named(named) = key {
-        // Letter-terminated keys (arrows, Home, End, F1-F4).
-        if let Some(lk) = letter_key(*named) {
+        // DECCKM-controlled cursor keys (arrows, Home, End).
+        if let Some(cursor) = cursor_key_for_named(*named) {
             return if mod_param > 0 {
                 // Modifiers always use CSI format: ESC [ 1 ; {mod} {term}.
-                format!("\x1b[1;{}{}", mod_param, lk.term as char).into_bytes()
-            } else if !lk.needs_app_cursor || app_cursor {
-                // SS3 format: F1-F4 always, arrows/Home/End only in DECCKM.
-                vec![0x1b, b'O', lk.term]
+                format!("\x1b[1;{}{}", mod_param, cursor.terminator() as char).into_bytes()
             } else {
-                // CSI format for arrows/Home/End in normal mode.
-                vec![0x1b, b'[', lk.term]
+                // SSOT byte selection (SS3 in DECCKM, CSI in normal mode).
+                cursor_key_bytes(cursor, app_cursor).to_vec()
+            };
+        }
+
+        // F1-F4: always SS3 when unmodified, CSI with modifiers.
+        if let Some(term) = function_key_terminator(*named) {
+            return if mod_param > 0 {
+                format!("\x1b[1;{}{}", mod_param, term as char).into_bytes()
+            } else {
+                vec![0x1b, b'O', term]
             };
         }
 

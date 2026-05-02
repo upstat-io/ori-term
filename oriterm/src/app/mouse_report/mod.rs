@@ -13,6 +13,8 @@ use winit::event::MouseScrollDelta;
 
 use oriterm_core::TermMode;
 
+use crate::key_encoding::cursor_keys::{CursorKey, cursor_key_bytes};
+
 use super::App;
 use super::mouse_selection::{self, GridCtx};
 
@@ -119,15 +121,11 @@ fn classify_wheel_event(mode: TermMode, shift_held: bool) -> WheelTier {
 /// §"The cursor keys transmit the following escape sequences depending
 /// on the mode specified via the DECCKM escape sequence"; xterm
 /// `scrollbar.c` `MODE_DECCKM ? ANSI_SS3 : ANSI_CSI` selection).
-/// See BUG-08-015 root cause analysis §1B.
-///
-/// NOTE: The (DECCKM × direction) → bytes mapping mirrors the regular
-/// cursor-key encoder in `oriterm/src/key_encoding/legacy.rs`. This
-/// duplication is intentional — alt-scroll synthesis is on the
-/// mouse-event path, key encoding is on the keyboard path, and unifying
-/// them via a shared cursor-key helper is tracked as BUG-08-033.
-/// Both paths share the same xterm spec (`ctlseqs.txt:2465-2473`)
-/// so semantic drift between them would be a spec violation.
+/// See BUG-08-015 root cause analysis §1B. The (DECCKM × direction) →
+/// bytes mapping is the SSOT defined in [`crate::key_encoding::cursor_keys`];
+/// keyboard cursor-arrow encoding (`legacy.rs::encode_legacy`) and Kitty's
+/// CSI-u terminator selection (`kitty.rs::legacy_csi_info`) route through
+/// the same helper to prevent semantic drift.
 #[must_use]
 fn tier2_alt_scroll_payload(
     mode: TermMode,
@@ -139,14 +137,12 @@ fn tier2_alt_scroll_payload(
         return None;
     }
     let app_cursor = mode.contains(TermMode::APP_CURSOR);
-    let bytes: &'static [u8] = match (direction, app_cursor) {
-        (ScrollDirection::Up, true) => b"\x1bOA",
-        (ScrollDirection::Up, false) => b"\x1b[A",
-        (ScrollDirection::Down, true) => b"\x1bOB",
-        (ScrollDirection::Down, false) => b"\x1b[B",
+    let cursor = match direction {
+        ScrollDirection::Up => CursorKey::Up,
+        ScrollDirection::Down => CursorKey::Down,
     };
     Some(AltScrollPayload {
-        bytes,
+        bytes: cursor_key_bytes(cursor, app_cursor),
         repeat: lines,
     })
 }

@@ -2413,3 +2413,83 @@ fn dispatch_wheel_viewport_scroll_does_not_query_cell_for_report() {
         "Tier-3 viewport scroll MUST NOT consult sink.cell_for_report"
     );
 }
+
+// --- BUG-08-033: cross-site convergence pin ---
+//
+// Pinned by Plan-TPR Round 0 codex F2: keyboard arrow encoding via the public
+// `encode_key` dispatcher must produce IDENTICAL bytes to mouse-wheel
+// `tier2_alt_scroll_payload` for the (DECCKM × direction) cells the wheel
+// path touches (Up/Down × app_cursor/normal). Any future divergence between
+// the keyboard and mouse paths breaks these tests — the SSOT helper at
+// `crate::key_encoding::cursor_keys::cursor_key_bytes` is the canonical home
+// for the (DECCKM × direction) → bytes mapping.
+
+mod cross_site_convergence {
+    use crate::app::mouse_report::{ScrollDirection, tier2_alt_scroll_payload};
+    use crate::key_encoding::{KeyEventType, KeyInput, Modifiers, encode_key};
+    use oriterm_core::TermMode;
+    use winit::keyboard::{Key, KeyLocation, NamedKey};
+
+    fn keyboard_bytes(named: NamedKey, mode: TermMode) -> Vec<u8> {
+        let key = Key::Named(named);
+        encode_key(&KeyInput {
+            key: &key,
+            mods: Modifiers::empty(),
+            mode,
+            text: None,
+            location: KeyLocation::Standard,
+            event_type: KeyEventType::Press,
+            alternate_key: None,
+        })
+    }
+
+    fn alt_scroll_bytes(direction: ScrollDirection, app_cursor: bool) -> Vec<u8> {
+        let mut mode = TermMode::ALT_SCREEN | TermMode::ALTERNATE_SCROLL;
+        if app_cursor {
+            mode |= TermMode::APP_CURSOR;
+        }
+        tier2_alt_scroll_payload(mode, false, 1, direction)
+            .expect("alt-scroll path active under ALT_SCREEN | ALTERNATE_SCROLL")
+            .bytes
+            .to_vec()
+    }
+
+    /// Cross-site convergence: ArrowUp under DECCKM (APP_CURSOR set) — both
+    /// paths emit `\x1bOA`.
+    #[test]
+    fn arrow_up_app_cursor_keyboard_matches_alt_scroll() {
+        let mode = TermMode::APP_CURSOR;
+        assert_eq!(
+            keyboard_bytes(NamedKey::ArrowUp, mode),
+            alt_scroll_bytes(ScrollDirection::Up, true)
+        );
+    }
+
+    /// Cross-site convergence: ArrowUp without DECCKM — both paths emit `\x1b[A`.
+    #[test]
+    fn arrow_up_normal_keyboard_matches_alt_scroll() {
+        assert_eq!(
+            keyboard_bytes(NamedKey::ArrowUp, TermMode::empty()),
+            alt_scroll_bytes(ScrollDirection::Up, false)
+        );
+    }
+
+    /// Cross-site convergence: ArrowDown under DECCKM — both paths emit `\x1bOB`.
+    #[test]
+    fn arrow_down_app_cursor_keyboard_matches_alt_scroll() {
+        let mode = TermMode::APP_CURSOR;
+        assert_eq!(
+            keyboard_bytes(NamedKey::ArrowDown, mode),
+            alt_scroll_bytes(ScrollDirection::Down, true)
+        );
+    }
+
+    /// Cross-site convergence: ArrowDown without DECCKM — both paths emit `\x1b[B`.
+    #[test]
+    fn arrow_down_normal_keyboard_matches_alt_scroll() {
+        assert_eq!(
+            keyboard_bytes(NamedKey::ArrowDown, TermMode::empty()),
+            alt_scroll_bytes(ScrollDirection::Down, false)
+        );
+    }
+}
