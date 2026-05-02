@@ -26,7 +26,7 @@ pub(crate) use encode::{
 /// `impl-hygiene.md §Parameter Hygiene` — boolean parameters with
 /// implicit semantics are a design smell.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum ScrollDirection {
+enum ScrollDirection {
     Up,
     Down,
 }
@@ -39,7 +39,7 @@ pub(super) enum ScrollDirection {
 /// `handle_mouse_wheel` makes regressions a compile error rather than
 /// a doc-comment violation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum WheelTier {
+enum WheelTier {
     /// Tier 1: report mouse event via SGR/UTF-8/etc encoding.
     MouseReport,
     /// Tier 2: synthesize arrow keys for alt-scroll.
@@ -55,9 +55,9 @@ pub(super) enum WheelTier {
 /// `\x1b[A` / `\x1b[B` (CSI) when DECCKM is clear (normal cursor mode).
 /// `repeat` is the number of times the caller should write `bytes` to the PTY.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) struct AltScrollPayload {
-    pub(super) bytes: &'static [u8],
-    pub(super) repeat: usize,
+struct AltScrollPayload {
+    bytes: &'static [u8],
+    repeat: usize,
 }
 
 /// Pure decision function: should mouse events be reported to the PTY for
@@ -98,7 +98,7 @@ pub(super) fn should_translate_wheel_to_arrows(mode: TermMode, shift_held: bool)
 /// (Tier-1 gate) and [`should_translate_wheel_to_arrows`] (Tier-2 gate)
 /// rather than inlining their predicates.
 #[must_use]
-pub(super) fn classify_wheel_event(mode: TermMode, shift_held: bool) -> WheelTier {
+fn classify_wheel_event(mode: TermMode, shift_held: bool) -> WheelTier {
     if should_report_mouse(mode, shift_held) {
         return WheelTier::MouseReport;
     }
@@ -128,7 +128,7 @@ pub(super) fn classify_wheel_event(mode: TermMode, shift_held: bool) -> WheelTie
 /// Both paths share the same xterm spec (`ctlseqs.txt:2465-2473`)
 /// so semantic drift between them would be a spec violation.
 #[must_use]
-pub(super) fn tier2_alt_scroll_payload(
+fn tier2_alt_scroll_payload(
     mode: TermMode,
     shift_held: bool,
     lines: usize,
