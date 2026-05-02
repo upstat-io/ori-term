@@ -66,6 +66,7 @@ pub(crate) enum MsgType {
     NotifyClipboardLoad = 0x0308,
     NotifyPaneSnapshot = 0x0307,
     NotifyNewTab = 0x0309,
+    NotifyPaneUrgencyHint = 0x030A,
 }
 
 impl MsgType {
@@ -127,6 +128,7 @@ impl MsgType {
             0x0308 => Some(Self::NotifyClipboardLoad),
             0x0307 => Some(Self::NotifyPaneSnapshot),
             0x0309 => Some(Self::NotifyNewTab),
+            0x030A => Some(Self::NotifyPaneUrgencyHint),
             _ => None,
         }
     }

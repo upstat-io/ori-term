@@ -142,6 +142,14 @@ impl ApplicationHandler<TermEvent> for App {
                         .terminal_mode()
                         .is_some_and(|m| m.contains(oriterm_core::TermMode::CURSOR_BLINKING));
                     self.blinking_active = self.cursor_should_blink(mode_blink);
+                    // Mode 1042 — clear any pending window-manager urgency
+                    // hint on focus-in. winit's X11 backend documents that
+                    // urgency requests must be manually cleared; on Win
+                    // (FLASHW_STOP), macOS, and Wayland this call is a
+                    // benign no-op when no attention is pending.
+                    if let Some(ctx) = self.windows.get(&window_id) {
+                        ctx.window.window().request_user_attention(None);
+                    }
                     self.send_focus_event(true);
                 } else {
                     // Freeze cursor visible when window loses focus.

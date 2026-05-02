@@ -36,6 +36,9 @@ pub(super) fn pdu_to_notification(pdu: MuxPdu) -> Option<MuxNotification> {
             Some(MuxNotification::PaneMetadataChanged(pane_id))
         }
         MuxPdu::NotifyPaneBell { pane_id } => Some(MuxNotification::PaneBell(pane_id)),
+        MuxPdu::NotifyPaneUrgencyHint { pane_id } => {
+            Some(MuxNotification::PaneUrgencyHint(pane_id))
+        }
         MuxPdu::NotifyCommandComplete {
             pane_id,
             duration_ms,

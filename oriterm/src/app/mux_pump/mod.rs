@@ -198,6 +198,7 @@ impl App {
 
                 self.mark_pane_window_dirty(id);
             }
+            MuxNotification::PaneUrgencyHint(id) => self.handle_pane_urgency_hint(id),
             MuxNotification::ClipboardStore {
                 clipboard_type,
                 text,
@@ -321,6 +322,24 @@ impl App {
                     self.mark_pane_window_dirty(pane_id);
                 }
             }
+        }
+    }
+
+    /// Mode 1042 urgency-hint request — winit dispatches the per-platform
+    /// attention API on the OWNING window when the pane isn't focused.
+    fn handle_pane_urgency_hint(&self, id: PaneId) {
+        if self.active_pane_id() == Some(id) {
+            return;
+        }
+        let Some(session_wid) = self.session.window_for_pane(id) else { return };
+        if let Some(ctx) = self
+            .windows
+            .values()
+            .find(|c| c.window.session_window_id() == session_wid)
+        {
+            ctx.window
+                .window()
+                .request_user_attention(Some(winit::window::UserAttentionType::Critical));
         }
     }
 

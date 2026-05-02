@@ -60,6 +60,11 @@ pub fn notification_to_pdu(
             MuxPdu::NotifyPaneBell { pane_id: *pane_id },
         )),
 
+        MuxNotification::PaneUrgencyHint(pane_id) => Some((
+            TargetClients::PaneSubscribers(*pane_id),
+            MuxPdu::NotifyPaneUrgencyHint { pane_id: *pane_id },
+        )),
+
         MuxNotification::CommandComplete { pane_id, duration } => Some((
             TargetClients::PaneSubscribers(*pane_id),
             MuxPdu::NotifyCommandComplete {

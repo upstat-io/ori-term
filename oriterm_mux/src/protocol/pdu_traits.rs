@@ -64,6 +64,7 @@ impl MuxPdu {
             Self::NotifyPaneExited { .. } => MsgType::NotifyPaneExited,
             Self::NotifyPaneMetadataChanged { .. } => MsgType::NotifyPaneMetadataChanged,
             Self::NotifyPaneBell { .. } => MsgType::NotifyPaneBell,
+            Self::NotifyPaneUrgencyHint { .. } => MsgType::NotifyPaneUrgencyHint,
             Self::NotifyCommandComplete { .. } => MsgType::NotifyCommandComplete,
             Self::NotifyClipboardStore { .. } => MsgType::NotifyClipboardStore,
             Self::NotifyClipboardLoad { .. } => MsgType::NotifyClipboardLoad,
@@ -105,6 +106,7 @@ impl MuxPdu {
                 | Self::NotifyPaneExited { .. }
                 | Self::NotifyPaneMetadataChanged { .. }
                 | Self::NotifyPaneBell { .. }
+                | Self::NotifyPaneUrgencyHint { .. }
                 | Self::NotifyCommandComplete { .. }
                 | Self::NotifyClipboardStore { .. }
                 | Self::NotifyClipboardLoad { .. }

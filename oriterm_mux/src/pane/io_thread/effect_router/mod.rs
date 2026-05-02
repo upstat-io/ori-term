@@ -94,6 +94,9 @@ impl<S: EffectSink> PaneIoThread<S> {
                 Effect::Host(HostEffect::Bell) => {
                     self.send_mux_event(MuxEvent::PaneBell(self.pane_id));
                 }
+                Effect::Host(HostEffect::UrgencyHint) => {
+                    self.send_mux_event(MuxEvent::PaneUrgencyHint(self.pane_id));
+                }
                 Effect::Host(HostEffect::TitleSet { value }) => {
                     self.send_mux_event(MuxEvent::PaneTitleChanged {
                         pane_id: self.pane_id,

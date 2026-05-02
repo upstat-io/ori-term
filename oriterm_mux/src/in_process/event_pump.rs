@@ -67,6 +67,10 @@ impl InProcessMux {
                     }
                     self.notifications.push(MuxNotification::PaneBell(id));
                 }
+                MuxEvent::PaneUrgencyHint(id) => {
+                    self.notifications
+                        .push(MuxNotification::PaneUrgencyHint(id));
+                }
                 MuxEvent::PtyWrite { pane_id, data } => {
                     if let Some(pane) = panes.get(&pane_id) {
                         pane.write_input(&data);
