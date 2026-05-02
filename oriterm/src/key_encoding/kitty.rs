@@ -438,6 +438,7 @@ struct LegacyCsiInfo {
 /// F1-F4 → [`function_key_terminator`]; tilde keys → [`tilde_key`]) so all
 /// protocol paths (legacy keyboard, alt-scroll, Kitty CSI-u) share one
 /// canonical table per key category.
+#[must_use]
 fn legacy_csi_info(named: NamedKey) -> Option<LegacyCsiInfo> {
     // Letter-terminated keys: base = 1.
     let letter = cursor_key_for_named(named)

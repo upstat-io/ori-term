@@ -80,6 +80,7 @@ pub(super) fn tilde_key(key: NamedKey) -> Option<TildeKey> {
 ///
 /// Handles named keys (arrows, function keys, Home/End, etc.), Ctrl+letter
 /// C0 control codes, Alt+key ESC prefix, and plain text fallback.
+#[must_use]
 pub(super) fn encode_legacy(
     key: &Key,
     mods: Modifiers,

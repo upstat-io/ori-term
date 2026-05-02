@@ -33,7 +33,6 @@ impl CursorKey {
     /// `ESC [ 1 ; <mod> <term>` and the Kitty CSI-u form `ESC [ 1 <term>`.
     /// For unmodified non-Kitty cases, callers use [`cursor_key_bytes`].
     #[must_use]
-    #[inline]
     pub(crate) const fn terminator(self) -> u8 {
         match self {
             Self::Up => b'A',
@@ -49,8 +48,10 @@ impl CursorKey {
 /// SSOT: encode a DECCKM-controlled cursor key as SS3 or CSI bytes.
 ///
 /// Returns one of 12 static byte slices (6 keys × 2 modes). Zero-alloc.
+/// Intra-crate; per `.claude/rules/impl-hygiene.md §Performance Annotations`,
+/// `#[inline]` on a 16-line intra-crate function requires profiling data —
+/// none collected, so the attribute is omitted.
 #[must_use]
-#[inline]
 pub(crate) const fn cursor_key_bytes(key: CursorKey, app_cursor: bool) -> &'static [u8] {
     use CursorKey::{Down, End, Home, Left, Right, Up};
     match (key, app_cursor) {
