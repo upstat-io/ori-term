@@ -377,7 +377,6 @@ impl App {
         );
 
         // Flash the tab bar (reuse bell pulse) if configured.
-        let is_focused = self.active_pane_id() == Some(pane_id);
         if behavior.notify_command_bell && !is_focused {
             if let Some(mux) = self.mux.as_mut() {
                 mux.set_bell(pane_id);

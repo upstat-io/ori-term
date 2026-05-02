@@ -275,10 +275,8 @@ impl App {
 
             match result.action {
                 mark_mode::MarkAction::Handled { scroll_delta } => {
-                    if let Some(delta) = scroll_delta {
-                        if let Some(mux) = self.mux.as_mut() {
-                            mux.scroll_display(pane_id, delta);
-                        }
+                    if let (Some(delta), Some(mux)) = (scroll_delta, self.mux.as_mut()) {
+                        mux.scroll_display(pane_id, delta);
                     }
                 }
                 mark_mode::MarkAction::Exit { copy } => {
