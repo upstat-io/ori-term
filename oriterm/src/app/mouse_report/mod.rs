@@ -300,10 +300,9 @@ impl App {
 
         match classify_wheel_event(mode, self.modifiers.shift_key()) {
             WheelTier::MouseReport => {
-                let button = if scroll_up {
-                    MouseButton::ScrollUp
-                } else {
-                    MouseButton::ScrollDown
+                let button = match direction {
+                    ScrollDirection::Up => MouseButton::ScrollUp,
+                    ScrollDirection::Down => MouseButton::ScrollDown,
                 };
                 let Some((col, line)) = self.mouse_cell_clamped() else {
                     return;
