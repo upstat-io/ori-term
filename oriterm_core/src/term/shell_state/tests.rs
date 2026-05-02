@@ -230,3 +230,337 @@ fn pending_marks_toggle() {
     term.set_prompt_mark_pending(false);
     assert!(!term.prompt_mark_pending());
 }
+
+// --- Additional cwd_short_path edge case ---
+
+#[test]
+fn cwd_short_path_double_slash_returns_slash() {
+    assert_eq!(cwd_short_path("//"), "/");
+}
+
+// --- Mark command/output start fills last marker ---
+
+#[test]
+fn mark_command_start_fills_last_marker() {
+    let mut term = make_term();
+    term.set_prompt_mark_pending(true);
+    term.mark_prompt_row();
+    term.set_command_start_mark_pending(true);
+    term.mark_command_start_row();
+
+    let markers = term.prompt_markers();
+    assert_eq!(markers.len(), 1);
+    assert!(markers[0].command.is_some());
+    assert!(markers[0].output.is_none());
+}
+
+#[test]
+fn mark_output_start_fills_last_marker() {
+    let mut term = make_term();
+    term.set_prompt_mark_pending(true);
+    term.mark_prompt_row();
+    term.set_output_start_mark_pending(true);
+    term.mark_output_start_row();
+
+    let markers = term.prompt_markers();
+    assert_eq!(markers.len(), 1);
+    assert!(markers[0].output.is_some());
+}
+
+// --- Prune-marker boundary cases ---
+
+#[test]
+fn prune_prompt_markers_zero_eviction_is_noop() {
+    let mut term = make_term();
+    term.set_prompt_mark_pending(true);
+    term.mark_prompt_row();
+
+    let before = term.prompt_markers().len();
+    term.prune_prompt_markers(0);
+    assert_eq!(term.prompt_markers().len(), before);
+}
+
+#[test]
+fn prune_prompt_markers_exact_boundary_evicts_at_threshold() {
+    let mut term = make_term();
+    term.set_prompt_mark_pending(true);
+    term.mark_prompt_row();
+
+    term.prune_prompt_markers(1);
+    assert!(
+        term.prompt_markers().is_empty(),
+        "marker at row 0 should be evicted when evicted=1"
+    );
+}
+
+// --- Command output / input range ---
+
+#[test]
+fn command_output_range_returns_correct_bounds() {
+    let mut term = make_term();
+    term.set_prompt_mark_pending(true);
+    term.mark_prompt_row();
+    term.set_command_start_mark_pending(true);
+    term.mark_command_start_row();
+    feed_bytes(&mut term, b"\r\n");
+    term.set_output_start_mark_pending(true);
+    term.mark_output_start_row();
+
+    let output_start = term.prompt_markers()[0].output.unwrap();
+    let range = term.command_output_range(0);
+    assert!(range.is_some());
+    let (start, end) = range.unwrap();
+    assert_eq!(start, output_start);
+    let cursor_row = term.grid().scrollback().len() + term.grid().cursor().line();
+    assert_eq!(end, cursor_row);
+}
+
+#[test]
+fn command_output_range_bounded_by_next_prompt() {
+    let mut term = make_term();
+    term.set_prompt_mark_pending(true);
+    term.mark_prompt_row();
+    term.set_command_start_mark_pending(true);
+    term.mark_command_start_row();
+    feed_bytes(&mut term, b"\r\n");
+    term.set_output_start_mark_pending(true);
+    term.mark_output_start_row();
+
+    feed_bytes(&mut term, b"\r\n\r\n\r\n");
+    term.set_prompt_mark_pending(true);
+    term.mark_prompt_row();
+
+    let second_prompt_start = term.prompt_markers()[1].prompt;
+    let range = term.command_output_range(0).unwrap();
+    assert_eq!(range.1, second_prompt_start - 1);
+}
+
+#[test]
+fn command_input_range_returns_correct_bounds() {
+    let mut term = make_term();
+    term.set_prompt_mark_pending(true);
+    term.mark_prompt_row();
+    term.set_command_start_mark_pending(true);
+    term.mark_command_start_row();
+    feed_bytes(&mut term, b"\r\n");
+    term.set_output_start_mark_pending(true);
+    term.mark_output_start_row();
+
+    let cmd_start = term.prompt_markers()[0].command.unwrap();
+    let output_start = term.prompt_markers()[0].output.unwrap();
+    let range = term.command_input_range(0);
+    assert!(range.is_some());
+    let (start, end) = range.unwrap();
+    assert_eq!(start, cmd_start);
+    assert_eq!(end, output_start - 1);
+}
+
+#[test]
+fn range_returns_none_when_no_markers() {
+    let term = make_term();
+    assert!(term.command_output_range(0).is_none());
+    assert!(term.command_input_range(0).is_none());
+}
+
+#[test]
+fn range_returns_none_when_output_start_missing() {
+    let mut term = make_term();
+    term.set_prompt_mark_pending(true);
+    term.mark_prompt_row();
+    assert!(term.command_output_range(0).is_none());
+}
+
+#[test]
+fn range_returns_none_when_command_start_missing() {
+    let mut term = make_term();
+    term.set_prompt_mark_pending(true);
+    term.mark_prompt_row();
+    assert!(term.command_input_range(0).is_none());
+}
+
+// --- Scroll to previous/next prompt ---
+
+#[test]
+fn scroll_to_previous_prompt_scrolls_viewport() {
+    let mut term = Term::new(10, 80, 1000, Theme::default(), VoidEffectSink);
+    for _ in 0..30 {
+        feed_bytes(&mut term, b"\r\n");
+    }
+    term.set_prompt_mark_pending(true);
+    term.mark_prompt_row();
+
+    for _ in 0..20 {
+        feed_bytes(&mut term, b"\r\n");
+    }
+
+    let scrolled = term.scroll_to_previous_prompt();
+    assert!(scrolled);
+    assert!(term.grid().display_offset() > 0);
+}
+
+#[test]
+fn scroll_to_next_prompt_scrolls_viewport() {
+    let mut term = Term::new(10, 80, 1000, Theme::default(), VoidEffectSink);
+    for _ in 0..30 {
+        feed_bytes(&mut term, b"\r\n");
+    }
+    term.set_prompt_mark_pending(true);
+    term.mark_prompt_row();
+
+    term.grid_mut().scroll_display(isize::MAX);
+
+    let scrolled = term.scroll_to_next_prompt();
+    assert!(scrolled);
+}
+
+// --- RIS clears shell integration state ---
+
+#[test]
+fn ris_clears_prompt_state() {
+    let mut term = make_term();
+    term.set_prompt_mark_pending(true);
+    term.mark_prompt_row();
+    term.set_command_start_mark_pending(true);
+    term.mark_command_start_row();
+
+    assert_eq!(term.prompt_markers().len(), 1);
+    assert_eq!(term.prompt_state(), super::PromptState::None);
+
+    term.set_prompt_state(super::PromptState::CommandStart);
+
+    feed_bytes(&mut term, b"\x1bc");
+
+    assert_eq!(term.prompt_state(), super::PromptState::None);
+    assert!(term.prompt_markers().is_empty());
+    assert!(!term.prompt_mark_pending());
+    assert!(!term.command_start_mark_pending());
+    assert!(!term.output_start_mark_pending());
+}
+
+#[test]
+fn ris_clears_cwd_and_title_state() {
+    let mut term = make_term();
+    term.set_cwd(Some("/home/user".to_string()));
+    term.set_has_explicit_title(true);
+    term.mark_title_dirty();
+
+    feed_bytes(&mut term, b"\x1bc");
+
+    assert!(term.cwd().is_none());
+    assert!(!term.has_explicit_title());
+    assert_eq!(term.effective_title(), "");
+}
+
+#[test]
+fn ris_clears_command_timing() {
+    let mut term = make_term();
+    term.set_command_start(std::time::Instant::now());
+    let _ = term.finish_command(None);
+
+    assert!(term.last_command_duration().is_some());
+
+    feed_bytes(&mut term, b"\x1bc");
+
+    assert!(term.last_command_duration().is_none());
+}
+
+// --- Multiple prompt starts without completion ---
+
+#[test]
+fn multiple_prompt_starts_without_completion_create_separate_markers() {
+    let mut term = make_term();
+
+    term.set_prompt_mark_pending(true);
+    term.mark_prompt_row();
+
+    feed_bytes(&mut term, b"\r\n\r\n");
+
+    term.set_prompt_mark_pending(true);
+    term.mark_prompt_row();
+
+    assert_eq!(term.prompt_markers().len(), 2);
+    assert!(term.prompt_markers()[0].prompt < term.prompt_markers()[1].prompt);
+    assert!(term.prompt_markers()[0].command.is_none());
+    assert!(term.prompt_markers()[0].output.is_none());
+}
+
+// --- Prompt markers surviving subsequent output ---
+
+#[test]
+fn prompt_markers_survive_subsequent_output() {
+    let mut term = make_term();
+
+    term.set_prompt_mark_pending(true);
+    term.mark_prompt_row();
+    assert_eq!(term.prompt_markers().len(), 1);
+
+    feed_bytes(&mut term, b"\r\nhello world\r\nmore output\r\n");
+
+    assert_eq!(
+        term.prompt_markers().len(),
+        1,
+        "prompt marker should survive subsequent output"
+    );
+}
+
+#[test]
+fn prompt_markers_survive_scrolling() {
+    let mut term = Term::new(5, 20, 100, Theme::default(), VoidEffectSink);
+
+    term.set_prompt_mark_pending(true);
+    term.mark_prompt_row();
+
+    for i in 0..10 {
+        let msg = format!("\r\nline {i}");
+        feed_bytes(&mut term, msg.as_bytes());
+    }
+
+    assert_eq!(
+        term.prompt_markers().len(),
+        1,
+        "prompt marker should survive scrolling within scrollback capacity"
+    );
+}
+
+#[test]
+fn prompt_markers_evicted_by_manual_prune() {
+    let mut term = Term::new(3, 10, 5, Theme::default(), VoidEffectSink);
+
+    term.set_prompt_mark_pending(true);
+    term.mark_prompt_row();
+    assert_eq!(term.prompt_markers().len(), 1);
+
+    term.prune_prompt_markers(5);
+    assert!(
+        term.prompt_markers().is_empty(),
+        "prompt marker at row 0 should be evicted when 5 rows are pruned"
+    );
+}
+
+// --- finish_command (injectable clock for deterministic duration) ---
+
+#[test]
+fn finish_command_uses_injected_now_for_deterministic_duration() {
+    use std::time::{Duration, Instant};
+
+    let mut term = make_term();
+    let t0 = Instant::now();
+    term.set_command_start(t0);
+
+    let duration = term.finish_command(Some(t0 + Duration::from_millis(1500)));
+    assert_eq!(duration, Some(Duration::from_millis(1500)));
+    assert_eq!(
+        term.last_command_duration(),
+        Some(Duration::from_millis(1500))
+    );
+}
+
+#[test]
+fn finish_command_without_start_returns_none_regardless_of_now() {
+    use std::time::{Duration, Instant};
+
+    let mut term = make_term();
+    let d = term.finish_command(Some(Instant::now() + Duration::from_millis(10)));
+    assert!(d.is_none());
+    assert!(term.last_command_duration().is_none());
+}

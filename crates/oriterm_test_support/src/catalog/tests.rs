@@ -743,7 +743,10 @@ fn csi_tuple_sig_aligns_across_all_four_producers() {
 fn csi_tuple_sig_distinct_per_selector() {
     let cup = runtime_csi_tuple('H', &[1, 1]).signature();
     let ed = runtime_csi_tuple('J', &[0]).signature();
-    assert_ne!(cup, ed, "CSI H (CUP) and CSI J (ED) must have distinct sigs");
+    assert_ne!(
+        cup, ed,
+        "CSI H (CUP) and CSI J (ED) must have distinct sigs"
+    );
 }
 
 /// Regression: CSI `final_byte` slot MUST hold the dispatch action
@@ -1054,7 +1057,10 @@ fn esc_tuple_sig_aligns_across_all_four_producers() {
         if dispatch_source_present {
             let t2 = dispatch_esc_tuple(byte)
                 .unwrap_or_else(|| panic!("ESC {final_str}: dispatch_extract must yield a tuple"));
-            assert_eq!(t2.params, "-", "ESC {final_str}: dispatch params must be \"-\"");
+            assert_eq!(
+                t2.params, "-",
+                "ESC {final_str}: dispatch params must be \"-\""
+            );
             assert_eq!(
                 t1.signature(),
                 t2.signature(),
@@ -1078,7 +1084,10 @@ fn esc_tuple_sig_aligns_across_all_four_producers() {
 fn esc_tuple_sig_distinct_per_selector() {
     let ind = runtime_esc_tuple(b'D').signature();
     let ri = runtime_esc_tuple(b'M').signature();
-    assert_ne!(ind, ri, "ESC D (IND) and ESC M (RI) must have distinct sigs");
+    assert_ne!(
+        ind, ri,
+        "ESC D (IND) and ESC M (RI) must have distinct sigs"
+    );
 }
 
 /// Regression: ESC `( B` (charset designation) routes to
@@ -1177,12 +1186,18 @@ fn apc_tuple_sig_aligns_across_three_producers() {
     // Per-producer params contract: all 3 emit "Pt".
     assert_eq!(t1.params, "Pt", "APC: catalog params must be \"Pt\"");
     assert_eq!(t3.params, "Pt", "APC: capture params must be \"Pt\"");
-    assert_eq!(t1.final_byte, "ST", "APC: catalog final_byte must be \"ST\"");
-    assert_eq!(t3.final_byte, "ST", "APC: capture final_byte must be \"ST\"");
+    assert_eq!(
+        t1.final_byte, "ST",
+        "APC: catalog final_byte must be \"ST\""
+    );
+    assert_eq!(
+        t3.final_byte, "ST",
+        "APC: capture final_byte must be \"ST\""
+    );
 
     if dispatch_source_present {
-        let t2 = dispatch_apc_tuple()
-            .expect("APC: dispatch_extract must yield a generic APC tuple");
+        let t2 =
+            dispatch_apc_tuple().expect("APC: dispatch_extract must yield a generic APC tuple");
         assert_eq!(t2.params, "Pt", "APC: dispatch params must be \"Pt\"");
         assert_eq!(
             t1.signature(),

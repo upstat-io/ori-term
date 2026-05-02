@@ -1,4 +1,11 @@
-//! Tests for Term<T> struct.
+//! Tests for `Term<S>` — methods defined directly in `term/mod.rs`.
+//!
+//! Submodule-specific tests live in their owning sibling files:
+//! - `alt_screen/tests.rs` — `swap_alt`, alt-grid lifecycle
+//! - `image_config/tests.rs` — image protocol configuration
+//! - `resize/tests.rs` — `Term::resize`
+//! - `shell_state/tests.rs` — prompt markers, command range, finish_command
+//! - `snapshot/tests.rs` — `renderable_content`, `damage`, `reset_damage`
 
 use vte::ansi::Processor;
 
@@ -10,7 +17,7 @@ use crate::grid::CursorShape;
 use crate::index::{Column, Line};
 use crate::theme::Theme;
 
-use super::{RenderableContent, Term, TermMode};
+use super::{Term, TermMode};
 
 fn make_term() -> Term<VoidEffectSink> {
     Term::new(24, 80, 1000, Theme::default(), VoidEffectSink)
@@ -49,6 +56,8 @@ fn feed(term: &mut impl vte::ansi::Handler, bytes: &[u8]) {
     processor.advance(term, bytes);
 }
 
+// ── Term construction + basic accessors ──
+
 #[test]
 fn new_creates_working_terminal() {
     let term = make_term();
@@ -59,7 +68,6 @@ fn new_creates_working_terminal() {
 #[test]
 fn grid_returns_primary_by_default() {
     let mut term = make_term();
-    // Write to primary grid.
     term.grid_mut().put_char('A');
     assert_eq!(term.grid()[Line(0)][Column(0)].ch, 'A');
     assert!(!term.mode().contains(TermMode::ALT_SCREEN));
@@ -86,640 +94,12 @@ fn default_cursor_shape_is_block() {
 }
 
 #[test]
-fn alt_grid_has_no_scrollback() {
-    let mut term = make_term();
-    term.swap_alt();
-    assert_eq!(term.grid().scrollback().max_scrollback(), 0);
-}
-
-#[test]
 fn primary_grid_has_scrollback() {
     let term = make_term();
     assert_eq!(term.grid().scrollback().max_scrollback(), 1000);
 }
 
-// --- Damage tracking integration (Term::damage / Term::reset_damage) ---
-
-/// Create a small terminal and clear initial damage.
-fn damage_term() -> Term<VoidEffectSink> {
-    let mut t = Term::new(6, 10, 100, Theme::default(), VoidEffectSink);
-    t.reset_damage();
-    t
-}
-
-/// Collect damaged line indices from a term.
-fn damaged_lines(term: &mut Term<VoidEffectSink>) -> Vec<usize> {
-    term.damage().map(|d| d.line).collect()
-}
-
-// Basic damage semantics
-
-#[test]
-fn damage_write_char_marks_line() {
-    let mut t = damage_term();
-    feed(&mut t, b"X");
-
-    let dmg: Vec<_> = t.damage().collect();
-    assert!(dmg.iter().any(|d| d.line == 0));
-    assert!(dmg.iter().all(|d| d.line == 0));
-    assert_eq!(dmg[0].left, Column(0));
-    assert_eq!(dmg[0].right, Column(0));
-}
-
-#[test]
-fn damage_drain_clears_marks() {
-    let mut t = damage_term();
-    feed(&mut t, b"A");
-
-    let first: Vec<_> = t.damage().collect();
-    assert!(!first.is_empty(), "first drain should report damage");
-
-    let second: Vec<_> = t.damage().collect();
-    assert!(second.is_empty(), "second drain should be empty");
-}
-
-#[test]
-fn damage_no_changes_empty() {
-    let mut t = damage_term();
-    let dmg: Vec<_> = t.damage().collect();
-    assert!(dmg.is_empty());
-}
-
-#[test]
-fn damage_scroll_marks_all_dirty() {
-    let mut t = damage_term();
-    // Push enough lines to trigger scroll in a 6-line terminal.
-    feed(&mut t, b"\r\n\r\n\r\n\r\n\r\n\r\n\r\n");
-
-    let dmg = t.damage();
-    assert!(dmg.is_all_dirty());
-    let lines: Vec<_> = dmg.collect();
-    assert_eq!(lines.len(), 6);
-}
-
-// Cursor movement damage
-
-#[test]
-fn damage_goto_marks_old_and_new_lines() {
-    let mut t = damage_term();
-    // Cursor starts at (0, 0). Move to line 3, col 5.
-    feed(&mut t, b"\x1b[4;6H"); // CSI 4;6 H (1-based)
-
-    let lines = damaged_lines(&mut t);
-    assert!(lines.contains(&0), "old cursor line 0 should be damaged");
-    assert!(lines.contains(&3), "new cursor line 3 should be damaged");
-}
-
-#[test]
-fn damage_move_forward() {
-    let mut t = damage_term();
-    // Move to (1, 2) then clear damage.
-    feed(&mut t, b"\x1b[2;3H");
-    t.reset_damage();
-
-    // CUF: move forward 3 columns.
-    feed(&mut t, b"\x1b[3C");
-
-    let lines = damaged_lines(&mut t);
-    assert!(lines.contains(&1), "cursor line should be damaged");
-    // Only line 1 should be damaged (same line).
-    assert!(lines.iter().all(|&l| l == 1));
-}
-
-#[test]
-fn damage_move_backward() {
-    let mut t = damage_term();
-    feed(&mut t, b"\x1b[2;8H"); // Line 2, col 8.
-    t.reset_damage();
-
-    // CUB: move backward 5 columns.
-    feed(&mut t, b"\x1b[5D");
-
-    let lines = damaged_lines(&mut t);
-    assert!(lines.contains(&1));
-    assert!(lines.iter().all(|&l| l == 1));
-}
-
-#[test]
-fn damage_move_up() {
-    let mut t = damage_term();
-    feed(&mut t, b"\x1b[4;1H"); // Line 4.
-    t.reset_damage();
-
-    // CUU: move up 2 lines.
-    feed(&mut t, b"\x1b[2A");
-
-    let lines = damaged_lines(&mut t);
-    assert!(lines.contains(&3), "old line 3 should be damaged");
-    assert!(lines.contains(&1), "new line 1 should be damaged");
-}
-
-#[test]
-fn damage_move_down() {
-    let mut t = damage_term();
-    feed(&mut t, b"\x1b[2;1H"); // Line 2.
-    t.reset_damage();
-
-    // CUD: move down 3 lines.
-    feed(&mut t, b"\x1b[3B");
-
-    let lines = damaged_lines(&mut t);
-    assert!(lines.contains(&1), "old line 1 should be damaged");
-    assert!(lines.contains(&4), "new line 4 should be damaged");
-}
-
-#[test]
-fn damage_carriage_return() {
-    let mut t = damage_term();
-    feed(&mut t, b"\x1b[1;6H"); // Line 1, col 6.
-    t.reset_damage();
-
-    feed(&mut t, b"\r");
-
-    let lines = damaged_lines(&mut t);
-    assert!(lines.contains(&0), "CR damages cursor line");
-    assert!(lines.iter().all(|&l| l == 0));
-}
-
-#[test]
-fn damage_linefeed_two_lines() {
-    let mut t = damage_term();
-    feed(&mut t, b"\x1b[3;1H"); // Line 3.
-    t.reset_damage();
-
-    feed(&mut t, b"\n");
-
-    let lines = damaged_lines(&mut t);
-    assert!(lines.contains(&2), "old line should be damaged");
-    assert!(lines.contains(&3), "new line should be damaged");
-}
-
-#[test]
-fn damage_backspace() {
-    let mut t = damage_term();
-    feed(&mut t, b"\x1b[1;5H"); // Line 1, col 5.
-    t.reset_damage();
-
-    feed(&mut t, b"\x08"); // BS.
-
-    let lines = damaged_lines(&mut t);
-    assert!(lines.contains(&0));
-    assert!(lines.iter().all(|&l| l == 0));
-}
-
-#[test]
-fn damage_wrapline() {
-    let mut t = damage_term();
-    // Fill line 0 to column 9 (last col in 10-col term).
-    feed(&mut t, b"0123456789");
-    t.reset_damage();
-
-    // Next char triggers wrap to line 1.
-    feed(&mut t, b"X");
-
-    let lines = damaged_lines(&mut t);
-    assert!(lines.contains(&0), "wrapped-from line should be damaged");
-    assert!(lines.contains(&1), "wrapped-to line should be damaged");
-}
-
-#[test]
-fn damage_reverse_index_scrolls() {
-    let mut t = damage_term();
-    // Set scroll region top=1..bottom=4 (1-based: 1..4).
-    feed(&mut t, b"\x1b[1;4r");
-    // Cursor at top of scroll region (line 0).
-    feed(&mut t, b"\x1b[1;1H");
-    t.reset_damage();
-
-    // RI: reverse index at top of region → scroll region down.
-    feed(&mut t, b"\x1bM");
-
-    let lines = damaged_lines(&mut t);
-    // Scroll region damage covers the region (lines 0..3).
-    for l in 0..4 {
-        assert!(
-            lines.contains(&l),
-            "line {l} in scroll region should be damaged"
-        );
-    }
-}
-
-#[test]
-fn damage_reverse_index_no_scroll() {
-    let mut t = damage_term();
-    feed(&mut t, b"\x1b[3;1H"); // Line 3 (not at top of region).
-    t.reset_damage();
-
-    // RI: reverse index from middle → just moves cursor up.
-    feed(&mut t, b"\x1bM");
-
-    let lines = damaged_lines(&mut t);
-    assert!(lines.contains(&2), "old line 2 should be damaged");
-    assert!(lines.contains(&1), "new line 1 should be damaged");
-}
-
-#[test]
-fn damage_tab_forward() {
-    let mut t = damage_term();
-    t.reset_damage();
-
-    // HT: tab forward.
-    feed(&mut t, b"\t");
-
-    let lines = damaged_lines(&mut t);
-    assert!(lines.contains(&0), "tab forward should damage cursor line");
-}
-
-#[test]
-fn damage_tab_backward() {
-    let mut t = damage_term();
-    // Move cursor to col 9.
-    feed(&mut t, b"\x1b[1;10H");
-    t.reset_damage();
-
-    // CBT: cursor backward tab.
-    feed(&mut t, b"\x1b[Z");
-
-    let lines = damaged_lines(&mut t);
-    assert!(lines.contains(&0), "tab backward should damage cursor line");
-}
-
-#[test]
-fn damage_save_restore_cursor() {
-    let mut t = damage_term();
-    // Move to line 2, save cursor.
-    feed(&mut t, b"\x1b[3;5H"); // Line 3, col 5.
-    feed(&mut t, b"\x1b7"); // DECSC: save cursor.
-
-    // Move to line 5.
-    feed(&mut t, b"\x1b[6;1H");
-    t.reset_damage();
-
-    // DECRC: restore cursor (back to line 2).
-    feed(&mut t, b"\x1b8");
-
-    let lines = damaged_lines(&mut t);
-    assert!(lines.contains(&5), "old cursor line 5 should be damaged");
-    assert!(
-        lines.contains(&2),
-        "restored cursor line 2 should be damaged"
-    );
-}
-
-// Erase operation damage
-
-#[test]
-fn damage_erase_chars() {
-    let mut t = damage_term();
-    feed(&mut t, b"\x1b[3;1H"); // Line 3.
-    t.reset_damage();
-
-    // ECH: erase 5 chars.
-    feed(&mut t, b"\x1b[5X");
-
-    let lines = damaged_lines(&mut t);
-    assert!(lines.contains(&2));
-    assert!(lines.iter().all(|&l| l == 2));
-}
-
-#[test]
-fn damage_delete_chars() {
-    let mut t = damage_term();
-    feed(&mut t, b"\x1b[2;3H"); // Line 2, col 3.
-    t.reset_damage();
-
-    // DCH: delete 3 chars.
-    feed(&mut t, b"\x1b[3P");
-
-    let lines = damaged_lines(&mut t);
-    assert!(lines.contains(&1));
-    assert!(lines.iter().all(|&l| l == 1));
-}
-
-#[test]
-fn damage_clear_line_all() {
-    let mut t = damage_term();
-    feed(&mut t, b"\x1b[4;5H"); // Line 4, col 5.
-    t.reset_damage();
-
-    // EL 2: erase entire line.
-    feed(&mut t, b"\x1b[2K");
-
-    let lines = damaged_lines(&mut t);
-    assert!(lines.contains(&3));
-}
-
-#[test]
-fn damage_clear_line_right() {
-    let mut t = damage_term();
-    feed(&mut t, b"\x1b[2;5H");
-    t.reset_damage();
-
-    // EL 0: erase to right.
-    feed(&mut t, b"\x1b[0K");
-
-    let lines = damaged_lines(&mut t);
-    assert!(lines.contains(&1));
-}
-
-#[test]
-fn damage_clear_line_left() {
-    let mut t = damage_term();
-    feed(&mut t, b"\x1b[3;5H");
-    t.reset_damage();
-
-    // EL 1: erase to left.
-    feed(&mut t, b"\x1b[1K");
-
-    let lines = damaged_lines(&mut t);
-    assert!(lines.contains(&2));
-}
-
-#[test]
-fn damage_clear_screen_below() {
-    let mut t = damage_term();
-    feed(&mut t, b"\x1b[3;1H"); // Cursor on line 3.
-    t.reset_damage();
-
-    // ED 0: erase below (lines 2..5 in 0-based).
-    feed(&mut t, b"\x1b[0J");
-
-    let lines = damaged_lines(&mut t);
-    // Lines 2 through 5 should be damaged.
-    for l in 2..6 {
-        assert!(lines.contains(&l), "line {l} should be damaged");
-    }
-}
-
-#[test]
-fn damage_clear_screen_above() {
-    let mut t = damage_term();
-    feed(&mut t, b"\x1b[4;1H"); // Cursor on line 4.
-    t.reset_damage();
-
-    // ED 1: erase above (lines 0..3 in 0-based).
-    feed(&mut t, b"\x1b[1J");
-
-    let lines = damaged_lines(&mut t);
-    for l in 0..4 {
-        assert!(lines.contains(&l), "line {l} should be damaged");
-    }
-}
-
-#[test]
-fn damage_clear_screen_all() {
-    let mut t = damage_term();
-    t.reset_damage();
-
-    // ED 2: erase entire display.
-    feed(&mut t, b"\x1b[2J");
-
-    let dmg = t.damage();
-    assert!(dmg.is_all_dirty(), "clear screen should mark all dirty");
-    drop(dmg);
-}
-
-// Scroll operations
-
-#[test]
-fn damage_scroll_up_csi() {
-    let mut t = damage_term();
-    t.reset_damage();
-
-    // SU: scroll up 2 lines.
-    feed(&mut t, b"\x1b[2S");
-
-    let dmg = t.damage();
-    // Full-screen scroll marks all dirty via mark_range(0..lines).
-    assert!(dmg.is_all_dirty());
-    drop(dmg);
-}
-
-#[test]
-fn damage_scroll_down_csi() {
-    let mut t = damage_term();
-    t.reset_damage();
-
-    // SD: scroll down 1 line.
-    feed(&mut t, b"\x1b[1T");
-
-    let dmg = t.damage();
-    assert!(dmg.is_all_dirty());
-    drop(dmg);
-}
-
-#[test]
-fn damage_scroll_up_in_region() {
-    let mut t = damage_term();
-    // Set scroll region to lines 2..5 (1-based: 2..5).
-    feed(&mut t, b"\x1b[2;5r");
-    t.reset_damage();
-
-    // SU: scroll up 1.
-    feed(&mut t, b"\x1b[1S");
-
-    let lines = damaged_lines(&mut t);
-    // Lines 1..4 (0-based) in the scroll region should be damaged.
-    for l in 1..5 {
-        assert!(
-            lines.contains(&l),
-            "line {l} in scroll region should be damaged"
-        );
-    }
-    // Lines outside the region should not be damaged.
-    assert!(
-        !lines.contains(&0),
-        "line 0 above region should not be damaged"
-    );
-    assert!(
-        !lines.contains(&5),
-        "line 5 below region should not be damaged"
-    );
-}
-
-#[test]
-fn damage_insert_lines() {
-    let mut t = damage_term();
-    feed(&mut t, b"\x1b[3;1H"); // Cursor on line 3.
-    t.reset_damage();
-
-    // IL: insert 2 blank lines at cursor.
-    feed(&mut t, b"\x1b[2L");
-
-    let lines = damaged_lines(&mut t);
-    // Lines from cursor (2) through bottom of scroll region should be damaged.
-    for l in 2..6 {
-        assert!(
-            lines.contains(&l),
-            "line {l} should be damaged by insert_lines"
-        );
-    }
-}
-
-#[test]
-fn damage_delete_lines() {
-    let mut t = damage_term();
-    feed(&mut t, b"\x1b[2;1H"); // Cursor on line 2.
-    t.reset_damage();
-
-    // DL: delete 1 line at cursor.
-    feed(&mut t, b"\x1b[1M");
-
-    let lines = damaged_lines(&mut t);
-    // Lines from cursor (1) through bottom should be damaged.
-    for l in 1..6 {
-        assert!(
-            lines.contains(&l),
-            "line {l} should be damaged by delete_lines"
-        );
-    }
-}
-
-// Full damage triggers
-
-#[test]
-fn damage_palette_set_color_marks_all_dirty() {
-    let mut t = damage_term();
-
-    // OSC 4;1;rgb:ff/00/00 ST — set palette index 1 to red.
-    feed(&mut t, b"\x1b]4;1;rgb:ff/00/00\x1b\\");
-
-    let dmg = t.damage();
-    assert!(dmg.is_all_dirty(), "palette change should mark all dirty");
-    drop(dmg);
-}
-
-#[test]
-fn damage_palette_reset_color_marks_all_dirty() {
-    let mut t = damage_term();
-
-    // OSC 104;1 ST — reset palette index 1.
-    feed(&mut t, b"\x1b]104;1\x1b\\");
-
-    let dmg = t.damage();
-    assert!(dmg.is_all_dirty(), "palette reset should mark all dirty");
-    drop(dmg);
-}
-
-#[test]
-fn damage_resize_marks_all_dirty() {
-    let mut t = damage_term();
-
-    // DirtyTracker::resize marks all dirty.
-    t.grid_mut().dirty_mut().resize(8, 80);
-
-    let dmg = t.damage();
-    assert!(dmg.is_all_dirty(), "resize should mark all dirty");
-    drop(dmg);
-}
-
-#[test]
-fn damage_scroll_display_marks_all_dirty() {
-    let mut t = damage_term();
-    // Generate some scrollback.
-    feed(&mut t, b"\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n");
-    t.reset_damage();
-
-    // Scroll display back.
-    t.grid_mut().scroll_display(2);
-
-    let dmg = t.damage();
-    assert!(dmg.is_all_dirty(), "scroll_display should mark all dirty");
-    drop(dmg);
-}
-
-// Edge cases
-
-#[test]
-fn damage_multiple_writes_same_line_single_entry() {
-    let mut t = damage_term();
-
-    // Write several chars on line 0.
-    feed(&mut t, b"ABCDE");
-
-    let dmg: Vec<_> = t.damage().collect();
-    let line0_count = dmg.iter().filter(|d| d.line == 0).count();
-    assert_eq!(line0_count, 1, "same line should appear once in damage");
-}
-
-#[test]
-fn damage_writes_different_lines_separate_entries() {
-    let mut t = damage_term();
-
-    // Write on line 0 then jump to line 3.
-    feed(&mut t, b"A\x1b[4;1HB");
-
-    let lines = damaged_lines(&mut t);
-    assert!(lines.contains(&0), "line 0 should be damaged");
-    assert!(lines.contains(&3), "line 3 should be damaged");
-}
-
-#[test]
-fn damage_wide_char_marks_line() {
-    let mut t = damage_term();
-
-    // Write a CJK character (width 2).
-    feed(&mut t, "世".as_bytes());
-
-    let lines = damaged_lines(&mut t);
-    assert!(lines.contains(&0));
-}
-
-#[test]
-fn damage_combining_mark_marks_line() {
-    let mut t = damage_term();
-    feed(&mut t, b"e");
-    t.reset_damage();
-
-    // Combining acute accent on existing char.
-    feed(&mut t, "\u{0301}".as_bytes());
-
-    let lines = damaged_lines(&mut t);
-    assert!(lines.contains(&0), "combining mark should damage its line");
-}
-
-#[test]
-fn damage_insert_blank_chars() {
-    let mut t = damage_term();
-    feed(&mut t, b"\x1b[2;3H"); // Line 2, col 3.
-    t.reset_damage();
-
-    // ICH: insert 2 blank chars.
-    feed(&mut t, b"\x1b[2@");
-
-    let lines = damaged_lines(&mut t);
-    assert!(lines.contains(&1));
-}
-
-#[test]
-fn damage_newline_cr_plus_lf() {
-    let mut t = damage_term();
-    feed(&mut t, b"\x1b[3;5H"); // Line 3, col 5.
-    t.reset_damage();
-
-    // CR + LF.
-    feed(&mut t, b"\r\n");
-
-    let lines = damaged_lines(&mut t);
-    assert!(lines.contains(&2), "CR should damage line 2");
-    assert!(lines.contains(&3), "LF should damage line 3");
-}
-
-#[test]
-fn damage_set_scroll_region_damages_via_goto() {
-    let mut t = damage_term();
-    feed(&mut t, b"\x1b[3;1H"); // Start on line 3.
-    t.reset_damage();
-
-    // DECSTBM resets cursor to origin, which damages old + new lines.
-    feed(&mut t, b"\x1b[2;5r");
-
-    let lines = damaged_lines(&mut t);
-    assert!(lines.contains(&0), "cursor-to-origin damages line 0");
-    assert!(lines.contains(&2), "old cursor line 2 should be damaged");
-}
-
-// --- Theme integration ---
+// ── Theme integration ──
 
 #[test]
 fn new_with_dark_theme_uses_dark_palette() {
@@ -810,7 +190,6 @@ fn set_theme_same_theme_is_noop() {
 #[test]
 fn ris_resets_to_current_theme() {
     let mut t = Term::new(4, 10, 0, Theme::Light, VoidEffectSink);
-    // Verify light palette is active.
     assert_eq!(
         t.palette().background(),
         Rgb {
@@ -820,7 +199,6 @@ fn ris_resets_to_current_theme() {
         }
     );
 
-    // RIS (ESC c) should reset to the stored theme (Light), not Dark.
     feed(&mut t, b"\x1bc");
 
     assert_eq!(t.theme(), Theme::Light);
@@ -842,7 +220,7 @@ fn ris_resets_to_current_theme() {
     );
 }
 
-// Selection dirty flag tests.
+// ── Selection dirty flag ──
 
 #[test]
 fn selection_dirty_initially_false() {
@@ -870,7 +248,6 @@ fn selection_dirty_cleared_by_clear_selection_dirty() {
 fn selection_dirty_set_by_erase_display() {
     let mut term = make_term();
     term.clear_selection_dirty();
-    // ED 2 — erase entire display.
     feed(&mut term, b"\x1b[2J");
     assert!(term.is_selection_dirty());
 }
@@ -879,7 +256,6 @@ fn selection_dirty_set_by_erase_display() {
 fn selection_dirty_set_by_erase_line() {
     let mut term = make_term();
     term.clear_selection_dirty();
-    // EL 0 — erase from cursor to end of line.
     feed(&mut term, b"\x1b[K");
     assert!(term.is_selection_dirty());
 }
@@ -888,7 +264,6 @@ fn selection_dirty_set_by_erase_line() {
 fn selection_dirty_set_by_insert_blank() {
     let mut term = make_term();
     term.clear_selection_dirty();
-    // ICH — insert 1 blank character.
     feed(&mut term, b"\x1b[@");
     assert!(term.is_selection_dirty());
 }
@@ -897,7 +272,6 @@ fn selection_dirty_set_by_insert_blank() {
 fn selection_dirty_set_by_delete_chars() {
     let mut term = make_term();
     term.clear_selection_dirty();
-    // DCH — delete 1 character.
     feed(&mut term, b"\x1b[P");
     assert!(term.is_selection_dirty());
 }
@@ -906,7 +280,6 @@ fn selection_dirty_set_by_delete_chars() {
 fn selection_dirty_set_by_scroll_up() {
     let mut term = make_term();
     term.clear_selection_dirty();
-    // SU — scroll up 1 line.
     feed(&mut term, b"\x1b[S");
     assert!(term.is_selection_dirty());
 }
@@ -915,7 +288,6 @@ fn selection_dirty_set_by_scroll_up() {
 fn selection_dirty_set_by_scroll_down() {
     let mut term = make_term();
     term.clear_selection_dirty();
-    // SD — scroll down 1 line.
     feed(&mut term, b"\x1b[T");
     assert!(term.is_selection_dirty());
 }
@@ -924,7 +296,6 @@ fn selection_dirty_set_by_scroll_down() {
 fn selection_dirty_set_by_insert_lines() {
     let mut term = make_term();
     term.clear_selection_dirty();
-    // IL — insert 1 line.
     feed(&mut term, b"\x1b[L");
     assert!(term.is_selection_dirty());
 }
@@ -933,7 +304,6 @@ fn selection_dirty_set_by_insert_lines() {
 fn selection_dirty_set_by_delete_lines() {
     let mut term = make_term();
     term.clear_selection_dirty();
-    // DL — delete 1 line.
     feed(&mut term, b"\x1b[M");
     assert!(term.is_selection_dirty());
 }
@@ -942,7 +312,6 @@ fn selection_dirty_set_by_delete_lines() {
 fn selection_dirty_set_by_erase_chars() {
     let mut term = make_term();
     term.clear_selection_dirty();
-    // ECH — erase 1 character.
     feed(&mut term, b"\x1b[X");
     assert!(term.is_selection_dirty());
 }
@@ -959,7 +328,6 @@ fn selection_dirty_set_by_linefeed() {
 fn selection_dirty_set_by_newline() {
     let mut term = make_term();
     term.clear_selection_dirty();
-    // NEL — next line.
     feed(&mut term, b"\x1bE");
     assert!(term.is_selection_dirty());
 }
@@ -968,7 +336,6 @@ fn selection_dirty_set_by_newline() {
 fn selection_dirty_set_by_reverse_index() {
     let mut term = make_term();
     term.clear_selection_dirty();
-    // RI — reverse index.
     feed(&mut term, b"\x1bM");
     assert!(term.is_selection_dirty());
 }
@@ -977,7 +344,6 @@ fn selection_dirty_set_by_reverse_index() {
 fn selection_dirty_set_by_reset() {
     let mut term = make_term();
     term.clear_selection_dirty();
-    // RIS — full reset.
     feed(&mut term, b"\x1bc");
     assert!(term.is_selection_dirty());
 }
@@ -986,7 +352,6 @@ fn selection_dirty_set_by_reset() {
 fn selection_dirty_not_set_by_cursor_movement() {
     let mut term = make_term();
     term.clear_selection_dirty();
-    // CUF — move cursor forward 1.
     feed(&mut term, b"\x1b[C");
     assert!(!term.is_selection_dirty());
 }
@@ -995,7 +360,6 @@ fn selection_dirty_not_set_by_cursor_movement() {
 fn selection_dirty_not_set_by_sgr() {
     let mut term = make_term();
     term.clear_selection_dirty();
-    // SGR bold.
     feed(&mut term, b"\x1b[1m");
     assert!(!term.is_selection_dirty());
 }
@@ -1020,7 +384,6 @@ fn selection_dirty_not_set_by_carriage_return() {
 fn selection_dirty_not_set_by_cup_goto() {
     let mut term = make_term();
     term.clear_selection_dirty();
-    // CUP — move cursor to row 5, col 10.
     feed(&mut term, b"\x1b[5;10H");
     assert!(!term.is_selection_dirty());
 }
@@ -1028,10 +391,8 @@ fn selection_dirty_not_set_by_cup_goto() {
 #[test]
 fn selection_dirty_not_set_by_cursor_up() {
     let mut term = make_term();
-    // Move cursor down first so up has room.
     feed(&mut term, b"\x1b[10B");
     term.clear_selection_dirty();
-    // CUU — move cursor up.
     feed(&mut term, b"\x1b[A");
     assert!(!term.is_selection_dirty());
 }
@@ -1040,7 +401,6 @@ fn selection_dirty_not_set_by_cursor_up() {
 fn selection_dirty_not_set_by_cursor_down() {
     let mut term = make_term();
     term.clear_selection_dirty();
-    // CUD — move cursor down.
     feed(&mut term, b"\x1b[B");
     assert!(!term.is_selection_dirty());
 }
@@ -1048,10 +408,8 @@ fn selection_dirty_not_set_by_cursor_down() {
 #[test]
 fn selection_dirty_not_set_by_cursor_backward() {
     let mut term = make_term();
-    // Move cursor right first so backward has room.
     feed(&mut term, b"\x1b[10C");
     term.clear_selection_dirty();
-    // CUB — move cursor backward.
     feed(&mut term, b"\x1b[D");
     assert!(!term.is_selection_dirty());
 }
@@ -1060,7 +418,6 @@ fn selection_dirty_not_set_by_cursor_backward() {
 fn selection_dirty_not_set_by_save_restore_cursor() {
     let mut term = make_term();
     term.clear_selection_dirty();
-    // DECSC + DECRC — save then restore cursor.
     feed(&mut term, b"\x1b7\x1b8");
     assert!(!term.is_selection_dirty());
 }
@@ -1069,7 +426,6 @@ fn selection_dirty_not_set_by_save_restore_cursor() {
 fn selection_dirty_not_set_by_mode_set() {
     let mut term = make_term();
     term.clear_selection_dirty();
-    // DECSET 25 — show cursor.
     feed(&mut term, b"\x1b[?25h");
     assert!(!term.is_selection_dirty());
 }
@@ -1078,7 +434,6 @@ fn selection_dirty_not_set_by_mode_set() {
 fn selection_dirty_set_by_erase_display_below() {
     let mut term = make_term();
     term.clear_selection_dirty();
-    // ED 0 — erase below cursor.
     feed(&mut term, b"\x1b[0J");
     assert!(term.is_selection_dirty());
 }
@@ -1087,7 +442,6 @@ fn selection_dirty_set_by_erase_display_below() {
 fn selection_dirty_set_by_erase_display_above() {
     let mut term = make_term();
     term.clear_selection_dirty();
-    // ED 1 — erase above cursor.
     feed(&mut term, b"\x1b[1J");
     assert!(term.is_selection_dirty());
 }
@@ -1096,7 +450,6 @@ fn selection_dirty_set_by_erase_display_above() {
 fn selection_dirty_set_by_erase_scrollback() {
     let mut term = make_term();
     term.clear_selection_dirty();
-    // ED 3 — erase scrollback.
     feed(&mut term, b"\x1b[3J");
     assert!(term.is_selection_dirty());
 }
@@ -1108,429 +461,11 @@ fn selection_dirty_cleared_then_resets_on_new_output() {
     assert!(term.is_selection_dirty());
     term.clear_selection_dirty();
     assert!(!term.is_selection_dirty());
-    // New output sets the flag again.
     feed(&mut term, b"B");
     assert!(term.is_selection_dirty());
 }
 
-// ── Term::resize integration ────────────────────────────────────────
-
-#[test]
-fn term_resize_changes_both_grids() {
-    let mut term = make_term();
-    assert_eq!(term.grid().lines(), 24);
-    assert_eq!(term.grid().cols(), 80);
-
-    term.resize(10, 40, true);
-
-    // Primary grid (active) resized.
-    assert_eq!(term.grid().lines(), 10);
-    assert_eq!(term.grid().cols(), 40);
-
-    // Switch to alt and verify it too.
-    term.swap_alt();
-    assert_eq!(term.grid().lines(), 10);
-    assert_eq!(term.grid().cols(), 40);
-}
-
-#[test]
-fn term_resize_preserves_content() {
-    let mut term = make_term();
-    // Write "hello" at (0,0) via VTE.
-    feed(&mut term, b"hello");
-
-    term.resize(10, 40, true);
-
-    assert_eq!(term.grid()[Line(0)][Column(0)].ch, 'h');
-    assert_eq!(term.grid()[Line(0)][Column(1)].ch, 'e');
-    assert_eq!(term.grid()[Line(0)][Column(4)].ch, 'o');
-}
-
-#[test]
-fn term_resize_marks_selection_dirty() {
-    let mut term = make_term();
-    term.clear_selection_dirty();
-
-    term.resize(10, 40, true);
-
-    assert!(term.is_selection_dirty());
-}
-
-#[test]
-fn term_resize_marks_all_dirty() {
-    let mut term = make_term();
-    term.grid_mut().dirty_mut().drain().for_each(drop);
-
-    term.resize(10, 40, true);
-
-    assert!(term.grid().dirty().is_all_dirty());
-}
-
-#[test]
-fn term_resize_zero_is_noop() {
-    let mut term = make_term();
-    term.resize(0, 40, true);
-    assert_eq!(term.grid().lines(), 24);
-    assert_eq!(term.grid().cols(), 80);
-
-    term.resize(10, 0, true);
-    assert_eq!(term.grid().lines(), 24);
-    assert_eq!(term.grid().cols(), 80);
-}
-
-#[test]
-fn term_resize_with_vte_wrapped_content() {
-    let mut term = Term::new(5, 10, 100, Theme::default(), VoidEffectSink);
-    // Write 20 chars — fills 10-col row and wraps to next line via VTE handler.
-    feed(&mut term, b"abcdefghijklmnopqrst");
-    // Cursor should be on line 1 after wrap.
-    assert_eq!(term.grid().cursor().line(), 1);
-
-    // Grow to 20 cols — wrapped line should unwrap.
-    term.resize(5, 20, true);
-
-    assert_eq!(term.grid().cols(), 20);
-    // Content should be on one line now.
-    assert_eq!(term.grid()[Line(0)][Column(0)].ch, 'a');
-    assert_eq!(term.grid()[Line(0)][Column(9)].ch, 'j');
-    assert_eq!(term.grid()[Line(0)][Column(10)].ch, 'k');
-    assert_eq!(term.grid()[Line(0)][Column(19)].ch, 't');
-}
-
-// --- CWD short path ---
-
-use super::cwd_short_path;
-
-#[test]
-fn short_path_last_component() {
-    assert_eq!(cwd_short_path("/home/user/projects"), "projects");
-}
-
-#[test]
-fn short_path_root() {
-    assert_eq!(cwd_short_path("/"), "/");
-}
-
-#[test]
-fn short_path_trailing_slash() {
-    assert_eq!(cwd_short_path("/home/user/"), "user");
-}
-
-#[test]
-fn short_path_single_dir() {
-    assert_eq!(cwd_short_path("/tmp"), "tmp");
-}
-
-#[test]
-fn short_path_triple_slash() {
-    assert_eq!(cwd_short_path("///"), "/");
-}
-
-#[test]
-fn short_path_double_slash() {
-    assert_eq!(cwd_short_path("//"), "/");
-}
-
-// --- Prompt marker tests ---
-
-#[test]
-fn mark_prompt_row_creates_marker_with_prompt_row_only() {
-    let mut term = make_term();
-    term.set_prompt_mark_pending(true);
-    term.mark_prompt_row();
-
-    let markers = term.prompt_markers();
-    assert_eq!(markers.len(), 1);
-    assert!(markers[0].command.is_none());
-    assert!(markers[0].output.is_none());
-}
-
-#[test]
-fn mark_command_start_fills_last_marker() {
-    let mut term = make_term();
-    // Mark prompt first.
-    term.set_prompt_mark_pending(true);
-    term.mark_prompt_row();
-    // Mark command start.
-    term.set_command_start_mark_pending(true);
-    term.mark_command_start_row();
-
-    let markers = term.prompt_markers();
-    assert_eq!(markers.len(), 1);
-    assert!(markers[0].command.is_some());
-    assert!(markers[0].output.is_none());
-}
-
-#[test]
-fn mark_output_start_fills_last_marker() {
-    let mut term = make_term();
-    term.set_prompt_mark_pending(true);
-    term.mark_prompt_row();
-    term.set_output_start_mark_pending(true);
-    term.mark_output_start_row();
-
-    let markers = term.prompt_markers();
-    assert_eq!(markers.len(), 1);
-    assert!(markers[0].output.is_some());
-}
-
-#[test]
-fn mark_prompt_row_avoids_duplicates() {
-    let mut term = make_term();
-    term.set_prompt_mark_pending(true);
-    term.mark_prompt_row();
-    // Same row, should not create a duplicate.
-    term.set_prompt_mark_pending(true);
-    term.mark_prompt_row();
-
-    assert_eq!(term.prompt_markers().len(), 1);
-}
-
-#[test]
-fn prune_prompt_markers_removes_evicted() {
-    let mut term = make_term();
-    // Push 3 lines to scrollback so cursor moves.
-    feed(&mut term, b"\r\n\r\n\r\n");
-    term.set_prompt_mark_pending(true);
-    term.mark_prompt_row();
-
-    let row_before = term.prompt_markers()[0].prompt;
-    assert!(row_before > 0, "prompt row should be > 0 after newlines");
-
-    // Simulate evicting 1 row — all row indices shift down by 1.
-    term.prune_prompt_markers(1);
-
-    let markers = term.prompt_markers();
-    assert_eq!(markers.len(), 1);
-    assert_eq!(markers[0].prompt, row_before - 1);
-}
-
-#[test]
-fn prune_prompt_markers_removes_fully_evicted() {
-    let mut term = make_term();
-    // Marker at the very first row (row 0 in scrollback space).
-    term.set_prompt_mark_pending(true);
-    term.mark_prompt_row();
-
-    // Evict beyond that row.
-    term.prune_prompt_markers(100);
-
-    assert!(term.prompt_markers().is_empty());
-}
-
-#[test]
-fn prune_prompt_markers_adjusts_all_fields() {
-    let mut term = make_term();
-    // Push a few lines.
-    feed(&mut term, b"\r\n\r\n\r\n\r\n\r\n");
-    term.set_prompt_mark_pending(true);
-    term.mark_prompt_row();
-    // Move cursor down then mark B.
-    feed(&mut term, b"\r\n");
-    term.set_command_start_mark_pending(true);
-    term.mark_command_start_row();
-    // Move cursor down then mark C.
-    feed(&mut term, b"\r\n");
-    term.set_output_start_mark_pending(true);
-    term.mark_output_start_row();
-
-    let ps = term.prompt_markers()[0].prompt;
-    let cs = term.prompt_markers()[0].command.unwrap();
-    let os = term.prompt_markers()[0].output.unwrap();
-
-    // Evict 2 rows.
-    term.prune_prompt_markers(2);
-
-    let m = &term.prompt_markers()[0];
-    assert_eq!(m.prompt, ps - 2);
-    assert_eq!(m.command, Some(cs - 2));
-    assert_eq!(m.output, Some(os - 2));
-}
-
-#[test]
-fn command_output_range_returns_correct_bounds() {
-    let mut term = make_term();
-    // Simulate a prompt lifecycle: A at row 0, B at row 0, C at row 1.
-    term.set_prompt_mark_pending(true);
-    term.mark_prompt_row();
-    term.set_command_start_mark_pending(true);
-    term.mark_command_start_row();
-    feed(&mut term, b"\r\n");
-    term.set_output_start_mark_pending(true);
-    term.mark_output_start_row();
-
-    let output_start = term.prompt_markers()[0].output.unwrap();
-    let range = term.command_output_range(0);
-    assert!(range.is_some());
-    let (start, end) = range.unwrap();
-    assert_eq!(start, output_start);
-    // Last marker: end should be the cursor row.
-    let cursor_row = term.grid().scrollback().len() + term.grid().cursor().line();
-    assert_eq!(end, cursor_row);
-}
-
-#[test]
-fn command_output_range_bounded_by_next_prompt() {
-    let mut term = make_term();
-    // First prompt lifecycle.
-    term.set_prompt_mark_pending(true);
-    term.mark_prompt_row();
-    term.set_command_start_mark_pending(true);
-    term.mark_command_start_row();
-    feed(&mut term, b"\r\n");
-    term.set_output_start_mark_pending(true);
-    term.mark_output_start_row();
-
-    // Push more lines and create a second prompt.
-    feed(&mut term, b"\r\n\r\n\r\n");
-    term.set_prompt_mark_pending(true);
-    term.mark_prompt_row();
-
-    let second_prompt_start = term.prompt_markers()[1].prompt;
-    let range = term.command_output_range(0).unwrap();
-    assert_eq!(range.1, second_prompt_start - 1);
-}
-
-#[test]
-fn command_input_range_returns_correct_bounds() {
-    let mut term = make_term();
-    term.set_prompt_mark_pending(true);
-    term.mark_prompt_row();
-    term.set_command_start_mark_pending(true);
-    term.mark_command_start_row();
-    feed(&mut term, b"\r\n");
-    term.set_output_start_mark_pending(true);
-    term.mark_output_start_row();
-
-    let cmd_start = term.prompt_markers()[0].command.unwrap();
-    let output_start = term.prompt_markers()[0].output.unwrap();
-    let range = term.command_input_range(0);
-    assert!(range.is_some());
-    let (start, end) = range.unwrap();
-    assert_eq!(start, cmd_start);
-    assert_eq!(end, output_start - 1);
-}
-
-#[test]
-fn range_returns_none_when_no_markers() {
-    let term = make_term();
-    assert!(term.command_output_range(0).is_none());
-    assert!(term.command_input_range(0).is_none());
-}
-
-#[test]
-fn range_returns_none_when_output_start_missing() {
-    let mut term = make_term();
-    term.set_prompt_mark_pending(true);
-    term.mark_prompt_row();
-    // No C marker.
-    assert!(term.command_output_range(0).is_none());
-}
-
-#[test]
-fn range_returns_none_when_command_start_missing() {
-    let mut term = make_term();
-    term.set_prompt_mark_pending(true);
-    term.mark_prompt_row();
-    // No B marker.
-    assert!(term.command_input_range(0).is_none());
-}
-
-#[test]
-fn scroll_to_previous_prompt_scrolls_viewport() {
-    let mut term = Term::new(10, 80, 1000, Theme::default(), VoidEffectSink);
-    // Fill scrollback: 30 lines.
-    for _ in 0..30 {
-        feed(&mut term, b"\r\n");
-    }
-    // Mark a prompt partway through.
-    // We need to go back and mark at a known position.
-    // Instead, mark at current position (row 30).
-    term.set_prompt_mark_pending(true);
-    term.mark_prompt_row();
-
-    // Push more lines.
-    for _ in 0..20 {
-        feed(&mut term, b"\r\n");
-    }
-
-    // Viewport is at bottom. scroll_to_previous_prompt should scroll.
-    let scrolled = term.scroll_to_previous_prompt();
-    assert!(scrolled);
-    assert!(term.grid().display_offset() > 0);
-}
-
-#[test]
-fn scroll_to_next_prompt_scrolls_viewport() {
-    let mut term = Term::new(10, 80, 1000, Theme::default(), VoidEffectSink);
-    // Fill scrollback: 30 lines.
-    for _ in 0..30 {
-        feed(&mut term, b"\r\n");
-    }
-    term.set_prompt_mark_pending(true);
-    term.mark_prompt_row();
-
-    // Scroll all the way back.
-    term.grid_mut().scroll_display(isize::MAX);
-
-    // Now scroll_to_next_prompt should find the marker.
-    let scrolled = term.scroll_to_next_prompt();
-    assert!(scrolled);
-}
-
-// --- RIS clears shell integration state ---
-
-#[test]
-fn ris_clears_prompt_state() {
-    let mut term = make_term();
-    term.set_prompt_mark_pending(true);
-    term.mark_prompt_row();
-    term.set_command_start_mark_pending(true);
-    term.mark_command_start_row();
-
-    assert_eq!(term.prompt_markers().len(), 1);
-    assert_eq!(term.prompt_state(), super::PromptState::None);
-
-    // Manually set prompt state to simulate mid-cycle.
-    term.set_prompt_state(super::PromptState::CommandStart);
-
-    // RIS should clear everything.
-    feed(&mut term, b"\x1bc");
-
-    assert_eq!(term.prompt_state(), super::PromptState::None);
-    assert!(term.prompt_markers().is_empty());
-    assert!(!term.prompt_mark_pending());
-    assert!(!term.command_start_mark_pending());
-    assert!(!term.output_start_mark_pending());
-}
-
-#[test]
-fn ris_clears_cwd_and_title_state() {
-    let mut term = make_term();
-    term.set_cwd(Some("/home/user".to_string()));
-    term.set_has_explicit_title(true);
-    term.mark_title_dirty();
-
-    feed(&mut term, b"\x1bc");
-
-    assert!(term.cwd().is_none());
-    assert!(!term.has_explicit_title());
-    assert_eq!(term.effective_title(), "");
-}
-
-#[test]
-fn ris_clears_command_timing() {
-    let mut term = make_term();
-    term.set_command_start(std::time::Instant::now());
-    let _ = term.finish_command(None);
-
-    // Verify we had a duration.
-    assert!(term.last_command_duration().is_some());
-
-    feed(&mut term, b"\x1bc");
-
-    assert!(term.last_command_duration().is_none());
-}
+// ── RIS effect emission + drain idempotency ──
 
 #[test]
 fn ris_emits_clear_pending_notifications_effect() {
@@ -1544,7 +479,6 @@ fn ris_emits_clear_pending_notifications_effect() {
 
     assert_eq!(drain_desktop_notifications(&term).len(), 1);
 
-    // Push another.
     term.effect_sink()
         .push(Effect::Host(HostEffect::DesktopNotification {
             source: NotificationSource::Osc9,
@@ -1554,13 +488,8 @@ fn ris_emits_clear_pending_notifications_effect() {
 
     feed(&mut term, b"\x1bc");
 
-    // RIS emits `ClearPendingNotifications`, which the local
-    // `drain_desktop_notifications` helper applies as preceding-clear
-    // semantics — every queued notification is dropped.
     assert!(drain_desktop_notifications(&term).is_empty());
 }
-
-// --- Effect drain idempotency ---
 
 #[test]
 fn drain_into_returns_empty_on_second_call() {
@@ -1579,78 +508,19 @@ fn drain_into_returns_empty_on_second_call() {
     assert!(second.is_empty(), "second drain should return empty");
 }
 
-// --- Multiple sequential OSC 133;A ---
-
-#[test]
-fn multiple_prompt_starts_without_completion_create_separate_markers() {
-    let mut term = make_term();
-
-    // First prompt at row 0.
-    term.set_prompt_mark_pending(true);
-    term.mark_prompt_row();
-
-    // Move cursor down.
-    feed(&mut term, b"\r\n\r\n");
-
-    // Second prompt at a different row (simulates Ctrl-C re-prompt).
-    term.set_prompt_mark_pending(true);
-    term.mark_prompt_row();
-
-    // Should have two separate markers.
-    assert_eq!(term.prompt_markers().len(), 2);
-    assert!(term.prompt_markers()[0].prompt < term.prompt_markers()[1].prompt);
-    // First marker has no command/output (incomplete).
-    assert!(term.prompt_markers()[0].command.is_none());
-    assert!(term.prompt_markers()[0].output.is_none());
-}
-
-// --- Prompt marker at scrollback boundary ---
-
-#[test]
-fn prune_prompt_markers_zero_eviction_is_noop() {
-    let mut term = make_term();
-    term.set_prompt_mark_pending(true);
-    term.mark_prompt_row();
-
-    let before = term.prompt_markers().len();
-    term.prune_prompt_markers(0);
-    assert_eq!(term.prompt_markers().len(), before);
-}
-
-#[test]
-fn prune_prompt_markers_exact_boundary() {
-    let mut term = make_term();
-    // Marker at row 0.
-    term.set_prompt_mark_pending(true);
-    term.mark_prompt_row();
-
-    // Evict exactly 1 row — marker at row 0 is below threshold (0 < 1).
-    term.prune_prompt_markers(1);
-    assert!(
-        term.prompt_markers().is_empty(),
-        "marker at row 0 should be evicted when evicted=1"
-    );
-}
-
-// --- Scrollback preservation during region scroll ---
+// ── Scroll region scrollback preservation (Term-level) ──
 
 #[test]
 fn scroll_region_preserves_scrollback_content() {
-    // Small terminal with scrollback to verify content survives region scrolls.
     let mut term = Term::new(5, 10, 100, Theme::default(), VoidEffectSink);
 
-    // Fill all 5 lines.
     feed(&mut term, b"Line 0\r\nLine 1\r\nLine 2\r\nLine 3\r\nLine 4");
 
-    // Set scroll region to lines 1-3 (0-indexed: rows 1..4).
-    // DECSTBM uses 1-based params.
     feed(&mut term, b"\x1b[2;4r");
 
-    // Move cursor into the scroll region and scroll up (SU).
-    feed(&mut term, b"\x1b[2;1H"); // Move to row 2, col 1.
-    feed(&mut term, b"\x1b[S"); // Scroll up 1 line in region.
+    feed(&mut term, b"\x1b[2;1H");
+    feed(&mut term, b"\x1b[S");
 
-    // Line 0 (outside region) should be unchanged.
     let grid = term.grid();
     assert_eq!(
         grid[Line(0)][Column(0)].ch,
@@ -1658,7 +528,6 @@ fn scroll_region_preserves_scrollback_content() {
         "line 0 outside region should be preserved"
     );
 
-    // Line 4 (outside region) should also be preserved.
     assert_eq!(
         grid[Line(4)][Column(0)].ch,
         'L',
@@ -1670,23 +539,20 @@ fn scroll_region_preserves_scrollback_content() {
 fn scrollback_survives_region_scroll_down() {
     let mut term = Term::new(5, 10, 100, Theme::default(), VoidEffectSink);
 
-    // Write content that pushes into scrollback.
     for i in 0..8u8 {
         if i > 0 {
             feed(&mut term, b"\r\n");
         }
-        feed(&mut term, &[b'A' + i]); // A through H
+        feed(&mut term, &[b'A' + i]);
     }
 
     let sb_before = term.grid().scrollback().len();
     assert!(sb_before > 0, "should have scrollback content");
 
-    // Set scroll region and scroll within it.
     feed(&mut term, b"\x1b[2;4r");
     feed(&mut term, b"\x1b[2;1H");
-    feed(&mut term, b"\x1b[T"); // Scroll down in region.
+    feed(&mut term, b"\x1b[T");
 
-    // Scrollback should still have the same number of lines.
     assert_eq!(
         term.grid().scrollback().len(),
         sb_before,
@@ -1694,798 +560,7 @@ fn scrollback_survives_region_scroll_down() {
     );
 }
 
-// --- Prompt markers surviving subsequent output ---
-
-#[test]
-fn prompt_markers_survive_subsequent_output() {
-    let mut term = make_term();
-
-    // Mark a prompt at row 0.
-    term.set_prompt_mark_pending(true);
-    term.mark_prompt_row();
-    assert_eq!(term.prompt_markers().len(), 1);
-
-    // Write more output on subsequent lines.
-    feed(&mut term, b"\r\nhello world\r\nmore output\r\n");
-
-    // Markers should still be present.
-    assert_eq!(
-        term.prompt_markers().len(),
-        1,
-        "prompt marker should survive subsequent output"
-    );
-}
-
-#[test]
-fn prompt_markers_survive_scrolling() {
-    // Small terminal with scrollback.
-    let mut term = Term::new(5, 20, 100, Theme::default(), VoidEffectSink);
-
-    // Mark a prompt.
-    term.set_prompt_mark_pending(true);
-    term.mark_prompt_row();
-
-    // Write enough lines to cause scrolling.
-    for i in 0..10 {
-        let msg = format!("\r\nline {i}");
-        feed(&mut term, msg.as_bytes());
-    }
-
-    // Markers should still be present (not evicted — within scrollback capacity).
-    assert_eq!(
-        term.prompt_markers().len(),
-        1,
-        "prompt marker should survive scrolling within scrollback capacity"
-    );
-}
-
-#[test]
-fn prompt_markers_evicted_by_manual_prune() {
-    let mut term = Term::new(3, 10, 5, Theme::default(), VoidEffectSink);
-
-    // Mark a prompt at row 0 (absolute row 0).
-    term.set_prompt_mark_pending(true);
-    term.mark_prompt_row();
-    assert_eq!(term.prompt_markers().len(), 1);
-
-    // Simulate scrollback eviction of 5 rows — marker at row 0 is below
-    // the eviction threshold and should be pruned.
-    term.prune_prompt_markers(5);
-    assert!(
-        term.prompt_markers().is_empty(),
-        "prompt marker at row 0 should be evicted when 5 rows are pruned"
-    );
-}
-
-// ── Image scrolling ──
-
-use crate::grid::StableRowIndex;
-use crate::image::{ImageData, ImageFormat, ImageId, ImagePlacement, ImageSource, PlacementSizing};
-use std::sync::Arc;
-
-/// Store a 2×2 RGBA test image and place it at the given cell row/col.
-fn place_test_image(
-    term: &mut Term<VoidEffectSink>,
-    stable_row: u64,
-    col: usize,
-    rows: usize,
-    cols: usize,
-) -> ImageId {
-    let id = term.image_cache_mut().next_image_id();
-    let data = ImageData {
-        id,
-        width: 2,
-        height: 2,
-        data: Arc::new(vec![255; 16]), // 2×2 RGBA
-        format: ImageFormat::Rgba,
-        source: ImageSource::Direct,
-        last_accessed: 0,
-        image_number: None,
-    };
-    term.image_cache_mut().store(data).unwrap();
-    term.image_cache_mut().place(ImagePlacement {
-        image_id: id,
-        placement_id: None,
-        source_x: 0,
-        source_y: 0,
-        source_w: 0,
-        source_h: 0,
-        cell_col: col,
-        cell_row: StableRowIndex(stable_row),
-        cols,
-        rows,
-        z_index: 0,
-        cell_x_offset: 0,
-        cell_y_offset: 0,
-        sizing: PlacementSizing::CellCount,
-    });
-    id
-}
-
-#[test]
-fn image_scrolls_with_display_offset() {
-    // 4 lines, 10 cols, 10 scrollback.
-    let mut term = Term::new(4, 10, 10, Theme::default(), VoidEffectSink);
-    term.set_cell_dimensions(8, 16);
-
-    // Place image at stable row 0 (first visible line at start).
-    place_test_image(&mut term, 0, 0, 1, 2);
-
-    // Before scrolling: image at viewport Y = 0.
-    let mut out = RenderableContent::default();
-    term.renderable_content_into(&mut out);
-    assert_eq!(out.images.len(), 1, "image should be visible");
-    assert_eq!(out.images[0].viewport_y, 0.0);
-
-    // Scroll down by writing enough lines to push content into scrollback.
-    feed(&mut term, b"\n\n\n\n"); // 4 newlines push row 0 into scrollback
-    term.renderable_content_into(&mut out);
-    // Image at stable row 0 is now above the viewport — not visible.
-    assert!(out.images.is_empty(), "image should scroll out of viewport");
-
-    // Scroll back up (set display_offset to bring old rows into view).
-    term.grid_mut().scroll_display(4);
-    term.renderable_content_into(&mut out);
-    assert_eq!(out.images.len(), 1, "image visible after scroll back");
-    assert_eq!(out.images[0].viewport_y, 0.0, "image at top of viewport");
-}
-
-#[test]
-fn image_partially_above_viewport_has_negative_y() {
-    // 4 lines, 10 cols, 20 scrollback.
-    let mut term = Term::new(4, 10, 20, Theme::default(), VoidEffectSink);
-    term.set_cell_dimensions(8, 16);
-
-    // Place a 3-row tall image at stable row 0.
-    place_test_image(&mut term, 0, 0, 3, 2);
-
-    // Feed 6 newlines: 3 to reach bottom, 3 more to scroll 3 rows into scrollback.
-    feed(&mut term, b"\n\n\n\n\n\n");
-
-    // Scroll back 2 rows: display_offset=2, stable_row_base = 0+3-2 = 1.
-    // Image at stable row 0 starts 1 row ABOVE the viewport.
-    term.grid_mut().scroll_display(2);
-    let mut out = RenderableContent::default();
-    term.renderable_content_into(&mut out);
-
-    // Image spans stable rows 0-2, viewport starts at stable row 1 →
-    // visible (bottom portion), but top is above viewport.
-    assert_eq!(out.images.len(), 1, "multi-row image partially visible");
-    assert!(
-        out.images[0].viewport_y < 0.0,
-        "image starting above viewport should have negative Y, got {}",
-        out.images[0].viewport_y,
-    );
-    assert_eq!(out.images[0].viewport_y, -16.0);
-}
-
-#[test]
-fn image_at_viewport_bottom_visible() {
-    let mut term = Term::new(4, 10, 10, Theme::default(), VoidEffectSink);
-    term.set_cell_dimensions(8, 16);
-
-    // Place image at stable row 3 (last visible line).
-    place_test_image(&mut term, 3, 0, 1, 2);
-
-    let mut out = RenderableContent::default();
-    term.renderable_content_into(&mut out);
-    assert_eq!(out.images.len(), 1);
-    // Row 3 * 16px = 48.0.
-    assert_eq!(out.images[0].viewport_y, 48.0);
-}
-
-// Alt screen on-demand allocation tests.
-
-#[test]
-fn alt_grid_not_allocated_initially() {
-    let term = make_term();
-    assert!(
-        term.alt_grid.is_none(),
-        "alt grid should be None on fresh terminal"
-    );
-    assert!(
-        term.alt_image_cache.is_none(),
-        "alt image cache should be None on fresh terminal"
-    );
-}
-
-#[test]
-fn alt_grid_allocated_on_first_entry() {
-    let mut term = make_term();
-    // DECSET 1049: enter alt screen with cursor save.
-    feed(&mut term, b"\x1b[?1049h");
-
-    assert!(
-        term.alt_grid.is_some(),
-        "alt grid should be allocated after entering alt screen"
-    );
-    assert!(
-        term.alt_image_cache.is_some(),
-        "alt image cache should be allocated after entering alt screen"
-    );
-    assert!(term.mode().contains(TermMode::ALT_SCREEN));
-}
-
-#[test]
-fn alt_grid_survives_exit() {
-    let mut term = make_term();
-    // Enter then exit alt screen.
-    feed(&mut term, b"\x1b[?1049h");
-    feed(&mut term, b"\x1b[?1049l");
-
-    // Alt grid stays allocated for fast re-entry.
-    assert!(term.alt_grid.is_some());
-    assert!(!term.mode().contains(TermMode::ALT_SCREEN));
-}
-
-// Graceful fallback tests: ALT_SCREEN set without alt_grid allocated.
-//
-// In debug builds, `debug_assert!` fires to catch the inconsistency during
-// development. In release builds, the methods fall back to the primary
-// grid/cache via `unwrap_or` so the terminal never crashes.
-
-#[test]
-#[cfg(debug_assertions)]
-#[should_panic(expected = "ALT_SCREEN set but alt_grid not allocated")]
-fn grid_debug_asserts_on_missing_alt_grid() {
-    let mut term = make_term();
-    // Force inconsistent state: set ALT_SCREEN without allocating alt grid.
-    term.mode.insert(TermMode::ALT_SCREEN);
-    let _grid = term.grid();
-}
-
-#[test]
-#[cfg(debug_assertions)]
-#[should_panic(expected = "ALT_SCREEN set but alt_grid not allocated")]
-fn grid_mut_debug_asserts_on_missing_alt_grid() {
-    let mut term = make_term();
-    term.mode.insert(TermMode::ALT_SCREEN);
-    let _grid = term.grid_mut();
-}
-
-#[test]
-#[cfg(debug_assertions)]
-#[should_panic(expected = "ALT_SCREEN set but alt_image_cache not allocated")]
-fn image_cache_debug_asserts_on_missing_alt_cache() {
-    let mut term = make_term();
-    term.mode.insert(TermMode::ALT_SCREEN);
-    let _cache = term.image_cache();
-}
-
-#[test]
-#[cfg(debug_assertions)]
-#[should_panic(expected = "ALT_SCREEN set but alt_image_cache not allocated")]
-fn image_cache_mut_debug_asserts_on_missing_alt_cache() {
-    let mut term = make_term();
-    term.mode.insert(TermMode::ALT_SCREEN);
-    let _cache = term.image_cache_mut();
-}
-
-// Resize + snapshot integration tests.
-//
-// These tests exercise the critical path that's untested: resize the terminal
-// then immediately extract a renderable snapshot. This is what happens on
-// every window resize — the IO thread resizes the grid and produces a
-// snapshot for the renderer.
-
-#[test]
-fn resize_then_snapshot_empty_term() {
-    let mut term = make_term();
-    term.resize(10, 40, true);
-    let snap = term.renderable_content();
-    assert_eq!(snap.lines, 10);
-    assert_eq!(snap.cols, 40);
-    assert_eq!(snap.cells.len(), 10 * 40);
-}
-
-#[test]
-fn resize_then_snapshot_with_content() {
-    let mut term = make_term();
-    feed(&mut term, b"hello world\r\nline two\r\nline three");
-    term.resize(10, 40, true);
-    let snap = term.renderable_content();
-    assert_eq!(snap.lines, 10);
-    assert_eq!(snap.cols, 40);
-    assert_eq!(snap.cells.len(), 10 * 40);
-    // First cell should still be 'h'.
-    assert_eq!(snap.cells[0].ch, 'h');
-}
-
-#[test]
-fn resize_then_snapshot_reuses_buffer() {
-    use RenderableContent;
-
-    let mut term = make_term();
-    feed(&mut term, b"content");
-    let mut buf = RenderableContent::default();
-
-    term.renderable_content_into(&mut buf);
-    assert_eq!(buf.lines, 24);
-    assert_eq!(buf.cols, 80);
-
-    term.resize(10, 40, true);
-    term.renderable_content_into(&mut buf);
-    assert_eq!(buf.lines, 10);
-    assert_eq!(buf.cols, 40);
-    assert_eq!(buf.cells.len(), 10 * 40);
-}
-
-#[test]
-fn resize_shrink_then_snapshot_cursor_in_bounds() {
-    let mut term = make_term();
-    // Move cursor to bottom-right area.
-    feed(&mut term, b"\x1b[20;70H");
-    assert_eq!(term.grid().cursor().line(), 19);
-
-    // Shrink dramatically.
-    term.resize(5, 20, true);
-    let snap = term.renderable_content();
-
-    // Cursor must be clamped within new bounds.
-    assert!(
-        snap.cursor.line < 5,
-        "cursor line {} out of bounds",
-        snap.cursor.line
-    );
-    assert!(
-        snap.cursor.column.0 < 20,
-        "cursor col {} out of bounds",
-        snap.cursor.column.0
-    );
-    assert_eq!(snap.cells.len(), 5 * 20);
-}
-
-#[test]
-fn resize_grow_then_snapshot_with_scrollback() {
-    let mut term = Term::new(5, 10, 100, Theme::default(), VoidEffectSink);
-    // Fill terminal so content overflows into scrollback.
-    for i in 0..10 {
-        let line = format!("line{i:05}\r\n");
-        feed(&mut term, line.as_bytes());
-    }
-    assert!(term.grid().scrollback().len() > 0);
-
-    // Grow — should restore scrollback rows.
-    term.resize(15, 10, true);
-    let snap = term.renderable_content();
-    assert_eq!(snap.lines, 15);
-    assert_eq!(snap.cols, 10);
-    assert_eq!(snap.cells.len(), 15 * 10);
-}
-
-#[test]
-fn resize_reflow_wrap_then_snapshot() {
-    let mut term = Term::new(5, 20, 100, Theme::default(), VoidEffectSink);
-    feed(&mut term, b"abcdefghijklmnopqrst");
-
-    // Shrink cols — content wraps across two lines.
-    term.resize(5, 10, true);
-    let snap = term.renderable_content();
-    assert_eq!(snap.cols, 10);
-    assert_eq!(snap.cells.len(), 5 * 10);
-    // First line should have 'a'..'j', second 'k'..'t'.
-    assert_eq!(snap.cells[0].ch, 'a');
-    assert_eq!(snap.cells[10].ch, 'k');
-}
-
-#[test]
-fn resize_reflow_unwrap_then_snapshot() {
-    let mut term = Term::new(5, 10, 100, Theme::default(), VoidEffectSink);
-    feed(&mut term, b"abcdefghijklmnopqrst");
-
-    // Grow cols — two wrapped lines should merge.
-    term.resize(5, 20, true);
-    let snap = term.renderable_content();
-    assert_eq!(snap.cols, 20);
-    assert_eq!(snap.cells.len(), 5 * 20);
-    assert_eq!(snap.cells[0].ch, 'a');
-    assert_eq!(snap.cells[19].ch, 't');
-}
-
-#[test]
-fn resize_snapshot_damage_is_all_dirty() {
-    let mut term = make_term();
-    feed(&mut term, b"content");
-    // Drain initial damage.
-    term.reset_damage();
-
-    term.resize(10, 40, true);
-    let snap = term.renderable_content();
-    assert!(snap.all_dirty, "resize should mark all dirty");
-}
-
-#[test]
-fn resize_snapshot_display_offset_reset() {
-    let mut term = Term::new(5, 10, 100, Theme::default(), VoidEffectSink);
-    // Fill scrollback.
-    for i in 0..20 {
-        let line = format!("line{i:03}\r\n");
-        feed(&mut term, line.as_bytes());
-    }
-    // Scroll back.
-    term.grid_mut().scroll_display(5);
-    assert!(term.grid().display_offset() > 0);
-
-    // Resize resets display_offset to 0.
-    term.resize(10, 10, true);
-    let snap = term.renderable_content();
-    assert_eq!(snap.display_offset, 0, "resize should reset display_offset");
-}
-
-// Stress resize: rapid dimension changes simulating window drag.
-
-#[test]
-fn stress_resize_rapid_dimension_changes() {
-    let mut term = make_term();
-    feed(&mut term, b"hello world\r\nsecond line\r\nthird line");
-
-    let sizes: &[(usize, usize)] = &[
-        (24, 80),
-        (23, 79),
-        (20, 60),
-        (10, 40),
-        (5, 20),
-        (1, 1),
-        (2, 2),
-        (3, 3),
-        (5, 5),
-        (10, 10),
-        (50, 200),
-        (100, 300),
-        (24, 80),
-        (1, 1),
-        (24, 80),
-        (3, 100),
-        (100, 3),
-        (1, 200),
-        (200, 1),
-    ];
-    let mut buf = RenderableContent::default();
-
-    for &(rows, cols) in sizes {
-        term.resize(rows, cols, true);
-        term.renderable_content_into(&mut buf);
-        assert_eq!(
-            buf.lines, rows,
-            "lines mismatch after resize to {rows}x{cols}"
-        );
-        assert_eq!(
-            buf.cols, cols,
-            "cols mismatch after resize to {rows}x{cols}"
-        );
-        assert_eq!(
-            buf.cells.len(),
-            rows * cols,
-            "cell count mismatch after resize to {rows}x{cols}"
-        );
-        assert!(
-            buf.cursor.line < rows,
-            "cursor line {} >= rows {rows} after resize to {rows}x{cols}",
-            buf.cursor.line
-        );
-        assert!(
-            buf.cursor.column.0 < cols,
-            "cursor col {} >= cols {cols} after resize to {rows}x{cols}",
-            buf.cursor.column.0
-        );
-    }
-}
-
-#[test]
-fn stress_resize_with_scrollback_and_reflow() {
-    let mut term = Term::new(10, 40, 500, Theme::default(), VoidEffectSink);
-    // Fill with enough content to populate scrollback.
-    for i in 0..100 {
-        let line = format!("line {i:04} with some padding text here\r\n");
-        feed(&mut term, line.as_bytes());
-    }
-
-    let sizes: &[(usize, usize)] = &[
-        (10, 40),
-        (5, 20),
-        (3, 10),
-        (1, 5),
-        (20, 80),
-        (10, 40),
-        (50, 120),
-        (5, 10),
-        (10, 40),
-    ];
-    let mut buf = RenderableContent::default();
-
-    for &(rows, cols) in sizes {
-        term.resize(rows, cols, true);
-        term.renderable_content_into(&mut buf);
-        assert_eq!(buf.lines, rows);
-        assert_eq!(buf.cols, cols);
-        assert_eq!(buf.cells.len(), rows * cols);
-        assert!(buf.cursor.line < rows);
-        assert!(buf.cursor.column.0 < cols);
-    }
-}
-
-#[test]
-fn stress_resize_alternating_grow_shrink() {
-    let mut term = make_term();
-    feed(&mut term, b"test content for resize cycles");
-    let mut buf = RenderableContent::default();
-
-    // Simulate interactive window drag: alternating grow/shrink.
-    for i in 0..50 {
-        let rows = if i % 2 == 0 { 10 } else { 30 };
-        let cols = if i % 3 == 0 { 40 } else { 120 };
-        term.resize(rows, cols, true);
-        term.renderable_content_into(&mut buf);
-        assert_eq!(buf.lines, rows);
-        assert_eq!(buf.cols, cols);
-        assert_eq!(buf.cells.len(), rows * cols);
-    }
-}
-
-#[test]
-fn stress_resize_with_wide_chars() {
-    let mut term = Term::new(10, 20, 100, Theme::default(), VoidEffectSink);
-    // Write CJK wide characters.
-    feed(&mut term, "日本語テスト".as_bytes());
-
-    let sizes: &[(usize, usize)] = &[
-        (10, 20),
-        (10, 10),
-        (10, 5),
-        (10, 3),
-        (10, 2),
-        (10, 20),
-        (10, 40),
-        (10, 10),
-        (10, 20),
-    ];
-    let mut buf = RenderableContent::default();
-
-    for &(rows, cols) in sizes {
-        term.resize(rows, cols, true);
-        term.renderable_content_into(&mut buf);
-        assert_eq!(buf.lines, rows);
-        assert_eq!(buf.cols, cols);
-        assert_eq!(buf.cells.len(), rows * cols);
-    }
-}
-
-#[test]
-fn stress_resize_vte_output_between_resizes() {
-    let mut term = make_term();
-    let mut buf = RenderableContent::default();
-
-    // Interleave VTE output with resizes (simulates resize during active output).
-    for i in 0..20 {
-        let line = format!("output line {i}\r\n");
-        feed(&mut term, line.as_bytes());
-
-        let rows = 10 + (i % 15);
-        let cols = 40 + (i * 3 % 60);
-        term.resize(rows, cols, true);
-        term.renderable_content_into(&mut buf);
-        assert_eq!(buf.lines, rows);
-        assert_eq!(buf.cols, cols);
-        assert_eq!(buf.cells.len(), rows * cols);
-    }
-}
-
-// ── Image lifecycle on resize (section 07.5) ──
-
-/// A placement whose starting column falls entirely outside the new
-/// grid width must be dropped by `Term::resize`.
-#[test]
-fn term_resize_removes_out_of_bounds_image_placement() {
-    let mut term = Term::new(24, 100, 1000, Theme::default(), VoidEffectSink);
-    term.set_cell_dimensions(8, 16);
-    place_test_image(&mut term, 0, 90, 1, 10);
-    assert_eq!(term.image_cache().placement_count(), 1);
-
-    term.resize(24, 80, true);
-
-    assert_eq!(
-        term.image_cache().placement_count(),
-        0,
-        "placement starting at col=90 must be removed when new_cols=80"
-    );
-}
-
-/// The alt-screen image cache (when allocated) also gets column-bounds
-/// handling on resize. Alt grid never reflows, so only `on_resize`
-/// runs on the alt cache — no remap.
-#[test]
-fn term_resize_updates_alt_cache_when_alt_exists() {
-    let mut term = Term::new(24, 100, 1000, Theme::default(), VoidEffectSink);
-    term.set_cell_dimensions(8, 16);
-    // Enter alt mode — allocates the alt cache and places us in it.
-    // While in alt mode, image_cache_mut() routes to the alt-screen's
-    // cache so the placement we make is the one the resize must clean.
-    term.swap_alt();
-    place_test_image(&mut term, 0, 90, 1, 10);
-    assert_eq!(
-        term.image_cache().placement_count(),
-        1,
-        "alt-mode placement should be visible before resize"
-    );
-
-    term.resize(24, 80, true);
-
-    assert_eq!(
-        term.image_cache().placement_count(),
-        0,
-        "alt-mode placement at col=90 must be removed when new_cols=80"
-    );
-}
-
-/// When reflow runs, `Term::resize` remaps placements through the
-/// `ReflowMapping` so they continue to point at the same content.
-/// A soft-wrapped continuation row unwraps into its parent on grow —
-/// the placement on the continuation row must follow the content.
-#[test]
-fn term_resize_remaps_image_placement_through_reflow() {
-    let mut term = Term::new(3, 10, 100, Theme::default(), VoidEffectSink);
-    term.set_cell_dimensions(8, 16);
-
-    // Seed: row 0 wrapped ("helloworld"), row 1 continuation ("again").
-    use crate::cell::CellFlags;
-    for (col, ch) in "helloworld".chars().enumerate() {
-        term.grid_mut()[Line(0)][Column(col)] = crate::cell::Cell {
-            ch,
-            ..crate::cell::Cell::default()
-        };
-    }
-    term.grid_mut()[Line(0)][Column(9)]
-        .flags
-        .insert(CellFlags::WRAP);
-    for (col, ch) in "again".chars().enumerate() {
-        term.grid_mut()[Line(1)][Column(col)] = crate::cell::Cell {
-            ch,
-            ..crate::cell::Cell::default()
-        };
-    }
-
-    // Place image on the continuation row (stable row 1).
-    place_test_image(&mut term, 1, 0, 1, 2);
-    assert_eq!(
-        term.image_cache()
-            .placements_in_viewport(StableRowIndex(0), StableRowIndex(u64::MAX))[0]
-            .cell_row
-            .0,
-        1
-    );
-
-    // Grow to 20 cols — unwrap collapses rows 0+1 into single output row 0.
-    term.resize(3, 20, true);
-
-    // The placement on stable row 1 should now be mapped to row 0
-    // (where the unwrapped content lives).
-    let placements = term
-        .image_cache()
-        .placements_in_viewport(StableRowIndex(0), StableRowIndex(u64::MAX));
-    assert_eq!(placements.len(), 1);
-    assert_eq!(
-        placements[0].cell_row.0, 0,
-        "placement must follow unwrapped content onto output row 0"
-    );
-}
-
-/// Regression guard: image-cache field isolation after alt-screen toggle.
-/// See: plans/spec-conformance/section-07-image-lifecycle-correctness.md §07.5
-///
-/// After removing the image-cache swap from `toggle_alt_common`, the
-/// `image_cache` and `alt_image_cache` fields hold their semantic
-/// contents regardless of `ALT_SCREEN` mode: primary placements live
-/// in `self.image_cache`, alt placements live in `self.alt_image_cache`.
-/// This test bypasses the `image_cache()` accessor and reads the
-/// fields directly so it catches any future routing inversion the
-/// accessor might hide.
-#[test]
-fn term_resize_routes_each_grid_through_its_own_image_cache() {
-    let mut term = Term::new(24, 100, 1000, Theme::default(), VoidEffectSink);
-    term.set_cell_dimensions(8, 16);
-
-    // Place in primary (image_cache_mut via primary mode → image_cache field).
-    place_test_image(&mut term, 0, 5, 1, 2);
-    assert_eq!(
-        term.image_cache.placement_count(),
-        1,
-        "primary field must hold the primary-mode placement"
-    );
-    assert!(
-        term.alt_image_cache.is_none(),
-        "alt cache not yet allocated"
-    );
-
-    // Enter alt, place there.
-    term.swap_alt();
-    place_test_image(&mut term, 0, 90, 1, 10); // col 90 — goes out of bounds on 80 resize.
-    assert_eq!(
-        term.image_cache.placement_count(),
-        1,
-        "primary field still has its 1 placement (NOT swapped)"
-    );
-    assert_eq!(
-        term.alt_image_cache.as_ref().unwrap().placement_count(),
-        1,
-        "alt field now holds the alt-mode placement (NOT swapped)"
-    );
-
-    // Resize while in alt mode — primary cache keeps its placement
-    // (primary grid's reflow mapping does NOT touch the alt cache),
-    // alt cache's col=90 placement is dropped by on_resize.
-    term.resize(24, 80, true);
-
-    assert_eq!(
-        term.image_cache.placement_count(),
-        1,
-        "primary placement at col=5 must survive — primary grid's reflow must not hit the alt cache"
-    );
-    assert_eq!(
-        term.alt_image_cache.as_ref().unwrap().placement_count(),
-        0,
-        "alt placement at col=90 must be removed by on_resize on the alt cache"
-    );
-}
-
-/// Isolation check: primary-mode and alt-mode placements do NOT leak
-/// into each other's cache. Regression guard for the image-cache
-/// field isolation fix (spec-conformance §07.5): the old cache-swap
-/// allowed alt-mode placements to appear in primary after swap back.
-#[test]
-fn alt_image_cache_isolation_check() {
-    let mut term = Term::new(24, 80, 1000, Theme::default(), VoidEffectSink);
-    term.set_cell_dimensions(8, 16);
-
-    // Primary: place at col=5.
-    place_test_image(&mut term, 0, 5, 1, 2);
-    assert_eq!(term.image_cache().placement_count(), 1);
-
-    // Enter alt — alt cache newly allocated, empty.
-    term.swap_alt();
-    assert_eq!(
-        term.image_cache().placement_count(),
-        0,
-        "alt mode must not see the primary placement"
-    );
-
-    // Place in alt at col=10.
-    place_test_image(&mut term, 0, 10, 1, 2);
-    assert_eq!(term.image_cache().placement_count(), 1);
-
-    // Back to primary — primary should still only have its original.
-    term.swap_alt();
-    assert_eq!(
-        term.image_cache().placement_count(),
-        1,
-        "primary must still hold only its original placement — alt-mode placement must not leak"
-    );
-}
-
-/// `reflow: false` skips the remap step entirely — placements retain
-/// their original `cell_row` when reflow does not run.
-#[test]
-fn term_resize_without_reflow_skips_remap() {
-    let mut term = Term::new(3, 20, 100, Theme::default(), VoidEffectSink);
-    term.set_cell_dimensions(8, 16);
-    place_test_image(&mut term, 1, 0, 1, 2);
-
-    term.resize(5, 10, false);
-
-    let placements = term
-        .image_cache()
-        .placements_in_viewport(StableRowIndex(0), StableRowIndex(u64::MAX));
-    assert_eq!(placements.len(), 1);
-    assert_eq!(
-        placements[0].cell_row.0, 1,
-        "reflow=false must leave cell_row unchanged"
-    );
-}
-
-// ── OSC 22: Mouse cursor icon ───────────────────────────────────────
-//
-// Section 10.0 adds `Term::mouse_cursor_icon` as the canonical store for
-// OSC 22 (iTerm2 mouse cursor icon). These tests pin the state plumbing
-// before subsection 10.5 writes the OSC 22 matrix.
+// ── OSC 22: Mouse cursor icon (state plumbing) ──
 
 #[test]
 fn term_mouse_cursor_icon_starts_none() {
@@ -2501,46 +576,4 @@ fn term_set_mouse_cursor_icon_stores_icon() {
     let mut term = make_term();
     Handler::set_mouse_cursor_icon(&mut term, CursorIcon::Pointer);
     assert_eq!(term.mouse_cursor_icon(), Some(CursorIcon::Pointer));
-}
-
-#[test]
-fn term_mouse_cursor_icon_flows_into_renderable_snapshot() {
-    use vte::ansi::Handler;
-    use vte::ansi::cursor_icon::CursorIcon;
-
-    let mut term = make_term();
-    Handler::set_mouse_cursor_icon(&mut term, CursorIcon::Crosshair);
-
-    let rc = term.renderable_content();
-    assert_eq!(rc.mouse_cursor_icon, Some(CursorIcon::Crosshair));
-}
-
-// ── OSC 133;D: Injectable clock for deterministic CommandComplete ───
-
-#[test]
-fn finish_command_uses_injected_now_for_deterministic_duration() {
-    use std::time::{Duration, Instant};
-
-    let mut term = make_term();
-    let t0 = Instant::now();
-    term.set_command_start(t0);
-
-    // Inject the end timestamp explicitly — no wall-clock reliance.
-    let duration = term.finish_command(Some(t0 + Duration::from_millis(1500)));
-    assert_eq!(duration, Some(Duration::from_millis(1500)));
-    assert_eq!(
-        term.last_command_duration(),
-        Some(Duration::from_millis(1500))
-    );
-}
-
-#[test]
-fn finish_command_without_start_returns_none_regardless_of_now() {
-    use std::time::{Duration, Instant};
-
-    let mut term = make_term();
-    // No set_command_start — finish should return None.
-    let d = term.finish_command(Some(Instant::now() + Duration::from_millis(10)));
-    assert!(d.is_none());
-    assert!(term.last_command_duration().is_none());
 }

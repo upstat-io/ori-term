@@ -223,4 +223,3 @@ impl vte::Perform for TupleSink {
         false
     }
 }
-
