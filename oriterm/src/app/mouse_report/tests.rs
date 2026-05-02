@@ -1880,7 +1880,7 @@ fn classify_wheel_event_any_mouse_member_count_assertion() {
 
 use oriterm_mux::PaneId;
 
-use super::{WheelDispatch, WheelSink, dispatch_wheel};
+use super::wheel_dispatch::{WheelDispatch, WheelSink, dispatch_wheel};
 
 /// Test sink that records every call. Lives in tests.rs (single consumer
 /// per `impl-hygiene.md §No Premature Abstraction`); promote to
@@ -2111,6 +2111,8 @@ fn dispatch_wheel_alt_scroll_app_cursor_set_up_emits_ss3_a() {
     }
 }
 
+/// Regression: BUG-08-032 — DECCKM set + ScrollDown writes SS3 B
+/// (`\x1bOB`) `lines` times via the dispatcher.
 #[test]
 fn dispatch_wheel_alt_scroll_app_cursor_set_down_emits_ss3_b() {
     let mut sink = RecordingSink::default();
@@ -2123,6 +2125,9 @@ fn dispatch_wheel_alt_scroll_app_cursor_set_down_emits_ss3_b() {
     }
 }
 
+/// Regression: BUG-08-032 — DECCKM clear + ScrollUp writes CSI A
+/// (`\x1b[A`); confirms BUG-08-015's DECCKM-aware byte selection
+/// stays load-bearing across the wiring path.
 #[test]
 fn dispatch_wheel_alt_scroll_app_cursor_clear_up_emits_csi_a() {
     let mut sink = RecordingSink::default();
@@ -2133,6 +2138,8 @@ fn dispatch_wheel_alt_scroll_app_cursor_clear_up_emits_csi_a() {
     }
 }
 
+/// Regression: BUG-08-032 — DECCKM clear + ScrollDown writes CSI B
+/// (`\x1b[B`); negative-pin counterpart to the SS3 B / CSI A cells.
 #[test]
 fn dispatch_wheel_alt_scroll_app_cursor_clear_down_emits_csi_b() {
     let mut sink = RecordingSink::default();
@@ -2282,4 +2289,87 @@ fn dispatch_wheel_pane_id_none_no_dispatch() {
     assert!(sink.writes.is_empty());
     assert!(sink.scrolls.is_empty());
     assert_eq!(sink.mark_dirty_calls, 0);
+}
+
+/// Regression: BUG-08-032 — Tier-1 mods (Alt/Ctrl/Shift, with Shift NOT
+/// held to avoid Tier-3 bypass) flow through the dispatcher into
+/// `encode_mouse_event` so the encoded byte payload reflects the modifiers.
+/// Pins that `dispatch_wheel` passes `input.mods` to the encoder rather
+/// than hardcoding `MouseModifiers::default()`.
+#[test]
+fn dispatch_wheel_mouse_report_propagates_alt_ctrl_modifiers_to_encoded_bytes() {
+    let mut sink = RecordingSink::default();
+    let mode = TermMode::MOUSE_REPORT_CLICK | TermMode::MOUSE_SGR;
+    let mods = MouseModifiers {
+        shift: false,
+        alt: true,
+        ctrl: true,
+    };
+    let input = WheelDispatch {
+        delta: px_up(1),
+        cell_height: 16.0,
+        mode,
+        shift_held: false,
+        pane_id: Some(pane()),
+        cell_for_report: Some((11, 7)),
+        mods,
+    };
+    dispatch_wheel(input, &mut sink);
+    let event = MouseEvent {
+        button: MouseButton::ScrollUp,
+        kind: MouseEventKind::Press,
+        col: 11,
+        line: 7,
+        mods,
+    };
+    let expected = encode_mouse_event(&event, mode);
+    assert_eq!(sink.writes.len(), 1);
+    assert_eq!(sink.writes[0].1, expected.as_bytes().to_vec());
+    let no_mods_event = MouseEvent {
+        button: MouseButton::ScrollUp,
+        kind: MouseEventKind::Press,
+        col: 11,
+        line: 7,
+        mods: MouseModifiers::default(),
+    };
+    let no_mods_expected = encode_mouse_event(&no_mods_event, mode);
+    assert_ne!(
+        sink.writes[0].1,
+        no_mods_expected.as_bytes().to_vec(),
+        "alt+ctrl payload must differ from no-mods payload — proves dispatch_wheel propagates input.mods"
+    );
+    assert_eq!(sink.mark_dirty_calls, 1);
+}
+
+/// Regression: BUG-08-032 — empty-bytes guard preserved from BUG-08-015
+/// at the dispatcher seam. Normal (X10-style coordinate-encoded) mode +
+/// `col > 222` makes `encode_mouse_event` return empty bytes; the
+/// `if !bytes.is_empty()` guard must skip the write loop AND
+/// `mark_dirty` must still fire (the dispatch reached past the early
+/// returns; only the side-effect bytes were elided).
+#[test]
+fn dispatch_wheel_mouse_report_empty_bytes_skips_writes_but_marks_dirty() {
+    let mut sink = RecordingSink::default();
+    // Normal mode (no SGR / UTF-8 / URXVT flags) — encode_normal returns
+    // empty bytes for col > 222 per encode.rs:199.
+    let mode = TermMode::MOUSE_REPORT_CLICK;
+    let input = WheelDispatch {
+        delta: px_up(2),
+        cell_height: 16.0,
+        mode,
+        shift_held: false,
+        pane_id: Some(pane()),
+        cell_for_report: Some((300, 0)), // col > 222 → empty bytes
+        mods: MouseModifiers::default(),
+    };
+    dispatch_wheel(input, &mut sink);
+    assert!(
+        sink.writes.is_empty(),
+        "empty-bytes guard must skip writes when encode returns empty"
+    );
+    assert!(sink.scrolls.is_empty());
+    assert_eq!(
+        sink.mark_dirty_calls, 1,
+        "mark_dirty must still fire — dispatch reached past early returns"
+    );
 }
