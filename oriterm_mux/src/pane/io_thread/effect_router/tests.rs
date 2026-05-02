@@ -118,6 +118,7 @@ fn pty_write_all_kinds_preserve_bytes() {
         PtyWriteKind::KeyboardEvent,
         PtyWriteKind::FocusEvent,
         PtyWriteKind::ChecksumReport,
+        PtyWriteKind::GraphicsAttributeReport,
         PtyWriteKind::Other,
     ];
     for kind in kinds {
@@ -906,6 +907,34 @@ fn decrqm_unknown_mode_emits_value_zero() {
             assert_eq!(
                 data, b"\x1b[?9999;0$y",
                 "DECRQM unknown-mode response bytes mismatch"
+            );
+        }
+        other => panic!("expected PtyWrite, got {other:?}"),
+    }
+}
+
+/// Regression: BUG-06-022 — XTSMGRAPHICS query had no reply path.
+///
+/// Pins the full pipeline: raw bytes → vte parser → CSI dispatch arm
+/// `('S', [b'?'])` → `Handler::graphics_attribute` → `Term`'s
+/// `status_graphics_attribute` helper → `effect_sink` →
+/// `drain_effects_into_mux_events` → `MuxEvent::PtyWrite`.
+///
+/// Without the dispatch arm + Handler method + helper + sync points,
+/// no PtyWrite event reaches the mux.
+#[test]
+fn xtsmgraphics_byte_parse_emits_pty_write_response() {
+    let (mut t, mux_rx, _wake) = make_router_harness();
+    // notcurses startup repro: XTSMGRAPHICS Pi=1 Pa=1 (read color registers).
+    t.handle_bytes(b"\x1b[?1;1;0S");
+    let event = mux_rx
+        .recv_timeout(Duration::from_millis(100))
+        .expect("expected MuxEvent::PtyWrite for XTSMGRAPHICS Pi=1 Pa=1 response");
+    match event {
+        MuxEvent::PtyWrite { data, .. } => {
+            assert_eq!(
+                data, b"\x1b[?1;0;256S",
+                "XTSMGRAPHICS Pi=1 Pa=1 response bytes mismatch"
             );
         }
         other => panic!("expected PtyWrite, got {other:?}"),

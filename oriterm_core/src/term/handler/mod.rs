@@ -425,6 +425,7 @@ impl<S: EffectSink> Handler for Term<S> {
     fn text_area_size_pixels(&mut self) {
         self.dcs_text_area_size_pixels();
     }
+    delegate_osc!(graphics_attribute(pi: u16, pa: u16, pv: u16) => status_graphics_attribute);
     delegate_osc!(apc_dispatch(payload: &[u8]) => handle_apc_dispatch);
     delegate_osc!(sixel_start(params: &[u16]) => handle_sixel_start);
     delegate_osc!(sixel_put(byte: u8) => handle_sixel_put);

@@ -255,6 +255,15 @@ macro_rules! handler_core_methods {
         /// Report text area size in characters.
         fn text_area_size_chars(&mut self) {}
 
+        /// XTSMGRAPHICS: set or request a graphics attribute.
+        ///
+        /// `Pi` selects the item (1=color registers, 2=sixel geometry,
+        /// 3=ReGIS geometry); `Pa` selects the action (1=read, 2=reset,
+        /// 3=set, 4=read max); `Pv` carries the requested value when
+        /// `Pa=3`. Reply is emitted by the handler implementation per
+        /// xterm ctlseqs (`CSI ? Pi ; Ps ; Pv [;Pv2] S`).
+        fn graphics_attribute(&mut self, _pi: u16, _pa: u16, _pv: u16) {}
+
         /// Set hyperlink.
         fn set_hyperlink(&mut self, _: Option<Hyperlink>) {}
 

@@ -267,6 +267,46 @@ fn raster_attrs_exceeding_max_pixel_bytes_aborts_cleanly() {
     );
 }
 
+// Color-register-wrap invariant (BUG-06-024).
+
+/// Catalog row: `SIXEL-COLOR-REGISTER-WRAP`. Regression: BUG-06-024.
+///
+/// End-to-end pin for the XTSMGRAPHICS Pi=1 Pa=3 → `Term::color_register_count`
+/// → `handle_sixel_start` → `SixelParser::new` → `apply_color` wrap chain.
+/// Negotiate count=16 via `\x1b[?1;3;16S`, then feed a DCS sequence that
+/// defines palette[0] red and bare-selects `#16` (which under count=16 wraps
+/// to register 0). The decoded image's drawn pixel must be red.
+///
+/// Mirrors xterm `graphics_sixel.c:697-698` (`s_Pregister %= valid_registers;`)
+/// and `graphics.c:802-812` (snapshot at `init_graphic` time). Without the
+/// wrap, `current_color = 16` would draw palette[16] which holds a zeroed
+/// VT340 default beyond the 16-entry table = black, NOT red.
+#[test]
+fn xtsmgraphics_negotiated_count_wraps_subsequent_sixel_register_indices() {
+    let mut h = SpecHarness::new();
+
+    // Step 1: negotiate color-register count down to 16 via XTSMGRAPHICS Pi=1 Pa=3 Pv=16.
+    h.feed(b"\x1b[?1;3;16S");
+
+    // Step 2: feed sixel DCS — define palette[0] red, then bare-select `#16`
+    // (16 % 16 = 0 under the new wrap), then draw value 1 (top-bit-of-bottom-pixel).
+    h.feed(b"\x1bPq#0;2;100;0;0#16@\x1b\\");
+
+    assert_eq!(
+        placement_count(&h),
+        1,
+        "negotiated-count + sixel DCS sequence must commit one placement",
+    );
+
+    let (pixels, _, _) = last_image_pixels(&h);
+    assert_eq!(
+        &pixels[0..4],
+        &[255, 0, 0, 255],
+        "post-XTSMGRAPHICS Pa=3 (count=16), bare `#16` MUST wrap to palette[0] = red. \
+         Without wrap, would render palette[16] = zeroed default = black.",
+    );
+}
+
 // Self-verifying matrix completeness.
 
 /// Structural matrix-completeness pin for §12.2.
@@ -284,14 +324,15 @@ fn invariant_category_matrix_completeness() {
         "palette_vt340_fingerprint_fresh",
         "repeat_clamp",
         "pixel_buffer_cap_aborts",
+        "color_register_wrap_semantics",
     ];
     // The negative-pin palette-leak test lives as a unit test in
     // `oriterm_core/src/image/sixel/tests.rs` because it requires the
     // test-only `BypassVt340ResetGuard` — not reachable from
-    // integration tests. That eighth invariant is counted here.
+    // integration tests. That ninth invariant is counted here.
     assert_eq!(
         CATEGORIES.len() + 1,
-        8,
-        "§12.2 has 8 invariant categories (7 integration + 1 unit test); update if the plan changes",
+        9,
+        "§12.2 has 9 invariant categories (8 integration + 1 unit test); update if the plan changes",
     );
 }

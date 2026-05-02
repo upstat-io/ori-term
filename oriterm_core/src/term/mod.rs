@@ -202,6 +202,19 @@ pub struct Term<S: EffectSink> {
     cell_pixel_height: u16,
     /// Whether image protocols (Kitty, Sixel, iTerm2) are enabled.
     image_protocol_enabled: bool,
+    /// XTSMGRAPHICS Pi=1 current color-register count.
+    ///
+    /// Defaults to [`crate::image::sixel::COLOR_REGISTERS_MAX`] (256 — the
+    /// SSOT for the sixel decoder palette size). Mutated on
+    /// `CSI ? 1 ; 3 ; <Pv> S` (set) when `Pv > 1 && Pv <= MAX`. Reset to
+    /// default on RIS (`ESC c`) by `term::handler::esc::esc_reset_state`.
+    /// Snapshotted into `SixelParser::new` at DCS-hook time so the active
+    /// decoder honors the negotiated count via xterm-style modulo wrap on
+    /// color register indices in `crate::image::sixel::SixelParser::apply_color`,
+    /// mirroring xterm `graphics_sixel.c:697-698`. In-flight XTSMGRAPHICS
+    /// mutations during an active DCS sequence do NOT retroactively change
+    /// the snapshotted count.
+    color_register_count: u16,
     /// Default column count for DECCOLM reset (CSI ? 3 l).
     ///
     /// When DECCOLM is reset, the grid restores to this width instead of
@@ -335,6 +348,7 @@ impl<S: EffectSink> Term<S> {
             cell_pixel_width: 8,
             cell_pixel_height: 16,
             image_protocol_enabled: true,
+            color_register_count: crate::image::sixel::COLOR_REGISTERS_MAX,
             deccolm_default_cols: cols,
             mouse_cursor_icon: None,
             last_command_line: None,

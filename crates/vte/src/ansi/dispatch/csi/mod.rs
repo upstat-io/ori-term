@@ -286,6 +286,33 @@ pub(super) fn dispatch<H: Handler, T: Timeout>(
             handler.deccara(top, left, bot, right, &attrs);
         },
         ('S', []) => handler.scroll_up(next_param_or(1) as usize),
+        ('S', [b'?']) => {
+            // XTSMGRAPHICS — `CSI ? Pi ; Pa ; Pv S`. Exactly 3 top-level
+            // params required; malformed arity is silently dropped per
+            // xterm `charproc.c:5159` (`if nparam != 3`).
+            //
+            // CRITICAL: `params.len()` (per `crates/vte/src/params.rs`)
+            // returns "total number of parameters and subparameters" —
+            // it INCLUDES subparams. Top-level arity check MUST use
+            // `params.iter().count()`, which counts parameter GROUPS
+            // (each yielding `&[u16]` of subparams).
+            //
+            // Example: `\x1b[?1:2;1;0S` has 3 top-level params (the
+            // first carries subparam `:2`):
+            //   - `params.len()` = 4 (values: 1, 2, 1, 0)
+            //   - `params.iter().count()` = 3 (groups)
+            //
+            // `next_param_or` consumes the FIRST sub-value of each
+            // group; subsequent subs are silently ignored.
+            if params.iter().count() != 3 {
+                unhandled!();
+                return;
+            }
+            let pi = next_param_or(0);
+            let pa = next_param_or(0);
+            let pv = next_param_or(0);
+            handler.graphics_attribute(pi, pa, pv);
+        },
         ('s', []) => {
             // CSI s / DECSLRM ambiguity: pass params to handler which
             // knows whether mode 69 (DECLRMM) is active.

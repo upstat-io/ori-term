@@ -36,6 +36,15 @@ pub enum SixelBgMode {
     SetToBg,
 }
 
+/// Canonical sixel color-register count.
+///
+/// Tied to the palette size at the decoder layer; XTSMGRAPHICS protocol
+/// replies (CSI ? 1 ; Ps [;Pv] S) use this same value for the `Pv`
+/// field on Pi=1 read/set/reset/max queries. Both the decoder palette
+/// allocation and `Term::color_register_count` initialization import
+/// this constant — single source of truth for our sixel color depth.
+pub(crate) const COLOR_REGISTERS_MAX: u16 = 256;
+
 /// Streaming sixel parser state machine.
 ///
 /// Feed bytes via `feed()` one at a time. When the DCS sequence ends,
@@ -63,6 +72,14 @@ pub struct SixelParser {
     /// §6.2.2 ties P2=2 to the current terminal bg (at the time of sixel
     /// entry), so snapshotting here is the DEC-correct semantics.
     terminal_bg: [u8; 3],
+    /// Negotiated color-register count (snapshot from
+    /// [`crate::term::Term::color_register_count`] at DCS-hook time).
+    /// xterm wraps `#idx` register indices modulo this value
+    /// (`graphics_sixel.c:697-698`); snapshot at construction matches
+    /// xterm's `init_graphic` (`graphics.c:802-812`) — in-flight
+    /// XTSMGRAPHICS mutations during this DCS do NOT retroactively
+    /// change the active parser.
+    color_registers: u16,
     /// Explicit width from raster attributes (if provided).
     raster_width: Option<usize>,
     /// Explicit height from raster attributes (if provided).
@@ -92,7 +109,16 @@ impl SixelParser {
     /// is used only when P2=2 (`SixelBgMode::SetToBg`) — DEC STD 070
     /// §6.2.2 ties P2=2 to the terminal bg at the start of the sixel
     /// sequence, so callers MUST snapshot it there (not at `finish()`).
-    pub fn new(params: &[u16], terminal_bg: [u8; 3]) -> Self {
+    /// `color_registers` is the XTSMGRAPHICS Pi=1 negotiated count — the
+    /// active register-index space for `#idx` color selection and
+    /// definition. The protocol bound is `[2, COLOR_REGISTERS_MAX]` per
+    /// `term::handler::status::status_graphics_attribute` Pa=3.
+    pub fn new(params: &[u16], terminal_bg: [u8; 3], color_registers: u16) -> Self {
+        debug_assert!(
+            (2..=COLOR_REGISTERS_MAX).contains(&color_registers),
+            "color_registers must be in [2, COLOR_REGISTERS_MAX]; \
+             status.rs Pa=3 enforces `pv > 1 && pv <= max`",
+        );
         let bg_mode = match params.get(1).copied().unwrap_or(0) {
             1 => SixelBgMode::NoChange,
             2 => SixelBgMode::SetToBg,
@@ -102,7 +128,7 @@ impl SixelParser {
         // Initialize palette with VT340 defaults.
         // Note: the `BYPASS_VT340_RESET` branch exists solely for the
         // negative-pin palette-leak test — production always rebuilds.
-        let mut palette = vec![[0u8; 3]; 256];
+        let mut palette = vec![[0u8; 3]; COLOR_REGISTERS_MAX as usize];
         #[cfg(test)]
         let bypass = BYPASS_VT340_RESET.with(std::cell::Cell::get);
         #[cfg(not(test))]
@@ -123,6 +149,7 @@ impl SixelParser {
             y: 0,
             bg_mode,
             terminal_bg,
+            color_registers,
             raster_width: None,
             raster_height: None,
             max_x: 0,
@@ -308,8 +335,14 @@ impl SixelParser {
     /// `#<n>` selects color `n`.
     /// `#<n>;2;<r>;<g>;<b>` defines RGB color (0-100 range, scale to 0-255).
     /// `#<n>;1;<h>;<l>;<s>` defines HLS color.
+    ///
+    /// xterm wraps `n` modulo the negotiated color-register count
+    /// (`graphics_sixel.c:697-698`: `s_Pregister %= valid_registers;`),
+    /// applied uniformly to selection AND definition. The wrap is
+    /// computed in `u32` BEFORE casting to `u16` so large `params[0]`
+    /// values (e.g. `999_999`) wrap correctly without u16 truncation.
     fn apply_color(&mut self) {
-        let idx = self.params[0] as u16;
+        let idx = (self.params[0] % u32::from(self.color_registers)) as u16;
 
         if self.param_idx >= 2 {
             // Color definition.
@@ -320,19 +353,14 @@ impl SixelParser {
                     let r = (self.params[2].min(100) * 255 / 100) as u8;
                     let g = (self.params[3].min(100) * 255 / 100) as u8;
                     let b = (self.params[4].min(100) * 255 / 100) as u8;
-                    if (idx as usize) < self.palette.len() {
-                        self.palette[idx as usize] = [r, g, b];
-                    }
+                    self.palette[idx as usize] = [r, g, b];
                 }
                 1 => {
                     // HLS: H=0-360, L=0-100, S=0-100.
                     let hue = self.params[2].min(360);
                     let lightness = self.params[3].min(100);
                     let saturation = self.params[4].min(100);
-                    let rgb = hls_to_rgb(hue, lightness, saturation);
-                    if (idx as usize) < self.palette.len() {
-                        self.palette[idx as usize] = rgb;
-                    }
+                    self.palette[idx as usize] = hls_to_rgb(hue, lightness, saturation);
                 }
                 _ => {} // Unknown color system — ignore.
             }
@@ -369,12 +397,11 @@ impl SixelParser {
     /// Each sixel character encodes 6 vertical pixels (LSB = top).
     fn emit_sixel(&mut self, value: u8, count: usize) {
         let count = count.min(MAX_DIMENSION);
+        // `current_color` is invariant `< color_registers <= palette.len()`
+        // by `apply_color`'s modulo wrap (and `0` at construction is also
+        // in-bounds for any `color_registers >= 2`). No fallback needed.
         let color_idx = self.current_color as usize;
-        let rgb = if color_idx < self.palette.len() {
-            self.palette[color_idx]
-        } else {
-            [255, 255, 255] // Fallback: white.
-        };
+        let rgb = self.palette[color_idx];
 
         for _ in 0..count {
             if self.x >= MAX_DIMENSION {

@@ -8,9 +8,10 @@
 //! with a partial-coverage payload (10 filled cols + 10 empty cols +
 //! 10 filled cols) so both the emitted color and the terminal-bg fill
 //! appear in the golden. Bracketing rationale alone is not enough —
-//! this pilot directly drives the `SixelParser::new(params, terminal_bg)`
-//! + `SixelBgMode::SetToBg` + `finish` path through the full visual
-//! rung chain.
+//! this pilot directly drives the
+//! `SixelParser::new(params, terminal_bg, color_register_count)` +
+//! `SixelBgMode::SetToBg` + `finish` path through the full visual rung
+//! chain.
 //!
 //! Regression guard: if `Term::handle_sixel_start` regresses to the
 //! pre-§12.2 DeviceDefault-collapse behavior (undrawn pixels filled with
@@ -37,8 +38,8 @@ const SIXEL_BYTES: &[u8] = b"\x1bP0;2q#0;2;100;100;100#0!10~!10?#0!10~\x1b\\";
 /// The deterministic lane's `PALETTE_BG = Rgb(1,1,1)` lands on undrawn
 /// pixels through the SetToBg branch — distinct from DeviceDefault's
 /// opaque `[0,0,0,255]`. If §12.2's `Term::effective_background` +
-/// `SixelParser::new(params, bg)` plumbing regresses, the golden image
-/// diff fails on the 0-pixel gate.
+/// `SixelParser::new(params, bg, color_register_count)` plumbing
+/// regresses, the golden image diff fails on the 0-pixel gate.
 #[test]
 fn sixel_set_to_bg_p2_two_fills_undrawn_with_terminal_background() {
     let Some(mut harness) = VisualSpecHarness::new() else {
