@@ -11,6 +11,7 @@ use winit::dpi::PhysicalPosition;
 use winit::event::MouseScrollDelta;
 
 use oriterm_core::TermMode;
+use oriterm_mux::PaneId;
 
 use super::App;
 use super::mouse_selection::{self, GridCtx};
@@ -18,6 +19,62 @@ use super::mouse_selection::{self, GridCtx};
 pub(crate) use encode::{
     MouseButton, MouseEvent, MouseEventKind, MouseModifiers, encode_mouse_event,
 };
+
+/// Direction of a mouse wheel event after `parse_wheel_delta` normalization.
+///
+/// Replaces the historical `scroll_up: bool` pattern per
+/// `impl-hygiene.md §Parameter Hygiene` — boolean parameters with
+/// implicit semantics are a design smell.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum ScrollDirection {
+    Up,
+    Down,
+}
+
+/// Which of the three `handle_mouse_wheel` tiers should consume this event.
+///
+/// Tier 1 wins if any mouse-tracking flag is set without shift-bypass;
+/// Tier 2 wins if alt-screen + alternate-scroll without shift-bypass;
+/// Tier 3 (viewport scroll) is the default. The exhaustive match in
+/// `handle_mouse_wheel` makes regressions a compile error rather than
+/// a doc-comment violation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum WheelTier {
+    /// Tier 1: report mouse event via SGR/UTF-8/etc encoding.
+    MouseReport,
+    /// Tier 2: synthesize arrow keys for alt-scroll.
+    AltScroll,
+    /// Tier 3: viewport scroll.
+    ViewportScroll,
+}
+
+/// Bytes + repeat count for a Tier-2 alt-scroll wheel translation.
+///
+/// `bytes` is one of four cursor sequences chosen by `(direction, app_cursor)`:
+/// `\x1bOA` / `\x1bOB` (SS3) when DECCKM is set (application cursor mode),
+/// `\x1b[A` / `\x1b[B` (CSI) when DECCKM is clear (normal cursor mode).
+/// `repeat` is the number of times the caller should write `bytes` to the PTY.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct AltScrollPayload {
+    pub(super) bytes: &'static [u8],
+    pub(super) repeat: usize,
+}
+
+/// Pure decision function: should mouse events be reported to the PTY for
+/// the given mode + Shift state?
+///
+/// Single source of truth for the Tier-1 mouse-reporting gate — consumed
+/// by both [`App::should_report_mouse`] (the `&self` method) and
+/// [`classify_wheel_event`] (free function). The free function and method
+/// share the same name; this is intentional — `App::should_report_mouse`
+/// is a thin `&self` wrapper that calls THIS free function with
+/// `self.modifiers.shift_key()`. Callers in `&self` scope use the method;
+/// callers in free-function scope (e.g., `classify_wheel_event`) use this
+/// free function directly.
+#[must_use]
+pub(super) fn should_report_mouse(mode: TermMode, shift_held: bool) -> bool {
+    !shift_held && mode.intersects(TermMode::ANY_MOUSE)
+}
 
 /// Pure decision function: should a mouse wheel event be translated to
 /// arrow key sequences in the PTY?
@@ -34,6 +91,65 @@ pub(super) fn should_translate_wheel_to_arrows(mode: TermMode, shift_held: bool)
     !shift_held && mode.contains(TermMode::ALT_SCREEN | TermMode::ALTERNATE_SCROLL)
 }
 
+/// Pure decision function: which tier consumes this wheel event?
+///
+/// Mirrors the order in [`App::handle_mouse_wheel`]. SSOT for the
+/// dispatch invariant — consults the canonical [`should_report_mouse`]
+/// (Tier-1 gate) and [`should_translate_wheel_to_arrows`] (Tier-2 gate)
+/// rather than inlining their predicates.
+#[must_use]
+pub(super) fn classify_wheel_event(mode: TermMode, shift_held: bool) -> WheelTier {
+    if should_report_mouse(mode, shift_held) {
+        return WheelTier::MouseReport;
+    }
+    if should_translate_wheel_to_arrows(mode, shift_held) {
+        return WheelTier::AltScroll;
+    }
+    WheelTier::ViewportScroll
+}
+
+/// Pure decision function: byte selection + repeat count for the
+/// Tier-2 alt-scroll wheel translation.
+///
+/// Returns `Some(payload)` iff [`should_translate_wheel_to_arrows`] is
+/// true. Otherwise returns `None`.
+///
+/// DECCKM-aware byte selection per xterm spec (xterm `ctlseqs.txt`
+/// §"The cursor keys transmit the following escape sequences depending
+/// on the mode specified via the DECCKM escape sequence"; xterm
+/// `scrollbar.c` `MODE_DECCKM ? ANSI_SS3 : ANSI_CSI` selection).
+/// See BUG-08-015 root cause analysis §1B.
+///
+/// NOTE: The (DECCKM × direction) → bytes mapping mirrors the regular
+/// cursor-key encoder in `oriterm/src/key_encoding/legacy.rs`. This
+/// duplication is intentional — alt-scroll synthesis is on the
+/// mouse-event path, key encoding is on the keyboard path, and unifying
+/// them via a shared cursor-key helper is tracked as BUG-08-033.
+/// Both paths share the same xterm spec (`ctlseqs.txt:2465-2473`)
+/// so semantic drift between them would be a spec violation.
+#[must_use]
+pub(super) fn tier2_alt_scroll_payload(
+    mode: TermMode,
+    shift_held: bool,
+    lines: usize,
+    direction: ScrollDirection,
+) -> Option<AltScrollPayload> {
+    if !should_translate_wheel_to_arrows(mode, shift_held) {
+        return None;
+    }
+    let app_cursor = mode.contains(TermMode::APP_CURSOR);
+    let bytes: &'static [u8] = match (direction, app_cursor) {
+        (ScrollDirection::Up, true) => b"\x1bOA",
+        (ScrollDirection::Up, false) => b"\x1b[A",
+        (ScrollDirection::Down, true) => b"\x1bOB",
+        (ScrollDirection::Down, false) => b"\x1b[B",
+    };
+    Some(AltScrollPayload {
+        bytes,
+        repeat: lines,
+    })
+}
+
 impl App {
     /// Whether mouse events should be reported to the PTY for the given mode.
     ///
@@ -43,8 +159,22 @@ impl App {
     ///
     /// Pure check — does not lock the terminal. Caller reads mode once via
     /// [`terminal_mode`](App::terminal_mode) and passes it through.
+    ///
+    /// Thin `&self` wrapper over the free [`should_report_mouse`] function.
     pub(super) fn should_report_mouse(&self, mode: TermMode) -> bool {
-        !self.modifiers.shift_key() && mode.intersects(TermMode::ANY_MOUSE)
+        should_report_mouse(mode, self.modifiers.shift_key())
+    }
+
+    /// Write `bytes` to the active pane `repeat` times. No-op when `bytes`
+    /// is empty (mirrors the original Tier-1 `if !bytes.is_empty()` guard
+    /// to avoid sending zero-length input PDUs over the mux). Caller is
+    /// responsible for marking the focused window dirty after dispatch.
+    fn write_repeated(&mut self, pane_id: PaneId, bytes: &[u8], repeat: usize) {
+        if !bytes.is_empty() {
+            for _ in 0..repeat {
+                self.write_pane_input(pane_id, bytes);
+            }
+        }
     }
 
     /// Encode and send a mouse button event to the PTY.
@@ -144,11 +274,12 @@ impl App {
         true
     }
 
-    /// Handle mouse wheel with 3-tier priority.
+    /// Handle mouse wheel with 3-tier priority dispatched via [`WheelTier`].
     ///
-    /// 1. Mouse reporting mode active → send scroll events to PTY.
-    /// 2. Alt screen + `ALTERNATE_SCROLL` → send arrow keys to PTY.
-    /// 3. Normal → smooth viewport scroll.
+    /// Tier ordering is enforced by exhaustive `match` over [`WheelTier`] —
+    /// regressions are compile-time errors rather than doc-comment violations.
+    /// See [`classify_wheel_event`] for the dispatch decision and BUG-08-015
+    /// for the design history.
     pub(super) fn handle_mouse_wheel(&mut self, delta: MouseScrollDelta, mode: TermMode) {
         let cell_height = self
             .focused_renderer()
@@ -161,59 +292,58 @@ impl App {
             return;
         };
 
-        // Tier 1: Mouse reporting.
-        if mode.intersects(TermMode::ANY_MOUSE) && !self.modifiers.shift_key() {
-            let button = if scroll_up {
-                MouseButton::ScrollUp
-            } else {
-                MouseButton::ScrollDown
-            };
-            let Some((col, line)) = self.mouse_cell_clamped() else {
-                return;
-            };
-            let event = MouseEvent {
-                button,
-                kind: MouseEventKind::Press,
-                col,
-                line,
-                mods: self.mouse_modifiers(),
-            };
+        let direction = if scroll_up {
+            ScrollDirection::Up
+        } else {
+            ScrollDirection::Down
+        };
 
-            let report = encode_mouse_event(&event, mode);
-            let bytes = report.as_bytes();
-            if !bytes.is_empty() {
-                for _ in 0..lines {
-                    self.write_pane_input(pane_id, bytes);
+        match classify_wheel_event(mode, self.modifiers.shift_key()) {
+            WheelTier::MouseReport => {
+                let button = if scroll_up {
+                    MouseButton::ScrollUp
+                } else {
+                    MouseButton::ScrollDown
+                };
+                let Some((col, line)) = self.mouse_cell_clamped() else {
+                    return;
+                };
+                let event = MouseEvent {
+                    button,
+                    kind: MouseEventKind::Press,
+                    col,
+                    line,
+                    mods: self.mouse_modifiers(),
+                };
+                let report = encode_mouse_event(&event, mode);
+                let bytes = report.as_bytes();
+                self.write_repeated(pane_id, bytes, lines);
+            }
+            WheelTier::AltScroll => {
+                // tier2_alt_scroll_payload re-checks should_translate_wheel_to_arrows
+                // even though classify_wheel_event already confirmed it returned true here.
+                // The re-check is intentional — it preserves tier2_alt_scroll_payload's
+                // standalone-testability contract (the helper can be matrix-tested with
+                // the full (mode × shift × direction × DECCKM) grid without depending on
+                // classify_wheel_event's pre-classification).
+                if let Some(payload) =
+                    tier2_alt_scroll_payload(mode, self.modifiers.shift_key(), lines, direction)
+                {
+                    self.write_repeated(pane_id, payload.bytes, payload.repeat);
                 }
             }
-            if let Some(ctx) = self.focused_ctx_mut() {
-                ctx.root.mark_dirty();
+            WheelTier::ViewportScroll => {
+                let scroll_lines = match direction {
+                    ScrollDirection::Up => lines as isize,
+                    ScrollDirection::Down => -(lines as isize),
+                };
+                if let Some(mux) = self.mux.as_mut() {
+                    mux.scroll_display(pane_id, scroll_lines);
+                }
             }
-            return;
         }
 
-        // Tier 2: Alternate scroll (arrow keys in alt screen).
-        if should_translate_wheel_to_arrows(mode, self.modifiers.shift_key()) {
-            let arrow: &[u8] = if scroll_up { b"\x1bOA" } else { b"\x1bOB" };
-            for _ in 0..lines {
-                self.write_pane_input(pane_id, arrow);
-            }
-            if let Some(ctx) = self.focused_ctx_mut() {
-                ctx.root.mark_dirty();
-            }
-            return;
-        }
-
-        // Tier 3: Discrete viewport scroll.
-        let scroll_lines = if scroll_up {
-            lines as isize
-        } else {
-            -(lines as isize)
-        };
-        if let Some(mux) = self.mux.as_mut() {
-            mux.scroll_display(pane_id, scroll_lines);
-        }
-
+        // mark_dirty hoisted to single post-match call covering all three tiers.
         if let Some(ctx) = self.focused_ctx_mut() {
             ctx.root.mark_dirty();
         }

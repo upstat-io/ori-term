@@ -1436,3 +1436,435 @@ fn bridge_parser_to_alt_scroll_decision() {
     let mode = term.mode();
     assert!(!should_translate_wheel_to_arrows(mode, false));
 }
+
+// =====================================================================
+// BUG-08-015: tier2_alt_scroll_payload + classify_wheel_event matrix
+//
+// Verifies the DECCKM-aware Tier-2 alt-scroll byte selection, the
+// WheelTier dispatcher, and the ANY_MOUSE_ENCODING isolation per
+// xterm spec (ctlseqs.txt:2465-2473 + scrollbar.c:711-727).
+// See bug-tracker/plans/BUG-08-015/ for the full plan.
+// =====================================================================
+
+use super::{
+    AltScrollPayload, ScrollDirection, WheelTier, classify_wheel_event, should_report_mouse,
+    tier2_alt_scroll_payload,
+};
+
+// --- Exact failing case (from BUG-08-015 repro) ---
+
+/// Catalog row: DEC-ALT-SCROLL
+/// Repro: `printf '\x1b[?1049h\x1b[?1007h\x1b[?1h'` then wheel up.
+/// Pinned by BUG-08-015 (Phase 1 root cause §1A).
+#[test]
+fn tier2_alt_scroll_payload_alt_screen_plus_alternate_scroll_app_cursor_emits_ss3_arrow_up() {
+    let mode = TermMode::ALT_SCREEN | TermMode::ALTERNATE_SCROLL | TermMode::APP_CURSOR;
+    let result = tier2_alt_scroll_payload(mode, false, 3, ScrollDirection::Up);
+    assert_eq!(
+        result,
+        Some(AltScrollPayload {
+            bytes: b"\x1bOA",
+            repeat: 3,
+        })
+    );
+}
+
+// --- DECCKM × direction matrix (semantic apex) ---
+
+/// Catalog row: DEC-ALT-SCROLL
+/// xterm spec: ctlseqs.txt:2465-2473 (`Cursor Up | CSI A | SS3 A` table).
+/// xterm impl: scrollbar.c:711-727 (`MODE_DECCKM ? ANSI_SS3 : ANSI_CSI`).
+/// Ghostty impl: Surface.zig:3492-3506 (mirrors xterm DECCKM split).
+/// Pinned by BUG-08-015 (Phase 1.75 codex consensus).
+#[test]
+fn tier2_alt_scroll_payload_app_cursor_set_scroll_up_emits_ss3_a() {
+    let mode = TermMode::ALT_SCREEN | TermMode::ALTERNATE_SCROLL | TermMode::APP_CURSOR;
+    let payload = tier2_alt_scroll_payload(mode, false, 1, ScrollDirection::Up).unwrap();
+    assert_eq!(payload.bytes, b"\x1bOA");
+}
+
+/// Catalog row: DEC-ALT-SCROLL
+#[test]
+fn tier2_alt_scroll_payload_app_cursor_set_scroll_down_emits_ss3_b() {
+    let mode = TermMode::ALT_SCREEN | TermMode::ALTERNATE_SCROLL | TermMode::APP_CURSOR;
+    let payload = tier2_alt_scroll_payload(mode, false, 1, ScrollDirection::Down).unwrap();
+    assert_eq!(payload.bytes, b"\x1bOB");
+}
+
+/// Catalog row: DEC-ALT-SCROLL
+/// DECCKM clear → CSI normal-cursor sequence per xterm spec.
+#[test]
+fn tier2_alt_scroll_payload_app_cursor_clear_scroll_up_emits_csi_a() {
+    let mode = TermMode::ALT_SCREEN | TermMode::ALTERNATE_SCROLL;
+    let payload = tier2_alt_scroll_payload(mode, false, 1, ScrollDirection::Up).unwrap();
+    assert_eq!(payload.bytes, b"\x1b[A");
+}
+
+/// Catalog row: DEC-ALT-SCROLL
+#[test]
+fn tier2_alt_scroll_payload_app_cursor_clear_scroll_down_emits_csi_b() {
+    let mode = TermMode::ALT_SCREEN | TermMode::ALTERNATE_SCROLL;
+    let payload = tier2_alt_scroll_payload(mode, false, 1, ScrollDirection::Down).unwrap();
+    assert_eq!(payload.bytes, b"\x1b[B");
+}
+
+// --- Repeat count pass-through ---
+
+/// Catalog row: DEC-ALT-SCROLL
+#[test]
+fn tier2_alt_scroll_payload_repeat_passes_through_lines_count() {
+    let mode = TermMode::ALT_SCREEN | TermMode::ALTERNATE_SCROLL | TermMode::APP_CURSOR;
+    let payload = tier2_alt_scroll_payload(mode, false, 5, ScrollDirection::Up).unwrap();
+    assert_eq!(payload.repeat, 5);
+}
+
+// --- Mode-gating cells (single-direction by design — gate short-circuits before direction) ---
+
+/// Catalog row: DEC-ALT-SCROLL
+#[test]
+fn tier2_alt_scroll_payload_no_alt_screen_returns_none() {
+    let mode = TermMode::ALTERNATE_SCROLL | TermMode::APP_CURSOR;
+    assert_eq!(
+        tier2_alt_scroll_payload(mode, false, 1, ScrollDirection::Up),
+        None
+    );
+}
+
+/// Catalog row: DEC-ALT-SCROLL
+#[test]
+fn tier2_alt_scroll_payload_no_alternate_scroll_returns_none() {
+    let mode = TermMode::ALT_SCREEN | TermMode::APP_CURSOR;
+    assert_eq!(
+        tier2_alt_scroll_payload(mode, false, 1, ScrollDirection::Up),
+        None
+    );
+}
+
+/// Catalog row: DEC-ALT-SCROLL
+#[test]
+fn tier2_alt_scroll_payload_empty_mode_returns_none() {
+    assert_eq!(
+        tier2_alt_scroll_payload(TermMode::empty(), false, 1, ScrollDirection::Up),
+        None
+    );
+}
+
+/// Catalog row: DEC-ALT-SCROLL
+#[test]
+fn tier2_alt_scroll_payload_shift_held_returns_none() {
+    let mode = TermMode::ALT_SCREEN | TermMode::ALTERNATE_SCROLL | TermMode::APP_CURSOR;
+    assert_eq!(
+        tier2_alt_scroll_payload(mode, true, 1, ScrollDirection::Up),
+        None
+    );
+}
+
+// --- Shift-bypass × DECCKM × direction (per Plan-TPR R1 [TPR-04-007-codex]) ---
+
+/// Catalog row: DEC-ALT-SCROLL
+#[test]
+fn tier2_alt_scroll_payload_shift_held_app_cursor_set_scroll_up_returns_none() {
+    let mode = TermMode::ALT_SCREEN | TermMode::ALTERNATE_SCROLL | TermMode::APP_CURSOR;
+    assert_eq!(
+        tier2_alt_scroll_payload(mode, true, 1, ScrollDirection::Up),
+        None
+    );
+}
+
+/// Catalog row: DEC-ALT-SCROLL
+#[test]
+fn tier2_alt_scroll_payload_shift_held_app_cursor_set_scroll_down_returns_none() {
+    let mode = TermMode::ALT_SCREEN | TermMode::ALTERNATE_SCROLL | TermMode::APP_CURSOR;
+    assert_eq!(
+        tier2_alt_scroll_payload(mode, true, 1, ScrollDirection::Down),
+        None
+    );
+}
+
+/// Catalog row: DEC-ALT-SCROLL
+#[test]
+fn tier2_alt_scroll_payload_shift_held_app_cursor_clear_scroll_up_returns_none() {
+    let mode = TermMode::ALT_SCREEN | TermMode::ALTERNATE_SCROLL;
+    assert_eq!(
+        tier2_alt_scroll_payload(mode, true, 1, ScrollDirection::Up),
+        None
+    );
+}
+
+/// Catalog row: DEC-ALT-SCROLL
+#[test]
+fn tier2_alt_scroll_payload_shift_held_app_cursor_clear_scroll_down_returns_none() {
+    let mode = TermMode::ALT_SCREEN | TermMode::ALTERNATE_SCROLL;
+    assert_eq!(
+        tier2_alt_scroll_payload(mode, true, 1, ScrollDirection::Down),
+        None
+    );
+}
+
+// --- Cross-tier independence ---
+
+/// Catalog row: DEC-ALT-SCROLL
+/// MOUSE_REPORT_CLICK is in ANY_MOUSE; tier2_alt_scroll_payload still
+/// returns Some — the Tier-1-precedes-Tier-2 ordering lives in the
+/// caller (handle_mouse_wheel via classify_wheel_event), not in the
+/// helper.
+#[test]
+fn tier2_alt_scroll_payload_with_mouse_report_click_still_returns_some() {
+    let mode = TermMode::ALT_SCREEN
+        | TermMode::ALTERNATE_SCROLL
+        | TermMode::MOUSE_REPORT_CLICK
+        | TermMode::APP_CURSOR;
+    let payload = tier2_alt_scroll_payload(mode, false, 1, ScrollDirection::Up).unwrap();
+    assert_eq!(payload.bytes, b"\x1bOA");
+    assert_eq!(payload.repeat, 1);
+}
+
+// --- Semantic pin (DECCKM-aware byte selection per xterm spec) ---
+
+/// Catalog row: DEC-ALT-SCROLL
+/// xterm spec: ctlseqs.txt:2465-2473 (`Cursor Up | CSI A | SS3 A` table).
+/// xterm impl: scrollbar.c:711-727 (`MODE_DECCKM ? ANSI_SS3 : ANSI_CSI`).
+/// Ghostty impl: Surface.zig:3492-3506 (mirrors xterm DECCKM split).
+/// Pinned by BUG-08-015 §1B — load-bearing semantic pin: prevents
+/// regression to hardcoded-SS3 implementation.
+#[test]
+fn tier2_alt_scroll_payload_decckm_aware_byte_selection_per_xterm_ctlseqs() {
+    // DECCKM set → SS3 sequences
+    let mode_app = TermMode::ALT_SCREEN | TermMode::ALTERNATE_SCROLL | TermMode::APP_CURSOR;
+    assert_eq!(
+        tier2_alt_scroll_payload(mode_app, false, 1, ScrollDirection::Up)
+            .unwrap()
+            .bytes,
+        b"\x1bOA"
+    );
+    assert_eq!(
+        tier2_alt_scroll_payload(mode_app, false, 1, ScrollDirection::Down)
+            .unwrap()
+            .bytes,
+        b"\x1bOB"
+    );
+    // DECCKM clear → CSI sequences
+    let mode_normal = TermMode::ALT_SCREEN | TermMode::ALTERNATE_SCROLL;
+    assert_eq!(
+        tier2_alt_scroll_payload(mode_normal, false, 1, ScrollDirection::Up)
+            .unwrap()
+            .bytes,
+        b"\x1b[A"
+    );
+    assert_eq!(
+        tier2_alt_scroll_payload(mode_normal, false, 1, ScrollDirection::Down)
+            .unwrap()
+            .bytes,
+        b"\x1b[B"
+    );
+}
+
+// --- Negative pin (rejects pre-fix hardcoded SS3) ---
+
+/// Catalog row: DEC-ALT-SCROLL
+/// Negative pin: rejects the pre-fix hardcoded `if scroll_up { b"\x1bOA" } else { b"\x1bOB" }`
+/// implementation that emitted SS3 unconditionally regardless of DECCKM.
+#[test]
+fn tier2_alt_scroll_payload_does_not_hardcode_ss3_when_decckm_clear() {
+    let mode = TermMode::ALT_SCREEN | TermMode::ALTERNATE_SCROLL;
+    let payload = tier2_alt_scroll_payload(mode, false, 1, ScrollDirection::Up).unwrap();
+    assert_ne!(payload.bytes, b"\x1bOA");
+    assert_eq!(payload.bytes, b"\x1b[A");
+}
+
+// --- classify_wheel_event dispatcher matrix (per Plan-TPR R1 [TPR-04-006-codex]) ---
+
+/// Catalog row: DEC-ALT-SCROLL
+#[test]
+fn classify_wheel_event_mouse_report_click_set_no_shift_returns_mouse_report() {
+    assert_eq!(
+        classify_wheel_event(TermMode::MOUSE_REPORT_CLICK, false),
+        WheelTier::MouseReport
+    );
+}
+
+/// Catalog row: DEC-ALT-SCROLL
+#[test]
+fn classify_wheel_event_mouse_drag_set_no_shift_returns_mouse_report() {
+    assert_eq!(
+        classify_wheel_event(TermMode::MOUSE_DRAG, false),
+        WheelTier::MouseReport
+    );
+}
+
+/// Catalog row: DEC-ALT-SCROLL
+#[test]
+fn classify_wheel_event_mouse_motion_set_no_shift_returns_mouse_report() {
+    assert_eq!(
+        classify_wheel_event(TermMode::MOUSE_MOTION, false),
+        WheelTier::MouseReport
+    );
+}
+
+/// Catalog row: DEC-ALT-SCROLL
+#[test]
+fn classify_wheel_event_mouse_x10_set_no_shift_returns_mouse_report() {
+    assert_eq!(
+        classify_wheel_event(TermMode::MOUSE_X10, false),
+        WheelTier::MouseReport
+    );
+}
+
+/// Catalog row: DEC-ALT-SCROLL
+#[test]
+fn classify_wheel_event_alt_screen_plus_alternate_scroll_set_returns_alt_scroll() {
+    assert_eq!(
+        classify_wheel_event(TermMode::ALT_SCREEN | TermMode::ALTERNATE_SCROLL, false),
+        WheelTier::AltScroll
+    );
+}
+
+/// Catalog row: DEC-ALT-SCROLL
+#[test]
+fn classify_wheel_event_no_tier_applies_returns_viewport_scroll() {
+    assert_eq!(
+        classify_wheel_event(TermMode::empty(), false),
+        WheelTier::ViewportScroll
+    );
+}
+
+/// Catalog row: DEC-ALT-SCROLL
+/// Tier-1-precedes-Tier-2 invariant: when both Tier-1 and Tier-2 conditions
+/// hold, Tier-1 wins per the canonical ordering. Replaces the doc-only
+/// invariant with executable verification.
+#[test]
+fn classify_wheel_event_mouse_report_click_with_alt_scroll_set_returns_mouse_report() {
+    let mode = TermMode::ALT_SCREEN | TermMode::ALTERNATE_SCROLL | TermMode::MOUSE_REPORT_CLICK;
+    assert_eq!(classify_wheel_event(mode, false), WheelTier::MouseReport);
+}
+
+/// Catalog row: DEC-ALT-SCROLL
+#[test]
+fn classify_wheel_event_mouse_drag_with_alt_scroll_set_returns_mouse_report() {
+    let mode = TermMode::ALT_SCREEN | TermMode::ALTERNATE_SCROLL | TermMode::MOUSE_DRAG;
+    assert_eq!(classify_wheel_event(mode, false), WheelTier::MouseReport);
+}
+
+/// Catalog row: DEC-ALT-SCROLL
+#[test]
+fn classify_wheel_event_mouse_motion_with_alt_scroll_set_returns_mouse_report() {
+    let mode = TermMode::ALT_SCREEN | TermMode::ALTERNATE_SCROLL | TermMode::MOUSE_MOTION;
+    assert_eq!(classify_wheel_event(mode, false), WheelTier::MouseReport);
+}
+
+/// Catalog row: DEC-ALT-SCROLL
+#[test]
+fn classify_wheel_event_mouse_x10_with_alt_scroll_set_returns_mouse_report() {
+    let mode = TermMode::ALT_SCREEN | TermMode::ALTERNATE_SCROLL | TermMode::MOUSE_X10;
+    assert_eq!(classify_wheel_event(mode, false), WheelTier::MouseReport);
+}
+
+// --- Shift-bypass × ANY_MOUSE (per Plan-TPR R3 [TPR-04-022-gemini]) ---
+
+/// Catalog row: DEC-ALT-SCROLL
+#[test]
+fn classify_wheel_event_shift_held_mouse_report_click_with_alt_scroll_returns_viewport_scroll() {
+    let mode = TermMode::ALT_SCREEN | TermMode::ALTERNATE_SCROLL | TermMode::MOUSE_REPORT_CLICK;
+    assert_eq!(classify_wheel_event(mode, true), WheelTier::ViewportScroll);
+}
+
+/// Catalog row: DEC-ALT-SCROLL
+#[test]
+fn classify_wheel_event_shift_held_mouse_drag_with_alt_scroll_returns_viewport_scroll() {
+    let mode = TermMode::ALT_SCREEN | TermMode::ALTERNATE_SCROLL | TermMode::MOUSE_DRAG;
+    assert_eq!(classify_wheel_event(mode, true), WheelTier::ViewportScroll);
+}
+
+/// Catalog row: DEC-ALT-SCROLL
+#[test]
+fn classify_wheel_event_shift_held_mouse_motion_with_alt_scroll_returns_viewport_scroll() {
+    let mode = TermMode::ALT_SCREEN | TermMode::ALTERNATE_SCROLL | TermMode::MOUSE_MOTION;
+    assert_eq!(classify_wheel_event(mode, true), WheelTier::ViewportScroll);
+}
+
+/// Catalog row: DEC-ALT-SCROLL
+#[test]
+fn classify_wheel_event_shift_held_mouse_x10_with_alt_scroll_returns_viewport_scroll() {
+    let mode = TermMode::ALT_SCREEN | TermMode::ALTERNATE_SCROLL | TermMode::MOUSE_X10;
+    assert_eq!(classify_wheel_event(mode, true), WheelTier::ViewportScroll);
+}
+
+/// Catalog row: DEC-ALT-SCROLL
+/// Pure Tier-2 shift-bypass (no ANY_MOUSE flags) per Plan-TPR R5 [TPR-04-029-gemini].
+#[test]
+fn classify_wheel_event_shift_held_alt_scroll_only_returns_viewport_scroll() {
+    let mode = TermMode::ALT_SCREEN | TermMode::ALTERNATE_SCROLL;
+    assert_eq!(classify_wheel_event(mode, true), WheelTier::ViewportScroll);
+}
+
+/// Catalog row: DEC-ALT-SCROLL
+/// Empty-mode + shift-held edge cell — pins shift alone doesn't alter the
+/// fallback dispatch.
+#[test]
+fn classify_wheel_event_empty_mode_with_shift_held_returns_viewport_scroll() {
+    assert_eq!(
+        classify_wheel_event(TermMode::empty(), true),
+        WheelTier::ViewportScroll
+    );
+}
+
+// --- ANY_MOUSE_ENCODING isolation negative pins ---
+
+/// Catalog row: DEC-ALT-SCROLL
+/// Negative pin: MOUSE_SGR is in ANY_MOUSE_ENCODING (encoding format),
+/// NOT in ANY_MOUSE (tracking trigger). Pins the bit-mask separation —
+/// defensive against future drift that lumps encoding flags into ANY_MOUSE.
+#[test]
+fn should_report_mouse_mouse_sgr_alone_returns_false() {
+    assert!(!should_report_mouse(TermMode::MOUSE_SGR, false));
+}
+
+/// Catalog row: DEC-ALT-SCROLL
+#[test]
+fn should_report_mouse_mouse_utf8_alone_returns_false() {
+    assert!(!should_report_mouse(TermMode::MOUSE_UTF8, false));
+}
+
+/// Catalog row: DEC-ALT-SCROLL
+#[test]
+fn should_report_mouse_mouse_urxvt_alone_returns_false() {
+    assert!(!should_report_mouse(TermMode::MOUSE_URXVT, false));
+}
+
+// --- Self-verifying ANY_MOUSE membership completeness assertion ---
+
+/// Catalog row: DEC-ALT-SCROLL
+/// Self-verifying matrix completeness: iterates every ANY_MOUSE flag and
+/// asserts dispatcher behavior + count. Any future ANY_MOUSE addition that
+/// silently bypasses dispatcher coverage would fail this test.
+#[test]
+fn classify_wheel_event_any_mouse_member_count_assertion() {
+    let any_mouse_flags = [
+        TermMode::MOUSE_REPORT_CLICK,
+        TermMode::MOUSE_DRAG,
+        TermMode::MOUSE_MOTION,
+        TermMode::MOUSE_X10,
+    ];
+    let mut count = 0;
+    for flag in any_mouse_flags {
+        assert_eq!(
+            classify_wheel_event(flag, false),
+            WheelTier::MouseReport,
+            "flag {flag:?} must trigger MouseReport"
+        );
+        count += 1;
+    }
+    assert_eq!(count, 4, "iteration count must match flag list length");
+    // Sanity-check that the union of the 4 flags equals TermMode::ANY_MOUSE
+    // (would catch a future ANY_MOUSE bit addition that this test doesn't
+    // exercise — proves the test list is comprehensive against the bit-set).
+    let union = TermMode::MOUSE_REPORT_CLICK
+        | TermMode::MOUSE_DRAG
+        | TermMode::MOUSE_MOTION
+        | TermMode::MOUSE_X10;
+    assert_eq!(
+        union,
+        TermMode::ANY_MOUSE,
+        "ANY_MOUSE flag set may have grown — extend the dispatcher matrix"
+    );
+}

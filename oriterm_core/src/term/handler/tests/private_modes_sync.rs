@@ -16,10 +16,7 @@ fn term() -> Term<crate::effect::VoidEffectSink> {
 /// Count how many of the given `HostEffect` variants appear in the drained
 /// effect set. Used by mode-1042 / urgency-hint tests to assert that BEL
 /// emits `Bell` always and `UrgencyHint` only when mode 1042 is set.
-fn count_host_effects(
-    effects: &[Effect],
-    matcher: impl Fn(&HostEffect) -> bool,
-) -> usize {
+fn count_host_effects(effects: &[Effect], matcher: impl Fn(&HostEffect) -> bool) -> usize {
     effects
         .iter()
         .filter(|e| matches!(e, Effect::Host(h) if matcher(h)))

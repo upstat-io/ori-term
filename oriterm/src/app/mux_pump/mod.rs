@@ -331,7 +331,9 @@ impl App {
         if self.active_pane_id() == Some(id) {
             return;
         }
-        let Some(session_wid) = self.session.window_for_pane(id) else { return };
+        let Some(session_wid) = self.session.window_for_pane(id) else {
+            return;
+        };
         if let Some(ctx) = self
             .windows
             .values()

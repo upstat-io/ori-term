@@ -86,8 +86,7 @@ impl<S: EffectSink> Handler for Term<S> {
         // window-manager attention via the host adapter (taskbar flash on
         // Windows, dock bounce on macOS, urgency hint on X11/Wayland).
         if self.mode().contains(TermMode::URGENCY_HINTS) {
-            self.effect_sink
-                .push(Effect::Host(HostEffect::UrgencyHint));
+            self.effect_sink.push(Effect::Host(HostEffect::UrgencyHint));
         }
     }
 
