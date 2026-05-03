@@ -25,12 +25,14 @@
 mod codec;
 pub(crate) mod decode;
 pub(crate) mod encode;
+pub(crate) mod host_request;
 pub(crate) mod messages;
 pub(crate) mod msg_type;
 mod pdu_traits;
 pub mod snapshot;
 
 pub use codec::{DecodeError, DecodedFrame, ProtocolCodec};
+pub use host_request::{HostReplyPayload, WireClipboardSelection, WireNotificationSource};
 pub use messages::MuxPdu;
 // Re-export for server/tests.rs (test-only consumer outside protocol module).
 #[cfg(test)]

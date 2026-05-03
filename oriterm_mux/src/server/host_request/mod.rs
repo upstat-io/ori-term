@@ -1,0 +1,168 @@
+//! Daemon-mode `HostRequest` dispatch — allocate request IDs, select a
+//! single responder, package OSC parameters into wire PDUs (BUG-11-011).
+//!
+//! Two notification variants carry process-local `ResponseToken`s:
+//! `HostClipboardLoad` and `HostColorQuery`. Neither token can cross IPC,
+//! so the daemon allocates a server-monotonic `HostRequestId`, packages
+//! the OSC parameters into a `Notify…` PDU, and stores the token in
+//! `MuxServer::pending_host_replies` until the responding client returns
+//! a matching `ReplyHostRequest`. The reply payload re-fulfills the
+//! token, which the IO thread observes via its existing `response_poll`
+//! loop and writes the formatted OSC reply back to the pane's PTY.
+
+use std::collections::HashMap;
+
+use oriterm_core::color::Rgb;
+use oriterm_core::effect::ResponseToken;
+
+use crate::id::{ClientId, HostRequestId, IdAllocator, PaneId};
+use crate::mux_event::MuxNotification;
+use crate::protocol::{MuxPdu, WireClipboardSelection};
+use crate::server::ClientConnection;
+use crate::server::notify::TargetClients;
+
+/// Daemon-side bookkeeping for an in-flight host request.
+pub(crate) struct PendingHostReply {
+    /// Pane that originated the request.
+    pub pane_id: PaneId,
+    /// Client picked by `select_responder` to answer this request.
+    pub responder: ClientId,
+    /// Typed token to fulfill on reply.
+    pub kind: PendingHostReplyKind,
+}
+
+/// Per-kind token storage for `PendingHostReply`.
+pub(crate) enum PendingHostReplyKind {
+    /// OSC 52 clipboard load — fulfilled with the read text.
+    Clipboard(ResponseToken<String>),
+    /// OSC color query — fulfilled with the resolved RGB triple.
+    Color(ResponseToken<Rgb>),
+}
+
+/// Output of `host_request_to_pdu` — bundles the routing target, the wire
+/// PDU, the allocated request id, and the bookkeeping entry to register
+/// in `pending_host_replies` AFTER successful queueing.
+pub(crate) struct HostRequestDispatch {
+    /// Single-responder routing target.
+    pub target: TargetClients,
+    /// Wire PDU to queue to the responder.
+    pub pdu: MuxPdu,
+    /// Allocated server-monotonic request id.
+    pub request_id: HostRequestId,
+    /// Token + responder bookkeeping to store on success.
+    pub pending: PendingHostReply,
+}
+
+/// Mutable context for `host_request_to_pdu`. Threads the id allocator and
+/// the chosen responder through without re-borrowing `MuxServer`.
+pub(crate) struct HostRequestDispatchCtx<'a> {
+    /// Server's `HostRequestId` allocator.
+    pub request_alloc: &'a mut IdAllocator<HostRequestId>,
+    /// Responder client id chosen by `select_responder`.
+    pub responder: ClientId,
+}
+
+/// Convert a host-request `MuxNotification` into a wire PDU + bookkeeping.
+///
+/// Allocates a `HostRequestId`, packages the OSC parameters into a
+/// `Notify…` PDU, and bundles the token into a `PendingHostReply` for
+/// the caller to insert into `pending_host_replies` AFTER successful
+/// queueing (codex-002 round 1 finding: rolling back a register-then-fail
+/// would leak a token entry for a request the client never receives).
+///
+/// Returns `None` for non-host-request notifications — those flow through
+/// the stateless `notify::notification_to_pdu` path instead.
+pub(crate) fn host_request_to_pdu(
+    notif: MuxNotification,
+    ctx: &mut HostRequestDispatchCtx<'_>,
+) -> Option<HostRequestDispatch> {
+    match notif {
+        MuxNotification::HostClipboardLoad {
+            pane_id,
+            selection,
+            clipboard_char,
+            terminator,
+            reply,
+        } => {
+            let request_id = ctx.request_alloc.alloc();
+            let pdu = MuxPdu::NotifyHostClipboardLoad {
+                pane_id,
+                request_id: request_id.raw(),
+                selection: WireClipboardSelection::from(selection),
+                clipboard_char,
+                terminator,
+            };
+            Some(HostRequestDispatch {
+                target: TargetClients::SinglePaneSubscriber(pane_id, ctx.responder),
+                pdu,
+                request_id,
+                pending: PendingHostReply {
+                    pane_id,
+                    responder: ctx.responder,
+                    kind: PendingHostReplyKind::Clipboard(reply),
+                },
+            })
+        }
+        MuxNotification::HostColorQuery {
+            pane_id,
+            prefix,
+            index,
+            terminator,
+            reply,
+        } => {
+            let request_id = ctx.request_alloc.alloc();
+            let pdu = MuxPdu::NotifyHostColorQuery {
+                pane_id,
+                request_id: request_id.raw(),
+                prefix,
+                // Palette index ≤ 270 entries (270 cells: 256 ANSI + 10
+                // dynamic + 4 OSC 4 reachable extras). Cast saturates on
+                // unsupported targets but is infallible on Linux x86_64,
+                // ARM64, and Windows.
+                index: u32::try_from(index).unwrap_or(u32::MAX),
+                terminator,
+            };
+            Some(HostRequestDispatch {
+                target: TargetClients::SinglePaneSubscriber(pane_id, ctx.responder),
+                pdu,
+                request_id,
+                pending: PendingHostReply {
+                    pane_id,
+                    responder: ctx.responder,
+                    kind: PendingHostReplyKind::Color(reply),
+                },
+            })
+        }
+        _ => None,
+    }
+}
+
+/// Pick the highest-priority subscribed client for a pane.
+///
+/// Lowest priority value wins (`0` = focused, `1` = visible, `2` = hidden).
+/// Ties broken deterministically by `ClientId` numerical order. Returns
+/// `None` when no client is subscribed to the pane.
+pub(crate) fn select_responder(
+    subscriptions: &HashMap<PaneId, Vec<ClientId>>,
+    connections: &HashMap<ClientId, ClientConnection>,
+    pane_id: PaneId,
+) -> Option<ClientId> {
+    let subs = subscriptions.get(&pane_id)?;
+    let mut best: Option<(u8, ClientId)> = None;
+    for &cid in subs {
+        let priority = connections
+            .get(&cid)
+            .map_or(u8::MAX, |c| c.pane_priority(pane_id));
+        match best {
+            None => best = Some((priority, cid)),
+            Some((bp, bcid)) if priority < bp || (priority == bp && cid.raw() < bcid.raw()) => {
+                best = Some((priority, cid));
+            }
+            _ => {}
+        }
+    }
+    best.map(|(_, cid)| cid)
+}
+
+#[cfg(test)]
+mod tests;

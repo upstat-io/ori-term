@@ -1854,3 +1854,184 @@ fn signal_child_alone_kills_flooding_process() {
 
     client.close_pane(pane_id);
 }
+
+// ---------------------------------------------------------------------------
+// BUG-11-011: Daemon-mode HostRequest round-trip
+// ---------------------------------------------------------------------------
+
+/// Wait until `client.drain_notifications` produces a notification matched by
+/// `pred`. Returns the matched notification (moved out of the buffer).
+fn wait_for_notification<F>(
+    client: &mut MuxClient,
+    mut pred: F,
+    timeout: Duration,
+) -> Option<MuxNotification>
+where
+    F: FnMut(&MuxNotification) -> bool,
+{
+    let deadline = Instant::now() + timeout;
+    let mut buf = Vec::new();
+    loop {
+        client.poll_events();
+        client.drain_notifications(&mut buf);
+        if let Some(idx) = buf.iter().position(&mut pred) {
+            return Some(buf.swap_remove(idx));
+        }
+        if Instant::now() > deadline {
+            return None;
+        }
+        thread::sleep(Duration::from_millis(20));
+    }
+}
+
+/// BUG-11-011: OSC 52 clipboard read from a daemon-mode pane round-trips
+/// through the new `NotifyHostClipboardLoad` → client fulfill →
+/// `ReplyHostRequest` wire path and the daemon writes the canonical OSC 52
+/// reply (`\x1b]52;c;<base64>\x1b\\`) back to the pane's PTY.
+#[test]
+fn daemon_osc_52_clipboard_read_round_trip() {
+    let daemon = TestDaemon::start();
+    let mut client = daemon.connect_client();
+    let pane_id = spawn_test_pane_ready(&mut client);
+
+    // Trigger an OSC 52 read inside the shell. `cat` keeps the slave open so
+    // the OSC reply (written to the PTY input) is echoed back to PTY output
+    // by the kernel's tty-line discipline (echo on by default).
+    client.send_input(pane_id, b"printf '\\033]52;c;?\\033\\\\' && cat\n");
+
+    let notif = wait_for_notification(
+        &mut client,
+        |n| matches!(n, MuxNotification::HostClipboardLoad { .. }),
+        Duration::from_secs(30),
+    )
+    .expect("daemon must forward OSC 52 read as HostClipboardLoad");
+
+    let token = match notif {
+        MuxNotification::HostClipboardLoad { reply, .. } => reply,
+        _ => unreachable!(),
+    };
+    client
+        .fulfill_host_request(
+            pane_id,
+            oriterm_mux::HostReply::ClipboardLoad {
+                token,
+                text: "hello".into(),
+            },
+        )
+        .expect("fulfill_host_request must succeed");
+
+    // OSC 52 reply for "hello" base64-encodes to "aGVsbG8=" — search the
+    // snapshot for that token (PTY echoes the reply back to the user).
+    wait_for_text_in_snapshot(&mut client, pane_id, "aGVsbG8", Duration::from_secs(30));
+
+    client.send_input(pane_id, &[0x03]); // Ctrl+C to terminate cat.
+    client.close_pane(pane_id);
+}
+
+/// BUG-11-011: OSC 10 (default foreground) color query round-trips and the
+/// daemon emits the `XParseColor` `rgb:RRRR/GGGG/BBBB` reply.
+#[test]
+fn daemon_osc_10_color_query_round_trip() {
+    let daemon = TestDaemon::start();
+    let mut client = daemon.connect_client();
+    let pane_id = spawn_test_pane_ready(&mut client);
+
+    client.send_input(pane_id, b"printf '\\033]10;?\\033\\\\' && cat\n");
+
+    let notif = wait_for_notification(
+        &mut client,
+        |n| matches!(n, MuxNotification::HostColorQuery { .. }),
+        Duration::from_secs(30),
+    )
+    .expect("daemon must forward OSC 10 as HostColorQuery");
+
+    let token = match notif {
+        MuxNotification::HostColorQuery { reply, .. } => reply,
+        _ => unreachable!(),
+    };
+    client
+        .fulfill_host_request(
+            pane_id,
+            oriterm_mux::HostReply::ColorQuery {
+                token,
+                color: oriterm_core::color::Rgb {
+                    r: 0xab,
+                    g: 0xcd,
+                    b: 0xef,
+                },
+            },
+        )
+        .expect("fulfill_host_request must succeed");
+
+    // Reply uses doubled-nibble: 0xab → "abab", 0xcd → "cdcd", 0xef → "efef".
+    wait_for_text_in_snapshot(
+        &mut client,
+        pane_id,
+        "abab/cdcd/efef",
+        Duration::from_secs(30),
+    );
+
+    client.send_input(pane_id, &[0x03]);
+    client.close_pane(pane_id);
+}
+
+/// BUG-11-011: pending host-replies for a closed pane are reaped during
+/// `cleanup_pane_state` — no leak across the close boundary. Verifies that
+/// re-issuing the same OSC 52 query against a fresh pane succeeds (the
+/// daemon's `pending_host_replies` map is not unbounded).
+#[test]
+fn daemon_host_request_cleanup_on_pane_close() {
+    let daemon = TestDaemon::start();
+    let mut client = daemon.connect_client();
+    let pane_id = spawn_test_pane_ready(&mut client);
+
+    client.send_input(pane_id, b"printf '\\033]52;c;?\\033\\\\' && cat\n");
+    let notif = wait_for_notification(
+        &mut client,
+        |n| matches!(n, MuxNotification::HostClipboardLoad { .. }),
+        Duration::from_secs(30),
+    )
+    .expect("first request must reach client");
+    // Drop the token *without* fulfilling — simulates the consumer abandoning
+    // the request. The daemon's pending entry MUST be reaped on pane close,
+    // not held forever.
+    drop(notif);
+
+    client.close_pane(pane_id);
+
+    // Issue another request from a fresh pane; verify the wire path still
+    // works (the daemon hasn't been wedged by the abandoned token).
+    let pane_id2 = spawn_test_pane_ready(&mut client);
+    client.send_input(pane_id2, b"printf '\\033]52;c;?\\033\\\\' && cat\n");
+    let notif2 = wait_for_notification(
+        &mut client,
+        |n| matches!(n, MuxNotification::HostClipboardLoad { .. }),
+        Duration::from_secs(30),
+    )
+    .expect("second request after pane close must succeed");
+    let token = match notif2 {
+        MuxNotification::HostClipboardLoad { reply, .. } => reply,
+        _ => unreachable!(),
+    };
+    client
+        .fulfill_host_request(
+            pane_id2,
+            oriterm_mux::HostReply::ClipboardLoad {
+                token,
+                text: "world".into(),
+            },
+        )
+        .expect("fulfill_host_request must succeed");
+
+    wait_for_text_in_snapshot(&mut client, pane_id2, "d29ybGQ", Duration::from_secs(30));
+    client.send_input(pane_id2, &[0x03]);
+    client.close_pane(pane_id2);
+}
+
+// `select_responder` priority routing is unit-tested in
+// `oriterm_mux/src/server/host_request/tests.rs::select_responder_*`. An
+// end-to-end version would require exposing `subscribe_pane` and
+// `set_pane_priority` on the public `MuxBackend` trait — those are internal
+// embedded/daemon-mode mechanisms today and exposing them solely for one
+// e2e test would expand the public API without a real consumer. The unit
+// test verifies the pure dispatch logic (priority comparison + tie break).

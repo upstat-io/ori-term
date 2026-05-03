@@ -69,6 +69,13 @@ impl MuxPdu {
             Self::NotifyClipboardStore { .. } => MsgType::NotifyClipboardStore,
             Self::NotifyClipboardLoad { .. } => MsgType::NotifyClipboardLoad,
             Self::NotifyPaneSnapshot { .. } => MsgType::NotifyPaneSnapshot,
+            Self::NotifyHostClipboardLoad { .. } => MsgType::NotifyHostClipboardLoad,
+            Self::NotifyHostColorQuery { .. } => MsgType::NotifyHostColorQuery,
+            Self::ReplyHostRequest { .. } => MsgType::ReplyHostRequest,
+            Self::NotifyDesktopNotification { .. } => MsgType::NotifyDesktopNotification,
+            Self::NotifyClearPendingDesktopNotifications { .. } => {
+                MsgType::NotifyClearPendingDesktopNotifications
+            }
         }
     }
 
@@ -95,6 +102,7 @@ impl MuxPdu {
                 | Self::SetCellDimensions { .. }
                 | Self::SetPanePriority { .. }
                 | Self::SignalChild { .. }
+                | Self::ReplyHostRequest { .. }
         )
     }
 
@@ -112,6 +120,10 @@ impl MuxPdu {
                 | Self::NotifyClipboardLoad { .. }
                 | Self::NotifyPaneSnapshot { .. }
                 | Self::NotifyNewTab
+                | Self::NotifyHostClipboardLoad { .. }
+                | Self::NotifyHostColorQuery { .. }
+                | Self::NotifyDesktopNotification { .. }
+                | Self::NotifyClearPendingDesktopNotifications { .. }
         )
     }
 }

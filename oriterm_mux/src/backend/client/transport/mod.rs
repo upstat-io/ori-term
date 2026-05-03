@@ -22,10 +22,36 @@ use std::os::fd::RawFd;
 
 use oriterm_ipc::ClientStream;
 
+use oriterm_core::effect::ResponseTokenId;
+
 use crate::id::ClientId;
 use crate::mux_event::MuxNotification;
 use crate::protocol::{MuxPdu, ProtocolCodec};
 use crate::{PaneId, PaneSnapshot};
+
+/// Bookkeeping for a host-request received from the daemon, awaiting the
+/// App's `MuxBackend::fulfill_host_request` call (BUG-11-011).
+pub(super) enum PendingClientReply {
+    /// OSC 52 clipboard load — `request_id` echoed back in the reply PDU.
+    Clipboard {
+        /// Server-allocated id from the originating notification.
+        request_id: u64,
+    },
+    /// OSC 4 / 10 / 11 / 12 color query.
+    Color {
+        /// Server-allocated id from the originating notification.
+        request_id: u64,
+    },
+}
+
+impl PendingClientReply {
+    /// Echo-back `request_id` regardless of variant.
+    pub(super) fn request_id(&self) -> u64 {
+        match self {
+            Self::Clipboard { request_id } | Self::Color { request_id } => *request_id,
+        }
+    }
+}
 
 /// RPC timeout for blocking responses.
 const RPC_TIMEOUT: Duration = Duration::from_secs(5);
@@ -83,6 +109,13 @@ pub(super) struct ClientTransport {
     /// when an outbound request is queued (Unix only).
     #[cfg(unix)]
     wake_write: RawFd,
+    /// Pending host-request replies received from the daemon — keyed by
+    /// the local `ResponseToken`'s `slot_id` so `MuxClient::fulfill_host_request`
+    /// can look up the original `request_id` and echo it back in
+    /// `MuxPdu::ReplyHostRequest`. Shared with the reader thread (which
+    /// inserts on `NotifyHostClipboardLoad`/`NotifyHostColorQuery`) and
+    /// the main thread (which removes on fulfill).
+    pending_replies: Arc<Mutex<HashMap<ResponseTokenId, PendingClientReply>>>,
 }
 
 impl ClientTransport {
@@ -90,6 +123,10 @@ impl ClientTransport {
     ///
     /// `wakeup` is called when push notifications arrive, so the event loop
     /// can wake and process them.
+    #[allow(
+        clippy::too_many_lines,
+        reason = "linear handshake + state-init sequence; splitting would scatter setup"
+    )]
     pub(super) fn connect(path: &Path, wakeup: Arc<dyn Fn() + Send + Sync>) -> io::Result<Self> {
         let mut stream = ClientStream::connect(path)?;
 
@@ -174,6 +211,10 @@ impl ClientTransport {
         #[cfg(unix)]
         let (wake_read, wake_write) = create_self_pipe()?;
 
+        let pending_replies: Arc<Mutex<HashMap<ResponseTokenId, PendingClientReply>>> =
+            Arc::new(Mutex::new(HashMap::new()));
+        let pending_replies_reader = Arc::clone(&pending_replies);
+
         // Spawn reader thread.
         let handle = std::thread::Builder::new()
             .name("mux-client-reader".into())
@@ -185,6 +226,7 @@ impl ClientTransport {
                     guarded_wakeup,
                     alive_flag,
                     pushed_snapshots_reader,
+                    pending_replies_reader,
                     #[cfg(unix)]
                     wake_read,
                 );
@@ -207,6 +249,7 @@ impl ClientTransport {
             wakeup_pending,
             #[cfg(unix)]
             wake_write,
+            pending_replies,
         })
     }
 
@@ -273,6 +316,47 @@ impl ClientTransport {
             });
             self.signal_wake();
         }
+    }
+
+    /// Fallible version of `fire_and_forget` — surfaces transport
+    /// liveness / mpsc failures as `io::Error` so callers (notably
+    /// `MuxClient::fulfill_host_request`) can propagate them rather than
+    /// silently dropping data (codex-004 round 1 finding).
+    pub(super) fn try_fire_and_forget(&mut self, pdu: MuxPdu) -> io::Result<()> {
+        if !self.is_alive() {
+            return Err(io::Error::new(
+                io::ErrorKind::NotConnected,
+                "daemon connection lost",
+            ));
+        }
+        let seq = self.alloc_seq();
+        let tx = self
+            .send_tx
+            .as_ref()
+            .ok_or_else(|| io::Error::new(io::ErrorKind::BrokenPipe, "transport shut down"))?;
+        tx.send(SendRequest {
+            seq,
+            pdu,
+            reply_tx: None,
+        })
+        .map_err(|_send_err| io::Error::new(io::ErrorKind::BrokenPipe, "reader thread gone"))?;
+        self.signal_wake();
+        Ok(())
+    }
+
+    /// Remove + return the pending reply entry for `slot_id`, if any.
+    ///
+    /// Called by `MuxClient::fulfill_host_request` to recover the
+    /// daemon-allocated `request_id` that must be echoed back in
+    /// `ReplyHostRequest`.
+    pub(super) fn take_pending_reply(
+        &self,
+        slot_id: ResponseTokenId,
+    ) -> Option<PendingClientReply> {
+        self.pending_replies
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .remove(&slot_id)
     }
 
     /// Drain pending push notifications into `out`.

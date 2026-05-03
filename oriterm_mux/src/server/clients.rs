@@ -158,6 +158,7 @@ impl MuxServer {
             closed_panes: &mut self.scratch_panes,
             snapshot_cache: &mut self.snapshot_cache,
             immediate_push: &mut self.scratch_immediate_push,
+            pending_host_replies: &mut self.pending_host_replies,
         };
         let result = dispatch::dispatch_request(&mut ctx, conn, decoded.pdu);
 
@@ -308,6 +309,24 @@ impl MuxServer {
             deferred.remove(&client_id);
             !deferred.is_empty()
         });
+
+        // BUG-11-011: drop pending host-replies the disconnecting client
+        // owned. Done INLINE in disconnect_client (not in
+        // remove_client_subscriptions) — that helper takes only the
+        // subscriptions HashMap, and threading pending_host_replies
+        // through it would violate SRP.
+        let dropped_host = self
+            .pending_host_replies
+            .iter()
+            .filter(|(_, v)| v.responder == client_id)
+            .count();
+        self.pending_host_replies
+            .retain(|_, v| v.responder != client_id);
+        if dropped_host > 0 {
+            log::warn!(
+                "disconnect_client {client_id}: dropped {dropped_host} pending host-request token(s) — consumer apps will time out"
+            );
+        }
 
         log::info!("client {client_id} fully disconnected");
     }

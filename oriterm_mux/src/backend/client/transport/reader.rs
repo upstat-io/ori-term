@@ -17,6 +17,8 @@ use std::time::Instant;
 #[cfg(unix)]
 use std::os::fd::{AsRawFd, RawFd};
 
+use oriterm_core::effect::{ResponseToken, ResponseTokenId};
+
 use oriterm_ipc::ClientStream;
 
 use crate::mux_event::MuxNotification;
@@ -24,16 +26,20 @@ use crate::protocol::{DecodedFrame, MuxPdu, ProtocolCodec};
 use crate::{PaneId, PaneSnapshot};
 
 use super::super::notification::pdu_to_notification;
-use super::{PING_INTERVAL, READ_POLL_INTERVAL, SendRequest};
+use super::{PING_INTERVAL, PendingClientReply, READ_POLL_INTERVAL, SendRequest};
 
 /// Dispatch a received notification PDU.
 ///
 /// `NotifyPaneSnapshot` and `NotifyPaneOutput` are intercepted here
-/// (stored/invalidated in the shared snapshot map). Other notifications
-/// go through [`pdu_to_notification`].
+/// (stored/invalidated in the shared snapshot map). The 4 BUG-11-011
+/// host-request / desktop-notification variants are also intercepted —
+/// they need the shared `pending_replies` map (host-request side) or a
+/// direct `MuxNotification` translation (desktop-notification side).
+/// Other notifications go through [`pdu_to_notification`].
 fn dispatch_notification(
     pdu: MuxPdu,
     pushed_snapshots: &Mutex<HashMap<PaneId, PaneSnapshot>>,
+    pending_replies: &Mutex<HashMap<ResponseTokenId, PendingClientReply>>,
     notif_tx: &mpsc::Sender<MuxNotification>,
     wakeup: &dyn Fn(),
 ) {
@@ -52,6 +58,69 @@ fn dispatch_notification(
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .remove(&pane_id);
             let _ = notif_tx.send(MuxNotification::PaneOutput(pane_id));
+            (wakeup)();
+        }
+        MuxPdu::NotifyHostClipboardLoad {
+            pane_id,
+            request_id,
+            selection,
+            clipboard_char,
+            terminator,
+        } => {
+            let token = ResponseToken::<String>::new();
+            pending_replies
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .insert(
+                    token.slot_id(),
+                    PendingClientReply::Clipboard { request_id },
+                );
+            let _ = notif_tx.send(MuxNotification::HostClipboardLoad {
+                pane_id,
+                selection: selection.into(),
+                clipboard_char,
+                terminator,
+                reply: token,
+            });
+            (wakeup)();
+        }
+        MuxPdu::NotifyHostColorQuery {
+            pane_id,
+            request_id,
+            prefix,
+            index,
+            terminator,
+        } => {
+            let token = ResponseToken::<oriterm_core::color::Rgb>::new();
+            pending_replies
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .insert(token.slot_id(), PendingClientReply::Color { request_id });
+            let _ = notif_tx.send(MuxNotification::HostColorQuery {
+                pane_id,
+                prefix,
+                index: index as usize,
+                terminator,
+                reply: token,
+            });
+            (wakeup)();
+        }
+        MuxPdu::NotifyDesktopNotification {
+            pane_id,
+            source,
+            title,
+            body,
+        } => {
+            let _ = notif_tx.send(MuxNotification::DesktopNotification {
+                pane_id,
+                source: source.into(),
+                title,
+                body,
+            });
+            (wakeup)();
+        }
+        MuxPdu::NotifyClearPendingDesktopNotifications { pane_id } => {
+            let _ = notif_tx.send(MuxNotification::ClearPendingDesktopNotifications(pane_id));
             (wakeup)();
         }
         other => {
@@ -136,6 +205,7 @@ pub(super) fn reader_loop(
     wakeup: Arc<dyn Fn() + Send + Sync>,
     alive: Arc<AtomicBool>,
     pushed_snapshots: Arc<Mutex<HashMap<PaneId, PaneSnapshot>>>,
+    pending_replies: Arc<Mutex<HashMap<ResponseTokenId, PendingClientReply>>>,
     #[cfg(unix)] wake_read: RawFd,
 ) {
     // Set a short read timeout as a safety net for edge cases where poll(2)
@@ -233,6 +303,7 @@ pub(super) fn reader_loop(
             &mut pending,
             &mut outstanding_ping_seq,
             &pushed_snapshots,
+            &pending_replies,
             &notif_tx,
             &*wakeup,
         ) {
@@ -257,6 +328,7 @@ fn read_and_dispatch_frames(
     pending: &mut HashMap<u32, mpsc::Sender<MuxPdu>>,
     outstanding_ping_seq: &mut Option<u32>,
     pushed_snapshots: &Mutex<HashMap<PaneId, PaneSnapshot>>,
+    pending_replies: &Mutex<HashMap<ResponseTokenId, PendingClientReply>>,
     notif_tx: &mpsc::Sender<MuxNotification>,
     wakeup: &dyn Fn(),
 ) -> bool {
@@ -273,7 +345,7 @@ fn read_and_dispatch_frames(
                 }
 
                 if seq == 0 || pdu.is_notification() {
-                    dispatch_notification(pdu, pushed_snapshots, notif_tx, wakeup);
+                    dispatch_notification(pdu, pushed_snapshots, pending_replies, notif_tx, wakeup);
                 } else if let Some(reply_tx) = pending.remove(&seq) {
                     let _ = reply_tx.send(pdu);
                 } else {

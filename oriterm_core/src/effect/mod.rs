@@ -14,8 +14,8 @@ mod types;
 pub use families::{
     AlreadyFulfilled, AudioKind, AudioRequest, ClipboardSelection, HostEffect, HostRequest,
     NotificationSource, PresentationEffect, PrintKind, PrintRequest, PtyEffect, PtyWriteKind,
-    ResponseFulfilled, ResponseToken, SyncAbortReason, TokenPoll, UiEffect, format_clipboard_reply,
-    format_color_reply,
+    ResponseFulfilled, ResponseToken, ResponseTokenId, SyncAbortReason, TokenPoll, UiEffect,
+    format_clipboard_reply, format_color_reply,
 };
 pub use response::{PendingResponse, PollResult};
 pub use sink::{EffectSink, QueueingEffectSink, VoidEffectSink};

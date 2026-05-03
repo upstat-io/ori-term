@@ -28,6 +28,20 @@ use std::sync::{Arc, Mutex};
 
 use super::ClipboardSelection;
 
+/// Opaque identity for a `ResponseToken`'s slot.
+///
+/// Used by daemon-mode IPC routing to correlate locally-created tokens with
+/// their wire `request_id`. Implementation detail (currently `Arc::as_ptr`);
+/// future changes (e.g. to a sequence number) are API-compatible.
+///
+/// Two clones of the same token return the same `ResponseTokenId`; distinct
+/// tokens return distinct values modulo allocator-reuse on dropped tokens.
+/// The daemon's pending-replies map ignores reuse via remove-on-fulfill —
+/// the App holds the token clone until calling
+/// `MuxBackend::fulfill_host_request`, so the slot is alive at lookup.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ResponseTokenId(usize);
+
 /// A host request that requires a response from the consumer.
 ///
 /// Carries typed, inspectable data instead of an opaque formatter
@@ -200,6 +214,19 @@ impl<T> ResponseToken<T> {
             *self.slot.lock().expect("ResponseToken mutex poisoned"),
             SlotState::Fulfilled(_)
         )
+    }
+
+    /// Stable identity for IPC-side reply routing.
+    ///
+    /// Two clones of the same token return the same `ResponseTokenId`;
+    /// distinct tokens return distinct values modulo allocator-reuse on
+    /// dropped tokens. The daemon-mode pending-replies map is robust to
+    /// reuse via remove-on-fulfill: the App holds the token clone until
+    /// calling `MuxBackend::fulfill_host_request`, so the slot is alive
+    /// at lookup time.
+    #[must_use]
+    pub fn slot_id(&self) -> ResponseTokenId {
+        ResponseTokenId(Arc::as_ptr(&self.slot) as usize)
     }
 
     /// Current strong count of the internal slot `Arc`.
