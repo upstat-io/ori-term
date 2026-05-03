@@ -111,15 +111,21 @@ pub(crate) fn host_request_to_pdu(
             reply,
         } => {
             let request_id = ctx.request_alloc.alloc();
+            // Palette index is bounded at 270 entries (256 ANSI + 10 dynamic
+            // + 4 OSC 4 reachable extras) per `oriterm_core::Palette`, so
+            // `usize → u32` is lossless on every supported target. The
+            // `debug_assert!` documents + enforces the invariant; a release
+            // build produces a direct cast (no fabricated `u32::MAX`
+            // saturation per `impl-hygiene.md §LEAK:lossy-fallback`).
+            debug_assert!(
+                index < 270,
+                "color index {index} exceeds palette bound (270); cast to u32 would lose data"
+            );
             let pdu = MuxPdu::NotifyHostColorQuery {
                 pane_id,
                 request_id: request_id.raw(),
                 prefix,
-                // Palette index ≤ 270 entries (270 cells: 256 ANSI + 10
-                // dynamic + 4 OSC 4 reachable extras). Cast saturates on
-                // unsupported targets but is infallible on Linux x86_64,
-                // ARM64, and Windows.
-                index: u32::try_from(index).unwrap_or(u32::MAX),
+                index: index as u32,
                 terminator,
             };
             Some(HostRequestDispatch {
