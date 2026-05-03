@@ -103,6 +103,10 @@ pub struct MuxServer {
     scratch_panes: Vec<PaneId>,
     /// Reusable scratch buffer for panes needing immediate snapshot push.
     scratch_immediate_push: Vec<PaneId>,
+    /// Reusable scratch buffer for closed-pane IDs collected during the
+    /// `drain_mux_events` cleanup pass — preserves capacity across cycles
+    /// per `impl-hygiene.md §WASTE`.
+    scratch_pane_closed: Vec<PaneId>,
 
     // Server-push state.
     /// Per-pane timestamp of last snapshot push.
@@ -167,6 +171,7 @@ impl MuxServer {
             scratch_clients: Vec::new(),
             scratch_panes: Vec::new(),
             scratch_immediate_push: Vec::new(),
+            scratch_pane_closed: Vec::new(),
             last_snapshot_push: HashMap::new(),
             pending_push: HashMap::new(),
             snapshot_cache: SnapshotCache::new(),
@@ -292,13 +297,14 @@ impl MuxServer {
         // preserves the buffer's heap allocation across cycles
         // (impl-hygiene §WASTE).
         let mut notifications = std::mem::take(&mut self.notification_buf);
-        let pane_closed_ids: Vec<PaneId> = notifications
-            .iter()
-            .filter_map(|n| match n {
+        // Collect closed-pane IDs into the reusable scratch buffer so we don't
+        // allocate a fresh Vec per drain (impl-hygiene §WASTE).
+        self.scratch_pane_closed.clear();
+        self.scratch_pane_closed
+            .extend(notifications.iter().filter_map(|n| match n {
                 MuxNotification::PaneClosed { pane_id, .. } => Some(*pane_id),
                 _ => None,
-            })
-            .collect();
+            }));
         // `drain(..)` (rather than `into_iter()`) preserves the buffer's heap
         // allocation across cycles; `notification_buf = notifications` at end
         // restores the (now-empty) Vec for reuse — impl-hygiene §WASTE.
@@ -348,9 +354,7 @@ impl MuxServer {
                     }
                 }
                 TargetClients::SinglePaneSubscriber(_, cid) => {
-                    if let Some(conn) = self.connections.get_mut(&cid) {
-                        let _ = conn.queue_frame(0, &pdu);
-                    }
+                    let _ = self.try_queue_to_responder(cid, &pdu, "single-responder notification");
                 }
             }
         }
@@ -384,8 +388,9 @@ impl MuxServer {
 
         // Post-pass: Clean up per-pane state for closed panes. Pre-collected
         // before the by-value drain because the drain consumed the buffer.
-        for pane_id in pane_closed_ids {
-            self.cleanup_pane_state(pane_id);
+        // Indexed iteration so cleanup_pane_state can take &mut self.
+        for i in 0..self.scratch_pane_closed.len() {
+            self.cleanup_pane_state(self.scratch_pane_closed[i]);
         }
 
         // Phase 3: Update write interests for connections with pending data.
@@ -399,6 +404,30 @@ impl MuxServer {
         );
         for i in 0..self.scratch_clients.len() {
             self.update_write_interest(self.scratch_clients[i]);
+        }
+    }
+
+    /// Attempt to queue `pdu` to client `cid`. Returns `true` on success.
+    ///
+    /// Shared between the host-request dispatch path
+    /// (`dispatch_host_request_notification`) and the stateless-fallback
+    /// `SinglePaneSubscriber` arm so single-responder queueing has one
+    /// canonical home (per `impl-hygiene.md §SSOT` / §LEAK:algorithmic-duplication).
+    /// `kind` is a short string slug (e.g. `"HostRequest"`,
+    /// `"single-responder notification"`) used purely for diagnostic logs
+    /// when the queue or the responder is unavailable.
+    fn try_queue_to_responder(&mut self, cid: ClientId, pdu: &crate::MuxPdu, kind: &str) -> bool {
+        if let Some(conn) = self.connections.get_mut(&cid) {
+            match conn.queue_frame(0, pdu) {
+                Ok(()) => true,
+                Err(e) => {
+                    log::warn!("{kind}: queue_frame failed for {cid}: {e}; dropping");
+                    false
+                }
+            }
+        } else {
+            log::warn!("{kind}: selected responder {cid} disconnected before delivery; dropping");
+            false
         }
     }
 
@@ -440,21 +469,7 @@ impl MuxServer {
         let TargetClients::SinglePaneSubscriber(_, cid) = target else {
             return;
         };
-        let queued = if let Some(conn) = self.connections.get_mut(&cid) {
-            match conn.queue_frame(0, &pdu) {
-                Ok(()) => true,
-                Err(e) => {
-                    log::warn!("HostRequest: queue_frame failed for {cid}: {e}; dropping token");
-                    false
-                }
-            }
-        } else {
-            log::warn!(
-                "HostRequest: selected responder {cid} disconnected before delivery; dropping token"
-            );
-            false
-        };
-        if queued {
+        if self.try_queue_to_responder(cid, &pdu, "HostRequest") {
             self.pending_host_replies.insert(request_id, pending);
         }
     }

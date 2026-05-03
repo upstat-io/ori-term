@@ -137,31 +137,43 @@ pub(crate) fn host_request_to_pdu(
     }
 }
 
+/// Pure priority-comparison core for `select_responder`.
+///
+/// Lowest priority value wins (`0` = focused beats `2` = hidden); ties are
+/// broken deterministically by `ClientId` numerical order. Returns `None`
+/// when `candidates` is empty. Pure-function shape so unit tests can
+/// exercise priority comparison + tie-break without constructing
+/// `ClientConnection` (which requires an `IpcStream`).
+pub(crate) fn pick_lowest_priority(candidates: &[(ClientId, u8)]) -> Option<ClientId> {
+    candidates
+        .iter()
+        .copied()
+        .min_by(|a, b| a.1.cmp(&b.1).then_with(|| a.0.raw().cmp(&b.0.raw())))
+        .map(|(cid, _)| cid)
+}
+
 /// Pick the highest-priority subscribed client for a pane.
 ///
-/// Lowest priority value wins (`0` = focused, `1` = visible, `2` = hidden).
-/// Ties broken deterministically by `ClientId` numerical order. Returns
-/// `None` when no client is subscribed to the pane.
+/// Builds the candidate list from `subscriptions[pane_id]` (priorities looked
+/// up in `connections`; disconnected clients fall back to `u8::MAX` so they
+/// always lose to live ones), then delegates to `pick_lowest_priority`.
+/// Returns `None` when no client is subscribed to the pane.
 pub(crate) fn select_responder(
     subscriptions: &HashMap<PaneId, Vec<ClientId>>,
     connections: &HashMap<ClientId, ClientConnection>,
     pane_id: PaneId,
 ) -> Option<ClientId> {
     let subs = subscriptions.get(&pane_id)?;
-    let mut best: Option<(u8, ClientId)> = None;
-    for &cid in subs {
-        let priority = connections
-            .get(&cid)
-            .map_or(u8::MAX, |c| c.pane_priority(pane_id));
-        match best {
-            None => best = Some((priority, cid)),
-            Some((bp, bcid)) if priority < bp || (priority == bp && cid.raw() < bcid.raw()) => {
-                best = Some((priority, cid));
-            }
-            _ => {}
-        }
-    }
-    best.map(|(_, cid)| cid)
+    let candidates: Vec<(ClientId, u8)> = subs
+        .iter()
+        .map(|&cid| {
+            let priority = connections
+                .get(&cid)
+                .map_or(u8::MAX, |c| c.pane_priority(pane_id));
+            (cid, priority)
+        })
+        .collect();
+    pick_lowest_priority(&candidates)
 }
 
 #[cfg(test)]

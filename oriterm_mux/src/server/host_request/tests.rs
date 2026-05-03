@@ -102,15 +102,66 @@ fn host_request_to_pdu_returns_none_for_non_host_request_variants() {
     assert!(host_request_to_pdu(MuxNotification::PaneBell(pane_id), &mut ctx).is_none());
 }
 
-// `select_responder` is in-tree; tests live alongside server unit-tests
-// where `ClientConnection` can be constructed via the test harness.
-// The single-responder selection contract is asserted in `server/tests.rs`
-// (via end-to-end paths) and in the e2e test
-// `daemon_host_request_routes_to_highest_priority_client` in
-// `oriterm_mux/tests/e2e.rs` (Linux-only).
 #[test]
 fn select_responder_returns_none_when_no_subscribers() {
     let subscriptions: HashMap<PaneId, Vec<ClientId>> = HashMap::new();
     let connections: HashMap<ClientId, super::ClientConnection> = HashMap::new();
     assert!(super::select_responder(&subscriptions, &connections, PaneId::from_raw(1)).is_none());
+}
+
+// `pick_lowest_priority` is the pure core of `select_responder`. Testing
+// against this signature exercises the priority comparison + tie-break logic
+// without requiring `ClientConnection` construction (which needs an
+// `IpcStream`). End-to-end priority routing is covered indirectly by the
+// daemon e2e tests in `oriterm_mux/tests/e2e.rs` exercising the full
+// request → notify → reply pipeline.
+
+/// Lowest priority value wins — focused (priority 0) beats hidden (priority 2).
+/// Regression for BUG-11-011 §03 cell `select_responder picks lowest-priority u8 (focused = 0)`.
+#[test]
+fn pick_lowest_priority_picks_focused_client() {
+    let focused = ClientId::from_raw(2);
+    let hidden = ClientId::from_raw(1);
+    // Focused has higher ClientId but lower priority → still wins.
+    let candidates = [(hidden, 2u8), (focused, 0u8)];
+    assert_eq!(super::pick_lowest_priority(&candidates), Some(focused));
+}
+
+/// Equal-priority ties broken deterministically by ClientId numerical order
+/// (lower raw value wins). Regression for BUG-11-011 §03 cell
+/// `select_responder ties broken by ClientId numerical order (determinism)`.
+#[test]
+fn pick_lowest_priority_breaks_ties_by_client_id_numerical_order() {
+    let early = ClientId::from_raw(1);
+    let late = ClientId::from_raw(7);
+    // Same priority — earlier ClientId wins.
+    let candidates = [(late, 1u8), (early, 1u8)];
+    assert_eq!(super::pick_lowest_priority(&candidates), Some(early));
+}
+
+/// Disconnected clients (priority `u8::MAX` from `select_responder`'s fallback)
+/// MUST lose to any connected client, regardless of ClientId order.
+#[test]
+fn pick_lowest_priority_excludes_disconnected_clients() {
+    let connected = ClientId::from_raw(99);
+    let disconnected = ClientId::from_raw(1); // earlier id but disconnected
+    let candidates = [(disconnected, u8::MAX), (connected, 2u8)];
+    assert_eq!(super::pick_lowest_priority(&candidates), Some(connected));
+}
+
+/// Empty candidate set returns `None`.
+#[test]
+fn pick_lowest_priority_returns_none_for_empty_candidates() {
+    assert_eq!(super::pick_lowest_priority(&[]), None);
+}
+
+/// Three-client scenario across the full priority range — focused beats
+/// visible beats hidden.
+#[test]
+fn pick_lowest_priority_three_client_full_range() {
+    let focused = ClientId::from_raw(3);
+    let visible = ClientId::from_raw(1);
+    let hidden = ClientId::from_raw(2);
+    let candidates = [(visible, 1u8), (hidden, 2u8), (focused, 0u8)];
+    assert_eq!(super::pick_lowest_priority(&candidates), Some(focused));
 }

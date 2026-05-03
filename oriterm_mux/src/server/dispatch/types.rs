@@ -59,7 +59,12 @@ impl DispatchContext<'_> {
         request_id: HostRequestId,
         responder: crate::id::ClientId,
     ) -> Option<PendingHostReply> {
-        let entry = self.pending_host_replies.get(&request_id)?;
+        let Some(entry) = self.pending_host_replies.get(&request_id) else {
+            log::warn!(
+                "ReplyHostRequest: unknown {request_id} (no pending entry; reply from {responder} dropped)"
+            );
+            return None;
+        };
         if entry.responder != responder {
             log::warn!(
                 "ReplyHostRequest: {request_id} routed to {} but reply came from {responder} (drop)",
