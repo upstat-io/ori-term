@@ -418,6 +418,14 @@ impl App {
             ctx.root.mark_dirty();
         }
 
+        // Capture the owning session window BEFORE removing the pane
+        // from the session — after removal `pane_position` returns None
+        // so we can no longer resolve the owner. We need the owner so the
+        // owning window's tab bar gets re-synced (active-window-scoped
+        // sync would update the wrong window's tab bar when a background-
+        // window pane closes).
+        let owner_session_wid = self.session.window_for_pane(id);
+
         // Remove pane from local session (tree/floating/tab/window).
         let result = crate::app::pane_ops::helpers::remove_pane_from_session(&mut self.session, id);
         if let Some(wid) = result.empty_window {
@@ -425,7 +433,9 @@ impl App {
             return;
         }
 
-        self.sync_tab_bar_from_mux();
+        if let Some(session_wid) = owner_session_wid {
+            self.sync_tab_bar_for_session_window(session_wid);
+        }
         self.resize_all_panes();
     }
 
