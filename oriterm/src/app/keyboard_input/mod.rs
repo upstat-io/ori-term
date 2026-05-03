@@ -90,44 +90,7 @@ impl App {
         }
 
         // Modal overlay: intercept keyboard events before anything else.
-        // Only check active overlays — dismissing (fading-out) overlays are
-        // visual-only and must not intercept keyboard input.
-        let has_overlays = self
-            .focused_ctx()
-            .is_some_and(|ctx| !ctx.root.overlays().is_active_empty());
-        if has_overlays && event.state == ElementState::Pressed {
-            if let Some(key) = winit_key_to_ui_key(&event.logical_key) {
-                let ui_event = oriterm_ui::input::KeyEvent {
-                    key,
-                    modifiers: super::winit_mods_to_ui(self.modifiers),
-                };
-                let now = std::time::Instant::now();
-                let result = {
-                    let Some(ctx) = self
-                        .focused_window_id
-                        .and_then(|id| self.windows.get_mut(&id))
-                    else {
-                        return;
-                    };
-                    let scale = ctx.window.scale_factor().factor() as f32;
-                    let Some(renderer) = ctx.renderer.as_ref() else {
-                        return;
-                    };
-                    let measurer = crate::font::CachedTextMeasurer::new(
-                        renderer.ui_measurer(scale),
-                        &ctx.text_cache,
-                        scale,
-                    );
-                    ctx.root.process_overlay_key_event(
-                        ui_event,
-                        &measurer,
-                        &self.ui_theme,
-                        None,
-                        now,
-                    )
-                };
-                self.handle_overlay_result(result);
-            }
+        if self.try_dispatch_overlay_key(event) {
             return;
         }
 
@@ -161,6 +124,50 @@ impl App {
 
         // Normal key encoding to PTY.
         self.encode_key_to_pty(event);
+    }
+
+    /// Dispatch a key event to an active modal overlay if any.
+    ///
+    /// Returns `true` if the event was consumed by an overlay (caller
+    /// should return). Only active overlays consume input — dismissing
+    /// (fading-out) overlays are visual-only.
+    fn try_dispatch_overlay_key(&mut self, event: &winit::event::KeyEvent) -> bool {
+        let has_overlays = self
+            .focused_ctx()
+            .is_some_and(|ctx| !ctx.root.overlays().is_active_empty());
+        if !has_overlays || event.state != ElementState::Pressed {
+            return false;
+        }
+        let Some(key) = winit_key_to_ui_key(&event.logical_key) else {
+            // Overlays consume even unmapped keys to prevent leaking to PTY.
+            return true;
+        };
+        let ui_event = oriterm_ui::input::KeyEvent {
+            key,
+            modifiers: super::winit_mods_to_ui(self.modifiers),
+        };
+        let now = std::time::Instant::now();
+        let result = {
+            let Some(ctx) = self
+                .focused_window_id
+                .and_then(|id| self.windows.get_mut(&id))
+            else {
+                return true;
+            };
+            let scale = ctx.window.scale_factor().factor() as f32;
+            let Some(renderer) = ctx.renderer.as_ref() else {
+                return true;
+            };
+            let measurer = crate::font::CachedTextMeasurer::new(
+                renderer.ui_measurer(scale),
+                &ctx.text_cache,
+                scale,
+            );
+            ctx.root
+                .process_overlay_key_event(ui_event, &measurer, &self.ui_theme, None, now)
+        };
+        self.handle_overlay_result(result);
+        true
     }
 
     /// Dispatch a key event to mark mode if active.

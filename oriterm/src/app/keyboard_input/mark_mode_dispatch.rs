@@ -104,6 +104,15 @@ pub(super) struct MarkKeyInput {
 /// `impl MarkModeSink for App`). Per `impl-hygiene.md §Platform & External
 /// Resource Abstraction` — the logic layer must not embed concrete runtime
 /// resources, so the side effects flow through this trait.
+///
+/// Method-name overlap with `App` inherent methods: six trait methods
+/// share names with inherent methods on `App`
+/// (`pane_mark_cursor`, `pane_selection`, `exit_mark_mode`,
+/// `set_pane_selection`, `clear_pane_selection`, `copy_selection`).
+/// The `impl MarkModeSink for App` block uses UFCS-via-`Self::method(self,
+/// ...)` to resolve each call to the inherent method without recursing
+/// through the trait — see the safety comment at the top of that impl
+/// block.
 pub(super) trait MarkModeSink {
     /// Resource snapshot for the BUG-08-031 gate. `&mut self` because
     /// the production impl reads mux state which can require `&mut`
@@ -112,6 +121,11 @@ pub(super) trait MarkModeSink {
     /// Current mark cursor position for the pane (None if no cursor).
     fn pane_mark_cursor(&self, pane_id: PaneId) -> Option<MarkCursor>;
     /// Current selection on the pane (None if no selection).
+    ///
+    /// Returns `Selection` by value (not by borrow) so the test sink can
+    /// satisfy the trait without exposing a borrow into its `HashMap`
+    /// storage. `Selection` is `Copy`, so the cost is a stack copy on
+    /// the cold mark-mode dispatch path.
     fn pane_selection(&self, pane_id: PaneId) -> Option<Selection>;
     /// Trigger a snapshot refresh on the pane's mux (no-op if mux absent
     /// or snapshot is fresh — the production impl checks both internally).
