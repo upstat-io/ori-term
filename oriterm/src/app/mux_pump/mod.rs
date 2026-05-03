@@ -161,17 +161,19 @@ impl App {
                     }
                 }
                 let now = Instant::now();
+                // Sync the OWNING window's tab entries FIRST so the persistent
+                // bell icon (sourced from `mux.has_bell` in build_tab_entries)
+                // appears / clears immediately. Hoisted before the
+                // !is_focused branch because set_tabs replaces the entries
+                // Vec — running it after ring_bell would wipe bell_start.
+                self.sync_tab_bar_for_pane(id);
                 if !is_focused {
-                    if let Some(idx) = self.tab_index_for_pane(id) {
-                        if let Some(ctx) = self.focused_ctx_mut() {
-                            ctx.tab_bar.ring_bell(idx, now);
+                    if let Some(pos) = self.session.pane_position(id) {
+                        if let Some(ctx) = self.owning_window_ctx_mut(pos.window_id) {
+                            ctx.tab_bar.ring_bell(pos.tab_index, now);
                         }
                     }
                 }
-                // Refresh tab-bar entries from mux state so the persistent
-                // bell icon (sourced from `mux.has_bell` in build_tab_entries)
-                // appears / clears immediately.
-                self.sync_tab_bar_from_mux();
 
                 // Audible bell — closes BUG-08-001 by absorbing the BEL `\a`
                 // audio path into BUG-11-016. Native OS APIs respect the
@@ -235,14 +237,14 @@ impl App {
                             mux.set_bell(pane_id);
                         }
                     }
+                    self.sync_tab_bar_for_pane(pane_id);
                     if !is_focused {
-                        if let Some(idx) = self.tab_index_for_pane(pane_id) {
-                            if let Some(ctx) = self.focused_ctx_mut() {
-                                ctx.tab_bar.ring_bell(idx, Instant::now());
+                        if let Some(pos) = self.session.pane_position(pane_id) {
+                            if let Some(ctx) = self.owning_window_ctx_mut(pos.window_id) {
+                                ctx.tab_bar.ring_bell(pos.tab_index, Instant::now());
                             }
                         }
                     }
-                    self.sync_tab_bar_from_mux();
                     self.mark_pane_window_dirty(pane_id);
                 }
             }
@@ -376,18 +378,21 @@ impl App {
             duration.as_secs_f64()
         );
 
-        // Flash the tab bar (reuse bell pulse) if configured.
+        // Flash the tab bar (reuse bell pulse) on the OWNING window if
+        // configured. Routes via pane_position + owning_window_ctx_mut so
+        // a command completing in a background-window pane pulses that
+        // window's tab bar — not the focused window's.
         if behavior.notify_command_bell && !is_focused {
             if let Some(mux) = self.mux.as_mut() {
                 mux.set_bell(pane_id);
             }
-            if let Some(idx) = self.tab_index_for_pane(pane_id) {
-                if let Some(ctx) = self.focused_ctx_mut() {
-                    ctx.tab_bar.ring_bell(idx, Instant::now());
-                    ctx.root.mark_dirty();
+            self.sync_tab_bar_for_pane(pane_id);
+            if let Some(pos) = self.session.pane_position(pane_id) {
+                if let Some(ctx) = self.owning_window_ctx_mut(pos.window_id) {
+                    ctx.tab_bar.ring_bell(pos.tab_index, Instant::now());
                 }
             }
-            self.sync_tab_bar_from_mux();
+            self.mark_pane_window_dirty(pane_id);
         }
 
         // Bell-focused dispatch (BUG-11-016 scope reset 2026-04-28):
