@@ -140,7 +140,7 @@ pub fn dispatch_request(
                 // Do NOT push an immediate snapshot — the IO thread will
                 // produce one after reflow completes. This prevents
                 // exposing intermediate reflow frames.
-                pane.send_io_command(PaneIoCommand::Resize { rows, cols });
+                pane.send_resize(rows, cols);
             }
             None // Fire-and-forget.
         }

@@ -136,15 +136,11 @@ pub fn adopt_pane(
             }
         })?;
 
-    // 4. Writer channel + writer thread.
+    // 4. Writer channel + handle. The writer thread spawns AFTER
+    //    the IO thread so it can clone `io_wake_tx` (Step 6C of
+    //    BUG-11-025).
     let (tx, rx) = mpsc::channel();
     let notifier = PaneNotifier::new(tx);
-    let writer_thread = spawn_pty_writer(
-        writer,
-        rx,
-        Arc::clone(&shutdown),
-        Arc::clone(&write_stalled),
-    )?;
 
     // 5. Terminal IO thread. `pty_control = None` because adopted PTYs
     //    have no portable_pty::MasterPty. Resize travels through
@@ -169,8 +165,20 @@ pub fn adopt_pane(
             selection_dirty: Arc::clone(&io_selection_dirty),
         });
     let byte_tx = io_handle.byte_sender();
+    let io_wake_tx = io_handle.io_wake_sender();
     let io_join = io_thread.spawn()?;
     io_handle.set_join(io_join);
+
+    // 5b. Spawn the writer thread. It owns the rx + writer, sets
+    //     `shutdown` on exit, and wakes the IO thread out of
+    //     `select!` via `io_wake_tx`.
+    let writer_thread = spawn_pty_writer(
+        writer,
+        rx,
+        Arc::clone(&shutdown),
+        Arc::clone(&write_stalled),
+        io_wake_tx,
+    )?;
 
     // 6. PTY reader thread with exit signal — fires
     //    AdoptedPtyHandle::deliver_exit when the reader exits, waking

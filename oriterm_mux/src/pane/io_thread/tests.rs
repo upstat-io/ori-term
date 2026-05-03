@@ -10,8 +10,19 @@ use crossbeam_channel::Receiver;
 use oriterm_core::effect::{PollResult, VoidEffectSink};
 use oriterm_core::{Column, Line, RenderableContent, Term, TermMode, Theme};
 
+use super::handle::{
+    CMD_CHANNEL_CAPACITY, PENDING_RESIZE_NONE, pack_pending_resize, unpack_pending_resize,
+};
 use super::snapshot::SnapshotDoubleBuffer;
 use super::{IoThreadConfig, PaneIoCommand, PaneIoHandle, PaneIoThread, new_with_handle};
+
+/// Test helper: pack and store a pending resize on the slot.
+///
+/// Stand-in for `PaneIoHandle::send_resize` when the test exercises a
+/// `PaneIoThread` directly without a paired handle.
+fn pack_then_store(slot: &Arc<AtomicU64>, rows: u16, cols: u16) {
+    slot.store(pack_pending_resize(rows, cols), Ordering::Release);
+}
 use crate::PaneId;
 use crate::mux_event::MuxEvent;
 use crate::pty::reader::BYTE_CHANNEL_CAPACITY;
@@ -131,7 +142,7 @@ fn make_sync_thread_with_term(term: Term<VoidEffectSink>) -> PaneIoThread<VoidEf
         mux_tx: _dummy_mux_tx,
         child_exit_rx: _dummy_exit_rx,
         pending_child_exit: None,
-        response_wake_rx: _dummy_wake_rx,
+        io_wake_rx: _dummy_wake_rx,
         cmd_rx,
         byte_rx,
         shutdown: Arc::new(AtomicBool::new(false)),
@@ -150,6 +161,7 @@ fn make_sync_thread_with_term(term: Term<VoidEffectSink>) -> PaneIoThread<VoidEf
         pending_responses: Vec::new(),
         effects_buf: Vec::new(),
         last_animation_deadline: None,
+        pending_resize: Arc::new(AtomicU64::new(PENDING_RESIZE_NONE)),
         shrink_call_count: Arc::new(AtomicUsize::new(0)),
     }
 }
@@ -168,7 +180,7 @@ fn make_sync_thread_with_wakeup() -> (PaneIoThread<VoidEffectSink>, Arc<AtomicU6
         mux_tx: _dummy_mux_tx,
         child_exit_rx: _dummy_exit_rx,
         pending_child_exit: None,
-        response_wake_rx: _dummy_wake_rx,
+        io_wake_rx: _dummy_wake_rx,
         cmd_rx,
         byte_rx,
         shutdown: Arc::new(AtomicBool::new(false)),
@@ -189,6 +201,7 @@ fn make_sync_thread_with_wakeup() -> (PaneIoThread<VoidEffectSink>, Arc<AtomicU6
         pending_responses: Vec::new(),
         effects_buf: Vec::new(),
         last_animation_deadline: None,
+        pending_resize: Arc::new(AtomicU64::new(PENDING_RESIZE_NONE)),
         shrink_call_count: Arc::new(AtomicUsize::new(0)),
     };
     (thread, wakeup_count)
@@ -227,7 +240,7 @@ fn shutdown_via_channel_disconnect() {
         mux_tx: _dummy_mux_tx,
         child_exit_rx: _dummy_exit_rx,
         pending_child_exit: None,
-        response_wake_rx: _dummy_wake_rx,
+        io_wake_rx: _dummy_wake_rx,
         cmd_rx,
         byte_rx,
         shutdown: Arc::clone(&shutdown),
@@ -246,6 +259,7 @@ fn shutdown_via_channel_disconnect() {
         pending_responses: Vec::new(),
         effects_buf: Vec::new(),
         last_animation_deadline: None,
+        pending_resize: Arc::new(AtomicU64::new(PENDING_RESIZE_NONE)),
         shrink_call_count: Arc::new(AtomicUsize::new(0)),
     };
     let join = thread.spawn().expect("failed to spawn IO thread");
@@ -323,7 +337,7 @@ fn byte_delivery_parses_vte() {
         mux_tx: _dummy_mux_tx,
         child_exit_rx: _dummy_exit_rx,
         pending_child_exit: None,
-        response_wake_rx: _dummy_wake_rx,
+        io_wake_rx: _dummy_wake_rx,
         cmd_rx,
         byte_rx,
         shutdown: Arc::clone(&shutdown),
@@ -342,6 +356,7 @@ fn byte_delivery_parses_vte() {
         pending_responses: Vec::new(),
         effects_buf: Vec::new(),
         last_animation_deadline: None,
+        pending_resize: Arc::new(AtomicU64::new(PENDING_RESIZE_NONE)),
         shrink_call_count: Arc::new(AtomicUsize::new(0)),
     };
     let join = thread.spawn().expect("failed to spawn IO thread");
@@ -477,7 +492,7 @@ fn handle_bytes_chunked_drains_commands() {
         mux_tx: _dummy_mux_tx,
         child_exit_rx: _dummy_exit_rx,
         pending_child_exit: None,
-        response_wake_rx: _dummy_wake_rx,
+        io_wake_rx: _dummy_wake_rx,
         cmd_rx,
         byte_rx,
         shutdown: Arc::clone(&shutdown),
@@ -496,6 +511,7 @@ fn handle_bytes_chunked_drains_commands() {
         pending_responses: Vec::new(),
         effects_buf: Vec::new(),
         last_animation_deadline: None,
+        pending_resize: Arc::new(AtomicU64::new(PENDING_RESIZE_NONE)),
         shrink_call_count: Arc::new(AtomicUsize::new(0)),
     };
 
@@ -716,7 +732,7 @@ fn make_sync_thread_with_cmd_tx() -> (PaneIoThread<VoidEffectSink>, Sender<PaneI
         mux_tx: _dummy_mux_tx,
         child_exit_rx: _dummy_exit_rx,
         pending_child_exit: None,
-        response_wake_rx: _dummy_wake_rx,
+        io_wake_rx: _dummy_wake_rx,
         cmd_rx,
         byte_rx,
         shutdown: Arc::new(AtomicBool::new(false)),
@@ -735,6 +751,7 @@ fn make_sync_thread_with_cmd_tx() -> (PaneIoThread<VoidEffectSink>, Sender<PaneI
         pending_responses: Vec::new(),
         effects_buf: Vec::new(),
         last_animation_deadline: None,
+        pending_resize: Arc::new(AtomicU64::new(PENDING_RESIZE_NONE)),
         shrink_call_count: Arc::new(AtomicUsize::new(0)),
     };
     (thread, cmd_tx)
@@ -766,18 +783,12 @@ fn test_resize_command_reflows_grid() {
 /// Rapid resize commands are coalesced — only the last one is applied.
 #[test]
 fn test_resize_coalescing() {
-    let (mut t, cmd_tx) = make_sync_thread_with_cmd_tx();
+    let (mut t, _cmd_tx) = make_sync_thread_with_cmd_tx();
 
     // Queue 3 resize commands before draining.
-    cmd_tx
-        .send(PaneIoCommand::Resize { rows: 24, cols: 80 })
-        .unwrap();
-    cmd_tx
-        .send(PaneIoCommand::Resize { rows: 24, cols: 60 })
-        .unwrap();
-    cmd_tx
-        .send(PaneIoCommand::Resize { rows: 24, cols: 40 })
-        .unwrap();
+    pack_then_store(&t.pending_resize, 24, 80);
+    pack_then_store(&t.pending_resize, 24, 60);
+    pack_then_store(&t.pending_resize, 24, 40);
 
     t.drain_commands();
 
@@ -954,12 +965,8 @@ fn test_resize_coalescing_preserves_other_commands() {
 
     // Queue: scroll, resize, resize, scroll.
     cmd_tx.send(PaneIoCommand::ScrollDisplay(5)).unwrap();
-    cmd_tx
-        .send(PaneIoCommand::Resize { rows: 24, cols: 60 })
-        .unwrap();
-    cmd_tx
-        .send(PaneIoCommand::Resize { rows: 24, cols: 40 })
-        .unwrap();
+    pack_then_store(&t.pending_resize, 24, 60);
+    pack_then_store(&t.pending_resize, 24, 40);
     cmd_tx.send(PaneIoCommand::ScrollDisplay(3)).unwrap();
 
     // Fill some scrollback so scroll has effect.
@@ -1514,7 +1521,9 @@ fn test_io_thread_panic_does_not_crash_app() {
         byte_tx,
         join: Some(join),
         double_buffer: SnapshotDoubleBuffer::new(),
-        response_wake_tx: _wake_tx,
+        io_wake_tx: _wake_tx,
+        pending_resize: Arc::new(AtomicU64::new(PENDING_RESIZE_NONE)),
+        shutdown_flag: Arc::new(AtomicBool::new(false)),
         drop_counter: None,
     };
 
@@ -1560,7 +1569,7 @@ fn test_concurrent_resize_and_pty_output() {
     for i in 0..100u16 {
         let cols = 40 + (i % 80);
         let rows = 20 + (i % 20);
-        handle.send_command(PaneIoCommand::Resize { rows, cols });
+        handle.send_resize(rows, cols);
     }
 
     // Wait for flood to finish.
@@ -1629,14 +1638,11 @@ fn test_multiple_panes_concurrent_resize() {
         for j in 0..20u16 {
             let (final_rows, _) = expected_dims[i];
             let cols = 40 + j * 3; // intermediate sizes
-            handle.send_command(PaneIoCommand::Resize {
-                rows: final_rows,
-                cols,
-            });
+            handle.send_resize(final_rows, cols);
         }
         // Final resize to the expected dimensions.
         let (rows, cols) = expected_dims[i];
-        handle.send_command(PaneIoCommand::Resize { rows, cols });
+        handle.send_resize(rows, cols);
     }
 
     // Give IO threads time to drain.
@@ -1670,10 +1676,7 @@ fn test_command_channel_flood() {
     std::thread::sleep(Duration::from_millis(200));
 
     // IO thread should still be responsive to new commands.
-    handle.send_command(PaneIoCommand::Resize {
-        rows: 30,
-        cols: 100,
-    });
+    handle.send_resize(30, 100);
     std::thread::sleep(Duration::from_millis(50));
 
     let mut snap = RenderableContent::default();
@@ -1758,7 +1761,7 @@ fn test_snapshot_swap_under_contention() {
 /// snapshot reflects correct final dimensions.
 #[test]
 fn test_rapid_resize_50_cycles() {
-    let (mut t, cmd_tx) = make_sync_thread_with_cmd_tx();
+    let (mut t, _cmd_tx) = make_sync_thread_with_cmd_tx();
 
     // Fill grid with content so resize has rows to reflow.
     for _ in 0..60 {
@@ -1769,7 +1772,7 @@ fn test_rapid_resize_50_cycles() {
     for i in 0..50u16 {
         let cols = 40 + (i % 80); // 40..119
         let rows = 20 + (i % 20); // 20..39
-        cmd_tx.send(PaneIoCommand::Resize { rows, cols }).unwrap();
+        pack_then_store(&t.pending_resize, rows, cols);
     }
 
     // Drain all commands — coalescing should apply the last resize only.
@@ -1996,7 +1999,7 @@ fn make_sync_thread_generic<S: oriterm_core::effect::EffectSink + 'static>(
         mux_tx: _dummy_mux_tx,
         child_exit_rx: _dummy_exit_rx,
         pending_child_exit: None,
-        response_wake_rx: _dummy_wake_rx,
+        io_wake_rx: _dummy_wake_rx,
         cmd_rx,
         byte_rx,
         shutdown: Arc::new(AtomicBool::new(false)),
@@ -2017,6 +2020,7 @@ fn make_sync_thread_generic<S: oriterm_core::effect::EffectSink + 'static>(
         pending_responses: Vec::new(),
         effects_buf: Vec::new(),
         last_animation_deadline: None,
+        pending_resize: Arc::new(AtomicU64::new(PENDING_RESIZE_NONE)),
         shrink_call_count: Arc::new(AtomicUsize::new(0)),
     };
     (thread, wakeup_count)
@@ -2515,7 +2519,7 @@ struct EofTestRig {
     /// Held so `cmd_rx` never returns `Err` before `byte_rx` — keeps the
     /// `select!` cmd arm idle for the duration of the test.
     _keep_alive_cmd_tx: Sender<PaneIoCommand>,
-    /// Held so `response_wake_rx` never returns `Err`.
+    /// Held so `io_wake_rx` never returns `Err`.
     _keep_alive_wake_tx: Sender<()>,
     join: std::thread::JoinHandle<()>,
 }
@@ -2528,7 +2532,7 @@ fn spawn_queueing_eof_rig() -> EofTestRig {
     let (cmd_tx, cmd_rx) = crossbeam_channel::unbounded::<PaneIoCommand>();
     let (byte_tx, byte_rx) = crossbeam_channel::unbounded::<Vec<u8>>();
     let (child_exit_tx, child_exit_rx) = crossbeam_channel::bounded::<ExitStatus>(1);
-    let (response_wake_tx, response_wake_rx) = crossbeam_channel::bounded::<()>(1);
+    let (io_wake_tx, io_wake_rx) = crossbeam_channel::bounded::<()>(1);
     let double_buffer = SnapshotDoubleBuffer::new();
     let term = Term::new(24, 80, 1000, Theme::default(), QueueingEffectSink::new());
 
@@ -2538,7 +2542,7 @@ fn spawn_queueing_eof_rig() -> EofTestRig {
         mux_tx,
         child_exit_rx,
         pending_child_exit: None,
-        response_wake_rx,
+        io_wake_rx,
         cmd_rx,
         byte_rx,
         shutdown: Arc::clone(&shutdown),
@@ -2557,6 +2561,7 @@ fn spawn_queueing_eof_rig() -> EofTestRig {
         pending_responses: Vec::new(),
         effects_buf: Vec::new(),
         last_animation_deadline: None,
+        pending_resize: Arc::new(AtomicU64::new(PENDING_RESIZE_NONE)),
         shrink_call_count: Arc::new(AtomicUsize::new(0)),
     };
 
@@ -2568,7 +2573,7 @@ fn spawn_queueing_eof_rig() -> EofTestRig {
         child_exit_tx,
         double_buffer,
         _keep_alive_cmd_tx: cmd_tx,
-        _keep_alive_wake_tx: response_wake_tx,
+        _keep_alive_wake_tx: io_wake_tx,
         join,
     }
 }
@@ -2884,8 +2889,8 @@ fn child_exit_disconnect_does_not_spin_loop() {
     drop(rig._keep_alive_wake_tx);
 }
 
-/// Regression companion: `response_wake_rx` carries the same disconnect-
-/// then-spin hazard as `child_exit_rx`. The handle's `response_wake_tx`
+/// Regression companion: `io_wake_rx` carries the same disconnect-
+/// then-spin hazard as `child_exit_rx`. The handle's `io_wake_tx`
 /// only drops at handle teardown, but a buggy IO thread that picked up
 /// the disconnected arm every iteration would saturate a core during
 /// the window between the drop and the join.
@@ -2902,7 +2907,7 @@ fn response_wake_disconnect_does_not_spin_loop() {
     let elapsed = start.elapsed();
     assert!(
         elapsed < Duration::from_secs(2),
-        "Shutdown after response_wake_rx disconnect took {elapsed:?} — \
+        "Shutdown after io_wake_rx disconnect took {elapsed:?} — \
          IO thread likely spinning on the disconnected select! arm"
     );
     drop(rig.byte_tx);
@@ -3214,4 +3219,457 @@ fn maybe_shrink_during_sync_active() {
         sync_bytes_before,
         "maybe_shrink must NOT alter sync_bytes_count"
     );
+}
+
+// --- BUG-11-025 §03 matrix: bounded cmd_tx + atomic-coalescing resize ---
+//
+// Pins the cmd_tx-bounding contract, the pending_resize tag-bit
+// encoding, the drain-time apply ordering, the wake topology, the
+// shutdown-saturation belt-and-suspenders, and the SSOT classification
+// for reply-bearing variants. Reverting any single piece breaks at
+// least one of these tests.
+// See: bug-tracker/plans/BUG-11-025/section-03-tdd-matrix.md.
+
+/// Pin the bounded-cmd_tx contract: a fresh handle reports a finite
+/// capacity. Replaces the unbounded shape that motivated BUG-11-025.
+///
+/// Regression: BUG-11-025 — exact failing case `cmd_tx_is_bounded`.
+/// See: bug-tracker/plans/BUG-11-025/section-03-tdd-matrix.md.
+#[test]
+fn new_with_handle_uses_bounded_cmd_tx() {
+    let (_thread, handle) = make_pair();
+    assert_eq!(
+        handle.cmd_tx.capacity(),
+        Some(CMD_CHANNEL_CAPACITY),
+        "cmd_tx must report Some(CMD_CHANNEL_CAPACITY); unbounded would return None"
+    );
+}
+
+/// Pin the sentinel: `PENDING_RESIZE_NONE` decodes to `None`.
+///
+/// Regression: BUG-11-025 — edge case `pending_resize_none_sentinel`.
+/// See: bug-tracker/plans/BUG-11-025/section-03-tdd-matrix.md.
+#[test]
+fn pending_resize_none_sentinel_means_no_pending() {
+    assert!(unpack_pending_resize(PENDING_RESIZE_NONE).is_none());
+}
+
+/// Pin the tag-bit at the upper boundary: `(u16::MAX, u16::MAX)`
+/// round-trips without truncation and the tag bit (bit 48) does not
+/// collide with the row/col fields.
+///
+/// Regression: BUG-11-025 — edge case `pack_pending_resize_max_dimensions_round_trip`.
+/// See: bug-tracker/plans/BUG-11-025/section-03-tdd-matrix.md §04 Plan TPR Round 0 F2.
+#[test]
+fn pack_pending_resize_max_dimensions_round_trip() {
+    let packed = pack_pending_resize(u16::MAX, u16::MAX);
+    assert_eq!(unpack_pending_resize(packed), Some((u16::MAX, u16::MAX)));
+}
+
+/// Pin the tag-bit at the zero boundary: `(0, 0)` round-trips
+/// distinctly from the `PENDING_RESIZE_NONE` sentinel. Without the
+/// tag bit, `pack(0,0) == 0 == PENDING_RESIZE_NONE`, and a legitimate
+/// resize-to-zero request would be silently swallowed.
+///
+/// Regression: BUG-11-025 — closes §04 Plan TPR Round 0 F2.
+/// See: bug-tracker/plans/BUG-11-025/section-03-tdd-matrix.md.
+#[test]
+fn pack_pending_resize_zero_zero_round_trip() {
+    let packed = pack_pending_resize(0, 0);
+    assert_eq!(unpack_pending_resize(packed), Some((0, 0)));
+    assert_ne!(
+        packed, PENDING_RESIZE_NONE,
+        "pack(0,0) MUST be distinct from the sentinel"
+    );
+}
+
+/// Pin the encoding across a representative set of `(rows, cols)`
+/// values: every input round-trips through pack → unpack.
+///
+/// Regression: BUG-11-025 — edge case `pack_pending_resize_arbitrary_round_trip`.
+/// See: bug-tracker/plans/BUG-11-025/section-03-tdd-matrix.md.
+#[test]
+fn pack_pending_resize_arbitrary_round_trip() {
+    let cases = [
+        (0u16, 0u16),
+        (1, 1),
+        (24, 80),
+        (50, 200),
+        (u16::MAX, 0),
+        (0, u16::MAX),
+        (u16::MAX, u16::MAX),
+    ];
+    for (rows, cols) in cases {
+        let packed = pack_pending_resize(rows, cols);
+        assert_eq!(
+            unpack_pending_resize(packed),
+            Some((rows, cols)),
+            "round-trip failed for ({rows}, {cols})"
+        );
+    }
+}
+
+/// Negative pin: pack/unpack is a pure function — exhaustive
+/// round-trip over the same case set, plus the explicit sentinel
+/// check. Compile-time enforces `pub(crate)` visibility on the
+/// helpers.
+///
+/// Regression: BUG-11-025 — closes §04 Plan TPR Round 1 Codex F6.
+#[test]
+fn pack_unpack_pending_resize_is_pure_function() {
+    let cases = [
+        (0u16, 0u16),
+        (1, 1),
+        (24, 80),
+        (u16::MAX, 0),
+        (0, u16::MAX),
+        (u16::MAX, u16::MAX),
+    ];
+    for (rows, cols) in cases {
+        assert_eq!(
+            unpack_pending_resize(pack_pending_resize(rows, cols)),
+            Some((rows, cols)),
+        );
+    }
+    assert_eq!(unpack_pending_resize(PENDING_RESIZE_NONE), None);
+}
+
+/// Pin the saturation contract synchronously: `cmd_tx.try_send`
+/// returns `Err(TrySendError::Full(_))` exactly at capacity. Wall-
+/// clock-free per `tests.md §Wall-Clock-Free Testing`.
+///
+/// Uses `make_pair()` (no spawned IO thread) per §04 Plan TPR Round 4
+/// Gemini F1 — a live thread would async-drain `cmd_tx` and break the
+/// saturation assertion.
+///
+/// Regression: BUG-11-025 — exact failing case
+/// `cmd_tx_at_capacity_returns_full_error_synchronously`. Replaces
+/// the wall-clock-dependent `test_command_channel_flood`.
+#[test]
+fn cmd_tx_at_capacity_returns_full_error_synchronously() {
+    let (_thread, handle) = make_pair();
+    for i in 0..CMD_CHANNEL_CAPACITY {
+        handle
+            .cmd_tx
+            .try_send(PaneIoCommand::MarkAllDirty)
+            .unwrap_or_else(|e| panic!("send {i} within capacity should succeed: {e}"));
+    }
+    let r = handle.cmd_tx.try_send(PaneIoCommand::MarkAllDirty);
+    assert!(
+        matches!(r, Err(crossbeam_channel::TrySendError::Full(_))),
+        "expected TrySendError::Full at capacity, got {r:?}"
+    );
+}
+
+/// Pin that a pre-drain atomic store reaches `process_resize` via
+/// `apply_pending_resize`. Drives `drain_commands()` directly so
+/// crossbeam's `select!` non-determinism is irrelevant.
+///
+/// Regression: BUG-11-025 — cross-pattern coverage
+/// `drain_after_atomic_store_processes_resize`.
+#[test]
+fn drain_after_atomic_store_processes_resize() {
+    let (mut t, _cmd_tx) = make_sync_thread_with_cmd_tx();
+    pack_then_store(&t.pending_resize, 30, 100);
+    t.drain_commands();
+    assert_eq!(t.terminal.grid().lines(), 30);
+    assert_eq!(t.terminal.grid().cols(), 100);
+}
+
+/// Pin last-writer-wins coalescing across three rapid stores: only
+/// the latest `(rows, cols)` reaches `process_resize`. Replacement
+/// for the original `test_resize_coalescing` against the now-removed
+/// `PaneIoCommand::Resize` variant.
+///
+/// Regression: BUG-11-025 — cross-pattern coverage
+/// `drain_after_three_atomic_stores_processes_only_last`.
+#[test]
+fn drain_after_three_atomic_stores_processes_only_last() {
+    let (mut t, _cmd_tx) = make_sync_thread_with_cmd_tx();
+    pack_then_store(&t.pending_resize, 24, 80);
+    pack_then_store(&t.pending_resize, 24, 60);
+    pack_then_store(&t.pending_resize, 24, 40);
+    t.drain_commands();
+    assert_eq!(
+        t.terminal.grid().cols(),
+        40,
+        "only the last atomic store should be applied"
+    );
+}
+
+/// Pin the resize-FIRST drain ordering: when a pending resize and
+/// scroll/mark-dirty commands land together, the resize is applied
+/// BEFORE the other commands so any reply-bearing command later in
+/// the same drain reads post-resize geometry.
+///
+/// Regression: BUG-11-025 — cross-pattern coverage
+/// `drain_applies_pending_resize_before_other_commands`. Per §04
+/// Plan TPR Round 0 F1 and Round 1 Codex F2 + Gemini F1.
+#[test]
+fn drain_applies_pending_resize_before_other_commands() {
+    let (mut t, cmd_tx) = make_sync_thread_with_cmd_tx();
+    cmd_tx.send(PaneIoCommand::MarkAllDirty).unwrap();
+    pack_then_store(&t.pending_resize, 24, 40);
+    t.drain_commands();
+    // Resize ran (cols changed)
+    assert_eq!(
+        t.terminal.grid().cols(),
+        40,
+        "resize must have been applied"
+    );
+    // MarkAllDirty ran post-resize: every line in the new viewport is dirty
+    assert!(
+        t.terminal.grid().dirty().is_all_dirty(),
+        "MarkAllDirty must execute after the resize"
+    );
+}
+
+/// Negative pin: when the pending_resize slot carries the
+/// `PENDING_RESIZE_NONE` sentinel, `apply_pending_resize` MUST NOT
+/// invoke `process_resize`. Verified by checking that
+/// `last_pty_size` is unchanged.
+///
+/// Regression: BUG-11-025 — cross-pattern negative pin
+/// `drain_with_no_pending_resize_does_not_call_process_resize`.
+#[test]
+fn drain_with_no_pending_resize_does_not_call_process_resize() {
+    let (mut t, _cmd_tx) = make_sync_thread_with_cmd_tx();
+    let initial_last = t.last_pty_size;
+    t.drain_commands();
+    assert_eq!(
+        t.last_pty_size, initial_last,
+        "process_resize must NOT fire when slot is the sentinel"
+    );
+}
+
+/// Pin the resize-then-Shutdown drain ordering: a pending resize is
+/// applied before `Shutdown` short-circuits the drain. Replacement
+/// for the rejected "shutdown wins over pending_resize" formulation
+/// per §04 Plan TPR Round 1 Codex F2.
+///
+/// Regression: BUG-11-025 — cross-pattern coverage
+/// `shutdown_after_pending_resize_applies_resize_then_terminates`.
+#[test]
+fn shutdown_after_pending_resize_applies_resize_then_terminates() {
+    let (mut t, cmd_tx) = make_sync_thread_with_cmd_tx();
+    pack_then_store(&t.pending_resize, 24, 40);
+    cmd_tx.send(PaneIoCommand::Shutdown).unwrap();
+    t.drain_commands();
+    assert_eq!(
+        t.terminal.grid().cols(),
+        40,
+        "resize must apply before Shutdown"
+    );
+    assert!(
+        t.shutdown.load(Ordering::Acquire),
+        "shutdown flag must be set after the Shutdown command"
+    );
+}
+
+/// Pin the semantic invariant: when a pending resize and a
+/// reply-bearing `MarkAllDirty` (proxy for SnapshotNow's barrier
+/// semantics) interleave, the latest atomic store wins AND the
+/// follow-on commands run post-resize. Load-bearing test for §05
+/// Step 2's per-iteration re-flush.
+///
+/// Regression: BUG-11-025 — semantic pin
+/// `drain_commands_applies_pending_resize_before_reply_bearing_commands`.
+#[test]
+fn drain_commands_applies_pending_resize_before_reply_bearing_commands() {
+    let (mut t, cmd_tx) = make_sync_thread_with_cmd_tx();
+    pack_then_store(&t.pending_resize, 24, 80);
+    cmd_tx.send(PaneIoCommand::MarkAllDirty).unwrap();
+    pack_then_store(&t.pending_resize, 24, 40);
+    cmd_tx.send(PaneIoCommand::MarkAllDirty).unwrap();
+    t.drain_commands();
+    // Last-writer-wins on the slot
+    assert_eq!(t.terminal.grid().cols(), 40);
+    // MarkAllDirty ran post-resize
+    assert!(t.terminal.grid().dirty().is_all_dirty());
+}
+
+/// Negative pin: applying a pending resize before a non-reply
+/// geometry-dependent command (`ScrollDisplay`) — deterministic
+/// complement to the live-thread probabilistic crossbeam-arm pin.
+/// Drives `drain_commands` directly with a pre-staged slot and
+/// command so non-determinism is irrelevant.
+///
+/// Regression: BUG-11-025 — closes §04 Plan TPR Round 4 Codex F4.
+#[test]
+fn drain_commands_applies_pending_resize_before_non_reply_command() {
+    let (mut t, cmd_tx) = make_sync_thread_with_cmd_tx();
+    // Fill scrollback so ScrollDisplay can take effect.
+    for _ in 0..50 {
+        t.handle_bytes(b"scrollback line\r\n");
+    }
+    pack_then_store(&t.pending_resize, 30, 100);
+    cmd_tx.send(PaneIoCommand::ScrollDisplay(5)).unwrap();
+    t.drain_commands();
+    // Resize ran first
+    assert_eq!(t.terminal.grid().cols(), 100);
+    assert_eq!(t.terminal.grid().lines(), 30);
+    // ScrollDisplay ran post-resize: display_offset moved
+    assert!(
+        t.terminal.grid().display_offset() > 0,
+        "ScrollDisplay must execute after the resize"
+    );
+}
+
+/// Negative pin: `Shutdown` reaches the IO thread even when `cmd_tx`
+/// is at capacity. Saturate `cmd_tx` (no live drain), call
+/// `handle.shutdown()`, and verify the IO thread joins promptly.
+///
+/// Regression: BUG-11-025 — Q4 belt-and-suspenders.
+#[test]
+fn shutdown_under_cmd_tx_saturation_still_terminates() {
+    let (mut handle, _shutdown_flag) = spawn_pair_with_flag();
+    // Saturate the channel without giving the IO thread a chance to
+    // drain (no commands consumed by the spawned thread before this
+    // saturation — try_send returns Full once N have queued).
+    let mut accepted = 0usize;
+    for _ in 0..(CMD_CHANNEL_CAPACITY * 2) {
+        if handle.cmd_tx.try_send(PaneIoCommand::MarkAllDirty).is_ok() {
+            accepted += 1;
+        } else {
+            break;
+        }
+    }
+    assert!(
+        accepted > 0,
+        "should have accepted at least one command before saturating"
+    );
+    let start = Instant::now();
+    handle.shutdown();
+    assert!(
+        start.elapsed() < Duration::from_secs(2),
+        "shutdown after saturation took too long; flag-via-shutdown_flag is not firing"
+    );
+}
+
+/// Negative pin: `send_command(Shutdown)` (the generic-channel path
+/// distinct from `handle.shutdown()`) terminates the IO thread even
+/// under `cmd_tx` saturation. Pins the `matches!(&cmd, PaneIoCommand::
+/// Shutdown)` special-case in `send_command`.
+///
+/// Regression: BUG-11-025 — closes §04 Plan TPR Round 4 Codex F3.
+#[test]
+fn send_command_shutdown_under_cmd_tx_saturation_still_terminates() {
+    let (handle, _shutdown_flag) = spawn_pair_with_flag();
+    for _ in 0..(CMD_CHANNEL_CAPACITY * 2) {
+        if handle.cmd_tx.try_send(PaneIoCommand::MarkAllDirty).is_err() {
+            break;
+        }
+    }
+    let start = Instant::now();
+    handle.send_command(PaneIoCommand::Shutdown);
+    // Drop the handle to surface join via Drop's shutdown() path.
+    drop(handle);
+    assert!(
+        start.elapsed() < Duration::from_secs(2),
+        "send_command(Shutdown) under saturation must still terminate; \
+         shutdown_flag special-case is not firing"
+    );
+}
+
+/// Negative pin: writer-thread shutdown wakes the IO thread out of
+/// `select!` within one iteration. Simulates the writer-thread exit
+/// path: set `shutdown` AND `try_send` on `io_wake_tx`. Pins §05
+/// Step 6C's writer-thread wake plumbing.
+///
+/// Regression: BUG-11-025 — closes §04 Plan TPR Round 5 Codex F1 + F2.
+#[test]
+fn idle_io_thread_observes_writer_thread_shutdown_within_one_iteration() {
+    let (mut handle, shutdown_flag) = spawn_pair_with_flag();
+    // Simulate the writer thread exit path verbatim: set the
+    // durable flag AND send a wake on io_wake_tx.
+    shutdown_flag.store(true, Ordering::Release);
+    let _ = handle.io_wake_tx.try_send(());
+    let start = Instant::now();
+    let join = handle.join.take().expect("join handle present");
+    let _ = join.join();
+    assert!(
+        start.elapsed() < Duration::from_secs(2),
+        "IO thread must observe writer-thread shutdown within one iteration; \
+         either Step 6C wake plumbing or Step 6B pre-select check is missing"
+    );
+}
+
+/// Negative pin: `is_reply_bearing()` is exhaustive — every
+/// `PaneIoCommand` variant constructible with a reply `Sender<_>`
+/// returns `true`; every non-reply variant returns `false`. A
+/// future contributor adding a new reply-bearing variant without
+/// updating the predicate fails this test.
+///
+/// Regression: BUG-11-025 — SSOT exhaustiveness guard, closes §04
+/// Plan TPR Round 2 Opencode F2.
+#[test]
+fn is_reply_bearing_predicate_matches_reply_field_presence() {
+    use oriterm_core::grid::StableRowIndex;
+    use oriterm_core::index::Side;
+    use oriterm_core::{CursorShape, Palette, Selection, Theme};
+
+    let (snap_tx, _snap_rx) = crossbeam_channel::bounded::<()>(1);
+    let (xt_tx, _xt_rx) = crossbeam_channel::bounded::<Option<String>>(1);
+    let (xh_tx, _xh_rx) = crossbeam_channel::bounded::<Option<(String, String)>>(1);
+    let (mark_tx, _mark_rx) = crossbeam_channel::bounded::<crate::pane::MarkCursor>(1);
+    let (out_tx, _out_rx) = crossbeam_channel::bounded::<Option<Selection>>(1);
+    let (in_tx, _in_rx) = crossbeam_channel::bounded::<Option<Selection>>(1);
+
+    let sel = Selection::new_char(StableRowIndex(0), 0, Side::Left);
+    let reply_bearing = [
+        PaneIoCommand::SnapshotNow { reply: snap_tx },
+        PaneIoCommand::ExtractText {
+            selection: sel,
+            reply: xt_tx,
+        },
+        PaneIoCommand::ExtractHtml {
+            selection: sel,
+            font_family: String::new(),
+            font_size: 12.0,
+            reply: xh_tx,
+        },
+        PaneIoCommand::EnterMarkMode { reply: mark_tx },
+        PaneIoCommand::SelectCommandOutput { reply: out_tx },
+        PaneIoCommand::SelectCommandInput { reply: in_tx },
+    ];
+    for cmd in &reply_bearing {
+        assert!(
+            cmd.is_reply_bearing(),
+            "is_reply_bearing must return true for {cmd:?}"
+        );
+    }
+
+    let non_reply = [
+        PaneIoCommand::ScrollDisplay(0),
+        PaneIoCommand::ScrollToBottom,
+        PaneIoCommand::ScrollToPreviousPrompt,
+        PaneIoCommand::ScrollToNextPrompt,
+        PaneIoCommand::SetTheme(Theme::default(), Box::new(Palette::default())),
+        PaneIoCommand::SetCursorShape(CursorShape::Block),
+        PaneIoCommand::SetBoldIsBright(true),
+        PaneIoCommand::MarkAllDirty,
+        PaneIoCommand::SetImageConfig(crate::backend::ImageConfig {
+            enabled: false,
+            memory_limit: 0,
+            max_single: 0,
+            animation_enabled: false,
+        }),
+        PaneIoCommand::SetCellDimensions {
+            width: 8,
+            height: 16,
+        },
+        PaneIoCommand::OpenSearch,
+        PaneIoCommand::CloseSearch,
+        PaneIoCommand::SearchSetQuery(String::new()),
+        PaneIoCommand::SearchNextMatch,
+        PaneIoCommand::SearchPrevMatch,
+        PaneIoCommand::Reset,
+        PaneIoCommand::Shutdown,
+    ];
+    for cmd in &non_reply {
+        assert!(
+            !cmd.is_reply_bearing(),
+            "is_reply_bearing must return false for {cmd:?}"
+        );
+    }
 }

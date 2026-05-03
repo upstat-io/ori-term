@@ -12,6 +12,8 @@ use std::time::Duration;
 
 use crossbeam_channel::Receiver;
 
+use super::super::handle::PENDING_RESIZE_NONE;
+
 use oriterm_core::effect::sink::EffectSink;
 use oriterm_core::effect::{
     ClipboardSelection, Effect, HostEffect, HostRequest, NotificationSource, PollResult,
@@ -39,9 +41,13 @@ fn make_router_harness() -> (
     let (_byte_tx, byte_rx) = crossbeam_channel::unbounded::<Vec<u8>>();
     let (_exit_tx, child_exit_rx): (_, Receiver<ExitStatus>) =
         crossbeam_channel::bounded::<ExitStatus>(1);
-    let (_wake_tx, response_wake_rx) = crossbeam_channel::bounded::<()>(1);
-    // Leak the auxiliary tx ends so receivers stay open for the lifetime
-    // of the test — prevents spurious EOF from firing select! arms.
+    // Effect-router harness keeps unbounded `cmd_tx` / `byte_tx` and
+    // dummy wake / exit channels so it tests effect-routing logic
+    // without coupling to BUG-11-025's bounded-cmd_tx / atomic-resize
+    // wiring (per §05 Step 5 test-harness exception). Leak the
+    // auxiliary tx ends so receivers stay open for the lifetime of
+    // the test — prevents spurious EOF from firing select! arms.
+    let (_wake_tx, io_wake_rx) = crossbeam_channel::bounded::<()>(1);
     std::mem::forget(_cmd_tx);
     std::mem::forget(_byte_tx);
     std::mem::forget(_exit_tx);
@@ -54,7 +60,7 @@ fn make_router_harness() -> (
         mux_tx,
         child_exit_rx,
         pending_child_exit: None,
-        response_wake_rx,
+        io_wake_rx,
         cmd_rx,
         byte_rx,
         shutdown: Arc::new(AtomicBool::new(false)),
@@ -75,6 +81,7 @@ fn make_router_harness() -> (
         pending_responses: Vec::new(),
         effects_buf: Vec::new(),
         last_animation_deadline: None,
+        pending_resize: Arc::new(AtomicU64::new(PENDING_RESIZE_NONE)),
         shrink_call_count: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
     };
     (thread, mux_rx, wakeup_count)

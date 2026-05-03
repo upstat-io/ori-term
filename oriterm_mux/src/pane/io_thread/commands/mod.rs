@@ -23,9 +23,6 @@ use crate::pane::MarkCursor;
     reason = "variants used incrementally as sections 02-06 are implemented"
 )]
 pub enum PaneIoCommand {
-    /// Resize grid and notify PTY. The IO thread performs `Grid::resize()`
-    /// with reflow, then sends SIGWINCH via `PtyControl`.
-    Resize { rows: u16, cols: u16 },
     /// Change viewport scroll offset by `delta` lines.
     ScrollDisplay(isize),
     /// Reset to live view (`display_offset = 0`).
@@ -103,14 +100,33 @@ pub enum PaneIoCommand {
     Shutdown,
 }
 
+impl PaneIoCommand {
+    /// SSOT classification for variants that carry a reply
+    /// `Sender<...>`.
+    ///
+    /// Production code does NOT use this for runtime dispatch — the
+    /// `apply_pending_resize()` flush is unconditional per the §05
+    /// Round-3 design. Sole consumer: the §03 exhaustiveness pin
+    /// `is_reply_bearing_predicate_matches_reply_field_presence`,
+    /// which fails compilation when a future contributor adds a new
+    /// `reply: Sender<_>` variant without updating this predicate.
+    #[cfg(test)]
+    pub(super) fn is_reply_bearing(&self) -> bool {
+        matches!(
+            self,
+            Self::SnapshotNow { .. }
+                | Self::ExtractText { .. }
+                | Self::ExtractHtml { .. }
+                | Self::EnterMarkMode { .. }
+                | Self::SelectCommandOutput { .. }
+                | Self::SelectCommandInput { .. }
+        )
+    }
+}
+
 impl fmt::Debug for PaneIoCommand {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Resize { rows, cols } => f
-                .debug_struct("Resize")
-                .field("rows", rows)
-                .field("cols", cols)
-                .finish(),
             Self::ScrollDisplay(delta) => write!(f, "ScrollDisplay({delta})"),
             Self::ScrollToBottom => write!(f, "ScrollToBottom"),
             Self::ScrollToPreviousPrompt => write!(f, "ScrollToPreviousPrompt"),

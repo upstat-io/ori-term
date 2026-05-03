@@ -30,6 +30,7 @@ use oriterm_core::{RenderableContent, Term};
 
 pub use commands::PaneIoCommand;
 pub use handle::{IoThreadConfig, PaneIoHandle, new_with_handle};
+pub(crate) use handle::{PENDING_RESIZE_NONE, unpack_pending_resize};
 pub(crate) use snapshot::SnapshotDoubleBuffer;
 
 use crate::PaneId;
@@ -75,10 +76,17 @@ pub struct PaneIoThread<S: EffectSink + 'static> {
     /// observed EOF). The `select!` arm stores here instead of emitting
     /// directly; the EOF drain sequence consumes it.
     pending_child_exit: Option<ExitStatus>,
-    /// Receives fulfillment wake signals from `PaneIoHandle::fulfill_*`.
-    /// The `select!` wake arm has an empty body — the wake IS the signal;
-    /// the next loop iteration drains commands and polls pending responses.
-    response_wake_rx: Receiver<()>,
+    /// Receives wake signals from any handle helper that mutates shared
+    /// IO-thread state without traversing `cmd_rx`/`byte_rx`:
+    /// [`PaneIoHandle::fulfill_clipboard_load`],
+    /// [`PaneIoHandle::fulfill_color_query`],
+    /// [`PaneIoHandle::send_resize`],
+    /// the [`PaneIoHandle::send_command`] Shutdown special-case,
+    /// [`PaneIoHandle::shutdown`], and the PTY writer-thread shutdown
+    /// path. The `select!` arm has an empty body — the wake IS the
+    /// signal; the next loop iteration drains commands and applies any
+    /// pending resize.
+    pub(super) io_wake_rx: Receiver<()>,
     /// Receives commands from the main thread.
     cmd_rx: Receiver<PaneIoCommand>,
     /// Receives raw PTY bytes from the reader thread.
@@ -126,6 +134,13 @@ pub struct PaneIoThread<S: EffectSink + 'static> {
     /// `None` means "no deadline currently in effect" — both the initial
     /// state and the state after all animations finish/pause.
     last_animation_deadline: Option<std::time::Instant>,
+    /// Pending resize slot — coalesces resize requests via last-writer-
+    /// wins atomic store. Encoded by [`pack_pending_resize`]; decoded
+    /// by [`unpack_pending_resize`]. `apply_pending_resize` swaps the
+    /// slot to the sentinel and processes the resize. Cloned from
+    /// [`PaneIoHandle::pending_resize`] in [`new_with_handle`].
+    /// Regression: BUG-11-025.
+    pub(super) pending_resize: Arc<AtomicU64>,
     /// Test-only counter — incremented at the top of
     /// [`Self::maybe_shrink_buffers`]. Pins that the OUTER run loop
     /// (not the `select!` `default(timeout)` arm) is the call path,
@@ -139,28 +154,52 @@ pub struct PaneIoThread<S: EffectSink + 'static> {
 }
 
 impl<S: EffectSink> PaneIoThread<S> {
+    /// Take any pending resize from the atomic slot and apply it.
+    ///
+    /// Idempotent — empty-slot fast path is one atomic load + one
+    /// branch. Called both BEFORE the `cmd_rx` drain begins (so any
+    /// command in the drain reads post-resize geometry) AND
+    /// unconditionally before each command in the drain (so a
+    /// `send_resize()` that lands during the drain still flushes
+    /// before the next command). Closes the race surfaced in §04
+    /// Plan TPR Round 1 Codex F1; broadened to all commands per
+    /// Round 3 Gemini F1.
+    pub(super) fn apply_pending_resize(&mut self) {
+        let packed = self
+            .pending_resize
+            .swap(PENDING_RESIZE_NONE, Ordering::AcqRel);
+        if let Some((rows, cols)) = unpack_pending_resize(packed) {
+            self.process_resize(rows, cols);
+        }
+    }
+
     /// Drain all pending commands from the command channel.
     ///
-    /// Resize commands are coalesced — only the last one in the batch is
-    /// processed. During drag resize, dozens of `Resize` commands queue up;
-    /// only the final dimensions matter. The coalesced resize is processed
-    /// after all other commands so reflow sees the latest terminal state.
+    /// `apply_pending_resize` is called unconditionally at drain entry
+    /// AND before each command so that any reply-bearing command in
+    /// this cycle reads post-resize terminal state — preserving the
+    /// `SnapshotNow` FIFO barrier contract at
+    /// `commands/mod.rs:45-56`. Cost is one atomic load per command
+    /// (negligible vs. per-command work). Pinned by §04 Plan TPR
+    /// Round 0 F1 + Round 1 Codex F1 + Round 3 Gemini F1.
     fn drain_commands(&mut self) {
-        let mut last_resize = None;
+        // Apply any pending resize FIRST so reply-bearing commands later
+        // in this cycle read terminal state AFTER the geometry change.
+        self.apply_pending_resize();
         while let Ok(cmd) = self.cmd_rx.try_recv() {
+            // Re-flush pending_resize unconditionally before EACH command
+            // so a send_resize() that landed during this drain cycle
+            // still flushes before the next command — including
+            // non-reply-bearing geometry-dependent commands like
+            // ScrollDisplay.
+            self.apply_pending_resize();
             match cmd {
-                PaneIoCommand::Resize { rows, cols } => {
-                    last_resize = Some((rows, cols));
-                }
                 PaneIoCommand::Shutdown => {
                     self.shutdown.store(true, Ordering::Release);
                     return;
                 }
                 other => self.handle_command(other),
             }
-        }
-        if let Some((rows, cols)) = last_resize {
-            self.process_resize(rows, cols);
         }
         self.poll_pending_responses();
         self.drain_effects_into_mux_events();

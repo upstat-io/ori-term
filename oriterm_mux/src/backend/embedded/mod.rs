@@ -165,7 +165,7 @@ impl MuxBackend for EmbeddedMux {
             // drawing the previous cached snapshot until the IO thread
             // publishes the resized one. This prevents exposing
             // intermediate reflow frames during drag resize.
-            pane.send_io_command(PaneIoCommand::Resize { rows, cols });
+            pane.send_resize(rows, cols);
         }
     }
 

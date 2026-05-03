@@ -30,10 +30,7 @@ impl App {
     /// Routes through `owning_window_ctx_mut` for the `WindowContext` lookup,
     /// ensuring the SAME `windows.values_mut() + session_window_id() ==
     /// session_wid` walk pattern is used everywhere — no inline duplicates.
-    pub(in crate::app) fn sync_tab_bar_for_session_window(
-        &mut self,
-        session_wid: SessionWindowId,
-    ) {
+    pub(in crate::app) fn sync_tab_bar_for_session_window(&mut self, session_wid: SessionWindowId) {
         // Scoped immutable borrow of self.session ends before mutable
         // borrow of self.windows via owning_window_ctx_mut.
         let computed = {

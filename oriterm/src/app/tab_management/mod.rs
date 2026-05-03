@@ -352,7 +352,6 @@ impl App {
             )
         })
     }
-
 }
 
 /// Wrapping index arithmetic for tab cycling.

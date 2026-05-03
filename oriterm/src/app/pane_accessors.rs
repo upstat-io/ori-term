@@ -192,11 +192,7 @@ impl App {
     /// Single canonical home for the bell-pulse pattern shared by the
     /// `PaneBell`, `DesktopNotification`, and `CommandComplete` arms in
     /// `mux_pump/mod.rs`.
-    pub(super) fn ring_owning_window_tab_bell(
-        &mut self,
-        pane_id: PaneId,
-        now: std::time::Instant,
-    ) {
+    pub(super) fn ring_owning_window_tab_bell(&mut self, pane_id: PaneId, now: std::time::Instant) {
         let Some(pos) = self.session.pane_position(pane_id) else {
             return;
         };

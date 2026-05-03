@@ -397,6 +397,7 @@ fn writer_thread_delivers_input() {
         rx,
         Arc::clone(&shutdown),
         Arc::new(AtomicBool::new(false)),
+        crossbeam_channel::bounded::<()>(1).0,
     )
     .expect("spawn writer thread");
 
@@ -430,6 +431,7 @@ fn writer_thread_batches_queued_messages() {
         rx,
         Arc::clone(&shutdown),
         Arc::new(AtomicBool::new(false)),
+        crossbeam_channel::bounded::<()>(1).0,
     )
     .expect("spawn writer thread");
     handle.join().expect("writer thread panicked");
@@ -450,6 +452,7 @@ fn writer_thread_shutdown_sets_flag() {
         rx,
         Arc::clone(&shutdown),
         Arc::new(AtomicBool::new(false)),
+        crossbeam_channel::bounded::<()>(1).0,
     )
     .expect("spawn writer thread");
 
@@ -473,6 +476,7 @@ fn writer_thread_channel_close_sets_flag() {
         rx,
         Arc::clone(&shutdown),
         Arc::new(AtomicBool::new(false)),
+        crossbeam_channel::bounded::<()>(1).0,
     )
     .expect("spawn writer thread");
 
@@ -503,6 +507,7 @@ fn writer_thread_sets_stall_flag_during_write() {
         rx,
         Arc::clone(&shutdown),
         Arc::clone(&stalled),
+        crossbeam_channel::bounded::<()>(1).0,
     )
     .expect("spawn writer thread");
 
@@ -562,6 +567,7 @@ fn ctrl_c_stuck_behind_stalled_write() {
         rx,
         Arc::clone(&shutdown),
         Arc::clone(&stalled),
+        crossbeam_channel::bounded::<()>(1).0,
     )
     .expect("spawn writer thread");
 
@@ -626,6 +632,7 @@ fn ctrl_c_delivered_after_stall_cleared() {
         rx,
         Arc::clone(&shutdown),
         Arc::clone(&stalled),
+        crossbeam_channel::bounded::<()>(1).0,
     )
     .expect("spawn writer thread");
 
@@ -726,6 +733,7 @@ fn write_stalled_flag_clears_after_write_completes() {
         rx,
         Arc::clone(&shutdown),
         Arc::clone(&stalled),
+        crossbeam_channel::bounded::<()>(1).0,
     )
     .expect("spawn writer thread");
 
@@ -769,6 +777,7 @@ fn write_stalled_flag_transitions_true_then_false_around_drained_write() {
         rx,
         Arc::clone(&shutdown),
         Arc::clone(&stalled),
+        crossbeam_channel::bounded::<()>(1).0,
     )
     .expect("spawn writer thread");
 
