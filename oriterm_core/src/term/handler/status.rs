@@ -132,6 +132,23 @@ impl<S: EffectSink> Term<S> {
         }));
     }
 
+    /// XTVERSION (CSI > q): report terminal name and version per xterm.
+    ///
+    /// Reply format: `DCS > | oriterm(<version>) ST`.
+    ///
+    /// The Ps=0 gate is enforced at the parser level
+    /// (`crates/vte/src/ansi/dispatch/csi/mod.rs`) per xterm
+    /// `charproc.c::CASE_REPORT_VERSION` semantics; this handler runs
+    /// only for default/zero Ps and emits the constant reply.
+    pub(super) fn status_xtversion(&mut self) {
+        let version = env!("CARGO_PKG_VERSION");
+        let response = format!("\x1bP>|oriterm({version})\x1b\\");
+        self.effect_sink.push(Effect::Pty(PtyEffect::Write {
+            bytes: response.into_bytes(),
+            kind: PtyWriteKind::DeviceAttribute,
+        }));
+    }
+
     /// DA: device attributes response.
     pub(super) fn status_identify_terminal(&mut self, intermediate: Option<char>) {
         match intermediate {

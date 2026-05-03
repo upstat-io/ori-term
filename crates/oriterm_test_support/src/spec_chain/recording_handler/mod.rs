@@ -184,6 +184,7 @@ impl<S: EffectSink> Handler for RecordingHandler<S> {
     }
 
     // All other handler methods — record as Other and delegate.
+    delegate_other!(xtversion);
     delegate_other!(set_title, title: Option<String>);
     delegate_other!(set_icon_name, name: Option<String>);
     delegate_other!(set_working_directory, dir: Option<String>);

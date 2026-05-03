@@ -50,6 +50,7 @@ enum Call {
     Decic(u16),
     Decdc(u16),
     GraphicsAttribute { pi: u16, pa: u16, pv: u16 },
+    Xtversion,
 }
 
 #[derive(Default)]
@@ -127,6 +128,9 @@ impl Handler for RecordingHandler {
     }
     fn graphics_attribute(&mut self, pi: u16, pa: u16, pv: u16) {
         self.calls.push(Call::GraphicsAttribute { pi, pa, pv });
+    }
+    fn xtversion(&mut self) {
+        self.calls.push(Call::Xtversion);
     }
 }
 
@@ -440,4 +444,60 @@ fn csi_other_intermediate_s_does_not_dispatch_graphics_attribute() {
     // graphics_attribute.
     let calls = run(b"\x1b[$S");
     assert!(calls.is_empty());
+}
+
+// ── XTVERSION (CSI > Ps q) — BUG-11-018 ─────────────────────────────
+
+/// Regression: BUG-11-018 — XTVERSION default Ps dispatches via the
+/// CSI dispatch arm with `>` intermediate (not via the raw mux interceptor).
+/// Per xterm `charproc.c::CASE_REPORT_VERSION`, default/zero Ps fires
+/// the response.
+#[test]
+fn xtversion_csi_gt_q_calls_xtversion() {
+    let calls = run(b"\x1b[>q");
+    assert_eq!(calls, vec![Call::Xtversion]);
+}
+
+/// Regression: BUG-11-018 — explicit Ps=0 is identical to default.
+#[test]
+fn xtversion_csi_gt_0_q_calls_xtversion() {
+    let calls = run(b"\x1b[>0q");
+    assert_eq!(calls, vec![Call::Xtversion]);
+}
+
+/// Regression: BUG-11-018 — Ps=1 negative pin. xterm replies only when
+/// `GetParam(0) <= 0` (`charproc.c::CASE_REPORT_VERSION`); we drop
+/// non-default Ps via the dispatch-arm gate.
+#[test]
+fn xtversion_csi_gt_1_q_does_not_call_xtversion() {
+    let calls = run(b"\x1b[>1q");
+    assert!(calls.is_empty(),
+        "XTVERSION must not fire for non-default Ps; got: {calls:?}");
+}
+
+/// Regression: BUG-11-018 — subparam form `CSI > 0:0 q` still dispatches.
+/// `Params::iter().next()` returns `&[0, 0]`; `next_param_or(0)` matches
+/// the leading `0`, so the gate behaves identically to `\x1b[>0q`.
+#[test]
+fn xtversion_csi_gt_zero_subparam_calls_xtversion() {
+    let calls = run(b"\x1b[>0:0q");
+    assert_eq!(calls, vec![Call::Xtversion]);
+}
+
+/// Regression: BUG-11-018 — subparam form `CSI > 1:0 q` is rejected
+/// because the leading subparam is non-zero.
+#[test]
+fn xtversion_csi_gt_one_subparam_does_not_call_xtversion() {
+    let calls = run(b"\x1b[>1:0q");
+    assert!(calls.is_empty(),
+        "XTVERSION must not fire for non-default leading subparam; got: {calls:?}");
+}
+
+/// Regression: BUG-11-018 — the `>` intermediate is required.
+/// `CSI q` with no intermediate is not the XTVERSION arm.
+#[test]
+fn xtversion_intermediate_required_csi_q_does_not_call_xtversion() {
+    let calls = run(b"\x1b[q");
+    assert!(calls.is_empty(),
+        "XTVERSION must not fire without `>` intermediate; got: {calls:?}");
 }

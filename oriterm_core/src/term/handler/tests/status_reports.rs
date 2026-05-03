@@ -1,3 +1,4 @@
+use crate::effect::sink::EffectSink;
 use crate::effect::{Effect, PtyEffect, PtyWriteKind};
 use crate::term::TermMode;
 
@@ -70,6 +71,60 @@ fn da3_produces_tertiary_device_attributes() {
         events
             .iter()
             .any(|e| e == "PtyWrite(\x1bP!|00000000\x1b\\)")
+    );
+}
+
+// --- XTVERSION (CSI > q) tests — BUG-11-018 ---
+
+/// Regression: BUG-11-018 — XTVERSION reply construction lives in
+/// `oriterm_core::Term::status_xtversion` (was in `oriterm_mux` interceptor).
+/// Pins reply byte format AND `PtyWriteKind::DeviceAttribute` classification
+/// alongside the DA1/DA2/DA3 family.
+/// See: bug-tracker/plans/BUG-11-018/section-03-tdd-matrix.md
+#[test]
+fn xtversion_responds_with_dcs_version_string() {
+    let mut t = term_with_effect_sink();
+    feed(&mut t, b"\x1b[>q");
+
+    let mut effects = Vec::new();
+    t.effect_sink().drain_into(&mut effects);
+
+    let version = env!("CARGO_PKG_VERSION");
+    let expected_bytes = format!("\x1bP>|oriterm({version})\x1b\\").into_bytes();
+    let matched = effects.iter().any(|e| {
+        matches!(
+            e,
+            Effect::Pty(PtyEffect::Write { bytes, kind })
+                if *bytes == expected_bytes && *kind == PtyWriteKind::DeviceAttribute
+        )
+    });
+    assert!(
+        matched,
+        "XTVERSION must emit DCS reply with DeviceAttribute kind, got: {effects:?}"
+    );
+}
+
+/// Regression: BUG-11-018 — XTVERSION must not fire for non-default Ps.
+/// Per xterm `charproc.c::CASE_REPORT_VERSION`, only `GetParam(0) <= 0`
+/// triggers a reply; non-zero Ps falls through to unhandled at the
+/// parser dispatch arm.
+#[test]
+fn xtversion_does_not_fire_for_nonzero_ps() {
+    let mut t = term_with_effect_sink();
+    feed(&mut t, b"\x1b[>1q");
+
+    let mut effects = Vec::new();
+    t.effect_sink().drain_into(&mut effects);
+
+    let leaked = effects.iter().any(|e| {
+        matches!(
+            e,
+            Effect::Pty(PtyEffect::Write { bytes, .. }) if bytes.starts_with(b"\x1bP>|")
+        )
+    });
+    assert!(
+        !leaked,
+        "XTVERSION must not fire for Ps=1, got: {effects:?}"
     );
 }
 

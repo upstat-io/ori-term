@@ -264,6 +264,19 @@ pub(super) fn dispatch<H: Handler, T: Timeout>(
             // DECSCA — Select Character Protection Attribute (CSI Ps " q).
             handler.decsca(next_param_or(0));
         },
+        ('q', [b'>']) => {
+            // XTVERSION (CSI > Ps q) — report terminal name and version.
+            //
+            // xterm `charproc.c::CASE_REPORT_VERSION` replies only when
+            // `GetParam(0) <= 0` (default/zero Ps). Non-zero Ps falls
+            // through to unhandled. We mirror that gate at the dispatch
+            // layer so the Handler method only fires on the requested form.
+            if next_param_or(0) == 0 {
+                handler.xtversion();
+            } else {
+                unhandled!();
+            }
+        },
         ('r', []) => {
             let top = next_param_or(1) as usize;
             let bottom =

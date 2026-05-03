@@ -325,6 +325,9 @@ impl<S: EffectSink> Handler for Term<S> {
     fn identify_terminal(&mut self, intermediate: Option<char>) {
         self.status_identify_terminal(intermediate);
     }
+    fn xtversion(&mut self) {
+        self.status_xtversion();
+    }
     fn device_status(&mut self, arg: usize) {
         self.status_device_status(arg);
     }

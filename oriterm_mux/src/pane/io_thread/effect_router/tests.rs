@@ -894,6 +894,66 @@ fn decrqm_reset_byte_parse_emits_value_two() {
     }
 }
 
+/// Regression: BUG-11-018 — XTVERSION (CSI > q) emits DCS terminal-version response.
+///
+/// Joins the BUG-11-004 cluster covering every response kind handled in
+/// `oriterm_core/src/term/handler/status.rs`. XTVERSION's reply pipeline:
+/// raw bytes → vte CSI dispatch arm `('q', [b'>'])` (Ps=0 gate) →
+/// `Handler::xtversion()` → `Term::status_xtversion()` → `effect_sink` →
+/// `drain_effects_into_mux_events` → `MuxEvent::PtyWrite`.
+///
+/// See: bug-tracker/plans/BUG-11-018/section-03-tdd-matrix.md
+#[test]
+fn xtversion_byte_parse_emits_pty_write_response() {
+    let (mut t, mux_rx, _wake) = make_router_harness();
+    t.handle_bytes(b"\x1b[>q");
+    let event = mux_rx
+        .recv_timeout(Duration::from_millis(100))
+        .expect("expected MuxEvent::PtyWrite for XTVERSION response");
+    match event {
+        MuxEvent::PtyWrite { data, .. } => {
+            let s = String::from_utf8_lossy(&data);
+            assert!(
+                s.starts_with("\x1bP>|oriterm("),
+                "XTVERSION reply must begin with DCS > | oriterm( prefix, got: {s}"
+            );
+            assert!(
+                s.ends_with("\x1b\\"),
+                "XTVERSION reply must end with ST, got: {s}"
+            );
+        }
+        other => panic!("expected PtyWrite, got {other:?}"),
+    }
+}
+
+/// Regression: BUG-11-018 — split-chunk XTVERSION still emits exactly one response.
+///
+/// Pins that the parser handles partial-byte input correctly: feeding
+/// `\x1b[>` then `q` as separate `handle_bytes` calls must produce the
+/// same single PtyWrite as the single-chunk case.
+#[test]
+fn xtversion_split_chunk_byte_parse_emits_pty_write_response() {
+    let (mut t, mux_rx, _wake) = make_router_harness();
+    t.handle_bytes(b"\x1b[>");
+    t.handle_bytes(b"q");
+    let event = mux_rx
+        .recv_timeout(Duration::from_millis(100))
+        .expect("expected MuxEvent::PtyWrite after split-chunk XTVERSION parse");
+    match event {
+        MuxEvent::PtyWrite { data, .. } => {
+            assert!(
+                String::from_utf8_lossy(&data).contains("oriterm"),
+                "XTVERSION split-chunk reply must contain 'oriterm'"
+            );
+        }
+        other => panic!("expected PtyWrite, got {other:?}"),
+    }
+    assert!(
+        mux_rx.recv_timeout(Duration::from_millis(50)).is_err(),
+        "XTVERSION must produce exactly one PtyWrite even on split-chunk input"
+    );
+}
+
 /// Regression: BUG-11-004 — DECRQM unknown mode reports value 0 (unrecognized).
 #[test]
 fn decrqm_unknown_mode_emits_value_zero() {
