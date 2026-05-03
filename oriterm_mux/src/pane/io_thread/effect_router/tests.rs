@@ -948,8 +948,12 @@ fn xtversion_split_chunk_byte_parse_emits_pty_write_response() {
         }
         other => panic!("expected PtyWrite, got {other:?}"),
     }
+    // Negative pin: handle_bytes() is synchronous — any second event would
+    // already be queued by the time we reach this assertion. try_recv() is
+    // wall-clock-free per `.claude/rules/tests.md` §Wall-Clock-Free Testing
+    // (no `recv_timeout` deadline; deterministic against scheduler jitter).
     assert!(
-        mux_rx.recv_timeout(Duration::from_millis(50)).is_err(),
+        mux_rx.try_recv().is_err(),
         "XTVERSION must produce exactly one PtyWrite even on split-chunk input"
     );
 }
