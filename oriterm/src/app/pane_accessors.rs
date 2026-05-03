@@ -181,4 +181,27 @@ impl App {
             .values_mut()
             .find(|ctx| ctx.window.session_window_id() == session_wid)
     }
+
+    /// Ring the tab-bar bell pulse on the OWNING window of `pane_id`.
+    ///
+    /// Resolves the pane's owning window via `pane_position`, walks to the
+    /// owning [`WindowContext`] via `owning_window_ctx_mut`, and rings the
+    /// bell on the correct tab. No-op if the pane is not in any tab or no
+    /// winit window is mapped to the owning session window.
+    ///
+    /// Single canonical home for the bell-pulse pattern shared by the
+    /// `PaneBell`, `DesktopNotification`, and `CommandComplete` arms in
+    /// `mux_pump/mod.rs`.
+    pub(super) fn ring_owning_window_tab_bell(
+        &mut self,
+        pane_id: PaneId,
+        now: std::time::Instant,
+    ) {
+        let Some(pos) = self.session.pane_position(pane_id) else {
+            return;
+        };
+        if let Some(ctx) = self.owning_window_ctx_mut(pos.window_id) {
+            ctx.tab_bar.ring_bell(pos.tab_index, now);
+        }
+    }
 }

@@ -157,12 +157,16 @@ fn windows_returns_all() {
 // pane_position regression suite — BUG-11-022.
 // See bug-tracker/plans/BUG-11-022/section-03-tdd-matrix.md.
 
+/// Edge case: empty registry — pane is registered nowhere.
+/// Pins `tab_for_pane` returning None at the head of the chain.
 #[test]
 fn pane_position_returns_none_when_pane_unknown() {
     let reg = SessionRegistry::new();
     assert!(reg.pane_position(pid(99)).is_none());
 }
 
+/// Baseline: one window with one tab containing one pane —
+/// resolves to (window_id, tab_index=0).
 #[test]
 fn pane_position_returns_some_for_single_window_single_tab() {
     let mut reg = SessionRegistry::new();
@@ -176,6 +180,8 @@ fn pane_position_returns_some_for_single_window_single_tab() {
     assert_eq!(pos.tab_index, 0);
 }
 
+/// Index correctness within one window: pane in the second tab
+/// resolves to tab_index=1 (not 0).
 #[test]
 fn pane_position_returns_secondary_tab_index() {
     let mut reg = SessionRegistry::new();
@@ -222,6 +228,9 @@ fn pane_position_resolves_to_owning_window_for_pane_in_secondary_window() {
     assert_ne!(pos.window_id, wid(1));
 }
 
+/// Two-axis pin: window selection AND tab index in that window. W2's
+/// middle tab (index 1) resolves to (W2_id, 1) — confirms the index
+/// is computed against the OWNING window's tab list, not W1's.
 #[test]
 fn pane_position_resolves_correct_tab_index_in_secondary_window_with_multiple_tabs() {
     let mut reg = SessionRegistry::new();
@@ -247,6 +256,8 @@ fn pane_position_resolves_correct_tab_index_in_secondary_window_with_multiple_ta
     assert_eq!(pos.tab_index, 1);
 }
 
+/// Edge case: pane with no tab — returns None at the first `?` of
+/// the resolution chain (`tab_for_pane`).
 #[test]
 fn pane_position_returns_none_for_pane_with_no_tab() {
     let reg = SessionRegistry::new();
