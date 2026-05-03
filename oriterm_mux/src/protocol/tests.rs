@@ -167,6 +167,9 @@ fn msg_type_roundtrip_all() {
         MsgType::SetCellDimensions,
         MsgType::RequestNewTab,
         MsgType::SetPanePriority,
+        MsgType::SignalChild,
+        MsgType::ClearBell,
+        MsgType::IsWriteStalled,
         MsgType::HelloAck,
         MsgType::PaneClosedAck,
         MsgType::Subscribed,
@@ -180,6 +183,7 @@ fn msg_type_roundtrip_all() {
         MsgType::SpawnPaneResponse,
         MsgType::ListPanesResponse,
         MsgType::NewTabAck,
+        MsgType::WriteStalledStatus,
         MsgType::Error,
         MsgType::NotifyNewTab,
         MsgType::NotifyPaneOutput,
@@ -190,6 +194,7 @@ fn msg_type_roundtrip_all() {
         MsgType::NotifyPaneSnapshot,
         MsgType::NotifyClipboardLoad,
         MsgType::NotifyPaneBell,
+        MsgType::NotifyPaneUrgencyHint,
         MsgType::ReplyHostRequest,
         MsgType::NotifyHostClipboardLoad,
         MsgType::NotifyHostColorQuery,
@@ -1493,3 +1498,69 @@ fn msg_type_decodes_new_host_request_ids() {
 
 // FrameReader forward-compat tests live in `server/tests.rs` where FrameReader
 // is accessible (it's a private server submodule).
+
+// -- BUG-11-020 IsWriteStalled / WriteStalledStatus round-trips --
+
+/// Regression: BUG-11-020 — IsWriteStalled request must round-trip losslessly.
+/// See: bug-tracker/plans/BUG-11-020/00-overview.md
+#[test]
+fn roundtrip_is_write_stalled_request() {
+    let pdu = MuxPdu::IsWriteStalled {
+        pane_id: PaneId::from_raw(7),
+    };
+    let frame = roundtrip(101, pdu.clone());
+    assert_eq!(frame.pdu, pdu);
+}
+
+/// Regression: BUG-11-020 — WriteStalledStatus { stalled: true } must round-trip losslessly.
+/// See: bug-tracker/plans/BUG-11-020/00-overview.md
+#[test]
+fn roundtrip_write_stalled_status_true() {
+    let pdu = MuxPdu::WriteStalledStatus {
+        pane_id: PaneId::from_raw(7),
+        stalled: true,
+    };
+    let frame = roundtrip(102, pdu.clone());
+    assert_eq!(frame.pdu, pdu);
+}
+
+/// Regression: BUG-11-020 — WriteStalledStatus { stalled: false } must round-trip losslessly.
+/// See: bug-tracker/plans/BUG-11-020/00-overview.md
+#[test]
+fn roundtrip_write_stalled_status_false() {
+    let pdu = MuxPdu::WriteStalledStatus {
+        pane_id: PaneId::from_raw(7),
+        stalled: false,
+    };
+    let frame = roundtrip(103, pdu.clone());
+    assert_eq!(frame.pdu, pdu);
+}
+
+/// Regression: BUG-11-020 — IsWriteStalled is not fire-and-forget; it expects a response.
+/// See: bug-tracker/plans/BUG-11-020/section-03-tdd-matrix.md (classifier pin)
+#[test]
+fn is_write_stalled_request_is_not_fire_and_forget() {
+    let pdu = MuxPdu::IsWriteStalled {
+        pane_id: PaneId::from_raw(1),
+    };
+    assert!(!pdu.is_fire_and_forget());
+}
+
+/// Regression: BUG-11-020 — WriteStalledStatus is a response, not a push notification.
+/// See: bug-tracker/plans/BUG-11-020/section-03-tdd-matrix.md (classifier pin)
+#[test]
+fn write_stalled_status_response_is_not_notification() {
+    let pdu = MuxPdu::WriteStalledStatus {
+        pane_id: PaneId::from_raw(1),
+        stalled: false,
+    };
+    assert!(!pdu.is_notification());
+}
+
+/// Regression: BUG-11-020 — MsgType IDs decode for the new variants.
+/// See: bug-tracker/plans/BUG-11-020/section-03-tdd-matrix.md
+#[test]
+fn msg_type_decodes_is_write_stalled_ids() {
+    assert_eq!(MsgType::from_u16(0x012E), Some(MsgType::IsWriteStalled));
+    assert_eq!(MsgType::from_u16(0x0219), Some(MsgType::WriteStalledStatus));
+}

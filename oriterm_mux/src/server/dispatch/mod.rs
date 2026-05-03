@@ -355,6 +355,14 @@ pub fn dispatch_request(
             Some(MuxPdu::Unsubscribed)
         }
 
+        MuxPdu::IsWriteStalled { pane_id } => {
+            let stalled = ctx
+                .panes
+                .get(&pane_id)
+                .is_some_and(crate::pane::Pane::is_write_stalled);
+            Some(MuxPdu::WriteStalledStatus { pane_id, stalled })
+        }
+
         MuxPdu::ReplyHostRequest {
             request_id,
             payload,

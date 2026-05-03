@@ -492,6 +492,18 @@ pub enum MuxPdu {
         /// Originating pane.
         pane_id: PaneId,
     },
+    /// Query a pane's PTY writer-stall state. Round-trip; daemon replies with [`WriteStalledStatus`](Self::WriteStalledStatus).
+    IsWriteStalled {
+        /// Target pane.
+        pane_id: PaneId,
+    },
+    /// Response to [`IsWriteStalled`](Self::IsWriteStalled).
+    WriteStalledStatus {
+        /// Target pane.
+        pane_id: PaneId,
+        /// Whether the pane's PTY writer thread is currently stalled on a full kernel buffer.
+        stalled: bool,
+    },
     // Wire-compat: append-only — new variants must go at the end.
 }
 

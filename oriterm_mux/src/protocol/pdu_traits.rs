@@ -76,6 +76,8 @@ impl MuxPdu {
             Self::NotifyClearPendingDesktopNotifications { .. } => {
                 MsgType::NotifyClearPendingDesktopNotifications
             }
+            Self::IsWriteStalled { .. } => MsgType::IsWriteStalled,
+            Self::WriteStalledStatus { .. } => MsgType::WriteStalledStatus,
         }
     }
 

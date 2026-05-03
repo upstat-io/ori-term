@@ -325,7 +325,7 @@ impl MuxBackend for EmbeddedMux {
         }
     }
 
-    fn is_write_stalled(&self, pane_id: PaneId) -> bool {
+    fn is_write_stalled(&mut self, pane_id: PaneId) -> bool {
         self.panes.get(&pane_id).is_some_and(Pane::is_write_stalled)
     }
 

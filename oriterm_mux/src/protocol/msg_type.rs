@@ -40,6 +40,7 @@ pub(crate) enum MsgType {
     SetCellDimensions = 0x012B,
     ClearBell = 0x012C,
     ReplyHostRequest = 0x012D,
+    IsWriteStalled = 0x012E,
 
     // Responses (daemon → client).
     HelloAck = 0x0201,
@@ -55,6 +56,7 @@ pub(crate) enum MsgType {
     SpawnPaneResponse = 0x0216,
     ListPanesResponse = 0x0217,
     NewTabAck = 0x0218,
+    WriteStalledStatus = 0x0219,
     Error = 0x02FF,
 
     // Push notifications (daemon → client).
@@ -111,6 +113,7 @@ impl MsgType {
             0x012B => Some(Self::SetCellDimensions),
             0x012C => Some(Self::ClearBell),
             0x012D => Some(Self::ReplyHostRequest),
+            0x012E => Some(Self::IsWriteStalled),
             0x0201 => Some(Self::HelloAck),
             0x0205 => Some(Self::PaneClosedAck),
             0x0207 => Some(Self::Subscribed),
@@ -124,6 +127,7 @@ impl MsgType {
             0x0216 => Some(Self::SpawnPaneResponse),
             0x0217 => Some(Self::ListPanesResponse),
             0x0218 => Some(Self::NewTabAck),
+            0x0219 => Some(Self::WriteStalledStatus),
             0x02FF => Some(Self::Error),
             0x0301 => Some(Self::NotifyPaneOutput),
             0x0302 => Some(Self::NotifyPaneExited),

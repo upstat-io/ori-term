@@ -343,6 +343,20 @@ impl MuxBackend for MuxClient {
         }
     }
 
+    fn is_write_stalled(&mut self, pane_id: PaneId) -> bool {
+        match self.rpc(MuxPdu::IsWriteStalled { pane_id }) {
+            Ok(MuxPdu::WriteStalledStatus { stalled, .. }) => stalled,
+            Ok(other) => {
+                log::error!("is_write_stalled: unexpected response: {other:?}");
+                false
+            }
+            Err(e) => {
+                log::error!("is_write_stalled: RPC failed: {e}");
+                false
+            }
+        }
+    }
+
     fn set_bell(&mut self, pane_id: PaneId) {
         // Patch the locally-cached snapshot so the trait-default
         // `has_bell()` (which reads from the cached snapshot, single SSOT

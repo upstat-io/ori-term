@@ -30,6 +30,21 @@ fn poll_events_noop() {
     client.poll_events();
 }
 
+/// Regression: BUG-11-020 — `is_write_stalled` must return `false` (not panic, not
+/// hang) when the client has no live transport. The defense flows through
+/// `MuxClient::rpc()`'s `Err(NotConnected)` return path; `is_write_stalled` collapses
+/// the error to `false`.
+/// See: bug-tracker/plans/BUG-11-020/00-overview.md
+#[test]
+fn is_write_stalled_returns_false_when_transport_disconnected() {
+    let mut client = MuxClient::new();
+    let pane_id = PaneId::from_raw(1);
+    assert!(
+        !client.is_write_stalled(pane_id),
+        "is_write_stalled must return false on disconnected transport",
+    );
+}
+
 /// `drain_notifications` returns injected notifications in order.
 #[test]
 fn drain_returns_injected_notifications() {

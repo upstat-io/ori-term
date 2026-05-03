@@ -272,7 +272,12 @@ pub trait MuxBackend {
     /// When `true`, the kernel PTY buffer is full and keyboard input
     /// queued via [`send_input`](Self::send_input) won't reach the child.
     /// Use [`signal_child`](Self::signal_child) to send Ctrl+C directly.
-    fn is_write_stalled(&self, _pane_id: PaneId) -> bool {
+    ///
+    /// Receiver is `&mut self` because the daemon backend round-trips this
+    /// query through the IPC transport (the transport's reply-channel
+    /// allocation requires `&mut self`); the embedded backend's body only
+    /// reads an `AtomicBool` and is `&mut self`-safe trivially.
+    fn is_write_stalled(&mut self, _pane_id: PaneId) -> bool {
         false
     }
 

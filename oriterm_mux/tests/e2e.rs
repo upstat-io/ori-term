@@ -1627,11 +1627,11 @@ fn ctrl_c_during_flood_via_signal_child() {
     // Send Ctrl+C through the normal input path AND signal_child — this
     // is the combined-path smoke test. Either the kernel ISIG path
     // (\x03 → SIGINT to fg PGID) or signal_child (tcgetpgrp → SIGINT to
-    // fg PGID) must kill `yes`. Without `MuxClient::is_write_stalled`
-    // RPC we cannot deterministically force the writer to stall, so this
-    // acts as a smoke test rather than a stall-specific regression pin.
-    // The canonical signal-only pin is
-    // `signal_child_alone_kills_flooding_process` below.
+    // fg PGID) must kill `yes`. The canonical signal-only pin is
+    // `signal_child_alone_kills_flooding_process` below; the canonical
+    // stall-specific regression pin (BUG-11-020 — daemon-mode
+    // `is_write_stalled` RPC now wired) is
+    // `signal_child_after_is_write_stalled_kills_writer_via_daemon`.
     client.send_input(pane_id, b"\x03");
     client.signal_child(pane_id, oriterm_mux::Signal::Interrupt);
 
@@ -2035,3 +2035,187 @@ fn daemon_host_request_cleanup_on_pane_close() {
 // embedded/daemon-mode mechanisms today and exposing them solely for one
 // e2e test would expand the public API without a real consumer. The unit
 // test verifies the pure dispatch logic (priority comparison + tie break).
+
+// ---------------------------------------------------------------------------
+// BUG-11-020 — daemon-mode `is_write_stalled` RPC tests
+// ---------------------------------------------------------------------------
+
+/// Regression: BUG-11-020 — a freshly spawned daemon-mode pane with no traffic
+/// must report `is_write_stalled == false` (writer is idle, not blocked).
+/// See: bug-tracker/plans/BUG-11-020/00-overview.md
+#[test]
+fn is_write_stalled_returns_false_for_idle_pane_via_daemon() {
+    let daemon = TestDaemon::start();
+    let mut client = daemon.connect_client();
+    let pane_id = spawn_test_pane_ready(&mut client);
+
+    assert!(
+        !client.is_write_stalled(pane_id),
+        "is_write_stalled must be false for a freshly spawned, idle pane"
+    );
+
+    client.close_pane(pane_id);
+}
+
+/// Regression: BUG-11-020 — querying `is_write_stalled` for a pane the daemon
+/// has never seen must return `false` (mirrors `EmbeddedMux` semantics) and
+/// must not panic.
+/// See: bug-tracker/plans/BUG-11-020/00-overview.md
+#[test]
+fn is_write_stalled_returns_false_for_unknown_pane_via_daemon() {
+    let daemon = TestDaemon::start();
+    let mut client = daemon.connect_client();
+    let bogus = PaneId::from_raw(99_999);
+
+    assert!(
+        !client.is_write_stalled(bogus),
+        "is_write_stalled must return false for an unknown pane id, not panic"
+    );
+
+    let _ = daemon;
+}
+
+/// Regression: BUG-11-020 — under sustained PTY-buffer-fill, the daemon-mode
+/// `is_write_stalled` query must eventually flip to `true`. This is the
+/// semantic positive pin: before the fix, the trait default returns `false`
+/// regardless of writer state, so this test loops without ever observing
+/// `true` and times out.
+/// See: bug-tracker/plans/BUG-11-020/00-overview.md
+/// Configure a daemon-mode pane for deterministic write-stall observation:
+/// puts the line discipline in raw mode (no echo, no canonical buffering),
+/// then runs `sleep 600` as the foreground job. Bytes sent via `send_input`
+/// pile up in the kernel pipe buffer because nothing reads them — `sleep`
+/// doesn't read stdin and the raw line discipline doesn't drain via echo.
+fn configure_pane_for_stall(client: &mut MuxClient, pane_id: PaneId) {
+    client.send_input(pane_id, b"stty raw -echo; sleep 600\n");
+    thread::sleep(Duration::from_millis(500));
+}
+
+/// Pump 8 MiB chunks until `client.is_write_stalled(pane_id)` returns `true`
+/// or the deadline expires. Returns `true` if stall was observed, `false` on
+/// timeout. Deadline-as-safety, not deadline-as-signal, per
+/// `tests.md §Wall-Clock-Free Testing`.
+fn pump_until_stalled(client: &mut MuxClient, pane_id: PaneId) -> bool {
+    let payload = vec![b'x'; 8 * 1024 * 1024];
+    let deadline = Instant::now() + Duration::from_secs(30);
+    while Instant::now() < deadline {
+        client.send_input(pane_id, &payload);
+        for _ in 0..50 {
+            if client.is_write_stalled(pane_id) {
+                return true;
+            }
+            thread::sleep(Duration::from_millis(2));
+        }
+    }
+    false
+}
+
+#[test]
+fn is_write_stalled_returns_true_when_writer_blocked_via_daemon() {
+    let daemon = TestDaemon::start();
+    let mut client = daemon.connect_client();
+    let pane_id = spawn_test_pane_ready(&mut client);
+
+    configure_pane_for_stall(&mut client, pane_id);
+    let observed = pump_until_stalled(&mut client, pane_id);
+    assert!(
+        observed,
+        "is_write_stalled must flip to true under sustained writer pressure"
+    );
+
+    // Cleanup: signal the foreground sleep so it dies, then close.
+    client.signal_child(pane_id, oriterm_mux::Signal::Interrupt);
+    client.close_pane(pane_id);
+}
+
+/// Regression: BUG-11-020 — `is_write_stalled` is keyed per-pane, not a global
+/// flag. With one pane stalled by flooding, a sibling idle pane must report
+/// `is_write_stalled == false` (multi-pane isolation pin per Plan TPR
+/// 3-of-3 reviewer agreement).
+/// See: bug-tracker/plans/BUG-11-020/00-overview.md
+#[test]
+fn is_write_stalled_isolates_per_pane_via_daemon() {
+    let daemon = TestDaemon::start();
+    let mut client = daemon.connect_client();
+    let stalled_pane = spawn_test_pane_ready(&mut client);
+    let idle_pane = spawn_test_pane_ready(&mut client);
+
+    configure_pane_for_stall(&mut client, stalled_pane);
+    let observed = pump_until_stalled(&mut client, stalled_pane);
+    assert!(
+        observed,
+        "stalled_pane must enter stall under sustained writer pressure"
+    );
+
+    // Sibling idle pane MUST report false despite stalled_pane's state.
+    assert!(
+        !client.is_write_stalled(idle_pane),
+        "idle sibling pane must report is_write_stalled == false; \
+         per-pane keying must not be muddled by another pane's stall",
+    );
+
+    client.signal_child(stalled_pane, oriterm_mux::Signal::Interrupt);
+    client.close_pane(stalled_pane);
+    client.close_pane(idle_pane);
+}
+
+/// Regression: BUG-11-020 — once daemon-mode `is_write_stalled` reports `true`,
+/// `signal_child` must successfully kill the flooding process. This replaces
+/// the "either path kills `yes`" smoke-test framing of
+/// `ctrl_c_during_flood_via_signal_child` with a stall-specific pin.
+/// See: bug-tracker/plans/BUG-11-020/00-overview.md
+#[test]
+fn signal_child_after_is_write_stalled_kills_writer_via_daemon() {
+    let daemon = TestDaemon::start();
+    let mut client = daemon.connect_client();
+    let pane_id = spawn_test_pane_ready(&mut client);
+
+    // Inline a fixture that prints `FG_GONE` after sleep dies — confirms
+    // signal_child reached the foreground PGID and bash continued to the
+    // next command.
+    client.send_input(
+        pane_id,
+        b"stty raw -echo; sleep 600; stty cooked echo; echo FG_GONE\n",
+    );
+    thread::sleep(Duration::from_millis(500));
+
+    let observed = pump_until_stalled(&mut client, pane_id);
+    assert!(
+        observed,
+        "writer must enter stall before the signal_child path is exercised"
+    );
+
+    // Stall-specific regression: signal_child must succeed even when the
+    // writer is blocked on `write()`. This exercises the canonical "detect
+    // stall via is_write_stalled, fall through to direct signal" flow.
+    let signaled = client.signal_child(pane_id, oriterm_mux::Signal::Interrupt);
+    assert!(
+        signaled,
+        "signal_child must succeed against a stalled writer"
+    );
+
+    // After signal_child kills sleep (foreground PGID), bash continues
+    // through the rest of the pipeline (stty cooked echo; echo FG_GONE).
+    // The sentinel appears in the snapshot once bash regains the prompt.
+    // Deadline-as-safety per `tests.md §Wall-Clock-Free Testing`.
+    let deadline = Instant::now() + Duration::from_secs(30);
+    let mut saw_fg_gone = false;
+    while Instant::now() < deadline {
+        client.poll_events();
+        let mut notifs = Vec::new();
+        client.drain_notifications(&mut notifs);
+        if let Some(snap) = client.refresh_pane_snapshot(pane_id) {
+            if snapshot_contains(snap, "FG_GONE") {
+                saw_fg_gone = true;
+                break;
+            }
+        }
+        thread::sleep(Duration::from_millis(50));
+    }
+    assert!(
+        saw_fg_gone,
+        "signal_child after detected stall must kill sleep and let bash print FG_GONE"
+    );
+
+    client.close_pane(pane_id);
+}
