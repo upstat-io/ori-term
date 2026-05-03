@@ -378,6 +378,16 @@ pub enum MuxPdu {
         pane_id: PaneId,
     },
 
+    /// Window-manager urgency hint requested by a pane (mode 1042 / DECSET ?1042h).
+    ///
+    /// The receiving client routes this to its app-layer
+    /// `request_user_attention(Some(UserAttentionType::Critical))` call on
+    /// the OWNING window when the pane is not focused.
+    NotifyPaneUrgencyHint {
+        /// Pane requesting attention.
+        pane_id: PaneId,
+    },
+
     /// A command completed in a pane (OSC 133;D → duration).
     NotifyCommandComplete {
         /// Pane that completed a command.

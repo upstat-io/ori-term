@@ -1,13 +1,19 @@
 //! ESC + DCS walker, driven off `crates/vte/src/ansi/dispatch/mod.rs`.
 //!
-//! The `Performer` impl in `dispatch/mod.rs` owns `esc_dispatch`
-//! (the ESC byte table — IND, RI, DECALN, charset designation,
-//! keypad application mode, single shifts) AND the `hook` entry
-//! that starts a DCS sequence. Both paths have (`final_byte`,
-//! `intermediates`) scrutinees the extractor understands:
+//! The `Performer` impl in `dispatch/mod.rs` exposes `esc_dispatch`
+//! (which delegates to free fn `dispatch_esc`) AND the `hook` entry
+//! (which delegates to free fn `dispatch_hook`). Both free functions
+//! own the actual `match` table the extractor walks:
 //!
-//! - `esc_dispatch`: `match (byte, intermediates) { (b'D', []) => ... }`
-//! - DCS hook:       `match (action, intermediates) { ('q', []) => ... }`
+//! - `dispatch_esc`: `match (byte, intermediates) { (b'D', []) => ... }`
+//! - `dispatch_hook`: `match action { 'q' if intermediates.is_empty() => ... }`
+//!
+//! The walker visits both impl methods AND the free functions
+//! (`dispatch_hook` / `dispatch_esc`) — `match` arms can live in
+//! either depending on how the codebase factors the dispatch logic.
+//! Setting `in_hook` for `dispatch_hook` is required to disambiguate
+//! the `match action` scrutinee shape, which is otherwise too generic
+//! to identify as DCS-specific.
 //!
 //! ESC arms emit `(ESC, intermediates, -, final)` tuples; charset-
 //! designation arms with a catch-all `intermediates` ident bind
@@ -49,6 +55,20 @@ impl syn::visit::Visit<'_> for ModVisitorWithHandlers<'_> {
         let was_in_hook = self.in_hook;
         self.in_hook = name == "hook";
         syn::visit::visit_impl_item_fn(self, method);
+        self.in_hook = was_in_hook;
+    }
+
+    /// Visit free functions in `dispatch/mod.rs`. The DCS hook arms live
+    /// in free fn `dispatch_hook` (impl method `hook` just delegates), so
+    /// `in_hook` must also flip for the free function. Without this, the
+    /// `match action` block in `dispatch_hook` is silently skipped because
+    /// `is_action_scrutinee` requires `in_hook == true` to disambiguate
+    /// "this match is a DCS arm" from "this match is something else".
+    fn visit_item_fn(&mut self, func: &syn::ItemFn) {
+        let name = func.sig.ident.to_string();
+        let was_in_hook = self.in_hook;
+        self.in_hook = name == "dispatch_hook";
+        syn::visit::visit_item_fn(self, func);
         self.in_hook = was_in_hook;
     }
 
@@ -207,20 +227,26 @@ fn infer_intermediates_from_guard(expr: &syn::Expr) -> Vec<u8> {
         ..
     }) = expr
     {
-        if let syn::Expr::Reference(r) = &**right {
-            if let syn::Expr::Array(arr) = &*r.expr {
-                let mut bytes = Vec::new();
-                for elem in &arr.elems {
-                    if let syn::Expr::Lit(syn::ExprLit {
-                        lit: syn::Lit::Byte(b),
-                        ..
-                    }) = elem
-                    {
-                        bytes.push(b.value());
-                    }
+        // Source can write either `intermediates == [b'$']` (bare array
+        // literal, relies on PartialEq<&[u8]> for [u8; N]) or
+        // `intermediates == &[b'$']` (explicit reference). Walk through
+        // an optional `&` and inspect the array literal either way.
+        let inner: &syn::Expr = match &**right {
+            syn::Expr::Reference(r) => &r.expr,
+            other => other,
+        };
+        if let syn::Expr::Array(arr) = inner {
+            let mut bytes = Vec::new();
+            for elem in &arr.elems {
+                if let syn::Expr::Lit(syn::ExprLit {
+                    lit: syn::Lit::Byte(b),
+                    ..
+                }) = elem
+                {
+                    bytes.push(b.value());
                 }
-                return bytes;
             }
+            return bytes;
         }
     }
     Vec::new()

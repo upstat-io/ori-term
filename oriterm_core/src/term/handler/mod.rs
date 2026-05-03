@@ -82,6 +82,12 @@ impl<S: EffectSink> Handler for Term<S> {
     #[inline]
     fn bell(&mut self) {
         self.effect_sink.push(Effect::Host(HostEffect::Bell));
+        // Mode 1042 (DECSET ?1042h) — when set, BEL also requests
+        // window-manager attention via the host adapter (taskbar flash on
+        // Windows, dock bounce on macOS, urgency hint on X11/Wayland).
+        if self.mode().contains(TermMode::URGENCY_HINTS) {
+            self.effect_sink.push(Effect::Host(HostEffect::UrgencyHint));
+        }
     }
 
     fn substitute(&mut self) {

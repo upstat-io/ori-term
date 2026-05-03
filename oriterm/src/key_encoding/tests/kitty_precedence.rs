@@ -144,6 +144,92 @@ fn kitty_arrow_up_report_all() {
     assert_eq!(r, b"\x1b[1A");
 }
 
+// --- BUG-08-033 Plan-TPR Round 1: kitty-mode terminator coverage for the 8
+// helper-backed keys that pre-fix kitty_precedence.rs missed. After the
+// `legacy_csi_info` migration, these exercise `cursor_key_for_named` +
+// `CursorKey::terminator()` (Down/Right/Left/Home/End) and
+// `function_key_terminator` (F2/F3/F4) end-to-end. ---
+
+#[test]
+fn kitty_arrow_down_report_all() {
+    let r = enc(
+        Key::Named(NamedKey::ArrowDown),
+        Modifiers::empty(),
+        kitty_all_flags(),
+    );
+    assert_eq!(r, b"\x1b[1B");
+}
+
+#[test]
+fn kitty_arrow_right_report_all() {
+    let r = enc(
+        Key::Named(NamedKey::ArrowRight),
+        Modifiers::empty(),
+        kitty_all_flags(),
+    );
+    assert_eq!(r, b"\x1b[1C");
+}
+
+#[test]
+fn kitty_arrow_left_report_all() {
+    let r = enc(
+        Key::Named(NamedKey::ArrowLeft),
+        Modifiers::empty(),
+        kitty_all_flags(),
+    );
+    assert_eq!(r, b"\x1b[1D");
+}
+
+#[test]
+fn kitty_home_report_all() {
+    let r = enc(
+        Key::Named(NamedKey::Home),
+        Modifiers::empty(),
+        kitty_all_flags(),
+    );
+    assert_eq!(r, b"\x1b[1H");
+}
+
+#[test]
+fn kitty_end_report_all() {
+    let r = enc(
+        Key::Named(NamedKey::End),
+        Modifiers::empty(),
+        kitty_all_flags(),
+    );
+    assert_eq!(r, b"\x1b[1F");
+}
+
+#[test]
+fn kitty_f2_report_all() {
+    let r = enc(
+        Key::Named(NamedKey::F2),
+        Modifiers::empty(),
+        kitty_all_flags(),
+    );
+    assert_eq!(r, b"\x1b[1Q");
+}
+
+#[test]
+fn kitty_f3_report_all() {
+    let r = enc(
+        Key::Named(NamedKey::F3),
+        Modifiers::empty(),
+        kitty_all_flags(),
+    );
+    assert_eq!(r, b"\x1b[1R");
+}
+
+#[test]
+fn kitty_f4_report_all() {
+    let r = enc(
+        Key::Named(NamedKey::F4),
+        Modifiers::empty(),
+        kitty_all_flags(),
+    );
+    assert_eq!(r, b"\x1b[1S");
+}
+
 #[test]
 fn kitty_end_disambiguate_uses_legacy() {
     // End has an unambiguous legacy sequence (CSI F), so

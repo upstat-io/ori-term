@@ -9,6 +9,8 @@ use std::fmt::Write;
 
 use winit::keyboard::{Key, KeyLocation, NamedKey};
 
+use super::cursor_keys::CursorKey;
+use super::legacy::{cursor_key_for_named, function_key_terminator, tilde_key};
 use super::{KeyEventType, KeyInput, Modifiers};
 use oriterm_core::TermMode;
 
@@ -138,6 +140,45 @@ fn kitty_codepoint(key: NamedKey) -> Option<u32> {
 /// Format: `ESC [ codepoint ; modifiers [: event_type] [; text] u`
 ///
 /// Returns an empty `Vec` for unhandled keys or suppressed release events.
+/// Numpad-disambiguation early-return path for `encode_kitty`.
+///
+/// When the key is on the numpad AND any kitty flag is active, map to the
+/// dedicated 57399-57426 codepoint range so applications can distinguish
+/// numpad-1 from main-row-1 (BUG-08-026). MUST run ahead of the legacy
+/// bypass (numpad arrows would otherwise route to legacy CSI A/B/C/D) and
+/// ahead of the standard `resolve_codepoint` (which would hit the
+/// `should_send_as_text` fast-path and emit `b"1"` instead of CSI u).
+///
+/// Returns `Some(bytes)` when the path fires; `None` when the key isn't on
+/// the numpad and `encode_kitty` should continue to the main encoding path.
+fn numpad_disambiguation_path(input: &KeyInput<'_>) -> Option<Vec<u8>> {
+    let cp = resolve_numpad_codepoint(input)?;
+    let report_events = input.mode.contains(TermMode::REPORT_EVENT_TYPES);
+    let report_alternate = input.mode.contains(TermMode::REPORT_ALTERNATE_KEYS);
+    let report_text = input.mode.contains(TermMode::REPORT_ASSOCIATED_TEXT);
+    // Release without REPORT_EVENT_TYPES is suppressed by the caller; this
+    // call still maps the event type to the suffix (or short-circuits).
+    let event_suffix = resolve_event_suffix(report_events, input.event_type)?;
+    let text = if report_text && input.event_type != KeyEventType::Release {
+        input.text.and_then(encode_associated_text)
+    } else {
+        None
+    };
+    let alternate = if report_alternate {
+        input.alternate_key.filter(|&alt| alt != cp)
+    } else {
+        None
+    };
+    Some(build_csi_sequence(
+        cp,
+        input.mods,
+        event_suffix,
+        text.as_deref(),
+        None,
+        alternate,
+    ))
+}
+
 pub(super) fn encode_kitty(input: &KeyInput<'_>) -> Vec<u8> {
     let report_all = input.mode.contains(TermMode::REPORT_ALL_KEYS_AS_ESC);
     let report_events = input.mode.contains(TermMode::REPORT_EVENT_TYPES);
@@ -156,36 +197,8 @@ pub(super) fn encode_kitty(input: &KeyInput<'_>) -> Vec<u8> {
         return Vec::new();
     }
 
-    // BUG-08-026: numpad disambiguation. When the key is on the numpad AND
-    // any kitty flag is active (we're already inside encode_kitty), map to
-    // the dedicated 57399-57426 codepoint range so applications can tell
-    // numpad-1 from main-row-1. This MUST run ahead of the legacy bypass
-    // (numpad arrows would otherwise route to legacy CSI A/B/C/D) and
-    // ahead of the standard `resolve_codepoint` (which would hit the
-    // `should_send_as_text` fast-path and emit `b"1"` instead of CSI u).
-    if let Some(cp) = resolve_numpad_codepoint(input) {
-        let event_suffix = match resolve_event_suffix(report_events, input.event_type) {
-            Some(s) => s,
-            None => return Vec::new(),
-        };
-        let text = if report_text && input.event_type != KeyEventType::Release {
-            input.text.and_then(encode_associated_text)
-        } else {
-            None
-        };
-        let alternate = if report_alternate {
-            input.alternate_key.filter(|&alt| alt != cp)
-        } else {
-            None
-        };
-        return build_csi_sequence(
-            cp,
-            input.mods,
-            event_suffix,
-            text.as_deref(),
-            None,
-            alternate,
-        );
+    if let Some(bytes) = numpad_disambiguation_path(input) {
+        return bytes;
     }
 
     // DISAMBIGUATE_ESC_CODES (flags=1) only uses CSI u for keys that are
@@ -431,21 +444,17 @@ struct LegacyCsiInfo {
 /// Look up legacy CSI info for a named key.
 ///
 /// Returns `None` for keys that have no legacy terminator (they use `u`).
+/// The terminator-byte selection routes through the SSOT helpers in
+/// `super::legacy` (cursor keys → [`cursor_key_for_named`] / [`CursorKey::terminator`];
+/// F1-F4 → [`function_key_terminator`]; tilde keys → [`tilde_key`]) so all
+/// protocol paths (legacy keyboard, alt-scroll, Kitty CSI-u) share one
+/// canonical table per key category.
+#[must_use]
 fn legacy_csi_info(named: NamedKey) -> Option<LegacyCsiInfo> {
     // Letter-terminated keys: base = 1.
-    let letter = match named {
-        NamedKey::ArrowUp => Some(b'A'),
-        NamedKey::ArrowDown => Some(b'B'),
-        NamedKey::ArrowRight => Some(b'C'),
-        NamedKey::ArrowLeft => Some(b'D'),
-        NamedKey::Home => Some(b'H'),
-        NamedKey::End => Some(b'F'),
-        NamedKey::F1 => Some(b'P'),
-        NamedKey::F2 => Some(b'Q'),
-        NamedKey::F3 => Some(b'R'),
-        NamedKey::F4 => Some(b'S'),
-        _ => None,
-    };
+    let letter = cursor_key_for_named(named)
+        .map(CursorKey::terminator)
+        .or_else(|| function_key_terminator(named));
     if let Some(term) = letter {
         return Some(LegacyCsiInfo {
             base: 1,
@@ -453,24 +462,9 @@ fn legacy_csi_info(named: NamedKey) -> Option<LegacyCsiInfo> {
         });
     }
 
-    // Tilde-terminated keys: base = traditional numeric parameter.
-    let num = match named {
-        NamedKey::Insert => Some(2),
-        NamedKey::Delete => Some(3),
-        NamedKey::PageUp => Some(5),
-        NamedKey::PageDown => Some(6),
-        NamedKey::F5 => Some(15),
-        NamedKey::F6 => Some(17),
-        NamedKey::F7 => Some(18),
-        NamedKey::F8 => Some(19),
-        NamedKey::F9 => Some(20),
-        NamedKey::F10 => Some(21),
-        NamedKey::F11 => Some(23),
-        NamedKey::F12 => Some(24),
-        _ => None,
-    };
-    num.map(|n| LegacyCsiInfo {
-        base: n,
+    // Tilde-terminated keys: base = traditional numeric parameter (SSOT in `legacy::tilde_key`).
+    tilde_key(named).map(|tk| LegacyCsiInfo {
+        base: u32::from(tk.num),
         terminator: b'~',
     })
 }

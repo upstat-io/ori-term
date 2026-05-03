@@ -7,6 +7,7 @@ use oriterm_core::TermMode;
 pub(super) use super::{KeyEventType, KeyInput, Modifiers, encode_key};
 
 mod application_keypad;
+mod cursor_keys;
 mod kitty_precedence;
 mod legacy_backspace;
 mod legacy_core;

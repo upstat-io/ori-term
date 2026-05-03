@@ -1436,3 +1436,1060 @@ fn bridge_parser_to_alt_scroll_decision() {
     let mode = term.mode();
     assert!(!should_translate_wheel_to_arrows(mode, false));
 }
+
+// BUG-08-015: tier2_alt_scroll_payload + classify_wheel_event matrix.
+// Verifies DECCKM-aware Tier-2 alt-scroll byte selection, the WheelTier
+// dispatcher, and ANY_MOUSE_ENCODING isolation per xterm spec
+// (ctlseqs.txt:2465-2473 + scrollbar.c:711-727).
+
+use super::{
+    AltScrollPayload, ScrollDirection, WheelTier, classify_wheel_event, should_report_mouse,
+    tier2_alt_scroll_payload,
+};
+
+// --- Exact failing case (from BUG-08-015 repro) ---
+
+/// Catalog row: DEC-ALT-SCROLL
+/// Repro: `printf '\x1b[?1049h\x1b[?1007h\x1b[?1h'` then wheel up.
+/// Pinned by BUG-08-015 (Phase 1 root cause §1A).
+#[test]
+fn tier2_alt_scroll_payload_alt_screen_plus_alternate_scroll_app_cursor_emits_ss3_arrow_up() {
+    let mode = TermMode::ALT_SCREEN | TermMode::ALTERNATE_SCROLL | TermMode::APP_CURSOR;
+    let result = tier2_alt_scroll_payload(mode, false, 3, ScrollDirection::Up);
+    assert_eq!(
+        result,
+        Some(AltScrollPayload {
+            bytes: b"\x1bOA",
+            repeat: 3,
+        })
+    );
+}
+
+// --- DECCKM × direction matrix (semantic apex) ---
+
+/// Catalog row: DEC-ALT-SCROLL
+/// xterm spec: ctlseqs.txt:2465-2473 (`Cursor Up | CSI A | SS3 A` table).
+/// xterm impl: scrollbar.c:711-727 (`MODE_DECCKM ? ANSI_SS3 : ANSI_CSI`).
+/// Ghostty impl: Surface.zig:3492-3506 (mirrors xterm DECCKM split).
+/// Pinned by BUG-08-015 (Phase 1.75 codex consensus).
+#[test]
+fn tier2_alt_scroll_payload_app_cursor_set_scroll_up_emits_ss3_a() {
+    let mode = TermMode::ALT_SCREEN | TermMode::ALTERNATE_SCROLL | TermMode::APP_CURSOR;
+    let payload = tier2_alt_scroll_payload(mode, false, 1, ScrollDirection::Up).unwrap();
+    assert_eq!(payload.bytes, b"\x1bOA");
+}
+
+/// Catalog row: DEC-ALT-SCROLL
+#[test]
+fn tier2_alt_scroll_payload_app_cursor_set_scroll_down_emits_ss3_b() {
+    let mode = TermMode::ALT_SCREEN | TermMode::ALTERNATE_SCROLL | TermMode::APP_CURSOR;
+    let payload = tier2_alt_scroll_payload(mode, false, 1, ScrollDirection::Down).unwrap();
+    assert_eq!(payload.bytes, b"\x1bOB");
+}
+
+/// Catalog row: DEC-ALT-SCROLL
+/// DECCKM clear → CSI normal-cursor sequence per xterm spec.
+#[test]
+fn tier2_alt_scroll_payload_app_cursor_clear_scroll_up_emits_csi_a() {
+    let mode = TermMode::ALT_SCREEN | TermMode::ALTERNATE_SCROLL;
+    let payload = tier2_alt_scroll_payload(mode, false, 1, ScrollDirection::Up).unwrap();
+    assert_eq!(payload.bytes, b"\x1b[A");
+}
+
+/// Catalog row: DEC-ALT-SCROLL
+#[test]
+fn tier2_alt_scroll_payload_app_cursor_clear_scroll_down_emits_csi_b() {
+    let mode = TermMode::ALT_SCREEN | TermMode::ALTERNATE_SCROLL;
+    let payload = tier2_alt_scroll_payload(mode, false, 1, ScrollDirection::Down).unwrap();
+    assert_eq!(payload.bytes, b"\x1b[B");
+}
+
+// --- Repeat count pass-through ---
+
+/// Catalog row: DEC-ALT-SCROLL
+#[test]
+fn tier2_alt_scroll_payload_repeat_passes_through_lines_count() {
+    let mode = TermMode::ALT_SCREEN | TermMode::ALTERNATE_SCROLL | TermMode::APP_CURSOR;
+    let payload = tier2_alt_scroll_payload(mode, false, 5, ScrollDirection::Up).unwrap();
+    assert_eq!(payload.repeat, 5);
+}
+
+// --- Mode-gating cells (single-direction by design — gate short-circuits before direction) ---
+
+/// Catalog row: DEC-ALT-SCROLL
+#[test]
+fn tier2_alt_scroll_payload_no_alt_screen_returns_none() {
+    let mode = TermMode::ALTERNATE_SCROLL | TermMode::APP_CURSOR;
+    assert_eq!(
+        tier2_alt_scroll_payload(mode, false, 1, ScrollDirection::Up),
+        None
+    );
+}
+
+/// Catalog row: DEC-ALT-SCROLL
+#[test]
+fn tier2_alt_scroll_payload_no_alternate_scroll_returns_none() {
+    let mode = TermMode::ALT_SCREEN | TermMode::APP_CURSOR;
+    assert_eq!(
+        tier2_alt_scroll_payload(mode, false, 1, ScrollDirection::Up),
+        None
+    );
+}
+
+/// Catalog row: DEC-ALT-SCROLL
+#[test]
+fn tier2_alt_scroll_payload_empty_mode_returns_none() {
+    assert_eq!(
+        tier2_alt_scroll_payload(TermMode::empty(), false, 1, ScrollDirection::Up),
+        None
+    );
+}
+
+/// Catalog row: DEC-ALT-SCROLL
+#[test]
+fn tier2_alt_scroll_payload_shift_held_returns_none() {
+    let mode = TermMode::ALT_SCREEN | TermMode::ALTERNATE_SCROLL | TermMode::APP_CURSOR;
+    assert_eq!(
+        tier2_alt_scroll_payload(mode, true, 1, ScrollDirection::Up),
+        None
+    );
+}
+
+// --- Shift-bypass × DECCKM × direction (per Plan-TPR R1 [TPR-04-007-codex]) ---
+
+/// Catalog row: DEC-ALT-SCROLL
+#[test]
+fn tier2_alt_scroll_payload_shift_held_app_cursor_set_scroll_up_returns_none() {
+    let mode = TermMode::ALT_SCREEN | TermMode::ALTERNATE_SCROLL | TermMode::APP_CURSOR;
+    assert_eq!(
+        tier2_alt_scroll_payload(mode, true, 1, ScrollDirection::Up),
+        None
+    );
+}
+
+/// Catalog row: DEC-ALT-SCROLL
+#[test]
+fn tier2_alt_scroll_payload_shift_held_app_cursor_set_scroll_down_returns_none() {
+    let mode = TermMode::ALT_SCREEN | TermMode::ALTERNATE_SCROLL | TermMode::APP_CURSOR;
+    assert_eq!(
+        tier2_alt_scroll_payload(mode, true, 1, ScrollDirection::Down),
+        None
+    );
+}
+
+/// Catalog row: DEC-ALT-SCROLL
+#[test]
+fn tier2_alt_scroll_payload_shift_held_app_cursor_clear_scroll_up_returns_none() {
+    let mode = TermMode::ALT_SCREEN | TermMode::ALTERNATE_SCROLL;
+    assert_eq!(
+        tier2_alt_scroll_payload(mode, true, 1, ScrollDirection::Up),
+        None
+    );
+}
+
+/// Catalog row: DEC-ALT-SCROLL
+#[test]
+fn tier2_alt_scroll_payload_shift_held_app_cursor_clear_scroll_down_returns_none() {
+    let mode = TermMode::ALT_SCREEN | TermMode::ALTERNATE_SCROLL;
+    assert_eq!(
+        tier2_alt_scroll_payload(mode, true, 1, ScrollDirection::Down),
+        None
+    );
+}
+
+// --- Cross-tier independence ---
+
+/// Catalog row: DEC-ALT-SCROLL
+/// MOUSE_REPORT_CLICK is in ANY_MOUSE; tier2_alt_scroll_payload still
+/// returns Some — the Tier-1-precedes-Tier-2 ordering lives in the
+/// caller (handle_mouse_wheel via classify_wheel_event), not in the
+/// helper.
+#[test]
+fn tier2_alt_scroll_payload_with_mouse_report_click_still_returns_some() {
+    let mode = TermMode::ALT_SCREEN
+        | TermMode::ALTERNATE_SCROLL
+        | TermMode::MOUSE_REPORT_CLICK
+        | TermMode::APP_CURSOR;
+    let payload = tier2_alt_scroll_payload(mode, false, 1, ScrollDirection::Up).unwrap();
+    assert_eq!(payload.bytes, b"\x1bOA");
+    assert_eq!(payload.repeat, 1);
+}
+
+// --- Semantic pin (DECCKM-aware byte selection per xterm spec) ---
+
+/// Catalog row: DEC-ALT-SCROLL
+/// xterm spec: ctlseqs.txt:2465-2473 (`Cursor Up | CSI A | SS3 A` table).
+/// xterm impl: scrollbar.c:711-727 (`MODE_DECCKM ? ANSI_SS3 : ANSI_CSI`).
+/// Ghostty impl: Surface.zig:3492-3506 (mirrors xterm DECCKM split).
+/// Pinned by BUG-08-015 §1B — load-bearing semantic pin: prevents
+/// regression to hardcoded-SS3 implementation.
+#[test]
+fn tier2_alt_scroll_payload_decckm_aware_byte_selection_per_xterm_ctlseqs() {
+    // DECCKM set → SS3 sequences
+    let mode_app = TermMode::ALT_SCREEN | TermMode::ALTERNATE_SCROLL | TermMode::APP_CURSOR;
+    assert_eq!(
+        tier2_alt_scroll_payload(mode_app, false, 1, ScrollDirection::Up)
+            .unwrap()
+            .bytes,
+        b"\x1bOA"
+    );
+    assert_eq!(
+        tier2_alt_scroll_payload(mode_app, false, 1, ScrollDirection::Down)
+            .unwrap()
+            .bytes,
+        b"\x1bOB"
+    );
+    // DECCKM clear → CSI sequences
+    let mode_normal = TermMode::ALT_SCREEN | TermMode::ALTERNATE_SCROLL;
+    assert_eq!(
+        tier2_alt_scroll_payload(mode_normal, false, 1, ScrollDirection::Up)
+            .unwrap()
+            .bytes,
+        b"\x1b[A"
+    );
+    assert_eq!(
+        tier2_alt_scroll_payload(mode_normal, false, 1, ScrollDirection::Down)
+            .unwrap()
+            .bytes,
+        b"\x1b[B"
+    );
+}
+
+// --- Negative pin (rejects pre-fix hardcoded SS3) ---
+
+/// Catalog row: DEC-ALT-SCROLL
+/// Negative pin: rejects the pre-fix hardcoded `if scroll_up { b"\x1bOA" } else { b"\x1bOB" }`
+/// implementation that emitted SS3 unconditionally regardless of DECCKM.
+#[test]
+fn tier2_alt_scroll_payload_does_not_hardcode_ss3_when_decckm_clear() {
+    let mode = TermMode::ALT_SCREEN | TermMode::ALTERNATE_SCROLL;
+    let payload = tier2_alt_scroll_payload(mode, false, 1, ScrollDirection::Up).unwrap();
+    assert_ne!(payload.bytes, b"\x1bOA");
+    assert_eq!(payload.bytes, b"\x1b[A");
+}
+
+// --- classify_wheel_event dispatcher matrix ---
+
+/// Catalog row: DEC-ALT-SCROLL
+#[test]
+fn classify_wheel_event_mouse_report_click_set_no_shift_returns_mouse_report() {
+    assert_eq!(
+        classify_wheel_event(TermMode::MOUSE_REPORT_CLICK, false),
+        WheelTier::MouseReport
+    );
+}
+
+/// Catalog row: DEC-ALT-SCROLL
+#[test]
+fn classify_wheel_event_mouse_drag_set_no_shift_returns_mouse_report() {
+    assert_eq!(
+        classify_wheel_event(TermMode::MOUSE_DRAG, false),
+        WheelTier::MouseReport
+    );
+}
+
+/// Catalog row: DEC-ALT-SCROLL
+#[test]
+fn classify_wheel_event_mouse_motion_set_no_shift_returns_mouse_report() {
+    assert_eq!(
+        classify_wheel_event(TermMode::MOUSE_MOTION, false),
+        WheelTier::MouseReport
+    );
+}
+
+/// Catalog row: DEC-ALT-SCROLL
+#[test]
+fn classify_wheel_event_mouse_x10_set_no_shift_returns_mouse_report() {
+    assert_eq!(
+        classify_wheel_event(TermMode::MOUSE_X10, false),
+        WheelTier::MouseReport
+    );
+}
+
+/// Catalog row: DEC-ALT-SCROLL
+#[test]
+fn classify_wheel_event_alt_screen_plus_alternate_scroll_set_returns_alt_scroll() {
+    assert_eq!(
+        classify_wheel_event(TermMode::ALT_SCREEN | TermMode::ALTERNATE_SCROLL, false),
+        WheelTier::AltScroll
+    );
+}
+
+/// Catalog row: DEC-ALT-SCROLL
+#[test]
+fn classify_wheel_event_no_tier_applies_returns_viewport_scroll() {
+    assert_eq!(
+        classify_wheel_event(TermMode::empty(), false),
+        WheelTier::ViewportScroll
+    );
+}
+
+/// Catalog row: DEC-ALT-SCROLL
+/// Tier-1-precedes-Tier-2 invariant: when both Tier-1 and Tier-2 conditions
+/// hold, Tier-1 wins per the canonical ordering. Replaces the doc-only
+/// invariant with executable verification.
+#[test]
+fn classify_wheel_event_mouse_report_click_with_alt_scroll_set_returns_mouse_report() {
+    let mode = TermMode::ALT_SCREEN | TermMode::ALTERNATE_SCROLL | TermMode::MOUSE_REPORT_CLICK;
+    assert_eq!(classify_wheel_event(mode, false), WheelTier::MouseReport);
+}
+
+/// Catalog row: DEC-ALT-SCROLL
+#[test]
+fn classify_wheel_event_mouse_drag_with_alt_scroll_set_returns_mouse_report() {
+    let mode = TermMode::ALT_SCREEN | TermMode::ALTERNATE_SCROLL | TermMode::MOUSE_DRAG;
+    assert_eq!(classify_wheel_event(mode, false), WheelTier::MouseReport);
+}
+
+/// Catalog row: DEC-ALT-SCROLL
+#[test]
+fn classify_wheel_event_mouse_motion_with_alt_scroll_set_returns_mouse_report() {
+    let mode = TermMode::ALT_SCREEN | TermMode::ALTERNATE_SCROLL | TermMode::MOUSE_MOTION;
+    assert_eq!(classify_wheel_event(mode, false), WheelTier::MouseReport);
+}
+
+/// Catalog row: DEC-ALT-SCROLL
+#[test]
+fn classify_wheel_event_mouse_x10_with_alt_scroll_set_returns_mouse_report() {
+    let mode = TermMode::ALT_SCREEN | TermMode::ALTERNATE_SCROLL | TermMode::MOUSE_X10;
+    assert_eq!(classify_wheel_event(mode, false), WheelTier::MouseReport);
+}
+
+// --- Shift-bypass × ANY_MOUSE (per Plan-TPR R3 [TPR-04-022-gemini]) ---
+
+/// Catalog row: DEC-ALT-SCROLL
+#[test]
+fn classify_wheel_event_shift_held_mouse_report_click_with_alt_scroll_returns_viewport_scroll() {
+    let mode = TermMode::ALT_SCREEN | TermMode::ALTERNATE_SCROLL | TermMode::MOUSE_REPORT_CLICK;
+    assert_eq!(classify_wheel_event(mode, true), WheelTier::ViewportScroll);
+}
+
+/// Catalog row: DEC-ALT-SCROLL
+#[test]
+fn classify_wheel_event_shift_held_mouse_drag_with_alt_scroll_returns_viewport_scroll() {
+    let mode = TermMode::ALT_SCREEN | TermMode::ALTERNATE_SCROLL | TermMode::MOUSE_DRAG;
+    assert_eq!(classify_wheel_event(mode, true), WheelTier::ViewportScroll);
+}
+
+/// Catalog row: DEC-ALT-SCROLL
+#[test]
+fn classify_wheel_event_shift_held_mouse_motion_with_alt_scroll_returns_viewport_scroll() {
+    let mode = TermMode::ALT_SCREEN | TermMode::ALTERNATE_SCROLL | TermMode::MOUSE_MOTION;
+    assert_eq!(classify_wheel_event(mode, true), WheelTier::ViewportScroll);
+}
+
+/// Catalog row: DEC-ALT-SCROLL
+#[test]
+fn classify_wheel_event_shift_held_mouse_x10_with_alt_scroll_returns_viewport_scroll() {
+    let mode = TermMode::ALT_SCREEN | TermMode::ALTERNATE_SCROLL | TermMode::MOUSE_X10;
+    assert_eq!(classify_wheel_event(mode, true), WheelTier::ViewportScroll);
+}
+
+/// Catalog row: DEC-ALT-SCROLL
+/// Pure Tier-2 shift-bypass (no ANY_MOUSE flags) per Plan-TPR R5 [TPR-04-029-gemini].
+#[test]
+fn classify_wheel_event_shift_held_alt_scroll_only_returns_viewport_scroll() {
+    let mode = TermMode::ALT_SCREEN | TermMode::ALTERNATE_SCROLL;
+    assert_eq!(classify_wheel_event(mode, true), WheelTier::ViewportScroll);
+}
+
+/// Catalog row: DEC-ALT-SCROLL
+/// Empty-mode + shift-held edge cell — pins shift alone doesn't alter the
+/// fallback dispatch.
+#[test]
+fn classify_wheel_event_empty_mode_with_shift_held_returns_viewport_scroll() {
+    assert_eq!(
+        classify_wheel_event(TermMode::empty(), true),
+        WheelTier::ViewportScroll
+    );
+}
+
+// --- ANY_MOUSE_ENCODING isolation negative pins ---
+
+/// Catalog row: DEC-ALT-SCROLL
+/// Negative pin: MOUSE_SGR is in ANY_MOUSE_ENCODING (encoding format),
+/// NOT in ANY_MOUSE (tracking trigger). Pins the bit-mask separation —
+/// defensive against future drift that lumps encoding flags into ANY_MOUSE.
+#[test]
+fn should_report_mouse_mouse_sgr_alone_returns_false() {
+    assert!(!should_report_mouse(TermMode::MOUSE_SGR, false));
+}
+
+/// Catalog row: DEC-ALT-SCROLL
+#[test]
+fn should_report_mouse_mouse_utf8_alone_returns_false() {
+    assert!(!should_report_mouse(TermMode::MOUSE_UTF8, false));
+}
+
+/// Catalog row: DEC-ALT-SCROLL
+#[test]
+fn should_report_mouse_mouse_urxvt_alone_returns_false() {
+    assert!(!should_report_mouse(TermMode::MOUSE_URXVT, false));
+}
+
+// --- Self-verifying ANY_MOUSE membership completeness assertion ---
+
+/// Catalog row: DEC-ALT-SCROLL
+/// Self-verifying matrix completeness: iterates every ANY_MOUSE flag and
+/// asserts dispatcher behavior + count. Any future ANY_MOUSE addition that
+/// silently bypasses dispatcher coverage would fail this test.
+#[test]
+fn classify_wheel_event_any_mouse_member_count_assertion() {
+    let any_mouse_flags = [
+        TermMode::MOUSE_REPORT_CLICK,
+        TermMode::MOUSE_DRAG,
+        TermMode::MOUSE_MOTION,
+        TermMode::MOUSE_X10,
+    ];
+    let mut count = 0;
+    for flag in any_mouse_flags {
+        assert_eq!(
+            classify_wheel_event(flag, false),
+            WheelTier::MouseReport,
+            "flag {flag:?} must trigger MouseReport"
+        );
+        count += 1;
+    }
+    assert_eq!(count, 4, "iteration count must match flag list length");
+    // Sanity-check that the union of the 4 flags equals TermMode::ANY_MOUSE
+    // (would catch a future ANY_MOUSE bit addition that this test doesn't
+    // exercise — proves the test list is comprehensive against the bit-set).
+    let union = TermMode::MOUSE_REPORT_CLICK
+        | TermMode::MOUSE_DRAG
+        | TermMode::MOUSE_MOTION
+        | TermMode::MOUSE_X10;
+    assert_eq!(
+        union,
+        TermMode::ANY_MOUSE,
+        "ANY_MOUSE flag set may have grown — extend the dispatcher matrix"
+    );
+}
+
+// --- BUG-08-032: dispatch_wheel wiring matrix ---
+//
+// Tests pin the wiring layer extracted from `App::handle_mouse_wheel`:
+// `dispatch_wheel<S: WheelSink>(WheelDispatch, &mut S)` consumes a sink
+// trait so the side-effect surface (PTY writes, viewport scroll, mark-dirty)
+// can be matrix-tested without constructing the unconstructible-in-#[test]
+// `App`. BUG-08-015 already pinned the pure decision functions
+// (parse_wheel_delta, classify_wheel_event, tier2_alt_scroll_payload);
+// these tests pin that the dispatcher's match arms call those decisions'
+// implications on the sink in the right order, with the right operand
+// counts, with the right bytes, and with the right post-match mark-dirty
+// invariant.
+
+use oriterm_mux::PaneId;
+
+use super::wheel_dispatch::{WheelDispatch, WheelSink, dispatch_wheel};
+
+/// Test sink that records every call. Lives in tests.rs (single consumer
+/// per `impl-hygiene.md §No Premature Abstraction`); promote to
+/// `oriterm_test_support` only when a second sink type (e.g., BUG-08-034's
+/// keyboard-wiring sink) creates a second concrete consumer.
+///
+/// `cell_for_report_value` is the value `dispatch_wheel`'s Tier-1 arm
+/// receives when it asks the sink for the cell coordinate (None matches
+/// pre-fix `mouse_cell_clamped() == None` semantics).
+/// `cell_for_report_calls` counts how many times the dispatcher consulted
+/// the sink — non-Tier-1 dispatches MUST leave this at 0 (pre-fix lazy
+/// semantics; Round 1 WASTE finding fix).
+#[derive(Default)]
+struct RecordingSink {
+    writes: Vec<(PaneId, Vec<u8>)>,
+    scrolls: Vec<(PaneId, isize)>,
+    mark_dirty_calls: usize,
+    cell_for_report_value: Option<(usize, usize)>,
+    cell_for_report_calls: usize,
+}
+
+impl WheelSink for RecordingSink {
+    fn write_pane_input(&mut self, pane_id: PaneId, bytes: &[u8]) {
+        self.writes.push((pane_id, bytes.to_vec()));
+    }
+    fn scroll_pane(&mut self, pane_id: PaneId, lines: isize) {
+        self.scrolls.push((pane_id, lines));
+    }
+    fn mark_dirty(&mut self) {
+        self.mark_dirty_calls += 1;
+    }
+    fn cell_for_report(&mut self) -> Option<(usize, usize)> {
+        self.cell_for_report_calls += 1;
+        self.cell_for_report_value
+    }
+}
+
+/// Test pane id used by every dispatch_wheel cell. Constructed via
+/// `from_raw` per `id/mod.rs:117` (the documented test-construction path).
+const TEST_PANE_ID: u64 = 42;
+
+fn pane() -> PaneId {
+    PaneId::from_raw(TEST_PANE_ID)
+}
+
+/// `MouseScrollDelta::PixelDelta` for exactly `lines` cells in the Up
+/// direction. Cell height is 16.0 — y=16 → ceil(1) = 1 line, y=48 → 3 lines.
+/// Used instead of `LineDelta` because `LineDelta` consults
+/// `platform::scroll::wheel_scroll_lines()` (3 on Windows, 1 on Linux),
+/// which would couple test assertions to host platform configuration.
+fn px_up(lines: usize) -> MouseScrollDelta {
+    MouseScrollDelta::PixelDelta(PhysicalPosition::new(0.0, (lines as f64) * 16.0))
+}
+
+fn px_down(lines: usize) -> MouseScrollDelta {
+    MouseScrollDelta::PixelDelta(PhysicalPosition::new(0.0, -(lines as f64) * 16.0))
+}
+
+fn dispatch_with(
+    mode: TermMode,
+    shift_held: bool,
+    pane_id: Option<PaneId>,
+    delta: MouseScrollDelta,
+) -> WheelDispatch {
+    WheelDispatch {
+        delta,
+        cell_height: 16.0,
+        mode,
+        shift_held,
+        pane_id,
+        mods: MouseModifiers {
+            shift: shift_held,
+            alt: false,
+            ctrl: false,
+        },
+    }
+}
+
+/// Construct a `RecordingSink` pre-loaded with a Tier-1 cell value.
+/// Tier-1 tests pre-load the cell here; non-Tier-1 tests use
+/// `RecordingSink::default()` and assert the sink's
+/// `cell_for_report_calls` stayed at 0 (lazy semantics).
+fn sink_with_cell(cell: Option<(usize, usize)>) -> RecordingSink {
+    RecordingSink {
+        cell_for_report_value: cell,
+        ..Default::default()
+    }
+}
+
+// --- Tier 1 (mouse-report) wiring cells ---
+
+/// Regression: BUG-08-032 — Tier-1 single-line dispatch.
+/// Pins `lines=1` produces exactly one `write_pane_input` call and one
+/// `mark_dirty`. Catches a regression that drops the per-line loop
+/// entirely (would produce zero writes).
+#[test]
+fn dispatch_wheel_mouse_report_lines_eq_1_writes_once_marks_dirty() {
+    let mut sink = sink_with_cell(Some((10, 5)));
+    let input = dispatch_with(TermMode::MOUSE_REPORT_CLICK, false, Some(pane()), px_up(1));
+    dispatch_wheel(input, &mut sink);
+    assert_eq!(sink.writes.len(), 1, "Tier-1 lines=1 must produce 1 write");
+    assert!(sink.scrolls.is_empty(), "Tier-1 must not call scroll_pane");
+    assert_eq!(
+        sink.mark_dirty_calls, 1,
+        "mark_dirty fires once per dispatch"
+    );
+}
+
+/// Regression: BUG-08-032 — Tier-1 fan-out semantic pin.
+/// `lines=3` MUST produce exactly 3 writes (not 0, not 1, not 6). This is
+/// the headline negative pin: a dispatcher that drops the loop, mishandles
+/// payload.repeat, or double-writes per iteration would all fail this cell.
+#[test]
+fn dispatch_wheel_mouse_report_lines_eq_3_writes_thrice_marks_dirty_once() {
+    let mut sink = sink_with_cell(Some((10, 5)));
+    let input = dispatch_with(TermMode::MOUSE_REPORT_CLICK, false, Some(pane()), px_up(3));
+    dispatch_wheel(input, &mut sink);
+    assert_eq!(
+        sink.writes.len(),
+        3,
+        "Tier-1 lines=3 must produce 3 writes (write count == lines)"
+    );
+    assert_eq!(sink.mark_dirty_calls, 1, "mark_dirty fires exactly once");
+}
+
+/// Regression: BUG-08-032 — Tier-1 ScrollUp byte payload.
+/// Recomputes the expected payload via the canonical `encode_mouse_event`
+/// path and asserts the wiring writes those exact bytes — pinning that the
+/// dispatcher passes the right `MouseButton::ScrollUp` to the encoder.
+#[test]
+fn dispatch_wheel_mouse_report_carries_scroll_up_bytes() {
+    let mut sink = sink_with_cell(Some((7, 3)));
+    let mode = TermMode::MOUSE_REPORT_CLICK;
+    let input = dispatch_with(mode, false, Some(pane()), px_up(1));
+    dispatch_wheel(input, &mut sink);
+    let event = MouseEvent {
+        button: MouseButton::ScrollUp,
+        kind: MouseEventKind::Press,
+        col: 7,
+        line: 3,
+        mods: MouseModifiers::default(),
+    };
+    let expected = encode_mouse_event(&event, mode);
+    assert_eq!(sink.writes.len(), 1);
+    assert_eq!(sink.writes[0].0, pane());
+    assert_eq!(sink.writes[0].1, expected.as_bytes().to_vec());
+}
+
+/// Regression: BUG-08-032 — Tier-1 ScrollDown byte payload.
+#[test]
+fn dispatch_wheel_mouse_report_carries_scroll_down_bytes() {
+    let mut sink = sink_with_cell(Some((7, 3)));
+    let mode = TermMode::MOUSE_REPORT_CLICK;
+    let input = dispatch_with(mode, false, Some(pane()), px_down(1));
+    dispatch_wheel(input, &mut sink);
+    let event = MouseEvent {
+        button: MouseButton::ScrollDown,
+        kind: MouseEventKind::Press,
+        col: 7,
+        line: 3,
+        mods: MouseModifiers::default(),
+    };
+    let expected = encode_mouse_event(&event, mode);
+    assert_eq!(sink.writes[0].1, expected.as_bytes().to_vec());
+}
+
+/// Regression: BUG-08-032 — Tier-1 cell_for_report=None early-return.
+/// When `mouse_cell_clamped` returns None, Tier-1 returns BEFORE
+/// `mark_dirty`. This cell pins `mark_dirty_calls == 0` so a regression
+/// that hoists `sink.mark_dirty()` ahead of the cell_for_report check
+/// (firing dirty unconditionally) would fail.
+#[test]
+fn dispatch_wheel_mouse_report_cell_for_report_none_writes_nothing_no_mark_dirty() {
+    let mut sink = RecordingSink::default();
+    // Sink left at default (cell_for_report_value: None) — Tier-1 arm
+    // queries the sink and gets None back.
+    let input = dispatch_with(TermMode::MOUSE_REPORT_CLICK, false, Some(pane()), px_up(3));
+    dispatch_wheel(input, &mut sink);
+    assert!(sink.writes.is_empty());
+    assert!(sink.scrolls.is_empty());
+    assert_eq!(
+        sink.mark_dirty_calls, 0,
+        "early-return on cell_for_report=None must not fire mark_dirty"
+    );
+    assert_eq!(
+        sink.cell_for_report_calls, 1,
+        "Tier-1 arm asks the sink exactly once before the early return"
+    );
+}
+
+// --- Tier 2 (alt-scroll) wiring cells ---
+
+const ALT_SCROLL_MODE: TermMode = TermMode::ALT_SCREEN.union(TermMode::ALTERNATE_SCROLL);
+
+/// Regression: BUG-08-032 — Tier-2 lines=1 wiring.
+#[test]
+fn dispatch_wheel_alt_scroll_lines_eq_1_writes_once_csi_a() {
+    let mut sink = RecordingSink::default();
+    let input = dispatch_with(ALT_SCROLL_MODE, false, Some(pane()), px_up(1));
+    dispatch_wheel(input, &mut sink);
+    assert_eq!(sink.writes.len(), 1);
+    assert_eq!(sink.writes[0].1, b"\x1b[A".to_vec());
+    assert_eq!(sink.mark_dirty_calls, 1);
+}
+
+/// Regression: BUG-08-032 — Tier-2 fan-out semantic pin.
+/// `payload.repeat == lines` MUST produce exactly that many writes. Catches
+/// a regression that drops the loop or double-writes.
+#[test]
+fn dispatch_wheel_alt_scroll_lines_eq_3_writes_thrice_csi_a() {
+    let mut sink = RecordingSink::default();
+    let input = dispatch_with(ALT_SCROLL_MODE, false, Some(pane()), px_up(3));
+    dispatch_wheel(input, &mut sink);
+    assert_eq!(
+        sink.writes.len(),
+        3,
+        "Tier-2 lines=3 must produce 3 writes (payload.repeat fan-out)"
+    );
+    for (pid, bytes) in &sink.writes {
+        assert_eq!(*pid, pane());
+        assert_eq!(bytes, &b"\x1b[A".to_vec());
+    }
+    assert_eq!(sink.mark_dirty_calls, 1);
+}
+
+/// Regression: BUG-08-032 — DECCKM × direction byte selection wiring
+/// (BUG-08-015 made the decision SS3-vs-CSI; this pins the wiring writes
+/// the chosen bytes through the loop).
+#[test]
+fn dispatch_wheel_alt_scroll_app_cursor_set_up_emits_ss3_a() {
+    let mut sink = RecordingSink::default();
+    let mode = ALT_SCROLL_MODE | TermMode::APP_CURSOR;
+    let input = dispatch_with(mode, false, Some(pane()), px_up(3));
+    dispatch_wheel(input, &mut sink);
+    assert_eq!(sink.writes.len(), 3);
+    for (_, bytes) in &sink.writes {
+        assert_eq!(bytes, &b"\x1bOA".to_vec());
+    }
+}
+
+/// Regression: BUG-08-032 — DECCKM set + ScrollDown writes SS3 B
+/// (`\x1bOB`) `lines` times via the dispatcher.
+#[test]
+fn dispatch_wheel_alt_scroll_app_cursor_set_down_emits_ss3_b() {
+    let mut sink = RecordingSink::default();
+    let mode = ALT_SCROLL_MODE | TermMode::APP_CURSOR;
+    let input = dispatch_with(mode, false, Some(pane()), px_down(3));
+    dispatch_wheel(input, &mut sink);
+    assert_eq!(sink.writes.len(), 3);
+    for (_, bytes) in &sink.writes {
+        assert_eq!(bytes, &b"\x1bOB".to_vec());
+    }
+}
+
+/// Regression: BUG-08-032 — DECCKM clear + ScrollUp writes CSI A
+/// (`\x1b[A`); confirms BUG-08-015's DECCKM-aware byte selection
+/// stays load-bearing across the wiring path.
+#[test]
+fn dispatch_wheel_alt_scroll_app_cursor_clear_up_emits_csi_a() {
+    let mut sink = RecordingSink::default();
+    let input = dispatch_with(ALT_SCROLL_MODE, false, Some(pane()), px_up(3));
+    dispatch_wheel(input, &mut sink);
+    for (_, bytes) in &sink.writes {
+        assert_eq!(bytes, &b"\x1b[A".to_vec());
+    }
+}
+
+/// Regression: BUG-08-032 — DECCKM clear + ScrollDown writes CSI B
+/// (`\x1b[B`); negative-pin counterpart to the SS3 B / CSI A cells.
+#[test]
+fn dispatch_wheel_alt_scroll_app_cursor_clear_down_emits_csi_b() {
+    let mut sink = RecordingSink::default();
+    let input = dispatch_with(ALT_SCROLL_MODE, false, Some(pane()), px_down(3));
+    dispatch_wheel(input, &mut sink);
+    for (_, bytes) in &sink.writes {
+        assert_eq!(bytes, &b"\x1b[B".to_vec());
+    }
+}
+
+// --- Tier 3 (viewport-scroll) wiring cells ---
+
+/// Regression: BUG-08-032 — viewport scroll up positive sign.
+#[test]
+fn dispatch_wheel_viewport_scroll_up_calls_scroll_pane_positive_lines() {
+    let mut sink = RecordingSink::default();
+    let input = dispatch_with(TermMode::empty(), false, Some(pane()), px_up(3));
+    dispatch_wheel(input, &mut sink);
+    assert!(sink.writes.is_empty());
+    assert_eq!(sink.scrolls, vec![(pane(), 3)]);
+    assert_eq!(sink.mark_dirty_calls, 1);
+}
+
+/// Regression: BUG-08-032 — viewport scroll down negative sign pin.
+/// Catches a regression that flips the sign or always passes positive.
+#[test]
+fn dispatch_wheel_viewport_scroll_down_calls_scroll_pane_negative_lines() {
+    let mut sink = RecordingSink::default();
+    let input = dispatch_with(TermMode::empty(), false, Some(pane()), px_down(3));
+    dispatch_wheel(input, &mut sink);
+    assert!(sink.writes.is_empty());
+    assert_eq!(sink.scrolls, vec![(pane(), -3)]);
+    assert_eq!(sink.mark_dirty_calls, 1);
+}
+
+// --- Cross-tier precedence wiring ---
+
+/// Regression: BUG-08-032 — when MOUSE_REPORT and ALT_SCROLL flags are
+/// BOTH set, `classify_wheel_event` returns Tier 1; this pins the WIRING
+/// follows that verdict (writes mouse-report bytes, NOT SS3/CSI arrows).
+/// Counterpart to the pure-classifier test at tests.rs ~1732.
+#[test]
+fn dispatch_wheel_mouse_report_takes_priority_over_alt_scroll() {
+    let mode = TermMode::MOUSE_REPORT_CLICK | ALT_SCROLL_MODE;
+    let mut sink = sink_with_cell(Some((4, 2)));
+    let input = dispatch_with(mode, false, Some(pane()), px_up(3));
+    dispatch_wheel(input, &mut sink);
+    assert_eq!(
+        sink.writes.len(),
+        3,
+        "Tier-1 wins precedence; lines=3 → 3 mouse-report writes"
+    );
+    // Bytes must NOT be SS3/CSI arrows (would prove Tier-2 stole the path).
+    for (_, bytes) in &sink.writes {
+        assert_ne!(bytes, &b"\x1b[A".to_vec(), "must NOT be CSI A");
+        assert_ne!(bytes, &b"\x1bOA".to_vec(), "must NOT be SS3 A");
+    }
+}
+
+// --- Shift-bypass × all three tiers ---
+
+/// Regression: BUG-08-032 — Shift bypasses Tier-1 mouse-report → Tier-3.
+/// Catches a regression where the shift gate stops working for mouse-report
+/// alone (only working when alt-scroll is also set).
+#[test]
+fn dispatch_wheel_shift_held_with_mouse_report_routes_to_viewport_scroll() {
+    // Shift bypass routes Tier-1 → Tier-3; sink_with_cell's value is
+    // unused because Tier-3 doesn't consult `cell_for_report`. Asserting
+    // `cell_for_report_calls == 0` pins the lazy semantics.
+    let mut sink = sink_with_cell(Some((4, 2)));
+    let input = dispatch_with(TermMode::MOUSE_REPORT_CLICK, true, Some(pane()), px_up(3));
+    dispatch_wheel(input, &mut sink);
+    assert!(sink.writes.is_empty(), "shift bypass → no PTY writes");
+    assert_eq!(sink.scrolls, vec![(pane(), 3)]);
+    assert_eq!(sink.mark_dirty_calls, 1);
+    assert_eq!(
+        sink.cell_for_report_calls, 0,
+        "shift bypass routes to Tier-3 — cell_for_report MUST stay lazy"
+    );
+}
+
+/// Regression: BUG-08-032 — Shift bypasses Tier-2 alt-scroll → Tier-3.
+#[test]
+fn dispatch_wheel_shift_held_with_alt_scroll_routes_to_viewport_scroll() {
+    let mut sink = RecordingSink::default();
+    let input = dispatch_with(ALT_SCROLL_MODE, true, Some(pane()), px_up(3));
+    dispatch_wheel(input, &mut sink);
+    assert!(sink.writes.is_empty(), "shift bypass → no PTY writes");
+    assert_eq!(sink.scrolls, vec![(pane(), 3)]);
+    assert_eq!(sink.mark_dirty_calls, 1);
+}
+
+/// Regression: BUG-08-032 — Shift bypass on plain mouse-report (no
+/// ALT_SCREEN) preserves direction sign through Tier-3.
+#[test]
+fn dispatch_wheel_shift_held_with_mouse_report_no_alt_screen_direction_preserved() {
+    let mut sink = sink_with_cell(Some((4, 2)));
+    let input = dispatch_with(TermMode::MOUSE_REPORT_CLICK, true, Some(pane()), px_down(3));
+    dispatch_wheel(input, &mut sink);
+    assert_eq!(
+        sink.scrolls,
+        vec![(pane(), -3)],
+        "down direction preserved through shift bypass"
+    );
+}
+
+// --- Cross-tier early-return invariants ---
+
+/// Regression: BUG-08-032 — parse_wheel_delta=None → no dispatch at all.
+/// Zero-magnitude line delta produces no writes / scrolls / mark_dirty.
+#[test]
+fn dispatch_wheel_parse_wheel_delta_none_no_dispatch() {
+    let mut sink = sink_with_cell(Some((4, 2)));
+    let input = dispatch_with(
+        TermMode::MOUSE_REPORT_CLICK,
+        false,
+        Some(pane()),
+        MouseScrollDelta::LineDelta(0.0, 0.0), // returns None from parse_wheel_delta
+    );
+    dispatch_wheel(input, &mut sink);
+    assert!(sink.writes.is_empty());
+    assert!(sink.scrolls.is_empty());
+    assert_eq!(sink.mark_dirty_calls, 0);
+    assert_eq!(
+        sink.cell_for_report_calls, 0,
+        "parse_wheel_delta=None must return BEFORE the Tier-1 sink query"
+    );
+}
+
+/// Regression: BUG-08-032 — pane_id=None → no dispatch at all.
+/// The `Option<PaneId>` lift in WheelDispatch (codex's catch — the
+/// `let Some(pane_id) = ... else { return }` gate exists in the dispatcher,
+/// not just on the App side) makes this seam testable headlessly.
+#[test]
+fn dispatch_wheel_pane_id_none_no_dispatch() {
+    let mut sink = sink_with_cell(Some((4, 2)));
+    let input = dispatch_with(
+        TermMode::MOUSE_REPORT_CLICK,
+        false,
+        None, // pane_id
+        px_up(3),
+    );
+    dispatch_wheel(input, &mut sink);
+    assert!(sink.writes.is_empty());
+    assert!(sink.scrolls.is_empty());
+    assert_eq!(sink.mark_dirty_calls, 0);
+    assert_eq!(
+        sink.cell_for_report_calls, 0,
+        "pane_id=None must return BEFORE the Tier-1 sink query"
+    );
+}
+
+/// Regression: BUG-08-032 — Tier-1 mods (Alt/Ctrl/Shift, with Shift NOT
+/// held to avoid Tier-3 bypass) flow through the dispatcher into
+/// `encode_mouse_event` so the encoded byte payload reflects the modifiers.
+/// Pins that `dispatch_wheel` passes `input.mods` to the encoder rather
+/// than hardcoding `MouseModifiers::default()`.
+#[test]
+fn dispatch_wheel_mouse_report_propagates_alt_ctrl_modifiers_to_encoded_bytes() {
+    let mut sink = sink_with_cell(Some((11, 7)));
+    let mode = TermMode::MOUSE_REPORT_CLICK | TermMode::MOUSE_SGR;
+    let mods = MouseModifiers {
+        shift: false,
+        alt: true,
+        ctrl: true,
+    };
+    let input = WheelDispatch {
+        delta: px_up(1),
+        cell_height: 16.0,
+        mode,
+        shift_held: false,
+        pane_id: Some(pane()),
+        mods,
+    };
+    dispatch_wheel(input, &mut sink);
+    let event = MouseEvent {
+        button: MouseButton::ScrollUp,
+        kind: MouseEventKind::Press,
+        col: 11,
+        line: 7,
+        mods,
+    };
+    let expected = encode_mouse_event(&event, mode);
+    assert_eq!(sink.writes.len(), 1);
+    assert_eq!(sink.writes[0].1, expected.as_bytes().to_vec());
+    let no_mods_event = MouseEvent {
+        button: MouseButton::ScrollUp,
+        kind: MouseEventKind::Press,
+        col: 11,
+        line: 7,
+        mods: MouseModifiers::default(),
+    };
+    let no_mods_expected = encode_mouse_event(&no_mods_event, mode);
+    assert_ne!(
+        sink.writes[0].1,
+        no_mods_expected.as_bytes().to_vec(),
+        "alt+ctrl payload must differ from no-mods payload — proves dispatch_wheel propagates input.mods"
+    );
+    assert_eq!(sink.mark_dirty_calls, 1);
+}
+
+/// Regression: BUG-08-032 — empty-bytes guard preserved from BUG-08-015
+/// at the dispatcher seam. Normal (X10-style coordinate-encoded) mode +
+/// `col > 222` makes `encode_mouse_event` return empty bytes; the
+/// `if !bytes.is_empty()` guard must skip the write loop AND
+/// `mark_dirty` must still fire (the dispatch reached past the early
+/// returns; only the side-effect bytes were elided).
+#[test]
+fn dispatch_wheel_mouse_report_empty_bytes_skips_writes_but_marks_dirty() {
+    // col > 222 → encode_normal returns empty bytes per encode.rs:199.
+    let mut sink = sink_with_cell(Some((300, 0)));
+    // Normal mode (no SGR / UTF-8 / URXVT flags).
+    let mode = TermMode::MOUSE_REPORT_CLICK;
+    let input = WheelDispatch {
+        delta: px_up(2),
+        cell_height: 16.0,
+        mode,
+        shift_held: false,
+        pane_id: Some(pane()),
+        mods: MouseModifiers::default(),
+    };
+    dispatch_wheel(input, &mut sink);
+    assert!(
+        sink.writes.is_empty(),
+        "empty-bytes guard must skip writes when encode returns empty"
+    );
+    assert!(sink.scrolls.is_empty());
+    assert_eq!(
+        sink.mark_dirty_calls, 1,
+        "mark_dirty must still fire — dispatch reached past early returns"
+    );
+}
+
+/// Regression: BUG-08-032 TPR R1 — Tier-2 alt-scroll dispatch MUST NOT
+/// query `WheelSink::cell_for_report`. Restores pre-fix lazy semantics
+/// where `mouse_cell_clamped()` was scoped to the Tier-1 arm; a regression
+/// that re-introduces eager hit-testing would land here.
+#[test]
+fn dispatch_wheel_alt_scroll_does_not_query_cell_for_report() {
+    let mut sink = sink_with_cell(Some((4, 2)));
+    let input = dispatch_with(ALT_SCROLL_MODE, false, Some(pane()), px_up(3));
+    dispatch_wheel(input, &mut sink);
+    assert_eq!(sink.writes.len(), 3, "Tier-2 still writes lines × bytes");
+    assert_eq!(
+        sink.cell_for_report_calls, 0,
+        "Tier-2 alt-scroll MUST NOT consult sink.cell_for_report"
+    );
+}
+
+/// Regression: BUG-08-032 TPR R1 — Tier-3 viewport-scroll dispatch MUST
+/// NOT query `WheelSink::cell_for_report`. Counterpart to the Tier-2 lazy
+/// pin; pins the cell-extraction is gated by tier classification.
+#[test]
+fn dispatch_wheel_viewport_scroll_does_not_query_cell_for_report() {
+    let mut sink = sink_with_cell(Some((4, 2)));
+    let input = dispatch_with(TermMode::empty(), false, Some(pane()), px_up(3));
+    dispatch_wheel(input, &mut sink);
+    assert_eq!(sink.scrolls, vec![(pane(), 3)]);
+    assert_eq!(
+        sink.cell_for_report_calls, 0,
+        "Tier-3 viewport scroll MUST NOT consult sink.cell_for_report"
+    );
+}
+
+// --- BUG-08-033: cross-site convergence pin ---
+//
+// Pinned by Plan-TPR Round 0 codex F2: keyboard arrow encoding via the public
+// `encode_key` dispatcher must produce IDENTICAL bytes to mouse-wheel
+// `tier2_alt_scroll_payload` for the (DECCKM × direction) cells the wheel
+// path touches (Up/Down × app_cursor/normal). Any future divergence between
+// the keyboard and mouse paths breaks these tests — the SSOT helper at
+// `crate::key_encoding::cursor_keys::cursor_key_bytes` is the canonical home
+// for the (DECCKM × direction) → bytes mapping.
+
+mod cross_site_convergence {
+    use crate::app::mouse_report::{ScrollDirection, tier2_alt_scroll_payload};
+    use crate::key_encoding::{KeyEventType, KeyInput, Modifiers, encode_key};
+    use oriterm_core::TermMode;
+    use winit::keyboard::{Key, KeyLocation, NamedKey};
+
+    fn keyboard_bytes(named: NamedKey, mode: TermMode) -> Vec<u8> {
+        let key = Key::Named(named);
+        encode_key(&KeyInput {
+            key: &key,
+            mods: Modifiers::empty(),
+            mode,
+            text: None,
+            location: KeyLocation::Standard,
+            event_type: KeyEventType::Press,
+            alternate_key: None,
+        })
+    }
+
+    fn alt_scroll_bytes(direction: ScrollDirection, app_cursor: bool) -> Vec<u8> {
+        let mut mode = TermMode::ALT_SCREEN | TermMode::ALTERNATE_SCROLL;
+        if app_cursor {
+            mode |= TermMode::APP_CURSOR;
+        }
+        tier2_alt_scroll_payload(mode, false, 1, direction)
+            .expect("alt-scroll path active under ALT_SCREEN | ALTERNATE_SCROLL")
+            .bytes
+            .to_vec()
+    }
+
+    /// Cross-site convergence: ArrowUp under DECCKM (APP_CURSOR set) — both
+    /// paths emit `\x1bOA`.
+    #[test]
+    fn arrow_up_app_cursor_keyboard_matches_alt_scroll() {
+        let mode = TermMode::APP_CURSOR;
+        assert_eq!(
+            keyboard_bytes(NamedKey::ArrowUp, mode),
+            alt_scroll_bytes(ScrollDirection::Up, true)
+        );
+    }
+
+    /// Cross-site convergence: ArrowUp without DECCKM — both paths emit `\x1b[A`.
+    #[test]
+    fn arrow_up_normal_keyboard_matches_alt_scroll() {
+        assert_eq!(
+            keyboard_bytes(NamedKey::ArrowUp, TermMode::empty()),
+            alt_scroll_bytes(ScrollDirection::Up, false)
+        );
+    }
+
+    /// Cross-site convergence: ArrowDown under DECCKM — both paths emit `\x1bOB`.
+    #[test]
+    fn arrow_down_app_cursor_keyboard_matches_alt_scroll() {
+        let mode = TermMode::APP_CURSOR;
+        assert_eq!(
+            keyboard_bytes(NamedKey::ArrowDown, mode),
+            alt_scroll_bytes(ScrollDirection::Down, true)
+        );
+    }
+
+    /// Cross-site convergence: ArrowDown without DECCKM — both paths emit `\x1b[B`.
+    #[test]
+    fn arrow_down_normal_keyboard_matches_alt_scroll() {
+        assert_eq!(
+            keyboard_bytes(NamedKey::ArrowDown, TermMode::empty()),
+            alt_scroll_bytes(ScrollDirection::Down, false)
+        );
+    }
+}

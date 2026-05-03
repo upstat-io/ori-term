@@ -7,7 +7,6 @@
 //! All grid queries operate on [`SnapshotGrid`] — no terminal lock required.
 //! Mark cursor and selection state live on [`App`](super::App), not on `Pane`.
 
-use winit::event::KeyEvent;
 use winit::keyboard::{Key, KeyCode, ModifiersState, NamedKey, PhysicalKey};
 
 use oriterm_core::{Selection, SelectionMode, SelectionPoint, Side};
@@ -16,6 +15,28 @@ use oriterm_ui::interaction::mark_mode::motion::{self, AbsCursor, GridBounds, Wo
 pub(crate) use oriterm_ui::interaction::mark_mode::{MarkAction, SelectionUpdate};
 
 use super::snapshot_grid::SnapshotGrid;
+
+/// Project-owned view of the `winit::event::KeyEvent` fields mark-mode
+/// key handling needs.
+///
+/// Constructed at the App boundary via [`from_winit`](Self::from_winit);
+/// constructed directly in tests so mark-mode dispatch is unit-testable
+/// without a real winit `KeyEvent` (whose `pub(crate) platform_specific`
+/// field blocks external struct-literal construction).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct MarkModeKeyEvent {
+    pub physical_key: PhysicalKey,
+    pub logical_key: Key,
+}
+
+impl MarkModeKeyEvent {
+    pub(crate) fn from_winit(event: &winit::event::KeyEvent) -> Self {
+        Self {
+            physical_key: event.physical_key,
+            logical_key: event.logical_key.clone(),
+        }
+    }
+}
 
 /// Cursor motion direction.
 #[derive(Clone, Copy)]
@@ -46,23 +67,24 @@ pub(crate) struct MarkModeResult {
     pub new_selection: Option<SelectionUpdate>,
 }
 
+/// Bundled inputs to [`handle_mark_mode_key`] — bundles the six dispatch
+/// inputs (grid, cursor, selection, event, mods, delimiters) per
+/// `impl-hygiene.md §Parameter Hygiene` (>4 params → struct).
+pub(crate) struct MarkModeKeyContext<'a> {
+    pub grid: &'a SnapshotGrid<'a>,
+    pub cursor: MarkCursor,
+    pub selection: Option<&'a Selection>,
+    pub event: &'a MarkModeKeyEvent,
+    pub mods: ModifiersState,
+    pub word_delimiters: &'a str,
+}
+
 /// Dispatch a key event while mark mode is active.
 ///
 /// Pure function: reads grid state from `SnapshotGrid`, mark cursor and
 /// selection from parameters. Returns a [`MarkModeResult`] describing
 /// state mutations for the caller to apply.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "mark mode dispatch: grid, cursor, selection, event, mods, delimiters"
-)]
-pub(crate) fn handle_mark_mode_key(
-    grid: &SnapshotGrid<'_>,
-    cursor: MarkCursor,
-    selection: Option<&Selection>,
-    event: &KeyEvent,
-    mods: ModifiersState,
-    word_delimiters: &str,
-) -> MarkModeResult {
+pub(crate) fn handle_mark_mode_key(ctx: &MarkModeKeyContext<'_>) -> MarkModeResult {
     let noop = MarkModeResult {
         action: MarkAction::Ignored,
         new_cursor: None,
@@ -70,9 +92,9 @@ pub(crate) fn handle_mark_mode_key(
     };
 
     // Ctrl+Shift+M toggles mark mode off.
-    if mods.control_key()
-        && mods.shift_key()
-        && matches!(event.physical_key, PhysicalKey::Code(KeyCode::KeyM))
+    if ctx.mods.control_key()
+        && ctx.mods.shift_key()
+        && matches!(ctx.event.physical_key, PhysicalKey::Code(KeyCode::KeyM))
     {
         return MarkModeResult {
             action: MarkAction::Exit { copy: false },
@@ -82,11 +104,11 @@ pub(crate) fn handle_mark_mode_key(
     }
 
     // Ctrl+A selects the entire buffer.
-    if mods.control_key()
-        && !mods.shift_key()
-        && matches!(event.physical_key, PhysicalKey::Code(KeyCode::KeyA))
+    if ctx.mods.control_key()
+        && !ctx.mods.shift_key()
+        && matches!(ctx.event.physical_key, PhysicalKey::Code(KeyCode::KeyA))
     {
-        let sel = select_all(grid);
+        let sel = select_all(ctx.grid);
         return MarkModeResult {
             action: MarkAction::Handled { scroll_delta: None },
             new_cursor: None,
@@ -95,7 +117,7 @@ pub(crate) fn handle_mark_mode_key(
     }
 
     // Named keys: Escape, Enter, arrow/page/home/end navigation.
-    if let Key::Named(named) = &event.logical_key {
+    if let Key::Named(named) = &ctx.event.logical_key {
         match named {
             NamedKey::Escape => {
                 return MarkModeResult {
@@ -112,15 +134,8 @@ pub(crate) fn handle_mark_mode_key(
                 };
             }
             _ => {
-                if let Some(m) = resolve_motion(*named, mods) {
-                    return apply_motion(
-                        grid,
-                        cursor,
-                        selection,
-                        m,
-                        mods.shift_key(),
-                        word_delimiters,
-                    );
+                if let Some(m) = resolve_motion(*named, ctx.mods) {
+                    return apply_motion(ctx, m);
                 }
             }
         }
@@ -161,18 +176,13 @@ fn resolve_motion(named: NamedKey, mods: ModifiersState) -> Option<Motion> {
 ///
 /// Returns a [`MarkModeResult`] with the new cursor, selection update,
 /// and scroll delta needed to keep the mark cursor visible.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "motion apply: grid, cursor, selection, motion, shift, delimiters"
-)]
-fn apply_motion(
-    grid: &SnapshotGrid<'_>,
-    old_cursor: MarkCursor,
-    selection: Option<&Selection>,
-    m: Motion,
-    shift: bool,
-    word_delimiters: &str,
-) -> MarkModeResult {
+fn apply_motion(ctx: &MarkModeKeyContext<'_>, m: Motion) -> MarkModeResult {
+    let grid = ctx.grid;
+    let old_cursor = ctx.cursor;
+    let selection = ctx.selection;
+    let shift = ctx.mods.shift_key();
+    let word_delimiters = ctx.word_delimiters;
+
     let Some(abs_row) = grid.stable_to_absolute(old_cursor.row) else {
         return MarkModeResult {
             action: MarkAction::Handled { scroll_delta: None },

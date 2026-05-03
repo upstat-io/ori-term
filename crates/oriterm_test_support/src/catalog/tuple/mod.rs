@@ -13,7 +13,7 @@ mod canonical;
 
 use core::fmt::{self, Display, Write as _};
 
-pub use canonical::{canonical_tuple, osc_placeholder};
+pub use canonical::{canonical_tuple, csi_params_placeholder, osc_placeholder};
 
 /// Tuple signature for coverage comparison: (`category`, `sorted
 /// intermediates`, `final_byte`). Params are excluded because they

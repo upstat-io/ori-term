@@ -64,6 +64,14 @@ pub enum MuxEvent {
     },
     /// Bell fired in a pane.
     PaneBell(PaneId),
+    /// Urgency hint requested by a pane (mode 1042 / DECSET ?1042h).
+    ///
+    /// Emitted when BEL fires while `TermMode::URGENCY_HINTS` is set.
+    /// The mux forwards as `MuxNotification::PaneUrgencyHint(PaneId)`,
+    /// which the app-layer consumer routes to
+    /// `winit::Window::request_user_attention(Some(UserAttentionType::Critical))`
+    /// on the OWNING window.
+    PaneUrgencyHint(PaneId),
     /// Data to write to a pane's PTY (DA responses, etc.).
     ///
     /// Carries raw bytes rather than `String` so non-UTF-8 replies (binary
@@ -186,6 +194,7 @@ impl fmt::Debug for MuxEvent {
                 write!(f, "CommandComplete({pane_id}, {duration:?})")
             }
             Self::PaneBell(id) => write!(f, "PaneBell({id})"),
+            Self::PaneUrgencyHint(id) => write!(f, "PaneUrgencyHint({id})"),
             Self::PtyWrite { pane_id, data } => {
                 write!(f, "PtyWrite({pane_id}, {} bytes)", data.len())
             }
@@ -260,6 +269,13 @@ pub enum MuxNotification {
     },
     /// A bell or urgent notification fired in a pane.
     PaneBell(PaneId),
+    /// Window-manager urgency hint requested by a pane (mode 1042).
+    ///
+    /// Forwarded by the in-process event pump and the daemon-mode wire
+    /// PDU `MuxPdu::NotifyPaneUrgencyHint`. The app-layer consumer routes
+    /// it to `winit::Window::request_user_attention(Some(UserAttentionType::Critical))`
+    /// on the OWNING window when the pane is not focused.
+    PaneUrgencyHint(PaneId),
     /// A long-running command completed in a pane.
     CommandComplete {
         /// Which pane completed a command.
@@ -369,6 +385,7 @@ impl fmt::Debug for MuxNotification {
                 write!(f, "PaneClosed({pane_id}, code={exit_code})")
             }
             Self::PaneBell(id) => write!(f, "PaneBell({id})"),
+            Self::PaneUrgencyHint(id) => write!(f, "PaneUrgencyHint({id})"),
             Self::CommandComplete { pane_id, duration } => {
                 write!(f, "CommandComplete({pane_id}, {duration:?})")
             }

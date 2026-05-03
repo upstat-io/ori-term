@@ -4,6 +4,9 @@
 //! Processes `MuxEvent`s from PTY reader threads via `MuxBackend::poll_events`,
 //! then handles resulting `MuxNotification`s (dirty, close, clipboard, etc.).
 
+mod host_color_query;
+mod notification_purge;
+
 use std::time::{Duration, Instant};
 
 use oriterm_mux::MuxNotification;
@@ -12,6 +15,8 @@ use oriterm_mux::PaneId;
 use crate::config::NotifyOnCommandFinish;
 use crate::platform::audio;
 
+use self::host_color_query::resolve_host_color_query;
+use self::notification_purge::purge_pending_desktop_notifications;
 use super::App;
 
 impl App {
@@ -198,6 +203,7 @@ impl App {
 
                 self.mark_pane_window_dirty(id);
             }
+            MuxNotification::PaneUrgencyHint(id) => self.handle_pane_urgency_hint(id),
             MuxNotification::ClipboardStore {
                 clipboard_type,
                 text,
@@ -324,6 +330,26 @@ impl App {
         }
     }
 
+    /// Mode 1042 urgency-hint request — winit dispatches the per-platform
+    /// attention API on the OWNING window when the pane isn't focused.
+    fn handle_pane_urgency_hint(&self, id: PaneId) {
+        if self.active_pane_id() == Some(id) {
+            return;
+        }
+        let Some(session_wid) = self.session.window_for_pane(id) else {
+            return;
+        };
+        if let Some(ctx) = self
+            .windows
+            .values()
+            .find(|c| c.window.session_window_id() == session_wid)
+        {
+            ctx.window
+                .window()
+                .request_user_attention(Some(winit::window::UserAttentionType::Critical));
+        }
+    }
+
     /// Handle a command completing in a pane.
     ///
     /// Checks config threshold and focus state to decide whether to flash
@@ -351,7 +377,6 @@ impl App {
         );
 
         // Flash the tab bar (reuse bell pulse) if configured.
-        let is_focused = self.active_pane_id() == Some(pane_id);
         if behavior.notify_command_bell && !is_focused {
             if let Some(mux) = self.mux.as_mut() {
                 mux.set_bell(pane_id);
@@ -374,61 +399,7 @@ impl App {
             audio::play_bell();
         }
     }
-}
 
-/// In-place collapse of `ClearPendingDesktopNotifications` against
-/// preceding `DesktopNotification` entries in the same staging
-/// buffer. For each clear marker at position `i` for pane `P`,
-/// removes every `DesktopNotification { pane_id: P, .. }` at
-/// positions `< i`. Iteration order preserves remaining markers.
-///
-/// Surfaced by `[high]` — the §01 fix only emitted
-/// the clear marker but did not act on it in the main-thread staging
-/// buffer.
-fn purge_pending_desktop_notifications(buf: &mut Vec<MuxNotification>) {
-    let mut i = 0;
-    while i < buf.len() {
-        if let MuxNotification::ClearPendingDesktopNotifications(target_pane) = buf[i] {
-            let mut j = 0;
-            while j < i {
-                let drop_it = matches!(
-                    &buf[j],
-                    MuxNotification::DesktopNotification { pane_id, .. }
-                        if *pane_id == target_pane
-                );
-                if drop_it {
-                    buf.remove(j);
-                    i -= 1;
-                } else {
-                    j += 1;
-                }
-            }
-        }
-        i += 1;
-    }
-}
-
-/// Resolve an OSC 4 / OSC 10 / OSC 11 / OSC 12 color query against the
-/// pane's palette snapshot.
-///
-/// `palette` is a slice of pre-resolved RGB triplets from
-/// `PaneSnapshot::palette` — 270 entries covering 0..=255 (indexed
-/// palette) and 256..=269 (named semantic slots: Foreground,
-/// Background, Cursor, dim variants, etc.). `index` is the
-/// pre-computed slot the VTE OSC dispatch resolved.
-///
-/// Returns black (`Rgb { r:0, g:0, b:0 }`) when the snapshot is
-/// missing (`None`) OR the index is out of range — matches
-/// `Palette::color()` contract at
-/// `oriterm_core/src/color/palette/mod.rs:286-296`.
-fn resolve_host_color_query(palette: Option<&[[u8; 3]]>, index: usize) -> oriterm_core::color::Rgb {
-    palette.and_then(|p| p.get(index).copied()).map_or(
-        oriterm_core::color::Rgb { r: 0, g: 0, b: 0 },
-        |[r, g, b]| oriterm_core::color::Rgb { r, g, b },
-    )
-}
-
-impl App {
     /// Handle a pane being closed (shell exit, PTY EOF, or explicit close).
     ///
     /// Cleans up client-side state, backend resources, and removes the pane

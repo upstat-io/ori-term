@@ -4,6 +4,7 @@
 //! applications. The dispatcher chooses between Kitty keyboard protocol
 //! (CSI u format) and legacy xterm encoding based on the active terminal mode.
 
+pub(crate) mod cursor_keys;
 mod kitty;
 mod legacy;
 // Win32 input mode module exists but is not wired into encode_key().

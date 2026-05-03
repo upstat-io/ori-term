@@ -94,6 +94,7 @@ fn legacy_format_effect(effect: &Effect) -> Option<String> {
 
     Some(match effect {
         Effect::Host(HostEffect::Bell) => "Bell".to_string(),
+        Effect::Host(HostEffect::UrgencyHint) => "UrgencyHint".to_string(),
         Effect::Host(HostEffect::TitleSet { value: Some(t) }) => format!("Title({t})"),
         Effect::Host(HostEffect::TitleSet { value: None }) => "ResetTitle".to_string(),
         Effect::Host(HostEffect::IconNameSet { value: Some(n) }) => format!("IconName({n})"),

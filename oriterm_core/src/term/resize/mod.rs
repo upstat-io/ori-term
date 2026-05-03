@@ -83,3 +83,6 @@ impl<S: EffectSink> Term<S> {
         self.selection_dirty = true;
     }
 }
+
+#[cfg(test)]
+mod tests;

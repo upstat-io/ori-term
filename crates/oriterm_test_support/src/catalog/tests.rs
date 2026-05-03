@@ -9,6 +9,30 @@
 //! This file covers cross-module integration tests, positive-pin
 //! tests for extractors, and the `walk_catalog_files` function
 //! from `mod.rs`.
+//!
+//! ## Cross-producer SSOT-alignment matrix — per-producer params shape contract
+//!
+//! Four producers feed `TupleSig` comparison consumed by
+//! `spec-coverage-report --check`. Each has a deliberate, by-design
+//! `params` shape; signatures (`category`, `intermediates`,
+//! `final_byte`) MUST agree across all producers per category, but
+//! `params` may diverge because each producer has different
+//! information available at construction time:
+//!
+//! | Category | Catalog (`canonical_tuple`) | Dispatch walker | Capture (`extract_capture_tuples`) | Runtime (`perform_action_to_tuple`) |
+//! |---|---|---|---|---|
+//! | OSC | `osc_placeholder` payload | `""` | `osc_placeholder` payload | `""` |
+//! | CSI | tokens (`Ps;Ps`/`Ps`/`-`) | `"Ps"` (arm pattern) | `csi_params_placeholder(arity)` | `""` |
+//! | DCS | `Pid` (q+empty ints) / `Pt` | matches catalog | matches catalog | `""` |
+//! | ESC | `"-"` | `"-"` | `"-"` | `""` |
+//! | APC | `"Pt"` (generic) / `"key-value"` (\_G) | `"Pt"` | `"Pt"` | `None` (filtered) |
+//!
+//! `TupleSig` excludes `params` (see `tuple/mod.rs:18`), so signature
+//! equality alone would hide intentional producer divergence. The
+//! per-category sibling matrix tests below pin both signature alignment
+//! AND per-producer params shape; together they prevent the
+//! `("CAT", [], TERMINATOR)` collapse class of regression that
+//! BUG-07-019 retrofit-fixed for OSC.
 
 use super::tuple::{Category, Tuple};
 use super::walk_catalog_files;
@@ -531,5 +555,693 @@ fn classify_from_map_osc_normalizes_via_final_byte_only() {
             Classification::NoDispatch
         ),
         "OSC 7 (interceptor-owned) must return NoDispatch from classify_from_map"
+    );
+}
+
+// =========================================================================
+// CSI cross-producer SSOT-alignment matrix
+// =========================================================================
+//
+// Mirrors the OSC matrix shape for CSI selectors. Per-producer params
+// contract is TIERED (catalog/capture share arity-driven shape; dispatch
+// is arity-agnostic `"Ps"`; runtime is empty by contract):
+//
+//   catalog.params == capture.params (Ps;Ps for arity 2, Ps for arity 1, - for arity 0)
+//   dispatch.params == "Ps" (single placeholder regardless of arity)
+//   runtime.params == "" (empty by contract — runtime observer fast-path)
+
+/// Producer 4: feed a synthetic `PerformAction::CsiDispatch` to
+/// `perform_action_to_tuple`. `args` carries the numeric parameter
+/// arity (each entry becomes a single-element u16 vec).
+fn runtime_csi_tuple(action_byte: char, args: &[u16]) -> Tuple {
+    let params: Vec<Vec<u16>> = args.iter().map(|v| vec![*v]).collect();
+    let action = PerformAction::CsiDispatch {
+        params,
+        intermediates: Vec::new(),
+        ignore: false,
+        action: action_byte,
+    };
+    perform_action_to_tuple(&action).expect("CsiDispatch must yield a Tuple")
+}
+
+/// Producer 3: synthesize a CSI byte stream and run it through
+/// `extract_capture_tuples`, returning the CSI tuple verbatim.
+fn capture_csi_tuple(action_byte: char, args: &[u16]) -> Tuple {
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(b"\x1b[");
+    for (i, v) in args.iter().enumerate() {
+        if i > 0 {
+            bytes.push(b';');
+        }
+        bytes.extend_from_slice(v.to_string().as_bytes());
+    }
+    bytes.push(action_byte as u8);
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("csi.cap");
+    std::fs::write(&path, bytes).expect("write cap");
+    let tuples = extract_capture_tuples(&path).expect("extract");
+    tuples
+        .into_iter()
+        .find(|(t, _)| t.category == Category::Csi)
+        .map(|(t, _)| t)
+        .expect("capture must yield one CSI tuple")
+}
+
+/// Producer 2: walk the VTE dispatch tree and find the CSI tuple
+/// `(CSI, [], <action_byte>)`. Returns `None` when the VTE dispatch
+/// source file is absent (cross-compiled / packaged builds).
+fn dispatch_csi_tuple(action_byte: char) -> Option<Tuple> {
+    let root = workspace_root();
+    let csi_path = root.join("crates/vte/src/ansi/dispatch/csi/mod.rs");
+    if !csi_path.exists() {
+        return None;
+    }
+    let tuples = extract_dispatch_tuples(root).expect("dispatch extraction succeeds");
+    tuples.into_iter().find(|t| {
+        t.category == Category::Csi
+            && t.intermediates.is_empty()
+            && t.final_byte == action_byte.to_string()
+    })
+}
+
+/// Producer 1: build a Sequence-column markdown like `` `CSI Ps;Ps H` ``
+/// (arity Ps tokens joined by `;` + final_byte) and canonicalize.
+/// `;`-joining matches the catalog's actual `Sequence`-column form for
+/// multi-parameter CSI rows (e.g., CUP: `CSI Ps;Ps H`); space-joined
+/// `Ps Ps` would canonicalize to `PsPs` because `normalize_csi_params`
+/// strips whitespace from the joined token sequence.
+fn catalog_csi_tuple(action_byte: char, arity: usize) -> Tuple {
+    let mut s = String::from("`CSI");
+    if arity > 0 {
+        s.push(' ');
+        let placeholders: Vec<&str> = vec!["Ps"; arity];
+        s.push_str(&placeholders.join(";"));
+    }
+    s.push(' ');
+    s.push(action_byte);
+    s.push('`');
+    canonical_tuple(&s).expect("catalog parse_csi must canonicalize CSI sequence")
+}
+
+/// The CSI SSOT-alignment matrix. Each row is `(action_byte, args)`.
+/// Selectors are real dispatch-backed entries (CUP `H`, ED `J`).
+fn csi_ssot_matrix() -> Vec<(char, Vec<u16>)> {
+    vec![('H', vec![1, 1]), ('J', vec![0])]
+}
+
+/// Regression: all four CSI tuple producers MUST yield identical
+/// `TupleSig` for the same CSI sequence (selector in `final_byte`,
+/// empty intermediates) AND each producer MUST emit the per-producer
+/// `params` shape its contract promises (catalog/capture arity-driven,
+/// dispatch arity-agnostic `Ps`, runtime empty).
+#[test]
+fn csi_tuple_sig_aligns_across_all_four_producers() {
+    let csi_path = workspace_root().join("crates/vte/src/ansi/dispatch/csi/mod.rs");
+    let dispatch_source_present = csi_path.exists();
+
+    let mut producer_cells_exercised = 0_usize;
+
+    for (action_byte, args) in csi_ssot_matrix() {
+        let arity = args.len();
+        let t1 = catalog_csi_tuple(action_byte, arity);
+        let t3 = capture_csi_tuple(action_byte, &args);
+        let t4 = runtime_csi_tuple(action_byte, &args);
+        producer_cells_exercised += 3;
+
+        // Selector lands in `final_byte`, intermediates empty.
+        assert_eq!(t1.final_byte, action_byte.to_string());
+        assert!(t1.intermediates.is_empty());
+        assert_eq!(t3.final_byte, action_byte.to_string());
+        assert!(t3.intermediates.is_empty());
+        assert_eq!(t4.final_byte, action_byte.to_string());
+        assert!(t4.intermediates.is_empty());
+
+        // Per-producer params shape contract:
+        // catalog/capture share arity-driven shape; runtime empty.
+        let expected_arity_shape = if arity == 0 {
+            "-".to_string()
+        } else {
+            vec!["Ps"; arity].join(";")
+        };
+        assert_eq!(
+            t1.params, expected_arity_shape,
+            "selector {action_byte}: catalog params must be arity-driven Ps shape"
+        );
+        assert_eq!(
+            t3.params, expected_arity_shape,
+            "selector {action_byte}: capture params must match catalog (arity-driven Ps shape)"
+        );
+        assert_eq!(
+            t4.params, "",
+            "selector {action_byte}: runtime observer params must be empty by contract"
+        );
+
+        // Signature alignment.
+        assert_eq!(
+            t1.signature(),
+            t3.signature(),
+            "selector {action_byte}: catalog and capture signatures must match"
+        );
+        assert_eq!(
+            t1.signature(),
+            t4.signature(),
+            "selector {action_byte}: catalog and runtime signatures must match"
+        );
+
+        if dispatch_source_present {
+            let t2 = dispatch_csi_tuple(action_byte).unwrap_or_else(|| {
+                panic!(
+                    "selector {action_byte}: dispatch_extract must yield a CSI tuple with \
+                     selector {action_byte} and empty intermediates"
+                )
+            });
+            // Dispatch always emits "Ps" (arity-agnostic arm pattern).
+            assert_eq!(
+                t2.params, "Ps",
+                "selector {action_byte}: dispatch arm params must be arity-agnostic 'Ps'"
+            );
+            assert_eq!(
+                t1.signature(),
+                t2.signature(),
+                "selector {action_byte}: catalog and dispatch signatures must match"
+            );
+            producer_cells_exercised += 1;
+        }
+    }
+
+    let expected_cells = if dispatch_source_present { 8 } else { 6 };
+    let producer_count = if dispatch_source_present { 4 } else { 3 };
+    assert_eq!(
+        producer_cells_exercised, expected_cells,
+        "CSI matrix completeness — expected {expected_cells} producer cells \
+         (2 selectors × {producer_count} producers), got {producer_cells_exercised}"
+    );
+}
+
+/// Regression: distinct CSI selectors yield distinct signatures.
+#[test]
+fn csi_tuple_sig_distinct_per_selector() {
+    let cup = runtime_csi_tuple('H', &[1, 1]).signature();
+    let ed = runtime_csi_tuple('J', &[0]).signature();
+    assert_ne!(
+        cup, ed,
+        "CSI H (CUP) and CSI J (ED) must have distinct sigs"
+    );
+}
+
+/// Regression: CSI `final_byte` slot MUST hold the dispatch action
+/// character, never an empty string and never a CSI intermediate
+/// byte (`?`/`>`/`=`/`!`/`"`/`#`/`$`). Negative pin against the
+/// pre-fix-style collapse where catalog incorrectly absorbed an
+/// intermediate byte into `final_byte`.
+#[test]
+fn csi_tuple_sig_does_not_collapse_to_intermediate() {
+    for (action_byte, args) in csi_ssot_matrix() {
+        let t = runtime_csi_tuple(action_byte, &args);
+        assert!(
+            !t.final_byte.is_empty(),
+            "selector {action_byte}: final_byte must not be empty"
+        );
+        for forbidden in ['?', '>', '=', '!', '"', '#', '$'] {
+            assert_ne!(
+                t.final_byte.chars().next(),
+                Some(forbidden),
+                "selector {action_byte}: final_byte must not be intermediate '{forbidden}'"
+            );
+        }
+    }
+}
+
+// =========================================================================
+// DCS cross-producer SSOT-alignment matrix
+// =========================================================================
+//
+// Per-producer params contract: catalog == capture == dispatch (all
+// emit `Pid` for q+empty-intermediates, `Pt` otherwise); runtime
+// is empty by contract.
+
+/// Producer 4: feed a synthetic `PerformAction::Hook` to
+/// `perform_action_to_tuple`.
+fn runtime_dcs_tuple(intermediates: &[u8], action_byte: char) -> Tuple {
+    let action = PerformAction::Hook {
+        params: Vec::new(),
+        intermediates: intermediates.to_vec(),
+        ignore: false,
+        action: action_byte,
+    };
+    perform_action_to_tuple(&action).expect("Hook must yield a Tuple")
+}
+
+/// Producer 3: synthesize a DCS byte stream, run through
+/// `extract_capture_tuples`, return the DCS tuple verbatim.
+fn capture_dcs_tuple(intermediates: &[u8], action_byte: char) -> Tuple {
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(b"\x1bP");
+    bytes.extend_from_slice(intermediates);
+    bytes.push(action_byte as u8);
+    bytes.extend_from_slice(b"\x1b\\");
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("dcs.cap");
+    std::fs::write(&path, bytes).expect("write cap");
+    let tuples = extract_capture_tuples(&path).expect("extract");
+    tuples
+        .into_iter()
+        .find(|(t, _)| t.category == Category::Dcs)
+        .map(|(t, _)| t)
+        .expect("capture must yield one DCS tuple")
+}
+
+/// Producer 2: walk the VTE dispatch tree, find the DCS tuple.
+fn dispatch_dcs_tuple(intermediates: &[u8], action_byte: char) -> Option<Tuple> {
+    let root = workspace_root();
+    let mod_path = root.join("crates/vte/src/ansi/dispatch/mod.rs");
+    if !mod_path.exists() {
+        return None;
+    }
+    let tuples = extract_dispatch_tuples(root).expect("dispatch extraction succeeds");
+    tuples.into_iter().find(|t| {
+        t.category == Category::Dcs
+            && t.intermediates == intermediates
+            && t.final_byte == action_byte.to_string()
+    })
+}
+
+/// Producer 1: build `` `DCS [intermediate ]<final> Pt ST` `` and
+/// canonicalize.
+fn catalog_dcs_tuple(intermediates: &[u8], action_byte: char) -> Tuple {
+    let mut s = String::from("`DCS");
+    for b in intermediates {
+        s.push(' ');
+        s.push(*b as char);
+    }
+    if intermediates.is_empty() && action_byte == 'q' {
+        // Sixel form: emit Ps params before final to drive parse_dcs's
+        // Pid arm (non-empty body so the Pid heuristic fires).
+        s.push_str(" Ps");
+    }
+    s.push(' ');
+    s.push(action_byte);
+    s.push_str(" Pt ST`");
+    canonical_tuple(&s).expect("catalog parse_dcs must canonicalize DCS sequence")
+}
+
+/// The DCS SSOT-alignment matrix. Each row is `(intermediates, final_byte)`.
+/// `(b"", 'q')` = sixel (Pid). `(b"$", 'q')` = DECRQM-q (Pt).
+fn dcs_ssot_matrix() -> Vec<(Vec<u8>, char)> {
+    vec![(vec![], 'q'), (vec![b'$'], 'q')]
+}
+
+/// Regression: all four DCS tuple producers MUST yield identical
+/// `TupleSig` AND identical `params` shape (Pid for q+empty-ints, Pt
+/// otherwise); runtime is empty by contract.
+#[test]
+fn dcs_tuple_sig_aligns_across_all_four_producers() {
+    let mod_path = workspace_root().join("crates/vte/src/ansi/dispatch/mod.rs");
+    let dispatch_source_present = mod_path.exists();
+
+    let mut producer_cells_exercised = 0_usize;
+
+    for (intermediates, action_byte) in dcs_ssot_matrix() {
+        let t1 = catalog_dcs_tuple(&intermediates, action_byte);
+        let t3 = capture_dcs_tuple(&intermediates, action_byte);
+        let t4 = runtime_dcs_tuple(&intermediates, action_byte);
+        producer_cells_exercised += 3;
+
+        // Signature alignment.
+        assert_eq!(
+            t1.signature(),
+            t3.signature(),
+            "DCS ({intermediates:?}, {action_byte}): catalog and capture signatures must match"
+        );
+        assert_eq!(
+            t1.signature(),
+            t4.signature(),
+            "DCS ({intermediates:?}, {action_byte}): catalog and runtime signatures must match"
+        );
+
+        // Per-producer params contract: catalog == capture (Pid for
+        // q+empty-ints, Pt otherwise); runtime empty.
+        let expected_params = if action_byte == 'q' && intermediates.is_empty() {
+            "Pid"
+        } else {
+            "Pt"
+        };
+        assert_eq!(
+            t1.params, expected_params,
+            "DCS ({intermediates:?}, {action_byte}): catalog params must be {expected_params}"
+        );
+        assert_eq!(
+            t3.params, expected_params,
+            "DCS ({intermediates:?}, {action_byte}): capture params must match catalog"
+        );
+        assert_eq!(
+            t4.params, "",
+            "DCS ({intermediates:?}, {action_byte}): runtime params must be empty by contract"
+        );
+
+        if dispatch_source_present {
+            let t2 = dispatch_dcs_tuple(&intermediates, action_byte).unwrap_or_else(|| {
+                panic!(
+                    "DCS ({intermediates:?}, {action_byte}): dispatch_extract must yield a tuple"
+                )
+            });
+            assert_eq!(
+                t2.params, expected_params,
+                "DCS ({intermediates:?}, {action_byte}): dispatch params must match catalog"
+            );
+            assert_eq!(
+                t1.signature(),
+                t2.signature(),
+                "DCS ({intermediates:?}, {action_byte}): catalog and dispatch signatures must match"
+            );
+            producer_cells_exercised += 1;
+        }
+    }
+
+    let expected_cells = if dispatch_source_present { 8 } else { 6 };
+    let producer_count = if dispatch_source_present { 4 } else { 3 };
+    assert_eq!(
+        producer_cells_exercised, expected_cells,
+        "DCS matrix completeness — expected {expected_cells} producer cells \
+         (2 inputs × {producer_count} producers), got {producer_cells_exercised}"
+    );
+}
+
+/// Regression: distinct DCS inputs yield distinct signatures
+/// (different intermediates).
+#[test]
+fn dcs_tuple_sig_distinct_per_intermediates() {
+    let sixel = runtime_dcs_tuple(&[], 'q').signature();
+    let decrqm = runtime_dcs_tuple(&[b'$'], 'q').signature();
+    assert_ne!(
+        sixel, decrqm,
+        "DCS sixel (q, []) and DECRQM-q (q, [$]) must have distinct sigs"
+    );
+}
+
+/// Regression: `Pid` params is reachable ONLY when `final == 'q'` AND
+/// intermediates are empty. Negative pin: any other shape produces `Pt`.
+#[test]
+fn dcs_tuple_sig_pid_pt_split_pinned() {
+    // Sixel: empty intermediates + q → Pid.
+    let sixel = capture_dcs_tuple(&[], 'q');
+    assert_eq!(sixel.params, "Pid");
+
+    // DECRQM-q: $ intermediate + q → Pt.
+    let decrqm = capture_dcs_tuple(&[b'$'], 'q');
+    assert_eq!(decrqm.params, "Pt");
+    assert_ne!(decrqm.params, "Pid");
+}
+
+// =========================================================================
+// ESC cross-producer SSOT-alignment matrix
+// =========================================================================
+//
+// Per-producer params contract: catalog == capture == dispatch (all
+// emit `"-"`); runtime is empty by contract.
+
+/// Producer 4: feed a synthetic `PerformAction::EscDispatch`.
+fn runtime_esc_tuple(byte: u8) -> Tuple {
+    let action = PerformAction::EscDispatch {
+        intermediates: Vec::new(),
+        ignore: false,
+        byte,
+    };
+    perform_action_to_tuple(&action).expect("EscDispatch must yield a Tuple")
+}
+
+/// Producer 3: synthesize an ESC byte stream, run through capture.
+fn capture_esc_tuple(byte: u8) -> Tuple {
+    let bytes = vec![0x1b, byte];
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("esc.cap");
+    std::fs::write(&path, bytes).expect("write cap");
+    let tuples = extract_capture_tuples(&path).expect("extract");
+    tuples
+        .into_iter()
+        .find(|(t, _)| t.category == Category::Esc)
+        .map(|(t, _)| t)
+        .expect("capture must yield one ESC tuple")
+}
+
+/// Producer 2: walk the VTE dispatch tree, find the ESC tuple.
+fn dispatch_esc_tuple(byte: u8) -> Option<Tuple> {
+    let root = workspace_root();
+    let mod_path = root.join("crates/vte/src/ansi/dispatch/mod.rs");
+    if !mod_path.exists() {
+        return None;
+    }
+    let tuples = extract_dispatch_tuples(root).expect("dispatch extraction succeeds");
+    tuples.into_iter().find(|t| {
+        t.category == Category::Esc
+            && t.intermediates.is_empty()
+            && t.final_byte == (byte as char).to_string()
+    })
+}
+
+/// Producer 1: build `` `ESC <byte>` `` and canonicalize.
+fn catalog_esc_tuple(byte: u8) -> Tuple {
+    let s = format!("`ESC {}`", byte as char);
+    canonical_tuple(&s).expect("catalog parse_esc must canonicalize ESC sequence")
+}
+
+/// The ESC SSOT-alignment matrix. `D` = IND, `M` = RI.
+fn esc_ssot_matrix() -> Vec<u8> {
+    vec![b'D', b'M']
+}
+
+/// Regression: all four ESC tuple producers MUST yield identical
+/// `TupleSig` AND identical `params == "-"` shape; runtime is empty.
+#[test]
+fn esc_tuple_sig_aligns_across_all_four_producers() {
+    let mod_path = workspace_root().join("crates/vte/src/ansi/dispatch/mod.rs");
+    let dispatch_source_present = mod_path.exists();
+
+    let mut producer_cells_exercised = 0_usize;
+
+    for byte in esc_ssot_matrix() {
+        let t1 = catalog_esc_tuple(byte);
+        let t3 = capture_esc_tuple(byte);
+        let t4 = runtime_esc_tuple(byte);
+        producer_cells_exercised += 3;
+
+        let final_str = (byte as char).to_string();
+
+        // Signature alignment.
+        assert_eq!(
+            t1.signature(),
+            t3.signature(),
+            "ESC {final_str}: catalog and capture signatures must match"
+        );
+        assert_eq!(
+            t1.signature(),
+            t4.signature(),
+            "ESC {final_str}: catalog and runtime signatures must match"
+        );
+
+        // Per-producer params contract: catalog == capture == "-",
+        // runtime empty.
+        assert_eq!(
+            t1.params, "-",
+            "ESC {final_str}: catalog params must be \"-\""
+        );
+        assert_eq!(
+            t3.params, "-",
+            "ESC {final_str}: capture params must be \"-\""
+        );
+        assert_eq!(
+            t4.params, "",
+            "ESC {final_str}: runtime params must be empty by contract"
+        );
+
+        if dispatch_source_present {
+            let t2 = dispatch_esc_tuple(byte)
+                .unwrap_or_else(|| panic!("ESC {final_str}: dispatch_extract must yield a tuple"));
+            assert_eq!(
+                t2.params, "-",
+                "ESC {final_str}: dispatch params must be \"-\""
+            );
+            assert_eq!(
+                t1.signature(),
+                t2.signature(),
+                "ESC {final_str}: catalog and dispatch signatures must match"
+            );
+            producer_cells_exercised += 1;
+        }
+    }
+
+    let expected_cells = if dispatch_source_present { 8 } else { 6 };
+    let producer_count = if dispatch_source_present { 4 } else { 3 };
+    assert_eq!(
+        producer_cells_exercised, expected_cells,
+        "ESC matrix completeness — expected {expected_cells} producer cells \
+         (2 selectors × {producer_count} producers), got {producer_cells_exercised}"
+    );
+}
+
+/// Regression: distinct ESC selectors yield distinct signatures.
+#[test]
+fn esc_tuple_sig_distinct_per_selector() {
+    let ind = runtime_esc_tuple(b'D').signature();
+    let ri = runtime_esc_tuple(b'M').signature();
+    assert_ne!(
+        ind, ri,
+        "ESC D (IND) and ESC M (RI) must have distinct sigs"
+    );
+}
+
+/// Regression: ESC `( B` (charset designation) routes to
+/// `Category::Da`, NOT `Category::Esc`. Pinned in `capture_extract.rs`
+/// (charset intermediates `(`/`)`/`*`/`+`) and in the dispatch walker's
+/// charset DA arms.
+#[test]
+fn esc_charset_designation_routes_to_da_not_esc() {
+    let bytes = vec![0x1b, b'(', b'B'];
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("charset.cap");
+    std::fs::write(&path, bytes).expect("write cap");
+    let tuples = extract_capture_tuples(&path).expect("extract");
+
+    // The capture pipeline routes `ESC ( B` to Category::Da.
+    let da = tuples.iter().any(|(t, _)| {
+        t.category == Category::Da && t.intermediates == vec![b'('] && t.final_byte == "B"
+    });
+    assert!(da, "ESC ( B must route to Category::Da");
+
+    // Negative pin: it MUST NOT appear under Category::Esc.
+    let esc_b = tuples
+        .iter()
+        .any(|(t, _)| t.category == Category::Esc && t.final_byte == "B");
+    assert!(
+        !esc_b,
+        "ESC ( B must NOT be captured as Category::Esc — charset designations are DA"
+    );
+}
+
+// =========================================================================
+// APC cross-producer SSOT-alignment matrix (3 producers + runtime-None pin)
+// =========================================================================
+//
+// APC has 3 tuple producers: catalog, dispatch, capture all emit the
+// generic `(APC, [], "Pt", "ST")`. Runtime is FILTERED — `ApcEnd`
+// returns `None` per `spec_chain/uncataloged/mod.rs:152-158` because
+// `vte::Perform::apc_end()` does not surface the accumulated payload.
+// `_G` (kitty graphics) lives in classification normalization, not
+// the cross-producer matrix.
+
+/// Producer 1: canonicalize generic APC.
+fn catalog_apc_tuple() -> Tuple {
+    canonical_tuple("`APC Pt ST`").expect("catalog must canonicalize generic APC")
+}
+
+/// Producer 2: walk the VTE dispatch tree, find the generic APC tuple.
+fn dispatch_apc_tuple() -> Option<Tuple> {
+    let root = workspace_root();
+    let mod_path = root.join("crates/vte/src/ansi/dispatch/mod.rs");
+    if !mod_path.exists() {
+        return None;
+    }
+    let tuples = extract_dispatch_tuples(root).expect("dispatch extraction succeeds");
+    tuples
+        .into_iter()
+        .find(|t| t.category == Category::Apc && t.intermediates.is_empty())
+}
+
+/// Producer 3: synthesize APC byte stream, run through capture.
+fn capture_apc_tuple() -> Tuple {
+    // `\x1b_<payload>\x1b\\` — APC start, payload, ST terminator.
+    let bytes: Vec<u8> = b"\x1b_payload\x1b\\".to_vec();
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("apc.cap");
+    std::fs::write(&path, bytes).expect("write cap");
+    let tuples = extract_capture_tuples(&path).expect("extract");
+    tuples
+        .into_iter()
+        .find(|(t, _)| t.category == Category::Apc)
+        .map(|(t, _)| t)
+        .expect("capture must yield one APC tuple")
+}
+
+/// Regression: 3 APC tuple producers (catalog, dispatch, capture)
+/// MUST yield identical `TupleSig` and identical `params == "Pt"`.
+/// Runtime is filtered — see `apc_runtime_returns_none_for_apc_end`.
+#[test]
+fn apc_tuple_sig_aligns_across_three_producers() {
+    let mod_path = workspace_root().join("crates/vte/src/ansi/dispatch/mod.rs");
+    let dispatch_source_present = mod_path.exists();
+
+    let mut producer_cells_exercised = 0_usize;
+
+    let t1 = catalog_apc_tuple();
+    let t3 = capture_apc_tuple();
+    producer_cells_exercised += 2;
+
+    // Signature alignment: `(APC, [], ST)`.
+    assert_eq!(
+        t1.signature(),
+        t3.signature(),
+        "APC: catalog and capture signatures must match"
+    );
+
+    // Per-producer params contract: all 3 emit "Pt".
+    assert_eq!(t1.params, "Pt", "APC: catalog params must be \"Pt\"");
+    assert_eq!(t3.params, "Pt", "APC: capture params must be \"Pt\"");
+    assert_eq!(
+        t1.final_byte, "ST",
+        "APC: catalog final_byte must be \"ST\""
+    );
+    assert_eq!(
+        t3.final_byte, "ST",
+        "APC: capture final_byte must be \"ST\""
+    );
+
+    if dispatch_source_present {
+        let t2 =
+            dispatch_apc_tuple().expect("APC: dispatch_extract must yield a generic APC tuple");
+        assert_eq!(t2.params, "Pt", "APC: dispatch params must be \"Pt\"");
+        assert_eq!(
+            t1.signature(),
+            t2.signature(),
+            "APC: catalog and dispatch signatures must match"
+        );
+        producer_cells_exercised += 1;
+    }
+
+    let expected_cells = if dispatch_source_present { 3 } else { 2 };
+    let producer_count = if dispatch_source_present { 3 } else { 2 };
+    assert_eq!(
+        producer_cells_exercised, expected_cells,
+        "APC matrix completeness — expected {expected_cells} producer cells \
+         ({producer_count} producers), got {producer_cells_exercised}"
+    );
+}
+
+/// Regression: APC has only 3 tuple producers because runtime
+/// observer filters `PerformAction::ApcEnd` — the `vte` crate's
+/// `apc_end()` callback does not surface the accumulated APC payload,
+/// so `perform_action_to_tuple` returns `None` by design (see
+/// `spec_chain/uncataloged/mod.rs:152-158`). This test pins the
+/// absence as an explicit machine-checkable contract: any future
+/// change that maps `ApcEnd` to a tuple would cause this assertion
+/// to fail and force a deliberate decision about the runtime/APC
+/// contract.
+#[test]
+fn apc_runtime_returns_none_for_apc_end() {
+    let action = PerformAction::ApcEnd;
+    assert!(
+        perform_action_to_tuple(&action).is_none(),
+        "APC runtime contract: PerformAction::ApcEnd must filter to None"
+    );
+}
+
+/// Regression: `UncatalogedDetector` MUST observe the same filter
+/// — `feed_actions(&[ApcEnd])` adds nothing to the seen set.
+#[test]
+fn apc_uncataloged_detector_does_not_record_apc_end() {
+    let mut detector = UncatalogedDetector::new();
+    detector.feed_actions(&[PerformAction::ApcEnd]);
+    assert!(
+        detector.seen().is_empty(),
+        "UncatalogedDetector must not record ApcEnd (filtered to None)"
     );
 }

@@ -5,6 +5,7 @@
 
 mod action_dispatch;
 pub(super) mod ime;
+mod mark_mode_dispatch;
 mod overlay_dispatch;
 
 use winit::event::ElementState;
@@ -17,6 +18,7 @@ use crate::key_encoding::{self, KeyEventType, KeyInput};
 use crate::keybindings;
 
 pub(super) use ime::ImeState;
+use mark_mode_dispatch::{MarkModeDispatch, dispatch_mark_mode};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct PtyInputRedrawState {
@@ -165,76 +167,28 @@ impl App {
     ///
     /// Returns `true` if mark mode consumed the event (caller should return).
     fn try_dispatch_mark_mode(&mut self, event: &winit::event::KeyEvent) -> bool {
+        // Boundary fast-path: skip MarkModeKeyEvent construction (which clones
+        // event.logical_key) on the common case where mark mode is inactive.
+        // The internal early returns in dispatch_mark_mode are preserved for
+        // test reachability and defense-in-depth.
         let Some(pane_id) = self.active_pane_id() else {
             return false;
         };
         if !self.is_mark_mode(pane_id) {
             return false;
         }
-        if event.state == ElementState::Pressed {
-            // Build SnapshotGrid from the current snapshot.
-            let Some(mux) = self.mux.as_mut() else {
-                return true;
-            };
-            if mux.pane_snapshot(pane_id).is_none() || mux.is_pane_snapshot_dirty(pane_id) {
-                mux.refresh_pane_snapshot(pane_id);
-            }
-            let Some(cursor) = self.pane_mark_cursor(pane_id) else {
-                return true;
-            };
-            let selection = self.pane_selection(pane_id).copied();
-            let result = {
-                let Some(snapshot) = self.mux.as_ref().and_then(|m| m.pane_snapshot(pane_id))
-                else {
-                    return true;
-                };
-                let grid = super::snapshot_grid::SnapshotGrid::new(snapshot);
-                mark_mode::handle_mark_mode_key(
-                    &grid,
-                    cursor,
-                    selection.as_ref(),
-                    event,
-                    self.modifiers,
-                    &self.config.behavior.word_delimiters,
-                )
-            };
-
-            // Apply state mutations from the result.
-            if let Some(mc) = result.new_cursor {
-                self.mark_cursors.insert(pane_id, mc);
-            }
-            if let Some(sel_update) = result.new_selection {
-                match sel_update {
-                    mark_mode::SelectionUpdate::Set(sel) => {
-                        self.set_pane_selection(pane_id, sel);
-                    }
-                    mark_mode::SelectionUpdate::Clear => {
-                        self.clear_pane_selection(pane_id);
-                    }
-                }
-            }
-
-            match result.action {
-                mark_mode::MarkAction::Handled { scroll_delta } => {
-                    if let Some(delta) = scroll_delta {
-                        if let Some(mux) = self.mux.as_mut() {
-                            mux.scroll_display(pane_id, delta);
-                        }
-                    }
-                }
-                mark_mode::MarkAction::Exit { copy } => {
-                    self.exit_mark_mode(pane_id);
-                    if copy {
-                        self.copy_selection();
-                    }
-                }
-                mark_mode::MarkAction::Ignored => {}
-            }
-            if let Some(ctx) = self.focused_ctx_mut() {
-                ctx.root.mark_dirty();
-            }
-        }
-        true
+        let modifiers = self.modifiers;
+        dispatch_mark_mode(
+            MarkModeDispatch {
+                event: mark_mode::MarkModeKeyEvent::from_winit(event),
+                event_state: event.state,
+                event_repeat: event.repeat,
+                modifiers,
+                active_pane_id: Some(pane_id),
+                mark_mode_active: true,
+            },
+            self,
+        )
     }
 
     /// Encode a key event and send the result to the PTY.

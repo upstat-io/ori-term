@@ -14,6 +14,16 @@ pub enum HostEffect {
     /// whole-window flash overlay fires alongside the audible-bell tab-bar pulse.
     /// Mode 12 is `TermMode::CURSOR_BLINKING` (ATT610), not DECVB.
     Bell,
+    /// Window-manager urgency hint requested by mode 1042 (DECSET ?1042h).
+    ///
+    /// Emitted alongside `Bell` when the pane's `TermMode::URGENCY_HINTS`
+    /// flag is set at BEL time. The host-adapter (`mux_pump` consumer of
+    /// `MuxNotification::PaneUrgencyHint`) routes this to
+    /// `winit::Window::request_user_attention(Some(UserAttentionType::Critical))`
+    /// on the OWNING window: taskbar flash on Windows, dock bounce on
+    /// macOS, `_NET_WM_STATE_DEMANDS_ATTENTION` on X11, xdg-activation on
+    /// Wayland. winit handles the per-platform glue.
+    UrgencyHint,
     /// Desktop notification emitted by OSC 9 / OSC 99 / OSC 777.
     DesktopNotification {
         source: NotificationSource,
