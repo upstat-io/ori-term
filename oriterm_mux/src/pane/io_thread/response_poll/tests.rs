@@ -263,7 +263,7 @@ fn no_wake_signal_drops_late_fulfill() {
 
     // Fulfill via the token's own `fulfill` method — no wake-tx pulse
     // is sent. The IO thread is currently parked in `select!` waiting
-    // on byte_rx / cmd_rx / response_wake_rx / child_exit_rx. Without
+    // on byte_rx / cmd_rx / io_wake_rx / child_exit_rx. Without
     // a wake-tx pulse, only an unrelated wake source can drive the
     // next poll cycle. We use byte arrival as that unrelated source.
     token

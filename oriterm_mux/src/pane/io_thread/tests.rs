@@ -1507,8 +1507,11 @@ fn handle_bytes_chunked_publishes_intermediate_snapshots() {
 /// path in `PaneIoHandle::shutdown()`.
 #[test]
 fn test_io_thread_panic_does_not_crash_app() {
-    let (tx, rx) = crossbeam_channel::unbounded::<PaneIoCommand>();
-    let (byte_tx, _byte_rx) = crossbeam_channel::unbounded::<Vec<u8>>();
+    // Bounded to match production shape (BUG-11-025); this test does
+    // not exercise saturation, but the field shape stays aligned with
+    // the production handle.
+    let (tx, rx) = crossbeam_channel::bounded::<PaneIoCommand>(CMD_CHANNEL_CAPACITY);
+    let (byte_tx, _byte_rx) = crossbeam_channel::bounded::<Vec<u8>>(BYTE_CHANNEL_CAPACITY);
 
     let join = std::thread::spawn(move || {
         let _ = rx.recv();
@@ -1663,28 +1666,18 @@ fn test_multiple_panes_concurrent_resize() {
     }
 }
 
-/// Flood 1000 MarkAllDirty commands — IO thread drains all without blocking.
-#[test]
-fn test_command_channel_flood() {
-    let (mut handle, _shutdown) = spawn_pair_with_flag();
-
-    for _ in 0..1000 {
-        handle.send_command(PaneIoCommand::MarkAllDirty);
-    }
-
-    // Give IO thread time to drain.
-    std::thread::sleep(Duration::from_millis(200));
-
-    // IO thread should still be responsive to new commands.
-    handle.send_resize(30, 100);
-    std::thread::sleep(Duration::from_millis(50));
-
-    let mut snap = RenderableContent::default();
-    handle.double_buffer().swap_front(&mut snap);
-    assert_eq!(snap.cols, 100, "should respond after 1000-command flood");
-
-    handle.shutdown();
-}
+// `test_command_channel_flood` was removed by BUG-11-025: the original
+// 1000-command flood asserted that all commands drain via wall-clock
+// `thread::sleep` (TIMING violation per `tests.md §Wall-Clock-Free
+// Testing`) AND assumed unbounded `cmd_tx`. Both assumptions are
+// invalid post-fix: `cmd_tx` is bounded(`CMD_CHANNEL_CAPACITY`) and
+// drops the overflow with `log::error!`. Replacement coverage:
+//
+// - `cmd_tx_at_capacity_returns_full_error_synchronously` — pins the
+//   bounded-saturation contract synchronously (no wall-clock).
+// - `drain_after_three_atomic_stores_processes_only_last` +
+//   `drain_after_atomic_store_processes_resize` — pin resize
+//   coalescing through the atomic slot (no flood needed).
 
 /// Snapshot swap under contention: producer + consumer threads hammering
 /// the double buffer for 500ms. Verifies the two correctness properties:
@@ -2895,7 +2888,7 @@ fn child_exit_disconnect_does_not_spin_loop() {
 /// the disconnected arm every iteration would saturate a core during
 /// the window between the drop and the join.
 #[test]
-fn response_wake_disconnect_does_not_spin_loop() {
+fn io_wake_disconnect_does_not_spin_loop() {
     let rig = spawn_queueing_eof_rig();
     drop(rig._keep_alive_wake_tx);
     std::thread::sleep(Duration::from_millis(100));
@@ -3516,34 +3509,69 @@ fn drain_commands_applies_pending_resize_before_non_reply_command() {
 }
 
 /// Negative pin: `Shutdown` reaches the IO thread even when `cmd_tx`
-/// is at capacity. Saturate `cmd_tx` (no live drain), call
-/// `handle.shutdown()`, and verify the IO thread joins promptly.
+/// is at capacity. Saturate `cmd_tx` synchronously (no spawned
+/// thread, so no async drain races the saturation), then call
+/// `handle.shutdown()` against a fresh spawned thread whose channel
+/// is already full. Verifies the durable `shutdown_flag` is observed
+/// regardless of `cmd_tx` saturation.
 ///
-/// Regression: BUG-11-025 — Q4 belt-and-suspenders.
+/// Regression: BUG-11-025 — Q4 belt-and-suspenders. Per §04 Plan TPR
+/// Round 4 Gemini F1 (saturation MUST be staged before the IO thread
+/// drains) AND §03 §Wall-Clock-Free Testing (no deadline-budget
+/// assertions — poll the join handle).
 #[test]
 fn shutdown_under_cmd_tx_saturation_still_terminates() {
-    let (mut handle, _shutdown_flag) = spawn_pair_with_flag();
-    // Saturate the channel without giving the IO thread a chance to
-    // drain (no commands consumed by the spawned thread before this
-    // saturation — try_send returns Full once N have queued).
-    let mut accepted = 0usize;
-    for _ in 0..(CMD_CHANNEL_CAPACITY * 2) {
-        if handle.cmd_tx.try_send(PaneIoCommand::MarkAllDirty).is_ok() {
-            accepted += 1;
-        } else {
-            break;
-        }
+    // Stage saturation BEFORE spawning the IO thread so the live
+    // thread can never drain the queue between saturation and
+    // shutdown(). spawn_pair_with_flag splits handle construction
+    // and join — we can fill the cmd_tx, attach the join after.
+    let shutdown = Arc::new(AtomicBool::new(false));
+    let (thread, mut handle) = new_with_handle(IoThreadConfig {
+        terminal: make_term(),
+        pane_id: {
+            let (p, _, _, _) = test_dummy_channels();
+            p
+        },
+        mux_tx: {
+            let (_, t, _, _) = test_dummy_channels();
+            t
+        },
+        child_exit_rx: {
+            let (_, _, r, _) = test_dummy_channels();
+            r
+        },
+        mode_cache: Arc::new(AtomicU64::new(TermMode::default().bits())),
+        shutdown: Arc::clone(&shutdown),
+        wakeup: Arc::new(|| {}),
+        grid_dirty: Arc::new(AtomicBool::new(false)),
+        pty_control: None,
+        adopted_signal: None,
+        initial_rows: 24,
+        initial_cols: 80,
+        selection_dirty: Arc::new(AtomicBool::new(false)),
+    });
+    // Fill the channel synchronously — no live drainer yet.
+    for _ in 0..CMD_CHANNEL_CAPACITY {
+        handle
+            .cmd_tx
+            .try_send(PaneIoCommand::MarkAllDirty)
+            .expect("staged saturation must succeed");
     }
+    let r = handle.cmd_tx.try_send(PaneIoCommand::MarkAllDirty);
     assert!(
-        accepted > 0,
-        "should have accepted at least one command before saturating"
+        matches!(r, Err(crossbeam_channel::TrySendError::Full(_))),
+        "channel must be at capacity before spawn; got {r:?}"
     );
-    let start = Instant::now();
+    // NOW spawn the IO thread on top of an already-saturated channel.
+    let join = thread.spawn().expect("spawn IO thread");
+    handle.set_join(join);
+    // Trigger shutdown via handle.shutdown() — must reach the IO
+    // thread via shutdown_flag even though cmd_tx is full.
     handle.shutdown();
-    assert!(
-        start.elapsed() < Duration::from_secs(2),
-        "shutdown after saturation took too long; flag-via-shutdown_flag is not firing"
-    );
+    // shutdown() takes the join handle; if it returned, the join
+    // already completed (via shutdown_flag observation, not via a
+    // freshly drained Shutdown command). 150s test process timeout
+    // is the only safety valve — no per-test deadline budget.
 }
 
 /// Negative pin: `send_command(Shutdown)` (the generic-channel path
@@ -3552,23 +3580,54 @@ fn shutdown_under_cmd_tx_saturation_still_terminates() {
 /// Shutdown)` special-case in `send_command`.
 ///
 /// Regression: BUG-11-025 — closes §04 Plan TPR Round 4 Codex F3.
+/// Same wall-clock-free pattern as the sibling
+/// `shutdown_under_cmd_tx_saturation_still_terminates` pin: stage
+/// saturation BEFORE spawning the live IO thread, then assert
+/// completion via `JoinHandle::is_finished()` polling.
 #[test]
 fn send_command_shutdown_under_cmd_tx_saturation_still_terminates() {
-    let (handle, _shutdown_flag) = spawn_pair_with_flag();
-    for _ in 0..(CMD_CHANNEL_CAPACITY * 2) {
-        if handle.cmd_tx.try_send(PaneIoCommand::MarkAllDirty).is_err() {
-            break;
-        }
+    let shutdown = Arc::new(AtomicBool::new(false));
+    let (thread, handle) = new_with_handle(IoThreadConfig {
+        terminal: make_term(),
+        pane_id: {
+            let (p, _, _, _) = test_dummy_channels();
+            p
+        },
+        mux_tx: {
+            let (_, t, _, _) = test_dummy_channels();
+            t
+        },
+        child_exit_rx: {
+            let (_, _, r, _) = test_dummy_channels();
+            r
+        },
+        mode_cache: Arc::new(AtomicU64::new(TermMode::default().bits())),
+        shutdown: Arc::clone(&shutdown),
+        wakeup: Arc::new(|| {}),
+        grid_dirty: Arc::new(AtomicBool::new(false)),
+        pty_control: None,
+        adopted_signal: None,
+        initial_rows: 24,
+        initial_cols: 80,
+        selection_dirty: Arc::new(AtomicBool::new(false)),
+    });
+    for _ in 0..CMD_CHANNEL_CAPACITY {
+        handle
+            .cmd_tx
+            .try_send(PaneIoCommand::MarkAllDirty)
+            .expect("staged saturation must succeed");
     }
-    let start = Instant::now();
+    let join = thread.spawn().expect("spawn IO thread");
+    // Use send_command(Shutdown) — the path distinct from shutdown()
+    // — to drive the matches!(&cmd, Shutdown) special-case.
     handle.send_command(PaneIoCommand::Shutdown);
-    // Drop the handle to surface join via Drop's shutdown() path.
+    // Wall-clock-free: poll the join until it finishes. The 150s
+    // process-level timeout is the only safety valve.
+    while !join.is_finished() {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let _ = join.join();
     drop(handle);
-    assert!(
-        start.elapsed() < Duration::from_secs(2),
-        "send_command(Shutdown) under saturation must still terminate; \
-         shutdown_flag special-case is not firing"
-    );
 }
 
 /// Negative pin: writer-thread shutdown wakes the IO thread out of
@@ -3577,6 +3636,9 @@ fn send_command_shutdown_under_cmd_tx_saturation_still_terminates() {
 /// Step 6C's writer-thread wake plumbing.
 ///
 /// Regression: BUG-11-025 — closes §04 Plan TPR Round 5 Codex F1 + F2.
+/// Wall-clock-free per `tests.md §Wall-Clock-Free Testing`: poll
+/// `JoinHandle::is_finished()` instead of asserting on
+/// `start.elapsed()`.
 #[test]
 fn idle_io_thread_observes_writer_thread_shutdown_within_one_iteration() {
     let (mut handle, shutdown_flag) = spawn_pair_with_flag();
@@ -3584,14 +3646,11 @@ fn idle_io_thread_observes_writer_thread_shutdown_within_one_iteration() {
     // durable flag AND send a wake on io_wake_tx.
     shutdown_flag.store(true, Ordering::Release);
     let _ = handle.io_wake_tx.try_send(());
-    let start = Instant::now();
     let join = handle.join.take().expect("join handle present");
+    while !join.is_finished() {
+        std::thread::sleep(Duration::from_millis(20));
+    }
     let _ = join.join();
-    assert!(
-        start.elapsed() < Duration::from_secs(2),
-        "IO thread must observe writer-thread shutdown within one iteration; \
-         either Step 6C wake plumbing or Step 6B pre-select check is missing"
-    );
 }
 
 /// Negative pin: `is_reply_bearing()` is exhaustive — every
