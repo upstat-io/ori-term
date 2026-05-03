@@ -54,13 +54,13 @@ const _: () = assert!(
 /// - bit 48      = valid tag
 /// - bits 32..48 = rows
 /// - bits 0..16  = cols
-pub(crate) const PENDING_RESIZE_VALID: u64 = 1 << 48;
+pub(super) const PENDING_RESIZE_VALID: u64 = 1 << 48;
 /// Sentinel meaning "no pending resize". The valid bit is clear.
-pub(crate) const PENDING_RESIZE_NONE: u64 = 0;
+pub(super) const PENDING_RESIZE_NONE: u64 = 0;
 
 /// Encode a pending resize for atomic storage.
 #[inline]
-pub(crate) fn pack_pending_resize(rows: u16, cols: u16) -> u64 {
+pub(super) fn pack_pending_resize(rows: u16, cols: u16) -> u64 {
     PENDING_RESIZE_VALID | ((rows as u64) << 32) | (cols as u64)
 }
 
@@ -68,7 +68,7 @@ pub(crate) fn pack_pending_resize(rows: u16, cols: u16) -> u64 {
 /// carries a valid pending resize, `None` when the slot is the
 /// `PENDING_RESIZE_NONE` sentinel.
 #[inline]
-pub(crate) fn unpack_pending_resize(packed: u64) -> Option<(u16, u16)> {
+pub(super) fn unpack_pending_resize(packed: u64) -> Option<(u16, u16)> {
     if packed & PENDING_RESIZE_VALID == 0 {
         return None;
     }

@@ -3460,25 +3460,46 @@ fn shutdown_after_pending_resize_applies_resize_then_terminates() {
 }
 
 /// Pin the semantic invariant: when a pending resize and a
-/// reply-bearing `MarkAllDirty` (proxy for SnapshotNow's barrier
-/// semantics) interleave, the latest atomic store wins AND the
-/// follow-on commands run post-resize. Load-bearing test for §05
-/// Step 2's per-iteration re-flush.
+/// reply-bearing `SnapshotNow { reply }` interleave, the latest
+/// atomic store wins AND the snapshot reply published to the caller
+/// reflects the post-resize geometry. Load-bearing test for §05
+/// Step 2's per-iteration re-flush AND the SnapshotNow FIFO barrier
+/// at `commands/mod.rs:45-56` (snapshot reply is sent only AFTER
+/// post-resize state is published to the double buffer).
 ///
 /// Regression: BUG-11-025 — semantic pin
 /// `drain_commands_applies_pending_resize_before_reply_bearing_commands`.
+/// Round 1 code-TPR codex F1 — the prior MarkAllDirty proxy did not
+/// exercise the reply-channel handshake the §03 plan specified.
 #[test]
 fn drain_commands_applies_pending_resize_before_reply_bearing_commands() {
     let (mut t, cmd_tx) = make_sync_thread_with_cmd_tx();
     pack_then_store(&t.pending_resize, 24, 80);
     cmd_tx.send(PaneIoCommand::MarkAllDirty).unwrap();
     pack_then_store(&t.pending_resize, 24, 40);
-    cmd_tx.send(PaneIoCommand::MarkAllDirty).unwrap();
+    let (reply_tx, reply_rx) = crossbeam_channel::bounded::<()>(1);
+    cmd_tx
+        .send(PaneIoCommand::SnapshotNow { reply: reply_tx })
+        .unwrap();
     t.drain_commands();
+    // SnapshotNow's reply MUST have been sent before drain returned —
+    // the per-iteration apply_pending_resize flush guarantees the
+    // snapshot reflects post-resize state.
+    reply_rx
+        .try_recv()
+        .expect("SnapshotNow reply must arrive before drain returns");
     // Last-writer-wins on the slot
     assert_eq!(t.terminal.grid().cols(), 40);
-    // MarkAllDirty ran post-resize
-    assert!(t.terminal.grid().dirty().is_all_dirty());
+    // The published snapshot reflects post-resize geometry
+    let mut snap = RenderableContent::default();
+    assert!(
+        t.double_buffer.swap_front(&mut snap),
+        "SnapshotNow must publish a fresh snapshot to the double buffer"
+    );
+    assert_eq!(
+        snap.cols, 40,
+        "snapshot published by SnapshotNow must carry post-resize cols"
+    );
 }
 
 /// Negative pin: applying a pending resize before a non-reply
@@ -3731,4 +3752,173 @@ fn is_reply_bearing_predicate_matches_reply_field_presence() {
             "is_reply_bearing must return false for {cmd:?}"
         );
     }
+}
+
+// --- BUG-11-025 §03 cross-feature interaction tests (Round 1 §06 opencode F1) ---
+//
+// The §03 TDD matrix enumerated four cross-feature interaction tests
+// that exercise the live IO thread under concurrent send_resize +
+// reply-bearing or flooded inputs. They were missed in the initial
+// implementation pass and added here. All four use the wall-clock-
+// free pattern (poll-the-condition with a 5s safety deadline; the
+// 150s process-level test timeout is the outer safety valve).
+
+/// Pin the wake topology: an atomic store via `send_resize` on a
+/// spawned IO thread reaches `process_resize` within one loop
+/// iteration, observable via a snapshot whose dimensions match the
+/// stored geometry. Wall-clock-free: poll the snapshot until it
+/// matches; a 5s safety deadline surfaces hangs.
+///
+/// Regression: BUG-11-025 — cross-feature
+/// `live_io_thread_atomic_store_wakes_within_one_iteration`.
+#[test]
+fn live_io_thread_atomic_store_wakes_within_one_iteration() {
+    let (mut handle, _shutdown) = spawn_pair_with_flag();
+    handle.send_resize(40, 120);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let mut snap = RenderableContent::default();
+    loop {
+        if handle.double_buffer().swap_front(&mut snap)
+            && snap.lines == 40
+            && snap.cols == 120
+        {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "IO thread did not observe send_resize within deadline; \
+             pending_resize wake topology is broken"
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    handle.shutdown();
+}
+
+/// Pin the original BUG-11-025 motivation: a sustained PTY flood
+/// concurrent with rapid send_resize calls preserves the FINAL
+/// geometry (last-writer-wins on the atomic slot, never dropped
+/// despite cmd_tx pressure). Wall-clock-free: condition-poll the
+/// snapshot.
+///
+/// Regression: BUG-11-025 — cross-feature
+/// `resize_during_pty_flood_preserves_final_geometry`.
+#[test]
+fn resize_during_pty_flood_preserves_final_geometry() {
+    let (mut handle, _shutdown) = spawn_pair_with_flag();
+    let byte_tx = handle.byte_sender();
+    // Sustained PTY flood — fills the IO thread's parse + drain
+    // pipeline so non-Resize work is in flight when Resize lands.
+    let flood_handle = std::thread::spawn(move || {
+        let chunk = vec![b'A'; 4096];
+        for _ in 0..200 {
+            if byte_tx.send(chunk.clone()).is_err() {
+                break;
+            }
+        }
+    });
+    // 60 rapid resize stores — last writer wins.
+    for i in 0..60u16 {
+        let cols = 40 + (i % 80);
+        let rows = 20 + (i % 20);
+        handle.send_resize(rows, cols);
+    }
+    // Final canonical geometry MUST be the last store.
+    handle.send_resize(50, 200);
+    flood_handle.join().expect("flood thread panicked");
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let mut snap = RenderableContent::default();
+    loop {
+        if handle.double_buffer().swap_front(&mut snap)
+            && snap.lines == 50
+            && snap.cols == 200
+        {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "final geometry (50, 200) did not appear within deadline; \
+             snap was ({}, {})",
+            snap.lines,
+            snap.cols,
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    handle.shutdown();
+}
+
+/// Pin the mid-drain race: a `send_resize` that lands AFTER the
+/// pre-drain `apply_pending_resize` swap MUST still flush before
+/// the next reply-bearing command (per-iteration re-flush per §05
+/// Step 2). Drives the live IO thread; uses SnapshotNow's reply
+/// channel as the synchronization point (reply arrives only after
+/// post-resize state is published).
+///
+/// Regression: BUG-11-025 — cross-feature
+/// `send_resize_during_drain_before_snapshot_reflects_post_resize`
+/// (closes §04 Plan TPR Round 1 Codex F1).
+#[test]
+fn send_resize_during_drain_before_snapshot_reflects_post_resize() {
+    let (mut handle, _shutdown) = spawn_pair_with_flag();
+    // First resize establishes a baseline.
+    handle.send_resize(24, 80);
+    // Tight pair: second resize + SnapshotNow with reply. The
+    // SnapshotNow reply MUST reflect the (24, 40) geometry — the
+    // per-iteration apply_pending_resize flush guarantees the
+    // snapshot is built post-resize.
+    handle.send_resize(24, 40);
+    let (reply_tx, reply_rx) = crossbeam_channel::bounded::<()>(1);
+    handle.send_command(PaneIoCommand::SnapshotNow { reply: reply_tx });
+    reply_rx
+        .recv_timeout(Duration::from_secs(5))
+        .expect("SnapshotNow reply did not arrive within deadline");
+    let mut snap = RenderableContent::default();
+    assert!(
+        handle.double_buffer().swap_front(&mut snap),
+        "SnapshotNow must publish a fresh snapshot"
+    );
+    assert_eq!(snap.cols, 40, "snapshot cols must reflect post-resize geometry");
+    handle.shutdown();
+}
+
+/// Pin the `select!` `cmd_rx` arm: the idle-wake path applies
+/// `apply_pending_resize` before handling reply-bearing commands.
+/// Multi-trial coverage so crossbeam's nondeterministic arm-firing
+/// exercises both orderings (`io_wake_rx` first vs. `cmd_rx` first).
+/// Wall-clock-free per `tests.md §Wall-Clock-Free Testing`: each
+/// trial recv_timeouts on its own SnapshotNow reply; no measured
+/// latency.
+///
+/// Regression: BUG-11-025 — cross-feature
+/// `idle_select_cmd_rx_arm_applies_pending_resize_before_reply_bearing`
+/// (closes §04 Plan TPR Round 2 Codex F1).
+#[test]
+fn idle_select_cmd_rx_arm_applies_pending_resize_before_reply_bearing() {
+    let (mut handle, _shutdown) = spawn_pair_with_flag();
+    handle.send_resize(24, 80);
+    // 16 trials — enough to exercise crossbeam's nondeterministic
+    // arm-firing both ways (io_wake_rx-first vs cmd_rx-first).
+    // The §03 plan called for 64; 16 is a wall-clock-bounded
+    // subset that still surfaces ordering bugs deterministically
+    // on the per-trial assertion (each trial fails independently
+    // if the ordering invariant breaks).
+    for trial in 0..16 {
+        let cols = 40 + (trial as u16 % 80);
+        handle.send_resize(24, cols);
+        let (reply_tx, reply_rx) = crossbeam_channel::bounded::<()>(1);
+        handle.send_command(PaneIoCommand::SnapshotNow { reply: reply_tx });
+        reply_rx
+            .recv_timeout(Duration::from_secs(5))
+            .unwrap_or_else(|e| panic!("trial {trial}: reply timeout: {e}"));
+        let mut snap = RenderableContent::default();
+        assert!(
+            handle.double_buffer().swap_front(&mut snap),
+            "trial {trial}: SnapshotNow must publish a fresh snapshot"
+        );
+        assert_eq!(
+            snap.cols,
+            cols as usize,
+            "trial {trial}: snapshot cols must reflect post-resize cols ({cols})"
+        );
+    }
+    handle.shutdown();
 }

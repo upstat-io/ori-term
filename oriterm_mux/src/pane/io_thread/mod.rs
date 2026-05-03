@@ -30,7 +30,13 @@ use oriterm_core::{RenderableContent, Term};
 
 pub use commands::PaneIoCommand;
 pub use handle::{IoThreadConfig, PaneIoHandle, new_with_handle};
-pub(crate) use handle::{PENDING_RESIZE_NONE, unpack_pending_resize};
+// Encoding helpers stay io_thread-private (pub(super) on the items
+// makes them visible only inside io_thread). Sibling modules that
+// need them — `mod.rs::apply_pending_resize`, `tests.rs`,
+// `effect_router/tests.rs` — import via direct `use handle::...` /
+// `use super::handle::...` paths rather than re-export, so the
+// encoding stays out of the broader oriterm_mux public surface.
+use handle::{PENDING_RESIZE_NONE, unpack_pending_resize};
 pub(crate) use snapshot::SnapshotDoubleBuffer;
 
 use crate::PaneId;
@@ -165,6 +171,18 @@ impl<S: EffectSink> PaneIoThread<S> {
     /// Plan TPR Round 1 Codex F1; broadened to all commands per
     /// Round 3 Gemini F1.
     pub(super) fn apply_pending_resize(&mut self) {
+        // Empty-slot fast path: an `Acquire` load + branch costs ~one
+        // cycle and avoids the full `AcqRel` read-modify-write on every
+        // call (the common case is no pending resize). A second writer
+        // landing between the load and the swap still wins last-writer-
+        // wins via the swap below — the load is purely a fast-skip
+        // gate, not the source of truth. Per §04 Plan TPR Round 1 §05
+        // Step 2 doc-comment ("Idempotent — empty-slot fast path is one
+        // atomic load + one branch") and Round 1 code-TPR codex F2 +
+        // gemini F1 (WASTE: unconditional swap in hot drain path).
+        if self.pending_resize.load(Ordering::Acquire) == PENDING_RESIZE_NONE {
+            return;
+        }
         let packed = self
             .pending_resize
             .swap(PENDING_RESIZE_NONE, Ordering::AcqRel);
