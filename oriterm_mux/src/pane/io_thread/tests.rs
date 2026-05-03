@@ -722,9 +722,14 @@ fn produce_snapshot_fires_wakeup() {
 // --- Resize tests (Section 05) ---
 
 /// Helper: create a sync thread with a command sender for testing.
+///
+/// Bounded to match production shape (BUG-11-025). Tests using this
+/// fixture do NOT exercise saturation — they drive `drain_commands`
+/// directly with a small command set — so production-shape parity
+/// matters more than headroom.
 fn make_sync_thread_with_cmd_tx() -> (PaneIoThread<VoidEffectSink>, Sender<PaneIoCommand>) {
-    let (cmd_tx, cmd_rx) = crossbeam_channel::unbounded::<PaneIoCommand>();
-    let (_, byte_rx) = crossbeam_channel::unbounded::<Vec<u8>>();
+    let (cmd_tx, cmd_rx) = crossbeam_channel::bounded::<PaneIoCommand>(CMD_CHANNEL_CAPACITY);
+    let (_, byte_rx) = crossbeam_channel::bounded::<Vec<u8>>(BYTE_CHANNEL_CAPACITY);
     let (_dummy_pane_id, _dummy_mux_tx, _dummy_exit_rx, _dummy_wake_rx) = test_dummy_channels();
     let thread = PaneIoThread {
         terminal: make_term(),
@@ -1539,15 +1544,12 @@ fn test_io_thread_panic_does_not_crash_app() {
     // forbidden per `.claude/rules/tests.md §Wall-Clock-Free Testing`.
     handle.send_command(PaneIoCommand::MarkAllDirty);
 
-    // shutdown() must complete without hanging (join catches the panic).
-    let start = Instant::now();
+    // shutdown() must complete without hanging (join catches the
+    // panic). Wall-clock-free per `tests.md §Wall-Clock-Free Testing`:
+    // shutdown() blocks on the join handle internally; if the join
+    // ever returns, the test passes. The 150s process-level timeout
+    // is the only safety valve. Per Round 2 code-TPR codex F5.
     handle.shutdown();
-    let elapsed = start.elapsed();
-
-    assert!(
-        elapsed < Duration::from_secs(2),
-        "shutdown after panic took {elapsed:?}, expected < 2s"
-    );
 }
 
 /// Concurrent resize + byte flood: one thread floods bytes, another sends
@@ -3688,6 +3690,44 @@ fn is_reply_bearing_predicate_matches_reply_field_presence() {
     use oriterm_core::index::Side;
     use oriterm_core::{CursorShape, Palette, Selection, Theme};
 
+    /// Test-local exhaustive classifier — NO wildcard arm. When a
+    /// future contributor adds a new `PaneIoCommand` variant, the
+    /// compiler refuses to build this test until the variant is
+    /// classified here, AND the assertion at the bottom verifies
+    /// the classification matches `is_reply_bearing()`. Per Round 2
+    /// codex F3 — the prior array-based test had no compile-time
+    /// exhaustiveness; a new reply-bearing variant could ship with
+    /// the predicate out of date and the test would still pass.
+    fn classify_expected(cmd: &PaneIoCommand) -> bool {
+        match cmd {
+            // Reply-bearing — must return true.
+            PaneIoCommand::SnapshotNow { .. }
+            | PaneIoCommand::ExtractText { .. }
+            | PaneIoCommand::ExtractHtml { .. }
+            | PaneIoCommand::EnterMarkMode { .. }
+            | PaneIoCommand::SelectCommandOutput { .. }
+            | PaneIoCommand::SelectCommandInput { .. } => true,
+            // Non-reply — must return false.
+            PaneIoCommand::ScrollDisplay(_)
+            | PaneIoCommand::ScrollToBottom
+            | PaneIoCommand::ScrollToPreviousPrompt
+            | PaneIoCommand::ScrollToNextPrompt
+            | PaneIoCommand::SetTheme(_, _)
+            | PaneIoCommand::SetCursorShape(_)
+            | PaneIoCommand::SetBoldIsBright(_)
+            | PaneIoCommand::MarkAllDirty
+            | PaneIoCommand::SetImageConfig(_)
+            | PaneIoCommand::SetCellDimensions { .. }
+            | PaneIoCommand::OpenSearch
+            | PaneIoCommand::CloseSearch
+            | PaneIoCommand::SearchSetQuery(_)
+            | PaneIoCommand::SearchNextMatch
+            | PaneIoCommand::SearchPrevMatch
+            | PaneIoCommand::Reset
+            | PaneIoCommand::Shutdown => false,
+        }
+    }
+
     let (snap_tx, _snap_rx) = crossbeam_channel::bounded::<()>(1);
     let (xt_tx, _xt_rx) = crossbeam_channel::bounded::<Option<String>>(1);
     let (xh_tx, _xh_rx) = crossbeam_channel::bounded::<Option<(String, String)>>(1);
@@ -3696,7 +3736,8 @@ fn is_reply_bearing_predicate_matches_reply_field_presence() {
     let (in_tx, _in_rx) = crossbeam_channel::bounded::<Option<Selection>>(1);
 
     let sel = Selection::new_char(StableRowIndex(0), 0, Side::Left);
-    let reply_bearing = [
+    let cmds = [
+        // Reply-bearing
         PaneIoCommand::SnapshotNow { reply: snap_tx },
         PaneIoCommand::ExtractText {
             selection: sel,
@@ -3711,15 +3752,7 @@ fn is_reply_bearing_predicate_matches_reply_field_presence() {
         PaneIoCommand::EnterMarkMode { reply: mark_tx },
         PaneIoCommand::SelectCommandOutput { reply: out_tx },
         PaneIoCommand::SelectCommandInput { reply: in_tx },
-    ];
-    for cmd in &reply_bearing {
-        assert!(
-            cmd.is_reply_bearing(),
-            "is_reply_bearing must return true for {cmd:?}"
-        );
-    }
-
-    let non_reply = [
+        // Non-reply
         PaneIoCommand::ScrollDisplay(0),
         PaneIoCommand::ScrollToBottom,
         PaneIoCommand::ScrollToPreviousPrompt,
@@ -3746,10 +3779,12 @@ fn is_reply_bearing_predicate_matches_reply_field_presence() {
         PaneIoCommand::Reset,
         PaneIoCommand::Shutdown,
     ];
-    for cmd in &non_reply {
-        assert!(
-            !cmd.is_reply_bearing(),
-            "is_reply_bearing must return false for {cmd:?}"
+    for cmd in &cmds {
+        let expected = classify_expected(cmd);
+        assert_eq!(
+            cmd.is_reply_bearing(),
+            expected,
+            "is_reply_bearing classification mismatch for {cmd:?}: expected {expected}"
         );
     }
 }
