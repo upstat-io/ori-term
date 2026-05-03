@@ -2086,9 +2086,22 @@ fn is_write_stalled_returns_false_for_unknown_pane_via_daemon() {
 /// then runs `sleep 600` as the foreground job. Bytes sent via `send_input`
 /// pile up in the kernel pipe buffer because nothing reads them — `sleep`
 /// doesn't read stdin and the raw line discipline doesn't drain via echo.
+///
+/// Synchronization uses a `BUG_11_020_CONFIG_DONE` sentinel (poll-the-condition
+/// per `tests.md §Wall-Clock-Free Testing`), not a fixed `thread::sleep` —
+/// when the snapshot shows the sentinel, the `stty` command has completed and
+/// `sleep 600` is in the foreground.
 fn configure_pane_for_stall(client: &mut MuxClient, pane_id: PaneId) {
-    client.send_input(pane_id, b"stty raw -echo; sleep 600\n");
-    thread::sleep(Duration::from_millis(500));
+    client.send_input(
+        pane_id,
+        b"stty raw -echo; echo BUG_11_020_CONFIG_DONE; sleep 600\n",
+    );
+    wait_for_text_in_snapshot(
+        client,
+        pane_id,
+        "BUG_11_020_CONFIG_DONE",
+        Duration::from_secs(30),
+    );
 }
 
 /// Pump 8 MiB chunks until `client.is_write_stalled(pane_id)` returns `true`
@@ -2170,14 +2183,20 @@ fn signal_child_after_is_write_stalled_kills_writer_via_daemon() {
     let mut client = daemon.connect_client();
     let pane_id = spawn_test_pane_ready(&mut client);
 
-    // Inline a fixture that prints `FG_GONE` after sleep dies — confirms
+    // Inline fixture that prints `FG_GONE` after sleep dies — confirms
     // signal_child reached the foreground PGID and bash continued to the
-    // next command.
+    // next command. Synchronization via `BUG_11_020_CONFIG_DONE` sentinel
+    // (poll-the-condition per `tests.md §Wall-Clock-Free Testing`).
     client.send_input(
         pane_id,
-        b"stty raw -echo; sleep 600; stty cooked echo; echo FG_GONE\n",
+        b"stty raw -echo; echo BUG_11_020_CONFIG_DONE; sleep 600; stty cooked echo; echo FG_GONE\n",
     );
-    thread::sleep(Duration::from_millis(500));
+    wait_for_text_in_snapshot(
+        &mut client,
+        pane_id,
+        "BUG_11_020_CONFIG_DONE",
+        Duration::from_secs(30),
+    );
 
     let observed = pump_until_stalled(&mut client, pane_id);
     assert!(
