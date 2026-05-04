@@ -116,7 +116,7 @@ fn urgency_hints_decrst_clears_flag() {
     assert!(!t.mode().contains(TermMode::URGENCY_HINTS));
 }
 
-/// BUG-08-014 — semantic pin: BEL with mode 1042 set emits `HostEffect::UrgencyHint`
+/// — property: BEL with mode 1042 set emits `HostEffect::UrgencyHint`
 /// in addition to the unconditional `HostEffect::Bell`.
 #[test]
 fn bell_with_mode_1042_active_emits_urgency_hint() {
@@ -138,7 +138,7 @@ fn bell_with_mode_1042_active_emits_urgency_hint() {
     );
 }
 
-/// BUG-08-014 — negative pin: BEL without mode 1042 must NOT emit `UrgencyHint`.
+/// — regression guard: BEL without mode 1042 must NOT emit `UrgencyHint`.
 #[test]
 fn bell_without_mode_1042_must_not_emit_urgency_hint() {
     let mut t = term_with_effect_sink();
@@ -161,7 +161,7 @@ fn bell_without_mode_1042_must_not_emit_urgency_hint() {
     );
 }
 
-/// BUG-08-014 — toggle interaction: SET → RESET → SET, then BEL emits urgency.
+/// — toggle interaction: SET → RESET → SET, then BEL emits urgency.
 #[test]
 fn bell_after_mode_1042_decset_decrst_decset_emits_urgency_hint() {
     let mut t = term_with_effect_sink();
@@ -179,7 +179,7 @@ fn bell_after_mode_1042_decset_decrst_decset_emits_urgency_hint() {
     );
 }
 
-/// BUG-08-014 — toggle interaction: SET → RESET, then BEL emits no urgency.
+/// — toggle interaction: SET → RESET, then BEL emits no urgency.
 #[test]
 fn bell_after_mode_1042_decset_decrst_must_not_emit_urgency_hint() {
     let mut t = term_with_effect_sink();
@@ -196,7 +196,7 @@ fn bell_after_mode_1042_decset_decrst_must_not_emit_urgency_hint() {
     );
 }
 
-/// BUG-08-014 — repeated emission: each BEL with mode 1042 set emits one urgency hint.
+/// — repeated emission: each BEL with mode 1042 set emits one urgency hint.
 #[test]
 fn three_bells_with_mode_1042_active_emit_three_urgency_hints() {
     let mut t = term_with_effect_sink();

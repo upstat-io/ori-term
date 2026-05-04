@@ -1,7 +1,7 @@
 //! Replay the notcurses-demo startup handshake capture and dump the
 //! response stream ori_term produces.
 //!
-//! Regression anchor for BUG-06-017 investigation — the captured startup
+//! Regression anchor for investigation — the captured startup
 //! handshake at `plans/spec-conformance/captures/notcurses-demo-intro.cap`
 //! exercises every identification query (DA1/DA2/DA3, XTVERSION, XTGETTCAP,
 //! DSR, OSC 4/10/11, DECRQM 2026/1016, XTSMGRAPHICS, KITTYQUERY, CSI 14t/18t,
@@ -17,13 +17,13 @@ use oriterm_test_support::spec_chain::{SpecHarness, pty_writes};
 /// Load the recorded notcurses startup bytes from the wrapper repo.
 ///
 /// Three-state return distinguishes (a) wrapper absent → graceful skip
-/// (`Ok(None)` per `.claude/rules/tests.md §Graceful Skip Protocol`) from
+/// (`Ok(None)` Skip Protocol`) from
 /// (b) wrapper present + file readable (`Ok(Some(bytes))`) from (c) wrapper
 /// present + file unreadable (`Err(e)` propagating the I/O error). Per
-/// `.claude/rules/impl-hygiene.md §Error Handling at Boundaries` —
+/// Handling at Boundaries` —
 /// silencing real I/O errors as graceful skip is forbidden.
 ///
-/// Path discovery via the SSOT helper introduced in BUG-08-028 — never
+/// Path discovery via the SSOT helper introduced in — never
 /// reintroduce `include_bytes!` against wrapper-resident files (compile-time
 /// bake breaks standalone term_repo checkout).
 fn notcurses_startup_bytes() -> std::io::Result<Option<Vec<u8>>> {
@@ -60,7 +60,7 @@ fn replay_notcurses_startup() -> Option<Vec<u8>> {
 /// queue via the `ultramegaok_demo` thread in `input.c:120` and trigger
 /// `interrupt_demo()` through `menu_or_hud_key`.
 ///
-/// This is the canonical framing pin for the BUG-06-017 hypothesis
+/// This is the canonical framing pin for the hypothesis
 /// ("malformed reply interpreted by demo_getc as spurious user input").
 #[test]
 fn notcurses_startup_reply_stream_has_no_bare_printable_bytes() {
@@ -98,8 +98,8 @@ fn notcurses_startup_reply_stream_contains_no_stray_q_bytes() {
 /// Pins: notcurses-demo startup must emit at least one PTY reply.
 /// A zero-reply run would indicate the VT parser silently dropped every
 /// identification query (DA1/DA2/DA3/DSR/XTVERSION/...) which is the same
-/// failure mode BUG-06-017 investigates. Run with `-- --nocapture` to
-/// inspect the per-effect dump. Anchor: BUG-06-017 / HYG-13.1-010.
+/// failure mode investigates. Run with `-- --nocapture` to
+/// inspect the per-effect dump. Anchor: / HYG-13.1-010.
 #[test]
 fn notcurses_startup_emits_at_least_one_pty_reply() {
     let bytes = match notcurses_startup_bytes() {
@@ -338,7 +338,7 @@ fn scan_escape_stream_emits_out_of_frame_for_raw_bytes() {
 }
 
 /// Pins: scan_escape_stream emits OutOfFrame for a stray `q` byte after a
-/// terminated CSI frame. Negative pin for find_stray_q_bytes. Anchor: HYG-13.1-008.
+/// terminated CSI frame. Regression guard for find_stray_q_bytes. Anchor: HYG-13.1-008.
 #[test]
 fn scan_escape_stream_emits_out_of_frame_for_stray_q_after_csi() {
     let stream = b"\x1b[0mq"; // CSI SGR reset, then stray q

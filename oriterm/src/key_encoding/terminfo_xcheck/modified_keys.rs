@@ -86,7 +86,7 @@ fn modified_keys_match_terminfo() {
     );
 }
 
-/// Negative pin: `infocmp_query` returns `None` for a cap not declared
+/// Regression guard: `infocmp_query` returns `None` for a cap not declared
 /// in `extra/ori_term.info`. Validates the parsing helper itself.
 #[test]
 fn infocmp_query_returns_none_for_cap_not_in_ori_term() {

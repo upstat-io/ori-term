@@ -245,8 +245,8 @@ fn collect_ids(ids: &SettingsIds) -> HashSet<u64> {
 /// family the host system does not have installed, the dropdown still includes
 /// the configured name (prepended at index 1, after "Default (System)"), so the
 /// open dialog reflects the saved configuration faithfully rather than silently
-/// snapping to "Default (System)" (closes opencode F2 GAP per
-/// `bug-tracker/plans/BUG-02-012/section-06-tpr-findings.md` Round 1).
+/// snapping to "Default (System)" (closes F2 GAP per
+/// `bug-tracker/plans//section-06-tpr-findings.md` Round 1).
 #[test]
 fn font_family_dropdown_prepends_configured_uninstalled_family() {
     let mut config = Config::default();

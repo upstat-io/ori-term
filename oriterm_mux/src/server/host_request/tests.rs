@@ -1,4 +1,4 @@
-//! Tests for daemon-mode host-request dispatch (BUG-11-011).
+//! Tests for daemon-mode host-request dispatch ().
 
 use std::collections::HashMap;
 
@@ -117,7 +117,7 @@ fn select_responder_returns_none_when_no_subscribers() {
 // request → notify → reply pipeline.
 
 /// Lowest priority value wins — focused (priority 0) beats hidden (priority 2).
-/// Regression for BUG-11-011 §03 cell `select_responder picks lowest-priority u8 (focused = 0)`.
+/// Regression for §03 cell `select_responder picks lowest-priority u8 (focused = 0)`.
 #[test]
 fn pick_lowest_priority_picks_focused_client() {
     let focused = ClientId::from_raw(2);
@@ -128,7 +128,7 @@ fn pick_lowest_priority_picks_focused_client() {
 }
 
 /// Equal-priority ties broken deterministically by ClientId numerical order
-/// (lower raw value wins). Regression for BUG-11-011 §03 cell
+/// (lower raw value wins). Regression for §03 cell
 /// `select_responder ties broken by ClientId numerical order (determinism)`.
 #[test]
 fn pick_lowest_priority_breaks_ties_by_client_id_numerical_order() {

@@ -334,7 +334,7 @@ pub fn dispatch_request(
 
         MuxPdu::Unsubscribe { pane_id } => {
             conn.unsubscribe(pane_id);
-            // BUG-11-011: drop pending host-replies the unsubscribing client
+ // : drop pending host-replies the unsubscribing client
             // owned for this pane — the responder is leaving the pane's
             // notification stream and won't observe / fulfill any further
             // notifications. Without this the daemon would leak entries

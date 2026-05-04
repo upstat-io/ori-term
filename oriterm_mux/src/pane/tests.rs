@@ -69,10 +69,10 @@ fn selection_dirty_swap_clear() {
     assert!(!flag.load(Ordering::Acquire));
 }
 
-/// Regression: BUG-11-005 — `resolve_target_pgid` with no master fd must fall
+/// Regression: — `resolve_target_pgid` with no master fd must fall
 /// back to the shell PID and report `resolved_via_tcgetpgrp = false` so the
 /// caller does NOT apply ESRCH-as-success on the fallback path.
-/// See: bug-tracker/plans/BUG-11-005/00-overview.md
+/// See: bug-tracker/plans//00-overview.md
 #[cfg(unix)]
 #[test]
 fn resolve_target_pgid_with_no_master_fd_returns_shell_pid() {
@@ -84,11 +84,11 @@ fn resolve_target_pgid_with_no_master_fd_returns_shell_pid() {
     );
 }
 
-/// Regression: BUG-11-005 — `resolve_target_pgid` with a non-TTY master fd
+/// Regression: — `resolve_target_pgid` with a non-TTY master fd
 /// (a pipe) must fall back to the shell PID. `tcgetpgrp` on a pipe returns
 /// -1 with `ENOTTY`; the helper must report `resolved_via_tcgetpgrp = false`
 /// so the caller does NOT apply ESRCH-as-success on the fallback path.
-/// See: bug-tracker/plans/BUG-11-005/00-overview.md
+/// See: bug-tracker/plans//00-overview.md
 #[cfg(unix)]
 #[test]
 #[allow(

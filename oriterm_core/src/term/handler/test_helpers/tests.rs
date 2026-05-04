@@ -10,7 +10,7 @@ use super::{feed, term_with_recorder};
 
 #[test]
 fn recording_listener_captures_title_event() {
-    // SEMANTIC PIN — feed `\x1b]2;hello\x07` (OSC 2 set window
+ // Verifies — feed `\x1b]2;hello\x07` (OSC 2 set window
     // title to "hello") through the VTE parser into a
     // `Term<RecordingListener>` and assert the recorder captured
     // an `Event::Title("hello")` entry. If the recorder stops
@@ -42,7 +42,7 @@ fn recording_listener_starts_with_empty_event_log() {
 
 #[test]
 fn feed_advances_processor_with_printable_bytes() {
-    // SEMANTIC PIN — `feed` correctly advances a fresh `Processor`
+ // Verifies — `feed` correctly advances a fresh `Processor`
     // and routes printable bytes into the handler's `input`
     // method. A regression that swapped `feed` to use a stale or
     // unconfigured processor would surface here as the cells

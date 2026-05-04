@@ -67,7 +67,7 @@ fn osc2_sets_only_title() {
     );
 }
 
-/// Negative pin: `OSC 0 ; ST` (empty `Pt`) sets BOTH slots to the empty
+/// Regression guard: `OSC 0 ; ST` (empty `Pt`) sets BOTH slots to the empty
 /// string. The dispatcher always passes `Some(text)` to the handler —
 /// `Some("")` for an empty payload — so the fields observably become
 /// `""`, NOT `None` or the prior value. A regression that special-cased

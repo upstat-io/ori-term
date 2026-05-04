@@ -54,7 +54,7 @@ const PING_INTERVAL: Duration = Duration::from_secs(5);
 
 /// IPC transport to the mux daemon.
 ///
-/// Manages background **reader** and **writer** threads (BUG-11-047
+/// Manages background **reader** and **writer** threads (
 /// architectural split): the writer drains the outbound mpsc and writes
 /// frames to its half of the cloned stream; the reader pulls inbound
 /// frames from its half and dispatches them to the shared pending map or
@@ -160,13 +160,13 @@ impl ClientTransport {
 
         // Split the stream into independent read + write halves so the
         // reader thread can drain replies while the writer thread is
-        // blocked on a backpressured write (BUG-11-047).
+ // blocked on a backpressured write ().
         let write_stream = stream
             .try_clone()
             .map_err(|e| io::Error::other(format!("failed to clone IPC stream for writer: {e}")))?;
         // Third clone reserved for `Drop` — calls `shutdown_write` so a
         // writer blocked in `encode_frame` exits promptly without waiting
-        // for the daemon to drain (codex round 1 finding pin).
+ // for the daemon to drain ( round 1 finding pin).
         let write_shutdown_handle = write_stream.try_clone().map_err(|e| {
             io::Error::other(format!("failed to clone IPC stream for shutdown: {e}"))
         })?;
@@ -279,7 +279,7 @@ impl ClientTransport {
     /// Fallible version of `fire_and_forget` — surfaces transport
     /// liveness / mpsc failures as `io::Error` so callers (notably
     /// `MuxClient::fulfill_host_request`) can propagate them rather than
-    /// silently dropping data (codex-004 round 1 finding).
+ /// silently dropping data (-004 round 1 finding).
     pub(super) fn try_fire_and_forget(&mut self, pdu: MuxPdu) -> io::Result<()> {
         if !self.is_alive() {
             return Err(io::Error::new(

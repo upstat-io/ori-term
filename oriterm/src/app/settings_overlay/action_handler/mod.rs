@@ -307,7 +307,7 @@ fn apply_default_terminal_state(enabled: bool) {
 #[cfg(any(not(target_os = "windows"), test))]
 fn apply_default_terminal_state(_enabled: bool) {}
 
-/// Bell page: animation, duration, desktop notification settings (BUG-11-016).
+/// Bell page: animation, duration, desktop notification settings ().
 fn handle_bell(action: &WidgetAction, ids: &SettingsIds, config: &mut Config) -> bool {
     match action {
         WidgetAction::Selected { id, index } if *id == ids.bell_animation_dropdown => {

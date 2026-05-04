@@ -187,8 +187,8 @@ pub(super) fn try_user_family_with_bridge(
 /// Inner shape of [`try_user_family_with_bridge`] with the catalog lookup
 /// injected. Production calls `super::family_paths`; tests inject a fixture
 /// closure so the bridge integration can be exercised without the global
-/// `OnceLock`-cached catalog (closes the codex F2 host-font skip per
-/// `bug-tracker/plans/BUG-02-012/section-06-tpr-findings.md` Round 0).
+/// `OnceLock`-cached catalog (closes the F2 host-font skip per
+/// `bug-tracker/plans//section-06-tpr-findings.md` Round 0).
 pub(super) fn try_user_family_with_bridge_using(
     name: &str,
     index: &HashMap<String, PathBuf>,
@@ -307,7 +307,7 @@ pub(super) fn variant_from_index(
 
 /// Try platform default families in priority order. Identical for Linux and
 /// macOS — both walk `PRIMARY_FAMILIES` against the filename index. Closes
-/// the gemini F1 LEAK:algorithmic-duplication finding from §06 Round 1.
+/// the F1 LEAK:algorithmic-duplication finding from §06 Round 1.
 pub(super) fn try_platform_defaults_with_index(
     index: &HashMap<String, PathBuf>,
 ) -> Option<DiscoveryResult> {
@@ -320,7 +320,7 @@ pub(super) fn try_platform_defaults_with_index(
 
 /// Resolve a user-configured fallback font name to a path. Identical for
 /// Linux and macOS — try filename in index, then absolute path. Closes the
-/// gemini F1 LEAK:algorithmic-duplication finding from §06 Round 1.
+/// F1 LEAK:algorithmic-duplication finding from §06 Round 1.
 pub(super) fn resolve_user_fallback_with_index(
     family: &str,
     index: &HashMap<String, PathBuf>,

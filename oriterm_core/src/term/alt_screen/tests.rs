@@ -4,8 +4,8 @@
 //! keyboard-mode-stack swap + reapply behavior in `toggle_alt_common`.
 //!
 //! Existing tests migrated from `term/tests.rs` after the alt_screen
-//! directory-module conversion (BUG-08-012). New toggle-reapply tests
-//! pin the pre-existing DRIFT fix landed with BUG-08-012.
+//! directory-module conversion (). New toggle-reapply tests
+//! pin the pre-existing DRIFT fix landed with.
 
 use std::collections::VecDeque;
 
@@ -146,11 +146,11 @@ fn resize_on_alt_screen_then_snapshot() {
     assert_eq!(snap.cells.len(), 10 * 40);
 }
 
-// --- New BUG-08-012 toggle_alt_common drift/paired-snapshot tests ---
+// --- New toggle_alt_common drift/paired-snapshot tests ---
 
-/// Regression: BUG-08-012 — kitty keyboard mode bits leaked across
+/// Regression: — kitty keyboard mode bits leaked across
 /// `?1049h/l` toggles before the reapply-top fix in `toggle_alt_common`.
-/// See: bug-tracker/plans/completed/BUG-08-012/00-overview.md
+/// See: bug-tracker/plans/completed//00-overview.md
 #[test]
 fn toggle_alt_common_swaps_nonempty_stacks_reapplies_new_active_top() {
     let mut term = make_term();
@@ -187,7 +187,7 @@ fn toggle_alt_common_swaps_nonempty_stacks_reapplies_new_active_top() {
     );
 }
 
-/// Regression: BUG-08-012 — empty alt stack left primary's KITTY bits
+/// Regression: — empty alt stack left primary's KITTY bits
 /// active after `?1049h`.
 #[test]
 fn toggle_alt_common_swaps_to_empty_alt_clears_mode_bits() {
@@ -206,7 +206,7 @@ fn toggle_alt_common_swaps_to_empty_alt_clears_mode_bits() {
     );
 }
 
-/// Regression: BUG-08-012 — paired snapshot fields must swap alongside
+/// Regression: — paired snapshot fields must swap alongside
 /// stacks so a command-boundary snapshot taken on one screen only fires
 /// restore on that screen.
 #[test]

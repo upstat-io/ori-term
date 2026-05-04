@@ -120,19 +120,19 @@ fn pty_reader_large_buffer_forwarding() {
     assert_eq!(received, data);
 }
 
-// --- BUG-11-002: bounded-channel disconnect-unblock contract ---
+// --- : bounded-channel disconnect-unblock contract ---
 
 /// Pin 5 — bounded-channel disconnect unblocks blocked sender.
 ///
-/// Regression: BUG-11-002. The bounded byte-channel back-pressure design
+/// Regression:. The bounded byte-channel back-pressure design
 /// relies on `crossbeam_channel`'s disconnect-unblock contract: when the
 /// receiver is dropped, a blocked or pending `send()` on the sender
 /// returns `Err(SendError)` rather than hanging. This UNIT-tests the
 /// crossbeam contract directly so the bounded-channel design can rely on
 /// it without spinning up a `PaneIoThread` (whose IO thread would
 /// deadlock when the byte queue saturates — verified during /tpr-review
-/// round 3, opencode F1/F2 + gemini F1 + codex F4).
-/// See: bug-tracker/plans/BUG-11-002/section-03-tdd-matrix.md §"Semantic pins" Pin 5.
+/// round 3, F1/F2 + F1 + F4).
+/// See: bug-tracker/plans//section-03-tdd-matrix.md §"Semantic pins" Pin 5.
 #[test]
 fn reader_send_returns_err_on_disconnect() {
     // Bounded channel of capacity 1 — easy to fill.
@@ -150,7 +150,7 @@ fn reader_send_returns_err_on_disconnect() {
     // (If the sender hadn't yet entered send(), it sees the disconnected
     // channel on entry and returns SendError immediately. Either branch
     // satisfies the assertion — wall-clock-free per
-    // `.claude/rules/tests.md §Wall-Clock-Free Testing`.)
+ // -Clock-Free Testing`.)
     drop(byte_rx);
 
     let result = join.join().expect("sender thread joined cleanly");

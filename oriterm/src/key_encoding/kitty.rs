@@ -26,7 +26,7 @@ use oriterm_core::TermMode;
 /// Codepoint table mirrors alacritty's `try_build_numpad`
 /// (alacritty/src/input/keyboard.rs:434-466) and wezterm's `Numpad(n)`
 /// mapping. Without this disambiguation, numpad keys are indistinguishable
-/// from their main-row counterparts at the application layer (BUG-08-026).
+/// from their main-row counterparts at the application layer ().
 fn resolve_numpad_codepoint(input: &KeyInput<'_>) -> Option<u32> {
     if input.location != KeyLocation::Numpad {
         return None;
@@ -144,7 +144,7 @@ fn kitty_codepoint(key: NamedKey) -> Option<u32> {
 ///
 /// When the key is on the numpad AND any kitty flag is active, map to the
 /// dedicated 57399-57426 codepoint range so applications can distinguish
-/// numpad-1 from main-row-1 (BUG-08-026). MUST run ahead of the legacy
+/// numpad-1 from main-row-1 (). MUST run ahead of the legacy
 /// bypass (numpad arrows would otherwise route to legacy CSI A/B/C/D) and
 /// ahead of the standard `resolve_codepoint` (which would hit the
 /// `should_send_as_text` fast-path and emit `b"1"` instead of CSI u).
@@ -268,7 +268,7 @@ enum CodepointOrBytes {
 ///
 /// The Character / Unidentified arms have no proper CSI u encoding for
 /// multi-char compositions or unrecognized keys — they fall back to text
-/// (or to the logical `Key::Character` content per BUG-08-013). Non-Press
+/// (or to the logical `Key::Character` content per ). Non-Press
 /// events with `REPORT_EVENT_TYPES` active suppress in those arms because
 /// CSI u requires a codepoint and there is none to emit.
 fn resolve_codepoint(
@@ -316,7 +316,7 @@ fn resolve_character_codepoint(
         {
             // Prefer winit's `text`; fall back to the logical
             // `Key::Character` content. Robust to backends that don't
-            // populate `text` for numpad keys (BUG-08-013).
+ // populate `text` for numpad keys ().
             let bytes: Vec<u8> = input
                 .text
                 .map_or_else(|| ch.as_bytes().to_vec(), |t| t.as_bytes().to_vec());

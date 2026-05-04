@@ -27,7 +27,7 @@ static TEST_ID: AtomicU32 = AtomicU32::new(0);
 /// directory on every exit path including panic unwinding, covering the
 /// same RAII invariant `oriterm_test_support::TempDirGuard` provides
 /// (the wrapper is unavailable here per the `oriterm_ipc` standalone
-/// crate-boundary rule in `.claude/rules/crate-boundaries.md`).
+/// crate-boundary rule in ).
 fn test_addr() -> (TempDir, PathBuf) {
     let id = TEST_ID.fetch_add(1, Ordering::Relaxed);
     let pid = std::process::id();

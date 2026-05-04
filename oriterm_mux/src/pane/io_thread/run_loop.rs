@@ -1,7 +1,7 @@
 //! Run-loop orchestration for `PaneIoThread` — the `select!` bodies and the
 //! PTY-EOF drain sequence.
 //!
-//! Extracted from `mod.rs` (§BUG-11-014 / §BUG-08-019-b split) so the struct
+//! Extracted from `mod.rs` (§ / §-b split) so the struct
 //! definition stays short and the loop bodies + EOF sequence each have a
 //! single-responsibility home. The loop arms remain duplicated between the
 //! sync-deadline and no-deadline branches because the `default(timeout)` arm
@@ -61,7 +61,7 @@ impl<S: EffectSink> PaneIoThread<S> {
                 // would fall through to tick_animations + maybe_produce_snapshot
                 // + maybe_shrink_buffers + select! (timeout up to
                 // IDLE_WAKE_CEILING = 24h), delaying shutdown by an arbitrary
-                // wait. Regression: BUG-11-002 / /tpr-review round 4 codex F1.
+ // wait. Regression: / /tpr-review round 4 F1.
                 self.maybe_produce_snapshot();
                 return;
             }
@@ -81,9 +81,9 @@ impl<S: EffectSink> PaneIoThread<S> {
             //     ~O(1) when capacity is already tight, so cost is
             //     negligible during active parsing and only does real
             //     work after a flood quiesces. Increments
-            //     `shrink_call_count` (cfg(test)) so §03 negative pin 3
+ // `shrink_call_count` (cfg(test)) so §03 regression guard 3
             //     can verify the OUTER-loop call path fires (not the
-            //     `select!` `default(timeout)` arm). Regression: BUG-11-002.
+ // `select!` `default(timeout)` arm). Regression:.
             self.maybe_shrink_buffers();
 
             // 4c. Final shutdown check — closes the gap between the
@@ -97,8 +97,8 @@ impl<S: EffectSink> PaneIoThread<S> {
             //     Step 6C ALSO has the writer thread `try_send` an
             //     `io_wake` so the in-`select!` window closes; this
             //     pre-`select!` check covers any setter that bypasses
-            //     the wake (defense in depth). Regression: BUG-11-025
-            //     §04 Plan TPR Round 1 Opencode F1 + Round 4 Codex F2.
+ // the wake (defense in depth). Regression
+ // §04 review round 1 Opencode F1 + Round 4 Codex F2.
             if self.shutdown.load(Ordering::Acquire) {
                 self.maybe_produce_snapshot();
                 return;
@@ -142,7 +142,7 @@ impl<S: EffectSink> PaneIoThread<S> {
                             // pair can yield a pre-resize SnapshotNow
                             // reply if `select!` non-deterministically
                             // picks `cmd_rx` first. Pinned by §04 Plan
-                            // TPR Round 2 Codex F1 + Round 3 Gemini F1
+ // review round 2 Codex F1 + Round 3 Gemini F1
                             // + Round 5 Codex F3 / Opencode F1.
                             self.apply_pending_resize();
                             if matches!(&cmd, PaneIoCommand::Shutdown) {

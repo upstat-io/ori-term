@@ -21,7 +21,7 @@
 //! `session/version_gate.rs` leaf. A subsequent iter
 //! converted the leaf to a directory module: `version_gate/mod.rs`
 //! plus its sibling `version_gate/tests.rs`, per the
-//! `.claude/rules/test-organization.md` "one tests.rs per source
+//! "one tests.rs per source
 //! file" rule. The runtime tool-availability probes
 //! (`tool_available`, `tack_available`, etc.) were extracted in
 //! the same wave into `session/tools/mod.rs` (also a

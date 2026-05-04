@@ -117,7 +117,7 @@ fn apex_layer_determines_applicable_rungs() {
 /// `oriterm_test_support`'s `RecordingHandler`. The completeness assert
 /// at the end pins the matrix size — adding a row without bumping the
 /// count is a compile-passing test bug per
-/// `.claude/rules/tests.md` §Self-verifying matrix completeness.
+/// §Self-verifying matrix completeness.
 #[test]
 fn spec_harness_records_all_iterm2_non_image_dispatches() {
     const OSC_1337_NON_IMAGE_SYNC: &[(&[u8], &str)] = &[

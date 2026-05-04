@@ -120,7 +120,7 @@ fn terminfo_env_drop_cleans_temp_dir() {
 
 #[test]
 fn apply_env_sets_three_vars() {
-    // SSOT semantic pin: `env_pairs()` is the canonical (name,
+ // SSOT property: `env_pairs()` is the canonical (name,
     // value) triple that BOTH `apply_env(&mut CommandBuilder)` AND
     // the 02.4 child-process integrity test consume. We assert
     // here that:
@@ -221,7 +221,7 @@ fn terminfo_env_repeated_compile_stress() {
     }
 }
 
-// Negative pin — ensures TerminfoEnv would fail loudly if the
+// Regression guard — ensures TerminfoEnv would fail loudly if the
 // committed source were ever corrupted. The typo-safe
 // `TerminfoVariant` enum eliminates the "unknown term name" negative
 // pin (it would not even compile).

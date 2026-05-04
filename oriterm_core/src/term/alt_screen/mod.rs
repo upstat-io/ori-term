@@ -97,7 +97,7 @@ impl<S: EffectSink> Term<S> {
         );
         // Swap the paired pre-command stack snapshots alongside the
         // stacks so a command-boundary snapshot taken on one screen
-        // only fires restore on that screen. BUG-08-012.
+ // only fires restore on that screen..
         std::mem::swap(
             &mut self.pre_command_kb_stack_snapshot,
             &mut self.inactive_pre_command_kb_stack_snapshot,
@@ -105,7 +105,7 @@ impl<S: EffectSink> Term<S> {
         // Paired bits snapshot swaps alongside the stack snapshot so
         // the snapshot travels with its owning screen — without this
         // swap, an alt-side `;A` restore applied primary's bits (wrong
-        // screen). BUG-08-012 TPR round-4.
+ // screen). review round-4.
         std::mem::swap(
             &mut self.pre_command_kb_mode_bits_snapshot,
             &mut self.inactive_pre_command_kb_mode_bits_snapshot,
@@ -125,7 +125,7 @@ impl<S: EffectSink> Term<S> {
         // inactive slot. Covers set-only `CSI = Ps u` state that never
         // enters the stack, and child mid-command mutations that would
         // otherwise be lost by deriving reapply from stack top. See
-        // BUG-08-012 TPR round-3 F1/F2.
+ // review round-3 F1/F2.
         let active_bits_before_swap = KeyboardModes::from(self.mode);
         let new_active_bits = self.inactive_keyboard_mode_bits;
         self.inactive_keyboard_mode_bits = active_bits_before_swap;
@@ -133,7 +133,7 @@ impl<S: EffectSink> Term<S> {
         // Both screens' keyboard-mode stacks are capped at the same max
         // depth; the enforcement lives in `dcs_push_keyboard_mode`, which
         // only runs against the active stack. This assert documents that
-        // the swap preserves the cap on both sides. BUG-08-012 F8.
+ // the swap preserves the cap on both sides. F8.
         debug_assert!(
             self.keyboard_mode_stack.len() <= crate::term::KEYBOARD_MODE_STACK_MAX_DEPTH
                 && self.inactive_keyboard_mode_stack.len()

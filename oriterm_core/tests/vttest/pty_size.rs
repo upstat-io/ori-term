@@ -3,7 +3,7 @@
 //! `TIOCSWINSZ`) and Windows ConPTY (`CreatePseudoConsole`) backends.
 //!
 //! Each platform branch runs two cases: a primary `33×97` and a
-//! `50×40` negative pin proving the helper assertion is parameterized
+//! `50×40` regression guard proving the helper assertion is parameterized
 //! and not coincidentally hardcoded against `33×97`.
 
 #[cfg(any(unix, windows))]
@@ -104,7 +104,7 @@ fn assert_pty_reports_size(
     // `ParseIntError`. POSIX `openpty` does not have ConPTY's DSR
     // gate; nothing waits on a CPR response.
     //
-    // Source: third-party-review consensus 2026-04-27 (codex + gemini)
+ // Source: third-party-review consensus 2026-04-27 ( + )
     // verified the DSR origin against `psuedocon.rs:87`.
     #[cfg(windows)]
     {
@@ -156,7 +156,7 @@ fn parse_stty_size_output(raw: &str) -> (u16, u16) {
     (rows, cols)
 }
 
-/// Regression: BUG-07-004 — Windows PTY size propagation test removed.
+/// Regression: — Windows PTY size propagation test removed.
 /// Pins `portable_pty::native_pty_system()` POSIX path: `openpty` with
 /// `PtySize { rows, cols }` delivers the requested size to the child.
 /// Two cases (33×97 and 50×40) clamp the matrix from both sides — proves
@@ -202,7 +202,7 @@ fn parse_mode_con_output(raw: &str) -> (u16, u16) {
     )
 }
 
-/// Regression: BUG-07-004 — Windows PTY size propagation test removed.
+/// Regression: — Windows PTY size propagation test removed.
 /// Pins `portable_pty::native_pty_system()` ConPTY path: `openpty` with
 /// `PtySize { rows, cols }` delivers the requested size via
 /// `CreatePseudoConsole`. Uses `cmd /d /c mode con` to bypass AutoRun.

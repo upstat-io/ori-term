@@ -141,7 +141,7 @@ fn ed_mode_2_drives_through_dispatch_and_state() {
     }
 }
 
-/// Negative pin: ED-2 with no preceding write must still leave the
+/// Regression guard: ED-2 with no preceding write must still leave the
 /// grid empty (idempotent erasure).
 ///
 /// Without this pin, a regression that made ED-2 a no-op when the

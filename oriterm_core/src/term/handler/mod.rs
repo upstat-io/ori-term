@@ -33,7 +33,7 @@ mod status;
 /// inherent helper on `Term<S>`. Used by the OSC 3/5/6/… block, the
 /// iTerm2 / sixel / APC / DECRQSS delegates, and the §09A.4 DEC
 /// private rect-ops + presentation delegates. Keeps the trait impl
-/// under the 500-line file budget per `.claude/rules/code-hygiene.md`.
+/// under the 500-line file budget.
 macro_rules! delegate_osc {
     ($method:ident($($arg:ident : $ty:ty),*) => $helper:ident) => {
         fn $method(&mut self, $($arg: $ty),*) { self.$helper($($arg),*); }
@@ -453,7 +453,7 @@ impl<S: EffectSink> Handler for Term<S> {
     // §10.9 OSC 3 / 5 / 6 / 13 / 14 / 17 / 19 / 113 / 114 / 117 / 119
     // delegates — each forwards to its `osc_*` helper in `handler/osc.rs`.
     // Compressed via `delegate_osc!` to keep the trait impl under the
-    // 500-line file budget (see `.claude/rules/code-hygiene.md`).
+ // 500-line file budget (see ).
     delegate_osc!(set_x11_property(payload: &[u8]) => osc_set_x11_property);
     delegate_osc!(set_special_color(index: usize, color: Rgb) => osc_set_special_color);
     delegate_osc!(query_special_color(index: usize, terminator: &str) => osc_query_special_color);

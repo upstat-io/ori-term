@@ -53,7 +53,7 @@ fn osc22_daemon_snapshot_carries_cursor_icon() {
     );
 }
 
-/// Negative pin: when no OSC 22 fired, `Term::mouse_cursor_icon` stays
+/// Regression guard: when no OSC 22 fired, `Term::mouse_cursor_icon` stays
 /// `None` and the wire field is also `None`. Guards against a future
 /// edit that writes a default encoding (e.g. `Some(0)`) instead of the
 /// correct absence.

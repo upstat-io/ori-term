@@ -80,7 +80,7 @@ fn tack_cap_xcheck_smulx_dashed_4_5() {
 
 #[test]
 fn tack_cap_xcheck_smulx_transitions_clear_previous() {
-    // SEMANTIC PIN — feeding curly-then-dotted must leave ONLY
+ // Verifies — feeding curly-then-dotted must leave ONLY
     // dotted set, not both. Catches the "bitflag-or instead of
     // replace" regression.
     let (mut term, _l) = term_with_recorder();

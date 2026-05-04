@@ -642,7 +642,7 @@ fn snapshot_to_renderable_into_populates_mouse_cursor_icon() {
     assert_eq!(out.mouse_cursor_icon, Some(CursorIcon::Text));
 }
 
-/// Negative pin: `mouse_cursor_icon: None` on the wire produces `None` on
+/// Regression guard: `mouse_cursor_icon: None` on the wire produces `None` on
 /// `RenderableContent`, not a stale value from a prior extract.
 #[test]
 fn snapshot_to_renderable_none_icon_stays_none() {
@@ -654,7 +654,7 @@ fn snapshot_to_renderable_none_icon_stays_none() {
     assert_eq!(content.mouse_cursor_icon, None);
 }
 
-/// Negative pin: refill path MUST clear a prior `Some(icon)` when the wire
+/// Regression guard: refill path MUST clear a prior `Some(icon)` when the wire
 /// snapshot has `None`. This is the stale-value-reuse case — without this
 /// pin, a refill that only assigns when the source is `Some` would leak the
 /// previous frame's icon into the current frame.
@@ -675,7 +675,7 @@ fn snapshot_to_renderable_into_clears_stale_icon() {
     assert_eq!(out.mouse_cursor_icon, None);
 }
 
-/// Negative pin: `extract_frame_from_snapshot_into` (the top-level refill
+/// Regression guard: `extract_frame_from_snapshot_into` (the top-level refill
 /// that both `snapshot_to_renderable_into` and other field resets flow
 /// through) MUST also clear a stale `Some(icon)` when the source is `None`.
 #[test]

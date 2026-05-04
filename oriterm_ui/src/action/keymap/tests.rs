@@ -253,7 +253,7 @@ fn defaults_cover_all_expected_bindings() {
         "widget::Dismiss"
     );
 
-    // MenuSearchable — distinct context for searchable Menu (BUG-03-003).
+ // MenuSearchable — distinct context for searchable Menu ().
     // Bindings mirror `Menu` EXCEPT Space is intentionally omitted so it
     // reaches `MenuWidget::on_input` as a filter character.
     assert_eq!(
@@ -284,7 +284,7 @@ fn defaults_cover_all_expected_bindings() {
             .name(),
         "widget::Dismiss"
     );
-    // Negative pin: Space is intentionally NOT bound for "MenuSearchable"
+ // Regression guard: Space is intentionally NOT bound for "MenuSearchable"
     // so searchable filter input reaches on_input as a printable character.
     assert!(
         keymap

@@ -7,8 +7,8 @@
 //! up a real winit `EventLoopProxy`.
 //!
 //! The local [`RecordedTermEvent`] enum keeps `oriterm_test_support`
-//! dependency-free of the `oriterm` crate (per the §02 BUG-11-026 fix
-//! consensus, codex revision: avoid dev-dep direction inversion).
+//! dependency-free of the `oriterm` crate (per the §02 fix
+//! consensus, revision: avoid dev-dep direction inversion).
 
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -75,8 +75,7 @@ impl RecordedProxy {
 
     /// Block until the next wakeup arrives or `deadline` elapses.
     ///
-    /// Per `.claude/rules/tests.md §Wall-Clock-Free Testing`, the
-    /// deadline is the safety valve to surface a hang — the awaited
+    /// The deadline is the safety valve to surface a hang — the awaited
     /// condition is the channel receive, not the elapsed time.
     ///
     /// # Errors

@@ -112,7 +112,7 @@ pub struct PaneIoHandle {
     /// Encoded via [`pack_pending_resize`]. Stored by
     /// [`Self::send_resize`], swapped out by the IO thread's
     /// `apply_pending_resize` helper. Replaces routing Resize through
-    /// `cmd_tx` (which broke under saturation: see BUG-11-025).
+ /// `cmd_tx` (which broke under saturation: see ).
     pub(crate) pending_resize: Arc<AtomicU64>,
     /// Durable shutdown flag, shared with the IO thread.
     ///
@@ -124,7 +124,7 @@ pub struct PaneIoHandle {
     /// Test-only Drop sentinel — counter incremented after `shutdown()`
     /// returns inside the existing `Drop` impl. Production builds carry
     /// zero overhead — the field is `#[cfg(test)]`. Used by §03 Pin 4
-    /// in `bug-tracker/plans/BUG-11-002/section-03-tdd-matrix.md`.
+ /// in `bug-tracker/plans//section-03-tdd-matrix.md`.
     #[cfg(test)]
     pub(crate) drop_counter: Option<Arc<std::sync::atomic::AtomicUsize>>,
 }
@@ -259,7 +259,7 @@ impl PaneIoHandle {
     /// The counter is incremented inside the existing `Drop` impl after
     /// `shutdown()` returns, so observers can pin the "every Drop runs
     /// to completion" invariant without a flaky wall-clock budget.
-    /// Used by §03 Pin 4 in `bug-tracker/plans/BUG-11-002/`.
+ /// Used by §03 Pin 4 in `bug-tracker/plans//`.
     #[cfg(test)]
     pub(crate) fn set_drop_counter(&mut self, counter: Arc<std::sync::atomic::AtomicUsize>) {
         self.drop_counter = Some(counter);
@@ -335,11 +335,11 @@ pub fn new_with_handle<S: EffectSink + 'static>(
     // sender via `try_send` returning `Err(TrySendError::Full(_))`.
     // Resize commands are routed through the atomic `pending_resize`
     // slot (see PaneIoHandle::send_resize) and never traverse this
-    // channel. Regression: BUG-11-025.
+ // channel. Regression:.
     let (cmd_tx, cmd_rx) = crossbeam_channel::bounded(CMD_CHANNEL_CAPACITY);
     // Bounded byte channel — caps the per-pane reader→IO queue heap at
     // BYTE_CHANNEL_MEMORY_BUDGET, propagating back-pressure through the
-    // kernel PTY buffer to the child process. Regression: BUG-11-002.
+ // kernel PTY buffer to the child process. Regression:.
     let (byte_tx, byte_rx) = crossbeam_channel::bounded(BYTE_CHANNEL_CAPACITY);
     // Bounded(1) wake channel: `try_send` coalesces N wakes between
     // iterations into a single signal. One wake drains ALL ready state

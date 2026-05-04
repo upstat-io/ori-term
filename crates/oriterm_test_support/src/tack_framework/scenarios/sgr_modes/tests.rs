@@ -35,7 +35,7 @@ fn parse_sgr_modes_screen_handles_empty_grid() {
 
 #[test]
 fn parse_sgr_modes_screen_finds_full_80_mode_grid() {
-    // SEMANTIC PIN for the 06.2 contract: a canonically-formatted
+ // Verifies for the 06.2 contract: a canonically-formatted
     // tack SGR grid returns exactly the full 80-mode count. Pins
     // the `Mode %2d` token format against accidental parser drift.
     let grid = synthetic_full_grid();
@@ -110,7 +110,7 @@ fn parse_sgr_modes_screen_handles_header_only_grid() {
 
 #[test]
 fn parse_sgr_modes_screen_does_not_confuse_mode_7_with_mode_70() {
-    // SEMANTIC PIN: the parser must NOT match `Mode  7` inside
+ // Verifies: the parser must NOT match `Mode 7` inside
     // `Mode 70`. `grid_has_token("Mode  7")` checks that the
     // byte AFTER the matched token is ASCII whitespace. In
     // `Mode 70` the byte after the single-space + `7` is `0`,
@@ -131,7 +131,7 @@ fn parse_sgr_modes_screen_does_not_confuse_mode_7_with_mode_70() {
 
 #[test]
 fn parse_sgr_modes_screen_rejects_substring_collisions_in_english_text() {
-    // SEMANTIC PIN: the parser uses `grid_has_token` which is
+ // Verifies: the parser uses `grid_has_token` which is
     // whitespace-bounded. A regression that swapped to raw
     // `str::contains` would false-positive on English text
     // containing "Mode 1" as a prefix of "Mode 13 is wrong" or
@@ -169,7 +169,7 @@ fn parse_sgr_modes_screen_handles_trailing_whitespace_padding() {
 
 #[test]
 fn parse_sgr_modes_screen_handles_minimum_expected_modes_constant() {
-    // SEMANTIC PIN: `MIN_EXPECTED_MODES` is the canonical
+ // Verifies: `MIN_EXPECTED_MODES` is the canonical
     // threshold both the parser sibling tests and the 80x24 test
     // wrapper reference. Pin the value to 80 so a well-meaning
     // refactor that lowered the threshold to match a broken

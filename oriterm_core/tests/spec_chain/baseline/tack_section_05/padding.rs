@@ -28,7 +28,7 @@
 //! source. Its conversion is owned by Section 08.8b (remaining
 //! Section-08-owned catalog rows) which has explicit RIS coverage.
 
-/// Negative pin: tack `padding` family contributes no NEW catalog-row
+/// Regression guard: tack `padding` family contributes no NEW catalog-row
 /// verifications beyond the DA1 pilot.
 ///
 /// Documents the empirical reality so that `_legacy-tack-mapping.md`

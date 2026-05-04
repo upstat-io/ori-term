@@ -25,14 +25,14 @@
 //! [`CapCoverageContribution::exempt`] slice with a comment
 //! explaining why).
 //!
-//! # Stale-exemption negative pin
+//! # Stale-exemption regression guard
 //!
 //! A cap appearing in BOTH any section's `covered` AND any
 //! section's `exempt` (its own OR another section's) makes the
 //! matrix test fail loudly. This forces the cleanup hand-off —
 //! when Section 06 adds its tools-menu caps to `section_06`'s
 //! `covered`, it MUST also remove them from any section's
-//! `exempt`. The negative pin protects against the SSOT decay
+//! `exempt`. The regression guard protects against the SSOT decay
 //! this whole structure exists to prevent.
 
 use std::collections::BTreeSet;
@@ -63,7 +63,7 @@ const TERMINFO_SRC: &str = include_str!(concat!(
 /// the coverage gate and requires explicit justification. Adding a
 /// cap to `covered` means a test exists.
 ///
-/// The stale-exemption negative pin (in the matrix test in
+/// The stale-exemption regression guard (in the matrix test in
 /// `oriterm_core/tests/tack/test_menu/cap_coverage_matrix.rs`) fires
 /// loudly when a cap appears in BOTH any section's `covered` AND
 /// any section's `exempt`. This forces Sections 06 / 08 to clean up
@@ -108,7 +108,7 @@ pub fn covered_caps() -> BTreeSet<String> {
 }
 
 /// Sum every section's `exempt` slice into a `BTreeSet<String>`.
-/// The matrix test uses this for the stale-exemption negative pin.
+/// The matrix test uses this for the stale-exemption regression guard.
 #[must_use]
 pub fn exempt_caps() -> BTreeSet<String> {
     let mut s = BTreeSet::new();

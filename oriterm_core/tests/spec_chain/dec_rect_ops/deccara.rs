@@ -25,7 +25,7 @@ fn deccara_applies_bold_to_rectangle() {
             );
         }
     }
-    // Negative pin: cell outside rect not bold.
+ // Regression guard: cell outside rect not bold.
     assert!(
         !h.term().grid()[Line(0)][Column(5)]
             .flags

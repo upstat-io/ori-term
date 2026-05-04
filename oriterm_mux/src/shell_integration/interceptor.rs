@@ -72,7 +72,7 @@ impl<S: EffectSink> RawInterceptor<'_, S> {
     /// OSC 133: update prompt state machine and track command timing.
     ///
     /// `;A` / `;D` also restore the Kitty keyboard mode stack from any
-    /// prior `;C` snapshot; `;C` takes the snapshot. See BUG-08-012 —
+ /// prior `;C` snapshot; `;C` takes the snapshot. See —
     /// prevents kitty modes pushed by a kitty-aware child from
     /// persisting past the next shell prompt when the child crashes or
     /// exits without popping cleanly.
@@ -86,7 +86,7 @@ impl<S: EffectSink> RawInterceptor<'_, S> {
     /// Shared A/B/C/D dispatch for both OSC 133 (xterm/bash/zsh shell
     /// integration) and OSC 633 (VS Code shell integration superset).
     /// Byte-identical control-flow collapsed to one SSOT per
-    /// `impl-hygiene.md` §Algorithmic DRY — any future prompt-lifecycle
+ /// §Algorithmic DRY — any future prompt-lifecycle
     /// change lands in one place.
     fn handle_prompt_action(&mut self, sub: u8) {
         match sub {

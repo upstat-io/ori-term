@@ -6,7 +6,7 @@
 //!
 //! See the parent module rustdoc for the full empirical record on
 //! why the parser is Unicode-only and the raw-ASCII branch is a
-//! NEGATIVE pin instead of a positive test.
+//! Regression guard instead of a positive test.
 
 use super::{MIN_DEC_GRAPHICS_THRESHOLD, count_dec_graphics_chars, parse_character_sets_screen};
 
@@ -39,7 +39,7 @@ fn parse_character_sets_unicode_box_drawing() {
 
 #[test]
 fn parse_character_sets_raw_ascii_line_drawing_does_not_match() {
-    // NEGATIVE PIN (b) — feed the raw ASCII DEC line-drawing form
+ // REGRESSION GUARD (b) — feed the raw ASCII DEC line-drawing form
     // (the bytes a non-translating terminal would render as printable
     // letters). oriterm_core ALWAYS translates DEC special graphics
     // through `vte::ansi::StandardCharset::SpecialCharacterAndLineDrawing`
@@ -63,7 +63,7 @@ fn parse_character_sets_raw_ascii_line_drawing_does_not_match() {
 
 #[test]
 fn parse_character_sets_negative_non_dec_grid() {
-    // NEGATIVE PIN (d) — English prose with no box-drawing must
+ // REGRESSION GUARD (d) — English prose with no box-drawing must
     // return 0. A regression that broadened the matched code point
     // range past U+2500..=U+257F would surface here.
     let grid = "Hello World, this has no graphics characters at all.";
@@ -72,7 +72,7 @@ fn parse_character_sets_negative_non_dec_grid() {
 
 #[test]
 fn parse_character_sets_mixed_unicode_and_ascii_only_counts_unicode() {
-    // SEMANTIC PIN (e) — a grid containing BOTH the Unicode form
+ // Verifies (e) — a grid containing BOTH the Unicode form
     // and the raw ASCII form must count ONLY the Unicode chars.
     // This proves the parser is single-form (Unicode-only) even
     // when the dead ASCII form is co-located. Two distinct Unicode
@@ -84,7 +84,7 @@ fn parse_character_sets_mixed_unicode_and_ascii_only_counts_unicode() {
 
 #[test]
 fn parse_character_sets_boundary_count() {
-    // SEMANTIC PIN (f) — a grid with EXACTLY
+ // Verifies (f) — a grid with EXACTLY
     // `MIN_DEC_GRAPHICS_THRESHOLD - 1` distinct Unicode box-
     // drawing chars returns exactly that count. Pins the
     // threshold as a comparison (`>=`) rather than an off-by-one
@@ -128,7 +128,7 @@ fn parse_character_sets_screen_records_full_count_in_notes() {
 
 #[test]
 fn parse_character_sets_screen_counts_distinct_not_total() {
-    // SEMANTIC PIN — a grid full of REPEATED `─` chars scores 1,
+ // Verifies — a grid full of REPEATED `─` chars scores 1,
     // not N. The parser asserts diversity (corners + edges + lines),
     // not bulk repetition. A regression that swapped distinct-count
     // for total-count would flip this red.
@@ -138,7 +138,7 @@ fn parse_character_sets_screen_counts_distinct_not_total() {
 
 #[test]
 fn parse_character_sets_screen_handles_minimum_threshold_constant() {
-    // SEMANTIC PIN: `MIN_DEC_GRAPHICS_THRESHOLD` is the canonical
+ // Verifies: `MIN_DEC_GRAPHICS_THRESHOLD` is the canonical
     // threshold both the parser sibling tests and the 80x24 test
     // wrapper reference. Pin the value to 4 so a refactor that
     // lowered the threshold to match a broken capture also flips

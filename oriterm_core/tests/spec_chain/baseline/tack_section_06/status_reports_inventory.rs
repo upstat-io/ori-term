@@ -381,7 +381,7 @@ fn dsr_6_reply_is_one_one_at_default_cursor() {
 
 // --- Negative pins ---------------------------------------------------------
 
-/// Negative pin: DSR 6 must emit `CursorReport`, NOT `DeviceStatus`.
+/// Regression guard: DSR 6 must emit `CursorReport`, NOT `DeviceStatus`.
 ///
 /// Matrix pair with `dsr_5_does_not_emit_cursor_report`. Without
 /// this pin, a regression that routed `CSI 6 n` to the
@@ -403,7 +403,7 @@ fn dsr_6_does_not_emit_device_status() {
     );
 }
 
-/// Negative pin: DSR 5 must emit `DeviceStatus`, NOT `CursorReport`.
+/// Regression guard: DSR 5 must emit `DeviceStatus`, NOT `CursorReport`.
 ///
 /// Without this pin, a regression that routed both DSR variants to
 /// the same `PtyWriteKind` (e.g. always `CursorReport`) would pass
@@ -423,7 +423,7 @@ fn dsr_5_does_not_emit_cursor_report() {
     );
 }
 
-/// Negative pin: DA1 / DA2 / DA3 must emit different reply bytes.
+/// Regression guard: DA1 / DA2 / DA3 must emit different reply bytes.
 ///
 /// Proves the three DA variants dispatch to different response
 /// bodies based on intermediate, not a single shared reply. Without

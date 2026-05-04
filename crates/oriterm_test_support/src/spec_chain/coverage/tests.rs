@@ -96,7 +96,7 @@ fn scan_test_citations_plural_form_skips_empty_pieces() {
 
 #[test]
 fn scan_test_citations_strips_trailing_period() {
-    // Regression: BUG-07-016 — `//! Catalog rows: OSC-0, OSC-1, OSC-2.`
+ // Regression: — `//! Catalog rows: OSC-0, OSC-1, OSC-2.`
     // used to register `OSC-2.` (with period) as a distinct row ID,
     // producing spurious UNCATALOGED CITATIONS + FALSE VERIFIED pairs.
     let dir = tempfile::tempdir().unwrap();
@@ -124,7 +124,7 @@ fn scan_test_citations_strips_trailing_period() {
 
 #[test]
 fn scan_test_citations_strips_surrounding_backticks() {
-    // Regression: BUG-07-016 — `` /// Catalog row: `SIXEL-BG-NoChange`.``
+ // Regression: — `` /// Catalog row: `SIXEL-BG-NoChange`.``
     // used to register a backtick-wrapped, period-suffixed id.
     let dir = tempfile::tempdir().unwrap();
     let file = dir.path().join("test.rs");
@@ -141,7 +141,7 @@ fn scan_test_citations_strips_surrounding_backticks() {
 
 #[test]
 fn scan_test_citations_strips_parenthetical_qualifier() {
-    // Regression: BUG-07-016 — `/// Catalog row: SIXEL-REPEAT (§12.4 GPU-apex)`
+ // Regression: — `/// Catalog row: SIXEL-REPEAT (§12.4 GPU-apex)`
     // used to register the entire prose as a row ID.
     let dir = tempfile::tempdir().unwrap();
     let file = dir.path().join("test.rs");
@@ -158,7 +158,7 @@ fn scan_test_citations_strips_parenthetical_qualifier() {
 
 #[test]
 fn scan_test_citations_cuts_trailing_prose_after_sentence_boundary() {
-    // Regression: BUG-07-016 —
+ // Regression: —
     // `//! Catalog rows: OSC-4-SET, OSC-4-QUERY. Apex: state-snapshot / effect-pty-write.`
     // used to register `OSC-4-QUERY. Apex: state-snapshot / effect-pty-write.`
     // as an id.
@@ -196,7 +196,7 @@ fn scan_test_citations_combined_backtick_and_parenthetical() {
 
 #[test]
 fn scan_test_citations_handles_multi_line_continuation() {
-    // Regression: BUG-07-016 — when a long plural form wraps across lines
+ // Regression: — when a long plural form wraps across lines
     // via trailing comma, the scanner used to drop lines 2+, producing
     // false-verified entries for every row after the first line.
     let dir = tempfile::tempdir().unwrap();

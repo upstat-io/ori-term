@@ -46,7 +46,7 @@ fn tack_acs_graphic_chars() {
         outcome.grid_text
     );
 
-    // SEMANTIC PIN for assert the (bel) capability is
+ // Verifies for assert the (bel) capability is
     // actually exercised. Tack v1.08's "alternate character set and
     // graphic rendition" test runs only the bell probe — it does
     // NOT emit DEC line-drawing chars or SGR sample text — so the

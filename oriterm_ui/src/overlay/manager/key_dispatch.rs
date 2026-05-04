@@ -7,8 +7,8 @@
 //!   the event through `deliver_via_pipeline` to `widget.on_input()`. Kept as
 //!   the keymap-miss fallback for overlays whose `key_context()` has no
 //!   binding in `Keymap::defaults()` (e.g. `SettingsPanel`).
-//! - [`OverlayManager::process_key_event_with_keymap`]: keymap-first routing
-//!   added by BUG-03-003. Looks up the topmost overlay's context in the
+//! - [`OverlayManager::process_key_event_with_keymap`]: keymap-first routing.
+//!   Looks up the topmost overlay's context in the
 //!   provided keymap and dispatches via
 //!   [`crate::pipeline::dispatch_keymap_action`] when a binding matches. On a
 //!   `widget::Dismiss` match, the manager translates the result into
@@ -17,7 +17,7 @@
 //!   `WidgetAction::DismissOverlay`) work correctly. Falls through to
 //!   `process_key_event` on a keymap miss.
 //!
-//! See `bug-tracker/plans/completed/BUG-03-003/` (post-archival) for the
+//! See `bug-tracker/plans/completed//` (post-archival) for the
 //! design rationale, including why the dispatch lives on `OverlayManager`
 //! (data locality + SRP, mirrors `process_mouse_event`'s pattern) and why
 //! the inline `Escape` short-circuit is acceptable as a fallback (mutually
@@ -48,7 +48,7 @@ impl OverlayManager {
     /// indicates which widget currently has keyboard focus (from the app
     /// layer's `FocusManager`).
     ///
-    /// As of BUG-03-003 this is the keymap-miss fallback for
+ /// As of this is the keymap-miss fallback for
     /// [`OverlayManager::process_key_event_with_keymap`]; direct callers
     /// (legacy paths that don't supply a keymap) still get the same behavior
     /// they did before the keymap-first dispatch landed.
@@ -123,7 +123,7 @@ impl OverlayManager {
     }
 
     /// Routes a key event through the overlay stack with keymap-first
-    /// dispatch (BUG-03-003).
+ /// dispatch ().
     ///
     /// Resolves the topmost overlay's `key_context()` against the provided
     /// keymap. On a hit:
@@ -207,7 +207,7 @@ impl OverlayManager {
         // `Keymap::defaults()` (no `key_context()` scope), so `keymap.lookup`
         // matches it on EVERY overlay regardless of context. Overlays do
         // not currently have a per-overlay focus model registered with
-        // `WindowRoot::InteractionManager` (per BUG-03-003 §02 design
+ // `WindowRoot::InteractionManager` (per §02 design
         // constraint), so dispatching `widget::FocusNext`/`widget::FocusPrev`
         // via `dispatch_keymap_action` on the overlay's root would emit
         // no widget action AND no focus would move — silently swallowing

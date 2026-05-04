@@ -173,8 +173,8 @@ impl App {
                     self.ring_owning_window_tab_bell(id, now);
                 }
 
-                // Audible bell — closes BUG-08-001 by absorbing the BEL `\a`
-                // audio path into BUG-11-016. Native OS APIs respect the
+ // Audible bell — closes by absorbing the BEL `\a`
+ // audio path into. Native OS APIs respect the
                 // user's system mute / sound-effects settings. Skip the
                 // audible bell entirely when the bell-ringing pane is
                 // already the user's focus.
@@ -214,7 +214,7 @@ impl App {
                 body: _body,
                 ..
             } => {
-                // Bell-focused dispatch (BUG-11-016 scope reset 2026-04-28):
+ // Bell-focused dispatch ( scope reset 2026-04-28)
                 // OSC 9 / OSC 99 / OSC 777 fire the bell sound + tab bell
                 // icon on the owning pane's tab. Skip both when the
                 // bell-ringing pane is already focused — user is looking
@@ -382,7 +382,7 @@ impl App {
             self.mark_pane_window_dirty(pane_id);
         }
 
-        // Bell-focused dispatch (BUG-11-016 scope reset 2026-04-28):
+ // Bell-focused dispatch ( scope reset 2026-04-28)
         // command-complete (OSC 133;D) fires the native bell sound; the
         // tab-bell pulse above already handles the visual feedback. Skip
         // entirely when the command's pane is already focused — user

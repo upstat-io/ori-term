@@ -511,7 +511,7 @@ fn data_byte_range_decodes_six_bit_column() {
 /// §12.1 plan (section-12-sixel.md:167-169) and §12.N completion
 /// checklist, no placement should be committed when the DCS is aborted
 /// mid-stream. Today `handle_sixel_end` stores unconditionally — this
-/// test is the negative pin that exposes the bug; the §12.1 plan calls
+/// test is the regression guard that exposes the bug; the §12.1 plan calls
 /// for filing BUG-12-* and fixing in-scope.
 #[test]
 fn dcs_abort_can_commits_no_placement() {

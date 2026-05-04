@@ -143,7 +143,7 @@ impl FontConfig {
     /// gamma boost compounds with the weight increase. `SubpixelRgb` /
     /// `SubpixelBgr` bitmaps do NOT receive the boost (see the
     /// `oriterm::font::collection::rasterize` module doc for the canonical
-    /// per-format rule, BUG-04-006), so the `+150` default slightly
+ /// per-format rule, ), so the `+150` default slightly
     /// over-compensates in subpixel mode — an accepted tradeoff of a single
     /// workspace-wide default.
     pub fn effective_bold_weight(&self) -> u16 {

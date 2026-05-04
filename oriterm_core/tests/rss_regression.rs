@@ -89,7 +89,7 @@ const MB: usize = 1_048_576;
 /// to verify the plateau invariant. This test exercises the same
 /// invariant under a smaller scrollback (1000 rows vs 5000) so recycling
 /// kicks in earlier; it does NOT duplicate the trend-detection logic.
-/// See `.claude/rules/tests.md §Wall-Clock-Free Testing`.
+/// See -Clock-Free Testing`.
 #[test]
 fn rss_plateaus_small_scrollback_trend() {
     let mut term = make_term(1000);

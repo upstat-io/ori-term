@@ -1389,7 +1389,7 @@ fn set_pane_priority_is_fire_and_forget() {
     assert!(!pdu.is_notification());
 }
 
-// -- BUG-11-011 daemon-mode HostRequest round-trip --
+// -- daemon-mode HostRequest round-trip --
 
 #[test]
 fn roundtrip_notify_host_clipboard_load() {
@@ -1499,10 +1499,10 @@ fn msg_type_decodes_new_host_request_ids() {
 // FrameReader forward-compat tests live in `server/tests.rs` where FrameReader
 // is accessible (it's a private server submodule).
 
-// -- BUG-11-020 IsWriteStalled / WriteStalledStatus round-trips --
+// -- IsWriteStalled / WriteStalledStatus round-trips --
 
-/// Regression: BUG-11-020 — IsWriteStalled request must round-trip losslessly.
-/// See: bug-tracker/plans/BUG-11-020/00-overview.md
+/// Regression: — IsWriteStalled request must round-trip losslessly.
+/// See: bug-tracker/plans//00-overview.md
 #[test]
 fn roundtrip_is_write_stalled_request() {
     let pdu = MuxPdu::IsWriteStalled {
@@ -1512,8 +1512,8 @@ fn roundtrip_is_write_stalled_request() {
     assert_eq!(frame.pdu, pdu);
 }
 
-/// Regression: BUG-11-020 — WriteStalledStatus { stalled: true } must round-trip losslessly.
-/// See: bug-tracker/plans/BUG-11-020/00-overview.md
+/// Regression: — WriteStalledStatus { stalled: true } must round-trip losslessly.
+/// See: bug-tracker/plans//00-overview.md
 #[test]
 fn roundtrip_write_stalled_status_true() {
     let pdu = MuxPdu::WriteStalledStatus {
@@ -1524,8 +1524,8 @@ fn roundtrip_write_stalled_status_true() {
     assert_eq!(frame.pdu, pdu);
 }
 
-/// Regression: BUG-11-020 — WriteStalledStatus { stalled: false } must round-trip losslessly.
-/// See: bug-tracker/plans/BUG-11-020/00-overview.md
+/// Regression: — WriteStalledStatus { stalled: false } must round-trip losslessly.
+/// See: bug-tracker/plans//00-overview.md
 #[test]
 fn roundtrip_write_stalled_status_false() {
     let pdu = MuxPdu::WriteStalledStatus {
@@ -1536,8 +1536,8 @@ fn roundtrip_write_stalled_status_false() {
     assert_eq!(frame.pdu, pdu);
 }
 
-/// Regression: BUG-11-020 — IsWriteStalled is not fire-and-forget; it expects a response.
-/// See: bug-tracker/plans/BUG-11-020/section-03-tdd-matrix.md (classifier pin)
+/// Regression: — IsWriteStalled is not fire-and-forget; it expects a response.
+/// See: bug-tracker/plans//section-03-tdd-matrix.md (classifier pin)
 #[test]
 fn is_write_stalled_request_is_not_fire_and_forget() {
     let pdu = MuxPdu::IsWriteStalled {
@@ -1546,8 +1546,8 @@ fn is_write_stalled_request_is_not_fire_and_forget() {
     assert!(!pdu.is_fire_and_forget());
 }
 
-/// Regression: BUG-11-020 — WriteStalledStatus is a response, not a push notification.
-/// See: bug-tracker/plans/BUG-11-020/section-03-tdd-matrix.md (classifier pin)
+/// Regression: — WriteStalledStatus is a response, not a push notification.
+/// See: bug-tracker/plans//section-03-tdd-matrix.md (classifier pin)
 #[test]
 fn write_stalled_status_response_is_not_notification() {
     let pdu = MuxPdu::WriteStalledStatus {
@@ -1557,8 +1557,8 @@ fn write_stalled_status_response_is_not_notification() {
     assert!(!pdu.is_notification());
 }
 
-/// Regression: BUG-11-020 — MsgType IDs decode for the new variants.
-/// See: bug-tracker/plans/BUG-11-020/section-03-tdd-matrix.md
+/// Regression: — MsgType IDs decode for the new variants.
+/// See: bug-tracker/plans//section-03-tdd-matrix.md
 #[test]
 fn msg_type_decodes_is_write_stalled_ids() {
     assert_eq!(MsgType::from_u16(0x012E), Some(MsgType::IsWriteStalled));

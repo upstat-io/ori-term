@@ -9,7 +9,7 @@
 //!
 //! Every test runs through `VisualSpecHarness` at the `GoldenImage` apex
 //! and uses `render_frame_cached()` — the production render path — per
-//! `.claude/rules/tests.md §GPU cached render testing`.
+//! cached render testing`.
 //!
 //! Catalog row IDs map to `plans/spec-conformance/catalog/unicode-subcell.md`.
 

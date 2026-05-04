@@ -81,7 +81,7 @@ fn parse_acs_screen_excludes_chars_just_outside_block() {
 
 #[test]
 fn parse_acs_screen_handles_realistic_tack_v108_output() {
-    // SEMANTIC PIN: against the actual tack v1.08 ACS test
+ // Verifies: against the actual tack v1.08 ACS test
     // output (verified empirically — see module rustdoc), the
     // parser returns 0 distinct line-drawing chars because tack
     // v1.08's ACS test only probes (bel) and reports Done. The
@@ -106,7 +106,7 @@ fn parse_acs_screen_extracts_first_non_blank_line_as_header() {
 
 #[test]
 fn parse_acs_screen_full_block_sweep_counts_all_128_codepoints() {
-    // SEMANTIC PIN for the parser must count EVERY
+ // Verifies for the parser must count EVERY
     // codepoint in the inclusive U+2500..=U+257F block as a distinct
     // line-drawing char. The block is 128 codepoints (0x2500 through
     // 0x257F). A regression that off-by-one-clips the upper bound
@@ -129,7 +129,7 @@ fn parse_acs_screen_full_block_sweep_counts_all_128_codepoints() {
 
 #[test]
 fn parse_acs_screen_preserves_count_across_multiple_lines() {
-    // SEMANTIC PIN for line breaks must NOT affect the
+ // Verifies for line breaks must NOT affect the
     // distinct-char count. A regression that processes only the
     // first line, or that resets per-line, would fire here.
     let grid = "─\n│\n┌\n┐\n└\n┘\n";

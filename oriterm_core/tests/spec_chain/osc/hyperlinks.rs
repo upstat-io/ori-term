@@ -273,7 +273,7 @@ fn osc8_alt_screen_toggle_clears() {
     }
 }
 
-/// Semantic pin: the renderable observer is no longer the §10.0 stub.
+/// Property: the renderable observer is no longer the §10.0 stub.
 ///
 /// Asserts that an intentionally-wrong expected URI causes the
 /// renderable rung to fail. If the observer regresses to

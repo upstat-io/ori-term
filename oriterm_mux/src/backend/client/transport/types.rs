@@ -7,7 +7,7 @@ use std::sync::mpsc;
 use crate::protocol::MuxPdu;
 
 /// Bookkeeping for a host-request received from the daemon, awaiting the
-/// App's `MuxBackend::fulfill_host_request` call (BUG-11-011).
+/// App's `MuxBackend::fulfill_host_request` call ().
 pub(in crate::backend::client) enum PendingClientReply {
     /// OSC 52 clipboard load — `request_id` echoed back in the reply PDU.
     Clipboard {

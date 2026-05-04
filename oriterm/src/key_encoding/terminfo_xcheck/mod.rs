@@ -11,7 +11,7 @@
 //! the user.
 //!
 //! Skips when `tic` or `infocmp` are unavailable (Windows native) —
-//! runtime gate, never a `cfg(unix)` block (per CLAUDE.md
+//! runtime gate, never a `cfg(unix)` block (per 
 //! cross-platform rule: compile everywhere, runtime skip).
 
 mod function_keys;

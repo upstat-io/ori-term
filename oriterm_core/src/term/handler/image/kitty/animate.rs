@@ -17,7 +17,7 @@ impl<S: EffectSink> Term<S> {
     /// - `display_cols` (`c=`) → set displayed frame
     /// - `source_height` (`v=`) → loop count (0=infinite)
     pub(super) fn kitty_animate(&mut self, cmd: &KittyCommand) {
-        // BUG-08-024: missing `i=` MUST emit ENOENT, mirroring `kitty_place`
+ // : missing `i=` MUST emit ENOENT, mirroring `kitty_place`
         // (place.rs:16-19). Additionally support `I=` (image_number) fallback
         // per kitty's graphics.c::handle_animate_command — when no `i=` is
         // given, try resolving via `newest_by_image_number(I)` before

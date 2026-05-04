@@ -9,7 +9,7 @@
 //! single-pane and multi-pane render paths flow through this function, so the
 //! gate covers every entry point with a single guard (no duplicate guards
 //! inside multi-pane helpers — algorithmic-DRY per
-//! `.claude/rules/impl-hygiene.md`).
+//! ).
 
 use super::App;
 use super::perf_stats::FramePhases;

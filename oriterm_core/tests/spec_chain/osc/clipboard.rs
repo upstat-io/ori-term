@@ -122,7 +122,7 @@ fn osc52_store_clipboard_p() {
     assert_eq!(data, "primary");
 }
 
-/// Negative pin: `Pc = q` has no `ClipboardSelection` variant, so the
+/// Regression guard: `Pc = q` has no `ClipboardSelection` variant, so the
 /// handler silently drops the payload without emitting any effect.
 ///
 /// `ClipboardSelection` at `oriterm_core/src/effect/families/host.rs:110-117`
@@ -137,7 +137,7 @@ fn osc52_store_clipboard_q_dropped() {
     assert_no_clipboard_effect(&harness);
 }
 
-/// Negative pin: the store path rejects invalid base64 silently.
+/// Regression guard: the store path rejects invalid base64 silently.
 ///
 /// `osc_clipboard_store` (`oriterm_core/src/term/handler/osc.rs:115-121`)
 /// uses `Base64.decode` and returns without emitting when decoding fails.

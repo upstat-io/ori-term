@@ -75,7 +75,7 @@
 //! and discarding any unread bytes in the chunk. This is a
 //! DIFFERENT algorithm from `poll_until` (incremental feed +
 //! per-byte check vs. chunk-at-a-time + per-iteration check), so
-//! the impl-hygiene.md "3+ instances of the same skeleton" rule
+//! the "3+ instances of the same skeleton" rule
 //! does not apply: the two algorithms serve different purposes
 //! and live in two distinct canonical homes (`session::poll_until`
 //! for chunk-based polling, `session::PtySession::drain_until` for

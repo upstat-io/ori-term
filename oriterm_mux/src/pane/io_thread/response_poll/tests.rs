@@ -141,7 +141,7 @@ fn response_poll_idle_wake_unblocks_select() {
     handle.shutdown();
 }
 
-/// Companion negative pin: without `fulfill_*`, no `PtyWrite` is ever
+/// Companion regression guard: without `fulfill_*`, no `PtyWrite` is ever
 /// emitted. Proves the wake is load-bearing — the registration alone is
 /// not enough to drive a reply.
 #[test]
@@ -327,7 +327,7 @@ fn cancellation_detects_after_staging_drain() {
     handle.shutdown();
 }
 
-/// Blind-spot §18 negative pin: explicitly cloning the inner
+/// Blind-spot §18 regression guard: explicitly cloning the inner
 /// `ResponseToken` artificially extends the `Arc<Mutex<_>>` lifetime
 /// past the consumer's logical drop of the carrier MuxEvent.
 /// Cancellation detection FAILS — the IO thread keeps polling because

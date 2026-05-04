@@ -49,7 +49,7 @@ impl ClientStream {
     /// Used by the `MuxClient` transport to give a dedicated writer thread
     /// exclusive write ownership while the reader thread retains read
     /// ownership, eliminating the head-of-line block where a backpressured
-    /// write starved RPC reply reads (BUG-11-047).
+ /// write starved RPC reply reads ().
     pub fn try_clone(&self) -> io::Result<Self> {
         Ok(Self(self.0.try_clone()?))
     }
@@ -58,8 +58,8 @@ impl ClientStream {
     ///
     /// Used by `MuxClient::Drop` to break a writer thread that is
     /// blocked inside a backpressured `write()` so the join completes
-    /// promptly even when the daemon has stopped draining (BUG-11-047
-    /// follow-up — round 1 codex finding).
+ /// promptly even when the daemon has stopped draining (
+ /// follow-up — round 1 finding).
     ///
     /// `Shutdown::Write` is socket-scoped on Unix domain sockets, so
     /// calling it on any fd duplicate referring to the same kernel

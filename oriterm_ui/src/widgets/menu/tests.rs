@@ -781,7 +781,7 @@ fn harness_scrollbar_track_click_captures_via_scrub() {
 }
 
 // Searchable mode tests — migrated from the deleted `searchable_dropdown`
-// widget per BUG-02-012 (architectural correction: searchable popup is
+// widget per (architectural correction: searchable popup is
 // `MenuWidget::with_searchable(true)`, not a parallel widget).
 
 fn key(k: Key) -> InputEvent {
@@ -911,7 +911,7 @@ fn searchable_navigate_up_at_top_wraps_to_last_filtered_entry() {
 
 #[test]
 fn searchable_confirm_emits_canonical_index_not_filter_relative() {
-    // Semantic pin: filter to a single entry whose canonical index is non-zero,
+ // Property: filter to a single entry whose canonical index is non-zero,
     // confirm, and assert the emitted Selected index is the canonical index.
     let entries: Vec<MenuEntry> = ["Alpha", "Beta", "Charlie", "Delta"]
         .iter()
@@ -986,18 +986,18 @@ fn searchable_escape_via_on_input_passes_through() {
     assert!(r.action.is_none());
 }
 
-// BUG-03-003 (resolved): the four `searchable_*_via_on_input_*` tests that
+// (resolved): the four `searchable_*_via_on_input_*` tests that
 // previously lived here exercised dead code — once overlay key routing went
-// through the keymap path (per BUG-03-003), `MenuWidget::on_input` no longer
+// through the keymap path (per ), `MenuWidget::on_input` no longer
 // handles `ArrowDown`/`ArrowUp`/`Enter` in searchable mode (those reach the
 // widget via `handle_keymap_action`). Equivalent coverage continues at the
 // canonical post-fix path via the `*_handle_keymap_action_*` tests above
-// (lines around 895/908/926/946/966) and the new BUG-03-003 integration
+// (lines around 895/908/926/946/966) and the new integration
 // tests in `oriterm_ui/src/window_root/tests.rs`.
 
 #[test]
 fn non_searchable_does_not_consume_arrow_keys_via_on_input() {
-    // Negative pin: outside searchable mode, arrow keys must NOT be swallowed
+ // Regression guard: outside searchable mode, arrow keys must NOT be swallowed
     // by on_input — the keymap dispatch path owns NavigateDown/NavigateUp.
     let entries = vec![MenuEntry::Item {
         label: "Alpha".into(),
@@ -1013,7 +1013,7 @@ fn non_searchable_does_not_consume_arrow_keys_via_on_input() {
 
 #[test]
 fn searchable_click_on_filtered_row_emits_canonical_index() {
-    // INVERTED-TDD positive pin: post-filter mouse click must emit the
+ // test ordering positive pin: post-filter mouse click must emit the
     // canonical entry index, not the filtered display position. Migrated
     // from the deleted SearchableDropdownPopupWidget test of the same name
     // and adapted to MenuWidget's ScrubController-mediated click path
@@ -1048,7 +1048,7 @@ fn searchable_click_on_filtered_row_emits_canonical_index() {
 
 #[test]
 fn non_searchable_does_not_consume_character_keys() {
-    // Negative pin: turning searchable OFF means typing letters falls through
+ // Regression guard: turning searchable OFF means typing letters falls through
     // to whatever else might handle them (e.g. parent overlay manager).
     let entries = vec![MenuEntry::Item {
         label: "Alpha".into(),
@@ -1225,20 +1225,20 @@ fn searchable_layout_height_includes_query_row() {
 
 #[test]
 fn non_searchable_query_row_height_is_zero() {
-    // Negative pin paired with the previous test.
+ // Regression guard paired with the previous test.
     let menu = MenuWidget::new(vec![MenuEntry::Item {
         label: "Alpha".into(),
     }]);
     assert_eq!(menu.query_row_height(), 0.0);
 }
 
-// MenuWidget::key_context() differentiation pin (BUG-03-003 §03 TDD matrix
-// line 25, Phase 5 code TPR Round 1 R1-F2). Searchable Menu must report the
+// MenuWidget::key_context() differentiation pin ( §03 test matrix
+// line 25, Phase 5 code review round 1 R1-F2). Searchable Menu must report the
 // `"MenuSearchable"` context so the keymap binds Arrow/Enter/Escape but NOT
 // Space (Space stays as filter input via `on_input`); non-searchable Menu
 // keeps the legacy `"Menu"` context where Space activates Confirm. Without
 // this differentiation, the searchable popup loses keyboard navigation
-// (BUG-03-003 root symptom) or breaks filter typing (Space confirms).
+// ( root symptom) or breaks filter typing (Space confirms).
 
 #[test]
 fn key_context_returns_menu_when_not_searchable() {
@@ -1264,7 +1264,7 @@ fn key_context_returns_menu_searchable_when_searchable() {
 
 #[test]
 fn with_searchable_false_returns_menu_context() {
-    // Negative pin: `with_searchable(false)` (or default) must preserve the
+ // Regression guard: `with_searchable(false)` (or default) must preserve the
     // legacy `"Menu"` context. Guards against an asymmetric edit that would
     // make BOTH modes report `"MenuSearchable"`.
     let menu = MenuWidget::new(sample_entries()).with_searchable(false);

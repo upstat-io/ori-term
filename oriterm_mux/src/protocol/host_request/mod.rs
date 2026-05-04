@@ -1,4 +1,4 @@
-//! Wire types for daemon-mode `HostRequest` IPC round-trip (BUG-11-011).
+//! Wire types for daemon-mode `HostRequest` IPC round-trip ().
 //!
 //! The originating `ResponseToken<T>` is process-local
 //! (`Arc<Mutex<...>>`); the daemon allocates a server-monotonic

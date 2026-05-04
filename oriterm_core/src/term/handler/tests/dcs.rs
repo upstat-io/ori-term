@@ -83,12 +83,12 @@ fn query_keyboard_mode_responds_with_current() {
     );
 }
 
-/// Regression: BUG-08-012 TPR round-6 F1 — `CSI ? u` must report the
+/// Regression: review round-6 F1 — `CSI ? u` must report the
 /// live `TermMode::KITTY_KEYBOARD_PROTOCOL` bits, not the stack top.
 /// Set-only modes enabled via `CSI = Ps u` do not enter the stack; a
 /// stack-top-derived report would incorrectly reply `?0u` while the
 /// bits are actually live.
-/// See: bug-tracker/plans/completed/BUG-08-012/00-overview.md §2.5 TPR round 6.
+/// See: bug-tracker/plans/completed//00-overview.md §2.5 review round 6.
 #[test]
 fn query_keyboard_mode_set_only_via_csi_equals_u_reports_live_bits() {
     let (mut t, listener) = term_with_recorder();

@@ -115,7 +115,7 @@ fn osc4_multi_param_sets_multiple_indices() {
     );
 }
 
-/// Negative pin: `OSC 4 ; 999 ; rgb:ff/ff/ff ST` names an out-of-range
+/// Regression guard: `OSC 4 ; 999 ; rgb:ff/ff/ff ST` names an out-of-range
 /// index. `Palette::set` has an internal `index < NUM_COLORS` bounds
 /// check (`oriterm_core/src/color/palette/mod.rs:239-243`) so the
 /// mutation is silently dropped. No assertion panics; the call is a
@@ -137,7 +137,7 @@ fn osc4_out_of_range_dropped() {
     }
 }
 
-/// Negative pin: `OSC 4 ; 5 ; NOT_A_COLOR ST` fails the `xparse_color`
+/// Regression guard: `OSC 4 ; 5 ; NOT_A_COLOR ST` fails the `xparse_color`
 /// branch in the dispatch arm — the chunk routes to `unhandled` without
 /// mutating index 5. Verify index 5 still holds its theme-default value.
 #[test]

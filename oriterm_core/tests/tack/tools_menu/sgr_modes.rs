@@ -37,7 +37,7 @@ fn tack_tools_sgr_80x24() {
         outcome.grid_text
     );
 
-    // SEMANTIC PIN: the parser found the full 80-mode grid. Uses the
+ // Verifies: the parser found the full 80-mode grid. Uses the
     // canonical `MIN_EXPECTED_MODES` constant so a regression that
     // lowers the threshold below 80 in `sgr_modes/mod.rs` flips both
     // this and the sibling parser tests simultaneously.

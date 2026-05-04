@@ -1515,7 +1515,7 @@ fn sr_extends_occ_when_content_shifts_with_empty_template() {
         'X',
         "shifted content must remain present at its new column",
     );
-    // Negative pin: col 2 (vacated by SR with empty template) must be empty.
+ // Regression guard: col 2 (vacated by SR with empty template) must be empty.
     assert!(
         grid[Line(0)][Column(2)].is_empty(),
         "vacated cell must be empty after SR",

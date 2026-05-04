@@ -12,13 +12,13 @@ use super::octants::{OCTANT_END, OCTANT_MASKS, OCTANT_START};
 ///
 /// The file lives in the wrapper repo at
 /// `plans/spec-conformance/specs/octant-bitmask-mapping.md`. Path discovery
-/// goes through the SSOT helper introduced in BUG-08-028 — never reintroduce
+/// goes through the SSOT helper introduced in — never reintroduce
 /// ad-hoc `crate_root.join("..").join("plans")` arithmetic, which silently
 /// breaks under the wrapper/subrepo split.
 ///
 /// Returns `None` when the wrapper repo is not discoverable (standalone
 /// term_repo checkout); consumers MUST graceful-skip per
-/// `.claude/rules/tests.md §Graceful Skip Protocol`.
+/// Skip Protocol`.
 fn octant_mapping_artifact_path() -> Option<PathBuf> {
     oriterm_test_support::paths::specs_dir().map(|d| d.join("octant-bitmask-mapping.md"))
 }
@@ -124,7 +124,7 @@ fn octants_table_covers_full_range_and_is_unique() {
 /// (a hygiene regression), or (b) someone has shared a Canvas helper
 /// across the two modules without preserving their distinct semantics.
 ///
-/// Per `.claude/rules/impl-hygiene.md §Algorithmic DRY` — shared code
+/// Per DRY` — shared code
 /// requires shared semantics. This guard prevents inadvertent DRY
 /// extraction between the two 2×4 renderers.
 #[test]

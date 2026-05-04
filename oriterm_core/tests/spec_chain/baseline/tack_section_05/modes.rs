@@ -35,7 +35,7 @@ use oriterm_test_support::spec_chain::{
 /// DECRST mode 7 (`\E[?7l`) clears `TermMode::LINE_WRAP`.
 ///
 /// Default `TermMode` includes `LINE_WRAP`, so the assertion proves the
-/// reset path actually transitions the flag; without the negative pin
+/// reset path actually transitions the flag; without the regression guard
 /// below, a no-op handler would still satisfy "LINE_WRAP unset" via the
 /// initial state.
 #[test]
@@ -142,7 +142,7 @@ fn decset_mode_45_sets_reverse_wrap() {
     );
 }
 
-/// Negative pin: DECSET mode 45 must NOT touch the LINE_WRAP flag.
+/// Regression guard: DECSET mode 45 must NOT touch the LINE_WRAP flag.
 ///
 /// Without this pin, a handler that bulk-flipped multiple wrap-related
 /// flags on any wrap-mode DECSET would silently pass the positive

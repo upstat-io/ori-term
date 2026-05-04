@@ -40,7 +40,7 @@ fn mode_2026_decset_toggles_flag() {
 
     let mut harness = SpecHarness::new();
 
-    // Negative pin: flag must start off.
+ // Regression guard: flag must start off.
     assert!(
         !harness.term().mode().contains(TermMode::SYNC_UPDATE),
         "default TermMode must NOT include SYNC_UPDATE"
@@ -56,7 +56,7 @@ fn mode_2026_decset_toggles_flag() {
         );
     }
 
-    // Semantic pin: flag must be set after DECSET.
+ // Property: flag must be set after DECSET.
     assert!(
         harness.term().mode().contains(TermMode::SYNC_UPDATE),
         "after DECSET ?2026, SYNC_UPDATE must be set"
@@ -121,7 +121,7 @@ fn mode_2026_decrqm_default_reset() {
 
 /// DECRQM `?2026` returns `\x1b[?2026;1$y` when mode is set.
 ///
-/// With Mode 2026 no longer buffering bytes (BUG-11-027), DECRQM is
+/// With Mode 2026 no longer buffering bytes (), DECRQM is
 /// dispatched inline between BSU and ESU within the same `feed()` call.
 /// The mode flag is still set when DECRQM arrives (BSU set it, ESU has
 /// not yet been processed), so the response correctly reports `1`.
@@ -145,7 +145,7 @@ fn mode_2026_decrqm_after_set() {
     );
 }
 
-/// Negative pin: DECSET `?2026` must NOT touch unrelated flags.
+/// Regression guard: DECSET `?2026` must NOT touch unrelated flags.
 ///
 /// Verifies that only the SYNC_UPDATE flag changes — no side effects
 /// on other mode bits.
@@ -166,7 +166,7 @@ fn mode_2026_does_not_touch_unrelated_flags() {
     );
 }
 
-// BUG-11-027 §03 matrix — device-query bytes inside Mode 2026 dispatch
+// §03 matrix — device-query bytes inside Mode 2026 dispatch
 // inline, not deferred to ESU/timeout.
 //
 // Each test below feeds `BSU + query` in ONE harness.feed() call with
@@ -176,11 +176,11 @@ fn mode_2026_does_not_touch_unrelated_flags() {
 // response would be deferred and these assertions would fail.
 //
 // All 11 query classes from §01 blast radius are covered, plus the
-// DECRQM unknown / set / reset axes added by Plan TPR rounds 0-1.
+// DECRQM unknown / set / reset axes added by review rounds 0-1.
 
 /// Helper: assert a specific PTY response is in the harness transcript.
 ///
-/// Used by the BUG-11-027 §03 matrix tests below — each test feeds a
+/// Used by the §03 matrix tests below — each test feeds a
 /// device query inside Mode 2026 and asserts the expected response.
 fn assert_pty_response(harness: &SpecHarness, expected: &[u8], context: &str) {
     let found = pty_writes(harness).any(|(b, _)| b == expected);
@@ -205,7 +205,7 @@ fn assert_pty_response_contains(harness: &SpecHarness, needle: &[u8], context: &
     );
 }
 
-/// Regression: BUG-11-027 §03 — DA1 dispatched inline during Mode 2026 BSU.
+/// Regression: §03 — DA1 dispatched inline during Mode 2026 BSU.
 ///
 /// Feed BSU + DA1 in one call (no ESU). The DA1 dispatches inline and
 /// the `\x1b[?64;6;4c` response appears in the transcript before the
@@ -217,7 +217,7 @@ fn da1_inside_mode_2026_emits_response_inline() {
     assert_pty_response(&harness, b"\x1b[?64;6;4c", "DA1 inline inside Mode 2026");
 }
 
-/// Regression: BUG-11-027 §03 — DA2 dispatched inline during Mode 2026 BSU.
+/// Regression: §03 — DA2 dispatched inline during Mode 2026 BSU.
 #[test]
 fn da2_inside_mode_2026_emits_response_inline() {
     let mut harness = SpecHarness::new();
@@ -231,7 +231,7 @@ fn da2_inside_mode_2026_emits_response_inline() {
     assert_pty_response_contains(&harness, b";1c", "DA2 inline inside Mode 2026 (suffix)");
 }
 
-/// Regression: BUG-11-027 §03 — DA3 dispatched inline during Mode 2026 BSU.
+/// Regression: §03 — DA3 dispatched inline during Mode 2026 BSU.
 #[test]
 fn da3_inside_mode_2026_emits_response_inline() {
     let mut harness = SpecHarness::new();
@@ -243,7 +243,7 @@ fn da3_inside_mode_2026_emits_response_inline() {
     );
 }
 
-/// Regression: BUG-11-027 §03 — DSR 5 dispatched inline during Mode 2026 BSU.
+/// Regression: §03 — DSR 5 dispatched inline during Mode 2026 BSU.
 #[test]
 fn dsr_5_inside_mode_2026_emits_response_inline() {
     let mut harness = SpecHarness::new();
@@ -251,7 +251,7 @@ fn dsr_5_inside_mode_2026_emits_response_inline() {
     assert_pty_response(&harness, b"\x1b[0n", "DSR 5 inline inside Mode 2026");
 }
 
-/// Regression: BUG-11-027 §03 — DSR 6 dispatched inline during Mode 2026 BSU.
+/// Regression: §03 — DSR 6 dispatched inline during Mode 2026 BSU.
 ///
 /// Default cursor is at (1,1) so the response reports `\x1b[1;1R`.
 #[test]
@@ -261,7 +261,7 @@ fn dsr_6_inside_mode_2026_emits_response_inline() {
     assert_pty_response(&harness, b"\x1b[1;1R", "DSR 6 inline inside Mode 2026");
 }
 
-/// Regression: BUG-11-027 §03 — DECRQM ANSI mode 4 (Insert, default reset)
+/// Regression: §03 — DECRQM ANSI mode 4 (Insert, default reset)
 /// dispatched inline during Mode 2026 BSU.
 #[test]
 fn decrqm_ansi_inside_mode_2026_emits_response_inline() {
@@ -275,7 +275,7 @@ fn decrqm_ansi_inside_mode_2026_emits_response_inline() {
     );
 }
 
-/// Regression: BUG-11-027 §03 — DECRQM private mode 2026 (set since BSU
+/// Regression: §03 — DECRQM private mode 2026 (set since BSU
 /// just set it) dispatched inline during Mode 2026 BSU.
 #[test]
 fn decrqm_private_inside_mode_2026_emits_response_inline() {
@@ -288,7 +288,7 @@ fn decrqm_private_inside_mode_2026_emits_response_inline() {
     );
 }
 
-/// Regression: BUG-11-027 §03 — DECRQM unknown private mode reports value 0
+/// Regression: §03 — DECRQM unknown private mode reports value 0
 /// when queried inline during Mode 2026 BSU.
 ///
 /// Covers the `unknown` axis of the DECRQM private matrix (Plan TPR
@@ -304,7 +304,7 @@ fn decrqm_unknown_private_inside_mode_2026_emits_response_inline() {
     );
 }
 
-/// Regression: BUG-11-027 §03 — DECRQM unknown ANSI mode reports value 0
+/// Regression: §03 — DECRQM unknown ANSI mode reports value 0
 /// when queried inline during Mode 2026 BSU.
 #[test]
 fn decrqm_unknown_ansi_inside_mode_2026_emits_response_inline() {
@@ -317,10 +317,10 @@ fn decrqm_unknown_ansi_inside_mode_2026_emits_response_inline() {
     );
 }
 
-/// Regression: BUG-11-027 §03 — DECRQM ANSI **set** axis. Set Insert
+/// Regression: §03 — DECRQM ANSI **set** axis. Set Insert
 /// before BSU so the inline DECRQM inside sync reports value 1 (set).
 ///
-/// Covers the ANSI-set axis (Plan TPR round 1 finding F4).
+/// Covers the ANSI-set axis (review round 1 finding F4).
 #[test]
 fn decrqm_ansi_set_inside_mode_2026_emits_response_inline() {
     let mut harness = SpecHarness::new();
@@ -332,11 +332,11 @@ fn decrqm_ansi_set_inside_mode_2026_emits_response_inline() {
     );
 }
 
-/// Regression: BUG-11-027 §03 — DECRQM private **reset** axis. Mode 1049
+/// Regression: §03 — DECRQM private **reset** axis. Mode 1049
 /// (Alternate Screen Buffer Save Cursor) is default reset, so the inline
 /// DECRQM inside sync reports value 2.
 ///
-/// Covers the private-reset axis (Plan TPR round 1 finding F4).
+/// Covers the private-reset axis (review round 1 finding F4).
 #[test]
 fn decrqm_private_reset_inside_mode_2026_emits_response_inline() {
     let mut harness = SpecHarness::new();
@@ -348,7 +348,7 @@ fn decrqm_private_reset_inside_mode_2026_emits_response_inline() {
     );
 }
 
-/// Regression: BUG-11-027 §03 — CSI 18t (text-area-size report)
+/// Regression: §03 — CSI 18t (text-area-size report)
 /// dispatched inline during Mode 2026 BSU. Default harness size is
 /// 24×80, so the response is `\x1b[8;24;80t`.
 #[test]
@@ -362,10 +362,10 @@ fn csi_18t_inside_mode_2026_emits_response_inline() {
     );
 }
 
-/// Regression: BUG-11-027 §03 — XTSMGRAPHICS Pi=1 Pa=1 Pv=0 (read color
+/// Regression: §03 — XTSMGRAPHICS Pi=1 Pa=1 Pv=0 (read color
 /// registers) dispatched inline during Mode 2026 BSU.
 ///
-/// Per Plan TPR round 1 finding F3, the dispatcher requires exactly 3
+/// Per review round 1 finding F3, the dispatcher requires exactly 3
 /// top-level params. Default `image_protocol_enabled = true` and
 /// `color_register_count = COLOR_REGISTERS_MAX`, so the response shape
 /// is `\x1b[?1;0;<count>S` — match the prefix to keep the test stable
@@ -381,7 +381,7 @@ fn xtsmgraphics_inside_mode_2026_emits_response_inline() {
     );
 }
 
-/// Regression: BUG-11-027 §03 — DECRQSS SGR query dispatched inline
+/// Regression: §03 — DECRQSS SGR query dispatched inline
 /// during Mode 2026 BSU. Default cursor template emits SGR `0` (reset),
 /// so the response is `\x1bP1$r0m\x1b\\`.
 #[test]
@@ -395,8 +395,8 @@ fn decrqss_inside_mode_2026_emits_response_inline() {
     );
 }
 
-/// Regression: BUG-11-027 §03 — XTVERSION dispatched inline during Mode
-/// 2026 BSU. Resolves the BUG-11-018 cross-ref note (XTVERSION inside a
+/// Regression: §03 — XTVERSION dispatched inline during Mode
+/// 2026 BSU. Resolves the cross-ref note (XTVERSION inside a
 /// sync block now responds immediately, not at sync end).
 #[test]
 fn xtversion_inside_mode_2026_emits_response_inline() {

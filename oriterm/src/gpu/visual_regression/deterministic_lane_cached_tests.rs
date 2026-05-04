@@ -6,7 +6,7 @@
 //!
 //! Section 05.6 items:
 //! - Cached render reproducibility proof
-//! - Subpixel positioning toggle semantic pin
+//! - Subpixel positioning toggle property
 
 #![cfg(all(test, feature = "gpu-tests"))]
 
@@ -124,9 +124,9 @@ fn content_unchanged_path_produces_correct_output() {
     );
 }
 
-// Subpixel positioning toggle semantic pin
+// Subpixel positioning toggle property
 
-/// Semantic pin: the deterministic lane correctly propagates
+/// Property: the deterministic lane correctly propagates
 /// `GoldenLaneConfig.subpixel_positioning` to the renderer AND the flag
 /// reaches the glyph emitter through the FrameInput.
 ///
@@ -179,7 +179,7 @@ fn subpixel_positioning_propagated_from_config_to_renderer() {
     );
 }
 
-/// Semantic pin: the cached render path produces non-blank pixels when
+/// Property: the cached render path produces non-blank pixels when
 /// rendering text content, proving the full pipeline (prepare → content
 /// cache → copy → overlay) is functional and actually rasterizes glyphs.
 ///

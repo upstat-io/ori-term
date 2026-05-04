@@ -70,7 +70,7 @@ pub(crate) struct MarkModeResult {
 
 /// Bundled inputs to [`handle_mark_mode_key`] — bundles the six dispatch
 /// inputs (grid, cursor, selection, event, mods, delimiters) per
-/// `impl-hygiene.md §Parameter Hygiene` (>4 params → struct).
+/// Hygiene (>4 params → struct).
 pub(crate) struct MarkModeKeyContext<'a> {
     pub grid: &'a SnapshotGrid<'a>,
     pub cursor: MarkCursor,

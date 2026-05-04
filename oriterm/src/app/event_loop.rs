@@ -461,7 +461,7 @@ impl ApplicationHandler<TermEvent> for App {
         //     `HashMap<u64, Instant>` leak, and `next_wake_time()` keeps
         //     returning past-due instants that cause `ControlFlow::
         //     WaitUntil(past)` to fire immediately — the event loop
-        //     spins, violating `.claude/rules/oriterm.md §Zero idle CPU
+ // spins, violating idle CPU
         //     beyond cursor blink`.
         // `has_pending_work(now)` covers both matured wake sources + any
         // already-outstanding anim/paint requests, so marking the window

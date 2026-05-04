@@ -12,9 +12,9 @@ fn default_color_0_is_black() {
     assert_eq!(black, Rgb { r: 0, g: 0, b: 0 });
 }
 
-/// Regression: BUG-08-016 — pins the canonical xterm white (0xE5E5E5),
+/// Regression: — pins the canonical xterm white (0xE5E5E5),
 /// not the Tango "Aluminium 2" value (0xD3D7CF) the palette had before.
-/// See: bug-tracker/plans/completed/BUG-08-016/00-overview.md
+/// See: bug-tracker/plans/completed//00-overview.md
 #[test]
 fn default_color_7_is_xterm_white() {
     let p = Palette::default();
@@ -29,7 +29,7 @@ fn default_color_7_is_xterm_white() {
     );
 }
 
-/// Regression: BUG-08-016 — pins canonical xterm bright white (pure
+/// Regression: — pins canonical xterm bright white (pure
 /// 0xFFFFFF), not Tango "Aluminium 1" (0xEEEEEC).
 #[test]
 fn default_color_15_is_xterm_bright_white() {
@@ -124,7 +124,7 @@ fn grayscale_ramp_correct() {
     }
 }
 
-/// Pins canonical xterm red (0xCD0000) per BUG-08-016.
+/// Pins canonical xterm red (0xCD0000) per.
 #[test]
 fn resolve_named() {
     let p = Palette::default();
@@ -665,11 +665,11 @@ fn set_default_changes_reset_baseline() {
     assert_eq!(p.resolve(Color::Indexed(1)), config_color);
 }
 
-/// Regression: BUG-08-016 — `ANSI_COLORS` previously held the GNOME/Tango
+/// Regression: — `ANSI_COLORS` previously held the GNOME/Tango
 /// palette under a "Standard xterm" comment. Yellow must be 0xCDCD00 (the
 /// xterm `ttyDefaultColors` value), not 0xC4A000 (Tango "Butter Dark" —
 /// orange-tinged), the user-most-visible divergence.
-/// See: bug-tracker/plans/completed/BUG-08-016/00-overview.md
+/// See: bug-tracker/plans/completed//00-overview.md
 #[test]
 fn default_color_3_is_xterm_yellow() {
     let p = Palette::default();
@@ -683,7 +683,7 @@ fn default_color_3_is_xterm_yellow() {
     );
 }
 
-/// Semantic pin: bright green must be pure 0x00FF00 (xterm), not 0x8AE234
+/// Property: bright green must be pure 0x00FF00 (xterm), not 0x8AE234
 /// (Tango "Chameleon Light" — lime-tinged).
 #[test]
 fn default_color_10_is_xterm_bright_green() {
@@ -698,7 +698,7 @@ fn default_color_10_is_xterm_bright_green() {
     );
 }
 
-/// Semantic pin: bright yellow must be pure 0xFFFF00 (xterm), not 0xFCE94F
+/// Property: bright yellow must be pure 0xFFFF00 (xterm), not 0xFCE94F
 /// (Tango "Butter Light" — slightly desaturated).
 #[test]
 fn default_color_11_is_xterm_bright_yellow() {
@@ -713,7 +713,7 @@ fn default_color_11_is_xterm_bright_yellow() {
     );
 }
 
-/// Negative pin: yellow must NOT be the Tango "Butter Dark" value, even
+/// Regression guard: yellow must NOT be the Tango "Butter Dark" value, even
 /// though that value remains available via the named `Tango Dark` /
 /// `Tango Light` schemes in `oriterm/src/scheme/builtin/extended2.rs`.
 #[test]
@@ -727,7 +727,7 @@ fn default_color_3_is_not_tango_yellow() {
     assert_ne!(p.resolve(Color::Indexed(3)), tango_yellow);
 }
 
-/// Negative pin: bright green must NOT be Tango "Chameleon Light".
+/// Regression guard: bright green must NOT be Tango "Chameleon Light".
 #[test]
 fn default_color_10_is_not_tango_bright_green() {
     let p = Palette::default();
@@ -739,7 +739,7 @@ fn default_color_10_is_not_tango_bright_green() {
     assert_ne!(p.resolve(Color::Indexed(10)), tango_bright_green);
 }
 
-/// Negative pin: bright yellow must NOT be Tango "Butter Light".
+/// Regression guard: bright yellow must NOT be Tango "Butter Light".
 #[test]
 fn default_color_11_is_not_tango_bright_yellow() {
     let p = Palette::default();
@@ -751,7 +751,7 @@ fn default_color_11_is_not_tango_bright_yellow() {
     assert_ne!(p.resolve(Color::Indexed(11)), tango_bright_yellow);
 }
 
-/// Regression: BUG-08-016 — full 16-entry matrix pin against the canonical
+/// Regression: — full 16-entry matrix pin against the canonical
 /// xterm `ttyDefaultColors` table (`xterm/charproc.c`). Catches any
 /// single-entry drift the targeted pins above might miss.
 #[test]

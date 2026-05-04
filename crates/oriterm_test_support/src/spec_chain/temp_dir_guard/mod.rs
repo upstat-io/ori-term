@@ -4,7 +4,7 @@
 //! exposes a borrowed path accessor. The inner `TempDir::drop` removes
 //! the directory on every exit path — normal return, `?` error
 //! propagation, and panic unwinding — which is the invariant
-//! `.claude/rules/code-hygiene.md` §Temporal Coupling & RAII Guards
+//! §Temporal Coupling & RAII Guards
 //! requires for paired setup/cleanup operations.
 //!
 //! Consumers should hold the guard for the full test lifetime and let

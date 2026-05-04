@@ -48,9 +48,9 @@ impl CursorKey {
 /// SSOT: encode a DECCKM-controlled cursor key as SS3 or CSI bytes.
 ///
 /// Returns one of 12 static byte slices (6 keys × 2 modes). Zero-alloc.
-/// Intra-crate; per `.claude/rules/impl-hygiene.md §Performance Annotations`,
-/// `#[inline]` on a 16-line intra-crate function requires profiling data —
-/// none collected, so the attribute is omitted.
+/// Intra-crate; per the Performance Annotations rule, `#[inline]` on a
+/// 16-line intra-crate function requires profiling data — none collected,
+/// so the attribute is omitted.
 #[must_use]
 pub(crate) const fn cursor_key_bytes(key: CursorKey, app_cursor: bool) -> &'static [u8] {
     use CursorKey::{Down, End, Home, Left, Right, Up};

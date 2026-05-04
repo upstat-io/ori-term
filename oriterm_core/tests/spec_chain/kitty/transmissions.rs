@@ -117,13 +117,13 @@ fn kitty_transmission_file_path_traversal_rejected() {
     );
 }
 
-// BUG-08-021 — kitty_store_from_file file-size pre-check + bounded reader.
+// — kitty_store_from_file file-size pre-check + bounded reader.
 // All tests in this section verify the bug fix: file-size enforcement
 // runs BEFORE allocating the file into memory, t=t cleanup runs on
 // every exit path via RAII guard, and non-regular paths are rejected
 // before any read is attempted.
 
-/// BUG-08-021: `t=f` with file > max_bytes returns ENOMEM via the
+/// : `t=f` with file > max_bytes returns ENOMEM via the
 /// metadata preflight, BEFORE the bounded read fills file_data. The
 /// post-read check is unreachable in this scenario (preflight rejects
 /// first). t=f does NOT remove the source file even on rejection.
@@ -158,7 +158,7 @@ fn kitty_store_from_file_oversized_t_eq_f_returns_enomem_via_preflight() {
     );
 }
 
-/// BUG-08-021: `t=t` with file > max_bytes returns ENOMEM AND the
+/// : `t=t` with file > max_bytes returns ENOMEM AND the
 /// source file IS removed via the RAII guard's Drop. Pins both the
 /// rejection and the cleanup-on-rejection invariant.
 #[test]
@@ -188,7 +188,7 @@ fn kitty_store_from_file_oversized_t_eq_t_returns_enomem_and_removes_source() {
     );
 }
 
-/// BUG-08-021 boundary clamp: file size == max_bytes succeeds.
+/// boundary clamp: file size == max_bytes succeeds.
 /// Per Round 2 Codex F6 + Gemini F3 + Opencode F2 (3-of-3 agreement)
 /// boundary-from-below pin.
 #[test]
@@ -214,7 +214,7 @@ fn kitty_store_from_file_exactly_max_bytes_succeeds() {
     assert!(reply_contains(&h, &ok_reply_for(82)));
 }
 
-/// BUG-08-021 boundary clamp: file size == max_bytes + 1 rejects via
+/// boundary clamp: file size == max_bytes + 1 rejects via
 /// metadata preflight. Pins the boundary-from-above per the same 3-of-3
 /// agreement.
 #[test]
@@ -243,7 +243,7 @@ fn kitty_store_from_file_max_bytes_plus_one_rejects_via_preflight() {
     );
 }
 
-/// BUG-08-021: `max_bytes = usize::MAX` does NOT panic on overflow.
+/// : `max_bytes = usize::MAX` does NOT panic on overflow.
 /// Pins the saturating_add invariant against debug-mode overflow.
 /// Per Round 1 Codex F5 + Gemini F2 + Opencode F2 (3-of-3 agreement).
 #[test]
@@ -269,7 +269,7 @@ fn kitty_store_from_file_max_bytes_usize_max_does_not_panic() {
     assert!(reply_contains(&h, &ok_reply_for(84)));
 }
 
-/// BUG-08-021 (Unix only): path is a directory → EINVAL via fstat
+/// (Unix only): path is a directory → EINVAL via fstat
 /// non-regular-file rejection. Per Round 2 Codex F1 + Opencode F1.
 #[cfg(unix)]
 #[test]
@@ -300,7 +300,7 @@ fn kitty_store_from_file_directory_path_returns_einval() {
     );
 }
 
-/// BUG-08-021 (Unix only): path is a FIFO → rejected without
+/// (Unix only): path is a FIFO → rejected without
 /// blocking. Pins the O_NONBLOCK + fstat protection against
 /// FIFO-without-writer DoS that Round 0 3-of-3 reviewers flagged.
 ///
@@ -345,7 +345,7 @@ fn kitty_store_from_file_fifo_path_returns_einval_no_block() {
     );
 }
 
-/// BUG-08-021: t=t with FIFO path. Pins the RAII-cleanup-on-EINVAL
+/// : t=t with FIFO path. Pins the RAII-cleanup-on-EINVAL
 /// invariant — `remove_file` CAN remove FIFOs on Unix, so the guard's
 /// Drop should successfully unlink the FIFO when t=t requested deletion.
 /// Per Round 0 Code TPR Codex F3 (missing non-regular t=t cleanup matrix).
@@ -386,7 +386,7 @@ fn kitty_store_from_file_fifo_t_eq_t_returns_einval_and_removes_source() {
     );
 }
 
-/// BUG-08-021: empty file (0 bytes) with f=32,s=4,v=4 fails decode
+/// : empty file (0 bytes) with f=32,s=4,v=4 fails decode
 /// gracefully with EINVAL. Pins the empty-file policy explicitly —
 /// the bounded read returns immediately with `file_data.len() == 0`,
 /// then `kitty_decode_pixels` rejects (0 != expected 64).
@@ -412,7 +412,7 @@ fn kitty_store_from_file_empty_file_returns_einval() {
     );
 }
 
-/// BUG-08-029: `kitty_decode_pixels` `(w * h * 4)` overflow protection.
+/// : `kitty_decode_pixels` `(w * h * 4)` overflow protection.
 /// Pin: feeding `s=u32::MAX,v=u32::MAX,f=32` MUST emit EINVAL without
 /// panic (debug build would have panicked on the bare multiplication;
 /// release build would have wrapped to 0 and corrupted the size check).
@@ -439,7 +439,7 @@ fn kitty_decode_pixels_extreme_dimensions_returns_einval_no_panic() {
     );
 }
 
-/// BUG-08-029: same overflow protection for `f=24` (RGB) format.
+/// : same overflow protection for `f=24` (RGB) format.
 #[test]
 fn kitty_decode_pixels_extreme_dimensions_rgb_returns_einval_no_panic() {
     let mut h = SpecHarness::new();
@@ -457,7 +457,7 @@ fn kitty_decode_pixels_extreme_dimensions_rgb_returns_einval_no_panic() {
     );
 }
 
-/// BUG-08-024: `a=a` (animate) MUST emit ENOENT when `i=` is missing,
+/// : `a=a` (animate) MUST emit ENOENT when `i=` is missing,
 /// mirroring `a=p` (place) which already does so at place.rs:16-19.
 /// Pin the cross-action consistency.
 #[test]

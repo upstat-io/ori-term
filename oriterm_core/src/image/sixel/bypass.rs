@@ -4,7 +4,7 @@
 //! `sixel/tests.rs`. The guard flips a thread-local flag so
 //! `SixelParser::new` skips the `VT340_PALETTE` copy loop; the `Drop`
 //! impl restores the flag even on panic, preventing state leakage into
-//! other tests on the same worker thread per `.claude/rules/impl-
+//! other tests on the same worker thread
 //! hygiene.md §Temporal Coupling & RAII Guards`.
 
 use std::cell::Cell;

@@ -126,7 +126,7 @@
 //! against this implementation.
 //!
 //! Per the "expand the mission, never scope down" rule, the test is
-//! NOT deleted — it is repurposed as a NEGATIVE pin
+//! NOT deleted — it is repurposed as a Regression guard
 //! ([`tests::parse_character_sets_raw_ascii_line_drawing_does_not_match`])
 //! that asserts the parser correctly REJECTS raw ASCII line-drawing
 //! letters (which carry no Unicode box-drawing code points). A

@@ -59,8 +59,7 @@ impl App {
     /// via `ControlFlow::WaitUntil`. `None` clears the prior deadline so a
     /// queued wake from an animation that has since stopped does NOT fire
     /// spuriously — critical for honoring the "zero idle CPU beyond cursor
-    /// blink" invariant (`.claude/rules/oriterm.md`) across animation
-    /// start/stop cycles.
+    /// blink" invariant across animation start/stop cycles.
     pub(super) fn request_pane_animation_frame_at(
         &mut self,
         pane_id: PaneId,

@@ -518,7 +518,7 @@ fn reflow_row_cells(
                 // new_cols - 1 is padding, not content. Mark it so
                 // reflow/selection/search skips it. Carries DRAWN
                 // because it structurally participates in the wide
-                // char's on-screen presence (BUG-08-017).
+ // char's on-screen presence ().
                 if is_wide && *out_col < new_cols {
                     boundary.ch = ' ';
                     boundary
@@ -550,7 +550,7 @@ fn reflow_row_cells(
 
         // Write wide char spacer in next column. Carries DRAWN because
         // it structurally participates in the wide char's on-screen
-        // presence (BUG-08-017).
+ // presence ().
         if is_wide {
             let mut spacer = Cell::default();
             spacer

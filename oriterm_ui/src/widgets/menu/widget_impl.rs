@@ -170,7 +170,7 @@ impl Widget for MenuWidget {
             // ArrowUp, Enter, Escape) route through the keymap path —
             // see `key_context()` returning `"MenuSearchable"`, which the
             // default keymap binds without `Space` so printable filter
-            // input reaches this branch. Per BUG-03-003 (resolved): the
+ // input reaches this branch. Per (resolved): the
             // overlay keymap dispatch path now invokes
             // `MenuWidget::handle_keymap_action` for nav/confirm keys,
             // so this `on_input` arm only handles the printable filter
@@ -195,7 +195,7 @@ impl Widget for MenuWidget {
     }
 
     fn key_context(&self) -> Option<&'static str> {
-        // BUG-03-003: searchable Menu uses a distinct context so the
+ // : searchable Menu uses a distinct context so the
         // keymap omits Space (which would otherwise steal printable
         // filter input via Space->Confirm). Non-searchable Menu keeps
         // Space->Confirm via the "Menu" context.

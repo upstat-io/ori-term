@@ -8,7 +8,7 @@
 //! `PendingMarks`) also live here; `term/mod.rs` re-exports them for a
 //! stable public API. Kitty keyboard snapshot / restore lives in
 //! `shell_state/kitty_keyboard.rs`. Note: `term/mod.rs` remains over
-//! the 500-line cap pending BUG-08-020's full split.
+//! the 500-line cap pending 's full split.
 
 mod kitty_keyboard;
 

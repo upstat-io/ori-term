@@ -28,7 +28,7 @@ fn tack_tools_enq_ack_80x24() {
 
     let outcome = ScenarioRunner::run(&TACK_TOOLS_ENQ_ACK);
 
-    // NEGATIVE PIN: empty grid means tack navigation failed before
+ // REGRESSION GUARD: empty grid means tack navigation failed before
     // the ENQ/ACK probe ran. The downstream assertions would still
     // pass on an empty grid (no notes → no extraction), so this
     // explicit assertion fires first with a precise diagnostic.

@@ -62,7 +62,7 @@ fn parse_padding_screen_finds_each_cap_in_isolation() {
 
 #[test]
 fn parse_padding_screen_rejects_substring_collisions() {
-    // SEMANTIC PIN for the M3 fix: the parser MUST require the
+ // Verifies for the M3 fix: the parser MUST require the
     // parenthesized form via `grid_has_paren_token`, not raw
     // `str::contains`. The shorter cap names (`is1`, `is2`, `is3`,
     // `rs1`, `rs2`, `rs3`) would false-positive against any
@@ -98,7 +98,7 @@ reset_1string contains s1 not (rs1)
 
 #[test]
 fn parse_padding_screen_returns_caps_in_canonical_order() {
-    // SEMANTIC PIN: the parser walks STRING_CAPS in declaration
+ // Verifies: the parser walks STRING_CAPS in declaration
     // order and pushes matches in that order, so the returned
     // `capability_labels` vec MUST appear in canonical order
     // [rs1, rs2, rs3, is1, is2, is3, smcup, rmcup, smkx, rmkx]
@@ -126,7 +126,7 @@ fn parse_padding_screen_returns_caps_in_canonical_order() {
 
 #[test]
 fn parse_padding_screen_handles_realistic_tack_v108_output() {
-    // SEMANTIC PIN: against the actual tack v1.08 padding test
+ // Verifies: against the actual tack v1.08 padding test
     // output (verified empirically — see module rustdoc), the
     // parser returns ["rs1"] because tack v1.08 emits the
     // `(rs1) reset_1string, not present.  (rs1) Done` line. The

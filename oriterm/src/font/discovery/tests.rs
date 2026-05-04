@@ -481,7 +481,7 @@ fn enumerate_groups_bold_into_correct_slot() {
     );
 }
 
-/// Bold-visited-first ordering (Round 5 codex F1) — even when the directory
+/// Bold-visited-first ordering (Round 5 F1) — even when the directory
 /// walker happens to encounter the Bold variant before the Regular variant,
 /// the Regular slot MUST be populated by the actual Regular face, not by Bold.
 /// Faked here by enumerating two siblings; `HashMap` iteration order is
@@ -533,7 +533,7 @@ fn enumerate_mono_families_returns_slice_no_panic() {
 
 // --- Resolution-bridge integration ---
 //
-// Pin 2 (§03 Semantic pin): if "JetBrains Mono" appears in the system catalog
+// Pin 2 (§03 Property): if "JetBrains Mono" appears in the system catalog
 // (typical Linux box where the user installed JBM, or any system where the
 // embedded JBM fixture happens to be in scope), `discover_fonts(Some("JetBrains
 // Mono"), …)` must resolve to a real file — not fall through to embedded
@@ -543,7 +543,7 @@ fn enumerate_mono_families_returns_slice_no_panic() {
 /// in `try_user_family_with_bridge_using` resolves it via the family-name →
 /// path map. Deterministic — uses the injectable lookup seam to seed a
 /// fixture catalog so the test does not depend on the host system having
-/// `JetBrains` Mono installed (closes codex F2 INVERTED-TDD per §06 Round 0).
+/// `JetBrains` Mono installed (closes F2 test ordering per §06 Round 0).
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn try_user_family_with_bridge_resolves_enumerated_family() {
@@ -585,7 +585,7 @@ fn try_user_family_with_bridge_resolves_enumerated_family() {
     );
 }
 
-/// Bridge negative pin (Pin 2 fall-through): when the catalog does NOT know
+/// Bridge regression guard (Pin 2 fall-through): when the catalog does NOT know
 /// the family AND filename heuristics also miss, the bridge returns `None`
 /// — never silently succeeds for genuinely uninstalled families.
 #[cfg(any(target_os = "linux", target_os = "macos"))]
@@ -610,7 +610,7 @@ fn try_user_family_with_bridge_returns_none_when_catalog_misses() {
 // --- Algorithmic-duplication regression ---
 
 /// Linux/macOS `index_font_dir` collapsed into a single canonical
-/// `walk_font_dirs` helper (closes opencode's `LEAK:algorithmic-duplication`
+/// `walk_font_dirs` helper (closes 's `LEAK:algorithmic-duplication`
 /// finding). This test pins the SSOT at the API level: both platforms expose
 /// `build_font_index` returning equivalently-shaped indices over their roots.
 #[cfg(target_os = "linux")]

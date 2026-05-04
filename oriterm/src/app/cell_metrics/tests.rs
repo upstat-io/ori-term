@@ -43,7 +43,7 @@ fn both_axis_change_fires() {
     assert!(cell_metric_broadcast_needed(Some((8, 16)), (16, 32)));
 }
 
-/// Negative pin: any non-None equal value must NOT fire, even for
+/// Regression guard: any non-None equal value must NOT fire, even for
 /// degenerate `(1, 1)` dims that happen after a font-size clamp.
 #[test]
 fn negative_pin_degenerate_dims_short_circuit() {
@@ -156,7 +156,7 @@ fn collect_window_pane_ids_spans_all_tabs() {
     assert_eq!(panes.len(), 2, "exactly 2 panes across 2 tabs");
 }
 
-/// Negative pin: a window with no tabs returns an empty list.
+/// Regression guard: a window with no tabs returns an empty list.
 /// See: plans/spec-conformance/section-07-image-lifecycle-correctness.md §07.N
 #[test]
 fn collect_window_pane_ids_empty_window() {
@@ -170,7 +170,7 @@ fn collect_window_pane_ids_empty_window() {
     assert!(panes.is_empty(), "empty window must yield no panes");
 }
 
-/// Negative pin: a non-existent window returns an empty list.
+/// Regression guard: a non-existent window returns an empty list.
 /// See: plans/spec-conformance/section-07-image-lifecycle-correctness.md §07.N
 #[test]
 fn collect_window_pane_ids_missing_window() {

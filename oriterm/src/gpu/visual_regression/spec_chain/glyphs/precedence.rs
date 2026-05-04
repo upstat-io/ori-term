@@ -10,7 +10,7 @@
 //! compares against the SAME golden PNG the `sparse_goldens.rs` tests
 //! committed. A pass proves the built-in renderer is selected regardless of
 //! the configured font's coverage claim — the SSOT requirement in
-//! `.claude/rules/impl-hygiene.md`.
+//!.
 //!
 //! If the font shaper ever leaks through (because a regression in
 //! `font::is_builtin` or the built-in dispatch), the rendered output would

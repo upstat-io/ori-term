@@ -6,7 +6,7 @@
 //! temp file for post-test aggregation by `spec-coverage-report --check`.
 //!
 //! No file I/O during test execution — flaky-test discipline per
-//! `.claude/rules/tests.md`.
+//!.
 
 use std::collections::HashSet;
 use std::io::Write;

@@ -438,7 +438,7 @@ mod font_config {
         );
     }
 
-    /// Regression: BUG-04-004 round-1 TPR finding TPR-04-004-codex.
+ /// Regression: round-1 TPR finding TPR-04-004-.
     ///
     /// Pins the source-side emoji-reinject ordering that mirrors the
     /// production config-reload call sequence
@@ -491,7 +491,7 @@ mod font_config {
         assert_eq!(
             ui_fallback_count(&renderer),
             0,
-            "replace_ui_font_sizes must NOT inject — it is storage-only (BUG-04-004 round-1 fix)"
+            "replace_ui_font_sizes must NOT inject — it is storage-only"
         );
 
         // Step 2: install a new terminal font collection. This is the
@@ -520,7 +520,7 @@ mod font_config {
         assert_eq!(
             ui_fallback.len(),
             1,
-            "replace_font_collection must reinject emoji from the NEW terminal font (BUG-04-004)"
+            "replace_font_collection must reinject emoji from the NEW terminal font"
         );
         assert!(
             std::sync::Arc::ptr_eq(&ui_fallback[0].data, &expected_fallback_arc),

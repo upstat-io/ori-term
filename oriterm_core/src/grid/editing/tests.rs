@@ -81,7 +81,7 @@ fn overwrite_wide_char_clears_spacer() {
     );
 }
 
-/// Regression: BUG-06-016 (notcurses-demo mojibake) — after a span
+/// Regression: (notcurses-demo mojibake) — after a span
 /// covered by a wide-char (emoji) is rewritten with narrow chars, every
 /// narrow-char cell must carry its own character. Simulates a stdplane
 /// row getting covered by an emoji-plane composite then re-rendered
@@ -1374,7 +1374,7 @@ fn dch_with_cursor_right_of_right_margin_is_noop() {
     }
 }
 
-// ---- BUG-08-017 regression tests: CHARDRAWN via CellFlags::DRAWN ----
+// ---- regression tests: CHARDRAWN via CellFlags::DRAWN ----
 //
 // xterm's CHARDRAWN bit is set on every application write and cleared
 // on every erase/reset. ori_term mirrors this via CellFlags::DRAWN.
@@ -1394,7 +1394,7 @@ fn put_char_ascii_sets_drawn() {
     );
 }
 
-/// Regression: BUG-08-017 — the specific repro from the bug entry.
+/// Regression: — the specific repro from the bug entry.
 /// Application writes a plain space with default SGR → cell must carry
 /// DRAWN so DECRQCRA sees it as a written cell, not pristine.
 #[test]
@@ -1405,7 +1405,7 @@ fn put_char_ascii_space_sets_drawn() {
         grid[crate::index::Line(0)][Column(0)]
             .flags
             .contains(CellFlags::DRAWN),
-        "plain space write MUST set DRAWN — this is the BUG-08-017 repro"
+        "plain space write MUST set DRAWN"
     );
 }
 
@@ -1443,7 +1443,7 @@ fn put_char_slow_leading_wide_spacer_sets_drawn() {
     );
 }
 
-/// Regression: BUG-08-017 gemini F1 — combining-mark modification on a
+/// Regression: F1 — combining-mark modification on a
 /// cell IS a draw operation. Even though push_zerowidth mutates `extra`
 /// (not `ch` or `flags`), we explicitly set DRAWN on the target cell
 /// so it survives future callers that might target an undrawn cell.

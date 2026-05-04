@@ -168,7 +168,7 @@ fn pty_session_quit_tack_returns_status_when_child_exits() {
 
 #[test]
 fn pty_session_quit_tack_exits_early_when_child_dies_after_first_q() {
-    // SEMANTIC PIN: this proves the q-loop returns the moment
+ // Verifies: this proves the q-loop returns the moment
     // `try_wait()` observes exit, NOT after exhausting
     // `max_iterations`. A regression that removed the `try_wait`
     // early-exit (e.g., always looped `max_iterations` times)

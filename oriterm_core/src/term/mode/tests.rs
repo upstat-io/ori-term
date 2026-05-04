@@ -192,7 +192,7 @@ fn term_mode_size_is_8_bytes() {
     assert_eq!(size_of::<TermMode>(), 8, "TermMode should be 8 bytes (u64)");
 }
 
-/// Regression: BUG-08-012 TPR impl-hygiene F6 — the `From<KeyboardModes> for
+/// Regression: TPR impl-hygiene F6 — the `From<KeyboardModes> for
 /// TermMode` and `From<TermMode> for KeyboardModes` impls must be exact
 /// inverses over the kitty-protocol subset. A divergence would silently
 /// corrupt `snapshot_keyboard_mode_stack` / `restore_keyboard_mode_stack`
@@ -213,7 +213,7 @@ fn keyboard_modes_termmode_roundtrip_preserves_all_bits() {
     }
 }
 
-/// Regression: BUG-08-012 TPR impl-hygiene F6 — non-kitty TermMode bits
+/// Regression: TPR impl-hygiene F6 — non-kitty TermMode bits
 /// must NOT appear in `KeyboardModes::from(TermMode)`. The inverse is
 /// scoped to the kitty-protocol subset.
 #[test]

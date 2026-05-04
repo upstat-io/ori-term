@@ -352,7 +352,7 @@ pub(super) unsafe extern "system" fn subclass_proc(
 
             WM_NCHITTEST => handle_nchittest(hwnd, lparam, data),
 
-            // BUG-10-001: focus-dependent accent border color. Swap between
+ // : focus-dependent accent border color. Swap between
             // the system accent color (active) and `DWMWA_COLOR_NONE`
             // (inactive) on focus changes — Microsoft Learn: "The
             // application is responsible for changing the border color when
@@ -368,7 +368,7 @@ pub(super) unsafe extern "system" fn subclass_proc(
                 DefSubclassProc(hwnd, msg, wparam, lparam)
             }
 
-            // BUG-10-001: refresh the accent color when the user changes
+ // : refresh the accent color when the user changes
             // their accent color or theme via Settings.
             WM_DWMCOLORIZATIONCOLORCHANGED => {
                 super::apply_active_border_color(hwnd);

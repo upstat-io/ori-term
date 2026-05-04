@@ -144,7 +144,7 @@ fn osc22_unknown_icon_is_dropped() {
     );
 }
 
-/// Negative pin: OSC 22 with no cursor-name parameter (one param only)
+/// Regression guard: OSC 22 with no cursor-name parameter (one param only)
 /// misses the `params.len() == 2` guard at `crates/vte/src/ansi/
 /// dispatch/osc.rs` and falls to `unhandled`. No state mutation.
 #[test]
@@ -178,7 +178,7 @@ fn osc22_reset_behavior() {
     );
 }
 
-/// Semantic pin: OSC 22 (mouse icon) and OSC 50 (text cursor shape)
+/// Property: OSC 22 (mouse icon) and OSC 50 (text cursor shape)
 /// write DISTINCT Term fields. Setting a shape via OSC 50 then firing
 /// OSC 22 must not mutate `Term::cursor_shape` — a regression would
 /// signal field conflation (scope clarification §I).
@@ -253,7 +253,7 @@ fn osc50_cursor_shape_underline() {
     assert_eq!(harness.term().cursor_shape(), CursorShape::Underline);
 }
 
-/// Negative pin: `CursorShape=9` misses the `0|1|2` match and falls to
+/// Regression guard: `CursorShape=9` misses the `0|1|2` match and falls to
 /// `unhandled`. Term shape stays at its prior value (`Block` default).
 #[test]
 fn osc50_unknown_shape_dropped() {
@@ -271,7 +271,7 @@ fn osc50_unknown_shape_dropped() {
     );
 }
 
-/// Negative pin: `OSC 50 ; BADTHING` misses the `CursorShape=` prefix
+/// Regression guard: `OSC 50 ; BADTHING` misses the `CursorShape=` prefix
 /// check at `dispatch/osc.rs` and falls to `unhandled`. No mutation.
 #[test]
 fn osc50_malformed_prefix_dropped() {

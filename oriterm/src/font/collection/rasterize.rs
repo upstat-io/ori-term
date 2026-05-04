@@ -71,7 +71,7 @@ pub(super) fn build_gamma_lut(gamma: f32) -> [u8; 256] {
 /// Must NOT be applied to `SubpixelRgb` / `SubpixelBgr` — each R / G / B
 /// byte is an independent per-channel LCD coverage value, and the concave
 /// gamma curve magnifies per-channel asymmetry into saturated color
-/// fringes (BUG-04-006). Must NOT be applied to `Color` — premultiplied
+/// fringes (). Must NOT be applied to `Color` — premultiplied
 /// RGBA would corrupt.
 ///
 /// The `debug_assert!` below is the runtime guard that catches any caller
@@ -84,8 +84,7 @@ fn apply_alpha_correction(glyph: &mut RasterizedGlyph, lut: &[u8; 256]) {
         glyph.format,
         GlyphFormat::Alpha,
         "apply_alpha_correction called on non-Alpha glyph ({:?}); per-byte gamma \
-         boost corrupts subpixel per-channel coverage and premultiplied color \
-         data — see BUG-04-006",
+         boost corrupts subpixel per-channel coverage and premultiplied color data",
         glyph.format,
     );
     for byte in &mut glyph.bitmap {
@@ -96,7 +95,7 @@ fn apply_alpha_correction(glyph: &mut RasterizedGlyph, lut: &[u8; 256]) {
 impl FontCollection {
     /// Apply the per-format gamma correction and insert the glyph into the cache.
     ///
-    /// Canonical home for the `GlyphFormat::Alpha`-only gamma rule (BUG-04-006).
+ /// Canonical home for the `GlyphFormat::Alpha`-only gamma rule ().
     /// Called by both `rasterize` and `rasterize_with_weight` after the raw
     /// rasterizer produces the bitmap — keeping the correction guard in a single
     /// place so any future protocol change lands once, not twice.

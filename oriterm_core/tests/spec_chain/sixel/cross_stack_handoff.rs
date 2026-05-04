@@ -10,7 +10,7 @@
 //! §13.6.
 //!
 //! The kitty side is driven read-only through `\x1b_G…\x1b\\` APC
-//! sequences — no `kitty.rs` edits, which keeps BUG-08-008's kitty-scope
+//! sequences — no `kitty.rs` edits, which keeps 's kitty-scope
 //! gate intact. Sixel side is driven through `\x1bPq…\x1b\\` DCS.
 
 use oriterm_test_support::spec_chain::SpecHarness;

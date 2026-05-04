@@ -117,7 +117,7 @@ fn pty_session_wait_for_with_context_uses_custom_message() {
 
 #[test]
 fn pty_session_wait_for_with_context_bounded_poll_invariant() {
-    // Bounded-poll SEMANTIC PIN for the wait_for_with_context consumer
+ // Bounded-poll Verifies for the wait_for_with_context consumer
     // of poll_until. With a 500 ms deadline, no match, and the silent
     // long-lived child producing no output, drain_blocking(50) returns
     // 0 every iteration and the 10 ms idle sleep keeps wall-clock
@@ -189,7 +189,7 @@ fn pty_session_wait_for_any_returns_some_alt_when_alternate_matches() {
 
 #[test]
 fn pty_session_wait_for_any_returns_none_on_timeout() {
-    // Semantic pin for the non-panicking contract: wait_for_any must
+ // Property for the non-panicking contract: wait_for_any must
     // return Option::None on timeout, NOT panic. A future refactor
     // that swapped the body for catch_unwind on wait_for_with_context
     // would panic inside the call and this test's assert_eq would
@@ -309,7 +309,7 @@ fn pty_session_repeated_spawn_drop_cycle_succeeds_on_subsequent_cmd_exe_spawn() 
 
 #[test]
 fn pty_session_wait_for_any_bounded_poll_invariant() {
-    // Bounded-poll SEMANTIC PIN for the third poll_until consumer.
+ // Bounded-poll Verifies for the third poll_until consumer.
     // Mirror of the wait_for_with_context bounded-poll test — pins
     // that the 10 ms idle-sleep discipline is preserved when
     // poll_until is invoked via the wait_for_any predicate shape.
@@ -333,7 +333,7 @@ fn pty_session_wait_for_any_bounded_poll_invariant() {
 
 #[test]
 fn pty_session_drain_writes_osc_responses_back() {
-    // SEMANTIC PIN for Section 06.0.c: `drain_blocking` must flush the
+ // Verifies for Section 06.0.c: `drain_blocking` must flush the
     // `PtyResponder::osc_responses` queue back through `self.writer`
     // after each VTE advance, exactly the same way it already flushes
     // `take_responses` (DA/DSR path). Proof-of-work: spawn a stdin-echo
@@ -468,7 +468,7 @@ impl PtySession {
 
 #[test]
 fn drain_until_returns_none_immediately_on_channel_disconnect() {
-    // SEMANTIC PIN for drain_until's contract: channel closure
+ // Verifies for drain_until's contract: channel closure
     // (the reader thread has hung up because the child exited or
     // the PTY closed) returns None IMMEDIATELY, not after burning
     // the full timeout budget.

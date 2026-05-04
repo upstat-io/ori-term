@@ -70,7 +70,7 @@ impl MuxServer {
         //
         // Drain in a loop until `WouldBlock` so a single edge-triggered
         // POLLIN event doesn't starve large inbound payloads (e.g. the 8 MiB
-        // `Input` PDUs in the BUG-11-047 e2e tests). Cap iterations to avoid
+ // `Input` PDUs in the e2e tests). Cap iterations to avoid
         // monopolizing the event loop on a single client.
         let read_status = {
             let Some(conn) = self.connections.get_mut(&client_id) else {
@@ -321,7 +321,7 @@ impl MuxServer {
             !deferred.is_empty()
         });
 
-        // BUG-11-011: drop pending host-replies the disconnecting client
+ // : drop pending host-replies the disconnecting client
         // owned. Done INLINE in disconnect_client (not in
         // remove_client_subscriptions) — that helper takes only the
         // subscriptions HashMap, and threading pending_host_replies

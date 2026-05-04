@@ -17,7 +17,7 @@ use super::PtySession;
 
 #[test]
 fn pty_session_send_raw_writes_without_quiesce() {
-    // SEMANTIC PIN that send_raw is distinct from send: send() bakes
+ // Verifies that send_raw is distinct from send: send() bakes
     // in a 300 ms quiesce internally, send_raw() must NOT. The
     // wall-clock assertion is the canary — if a future refactor
     // accidentally rewires send_raw to delegate to send, the elapsed

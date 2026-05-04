@@ -4,7 +4,7 @@ use super::{
     BellAnimation, BellConfig, bell_animation_to_easing, parse_bell_color, parse_bell_color_as_ui,
 };
 
-/// Regression: BUG-11-008 — `BellConfig::is_enabled()` is the gate that
+/// Regression: — `BellConfig::is_enabled()` is the gate that
 /// `mux_pump` uses to decide whether to ring the visual flash overlay.
 /// Default config (animation EaseOut, 150ms) is enabled; a 0ms or None
 /// animation disables.
@@ -13,7 +13,7 @@ fn bell_config_default_is_enabled() {
     assert!(BellConfig::default().is_enabled());
 }
 
-/// Regression: BUG-11-008 — duration_ms == 0 disables visual flash.
+/// Regression: — duration_ms == 0 disables visual flash.
 #[test]
 fn bell_config_zero_duration_is_disabled() {
     let cfg = BellConfig {
@@ -23,7 +23,7 @@ fn bell_config_zero_duration_is_disabled() {
     assert!(!cfg.is_enabled());
 }
 
-/// Regression: BUG-11-008 — animation None disables visual flash.
+/// Regression: — animation None disables visual flash.
 #[test]
 fn bell_config_animation_none_is_disabled() {
     let cfg = BellConfig {
@@ -33,7 +33,7 @@ fn bell_config_animation_none_is_disabled() {
     assert!(!cfg.is_enabled());
 }
 
-/// Regression: BUG-11-008 — parse `"#RRGGBB"` to `Rgb`.
+/// Regression: — parse `"#RRGGBB"` to `Rgb`.
 #[test]
 fn parse_bell_color_accepts_well_formed_hex() {
     let c = parse_bell_color(Some("#ff8000")).expect("valid hex");
@@ -42,7 +42,7 @@ fn parse_bell_color_accepts_well_formed_hex() {
     assert_eq!(c.b, 0x00);
 }
 
-/// Regression: BUG-11-008 — None / malformed input returns None so
+/// Regression: — None / malformed input returns None so
 /// `parse_bell_color_as_ui` can fall back to default white.
 #[test]
 fn parse_bell_color_rejects_malformed() {
@@ -52,7 +52,7 @@ fn parse_bell_color_rejects_malformed() {
     assert!(parse_bell_color(Some("#gghhii")).is_none()); // non-hex
 }
 
-/// Regression: BUG-11-008 — `parse_bell_color_as_ui` produces white as
+/// Regression: — `parse_bell_color_as_ui` produces white as
 /// the default when the config is absent or malformed; mux_pump relies
 /// on this to never pass a "None" color into `ring_visual_bell`.
 #[test]
@@ -62,7 +62,7 @@ fn parse_bell_color_as_ui_defaults_to_white_on_missing() {
     assert_eq!(c, white);
 }
 
-/// Regression: BUG-11-008 — `bell_animation_to_easing` maps the config
+/// Regression: — `bell_animation_to_easing` maps the config
 /// enum to the UI-side `Easing` curve enum so `WindowRoot::ring_visual_bell`
 /// receives the right curve. Verifies the mapping is correct.
 #[test]

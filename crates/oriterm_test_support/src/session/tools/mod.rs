@@ -55,7 +55,7 @@ pub fn tool_available(name: &str, version_arg: &str) -> bool {
 /// installed. `vttest -V` (capital, NOT `--version` — vttest does not
 /// recognize the long form) prints the version banner and exits 0.
 /// Same antipattern family as the prior tack `-h`/`-V` fix above.
-/// Closes BUG-07-020.
+/// Closes.
 #[must_use]
 pub fn vttest_available() -> bool {
     tool_available("vttest", "-V")

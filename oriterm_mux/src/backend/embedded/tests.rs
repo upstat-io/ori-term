@@ -542,7 +542,7 @@ fn pane_mode_reflects_decbkm_set() {
     mux.cleanup_closed_pane(pane_id);
 }
 
-/// Negative pin: `pane_mode()` clears DECBKM after `CSI ? 67 l`.
+/// Regression guard: `pane_mode()` clears DECBKM after `CSI ? 67 l`.
 ///
 /// Companion to `pane_mode_reflects_decbkm_set` — proves the reset path
 /// also propagates through the embedded backend's `pane_mode()`.
@@ -613,7 +613,7 @@ fn pane_mode_returns_none_for_missing_pane() {
     );
 }
 
-/// TPR-6 semantic pin: `sync_pane_snapshot` returns `None` for an
+/// TPR-6 property: `sync_pane_snapshot` returns `None` for an
 /// unknown pane id rather than blocking on a non-existent IO thread.
 ///
 /// We can't easily simulate the timeout case (the IO thread always
@@ -632,10 +632,10 @@ fn sync_pane_snapshot_returns_none_for_missing_pane() {
     );
 }
 
-/// Regression: BUG-11-020 — embedded `is_write_stalled` must continue returning `false`
+/// Regression: — embedded `is_write_stalled` must continue returning `false`
 /// for an unknown pane id (matches the daemon-side server dispatch contract: missing
 /// pane ⇒ `false` rather than `Err`).
-/// See: bug-tracker/plans/BUG-11-020/00-overview.md
+/// See: bug-tracker/plans//00-overview.md
 #[test]
 fn is_write_stalled_returns_false_for_unknown_pane_in_embedded() {
     let mut mux = EmbeddedMux::new(test_wakeup());

@@ -1,6 +1,6 @@
 //! Exhaustive semantic raster sweep for every subcell-glyph codepoint.
 //!
-//! Per `.claude/rules/tests.md §Matrix Testing Rule` and the §11.2 plan,
+//! Per Testing Rule` and the §11.2 plan,
 //! sparse golden pins establish the visual anchor for each family while
 //! this sweep proves per-codepoint dispatch wiring across all 706
 //! codepoints in the five covered ranges.
@@ -131,7 +131,7 @@ fn braille_exhaustive_raster() {
     assert_every_codepoint_rasterizes(0x2801, 0x28FF, "BRAILLE", true);
 }
 
-/// Additional semantic pin: for braille, the 8 low bits of the codepoint
+/// Additional property: for braille, the 8 low bits of the codepoint
 /// drive which dots are set, per Unicode. Dot-1 = bit 0, dot-2 = bit 1,
 /// ..., dot-8 = bit 7. Proves the dispatch is reading codepoint bits in
 /// the canonical order — not scrambled.
@@ -203,7 +203,7 @@ fn braille_dot_bits_match_codepoint_low_byte() {
     }
 }
 
-/// Additional semantic pin: for sextants U+1FB00..=U+1FB3B, the 2×3 subcell
+/// Additional property: for sextants U+1FB00..=U+1FB3B, the 2×3 subcell
 /// grid's 6-bit mask is derived from the codepoint via the Ghostty arithmetic
 /// formula `bits = idx + idx/0x14 + 1` (where `idx = cp - 0x1FB00`), with bit
 /// ordering `tl, tr, ml, mr, bl, br`. Sample the center of each of the six
@@ -259,7 +259,7 @@ fn sextants_bit_decomposition_matches_canonical_formula() {
     }
 }
 
-/// Additional semantic pin: for non-quadrant block elements U+2580..=U+2595,
+/// Additional property: for non-quadrant block elements U+2580..=U+2595,
 /// each codepoint has a canonical fill region per Unicode (upper half, lower
 /// N/8, full block, left N/8, right half, 25%/50%/75% shade, upper 1/8, right
 /// 1/8). Sample points inside-vs-outside the expected fill region and verify
@@ -390,7 +390,7 @@ fn block_elements_non_quadrant_fill_regions_match_unicode_spec() {
     }
 }
 
-/// Additional semantic pin: for quadrants U+2596..=U+259F, the four 2×2
+/// Additional property: for quadrants U+2596..=U+259F, the four 2×2
 /// subcells correspond to explicit bit positions per Unicode (TL, TR, BL,
 /// BR). Sample the center of each subcell and verify the filled pattern
 /// matches the codepoint's canonical quadrant semantics.

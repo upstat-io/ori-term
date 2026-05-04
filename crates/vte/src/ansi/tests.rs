@@ -617,22 +617,22 @@ fn parse_decrsps_default_ps_is_zero() {
     assert_eq!(handler.decrsps_calls, vec![(0, Vec::<u8>::new())]);
 }
 
-// BUG-11-027 §03 matrix — Mode 2026 inline dispatch (vte-layer pins).
+// §03 matrix — Mode 2026 inline dispatch (vte-layer pins).
 //
 // These pins enforce that the parser's Mode 2026 handling dispatches
 // the handler INLINE within the same `advance()` call as the BSU —
 // no buffering, no deferred replay. The only sync state the parser
 // holds is the deadline timer used by the run loop's `select!`
-// deadline arm to bound a sync window. See bug-tracker/plans/BUG-11-027/.
+// deadline arm to bound a sync window. See bug-tracker/plans//.
 
-/// Negative pin: `SyncState` carries no byte buffer.
+/// Regression guard: `SyncState` carries no byte buffer.
 ///
 /// Asserts that `SyncState<TestSyncHandler>` has the SAME size as
 /// `TestSyncHandler` alone (the only field is `timeout: T`). If a
 /// future refactor re-introduces a `buffer: Vec<u8>` field (24 bytes
 /// on 64-bit), the sizes diverge and this assertion fires.
 ///
-/// Regression: BUG-11-027 §03 negative-pin (no byte-level buffering).
+/// Regression: §03 negative-pin (no byte-level buffering).
 #[test]
 fn processor_no_sync_buffer_during_active_sync() {
     use core::mem::size_of;
@@ -665,7 +665,7 @@ fn processor_no_sync_buffer_during_active_sync() {
 /// angles — if a regression re-introduced parser termination after BSU,
 /// DA1 and SGR would not reach the handler in this chunk.
 ///
-/// Regression: BUG-11-027 §03 inline-dispatch pin.
+/// Regression: §03 inline-dispatch pin.
 #[test]
 fn processor_dispatches_handler_inline_during_sync() {
     let mut parser = Processor::<TestSyncHandler>::new();
@@ -690,7 +690,7 @@ fn processor_dispatches_handler_inline_during_sync() {
 /// already-disarmed timer does NOT panic and does NOT leave the timer
 /// in a weird state (stays disarmed).
 ///
-/// Regression: BUG-11-027 §03 ESU-without-BSU edge case.
+/// Regression: §03 ESU-without-BSU edge case.
 #[test]
 fn esu_without_bsu_is_noop() {
     let mut parser = Processor::<TestSyncHandler>::new();
@@ -713,7 +713,7 @@ fn esu_without_bsu_is_noop() {
 /// dispatches (`handler.identity_reported == true`), pinning the same
 /// inline-dispatch invariant from a different angle.
 ///
-/// Regression: BUG-11-027 §03 nested-BSU pin.
+/// Regression: §03 nested-BSU pin.
 #[test]
 fn bsu_twice_in_one_feed_extends_timeout() {
     let mut parser = Processor::<TestSyncHandler>::new();

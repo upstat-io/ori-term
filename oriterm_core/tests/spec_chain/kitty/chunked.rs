@@ -80,7 +80,7 @@ fn kitty_chunked_transmit_m1_m0_coalesces_into_single_placement() {
 /// the bytes match the original payload EXACTLY — a length-preserving byte
 /// reorder (swap, reverse, per-chunk shuffle) would pass the weaker
 /// placement-only check but fails this byte-equality clamp per
-/// `.claude/rules/tests.md` §Matrix Clamping.
+/// §Matrix Clamping.
 #[test]
 fn kitty_chunked_arrival_order_pin_preserves_append_sequence() {
     // 4×1 RGBA, 4 distinct colors so any byte reorder is visible.
@@ -148,7 +148,7 @@ fn kitty_chunked_arrival_order_pin_preserves_append_sequence() {
 
 /// Catalog row: `KG-TRANSMIT-FORMAT-32` (chunked negative — size mismatch).
 ///
-/// Negative pin for `kitty_chunked_transmit_m1_m0_coalesces_into_single_placement`:
+/// Regression guard for `kitty_chunked_transmit_m1_m0_coalesces_into_single_placement`
 /// if coalesce drops bytes or the store path skips size validation, this
 /// test would pass silently. Send a chunked RGBA payload that coalesces to
 /// only 32 bytes (half of s=4,v=4 → 64 expected) and assert the
@@ -223,7 +223,7 @@ fn kitty_chunked_oversize_accumulation_discards_loading_state_without_reply() {
     );
 }
 
-/// Catalog row: `KG-TRANSMIT-CHUNKED-SIZE-LIMIT` (negative pin).
+/// Catalog row: `KG-TRANSMIT-CHUNKED-SIZE-LIMIT` (regression guard).
 ///
 /// Pairs with `kitty_chunked_oversize_accumulation_discards_loading_state_without_reply`:
 /// if the discard code path ever starts emitting an error reply (drift
@@ -259,7 +259,7 @@ fn kitty_chunked_oversize_negative_pin_does_not_emit_einval_reply() {
 
 // Malformed-base64 reply path (§13.2 Option A implementation)
 
-/// Catalog row: `KG-TRANSMIT-CHUNKED-MALFORMED-BASE64` (semantic pin — Option A).
+/// Catalog row: `KG-TRANSMIT-CHUNKED-MALFORMED-BASE64` (property — Option A).
 ///
 /// A malformed base64 payload (containing `@`, which is outside the base64
 /// alphabet) causes `parse_kitty_command_into` to return
@@ -346,7 +346,7 @@ fn kitty_malformed_base64_with_quiet_2_suppresses_einval_reply() {
     );
 }
 
-/// Catalog row: `KG-TRANSMIT-CHUNKED-MALFORMED-BASE64` (negative pin — no storage).
+/// Catalog row: `KG-TRANSMIT-CHUNKED-MALFORMED-BASE64` (regression guard — no storage).
 ///
 /// Parse failure must not leave any side effects in the image cache. A
 /// follow-up `a=p,i=70` must emit ENOENT because the image was never
@@ -373,7 +373,7 @@ fn kitty_malformed_base64_does_not_create_placement_or_image() {
     );
 }
 
-/// Catalog row: `KG-TRANSMIT-CHUNKED-MALFORMED-BASE64` (negative pin — valid payload).
+/// Catalog row: `KG-TRANSMIT-CHUNKED-MALFORMED-BASE64` (regression guard — valid payload).
 ///
 /// Counterpart to `kitty_malformed_base64_emits_einval_reply`: a valid
 /// base64 payload MUST NOT emit the EINVAL base64 reply. Fails if the
@@ -536,7 +536,7 @@ fn kitty_malformed_base64_echoes_both_i_and_image_number_when_present() {
 /// `SpecHarness` — deleting a category from the module below also drops
 /// this category's probe from the matrix, breaking the count.
 ///
-/// Per `.claude/rules/tests.md` §Matrix Testing Rule + §Matrix Clamping:
+/// Per §Matrix Testing Rule + §Matrix Clamping
 /// the self-verifying matrix must prove cells were exercised, not just
 /// name them.
 #[test]

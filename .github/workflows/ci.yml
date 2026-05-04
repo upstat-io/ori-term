@@ -25,6 +25,19 @@ jobs:
       - name: Check version synchronization
         run: ./scripts/sync-version.sh --check
 
+  prose-lint:
+    name: Prose Lint
+    if: "!startsWith(github.event.head_commit.message, 'chore: release v')"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Run prose-lint
+        run: python3 scripts/prose-lint.py .
+
   format:
     name: Format
     if: "!startsWith(github.event.head_commit.message, 'chore: release v')"
@@ -222,13 +235,14 @@ jobs:
   # Single status check for branch protection
   ci-success:
     name: CI Success
-    needs: [version-check, format, clippy, clippy-windows-cross, test-linux, cross-platform, build-windows-cross, bench-compile]
+    needs: [version-check, prose-lint, format, clippy, clippy-windows-cross, test-linux, cross-platform, build-windows-cross, bench-compile]
     runs-on: ubuntu-latest
     if: "always() && !startsWith(github.event.head_commit.message, 'chore: release v')"
     steps:
       - name: Check all jobs passed
         run: |
           if [[ "${{ needs.version-check.result }}" != "success" ]] || \
+             [[ "${{ needs.prose-lint.result }}" != "success" ]] || \
              [[ "${{ needs.format.result }}" != "success" ]] || \
              [[ "${{ needs.clippy.result }}" != "success" ]] || \
              [[ "${{ needs.clippy-windows-cross.result }}" != "success" ]] || \

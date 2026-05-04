@@ -16,7 +16,7 @@ pub enum TargetClients {
     /// All clients subscribed to a specific pane.
     PaneSubscribers(PaneId),
     /// One specific subscriber chosen by `select_responder` — used for
-    /// daemon-mode `HostRequest` routing (BUG-11-011) where a single
+ /// daemon-mode `HostRequest` routing () where a single
     /// authoritative responder answers. The `PaneId` is structural — kept
     /// for diagnostic logging / future routing decisions even though the
     /// dispatch path only reads the `ClientId`.

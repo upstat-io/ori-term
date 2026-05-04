@@ -85,7 +85,7 @@ use oriterm_test_support::terminfo::TerminfoEnv;
 
 #[test]
 fn tack_help_redisplays_begin_testing_menu() {
-    // SEMANTIC PIN for gate on the canonical
+ // Verifies for gate on the canonical
     // `ScenarioRunner::available()` AND-combine (tack_available
     // + tic_available + tack_version_supported), NOT on the
     // bare `tack_available() && tic_available()` pair. The

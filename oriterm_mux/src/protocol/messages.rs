@@ -407,7 +407,7 @@ pub enum MuxPdu {
         text: String,
     },
 
-    /// Legacy OSC 52 clipboard load notification from before BUG-11-011.
+ /// Legacy OSC 52 clipboard load notification from before.
     ///
     /// Superseded by [`MuxPdu::NotifyHostClipboardLoad`], which carries the
     /// daemon-allocated `request_id` for reply correlation. Retained for
@@ -434,7 +434,7 @@ pub enum MuxPdu {
         snapshot: PaneSnapshot,
     },
 
-    // -- BUG-11-011: Daemon-mode HostRequest round-trip --
+ // -- : Daemon-mode HostRequest round-trip --
     /// Daemon-allocated OSC 52 clipboard load forwarded to a single
     /// responder client. The client services the request locally and
     /// replies with [`ReplyHostRequest`](Self::ReplyHostRequest).

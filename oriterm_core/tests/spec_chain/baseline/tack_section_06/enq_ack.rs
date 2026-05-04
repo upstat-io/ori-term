@@ -11,9 +11,9 @@
 //!
 //! None. The scenario family's only distinctive catalog row is
 //! `ECMA48-C0-ENQ` (`0x05`, Answerback / enquiry), which is currently
-//! `status: missing` in the catalog pending **`BUG-08-006`**:
+//! `status: missing` in the catalog pending **``**
 //!
-//! > `[BUG-08-006][low]` **ENQ/Answerback not implemented** — Repro:
+//! > `[][low]` **ENQ/Answerback not implemented** — Repro
 //! > vttest menu 6 sub-item 1 (answerback test). No response
 //! > displayed. Detail: ENQ (0x05) control code not handled in VTE
 //! > C0 dispatcher. WezTerm implements it (defaults to empty
@@ -26,65 +26,65 @@
 //! sends as `tty_ENQ` because `u9=\E[c`) is already driven through
 //! the DA1 pilot, so the enq_ack family contributes zero NEW
 //! spec_chain coverage here — and cannot contribute `ECMA48-C0-ENQ`
-//! coverage until BUG-08-006 is resolved.
+//! coverage until is resolved.
 //!
 //! # Why the module file exists
 //!
 //! Declared as a stub module so the per-family conversion map in
 //! `mod.rs` is complete: a future reader searching for "where is
 //! tack `enq_ack` converted?" lands here and sees the blocked-on-bug
-//! classification immediately. When BUG-08-006 is fixed, a
+//! classification immediately. When is fixed, a
 //! spec_chain test driving `ECMA48-C0-ENQ` (parser Execute 0x05,
 //! dispatch to a new `answerback`/`enquiry` method, effect
 //! `PtyWriteKind::Other` with the empty answerback byte string) will
 //! land here, replacing the regression guard below.
 //!
 //! The test in this module is a **load-bearing regression guard**
-//! against BUG-08-006, not a tautology. When the catalog row
+//! against, not a tautology. When the catalog row
 //! `ECMA48-C0-ENQ` is flipped from `status: missing` to any other
 //! value (i.e. someone implemented ENQ), the assertion below will
-//! fail, forcing whoever fixes BUG-08-006 to open this file and
+//! fail, forcing whoever fixes to open this file and
 //! replace the guard with the real spec_chain test the module
-//! rustdoc describes. Without this pin, BUG-08-006 could be silently
+//! rustdoc describes. Without this pin, could be silently
 //! closed without the corresponding spec_chain coverage ever landing.
 
-/// Pins: the ECMA-48 C0 ENQ catalog row remains `missing` until BUG-08-006
+/// Pins: the ECMA-48 C0 ENQ catalog row remains `missing` until 
 /// lands. Reads the catalog markdown directly and asserts the ENQ row's
-/// verification-status column still reads `missing`. When BUG-08-006 is
+/// verification-status column still reads `missing`. When is
 /// resolved, the catalog row's status will flip (to `verified` or similar),
 /// this assertion will fail, and the failing test reminds the implementer
 /// that the spec_chain coverage for this family needs to land here — not
 /// just the implementation elsewhere.
 ///
-/// Anchor: BUG-08-006 / HYG-13.1-011.
+/// Anchor: / HYG-13.1-011.
 #[test]
 fn ecma48_c0_enq_catalog_row_still_missing() {
-    // The spec-conformance catalog lives in the wrapper repo. When the test
-    // runs from a standalone term_repo checkout (no wrapper present), the
-    // file is absent — graceful skip per `.claude/rules/tests.md §Graceful
-    // Skip Protocol`. Path discovery via the SSOT helper introduced in
-    // BUG-08-028; never reintroduce ad-hoc `manifest_dir.parent()` arithmetic.
-    let Some(catalog_dir) = oriterm_test_support::paths::catalog_dir() else {
-        eprintln!("SKIP: ECMA-48 catalog not present (term_repo running without wrapper)");
-        return;
-    };
-    let catalog_path = catalog_dir.join("ecma-48.md");
-    // Wrapper is confirmed present (catalog_dir is Some); a read failure here
-    // is a real I/O error, not a graceful-skip case. Propagate per
-    // `.claude/rules/impl-hygiene.md §Error Handling at Boundaries`.
-    let catalog = std::fs::read_to_string(&catalog_path)
-        .unwrap_or_else(|e| panic!("read {}: {e}", catalog_path.display()));
+ // The spec-conformance catalog lives in the wrapper repo. When the test
+ // runs from a standalone term_repo checkout (no wrapper present), the
+ // file is absent — graceful skip
+ // Skip Protocol`. Path discovery via the SSOT helper introduced in
+ //; never reintroduce ad-hoc `manifest_dir.parent()` arithmetic.
+ let Some(catalog_dir) = oriterm_test_support::paths::catalog_dir() else {
+ eprintln!("SKIP: ECMA-48 catalog not present (term_repo running without wrapper)");
+ return;
+ };
+ let catalog_path = catalog_dir.join("ecma-48.md");
+ // Wrapper is confirmed present (catalog_dir is Some); a read failure here
+ // is a real I/O error, not a graceful-skip case. Propagate per
+ // Handling at Boundaries`.
+ let catalog = std::fs::read_to_string(&catalog_path)
+ .unwrap_or_else(|e| panic!("read {}: {e}", catalog_path.display()));
 
-    let row = catalog
-        .lines()
-        .find(|l| l.starts_with("| ECMA48-C0-ENQ "))
-        .expect("ECMA48-C0-ENQ row must exist in catalog/ecma-48.md");
+ let row = catalog
+ .lines()
+ .find(|l| l.starts_with("| ECMA48-C0-ENQ "))
+ .expect("ECMA48-C0-ENQ row must exist in catalog/ecma-48.md");
 
-    assert!(
-        row.contains("| missing |"),
-        "ECMA48-C0-ENQ is no longer marked `missing` in the catalog — \
-         BUG-08-006 has been fixed. Replace this regression guard with a \
-         real spec_chain test driving the ENQ probe, per the module \
-         rustdoc. Row line:\n  {row}"
-    );
+ assert!(
+ row.contains("| missing |"),
+ "ECMA48-C0-ENQ is no longer marked `missing` in the catalog — \
+ has been fixed. Replace this regression guard with a \
+ real spec_chain test driving the ENQ probe, per the module \
+ rustdoc. Row line:\n {row}"
+);
 }

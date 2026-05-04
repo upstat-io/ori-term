@@ -9,7 +9,7 @@
 //! (SIXEL_CURSOR_RIGHT), placement-creation attributes, orphan cleanup.
 //!
 //! Negative `z_index` (§11 occlusion rung) and golden-image z-order
-//! live in GPU-crate pilots per `.claude/rules/crate-boundaries.md`
+//! live in GPU-crate pilots
 //! (§12.3 plan body: "grid-state assertions stay in `oriterm_core`,
 //! pixel-golden assertions stay in `oriterm`").
 

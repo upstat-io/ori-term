@@ -21,7 +21,7 @@
 //! color scenario family contributes ZERO new protocol-row verifications
 //! to spec_chain — its coverage is metadata-only.
 
-/// Negative pin: tack `color` family contributes no ECMA-48 protocol
+/// Regression guard: tack `color` family contributes no ECMA-48 protocol
 /// rows to spec_chain.
 ///
 /// This test exists to make the absence visible. If a future tack

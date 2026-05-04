@@ -48,7 +48,7 @@ fn sense_returns_click() {
 #[test]
 fn has_three_controllers() {
     // Hover + Click + Focus — the focus controller was added per Round 1
-    // codex F1 to ensure click-to-focus so subsequent keymap actions
+ // F1 to ensure click-to-focus so subsequent keymap actions
     // dispatch to this widget (was 2 before, hence the rename).
     let dd = DropdownWidget::new(items());
     assert_eq!(dd.controllers().len(), 3);

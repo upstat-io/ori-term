@@ -140,7 +140,7 @@ fn scheduler_multiple_deferred_ordered_correctly() {
 }
 
 /// `set_animation_deadline(key, Some(t))` surfaces `t` as `next_wake_time()`
-/// when no other wake source is pending. Semantic pin for the per-key
+/// when no other wake source is pending. Property for the per-key
 /// animation deadline API used by kitty graphics animation ticks.
 /// Regression: §13.3 timer wiring.
 #[test]
@@ -159,7 +159,7 @@ fn set_animation_deadline_some_surfaces_as_next_wake_time() {
 
 /// `set_animation_deadline(key, None)` clears the prior deadline for that
 /// key — when an animation stops, the queued wake MUST NOT fire spuriously.
-/// Regression: §13.3 TPR round 1 codex F2 — append-only push(Reverse(t))
+/// Regression: §13.3 review round 1 F2 — append-only push(Reverse(t))
 /// left stop notifications unable to cancel a queued wake.
 #[test]
 fn set_animation_deadline_none_clears_prior_deadline_for_that_key() {
@@ -264,7 +264,7 @@ fn has_pending_work_true_when_animation_deadline_matured() {
 }
 
 /// `has_pending_work` returns false when the only entry is a future
-/// animation deadline — the negative pin that proves the readiness check
+/// animation deadline — the regression guard that proves the readiness check
 /// is time-gated.
 #[test]
 fn has_pending_work_false_when_animation_deadline_in_future() {

@@ -2400,7 +2400,7 @@ fn mean_alpha(bitmap: &[u8]) -> f64 {
 /// `gamma_lut`: one at default `TEXT_GAMMA` 1.8, one with gamma 1.0 (identity
 /// LUT via `set_gamma_for_test`). Returns `(gamma_1_8_bitmap, identity_bitmap)`.
 ///
-/// Pair-fixture for the BUG-04-006 regression suite. Under the Alpha-only
+/// Pair-fixture for the regression suite. Under the Alpha-only
 /// guard the two bitmaps are byte-equal for subpixel formats (neither path
 /// applies `apply_alpha_correction`) and differ for `Alpha` (only the
 /// gamma=1.8 collection applies the boost). Each caller owns its own
@@ -2536,7 +2536,7 @@ fn effective_bold_weight_clamped_to_range() {
     );
 }
 
-// BUG-04-006: subpixel bitmap gamma correction.
+// : subpixel bitmap gamma correction.
 //
 // Pin that `FontCollection::rasterize` / `rasterize_with_weight` do NOT apply
 // the gamma LUT to subpixel RGBA bitmaps. Per zeno `Format::Subpixel`, each of
@@ -2553,8 +2553,8 @@ fn effective_bold_weight_clamped_to_range() {
 // back to `!= GlyphFormat::Color` routes subpixel through
 // `apply_alpha_correction` and the subpixel equality pins fail.
 
-/// Regression: BUG-04-006 — SubpixelRgb bitmap must not receive gamma LUT.
-/// See: bug-tracker/plans/completed/BUG-04-006/00-overview.md §2 Red-first fail pins.
+/// Regression: — SubpixelRgb bitmap must not receive gamma LUT.
+/// See: bug-tracker/plans/completed//00-overview.md §2 Red-first fail pins.
 #[test]
 fn subpixel_rgb_bitmap_not_gamma_boosted() {
     let (gamma_bitmap, raw_bitmap) = rasterize_h_gamma_pair(GlyphFormat::SubpixelRgb, false);
@@ -2565,7 +2565,7 @@ fn subpixel_rgb_bitmap_not_gamma_boosted() {
     );
 }
 
-/// Regression: BUG-04-006 — SubpixelBgr bitmap must not receive gamma LUT.
+/// Regression: — SubpixelBgr bitmap must not receive gamma LUT.
 /// Covers the BGR sibling path via `Format::subpixel_bgra()`.
 #[test]
 fn subpixel_bgr_bitmap_not_gamma_boosted() {
@@ -2576,7 +2576,7 @@ fn subpixel_bgr_bitmap_not_gamma_boosted() {
     );
 }
 
-/// Regression: BUG-04-006 — `rasterize_with_weight` subpixel path must not
+/// Regression: — `rasterize_with_weight` subpixel path must not
 /// receive gamma LUT. The bug exists in both `rasterize` (terminal grid) and
 /// `rasterize_with_weight` (UI text); both need independent red-first coverage.
 #[test]
@@ -2589,7 +2589,7 @@ fn subpixel_rgb_ui_text_path_bitmap_not_gamma_boosted() {
     );
 }
 
-/// Invariant guard: BUG-04-006 — Alpha bitmap still receives gamma LUT.
+/// Invariant guard: — Alpha bitmap still receives gamma LUT.
 /// Fires if someone widens the new Alpha-only guard to exclude Alpha.
 #[test]
 fn alpha_bitmap_still_gamma_boosted() {
@@ -2607,7 +2607,7 @@ fn alpha_bitmap_still_gamma_boosted() {
     );
 }
 
-/// Invariant guard: BUG-04-006 — Alpha bitmap via `rasterize_with_weight`
+/// Invariant guard: — Alpha bitmap via `rasterize_with_weight`
 /// still receives gamma LUT. Pins the UI-text Alpha guard independently so
 /// a refactor that touches only `rasterize` cannot silently regress the UI
 /// path.
@@ -2620,7 +2620,7 @@ fn alpha_ui_text_path_bitmap_still_gamma_boosted() {
     );
 }
 
-/// Invariant guard: BUG-04-006 — `SubpixelRgb` A channel is zero because
+/// Invariant guard: — `SubpixelRgb` A channel is zero because
 /// zeno never writes offset 3 of an RGBA pixel in subpixel mode. LUT[0] = 0
 /// so the invariant holds either way; the pin catches a regression where
 /// someone starts writing to the alpha channel or flips LUT[0].
@@ -2652,7 +2652,7 @@ fn subpixel_rgb_bitmap_alpha_channel_is_zero() {
     );
 }
 
-/// Regression: BUG-04-006 interaction check — synthetic-bold subpixel 'H'
+/// Regression: interaction check — synthetic-bold subpixel 'H'
 /// remains heavier than regular weight after removing the gamma boost.
 /// `embolden_strength` at `face.rs:249-259` was tuned down (2.0 → 1.5) to
 /// compensate for the gamma correction. If synthetic-bold subpixel ends up

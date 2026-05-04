@@ -288,7 +288,7 @@ fn is_blank_false_after_write() {
     assert!(!row.is_blank());
 }
 
-/// Regression: BUG-08-017 TPR round-1 codex F1. A row of cells with
+/// Regression: review round-1 F1. A row of cells with
 /// ONLY `CellFlags::DRAWN` set (no visible content beyond the DRAWN
 /// write-history bit) MUST still be `is_blank()` — DRAWN is the xterm
 /// CHARDRAWN analog consumed by DECRQCRA, but `is_blank`/`content_len`
@@ -310,7 +310,7 @@ fn is_blank_true_for_drawn_only_cells() {
     );
 }
 
-/// Regression: BUG-08-017 TPR round-1 codex F1. `content_len` is
+/// Regression: review round-1 F1. `content_len` is
 /// visual-empty only. A row of DRAWN-only cells has no visual content,
 /// so `content_len() == 0`. Reflow relies on this to decide effective
 /// row lengths (`resize/mod.rs:407`).
@@ -329,7 +329,7 @@ fn content_len_zero_for_drawn_only_row() {
     );
 }
 
-/// Regression: BUG-08-017 TPR round-1 codex F1. A row mixing DRAWN-only
+/// Regression: review round-1 F1. A row mixing DRAWN-only
 /// cells with a single visible char still reports content_len that
 /// ignores the DRAWN-only cells. "A<space><space>" where the spaces
 /// carry DRAWN: content_len should be 1 (just 'A'), NOT 3.
@@ -392,7 +392,7 @@ fn content_len_shrinks_after_clear() {
     assert_eq!(row.content_len(), 0);
 }
 
-// ---- BUG-08-017 regression tests: DRAWN lifecycle on Row ----
+// ---- regression tests: DRAWN lifecycle on Row ----
 
 /// `Row::reset` MUST copy DRAWN state from the template. A DRAWN-clear
 /// template (the normal case — `Cell::default()` or `Cell::from(bg)`)

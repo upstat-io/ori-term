@@ -62,7 +62,7 @@ pub(crate) struct UiFontSizes {
     /// every rebuild path (`rebuild_all`, `ensure_size`,
     /// `create_default_collection`) so the emoji fallback is never dropped
     /// during a monitor-DPI change, a runtime size addition, or a standalone
-    /// default construction. Fixes BUG-04-004.
+ /// default construction. Fixes.
     injected_fallbacks: Vec<FontData>,
 }
 
@@ -145,7 +145,7 @@ impl UiFontSizes {
     /// `create_default_collection`) replays them onto the new collections.
     ///
     /// Used to add the terminal font's emoji fallback so emoji render at
-    /// the correct UI text size through `FontSource::Ui`. See BUG-04-004
+ /// the correct UI text size through `FontSource::Ui`. See 
     /// for the DPI-change regression this replay fixes.
     ///
     /// Idempotent: entries whose `Arc<FontBytes>` identity and face index
@@ -178,7 +178,7 @@ impl UiFontSizes {
     ///
     /// Collapses the prior "run hook, then append injected fallbacks"
     /// sequence out of three bodies into one canonical home — satisfies
-    /// `.claude/rules/impl-hygiene.md §Algorithmic DRY`.
+    /// algorithmic DRY.
     fn finalize_collection(&self, fc: &mut FontCollection) {
         if let Some(ref hook) = self.post_rebuild_hook {
             hook(fc);

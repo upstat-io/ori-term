@@ -2,7 +2,7 @@
 //!
 //! Ensures the eight §12.4 GPU-apex scenarios (A–G + SetToBg pilot) are
 //! all present in the pilots directory AND have committed golden PNGs
-//! under `oriterm/tests/references/`. The structural negative pin —
+//! under `oriterm/tests/references/`. The structural regression guard —
 //! "unavailable deterministic lane skips cleanly, never false-passes" —
 //! is embedded per-pilot via the `let Some(mut harness) =
 //! VisualSpecHarness::new() else { eprintln!("SKIP: …"); return; };`

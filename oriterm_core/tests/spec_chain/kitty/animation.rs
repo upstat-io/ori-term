@@ -11,7 +11,7 @@
 //! `KG-ANIMATE-SET-CURRENT-FRAME` (r=N / c=N), `KG-ANIMATE-SET-FRAME-GAP`
 //! (z=ms for current frame).
 //!
-//! Closes TPR-13.0.5-R1-F3-gemini (v=0 infinite loops via `loop_count:
+//! Closes TPR-13.0.5-R1-F3- (v=0 infinite loops via `loop_count
 //! Option<u32>`) and TPR-13.2-R3-F1 (`,r=<frame_num>` on a=f + a=a replies).
 
 use std::time::{Duration, Instant};
@@ -95,7 +95,7 @@ fn kitty_frame_reply_echoes_r_qualifier_for_subsequent_frame_append() {
 
 /// Missing-image `a=f` emits ENOENT with NO `,r=` qualifier — the negative
 /// pin that proves the frame-index chaining only happens on the success arm.
-/// Catalog row: `KG-FRAME-TRANSMIT` (negative pin, ENOENT path).
+/// Catalog row: `KG-FRAME-TRANSMIT` (regression guard, ENOENT path).
 #[test]
 fn kitty_frame_reply_r_qualifier_omitted_on_missing_image_enoent() {
     let frame = b64(&rgba_4x4_red());
@@ -201,10 +201,10 @@ fn kitty_animate_s_one_pauses_and_reply_echoes_current_frame() {
 }
 
 /// `a=a,v=0` sets `AnimationState::loop_count` to `None` (infinite loops per
-/// kitty graphics-protocol.rst §Animation control). Semantic pin that ONLY
+/// kitty graphics-protocol.rst §Animation control). Property that ONLY
 /// passes when `KittyCommand::loop_count: Option<u32>` routes `v=0` to
 /// `set_animation_loops(id, 0)` → `loop_count = None`.
-/// Catalog row: `KG-ANIMATE-LOOP-COUNT`. Closes TPR-13.0.5-R1-F3-gemini.
+/// Catalog row: `KG-ANIMATE-LOOP-COUNT`. Closes TPR-13.0.5-R1-F3-.
 #[test]
 fn kitty_animate_v_zero_sets_loop_count_to_none_infinite() {
     let base = b64(&rgba_4x4_red());
@@ -239,11 +239,11 @@ fn kitty_animate_v_zero_sets_loop_count_to_none_infinite() {
     );
 }
 
-/// `a=a` without `v=` leaves `loop_count` unchanged — the negative pin that
+/// `a=a` without `v=` leaves `loop_count` unchanged — the regression guard that
 /// proves the implementation distinguishes "key absent" from "v=0". A
 /// previous bug unconditionally set `source_height` to 0 on missing `v=`,
 /// which would overwrite a prior finite loop count.
-/// Catalog row: `KG-ANIMATE-LOOP-COUNT` (negative pin).
+/// Catalog row: `KG-ANIMATE-LOOP-COUNT` (regression guard).
 #[test]
 fn kitty_animate_v_absent_leaves_prior_loop_count_unchanged() {
     let base = b64(&rgba_4x4_red());
@@ -273,12 +273,12 @@ fn kitty_animate_v_absent_leaves_prior_loop_count_unchanged() {
             .loop_count,
         Some(7),
         "a=a with v= absent MUST leave loop_count at its prior value — \
-         a negative pin for the Some(0)-vs-None distinction"
+         a regression guard for the Some(0)-vs-None distinction"
     );
 }
 
 /// `a=a,r=N` jumps to frame N (1-based) and the OK reply echoes `,r=N` for
-/// the newly-set current frame. Semantic pin for the animate reply's
+/// the newly-set current frame. Property for the animate reply's
 /// post-mutation current-frame echo.
 /// Catalog row: `KG-ANIMATE-SET-CURRENT-FRAME`. Closes TPR-13.2-R3-F1 (a=a arm).
 #[test]
@@ -315,7 +315,7 @@ fn kitty_animate_r_two_sets_current_frame_and_reply_echoes_r_two() {
 /// loops_completed=0. They differ in `wait_mode`: s=2 sets it true, s=3
 /// clears it. wait_mode governs whether `add_animation_frame` resumes a
 /// finished animation (s=2 yes; s=3 no).
-/// BUG-08-025 fix: previously these collapsed via a shared match arm.
+/// fix: previously these collapsed via a shared match arm.
 /// Catalog row: `KG-ANIMATE-RUN-WAIT`.
 #[test]
 fn kitty_animate_s_two_sets_wait_mode_and_s_three_clears_it() {
@@ -416,13 +416,13 @@ fn term_advance_animations_returns_next_deadline_when_animated_image_visible() {
     );
 }
 
-/// Idempotency negative pin: without any call to `advance_animations`,
+/// Idempotency regression guard: without any call to `advance_animations`,
 /// `current_frame` MUST stay at 0 after a fresh promotion. Proves the
 /// animation does NOT advance via some internal auto-loop path — the
 /// timer-driven tick from the IO thread IS load-bearing. (The companion
 /// "timer wired" positive pin lives in `oriterm_mux/src/pane/io_thread/
 /// tests.rs` once the IO-thread wiring lands.)
-/// Catalog row: `KG-ANIMATE-RUN` (negative pin, no-tick).
+/// Catalog row: `KG-ANIMATE-RUN` (regression guard, no-tick).
 #[test]
 fn animation_current_frame_does_not_advance_without_timer_tick() {
     let base = b64(&rgba_4x4_red());

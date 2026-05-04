@@ -59,11 +59,11 @@ fn osc3_delete_without_value() {
     );
 }
 
-/// Negative pin: OSC 3 state mutations are pure terminal state. Feeding
+/// Regression guard: OSC 3 state mutations are pure terminal state. Feeding
 /// the sequence MUST NOT panic on any supported platform — the tests
 /// below cover macOS / Linux / Windows symmetrically because no platform
 /// branches touch the dispatch path.
-/// Anchor: catalog row `OSC-3` (negative pin).
+/// Anchor: catalog row `OSC-3` (regression guard).
 #[test]
 fn osc3_non_x11_platform_no_panic() {
     let mut harness = SpecHarness::new();
@@ -108,10 +108,10 @@ fn osc5_query_slot_0_replies_via_pty() {
     );
 }
 
-/// Negative pin: `OSC 5 ; NOT_A_COLOR ST` is malformed — only two params
+/// Regression guard: `OSC 5 ; NOT_A_COLOR ST` is malformed — only two params
 /// where the dispatch arm requires three (`5`, `Ps`, `spec`). The arm
 /// routes through `unhandled` without mutating any special-color slot.
-/// Anchor: catalog row `OSC-5-SET` (negative pin).
+/// Anchor: catalog row `OSC-5-SET` (regression guard).
 #[test]
 fn osc5_invalid_color_dropped() {
     let mut harness = SpecHarness::new();
@@ -147,11 +147,11 @@ fn osc6_sets_tab_title_color() {
     );
 }
 
-/// Negative pin: the xterm-ctlseqs `OSC 6 ; 0 ST` disable form is a
+/// Regression guard: the xterm-ctlseqs `OSC 6 ; 0 ST` disable form is a
 /// deliberate NON-implementation. ori_term follows iTerm2's OSC 6 (tab
 /// color) — the bare `0` does not parse as a color spec so the arm
 /// routes through `unhandled` without mutating state.
-/// Anchor: catalog row `OSC-6` (negative pin).
+/// Anchor: catalog row `OSC-6` (regression guard).
 #[test]
 fn osc6_xterm_disable_form_is_treated_as_color_parse_failure() {
     let mut harness = SpecHarness::new();
@@ -217,8 +217,8 @@ fn osc113_resets_mouse_fg_color() {
     assert_eq!(harness.term().mouse_fg_color(), None);
 }
 
-/// Negative pin: `OSC 13 ; GARBAGE ST` leaves the mouse fg color unchanged.
-/// Anchor: catalog row `OSC-13-SET` (negative pin).
+/// Regression guard: `OSC 13 ; GARBAGE ST` leaves the mouse fg color unchanged.
+/// Anchor: catalog row `OSC-13-SET` (regression guard).
 #[test]
 fn osc13_invalid_rgb_dropped() {
     let mut harness = SpecHarness::new();
@@ -276,7 +276,7 @@ fn osc114_resets_mouse_bg_color() {
     assert_eq!(harness.term().mouse_bg_color(), None);
 }
 
-/// Negative pin: `OSC 14 ; GARBAGE ST` (unparseable color spec) leaves
+/// Regression guard: `OSC 14 ; GARBAGE ST` (unparseable color spec) leaves
 /// the previously-set mouse background color unchanged — the rgb parser
 /// rejects before reaching the setter. Anchor: catalog row `OSC-14-SET`
 /// (invalid-rgb drop).
@@ -337,7 +337,7 @@ fn osc117_resets_highlight_bg_color() {
     assert_eq!(harness.term().highlight_bg_color(), None);
 }
 
-/// Negative pin: `OSC 17 ; GARBAGE ST` leaves the previously-set
+/// Regression guard: `OSC 17 ; GARBAGE ST` leaves the previously-set
 /// highlight background color unchanged — the rgb parser rejects before
 /// reaching the setter. Anchor: catalog row `OSC-17-SET`
 /// (invalid-rgb drop).
@@ -398,7 +398,7 @@ fn osc119_resets_highlight_fg_color() {
     assert_eq!(harness.term().highlight_fg_color(), None);
 }
 
-/// Negative pin: `OSC 19 ; GARBAGE ST` leaves the previously-set
+/// Regression guard: `OSC 19 ; GARBAGE ST` leaves the previously-set
 /// highlight foreground color unchanged — the rgb parser rejects before
 /// reaching the setter. Anchor: catalog row `OSC-19-SET`
 /// (invalid-rgb drop).

@@ -577,13 +577,13 @@ fn decaln_clears_cell_attributes() {
     );
 }
 
-// --- RIS / DECSTR paired keyboard-mode-snapshot invariant (BUG-08-012) ---
+// --- RIS / DECSTR paired keyboard-mode-snapshot invariant () ---
 
-/// Regression: BUG-08-012 — RIS fired mid-command must seed BOTH paired
+/// Regression: — RIS fired mid-command must seed BOTH paired
 /// snapshots to `Some(VecDeque::new())` (not `None`) so a child that later
 /// pushes kitty modes and crashes can still have those pushes cleaned at
 /// the next OSC 133 ; A / ; D.
-/// See: bug-tracker/plans/completed/BUG-08-012/00-overview.md
+/// See: bug-tracker/plans/completed//00-overview.md
 #[test]
 fn keyboard_mode_stack_ris_during_command_sets_saved_to_empty_snapshot() {
     use std::collections::VecDeque;
@@ -613,7 +613,7 @@ fn keyboard_mode_stack_ris_during_command_sets_saved_to_empty_snapshot() {
     );
 }
 
-/// Regression: BUG-08-012 — DECSTR variant of RIS snapshot seeding.
+/// Regression: — DECSTR variant of RIS snapshot seeding.
 #[test]
 fn keyboard_mode_stack_decstr_during_command_sets_saved_to_empty_snapshot() {
     use std::collections::VecDeque;
@@ -639,7 +639,7 @@ fn keyboard_mode_stack_decstr_during_command_sets_saved_to_empty_snapshot() {
     );
 }
 
-/// Regression: BUG-08-012 — RIS mid-command followed by child pushes then
+/// Regression: — RIS mid-command followed by child pushes then
 /// restore must clean the post-RIS child pushes. `Some(empty)` snapshot
 /// enables this; `None` would leave post-reset pushes live.
 #[test]
@@ -665,7 +665,7 @@ fn keyboard_mode_stack_ris_mid_command_then_child_push_then_a_cleans_pushes() {
     );
 }
 
-/// Regression: BUG-08-012 — DECSTR variant of the mid-command cleanup test.
+/// Regression: — DECSTR variant of the mid-command cleanup test.
 #[test]
 fn keyboard_mode_stack_decstr_mid_command_then_child_push_then_a_cleans_pushes() {
     let mut t = term();
@@ -681,7 +681,7 @@ fn keyboard_mode_stack_decstr_mid_command_then_child_push_then_a_cleans_pushes()
     assert!(!t.mode().intersects(TermMode::KITTY_KEYBOARD_PROTOCOL));
 }
 
-/// Regression: BUG-08-017. DECALN (`ESC # 8`) fills every visible cell
+/// Regression:. DECALN (`ESC # 8`) fills every visible cell
 /// with 'E'. Those cells are application-written and MUST carry
 /// `CellFlags::DRAWN` so DECRQCRA sees them as drawn. Before the fix,
 /// DECALN called `cell.reset(&default_template)` then `cell.ch = 'E'`

@@ -1,5 +1,5 @@
 //! Daemon-mode `HostRequest` dispatch — allocate request IDs, select a
-//! single responder, package OSC parameters into wire PDUs (BUG-11-011).
+//! single responder, package OSC parameters into wire PDUs ().
 //!
 //! Two notification variants carry process-local `ResponseToken`s:
 //! `HostClipboardLoad` and `HostColorQuery`. Neither token can cross IPC,
@@ -67,7 +67,7 @@ pub(crate) struct HostRequestDispatchCtx<'a> {
 /// Allocates a `HostRequestId`, packages the OSC parameters into a
 /// `Notify…` PDU, and bundles the token into a `PendingHostReply` for
 /// the caller to insert into `pending_host_replies` AFTER successful
-/// queueing (codex-002 round 1 finding: rolling back a register-then-fail
+/// queueing (-002 round 1 finding: rolling back a register-then-fail
 /// would leak a token entry for a request the client never receives).
 ///
 /// Returns `None` for non-host-request notifications — those flow through
@@ -116,7 +116,7 @@ pub(crate) fn host_request_to_pdu(
             // `usize → u32` is lossless on every supported target. The
             // `debug_assert!` documents + enforces the invariant; a release
             // build produces a direct cast (no fabricated `u32::MAX`
-            // saturation per `impl-hygiene.md §LEAK:lossy-fallback`).
+ // saturation:lossy-fallback`).
             debug_assert!(
                 index < 270,
                 "color index {index} exceeds palette bound (270); cast to u32 would lose data"

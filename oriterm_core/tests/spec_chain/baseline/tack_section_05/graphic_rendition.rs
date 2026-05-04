@@ -24,7 +24,7 @@
 //! Section 08.8 (ISO 8613-6 colon forms) and Section 08.8b (overline,
 //! superscript, subscript, etc.).
 
-/// Negative pin: tack `graphic_rendition` family contributes no NEW
+/// Regression guard: tack `graphic_rendition` family contributes no NEW
 /// catalog-row verifications beyond what `super::acs` already covers.
 ///
 /// Documents the empirical reality so that `_legacy-tack-mapping.md`

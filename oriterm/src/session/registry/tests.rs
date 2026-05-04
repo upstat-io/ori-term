@@ -154,8 +154,8 @@ fn windows_returns_all() {
     assert!(reg.windows().contains_key(&wid(2)));
 }
 
-// pane_position regression suite — BUG-11-022.
-// See bug-tracker/plans/BUG-11-022/section-03-tdd-matrix.md.
+// pane_position regression suite —.
+// See bug-tracker/plans//section-03-tdd-matrix.md.
 
 /// Edge case: empty registry — pane is registered nowhere.
 /// Pins `tab_for_pane` returning None at the head of the chain.
@@ -197,12 +197,12 @@ fn pane_position_returns_secondary_tab_index() {
     assert_eq!(pos.tab_index, 1);
 }
 
-/// Regression: BUG-11-022 — semantic pin AND negative pin against
+/// Regression: — property AND regression guard against
 /// `active_window`-scoped routing. With two windows registered, a pane
 /// in the SECOND window must resolve to that window's id and the correct
 /// tab index in that window's tab list. A buggy implementation that
 /// scoped the lookup to "active_window" (W1) would return None or
-/// `(W1_id, ...)`. Cell #4 in §03 TDD matrix.
+/// `(W1_id,...)`. Cell #4 in §03 test matrix.
 #[test]
 fn pane_position_resolves_to_owning_window_for_pane_in_secondary_window() {
     let mut reg = SessionRegistry::new();
@@ -265,9 +265,9 @@ fn pane_position_returns_none_for_pane_with_no_tab() {
     assert!(reg.pane_position(pid(42)).is_none());
 }
 
-/// Regression: BUG-11-022 — orphan-tab edge case. Tab containing the pane
+/// Regression: — orphan-tab edge case. Tab containing the pane
 /// exists in the registry, but the tab_id is not in any Window's tab list.
-/// Cell #7 in §03 TDD matrix.
+/// Cell #7 in §03 test matrix.
 #[test]
 fn pane_position_returns_none_for_pane_in_tab_not_in_any_window() {
     let mut reg = SessionRegistry::new();

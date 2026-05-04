@@ -83,7 +83,7 @@ fn spawn_quit_on_keystroke(exit_code: i32) -> PtySession {
 
 #[test]
 fn live_session_finish_asserts_clean_exit_via_quit_tack() {
-    // SEMANTIC PIN: this proves `LiveSession::finish` actually
+ // Verifies: this proves `LiveSession::finish` actually
     // exercises `quit_tack` and not a "just drop" shortcut. Without
     // this test, a regression that silently replaces `finish`'s body
     // with a no-op `drop(self)` would pass every other test in
@@ -108,7 +108,7 @@ fn live_session_finish_asserts_clean_exit_via_quit_tack() {
     );
 }
 
-/// SEMANTIC PIN for the C3 exit-success assertion inside
+/// Verifies for the C3 exit-success assertion inside
 /// [`LiveSession::finish`]. Wraps a child that exits with code 1
 /// after a single input read in a `LiveSession` and asserts that
 /// `finish()` panics with a message containing the literal `"tack
@@ -192,7 +192,7 @@ fn panic_message(payload: Box<dyn std::any::Any + Send>) -> String {
 
 #[test]
 fn phase_spec_construction_compiles() {
-    // SEMANTIC PIN: this test exists so the PhaseSpec type and
+ // Verifies: this test exists so the PhaseSpec type and
     // every one of its public fields is referenced from at least
     // one #[test], proving the spec is exhaustively constructible
     // outside the tack_framework::scenarios::* modules. A future
@@ -219,7 +219,7 @@ fn phase_spec_construction_compiles() {
 
 #[test]
 fn assert_no_unverified_sentinels_passes_on_clean_inputs() {
-    // Negative pin: a fully valid spec must NOT panic. Without
+ // Regression guard: a fully valid spec must NOT panic. Without
     // this test, a future refactor that accidentally always-panics
     // would break every other test silently while making this
     // helper non-load-bearing.
@@ -559,7 +559,7 @@ fn phase_capture_loop_returns_none_on_timeout() {
 
 #[test]
 fn phase_default_timeout_ms_matches_documented_value() {
-    // SEMANTIC PIN for the default phase timeout. PhaseSpec
+ // Verifies for the default phase timeout. PhaseSpec
     // documentation references this value; if it changes here, all
     // downstream PhaseSpec consumers (and the rustdoc on
     // `phase_timeout_ms`) need to update in lockstep. The pin
@@ -645,7 +645,7 @@ const TACK_PHASE_PRE_EXISTING: PhaseSpec = PhaseSpec {
 
 #[test]
 fn run_phase_at_returns_grid_containing_anchor() {
-    // SEMANTIC PIN for the run_phase_at happy-path orchestration:
+ // Verifies for the run_phase_at happy-path orchestration
     // spawn tack, navigate to modes-controls, trigger the modes
     // sweep via send_raw, capture via phase_capture_loop, return
     // a ScenarioOutcome whose grid_text contains the phase anchor.
@@ -680,7 +680,7 @@ fn run_phase_at_returns_grid_containing_anchor() {
 
 #[test]
 fn run_phase_at_pre_existing_anchor_panics() {
-    // SEMANTIC PIN for the pre-existing-anchor guard at the
+ // Verifies for the pre-existing-anchor guard at the
     // run_phase_at orchestration level. The plan's most subtle
     // correctness invariant is that the guard fires BEFORE
     // `send_raw(spec.phase_trigger)` writes any byte to the PTY.

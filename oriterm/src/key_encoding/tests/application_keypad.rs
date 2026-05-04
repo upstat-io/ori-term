@@ -82,10 +82,10 @@ fn numpad_0_app_keypad() {
     assert_eq!(r, b"\x1bOp");
 }
 
-/// Regression: BUG-08-013 — numpad digits with no `APP_KEYPAD` must emit the
+/// Regression: — numpad digits with no `APP_KEYPAD` must emit the
 /// digit byte even when winit does not populate `KeyEvent::text`. Before the
 /// fix this returned empty bytes and the shell saw no keystrokes.
-/// See: bug-tracker/plans/completed/BUG-08-013/00-overview.md
+/// See: bug-tracker/plans/completed//00-overview.md
 #[test]
 fn numpad_5_no_app_keypad_no_text_falls_back_to_logical_char() {
     let r = enc_numpad(
@@ -170,12 +170,12 @@ fn numpad_divide_app_keypad() {
     assert_eq!(r, b"\x1bOo");
 }
 
-// --- BUG-08-013 regression: numpad character keys without APP_KEYPAD ---
+// --- regression: numpad character keys without APP_KEYPAD ---
 //
 // When winit does not populate `KeyEvent::text` for numpad characters — some
 // backends and certain Ctrl-combos leave it `None` — the encoder must fall
 // back to the logical-key character rather than returning empty bytes.
-// See: bug-tracker/plans/completed/BUG-08-013/00-overview.md
+// See: bug-tracker/plans/completed//00-overview.md
 
 /// Helper: every digit with `text=None` maps to the digit byte.
 #[test]
@@ -309,7 +309,7 @@ fn numpad_enter_named_linefeed_mode_no_text() {
 // --- Kitty DISAMBIGUATE path × numpad character ---
 
 /// Numpad digit in Kitty DISAMBIGUATE mode, Press, text=None: per
-/// BUG-08-026 the numpad-disambiguation codepoint range fires (57404
+/// the numpad-disambiguation codepoint range fires (57404
 /// for numpad 5), distinguishing numpad input from main-row input at
 /// the application layer. Previously this emitted `b"5"` via the
 /// send-as-text fast-path — that was the bug.
@@ -323,7 +323,7 @@ fn numpad_digit_kitty_disambiguate_press_emits_57404() {
     assert_eq!(r, b"\x1b[57404u");
 }
 
-/// Negative pin (codex's refinement): numpad digit release in Kitty
+/// Regression guard ('s refinement): numpad digit release in Kitty
 /// DISAMBIGUATE WITHOUT REPORT_EVENT_TYPES must still be suppressed — the
 /// fallback must not leak release bytes into the PTY.
 #[test]
@@ -361,7 +361,7 @@ fn standard_char_kitty_disambiguate_release_no_report_events_suppressed() {
 /// Multi-char Character (dead-key composition, IME output) on release in
 /// Kitty DISAMBIGUATE without REPORT_EVENT_TYPES must also be suppressed.
 /// The `resolve_char_codepoint` None branch bypassed `should_send_as_text`
-/// and would otherwise leak `"ae"` bytes — codex Phase 5 finding.
+/// and would otherwise leak `"ae"` bytes — Phase 5 finding.
 #[test]
 fn multichar_character_kitty_disambiguate_release_no_report_events_suppressed() {
     use winit::keyboard::KeyLocation;
@@ -416,7 +416,7 @@ fn multichar_character_kitty_disambiguate_press_emits_text() {
 
 // --- Named keys with unambiguous legacy in Kitty mode: release suppression ---
 //
-// Round-1 TPR finding (codex + gemini agreement): Named keys that fall
+// Round-1 TPR finding ( + agreement): Named keys that fall
 // through the kitty.rs `has_unambiguous_legacy` shortcut to `legacy::encode_legacy`
 // were bypassing the release-suppression check. The top-of-`encode_kitty`
 // guard added in round-1 fix closes the leak. These pins guard against
@@ -526,7 +526,7 @@ fn arrow_up_kitty_release_with_report_events_emits_csi_u() {
     assert_eq!(r, b"\x1b[1;1:3A");
 }
 
-// --- Round-2 TPR (gemini): multi-char and Unidentified arms must suppress
+// --- Round-2 TPR (): multi-char and Unidentified arms must suppress
 // --- non-Press events even when REPORT_EVENT_TYPES is active. There is no
 // --- codepoint to encode, so leaking raw text on release/repeat would be
 // --- a protocol violation.
@@ -621,7 +621,7 @@ fn unidentified_kitty_press_with_report_events_emits_text() {
     assert_eq!(r, b"x");
 }
 
-// --- Round-3 TPR (codex): Repeat without REPORT_EVENT_TYPES is press-
+// --- Round-3 TPR (): Repeat without REPORT_EVENT_TYPES is press-
 // --- equivalent per `resolve_event_suffix`. Multi-char and Unidentified
 // --- arms must NOT suppress Repeat unless REPORT_EVENT_TYPES is active.
 
@@ -682,8 +682,8 @@ fn multichar_character_kitty_repeat_with_report_events_suppressed_pin() {
     assert!(r.is_empty());
 }
 
-// --- Round-4 TPR (codex): Unidentified matrix completeness — explicit
-// --- pins for the three cells codex identified as untested.
+// --- Round-4 TPR (): Unidentified matrix completeness — explicit
+// --- pins for the three cells identified as untested.
 
 /// Unidentified Press WITHOUT REPORT_EVENT_TYPES emits text (baseline).
 #[test]

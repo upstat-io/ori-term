@@ -116,7 +116,7 @@ fn decfi_inside_declrmm_band_but_not_at_right_margin_moves_cursor() {
     assert_eq!(h.term().grid().cursor().col().0, 5);
 }
 
-/// Negative pin: the cursor-move branch must NOT touch any grid cell —
+/// Regression guard: the cursor-move branch must NOT touch any grid cell —
 /// a DECFI that takes the move path leaves every row's content byte-
 /// identical. Guards against a regression where the move branch
 /// accidentally calls the scroll path on one row.

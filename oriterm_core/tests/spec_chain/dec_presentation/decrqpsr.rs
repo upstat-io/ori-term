@@ -59,7 +59,7 @@ fn decrqpsr_mode1_emits_dcs_header_and_terminator() {
     assert!(bytes.ends_with(b"\x1b\\"));
 }
 
-/// Negative pin: `CSI 9 $ w` (unknown mode) emits zero PTY writes — the
+/// Regression guard: `CSI 9 $ w` (unknown mode) emits zero PTY writes — the
 /// dispatcher must not fabricate a reply for unrecognized Ps values.
 /// Anchor: catalog row `DECPRES-DECRQPSR` (unknown-mode drop).
 #[test]

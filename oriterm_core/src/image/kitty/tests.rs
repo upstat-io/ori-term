@@ -316,7 +316,7 @@ fn handler_delete_by_placement_id() {
 
     // Delete only placement 10. Per kitty graphics-protocol.rst, the spec arm
     // for placement-id scoping is `d=i,i=<id>,p=<pid>` (NOT `d=p`, which
-    // deletes by cell position per BUG-08-007's corrected semantics).
+ // deletes by cell position per 's corrected semantics).
     let delete = kitty_apc("a=d,d=i,i=1,p=10,q=2");
     feed(&mut term, &delete);
     assert_eq!(term.image_cache().placement_count(), 1);
@@ -607,7 +607,7 @@ fn parse_compression_oz_populates_field_but_store_does_not_decompress() {
 
 /// `v=` present with value 0 sets `loop_count = Some(0)` — distinguishing the
 /// kitty-spec "infinite loops" case from "key absent". Pin for
-/// TPR-13.0.5-R1-F3-gemini: `source_height: u32` alone cannot tell these
+/// TPR-13.0.5-R1-F3-: `source_height: u32` alone cannot tell these
 /// apart, so `loop_count: Option<u32>` must be populated independently.
 /// Catalog row: `KG-ANIMATE-LOOP-COUNT`.
 #[test]
@@ -643,7 +643,7 @@ fn parse_kitty_command_v_nonzero_sets_both_source_height_and_loop_count() {
 /// `v=` key absent leaves `loop_count` at its `None` default — the negative
 /// pin that keeps the animate path from overwriting loop_count on every
 /// transmit command that omits `v=`.
-/// Catalog row: `KG-ANIMATE-LOOP-COUNT` (negative pin).
+/// Catalog row: `KG-ANIMATE-LOOP-COUNT` (regression guard).
 #[test]
 fn parse_kitty_command_v_absent_leaves_loop_count_none() {
     let cmd = parse_kitty_command(b"a=a,i=7").unwrap();

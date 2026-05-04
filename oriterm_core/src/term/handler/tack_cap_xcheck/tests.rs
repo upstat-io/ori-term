@@ -100,7 +100,7 @@ fn tack_cap_xcheck_registered_caps_have_no_duplicates_across_submodules() {
 
 #[test]
 fn tack_cap_xcheck_owned_count_matches_section_06_plan() {
-    // SEMANTIC PIN — Section 06.5's plan declares 23 direct-VTE
+ // Verifies — Section 06.5's plan declares 23 direct-VTE
     // caps (19 escape-sequence-emitting + 4 pure-bool markers).
     // Pin the count so a refactor that removed an entry without
     // updating the plan flips this red.

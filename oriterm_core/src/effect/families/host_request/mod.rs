@@ -130,11 +130,11 @@ enum SlotState<T> {
 /// `NotifyHostColorQuery` PDUs. As a result, `HostRequest` round-trips
 /// (OSC 52 clipboard load, OSC 4/10/11/12 color queries) work in
 /// embedded mode (`oriterm` and `oriterm_mux::backend::embedded`) but
-/// are dropped at the daemon-client boundary today. The daemon
-/// request-ID + reply-PDU design is tracked in bug-tracker
-/// `BUG-11-011`; see `plans/effect-cutover/section-01-migrate-mux-consumer.md`
-/// §01.4 for the deferral rationale (Path B — bug filing + cross-link,
-/// chosen over an in-scope daemon redesign).
+/// are dropped at the daemon-client boundary today. A daemon-mode
+/// request-ID + reply-PDU design is the documented follow-up; the
+/// chosen path was to file the gap and keep the host-request type
+/// process-local rather than redesign the daemon protocol in the same
+/// change.
 ///
 /// # Cloning discipline
 ///
