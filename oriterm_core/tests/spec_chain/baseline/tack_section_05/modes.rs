@@ -6,7 +6,7 @@
 //! modes:
 //!
 //! - `am` (auto_right_margin) → `DEC-DECAWM` (mode 7)
-//! - `bw` (auto_left_margin)  → `DEC-DECREVWRAP` (mode 45)
+//! - `bw` (auto_left_margin) → `DEC-DECREVWRAP` (mode 45)
 //!
 //! Tack v1.08 does NOT surface per-cap `(am)` / `(bw)` labels (the modes
 //! sweep only emits `(os)` at the end — see the scenario module's

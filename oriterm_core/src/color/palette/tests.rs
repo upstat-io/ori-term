@@ -12,9 +12,9 @@ fn default_color_0_is_black() {
     assert_eq!(black, Rgb { r: 0, g: 0, b: 0 });
 }
 
-/// Regression: — pins the canonical xterm white (0xE5E5E5),
+/// Regression: pins the canonical xterm white (0xE5E5E5),
 /// not the Tango "Aluminium 2" value (0xD3D7CF) the palette had before.
-/// See: bug-tracker/plans/completed//00-overview.md
+/// See: bug-tracker/plans/completed/00-overview.md
 #[test]
 fn default_color_7_is_xterm_white() {
     let p = Palette::default();
@@ -29,7 +29,7 @@ fn default_color_7_is_xterm_white() {
     );
 }
 
-/// Regression: — pins canonical xterm bright white (pure
+/// Regression: pins canonical xterm bright white (pure
 /// 0xFFFFFF), not Tango "Aluminium 1" (0xEEEEEC).
 #[test]
 fn default_color_15_is_xterm_bright_white() {
@@ -665,11 +665,11 @@ fn set_default_changes_reset_baseline() {
     assert_eq!(p.resolve(Color::Indexed(1)), config_color);
 }
 
-/// Regression: — `ANSI_COLORS` previously held the GNOME/Tango
+/// Regression: `ANSI_COLORS` previously held the GNOME/Tango
 /// palette under a "Standard xterm" comment. Yellow must be 0xCDCD00 (the
 /// xterm `ttyDefaultColors` value), not 0xC4A000 (Tango "Butter Dark" —
 /// orange-tinged), the user-most-visible divergence.
-/// See: bug-tracker/plans/completed//00-overview.md
+/// See: bug-tracker/plans/completed/00-overview.md
 #[test]
 fn default_color_3_is_xterm_yellow() {
     let p = Palette::default();
@@ -751,7 +751,7 @@ fn default_color_11_is_not_tango_bright_yellow() {
     assert_ne!(p.resolve(Color::Indexed(11)), tango_bright_yellow);
 }
 
-/// Regression: — full 16-entry matrix pin against the canonical
+/// Regression: full 16-entry matrix pin against the canonical
 /// xterm `ttyDefaultColors` table (`xterm/charproc.c`). Catches any
 /// single-entry drift the targeted pins above might miss.
 #[test]

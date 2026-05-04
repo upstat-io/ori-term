@@ -28,7 +28,7 @@ fn tack_tools_g0_dec_graphics_80x24() {
 
     let outcome = ScenarioRunner::run(&TACK_TOOLS_G0_DEC_GRAPHICS);
 
- // REGRESSION GUARD: empty grid means tack navigation failed before
+    // REGRESSION GUARD: empty grid means tack navigation failed before
     // the SCS render landed. The threshold comparison below would
     // pass on an empty grid (count == 0 < threshold == 4 → fail,
     // but the panic message would not name the navigation failure).
@@ -39,7 +39,7 @@ fn tack_tools_g0_dec_graphics_80x24() {
          navigation failed before render"
     );
 
- // Verifies: the parser found at least the minimum number of
+    // Verifies: the parser found at least the minimum number of
     // distinct Unicode box-drawing chars. Uses the canonical
     // `MIN_DEC_GRAPHICS_THRESHOLD` constant so a regression that
     // lowers the threshold in `character_sets/mod.rs` flips both

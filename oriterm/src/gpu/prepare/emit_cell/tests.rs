@@ -268,7 +268,7 @@ fn emit_cell_applies_blink_alpha_to_bg() {
         "BLINK glyph alpha should be 0.5 (fg_dim * text_blink_opacity), got {glyph_alpha}"
     );
 
- // Regression guard: bg must stay at alpha=1.0 regardless of blink state.
+    // Regression guard: bg must stay at alpha=1.0 regardless of blink state.
     // push_rect writes the color into the bg slot (offset 60), fg slot is zeroed.
     assert_eq!(bg_count(&frame), 1, "bg pushed even when blink=0.5");
     let b = frame.backgrounds.as_bytes();
@@ -397,7 +397,7 @@ fn emit_cell_applies_blink_alpha_to_decoration() {
         "BLINK deco_alpha must equal text_blink_opacity=0.5, got {deco_alpha}"
     );
 
- // Regression guard: bg quad must NOT be dimmed by BLINK (bg alpha always 1.0).
+    // Regression guard: bg quad must NOT be dimmed by BLINK (bg alpha always 1.0).
     let bg_idx = (0..n)
         .find(|&i| (instance_y(b, i) - 0.0_f32).abs() < 0.1)
         .expect("bg rect at y=0 must exist");

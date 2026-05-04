@@ -246,7 +246,7 @@ fn wrong_column_count_row_is_flagged() {
 
 #[test]
 fn malformed_frontmatter_does_not_panic() {
- // Regression guard: the parser must survive arbitrary junk inside the
+    // Regression guard: the parser must survive arbitrary junk inside the
     // frontmatter block without panicking.
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();

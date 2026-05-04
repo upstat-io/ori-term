@@ -626,7 +626,7 @@ fn family_name_not_empty() {
 #[test]
 fn resolve_prefer_emoji_without_fallbacks_uses_primary() {
     // With no fallbacks, resolve_prefer_emoji should fall through to
-    // normal resolution and return the primary face (or .notdef).
+    // normal resolution and return the primary face (or.notdef).
     let fc = embedded_only_collection(GlyphFormat::Alpha);
     let normal = fc.resolve('A', GlyphStyle::Regular);
     let emoji = fc.resolve_prefer_emoji('A', GlyphStyle::Regular);
@@ -728,7 +728,7 @@ fn resolve_unknown_char_returns_notdef_without_fallbacks() {
         FaceIdx::REGULAR,
         "unknown char should fall back to Regular"
     );
-    // Glyph ID 0 = .notdef (unmapped character).
+    // Glyph ID 0 =.notdef (unmapped character).
     assert_eq!(resolved.glyph_id, 0, "unmapped char should be .notdef");
 }
 
@@ -739,7 +739,7 @@ fn resolve_unknown_char_uses_fallback_when_available() {
     let resolved = fc.resolve('\u{4E00}', GlyphStyle::Regular);
     // If system has CJK fallback, face_idx should be >= 4 (a fallback face)
     // and glyph_id should be non-zero.
-    // If no CJK fallback is installed, this degrades to .notdef — both are valid.
+    // If no CJK fallback is installed, this degrades to.notdef — both are valid.
     if resolved.glyph_id != 0 {
         assert!(
             resolved.face_idx.is_fallback(),
@@ -1848,7 +1848,7 @@ fn codepoint_map_glyph_not_in_mapped_face_falls_through() {
     fc.add_codepoint_mapping(0x4E00, 0x9FFF, FaceIdx::REGULAR);
     // CJK char should fall through since the embedded font lacks it.
     let resolved = fc.resolve('\u{4E00}', GlyphStyle::Regular);
-    // Will ultimately fall back to .notdef since there are no fallbacks.
+    // Will ultimately fall back to.notdef since there are no fallbacks.
     assert_eq!(resolved.face_idx, FaceIdx::REGULAR);
 }
 
@@ -2553,8 +2553,8 @@ fn effective_bold_weight_clamped_to_range() {
 // back to `!= GlyphFormat::Color` routes subpixel through
 // `apply_alpha_correction` and the subpixel equality pins fail.
 
-/// Regression: — SubpixelRgb bitmap must not receive gamma LUT.
-/// See: bug-tracker/plans/completed//00-overview.md §2 Red-first fail pins.
+/// Regression: SubpixelRgb bitmap must not receive gamma LUT.
+/// See: bug-tracker/plans/completed/00-overview.md §2 Red-first fail pins.
 #[test]
 fn subpixel_rgb_bitmap_not_gamma_boosted() {
     let (gamma_bitmap, raw_bitmap) = rasterize_h_gamma_pair(GlyphFormat::SubpixelRgb, false);
@@ -2565,7 +2565,7 @@ fn subpixel_rgb_bitmap_not_gamma_boosted() {
     );
 }
 
-/// Regression: — SubpixelBgr bitmap must not receive gamma LUT.
+/// Regression: SubpixelBgr bitmap must not receive gamma LUT.
 /// Covers the BGR sibling path via `Format::subpixel_bgra()`.
 #[test]
 fn subpixel_bgr_bitmap_not_gamma_boosted() {
@@ -2576,7 +2576,7 @@ fn subpixel_bgr_bitmap_not_gamma_boosted() {
     );
 }
 
-/// Regression: — `rasterize_with_weight` subpixel path must not
+/// Regression: `rasterize_with_weight` subpixel path must not
 /// receive gamma LUT. The bug exists in both `rasterize` (terminal grid) and
 /// `rasterize_with_weight` (UI text); both need independent red-first coverage.
 #[test]

@@ -305,7 +305,7 @@ impl StateExpectation {
 ///
 /// Matches effects by top-level family and optional sub-variant.
 /// Example: `EffectExpectation::pty("DeviceAttribute")` matches
-/// `Effect::Pty(PtyEffect::Write { kind: PtyWriteKind::DeviceAttribute, .. })`.
+/// `Effect::Pty(PtyEffect::Write { kind: PtyWriteKind::DeviceAttribute,.. })`.
 #[derive(Copy, Clone, Debug)]
 pub struct EffectExpectation {
     /// Expected effect variant name (e.g. `"Pty"`, `"Host"`).

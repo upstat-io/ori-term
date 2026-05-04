@@ -83,7 +83,7 @@ fn tack_begin_testing_inventory() {
 /// formats (table headers, prompt lines, blank rows) are ignored.
 ///
 /// **Case-sensitive on purpose.** Tack's begin-testing menu uses
-/// BOTH `p) test padding ...` and `P) test printer` — distinct
+/// BOTH `p) test padding...` and `P) test printer` — distinct
 /// commands that map to different scenarios. Lowercasing here would
 /// collapse them and silently hide the printer entry from the drift
 /// gate.

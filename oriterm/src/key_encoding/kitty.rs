@@ -316,7 +316,7 @@ fn resolve_character_codepoint(
         {
             // Prefer winit's `text`; fall back to the logical
             // `Key::Character` content. Robust to backends that don't
- // populate `text` for numpad keys ().
+            // populate `text` for numpad keys ().
             let bytes: Vec<u8> = input
                 .text
                 .map_or_else(|| ch.as_bytes().to_vec(), |t| t.as_bytes().to_vec());

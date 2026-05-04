@@ -102,7 +102,7 @@ fn decrqss_unknown_pt_reports_invalid() {
 /// DECSCA branches. Anchor: catalog row `DECPRES-DECRQSS` (DECSCL branch).
 #[test]
 fn decrqss_decscl_baseline_still_replies() {
- // Regression guard: baseline DECSCL branch must continue to reply after §09A.9
+    // Regression guard: baseline DECSCL branch must continue to reply after §09A.9
     // extends the match table — guards against accidentally shadowing the
     // pre-existing targets when adding new ones.
     let mut h = SpecHarness::with_size(24, 80);

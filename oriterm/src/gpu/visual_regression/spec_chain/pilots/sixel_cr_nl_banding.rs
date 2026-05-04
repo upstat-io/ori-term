@@ -11,8 +11,8 @@
 //! Layout (in sixel-native coordinates, each sixel row = 6 pixels tall):
 //!
 //! ```text
-//!   y=0..5:  red (cols 0-9) overlaid with green (cols 0-9 via $)
-//!   y=6..11: blue (cols 0-9) overlaid with yellow (cols 0-9 via $)
+//! y=0..5: red (cols 0-9) overlaid with green (cols 0-9 via $)
+//! y=6..11: blue (cols 0-9) overlaid with yellow (cols 0-9 via $)
 //! ```
 //!
 //! The overlay semantics of `$` are that the *second* color's set bits

@@ -39,4 +39,3 @@ pub(in crate::backend::client) struct SendRequest {
     /// Reply channel. `None` for fire-and-forget messages.
     pub(in crate::backend::client) reply_tx: Option<mpsc::Sender<MuxPdu>>,
 }
-

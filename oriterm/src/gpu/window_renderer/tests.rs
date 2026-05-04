@@ -438,21 +438,21 @@ mod font_config {
         );
     }
 
- /// Regression: round-1 TPR finding TPR-04-004-.
+    /// Regression: round-1 TPR finding TPR-04-004-.
     ///
     /// Pins the source-side emoji-reinject ordering that mirrors the
     /// production config-reload call sequence
     /// (`oriterm/src/app/config_reload/mod.rs:187-197`):
     ///
     /// - `WindowRenderer::replace_ui_font_sizes` is storage-only — it MUST
-    ///   NOT inject emoji, because `rebuild_ui_font_sizes` calls it BEFORE
-    ///   `replace_font_collection` installs the new terminal font. If
-    ///   injection fired here it would pull stale emoji from the previous
-    ///   terminal font.
+    /// NOT inject emoji, because `rebuild_ui_font_sizes` calls it BEFORE
+    /// `replace_font_collection` installs the new terminal font. If
+    /// injection fired here it would pull stale emoji from the previous
+    /// terminal font.
     /// - `WindowRenderer::replace_font_collection` is the canonical
-    ///   reinject trigger — it installs the new terminal font AND
-    ///   re-wires emoji into whatever UI registry is currently stored,
-    ///   so the post-reload state carries the NEW terminal font's emoji.
+    /// reinject trigger — it installs the new terminal font AND
+    /// re-wires emoji into whatever UI registry is currently stored,
+    /// so the post-reload state carries the NEW terminal font's emoji.
     ///
     /// Uses `FontSet::ui_embedded()` (empty fallbacks) for the UI side
     /// to mirror production — the embedded test helper uses

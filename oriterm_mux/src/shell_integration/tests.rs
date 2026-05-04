@@ -913,9 +913,9 @@ fn multiple_osc133a_without_completion_creates_separate_markers() {
     assert!(term.prompt_markers()[0].output.is_none());
 }
 
-// XTVERSION (CSI > q) — 
+// XTVERSION (CSI > q) —
 
-/// Regression: — XTVERSION (CSI > q) now routes through the
+/// Regression: XTVERSION (CSI > q) now routes through the
 /// vendored `vte::ansi::Processor` (was a `RawInterceptor::csi_dispatch`
 /// override). The dual-pass production helper runs the raw interceptor
 /// FIRST and the high-level processor SECOND on the same bytes — exactly
@@ -1456,7 +1456,7 @@ fn osc133_a_without_b_does_not_record_command() {
 /// §10.4 — OSC 133;D without a preceding C is a no-op: no
 /// `HostEffect::CommandComplete` is emitted because `finish_command()`
 /// returns `None` when `command_start` is unset (interceptor.rs `b'D'` arm
-/// wraps the push in `if let Some(duration) = ...`). Pins the
+/// wraps the push in `if let Some(duration) =...`). Pins the
 /// `set_prompt_state(None) + finish_command() == None → skip effect` path.
 #[test]
 fn osc133_command_complete_without_c_is_noop() {
@@ -1773,7 +1773,7 @@ fn osc7_via_high_level_processor_drops() {
 // Shell-integration protocol tests for the fix
 // - OSC 133 ; C (command-start) takes a paired contents-based snapshot.
 // - OSC 133 ; A (next prompt) / ; D (command-done) restores verbatim
-//   AND unconditionally reapplies top-of-stack mode bits.
+// AND unconditionally reapplies top-of-stack mode bits.
 // - OSC 633 A / C / D mirror OSC 133 (VS Code shell-integration superset).
 // - Alt-screen × paired per-screen snapshot.
 // - Over-pop / max-depth-eviction recovery.
@@ -1790,11 +1790,11 @@ use spec_chain_helper::feed_mux_and_proc;
 
 // --- Exact failing case ---
 
-/// Regression: — push one kitty mode, `;C` snapshot, child
+/// Regression: push one kitty mode, `;C` snapshot, child
 /// crashes without popping, `;A` next prompt. Stack must restore to
 /// snapshotted empty depth AND `KITTY_KEYBOARD_PROTOCOL` bits cleared.
 /// This is the user-visible crash-during-command symptom.
-/// See: bug-tracker/plans/completed//00-overview.md
+/// See: bug-tracker/plans/completed/00-overview.md
 #[test]
 fn keyboard_mode_stack_child_crash_on_osc_133_a_restores_to_snapshot_depth() {
     let mut term = make_term();
@@ -1820,7 +1820,7 @@ fn keyboard_mode_stack_child_crash_on_osc_133_a_restores_to_snapshot_depth() {
 
 // --- Edge cases ---
 
-/// Regression: — `;D` is the clean-path restore trigger;
+/// Regression: `;D` is the clean-path restore trigger;
 /// a well-behaved child emits `;D` before exiting.
 #[test]
 fn keyboard_mode_stack_child_clean_exit_on_osc_133_d_restores_to_snapshot_depth() {
@@ -1835,7 +1835,7 @@ fn keyboard_mode_stack_child_clean_exit_on_osc_133_d_restores_to_snapshot_depth(
     assert!(!term.mode().intersects(TermMode::KITTY_KEYBOARD_PROTOCOL));
 }
 
-/// Regression: — `;C` then `;A` with no pushes in between
+/// Regression: `;C` then `;A` with no pushes in between
 /// must leave the stack empty.
 #[test]
 fn keyboard_mode_stack_empty_at_c_and_a_stays_empty() {
@@ -1846,7 +1846,7 @@ fn keyboard_mode_stack_empty_at_c_and_a_stays_empty() {
     assert!(term.keyboard_mode_stack().is_empty());
 }
 
-/// Regression: — contents-based snapshot preserves
+/// Regression: contents-based snapshot preserves
 /// shell-held modes across command boundaries. Shell pushes 1 mode,
 /// `;C`, child pushes 2 more and crashes, `;A` restores stack to
 /// `[shell_mode]`.
@@ -1873,7 +1873,7 @@ fn keyboard_mode_stack_shell_held_mode_at_c_preserved_after_a() {
     );
 }
 
-/// Regression: — snapshot/restore is reset each command
+/// Regression: snapshot/restore is reset each command
 /// cycle. After three consecutive `;C → push → crash → ;A` cycles,
 /// the stack returns to its shell-held state each time.
 #[test]
@@ -1887,7 +1887,7 @@ fn keyboard_mode_stack_three_command_cycles_each_restores_independently() {
     }
 }
 
-/// Regression: — in-band `CSI < u` pop without a prior
+/// Regression: in-band `CSI < u` pop without a prior
 /// `;C` must take effect. Restore is snapshot-gated, so no snapshot
 /// means no restore, and in-band pushes/pops operate normally.
 #[test]
@@ -1912,7 +1912,7 @@ fn keyboard_mode_stack_in_band_csi_pop_without_prior_c_still_pops() {
 
 // --- OSC 633 parallel (VS Code shell integration superset) ---
 
-/// Regression: — OSC 633 `;C` takes the same paired
+/// Regression: OSC 633 `;C` takes the same paired
 /// contents-based snapshot as OSC 133 `;C`.
 #[test]
 fn osc_633_c_snapshots_both_paired_depths() {
@@ -1926,7 +1926,7 @@ fn osc_633_c_snapshots_both_paired_depths() {
     assert_eq!(term.pre_command_kb_stack_snapshot().unwrap().len(), 1);
 }
 
-/// Regression: — OSC 633 `;A` restore mirrors OSC 133 `;A`.
+/// Regression: OSC 633 `;A` restore mirrors OSC 133 `;A`.
 #[test]
 fn osc_633_a_restores_both_paired_depths() {
     let mut term = make_term();
@@ -1940,7 +1940,7 @@ fn osc_633_a_restores_both_paired_depths() {
     assert!(!term.mode().intersects(TermMode::KITTY_KEYBOARD_PROTOCOL));
 }
 
-/// Regression: — OSC 633 `;D` restore mirrors OSC 133 `;D`.
+/// Regression: OSC 633 `;D` restore mirrors OSC 133 `;D`.
 #[test]
 fn osc_633_d_restores_both_paired_depths() {
     let mut term = make_term();
@@ -1955,7 +1955,7 @@ fn osc_633_d_restores_both_paired_depths() {
 
 // --- alt-screen × paired per-screen snapshot ---
 
-/// Regression: — snapshot on primary, toggle to alt, push
+/// Regression: snapshot on primary, toggle to alt, push
 /// on alt, toggle back, `;A` on primary. Both stacks must be cleaned
 /// — the inactive (alt) side too, so child pushes on the alt screen
 /// before its crash don't leak.
@@ -2020,7 +2020,7 @@ fn keyboard_mode_stack_snapshot_on_primary_child_alt_push_exit_alt_before_a_rest
     );
 }
 
-/// Regression: — shell-held mode preserved across an
+/// Regression: shell-held mode preserved across an
 /// alt-screen command. Snapshot primary at depth 1, enter alt,
 /// push 2 on alt, exit alt, `;A`. Primary stack restored.
 #[test]
@@ -2044,7 +2044,7 @@ fn keyboard_mode_stack_snapshot_and_restore_across_one_toggle_preserves_primary(
     assert!(term.mode().contains(TermMode::DISAMBIGUATE_ESC_CODES));
 }
 
-/// Regression: — child pops one legitimately then crashes.
+/// Regression: child pops one legitimately then crashes.
 /// Contents-based snapshot recovers the original stack verbatim.
 #[test]
 fn keyboard_mode_stack_child_pops_one_and_crashes_restores_from_snapshot() {
@@ -2190,7 +2190,7 @@ fn osc_133_c_and_csi_push_same_chunk_snapshot_captures_pre_push_depth() {
     assert!(term.keyboard_mode_stack().is_empty());
 }
 
-/// Regression: — reverse same-chunk ordering (`CSI > u`
+/// Regression: reverse same-chunk ordering (`CSI > u`
 /// then `OSC 133 ; C`). Raw interceptor still runs first; snapshot
 /// captures the pre-chunk depth (empty), then the push lands.
 /// Subsequent `;A` removes the push.
@@ -2220,7 +2220,7 @@ fn csi_push_and_osc_133_c_same_chunk_snapshot_still_captures_pre_chunk_depth() {
 /// preserve the shell's set-only bits — prior to the paired bits
 /// snapshot, reapplying stack-top (`NO_MODE` for empty stack) would
 /// silently clear the shell's kitty state at every prompt boundary.
-/// See: bug-tracker/plans/completed//00-overview.md §2.5 review round 1.
+/// See: bug-tracker/plans/completed/00-overview.md §2.5 review round 1.
 #[test]
 fn keyboard_mode_stack_shell_set_without_push_csi_equals_u_survives_restore() {
     let mut term = make_term();
@@ -2258,7 +2258,7 @@ fn keyboard_mode_stack_shell_set_without_push_csi_equals_u_survives_restore() {
 /// then user enters/exits alt screen (e.g. pages a manpage). Bits
 /// must survive — live per-screen `inactive_keyboard_mode_bits` tracks
 /// the off-screen effective bits so alt toggles preserve set state.
-/// See: bug-tracker/plans/completed//00-overview.md §2.5 review round 3.
+/// See: bug-tracker/plans/completed/00-overview.md §2.5 review round 3.
 #[test]
 fn kitty_set_only_bits_without_shell_integration_survive_alt_roundtrip() {
     let mut term = make_term();
@@ -2309,7 +2309,7 @@ fn kitty_mid_command_bit_mutation_survives_alt_roundtrip() {
 /// not persisted. Previously restore discarded the inactive bits snap;
 /// now it applies the snap to `inactive_keyboard_mode_bits` so the alt
 /// screen's mid-command mutations are cleaned at the prompt boundary.
-/// See: bug-tracker/plans/completed//00-overview.md §2.5 review round 5.
+/// See: bug-tracker/plans/completed/00-overview.md §2.5 review round 5.
 #[test]
 fn inactive_screen_bit_mutation_during_command_restored_on_primary_d() {
     let mut term = make_term();
@@ -2349,7 +2349,7 @@ fn inactive_screen_bit_mutation_during_command_restored_on_primary_d() {
 /// shell-set bits. Without the paired swap, alt-side `;A` incorrectly
 /// applies primary's DISAMBIGUATE bits to the alt screen and then
 /// consumes/loses primary's paired snap.
-/// See: bug-tracker/plans/completed//00-overview.md §2.5 review round 4.
+/// See: bug-tracker/plans/completed/00-overview.md §2.5 review round 4.
 #[test]
 fn alt_side_a_restore_uses_alt_paired_snapshot_not_primary() {
     let mut term = make_term();
@@ -2390,7 +2390,7 @@ fn alt_side_a_restore_uses_alt_paired_snapshot_not_primary() {
 /// the alt side (misbehaving integration or background emission).
 /// `CSI = 1u; OSC 133;C; ?1049h; OSC 133;A; ?1049l` must end with
 /// `DISAMBIGUATE_ESC_CODES` still active on primary.
-/// See: bug-tracker/plans/completed//00-overview.md §2.5 review round 2.
+/// See: bug-tracker/plans/completed/00-overview.md §2.5 review round 2.
 #[test]
 fn kitty_set_only_bits_survive_alt_screen_roundtrip_with_a_on_alt() {
     let mut term = make_term();
@@ -2438,14 +2438,14 @@ fn keyboard_mode_stack_shell_set_then_child_set_mutation_then_a_reapplies_shell_
     assert!(!term.mode().contains(TermMode::REPORT_ALL_KEYS_AS_ESC));
 }
 
-/// Regression: — pin the raw-first invariant for pop + ;D
+/// Regression: pin the raw-first invariant for pop + ;D
 /// same-chunk. When a child emits `CSI < 1 u` immediately before
 /// `OSC 133 ; D` and both land in one PTY read, the raw interceptor
 /// runs restore BEFORE the high-level processor processes the pop.
 /// Result: stack = snapshot minus one pop. Documents the tradeoff
 /// called out in the plan's §2.5 Round 2 F2 disagreement — the
 /// raw-first-then-high-level architecture is the chosen SSOT per plan.
-/// See: bug-tracker/plans/completed//00-overview.md §2.5.
+/// See: bug-tracker/plans/completed/00-overview.md §2.5.
 #[test]
 fn csi_pop_and_osc_133_d_same_chunk_raw_first_restores_then_pop_applies() {
     let mut term = make_term();
@@ -2474,7 +2474,7 @@ fn csi_pop_and_osc_133_d_same_chunk_raw_first_restores_then_pop_applies() {
     let _ = shell_held;
 }
 
-/// Regression: — pop + ;A same-chunk variant of the above.
+/// Regression: pop + ;A same-chunk variant of the above.
 /// Same invariant: raw interceptor's ;A restore fires before
 /// processor's pop applies, producing stack = snapshot minus one pop.
 #[test]
@@ -2494,7 +2494,7 @@ fn csi_pop_and_osc_133_a_same_chunk_raw_first_restores_then_pop_applies() {
 
 // --- Negative pins ---
 
-/// Regression: — without `;C` (no shell integration), `;A`
+/// Regression: without `;C` (no shell integration), `;A`
 /// must NOT clear the stack. Restore is snapshot-gated.
 #[test]
 fn keyboard_mode_stack_osc_133_a_without_prior_c_does_not_modify_stack() {
@@ -2513,7 +2513,7 @@ fn keyboard_mode_stack_osc_133_a_without_prior_c_does_not_modify_stack() {
     );
 }
 
-/// Regression: — `;A` without prior `;C` leaves BOTH
+/// Regression: `;A` without prior `;C` leaves BOTH
 /// paired snapshot fields still `None`.
 #[test]
 fn keyboard_mode_stack_restore_without_snapshot_leaves_paired_fields_none() {

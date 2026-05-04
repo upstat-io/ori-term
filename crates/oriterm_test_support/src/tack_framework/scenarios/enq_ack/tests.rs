@@ -38,7 +38,7 @@ fn parse_enq_ack_screen_extracts_first_non_blank_line_as_header() {
 
 #[test]
 fn parse_enq_ack_screen_handles_screen_without_terminator_label() {
- // REGRESSION GUARD — a grid that has the header but NOT the
+    // REGRESSION GUARD — a grid that has the header but NOT the
     // success-path terminator line returns no notes. Catches a
     // regression where the parser would default-emit a stub note
     // with an empty value.
@@ -50,7 +50,7 @@ fn parse_enq_ack_screen_handles_screen_without_terminator_label() {
 
 #[test]
 fn parse_enq_ack_screen_does_not_match_substring_inside_word() {
- // Verifies — `grid_find_field` is whitespace-bounded on
+    // Verifies — `grid_find_field` is whitespace-bounded on
     // both sides, so a word containing `character:` as a substring
     // (e.g., `subcharacter:value`) must NOT match. This pins the
     // M3 token-boundary discipline at the parser layer.

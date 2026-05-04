@@ -150,7 +150,7 @@ impl ClientStream {
     /// Used by the `MuxClient` transport to give a dedicated writer thread
     /// exclusive write ownership while the reader thread retains read
     /// ownership, eliminating the head-of-line block where a backpressured
- /// write starved RPC reply reads ().
+    /// write starved RPC reply reads ().
     pub fn try_clone(&self) -> io::Result<Self> {
         Ok(Self {
             handle: self.handle.try_clone()?,
@@ -159,8 +159,8 @@ impl ClientStream {
     }
 
     /// Cancel any pending I/O on the underlying handle so a blocked writer
- /// thread can exit promptly during shutdown ( follow-up —
- /// round 1 finding).
+    /// thread can exit promptly during shutdown ( follow-up —
+    /// round 1 finding).
     ///
     /// On Windows there is no socket-scoped `shutdown(SHUT_WR)`. The
     /// equivalent for a named pipe is `CancelIoEx`, which aborts pending

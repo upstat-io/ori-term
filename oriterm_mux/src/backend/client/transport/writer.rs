@@ -57,7 +57,7 @@ pub(super) fn writer_loop(
         }
 
         // 1. Drain outbound requests with bounded timeout so we periodically
-        //    wake to check the ping interval and the alive flag.
+        // wake to check the ping interval and the alive flag.
         match send_rx.recv_timeout(SEND_RECV_TIMEOUT) {
             Ok(req) => {
                 if let Some(reply_tx) = req.reply_tx {
@@ -94,7 +94,7 @@ pub(super) fn writer_loop(
             // Publish the outstanding seq BEFORE writing the ping so a fast
             // PingAck reply cannot race ahead of the store and be dropped by
             // the reader thread's `expected_ping == 0` sentinel check.
- // Codex round 0 / §06 finding F1 pin.
+            // Codex round 0 / §06 finding F1 pin.
             outstanding_ping_seq.store(u64::from(seq), Ordering::Release);
             if let Err(e) = ProtocolCodec::encode_frame(&mut write_stream, seq, &MuxPdu::Ping) {
                 log::error!("mux-client-writer: ping write error: {e}");

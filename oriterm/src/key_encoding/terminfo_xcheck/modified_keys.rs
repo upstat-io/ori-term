@@ -43,7 +43,7 @@ fn modified_keys_match_terminfo() {
         );
         tested += 1;
 
-        // Suffixed caps (e.g., kLFT3, kLFT4, ..., kLFT7).
+        // Suffixed caps (e.g., kLFT3, kLFT4,..., kLFT7).
         for suffix in 3..=7u8 {
             let cap_name = format!("{base}{suffix}");
             let val = caps.get(cap_name.as_str()).unwrap_or_else(|| {

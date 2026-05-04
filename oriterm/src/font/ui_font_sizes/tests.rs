@@ -276,9 +276,9 @@ fn create_default_collection_applies_post_rebuild_hook() {
 // rebuild path (set_dpi, ensure_size, create_default_collection) and
 // inject_fallbacks must be idempotent so DPI changes + GPU-recovery
 // re-injection cannot grow the fallback chain unboundedly.
-// See bug-tracker/plans/completed//00-overview.md.
+// See bug-tracker/plans/completed/00-overview.md.
 
-/// Regression: — emoji vanishes from tab titles after DPI change.
+/// Regression: emoji vanishes from tab titles after DPI change.
 /// Pins that the default collection retains its injected fallback across
 /// `rebuild_all` (triggered by `set_dpi`).
 #[test]
@@ -305,7 +305,7 @@ fn set_dpi_preserves_injected_fallbacks() {
     );
 }
 
-/// Regression: — every preloaded size (not only the default)
+/// Regression: every preloaded size (not only the default)
 /// must retain the injected fallback after rebuild.
 #[test]
 fn set_dpi_preserves_injected_fallbacks_all_collections() {
@@ -355,7 +355,7 @@ fn inject_fallbacks_empty_data_is_noop() {
     assert_eq!(default_fallback_count(&reg), before);
 }
 
-/// Regression: — `ensure_size` path.
+/// Regression: `ensure_size` path.
 /// A size added AFTER `inject_fallbacks` must still carry the injected
 /// fallback. Pins the "new-collection factory produces a complete
 /// collection" invariant on the runtime-size-registration path.
@@ -378,7 +378,7 @@ fn ensure_size_applies_injected_fallbacks() {
     );
 }
 
-/// Regression: — `create_default_collection` path.
+/// Regression: `create_default_collection` path.
 /// The standalone default collection returned by `create_default_collection`
 /// must carry injected fallbacks. Used by `WindowRenderer::new_ui_only`
 /// for dialog/tab-bar flows where a standalone terminal-font slot is built
@@ -440,7 +440,7 @@ fn init_order_hook_first_then_injection_survives_dpi() {
     // Step 2: inject (mirrors `WindowRenderer::new`'s post-construction step).
     reg.inject_fallbacks(&[test_emoji_font_data()]);
 
- // Step 3: DPI rebuild (the trigger).
+    // Step 3: DPI rebuild (the trigger).
     reg.set_dpi(192.0).expect("DPI rebuild must succeed");
 
     let fc = reg.default_collection().unwrap();

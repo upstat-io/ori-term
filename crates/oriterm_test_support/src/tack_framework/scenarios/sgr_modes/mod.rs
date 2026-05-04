@@ -102,8 +102,8 @@ pub const TACK_TOOLS_SGR: ScenarioSpec = ScenarioSpec {
 ///
 /// Tack formats each label as `Mode %2d` (printf-style, 2-char
 /// right-aligned number), so single-digit modes have two spaces
-/// between `Mode` and the digit (`Mode  0`) and double-digit modes
-/// have one (`Mode 10`, .., `Mode 79`). The parser matches the exact
+/// between `Mode` and the digit (`Mode 0`) and double-digit modes
+/// have one (`Mode 10`,.., `Mode 79`). The parser matches the exact
 /// internal whitespace; [`grid_has_token`] enforces ASCII-whitespace
 /// boundaries on the outside. This is collision-free: `Mode 10` at
 /// position `i` cannot false-positive as `Mode 1` because the
@@ -140,8 +140,8 @@ pub(super) fn count_mode_labels(grid: &str) -> usize {
     for n in 0..80_u32 {
         // `{n:>2}` right-aligns the number in 2 chars, matching
         // tack's `printf("%2d", n)` output exactly:
-        //   n=0  -> "Mode  0"   (two spaces before the digit)
-        //   n=10 -> "Mode 10"   (one space, two-digit number)
+        // n=0 -> "Mode 0" (two spaces before the digit)
+        // n=10 -> "Mode 10" (one space, two-digit number)
         let token = format!("Mode {n:>2}");
         if grid_has_token(grid, &token) {
             count += 1;

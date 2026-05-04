@@ -59,7 +59,7 @@ impl RecordedProxy {
     /// observation log AND sends it through the mpsc channel for
     /// poll-the-condition tests via
     /// [`wait_for_wakeup`](Self::wait_for_wakeup). Both writes use
-    /// `let _ = ...` semantics so the closure is byte-loss-safe even
+    /// `let _ =...` semantics so the closure is byte-loss-safe even
     /// when the receiver has been dropped — matches the production
     /// `let _ = proxy.send_event(TermEvent::MuxWakeup)` semantics.
     pub fn make_mux_wakeup(&self) -> Arc<dyn Fn() + Send + Sync> {

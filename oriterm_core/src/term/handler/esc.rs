@@ -91,7 +91,7 @@ impl<S: EffectSink> Term<S> {
         // §09A.6: DECSACE attribute-change extent mode.
         self.ace_mode = crate::term::AceMode::default();
 
- // : XTSMGRAPHICS Pi=1 color-register count back to default.
+        // : XTSMGRAPHICS Pi=1 color-register count back to default.
         self.color_register_count = crate::image::sixel::COLOR_REGISTERS_MAX;
     }
 
@@ -123,7 +123,7 @@ impl<S: EffectSink> Term<S> {
         self.cursor_shape = crate::grid::CursorShape::default();
         self.keyboard_mode_stack.clear();
         self.inactive_keyboard_mode_stack.clear();
- // Same paired-snapshot seeding as RIS — see.
+        // Same paired-snapshot seeding as RIS — see.
         self.pre_command_kb_stack_snapshot = Some(VecDeque::new());
         self.inactive_pre_command_kb_stack_snapshot = Some(VecDeque::new());
         self.pre_command_kb_mode_bits_snapshot = Some(KeyboardModes::NO_MODE);

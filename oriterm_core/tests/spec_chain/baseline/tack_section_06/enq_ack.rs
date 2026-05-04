@@ -48,7 +48,7 @@
 //! rustdoc describes. Without this pin, could be silently
 //! closed without the corresponding spec_chain coverage ever landing.
 
-/// Pins: the ECMA-48 C0 ENQ catalog row remains `missing` until 
+/// Pins: the ECMA-48 C0 ENQ catalog row remains `missing` until
 /// lands. Reads the catalog markdown directly and asserts the ENQ row's
 /// verification-status column still reads `missing`. When is
 /// resolved, the catalog row's status will flip (to `verified` or similar),
@@ -59,32 +59,32 @@
 /// Anchor: / HYG-13.1-011.
 #[test]
 fn ecma48_c0_enq_catalog_row_still_missing() {
- // The spec-conformance catalog lives in the wrapper repo. When the test
- // runs from a standalone term_repo checkout (no wrapper present), the
- // file is absent — graceful skip
- // Skip Protocol`. Path discovery via the SSOT helper introduced in
- //; never reintroduce ad-hoc `manifest_dir.parent()` arithmetic.
- let Some(catalog_dir) = oriterm_test_support::paths::catalog_dir() else {
- eprintln!("SKIP: ECMA-48 catalog not present (term_repo running without wrapper)");
- return;
- };
- let catalog_path = catalog_dir.join("ecma-48.md");
- // Wrapper is confirmed present (catalog_dir is Some); a read failure here
- // is a real I/O error, not a graceful-skip case. Propagate per
- // Handling at Boundaries`.
- let catalog = std::fs::read_to_string(&catalog_path)
- .unwrap_or_else(|e| panic!("read {}: {e}", catalog_path.display()));
+    // The spec-conformance catalog lives in the wrapper repo. When the test
+    // runs from a standalone term_repo checkout (no wrapper present), the
+    // file is absent — graceful skip
+    // Skip Protocol`. Path discovery via the SSOT helper introduced in
+    //; never reintroduce ad-hoc `manifest_dir.parent()` arithmetic.
+    let Some(catalog_dir) = oriterm_test_support::paths::catalog_dir() else {
+        eprintln!("SKIP: ECMA-48 catalog not present (term_repo running without wrapper)");
+        return;
+    };
+    let catalog_path = catalog_dir.join("ecma-48.md");
+    // Wrapper is confirmed present (catalog_dir is Some); a read failure here
+    // is a real I/O error, not a graceful-skip case. Propagate per
+    // Handling at Boundaries`.
+    let catalog = std::fs::read_to_string(&catalog_path)
+        .unwrap_or_else(|e| panic!("read {}: {e}", catalog_path.display()));
 
- let row = catalog
- .lines()
- .find(|l| l.starts_with("| ECMA48-C0-ENQ "))
- .expect("ECMA48-C0-ENQ row must exist in catalog/ecma-48.md");
+    let row = catalog
+        .lines()
+        .find(|l| l.starts_with("| ECMA48-C0-ENQ "))
+        .expect("ECMA48-C0-ENQ row must exist in catalog/ecma-48.md");
 
- assert!(
- row.contains("| missing |"),
- "ECMA48-C0-ENQ is no longer marked `missing` in the catalog — \
+    assert!(
+        row.contains("| missing |"),
+        "ECMA48-C0-ENQ is no longer marked `missing` in the catalog — \
  has been fixed. Replace this regression guard with a \
  real spec_chain test driving the ENQ probe, per the module \
  rustdoc. Row line:\n {row}"
-);
+    );
 }

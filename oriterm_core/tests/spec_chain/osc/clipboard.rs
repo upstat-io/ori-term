@@ -4,12 +4,12 @@
 //! `Processor` and asserts the correct apex effect:
 //!
 //! - `Pc` ∈ {`c`, `s`, `p`} + base64 payload → `Effect::Host(HostEffect::
-//!   ClipboardStore { selection, data })` (fire-and-forget store).
+//! ClipboardStore { selection, data })` (fire-and-forget store).
 //! - `Pc` ∈ {`c`, `s`, `p`} + `?` payload → `Effect::HostRequest(HostRequest::
-//!   ClipboardLoad { selection, clipboard_char, terminator, reply })` (load
-//!   request carrying a `ResponseToken` the consumer fulfills).
+//! ClipboardLoad { selection, clipboard_char, terminator, reply })` (load
+//! request carrying a `ResponseToken` the consumer fulfills).
 //! - Unknown `Pc` (e.g. `q`) and invalid base64 are silently dropped; no
-//!   effect is emitted.
+//! effect is emitted.
 //!
 //! The `ResponseToken` round-trip to `PtyEffect::Write` is verified in
 //! `oriterm_mux/src/pane/io_thread/response_poll/tests.rs` (`osc52_register_

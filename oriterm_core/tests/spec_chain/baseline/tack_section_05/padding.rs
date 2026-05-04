@@ -8,7 +8,7 @@
 //! `extra/ori_term.info`, the captured grid is:
 //!
 //! ```text
-//! (rs1) reset_1string, not present.  (rs1) Done
+//! (rs1) reset_1string, not present. (rs1) Done
 //! ```
 //!
 //! That is — tack v1.08 reports `rs1` (the terminfo `reset_1string`
@@ -20,8 +20,8 @@
 //! # Catalog rows verified
 //!
 //! - **None new.** `ECMA48-CSI-DA1` is already verified by the harness
-//!   pilot `pilots/da1_query.rs::da1_query_drives_to_effect_apex`. The
-//!   padding scenario adds no protocol-row coverage beyond that pilot.
+//! pilot `pilots/da1_query.rs::da1_query_drives_to_effect_apex`. The
+//! padding scenario adds no protocol-row coverage beyond that pilot.
 //!
 //! `ECMA48-ESC-c` (RIS) is NOT exercised by tack v1.08 against
 //! `extra/ori_term.info` because `rs1` is absent from the terminfo

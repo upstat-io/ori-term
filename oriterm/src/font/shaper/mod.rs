@@ -179,7 +179,7 @@ fn segment_runs<C: ShapableCell>(
                 runs[run_count].face_idx = face_idx;
                 runs[run_count].synthetic = synthetic;
                 runs[run_count].col_start = col;
-                // text and byte_to_col already cleared by caller.
+            // text and byte_to_col already cleared by caller.
             } else {
                 runs.push(ShapingRun {
                     text: String::with_capacity(cols - col),

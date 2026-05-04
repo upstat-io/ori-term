@@ -20,8 +20,8 @@
 //!
 //! - `main.rs` — this file (smoke + cross-cutting tests)
 //! - Sub-module declarations for Sections 04-06 land as those sections
-//!   complete; they consume the framework that lives in
-//!   `oriterm_test_support::tack_framework`.
+//! complete; they consume the framework that lives in
+//! `oriterm_test_support::tack_framework`.
 
 use oriterm_test_support::{PtySession, TerminfoEnv, tack_available, tic_available};
 

@@ -155,8 +155,8 @@ enum ScanEvent {
 /// - `ESC ]` OSC — consume until `BEL` (0x07) or `ESC \\` terminator.
 /// - `ESC _` APC / `ESC P` DCS — consume until `ESC \\` terminator.
 /// - `ESC <other>` — return to out-of-frame state without emitting events for
-///   the two framing bytes (matches the original scanners' behaviour for
-///   unrecognised two-byte ESC sequences).
+/// the two framing bytes (matches the original scanners' behaviour for
+/// unrecognised two-byte ESC sequences).
 ///
 /// Extracted at §13.1 close-out (HYG-13.1-008) to de-duplicate the identical
 /// walker skeleton that previously lived in `find_out_of_frame_bytes` and

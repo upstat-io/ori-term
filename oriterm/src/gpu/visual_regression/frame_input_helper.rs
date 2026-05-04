@@ -45,7 +45,7 @@ pub(in crate::gpu::visual_regression) fn frame_input(
     let content = session.term().renderable_content();
 
     // Stable fixture-specific foreground — see fn doc comment for the
- // SSOT note re.
+    // SSOT note re.
     let fg = Rgb {
         r: 211,
         g: 215,

@@ -88,7 +88,7 @@ impl Category {
 /// Canonical tuple form for a single escape sequence.
 ///
 /// - `category` — see [`Category`].
-/// - `intermediates` — sorted byte sequence (`?`, `>`, `$`, ...).
+/// - `intermediates` — sorted byte sequence (`?`, `>`, `$`,...).
 /// - `params` — normalized parameter placeholder (`Ps`, `Ps;Ps`, `text`, …).
 /// - `final_byte` — the dispatch-triggering byte for CSI/ESC/DCS,
 ///   the OSC dispatch selector (numeric id like `"52"` or alias

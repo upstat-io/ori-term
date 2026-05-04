@@ -54,7 +54,7 @@ fn parse_cursor_screen_finds_each_cap_in_isolation() {
 
 #[test]
 fn parse_cursor_screen_rejects_substring_collisions() {
- // Verifies for the M3 fix: the parser MUST use
+    // Verifies for the M3 fix: the parser MUST use
     // `grid_has_token`, not raw `str::contains`. The plan
     // explicitly calls out: `cup` matches inside
     // `cupboard`/`occupied`, `hpa`/`vpa` inside arbitrary letter
@@ -90,7 +90,7 @@ fn parse_cursor_screen_handles_partial_caps() {
 
 #[test]
 fn parse_cursor_screen_returns_caps_in_canonical_order() {
- // Verifies: the parser walks CURSOR_CAPS in declaration
+    // Verifies: the parser walks CURSOR_CAPS in declaration
     // order and pushes matches in that order, so the returned
     // `capability_labels` vec MUST appear in canonical
     // [cup, hpa, vpa, csr, cuu, cud, cub, cuf] order REGARDLESS
@@ -115,7 +115,7 @@ fn parse_cursor_screen_returns_caps_in_canonical_order() {
 
 #[test]
 fn parse_cursor_screen_handles_realistic_tack_v108_output() {
- // Verifies: against the actual tack v1.08 cursor movement
+    // Verifies: against the actual tack v1.08 cursor movement
     // test output (verified empirically — see module rustdoc),
     // the parser returns no cursor caps because tack v1.08's
     // cursor movement test only probes (clear) cap name — it does

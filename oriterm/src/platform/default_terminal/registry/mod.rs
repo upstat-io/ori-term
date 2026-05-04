@@ -6,20 +6,20 @@
 //! ## Two distinct registration steps
 //!
 //! 1. **Selector keys** under `HKCU\Console\%%Startup`:
-//!    - `DelegationConsole` (`REG_SZ`): CLSID of the console host
-//!      (we use Windows Terminal's `OpenConsole.exe` CLSID).
-//!    - `DelegationTerminal` (`REG_SZ`): CLSID of the terminal application
-//!      (our [`ORITERM_TERMINAL_CLSID`]).
+//! - `DelegationConsole` (`REG_SZ`): CLSID of the console host
+//!   (we use Windows Terminal's `OpenConsole.exe` CLSID).
+//! - `DelegationTerminal` (`REG_SZ`): CLSID of the terminal application
+//!   (our [`ORITERM_TERMINAL_CLSID`]).
 //!
-//!    Conhost reads these at startup to decide where to delegate.
+//! Conhost reads these at startup to decide where to delegate.
 //!
 //! 2. **COM server registration** under
 //!    `HKCU\Software\Classes\CLSID\{ORITERM_TERMINAL_CLSID}\LocalServer32`:
-//!    - Default value (`REG_SZ`): full path to `oriterm.exe`.
+//! - Default value (`REG_SZ`): full path to `oriterm.exe`.
 //!
-//!    Required so COM can `CoCreateInstance` our class out-of-process
-//!    when the console host hands a session off (Phase 3 wires the COM
-//!    server lifecycle that consumes this registration).
+//! Required so COM can `CoCreateInstance` our class out-of-process
+//! when the console host hands a session off (Phase 3 wires the COM
+//! server lifecycle that consumes this registration).
 //!
 //! Standard COM marshaling is used (no proxy/stub DLL) because
 //! `ITerminalHandoff3` parameters are primitive `HANDLE`s and a single

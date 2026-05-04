@@ -4,17 +4,17 @@
 //! and the empirical capture against tack v1.08 (2026-04-08), the color
 //! test on tack v1.08 only probes the `colors` and `pairs` numeric
 //! capabilities (`This terminal can display 256 colors and 32767 color
-//! pairs.  (colors) (pairs) Done`). Both are TERMINFO numeric caps —
+//! pairs. (colors) (pairs) Done`). Both are TERMINFO numeric caps —
 //! `max_colors` and `max_pairs` — which describe terminal capability
 //! metadata, not protocol sequences emitted on the wire.
 //!
 //! # Catalog rows verified
 //!
 //! - **None.** Numeric terminfo caps do not have ECMA-48 / DEC private
-//!   mode catalog rows. Color RENDERING (`setaf`/`setab`) is the
-//!   domain of Section 07 GPU goldens and the SGR rows owned by
-//!   Section 08.8 (ISO 8613-6 colon forms) and Section 08.8b
-//!   (remaining SGR-color-related rows).
+//! mode catalog rows. Color RENDERING (`setaf`/`setab`) is the
+//! domain of Section 07 GPU goldens and the SGR rows owned by
+//! Section 08.8 (ISO 8613-6 colon forms) and Section 08.8b
+//! (remaining SGR-color-related rows).
 //!
 //! This file documents the conversion finding so that the cap-coverage
 //! matrix and `_legacy-tack-mapping.md` accurately reflect that the

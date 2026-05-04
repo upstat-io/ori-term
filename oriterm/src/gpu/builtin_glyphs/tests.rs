@@ -348,7 +348,7 @@ fn rasterize_braille_single_dot() {
 
 #[test]
 fn rasterize_powerline_right_triangle() {
-    // U+E0B0  — solid right-pointing triangle.
+    // U+E0B0 — solid right-pointing triangle.
     let glyph = rasterize('\u{E0B0}', 8, 16).expect("powerline right triangle should rasterize");
     assert_eq!(glyph.width, 8);
     assert_eq!(glyph.height, 16);

@@ -150,7 +150,7 @@ fn reader_send_returns_err_on_disconnect() {
     // (If the sender hadn't yet entered send(), it sees the disconnected
     // channel on entry and returns SendError immediately. Either branch
     // satisfies the assertion — wall-clock-free per
- // -Clock-Free Testing`.)
+    // -Clock-Free Testing`.)
     drop(byte_rx);
 
     let result = join.join().expect("sender thread joined cleanly");

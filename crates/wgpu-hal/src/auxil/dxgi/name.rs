@@ -11,9 +11,9 @@ pub trait ObjectExt {
 
 impl<T> ObjectExt for T
 where
-    // Windows impls `From` for all parent interfaces, so we can use that to convert to ID3D12Object.
-    //
-    // This includes implementations for references.
+ // Windows impls `From` for all parent interfaces, so we can use that to convert to ID3D12Object.
+ //
+ // This includes implementations for references.
     for<'a> &'a ID3D12Object: From<&'a T>,
 {
     fn set_name(&self, name: &str) -> Result<(), crate::DeviceError> {

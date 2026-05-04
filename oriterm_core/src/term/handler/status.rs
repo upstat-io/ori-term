@@ -155,9 +155,9 @@ impl<S: EffectSink> Term<S> {
             None => {
                 // DA1: report VT420-class terminal with ANSI color + sixel.
                 // Format: CSI ? Pc ; Pp1 ; Pp2 c
-                //   64 = VT420 conformance level (same as xterm)
-                //   6  = selective erase / ANSI color
-                //   4  = sixel graphics
+                // 64 = VT420 conformance level (same as xterm)
+                // 6 = selective erase / ANSI color
+                // 4 = sixel graphics
                 // vttest checks for 62+ (VT220+) to enable CSI 18t
                 // size queries and other VT200+ features.
                 let response = "\x1b[?64;6;4c";
@@ -342,7 +342,7 @@ impl<S: EffectSink> Term<S> {
 
     /// DECRQSS: Request Status String.
     ///
-    /// Responds to DCS $ q ... ST queries. Each query type requests the
+    /// Responds to DCS $ q... ST queries. Each query type requests the
     /// current setting of a specific terminal feature. Valid responses
     /// use `DCS 1 $ r <value> ST`; invalid queries get `DCS 0 $ r ST`.
     pub(super) fn status_decrqss(&mut self, query: &[u8]) {
@@ -368,16 +368,16 @@ impl<S: EffectSink> Term<S> {
                 format!("\x1bP1$r{};{}s\x1b\\", left + 1, right + 1)
             }
             // DECSCUSR: cursor style. Report shape + blink per xterm mapping:
-            //   1 = blink block,     2 = steady block,
-            //   3 = blink underline, 4 = steady underline,
-            //   5 = blink bar,       6 = steady bar.
+            // 1 = blink block, 2 = steady block,
+            // 3 = blink underline, 4 = steady underline,
+            // 5 = blink bar, 6 = steady bar.
             b" q" => {
                 let blinking = self.mode.contains(TermMode::CURSOR_BLINKING);
                 let ps = decscusr_param(self.cursor_shape, blinking);
                 format!("\x1bP1$r{ps} q\x1b\\")
             }
             // DECSCA: character protection attribute.
-            //   1 = protected, 2 = unprotected (default per xterm).
+            // 1 = protected, 2 = unprotected (default per xterm).
             b"\"q" => {
                 let ps = if self.char_protection { 1 } else { 2 };
                 format!("\x1bP1$r{ps}\"q\x1b\\")
@@ -420,9 +420,9 @@ impl<S: EffectSink> Term<S> {
 ///
 /// Returned values mirror the DECSCUSR *setter* accepted in
 /// `crates/vte/src/ansi/types.rs`:
-///   1 = blink block,      2 = steady block,
-///   3 = blink underline,  4 = steady underline,
-///   5 = blink bar (Beam), 6 = steady bar.
+/// 1 = blink block, 2 = steady block,
+/// 3 = blink underline, 4 = steady underline,
+/// 5 = blink bar (Beam), 6 = steady bar.
 ///
 /// `HollowBlock` and `Hidden` are ori-extensions with no DECSCUSR encoding;
 /// they report as the nearest steady block (Ps=2) so consumers receive a

@@ -82,10 +82,10 @@ fn numpad_0_app_keypad() {
     assert_eq!(r, b"\x1bOp");
 }
 
-/// Regression: — numpad digits with no `APP_KEYPAD` must emit the
+/// Regression: numpad digits with no `APP_KEYPAD` must emit the
 /// digit byte even when winit does not populate `KeyEvent::text`. Before the
 /// fix this returned empty bytes and the shell saw no keystrokes.
-/// See: bug-tracker/plans/completed//00-overview.md
+/// See: bug-tracker/plans/completed/00-overview.md
 #[test]
 fn numpad_5_no_app_keypad_no_text_falls_back_to_logical_char() {
     let r = enc_numpad(
@@ -175,7 +175,7 @@ fn numpad_divide_app_keypad() {
 // When winit does not populate `KeyEvent::text` for numpad characters — some
 // backends and certain Ctrl-combos leave it `None` — the encoder must fall
 // back to the logical-key character rather than returning empty bytes.
-// See: bug-tracker/plans/completed//00-overview.md
+// See: bug-tracker/plans/completed/00-overview.md
 
 /// Helper: every digit with `text=None` maps to the digit byte.
 #[test]

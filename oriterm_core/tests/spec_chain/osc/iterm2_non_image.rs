@@ -437,7 +437,7 @@ fn osc1337_invalid_utf8_dropped() {
 // The SSOT invariant under test is: both OSC 7 (via interceptor calling
 // `Term::set_cwd`) and OSC 1337 CurrentDir (via `Handler::iterm2_current_dir`
 // → `Term::set_cwd`) write the SAME `Term::cwd` field — any second CWD
-// field would break either test.  We simulate the OSC 7 side by calling
+// field would break either test. We simulate the OSC 7 side by calling
 // `set_cwd` directly (exactly what the interceptor does post-URI-parse).
 
 /// DIRECTION A: OSC 7 sets cwd first (via `set_cwd`, as the interceptor
@@ -458,7 +458,7 @@ fn osc1337_ssot_cwd_direction_a() {
 }
 
 /// DIRECTION B: OSC 1337 CurrentDir sets cwd first (via the Handler
-/// path); OSC 7's `set_cwd` overwrites it.  Pins that BOTH directions
+/// path); OSC 7's `set_cwd` overwrites it. Pins that BOTH directions
 /// flow through the SAME field — a future regression where either OSC
 /// writes a second field is caught here.
 /// Anchor: catalog rows `ITERM2-1337-CURRENTDIR` + `OSC-7` (SSOT shared-field contract).

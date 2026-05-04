@@ -230,14 +230,14 @@ pub const BEGIN_TESTING_INVENTORY: &[BeginTestingKey] = &[
         // 1. Spawns tack via `PtySession`.
         // 2. Sends `n` to enter the begin-testing menu.
         // 3. Captures a baseline grid + sanity-checks the menu
-        //    prompt is present.
+        // prompt is present.
         // 4. Sends `?`.
         // 5. Captures the post-`?` grid.
         // 6. Asserts every one of the 16 begin-testing menu
-        //    entries is still visible (proves `?` did not
-        //    navigate away).
+        // entries is still visible (proves `?` did not
+        // navigate away).
         // 7. Snapshots the post-`?` grid via insta for byte-level
-        //    visual regression.
+        // visual regression.
         //
         // The previous version of this comment said the 05.0
         // begin_testing_inventory drift gate covered help

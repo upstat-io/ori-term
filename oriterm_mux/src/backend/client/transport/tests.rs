@@ -8,318 +8,318 @@
 
 #[test]
 fn reader_does_not_drain_send_rx() {
- let reader_src = include_str!("reader.rs");
- let bad_patterns = [
- "send_rx.try_recv",
- "send_rx.recv(",
- "send_rx.recv_timeout",
- "send_rx: mpsc::Receiver<SendRequest>",
- ];
- for pat in bad_patterns {
- assert!(
- !reader_src.contains(pat),
- "architectural invariant: reader.rs MUST NOT drain or own \
+    let reader_src = include_str!("reader.rs");
+    let bad_patterns = [
+        "send_rx.try_recv",
+        "send_rx.recv(",
+        "send_rx.recv_timeout",
+        "send_rx: mpsc::Receiver<SendRequest>",
+    ];
+    for pat in bad_patterns {
+        assert!(
+            !reader_src.contains(pat),
+            "architectural invariant: reader.rs MUST NOT drain or own \
  send_rx (found `{pat}`). Outbound writes belong in writer.rs so the \
  reader thread can always read replies regardless of write backpressure."
-);
- }
+        );
+    }
 }
 
 #[test]
 fn reader_does_not_send_pings() {
- let reader_src = include_str!("reader.rs");
- // Match `Ping` followed by punctuation — `MuxPdu::Ping` as a value, not
- // the `MuxPdu::PingAck` variant which the reader still observes.
- // `encode_frame` is forbidden as a bare token (catches any receiver name,
- // not just `&mut stream`) — the reader is read-only post-fix.
- let bad_patterns = ["MuxPdu::Ping,", "MuxPdu::Ping)", "encode_frame"];
- for pat in bad_patterns {
- assert!(
- !reader_src.contains(pat),
- "architectural invariant: reader.rs MUST NOT call \
+    let reader_src = include_str!("reader.rs");
+    // Match `Ping` followed by punctuation — `MuxPdu::Ping` as a value, not
+    // the `MuxPdu::PingAck` variant which the reader still observes.
+    // `encode_frame` is forbidden as a bare token (catches any receiver name,
+    // not just `&mut stream`) — the reader is read-only post-fix.
+    let bad_patterns = ["MuxPdu::Ping,", "MuxPdu::Ping)", "encode_frame"];
+    for pat in bad_patterns {
+        assert!(
+            !reader_src.contains(pat),
+            "architectural invariant: reader.rs MUST NOT call \
  `encode_frame` or send `MuxPdu::Ping` (found `{pat}`). The writer \
  thread owns the heartbeat pings; merging them back into the reader \
  re-introduces the head-of-line block under backpressure."
-);
- }
+        );
+    }
 }
 
 #[test]
 fn writer_module_owns_send_rx_drain() {
- let writer_src = include_str!("writer.rs");
- assert!(
- writer_src.contains("send_rx"),
- "architectural invariant: writer.rs MUST own send_rx draining."
-);
- assert!(
- writer_src.contains("encode_frame"),
- "architectural invariant: writer.rs MUST own outbound \
+    let writer_src = include_str!("writer.rs");
+    assert!(
+        writer_src.contains("send_rx"),
+        "architectural invariant: writer.rs MUST own send_rx draining."
+    );
+    assert!(
+        writer_src.contains("encode_frame"),
+        "architectural invariant: writer.rs MUST own outbound \
  encode_frame calls."
-);
+    );
 }
 
 #[test]
 fn writer_module_owns_ping_heartbeat() {
- let writer_src = include_str!("writer.rs");
- assert!(
- writer_src.contains("MuxPdu::Ping"),
- "architectural invariant: writer.rs MUST own the heartbeat \
+    let writer_src = include_str!("writer.rs");
+    assert!(
+        writer_src.contains("MuxPdu::Ping"),
+        "architectural invariant: writer.rs MUST own the heartbeat \
  Ping send (moved here from reader.rs so a backpressured write does \
  not block the heartbeat)."
-);
+    );
 }
 
 #[test]
 fn writer_module_drains_pending_on_error_exit() {
- let writer_src = include_str!("writer.rs");
- assert!(
- writer_src.contains("drain_pending") || writer_src.contains("drain()"),
- "review pin: writer.rs MUST drain pending RPC reply \
+    let writer_src = include_str!("writer.rs");
+    assert!(
+        writer_src.contains("drain_pending") || writer_src.contains("drain()"),
+        "review pin: writer.rs MUST drain pending RPC reply \
  senders on error exit so callers see Disconnected (BrokenPipe) \
  instead of waiting RPC_TIMEOUT (5s) for a phantom response."
-);
+    );
 }
 
 #[cfg(unix)]
 mod drain_pending_behavioral_pin {
- //! Behavioral pin paired with the source-grep
- //! `writer_module_drains_pending_on_error_exit` test above. Pre-fix
- //! (writer doesn't drain), an in-flight RPC waits the full RPC_TIMEOUT
- //! (5 s) for a phantom response after the connection breaks. Post-fix,
- //! the writer drains the shared pending map on its error-exit path so
- //! the application's `reply_rx` observes `Disconnected` immediately.
- //!
- //! The pin is paired-source-and-behavior so a future regression that
- //! removes the `drain_pending` call (passing the source-grep on the
- //! word's continued presence in a comment, for instance) is still
- //! caught by the wall-clock pin: an RPC that takes >1 s to fail after
- //! the connection drops fails this test.
- //!
- //! Codex round 1 finding F2 pin.
+    //! Behavioral pin paired with the source-grep
+    //! `writer_module_drains_pending_on_error_exit` test above. Pre-fix
+    //! (writer doesn't drain), an in-flight RPC waits the full RPC_TIMEOUT
+    //! (5 s) for a phantom response after the connection breaks. Post-fix,
+    //! the writer drains the shared pending map on its error-exit path so
+    //! the application's `reply_rx` observes `Disconnected` immediately.
+    //!
+    //! The pin is paired-source-and-behavior so a future regression that
+    //! removes the `drain_pending` call (passing the source-grep on the
+    //! word's continued presence in a comment, for instance) is still
+    //! caught by the wall-clock pin: an RPC that takes >1 s to fail after
+    //! the connection drops fails this test.
+    //!
+    //! Codex round 1 finding F2 pin.
 
- use std::os::unix::net::UnixListener;
- use std::sync::Arc;
- use std::thread;
- use std::time::{Duration, Instant};
+    use std::os::unix::net::UnixListener;
+    use std::sync::Arc;
+    use std::thread;
+    use std::time::{Duration, Instant};
 
- use crate::id::ClientId;
- use crate::protocol::{MuxPdu, ProtocolCodec};
+    use crate::id::ClientId;
+    use crate::protocol::{MuxPdu, ProtocolCodec};
 
- use super::super::ClientTransport;
+    use super::super::ClientTransport;
 
- /// When the daemon abruptly closes the connection mid-flight, an RPC
- /// caller observes `BrokenPipe` (or another non-`TimedOut`) error
- /// within 1 second — NOT after the 5-second `RPC_TIMEOUT`. The writer
- /// thread's `drain_pending` is what closes the gap: without it,
- /// `reply_rx` waits for a sender that nobody will ever drop until
- /// `Drop::drop` runs.
- #[test]
- fn rpc_after_connection_drop_observes_disconnected_within_one_second() {
- let dir = tempfile::tempdir().unwrap();
- let sock = dir.path().join("drain.sock");
- let listener = UnixListener::bind(&sock).unwrap();
+    /// When the daemon abruptly closes the connection mid-flight, an RPC
+    /// caller observes `BrokenPipe` (or another non-`TimedOut`) error
+    /// within 1 second — NOT after the 5-second `RPC_TIMEOUT`. The writer
+    /// thread's `drain_pending` is what closes the gap: without it,
+    /// `reply_rx` waits for a sender that nobody will ever drop until
+    /// `Drop::drop` runs.
+    #[test]
+    fn rpc_after_connection_drop_observes_disconnected_within_one_second() {
+        let dir = tempfile::tempdir().unwrap();
+        let sock = dir.path().join("drain.sock");
+        let listener = UnixListener::bind(&sock).unwrap();
 
- let server_handle = thread::spawn(move || {
- let (mut stream, _) = listener.accept().unwrap();
- let mut codec = ProtocolCodec::new();
- // Hello / HelloAck.
- let frame = codec.decode_frame(&mut stream).unwrap();
- assert!(matches!(frame.pdu, MuxPdu::Hello { .. }));
- ProtocolCodec::encode_frame(
- &mut stream,
- frame.seq,
- &MuxPdu::HelloAck {
- client_id: ClientId::from_raw(1),
- protocol_version: crate::protocol::CURRENT_PROTOCOL_VERSION,
- features: 0,
- },
-)
- .unwrap();
- // SetCapabilities (fire-and-forget).
- let _ = codec.decode_frame(&mut stream);
- // Drop the stream immediately — daemon side disappears.
- drop(stream);
- });
+        let server_handle = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut codec = ProtocolCodec::new();
+            // Hello / HelloAck.
+            let frame = codec.decode_frame(&mut stream).unwrap();
+            assert!(matches!(frame.pdu, MuxPdu::Hello { .. }));
+            ProtocolCodec::encode_frame(
+                &mut stream,
+                frame.seq,
+                &MuxPdu::HelloAck {
+                    client_id: ClientId::from_raw(1),
+                    protocol_version: crate::protocol::CURRENT_PROTOCOL_VERSION,
+                    features: 0,
+                },
+            )
+            .unwrap();
+            // SetCapabilities (fire-and-forget).
+            let _ = codec.decode_frame(&mut stream);
+            // Drop the stream immediately — daemon side disappears.
+            drop(stream);
+        });
 
- let wakeup: Arc<dyn Fn() + Send + Sync> = Arc::new(|| {});
- let mut transport = ClientTransport::connect(&sock, wakeup).unwrap();
- let _ = server_handle.join();
+        let wakeup: Arc<dyn Fn() + Send + Sync> = Arc::new(|| {});
+        let mut transport = ClientTransport::connect(&sock, wakeup).unwrap();
+        let _ = server_handle.join();
 
- // Brief settle so the writer's next `recv_timeout` cycle observes
- // the broken connection. The exact mechanism doesn't matter — what
- // matters is that a subsequent RPC must not block for 5 seconds.
- thread::sleep(Duration::from_millis(50));
+        // Brief settle so the writer's next `recv_timeout` cycle observes
+        // the broken connection. The exact mechanism doesn't matter — what
+        // matters is that a subsequent RPC must not block for 5 seconds.
+        thread::sleep(Duration::from_millis(50));
 
- let start = Instant::now();
- let result = transport.rpc(MuxPdu::Ping);
- let elapsed = start.elapsed();
+        let start = Instant::now();
+        let result = transport.rpc(MuxPdu::Ping);
+        let elapsed = start.elapsed();
 
- assert!(result.is_err(), "RPC must fail after the daemon dropped");
- let err = result.unwrap_err();
- assert_ne!(
- err.kind(),
- std::io::ErrorKind::TimedOut,
- "drain_pending must wake reply_rx with `BrokenPipe` (or transport \
+        assert!(result.is_err(), "RPC must fail after the daemon dropped");
+        let err = result.unwrap_err();
+        assert_ne!(
+            err.kind(),
+            std::io::ErrorKind::TimedOut,
+            "drain_pending must wake reply_rx with `BrokenPipe` (or transport \
  death) — observing `TimedOut` means the writer's error path did \
  not drain the pending map. Codex round 1 finding F2 pin."
-);
- assert!(
- elapsed < Duration::from_secs(1),
- "drain_pending pin: rpc() must return within 1 s after the daemon \
+        );
+        assert!(
+            elapsed < Duration::from_secs(1),
+            "drain_pending pin: rpc() must return within 1 s after the daemon \
  drops, not wait `RPC_TIMEOUT` (5 s) for a phantom response (got \
  {elapsed:?})"
-);
- }
+        );
+    }
 }
 
 #[test]
 fn pending_map_is_shared_arc_mutex() {
- let mod_src = include_str!("mod.rs");
- assert!(
- mod_src.contains("Arc<Mutex<HashMap<u32, mpsc::Sender<MuxPdu>>>>"),
- "architectural invariant: the pending RPC reply-sender map \
+    let mod_src = include_str!("mod.rs");
+    assert!(
+        mod_src.contains("Arc<Mutex<HashMap<u32, mpsc::Sender<MuxPdu>>>>"),
+        "architectural invariant: the pending RPC reply-sender map \
  must be Arc<Mutex<HashMap<...>>> so writer.rs (insert) and reader.rs \
  (remove) can share it across thread boundaries. Pre-fix layout (a \
  reader-local HashMap) is what enabled the head-of-line block."
-);
+    );
 }
 
 #[test]
 fn writer_module_is_declared_in_mod_rs() {
- let mod_src = include_str!("mod.rs");
- assert!(
- mod_src.contains("mod writer;") || mod_src.contains("mod writer;"),
- "mod.rs must declare `mod writer;` so the writer thread \
+    let mod_src = include_str!("mod.rs");
+    assert!(
+        mod_src.contains("mod writer;") || mod_src.contains("mod writer;"),
+        "mod.rs must declare `mod writer;` so the writer thread \
  lives in its canonical home (transport/writer.rs)."
-);
+    );
 }
 
 #[cfg(unix)]
 mod backpressure_pins {
- //! Behavioral pin: the reader thread continues to dispatch incoming
- //! frames while the writer thread is blocked on a backpressured
- //! `write()` to the IPC socket. Pre-fix this scenario hangs because the
- //! single reactor owns both directions.
+    //! Behavioral pin: the reader thread continues to dispatch incoming
+    //! frames while the writer thread is blocked on a backpressured
+    //! `write()` to the IPC socket. Pre-fix this scenario hangs because the
+    //! single reactor owns both directions.
 
- use std::os::unix::net::UnixListener;
- use std::sync::Arc;
- use std::thread;
- use std::time::{Duration, Instant};
+    use std::os::unix::net::UnixListener;
+    use std::sync::Arc;
+    use std::thread;
+    use std::time::{Duration, Instant};
 
- use crate::id::{ClientId, PaneId};
- use crate::protocol::{MuxPdu, ProtocolCodec};
+    use crate::id::{ClientId, PaneId};
+    use crate::protocol::{MuxPdu, ProtocolCodec};
 
- use super::super::ClientTransport;
+    use super::super::ClientTransport;
 
- /// Push notifications keep arriving via the reader thread even when
- /// the writer thread is mid-flight on a large outbound payload.
- ///
- /// Test shape: server stops draining the client's outbound socket once
- /// the handshake completes. The client queues a 2 MiB `Input` PDU
- /// which the writer thread tries to encode — but since the server is
- /// not draining, the writer blocks in `write()`. After a short settle
- /// to ensure the writer is firmly inside `write()`, the test signals
- /// the server to emit a `NotifyPaneOutput`. That byte lands on the
- /// client's RCVBUF *while the writer is blocked*. Post-fix: reader
- /// thread is independent and dispatches the notification within ~ms.
- /// Pre-fix (single reactor): the dispatch waits behind the 2 MiB
- /// encode and never arrives within the deadline.
- #[test]
- fn reader_dispatches_notifications_while_writer_is_backpressured() {
- let dir = tempfile::tempdir().unwrap();
- let sock = dir.path().join("test.sock");
- let listener = UnixListener::bind(&sock).unwrap();
+    /// Push notifications keep arriving via the reader thread even when
+    /// the writer thread is mid-flight on a large outbound payload.
+    ///
+    /// Test shape: server stops draining the client's outbound socket once
+    /// the handshake completes. The client queues a 2 MiB `Input` PDU
+    /// which the writer thread tries to encode — but since the server is
+    /// not draining, the writer blocks in `write()`. After a short settle
+    /// to ensure the writer is firmly inside `write()`, the test signals
+    /// the server to emit a `NotifyPaneOutput`. That byte lands on the
+    /// client's RCVBUF *while the writer is blocked*. Post-fix: reader
+    /// thread is independent and dispatches the notification within ~ms.
+    /// Pre-fix (single reactor): the dispatch waits behind the 2 MiB
+    /// encode and never arrives within the deadline.
+    #[test]
+    fn reader_dispatches_notifications_while_writer_is_backpressured() {
+        let dir = tempfile::tempdir().unwrap();
+        let sock = dir.path().join("test.sock");
+        let listener = UnixListener::bind(&sock).unwrap();
 
- let (signal_tx, signal_rx) = std::sync::mpsc::channel::<()>();
+        let (signal_tx, signal_rx) = std::sync::mpsc::channel::<()>();
 
- let server_handle = thread::spawn(move || {
- let (mut stream, _) = listener.accept().unwrap();
- let mut codec = ProtocolCodec::new();
+        let server_handle = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut codec = ProtocolCodec::new();
 
- // Hello / HelloAck.
- let frame = codec.decode_frame(&mut stream).unwrap();
- assert!(matches!(frame.pdu, MuxPdu::Hello { .. }));
- ProtocolCodec::encode_frame(
- &mut stream,
- frame.seq,
- &MuxPdu::HelloAck {
- client_id: ClientId::from_raw(99),
- protocol_version: crate::protocol::CURRENT_PROTOCOL_VERSION,
- features: 0,
- },
-)
- .unwrap();
- // SetCapabilities (fire-and-forget).
- let _ = codec.decode_frame(&mut stream);
+            // Hello / HelloAck.
+            let frame = codec.decode_frame(&mut stream).unwrap();
+            assert!(matches!(frame.pdu, MuxPdu::Hello { .. }));
+            ProtocolCodec::encode_frame(
+                &mut stream,
+                frame.seq,
+                &MuxPdu::HelloAck {
+                    client_id: ClientId::from_raw(99),
+                    protocol_version: crate::protocol::CURRENT_PROTOCOL_VERSION,
+                    features: 0,
+                },
+            )
+            .unwrap();
+            // SetCapabilities (fire-and-forget).
+            let _ = codec.decode_frame(&mut stream);
 
- // Wait for the test thread to signal that the writer is
- // backpressured (Input has been queued + a small settling
- // delay). Then emit the notification — it lands on the
- // client's RCVBUF while the writer is stuck in `write()`.
- let _ = signal_rx.recv();
+            // Wait for the test thread to signal that the writer is
+            // backpressured (Input has been queued + a small settling
+            // delay). Then emit the notification — it lands on the
+            // client's RCVBUF while the writer is stuck in `write()`.
+            let _ = signal_rx.recv();
 
- ProtocolCodec::encode_frame(
- &mut stream,
- 0,
- &MuxPdu::NotifyPaneOutput {
- pane_id: PaneId::from_raw(2),
- },
-)
- .unwrap();
+            ProtocolCodec::encode_frame(
+                &mut stream,
+                0,
+                &MuxPdu::NotifyPaneOutput {
+                    pane_id: PaneId::from_raw(2),
+                },
+            )
+            .unwrap();
 
- // Hold the connection open long enough for the assertion to
- // observe the notification. Don't drain the client's outbound
- // buffer — that's what creates the backpressure.
- thread::sleep(Duration::from_millis(800));
- });
+            // Hold the connection open long enough for the assertion to
+            // observe the notification. Don't drain the client's outbound
+            // buffer — that's what creates the backpressure.
+            thread::sleep(Duration::from_millis(800));
+        });
 
- // No-op wakeup — we measure notification arrival via `notif_rx`
- // directly, not the wakeup count, because the transport's
- // coalescing flag suppresses second wakeups until
- // `clear_wakeup_pending` is called.
- let wakeup: Arc<dyn Fn() + Send + Sync> = Arc::new(|| {});
+        // No-op wakeup — we measure notification arrival via `notif_rx`
+        // directly, not the wakeup count, because the transport's
+        // coalescing flag suppresses second wakeups until
+        // `clear_wakeup_pending` is called.
+        let wakeup: Arc<dyn Fn() + Send + Sync> = Arc::new(|| {});
 
- let mut transport = ClientTransport::connect(&sock, wakeup).unwrap();
+        let mut transport = ClientTransport::connect(&sock, wakeup).unwrap();
 
- // Queue a 2 MiB Input PDU. The server is not draining, so the
- // client's writer thread blocks inside `encode_frame`.
- let big_payload = vec![b'x'; 2 * 1024 * 1024];
- transport.fire_and_forget(MuxPdu::Input {
- pane_id: PaneId::from_raw(1),
- data: big_payload,
- });
+        // Queue a 2 MiB Input PDU. The server is not draining, so the
+        // client's writer thread blocks inside `encode_frame`.
+        let big_payload = vec![b'x'; 2 * 1024 * 1024];
+        transport.fire_and_forget(MuxPdu::Input {
+            pane_id: PaneId::from_raw(1),
+            data: big_payload,
+        });
 
- // Brief settle so the writer is firmly inside `write()` before
- // the server emits the notification.
- thread::sleep(Duration::from_millis(100));
- let _ = signal_tx.send(());
+        // Brief settle so the writer is firmly inside `write()` before
+        // the server emits the notification.
+        thread::sleep(Duration::from_millis(100));
+        let _ = signal_tx.send(());
 
- // Poll notif_rx until the notification arrives or the deadline
- // expires. Per `tests.md §Wall-Clock-Free Testing`,
- // deadline-as-safety not deadline-as-signal — the assertion is on
- // the notification arrival, not on the timer.
- let deadline = Instant::now() + Duration::from_millis(700);
- let mut got_notif = false;
- while Instant::now() < deadline {
- let mut notifs = Vec::new();
- transport.poll_notifications(&mut notifs);
- if !notifs.is_empty() {
- got_notif = true;
- break;
- }
- thread::sleep(Duration::from_millis(5));
- }
+        // Poll notif_rx until the notification arrives or the deadline
+        // expires. Per `tests.md §Wall-Clock-Free Testing`,
+        // deadline-as-safety not deadline-as-signal — the assertion is on
+        // the notification arrival, not on the timer.
+        let deadline = Instant::now() + Duration::from_millis(700);
+        let mut got_notif = false;
+        while Instant::now() < deadline {
+            let mut notifs = Vec::new();
+            transport.poll_notifications(&mut notifs);
+            if !notifs.is_empty() {
+                got_notif = true;
+                break;
+            }
+            thread::sleep(Duration::from_millis(5));
+        }
 
- assert!(
- got_notif,
- "architectural invariant: reader thread must dispatch \
+        assert!(
+            got_notif,
+            "architectural invariant: reader thread must dispatch \
  notifications while writer thread is backpressured on a 2 MiB \
  write. Pre-fix: same thread owns both reads and writes, so the \
  notification waits behind the 2 MiB encode_frame and never \
  arrives within the deadline."
-);
+        );
 
- drop(transport);
- let _ = server_handle.join();
- }
+        drop(transport);
+        let _ = server_handle.join();
+    }
 }

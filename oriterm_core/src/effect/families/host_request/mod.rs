@@ -2,7 +2,7 @@
 //!
 //! The handler emits a `HostRequest` with a `ResponseToken`; the consumer
 //! fulfills the token with the requested data; the terminal formats the
-//! reply and emits it as `Effect::Pty(PtyEffect::Write { .. })`.
+//! reply and emits it as `Effect::Pty(PtyEffect::Write {.. })`.
 //!
 //! # Single-assignment fulfill
 //!

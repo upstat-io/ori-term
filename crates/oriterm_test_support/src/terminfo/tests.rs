@@ -120,18 +120,18 @@ fn terminfo_env_drop_cleans_temp_dir() {
 
 #[test]
 fn apply_env_sets_three_vars() {
- // SSOT property: `env_pairs()` is the canonical (name,
+    // SSOT property: `env_pairs()` is the canonical (name,
     // value) triple that BOTH `apply_env(&mut CommandBuilder)` AND
     // the 02.4 child-process integrity test consume. We assert
     // here that:
-    //   1. Exactly three env vars are set (TERM, TERMINFO,
-    //      TERMINFO_DIRS).
-    //   2. TERM matches the pinned variant entry name.
-    //   3. TERMINFO and TERMINFO_DIRS BOTH point at the compiled
-    //      tempdir (some ncurses consumers honor only one of the
-    //      two).
-    //   4. The three names are distinct (catches a copy-paste bug
-    //      where `TERMINFO_DIRS` accidentally became `TERMINFO`).
+    // 1. Exactly three env vars are set (TERM, TERMINFO,
+    // TERMINFO_DIRS).
+    // 2. TERM matches the pinned variant entry name.
+    // 3. TERMINFO and TERMINFO_DIRS BOTH point at the compiled
+    // tempdir (some ncurses consumers honor only one of the
+    // two).
+    // 4. The three names are distinct (catches a copy-paste bug
+    // where `TERMINFO_DIRS` accidentally became `TERMINFO`).
     //
     // We cannot read env back from `CommandBuilder` (portable-pty
     // does not expose accessors), so the unit-test scope is the

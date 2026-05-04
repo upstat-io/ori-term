@@ -13,7 +13,7 @@
 //! named colors. The captured output is only:
 //!
 //! ```text
-//! \x1B[H\x1B[2JThis terminal can display 256 colors and 32767 color pairs.  (colors) (pairs)
+//! \x1B[H\x1B[2JThis terminal can display 256 colors and 32767 color pairs. (colors) (pairs)
 //! (colors) (pairs) Done
 //! ```
 //!
@@ -52,12 +52,12 @@ fn run_color_at(cols: u16, rows: u16) {
     // semantic claims for 05.3 cap-coverage:
     //
     // 1. "This terminal can display" — proves tack entered the
-    //    color test code path (the test description header).
+    // color test code path (the test description header).
     // 2. "(colors)" — proves tack referenced the colors cap by
-    //    its terminfo short name (the canonical tack output
-    //    format — matches the (am)/(os)/(bel) pattern from
-    //    prior screens). This is the cap-coverage pin for
-    //    `colors` in 05.5.
+    // its terminfo short name (the canonical tack output
+    // format — matches the (am)/(os)/(bel) pattern from
+    // prior screens). This is the cap-coverage pin for
+    // `colors` in 05.5.
     // 3. "(pairs)" — same for the `pairs` cap.
     //
     // Per the empirical-finding block in 05.3, only `colors`

@@ -142,10 +142,10 @@ unsafe fn establish_handoff(
     // pattern from `ConptyConnection.cpp`.
 
     // 1. Create the input pipe (console reads its stdin from `in_read`,
-    //    we write keystrokes into `in_write`).
+    // we write keystrokes into `in_write`).
     let (in_read, in_write) = create_pipe()?;
     // 2. Create the output pipe (console writes its stdout into
-    //    `out_write`, we read terminal output from `out_read`).
+    // `out_write`, we read terminal output from `out_read`).
     let (out_read, out_write) = create_pipe().inspect_err(|_| {
         // SAFETY: in_read and in_write are valid handles produced by
         // CreatePipe in step 1. CloseHandle releases each one exactly
@@ -157,11 +157,11 @@ unsafe fn establish_handoff(
     })?;
 
     // 3. Wrap our ends as std::fs::File trait objects. File takes
-    //    ownership of the raw handle and closes it on Drop, which
-    //    matches the lifetime of the resulting Pane. NOTE: in_read and
-    //    out_write are still raw HANDLEs at this point — they remain
-    //    closeable via close_handle on the cleanup paths until we
-    //    publish them to the caller in step 10.
+    // ownership of the raw handle and closes it on Drop, which
+    // matches the lifetime of the resulting Pane. NOTE: in_read and
+    // out_write are still raw HANDLEs at this point — they remain
+    // closeable via close_handle on the cleanup paths until we
+    // publish them to the caller in step 10.
     // SAFETY: in_write and out_read are valid handles created by
     // CreatePipe and not yet wrapped or closed. From this point on,
     // the File instances exclusively own them.
@@ -169,9 +169,9 @@ unsafe fn establish_handoff(
     let reader = unsafe { File::from_raw_handle(out_read.0.cast()) };
 
     // 4. Duplicate the [in] handles so they outlive this COM call. On
-    //    any failure, drop the wrapped File ends (which closes them
-    //    via File::Drop) AND close the still-raw console-side ends so
-    //    the caller never sees them.
+    // any failure, drop the wrapped File ends (which closes them
+    // via File::Drop) AND close the still-raw console-side ends so
+    // the caller never sees them.
     let dup_signal = match unsafe { duplicate_handle(signal) } {
         Ok(handle) => handle,
         Err(hr) => {
@@ -237,12 +237,12 @@ unsafe fn establish_handoff(
     };
 
     // 5. Wrap the duplicated handles in AdoptedSignal (RAII close on
-    //    Drop). After this point, the AdoptedSignal owns all four
-    //    handles and we MUST NOT manually close them.
+    // Drop). After this point, the AdoptedSignal owns all four
+    // handles and we MUST NOT manually close them.
     //
-    //    AdoptedSignal lives in oriterm_mux which uses windows-sys
-    //    HANDLE (= *mut c_void), so unwrap each windows HANDLE wrapper
-    //    via `.0` before passing.
+    // AdoptedSignal lives in oriterm_mux which uses windows-sys
+    // HANDLE (= *mut c_void), so unwrap each windows HANDLE wrapper
+    // via `.0` before passing.
     // SAFETY: AdoptedSignal::from_duplicated_handles requires four
     // duplicated copies. We just produced them via DuplicateHandle and
     // are passing them by-move (the local variables are not used after
@@ -257,8 +257,8 @@ unsafe fn establish_handoff(
     };
 
     // 6. Read the client PID from the duplicated client handle. The
-    //    handle is now owned by AdoptedSignal, so we query before the
-    //    next step (which moves it).
+    // handle is now owned by AdoptedSignal, so we query before the
+    // next step (which moves it).
     // SAFETY: GetProcessId is a standard Win32 query that takes any
     // process HANDLE. AdoptedSignal still holds the handle alive.
     let client_pid_raw = unsafe { GetProcessId(dup_client) };
@@ -286,20 +286,20 @@ unsafe fn establish_handoff(
     };
 
     // 9. Send the payload through the channel. Failures here drop the
-    //    payload (which closes the wrapped File ends) and we still need
-    //    to close in_read / out_write because they were never published
-    //    to the caller.
+    // payload (which closes the wrapped File ends) and we still need
+    // to close in_read / out_write because they were never published
+    // to the caller.
     // SAFETY: in_read / out_write are still raw handles that have not
     // been published to the caller, so deliver_handoff is allowed to
     // close them on every failure path.
     unsafe { deliver_handoff(server_impl, payload, in_read, out_write) }?;
 
     // 10. Only NOW that the entire pipeline succeeded do we publish the
-    //     console-side pipe ends to the caller. From this point on, COM
-    //     marshalling owns these handles. If we had hit any failure
-    //     above, the caller would never have observed a partially
-    //     populated state — matching the WT pattern in
-    //     `ConptyConnection.cpp::_initiateConnection`.
+    // console-side pipe ends to the caller. From this point on, COM
+    // marshalling owns these handles. If we had hit any failure
+    // above, the caller would never have observed a partially
+    // populated state — matching the WT pattern in
+    // `ConptyConnection.cpp::_initiateConnection`.
     // SAFETY: in_handle and out_handle are valid out-pointers per the
     // function contract; we are writing initialized HANDLE values that
     // we just successfully created via CreatePipe.

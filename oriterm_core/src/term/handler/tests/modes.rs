@@ -612,7 +612,7 @@ fn csi_s_zero_zero_params_mode_69_on_resets_margins() {
 
 #[test]
 fn decrc_does_not_restore_horizontal_margins() {
- // Regression guard: after DECSC saves the cursor, a subsequent DECSLRM
+    // Regression guard: after DECSC saves the cursor, a subsequent DECSLRM
     // change to the margins must SURVIVE a DECRC — the margins are not
     // part of the save set.
     let mut t = term();
@@ -633,7 +633,7 @@ fn decrc_does_not_restore_horizontal_margins() {
 #[test]
 fn decrc_does_not_restore_declrmm_mode_flag() {
     use crate::term::TermMode;
- // Regression guard: DECSC with mode 69 on, then DECRST ?69 turns it off.
+    // Regression guard: DECSC with mode 69 on, then DECRST ?69 turns it off.
     // DECRC must leave mode 69 OFF — the mode flag is not part of the
     // save set.
     let mut t = term();
@@ -652,7 +652,7 @@ fn decrc_does_not_restore_declrmm_mode_flag() {
 #[test]
 fn decrc_does_not_enable_declrmm_after_disabled_save() {
     use crate::term::TermMode;
- // Symmetric regression guard: DECSC with mode 69 off, then enable it.
+    // Symmetric regression guard: DECSC with mode 69 off, then enable it.
     // DECRC must leave mode 69 ON — the restore cannot resurrect the
     // saved off-state either direction.
     let mut t = term();

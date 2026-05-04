@@ -624,7 +624,7 @@ fn pick_adapter_software_rasterizer_returns_none_when_unavailable() {
 fn pick_adapter_discrete_or_fallback_matches_original() {
     use super::helpers::{AdapterPreference, pick_adapter, pick_adapter_with_preference};
 
- // Property: DiscreteOrFallback must delegate to pick_adapter.
+    // Property: DiscreteOrFallback must delegate to pick_adapter.
     let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
         backends: wgpu::Backends::PRIMARY,
         ..Default::default()

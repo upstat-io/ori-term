@@ -162,7 +162,7 @@ pub fn expand_modified_key_caps() -> Vec<String> {
 /// cap names (boolean caps + numeric caps + string caps).
 ///
 /// The parser handles tic format quirks:
-/// - Comment lines (`# ...`) are skipped.
+/// - Comment lines (`#...`) are skipped.
 /// - Entry header lines (start in column 0, end with `,`) are
 ///   skipped — they declare the entry name and aliases, not caps.
 /// - Continuation lines (cap value continues on next indented line)

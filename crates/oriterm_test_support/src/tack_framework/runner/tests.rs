@@ -66,7 +66,7 @@ fn spawn_quit_on_keystroke(exit_code: i32) -> PtySession {
     };
     // `mut` is required on Unix so `wait_for` can drive the reader;
     // on Windows the call is cfg-gated out, so the binding is only
-    // read — `#[cfg_attr(not(unix), expect(unused_mut, ...))]` keeps
+    // read — `#[cfg_attr(not(unix), expect(unused_mut,...))]` keeps
     // the single source-form line while satisfying `-D unused-mut`.
     #[cfg_attr(
         not(unix),
@@ -83,7 +83,7 @@ fn spawn_quit_on_keystroke(exit_code: i32) -> PtySession {
 
 #[test]
 fn live_session_finish_asserts_clean_exit_via_quit_tack() {
- // Verifies: this proves `LiveSession::finish` actually
+    // Verifies: this proves `LiveSession::finish` actually
     // exercises `quit_tack` and not a "just drop" shortcut. Without
     // this test, a regression that silently replaces `finish`'s body
     // with a no-op `drop(self)` would pass every other test in
@@ -115,7 +115,7 @@ fn live_session_finish_asserts_clean_exit_via_quit_tack() {
 /// exited"` (the panic format in `finish`).
 ///
 /// Without this test, a regression that removes the
-/// `assert!(exit.success(), ...)` from `finish` would pass silently
+/// `assert!(exit.success(),...)` from `finish` would pass silently
 /// — this test fires the moment the assertion is gone.
 ///
 /// Unix-only: a clean "exit 1 on single read" child is hard to
@@ -160,16 +160,16 @@ fn live_session_finish_panics_on_non_success_exit() {
 // Two test families:
 //
 // 1. SENTINEL DETECTION — pure data scans through
-//    `assert_no_unverified_sentinels` (and via `run_at` /
-//    `run_phase_at` to prove the gate fires BEFORE PTY spawn).
-//    These tests work on hosts without tack/tic installed because
-//    the panic happens before any TerminfoEnv::compile or
-//    spawn_tack call.
+// `assert_no_unverified_sentinels` (and via `run_at` /
+// `run_phase_at` to prove the gate fires BEFORE PTY spawn).
+// These tests work on hosts without tack/tic installed because
+// the panic happens before any TerminfoEnv::compile or
+// spawn_tack call.
 //
 // 2. `phase_capture_loop` BEHAVIOR — real PtySession spawned
-//    against a small shell script (Unix) or cmd.exe pause loop
-//    (Windows) to exercise the loop's "anchor present" /
-//    "deadline expires" branches without depending on tack.
+// against a small shell script (Unix) or cmd.exe pause loop
+// (Windows) to exercise the loop's "anchor present" /
+// "deadline expires" branches without depending on tack.
 //
 // The 05.1 sub-section adds end-to-end tests against real tack
 // for each modes-family cap. 05.0.b proves the PRIMITIVE.
@@ -192,7 +192,7 @@ fn panic_message(payload: Box<dyn std::any::Any + Send>) -> String {
 
 #[test]
 fn phase_spec_construction_compiles() {
- // Verifies: this test exists so the PhaseSpec type and
+    // Verifies: this test exists so the PhaseSpec type and
     // every one of its public fields is referenced from at least
     // one #[test], proving the spec is exhaustively constructible
     // outside the tack_framework::scenarios::* modules. A future
@@ -219,7 +219,7 @@ fn phase_spec_construction_compiles() {
 
 #[test]
 fn assert_no_unverified_sentinels_passes_on_clean_inputs() {
- // Regression guard: a fully valid spec must NOT panic. Without
+    // Regression guard: a fully valid spec must NOT panic. Without
     // this test, a future refactor that accidentally always-panics
     // would break every other test silently while making this
     // helper non-load-bearing.
@@ -559,7 +559,7 @@ fn phase_capture_loop_returns_none_on_timeout() {
 
 #[test]
 fn phase_default_timeout_ms_matches_documented_value() {
- // Verifies for the default phase timeout. PhaseSpec
+    // Verifies for the default phase timeout. PhaseSpec
     // documentation references this value; if it changes here, all
     // downstream PhaseSpec consumers (and the rustdoc on
     // `phase_timeout_ms`) need to update in lockstep. The pin
@@ -578,13 +578,13 @@ fn phase_default_timeout_ms_matches_documented_value() {
 // covered above). The covered orchestration properties:
 //
 // 1. Happy path: full spawn → navigate → trigger → capture →
-//    finish_and_assert pipeline returns a `ScenarioOutcome` whose
-//    `grid_text` contains the phase anchor.
+// finish_and_assert pipeline returns a `ScenarioOutcome` whose
+// `grid_text` contains the phase anchor.
 // 2. Pre-existing-anchor guard: when the phase anchor is already
-//    in the pre-trigger grid, run_phase_at PANICS (not silently
-//    captures the pre-existing match) and the panic message
-//    names the anchor + the "already present BEFORE
-//    phase_trigger fires" diagnostic.
+// in the pre-trigger grid, run_phase_at PANICS (not silently
+// captures the pre-existing match) and the panic message
+// names the anchor + the "already present BEFORE
+// phase_trigger fires" diagnostic.
 //
 // The plan's 05.0.b success criteria envisioned 5 timing tests
 // against a synthetic in-process fake `PtySession`. The current
@@ -645,7 +645,7 @@ const TACK_PHASE_PRE_EXISTING: PhaseSpec = PhaseSpec {
 
 #[test]
 fn run_phase_at_returns_grid_containing_anchor() {
- // Verifies for the run_phase_at happy-path orchestration
+    // Verifies for the run_phase_at happy-path orchestration
     // spawn tack, navigate to modes-controls, trigger the modes
     // sweep via send_raw, capture via phase_capture_loop, return
     // a ScenarioOutcome whose grid_text contains the phase anchor.
@@ -680,7 +680,7 @@ fn run_phase_at_returns_grid_containing_anchor() {
 
 #[test]
 fn run_phase_at_pre_existing_anchor_panics() {
- // Verifies for the pre-existing-anchor guard at the
+    // Verifies for the pre-existing-anchor guard at the
     // run_phase_at orchestration level. The plan's most subtle
     // correctness invariant is that the guard fires BEFORE
     // `send_raw(spec.phase_trigger)` writes any byte to the PTY.

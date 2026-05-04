@@ -181,9 +181,9 @@ fn split_table_row(line: &str) -> Vec<String> {
     // Split on `|` column separators while honoring two markdown
     // escape conventions used inside catalog cells:
     //
-    //   * `\|` — literal pipe inside a cell (e.g., `BEL\|ST`).
-    //   * `` `…|…` `` — literal pipe inside backticked code spans
-    //     (e.g., the DECUDK sequence `DCS ! | 00000000 ST`).
+    // * `\|` — literal pipe inside a cell (e.g., `BEL\|ST`).
+    // * `` `…|…` `` — literal pipe inside backticked code spans
+    // (e.g., the DECUDK sequence `DCS ! | 00000000 ST`).
     //
     // We walk the line character-by-character, tracking backtick
     // depth. A pipe inside a code span is absorbed into the current

@@ -455,14 +455,14 @@ impl ApplicationHandler<TermEvent> for App {
         // animation deadlines) into dirty-window state BEFORE the dirty
         // check, then drain the matured entries from every scheduler.
         // Without this step:
-        //   - matured widget deferred repaints (cursor blink) never flow
-        //     from the scheduler's deferred heap into `paint_requests`;
-        //   - matured animation-deadline entries in the scheduler's
-        //     `HashMap<u64, Instant>` leak, and `next_wake_time()` keeps
-        //     returning past-due instants that cause `ControlFlow::
-        //     WaitUntil(past)` to fire immediately — the event loop
- // spins, violating idle CPU
-        //     beyond cursor blink`.
+        // - matured widget deferred repaints (cursor blink) never flow
+        // from the scheduler's deferred heap into `paint_requests`;
+        // - matured animation-deadline entries in the scheduler's
+        // `HashMap<u64, Instant>` leak, and `next_wake_time()` keeps
+        // returning past-due instants that cause `ControlFlow::
+        // WaitUntil(past)` to fire immediately — the event loop
+        // spins, violating idle CPU
+        // beyond cursor blink`.
         // `has_pending_work(now)` covers both matured wake sources + any
         // already-outstanding anim/paint requests, so marking the window
         // dirty on that signal is the canonical repaint trigger.

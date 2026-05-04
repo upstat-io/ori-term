@@ -41,7 +41,7 @@ fn tack_graphic_rendition_sgr() {
         outcome.grid_text
     );
 
- // Verifies for same as the ACS wrapper. Tack
+    // Verifies for same as the ACS wrapper. Tack
     // v1.08 combines the ACS and graphic-rendition tests under one
     // menu key (`a`) and the test only probes (bel). No SGR labels
     // (bold/dim/underline/blink/reverse/invis) appear on the screen

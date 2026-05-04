@@ -160,13 +160,13 @@ impl ClientTransport {
 
         // Split the stream into independent read + write halves so the
         // reader thread can drain replies while the writer thread is
- // blocked on a backpressured write ().
+        // blocked on a backpressured write ().
         let write_stream = stream
             .try_clone()
             .map_err(|e| io::Error::other(format!("failed to clone IPC stream for writer: {e}")))?;
         // Third clone reserved for `Drop` — calls `shutdown_write` so a
         // writer blocked in `encode_frame` exits promptly without waiting
- // for the daemon to drain ( round 1 finding pin).
+        // for the daemon to drain ( round 1 finding pin).
         let write_shutdown_handle = write_stream.try_clone().map_err(|e| {
             io::Error::other(format!("failed to clone IPC stream for shutdown: {e}"))
         })?;
@@ -279,7 +279,7 @@ impl ClientTransport {
     /// Fallible version of `fire_and_forget` — surfaces transport
     /// liveness / mpsc failures as `io::Error` so callers (notably
     /// `MuxClient::fulfill_host_request`) can propagate them rather than
- /// silently dropping data (-004 round 1 finding).
+    /// silently dropping data (-004 round 1 finding).
     pub(super) fn try_fire_and_forget(&mut self, pdu: MuxPdu) -> io::Result<()> {
         if !self.is_alive() {
             return Err(io::Error::new(
@@ -404,36 +404,36 @@ impl ClientTransport {
 impl Drop for ClientTransport {
     fn drop(&mut self) {
         // 1. Close the send channel so the writer thread sees `Disconnected`
-        //    on `recv_timeout` between PDUs and exits, draining its pending
-        //    RPC reply senders so callers see `BrokenPipe` (Codex-001
-        //    round 1 pin from §02 fix-consensus).
+        // on `recv_timeout` between PDUs and exits, draining its pending
+        // RPC reply senders so callers see `BrokenPipe` (Codex-001
+        // round 1 pin from §02 fix-consensus).
         self.send_tx.take();
 
         // 2. Abort any `write()` the writer is currently blocked on. When
-        //    the daemon is wedged (alive but unresponsive), step 1 alone
-        //    is not enough — the writer's `encode_frame` does not consult
-        //    `send_rx` mid-write. `shutdown(SHUT_WR)` (Unix) /
-        //    `CancelIoEx` (Windows) on the reserved clone handle returns
-        //    `EPIPE` to the blocked write so the writer exits via its
-        //    error path. Codex round 1 finding pin.
+        // the daemon is wedged (alive but unresponsive), step 1 alone
+        // is not enough — the writer's `encode_frame` does not consult
+        // `send_rx` mid-write. `shutdown(SHUT_WR)` (Unix) /
+        // `CancelIoEx` (Windows) on the reserved clone handle returns
+        // `EPIPE` to the blocked write so the writer exits via its
+        // error path. Codex round 1 finding pin.
         if let Some(handle) = self.write_shutdown_handle.take() {
             let _ = handle.shutdown_write();
         }
 
         // 3. Join the writer thread. Once it exits it sets `alive = false`
-        //    (via `drain_pending` on the error path or natural exit on
-        //    `Disconnected`), which the reader observes on its next loop
-        //    iteration.
+        // (via `drain_pending` on the error path or natural exit on
+        // `Disconnected`), which the reader observes on its next loop
+        // iteration.
         if let Some(handle) = self.writer_handle.take() {
             let _ = handle.join();
         }
 
         // 4. Belt-and-suspenders: ensure the reader sees `alive = false`
-        //    even on the rare path where the writer never ran a loop body.
+        // even on the rare path where the writer never ran a loop body.
         self.alive.store(false, Ordering::Release);
 
         // 5. Wake the reader from poll(2) so it observes `alive = false`
-        //    immediately and exits.
+        // immediately and exits.
         self.signal_wake();
         if let Some(handle) = self.reader_handle.take() {
             let _ = handle.join();

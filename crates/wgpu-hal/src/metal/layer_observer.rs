@@ -32,10 +32,10 @@ const BOUNDS: &CStr = c"bounds";
 pub unsafe fn new_observer_layer(root_layer: *mut Object) -> StrongPtr {
     let this: *mut Object = unsafe { msg_send![class(), new] };
 
-    // Add the layer as a sublayer of the root layer.
+ // Add the layer as a sublayer of the root layer.
     let _: () = unsafe { msg_send![root_layer, addSublayer: this] };
 
-    // Register for key-value observing.
+ // Register for key-value observing.
     let key_path: *const Object =
         unsafe { msg_send![class!(NSString), stringWithUTF8String: CONTENTS_SCALE.as_ptr()] };
     let _: () = unsafe {
@@ -60,11 +60,11 @@ pub unsafe fn new_observer_layer(root_layer: *mut Object) -> StrongPtr {
         ]
     };
 
-    // Uncomment when debugging resize issues.
-    // extern "C" {
-    //     static kCAGravityTopLeft: *mut Object;
-    // }
-    // let _: () = unsafe { msg_send![this, setContentsGravity: kCAGravityTopLeft] };
+ // Uncomment when debugging resize issues.
+ // extern "C" {
+ // static kCAGravityTopLeft: *mut Object;
+ // }
+ // let _: () = unsafe { msg_send![this, setContentsGravity: kCAGravityTopLeft] };
 
     unsafe { StrongPtr::new(this) }
 }
@@ -78,7 +78,7 @@ fn class() -> &'static Class {
         let class_name = format!("WgpuObserverLayer@{:p}", &CLASS);
         let mut decl = ClassDecl::new(&class_name, superclass).unwrap();
 
-        // From NSKeyValueObserving.
+ // From NSKeyValueObserving.
         let sel = sel!(observeValueForKeyPath:ofObject:change:context:);
         let method: extern "C" fn(
             &Object,
@@ -113,10 +113,10 @@ extern "C" fn observe_value(
     change: *mut Object,
     context: *mut c_void,
 ) {
-    // An unrecognized context must belong to the super class.
+ // An unrecognized context must belong to the super class.
     if context != context_ptr() {
-        // SAFETY: The signature is correct, and it's safe to forward to
-        // the superclass' method when we're overriding the method.
+ // SAFETY: The signature is correct, and it's safe to forward to
+ // the superclass' method when we're overriding the method.
         return unsafe {
             msg_send![
                 super(this, class!(CAMetalLayer)),
@@ -138,14 +138,14 @@ extern "C" fn observe_value(
         unsafe { msg_send![class!(NSString), stringWithUTF8String: CONTENTS_SCALE.as_ptr()] };
     let is_equal: BOOL = unsafe { msg_send![key_path, isEqual: to_compare] };
     if is_equal != NO {
-        // `contentsScale` is a CGFloat, and so the observed value is always a NSNumber.
+ // `contentsScale` is a CGFloat, and so the observed value is always a NSNumber.
         let scale_factor: CGFloat = if cfg!(target_pointer_width = "64") {
             unsafe { msg_send![new, doubleValue] }
         } else {
             unsafe { msg_send![new, floatValue] }
         };
 
-        // Set the scale factor of the layer to match the root layer.
+ // Set the scale factor of the layer to match the root layer.
         let _: () = unsafe { msg_send![this, setContentsScale: scale_factor] };
         return;
     }
@@ -154,13 +154,13 @@ extern "C" fn observe_value(
         unsafe { msg_send![class!(NSString), stringWithUTF8String: BOUNDS.as_ptr()] };
     let is_equal: BOOL = unsafe { msg_send![key_path, isEqual: to_compare] };
     if is_equal != NO {
-        // `bounds` is a CGRect, and so the observed value is always a NSNumber.
+ // `bounds` is a CGRect, and so the observed value is always a NSNumber.
         let bounds: CGRect = unsafe { msg_send![new, rectValue] };
 
-        // Set `bounds` and `position` to match the root layer.
-        //
-        // This differs from just setting the `bounds`, as it also takes into account any
-        // translation that the superlayer may have that we'd want to preserve.
+ // Set `bounds` and `position` to match the root layer.
+ //
+ // This differs from just setting the `bounds`, as it also takes into account any
+ // translation that the superlayer may have that we'd want to preserve.
         let _: () = unsafe { msg_send![this, setFrame: bounds] };
         return;
     }
@@ -169,14 +169,14 @@ extern "C" fn observe_value(
 }
 
 extern "C" fn dealloc(this: &Object, _cmd: Sel) {
-    // Load the root layer if it still exists, and deregister the observer.
-    //
-    // This is not entirely sound, as the ObserverLayer _could_ have been
-    // moved to another layer; but Wgpu doesn't do that, so it should be fine.
-    //
-    // `raw-window-metal` uses a weak instance variable to do it correctly:
-    // https://docs.rs/raw-window-metal/1.1.0/src/raw_window_metal/observer.rs.html#74-132
-    // (but that's difficult to do with `objc`).
+ // Load the root layer if it still exists, and deregister the observer.
+ //
+ // This is not entirely sound, as the ObserverLayer _could_ have been
+ // moved to another layer; but Wgpu doesn't do that, so it should be fine.
+ //
+ // `raw-window-metal` uses a weak instance variable to do it correctly:
+ // https://docs.rs/raw-window-metal/1.1.0/src/raw_window_metal/observer.rs.html#74-132
+ // (but that's difficult to do with `objc`).
     let root_layer: *mut Object = unsafe { msg_send![this, superlayer] };
     if !root_layer.is_null() {
         let key_path: *const Object =

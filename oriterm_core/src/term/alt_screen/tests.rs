@@ -148,9 +148,9 @@ fn resize_on_alt_screen_then_snapshot() {
 
 // --- New toggle_alt_common drift/paired-snapshot tests ---
 
-/// Regression: — kitty keyboard mode bits leaked across
+/// Regression: kitty keyboard mode bits leaked across
 /// `?1049h/l` toggles before the reapply-top fix in `toggle_alt_common`.
-/// See: bug-tracker/plans/completed//00-overview.md
+/// See: bug-tracker/plans/completed/00-overview.md
 #[test]
 fn toggle_alt_common_swaps_nonempty_stacks_reapplies_new_active_top() {
     let mut term = make_term();
@@ -187,7 +187,7 @@ fn toggle_alt_common_swaps_nonempty_stacks_reapplies_new_active_top() {
     );
 }
 
-/// Regression: — empty alt stack left primary's KITTY bits
+/// Regression: empty alt stack left primary's KITTY bits
 /// active after `?1049h`.
 #[test]
 fn toggle_alt_common_swaps_to_empty_alt_clears_mode_bits() {
@@ -206,7 +206,7 @@ fn toggle_alt_common_swaps_to_empty_alt_clears_mode_bits() {
     );
 }
 
-/// Regression: — paired snapshot fields must swap alongside
+/// Regression: paired snapshot fields must swap alongside
 /// stacks so a command-boundary snapshot taken on one screen only fires
 /// restore on that screen.
 #[test]

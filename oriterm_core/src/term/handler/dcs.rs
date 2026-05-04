@@ -71,7 +71,7 @@ impl<S: EffectSink> Term<S> {
     /// swap) and `term::shell_state::restore_keyboard_mode_stack` (reapply
     /// top after OSC 133 ; A / ; D) — can reassert `TermMode::KITTY_KEYBOARD_PROTOCOL`
     /// bits against the active stack's top without reaching through the
- /// `handler` submodule. See.
+    /// `handler` submodule. See.
     pub(in crate::term) fn dcs_set_keyboard_mode(
         &mut self,
         mode: KeyboardModes,
@@ -94,7 +94,7 @@ impl<S: EffectSink> Term<S> {
     ///
     /// Reports the live `TermMode::KITTY_KEYBOARD_PROTOCOL` bits rather
     /// than the stack top. Set-only kitty modes enabled via `CSI = Ps u`
- /// do NOT enter the stack (see ) — deriving the reply from
+    /// do NOT enter the stack — deriving the reply from
     /// stack top would report `0` while the bits are actually live,
     /// leaving shells unable to detect their own set-only kitty state.
     #[expect(

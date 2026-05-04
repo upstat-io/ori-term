@@ -206,7 +206,7 @@ fn cjk_notdef() {
     };
 
     let cell = renderer.cell_metrics();
-    // "Hello你好世界" — CJK chars map to .notdef with embedded font.
+    // "Hello你好世界" — CJK chars map to.notdef with embedded font.
     // 5 narrow + 4 wide = 13 columns.
     let cols = 13;
     let rows = 1;

@@ -331,7 +331,7 @@ fn removed_placement_not_in_renderable_content() {
     // Resize: drops the col=90 placement.
     term.resize(24, 80, true);
 
- // Regression guard: the removed placement must NOT appear in the
+    // Regression guard: the removed placement must NOT appear in the
     // rendered snapshot.
     let mut after = RenderableContent::default();
     term.renderable_content_into(&mut after);

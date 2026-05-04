@@ -12,7 +12,7 @@
 //!
 //! ```text
 //! \x1B[H\x1B[2JThis line should start in the home position.
-//! The rest of the screen should be clear.  (clear) Done
+//! The rest of the screen should be clear. (clear) Done
 //! ```
 //!
 //! That is — the cursor movement test on tack v1.08 only probes

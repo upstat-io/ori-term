@@ -387,15 +387,15 @@ fn partial_sync_updates() {
     assert_eq!(parser.state.sync_state.timeout.is_sync, 0);
     assert!(handler.attr.is_none());
 
-    // BSU split across two advance() calls — timer arms only when the
-    // full sequence is consumed.
+ // BSU split across two advance() calls — timer arms only when the
+ // full sequence is consumed.
     parser.advance(&mut handler, b"\x1b[?20");
     assert_eq!(parser.state.sync_state.timeout.is_sync, 0);
     parser.advance(&mut handler, b"26h");
     assert_eq!(parser.state.sync_state.timeout.is_sync, 1);
 
-    // SGR mid-sync dispatches INLINE (Mode 2026 gates snapshots, not
-    // byte processing).
+ // SGR mid-sync dispatches INLINE (Mode 2026 gates snapshots, not
+ // byte processing).
     parser.advance(&mut handler, b"random \x1b[31m stuff");
     assert_eq!(parser.state.sync_state.timeout.is_sync, 1);
     assert!(
@@ -404,13 +404,13 @@ fn partial_sync_updates() {
     );
     handler.attr = None;
 
-    // Second BSU re-arms the timer (counter increments again).
+ // Second BSU re-arms the timer (counter increments again).
     parser.advance(&mut handler, b"\x1b[?20");
     parser.advance(&mut handler, b"26h");
     assert_eq!(parser.state.sync_state.timeout.is_sync, 2);
 
-    // ESU split across two advance() calls — timer disarms when the
-    // full sequence is consumed.
+ // ESU split across two advance() calls — timer disarms when the
+ // full sequence is consumed.
     parser.advance(&mut handler, b"\x1b[?20");
     assert_eq!(parser.state.sync_state.timeout.is_sync, 2);
     parser.advance(&mut handler, b"26l");
@@ -425,7 +425,7 @@ fn mixed_sync_escape() {
     assert_eq!(parser.state.sync_state.timeout.is_sync, 0);
     assert!(handler.attr.is_none());
 
-    // BSU + SGR in one advance() — both dispatch inline.
+ // BSU + SGR in one advance() — both dispatch inline.
     parser.advance(&mut handler, b"\x1b[?2026h\x1b[31m");
     assert_eq!(parser.state.sync_state.timeout.is_sync, 1);
     assert!(
@@ -433,7 +433,7 @@ fn mixed_sync_escape() {
         "SGR after BSU must dispatch inline (Mode 2026 does not buffer)"
     );
 
-    // ESU disarms the timer.
+ // ESU disarms the timer.
     parser.advance(&mut handler, b"\x1b[?2026l");
     assert_eq!(parser.state.sync_state.timeout.is_sync, 0);
 }
@@ -443,18 +443,18 @@ fn sync_bsu_with_esu() {
     let mut parser = Processor::<TestSyncHandler>::new();
     let mut handler = MockHandler::default();
 
-    // BSU + SGR(Bold) in one chunk — Bold dispatches inline.
+ // BSU + SGR(Bold) in one chunk — Bold dispatches inline.
     parser.advance(&mut handler, b"\x1b[?2026h\x1b[1m");
     assert_eq!(parser.state.sync_state.timeout.is_sync, 1);
     assert_eq!(handler.attr.take(), Some(Attr::Bold));
 
-    // ESU + BSU + SGR(Underline) in one chunk — ESU disarms, BSU
-    // re-arms, Underline dispatches inline.
+ // ESU + BSU + SGR(Underline) in one chunk — ESU disarms, BSU
+ // re-arms, Underline dispatches inline.
     parser.advance(&mut handler, b"\x1b[?2026l\x1b[?2026h\x1b[4m");
     assert_eq!(parser.state.sync_state.timeout.is_sync, 1);
     assert_eq!(handler.attr.take(), Some(Attr::Underline));
 
-    // Final ESU clears the timer.
+ // Final ESU clears the timer.
     parser.advance(&mut handler, b"\x1b[?2026l");
     assert_eq!(parser.state.sync_state.timeout.is_sync, 0);
 }
@@ -482,7 +482,7 @@ fn contrast() {
 
 #[test]
 fn osc_0_sets_both_title_and_icon_name() {
-    // OSC 0 ; text ST
+ // OSC 0 ; text ST
     let bytes: &[u8] = b"\x1b]0;hello\x1b\\";
     let mut parser = Processor::<TestSyncHandler>::new();
     let mut handler = MockHandler::default();
@@ -493,7 +493,7 @@ fn osc_0_sets_both_title_and_icon_name() {
 
 #[test]
 fn osc_1_sets_only_icon_name() {
-    // OSC 1 ; text ST
+ // OSC 1 ; text ST
     let bytes: &[u8] = b"\x1b]1;icon\x1b\\";
     let mut parser = Processor::<TestSyncHandler>::new();
     let mut handler = MockHandler::default();
@@ -504,7 +504,7 @@ fn osc_1_sets_only_icon_name() {
 
 #[test]
 fn osc_2_sets_only_title() {
-    // OSC 2 ; text ST
+ // OSC 2 ; text ST
     let bytes: &[u8] = b"\x1b]2;title\x1b\\";
     let mut parser = Processor::<TestSyncHandler>::new();
     let mut handler = MockHandler::default();
@@ -515,7 +515,7 @@ fn osc_2_sets_only_title() {
 
 #[test]
 fn parse_esc_6_dispatches_decbi() {
-    // DECBI: ESC 6
+ // DECBI: ESC 6
     let bytes: &[u8] = b"\x1b6";
     let mut parser = Processor::<TestSyncHandler>::new();
     let mut handler = MockHandler::default();
@@ -526,7 +526,7 @@ fn parse_esc_6_dispatches_decbi() {
 
 #[test]
 fn parse_esc_9_dispatches_decfi() {
-    // DECFI: ESC 9
+ // DECFI: ESC 9
     let bytes: &[u8] = b"\x1b9";
     let mut parser = Processor::<TestSyncHandler>::new();
     let mut handler = MockHandler::default();
@@ -537,7 +537,7 @@ fn parse_esc_9_dispatches_decfi() {
 
 #[test]
 fn parse_csi_apostrophe_right_brace_dispatches_decic() {
-    // DECIC: CSI Ps ' }
+ // DECIC: CSI Ps ' }
     let bytes: &[u8] = b"\x1b[3'}";
     let mut parser = Processor::<TestSyncHandler>::new();
     let mut handler = MockHandler::default();
@@ -548,7 +548,7 @@ fn parse_csi_apostrophe_right_brace_dispatches_decic() {
 
 #[test]
 fn parse_csi_apostrophe_tilde_dispatches_decdc() {
-    // DECDC: CSI Ps ' ~
+ // DECDC: CSI Ps ' ~
     let bytes: &[u8] = b"\x1b[2'~";
     let mut parser = Processor::<TestSyncHandler>::new();
     let mut handler = MockHandler::default();
@@ -559,7 +559,7 @@ fn parse_csi_apostrophe_tilde_dispatches_decdc() {
 
 #[test]
 fn parse_decic_default_count_is_one() {
-    // DECIC with no explicit Ps → default 1.
+ // DECIC with no explicit Ps → default 1.
     let bytes: &[u8] = b"\x1b['}";
     let mut parser = Processor::<TestSyncHandler>::new();
     let mut handler = MockHandler::default();
@@ -569,7 +569,7 @@ fn parse_decic_default_count_is_one() {
 
 #[test]
 fn parse_decrqss_decscusr_routes_to_handler() {
-    // DECRQSS DECSCUSR query: DCS $ q q ST.
+ // DECRQSS DECSCUSR query: DCS $ q q ST.
     let bytes: &[u8] = b"\x1bP$qq\x1b\\";
     let mut parser = Processor::<TestSyncHandler>::new();
     let mut handler = MockHandler::default();
@@ -579,7 +579,7 @@ fn parse_decrqss_decscusr_routes_to_handler() {
 
 #[test]
 fn parse_decrqss_decsca_routes_to_handler() {
-    // DECRQSS DECSCA query: DCS $ q " q ST.
+ // DECRQSS DECSCA query: DCS $ q " q ST.
     let bytes: &[u8] = b"\x1bP$q\"q\x1b\\";
     let mut parser = Processor::<TestSyncHandler>::new();
     let mut handler = MockHandler::default();
@@ -589,7 +589,7 @@ fn parse_decrqss_decsca_routes_to_handler() {
 
 #[test]
 fn parse_decrsps_ps1_routes_to_handler() {
-    // DECRSPS with Ps=1 (DECCIR cursor-info) and a small payload.
+ // DECRSPS with Ps=1 (DECCIR cursor-info) and a small payload.
     let bytes: &[u8] = b"\x1bP1$tABC\x1b\\";
     let mut parser = Processor::<TestSyncHandler>::new();
     let mut handler = MockHandler::default();
@@ -599,7 +599,7 @@ fn parse_decrsps_ps1_routes_to_handler() {
 
 #[test]
 fn parse_decrsps_ps2_routes_to_handler() {
-    // DECRSPS with Ps=2 (DECTABSR tab-stop vector).
+ // DECRSPS with Ps=2 (DECTABSR tab-stop vector).
     let bytes: &[u8] = b"\x1bP2$t1/9/17\x1b\\";
     let mut parser = Processor::<TestSyncHandler>::new();
     let mut handler = MockHandler::default();
@@ -609,7 +609,7 @@ fn parse_decrsps_ps2_routes_to_handler() {
 
 #[test]
 fn parse_decrsps_default_ps_is_zero() {
-    // DECRSPS with no explicit Ps → default 0 (unrecognized format).
+ // DECRSPS with no explicit Ps → default 0 (unrecognized format).
     let bytes: &[u8] = b"\x1bP$t\x1b\\";
     let mut parser = Processor::<TestSyncHandler>::new();
     let mut handler = MockHandler::default();
@@ -640,16 +640,16 @@ fn processor_no_sync_buffer_during_active_sync() {
     let mut parser = Processor::<TestSyncHandler>::new();
     let mut handler = MockHandler::default();
 
-    // Activate sync — gives the timer something non-default to hold.
+ // Activate sync — gives the timer something non-default to hold.
     parser.advance(&mut handler, b"\x1b[?2026h");
     assert!(
         parser.state.sync_state.timeout.pending_timeout(),
         "BSU should arm the parser-side sync timer"
     );
 
-    // SyncState must be a thin wrapper around just `timeout: T`. A
-    // future regression that re-introduces a `buffer: Vec<u8>` field
-    // (24 bytes on 64-bit) would diverge the sizes and fire here.
+ // SyncState must be a thin wrapper around just `timeout: T`. A
+ // future regression that re-introduces a `buffer: Vec<u8>` field
+ // (24 bytes on 64-bit) would diverge the sizes and fire here.
     assert_eq!(
         size_of::<super::processor::SyncState<TestSyncHandler>>(),
         size_of::<TestSyncHandler>(),

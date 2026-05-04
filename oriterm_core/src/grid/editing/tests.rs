@@ -95,7 +95,7 @@ fn overwrite_wide_char_clears_spacer() {
 fn mojibake_emoji_overlay_then_redraw_leaves_no_holes() {
     let mut grid = Grid::new(24, 20);
 
-    // Phase 1: fill row 0 with "relative to the ....." (stdplane content).
+    // Phase 1: fill row 0 with "relative to the....." (stdplane content).
     for ch in "relative to the xxxx".chars() {
         grid.put_char(ch);
     }
@@ -119,7 +119,7 @@ fn mojibake_emoji_overlay_then_redraw_leaves_no_holes() {
     }
     // Cols 15..20 still hold "xxxx" (unchanged by overlay).
     assert_eq!(grid[line][Column(15)].ch, ' '); // space between "the" and "xxxx" actually
-    // Actually: "relative to the xxxx" → cols 0='r', ..., 12='e', 13=' ',
+    // Actually: "relative to the xxxx" → cols 0='r',..., 12='e', 13=' ',
     // 14='x', 15='x', 16='x', 17='x', 18=..., wait let me recount.
 
     // Phase 3: plane scrolls away — stdplane re-emits full row.
@@ -1394,7 +1394,7 @@ fn put_char_ascii_sets_drawn() {
     );
 }
 
-/// Regression: — the specific repro from the bug entry.
+/// Regression: the specific repro from the bug entry.
 /// Application writes a plain space with default SGR → cell must carry
 /// DRAWN so DECRQCRA sees it as a written cell, not pristine.
 #[test]

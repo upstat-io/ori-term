@@ -147,7 +147,7 @@ impl WindowRoot {
     }
 
     /// Routes a key event through the overlay manager with keymap-first
- /// dispatch ().
+    /// dispatch ().
     ///
     /// Resolves the topmost overlay's `key_context()` against
     /// `self.keymap` and dispatches via `dispatch_keymap_action` when a

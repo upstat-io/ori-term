@@ -14,21 +14,21 @@ use std::path::Path;
 #[derive(Clone, Debug, PartialEq, PartialOrd)]
 #[cfg_attr(feature = "serde_support", derive(Serialize, Deserialize))]
 struct EnvEntry {
-    /// Whether or not this environment variable came from the base environment,
-    /// as opposed to having been explicitly set by the caller.
+ /// Whether or not this environment variable came from the base environment,
+ /// as opposed to having been explicitly set by the caller.
     is_from_base_env: bool,
 
-    /// For case-insensitive platforms, the environment variable key in its preferred casing.
+ /// For case-insensitive platforms, the environment variable key in its preferred casing.
     preferred_key: OsString,
 
-    /// The environment variable value.
+ /// The environment variable value.
     value: OsString,
 }
 
 impl EnvEntry {
     fn map_key(k: OsString) -> OsString {
         if cfg!(windows) {
-            // Best-effort lowercase transformation of an os string
+ // Best-effort lowercase transformation of an os string
             match k.to_str() {
                 Some(s) => s.to_lowercase().into(),
                 None => k,
@@ -88,7 +88,7 @@ fn get_base_env() -> BTreeMap<OsString, EnvEntry> {
     #[cfg(unix)]
     {
         let key = EnvEntry::map_key("SHELL".into());
-        // Only set the value of SHELL if it isn't already set
+ // Only set the value of SHELL if it isn't already set
         if !env.contains_key(&key) {
             env.insert(
                 EnvEntry::map_key("SHELL".into()),
@@ -162,7 +162,7 @@ fn get_base_env() -> BTreeMap<OsString, EnvEntry> {
             for res in sys_env.enum_values() {
                 if let Ok((name, value)) = res {
                     if let Ok(value) = reg_value_to_string(&value) {
-                        // Merge the system and user paths together
+ // Merge the system and user paths together
                         let value = if name.to_ascii_lowercase() == "path" {
                             match env.get(&EnvEntry::map_key(name.clone().into())) {
                                 Some(entry) => {
@@ -210,8 +210,8 @@ pub struct CommandBuilder {
 }
 
 impl CommandBuilder {
-    /// Create a new builder instance with argv\[0\] set to the specified
-    /// program.
+ /// Create a new builder instance with argv\[0\] set to the specified
+ /// program.
     pub fn new<S: AsRef<OsStr>>(program: S) -> Self {
         Self {
             args: vec![program.as_ref().to_owned()],
@@ -223,7 +223,7 @@ impl CommandBuilder {
         }
     }
 
-    /// Create a new builder instance from a pre-built argument vector
+ /// Create a new builder instance from a pre-built argument vector
     pub fn from_argv(args: Vec<OsString>) -> Self {
         Self {
             args,
@@ -235,12 +235,12 @@ impl CommandBuilder {
         }
     }
 
-    /// Set whether we should set the pty as the controlling terminal.
-    /// The default is true, which is usually what you want, but you
-    /// may need to set this to false if you are crossing container
-    /// boundaries (eg: flatpak) to workaround issues like:
-    /// <https://github.com/flatpak/flatpak/issues/3697>
-    /// <https://github.com/flatpak/flatpak/issues/3285>
+ /// Set whether we should set the pty as the controlling terminal.
+ /// The default is true, which is usually what you want, but you
+ /// may need to set this to false if you are crossing container
+ /// boundaries (eg: flatpak) to workaround issues like:
+ /// <https://github.com/flatpak/flatpak/issues/3697>
+ /// <https://github.com/flatpak/flatpak/issues/3285>
     pub fn set_controlling_tty(&mut self, controlling_tty: bool) {
         self.controlling_tty = controlling_tty;
     }
@@ -249,8 +249,8 @@ impl CommandBuilder {
         self.controlling_tty
     }
 
-    /// Create a new builder instance that will run some idea of a default
-    /// program.  Such a builder will panic if `arg` is called on it.
+ /// Create a new builder instance that will run some idea of a default
+ /// program. Such a builder will panic if `arg` is called on it.
     pub fn new_default_prog() -> Self {
         Self {
             args: vec![],
@@ -262,13 +262,13 @@ impl CommandBuilder {
         }
     }
 
-    /// Returns true if this builder was created via `new_default_prog`
+ /// Returns true if this builder was created via `new_default_prog`
     pub fn is_default_prog(&self) -> bool {
         self.args.is_empty()
     }
 
-    /// Append an argument to the current command line.
-    /// Will panic if called on a builder created via `new_default_prog`.
+ /// Append an argument to the current command line.
+ /// Will panic if called on a builder created via `new_default_prog`.
     pub fn arg<S: AsRef<OsStr>>(&mut self, arg: S) {
         if self.is_default_prog() {
             panic!("attempted to add args to a default_prog builder");
@@ -276,7 +276,7 @@ impl CommandBuilder {
         self.args.push(arg.as_ref().to_owned());
     }
 
-    /// Append a sequence of arguments to the current command line
+ /// Append a sequence of arguments to the current command line
     pub fn args<I, S>(&mut self, args: I)
     where
         I: IntoIterator<Item = S>,
@@ -295,7 +295,7 @@ impl CommandBuilder {
         &mut self.args
     }
 
-    /// Override the value of an environmental variable
+ /// Override the value of an environmental variable
     pub fn env<K, V>(&mut self, key: K, value: V)
     where
         K: AsRef<OsStr>,
@@ -354,9 +354,9 @@ impl CommandBuilder {
         self.cwd.as_ref()
     }
 
-    /// Iterate over the configured environment. Only includes environment
-    /// variables set by the caller via `env`, not variables set in the base
-    /// environment.
+ /// Iterate over the configured environment. Only includes environment
+ /// variables set by the caller via `env`, not variables set in the base
+ /// environment.
     pub fn iter_extra_env_as_str(&self) -> impl Iterator<Item = (&str, &str)> {
         self.envs.values().filter_map(
             |EnvEntry {
@@ -389,8 +389,8 @@ impl CommandBuilder {
         )
     }
 
-    /// Return the configured command and arguments as a single string,
-    /// quoted per the unix shell conventions.
+ /// Return the configured command and arguments as a single string,
+ /// quoted per the unix shell conventions.
     pub fn as_unix_command_line(&self) -> anyhow::Result<String> {
         let mut strs = vec![];
         for arg in &self.args {
@@ -421,8 +421,8 @@ impl CommandBuilder {
             let cwd: &Path = cwd.as_ref();
             let mut errors = vec![];
 
-            // If the requested executable is explicitly relative to cwd,
-            // then check only there.
+ // If the requested executable is explicitly relative to cwd,
+ // then check only there.
             if is_cwd_relative_path(exe_path) {
                 let abs_path = cwd.join(exe_path);
 
@@ -494,7 +494,7 @@ impl CommandBuilder {
         }
     }
 
-    /// Convert the CommandBuilder to a `std::process::Command` instance.
+ /// Convert the CommandBuilder to a `std::process::Command` instance.
     pub(crate) fn as_command(&self) -> anyhow::Result<std::process::Command> {
         use std::os::unix::process::CommandExt;
 
@@ -510,8 +510,8 @@ impl CommandBuilder {
         let mut cmd = if self.is_default_prog() {
             let mut cmd = std::process::Command::new(&shell);
 
-            // Run the shell as a login shell by prefixing the shell's
-            // basename with `-` and setting that as argv0
+ // Run the shell as a login shell by prefixing the shell's
+ // basename with `-` and setting that as argv0
             let basename = shell.rsplit('/').next().unwrap_or(&shell);
             cmd.arg0(&format!("-{}", basename));
             cmd
@@ -538,9 +538,9 @@ impl CommandBuilder {
         Ok(cmd)
     }
 
-    /// Determine which shell to run.
-    /// We take the contents of the $SHELL env var first, then
-    /// fall back to looking it up from the password database.
+ /// Determine which shell to run.
+ /// We take the contents of the $SHELL env var first, then
+ /// fall back to looking it up from the password database.
     pub fn get_shell(&self) -> String {
         use nix::unistd::{access, AccessFlags};
 
@@ -582,18 +582,18 @@ impl CommandBuilder {
         if let Some(path) = self.get_env("PATH") {
             let extensions = self.get_env("PATHEXT").unwrap_or(OsStr::new(".EXE"));
             for path in std::env::split_paths(&path) {
-                // Check for exactly the user's string in this path dir
+ // Check for exactly the user's string in this path dir
                 let candidate = path.join(&exe);
                 if candidate.exists() {
                     return candidate.into_os_string();
                 }
 
-                // otherwise try tacking on some extensions.
-                // Note that this really replaces the extension in the
-                // user specified path, so this is potentially wrong.
+ // otherwise try tacking on some extensions.
+ // Note that this really replaces the extension in the
+ // user specified path, so this is potentially wrong.
                 for ext in std::env::split_paths(&extensions) {
-                    // PATHEXT includes the leading `.`, but `with_extension`
-                    // doesn't want that
+ // PATHEXT includes the leading `.`, but `with_extension`
+ // doesn't want that
                     let ext = ext.to_str().expect("PATHEXT entries must be utf8");
                     let path = path.join(&exe).with_extension(&ext[1..]);
                     if path.exists() {
@@ -631,12 +631,12 @@ impl CommandBuilder {
         })
     }
 
-    /// Constructs an environment block for this spawn attempt.
-    /// Uses the current process environment as the base and then
-    /// adds/replaces the environment that was specified via the
-    /// `env` methods.
+ /// Constructs an environment block for this spawn attempt.
+ /// Uses the current process environment as the base and then
+ /// adds/replaces the environment that was specified via the
+ /// `env` methods.
     pub(crate) fn environment_block(&self) -> Vec<u16> {
-        // encode the environment as wide characters
+ // encode the environment as wide characters
         let mut block = vec![];
 
         for EnvEntry {
@@ -650,7 +650,7 @@ impl CommandBuilder {
             block.extend(value.encode_wide());
             block.push(0);
         }
-        // and a final terminator for CreateProcessW
+ // and a final terminator for CreateProcessW
         block.push(0);
 
         block
@@ -678,8 +678,8 @@ impl CommandBuilder {
 
         Self::append_quoted(&exe, &mut cmdline);
 
-        // Ensure that we nul terminate the module name, otherwise we'll
-        // ask CreateProcessW to start something random!
+ // Ensure that we nul terminate the module name, otherwise we'll
+ // ask CreateProcessW to start something random!
         let mut exe: Vec<u16> = exe.encode_wide().collect();
         exe.push(0);
 
@@ -692,13 +692,13 @@ impl CommandBuilder {
             );
             Self::append_quoted(arg, &mut cmdline);
         }
-        // Ensure that the command line is nul terminated too!
+ // Ensure that the command line is nul terminated too!
         cmdline.push(0);
         Ok((exe, cmdline))
     }
 
-    // Borrowed from https://github.com/hniksic/rust-subprocess/blob/873dfed165173e52907beb87118b2c0c05d8b8a1/src/popen.rs#L1117
-    // which in turn was translated from ArgvQuote at http://tinyurl.com/zmgtnls
+ // Borrowed from https://github.com/hniksic/rust-subprocess/blob/873dfed165173e52907beb87118b2c0c05d8b8a1/src/popen.rs#L1117
+ // which in turn was translated from ArgvQuote at http://tinyurl.com/zmgtnls
     fn append_quoted(arg: &OsStr, cmdline: &mut Vec<u16>) {
         if !arg.is_empty()
             && !arg.encode_wide().any(|c| {

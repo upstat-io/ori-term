@@ -579,11 +579,11 @@ fn decaln_clears_cell_attributes() {
 
 // --- RIS / DECSTR paired keyboard-mode-snapshot invariant () ---
 
-/// Regression: — RIS fired mid-command must seed BOTH paired
+/// Regression: RIS fired mid-command must seed BOTH paired
 /// snapshots to `Some(VecDeque::new())` (not `None`) so a child that later
 /// pushes kitty modes and crashes can still have those pushes cleaned at
 /// the next OSC 133 ; A / ; D.
-/// See: bug-tracker/plans/completed//00-overview.md
+/// See: bug-tracker/plans/completed/00-overview.md
 #[test]
 fn keyboard_mode_stack_ris_during_command_sets_saved_to_empty_snapshot() {
     use std::collections::VecDeque;
@@ -613,7 +613,7 @@ fn keyboard_mode_stack_ris_during_command_sets_saved_to_empty_snapshot() {
     );
 }
 
-/// Regression: — DECSTR variant of RIS snapshot seeding.
+/// Regression: DECSTR variant of RIS snapshot seeding.
 #[test]
 fn keyboard_mode_stack_decstr_during_command_sets_saved_to_empty_snapshot() {
     use std::collections::VecDeque;
@@ -639,7 +639,7 @@ fn keyboard_mode_stack_decstr_during_command_sets_saved_to_empty_snapshot() {
     );
 }
 
-/// Regression: — RIS mid-command followed by child pushes then
+/// Regression: RIS mid-command followed by child pushes then
 /// restore must clean the post-RIS child pushes. `Some(empty)` snapshot
 /// enables this; `None` would leave post-reset pushes live.
 #[test]
@@ -665,7 +665,7 @@ fn keyboard_mode_stack_ris_mid_command_then_child_push_then_a_cleans_pushes() {
     );
 }
 
-/// Regression: — DECSTR variant of the mid-command cleanup test.
+/// Regression: DECSTR variant of the mid-command cleanup test.
 #[test]
 fn keyboard_mode_stack_decstr_mid_command_then_child_push_then_a_cleans_pushes() {
     let mut t = term();

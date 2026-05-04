@@ -8,12 +8,12 @@
 //!
 //! Catalog rows covered:
 //! - `SIXEL-BG-DeviceDefault` / `SIXEL-BG-SetToBg` — undrawn-pixel RGB
-//!   semantics under the two opaque-bg modes.
+//! semantics under the two opaque-bg modes.
 //! - `SIXEL-BG-NoChange` — α=0 transparency invariant.
 //! - `SIXEL-PALETTE-RESET-PER-DCS` — palette is rebuilt per DCS q.
 //! - `SIXEL-REPEAT-CLAMP` — `!N?` with `N > MAX_DIMENSION` is clamped.
 //! - `SIXEL-PIXEL-BUFFER-CAP` — raster attrs beyond `MAX_PIXEL_BYTES`
-//!   aborts via `ImageError::OversizedImage` with no 900 MB allocation.
+//! aborts via `ImageError::OversizedImage` with no 900 MB allocation.
 
 use oriterm_test_support::spec_chain::SpecHarness;
 use oriterm_test_support::spec_chain::sixel_fixtures::placement_count;

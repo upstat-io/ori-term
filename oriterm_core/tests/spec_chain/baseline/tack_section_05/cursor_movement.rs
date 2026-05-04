@@ -7,7 +7,7 @@
 //!
 //! ```text
 //! \x1B[H\x1B[2JThis line should start in the home position.
-//! The rest of the screen should be clear.  (clear) Done
+//! The rest of the screen should be clear. (clear) Done
 //! ```
 //!
 //! `clear` in `extra/ori_term.info` is defined as the literal
@@ -19,7 +19,7 @@
 //! # Catalog rows verified
 //!
 //! - `ECMA48-CSI-CUP` — `CSI Ps;Ps H` (cursor position)
-//! - `ECMA48-CSI-ED`  — `CSI Ps J` (erase in display)
+//! - `ECMA48-CSI-ED` — `CSI Ps J` (erase in display)
 //!
 //! `cup`, `csr`, `hpa`, `vpa`, `cuu`, `cud`, `cub`, `cuf` are NOT
 //! emitted as cap labels by tack v1.08's cursor movement test (see the

@@ -25,7 +25,7 @@ fn octant_mapping_artifact_path() -> Option<PathBuf> {
 
 /// Parse the canonical artifact's table into a `Vec<(u32, u8)>`.
 ///
-/// Each row has the shape `| U+1CDxx | 0xNN | 0b... | ... |`; the parser
+/// Each row has the shape `| U+1CDxx | 0xNN | 0b... |... |`; the parser
 /// extracts the codepoint (hex after `U+`) and the mask (hex after `0x`).
 fn parse_canonical_mapping(path: &std::path::Path) -> Vec<(u32, u8)> {
     let contents = fs::read_to_string(path)
@@ -197,7 +197,7 @@ fn octant_u1cde5_renders_all_but_top_left() {
 }
 
 /// Dispatch wiring: `is_builtin(ch)` returns `true` for every octant
-/// codepoint; `rasterize(ch, ..)` returns `Some(..)` for every octant
+/// codepoint; `rasterize(ch,..)` returns `Some(..)` for every octant
 /// codepoint — the font shaper must never see these.
 #[test]
 fn every_octant_codepoint_is_builtin_and_rasterizes() {

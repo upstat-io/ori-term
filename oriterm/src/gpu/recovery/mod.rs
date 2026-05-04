@@ -193,14 +193,14 @@ impl GpuHealth {
     ///
     /// Transition table for 5.16.1:
     ///
-    /// | Current      | Reason         | Next                                |
+    /// | Current | Reason | Next |
     /// |--------------|----------------|-------------------------------------|
-    /// | `Healthy`    | `OutOfMemory`  | `Unavailable { last_error, since }` |
-    /// | `Healthy`    | other          | `Recovering { epoch, attempt: 0 }`  |
-    /// | `Recovering` | `OutOfMemory`  | `Unavailable { last_error, since }` |
-    /// | `Recovering` | other          | unchanged (coalesce)                |
-    /// | `Unavailable`| `OutOfMemory`  | unchanged (already terminal)        |
-    /// | `Unavailable`| other          | unchanged (manual retry only)       |
+    /// | `Healthy` | `OutOfMemory` | `Unavailable { last_error, since }` |
+    /// | `Healthy` | other | `Recovering { epoch, attempt: 0 }` |
+    /// | `Recovering` | `OutOfMemory` | `Unavailable { last_error, since }` |
+    /// | `Recovering` | other | unchanged (coalesce) |
+    /// | `Unavailable`| `OutOfMemory` | unchanged (already terminal) |
+    /// | `Unavailable`| other | unchanged (manual retry only) |
     pub(crate) fn next_after_loss(
         &self,
         reason: GpuLossReason,

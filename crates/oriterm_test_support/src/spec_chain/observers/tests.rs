@@ -300,7 +300,7 @@ fn renderable_observer_fails_on_wrong_hyperlink_uri() {
 
 #[test]
 fn renderable_observer_fails_when_hyperlink_absent() {
- // Regression guard: cell exists but has NO hyperlink attached; expecting
+    // Regression guard: cell exists but has NO hyperlink attached; expecting
     // one must fail (the stub would have passed this too).
     let mut harness = SpecHarness::new();
     harness.feed(b"X");

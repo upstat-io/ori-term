@@ -700,11 +700,11 @@ fn accumulated_scrollback_via_linefeed_cycles() {
     }
 
     // Each linefeed at bottom evicts the TOP row to scrollback:
-    //   Initial:  [A, B, C]
-    //   Write D@2 → [A, B, D] → evict A → [B, D, blank]
-    //   Write E@2 → [B, D, E] → evict B → [D, E, blank]
-    //   Write F@2 → [D, E, F] → evict D → [E, F, blank]
-    //   Write G@2 → [E, F, G] → evict E → [F, G, blank]
+    // Initial: [A, B, C]
+    // Write D@2 → [A, B, D] → evict A → [B, D, blank]
+    // Write E@2 → [B, D, E] → evict B → [D, E, blank]
+    // Write F@2 → [D, E, F] → evict D → [E, F, blank]
+    // Write G@2 → [E, F, G] → evict E → [F, G, blank]
     // Note: C was overwritten by D before reaching the top — correct
     // terminal behavior (overwritten content is lost).
     assert_eq!(grid.scrollback().len(), 4);
@@ -1515,7 +1515,7 @@ fn sr_extends_occ_when_content_shifts_with_empty_template() {
         'X',
         "shifted content must remain present at its new column",
     );
- // Regression guard: col 2 (vacated by SR with empty template) must be empty.
+    // Regression guard: col 2 (vacated by SR with empty template) must be empty.
     assert!(
         grid[Line(0)][Column(2)].is_empty(),
         "vacated cell must be empty after SR",

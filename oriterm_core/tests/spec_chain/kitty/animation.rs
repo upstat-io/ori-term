@@ -4,7 +4,7 @@
 //! chain.
 //!
 //! Catalog rows: `KG-FRAME-TRANSMIT` (a=f appends a frame, OK reply with
-//! ,r=<n>), `KG-FRAME-COMPOSITE-OVERWRITE` (X=1 overwrites), `KG-FRAME-
+//!,r=<n>), `KG-FRAME-COMPOSITE-OVERWRITE` (X=1 overwrites), `KG-FRAME-
 //! COMPOSITE-ALPHABLEND` (default alpha-blends), `KG-ANIMATE-STOP`
 //! (s=1 pauses), `KG-ANIMATE-RUN-WAIT` (s=2 resumes waiting), `KG-ANIMATE-RUN`
 //! (s=3 resumes), `KG-ANIMATE-LOOP-COUNT` (v=0 → infinite, v=N → finite),

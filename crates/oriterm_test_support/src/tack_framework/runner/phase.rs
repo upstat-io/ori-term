@@ -2,7 +2,7 @@
 //!
 //! These methods drive tack scenarios where the captured fact is
 //! visible only briefly mid-run — the modes test sweep that prints
-//! `(am)`, `(bce)`, `(bw)`, ... and scrolls each line off the
+//! `(am)`, `(bce)`, `(bw)`,... and scrolls each line off the
 //! 24-row viewport in under ~500 ms. The stable-screen
 //! [`super::stable`] path cannot capture these because the 300 ms
 //! [`crate::session::PtySession::send`] quiesce + 200 ms

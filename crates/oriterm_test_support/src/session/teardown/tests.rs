@@ -138,7 +138,7 @@ fn spawn_quit_on_keystroke(exit_code: i32) -> PtySession {
     };
     // `mut` is required on Unix so `wait_for` can drive the reader;
     // on Windows the call is cfg-gated out, so the binding is only
-    // read — `#[cfg_attr(not(unix), expect(unused_mut, ...))]` keeps
+    // read — `#[cfg_attr(not(unix), expect(unused_mut,...))]` keeps
     // the single source-form line while satisfying `-D unused-mut`.
     #[cfg_attr(
         not(unix),
@@ -168,7 +168,7 @@ fn pty_session_quit_tack_returns_status_when_child_exits() {
 
 #[test]
 fn pty_session_quit_tack_exits_early_when_child_dies_after_first_q() {
- // Verifies: this proves the q-loop returns the moment
+    // Verifies: this proves the q-loop returns the moment
     // `try_wait()` observes exit, NOT after exhausting
     // `max_iterations`. A regression that removed the `try_wait`
     // early-exit (e.g., always looped `max_iterations` times)

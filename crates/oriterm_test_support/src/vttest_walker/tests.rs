@@ -1,7 +1,7 @@
 use super::walk_vttest_screens;
 use crate::session::{PtySession, vttest_available};
 
-/// Regression: — helper walks menu 1 to completion, returning
+/// Regression: helper walks menu 1 to completion, returning
 /// the number of screens captured.
 ///
 /// Pin: closure invoked at least once, terminates on `"Enter choice number"`.
@@ -37,7 +37,7 @@ fn walk_vttest_screens_walks_menu1_to_completion() {
     );
 }
 
-/// Regression: — helper makes ZERO closure calls when the
+/// Regression: helper makes ZERO closure calls when the
 /// sentinel is already present in the initial grid (vttest at the
 /// main menu before any selection).
 ///
@@ -69,7 +69,7 @@ fn walk_vttest_screens_zero_calls_when_sentinel_already_present() {
     );
 }
 
-/// Regression: — helper terminates after `max_screens`
+/// Regression: helper terminates after `max_screens`
 /// closure invocations.
 ///
 /// Pin: with `max_screens = 2`, closure invoked exactly 2 times even if
@@ -97,7 +97,7 @@ fn walk_vttest_screens_max_screens_cap_terminates_loop() {
     );
 }
 
-/// Regression: — helper passes the SAME `text` value to the
+/// Regression: helper passes the SAME `text` value to the
 /// closure that it used for the sentinel check.
 ///
 /// Pin: closure receives non-empty text on every invocation; the text

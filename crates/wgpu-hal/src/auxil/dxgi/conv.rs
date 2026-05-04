@@ -193,7 +193,7 @@ pub fn map_texture_format_for_resource(
     if casting_fully_typed_format_supported {
         map_texture_format(format)
 
-    // We might view this resource as srgb or non-srgb
+ // We might view this resource as srgb or non-srgb
     } else if has_view_formats {
         match format {
             Tf::Rgba8Unorm | Tf::Rgba8UnormSrgb => DXGI_FORMAT_R8G8B8A8_TYPELESS,
@@ -205,7 +205,7 @@ pub fn map_texture_format_for_resource(
             format => map_texture_format(format),
         }
 
-    // We might view this resource as SRV/UAV but also as DSV
+ // We might view this resource as SRV/UAV but also as DSV
     } else if format.is_depth_stencil_format()
         && usage.intersects(
             wgt::TextureUses::RESOURCE

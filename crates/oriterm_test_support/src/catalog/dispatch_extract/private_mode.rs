@@ -3,7 +3,7 @@
 //! Walks `crates/vte/src/ansi/types.rs::PrivateMode::new` and
 //! emits a paired set/reset tuple per recognized numeric variant.
 //! The extractor scans `match self { 1 => NamedPrivateMode::...,
-//! 25 => ..., ... }` arms and collects every literal `u16`. Each
+//! 25 =>...,... }` arms and collects every literal `u16`. Each
 //! number becomes two tuples: `(CSI, [?], "<n>", h)` and
 //! `(CSI, [?], "<n>", l)`.
 //!
@@ -57,7 +57,7 @@ fn scan_match_numeric_arms(block: &syn::Block, out: &mut BTreeSet<u16>) {
         };
         let syn::Expr::Match(m) = expr else { continue };
         for arm in &m.arms {
-            // Patterns are either `N => ...` or `N | M => ...` or `_`.
+            // Patterns are either `N =>...` or `N | M =>...` or `_`.
             collect_numeric_pats(&arm.pat, out);
         }
     }

@@ -95,7 +95,7 @@ fn apply_alpha_correction(glyph: &mut RasterizedGlyph, lut: &[u8; 256]) {
 impl FontCollection {
     /// Apply the per-format gamma correction and insert the glyph into the cache.
     ///
- /// Canonical home for the `GlyphFormat::Alpha`-only gamma rule ().
+    /// Canonical home for the `GlyphFormat::Alpha`-only gamma rule ().
     /// Called by both `rasterize` and `rasterize_with_weight` after the raw
     /// rasterizer produces the bitmap — keeping the correction guard in a single
     /// place so any future protocol change lands once, not twice.

@@ -49,7 +49,7 @@ pub(super) struct MarkModeResources {
 /// the Defensive-Code-for-Impossible-States rule
 /// — silently swallowing keystrokes when an "unreachable" precondition
 /// fails is the bug this guard exists to prevent. See
-/// `bug-tracker/plans/completed//section-02-fix-consensus.md`
+/// `bug-tracker/plans/completed/section-02-fix-consensus.md`
 /// "Reviewer notes adopted" for the full justification.
 #[must_use]
 pub(super) fn mark_mode_should_exit(resources: MarkModeResources) -> bool {
@@ -110,11 +110,11 @@ pub(super) struct MarkKeyInput {
 /// (`pane_mark_cursor`, `pane_selection`, `exit_mark_mode`,
 /// `set_pane_selection`, `clear_pane_selection`, `copy_selection`).
 /// The `impl MarkModeSink for App` block uses UFCS-via-`Self::method(self,
-/// ...)` to resolve each call to the inherent method without recursing
+///...)` to resolve each call to the inherent method without recursing
 /// through the trait — see the safety comment at the top of that impl
 /// block.
 pub(super) trait MarkModeSink {
- /// Resource snapshot for the gate. `&mut self` because
+    /// Resource snapshot for the gate. `&mut self` because
     /// the production impl reads mux state which can require `&mut`
     /// borrow paths.
     fn mark_mode_resources(&mut self, pane_id: PaneId) -> MarkModeResources;

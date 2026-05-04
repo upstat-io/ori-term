@@ -171,7 +171,7 @@ fn mux_notification_debug_all_variants() {
     assert!(dbg.contains("Clipboard"));
 
     // Variants added in effect-cutover 01.1 — Debug coverage per the
- // matrix-testing rule (). Surfaced by
+    // matrix-testing rule (). Surfaced by
     // `[low]`.
     let desk = MuxNotification::DesktopNotification {
         pane_id: pid,

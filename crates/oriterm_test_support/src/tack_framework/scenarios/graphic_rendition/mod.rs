@@ -42,7 +42,7 @@ use crate::tack_framework::{MenuStep, ScenarioSpec, ScreenFacts};
 ///
 /// **Empirical caveat (tack v1.08).** As of tack v1.08 the ACS
 /// screen does NOT emit any of these SGR labels — the test only
-/// outputs `Testing bell (bel) ... (bel) Done`. The parser
+/// outputs `Testing bell (bel)... (bel) Done`. The parser
 /// returns an empty `capability_labels` list against the live
 /// host. This is preserved as forward-compatible infrastructure
 /// for a future tack release that draws SGR sample text on the

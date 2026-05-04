@@ -32,108 +32,108 @@ use oriterm_mux::{EmbeddedMux, PaneId, PaneSnapshot, WireCursorShape};
 /// Owns either an `EmbeddedMux` directly or a `MuxClient` + `TestDaemon`.
 /// The daemon (if any) is kept alive by the `_daemon` field.
 struct TestContext {
- backend: Box<dyn MuxBackend>,
- pane_id: PaneId,
- #[cfg(target_os = "linux")]
- _daemon: Option<TestDaemon>,
+    backend: Box<dyn MuxBackend>,
+    pane_id: PaneId,
+    #[cfg(target_os = "linux")]
+    _daemon: Option<TestDaemon>,
 }
 
 impl TestContext {
- /// Borrow the backend mutably.
- fn b(&mut self) -> &mut dyn MuxBackend {
- &mut *self.backend
- }
+    /// Borrow the backend mutably.
+    fn b(&mut self) -> &mut dyn MuxBackend {
+        &mut *self.backend
+    }
 
- /// Wait until the snapshot contains `text`, returning an owned copy.
- fn wait_for_text(&mut self, text: &str, timeout: Duration) -> PaneSnapshot {
- let deadline = Instant::now() + timeout;
- let pid = self.pane_id;
- loop {
- self.b().poll_events();
- let mut notifs = Vec::new();
- self.b().drain_notifications(&mut notifs);
+    /// Wait until the snapshot contains `text`, returning an owned copy.
+    fn wait_for_text(&mut self, text: &str, timeout: Duration) -> PaneSnapshot {
+        let deadline = Instant::now() + timeout;
+        let pid = self.pane_id;
+        loop {
+            self.b().poll_events();
+            let mut notifs = Vec::new();
+            self.b().drain_notifications(&mut notifs);
 
- if let Some(snap) = self.b().refresh_pane_snapshot(pid) {
- if snapshot_contains(snap, text) {
- return snap.clone();
- }
- }
+            if let Some(snap) = self.b().refresh_pane_snapshot(pid) {
+                if snapshot_contains(snap, text) {
+                    return snap.clone();
+                }
+            }
 
- assert!(
- Instant::now() < deadline,
- "timed out waiting for text {text:?} in pane {pid}"
-);
- thread::sleep(Duration::from_millis(50));
- }
- }
+            assert!(
+                Instant::now() < deadline,
+                "timed out waiting for text {text:?} in pane {pid}"
+            );
+            thread::sleep(Duration::from_millis(50));
+        }
+    }
 
- /// Refresh and return an owned snapshot.
- fn snapshot(&mut self) -> PaneSnapshot {
- let pid = self.pane_id;
- self.b()
- .refresh_pane_snapshot(pid)
- .expect("snapshot should be available")
- .clone()
- }
+    /// Refresh and return an owned snapshot.
+    fn snapshot(&mut self) -> PaneSnapshot {
+        let pid = self.pane_id;
+        self.b()
+            .refresh_pane_snapshot(pid)
+            .expect("snapshot should be available")
+            .clone()
+    }
 
- /// Poll until a snapshot predicate is satisfied, returning an owned copy.
- fn wait_for(&mut self, what: &str, predicate: impl Fn(&PaneSnapshot) -> bool) -> PaneSnapshot {
- let deadline = Instant::now() + Duration::from_secs(30);
- let pid = self.pane_id;
- loop {
- self.b().poll_events();
- let mut notifs = Vec::new();
- self.b().drain_notifications(&mut notifs);
+    /// Poll until a snapshot predicate is satisfied, returning an owned copy.
+    fn wait_for(&mut self, what: &str, predicate: impl Fn(&PaneSnapshot) -> bool) -> PaneSnapshot {
+        let deadline = Instant::now() + Duration::from_secs(30);
+        let pid = self.pane_id;
+        loop {
+            self.b().poll_events();
+            let mut notifs = Vec::new();
+            self.b().drain_notifications(&mut notifs);
 
- if let Some(snap) = self.b().refresh_pane_snapshot(pid) {
- if predicate(snap) {
- return snap.clone();
- }
- }
+            if let Some(snap) = self.b().refresh_pane_snapshot(pid) {
+                if predicate(snap) {
+                    return snap.clone();
+                }
+            }
 
- assert!(
- Instant::now() < deadline,
- "timed out waiting for condition: {what}"
-);
- thread::sleep(Duration::from_millis(50));
- }
- }
+            assert!(
+                Instant::now() < deadline,
+                "timed out waiting for condition: {what}"
+            );
+            thread::sleep(Duration::from_millis(50));
+        }
+    }
 
- /// Wait until the snapshot contains `text` — but only call `poll_events`
- /// when `mux.has_pending_wakeup()` returns true, mirroring the gate logic
- /// in `oriterm/src/app/mux_pump/mod.rs:35-43`.
- ///
- /// This is the §05 Step 3 helper: the gated drain pins the
- /// MUX-LAYER CONTRACT that `App::pump_mux_events` relies on (early-exit
- /// when no wakeup pending, drain when set, flag-clear after poll). The
- /// existing [`wait_for_text`] polls unconditionally and is the right
- /// helper for general backend-progress contract tests where the gate's
- /// performance-optimization role doesn't apply.
- fn wait_for_text_via_gated_drain(&mut self, text: &str, timeout: Duration) -> PaneSnapshot {
- let deadline = Instant::now() + timeout;
- let pid = self.pane_id;
- loop {
- // Mirror App::pump_mux_events's exact gate logic:
- // if mux.has_pending_wakeup() { mux.poll_events(); drain_notifications(); }
- if self.b().has_pending_wakeup() {
- self.b().poll_events();
- let mut notifs = Vec::new();
- self.b().drain_notifications(&mut notifs);
- }
+    /// Wait until the snapshot contains `text` — but only call `poll_events`
+    /// when `mux.has_pending_wakeup()` returns true, mirroring the gate logic
+    /// in `oriterm/src/app/mux_pump/mod.rs:35-43`.
+    ///
+    /// This is the §05 Step 3 helper: the gated drain pins the
+    /// MUX-LAYER CONTRACT that `App::pump_mux_events` relies on (early-exit
+    /// when no wakeup pending, drain when set, flag-clear after poll). The
+    /// existing [`wait_for_text`] polls unconditionally and is the right
+    /// helper for general backend-progress contract tests where the gate's
+    /// performance-optimization role doesn't apply.
+    fn wait_for_text_via_gated_drain(&mut self, text: &str, timeout: Duration) -> PaneSnapshot {
+        let deadline = Instant::now() + timeout;
+        let pid = self.pane_id;
+        loop {
+            // Mirror App::pump_mux_events's exact gate logic:
+            // if mux.has_pending_wakeup() { mux.poll_events(); drain_notifications(); }
+            if self.b().has_pending_wakeup() {
+                self.b().poll_events();
+                let mut notifs = Vec::new();
+                self.b().drain_notifications(&mut notifs);
+            }
 
- if let Some(snap) = self.b().refresh_pane_snapshot(pid) {
- if snapshot_contains(snap, text) {
- return snap.clone();
- }
- }
+            if let Some(snap) = self.b().refresh_pane_snapshot(pid) {
+                if snapshot_contains(snap, text) {
+                    return snap.clone();
+                }
+            }
 
- assert!(
- Instant::now() < deadline,
- "timed out waiting for text {text:?} via gated drain in pane {pid}"
-);
- thread::sleep(Duration::from_millis(20));
- }
- }
+            assert!(
+                Instant::now() < deadline,
+                "timed out waiting for text {text:?} via gated drain in pane {pid}"
+            );
+            thread::sleep(Duration::from_millis(20));
+        }
+    }
 }
 
 /// Compose the shell command for a gated round-trip test.
@@ -172,29 +172,29 @@ impl TestContext {
 /// across `/bin/sh`, `bash`, and `zsh` (POSIX `printf` is not required to
 /// support `\xNN`, but `\NNN` is mandated).
 fn gated_round_trip_cmd(query: &str, n: usize, label: &str, cup_to_origin: bool) -> String {
- let cup = if cup_to_origin {
- "printf '\\033[1;1H'; "
- } else {
- ""
- };
- // Portable 1-second-bounded reader: perl with SIGALRM. `/usr/bin/perl`
- // ships on macOS, Linux, and BSD by default. Avoids GNU coreutils
- // `timeout` (missing on macOS GitHub runners) and the SIGTTIN trap that
- // breaks `( head -c N) &` in interactive shells. Reads one byte at a
- // time and writes immediately so any bytes that arrived before the
- // alarm fired are still captured.
- let reader = format!(
- "perl -e '$| = 1; eval {{ local $SIG{{ALRM}} = sub {{ exit 0 }}; alarm 1; \
+    let cup = if cup_to_origin {
+        "printf '\\033[1;1H'; "
+    } else {
+        ""
+    };
+    // Portable 1-second-bounded reader: perl with SIGALRM. `/usr/bin/perl`
+    // ships on macOS, Linux, and BSD by default. Avoids GNU coreutils
+    // `timeout` (missing on macOS GitHub runners) and the SIGTTIN trap that
+    // breaks `( head -c N) &` in interactive shells. Reads one byte at a
+    // time and writes immediately so any bytes that arrived before the
+    // alarm fired are still captured.
+    let reader = format!(
+        "perl -e '$| = 1; eval {{ local $SIG{{ALRM}} = sub {{ exit 0 }}; alarm 1; \
  my $g = 0; while ($g < {n}) {{ my $r = sysread(STDIN, my $c, 1); last unless $r; \
  syswrite(STDOUT, $c); $g++; }} }}' > /tmp/tpr-{label}-$$"
-);
- format!(
- "stty raw -echo; {cup}printf '{query}'; \
+    );
+    format!(
+        "stty raw -echo; {cup}printf '{query}'; \
  {reader}; \
  printf '%s_RESP=BYTES=%s|HEX=%s\\n' 'TPR' \"$(wc -c < /tmp/tpr-{label}-$$)\" \
  \"$(od -An -tx1 -v /tmp/tpr-{label}-$$ | tr -d ' \\n')\"; \
  rm -f /tmp/tpr-{label}-$$; stty -raw echo\n"
-)
+    )
 }
 
 /// Drive a gated round-trip for one device-query response kind.
@@ -209,56 +209,56 @@ fn gated_round_trip_cmd(query: &str, n: usize, label: &str, cup_to_origin: bool)
 /// `cup_to_origin: true` for cursor-position-dependent responses (DSR 6)
 /// so the shell-prompt cursor placement does not pollute the response.
 fn assert_gated_round_trip(
- ctx: &mut TestContext,
- query: &str,
- n: usize,
- label: &str,
- cup_to_origin: bool,
+    ctx: &mut TestContext,
+    query: &str,
+    n: usize,
+    label: &str,
+    cup_to_origin: bool,
 ) -> PaneSnapshot {
- let pid = ctx.pane_id;
- let cmd = gated_round_trip_cmd(query, n, label, cup_to_origin);
- ctx.b().send_input(pid, cmd.as_bytes());
- // Wait for the runtime-constructed `TPR_RESP=` sentinel — see
- // `gated_round_trip_cmd` doc for why this never appears in the
- // command echo. Synchronizes on the actual printf output, not on
- // the shell's pre-`stty -echo` line echo.
- let snap = ctx.wait_for_text_via_gated_drain("TPR_RESP=BYTES=", Duration::from_secs(30));
- // Regression guard per §03: response bytes must NOT be empty.
- let line = snapshot_find_line_with(&snap, "TPR_RESP=BYTES=").unwrap_or_default();
- assert!(
- !line.contains("BYTES=0|"),
- "regression guard: response did not arrive (label={label}, line={line:?})"
-);
- snap
+    let pid = ctx.pane_id;
+    let cmd = gated_round_trip_cmd(query, n, label, cup_to_origin);
+    ctx.b().send_input(pid, cmd.as_bytes());
+    // Wait for the runtime-constructed `TPR_RESP=` sentinel — see
+    // `gated_round_trip_cmd` doc for why this never appears in the
+    // command echo. Synchronizes on the actual printf output, not on
+    // the shell's pre-`stty -echo` line echo.
+    let snap = ctx.wait_for_text_via_gated_drain("TPR_RESP=BYTES=", Duration::from_secs(30));
+    // Regression guard per §03: response bytes must NOT be empty.
+    let line = snapshot_find_line_with(&snap, "TPR_RESP=BYTES=").unwrap_or_default();
+    assert!(
+        !line.contains("BYTES=0|"),
+        "regression guard: response did not arrive (label={label}, line={line:?})"
+    );
+    snap
 }
 
 /// Find the first row in the snapshot that contains `needle`; return the
 /// row text trimmed of trailing spaces.
 fn snapshot_find_line_with(snapshot: &PaneSnapshot, needle: &str) -> Option<String> {
- for row in &snapshot.cells {
- let line: String = row.iter().map(|c| c.ch).collect();
- if line.contains(needle) {
- return Some(line.trim_end().to_string());
- }
- }
- None
+    for row in &snapshot.cells {
+        let line: String = row.iter().map(|c| c.ch).collect();
+        if line.contains(needle) {
+            return Some(line.trim_end().to_string());
+        }
+    }
+    None
 }
 
 /// Extract the hex blob from the first `TPR_RESP=BYTES=N|HEX=<hex>` line in
 /// the snapshot. Returns the hex blob with no leading/trailing whitespace.
 fn extract_hex_response(snapshot: &PaneSnapshot) -> String {
- let line = snapshot_find_line_with(snapshot, "TPR_RESP=BYTES=").unwrap_or_default();
- line.split("HEX=").nth(1).unwrap_or("").trim().to_string()
+    let line = snapshot_find_line_with(snapshot, "TPR_RESP=BYTES=").unwrap_or_default();
+    line.split("HEX=").nth(1).unwrap_or("").trim().to_string()
 }
 
 /// Extract the byte-count from the `TPR_RESP=BYTES=N|HEX=...` line.
 fn extract_byte_count(snapshot: &PaneSnapshot) -> usize {
- let line = snapshot_find_line_with(snapshot, "TPR_RESP=BYTES=").unwrap_or_default();
- line.split("BYTES=")
- .nth(1)
- .and_then(|s| s.split('|').next())
- .and_then(|s| s.trim().parse::<usize>().ok())
- .unwrap_or(0)
+    let line = snapshot_find_line_with(snapshot, "TPR_RESP=BYTES=").unwrap_or_default();
+    line.split("BYTES=")
+        .nth(1)
+        .and_then(|s| s.split('|').next())
+        .and_then(|s| s.trim().parse::<usize>().ok())
+        .unwrap_or(0)
 }
 
 // ---------------------------------------------------------------------------
@@ -267,59 +267,59 @@ fn extract_byte_count(snapshot: &PaneSnapshot) -> usize {
 
 #[cfg(target_os = "linux")]
 struct TestDaemon {
- socket_path: std::path::PathBuf,
- shutdown: Arc<std::sync::atomic::AtomicBool>,
- thread: Option<thread::JoinHandle<()>>,
- _tmpdir: tempfile::TempDir,
+    socket_path: std::path::PathBuf,
+    shutdown: Arc<std::sync::atomic::AtomicBool>,
+    thread: Option<thread::JoinHandle<()>>,
+    _tmpdir: tempfile::TempDir,
 }
 
 #[cfg(target_os = "linux")]
 impl TestDaemon {
- fn start() -> Self {
- let tmpdir = tempfile::tempdir().expect("failed to create temp dir");
- let socket_path = tmpdir.path().join("mux.sock");
- let pid_path = tmpdir.path().join("mux.pid");
+    fn start() -> Self {
+        let tmpdir = tempfile::tempdir().expect("failed to create temp dir");
+        let socket_path = tmpdir.path().join("mux.sock");
+        let pid_path = tmpdir.path().join("mux.pid");
 
- let mut server =
- MuxServer::with_paths(&socket_path, &pid_path).expect("failed to create MuxServer");
- let shutdown = server.shutdown_flag();
+        let mut server =
+            MuxServer::with_paths(&socket_path, &pid_path).expect("failed to create MuxServer");
+        let shutdown = server.shutdown_flag();
 
- let thread = thread::spawn(move || {
- if let Err(e) = server.run() {
- eprintln!("MuxServer error: {e}");
- }
- });
+        let thread = thread::spawn(move || {
+            if let Err(e) = server.run() {
+                eprintln!("MuxServer error: {e}");
+            }
+        });
 
- let deadline = Instant::now() + Duration::from_secs(30);
- while !socket_path.exists() {
- if Instant::now() > deadline {
- panic!("daemon socket did not appear within 5 seconds");
- }
- thread::sleep(Duration::from_millis(10));
- }
+        let deadline = Instant::now() + Duration::from_secs(30);
+        while !socket_path.exists() {
+            if Instant::now() > deadline {
+                panic!("daemon socket did not appear within 5 seconds");
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
 
- Self {
- socket_path,
- shutdown,
- thread: Some(thread),
- _tmpdir: tmpdir,
- }
- }
+        Self {
+            socket_path,
+            shutdown,
+            thread: Some(thread),
+            _tmpdir: tmpdir,
+        }
+    }
 
- fn connect_client(&self) -> MuxClient {
- let wakeup: Arc<dyn Fn() + Send + Sync> = Arc::new(|| {});
- MuxClient::connect(&self.socket_path, wakeup).expect("failed to connect MuxClient")
- }
+    fn connect_client(&self) -> MuxClient {
+        let wakeup: Arc<dyn Fn() + Send + Sync> = Arc::new(|| {});
+        MuxClient::connect(&self.socket_path, wakeup).expect("failed to connect MuxClient")
+    }
 }
 
 #[cfg(target_os = "linux")]
 impl Drop for TestDaemon {
- fn drop(&mut self) {
- self.shutdown.store(true, Ordering::Release);
- if let Some(handle) = self.thread.take() {
- let _ = handle.join();
- }
- }
+    fn drop(&mut self) {
+        self.shutdown.store(true, Ordering::Release);
+        if let Some(handle) = self.thread.take() {
+            let _ = handle.join();
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -329,50 +329,50 @@ impl Drop for TestDaemon {
 /// Build a `SpawnConfig` for tests with history suppressed so fence commands
 /// don't pollute the user's `~/.zsh_history`.
 fn test_spawn_config() -> SpawnConfig {
- SpawnConfig {
- env: vec![("HISTFILE".into(), "/dev/null".into())],
- ..SpawnConfig::default()
- }
+    SpawnConfig {
+        env: vec![("HISTFILE".into(), "/dev/null".into())],
+        ..SpawnConfig::default()
+    }
 }
 
 /// Create a `TestContext` backed by `EmbeddedMux`.
 fn embedded_context() -> TestContext {
- let wakeup: Arc<dyn Fn() + Send + Sync> = Arc::new(|| {});
- let mut mux = EmbeddedMux::new(wakeup);
+    let wakeup: Arc<dyn Fn() + Send + Sync> = Arc::new(|| {});
+    let mut mux = EmbeddedMux::new(wakeup);
 
- let config = test_spawn_config();
- let pane_id = mux.spawn_pane(&config, Theme::Dark).expect("spawn_pane");
+    let config = test_spawn_config();
+    let pane_id = mux.spawn_pane(&config, Theme::Dark).expect("spawn_pane");
 
- // Wait for the shell to be ready by sending a fence command and
- // polling until its output appears — no fixed sleep.
- wait_for_shell_ready(&mut mux, pane_id);
+    // Wait for the shell to be ready by sending a fence command and
+    // polling until its output appears — no fixed sleep.
+    wait_for_shell_ready(&mut mux, pane_id);
 
- TestContext {
- backend: Box::new(mux),
- pane_id,
- #[cfg(target_os = "linux")]
- _daemon: None,
- }
+    TestContext {
+        backend: Box::new(mux),
+        pane_id,
+        #[cfg(target_os = "linux")]
+        _daemon: None,
+    }
 }
 
 /// Create a `TestContext` backed by `MuxClient` connected to a `TestDaemon`.
 #[cfg(target_os = "linux")]
 fn daemon_context() -> TestContext {
- let daemon = TestDaemon::start();
- let mut client = daemon.connect_client();
+    let daemon = TestDaemon::start();
+    let mut client = daemon.connect_client();
 
- let config = test_spawn_config();
- let pane_id = client.spawn_pane(&config, Theme::Dark).expect("spawn_pane");
+    let config = test_spawn_config();
+    let pane_id = client.spawn_pane(&config, Theme::Dark).expect("spawn_pane");
 
- // Wait for the shell to be ready by sending a fence command and
- // polling until its output appears — no fixed sleep.
- wait_for_shell_ready(&mut client, pane_id);
+    // Wait for the shell to be ready by sending a fence command and
+    // polling until its output appears — no fixed sleep.
+    wait_for_shell_ready(&mut client, pane_id);
 
- TestContext {
- backend: Box::new(client),
- pane_id,
- _daemon: Some(daemon),
- }
+    TestContext {
+        backend: Box::new(client),
+        pane_id,
+        _daemon: Some(daemon),
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -380,41 +380,41 @@ fn daemon_context() -> TestContext {
 // ---------------------------------------------------------------------------
 
 fn snapshot_contains(snapshot: &PaneSnapshot, text: &str) -> bool {
- snapshot.cells.iter().any(|row| {
- let line: String = row.iter().map(|c| c.ch).collect();
- line.contains(text)
- })
+    snapshot.cells.iter().any(|row| {
+        let line: String = row.iter().map(|c| c.ch).collect();
+        line.contains(text)
+    })
 }
 
 /// Wait for the shell to be ready by sending a fence and polling until
 /// its output appears. This replaces fixed `thread::sleep` calls.
 fn wait_for_shell_ready(backend: &mut dyn MuxBackend, pane_id: PaneId) {
- backend.send_input(pane_id, b"echo SHELL_READY_FENCE\n");
- let deadline = Instant::now() + Duration::from_secs(30);
- loop {
- backend.poll_events();
- let mut n = Vec::new();
- backend.drain_notifications(&mut n);
- if let Some(snap) = backend.refresh_pane_snapshot(pane_id) {
- // Wait for the output line (not just the command echo).
- let count = snap
- .cells
- .iter()
- .filter(|row| {
- let line: String = row.iter().map(|c| c.ch).collect();
- line.contains("SHELL_READY_FENCE")
- })
- .count();
- if count >= 2 {
- return;
- }
- }
- assert!(
- Instant::now() < deadline,
- "shell did not start within 30 seconds"
-);
- thread::sleep(Duration::from_millis(50));
- }
+    backend.send_input(pane_id, b"echo SHELL_READY_FENCE\n");
+    let deadline = Instant::now() + Duration::from_secs(30);
+    loop {
+        backend.poll_events();
+        let mut n = Vec::new();
+        backend.drain_notifications(&mut n);
+        if let Some(snap) = backend.refresh_pane_snapshot(pane_id) {
+            // Wait for the output line (not just the command echo).
+            let count = snap
+                .cells
+                .iter()
+                .filter(|row| {
+                    let line: String = row.iter().map(|c| c.ch).collect();
+                    line.contains("SHELL_READY_FENCE")
+                })
+                .count();
+            if count >= 2 {
+                return;
+            }
+        }
+        assert!(
+            Instant::now() < deadline,
+            "shell did not start within 30 seconds"
+        );
+        thread::sleep(Duration::from_millis(50));
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1082,7 +1082,7 @@ macro_rules! muxbackend_contract_tests {
 // ---------------------------------------------------------------------------
 
 mod embedded {
- muxbackend_contract_tests!(embedded_context);
+    muxbackend_contract_tests!(embedded_context);
 }
 
 // Daemon IPC does not work reliably on macOS CI runners — shells spawned
@@ -1090,5 +1090,5 @@ mod embedded {
 // contract, so skipping daemon tests on macOS is safe.
 #[cfg(target_os = "linux")]
 mod daemon {
- muxbackend_contract_tests!(daemon_context);
+    muxbackend_contract_tests!(daemon_context);
 }

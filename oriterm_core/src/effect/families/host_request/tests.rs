@@ -157,7 +157,7 @@ fn response_token_slot_id_stable_across_clones() {
 
 /// `slot_id` returns distinct identities for independently-allocated tokens.
 ///
-/// Regression: — the pending-replies HashMap must not collide
+/// Regression: the pending-replies HashMap must not collide
 /// across distinct tokens (otherwise an OSC 52 reply could route to an
 /// OSC 10 token and vice versa).
 #[test]

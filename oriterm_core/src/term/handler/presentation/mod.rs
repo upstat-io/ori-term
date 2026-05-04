@@ -39,7 +39,7 @@ impl<S: EffectSink> Term<S> {
             1 => {
                 // Cursor information report — stub. Serialize just the
                 // cursor line/col + page (no charset designations,
-                // SGR, or protection state yet). DCS 1 $ u ... ST.
+                // SGR, or protection state yet). DCS 1 $ u... ST.
                 let line = self.grid().cursor().line() + 1;
                 let col = self.grid().cursor().col().0 + 1;
                 format!("\x1bP1$u{line};{col};1;@;@;@;0;@;BBBB\x1b\\").into_bytes()

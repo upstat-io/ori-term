@@ -362,8 +362,8 @@ fn nested_balanced_parentheses() {
 fn url_ending_at_last_column() {
     // URL ends exactly at the last column (col 29 on a 30-col grid).
     let mut grid = Grid::with_scrollback(1, 30, 0);
-    //              0         1         2
-    //              0123456789012345678901234567890
+    // 0 1 2
+    // 0123456789012345678901234567890
     let text = "go https://example.com/abcdef";
     assert_eq!(text.len(), 29);
     for (col, ch) in text.chars().enumerate() {

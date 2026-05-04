@@ -23,14 +23,14 @@ const SIZES: [(usize, usize); 2] = [
 /// Target throughput: >100 MB/s ASCII, >50 MB/s mixed.
 ///
 /// Baseline (2026-03-12, WSL2, Ryzen, pre-fast-path):
-///   ASCII-only:    ~71 MiB/s (120x50), ~66 MiB/s (240x80)
-///   Mixed:         ~77 MiB/s (120x50), ~66 MiB/s (240x80)
-///   Heavy escape:  ~145 MiB/s (120x50), ~142 MiB/s (240x80)
+/// ASCII-only: ~71 MiB/s (120x50), ~66 MiB/s (240x80)
+/// Mixed: ~77 MiB/s (120x50), ~66 MiB/s (240x80)
+/// Heavy escape: ~145 MiB/s (120x50), ~142 MiB/s (240x80)
 ///
 /// After fast ASCII path (23.2):
-///   ASCII-only:    ~86 MiB/s (120x50), ~83 MiB/s (240x80)
-///   Mixed:         ~112 MiB/s (120x50), ~115 MiB/s (240x80)
-///   Heavy escape:  ~159 MiB/s (120x50), ~167 MiB/s (240x80)
+/// ASCII-only: ~86 MiB/s (120x50), ~83 MiB/s (240x80)
+/// Mixed: ~112 MiB/s (120x50), ~115 MiB/s (240x80)
+/// Heavy escape: ~159 MiB/s (120x50), ~167 MiB/s (240x80)
 const BUFFER_SIZE: usize = 1024 * 1024; // 1 MB
 
 // ---------------------------------------------------------------------------

@@ -40,7 +40,7 @@ fn mode_2026_decset_toggles_flag() {
 
     let mut harness = SpecHarness::new();
 
- // Regression guard: flag must start off.
+    // Regression guard: flag must start off.
     assert!(
         !harness.term().mode().contains(TermMode::SYNC_UPDATE),
         "default TermMode must NOT include SYNC_UPDATE"
@@ -56,7 +56,7 @@ fn mode_2026_decset_toggles_flag() {
         );
     }
 
- // Property: flag must be set after DECSET.
+    // Property: flag must be set after DECSET.
     assert!(
         harness.term().mode().contains(TermMode::SYNC_UPDATE),
         "after DECSET ?2026, SYNC_UPDATE must be set"

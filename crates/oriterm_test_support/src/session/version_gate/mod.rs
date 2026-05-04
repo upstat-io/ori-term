@@ -157,7 +157,7 @@ pub fn check_tack_version_with_emit(
 /// 1. Update [`TACK_PINNED_MAJOR`] / [`TACK_PINNED_MINOR`] in
 ///    `crates/oriterm_test_support/src/session/version_gate/mod.rs`.
 /// 2. Run `INSTA_UPDATE=1 cargo test -p oriterm_core --test tack
-///    -- test_menu::begin_testing_inventory` to capture the new
+/// -- test_menu::begin_testing_inventory` to capture the new
 ///    menu graph.
 /// 3. Update `BEGIN_TESTING_INVENTORY` in
 ///    `crates/oriterm_test_support/src/tack_framework/scenarios/begin_testing_inventory/mod.rs`

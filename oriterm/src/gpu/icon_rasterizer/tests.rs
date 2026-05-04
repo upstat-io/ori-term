@@ -261,14 +261,14 @@ fn chrome_icons_unchanged_at_10px() {
 //
 // Tolerance methodology:
 // - Mean Absolute Difference (MAD) across all pixels: threshold 2.0 (out of 255).
-//   This is the PRIMARY shape-drift detector. A MAD above 2.0 means the runtime
-//   definition has meaningfully diverged from the source SVG.
+// This is the PRIMARY shape-drift detector. A MAD above 2.0 means the runtime
+// definition has meaningfully diverged from the source SVG.
 // - Max per-pixel difference: threshold 80 alpha units.
-//   Generous because codegen truncation (6-decimal formatting in
-//   commands_to_rust_source) shifts anti-aliased stroke boundaries by up to
-//   ~0.0001 normalized units. At HiDPI scales, this can flip a single border
-//   pixel's alpha by ±60-80. Real geometry errors affect many pixels and are
-//   caught by the MAD threshold.
+// Generous because codegen truncation (6-decimal formatting in
+// commands_to_rust_source) shifts anti-aliased stroke boundaries by up to
+// ~0.0001 normalized units. At HiDPI scales, this can flip a single border
+// pixel's alpha by ±60-80. Real geometry errors affect many pixels and are
+// caught by the MAD threshold.
 
 /// The SVG viewBox size used by all sidebar icon fixtures.
 const SVG_VIEWBOX: f32 = 24.0;

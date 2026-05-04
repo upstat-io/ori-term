@@ -22,7 +22,7 @@ use super::{
 
 #[test]
 fn parses_pinned_tack_1_08() {
- // Property: this is the EXACT version on the dev host. If
+    // Property: this is the EXACT version on the dev host. If
     // this test fails, the parser is broken at the only working
     // baseline.
     assert_eq!(
@@ -101,7 +101,7 @@ fn rejects_non_numeric_version() {
 
 #[test]
 fn rejects_partial_version_missing_minor() {
-    // "tack version 1\n" — split produces ["1", "", ...] — the second
+    // "tack version 1\n" — split produces ["1", "",...] — the second
     // fragment is empty and `parse::<u32>("")` returns Err.
     assert_eq!(parse_tack_version("tack version 1\n", ""), None);
 }
@@ -115,7 +115,7 @@ fn tack_runner_available_combine_all_true() {
 
 #[test]
 fn tack_runner_available_combine_version_false_short_circuits() {
- // Verifies for the AND-combine. If a future regression
+    // Verifies for the AND-combine. If a future regression
     // flips the AND to an OR (e.g. `tack && tic || version`), this
     // assertion fails because `(true && true) || false` would be
     // true. With AND, version=false makes the whole expression
@@ -142,7 +142,7 @@ fn tack_runner_available_combine_all_false() {
 
 #[test]
 fn check_tack_version_emits_loud_skip_on_mismatch() {
- // Verifies for the loud-skip diagnostic. Without this test,
+    // Verifies for the loud-skip diagnostic. Without this test,
     // a refactor that removed the `eprintln!` invocation in
     // `tack_version_supported` would silently break the loud-skip
     // discipline — the function would still return false but
@@ -173,7 +173,7 @@ fn check_tack_version_emits_loud_skip_on_mismatch() {
 
 #[test]
 fn check_tack_version_silent_on_pinned_match() {
- // Verifies: when the version DOES match the pinned values,
+    // Verifies: when the version DOES match the pinned values,
     // NO eprintln fires. Otherwise the loud-skip becomes noise on
     // every test run and operators learn to ignore it. The pure
     // helper makes "did the closure fire" observable without a

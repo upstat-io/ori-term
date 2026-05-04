@@ -14,7 +14,7 @@
 //! against tack v1.08 / xterm-256color on 2026-04-08) is:
 //!
 //! ```text
-//! \x1B[H\x1B[2JThis terminal can display 256 colors and 32767 color pairs.  (colors) (pairs)
+//! \x1B[H\x1B[2JThis terminal can display 256 colors and 32767 color pairs. (colors) (pairs)
 //! (colors) (pairs) Done
 //! ```
 //!

@@ -81,7 +81,7 @@ fn adopt_pane_returns_pane_with_expected_id() {
 
 #[test]
 fn adopt_pane_records_client_pid_via_pty_lifecycle() {
- // Property: process_id() must reach the AdoptedPtyHandle through
+    // Property: process_id() must reach the AdoptedPtyHandle through
     // the boxed PtyLifecycle dispatch so the Pane can report the client
     // PID even though no Child was spawned. If the box wraps the wrong
     // type or process_id() returns the wrong field, this test fails.
@@ -93,7 +93,7 @@ fn adopt_pane_records_client_pid_via_pty_lifecycle() {
 
 #[test]
 fn adopt_pane_io_thread_produces_initial_snapshot() {
- // Property: the IO thread must run and call produce_snapshot()
+    // Property: the IO thread must run and call produce_snapshot()
     // at startup. If adopt_pane fails to spawn the IO thread, has_io_snapshot()
     // returns false and this test fails.
     let config = test_config(103);
@@ -118,7 +118,7 @@ fn adopt_pane_io_thread_produces_initial_snapshot() {
 
 #[test]
 fn adopt_pane_signal_moves_into_pane_drops_with_pane() {
- // TPR-4 property: adopt_pane must call AdoptedPtyHandle::take_signal
+    // TPR-4 property: adopt_pane must call AdoptedPtyHandle::take_signal
     // (which moves the signal out into the IO thread's adopted_signal slot)
     // so that resize can be routed through the conhost signal pipe. After
     // adopt_pane returns, the boxed AdoptedPtyHandle in Pane.pty no longer
@@ -141,7 +141,7 @@ fn adopt_pane_signal_moves_into_pane_drops_with_pane() {
 
 #[test]
 fn adopt_pane_drop_joins_io_thread_within_one_second() {
- // Property: dropping the Pane must shut down the IO thread,
+    // Property: dropping the Pane must shut down the IO thread,
     // writer thread, and reader thread cleanly within 1 second. If any
     // thread leaks the join handle or fails to receive the shutdown
     // signal, the elapsed time exceeds 1 second.

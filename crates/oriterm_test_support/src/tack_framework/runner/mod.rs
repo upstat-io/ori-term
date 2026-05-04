@@ -379,7 +379,7 @@ impl LiveSession {
     /// PNG golden name: identical to [`Self::snapshot_name`]. Used
     /// by Section 07's `run_tack_scenario_golden` as the SSOT golden
     /// filename. Section 07 MUST call `live.golden_name()` instead
-    /// of rebuilding `format!("{}_{}x{}", ...)` at the call site.
+    /// of rebuilding `format!("{}_{}x{}",...)` at the call site.
     #[must_use]
     pub fn golden_name(&self) -> String {
         self.snapshot_name()

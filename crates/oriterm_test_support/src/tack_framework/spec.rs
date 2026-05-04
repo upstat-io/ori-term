@@ -47,7 +47,7 @@ pub struct MenuStep {
     /// anchor guard, enforced by `TackNavigator::navigate`).
     pub wait_for: &'static str,
     /// Alternate anchors. Empty by default. The navigator builds a
-    /// combined `[wait_for, ...or_wait_for]` slice and calls
+    /// combined `[wait_for,...or_wait_for]` slice and calls
     /// `PtySession::wait_for_any` so all anchors race against the
     /// same step deadline.
     pub or_wait_for: &'static [&'static str],
@@ -100,14 +100,14 @@ pub struct ScenarioSpec {
     ///
     /// ```ignore
     /// &[
-    ///   MenuStep::new(b"n", "tack [n] >"),
-    ///   MenuStep::new(b"m", "tack [m] >"),
+    /// MenuStep::new(b"n", "tack [n] >"),
+    /// MenuStep::new(b"m", "tack [m] >"),
     /// ]
     /// ```
     pub menu_path: &'static [MenuStep],
 
     /// Final readiness anchor. After the last `MenuStep` lands, the
-    /// runner calls `session.wait_for(ready_anchor, ...)` once more
+    /// runner calls `session.wait_for(ready_anchor,...)` once more
     /// to make sure the screen has fully painted before `grid_text`
     /// is captured.
     ///

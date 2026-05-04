@@ -911,7 +911,7 @@ fn searchable_navigate_up_at_top_wraps_to_last_filtered_entry() {
 
 #[test]
 fn searchable_confirm_emits_canonical_index_not_filter_relative() {
- // Property: filter to a single entry whose canonical index is non-zero,
+    // Property: filter to a single entry whose canonical index is non-zero,
     // confirm, and assert the emitted Selected index is the canonical index.
     let entries: Vec<MenuEntry> = ["Alpha", "Beta", "Charlie", "Delta"]
         .iter()
@@ -988,7 +988,7 @@ fn searchable_escape_via_on_input_passes_through() {
 
 // (resolved): the four `searchable_*_via_on_input_*` tests that
 // previously lived here exercised dead code — once overlay key routing went
-// through the keymap path (per ), `MenuWidget::on_input` no longer
+// through the keymap path, `MenuWidget::on_input` no longer
 // handles `ArrowDown`/`ArrowUp`/`Enter` in searchable mode (those reach the
 // widget via `handle_keymap_action`). Equivalent coverage continues at the
 // canonical post-fix path via the `*_handle_keymap_action_*` tests above
@@ -997,7 +997,7 @@ fn searchable_escape_via_on_input_passes_through() {
 
 #[test]
 fn non_searchable_does_not_consume_arrow_keys_via_on_input() {
- // Regression guard: outside searchable mode, arrow keys must NOT be swallowed
+    // Regression guard: outside searchable mode, arrow keys must NOT be swallowed
     // by on_input — the keymap dispatch path owns NavigateDown/NavigateUp.
     let entries = vec![MenuEntry::Item {
         label: "Alpha".into(),
@@ -1013,7 +1013,7 @@ fn non_searchable_does_not_consume_arrow_keys_via_on_input() {
 
 #[test]
 fn searchable_click_on_filtered_row_emits_canonical_index() {
- // test ordering positive pin: post-filter mouse click must emit the
+    // test ordering positive pin: post-filter mouse click must emit the
     // canonical entry index, not the filtered display position. Migrated
     // from the deleted SearchableDropdownPopupWidget test of the same name
     // and adapted to MenuWidget's ScrubController-mediated click path
@@ -1048,7 +1048,7 @@ fn searchable_click_on_filtered_row_emits_canonical_index() {
 
 #[test]
 fn non_searchable_does_not_consume_character_keys() {
- // Regression guard: turning searchable OFF means typing letters falls through
+    // Regression guard: turning searchable OFF means typing letters falls through
     // to whatever else might handle them (e.g. parent overlay manager).
     let entries = vec![MenuEntry::Item {
         label: "Alpha".into(),
@@ -1225,7 +1225,7 @@ fn searchable_layout_height_includes_query_row() {
 
 #[test]
 fn non_searchable_query_row_height_is_zero() {
- // Regression guard paired with the previous test.
+    // Regression guard paired with the previous test.
     let menu = MenuWidget::new(vec![MenuEntry::Item {
         label: "Alpha".into(),
     }]);
@@ -1264,7 +1264,7 @@ fn key_context_returns_menu_searchable_when_searchable() {
 
 #[test]
 fn with_searchable_false_returns_menu_context() {
- // Regression guard: `with_searchable(false)` (or default) must preserve the
+    // Regression guard: `with_searchable(false)` (or default) must preserve the
     // legacy `"Menu"` context. Guards against an asymmetric edit that would
     // make BOTH modes report `"MenuSearchable"`.
     let menu = MenuWidget::new(sample_entries()).with_searchable(false);

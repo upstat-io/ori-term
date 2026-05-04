@@ -20,7 +20,7 @@ fn deccra_copies_non_overlapping_rect() {
     assert_eq!(h.term().grid()[Line(2)][Column(2)].ch, 'A');
     assert_eq!(h.term().grid()[Line(2)][Column(3)].ch, 'B');
     assert_eq!(h.term().grid()[Line(2)][Column(4)].ch, 'C');
- // Regression guard: row 2 untouched.
+    // Regression guard: row 2 untouched.
     assert_eq!(h.term().grid()[Line(1)][Column(0)].ch, 'F');
 }
 

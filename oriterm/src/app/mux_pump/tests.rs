@@ -114,9 +114,9 @@ fn clear_pending_notifications_purges_all_staging_buffers() {
     purge_pending_desktop_notifications(&mut buf);
 
     // pane_a clear at original index 3: drops preceding A1 and A2;
-    //   pane_b's B1 untouched (cross-pane filter).
+    // pane_b's B1 untouched (cross-pane filter).
     // pane_b clear at original index 6 (now shifted): drops preceding
-    //   B1 and B2; pane_a's A3 untouched.
+    // B1 and B2; pane_a's A3 untouched.
     // Both clear markers retained; A3 and B3 (post-clear) survive.
     let titles: Vec<String> = buf
         .iter()
@@ -144,11 +144,11 @@ fn clear_pending_notifications_purges_all_staging_buffers() {
 // against the pane's palette snapshot. Layer 1 of the TDD
 // matrix per `bug-tracker/plans//section-03-tdd-matrix.md`.
 // VTE dispatch index space:
-//   - OSC 4 ; Pn ; ?      → index = u8 (0..=255), per
-//                           crates/vte/src/ansi/colors.rs:197-209
-//   - OSC 10 ; ?          → index = NamedColor::Foreground = 256
-//   - OSC 11 ; ?           → index = NamedColor::Background = 257
-//   - OSC 12 ; ?           → index = NamedColor::Cursor    = 258
+// - OSC 4 ; Pn ; ? → index = u8 (0..=255), per
+// crates/vte/src/ansi/colors.rs:197-209
+// - OSC 10 ; ? → index = NamedColor::Foreground = 256
+// - OSC 11 ; ? → index = NamedColor::Background = 257
+// - OSC 12 ; ? → index = NamedColor::Cursor = 258
 // Indices 259..=269 (DimBlack..DimForeground) are NOT reachable via
 // current OSC dispatch but the helper handles them defensively.
 
@@ -158,8 +158,8 @@ fn palette_with(index: usize, color: [u8; 3]) -> Vec<[u8; 3]> {
     p
 }
 
-/// Regression: — property for OSC 10 returning configured
-/// foreground color (NamedColor::Foreground = 256). Before 
+/// Regression: property for OSC 10 returning configured
+/// foreground color (NamedColor::Foreground = 256). Before
 /// the consumer arm always returned black.
 #[test]
 fn resolve_host_color_query_returns_named_foreground_when_index_is_256() {
@@ -175,7 +175,7 @@ fn resolve_host_color_query_returns_named_foreground_when_index_is_256() {
     );
 }
 
-/// Regression: — OSC 11 (background) query.
+/// Regression: OSC 11 (background) query.
 #[test]
 fn resolve_host_color_query_returns_named_background_when_index_is_257() {
     let palette = palette_with(257, [0x10, 0x20, 0x30]);
@@ -190,7 +190,7 @@ fn resolve_host_color_query_returns_named_background_when_index_is_257() {
     );
 }
 
-/// Regression: — OSC 12 (cursor) query.
+/// Regression: OSC 12 (cursor) query.
 #[test]
 fn resolve_host_color_query_returns_named_cursor_when_index_is_258() {
     let palette = palette_with(258, [0xff, 0xa5, 0x00]);
@@ -205,7 +205,7 @@ fn resolve_host_color_query_returns_named_cursor_when_index_is_258() {
     );
 }
 
-/// Regression: — OSC 4 indexed query at u8 minimum (boundary).
+/// Regression: OSC 4 indexed query at u8 minimum (boundary).
 #[test]
 fn resolve_host_color_query_returns_indexed_color_for_osc_4_zero_index() {
     let palette = palette_with(0, [0x00, 0x00, 0x01]); // not literal black, to detect the lookup
@@ -220,7 +220,7 @@ fn resolve_host_color_query_returns_indexed_color_for_osc_4_zero_index() {
     );
 }
 
-/// Regression: — OSC 4 indexed query at low index (xterm white).
+/// Regression: OSC 4 indexed query at low index (xterm white).
 #[test]
 fn resolve_host_color_query_returns_indexed_color_for_osc_4_low_index() {
     let palette = palette_with(7, [0xe5, 0xe5, 0xe5]);
@@ -235,7 +235,7 @@ fn resolve_host_color_query_returns_indexed_color_for_osc_4_low_index() {
     );
 }
 
-/// Regression: — OSC 4 indexed query in the 6×6×6 cube.
+/// Regression: OSC 4 indexed query in the 6×6×6 cube.
 #[test]
 fn resolve_host_color_query_returns_indexed_color_for_osc_4_mid_index() {
     let palette = palette_with(200, [0x12, 0x34, 0x56]);
@@ -250,7 +250,7 @@ fn resolve_host_color_query_returns_indexed_color_for_osc_4_mid_index() {
     );
 }
 
-/// Regression: — OSC 4 indexed query at u8 maximum (boundary
+/// Regression: OSC 4 indexed query at u8 maximum (boundary
 /// at parse_number's u8 cap).
 #[test]
 fn resolve_host_color_query_returns_indexed_color_for_osc_4_max_index() {
@@ -266,7 +266,7 @@ fn resolve_host_color_query_returns_indexed_color_for_osc_4_max_index() {
     );
 }
 
-/// Regression: — defensive pin at the last valid palette
+/// Regression: defensive pin at the last valid palette
 /// slot (NamedColor::DimForeground = 269). Not reachable via current
 /// OSC dispatch but the helper must handle it correctly if VTE
 /// dispatch ever changes.
@@ -284,7 +284,7 @@ fn resolve_host_color_query_returns_palette_value_for_index_269() {
     );
 }
 
-/// Regression: — out-of-range index (one past palette
+/// Regression: out-of-range index (one past palette
 /// length) falls back to black per Palette::color() contract at
 /// `oriterm_core/src/color/palette/mod.rs:286-296`.
 #[test]
@@ -294,7 +294,7 @@ fn resolve_host_color_query_returns_black_when_index_is_out_of_range() {
     assert_eq!(result, Rgb { r: 0, g: 0, b: 0 });
 }
 
-/// Regression: — None palette (snapshot unavailable, e.g.
+/// Regression: None palette (snapshot unavailable, e.g.
 /// pane closed mid-query) falls back to black. Helper owns the None
 /// case so callers can use `map_or` without re-stating the fallback.
 #[test]
@@ -303,7 +303,7 @@ fn resolve_host_color_query_returns_black_when_palette_is_none() {
     assert_eq!(result, Rgb { r: 0, g: 0, b: 0 });
 }
 
-/// Regression: — empty palette slice (defensive — never
+/// Regression: empty palette slice (defensive — never
 /// expected in practice).
 #[test]
 fn resolve_host_color_query_returns_black_when_palette_is_empty() {
@@ -312,7 +312,7 @@ fn resolve_host_color_query_returns_black_when_palette_is_empty() {
     assert_eq!(result, Rgb { r: 0, g: 0, b: 0 });
 }
 
-/// Regression: — regression guard. Configures palette[256] to a
+/// Regression: regression guard. Configures palette[256] to a
 /// non-black color and asserts the helper does NOT return the
 /// pre-fix placeholder black. Catches regressions that re-introduce
 /// hardcoded `Rgb { r:0, g:0, b:0 }` at the consumer arm.

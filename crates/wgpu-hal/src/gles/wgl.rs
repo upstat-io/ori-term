@@ -56,14 +56,14 @@ impl AdapterContext {
         }
     }
 
-    /// Obtain a lock to the WGL context and get handle to the [`glow::Context`] that can be used to
-    /// do rendering.
+ /// Obtain a lock to the WGL context and get handle to the [`glow::Context`] that can be used to
+ /// do rendering.
     #[track_caller]
     pub fn lock(&self) -> AdapterContextLock<'_> {
         let inner = self
             .inner
-            // Don't lock forever. If it takes longer than 1 second to get the lock we've got a
-            // deadlock and should panic to show where we got stuck
+ // Don't lock forever. If it takes longer than 1 second to get the lock we've got a
+ // deadlock and should panic to show where we got stuck
             .try_lock_for(Duration::from_secs(CONTEXT_LOCK_TIMEOUT_SECS))
             .expect("Could not lock adapter context. This is most-likely a deadlock.");
 
@@ -74,11 +74,11 @@ impl AdapterContext {
         AdapterContextLock { inner }
     }
 
-    /// Obtain a lock to the WGL context and get handle to the [`glow::Context`] that can be used to
-    /// do rendering.
-    ///
-    /// Unlike [`lock`](Self::lock), this accepts a device to pass to `make_current` and exposes the error
-    /// when `make_current` fails.
+ /// Obtain a lock to the WGL context and get handle to the [`glow::Context`] that can be used to
+ /// do rendering.
+ ///
+ /// Unlike [`lock`](Self::lock), this accepts a device to pass to `make_current` and exposes the error
+ /// when `make_current` fails.
     #[track_caller]
     fn lock_with_dc(&self, device: Gdi::HDC) -> windows::core::Result<AdapterContextLock<'_>> {
         let inner = self
@@ -158,17 +158,17 @@ impl Drop for Inner {
             }
         }
 
-        // Context must be current when dropped. See safety docs on
-        // `glow::HasContext`.
-        //
-        // NOTE: This is only set to `None` by `Adapter::new_external` which
-        // requires the context to be current when anything that may be holding
-        // the `Arc<AdapterShared>` is dropped.
+ // Context must be current when dropped. See safety docs on
+ // `glow::HasContext`.
+ //
+ // NOTE: This is only set to `None` by `Adapter::new_external` which
+ // requires the context to be current when anything that may be holding
+ // the `Arc<AdapterShared>` is dropped.
         let _guard = self.context.as_ref().map(|wgl| {
             wgl.make_current(self.device.dc).unwrap();
             CurrentGuard(wgl)
         });
-        // SAFETY: Field not used after this.
+ // SAFETY: Field not used after this.
         unsafe { ManuallyDrop::drop(&mut self.gl) };
     }
 }
@@ -274,15 +274,15 @@ fn create_global_window_class() -> Result<CString, crate::InstanceError> {
         crate::InstanceError::with_source(String::from("unable to get executable instance"), e)
     })?;
 
-    // Use the address of `UNIQUE` as part of the window class name to ensure different
-    // `wgpu` versions use different names.
+ // Use the address of `UNIQUE` as part of the window class name to ensure different
+ // `wgpu` versions use different names.
     static UNIQUE: Mutex<u8> = Mutex::new(0);
     let class_addr: *const _ = &UNIQUE;
     let name = format!("wgpu Device Class {:x}\0", class_addr as usize);
     let name = CString::from_vec_with_nul(name.into_bytes()).unwrap();
 
-    // The window class may already be registered if we are a dynamic library that got
-    // unloaded & loaded back into the same process. If so, just skip creation.
+ // The window class may already be registered if we are a dynamic library that got
+ // unloaded & loaded back into the same process. If so, just skip creation.
     let already_exists = unsafe {
         let mut wc = mem::zeroed::<WindowsAndMessaging::WNDCLASSEXA>();
         WindowsAndMessaging::GetClassInfoExA(
@@ -296,7 +296,7 @@ fn create_global_window_class() -> Result<CString, crate::InstanceError> {
         return Ok(name);
     }
 
-    // Use a wrapper function for compatibility with `windows-rs`.
+ // Use a wrapper function for compatibility with `windows-rs`.
     unsafe extern "system" fn wnd_proc(
         window: Foundation::HWND,
         msg: u32,
@@ -330,7 +330,7 @@ fn create_global_window_class() -> Result<CString, crate::InstanceError> {
         ));
     }
 
-    // We intentionally leak the window class as we only need one per process.
+ // We intentionally leak the window class as we only need one per process.
 
     Ok(name)
 }
@@ -344,13 +344,13 @@ fn get_global_window_class() -> Result<CString, crate::InstanceError> {
 struct InstanceDevice {
     dc: Gdi::HDC,
 
-    /// This is used to keep the thread owning `dc` alive until this struct is dropped.
+ /// This is used to keep the thread owning `dc` alive until this struct is dropped.
     _tx: SyncSender<()>,
 }
 
 fn create_instance_device() -> Result<InstanceDevice, crate::InstanceError> {
     #[derive(Clone, Copy)]
-    // TODO: We can get these SendSync definitions in the upstream metadata if this is the case
+ // TODO: We can get these SendSync definitions in the upstream metadata if this is the case
     struct SendDc(Gdi::HDC);
     unsafe impl Sync for SendDc {}
     unsafe impl Send for SendDc {}
@@ -371,7 +371,7 @@ fn create_instance_device() -> Result<InstanceDevice, crate::InstanceError> {
     let (drop_tx, drop_rx) = sync_channel(0);
     let (setup_tx, setup_rx) = sync_channel(0);
 
-    // We spawn a thread which owns the hidden window for this instance.
+ // We spawn a thread which owns the hidden window for this instance.
     thread::Builder::new()
         .stack_size(256 * 1024)
         .name("wgpu-hal WGL Instance Thread".to_owned())
@@ -384,7 +384,7 @@ fn create_instance_device() -> Result<InstanceDevice, crate::InstanceError> {
                     )
                 })?;
 
-                // Create a hidden window since we don't pass `WS_VISIBLE`.
+ // Create a hidden window since we don't pass `WS_VISIBLE`.
                 let window = unsafe {
                     WindowsAndMessaging::CreateWindowExA(
                         WindowsAndMessaging::WINDOW_EX_STYLE::default(),
@@ -428,7 +428,7 @@ fn create_instance_device() -> Result<InstanceDevice, crate::InstanceError> {
             match setup {
                 Ok((_window, dc)) => {
                     setup_tx.send(Ok(SendDc(dc.device))).unwrap();
-                    // Wait for the shutdown event to free the window and device context handle.
+ // Wait for the shutdown event to free the window and device context handle.
                     drop_rx.recv().ok();
                 }
                 Err(err) => {
@@ -529,8 +529,8 @@ impl crate::Instance for Instance {
                 .supported_extensions()
                 .contains("GL_ARB_framebuffer_sRGB");
 
-        // In contrast to OpenGL ES, OpenGL requires explicitly enabling sRGB conversions,
-        // as otherwise the user has to do the sRGB conversion.
+ // In contrast to OpenGL ES, OpenGL requires explicitly enabling sRGB conversions,
+ // as otherwise the user has to do the sRGB conversion.
         if srgb_capable {
             unsafe { gl.enable(glow::FRAMEBUFFER_SRGB) };
         }
@@ -541,9 +541,9 @@ impl crate::Instance for Instance {
             unsafe { gl.debug_message_callback(super::gl_debug_message_callback) };
         }
 
-        // Wrap in ManuallyDrop to make it easier to "current" the GL context before dropping this
-        // GLOW context, which could also happen if a panic occurs after we uncurrent the context
-        // below but before Inner is constructed.
+ // Wrap in ManuallyDrop to make it easier to "current" the GL context before dropping this
+ // GLOW context, which could also happen if a panic occurs after we uncurrent the context
+ // below but before Inner is constructed.
         let gl = ManuallyDrop::new(gl);
         context.unmake_current().map_err(|e| {
             crate::InstanceError::with_source(
@@ -577,7 +577,7 @@ impl crate::Instance for Instance {
             )));
         };
         Ok(Surface {
-            // This cast exists because of https://github.com/rust-windowing/raw-window-handle/issues/171
+ // This cast exists because of https://github.com/rust-windowing/raw-window-handle/issues/171
             window: Foundation::HWND(window.hwnd.get() as *mut _),
             presentable: true,
             swapchain: RwLock::new(None),
@@ -603,15 +603,15 @@ impl crate::Instance for Instance {
 }
 
 impl super::Adapter {
-    /// Creates a new external adapter using the specified loader function.
-    ///
-    /// # Safety
-    ///
-    /// - The underlying OpenGL ES context must be current.
-    /// - The underlying OpenGL ES context must be current when interfacing with any objects returned by
-    ///   wgpu-hal from this adapter.
-    /// - The underlying OpenGL ES context must be current when dropping this adapter and when
-    ///   dropping any objects returned from this adapter.
+ /// Creates a new external adapter using the specified loader function.
+ ///
+ /// # Safety
+ ///
+ /// - The underlying OpenGL ES context must be current.
+ /// - The underlying OpenGL ES context must be current when interfacing with any objects returned by
+ /// wgpu-hal from this adapter.
+ /// - The underlying OpenGL ES context must be current when dropping this adapter and when
+ /// dropping any objects returned from this adapter.
     pub unsafe fn new_external(
         fun: impl FnMut(&str) -> *const c_void,
         options: wgt::GlBackendOptions,
@@ -637,7 +637,7 @@ impl super::Adapter {
 }
 
 impl super::Device {
-    /// Returns the underlying WGL context.
+ /// Returns the underlying WGL context.
     pub fn context(&self) -> &AdapterContext {
         &self.shared.context
     }
@@ -660,7 +660,7 @@ pub struct Swapchain {
     framebuffer: glow::Framebuffer,
     renderbuffer: glow::Renderbuffer,
 
-    /// Extent because the window lies
+ /// Extent because the window lies
     extent: wgt::Extent3d,
 
     format: wgt::TextureFormat,
@@ -711,14 +711,14 @@ impl Surface {
         unsafe { gl.bind_framebuffer(glow::READ_FRAMEBUFFER, Some(sc.framebuffer)) };
 
         if self.srgb_capable {
-            // Disable sRGB conversions for `glBlitFramebuffer` as behavior does diverge between
-            // drivers and formats otherwise and we want to ensure no sRGB conversions happen.
+ // Disable sRGB conversions for `glBlitFramebuffer` as behavior does diverge between
+ // drivers and formats otherwise and we want to ensure no sRGB conversions happen.
             unsafe { gl.disable(glow::FRAMEBUFFER_SRGB) };
         }
 
-        // Note the Y-flipping here. GL's presentation is not flipped,
-        // but main rendering is. Therefore, we Y-flip the output positions
-        // in the shader, and also this blit.
+ // Note the Y-flipping here. GL's presentation is not flipped,
+ // but main rendering is. Therefore, we Y-flip the output positions
+ // in the shader, and also this blit.
         unsafe {
             gl.blit_framebuffer(
                 0,
@@ -762,7 +762,7 @@ impl crate::Surface for Surface {
         device: &super::Device,
         config: &crate::SurfaceConfiguration,
     ) -> Result<(), crate::SurfaceError> {
-        // Remove the old configuration.
+ // Remove the old configuration.
         unsafe { self.unconfigure(device) };
 
         let dc = unsafe { Gdi::GetDC(Some(self.window)) };
@@ -823,7 +823,7 @@ impl crate::Surface for Surface {
         unsafe { gl.bind_renderbuffer(glow::RENDERBUFFER, None) };
         unsafe { gl.bind_framebuffer(glow::READ_FRAMEBUFFER, None) };
 
-        // Setup presentation mode
+ // Setup presentation mode
         let extra = Wgl::load_with(|name| load_gl_func(name, None));
         let extensions = get_extensions(&extra, dc.device);
         if !(extensions.contains("WGL_EXT_swap_control") && extra.SwapIntervalEXT.is_loaded()) {

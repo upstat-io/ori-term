@@ -123,7 +123,7 @@ fn ctrl_shift_left() {
     assert_eq!(r, b"\x1b[1;6D");
 }
 
-/// Regression: — modifier-path coverage gap for ArrowDown.
+/// Regression: modifier-path coverage gap for ArrowDown.
 /// Pinned by Plan-review round 0 F1 (modifier_matrix.rs covered Up/Right/Left
 /// pre-fix but not Down). The terminator byte flows through `CursorKey::Down.terminator()`.
 #[test]
@@ -136,7 +136,7 @@ fn modified_arrow_down_ctrl_emits_csi_1_5_b() {
     assert_eq!(r, b"\x1b[1;5B");
 }
 
-/// Regression: — modifier-path coverage gap for Home.
+/// Regression: modifier-path coverage gap for Home.
 /// Terminator byte flows through `CursorKey::Home.terminator()`.
 #[test]
 fn modified_home_shift_emits_csi_1_2_h() {
@@ -144,7 +144,7 @@ fn modified_home_shift_emits_csi_1_2_h() {
     assert_eq!(r, b"\x1b[1;2H");
 }
 
-/// Regression: — modifier-path coverage gap for End.
+/// Regression: modifier-path coverage gap for End.
 /// Terminator byte flows through `CursorKey::End.terminator()`.
 #[test]
 fn modified_end_alt_emits_csi_1_3_f() {

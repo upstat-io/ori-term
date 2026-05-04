@@ -515,14 +515,14 @@ fn binding_takes_priority_over_pty_send() {
 /// to PTY encoding when no selection exists.
 ///
 /// Dispatch path with no selection:
-///   find_binding(Ctrl+C) → SmartCopy
-///   → execute_action(SmartCopy) returns false (no selection)
-///   → encode_key_to_pty(Ctrl+C) → sends \x03 (ETX/SIGINT)
+/// find_binding(Ctrl+C) → SmartCopy
+/// → execute_action(SmartCopy) returns false (no selection)
+/// → encode_key_to_pty(Ctrl+C) → sends \x03 (ETX/SIGINT)
 ///
 /// Dispatch path with selection:
-///   find_binding(Ctrl+C) → SmartCopy
-///   → execute_action(SmartCopy) copies + returns true (event consumed)
-///   → PTY never reached (no SIGINT)
+/// find_binding(Ctrl+C) → SmartCopy
+/// → execute_action(SmartCopy) copies + returns true (event consumed)
+/// → PTY never reached (no SIGINT)
 #[test]
 fn ctrl_c_smart_copy_falls_through_to_pty_without_selection() {
     use winit::keyboard::Key;
@@ -575,7 +575,7 @@ fn ctrl_c_smart_copy_falls_through_to_pty_without_selection() {
 
 // --- Mark mode exit decision () ---
 
-/// Regression: — try_dispatch_mark_mode swallowed keypresses
+/// Regression: try_dispatch_mark_mode swallowed keypresses
 /// when mux/cursor/snapshot was None during mark mode. The pure decision
 /// predicate `mark_mode_should_exit` returns false ONLY when all three
 /// resources are present, so the caller proceeds into mark-mode dispatch.
@@ -593,7 +593,7 @@ fn mark_mode_exit_decision_with_all_resources_present_returns_false() {
     );
 }
 
-/// Regression: — pins the mux-None recovery path. The original
+/// Regression: pins the mux-None recovery path. The original
 /// bug returned `true` (silent swallow) at `mod.rs:177`; the fix routes
 /// through `mark_mode_should_exit → true → caller exits mark mode +
 /// returns false → keystroke flows to keybinding then PTY`.
@@ -611,7 +611,7 @@ fn mark_mode_exit_decision_with_mux_missing_returns_true() {
     );
 }
 
-/// Regression: — pins the cursor-None recovery path. The
+/// Regression: pins the cursor-None recovery path. The
 /// original bug returned `true` (silent swallow) at `mod.rs:183`; the fix
 /// routes the keystroke through normal dispatch instead.
 /// See: bug-tracker/plans//00-overview.md
@@ -628,7 +628,7 @@ fn mark_mode_exit_decision_with_cursor_missing_returns_true() {
     );
 }
 
-/// Regression: — pins the snapshot-None recovery path. The
+/// Regression: pins the snapshot-None recovery path. The
 /// original bug returned `true` (silent swallow) at `mod.rs:189`; the fix
 /// routes the keystroke through normal dispatch instead.
 /// See: bug-tracker/plans//00-overview.md
@@ -645,7 +645,7 @@ fn mark_mode_exit_decision_with_snapshot_missing_returns_true() {
     );
 }
 
-/// Regression: — matrix completeness pin. Enumerates all 8
+/// Regression: matrix completeness pin. Enumerates all 8
 /// truth-table cells over `(mux_present, cursor_present, snapshot_present)`
 /// and asserts that exactly one cell (`true, true, true`) returns false
 /// while the other 7 return true. The `count == 8` assertion proves no
@@ -688,7 +688,7 @@ fn mark_mode_exit_decision_truth_table_complete() {
 // --- Mark-mode dispatch chain () ---
 //
 // Pins the wiring between gate decision, pre-handler refresh, pure handler
-// dispatch, and post-handler state mutations. Replaces the 
+// dispatch, and post-handler state mutations. Replaces the
 // helper-test-only coverage of `mark_mode_should_exit`.
 //
 // See: bug-tracker/plans//00-overview.md.
@@ -1032,7 +1032,7 @@ struct DispatchCell {
     mark_mode_active: bool,
 }
 
-/// Wrapper around `dispatch_mark_mode(MarkModeDispatch { ... }, sink)` that
+/// Wrapper around `dispatch_mark_mode(MarkModeDispatch {... }, sink)` that
 /// hides struct construction noise from each test body.
 fn dispatch_with(sink: &mut RecordingSink, cell: DispatchCell) -> bool {
     dispatch_mark_mode(
@@ -1719,7 +1719,7 @@ fn dispatch_mark_mode_pressed_refresh_can_promote_snapshot_present() {
 /// caller's `if x { return; }` to swallow the keystroke.
 ///
 /// See: bug-tracker/plans//section-03-tdd-matrix.md (Pin 15).
-/// Anti-regression for: bug-tracker/plans/completed//.
+/// Anti-regression for: bug-tracker/plans/completed/.
 #[test]
 fn dispatch_mark_mode_missing_mux_does_not_silently_consume_keystroke() {
     let pane_id = make_pane_id();

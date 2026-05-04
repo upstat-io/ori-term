@@ -55,7 +55,7 @@ pub struct Grid {
     saved_cursor: Option<Cursor>,
     /// Tab stop at each column (true = stop).
     tab_stops: Vec<bool>,
-    /// DECSTBM scroll region: top (inclusive) .. bottom (exclusive).
+    /// DECSTBM scroll region: top (inclusive).. bottom (exclusive).
     scroll_region: Range<usize>,
     /// Scrollback history (rows that scrolled off the top).
     scrollback: ScrollbackBuffer,

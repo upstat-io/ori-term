@@ -1248,13 +1248,13 @@ fn dispatch_utf8_boundary_one_past_max_drops() {
 // at the encoding layer:
 //
 // - Same-cell motion deduplication: App::report_mouse_motion skips reporting
-//   when mouse.last_reported_cell() matches the current cell. The dedup
-//   happens before encode_mouse_event is ever called.
+// when mouse.last_reported_cell() matches the current cell. The dedup
+// happens before encode_mouse_event is ever called.
 //
 // - Focus-loss button release synthesis: When the window loses focus with
-//   buttons held, the app should synthesize release events for all held
-//   buttons. This prevents apps (vim, tmux) from thinking buttons are still
-//   held after focus returns.
+// buttons held, the app should synthesize release events for all held
+// buttons. This prevents apps (vim, tmux) from thinking buttons are still
+// held after focus returns.
 
 // -- parse_wheel_delta tests --
 
@@ -1972,7 +1972,7 @@ fn sink_with_cell(cell: Option<(usize, usize)>) -> RecordingSink {
 
 // --- Tier 1 (mouse-report) wiring cells ---
 
-/// Regression: — Tier-1 single-line dispatch.
+/// Regression: Tier-1 single-line dispatch.
 /// Pins `lines=1` produces exactly one `write_pane_input` call and one
 /// `mark_dirty`. Catches a regression that drops the per-line loop
 /// entirely (would produce zero writes).
@@ -1989,7 +1989,7 @@ fn dispatch_wheel_mouse_report_lines_eq_1_writes_once_marks_dirty() {
     );
 }
 
-/// Regression: — Tier-1 fan-out property.
+/// Regression: Tier-1 fan-out property.
 /// `lines=3` MUST produce exactly 3 writes (not 0, not 1, not 6). This is
 /// the headline regression guard: a dispatcher that drops the loop, mishandles
 /// payload.repeat, or double-writes per iteration would all fail this cell.
@@ -2006,7 +2006,7 @@ fn dispatch_wheel_mouse_report_lines_eq_3_writes_thrice_marks_dirty_once() {
     assert_eq!(sink.mark_dirty_calls, 1, "mark_dirty fires exactly once");
 }
 
-/// Regression: — Tier-1 ScrollUp byte payload.
+/// Regression: Tier-1 ScrollUp byte payload.
 /// Recomputes the expected payload via the canonical `encode_mouse_event`
 /// path and asserts the wiring writes those exact bytes — pinning that the
 /// dispatcher passes the right `MouseButton::ScrollUp` to the encoder.
@@ -2029,7 +2029,7 @@ fn dispatch_wheel_mouse_report_carries_scroll_up_bytes() {
     assert_eq!(sink.writes[0].1, expected.as_bytes().to_vec());
 }
 
-/// Regression: — Tier-1 ScrollDown byte payload.
+/// Regression: Tier-1 ScrollDown byte payload.
 #[test]
 fn dispatch_wheel_mouse_report_carries_scroll_down_bytes() {
     let mut sink = sink_with_cell(Some((7, 3)));
@@ -2047,7 +2047,7 @@ fn dispatch_wheel_mouse_report_carries_scroll_down_bytes() {
     assert_eq!(sink.writes[0].1, expected.as_bytes().to_vec());
 }
 
-/// Regression: — Tier-1 cell_for_report=None early-return.
+/// Regression: Tier-1 cell_for_report=None early-return.
 /// When `mouse_cell_clamped` returns None, Tier-1 returns BEFORE
 /// `mark_dirty`. This cell pins `mark_dirty_calls == 0` so a regression
 /// that hoists `sink.mark_dirty()` ahead of the cell_for_report check
@@ -2075,7 +2075,7 @@ fn dispatch_wheel_mouse_report_cell_for_report_none_writes_nothing_no_mark_dirty
 
 const ALT_SCROLL_MODE: TermMode = TermMode::ALT_SCREEN.union(TermMode::ALTERNATE_SCROLL);
 
-/// Regression: — Tier-2 lines=1 wiring.
+/// Regression: Tier-2 lines=1 wiring.
 #[test]
 fn dispatch_wheel_alt_scroll_lines_eq_1_writes_once_csi_a() {
     let mut sink = RecordingSink::default();
@@ -2086,7 +2086,7 @@ fn dispatch_wheel_alt_scroll_lines_eq_1_writes_once_csi_a() {
     assert_eq!(sink.mark_dirty_calls, 1);
 }
 
-/// Regression: — Tier-2 fan-out property.
+/// Regression: Tier-2 fan-out property.
 /// `payload.repeat == lines` MUST produce exactly that many writes. Catches
 /// a regression that drops the loop or double-writes.
 #[test]
@@ -2106,7 +2106,7 @@ fn dispatch_wheel_alt_scroll_lines_eq_3_writes_thrice_csi_a() {
     assert_eq!(sink.mark_dirty_calls, 1);
 }
 
-/// Regression: — DECCKM × direction byte selection wiring
+/// Regression: DECCKM × direction byte selection wiring
 /// ( made the decision SS3-vs-CSI; this pins the wiring writes
 /// the chosen bytes through the loop).
 #[test]
@@ -2121,7 +2121,7 @@ fn dispatch_wheel_alt_scroll_app_cursor_set_up_emits_ss3_a() {
     }
 }
 
-/// Regression: — DECCKM set + ScrollDown writes SS3 B
+/// Regression: DECCKM set + ScrollDown writes SS3 B
 /// (`\x1bOB`) `lines` times via the dispatcher.
 #[test]
 fn dispatch_wheel_alt_scroll_app_cursor_set_down_emits_ss3_b() {
@@ -2135,7 +2135,7 @@ fn dispatch_wheel_alt_scroll_app_cursor_set_down_emits_ss3_b() {
     }
 }
 
-/// Regression: — DECCKM clear + ScrollUp writes CSI A
+/// Regression: DECCKM clear + ScrollUp writes CSI A
 /// (`\x1b[A`); confirms 's DECCKM-aware byte selection
 /// stays load-bearing across the wiring path.
 #[test]
@@ -2148,7 +2148,7 @@ fn dispatch_wheel_alt_scroll_app_cursor_clear_up_emits_csi_a() {
     }
 }
 
-/// Regression: — DECCKM clear + ScrollDown writes CSI B
+/// Regression: DECCKM clear + ScrollDown writes CSI B
 /// (`\x1b[B`); negative-pin counterpart to the SS3 B / CSI A cells.
 #[test]
 fn dispatch_wheel_alt_scroll_app_cursor_clear_down_emits_csi_b() {
@@ -2162,7 +2162,7 @@ fn dispatch_wheel_alt_scroll_app_cursor_clear_down_emits_csi_b() {
 
 // --- Tier 3 (viewport-scroll) wiring cells ---
 
-/// Regression: — viewport scroll up positive sign.
+/// Regression: viewport scroll up positive sign.
 #[test]
 fn dispatch_wheel_viewport_scroll_up_calls_scroll_pane_positive_lines() {
     let mut sink = RecordingSink::default();
@@ -2173,7 +2173,7 @@ fn dispatch_wheel_viewport_scroll_up_calls_scroll_pane_positive_lines() {
     assert_eq!(sink.mark_dirty_calls, 1);
 }
 
-/// Regression: — viewport scroll down negative sign pin.
+/// Regression: viewport scroll down negative sign pin.
 /// Catches a regression that flips the sign or always passes positive.
 #[test]
 fn dispatch_wheel_viewport_scroll_down_calls_scroll_pane_negative_lines() {
@@ -2187,7 +2187,7 @@ fn dispatch_wheel_viewport_scroll_down_calls_scroll_pane_negative_lines() {
 
 // --- Cross-tier precedence wiring ---
 
-/// Regression: — when MOUSE_REPORT and ALT_SCROLL flags are
+/// Regression: when MOUSE_REPORT and ALT_SCROLL flags are
 /// BOTH set, `classify_wheel_event` returns Tier 1; this pins the WIRING
 /// follows that verdict (writes mouse-report bytes, NOT SS3/CSI arrows).
 /// Counterpart to the pure-classifier test at tests.rs ~1732.
@@ -2211,7 +2211,7 @@ fn dispatch_wheel_mouse_report_takes_priority_over_alt_scroll() {
 
 // --- Shift-bypass × all three tiers ---
 
-/// Regression: — Shift bypasses Tier-1 mouse-report → Tier-3.
+/// Regression: Shift bypasses Tier-1 mouse-report → Tier-3.
 /// Catches a regression where the shift gate stops working for mouse-report
 /// alone (only working when alt-scroll is also set).
 #[test]
@@ -2231,7 +2231,7 @@ fn dispatch_wheel_shift_held_with_mouse_report_routes_to_viewport_scroll() {
     );
 }
 
-/// Regression: — Shift bypasses Tier-2 alt-scroll → Tier-3.
+/// Regression: Shift bypasses Tier-2 alt-scroll → Tier-3.
 #[test]
 fn dispatch_wheel_shift_held_with_alt_scroll_routes_to_viewport_scroll() {
     let mut sink = RecordingSink::default();
@@ -2242,7 +2242,7 @@ fn dispatch_wheel_shift_held_with_alt_scroll_routes_to_viewport_scroll() {
     assert_eq!(sink.mark_dirty_calls, 1);
 }
 
-/// Regression: — Shift bypass on plain mouse-report (no
+/// Regression: Shift bypass on plain mouse-report (no
 /// ALT_SCREEN) preserves direction sign through Tier-3.
 #[test]
 fn dispatch_wheel_shift_held_with_mouse_report_no_alt_screen_direction_preserved() {
@@ -2258,7 +2258,7 @@ fn dispatch_wheel_shift_held_with_mouse_report_no_alt_screen_direction_preserved
 
 // --- Cross-tier early-return invariants ---
 
-/// Regression: — parse_wheel_delta=None → no dispatch at all.
+/// Regression: parse_wheel_delta=None → no dispatch at all.
 /// Zero-magnitude line delta produces no writes / scrolls / mark_dirty.
 #[test]
 fn dispatch_wheel_parse_wheel_delta_none_no_dispatch() {
@@ -2279,9 +2279,9 @@ fn dispatch_wheel_parse_wheel_delta_none_no_dispatch() {
     );
 }
 
-/// Regression: — pane_id=None → no dispatch at all.
+/// Regression: pane_id=None → no dispatch at all.
 /// The `Option<PaneId>` lift in WheelDispatch ('s catch — the
-/// `let Some(pane_id) = ... else { return }` gate exists in the dispatcher,
+/// `let Some(pane_id) =... else { return }` gate exists in the dispatcher,
 /// not just on the App side) makes this seam testable headlessly.
 #[test]
 fn dispatch_wheel_pane_id_none_no_dispatch() {
@@ -2302,7 +2302,7 @@ fn dispatch_wheel_pane_id_none_no_dispatch() {
     );
 }
 
-/// Regression: — Tier-1 mods (Alt/Ctrl/Shift, with Shift NOT
+/// Regression: Tier-1 mods (Alt/Ctrl/Shift, with Shift NOT
 /// held to avoid Tier-3 bypass) flow through the dispatcher into
 /// `encode_mouse_event` so the encoded byte payload reflects the modifiers.
 /// Pins that `dispatch_wheel` passes `input.mods` to the encoder rather
@@ -2351,7 +2351,7 @@ fn dispatch_wheel_mouse_report_propagates_alt_ctrl_modifiers_to_encoded_bytes() 
     assert_eq!(sink.mark_dirty_calls, 1);
 }
 
-/// Regression: — empty-bytes guard preserved from 
+/// Regression: empty-bytes guard preserved from
 /// at the dispatcher seam. Normal (X10-style coordinate-encoded) mode +
 /// `col > 222` makes `encode_mouse_event` return empty bytes; the
 /// `if !bytes.is_empty()` guard must skip the write loop AND

@@ -13,7 +13,7 @@
 //! - `ECMA48-CSI-DA2` — Secondary Device Attributes (`CSI > c`)
 //! - `ECMA48-CSI-DA3` — Tertiary Device Attributes (`CSI = c`)
 //! - `ECMA48-CSI-DSR-5` — Device Status Report — operating status
-//!   (`CSI 5 n`)
+//! (`CSI 5 n`)
 //! - `ECMA48-CSI-DSR-6` — Cursor Position Report (`CSI 6 n`)
 //!
 //! DA1 (`ECMA48-CSI-DA1`) is already driven to `verified` by the
@@ -246,7 +246,7 @@ fn da3_query_explicit_zero_param_drives_to_effect_apex() {
     }
 }
 
-/// DA3 reply is a DCS frame: `ESC P ! | ... ESC \` (eight hex digits).
+/// DA3 reply is a DCS frame: `ESC P ! |... ESC \` (eight hex digits).
 ///
 /// Pins the xterm-standard unit-ID format. Regressions that emit a
 /// CSI response instead of DCS, or return the wrong digit count,

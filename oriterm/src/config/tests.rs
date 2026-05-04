@@ -66,7 +66,7 @@ bold_is_bright = false
     assert!(!parsed.behavior.bold_is_bright);
 }
 
-/// Regression: — `behavior.notification` parses the four
+/// Regression: `behavior.notification` parses the four
 /// modes ("none", "visual", "sound", "both") and `is_visual` /
 /// `is_audible` predicates correctly classify each mode for the
 /// `mux_pump` consumer arm.
@@ -113,7 +113,7 @@ notification = "both""#,
     }
 }
 
-/// Regression: — default `behavior.notification` is `Both`
+/// Regression: default `behavior.notification` is `Both`
 /// (notification + sound). Confirms users who don't set the field get
 /// audible notifications by default, matching the pre-existing bell
 /// configuration's preference for sensory feedback.

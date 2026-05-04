@@ -13,7 +13,7 @@
 //!
 //! ```text
 //! \x1B[H\x1B[2JTesting bell (bel)
-//! If you did not hear the Bell then (bel) has failed.  (bel) Done
+//! If you did not hear the Bell then (bel) has failed. (bel) Done
 //! ```
 //!
 //! See `crates/oriterm_test_support/src/tack_framework/scenarios/acs/mod.rs`
@@ -46,7 +46,7 @@ fn tack_acs_graphic_chars() {
         outcome.grid_text
     );
 
- // Verifies for assert the (bel) capability is
+    // Verifies for assert the (bel) capability is
     // actually exercised. Tack v1.08's "alternate character set and
     // graphic rendition" test runs only the bell probe — it does
     // NOT emit DEC line-drawing chars or SGR sample text — so the

@@ -26,7 +26,7 @@
 //! after the test is:
 //!
 //! ```text
-//! (rs1) reset_1string, not present.  (rs1) Done
+//! (rs1) reset_1string, not present. (rs1) Done
 //! ```
 //!
 //! That is — tack v1.08's padding test only probes the `rs1`
@@ -88,7 +88,7 @@ use crate::tack_framework::{MenuStep, ScenarioSpec, ScreenFacts};
 ///
 /// **Why parenthesized, not whitespace-bounded.** Tack v1.08's
 /// padding test emits cap names wrapped in parens — e.g.
-/// `(rs1) reset_1string, not present.  (rs1) Done`. This matches
+/// `(rs1) reset_1string, not present. (rs1) Done`. This matches
 /// the same parenthesized pattern as the modes test (`(am)`,
 /// `(os)`, `(bel)`, `(colors)`, `(pairs)`, `(clear)`). Using
 /// [`grid_has_paren_token`] (the canonical helper from

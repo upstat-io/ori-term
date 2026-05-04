@@ -632,7 +632,7 @@ fn sync_pane_snapshot_returns_none_for_missing_pane() {
     );
 }
 
-/// Regression: — embedded `is_write_stalled` must continue returning `false`
+/// Regression: embedded `is_write_stalled` must continue returning `false`
 /// for an unknown pane id (matches the daemon-side server dispatch contract: missing
 /// pane ⇒ `false` rather than `Err`).
 /// See: bug-tracker/plans//00-overview.md

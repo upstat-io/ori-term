@@ -18,8 +18,8 @@ impl AdapterContext {
         false
     }
 
-    /// Obtain a lock to the EGL context and get handle to the [`glow::Context`] that can be used to
-    /// do rendering.
+ /// Obtain a lock to the EGL context and get handle to the [`glow::Context`] that can be used to
+ /// do rendering.
     #[track_caller]
     pub fn lock(&self) -> &glow::Context {
         &self.glow_context
@@ -50,10 +50,10 @@ impl Instance {
         self.create_surface_from_context(Canvas::Offscreen(canvas), result)
     }
 
-    /// Common portion of public `create_surface_from_*` functions.
-    ///
-    /// Note: Analogous code also exists in the WebGPU backend at
-    /// `wgpu::backend::web::Context`.
+ /// Common portion of public `create_surface_from_*` functions.
+ ///
+ /// Note: Analogous code also exists in the WebGPU backend at
+ /// `wgpu::backend::web::Context`.
     fn create_surface_from_context(
         &self,
         canvas: Canvas,
@@ -62,28 +62,28 @@ impl Instance {
         let context_object: js_sys::Object = match context_result {
             Ok(Some(context)) => context,
             Ok(None) => {
-                // <https://html.spec.whatwg.org/multipage/canvas.html#dom-canvas-getcontext-dev>
-                // A getContext() call “returns null if contextId is not supported, or if the
-                // canvas has already been initialized with another context type”. Additionally,
-                // “not supported” could include “insufficient GPU resources” or “the GPU process
-                // previously crashed”. So, we must return it as an `Err` since it could occur
-                // for circumstances outside the application author's control.
+ // <https://html.spec.whatwg.org/multipage/canvas.html#dom-canvas-getcontext-dev>
+ // A getContext() call “returns null if contextId is not supported, or if the
+ // canvas has already been initialized with another context type”. Additionally,
+ // “not supported” could include “insufficient GPU resources” or “the GPU process
+ // previously crashed”. So, we must return it as an `Err` since it could occur
+ // for circumstances outside the application author's control.
                 return Err(crate::InstanceError::new(String::from(concat!(
                     "canvas.getContext() returned null; ",
                     "webgl2 not available or canvas already in use"
                 ))));
             }
             Err(js_error) => {
-                // <https://html.spec.whatwg.org/multipage/canvas.html#dom-canvas-getcontext>
-                // A thrown exception indicates misuse of the canvas state.
+ // <https://html.spec.whatwg.org/multipage/canvas.html#dom-canvas-getcontext>
+ // A thrown exception indicates misuse of the canvas state.
                 return Err(crate::InstanceError::new(format!(
                     "canvas.getContext() threw exception {js_error:?}",
                 )));
             }
         };
 
-        // Not returning this error because it is a type error that shouldn't happen unless
-        // the browser, JS builtin objects, or wasm bindings are misbehaving somehow.
+ // Not returning this error because it is a type error that shouldn't happen unless
+ // the browser, JS builtin objects, or wasm bindings are misbehaving somehow.
         let webgl2_context: web_sys::WebGl2RenderingContext = context_object
             .dyn_into()
             .expect("canvas context is not a WebGl2RenderingContext");
@@ -216,7 +216,7 @@ enum Canvas {
 #[derive(Clone, Debug)]
 pub struct Swapchain {
     pub(crate) extent: wgt::Extent3d,
-    // pub(crate) channel: f::ChannelType,
+ // pub(crate) channel: f::ChannelType,
     pub(super) format: wgt::TextureFormat,
     pub(super) framebuffer: glow::Framebuffer,
     pub(super) format_desc: TextureFormatDesc,
@@ -235,7 +235,7 @@ impl Surface {
         ))?;
 
         if swapchain.format.is_srgb() {
-            // Important to set the viewport since we don't know in what state the user left it.
+ // Important to set the viewport since we don't know in what state the user left it.
             unsafe {
                 gl.viewport(
                     0,
@@ -259,9 +259,9 @@ impl Surface {
         } else {
             unsafe { gl.bind_framebuffer(glow::READ_FRAMEBUFFER, Some(swapchain.framebuffer)) };
             unsafe { gl.bind_framebuffer(glow::DRAW_FRAMEBUFFER, None) };
-            // Note the Y-flipping here. GL's presentation is not flipped,
-            // but main rendering is. Therefore, we Y-flip the output positions
-            // in the shader, and also this blit.
+ // Note the Y-flipping here. GL's presentation is not flipped,
+ // but main rendering is. Therefore, we Y-flip the output positions
+ // in the shader, and also this blit.
             unsafe {
                 gl.blit_framebuffer(
                     0,
@@ -302,7 +302,7 @@ impl Surface {
     }
 
     pub fn supports_srgb(&self) -> bool {
-        // present.frag takes care of handling srgb conversion
+ // present.frag takes care of handling srgb conversion
         true
     }
 }
@@ -331,7 +331,7 @@ impl crate::Surface for Surface {
         {
             let mut swapchain = self.swapchain.write();
             if let Some(swapchain) = swapchain.take() {
-                // delete all frame buffers already allocated
+ // delete all frame buffers already allocated
                 unsafe { gl.delete_framebuffer(swapchain.framebuffer) };
             }
         }
@@ -397,7 +397,7 @@ impl crate::Surface for Surface {
             let mut swapchain = self.swapchain.write();
             *swapchain = Some(Swapchain {
                 extent: config.extent,
-                // channel: config.format.base_format().1,
+ // channel: config.format.base_format().1,
                 format: config.format,
                 format_desc: desc,
                 framebuffer,

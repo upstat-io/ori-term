@@ -1,7 +1,7 @@
 //! OSC dispatch-arm walker.
 //!
 //! Walks `crates/vte/src/ansi/dispatch/osc.rs` — specifically the
-//! `match params[0] { ... }` in the `dispatch` function — and
+//! `match params[0] {... }` in the `dispatch` function — and
 //! emits one [`Tuple`] per recognized numeric-id byte string
 //! literal.
 //!

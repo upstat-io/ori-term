@@ -39,7 +39,7 @@ pub(super) fn dispatch<H: Handler>(handler: &mut H, params: &[&[u8]], bell_termi
     }
 
     match params[0] {
-        // Set window title and/or icon name.
+ // Set window title and/or icon name.
         b"0" | b"1" | b"2" => {
             if params.len() >= 2 {
                 let text = join_title_payload(&params[1..]);
@@ -60,9 +60,9 @@ pub(super) fn dispatch<H: Handler>(handler: &mut H, params: &[&[u8]], bell_termi
             unhandled(params);
         },
 
-        // VENDORED PATCH (oriterm): OSC 3 — set X11 window property (Section 10.9).
-        // Per xterm ctlseqs: `OSC 3 ; Pt BEL|ST`. `Pt` is a single payload
-        // `prop[=value]`. The `=` split happens in `Handler::set_x11_property`.
+ // VENDORED PATCH (oriterm): OSC 3 — set X11 window property (Section 10.9).
+ // Per xterm ctlseqs: `OSC 3 ; Pt BEL|ST`. `Pt` is a single payload
+ // `prop[=value]`. The `=` split happens in `Handler::set_x11_property`.
         b"3" => {
             if params.len() < 2 {
                 unhandled(params);
@@ -71,7 +71,7 @@ pub(super) fn dispatch<H: Handler>(handler: &mut H, params: &[&[u8]], bell_termi
             handler.set_x11_property(params[1]);
         },
 
-        // Set color index.
+ // Set color index.
         b"4" => {
             if params.len() <= 1 || params.len() % 2 == 0 {
                 unhandled(params);
@@ -98,12 +98,12 @@ pub(super) fn dispatch<H: Handler>(handler: &mut H, params: &[&[u8]], bell_termi
             }
         },
 
-        // VENDORED PATCH (oriterm): OSC 5 — special color set/query (Section 10.9).
-        // `OSC 5 ; Ps ; spec` set a special color slot (Ps ∈ 0..=4 per
-        // xterm: bold / underline / blink / reverse / italics). `spec = ?`
-        // queries the slot — handler replies over PTY. Malformed forms
-        // (<3 params, non-numeric Ps, unparseable color) route to `unhandled`
-        // without mutating state.
+ // VENDORED PATCH (oriterm): OSC 5 — special color set/query (Section 10.9).
+ // `OSC 5 ; Ps ; spec` set a special color slot (Ps ∈ 0..=4 per
+ // xterm: bold / underline / blink / reverse / italics). `spec = ?`
+ // queries the slot — handler replies over PTY. Malformed forms
+ // (<3 params, non-numeric Ps, unparseable color) route to `unhandled`
+ // without mutating state.
         b"5" => {
             if params.len() < 3 {
                 unhandled(params);
@@ -122,11 +122,11 @@ pub(super) fn dispatch<H: Handler>(handler: &mut H, params: &[&[u8]], bell_termi
             }
         },
 
-        // VENDORED PATCH (oriterm): OSC 6 — iTerm2 change title tab color (Section 10.9).
-        // ori_term follows the iTerm2 interpretation (tab color), not the
-        // xterm special-color enable/disable semantic. Parse `spec` with
-        // `xparse_color`; a parse failure (e.g. bare `0`) leaves the field
-        // unchanged — pinned by `osc6_xterm_disable_form_is_treated_as_color_parse_failure`.
+ // VENDORED PATCH (oriterm): OSC 6 — iTerm2 change title tab color (Section 10.9).
+ // ori_term follows the iTerm2 interpretation (tab color), not the
+ // xterm special-color enable/disable semantic. Parse `spec` with
+ // `xparse_color`; a parse failure (e.g. bare `0`) leaves the field
+ // unchanged — pinned by `osc6_xterm_disable_form_is_treated_as_color_parse_failure`.
         b"6" => {
             if params.len() >= 2 {
                 if let Some(color) = xparse_color(params[1]) {
@@ -137,27 +137,27 @@ pub(super) fn dispatch<H: Handler>(handler: &mut H, params: &[&[u8]], bell_termi
             unhandled(params);
         },
 
-        // Hyperlink.
+ // Hyperlink.
         b"8" if params.len() > 2 => {
             let link_params = params[1];
 
-            // NOTE: The escape sequence is of form 'OSC 8 ; params ; URI ST', where
-            // URI is URL-encoded. However `;` is a special character and might be
-            // passed as is, thus we need to rebuild the URI.
+ // NOTE: The escape sequence is of form 'OSC 8 ; params ; URI ST', where
+ // URI is URL-encoded. However `;` is a special character and might be
+ // passed as is, thus we need to rebuild the URI.
             let mut uri = str::from_utf8(params[2]).unwrap_or_default().to_string();
             for param in params[3..].iter() {
                 uri.push(';');
                 uri.push_str(str::from_utf8(param).unwrap_or_default());
             }
 
-            // The OSC 8 escape sequence must be stopped when getting an empty `uri`.
+ // The OSC 8 escape sequence must be stopped when getting an empty `uri`.
             if uri.is_empty() {
                 handler.set_hyperlink(None);
                 return;
             }
 
-            // Link parameters are in format of `key1=value1:key2=value2`. Currently only
-            // key `id` is defined.
+ // Link parameters are in format of `key1=value1:key2=value2`. Currently only
+ // key `id` is defined.
             let id = link_params
                 .split(|&b| b == b':')
                 .find_map(|kv| kv.strip_prefix(b"id="))
@@ -166,16 +166,16 @@ pub(super) fn dispatch<H: Handler>(handler: &mut H, params: &[&[u8]], bell_termi
             handler.set_hyperlink(Some(Hyperlink { id, uri }));
         },
 
-        // Get/set Foreground, Background, Cursor colors.
+ // Get/set Foreground, Background, Cursor colors.
         b"10" | b"11" | b"12" => {
             if params.len() >= 2 {
                 if let Some(mut dynamic_code) = parse_number(params[0]) {
                     for param in &params[1..] {
-                        // 10 is the first dynamic color, also the foreground.
+ // 10 is the first dynamic color, also the foreground.
                         let offset = dynamic_code as usize - 10;
                         let index = NamedColor::Foreground as usize + offset;
 
-                        // End of setting dynamic colors.
+ // End of setting dynamic colors.
                         if index > NamedColor::Cursor as usize {
                             unhandled(params);
                             break;
@@ -200,11 +200,11 @@ pub(super) fn dispatch<H: Handler>(handler: &mut H, params: &[&[u8]], bell_termi
             unhandled(params);
         },
 
-        // VENDORED PATCH (oriterm): OSC 13 / 14 / 17 / 19 — set/query
-        // mouse and highlight colors (Section 10.9).
-        //
-        // Each variant accepts `spec` (set) or `?` (query). Malformed
-        // `spec` values route to `unhandled` without mutating state.
+ // VENDORED PATCH (oriterm): OSC 13 / 14 / 17 / 19 — set/query
+ // mouse and highlight colors (Section 10.9).
+ //
+ // Each variant accepts `spec` (set) or `?` (query). Malformed
+ // `spec` values route to `unhandled` without mutating state.
         b"13" | b"14" | b"17" | b"19" => {
             if params.len() < 2 {
                 unhandled(params);
@@ -234,7 +234,7 @@ pub(super) fn dispatch<H: Handler>(handler: &mut H, params: &[&[u8]], bell_termi
             unhandled(params);
         },
 
-        // Set mouse cursor shape.
+ // Set mouse cursor shape.
         b"22" if params.len() == 2 => {
             let shape = String::from_utf8_lossy(params[1]);
             match CursorIcon::from_str(&shape) {
@@ -243,7 +243,7 @@ pub(super) fn dispatch<H: Handler>(handler: &mut H, params: &[&[u8]], bell_termi
             }
         },
 
-        // Set cursor style.
+ // Set cursor style.
         b"50" => {
             if params.len() >= 2
                 && params[1].len() >= 13
@@ -261,7 +261,7 @@ pub(super) fn dispatch<H: Handler>(handler: &mut H, params: &[&[u8]], bell_termi
             unhandled(params);
         },
 
-        // Set clipboard.
+ // Set clipboard.
         b"52" => {
             if params.len() < 3 {
                 return unhandled(params);
@@ -274,9 +274,9 @@ pub(super) fn dispatch<H: Handler>(handler: &mut H, params: &[&[u8]], bell_termi
             }
         },
 
-        // Reset color index.
+ // Reset color index.
         b"104" => {
-            // Reset all color indexes when no parameters are given.
+ // Reset all color indexes when no parameters are given.
             if params.len() == 1 || params[1].is_empty() {
                 for i in 0..256 {
                     handler.reset_color(i);
@@ -284,7 +284,7 @@ pub(super) fn dispatch<H: Handler>(handler: &mut H, params: &[&[u8]], bell_termi
                 return;
             }
 
-            // Reset color indexes given as parameters.
+ // Reset color indexes given as parameters.
             for param in &params[1..] {
                 match parse_number(param) {
                     Some(index) => handler.reset_color(index as usize),
@@ -293,27 +293,27 @@ pub(super) fn dispatch<H: Handler>(handler: &mut H, params: &[&[u8]], bell_termi
             }
         },
 
-        // Reset foreground color.
+ // Reset foreground color.
         b"110" => handler.reset_color(NamedColor::Foreground as usize),
 
-        // Reset background color.
+ // Reset background color.
         b"111" => handler.reset_color(NamedColor::Background as usize),
 
-        // Reset text cursor color.
+ // Reset text cursor color.
         b"112" => handler.reset_color(NamedColor::Cursor as usize),
 
-        // VENDORED PATCH (oriterm): OSC 113 / 114 / 117 / 119 — reset
-        // mouse and highlight colors (Section 10.9).
+ // VENDORED PATCH (oriterm): OSC 113 / 114 / 117 / 119 — reset
+ // mouse and highlight colors (Section 10.9).
         b"113" => handler.reset_mouse_fg_color(),
         b"114" => handler.reset_mouse_bg_color(),
         b"117" => handler.reset_highlight_bg_color(),
         b"119" => handler.reset_highlight_fg_color(),
 
-        // VENDORED PATCH (oriterm): OSC L / OSC l — Sun console aliases
-        // for OSC 1 (icon name) / OSC 2 (window title) respectively
-        // (Section 10.9). Historical; wezterm does not implement either,
-        // but the catalog promises `verified-with-deviation` for
-        // compatibility with older consoles.
+ // VENDORED PATCH (oriterm): OSC L / OSC l — Sun console aliases
+ // for OSC 1 (icon name) / OSC 2 (window title) respectively
+ // (Section 10.9). Historical; wezterm does not implement either,
+ // but the catalog promises `verified-with-deviation` for
+ // compatibility with older consoles.
         b"L" => {
             if params.len() >= 2 {
                 handler.set_icon_name(Some(join_title_payload(&params[1..])));
@@ -329,8 +329,8 @@ pub(super) fn dispatch<H: Handler>(handler: &mut H, params: &[&[u8]], bell_termi
             unhandled(params);
         },
 
-        // VENDORED PATCH (oriterm): refactored b"1337" arm into sub-dispatcher (Section 10.0).
-        // iTerm2 proprietary sequences.
+ // VENDORED PATCH (oriterm): refactored b"1337" arm into sub-dispatcher (Section 10.0).
+ // iTerm2 proprietary sequences.
         b"1337" => {
             if params.len() < 2 {
                 unhandled(params);
@@ -371,8 +371,8 @@ fn join_title_payload(parts: &[&[u8]]) -> String {
 /// `Handler` hooks so each consumer (e.g. `Term`) can implement them without
 /// repeating the `key[=value]` parse.
 fn dispatch_iterm2_osc1337<H: Handler>(handler: &mut H, params: &[&[u8]]) {
-    // `params[0]` is the first sub-op, e.g. `SetMark`, `RemoteHost=user@host`,
-    // `File=name=...`, etc.
+ // `params[0]` is the first sub-op, e.g. `SetMark`, `RemoteHost=user@host`,
+ // `File=name=...`, etc.
     let head = params[0];
 
     if head.starts_with(b"File=") {
@@ -380,7 +380,7 @@ fn dispatch_iterm2_osc1337<H: Handler>(handler: &mut H, params: &[&[u8]]) {
         return;
     }
 
-    // Split `head` on the first `=` into `(key, value)`.
+ // Split `head` on the first `=` into `(key, value)`.
     let (key, value) = match head.iter().position(|&b| b == b'=') {
         Some(idx) => (&head[..idx], Some(&head[idx + 1..])),
         None => (head, None),
@@ -410,9 +410,9 @@ fn dispatch_iterm2_osc1337<H: Handler>(handler: &mut H, params: &[&[u8]]) {
             }
         },
         b"SetUserVar" => {
-            // `SetUserVar=NAME=<base64-value>` — the head split above gave us
-            // `value = Some(b"NAME=<base64>")`. Split once more on `=` to
-            // recover the name and the base64-encoded value.
+ // `SetUserVar=NAME=<base64-value>` — the head split above gave us
+ // `value = Some(b"NAME=<base64>")`. Split once more on `=` to
+ // recover the name and the base64-encoded value.
             let Some(rest) = value else { return };
             let Some(sep) = rest.iter().position(|&b| b == b'=') else {
                 return;

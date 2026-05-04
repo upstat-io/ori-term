@@ -1501,7 +1501,7 @@ fn msg_type_decodes_new_host_request_ids() {
 
 // -- IsWriteStalled / WriteStalledStatus round-trips --
 
-/// Regression: — IsWriteStalled request must round-trip losslessly.
+/// Regression: IsWriteStalled request must round-trip losslessly.
 /// See: bug-tracker/plans//00-overview.md
 #[test]
 fn roundtrip_is_write_stalled_request() {
@@ -1512,7 +1512,7 @@ fn roundtrip_is_write_stalled_request() {
     assert_eq!(frame.pdu, pdu);
 }
 
-/// Regression: — WriteStalledStatus { stalled: true } must round-trip losslessly.
+/// Regression: WriteStalledStatus { stalled: true } must round-trip losslessly.
 /// See: bug-tracker/plans//00-overview.md
 #[test]
 fn roundtrip_write_stalled_status_true() {
@@ -1524,7 +1524,7 @@ fn roundtrip_write_stalled_status_true() {
     assert_eq!(frame.pdu, pdu);
 }
 
-/// Regression: — WriteStalledStatus { stalled: false } must round-trip losslessly.
+/// Regression: WriteStalledStatus { stalled: false } must round-trip losslessly.
 /// See: bug-tracker/plans//00-overview.md
 #[test]
 fn roundtrip_write_stalled_status_false() {
@@ -1536,7 +1536,7 @@ fn roundtrip_write_stalled_status_false() {
     assert_eq!(frame.pdu, pdu);
 }
 
-/// Regression: — IsWriteStalled is not fire-and-forget; it expects a response.
+/// Regression: IsWriteStalled is not fire-and-forget; it expects a response.
 /// See: bug-tracker/plans//section-03-tdd-matrix.md (classifier pin)
 #[test]
 fn is_write_stalled_request_is_not_fire_and_forget() {
@@ -1546,7 +1546,7 @@ fn is_write_stalled_request_is_not_fire_and_forget() {
     assert!(!pdu.is_fire_and_forget());
 }
 
-/// Regression: — WriteStalledStatus is a response, not a push notification.
+/// Regression: WriteStalledStatus is a response, not a push notification.
 /// See: bug-tracker/plans//section-03-tdd-matrix.md (classifier pin)
 #[test]
 fn write_stalled_status_response_is_not_notification() {
@@ -1557,7 +1557,7 @@ fn write_stalled_status_response_is_not_notification() {
     assert!(!pdu.is_notification());
 }
 
-/// Regression: — MsgType IDs decode for the new variants.
+/// Regression: MsgType IDs decode for the new variants.
 /// See: bug-tracker/plans//section-03-tdd-matrix.md
 #[test]
 fn msg_type_decodes_is_write_stalled_ids() {

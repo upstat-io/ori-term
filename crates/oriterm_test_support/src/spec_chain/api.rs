@@ -247,7 +247,7 @@ impl Drop for SpecHarness {
         // cleaned by `cargo clean`). The reader is `spec-coverage-report`,
         // which uses the same SSOT helper to find this dir — keep both ends
         // routed through `paths::term_workspace_root()` per
- // /Subrepo Path Discovery`.
+        // /Subrepo Path Discovery`.
         let dir = crate::paths::term_workspace_root().join("target/spec-chain-uncataloged");
         if let Err(e) = self.uncataloged.serialize_to_dir(&dir) {
             eprintln!("warning: failed to serialize uncataloged tuples: {e}");

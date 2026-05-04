@@ -2323,7 +2323,7 @@ fn modal_dim_rect_opacity_tracks_dim_layer() {
     );
 }
 
-// FocusNext/FocusPrev fall-through gate regression — pins the 
+// FocusNext/FocusPrev fall-through gate regression — pins the
 // Phase 5 code review round 0 R0-F1 fix at
 // `oriterm_ui/src/overlay/manager/key_dispatch.rs:221`. Tab/Shift+Tab are
 // bound globally in `Keymap::defaults()` (no `key_context` scope), so they

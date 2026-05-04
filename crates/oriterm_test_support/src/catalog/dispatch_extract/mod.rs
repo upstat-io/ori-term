@@ -273,7 +273,7 @@ pub fn extract_dispatch_map(
 /// descent at this node. csi/osc walkers return `true` when their
 /// scrutinee predicate does NOT match (so nested matches still get
 /// visited); the sgr walker always returns `false` (the SGR
-/// `match param { ... }` is the single top-level match it cares about).
+/// `match param {... }` is the single top-level match it cares about).
 ///
 /// Replaces three identical inline `*Visitor` struct + impl blocks
 /// (csi/osc/sgr) — algorithmic DRY (3+ instances).

@@ -14,10 +14,10 @@ use crate::protocol::MuxPdu;
 
 /// Wire clipboard type → [`ClipboardType`]: 0 = Clipboard, 1 = Selection.
 fn wire_to_clipboard_type(wire: u8) -> ClipboardType {
- match wire {
- 1 => ClipboardType::Selection,
- _ => ClipboardType::Clipboard,
- }
+    match wire {
+        1 => ClipboardType::Selection,
+        _ => ClipboardType::Clipboard,
+    }
 }
 
 /// Convert a daemon push PDU into a [`MuxNotification`].
@@ -28,48 +28,48 @@ fn wire_to_clipboard_type(wire: u8) -> ClipboardType {
 /// Note: `NotifyPaneOutput` and `NotifyPaneSnapshot` are handled directly
 /// in the reader loop and should never reach this function.
 pub(super) fn pdu_to_notification(pdu: MuxPdu) -> Option<MuxNotification> {
- match pdu {
- MuxPdu::NotifyPaneExited { pane_id, exit_code } => {
- Some(MuxNotification::PaneClosed { pane_id, exit_code })
- }
- MuxPdu::NotifyPaneMetadataChanged { pane_id, .. } => {
- Some(MuxNotification::PaneMetadataChanged(pane_id))
- }
- MuxPdu::NotifyPaneBell { pane_id } => Some(MuxNotification::PaneBell(pane_id)),
- MuxPdu::NotifyPaneUrgencyHint { pane_id } => {
- Some(MuxNotification::PaneUrgencyHint(pane_id))
- }
- MuxPdu::NotifyCommandComplete {
- pane_id,
- duration_ms,
- } => Some(MuxNotification::CommandComplete {
- pane_id,
- duration: Duration::from_millis(duration_ms),
- }),
- MuxPdu::NotifyClipboardStore {
- pane_id,
- clipboard_type,
- text,
- } => Some(MuxNotification::ClipboardStore {
- pane_id,
- clipboard_type: wire_to_clipboard_type(clipboard_type),
- text,
- }),
- MuxPdu::NotifyClipboardLoad { pane_id, .. } => {
- // Legacy from before — superseded by
- // `NotifyHostClipboardLoad` (with request_id + reply correlation).
- // New servers do not emit this variant; the legacy arm logs and
- // drops on the rare wire-compat fallback path.
- log::warn!(
- "daemon-mode legacy NotifyClipboardLoad (pane {pane_id}) dropped — \
+    match pdu {
+        MuxPdu::NotifyPaneExited { pane_id, exit_code } => {
+            Some(MuxNotification::PaneClosed { pane_id, exit_code })
+        }
+        MuxPdu::NotifyPaneMetadataChanged { pane_id, .. } => {
+            Some(MuxNotification::PaneMetadataChanged(pane_id))
+        }
+        MuxPdu::NotifyPaneBell { pane_id } => Some(MuxNotification::PaneBell(pane_id)),
+        MuxPdu::NotifyPaneUrgencyHint { pane_id } => {
+            Some(MuxNotification::PaneUrgencyHint(pane_id))
+        }
+        MuxPdu::NotifyCommandComplete {
+            pane_id,
+            duration_ms,
+        } => Some(MuxNotification::CommandComplete {
+            pane_id,
+            duration: Duration::from_millis(duration_ms),
+        }),
+        MuxPdu::NotifyClipboardStore {
+            pane_id,
+            clipboard_type,
+            text,
+        } => Some(MuxNotification::ClipboardStore {
+            pane_id,
+            clipboard_type: wire_to_clipboard_type(clipboard_type),
+            text,
+        }),
+        MuxPdu::NotifyClipboardLoad { pane_id, .. } => {
+            // Legacy from before — superseded by
+            // `NotifyHostClipboardLoad` (with request_id + reply correlation).
+            // New servers do not emit this variant; the legacy arm logs and
+            // drops on the rare wire-compat fallback path.
+            log::warn!(
+                "daemon-mode legacy NotifyClipboardLoad (pane {pane_id}) dropped — \
  superseded by NotifyHostClipboardLoad ()"
-);
- None
- }
- MuxPdu::NotifyNewTab => Some(MuxNotification::NewTab),
- other => {
- log::debug!("unexpected notification PDU: {other:?}");
- None
- }
- }
+            );
+            None
+        }
+        MuxPdu::NotifyNewTab => Some(MuxNotification::NewTab),
+        other => {
+            log::debug!("unexpected notification PDU: {other:?}");
+            None
+        }
+    }
 }

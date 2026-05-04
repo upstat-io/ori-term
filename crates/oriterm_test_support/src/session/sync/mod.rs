@@ -48,7 +48,7 @@ pub(super) enum PollStep<T> {
 /// [`super::PtySession::drain_until`] which feeds the VTE processor
 /// byte-by-byte and stops at the first match. The two are
 /// fundamentally different algorithms (chunk-at-a-time anchor poll
-/// vs. byte-at-a-time mid-flow capture) so the 
+/// vs. byte-at-a-time mid-flow capture) so the
 /// "3+ instances = always extract" rule does not apply.
 pub(super) fn poll_until<T, P>(session: &mut PtySession, timeout_ms: u64, mut check: P) -> Option<T>
 where

@@ -8,7 +8,7 @@
 //! captures every grid snapshot and hands the history to the helpers
 //! below, which locate each curated sub-test's label and extract the
 //! response region on the SAME line as the label (tack's format:
-//! `(PROTO) label (QUERY)       RESPONSE`, with the response padded
+//! `(PROTO) label (QUERY) RESPONSE`, with the response padded
 //! to a fixed column and separated from the label by ≥2 spaces).
 
 /// Shape of a curated response-check row.
@@ -46,10 +46,10 @@ const ESC_PREFIX: &str = "^[";
 /// during implementation (2026-04-08):
 ///
 /// - DA1 (Primary device attributes) → `^[[?64;6;4c`
-/// - DSR Terminal status             → `^[[0n`
-/// - DSR Cursor position             → `^[[7;50R` (row;col R)
-/// - DA2 (Secondary device attrs)    → `^[[>0;200;1c`
-/// - DA3 (Tertiary device attrs)     → `^[P!|00000000^[\` (DCS P ! | … ST)
+/// - DSR Terminal status → `^[[0n`
+/// - DSR Cursor position → `^[[7;50R` (row;col R)
+/// - DA2 (Secondary device attrs) → `^[[>0;200;1c`
+/// - DA3 (Tertiary device attrs) → `^[P!|00000000^[\` (DCS P ! | … ST)
 pub const STATUS_REPORTS_RESPONSE_EXPECTATIONS: &[HasResponseExpectation] = &[
     HasResponseExpectation {
         label: "Primary device attributes",

@@ -31,7 +31,7 @@ use super::{PendingClientReply, READ_POLL_INTERVAL};
 /// Dispatch a received notification PDU.
 ///
 /// `NotifyPaneSnapshot` and `NotifyPaneOutput` are intercepted here
-/// (stored/invalidated in the shared snapshot map). The 4 
+/// (stored/invalidated in the shared snapshot map). The 4
 /// host-request / desktop-notification variants are also intercepted —
 /// they need the shared `pending_replies` map (host-request side) or a
 /// direct `MuxNotification` translation (desktop-notification side).

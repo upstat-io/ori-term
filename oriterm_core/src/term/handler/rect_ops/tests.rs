@@ -247,7 +247,7 @@ fn compute_rect_checksum_folds_combining_marks_in_notrim_mode() {
     let mut t = Term::new(1, 1, 0, Theme::default(), VoidEffectSink);
     // Install a cell with 'a' + combining acute accent (U+0301) at (0,0).
     // DRAWN set so the checksum treats this as an application-written
- // cell per xterm CHARDRAWN semantics ().
+    // cell per xterm CHARDRAWN semantics ().
     let mut extra = CellExtra::new();
     extra.zerowidth.push('\u{0301}');
     let cell = Cell {
@@ -278,14 +278,14 @@ fn compute_rect_checksum_folds_combining_marks_in_notrim_mode() {
 /// leading synthetic-space cell pushes into `trimmed` or gets dropped.
 ///
 /// On a pristine 2×3 grid:
-///   - Hoisted (correct, xterm parity): row 0 col 0 has `first=true`,
-///     contributes `' '` to `trimmed`. End-of-row reset sets
-///     `first=false` (matching `screen.c:3256`). Row 1 col 0 has
-///     `first=false` → synthetic space drops. Total `trimmed = 0x20`,
-///     negate → `0xFFE0`.
-///   - Buggy (per-row reset): each row's col 0 has `first=true` again,
-///     contributing `' '` twice. Total `trimmed = 0x40`, negate →
-///     `0xFFC0`.
+/// - Hoisted (correct, xterm parity): row 0 col 0 has `first=true`,
+/// contributes `' '` to `trimmed`. End-of-row reset sets
+/// `first=false` (matching `screen.c:3256`). Row 1 col 0 has
+/// `first=false` → synthetic space drops. Total `trimmed = 0x20`,
+/// negate → `0xFFE0`.
+/// - Buggy (per-row reset): each row's col 0 has `first=true` again,
+/// contributing `' '` twice. Total `trimmed = 0x40`, negate →
+/// `0xFFC0`.
 ///
 /// The test asserts the hoisted value (`0xFFE0`) so any regression to
 /// per-row reset trips it. Regression pin for round-1 F1 + round-2 F2.
@@ -309,7 +309,7 @@ fn compute_rect_checksum_wide_char_spacer_not_trimmed() {
     use crate::cell::{Cell, CellFlags};
     let mut t = Term::new(1, 2, 0, Theme::default(), VoidEffectSink);
     // Both cells are application-written: 'A' with DRAWN, and a
- // wide-char spacer (structurally drawn) with DRAWN ().
+    // wide-char spacer (structurally drawn) with DRAWN ().
     t.grid_mut()[crate::index::Line(0)][Column(0)] = Cell {
         ch: 'A',
         flags: CellFlags::DRAWN,

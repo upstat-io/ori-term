@@ -197,7 +197,7 @@ fn pane_position_returns_secondary_tab_index() {
     assert_eq!(pos.tab_index, 1);
 }
 
-/// Regression: — property AND regression guard against
+/// Regression: property AND regression guard against
 /// `active_window`-scoped routing. With two windows registered, a pane
 /// in the SECOND window must resolve to that window's id and the correct
 /// tab index in that window's tab list. A buggy implementation that
@@ -265,7 +265,7 @@ fn pane_position_returns_none_for_pane_with_no_tab() {
     assert!(reg.pane_position(pid(42)).is_none());
 }
 
-/// Regression: — orphan-tab edge case. Tab containing the pane
+/// Regression: orphan-tab edge case. Tab containing the pane
 /// exists in the registry, but the tab_id is not in any Window's tab list.
 /// Cell #7 in §03 test matrix.
 #[test]

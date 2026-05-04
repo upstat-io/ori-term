@@ -171,8 +171,8 @@ impl<S: EffectSink + 'static> PaneIoThread<S> {
                 // the catch-all chain in `handle_reply_command`
                 // (`_ => {}`) would otherwise silently no-op,
                 // turning a real bug into a silent hang. Per
- // Code for Impossible
- // States`. Pinned by §04 review round 3
+                // Code for Impossible
+                // States`. Pinned by §04 review round 3
                 // Codex F1 + Opencode F1.
                 unreachable!(
                     "Shutdown must be intercepted by drain_commands() or run_loop's \

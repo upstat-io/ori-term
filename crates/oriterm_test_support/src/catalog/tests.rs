@@ -48,7 +48,7 @@ use crate::spec_chain::uncataloged::{UncatalogedDetector, perform_action_to_tupl
 /// Resolve the term_repo workspace root via the canonical SSOT helper.
 /// All call sites in this file use term-repo-relative paths (vte source
 /// scanning); `paths::term_workspace_root()` is always available and has
-/// no wrapper concern. See `bug-tracker/plans/completed//`.
+/// no wrapper concern. See `bug-tracker/plans/completed/`.
 fn workspace_root() -> &'static std::path::Path {
     crate::paths::term_workspace_root()
 }
@@ -227,10 +227,10 @@ fn build_dispatch_map_includes_known_handler_names() {
 // Four producers construct OSC tuples that MUST yield identical
 // `TupleSig` for the same OSC sequence:
 //
-//   1. catalog `parse_osc` (`canonical_tuple`)            — `tuple/canonical.rs`
-//   2. dispatch `extract_dispatch_tuples`                  — `dispatch_extract/osc.rs`
-//   3. capture `extract_capture_tuples`                    — `capture_extract.rs`
-//   4. runtime `UncatalogedDetector::feed_actions`         — `spec_chain/uncataloged/mod.rs`
+// 1. catalog `parse_osc` (`canonical_tuple`) — `tuple/canonical.rs`
+// 2. dispatch `extract_dispatch_tuples` — `dispatch_extract/osc.rs`
+// 3. capture `extract_capture_tuples` — `capture_extract.rs`
+// 4. runtime `UncatalogedDetector::feed_actions` — `spec_chain/uncataloged/mod.rs`
 //
 // Pre-fix, producer 4 alone placed the OSC selector in `final_byte`
 // and producers 1+2+3 placed it in `params` with the terminator in
@@ -406,8 +406,8 @@ fn osc_tuple_sig_aligns_across_all_four_producers() {
 
         // Per-producer `params` shape contract:
         // - catalog and capture canonicalize the payload via `osc_placeholder`,
-        //   joined by `;`. They MUST agree byte-for-byte (both call the
-        //   same SSOT canonicalization).
+        // joined by `;`. They MUST agree byte-for-byte (both call the
+        // same SSOT canonicalization).
         // - runtime leaves `params` empty (the observer fast-path).
         assert_eq!(
             t1.params, t3.params,
@@ -566,9 +566,9 @@ fn classify_from_map_osc_normalizes_via_final_byte_only() {
 // contract is TIERED (catalog/capture share arity-driven shape; dispatch
 // is arity-agnostic `"Ps"`; runtime is empty by contract):
 //
-//   catalog.params == capture.params (Ps;Ps for arity 2, Ps for arity 1, - for arity 0)
-//   dispatch.params == "Ps" (single placeholder regardless of arity)
-//   runtime.params == "" (empty by contract — runtime observer fast-path)
+// catalog.params == capture.params (Ps;Ps for arity 2, Ps for arity 1, - for arity 0)
+// dispatch.params == "Ps" (single placeholder regardless of arity)
+// runtime.params == "" (empty by contract — runtime observer fast-path)
 
 /// Producer 4: feed a synthetic `PerformAction::CsiDispatch` to
 /// `perform_action_to_tuple`. `args` carries the numeric parameter
@@ -1108,7 +1108,7 @@ fn esc_charset_designation_routes_to_da_not_esc() {
     });
     assert!(da, "ESC ( B must route to Category::Da");
 
- // Regression guard: it MUST NOT appear under Category::Esc.
+    // Regression guard: it MUST NOT appear under Category::Esc.
     let esc_b = tuples
         .iter()
         .any(|(t, _)| t.category == Category::Esc && t.final_byte == "B");

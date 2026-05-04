@@ -96,7 +96,7 @@ fn scan_test_citations_plural_form_skips_empty_pieces() {
 
 #[test]
 fn scan_test_citations_strips_trailing_period() {
- // Regression: — `//! Catalog rows: OSC-0, OSC-1, OSC-2.`
+    // Regression: `//! Catalog rows: OSC-0, OSC-1, OSC-2.`
     // used to register `OSC-2.` (with period) as a distinct row ID,
     // producing spurious UNCATALOGED CITATIONS + FALSE VERIFIED pairs.
     let dir = tempfile::tempdir().unwrap();
@@ -124,7 +124,7 @@ fn scan_test_citations_strips_trailing_period() {
 
 #[test]
 fn scan_test_citations_strips_surrounding_backticks() {
- // Regression: — `` /// Catalog row: `SIXEL-BG-NoChange`.``
+    // Regression: `` /// Catalog row: `SIXEL-BG-NoChange`.``
     // used to register a backtick-wrapped, period-suffixed id.
     let dir = tempfile::tempdir().unwrap();
     let file = dir.path().join("test.rs");
@@ -141,7 +141,7 @@ fn scan_test_citations_strips_surrounding_backticks() {
 
 #[test]
 fn scan_test_citations_strips_parenthetical_qualifier() {
- // Regression: — `/// Catalog row: SIXEL-REPEAT (§12.4 GPU-apex)`
+    // Regression: `/// Catalog row: SIXEL-REPEAT (§12.4 GPU-apex)`
     // used to register the entire prose as a row ID.
     let dir = tempfile::tempdir().unwrap();
     let file = dir.path().join("test.rs");
@@ -158,8 +158,7 @@ fn scan_test_citations_strips_parenthetical_qualifier() {
 
 #[test]
 fn scan_test_citations_cuts_trailing_prose_after_sentence_boundary() {
- // Regression: —
-    // `//! Catalog rows: OSC-4-SET, OSC-4-QUERY. Apex: state-snapshot / effect-pty-write.`
+    // Regression:  // `//! Catalog rows: OSC-4-SET, OSC-4-QUERY. Apex: state-snapshot / effect-pty-write.`
     // used to register `OSC-4-QUERY. Apex: state-snapshot / effect-pty-write.`
     // as an id.
     let dir = tempfile::tempdir().unwrap();
@@ -196,7 +195,7 @@ fn scan_test_citations_combined_backtick_and_parenthetical() {
 
 #[test]
 fn scan_test_citations_handles_multi_line_continuation() {
- // Regression: — when a long plural form wraps across lines
+    // Regression: when a long plural form wraps across lines
     // via trailing comma, the scanner used to drop lines 2+, producing
     // false-verified entries for every row after the first line.
     let dir = tempfile::tempdir().unwrap();
@@ -204,9 +203,9 @@ fn scan_test_citations_handles_multi_line_continuation() {
     std::fs::write(
         &file,
         "//! Catalog rows: OSC-3, OSC-5-SET, OSC-5-QUERY, OSC-6, OSC-13-SET,\n\
-         //! OSC-13-QUERY, OSC-14-SET, OSC-14-QUERY, OSC-17-SET, OSC-17-QUERY,\n\
-         //! OSC-19-SET, OSC-19-QUERY, OSC-113, OSC-114, OSC-117, OSC-119, OSC-L,\n\
-         //! OSC-l.\nfn test() {}\n",
+ //! OSC-13-QUERY, OSC-14-SET, OSC-14-QUERY, OSC-17-SET, OSC-17-QUERY,\n\
+ //! OSC-19-SET, OSC-19-QUERY, OSC-113, OSC-114, OSC-117, OSC-119, OSC-L,\n\
+ //! OSC-l.\nfn test() {}\n",
     )
     .unwrap();
 

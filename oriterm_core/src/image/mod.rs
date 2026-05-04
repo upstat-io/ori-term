@@ -227,7 +227,7 @@ pub struct AnimationState {
     /// the animation halts at the last frame and waits for new frames
     /// (via `a=f`) before resuming. `s=3` (run) clears this flag so a
     /// later `add_animation_frame` does NOT auto-resume — distinguishing
- /// "wait for new frames" () from "play once and stop."
+    /// "wait for new frames" () from "play once and stop."
     pub wait_mode: bool,
 }
 

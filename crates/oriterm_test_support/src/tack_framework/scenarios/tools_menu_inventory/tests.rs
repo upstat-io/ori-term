@@ -23,7 +23,7 @@ fn pinned_set() -> BTreeSet<char> {
 
 #[test]
 fn pinned_inventory_is_non_empty() {
- // Regression guard: the inventory cannot regress to the failing-
+    // Regression guard: the inventory cannot regress to the failing-
     // first empty-array state without breaking this test. Without
     // this guard, a future PR that accidentally cleared
     // TOOLS_MENU_INVENTORY would make every drift-gate assertion
@@ -57,7 +57,7 @@ fn pinned_inventory_matches_captured_tack_v1_08_menu() {
 
 #[test]
 fn drift_gate_detects_injected_extra_key() {
- // Property for the shared `assert_menu_drift` helper, but
+    // Property for the shared `assert_menu_drift` helper, but
     // routed through `TOOLS_MENU_INVENTORY` to prove the wiring
     // works end-to-end. Inject one extra key that is guaranteed not
     // to collide with the real menu (`@` is not used by tack v1.08

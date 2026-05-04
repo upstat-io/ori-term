@@ -116,7 +116,7 @@ pub(crate) fn host_request_to_pdu(
             // `usize → u32` is lossless on every supported target. The
             // `debug_assert!` documents + enforces the invariant; a release
             // build produces a direct cast (no fabricated `u32::MAX`
- // saturation:lossy-fallback`).
+            // saturation:lossy-fallback`).
             debug_assert!(
                 index < 270,
                 "color index {index} exceeds palette bound (270); cast to u32 would lose data"

@@ -316,7 +316,7 @@ fn handler_delete_by_placement_id() {
 
     // Delete only placement 10. Per kitty graphics-protocol.rst, the spec arm
     // for placement-id scoping is `d=i,i=<id>,p=<pid>` (NOT `d=p`, which
- // deletes by cell position per 's corrected semantics).
+    // deletes by cell position per 's corrected semantics).
     let delete = kitty_apc("a=d,d=i,i=1,p=10,q=2");
     feed(&mut term, &delete);
     assert_eq!(term.image_cache().placement_count(), 1);

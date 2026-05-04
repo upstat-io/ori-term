@@ -16,7 +16,7 @@ fn tool_available_returns_false_for_nonexistent_binary() {
 
 #[test]
 fn tool_available_returns_false_when_binary_spawns_but_exits_nonzero() {
- // Verifies for tool_available must check
+    // Verifies for tool_available must check
     // BOTH "spawn succeeded" AND "exit code is success." A binary
     // that launches but reports failure (wrong flag, missing
     // terminfo path, broken install) is NOT available — it would
@@ -49,16 +49,16 @@ fn vttest_available_matches_tool_available() {
     // would always report vttest as unavailable on every dev/CI host
     // that has vttest installed. `vttest -V` (capital, not `--version`
     // — vttest does not recognize the long form) prints the version
- // banner and exits 0. Closes.
+    // banner and exits 0. Closes.
     assert_eq!(vttest_available(), tool_available("vttest", "-V"));
 }
 
 #[test]
 fn vttest_available_pinned_to_capital_v_probe_via_direct_spawn() {
- // Verifies for `vttest_available()` must agree with a DIRECT
+    // Verifies for `vttest_available()` must agree with a DIRECT
     // `vttest -V` spawn — independent ground truth, decoupled from
     // `tool_available`. Mirrors `tack_available_pinned_to_h_probe_via_direct_spawn`
- // and closes the regression vector.
+    // and closes the regression vector.
     //
     // Why a separate test from `vttest_available_matches_tool_available`:
     // the existing test compares both sides against `tool_available("vttest", "-V")`,
@@ -77,7 +77,7 @@ fn vttest_available_pinned_to_capital_v_probe_via_direct_spawn() {
     // happens to exit zero.
     //
     // On hosts WITHOUT vttest installed, the test emits a visible SKIP
- // message ( Skip Protocol) and
+    // message ( Skip Protocol) and
     // returns early.
     let v_succeeds = std::process::Command::new("vttest")
         .arg("-V")
@@ -144,7 +144,7 @@ fn tack_available_matches_tool_available() {
 
 #[test]
 fn tack_available_pinned_to_h_probe_via_direct_spawn() {
- // Verifies for `tack_available()` must agree with
+    // Verifies for `tack_available()` must agree with
     // a DIRECT `tack -h` spawn — independent ground truth, decoupled
     // from `tool_available`.
     //
@@ -175,7 +175,7 @@ fn tack_available_pinned_to_h_probe_via_direct_spawn() {
     // `tack_available()` back to `tool_available("tack", "-V")`.
     //
     // On hosts WITHOUT tack installed, the test emits a visible SKIP
- // message ( Skip Protocol) and
+    // message ( Skip Protocol) and
     // returns early. The dev environment (Linux/WSL) and Linux CI both
     // have tack, which is where the regression is caught in practice.
     let h_succeeds = std::process::Command::new("tack")

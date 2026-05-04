@@ -452,7 +452,7 @@ fn count_mid_idx_at_double_count_wraps_to_zero() {
 /// the bare selection lands on:
 /// - Correct impl: `999_999 % 17 = 8` → `current_color = 8` → palette[8] = red.
 /// - Buggy impl `(params[0] as u16) % count`: `(999999 as u16) = 16959;
-///   16959 % 17 = 10` → `current_color = 10` → palette[10] = green.
+/// 16959 % 17 = 10` → `current_color = 10` → palette[10] = green.
 ///
 /// Without the pre-defined distinct colors at the two competing slots,
 /// the original `#999999;...;#999999@` shape would route both define

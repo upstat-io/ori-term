@@ -75,7 +75,7 @@ pub(crate) struct SettingsIds {
     // Bell page — Visual Bell section.
     pub bell_animation_dropdown: WidgetId,
     pub bell_duration_dropdown: WidgetId,
- // Bell page — Desktop Notifications section ().
+    // Bell page — Desktop Notifications section ().
     pub notification_mode_dropdown: WidgetId,
     pub notify_on_command_finish_dropdown: WidgetId,
     pub notify_command_bell_toggle: WidgetId,

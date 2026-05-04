@@ -7,17 +7,17 @@
 //! Tests then drive a real PTY shell and observe:
 //!
 //! 1. `gate_blocks_when_no_wakeup` — `mux.has_pending_wakeup()` returns
-//!    false after startup-wakeup drain; gate's early-exit at
-//!    `oriterm/src/app/mux_pump/mod.rs:35-37` is sound.
+//! false after startup-wakeup drain; gate's early-exit at
+//! `oriterm/src/app/mux_pump/mod.rs:35-37` is sound.
 //! 2. `gate_passes_after_io_emit` — DA1 query → `has_pending_wakeup()`
-//!    becomes true → drain delivers response bytes back to child stdin.
+//! becomes true → drain delivers response bytes back to child stdin.
 //! 3. `recorded_proxy_observes_wakeup` — proxy receives
-//!    `RecordedTermEvent::MuxWakeup` for every IO-thread effect emission.
+//! `RecordedTermEvent::MuxWakeup` for every IO-thread effect emission.
 //! 4. `recorded_proxy_does_not_double_signal` — coalescing guard at
-//!    `oriterm_mux/src/backend/embedded/mod.rs:62-66` fires the wakeup
-//!    AT MOST once per parse cycle.
+//! `oriterm_mux/src/backend/embedded/mod.rs:62-66` fires the wakeup
+//! AT MOST once per parse cycle.
 //! 5. `flag_clears_on_poll_events` — `wakeup_pending.store(false)` at
-//!    `oriterm_mux/src/backend/embedded/mod.rs:86` runs before drain.
+//! `oriterm_mux/src/backend/embedded/mod.rs:86` runs before drain.
 //!
 //! These tests live in `oriterm_mux/tests/` (NOT `oriterm/tests/`) per
 //! the Test`: the tests

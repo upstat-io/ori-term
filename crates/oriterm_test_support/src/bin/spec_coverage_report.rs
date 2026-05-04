@@ -35,7 +35,7 @@ fn main() -> ExitCode {
 
     // Wrapper-resident gate: catalog, baseline, audit-files all live at the
     // wrapper root. Standalone term_repo checkout = graceful skip + exit 0
- // Skip Protocol`. Explicit gates
+    // Skip Protocol`. Explicit gates
     // (catalog/baseline/audits) require the wrapper; without it there is
     // nothing this binary can do. `paths::catalog_dir()` is the SSOT entry
     // point — every wrapper-relative subpath below derives from it.

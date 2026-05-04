@@ -498,9 +498,9 @@ fn bench_realistic_tui_redraw(c: &mut Criterion) {
 /// already done O(rows * cols) work.
 ///
 /// Baseline (2026-03-12, WSL2, Ryzen):
-///   80x24:  ~20 µs
-///   120x50: ~52 µs
-///   240x80: ~167 µs
+/// 80x24: ~20 µs
+/// 120x50: ~52 µs
+/// 240x80: ~167 µs
 ///
 /// All well under the 0.5ms optimization threshold (Section 23.1).
 fn bench_renderable_content_into(c: &mut Criterion) {
@@ -535,8 +535,8 @@ fn bench_renderable_content_into(c: &mut Criterion) {
 /// Called once per frame after the prepare phase consumes the snapshot.
 ///
 /// Baseline (2026-03-12, WSL2, Ryzen):
-///   120x50: ~384 ns
-///   240x80: ~608 ns
+/// 120x50: ~384 ns
+/// 240x80: ~608 ns
 fn bench_dirty_drain(c: &mut Criterion) {
     let drain_sizes: [(usize, usize); 2] = [(120, 50), (240, 80)];
     let mut group = c.benchmark_group("dirty/drain");

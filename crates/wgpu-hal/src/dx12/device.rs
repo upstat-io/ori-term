@@ -112,10 +112,10 @@ impl super::Device {
 
         let zero_buffer = zero_buffer.ok_or(crate::DeviceError::Unexpected)?;
 
-        // Note: without `D3D12_HEAP_FLAG_CREATE_NOT_ZEROED`
-        // this resource is zeroed by default.
+ // Note: without `D3D12_HEAP_FLAG_CREATE_NOT_ZEROED`
+ // this resource is zeroed by default.
 
-        // maximum number of CBV/SRV/UAV descriptors in heap for Tier 1
+ // maximum number of CBV/SRV/UAV descriptors in heap for Tier 1
         let capacity_views = limits.max_non_sampler_bindings as u64;
 
         let draw_mesh = if features
@@ -184,8 +184,8 @@ impl super::Device {
         let mut rtv_pool =
             descriptor::CpuPool::new(raw.clone(), Direct3D12::D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
         let null_rtv_handle = rtv_pool.alloc_handle()?;
-        // A null pResource is used to initialize a null descriptor,
-        // which guarantees D3D11-like null binding behavior (reading 0s, writes are discarded)
+ // A null pResource is used to initialize a null descriptor,
+ // which guarantees D3D11-like null binding behavior (reading 0s, writes are discarded)
         unsafe {
             raw.CreateRenderTargetView(
                 None,
@@ -255,9 +255,9 @@ impl super::Device {
         signature.ok_or(crate::DeviceError::Unexpected)
     }
 
-    // Blocks until the dedicated present queue is finished with all of its work.
-    //
-    // Once this method completes, the surface is able to be resized or deleted.
+ // Blocks until the dedicated present queue is finished with all of its work.
+ //
+ // Once this method completes, the surface is able to be resized or deleted.
     pub(super) unsafe fn wait_for_present_queue_idle(&self) -> Result<(), crate::DeviceError> {
         let cur_value = unsafe { self.idler.fence.GetCompletedValue() };
         if cur_value == !0 {
@@ -275,9 +275,9 @@ impl super::Device {
         Ok(())
     }
 
-    /// When generating the vertex shader, the fragment stage must be passed if it exists!
-    /// Otherwise, the generated HLSL may be incorrect since the fragment shader inputs are
-    /// allowed to be a subset of the vertex outputs.
+ /// When generating the vertex shader, the fragment stage must be passed if it exists!
+ /// Otherwise, the generated HLSL may be incorrect since the fragment shader inputs are
+ /// allowed to be a subset of the vertex outputs.
     fn load_shader(
         &self,
         stage: &crate::ProgrammableStage<super::ShaderModule>,
@@ -292,7 +292,7 @@ impl super::Device {
             || stage.module.runtime_checks.bounds_checks != layout.naga_options.restrict_indexing
             || stage.module.runtime_checks.force_loop_bounding
                 != layout.naga_options.force_loop_bounding;
-        // Note: ray query initialization tracking not yet implemented
+ // Note: ray query initialization tracking not yet implemented
         let mut temp_options;
         let naga_options = if needs_temp_options {
             temp_options = layout.naga_options.clone();
@@ -339,7 +339,7 @@ impl super::Device {
                     entry_point: Some((naga_stage, stage.entry_point.to_string())),
                 };
 
-                //TODO: reuse the writer
+ //TODO: reuse the writer
                 let (source, entry_point) = {
                     let mut source = String::new();
                     let mut writer =
@@ -419,7 +419,7 @@ impl super::Device {
             };
             shader_cache.entries.insert(key, value);
 
-            // Retain all entries that have been used since we compiled the last 100 shaders.
+ // Retain all entries that have been used since we compiled the last 100 shaders.
             if shader_cache.entries.len() > 200 {
                 shader_cache
                     .entries
@@ -519,14 +519,14 @@ impl crate::Device for super::Device {
         range: crate::MemoryRange,
     ) -> Result<crate::BufferMapping, crate::DeviceError> {
         let mut ptr = ptr::null_mut();
-        // TODO: 0 for subresource should be fine here until map and unmap buffer is subresource aware?
+ // TODO: 0 for subresource should be fine here until map and unmap buffer is subresource aware?
         unsafe { buffer.resource.Map(0, None, Some(&mut ptr)) }.into_device_result("Map buffer")?;
 
         Ok(crate::BufferMapping {
             ptr: ptr::NonNull::new(unsafe { ptr.offset(range.start as isize).cast::<u8>() })
                 .unwrap(),
-            //TODO: double-check this. Documentation is a bit misleading -
-            // it implies that Map/Unmap is needed to invalidate/flush memory.
+ //TODO: double-check this. Documentation is a bit misleading -
+ // it implies that Map/Unmap is needed to invalidate/flush memory.
             is_coherent: true,
         })
     }
@@ -655,7 +655,7 @@ impl crate::Device for super::Device {
             },
             handle_rtv: if desc.usage.intersects(wgt::TextureUses::COLOR_TARGET)
                 && desc.dimension != wgt::TextureViewDimension::D3
-            // 3D RTVs must be created in the render pass
+ // 3D RTVs must be created in the render pass
             {
                 let raw_desc = unsafe { view_desc.to_rtv() };
                 let handle = self.rtv_pool.lock().alloc_handle()?;
@@ -829,7 +829,7 @@ impl crate::Device for super::Device {
                 | wgt::BindingType::StorageTexture { .. }
                 | wgt::BindingType::AccelerationStructure { .. } => num_views += count,
                 wgt::BindingType::Sampler { .. } => has_sampler_in_group = true,
-                // Three texture planes and one params buffer
+ // Three texture planes and one params buffer
                 wgt::BindingType::ExternalTexture => num_views += 4 * count,
             }
         }
@@ -865,41 +865,41 @@ impl crate::Device for super::Device {
         desc: &crate::PipelineLayoutDescriptor<super::BindGroupLayout>,
     ) -> Result<super::PipelineLayout, crate::DeviceError> {
         use naga::back::hlsl;
-        // Pipeline layouts are implemented as RootSignature for D3D12.
-        //
-        // Immediates are implemented as root constants.
-        //
-        // Each bind group layout will be one table entry of the root signature.
-        // We have the additional restriction that SRV/CBV/UAV and samplers need to be
-        // separated, so each set layout will actually occupy up to 2 entries!
-        // SRV/CBV/UAV tables are added to the signature first, then Sampler tables,
-        // and finally dynamic uniform descriptors.
-        //
-        // Uniform buffers with dynamic offsets are implemented as root descriptors.
-        // This is easier than trying to patch up the offset on the shader side.
-        //
-        // Storage buffers with dynamic offsets are part of a descriptor table and
-        // the dynamic offsets are passed via root constants.
-        //
-        // Root signature layout:
-        // Root Constants: Parameter=0, Space=0
-        //     ...
-        // (bind group [0]) - Space=0
-        //   View descriptor table, if any
-        //   Sampler buffer descriptor table, if any
-        //   Root descriptors (for dynamic offset buffers)
-        // (bind group [1]) - Space=0
-        // ...
-        // (bind group [2]) - Space=0
-        // Special constant buffer: Space=0
-        // Sampler descriptor tables: Space=0
-        //   SamplerState Array: Space=0, Register=0-2047
-        //   SamplerComparisonState Array: Space=0, Register=2048-4095
+ // Pipeline layouts are implemented as RootSignature for D3D12.
+ //
+ // Immediates are implemented as root constants.
+ //
+ // Each bind group layout will be one table entry of the root signature.
+ // We have the additional restriction that SRV/CBV/UAV and samplers need to be
+ // separated, so each set layout will actually occupy up to 2 entries!
+ // SRV/CBV/UAV tables are added to the signature first, then Sampler tables,
+ // and finally dynamic uniform descriptors.
+ //
+ // Uniform buffers with dynamic offsets are implemented as root descriptors.
+ // This is easier than trying to patch up the offset on the shader side.
+ //
+ // Storage buffers with dynamic offsets are part of a descriptor table and
+ // the dynamic offsets are passed via root constants.
+ //
+ // Root signature layout:
+ // Root Constants: Parameter=0, Space=0
+ //...
+ // (bind group [0]) - Space=0
+ // View descriptor table, if any
+ // Sampler buffer descriptor table, if any
+ // Root descriptors (for dynamic offset buffers)
+ // (bind group [1]) - Space=0
+ //...
+ // (bind group [2]) - Space=0
+ // Special constant buffer: Space=0
+ // Sampler descriptor tables: Space=0
+ // SamplerState Array: Space=0, Register=0-2047
+ // SamplerComparisonState Array: Space=0, Register=2048-4095
 
-        //TODO: put lower bind group indices further down the root signature. See:
-        // https://microsoft.github.io/DirectX-Specs/d3d/ResourceBinding.html#binding-model
-        // Currently impossible because wgpu-core only re-binds the descriptor sets based
-        // on Vulkan-like layout compatibility rules.
+ //TODO: put lower bind group indices further down the root signature. See:
+ // https://microsoft.github.io/DirectX-Specs/d3d/ResourceBinding.html#binding-model
+ // Currently impossible because wgpu-core only re-binds the descriptor sets based
+ // on Vulkan-like layout compatibility rules.
 
         let mut binding_map = hlsl::BindingMap::default();
         let mut sampler_buffer_binding_map = hlsl::SamplerIndexBufferBindingMap::default();
@@ -939,9 +939,9 @@ impl crate::Device for super::Device {
         let mut dynamic_storage_buffer_offsets_targets = alloc::collections::BTreeMap::new();
         let mut total_dynamic_storage_buffers = 0;
 
-        // Collect the whole number of bindings we will create upfront.
-        // It allows us to preallocate enough storage to avoid reallocation,
-        // which could cause invalid pointers.
+ // Collect the whole number of bindings we will create upfront.
+ // It allows us to preallocate enough storage to avoid reallocation,
+ // which could cause invalid pointers.
         let mut total_non_dynamic_entries = 0_usize;
         let mut sampler_in_any_bind_group = false;
         for bgl in desc.bind_group_layouts {
@@ -955,21 +955,21 @@ impl crate::Device for super::Device {
                         ..
                     } => {}
                     wgt::BindingType::Sampler(_) => sampler_in_bind_group = true,
-                    // Three texture planes and one params buffer
+ // Three texture planes and one params buffer
                     wgt::BindingType::ExternalTexture => total_non_dynamic_entries += 4,
                     _ => total_non_dynamic_entries += 1,
                 }
             }
 
             if sampler_in_bind_group {
-                // One for the sampler buffer
+ // One for the sampler buffer
                 total_non_dynamic_entries += 1;
                 sampler_in_any_bind_group = true;
             }
         }
 
         if sampler_in_any_bind_group {
-            // Two for the sampler arrays themselves
+ // Two for the sampler arrays themselves
             total_non_dynamic_entries += 2;
         }
 
@@ -1008,13 +1008,13 @@ impl crate::Device for super::Device {
 
             let mut dynamic_storage_buffers = 0;
 
-            // SRV/CBV/UAV descriptor tables
+ // SRV/CBV/UAV descriptor tables
             let range_base = ranges.len();
             for entry in bgl.entries.iter() {
                 let count = entry.count.map_or(1, NonZeroU32::get);
                 if let wgt::BindingType::ExternalTexture = entry.ty {
-                    // External textures need 3 SRVs (a texture for each plane)
-                    // and 1 CBV for the parameters buffer.
+ // External textures need 3 SRVs (a texture for each plane)
+ // and 1 CBV for the parameters buffer.
                     let bind_target = hlsl::ExternalTextureBindTarget {
                         planes: core::array::from_fn(|_| hlsl::BindTarget {
                             register: {
@@ -1126,7 +1126,7 @@ impl crate::Device for super::Device {
                             binding: entry.binding,
                         },
                         hlsl::BindTarget {
-                            // Naga does not use the space field for samplers
+ // Naga does not use the space field for samplers
                             space: 255,
                             register: sampler_index_within_bind_group,
                             binding_array_size: None,
@@ -1171,7 +1171,7 @@ impl crate::Device for super::Device {
                 info.tables |= super::TableTypes::SRV_CBV_UAV;
             }
 
-            // Root descriptors for dynamic uniform buffers
+ // Root descriptors for dynamic uniform buffers
             let dynamic_buffers_visibility = conv::map_visibility(visibility_view_dynamic_uniform);
             for entry in bgl.entries.iter() {
                 match entry.ty {
@@ -1209,7 +1209,7 @@ impl crate::Device for super::Device {
                 bind_cbv.register += entry.count.map_or(1, NonZeroU32::get);
             }
 
-            // Root constants for (offsets of) dynamic storage buffers
+ // Root constants for (offsets of) dynamic storage buffers
             if dynamic_storage_buffers > 0 {
                 let parameter_index = parameters.len();
 
@@ -1264,17 +1264,17 @@ impl crate::Device for super::Device {
 
         let mut sampler_heap_root_index = None;
         if sampler_in_any_bind_group {
-            // Sampler descriptor tables
-            //
-            // We bind two sampler ranges pointing to the same descriptor heap, using two different register ranges.
-            //
-            // We bind them as normal samplers in registers 0-2047 and comparison samplers in registers 2048-4095.
-            // Tier 2 hardware guarantees that the type of sampler only needs to match if the sampler is actually
-            // accessed in the shader. As such, we can bind the same array of samplers to both registers.
-            //
-            // We do this because HLSL does not allow you to alias registers at all.
+ // Sampler descriptor tables
+ //
+ // We bind two sampler ranges pointing to the same descriptor heap, using two different register ranges.
+ //
+ // We bind them as normal samplers in registers 0-2047 and comparison samplers in registers 2048-4095.
+ // Tier 2 hardware guarantees that the type of sampler only needs to match if the sampler is actually
+ // accessed in the shader. As such, we can bind the same array of samplers to both registers.
+ //
+ // We do this because HLSL does not allow you to alias registers at all.
             let range_base = ranges.len();
-            // Standard samplers, registers 0-2047
+ // Standard samplers, registers 0-2047
             ranges.push(Direct3D12::D3D12_DESCRIPTOR_RANGE {
                 RangeType: Direct3D12::D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER,
                 NumDescriptors: 2048,
@@ -1282,7 +1282,7 @@ impl crate::Device for super::Device {
                 RegisterSpace: 0,
                 OffsetInDescriptorsFromTableStart: 0,
             });
-            // Comparison samplers, registers 2048-4095
+ // Comparison samplers, registers 2048-4095
             ranges.push(Direct3D12::D3D12_DESCRIPTOR_RANGE {
                 RangeType: Direct3D12::D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER,
                 NumDescriptors: 2048,
@@ -1305,7 +1305,7 @@ impl crate::Device for super::Device {
             });
         }
 
-        // Ensure that we didn't reallocate!
+ // Ensure that we didn't reallocate!
         debug_assert_eq!(ranges.len(), total_non_dynamic_entries);
 
         let (special_constants_root_index, special_constants_binding) = if desc.flags.intersects(
@@ -1325,10 +1325,10 @@ impl crate::Device for super::Device {
                 ShaderVisibility: Direct3D12::D3D12_SHADER_VISIBILITY_ALL, // really needed for VS and CS only,
             });
             let binding = bind_cbv;
-            // This is the last time we use this, but lets increment
-            // it so if we add more later, the value behaves correctly.
+ // This is the last time we use this, but lets increment
+ // it so if we add more later, the value behaves correctly.
 
-            // This is an allow as it doesn't trigger on 1.82, hal's MSRV.
+ // This is an allow as it doesn't trigger on 1.82, hal's MSRV.
             #[allow(unused_assignments)]
             {
                 bind_cbv.register += 1;
@@ -1367,8 +1367,8 @@ impl crate::Device for super::Device {
                     },
                 };
                 let special_constant_buffer_args_len = {
-                    // Hack: construct a dummy value of the special constants buffer value we need to
-                    // fill, and calculate the size of each member.
+ // Hack: construct a dummy value of the special constants buffer value we need to
+ // fill, and calculate the size of each member.
                     let super::RootElement::SpecialConstantBuffer {
                         first_vertex,
                         first_instance,
@@ -1673,8 +1673,8 @@ impl crate::Device for super::Device {
                     }
                 }
                 wgt::BindingType::ExternalTexture => {
-                    // We don't yet support binding arrays of external textures.
-                    // https://github.com/gfx-rs/wgpu/issues/8027
+ // We don't yet support binding arrays of external textures.
+ // https://github.com/gfx-rs/wgpu/issues/8027
                     assert_eq!(entry.count, 1);
                     let external_texture = &desc.external_textures[entry.resource_index as usize];
                     for plane in &external_texture.planes {
@@ -1713,7 +1713,7 @@ impl crate::Device for super::Device {
                 label: Some(&label),
                 size: buffer_size,
                 usage: wgt::BufferUses::STORAGE_READ_ONLY | wgt::BufferUses::MAP_WRITE,
-                // D3D12 backend doesn't care about the memory flags
+ // D3D12 backend doesn't care about the memory flags
                 memory_flags: crate::MemoryFlags::empty(),
             };
 
@@ -1734,7 +1734,7 @@ impl crate::Device for super::Device {
                 )
             };
 
-            // The unmapping is not needed, as all memory is coherent in d3d12, but lets be nice to our address space.
+ // The unmapping is not needed, as all memory is coherent in d3d12, but lets be nice to our address space.
             unsafe { buffer.Unmap(0, None) };
 
             let srv_desc = Direct3D12::D3D12_SHADER_RESOURCE_VIEW_DESC {
@@ -1855,7 +1855,7 @@ impl crate::Device for super::Device {
     }
     unsafe fn destroy_shader_module(&self, _module: super::ShaderModule) {
         self.counters.shader_modules.sub(1);
-        // just drop
+ // just drop
     }
 
     unsafe fn create_render_pipeline(
@@ -1955,10 +1955,10 @@ impl crate::Device for super::Device {
         let mut view_instancing = ArrayVec::<Direct3D12::D3D12_VIEW_INSTANCE_LOCATION, 32>::new();
         if let Some(mask) = desc.multiview_mask {
             let mask = mask.get();
-            // This array is just what _could_ be rendered to. We actually apply the mask at
-            // renderpass creation time. The `view_index` passed to the shader depends on the
-            // view's index in this array, so if we include every view in this array, `view_index`
-            // actually the texture array layer, like in vulkan.
+ // This array is just what _could_ be rendered to. We actually apply the mask at
+ // renderpass creation time. The `view_index` passed to the shader depends on the
+ // view's index in this array, so if we include every view in this array, `view_index`
+ // actually the texture array layer, like in vulkan.
             for i in 0..32 - mask.leading_zeros() {
                 view_instancing.push(Direct3D12::D3D12_VIEW_INSTANCE_LOCATION {
                     ViewportArrayIndex: 0,
@@ -1967,11 +1967,11 @@ impl crate::Device for super::Device {
             }
         }
 
-        // Borrow view instancing slice, so we can be sure that it won't be moved while we have pointers into this buffer.
+ // Borrow view instancing slice, so we can be sure that it won't be moved while we have pointers into this buffer.
         let view_instancing_slice = view_instancing.as_slice();
 
         let mut stream_desc = RenderPipelineStateStreamDesc {
-            // Shared by vertex and mesh pipelines
+ // Shared by vertex and mesh pipelines
             root_signature: desc.layout.shared.signature.as_ref(),
             pixel_shader,
             blend_state,
@@ -1992,14 +1992,14 @@ impl crate::Device for super::Device {
                 Some(Direct3D12::D3D12_VIEW_INSTANCING_DESC {
                     ViewInstanceCount: view_instancing_slice.len() as u32,
                     pViewInstanceLocations: view_instancing_slice.as_ptr(),
-                    // This lets us hide/mask certain values later, at renderpass creation time.
+ // This lets us hide/mask certain values later, at renderpass creation time.
                     Flags: Direct3D12::D3D12_VIEW_INSTANCING_FLAG_ENABLE_VIEW_INSTANCE_MASKING,
                 })
             } else {
                 None
             },
 
-            // Optional data that depends on the pipeline type (vertex vs mesh).
+ // Optional data that depends on the pipeline type (vertex vs mesh).
             vertex_shader: Default::default(),
             input_layout: Default::default(),
             index_buffer_strip_cut_value: Default::default(),
@@ -2106,9 +2106,9 @@ impl crate::Device for super::Device {
             }
         };
         let raw: Direct3D12::ID3D12PipelineState =
-            // If stream descriptors are available, use them as they are more flexible.
+ // If stream descriptors are available, use them as they are more flexible.
             if let Ok(device) = self.raw.cast::<Direct3D12::ID3D12Device2>() {
-                // Prefer stream descs where possible
+ // Prefer stream descs where possible
                 let mut stream = stream_desc.to_stream();
                 unsafe {
                     profiling::scope!("ID3D12Device2::CreatePipelineState");
@@ -2118,7 +2118,7 @@ impl crate::Device for super::Device {
                 }
             } else {
                 unsafe {
-                    // Safety: `stream_desc` entirely outlives the `desc`.
+ // Safety: `stream_desc` entirely outlives the `desc`.
                     let desc = stream_desc.to_graphics_pipeline_descriptor();
                     self.raw.CreateGraphicsPipelineState(&desc).map_err(|err| {
                         crate::PipelineError::Linkage(shader_stages, err.to_string())
@@ -2229,8 +2229,8 @@ impl crate::Device for super::Device {
                 .adapter
                 .query_video_memory_info(Dxgi::DXGI_MEMORY_SEGMENT_GROUP_LOCAL)?;
 
-            // Assume each query is 256 bytes.
-            // On an AMD W6800 with driver version 32.0.12030.9, occlusion and pipeline statistics are 256, timestamp is 8.
+ // Assume each query is 256 bytes.
+ // On an AMD W6800 with driver version 32.0.12030.9, occlusion and pipeline statistics are 256, timestamp is 8.
 
             if info.CurrentUsage + desc.count as u64 * 256 >= info.Budget / 100 * threshold as u64 {
                 return Err(crate::DeviceError::OutOfMemory);
@@ -2292,7 +2292,7 @@ impl crate::Device for super::Device {
     ) -> Result<bool, crate::DeviceError> {
         let timeout = timeout.unwrap_or(Duration::MAX);
 
-        // We first check if the fence has already reached the value we're waiting for.
+ // We first check if the fence has already reached the value we're waiting for.
         let mut fence_value = unsafe { fence.raw.GetCompletedValue() };
         if fence_value >= value {
             return Ok(true);
@@ -2305,25 +2305,25 @@ impl crate::Device for super::Device {
 
         let start_time = Instant::now();
 
-        // We need to loop to get correct behavior when timeouts are involved.
-        //
-        // wait(0):
-        //   - We set the event from the fence value 0.
-        //   - WaitForSingleObject times out, we return false.
-        //
-        // wait(1):
-        //   - We set the event from the fence value 1.
-        //   - WaitForSingleObject returns. However we do not know if the fence value is 0 or 1,
-        //     just that _something_ triggered the event. We check the fence value, and if it is
-        //     1, we return true. Otherwise, we loop and wait again.
+ // We need to loop to get correct behavior when timeouts are involved.
+ //
+ // wait(0):
+ // - We set the event from the fence value 0.
+ // - WaitForSingleObject times out, we return false.
+ //
+ // wait(1):
+ // - We set the event from the fence value 1.
+ // - WaitForSingleObject returns. However we do not know if the fence value is 0 or 1,
+ // just that _something_ triggered the event. We check the fence value, and if it is
+ // 1, we return true. Otherwise, we loop and wait again.
         loop {
             let elapsed = start_time.elapsed();
 
-            // We need to explicitly use checked_sub. Overflow with duration panics, and if the
-            // timing works out just right, we can get a negative remaining wait duration.
-            //
-            // This happens when a previous iteration WaitForSingleObject succeeded with a previous fence value,
-            // right before the timeout would have been hit.
+ // We need to explicitly use checked_sub. Overflow with duration panics, and if the
+ // timing works out just right, we can get a negative remaining wait duration.
+ //
+ // This happens when a previous iteration WaitForSingleObject succeeded with a previous fence value,
+ // right before the timeout would have been hit.
             let remaining_wait_duration = match timeout.checked_sub(elapsed) {
                 Some(remaining) => remaining,
                 None => {
@@ -2413,15 +2413,15 @@ impl crate::Device for super::Device {
                     let index_count = triangle.indices.as_ref().map_or(0, |indices| indices.count);
 
                     let triangle_desc = Direct3D12::D3D12_RAYTRACING_GEOMETRY_TRIANGLES_DESC {
-                        // https://learn.microsoft.com/en-us/windows/win32/api/d3d12/nf-d3d12-id3d12device5-getraytracingaccelerationstructureprebuildinfo
-                        // It may not inspect/dereference any GPU virtual addresses, other than
-                        // to check to see if a pointer is NULL or not, such as the optional
-                        // transform in D3D12_RAYTRACING_GEOMETRY_TRIANGLES_DESC, without
-                        // dereferencing it.
-                        //
-                        // This suggests we could pass a non-zero invalid address here if fetching the
-                        // real address has significant overhead, but we pass the real one to be on the
-                        // safe side for now.
+ // https://learn.microsoft.com/en-us/windows/win32/api/d3d12/nf-d3d12-id3d12device5-getraytracingaccelerationstructureprebuildinfo
+ // It may not inspect/dereference any GPU virtual addresses, other than
+ // to check to see if a pointer is NULL or not, such as the optional
+ // transform in D3D12_RAYTRACING_GEOMETRY_TRIANGLES_DESC, without
+ // dereferencing it.
+ //
+ // This suggests we could pass a non-zero invalid address here if fetching the
+ // real address has significant overhead, but we pass the real one to be on the
+ // safe side for now.
                         Transform3x4: if desc
                             .flags
                             .contains(wgt::AccelerationStructureFlags::USE_TRANSFORM)
@@ -2521,7 +2521,7 @@ impl crate::Device for super::Device {
         &self,
         desc: &crate::AccelerationStructureDescriptor,
     ) -> Result<super::AccelerationStructure, crate::DeviceError> {
-        // Create a D3D12 resource as per-usual.
+ // Create a D3D12 resource as per-usual.
         let size = desc.size;
 
         let raw_desc = Direct3D12::D3D12_RESOURCE_DESC {
@@ -2537,14 +2537,14 @@ impl crate::Device for super::Device {
                 Quality: 0,
             },
             Layout: Direct3D12::D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
-            // TODO: when moving to enhanced barriers use Direct3D12::D3D12_RESOURCE_FLAG_RAYTRACING_ACCELERATION_STRUCTURE
+ // TODO: when moving to enhanced barriers use Direct3D12::D3D12_RESOURCE_FLAG_RAYTRACING_ACCELERATION_STRUCTURE
             Flags: Direct3D12::D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS,
         };
 
         let (resource, allocation) = suballocation::DeviceAllocationContext::from(self)
             .create_acceleration_structure(desc, raw_desc)?;
 
-        // for some reason there is no counter for acceleration structures
+ // for some reason there is no counter for acceleration structures
 
         Ok(super::AccelerationStructure {
             resource,

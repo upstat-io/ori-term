@@ -7,14 +7,14 @@
 //!
 //! ```text
 //! \x1B[H\x1B[2JTesting bell (bel)
-//! If you did not hear the Bell then (bel) has failed.  (bel) Done
+//! If you did not hear the Bell then (bel) has failed. (bel) Done
 //! ```
 //!
 //! # Catalog rows verified
 //!
 //! - **None new.** The `bel` row (`ECMA48-C0-BEL`) is verified by
-//!   `super::acs::bel_drives_to_host_effect_apex` — the combined
-//!   tack screen exercises one BEL probe, not two.
+//! `super::acs::bel_drives_to_host_effect_apex` — the combined
+//! tack screen exercises one BEL probe, not two.
 //!
 //! SGR rendering rows (bold / dim / underline / blink / reverse / invis)
 //! are NOT exercised by tack v1.08's combined ACS + graphic-rendition

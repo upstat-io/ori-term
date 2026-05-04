@@ -62,7 +62,7 @@ pub(crate) struct UiFontSizes {
     /// every rebuild path (`rebuild_all`, `ensure_size`,
     /// `create_default_collection`) so the emoji fallback is never dropped
     /// during a monitor-DPI change, a runtime size addition, or a standalone
- /// default construction. Fixes.
+    /// default construction. Fixes.
     injected_fallbacks: Vec<FontData>,
 }
 
@@ -145,7 +145,7 @@ impl UiFontSizes {
     /// `create_default_collection`) replays them onto the new collections.
     ///
     /// Used to add the terminal font's emoji fallback so emoji render at
- /// the correct UI text size through `FontSource::Ui`. See 
+    /// the correct UI text size through `FontSource::Ui`. See
     /// for the DPI-change regression this replay fixes.
     ///
     /// Idempotent: entries whose `Arc<FontBytes>` identity and face index

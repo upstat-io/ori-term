@@ -42,7 +42,7 @@ fn tack_cap_coverage_matrix() {
         uncovered.join("\n  "),
     );
 
- // Regression guard: a cap appearing in BOTH any section's `covered`
+    // Regression guard: a cap appearing in BOTH any section's `covered`
     // AND any section's `exempt` is a stale exemption — the matrix
     // fails loudly so the cleanup happens.
     //

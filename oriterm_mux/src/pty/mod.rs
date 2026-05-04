@@ -84,8 +84,8 @@ pub fn spawn_pty_writer(
             // Wake the IO thread so it observes shutdown out of
             // `select!` within one iteration. Best-effort: bounded(1)
             // — if a wake is already pending the existing wake is
- // sufficient. Pinned by §04 review round 5 Codex F1
- // and the §03 regression guard
+            // sufficient. Pinned by §04 review round 5 Codex F1
+            // and the §03 regression guard
             // `idle_io_thread_observes_writer_thread_shutdown_within_one_iteration`.
             let _ = io_wake_tx.try_send(());
         })

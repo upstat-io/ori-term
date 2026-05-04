@@ -195,58 +195,58 @@ crate::impl_dyn_resource!(
 );
 
 bitflags::bitflags! {
-    /// Flags that affect internal code paths but do not
-    /// change the exposed feature set.
+ /// Flags that affect internal code paths but do not
+ /// change the exposed feature set.
     #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
     struct PrivateCapabilities: u32 {
-        /// Indicates support for `glBufferStorage` allocation.
+ /// Indicates support for `glBufferStorage` allocation.
         const BUFFER_ALLOCATION = 1 << 0;
-        /// Support explicit layouts in shader.
+ /// Support explicit layouts in shader.
         const SHADER_BINDING_LAYOUT = 1 << 1;
-        /// Support extended shadow sampling instructions.
+ /// Support extended shadow sampling instructions.
         const SHADER_TEXTURE_SHADOW_LOD = 1 << 2;
-        /// Support memory barriers.
+ /// Support memory barriers.
         const MEMORY_BARRIERS = 1 << 3;
-        /// Vertex buffer layouts separate from the data.
+ /// Vertex buffer layouts separate from the data.
         const VERTEX_BUFFER_LAYOUT = 1 << 4;
-        /// Indicates that buffers used as `GL_ELEMENT_ARRAY_BUFFER` may be created / initialized / used
-        /// as other targets, if not present they must not be mixed with other targets.
+ /// Indicates that buffers used as `GL_ELEMENT_ARRAY_BUFFER` may be created / initialized / used
+ /// as other targets, if not present they must not be mixed with other targets.
         const INDEX_BUFFER_ROLE_CHANGE = 1 << 5;
-        /// Supports `glGetBufferSubData`
+ /// Supports `glGetBufferSubData`
         const GET_BUFFER_SUB_DATA = 1 << 7;
-        /// Supports `f16` color buffers
+ /// Supports `f16` color buffers
         const COLOR_BUFFER_HALF_FLOAT = 1 << 8;
-        /// Supports `f11/f10` and `f32` color buffers
+ /// Supports `f11/f10` and `f32` color buffers
         const COLOR_BUFFER_FLOAT = 1 << 9;
-        /// Supports query buffer objects.
+ /// Supports query buffer objects.
         const QUERY_BUFFERS = 1 << 11;
-        /// Supports 64 bit queries via `glGetQueryObjectui64v`
+ /// Supports 64 bit queries via `glGetQueryObjectui64v`
         const QUERY_64BIT = 1 << 12;
-        /// Supports `glTexStorage2D`, etc.
+ /// Supports `glTexStorage2D`, etc.
         const TEXTURE_STORAGE = 1 << 13;
-        /// Supports `push_debug_group`, `pop_debug_group` and `debug_message_insert`.
+ /// Supports `push_debug_group`, `pop_debug_group` and `debug_message_insert`.
         const DEBUG_FNS = 1 << 14;
-        /// Supports framebuffer invalidation.
+ /// Supports framebuffer invalidation.
         const INVALIDATE_FRAMEBUFFER = 1 << 15;
-        /// Indicates support for `glDrawElementsInstancedBaseVertexBaseInstance` and `ARB_shader_draw_parameters`
-        ///
-        /// When this is true, instance offset emulation via vertex buffer rebinding and a shader uniform will be disabled.
+ /// Indicates support for `glDrawElementsInstancedBaseVertexBaseInstance` and `ARB_shader_draw_parameters`
+ ///
+ /// When this is true, instance offset emulation via vertex buffer rebinding and a shader uniform will be disabled.
         const FULLY_FEATURED_INSTANCING = 1 << 16;
     }
 }
 
 bitflags::bitflags! {
-    /// Flags that indicate necessary workarounds for specific devices or driver bugs
+ /// Flags that indicate necessary workarounds for specific devices or driver bugs
     #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
     struct Workarounds: u32 {
-        // Needs workaround for Intel Mesa bug:
-        // https://gitlab.freedesktop.org/mesa/mesa/-/issues/2565.
-        //
-        // This comment
-        // (https://gitlab.freedesktop.org/mesa/mesa/-/merge_requests/4972/diffs?diff_id=75888#22f5d1004713c9bbf857988c7efb81631ab88f99_323_327)
-        // seems to indicate all skylake models are effected.
+ // Needs workaround for Intel Mesa bug:
+ // https://gitlab.freedesktop.org/mesa/mesa/-/issues/2565.
+ //
+ // This comment
+ // (https://gitlab.freedesktop.org/mesa/mesa/-/merge_requests/4972/diffs?diff_id=75888#22f5d1004713c9bbf857988c7efb81631ab88f99_323_327)
+ // seems to indicate all skylake models are effected.
         const MESA_I915_SRGB_SHADER_CLEAR = 1 << 0;
-        /// Buffer map must emulated because it is not supported natively
+ /// Buffer map must emulated because it is not supported natively
         const EMULATE_BUFFER_MAP = 1 << 1;
     }
 }
@@ -258,7 +258,7 @@ enum VertexAttribKind {
     #[default]
     Float, // glVertexAttribPointer
     Integer, // glVertexAttribIPointer
-             //Double,  // glVertexAttribLPointer
+ //Double, // glVertexAttribLPointer
 }
 
 #[derive(Clone, Debug)]
@@ -280,9 +280,9 @@ struct AdapterShared {
     program_cache: Mutex<ProgramCache>,
     es: bool,
 
-    /// Result of `gl.get_parameter_i32(glow::MAX_SAMPLES)`.
-    /// Cached here so it doesn't need to be queried every time texture format capabilities are requested.
-    /// (this has been shown to be a significant enough overhead)
+ /// Result of `gl.get_parameter_i32(glow::MAX_SAMPLES)`.
+ /// Cached here so it doesn't need to be queried every time texture format capabilities are requested.
+ /// (this has been shown to be a significant enough overhead)
     max_msaa_samples: i32,
 }
 
@@ -315,11 +315,11 @@ pub struct Queue {
     features: wgt::Features,
     draw_fbo: glow::Framebuffer,
     copy_fbo: glow::Framebuffer,
-    /// Shader program used to clear the screen for [`Workarounds::MESA_I915_SRGB_SHADER_CLEAR`]
-    /// devices.
+ /// Shader program used to clear the screen for [`Workarounds::MESA_I915_SRGB_SHADER_CLEAR`]
+ /// devices.
     shader_clear_program: Option<ShaderClearProgram>,
-    /// Keep a reasonably large buffer filled with zeroes, so that we can implement `ClearBuffer` of
-    /// zeroes by copying from it.
+ /// Keep a reasonably large buffer filled with zeroes, so that we can implement `ClearBuffer` of
+ /// zeroes by copying from it.
     zero_buffer: glow::Buffer,
     temp_query_results: Mutex<Vec<u64>>,
     draw_buffer_count: AtomicU8,
@@ -340,7 +340,7 @@ pub struct Buffer {
     raw: Option<glow::Buffer>,
     target: BindTarget,
     size: wgt::BufferAddress,
-    /// Flags to use within calls to [`Device::map_buffer`](crate::Device::map_buffer).
+ /// Flags to use within calls to [`Device::map_buffer`](crate::Device::map_buffer).
     map_flags: u32,
     data: Option<Arc<MaybeMutex<Vec<u8>>>>,
     offset_of_current_mapping: Arc<MaybeMutex<wgt::BufferAddress>>,
@@ -364,18 +364,18 @@ pub enum TextureInner {
         target: BindTarget,
     },
     #[cfg(webgl)]
-    /// Render to a `WebGLFramebuffer`
-    ///
-    /// This is a web feature
+ /// Render to a `WebGLFramebuffer`
+ ///
+ /// This is a web feature
     ExternalFramebuffer {
         inner: web_sys::WebGlFramebuffer,
     },
     #[cfg(native)]
-    /// Render to a `glow::NativeFramebuffer`
-    /// Useful when the framebuffer to draw to
-    /// has a non-zero framebuffer ID
-    ///
-    /// This is a native feature
+ /// Render to a `glow::NativeFramebuffer`
+ /// Useful when the framebuffer to draw to
+ /// has a non-zero framebuffer ID
+ ///
+ /// This is a native feature
     ExternalNativeFramebuffer {
         inner: glow::NativeFramebuffer,
     },
@@ -411,8 +411,8 @@ pub struct Texture {
     pub format_desc: TextureFormatDesc,
     pub copy_size: CopyExtent,
 
-    // The `drop_guard` field must be the last field of this struct so it is dropped last.
-    // Do not add new fields after it.
+ // The `drop_guard` field must be the last field of this struct so it is dropped last.
+ // Do not add new fields after it.
     pub drop_guard: Option<crate::DropGuard>,
 }
 
@@ -446,14 +446,14 @@ impl Texture {
         }
     }
 
-    /// Returns the `target`, whether the image is 3d and whether the image is a cubemap.
+ /// Returns the `target`, whether the image is 3d and whether the image is a cubemap.
     fn get_info_from_desc(desc: &TextureDescriptor) -> u32 {
         match desc.dimension {
-            // WebGL (1 and 2) as well as some GLES versions do not have 1D textures, so we are
-            // doing `TEXTURE_2D` instead
+ // WebGL (1 and 2) as well as some GLES versions do not have 1D textures, so we are
+ // doing `TEXTURE_2D` instead
             wgt::TextureDimension::D1 => glow::TEXTURE_2D,
             wgt::TextureDimension::D2 => {
-                // HACK: detect a cube map; forces cube compatible textures to be cube textures
+ // HACK: detect a cube map; forces cube compatible textures to be cube textures
                 match (desc.is_cube_compatible(), desc.size.depth_or_array_layers) {
                     (false, 1) => glow::TEXTURE_2D,
                     (false, _) => glow::TEXTURE_2D_ARRAY,
@@ -465,7 +465,7 @@ impl Texture {
         }
     }
 
-    /// More information can be found in issues #1614 and #1574
+ /// More information can be found in issues #1614 and #1574
     fn log_failing_target_heuristics(view_dimension: wgt::TextureViewDimension, target: u32) {
         let expected_target = match view_dimension {
             wgt::TextureViewDimension::D1 => glow::TEXTURE_2D,
@@ -544,11 +544,11 @@ impl crate::DynBindGroupLayout for BindGroupLayout {}
 #[derive(Debug)]
 struct BindGroupLayoutInfo {
     entries: Arc<[wgt::BindGroupLayoutEntry]>,
-    /// Mapping of resources, indexed by `binding`, into the whole layout space.
-    /// For texture resources, the value is the texture slot index.
-    /// For sampler resources, the value is the index of the sampler in the whole layout.
-    /// For buffers, the value is the uniform or storage slot index.
-    /// For unused bindings, the value is `!0`
+ /// Mapping of resources, indexed by `binding`, into the whole layout space.
+ /// For texture resources, the value is the texture slot index.
+ /// For sampler resources, the value is the index of the sampler in the whole layout.
+ /// For buffers, the value is the uniform or storage slot index.
+ /// For unused bindings, the value is `!0`
     binding_to_slot: Box<[u8]>,
 }
 
@@ -587,7 +587,7 @@ enum RawBinding {
         target: BindTarget,
         aspects: crate::FormatAspects,
         mip_levels: Range<u32>,
-        //TODO: array layers
+ //TODO: array layers
     },
     Image(ImageBinding),
     Sampler(glow::Sampler),
@@ -936,10 +936,10 @@ enum Command {
     ClearColorI(u32, [i32; 4]),
     ClearDepth(f32),
     ClearStencil(u32),
-    // Clearing both the depth and stencil buffer individually appears to
-    // result in the stencil buffer failing to clear, atleast in WebGL.
-    // It is also more efficient to emit a single command instead of two for
-    // this.
+ // Clearing both the depth and stencil buffer individually appears to
+ // result in the stencil buffer failing to clear, atleast in WebGL.
+ // It is also more efficient to emit a single command instead of two for
+ // this.
     ClearDepthAndStencil(f32, u32),
     BufferBarrier(glow::Buffer, wgt::BufferUses),
     TextureBarrier(wgt::TextureUses),
@@ -1005,7 +1005,7 @@ enum Command {
     PopDebugGroup,
     SetImmediates {
         uniform: ImmediateDesc,
-        /// Offset from the start of the `data_bytes`
+ /// Offset from the start of the `data_bytes`
         offset: u32,
     },
     SetClipDistances {
@@ -1105,7 +1105,7 @@ fn gl_debug_message_callback(source: u32, gltype: u32, id: u32, severity: u32, m
 
     #[cfg(feature = "validation_canary")]
     if cfg!(debug_assertions) && log_severity == log::Level::Error {
-        // Set canary and continue
+ // Set canary and continue
         crate::VALIDATION_CANARY.add(message.to_string());
     }
 }
@@ -1119,9 +1119,9 @@ cfg_if::cfg_if! {
             mutex.lock().unwrap()
         }
     } else {
-        // It should be impossible for any build configuration to trigger this error
-        // It is intended only as a guard against changes elsewhere causing the use of
-        // `RefCell` here to become unsound.
+ // It should be impossible for any build configuration to trigger this error
+ // It is intended only as a guard against changes elsewhere causing the use of
+ // `RefCell` here to become unsound.
         #[cfg(all(send_sync, not(feature = "fragile-send-sync-non-atomic-wasm")))]
         compile_error!("cannot provide non-fragile Send+Sync without std");
 

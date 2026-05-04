@@ -453,7 +453,7 @@ impl<S: EffectSink> Handler for Term<S> {
     // §10.9 OSC 3 / 5 / 6 / 13 / 14 / 17 / 19 / 113 / 114 / 117 / 119
     // delegates — each forwards to its `osc_*` helper in `handler/osc.rs`.
     // Compressed via `delegate_osc!` to keep the trait impl under the
- // 500-line file budget (see ).
+    // 500-line file budget.
     delegate_osc!(set_x11_property(payload: &[u8]) => osc_set_x11_property);
     delegate_osc!(set_special_color(index: usize, color: Rgb) => osc_set_special_color);
     delegate_osc!(query_special_color(index: usize, terminator: &str) => osc_query_special_color);

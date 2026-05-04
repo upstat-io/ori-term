@@ -239,7 +239,7 @@ impl Grid {
         }
 
         let target = &mut self.rows[line][Column(prev_col)];
- // Combining-mark modification IS a draw operation ().
+        // Combining-mark modification IS a draw operation ().
         // In current production paths the target was just written and
         // already carries DRAWN, but the invariant is cheap to enforce
         // here and defends against future callers.

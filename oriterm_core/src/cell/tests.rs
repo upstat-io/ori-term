@@ -125,7 +125,7 @@ fn internal_cell_state_union_pins_exact_membership() {
         | CellFlags::LEADING_WIDE_CHAR_SPACER;
     assert_eq!(CellFlags::INTERNAL_CELL_STATE, expected);
 
- // Regression guard: SGR attributes MUST NOT be in the internal set.
+    // Regression guard: SGR attributes MUST NOT be in the internal set.
     assert!(!CellFlags::INTERNAL_CELL_STATE.contains(CellFlags::BOLD));
     assert!(!CellFlags::INTERNAL_CELL_STATE.contains(CellFlags::UNDERLINE));
     assert!(!CellFlags::INTERNAL_CELL_STATE.contains(CellFlags::INVERSE));

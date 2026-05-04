@@ -16,7 +16,7 @@
 //!
 //! ```text
 //! \x1B[H\x1B[2JTesting bell (bel)
-//! If you did not hear the Bell then (bel) has failed.  (bel) Done
+//! If you did not hear the Bell then (bel) has failed. (bel) Done
 //! ```
 //!
 //! That is — the ACS test on tack v1.08 actually probes only the

@@ -229,7 +229,7 @@ fn oriterm_ipc_is_standalone() {
 // → pre-render source → set_visible). Without all of these, the new
 // window appears blank or with stale source-window dimensions. These
 // grep-based pins catch accidental removal.
-// See bug-tracker/plans/completed//00-overview.md.
+// See bug-tracker/plans/completed/00-overview.md.
 
 /// `move_tab_to_new_window_embedded` must include the canonical call
 /// sequence from `tear_off_tab` (no visible-then-render flash). Bounded
@@ -349,12 +349,12 @@ fn move_tab_to_window_helper_remains_removed() {
 /// Touched-set (10 paths total):
 /// - `oriterm/src/app/mod.rs` (574 → < 500 after relocation)
 /// - 5 existing destinations that absorbed methods (`pane_accessors.rs`, `redraw/mod.rs`,
-///   `mux_pump/mod.rs`, `config_reload/mod.rs`, `mouse_input.rs`) — all must stay under
-///   500 after the additions.
+/// `mux_pump/mod.rs`, `config_reload/mod.rs`, `mouse_input.rs`) — all must stay under
+/// 500 after the additions.
 /// - `oriterm/src/app/tab_management/mod.rs` (gains `mod width_lock;` line) — must stay
-///   under 500.
+/// under 500.
 /// - 3 new submodules created by the refactor (`focus_accessors.rs`, `dpi_change.rs`,
-///   `tab_management/width_lock.rs`) — must each be under 500 from creation.
+/// `tab_management/width_lock.rs`) — must each be under 500 from creation.
 ///
 /// Path discovery uses `oriterm_test_support::paths::term_workspace_root()` per
 /// /Subrepo Path Discovery`. Every touched

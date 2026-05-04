@@ -45,7 +45,7 @@ fn sixel_minimal_drives_every_rung_green() {
         apex_layer: ApexLayer::GoldenImage,
         setup: b"",
         expectations: ScenarioExpectations {
- // Per-rung expectations strengthen the property beyond
+            // Per-rung expectations strengthen the property beyond
             // the golden apex. Rungs with stub expectation types
             // (dispatch, state, renderable) pass unconditionally until
             // their types gain assertion fields in later sections.

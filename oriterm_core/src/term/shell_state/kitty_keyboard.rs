@@ -9,7 +9,7 @@
 //! `pre_command_kb_mode_bits_snapshot`, `inactive_keyboard_mode_bits`,
 //! and `inactive_pre_command_kb_mode_bits_snapshot` live here.
 //!
-//! See (`bug-tracker/plans/completed//00-overview.md`) for the full
+//! See (`bug-tracker/plans/completed/00-overview.md`) for the full
 //! contract: paired per-screen snapshots + live per-screen bits.
 
 use std::collections::VecDeque;
@@ -37,7 +37,7 @@ impl<S: EffectSink> Term<S> {
     ///
     /// `None` means no snapshot is active for this screen. `Some(deque)`
     /// holds the verbatim contents of [`Self::keyboard_mode_stack`] at
- /// the moment the pre-command snapshot was taken. See.
+    /// the moment the pre-command snapshot was taken. See.
     pub fn pre_command_kb_stack_snapshot(&self) -> Option<&VecDeque<KeyboardModes>> {
         self.pre_command_kb_stack_snapshot.as_ref()
     }
@@ -55,7 +55,7 @@ impl<S: EffectSink> Term<S> {
     /// Pre-command snapshot of the active-screen Kitty-keyboard-protocol
     /// `TermMode` bits. Paired with [`Self::pre_command_kb_stack_snapshot`]
     /// — preserves shell-held kitty bits set via `CSI = Ps u` that never
- /// enter the stack. See review round-1 F1.
+    /// enter the stack. See review round-1 F1.
     pub fn pre_command_kb_mode_bits_snapshot(&self) -> Option<KeyboardModes> {
         self.pre_command_kb_mode_bits_snapshot
     }
@@ -63,7 +63,7 @@ impl<S: EffectSink> Term<S> {
     /// Live Kitty-keyboard-protocol bits for the INACTIVE screen. Swapped
     /// with the active bits (the `TermMode::KITTY_KEYBOARD_PROTOCOL`
     /// subset of `self.mode`) in `toggle_alt_common` so set-only kitty
- /// bits survive alt-screen toggles. See review round-3.
+    /// bits survive alt-screen toggles. See review round-3.
     pub fn inactive_keyboard_mode_bits(&self) -> KeyboardModes {
         self.inactive_keyboard_mode_bits
     }
@@ -71,7 +71,7 @@ impl<S: EffectSink> Term<S> {
     /// Paired inactive-screen bits snapshot — see
     /// [`Self::pre_command_kb_mode_bits_snapshot`]. Swapped alongside
     /// the paired stacks in `toggle_alt_common` so the snapshot stays
- /// with the screen where `;C` was emitted. review round-4.
+    /// with the screen where `;C` was emitted. review round-4.
     pub fn inactive_pre_command_kb_mode_bits_snapshot(&self) -> Option<KeyboardModes> {
         self.inactive_pre_command_kb_mode_bits_snapshot
     }
@@ -88,10 +88,10 @@ impl<S: EffectSink> Term<S> {
     /// [`crate::term::KEYBOARD_MODE_STACK_MAX_DEPTH`] and `pop_front`
     /// evicts shell-held entries. Paired bits snapshot (not derived from
     /// stack top) so shells that set kitty modes via `CSI = Ps u` without
- /// pushing are also restored — see review round-1 F1. Allocates
+    /// pushing are also restored — see review round-1 F1. Allocates
     /// up to `2 × KEYBOARD_MODE_STACK_MAX_DEPTH × size_of::<KeyboardModes>()`
     /// plus 2 bytes of bits snapshot per command boundary — infrequent
- /// (once per command), not a hot path. See.
+    /// (once per command), not a hot path. See.
     pub fn snapshot_keyboard_mode_stack(&mut self) {
         self.pre_command_kb_stack_snapshot = Some(self.keyboard_mode_stack.clone());
         self.inactive_pre_command_kb_stack_snapshot =
@@ -116,7 +116,7 @@ impl<S: EffectSink> Term<S> {
     /// command (child changes bits without touching the stack; restore
     /// reverts both stack AND bits). The inactive bits snapshot is
     /// applied to `inactive_keyboard_mode_bits` to revert mid-command
- /// mutations on the inactive screen ( review round-5).
+    /// mutations on the inactive screen ( review round-5).
     pub fn restore_keyboard_mode_stack(&mut self) {
         if let Some(saved) = self.pre_command_kb_stack_snapshot.take() {
             self.keyboard_mode_stack = saved;
@@ -132,7 +132,7 @@ impl<S: EffectSink> Term<S> {
         // during the command (e.g. child `CSI = Ps u` inside alt-screen
         // while shell's `;C` was active on primary). Without this apply,
         // the alt screen's mid-command bit mutations would persist past
- // the shell's prompt-boundary restore. review round-5.
+        // the shell's prompt-boundary restore. review round-5.
         if let Some(saved_bits) = self.inactive_pre_command_kb_mode_bits_snapshot.take() {
             self.inactive_keyboard_mode_bits = saved_bits;
         }

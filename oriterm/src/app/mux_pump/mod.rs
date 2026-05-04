@@ -77,15 +77,15 @@ impl App {
         }
 
         // 2a. Honor cross-batch `ClearPendingDesktopNotifications`
-        //     markers BEFORE dispatching: each clear marker discards
-        //     all preceding `DesktopNotification` entries for the same
-        //     pane that landed in earlier IO-thread batches and
-        //     accumulated in this drain. The IO-thread router already
-        //     handles intra-batch collapse; this purge handles the
-        //     case where a notification reached `notification_buf` in
-        //     an earlier drain cycle and the clear catches it before
-        //     the next dispatch tick. Per effect-cutover §01.1
-        //     success criterion 24.
+        // markers BEFORE dispatching: each clear marker discards
+        // all preceding `DesktopNotification` entries for the same
+        // pane that landed in earlier IO-thread batches and
+        // accumulated in this drain. The IO-thread router already
+        // handles intra-batch collapse; this purge handles the
+        // case where a notification reached `notification_buf` in
+        // an earlier drain cycle and the clear catches it before
+        // the next dispatch tick. Per effect-cutover §01.1
+        // success criterion 24.
         purge_pending_desktop_notifications(&mut self.notification_buf);
 
         // 3. Handle each notification.
@@ -173,8 +173,8 @@ impl App {
                     self.ring_owning_window_tab_bell(id, now);
                 }
 
- // Audible bell — closes by absorbing the BEL `\a`
- // audio path into. Native OS APIs respect the
+                // Audible bell — closes by absorbing the BEL `\a`
+                // audio path into. Native OS APIs respect the
                 // user's system mute / sound-effects settings. Skip the
                 // audible bell entirely when the bell-ringing pane is
                 // already the user's focus.
@@ -214,7 +214,7 @@ impl App {
                 body: _body,
                 ..
             } => {
- // Bell-focused dispatch ( scope reset 2026-04-28)
+                // Bell-focused dispatch ( scope reset 2026-04-28)
                 // OSC 9 / OSC 99 / OSC 777 fire the bell sound + tab bell
                 // icon on the owning pane's tab. Skip both when the
                 // bell-ringing pane is already focused — user is looking
@@ -382,7 +382,7 @@ impl App {
             self.mark_pane_window_dirty(pane_id);
         }
 
- // Bell-focused dispatch ( scope reset 2026-04-28)
+        // Bell-focused dispatch ( scope reset 2026-04-28)
         // command-complete (OSC 133;D) fires the native bell sound; the
         // tab-bell pulse above already handles the visual feedback. Skip
         // entirely when the command's pane is already focused — user

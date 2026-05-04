@@ -1632,7 +1632,7 @@ fn wide_char_underline_spans_double_width() {
 // Overline y = cell_top y = 0; thickness = stroke_size = 1.
 // Super offset = -16 * 0.25 = -4; Sub offset = +4. Both already integer.
 
-/// Regression: — property for SGR 53 (overline) GPU emission.
+/// Regression: property for SGR 53 (overline) GPU emission.
 #[test]
 fn overline_emits_rect_at_cell_top_with_stroke_size_thickness() {
     let input = frame_with_flags(CellFlags::OVERLINE);
@@ -1651,7 +1651,7 @@ fn overline_emits_rect_at_cell_top_with_stroke_size_thickness() {
     );
 }
 
-/// Regression: — overline uses fg color (no SGR for "colored overline").
+/// Regression: overline uses fg color (no SGR for "colored overline").
 #[test]
 fn overline_uses_fg_color() {
     let input = frame_with_flags(CellFlags::OVERLINE);
@@ -1663,7 +1663,7 @@ fn overline_uses_fg_color() {
     assert_eq!(ol.bg_color, rgb_f32(fg));
 }
 
-/// Regression: — regression guard: cell without OVERLINE produces no top rect.
+/// Regression: regression guard: cell without OVERLINE produces no top rect.
 #[test]
 fn overline_absent_emits_no_top_rect() {
     let input = frame_with_flags(CellFlags::empty());
@@ -1672,7 +1672,7 @@ fn overline_absent_emits_no_top_rect() {
     assert_eq!(decoration_bg_count(&frame), 0);
 }
 
-/// Regression: — OVERLINE-only cell triggers decoration emission
+/// Regression: OVERLINE-only cell triggers decoration emission
 /// (pins the early-return predicate update).
 #[test]
 fn overline_only_cell_passes_decoration_fast_path_gate() {
@@ -1685,7 +1685,7 @@ fn overline_only_cell_passes_decoration_fast_path_gate() {
     assert!(decoration_bg_count(&frame) > 0);
 }
 
-/// Regression: — OVERLINE composes with UNDERLINE (top + bottom rects).
+/// Regression: OVERLINE composes with UNDERLINE (top + bottom rects).
 #[test]
 fn overline_with_underline_emits_two_separate_rects() {
     let input = frame_with_flags(CellFlags::OVERLINE | CellFlags::UNDERLINE);
@@ -1696,7 +1696,7 @@ fn overline_with_underline_emits_two_separate_rects() {
     assert_eq!(decoration_bg_count(&frame), 2);
 }
 
-/// Regression: — OVERLINE composes with STRIKETHROUGH.
+/// Regression: OVERLINE composes with STRIKETHROUGH.
 #[test]
 fn overline_with_strikethrough_emits_two_separate_rects() {
     let input = frame_with_flags(CellFlags::OVERLINE | CellFlags::STRIKETHROUGH);
@@ -1706,7 +1706,7 @@ fn overline_with_strikethrough_emits_two_separate_rects() {
     assert_eq!(decoration_bg_count(&frame), 2);
 }
 
-/// Regression: — OVERLINE composes with DOUBLE_UNDERLINE (1 + 2 = 3 rects).
+/// Regression: OVERLINE composes with DOUBLE_UNDERLINE (1 + 2 = 3 rects).
 #[test]
 fn overline_with_double_underline_emits_three_rects() {
     let input = frame_with_flags(CellFlags::OVERLINE | CellFlags::DOUBLE_UNDERLINE);
@@ -1717,7 +1717,7 @@ fn overline_with_double_underline_emits_three_rects() {
     assert_eq!(decoration_bg_count(&frame), 3);
 }
 
-/// Regression: — OVERLINE + DOUBLE_UNDERLINE + STRIKETHROUGH
+/// Regression: OVERLINE + DOUBLE_UNDERLINE + STRIKETHROUGH
 /// composition (matrix gap from close-out).
 #[test]
 fn overline_with_double_underline_and_strikethrough_emits_four_rects() {
@@ -1730,7 +1730,7 @@ fn overline_with_double_underline_and_strikethrough_emits_four_rects() {
     assert_eq!(decoration_bg_count(&frame), 4);
 }
 
-/// Regression: — OVERLINE on a wide char spans 2 cell-widths.
+/// Regression: OVERLINE on a wide char spans 2 cell-widths.
 #[test]
 fn overline_on_wide_char_spans_double_width() {
     let mut input = FrameInput::test_grid(4, 1, "");
@@ -1751,7 +1751,7 @@ fn overline_on_wide_char_spans_double_width() {
     assert_eq!(ol.size.1, 1.0);
 }
 
-/// Regression: — property for SGR 73 (superscript) glyph y shift.
+/// Regression: property for SGR 73 (superscript) glyph y shift.
 /// In test_grid: cell_height=16, FACTOR=0.25 → offset=-4. With baseline=12 and
 /// test atlas bearing_y=12, normal glyph_y = 0 + 12 - 12 = 0; super glyph_y = -4.
 #[test]
@@ -1770,7 +1770,7 @@ fn superscript_shifts_glyph_y_up_by_quarter_cell_height() {
     );
 }
 
-/// Regression: — property for SGR 74 (subscript) glyph y shift.
+/// Regression: property for SGR 74 (subscript) glyph y shift.
 #[test]
 fn subscript_shifts_glyph_y_down_by_quarter_cell_height() {
     let input = frame_with_flags(CellFlags::SUBSCRIPT);
@@ -1785,7 +1785,7 @@ fn subscript_shifts_glyph_y_down_by_quarter_cell_height() {
     );
 }
 
-/// Regression: — without super/sub flags, glyph y is unshifted.
+/// Regression: without super/sub flags, glyph y is unshifted.
 #[test]
 fn no_super_sub_flag_emits_unshifted_glyph_y() {
     let input = frame_with_flags(CellFlags::empty());
@@ -1796,7 +1796,7 @@ fn no_super_sub_flag_emits_unshifted_glyph_y() {
     assert_eq!(glyph.pos.1, 0.0, "no super/sub flag => unshifted glyph y");
 }
 
-/// Regression: — regression guard: SUPERSCRIPT/SUBSCRIPT MUST NOT shift
+/// Regression: regression guard: SUPERSCRIPT/SUBSCRIPT MUST NOT shift
 /// decoration y (underline, strikethrough, overline stay anchored to cell).
 #[test]
 fn decorations_y_unaffected_by_super_sub() {
@@ -1817,7 +1817,7 @@ fn decorations_y_unaffected_by_super_sub() {
     assert_eq!(glyph.pos.1, -4.0, "glyph y must shift up");
 }
 
-/// Regression: — regression guard: SUBSCRIPT MUST NOT shift strikethrough y.
+/// Regression: regression guard: SUBSCRIPT MUST NOT shift strikethrough y.
 #[test]
 fn subscript_does_not_shift_strikethrough_y() {
     let input = frame_with_flags(CellFlags::SUBSCRIPT | CellFlags::STRIKETHROUGH);
@@ -1832,7 +1832,7 @@ fn subscript_does_not_shift_strikethrough_y() {
     assert_eq!(glyph.pos.1, 4.0);
 }
 
-/// Regression: — regression guard: SUBSCRIPT MUST NOT shift overline y.
+/// Regression: regression guard: SUBSCRIPT MUST NOT shift overline y.
 #[test]
 fn subscript_does_not_shift_overline_y() {
     let input = frame_with_flags(CellFlags::SUBSCRIPT | CellFlags::OVERLINE);
@@ -1850,7 +1850,7 @@ fn subscript_does_not_shift_overline_y() {
     assert_eq!(glyph.pos.1, 4.0);
 }
 
-/// Regression: — SUPERSCRIPT + INVERSE: bg quad fills full cell rect
+/// Regression: SUPERSCRIPT + INVERSE: bg quad fills full cell rect
 /// (NOT shifted with glyph).
 #[test]
 fn superscript_with_inverse_keeps_full_cell_background() {
@@ -1869,7 +1869,7 @@ fn superscript_with_inverse_keeps_full_cell_background() {
     assert_eq!(glyph.pos.1, -4.0);
 }
 
-/// Regression: — fractional cell heights (e.g. 13px) must round
+/// Regression: fractional cell heights (e.g. 13px) must round
 /// to integer pixel offset, preserving Y-snap from `mod.rs:257`.
 #[test]
 fn super_sub_offset_rounds_to_integer_for_fractional_cell_height() {
@@ -1895,7 +1895,7 @@ fn super_sub_offset_rounds_to_integer_for_fractional_cell_height() {
     // never sees both at once. Still test the happy-path edge values.
 }
 
-/// Regression: — shaped path applies super/sub offset to glyph y.
+/// Regression: shaped path applies super/sub offset to glyph y.
 /// Pinned via `prepare_frame_shaped` rather than the unshaped path so the
 /// production code path (`fill_frame_shaped`) is exercised directly.
 #[test]
@@ -1921,7 +1921,7 @@ fn shaped_superscript_shifts_glyph_y_up_by_quarter_cell_height() {
     let fg = nth_instance(frame.glyphs.as_bytes(), 0);
     let entry = test_entry_for_glyph(60);
     // glyph_y = (y + super_offset) + baseline - bearing_y
-    //        = (0.0 + -4.0) + 12.0 - 12.0 = -4.0
+    // = (0.0 + -4.0) + 12.0 - 12.0 = -4.0
     let expected_y = -4.0 + 12.0 - entry.bearing_y as f32;
     assert_eq!(
         fg.pos.1, expected_y,
@@ -1930,7 +1930,7 @@ fn shaped_superscript_shifts_glyph_y_up_by_quarter_cell_height() {
     );
 }
 
-/// Regression: — shaped path applies SUBSCRIPT offset (downward shift).
+/// Regression: shaped path applies SUBSCRIPT offset (downward shift).
 #[test]
 fn shaped_subscript_shifts_glyph_y_down_by_quarter_cell_height() {
     let size_q6 = 768;
@@ -1956,7 +1956,7 @@ fn shaped_subscript_shifts_glyph_y_down_by_quarter_cell_height() {
     assert_eq!(fg.pos.1, expected_y);
 }
 
-/// Regression: — shaped path WITHOUT super/sub keeps glyph y unshifted.
+/// Regression: shaped path WITHOUT super/sub keeps glyph y unshifted.
 /// Pins that the offset only applies when the flag is set (no spurious shift).
 #[test]
 fn shaped_no_super_sub_keeps_glyph_y_unshifted() {
@@ -1982,7 +1982,7 @@ fn shaped_no_super_sub_keeps_glyph_y_unshifted() {
     assert_eq!(fg.pos.1, expected_y);
 }
 
-/// Regression: — built-in glyph path (e.g. box-drawing chars in
+/// Regression: built-in glyph path (e.g. box-drawing chars in
 /// U+2500..=U+257F) shifts y when SUPERSCRIPT/SUBSCRIPT is set. The built-in
 /// branch is a separate emission site from `GlyphEmitter::emit`; both must
 /// honor the offset.
@@ -2019,7 +2019,7 @@ fn shaped_builtin_glyph_with_superscript_shifts_y() {
     );
 }
 
-/// Regression: — dirty-skip incremental path applies super/sub
+/// Regression: dirty-skip incremental path applies super/sub
 /// offset to dirty rows. Pin: a row with SUPERSCRIPT, after a dirty rebuild,
 /// emits a shifted glyph y.
 #[test]
@@ -2073,7 +2073,7 @@ fn incremental_dirty_row_with_superscript_shifts_glyph_y() {
     );
 }
 
-/// Regression: — shaped path emits OVERLINE rect at cell top
+/// Regression: shaped path emits OVERLINE rect at cell top
 /// (matrix gap closed during impl-hygiene Phase 5).
 #[test]
 fn shaped_overline_emits_top_rect() {
@@ -2109,7 +2109,7 @@ fn shaped_overline_emits_top_rect() {
     );
 }
 
-/// Regression: — dirty-skip incremental path emits OVERLINE rect
+/// Regression: dirty-skip incremental path emits OVERLINE rect
 /// for a dirty row with the OVERLINE flag (matrix gap closed during
 /// impl-hygiene Phase 5).
 #[test]
@@ -3155,7 +3155,7 @@ fn selection_hidden_cell_stays_invisible() {
 #[test]
 fn selection_preserves_instance_counts() {
     // Selection is implemented as color inversion on existing instances, not
-    // as a separate overlay layer.  Instance counts must be identical
+    // as a separate overlay layer. Instance counts must be identical
     // regardless of whether a selection is active.
     let text: String = std::iter::repeat_n('A', 10).collect();
     let atlas = atlas_with(&['A']);
@@ -3321,8 +3321,8 @@ fn non_hyperlink_cell_no_extra_decorations() {
 // ── Viewport / coordinate system alignment ──
 //
 // The shader maps pixel positions to NDC: ndc = pos / screen_size * 2 - 1.
-// screen_size comes from FrameInput.viewport.  Cell positions come from
-// origin + col * cell_width.  For cells to fill the viewport correctly,
+// screen_size comes from FrameInput.viewport. Cell positions come from
+// origin + col * cell_width. For cells to fill the viewport correctly,
 // viewport and cell positions must be in the same coordinate system.
 
 #[test]

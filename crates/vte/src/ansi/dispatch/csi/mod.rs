@@ -104,10 +104,10 @@ pub(super) fn dispatch<H: Handler, T: Timeout>(
         },
         ('h', [b'?']) => {
             for param in params_iter.map(|param| param[0]) {
-                // BSU arms the run-loop deadline so a sync window with
-                // no ESU still terminates after SYNC_UPDATE_TIMEOUT.
-                // Handler dispatch continues inline — Mode 2026 gates
-                // snapshot publication, not byte processing.
+ // BSU arms the run-loop deadline so a sync window with
+ // no ESU still terminates after SYNC_UPDATE_TIMEOUT.
+ // Handler dispatch continues inline — Mode 2026 gates
+ // snapshot publication, not byte processing.
                 if param == NamedPrivateMode::SyncUpdate as u16 {
                     sync_timeout.set_timeout(SYNC_UPDATE_TIMEOUT);
                 }
@@ -168,7 +168,7 @@ pub(super) fn dispatch<H: Handler, T: Timeout>(
             handler.clear_line(mode);
         },
         ('k', [b' ']) => {
-            // SCP control.
+ // SCP control.
             let char_path = match next_param_or(0) {
                 0 => ScpCharPath::Default,
                 1 => ScpCharPath::LTR,
@@ -199,10 +199,10 @@ pub(super) fn dispatch<H: Handler, T: Timeout>(
         },
         ('l', [b'?']) => {
             for param in params_iter.map(|param| param[0]) {
-                // ESU disarms the run-loop deadline so it does NOT
-                // fire after the sync window legitimately ends. Owns
-                // the full timer-state transition that pairs with the
-                // BSU arm's `set_timeout`.
+ // ESU disarms the run-loop deadline so it does NOT
+ // fire after the sync window legitimately ends. Owns
+ // the full timer-state transition that pairs with the
+ // BSU arm's `set_timeout`.
                 if param == NamedPrivateMode::SyncUpdate as u16 {
                     sync_timeout.clear_timeout();
                 }
@@ -245,13 +245,13 @@ pub(super) fn dispatch<H: Handler, T: Timeout>(
             handler.report_private_mode(PrivateMode::new(mode));
         },
         ('p', [b'"']) => {
-            // DECSCL — Set Conformance Level (CSI Pl;Pc " p).
+ // DECSCL — Set Conformance Level (CSI Pl;Pc " p).
             let level = next_param_or(0);
             let c1_mode = next_param_or(0);
             handler.decscl(level, c1_mode);
         },
         ('q', [b' ']) => {
-            // DECSCUSR (CSI Ps SP q) -- Set Cursor Style.
+ // DECSCUSR (CSI Ps SP q) -- Set Cursor Style.
             let cursor_style_id = next_param_or(0);
             let shape = match cursor_style_id {
                 0 => None,
@@ -269,16 +269,16 @@ pub(super) fn dispatch<H: Handler, T: Timeout>(
             handler.set_cursor_style(cursor_style);
         },
         ('q', [b'"']) => {
-            // DECSCA — Select Character Protection Attribute (CSI Ps " q).
+ // DECSCA — Select Character Protection Attribute (CSI Ps " q).
             handler.decsca(next_param_or(0));
         },
         ('q', [b'>']) => {
-            // XTVERSION (CSI > Ps q) — report terminal name and version.
-            //
-            // xterm `charproc.c::CASE_REPORT_VERSION` replies only when
-            // `GetParam(0) <= 0` (default/zero Ps). Non-zero Ps falls
-            // through to unhandled. We mirror that gate at the dispatch
-            // layer so the Handler method only fires on the requested form.
+ // XTVERSION (CSI > Ps q) — report terminal name and version.
+ //
+ // xterm `charproc.c::CASE_REPORT_VERSION` replies only when
+ // `GetParam(0) <= 0` (default/zero Ps). Non-zero Ps falls
+ // through to unhandled. We mirror that gate at the dispatch
+ // layer so the Handler method only fires on the requested form.
             if next_param_or(0) == 0 {
                 handler.xtversion();
             } else {
@@ -293,12 +293,12 @@ pub(super) fn dispatch<H: Handler, T: Timeout>(
             handler.set_scrolling_region(top, bottom);
         },
         ('r', [b'?']) => {
-            // XTRESTORE: restore saved private mode values.
+ // XTRESTORE: restore saved private mode values.
             let modes: Vec<u16> = params_iter.map(|p| p[0]).collect();
             handler.restore_private_mode_values(&modes);
         },
         ('r', [b'$']) => {
-            // DECCARA — Change Attributes in Rectangular Area (CSI Pt;Pl;Pb;Pr;Pm $ r).
+ // DECCARA — Change Attributes in Rectangular Area (CSI Pt;Pl;Pb;Pr;Pm $ r).
             let top = next_param_or(1);
             let left = next_param_or(1);
             let bot = next_param_or(1);
@@ -308,23 +308,23 @@ pub(super) fn dispatch<H: Handler, T: Timeout>(
         },
         ('S', []) => handler.scroll_up(next_param_or(1) as usize),
         ('S', [b'?']) => {
-            // XTSMGRAPHICS — `CSI ? Pi ; Pa ; Pv S`. Exactly 3 top-level
-            // params required; malformed arity is silently dropped per
-            // xterm `charproc.c:5159` (`if nparam != 3`).
-            //
-            // CRITICAL: `params.len()` (per `crates/vte/src/params.rs`)
-            // returns "total number of parameters and subparameters" —
-            // it INCLUDES subparams. Top-level arity check MUST use
-            // `params.iter().count()`, which counts parameter GROUPS
-            // (each yielding `&[u16]` of subparams).
-            //
-            // Example: `\x1b[?1:2;1;0S` has 3 top-level params (the
-            // first carries subparam `:2`):
-            //   - `params.len()` = 4 (values: 1, 2, 1, 0)
-            //   - `params.iter().count()` = 3 (groups)
-            //
-            // `next_param_or` consumes the FIRST sub-value of each
-            // group; subsequent subs are silently ignored.
+ // XTSMGRAPHICS — `CSI ? Pi ; Pa ; Pv S`. Exactly 3 top-level
+ // params required; malformed arity is silently dropped per
+ // xterm `charproc.c:5159` (`if nparam != 3`).
+ //
+ // CRITICAL: `params.len()` (per `crates/vte/src/params.rs`)
+ // returns "total number of parameters and subparameters" —
+ // it INCLUDES subparams. Top-level arity check MUST use
+ // `params.iter().count()`, which counts parameter GROUPS
+ // (each yielding `&[u16]` of subparams).
+ //
+ // Example: `\x1b[?1:2;1;0S` has 3 top-level params (the
+ // first carries subparam `:2`):
+ // - `params.len()` = 4 (values: 1, 2, 1, 0)
+ // - `params.iter().count()` = 3 (groups)
+ //
+ // `next_param_or` consumes the FIRST sub-value of each
+ // group; subsequent subs are silently ignored.
             if params.iter().count() != 3 {
                 unhandled!();
                 return;
@@ -335,19 +335,19 @@ pub(super) fn dispatch<H: Handler, T: Timeout>(
             handler.graphics_attribute(pi, pa, pv);
         },
         ('s', []) => {
-            // CSI s / DECSLRM ambiguity: pass params to handler which
-            // knows whether mode 69 (DECLRMM) is active.
-            //
-            // VTE always pushes at least one default-0 param before CSI
-            // dispatch (see `action_csi_dispatch` in lib.rs), so
-            // `params.is_empty()` is never true. To distinguish
-            // explicit-params from no-params, use BOTH arity (a semicolon
-            // was seen → `params.len() > 1`) AND non-default values (at
-            // least one explicit non-zero param). This correctly treats
-            // `CSI 0;0 s` as DECSLRM (has-params) while still treating
-            // `CSI s` as zero-params. `CSI 0 s` is indistinguishable
-            // from `CSI s` at the parser level, and both mean "use
-            // defaults" per ECMA-48 §5.4.2.
+ // CSI s / DECSLRM ambiguity: pass params to handler which
+ // knows whether mode 69 (DECLRMM) is active.
+ //
+ // VTE always pushes at least one default-0 param before CSI
+ // dispatch (see `action_csi_dispatch` in lib.rs), so
+ // `params.is_empty()` is never true. To distinguish
+ // explicit-params from no-params, use BOTH arity (a semicolon
+ // was seen → `params.len() > 1`) AND non-default values (at
+ // least one explicit non-zero param). This correctly treats
+ // `CSI 0;0 s` as DECSLRM (has-params) while still treating
+ // `CSI s` as zero-params. `CSI 0 s` is indistinguishable
+ // from `CSI s` at the parser level, and both mean "use
+ // defaults" per ECMA-48 §5.4.2.
             let arity = params.len();
             let left = next_param_or(0);
             let right = next_param_or(0);
@@ -355,7 +355,7 @@ pub(super) fn dispatch<H: Handler, T: Timeout>(
             handler.decslrm_or_save_cursor(has_params, left, right);
         },
         ('s', [b'?']) => {
-            // XTSAVE: save private mode values.
+ // XTSAVE: save private mode values.
             let modes: Vec<u16> = params_iter.map(|p| p[0]).collect();
             handler.save_private_mode_values(&modes);
         },
@@ -368,7 +368,7 @@ pub(super) fn dispatch<H: Handler, T: Timeout>(
             _ => unhandled!(),
         },
         ('t', [b'$']) => {
-            // DECRARA — Reverse Attributes in Rectangular Area (CSI Pt;Pl;Pb;Pr;Pm $ t).
+ // DECRARA — Reverse Attributes in Rectangular Area (CSI Pt;Pl;Pb;Pr;Pm $ t).
             let top = next_param_or(1);
             let left = next_param_or(1);
             let bot = next_param_or(1);
@@ -382,7 +382,7 @@ pub(super) fn dispatch<H: Handler, T: Timeout>(
             let behavior = match next_param_or(1) {
                 3 => KeyboardModesApplyBehavior::Difference,
                 2 => KeyboardModesApplyBehavior::Union,
-                // Default is replace.
+ // Default is replace.
                 _ => KeyboardModesApplyBehavior::Replace,
             };
             handler.set_keyboard_mode(mode, behavior);
@@ -392,14 +392,14 @@ pub(super) fn dispatch<H: Handler, T: Timeout>(
             handler.push_keyboard_mode(mode);
         },
         ('u', [b'<']) => {
-            // The default is 1.
+ // The default is 1.
             handler.pop_keyboard_modes(next_param_or(1));
         },
         ('u', []) => handler.restore_cursor_position(),
         ('u', [b'&']) => handler.decrqupss(),
         ('v', [b'$']) => {
-            // DECCRA — Copy Rectangular Area
-            // (CSI Pts;Pls;Pbs;Prs;Pps;Ptd;Pld;Ppd $ v).
+ // DECCRA — Copy Rectangular Area
+ // (CSI Pts;Pls;Pbs;Prs;Pps;Ptd;Pld;Ppd $ v).
             let st = next_param_or(1);
             let sl = next_param_or(1);
             let sb = next_param_or(1);
@@ -415,7 +415,7 @@ pub(super) fn dispatch<H: Handler, T: Timeout>(
         ('X', []) => handler.erase_chars(next_param_or(1) as usize),
         ('x', [b'*']) => handler.decsace(next_param_or(0)),
         ('x', [b'$']) => {
-            // DECFRA — Fill Rectangular Area (CSI Pc;Pt;Pl;Pb;Pr $ x).
+ // DECFRA — Fill Rectangular Area (CSI Pc;Pt;Pl;Pb;Pr $ x).
             let ch = next_param_or(0x20);
             let top = next_param_or(1);
             let left = next_param_or(1);
@@ -425,8 +425,8 @@ pub(super) fn dispatch<H: Handler, T: Timeout>(
         },
         ('y', [b'#']) => handler.xtchecksum(next_param_or(0)),
         ('y', [b'*']) => {
-            // DECRQCRA — Request Checksum of Rectangular Area
-            // (CSI Pi;Pg;Pt;Pl;Pb;Pr * y).
+ // DECRQCRA — Request Checksum of Rectangular Area
+ // (CSI Pi;Pg;Pt;Pl;Pb;Pr * y).
             let id = next_param_or(0);
             let page = next_param_or(1);
             let top = next_param_or(1);
@@ -437,7 +437,7 @@ pub(super) fn dispatch<H: Handler, T: Timeout>(
         },
         ('Z', []) => handler.move_backward_tabs(next_param_or(1)),
         ('z', [b'$']) => {
-            // DECERA — Erase Rectangular Area (CSI Pt;Pl;Pb;Pr $ z).
+ // DECERA — Erase Rectangular Area (CSI Pt;Pl;Pb;Pr $ z).
             let top = next_param_or(1);
             let left = next_param_or(1);
             let bot = next_param_or(1);
@@ -446,7 +446,7 @@ pub(super) fn dispatch<H: Handler, T: Timeout>(
         },
         ('{', [b'#']) => handler.push_sgr(),
         ('{', [b'$']) => {
-            // DECSERA — Selective Erase Rectangular Area (CSI Pt;Pl;Pb;Pr $ {).
+ // DECSERA — Selective Erase Rectangular Area (CSI Pt;Pl;Pb;Pr $ {).
             let top = next_param_or(1);
             let left = next_param_or(1);
             let bot = next_param_or(1);
@@ -454,8 +454,8 @@ pub(super) fn dispatch<H: Handler, T: Timeout>(
             handler.decsera(top, left, bot, right);
         },
         ('|', [b'#']) => {
-            // XTREPORTSGR — Report SGR attributes of Rectangular Area
-            // (CSI Pt;Pl;Pb;Pr # |).
+ // XTREPORTSGR — Report SGR attributes of Rectangular Area
+ // (CSI Pt;Pl;Pb;Pr # |).
             let top = next_param_or(1);
             let left = next_param_or(1);
             let bot = next_param_or(1);

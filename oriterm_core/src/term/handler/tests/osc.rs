@@ -855,9 +855,9 @@ fn osc8_hyperlink_survives_sgr_reset() {
     let mut t = term();
 
     // Set hyperlink, then write text, then SGR reset, then more text.
-    // ESC]8;;uri\x07  sets hyperlink
-    // ESC[1m          sets bold
-    // ESC[0m          resets all SGR (but NOT hyperlink)
+    // ESC]8;;uri\x07 sets hyperlink
+    // ESC[1m sets bold
+    // ESC[0m resets all SGR (but NOT hyperlink)
     feed(&mut t, b"\x1b]8;;https://example.com\x07");
     feed(&mut t, b"\x1b[1m"); // bold
     feed(&mut t, b"\x1b[0m"); // SGR reset

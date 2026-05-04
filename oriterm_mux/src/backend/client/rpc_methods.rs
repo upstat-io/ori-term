@@ -421,7 +421,7 @@ impl MuxBackend for MuxClient {
     }
 
     fn fulfill_host_request(&mut self, _pane_id: PaneId, reply: HostReply) -> io::Result<()> {
- // : package the reply into a `MuxPdu::ReplyHostRequest` and
+        // : package the reply into a `MuxPdu::ReplyHostRequest` and
         // fire it back to the daemon. The pending entry — created by the
         // reader thread when it received the originating notification — is
         // looked up by the token's `slot_id` to recover the daemon-allocated

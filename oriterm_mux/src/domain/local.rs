@@ -149,7 +149,7 @@ impl LocalDomain {
         //    sender. The writer thread `try_send`s on this channel
         //    when it sets `shutdown` so the IO thread observes
         //    shutdown out of `select!` within one iteration —
- // closes the §04 review round 5 Codex F1 in-`select!`
+        // closes the §04 review round 5 Codex F1 in-`select!`
         //    window for the writer-thread setter.
         let (io_thread, mut io_handle) = io_thread::new_with_handle(io_thread::IoThreadConfig {
             terminal: io_term,

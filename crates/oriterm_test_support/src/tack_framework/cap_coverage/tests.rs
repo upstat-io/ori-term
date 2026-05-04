@@ -45,7 +45,7 @@ fn parse_declared_caps_handles_numeric_cap() {
 
 #[test]
 fn parse_declared_caps_handles_cap_cancellation() {
- // Verifies: the `@` cancellation marker means "cancel
+    // Verifies: the `@` cancellation marker means "cancel
     // inherited cap", but the cap NAME is still part of the
     // entry's surface. The parser INCLUDES the cancelled name
     // because cap-coverage gating cares about the name's
@@ -57,7 +57,7 @@ fn parse_declared_caps_handles_cap_cancellation() {
 
 #[test]
 fn parse_declared_caps_handles_continuation_lines() {
- // Verifies: continuation lines (the cap value spans
+    // Verifies: continuation lines (the cap value spans
     // multiple physical lines) MUST NOT be parsed as new cap
     // declarations. A regression that processed every indented
     // line as a fresh cap-list would extract garbage from the
@@ -77,7 +77,7 @@ fn parse_declared_caps_handles_comment_lines() {
 
 #[test]
 fn parse_declared_caps_handles_use_reference() {
- // Verifies: `use=other_term` is the inheritance directive,
+    // Verifies: `use=other_term` is the inheritance directive,
     // not a cap declaration. The leading `use` token must NOT
     // appear in the result set.
     let src = "foo|bar,\n    use=other_term,\n    am,\n";
@@ -97,7 +97,7 @@ fn parse_declared_caps_handles_multiple_caps_per_line() {
 
 #[test]
 fn parse_declared_caps_handles_entry_header_skip() {
- // Verifies: header lines (start in column 0, end with `,`)
+    // Verifies: header lines (start in column 0, end with `,`)
     // declare the entry name + aliases, NOT caps. A regression
     // that did not skip them would put `foo` and `baz` in the
     // result set.
@@ -141,7 +141,7 @@ fn parse_declared_caps_against_real_terminfo_returns_sensible_result() {
 
 #[test]
 fn parse_declared_caps_real_terminfo_count_pin() {
- // Verifies: the exact count of caps declared in
+    // Verifies: the exact count of caps declared in
     // `extra/ori_term.info`. If a future edit to the terminfo
     // adds or removes a cap, this test fails LOUDLY and forces
     // the implementer to update the pinned count and audit the
@@ -199,7 +199,7 @@ fn expand_modified_key_caps_contains_required_caps() {
 
 #[test]
 fn expand_modified_key_caps_matches_terminfo() {
- // Verifies: every modified-key cap declared in
+    // Verifies: every modified-key cap declared in
     // extra/ori_term.info MUST appear in the expansion, and
     // vice versa. If extra/ori_term.info adds kHOM7 without
     // adding it to the expansion, the cap-coverage matrix would
@@ -270,7 +270,7 @@ fn expand_modified_key_caps_matches_terminfo() {
 
 #[test]
 fn partition_no_intra_section_overlap() {
- // Verifies: each section's `covered` and its own `exempt`
+    // Verifies: each section's `covered` and its own `exempt`
     // must be disjoint. A cap appearing in both means the section
     // is internally inconsistent (claims to cover AND exempt the
     // same cap).
@@ -288,7 +288,7 @@ fn partition_no_intra_section_overlap() {
 
 #[test]
 fn partition_no_inter_section_covered_overlap() {
- // Verifies: no two sections claim coverage of the same
+    // Verifies: no two sections claim coverage of the same
     // cap. Catches accidental double-counting where two sections
     // own the same cap (the matrix would still pass, but the
     // ownership story would be unclear).
@@ -309,7 +309,7 @@ fn partition_no_inter_section_covered_overlap() {
 
 #[test]
 fn stale_exemption_negative_pin() {
- // Verifies: the matrix's stale-exemption check actually
+    // Verifies: the matrix's stale-exemption check actually
     // catches the failure mode it claims to. Construct a synthetic
     // scenario where one section's `covered` and another section's
     // `exempt` overlap on `"am"`. The matrix-checker walked here
@@ -357,7 +357,7 @@ fn stale_exemption_negative_pin() {
          matrix's negative-pin invariant is broken"
     );
 
- // Verifies: the integration test must ALSO scan
+    // Verifies: the integration test must ALSO scan
     // the iterator-built keyboard exemptions (`expand_kf_caps()`
     // and `expand_modified_key_caps()`), not just `contrib.exempt`.
     // Otherwise Section 08 could move `kf1` into `covered` and the
@@ -431,7 +431,7 @@ fn extract_cap_value_finds_cap_on_continuation_line() {
 
 #[test]
 fn parse_terminfo_source_and_extract_cap_value_agree_on_blank_line_break() {
- // Verifies: the shared `collapse_continuations`
+    // Verifies: the shared `collapse_continuations`
     // helper treats blank lines as hard breaks in the entry
     // stream. Both `parse_terminfo_source` (cap names) and
     // `extract_cap_value` (cap values) delegate to it, so they
@@ -464,7 +464,7 @@ fn parse_terminfo_source_and_extract_cap_value_agree_on_blank_line_break() {
 
 #[test]
 fn extract_cap_value_handles_multiline_continuations() {
- // Verifies: tic format allows cap values to
+    // Verifies: tic format allows cap values to
     // continue on the next physical line when the current line
     // does NOT end with `,`. The continuation line's leading
     // whitespace is stripped before concatenation. The previous
@@ -527,7 +527,7 @@ fn declared_cap_value_returns_real_terminfo_values() {
 
 #[test]
 fn all_contributions_iteration_pin() {
- // Verifies: ALL_CONTRIBUTIONS is iterated in
+    // Verifies: ALL_CONTRIBUTIONS is iterated in
     // covered_caps() / exempt_caps(). Catches a regression where
     // the iteration was replaced with a hand-written union over
     // hard-coded constants — the partition tests would still

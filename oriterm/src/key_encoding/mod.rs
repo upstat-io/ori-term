@@ -36,20 +36,20 @@ pub enum KeyEventType {
 }
 
 bitflags! {
-    /// Keyboard modifiers for key events.
-    ///
-    /// Bit layout matches the xterm modifier parameter encoding:
-    /// Shift=1, Alt=2, Ctrl=4, Super=8. The parameter sent to the terminal
-    /// is `1 + bits` (so Ctrl+Shift = 1 + 1 + 4 = 6).
+ /// Keyboard modifiers for key events.
+ ///
+ /// Bit layout matches the xterm modifier parameter encoding:
+ /// Shift=1, Alt=2, Ctrl=4, Super=8. The parameter sent to the terminal
+ /// is `1 + bits` (so Ctrl+Shift = 1 + 1 + 4 = 6).
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
     pub struct Modifiers: u8 {
-        /// Shift key held.
+ /// Shift key held.
         const SHIFT   = 0b0001;
-        /// Alt (Meta/Option) key held.
+ /// Alt (Meta/Option) key held.
         const ALT     = 0b0010;
-        /// Control key held.
+ /// Control key held.
         const CONTROL = 0b0100;
-        /// Super (Windows/Command) key held.
+ /// Super (Windows/Command) key held.
         const SUPER   = 0b1000;
     }
 }

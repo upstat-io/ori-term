@@ -160,7 +160,7 @@ impl<S: EffectSink> Term<S> {
     /// 0x7E) or Latin-1 supplemental (0xA0–0xFF). Out-of-range values
     /// (e.g. 0x01–0x1F or 0x7F–0x9F) are silently ignored. The fill
     /// cell inherits the cursor's current SGR template plus `DRAWN`
- /// ().
+    /// ().
     #[expect(
         clippy::too_many_arguments,
         reason = "DECFRA spec: char + top/left/bot/right — 5 coords + char = 6 distinct param slots"
@@ -181,7 +181,7 @@ impl<S: EffectSink> Term<S> {
         let grid = self.grid_mut();
         let mut template = grid.cursor().template.clone();
         // The cursor template must never carry INTERNAL_CELL_STATE
- // bits (); sanity-assert so a future regression is
+        // bits (); sanity-assert so a future regression is
         // surfaced at fill-rect time rather than silently writing
         // structurally-invalid cells.
         debug_assert!(
@@ -239,7 +239,7 @@ impl<S: EffectSink> Term<S> {
     /// blanks per row); the final checksum is `trimmed` in default mode
     /// and `total` when `csNOTRIM` is set. Undrawn cells (detected via
     /// `CellFlags::DRAWN` — the `ori_term` CHARDRAWN analog set on every
- /// cell-write path per ) are skipped in default mode and
+    /// cell-write path per ) are skipped in default mode and
     /// treated as `' '` when `csNOTRIM` or `csDRAWN` is set. Combining
     /// marks fold into `total` only when `csBYTE` is unset.
     ///
@@ -303,7 +303,7 @@ impl<S: EffectSink> Term<S> {
 
             for col in left0..=right0 {
                 let cell = &row[Column(col as usize)];
- // xterm CHARDRAWN analog (). The DRAWN bit is
+                // xterm CHARDRAWN analog (). The DRAWN bit is
                 // set on every cell-write path and cleared on every
                 // reset path, giving us a persistent "was written"
                 // marker distinct from the visual `is_empty()` query.
