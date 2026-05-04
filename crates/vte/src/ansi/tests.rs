@@ -649,9 +649,9 @@ fn processor_no_sync_buffer_during_active_sync() {
         "BSU should arm the parser-side sync timer"
     );
 
-    // SyncState should be a thin wrapper around just `timeout: T`.
-    // On HEAD it also carries a `buffer: Vec<u8>` (24 bytes on 64-bit
-    // platforms), so the sizes diverge.
+    // SyncState must be a thin wrapper around just `timeout: T`. A
+    // future regression that re-introduces a `buffer: Vec<u8>` field
+    // (24 bytes on 64-bit) would diverge the sizes and fire here.
     assert_eq!(
         size_of::<super::processor::SyncState<TestSyncHandler>>(),
         size_of::<TestSyncHandler>(),
@@ -677,20 +677,20 @@ fn processor_dispatches_handler_inline_during_sync() {
 
     assert!(
         handler.identity_reported,
-        "DA1 must dispatch inline during sync — buffered on HEAD"
+        "DA1 must dispatch inline during sync"
     );
     assert!(
         handler.attr.is_some(),
-        "SGR must dispatch inline during sync — buffered on HEAD"
+        "SGR must dispatch inline during sync"
     );
 }
 
 /// ESU without a preceding BSU is a safe no-op.
 ///
-/// After the fix the ESU dispatch arm calls `sync_timeout.clear_timeout()`
-/// unconditionally for `?2026 l`. This pin proves that calling
-/// `clear_timeout` on an already-disarmed timer does NOT panic and does
-/// NOT leave the timer in a weird state (still disarmed).
+/// The ESU dispatch arm calls `sync_timeout.clear_timeout()` unconditionally
+/// for `?2026 l`. This pin proves that calling `clear_timeout` on an
+/// already-disarmed timer does NOT panic and does NOT leave the timer
+/// in a weird state (stays disarmed).
 ///
 /// Regression: BUG-11-027 §03 ESU-without-BSU edge case.
 #[test]

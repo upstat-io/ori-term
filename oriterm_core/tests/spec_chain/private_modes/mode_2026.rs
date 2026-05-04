@@ -209,10 +209,9 @@ fn assert_pty_response_contains(harness: &SpecHarness, needle: &[u8], context: &
 
 /// Regression: BUG-11-027 §03 — DA1 dispatched inline during Mode 2026 BSU.
 ///
-/// Feed BSU + DA1 in one call (no ESU). On HEAD the DA1 byte is buffered
-/// alongside screen-update bytes; no response is emitted until ESU or
-/// the 150 ms timeout expires. After the fix the DA1 dispatches inline
-/// and the `\x1b[?64;6;4c` response is in the transcript immediately.
+/// Feed BSU + DA1 in one call (no ESU). The DA1 dispatches inline and
+/// the `\x1b[?64;6;4c` response appears in the transcript before the
+/// chunk completes — no buffering, no deferred replay.
 #[test]
 fn da1_inside_mode_2026_emits_response_inline() {
     let mut harness = SpecHarness::new();

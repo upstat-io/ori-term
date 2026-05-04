@@ -3978,22 +3978,22 @@ fn idle_select_cmd_rx_arm_applies_pending_resize_before_reply_bearing() {
 // =====================================================================
 // BUG-11-027 §03 matrix — Mode 2026 inline dispatch + snapshot gating.
 //
-// These pins prove the user-visible "no partial frames" invariant is
-// preserved by snapshot-publication gating on `TermMode::SYNC_UPDATE`,
-// while device queries and grid mutations dispatch INLINE during the
-// sync window (the byte-level buffer in the vendored vte parser is
-// gone after the fix). See bug-tracker/plans/BUG-11-027/.
+// These pins enforce the user-visible "no partial frames" invariant
+// via snapshot-publication gating on `TermMode::SYNC_UPDATE`, while
+// device queries and grid mutations dispatch INLINE during the sync
+// window. The vendored vte parser carries no byte-level buffer; the
+// only sync state is the deadline timer used by the run loop's
+// `select!` deadline arm. See bug-tracker/plans/BUG-11-027/.
 // =====================================================================
 
 /// Semantic pin: BSU + grid-mutating bytes mutate the grid INLINE,
 /// while snapshot publication is suppressed via the `SYNC_UPDATE`
 /// mode flag.
 ///
-/// On HEAD the bytes get buffered in vte; the grid is NOT mutated
-/// until ESU/timeout, so the assertion that "Hello" appears in the
-/// grid fails. After the fix the bytes dispatch inline (grid is
-/// mutated immediately) but `maybe_produce_snapshot` defers because
-/// `TermMode::SYNC_UPDATE` is set.
+/// Asserts (a) "Hello" lands in the grid before the chunk completes
+/// (inline dispatch — no buffering), AND (b) `maybe_produce_snapshot`
+/// returns without publishing because `TermMode::SYNC_UPDATE` gates
+/// the snapshot pipeline.
 ///
 /// Regression: BUG-11-027 §03 semantic-pin.
 #[test]
@@ -4085,9 +4085,9 @@ fn mode_2026_timeout_unsets_sync_mode_emits_abort_forces_snapshot() {
 /// ESU dispatched inline with BSU: mode flag clears AND parser-side
 /// timer disarms within the same `handle_bytes()` call.
 ///
-/// Regression: BUG-11-027 §03 — pins the ESU dispatch arm's new
-/// `clear_timeout` call (Step 3) so a future revert won't leave the
-/// timer armed after ESU.
+/// Regression: BUG-11-027 §03 — pins the ESU dispatch arm's
+/// `clear_timeout` call so a future revert won't leave the timer
+/// armed after ESU.
 #[test]
 fn mode_2026_esu_unsets_mode_clears_processor_timeout() {
     let mut t = make_sync_thread();
@@ -4105,16 +4105,15 @@ fn mode_2026_esu_unsets_mode_clears_processor_timeout() {
     );
 }
 
-/// Regression pin for the ESU-arm timer-disarm fix (Step 3): after
-/// BSU + ESU in one parser advance, the parser-side sync timer is
-/// disarmed AND the mode flag is cleared.
+/// Regression pin for the ESU-arm timer-disarm: after BSU + DA1 + ESU
+/// in one parser advance, the parser-side sync timer is disarmed, the
+/// mode flag is cleared, and the DA1 response is in the effect sink.
 ///
-/// Without Step 3's `clear_timeout` call in the ESU dispatch arm, the
-/// parser-side timer would still be armed after ESU once the byte
-/// buffer is removed (Step 1 deletes `stop_sync_internal`, the previous
-/// disarm path), and the run loop's `crossbeam_channel::select!`
-/// `default(timeout)` arm would fire ~150 ms after ESU — invoking
-/// `handle_sync_timeout` on already-cleared state.
+/// Without the ESU-arm `clear_timeout` call, the parser-side timer
+/// would remain armed after ESU and the run loop's
+/// `crossbeam_channel::select!` `default(timeout)` arm would fire
+/// ~150 ms later — invoking `handle_sync_timeout` on already-cleared
+/// state and emitting a spurious Abort effect.
 ///
 /// The disarmed timer (`sync_timeout().sync_timeout() == None`) IS the
 /// assertion: the select! arm only fires when a deadline is pending,
@@ -4243,13 +4242,13 @@ fn queries_interleaved_with_grid_mutation_dispatch_inline_during_sync() {
 /// sync must NOT publish a mid-mutation snapshot while
 /// `TermMode::SYNC_UPDATE` is set.
 ///
-/// On HEAD the SnapshotNow handler at `handler.rs:238-242` calls
-/// `produce_snapshot()` directly, bypassing the sync gate. Bytes are
-/// buffered, so the grid is NOT mid-mutation on HEAD — the snapshot
-/// publishes empty content. After Step 1 (byte-buffer removal) the
-/// grid IS mid-mutation, and without Step 4b the SnapshotNow would
-/// expose that intermediate state. Step 4b adds the gate so the
-/// publish defers until ESU/timeout.
+/// Inline byte dispatch lands the mutation in the grid the moment the
+/// chunk arrives; without this gate, a `SnapshotNow` request from the
+/// main thread mid-sync would expose a partial-frame view of the grid.
+/// The gate routes through `maybe_produce_snapshot` which returns
+/// without publishing whenever `TermMode::SYNC_UPDATE` is set; the
+/// reply still fires (the request was acknowledged), and the snapshot
+/// publishes on the next ESU/timeout that clears the gate.
 ///
 /// Regression: BUG-11-027 §03 SnapshotNow gate pin (Step 4b).
 #[test]

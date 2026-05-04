@@ -353,8 +353,9 @@ impl<S: EffectSink> PaneIoThread<S> {
     /// `handle_sync_timeout()`.
     ///
     /// Runs deferred prompt marking, marker pruning for scrollback eviction,
-    /// mode cache update, and selection-dirty propagation. Must be called after
-    /// any VTE byte processing (both normal and timeout-replay paths).
+    /// mode cache update, and selection-dirty propagation. Called after the
+    /// normal byte-parse path AND after a Mode 2026 timeout closes the sync
+    /// window — both paths leave deferred state that needs flushing.
     fn post_parse_housekeeping(&mut self, evicted_before: usize) {
         // Deferred prompt marking.
         if self.terminal.prompt_mark_pending() {
