@@ -277,7 +277,7 @@ impl ClientTransport {
             pdu,
             reply_tx: Some(reply_tx),
         })
-        .map_err(|_send_err| io::Error::new(io::ErrorKind::BrokenPipe, "reader thread gone"))?;
+        .map_err(|_send_err| io::Error::new(io::ErrorKind::BrokenPipe, "writer thread gone"))?;
         self.signal_wake();
 
         match reply_rx.recv_timeout(RPC_TIMEOUT) {
@@ -335,7 +335,7 @@ impl ClientTransport {
             pdu,
             reply_tx: None,
         })
-        .map_err(|_send_err| io::Error::new(io::ErrorKind::BrokenPipe, "reader thread gone"))?;
+        .map_err(|_send_err| io::Error::new(io::ErrorKind::BrokenPipe, "writer thread gone"))?;
         self.signal_wake();
         Ok(())
     }

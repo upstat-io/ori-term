@@ -30,7 +30,9 @@ fn reader_does_not_send_pings() {
     let reader_src = include_str!("reader.rs");
     // Match `Ping` followed by punctuation — `MuxPdu::Ping` as a value, not
     // the `MuxPdu::PingAck` variant which the reader still observes.
-    let bad_patterns = ["MuxPdu::Ping,", "MuxPdu::Ping)", "encode_frame(&mut stream"];
+    // `encode_frame` is forbidden as a bare token (catches any receiver name,
+    // not just `&mut stream`) — the reader is read-only post-fix.
+    let bad_patterns = ["MuxPdu::Ping,", "MuxPdu::Ping)", "encode_frame"];
     for pat in bad_patterns {
         assert!(
             !reader_src.contains(pat),

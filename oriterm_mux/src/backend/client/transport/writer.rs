@@ -91,13 +91,20 @@ pub(super) fn writer_loop(
             }
             let seq = ping_seq_counter;
             ping_seq_counter = next_ping_seq(ping_seq_counter);
+            // Publish the outstanding seq BEFORE writing the ping so a fast
+            // PingAck reply cannot race ahead of the store and be dropped by
+            // the reader thread's `expected_ping == 0` sentinel check.
+            // Codex round 0 / BUG-11-047 §06 finding F1 pin.
+            outstanding_ping_seq.store(u64::from(seq), Ordering::Release);
             if let Err(e) = ProtocolCodec::encode_frame(&mut write_stream, seq, &MuxPdu::Ping) {
                 log::error!("mux-client-writer: ping write error: {e}");
+                // Clear the published seq so a future writer (or the
+                // shutdown path) does not observe a stale outstanding ping.
+                outstanding_ping_seq.store(0, Ordering::Release);
                 alive.store(false, Ordering::Release);
                 drain_pending(&pending);
                 return;
             }
-            outstanding_ping_seq.store(u64::from(seq), Ordering::Release);
             last_ping_sent = Instant::now();
         }
     }

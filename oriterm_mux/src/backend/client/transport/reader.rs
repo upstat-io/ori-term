@@ -229,18 +229,12 @@ pub(super) fn reader_loop(
 
         // 1. Wait for socket data or wake signal (shutdown).
         //
-        // First try a non-blocking poll (0ms timeout) to skip kernel timer
-        // granularity. Fall back to a blocking poll bounded by a short
-        // safety interval so we periodically observe the alive flag.
+        // `poll(2)` returns immediately if either fd is already ready, so
+        // a single 1-second-bounded call covers both the "data already
+        // waiting" and "block until ready or shutdown" paths. The bound
+        // gives `alive`-flag observation cadence on quiet connections.
         #[cfg(unix)]
-        let socket_ready = {
-            if wait_for_readable(&stream, wake_read, 0) {
-                true
-            } else {
-                // 1-second safety bound — alive-flag observation cadence.
-                wait_for_readable(&stream, wake_read, 1000)
-            }
-        };
+        let socket_ready = wait_for_readable(&stream, wake_read, 1000);
         #[cfg(not(unix))]
         let socket_ready = {
             std::thread::sleep(READ_POLL_INTERVAL);
