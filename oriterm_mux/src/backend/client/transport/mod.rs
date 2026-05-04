@@ -8,8 +8,13 @@
 
 mod handshake;
 mod reader;
+mod spawn;
+mod types;
 mod wake_pipe;
 mod writer;
+
+use self::spawn::{spawn_reader_thread, spawn_writer_thread};
+use self::types::{PendingClientReply, SendRequest};
 
 use std::collections::HashMap;
 use std::io;
@@ -32,30 +37,6 @@ use crate::mux_event::MuxNotification;
 use crate::protocol::MuxPdu;
 use crate::{PaneId, PaneSnapshot};
 
-/// Bookkeeping for a host-request received from the daemon, awaiting the
-/// App's `MuxBackend::fulfill_host_request` call (BUG-11-011).
-pub(super) enum PendingClientReply {
-    /// OSC 52 clipboard load — `request_id` echoed back in the reply PDU.
-    Clipboard {
-        /// Server-allocated id from the originating notification.
-        request_id: u64,
-    },
-    /// OSC 4 / 10 / 11 / 12 color query.
-    Color {
-        /// Server-allocated id from the originating notification.
-        request_id: u64,
-    },
-}
-
-impl PendingClientReply {
-    /// Echo-back `request_id` regardless of variant.
-    pub(super) fn request_id(&self) -> u64 {
-        match self {
-            Self::Clipboard { request_id } | Self::Color { request_id } => *request_id,
-        }
-    }
-}
-
 /// RPC timeout for blocking responses.
 const RPC_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -70,16 +51,6 @@ const READ_POLL_INTERVAL: Duration = Duration::from_millis(1);
 /// If the previous ping is still outstanding when the next interval fires,
 /// the connection is declared dead (implicit timeout = `PING_INTERVAL`).
 const PING_INTERVAL: Duration = Duration::from_secs(5);
-
-/// A request queued for the reader thread to send.
-struct SendRequest {
-    /// Sequence number assigned by the transport.
-    seq: u32,
-    /// PDU to encode and write.
-    pdu: MuxPdu,
-    /// Reply channel. `None` for fire-and-forget messages.
-    reply_tx: Option<mpsc::Sender<MuxPdu>>,
-}
 
 /// IPC transport to the mux daemon.
 ///
@@ -141,10 +112,6 @@ impl ClientTransport {
     ///
     /// `wakeup` is called when push notifications arrive, so the event loop
     /// can wake and process them.
-    #[allow(
-        clippy::too_many_lines,
-        reason = "linear setup sequence — channels, threads, struct init; splitting would scatter ownership"
-    )]
     pub(super) fn connect(path: &Path, wakeup: Arc<dyn Fn() + Send + Sync>) -> io::Result<Self> {
         let mut stream = ClientStream::connect(path)?;
         let client_id = handshake::run_handshake(&mut stream, path)?;
@@ -207,42 +174,25 @@ impl ClientTransport {
 
         // Spawn writer thread first; reader thread depends on the writer
         // for the heartbeat ping cadence.
-        let writer_handle = std::thread::Builder::new()
-            .name("mux-client-writer".into())
-            .spawn(move || {
-                writer::writer_loop(
-                    write_stream,
-                    send_rx,
-                    pending_writer,
-                    alive_writer,
-                    outstanding_ping_seq_writer,
-                );
-            })
-            .map_err(|e| io::Error::other(format!("failed to spawn writer thread: {e}")))?;
-
-        // Spawn reader thread.
-        let reader_handle = std::thread::Builder::new()
-            .name("mux-client-reader".into())
-            .spawn(move || {
-                reader::reader_loop(
-                    read_stream,
-                    notif_tx,
-                    guarded_wakeup,
-                    alive_reader,
-                    pushed_snapshots_reader,
-                    pending_replies_reader,
-                    pending_reader,
-                    outstanding_ping_seq_reader,
-                    #[cfg(unix)]
-                    wake_read,
-                );
-                #[cfg(unix)]
-                #[allow(unsafe_code, reason = "close(2) for self-pipe read end")]
-                unsafe {
-                    libc::close(wake_read);
-                }
-            })
-            .map_err(|e| io::Error::other(format!("failed to spawn reader thread: {e}")))?;
+        let writer_handle = spawn_writer_thread(
+            write_stream,
+            send_rx,
+            pending_writer,
+            alive_writer,
+            outstanding_ping_seq_writer,
+        )?;
+        let reader_handle = spawn_reader_thread(
+            read_stream,
+            notif_tx,
+            guarded_wakeup,
+            alive_reader,
+            pushed_snapshots_reader,
+            pending_replies_reader,
+            pending_reader,
+            outstanding_ping_seq_reader,
+            #[cfg(unix)]
+            wake_read,
+        )?;
 
         Ok(Self {
             send_tx: Some(send_tx),

@@ -2036,9 +2036,7 @@ fn daemon_host_request_cleanup_on_pane_close() {
 // e2e test would expand the public API without a real consumer. The unit
 // test verifies the pure dispatch logic (priority comparison + tie break).
 
-// ---------------------------------------------------------------------------
 // BUG-11-020 — daemon-mode `is_write_stalled` RPC tests
-// ---------------------------------------------------------------------------
 
 /// Regression: BUG-11-020 — a freshly spawned daemon-mode pane with no traffic
 /// must report `is_write_stalled == false` (writer is idle, not blocked).
