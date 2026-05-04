@@ -631,3 +631,17 @@ fn sync_pane_snapshot_returns_none_for_missing_pane() {
          not silently fall back to refresh_pane_snapshot's cached value",
     );
 }
+
+/// Regression: BUG-11-020 — embedded `is_write_stalled` must continue returning `false`
+/// for an unknown pane id (matches the daemon-side server dispatch contract: missing
+/// pane ⇒ `false` rather than `Err`).
+/// See: bug-tracker/plans/BUG-11-020/00-overview.md
+#[test]
+fn is_write_stalled_returns_false_for_unknown_pane_in_embedded() {
+    let mut mux = EmbeddedMux::new(test_wakeup());
+    let bogus = PaneId::from_raw(99_999);
+    assert!(
+        !mux.is_write_stalled(bogus),
+        "embedded is_write_stalled must return false for an unknown pane",
+    );
+}

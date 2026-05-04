@@ -373,6 +373,12 @@ fn parse_osc104_reset_all_colors_no_semicolon() {
     assert_eq!(handler.reset_colors, expected);
 }
 
+/// Mode 2026 sync window arms / disarms the parser-side timer across
+/// chunked advance() calls — and intra-window bytes dispatch inline.
+///
+/// `TestSyncHandler::is_sync` increments on every `set_timeout` call
+/// and resets to 0 on `clear_timeout`, giving a count of timer arms.
+/// BSU re-arms; ESU disarms.
 #[test]
 fn partial_sync_updates() {
     let mut parser = Processor::<TestSyncHandler>::new();
@@ -381,73 +387,34 @@ fn partial_sync_updates() {
     assert_eq!(parser.state.sync_state.timeout.is_sync, 0);
     assert!(handler.attr.is_none());
 
-    // Start synchronized update.
-
+    // BSU split across two advance() calls — timer arms only when the
+    // full sequence is consumed.
     parser.advance(&mut handler, b"\x1b[?20");
     assert_eq!(parser.state.sync_state.timeout.is_sync, 0);
-    assert!(handler.attr.is_none());
-
     parser.advance(&mut handler, b"26h");
     assert_eq!(parser.state.sync_state.timeout.is_sync, 1);
-    assert!(handler.attr.is_none());
 
-    // Dispatch some data.
-
+    // SGR mid-sync dispatches INLINE (Mode 2026 gates snapshots, not
+    // byte processing).
     parser.advance(&mut handler, b"random \x1b[31m stuff");
     assert_eq!(parser.state.sync_state.timeout.is_sync, 1);
-    assert!(handler.attr.is_none());
+    assert!(
+        handler.attr.is_some(),
+        "SGR mid-sync must dispatch inline (Mode 2026 does not buffer)"
+    );
+    handler.attr = None;
 
-    // Extend synchronized update.
-
+    // Second BSU re-arms the timer (counter increments again).
     parser.advance(&mut handler, b"\x1b[?20");
-    assert_eq!(parser.state.sync_state.timeout.is_sync, 1);
-    assert!(handler.attr.is_none());
-
     parser.advance(&mut handler, b"26h");
     assert_eq!(parser.state.sync_state.timeout.is_sync, 2);
-    assert!(handler.attr.is_none());
 
-    // Terminate synchronized update.
-
+    // ESU split across two advance() calls — timer disarms when the
+    // full sequence is consumed.
     parser.advance(&mut handler, b"\x1b[?20");
     assert_eq!(parser.state.sync_state.timeout.is_sync, 2);
-    assert!(handler.attr.is_none());
-
     parser.advance(&mut handler, b"26l");
     assert_eq!(parser.state.sync_state.timeout.is_sync, 0);
-    assert!(handler.attr.is_some());
-}
-
-#[test]
-fn sync_bursts_buffer() {
-    let mut parser = Processor::<TestSyncHandler>::new();
-    let mut handler = MockHandler::default();
-
-    assert_eq!(parser.state.sync_state.timeout.is_sync, 0);
-    assert!(handler.attr.is_none());
-
-    // Repeat test twice to ensure internal state is reset properly.
-    for _ in 0..2 {
-        // Start synchronized update.
-        parser.advance(&mut handler, b"\x1b[?2026h");
-        assert_eq!(parser.state.sync_state.timeout.is_sync, 1);
-        assert!(handler.attr.is_none());
-
-        // Ensure sync works.
-        parser.advance(&mut handler, b"\x1b[31m");
-        assert_eq!(parser.state.sync_state.timeout.is_sync, 1);
-        assert!(handler.attr.is_none());
-
-        // Exceed sync buffer dimensions.
-        parser.advance(&mut handler, "a".repeat(SYNC_BUFFER_SIZE).as_bytes());
-        assert_eq!(parser.state.sync_state.timeout.is_sync, 0);
-        assert!(handler.attr.take().is_some());
-
-        // Ensure new events are dispatched directly.
-        parser.advance(&mut handler, b"\x1b[31m");
-        assert_eq!(parser.state.sync_state.timeout.is_sync, 0);
-        assert!(handler.attr.take().is_some());
-    }
 }
 
 #[test]
@@ -458,15 +425,17 @@ fn mixed_sync_escape() {
     assert_eq!(parser.state.sync_state.timeout.is_sync, 0);
     assert!(handler.attr.is_none());
 
-    // Start synchronized update with immediate SGR.
+    // BSU + SGR in one advance() — both dispatch inline.
     parser.advance(&mut handler, b"\x1b[?2026h\x1b[31m");
     assert_eq!(parser.state.sync_state.timeout.is_sync, 1);
-    assert!(handler.attr.is_none());
+    assert!(
+        handler.attr.is_some(),
+        "SGR after BSU must dispatch inline (Mode 2026 does not buffer)"
+    );
 
-    // Terminate synchronized update and check for SGR.
+    // ESU disarms the timer.
     parser.advance(&mut handler, b"\x1b[?2026l");
     assert_eq!(parser.state.sync_state.timeout.is_sync, 0);
-    assert!(handler.attr.is_some());
 }
 
 #[test]
@@ -474,23 +443,20 @@ fn sync_bsu_with_esu() {
     let mut parser = Processor::<TestSyncHandler>::new();
     let mut handler = MockHandler::default();
 
-    assert_eq!(parser.state.sync_state.timeout.is_sync, 0);
-    assert!(handler.attr.is_none());
-
-    // Start synchronized update with immediate SGR.
+    // BSU + SGR(Bold) in one chunk — Bold dispatches inline.
     parser.advance(&mut handler, b"\x1b[?2026h\x1b[1m");
     assert_eq!(parser.state.sync_state.timeout.is_sync, 1);
-    assert!(handler.attr.is_none());
-
-    // Terminate synchronized update, but immediately start a new one.
-    parser.advance(&mut handler, b"\x1b[?2026l\x1b[?2026h\x1b[4m");
-    assert_eq!(parser.state.sync_state.timeout.is_sync, 2);
     assert_eq!(handler.attr.take(), Some(Attr::Bold));
 
-    // Terminate again, expecting one buffered SGR.
+    // ESU + BSU + SGR(Underline) in one chunk — ESU disarms, BSU
+    // re-arms, Underline dispatches inline.
+    parser.advance(&mut handler, b"\x1b[?2026l\x1b[?2026h\x1b[4m");
+    assert_eq!(parser.state.sync_state.timeout.is_sync, 1);
+    assert_eq!(handler.attr.take(), Some(Attr::Underline));
+
+    // Final ESU clears the timer.
     parser.advance(&mut handler, b"\x1b[?2026l");
     assert_eq!(parser.state.sync_state.timeout.is_sync, 0);
-    assert_eq!(handler.attr.take(), Some(Attr::Underline));
 }
 
 #[test]
@@ -649,4 +615,118 @@ fn parse_decrsps_default_ps_is_zero() {
     let mut handler = MockHandler::default();
     parser.advance(&mut handler, bytes);
     assert_eq!(handler.decrsps_calls, vec![(0, Vec::<u8>::new())]);
+}
+
+// BUG-11-027 §03 matrix — Mode 2026 inline dispatch (vte-layer pins).
+//
+// These pins enforce that the parser's Mode 2026 handling dispatches
+// the handler INLINE within the same `advance()` call as the BSU —
+// no buffering, no deferred replay. The only sync state the parser
+// holds is the deadline timer used by the run loop's `select!`
+// deadline arm to bound a sync window. See bug-tracker/plans/BUG-11-027/.
+
+/// Negative pin: `SyncState` carries no byte buffer.
+///
+/// Asserts that `SyncState<TestSyncHandler>` has the SAME size as
+/// `TestSyncHandler` alone (the only field is `timeout: T`). If a
+/// future refactor re-introduces a `buffer: Vec<u8>` field (24 bytes
+/// on 64-bit), the sizes diverge and this assertion fires.
+///
+/// Regression: BUG-11-027 §03 negative-pin (no byte-level buffering).
+#[test]
+fn processor_no_sync_buffer_during_active_sync() {
+    use core::mem::size_of;
+
+    let mut parser = Processor::<TestSyncHandler>::new();
+    let mut handler = MockHandler::default();
+
+    // Activate sync — gives the timer something non-default to hold.
+    parser.advance(&mut handler, b"\x1b[?2026h");
+    assert!(
+        parser.state.sync_state.timeout.pending_timeout(),
+        "BSU should arm the parser-side sync timer"
+    );
+
+    // SyncState must be a thin wrapper around just `timeout: T`. A
+    // future regression that re-introduces a `buffer: Vec<u8>` field
+    // (24 bytes on 64-bit) would diverge the sizes and fire here.
+    assert_eq!(
+        size_of::<super::processor::SyncState<TestSyncHandler>>(),
+        size_of::<TestSyncHandler>(),
+        "SyncState must contain only the timeout field; presence of a byte buffer adds Vec overhead"
+    );
+}
+
+/// Inline-dispatch pin: BSU + DA1 + grid-mutating SGR all dispatch
+/// within the SAME `advance()` call.
+///
+/// Asserting both the DA1 `identify_terminal` callback AND the SGR
+/// `terminal_attribute` callback fired pins inline dispatch from two
+/// angles — if a regression re-introduced parser termination after BSU,
+/// DA1 and SGR would not reach the handler in this chunk.
+///
+/// Regression: BUG-11-027 §03 inline-dispatch pin.
+#[test]
+fn processor_dispatches_handler_inline_during_sync() {
+    let mut parser = Processor::<TestSyncHandler>::new();
+    let mut handler = MockHandler::default();
+
+    parser.advance(&mut handler, b"\x1b[?2026h\x1b[c\x1b[31m");
+
+    assert!(
+        handler.identity_reported,
+        "DA1 must dispatch inline during sync"
+    );
+    assert!(
+        handler.attr.is_some(),
+        "SGR must dispatch inline during sync"
+    );
+}
+
+/// ESU without a preceding BSU is a safe no-op.
+///
+/// The ESU dispatch arm calls `sync_timeout.clear_timeout()` unconditionally
+/// for `?2026 l`. This pin proves that calling `clear_timeout` on an
+/// already-disarmed timer does NOT panic and does NOT leave the timer
+/// in a weird state (stays disarmed).
+///
+/// Regression: BUG-11-027 §03 ESU-without-BSU edge case.
+#[test]
+fn esu_without_bsu_is_noop() {
+    let mut parser = Processor::<TestSyncHandler>::new();
+    let mut handler = MockHandler::default();
+
+    parser.advance(&mut handler, b"\x1b[?2026l");
+
+    assert!(
+        !parser.state.sync_state.timeout.pending_timeout(),
+        "ESU on a disarmed timer must remain disarmed (no-op)"
+    );
+}
+
+/// Two BSUs in one feed re-arm the timer (TestSyncHandler increments
+/// its `is_sync` counter on each `set_timeout`).
+///
+/// Both BSUs dispatch inline through the same `advance()` call — the
+/// counter advances to 2, demonstrating the second BSU reached the
+/// dispatch arm rather than being deferred. The intra-chunk DA1 also
+/// dispatches (`handler.identity_reported == true`), pinning the same
+/// inline-dispatch invariant from a different angle.
+///
+/// Regression: BUG-11-027 §03 nested-BSU pin.
+#[test]
+fn bsu_twice_in_one_feed_extends_timeout() {
+    let mut parser = Processor::<TestSyncHandler>::new();
+    let mut handler = MockHandler::default();
+
+    parser.advance(&mut handler, b"\x1b[?2026h\x1b[c\x1b[?2026h");
+
+    assert_eq!(
+        parser.state.sync_state.timeout.is_sync, 2,
+        "both BSUs must reach the dispatch arm and re-arm the timer (is_sync == 2)"
+    );
+    assert!(
+        handler.identity_reported,
+        "DA1 between the two BSUs must reach the handler inline"
+    );
 }

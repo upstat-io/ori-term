@@ -86,13 +86,32 @@ impl<S: EffectSink> PaneIoThread<S> {
             //     `select!` `default(timeout)` arm). Regression: BUG-11-002.
             self.maybe_shrink_buffers();
 
+            // 4c. Final shutdown check — closes the gap between the
+            //     last load at line 57 (after `process_pending_bytes`)
+            //     and the blocking `select!` below. Without this, a
+            //     `shutdown_flag.store(true)` by a non-handle path that
+            //     doesn't enqueue on `cmd_tx` or `io_wake_tx` (e.g. the
+            //     pty writer thread at `pty/mod.rs::spawn_pty_writer`'s
+            //     exit path) leaves the IO thread blocked in `select!`
+            //     until `byte_rx` hangs up — timing not guaranteed.
+            //     Step 6C ALSO has the writer thread `try_send` an
+            //     `io_wake` so the in-`select!` window closes; this
+            //     pre-`select!` check covers any setter that bypasses
+            //     the wake (defense in depth). Regression: BUG-11-025
+            //     §04 Plan TPR Round 1 Opencode F1 + Round 4 Codex F2.
+            if self.shutdown.load(Ordering::Acquire) {
+                self.maybe_produce_snapshot();
+                return;
+            }
+
             // 5. Block until the next event.
             //
-            // Mode 2026 (synchronized output): when a sync buffer is pending,
-            // the VTE processor's StdSyncHandler tracks a deadline; we must
-            // wake before the sync deadline to call stop_sync and flush the
-            // buffer — otherwise an app that crashes mid-sync hangs the
-            // terminal forever.
+            // Mode 2026 (synchronized output): when a sync window is active,
+            // the VTE processor's StdSyncHandler carries a deadline; we must
+            // wake before that deadline to call `handle_sync_timeout`, which
+            // clears `TermMode::SYNC_UPDATE` and publishes the accumulated
+            // snapshot — otherwise an app that crashes mid-sync would leave
+            // the gate set and snapshots would never publish again.
             //
             // Animation: when at least one pane has an active animation,
             // `animation_deadline` carries the next-frame instant so the
@@ -114,12 +133,25 @@ impl<S: EffectSink> PaneIoThread<S> {
             crossbeam_channel::select! {
                 recv(self.cmd_rx) -> msg => {
                     match msg {
-                        Ok(PaneIoCommand::Shutdown) => {
-                            self.shutdown.store(true, Ordering::Release);
-                            self.maybe_produce_snapshot();
-                            return;
+                        Ok(cmd) => {
+                            // Apply pending_resize UNCONDITIONALLY before
+                            // handling ANY command (Shutdown included) so
+                            // the idle-wake path always yields post-resize
+                            // state. Without this, a concurrent
+                            // `send_resize` + `send_command(SnapshotNow)`
+                            // pair can yield a pre-resize SnapshotNow
+                            // reply if `select!` non-deterministically
+                            // picks `cmd_rx` first. Pinned by §04 Plan
+                            // TPR Round 2 Codex F1 + Round 3 Gemini F1
+                            // + Round 5 Codex F3 / Opencode F1.
+                            self.apply_pending_resize();
+                            if matches!(&cmd, PaneIoCommand::Shutdown) {
+                                self.shutdown.store(true, Ordering::Release);
+                                self.maybe_produce_snapshot();
+                                return;
+                            }
+                            self.handle_command(cmd);
                         }
-                        Ok(cmd) => self.handle_command(cmd),
                         Err(_) => return,
                     }
                 },
@@ -147,18 +179,21 @@ impl<S: EffectSink> PaneIoThread<S> {
                         self.child_exit_rx = crossbeam_channel::never();
                     }
                 }
-                recv(self.response_wake_rx) -> msg => {
+                recv(self.io_wake_rx) -> msg => {
                     if msg.is_err() {
-                        // Handle dropped its `response_wake_tx`. Same spin
-                        // hazard as the `child_exit_rx` arm above.
-                        self.response_wake_rx = crossbeam_channel::never();
+                        // All wake senders dropped. Same spin hazard as
+                        // the `child_exit_rx` arm above.
+                        self.io_wake_rx = crossbeam_channel::never();
                     }
-                    // Otherwise: woken by response fulfillment — next loop
-                    // iteration drains commands which polls pending responses
-                    // and emits PTY replies.
+                    // Otherwise: woken by response fulfillment, a
+                    // pending-resize store, the writer-thread shutdown
+                    // path, or the send_command Shutdown special-case —
+                    // next loop iteration drains commands, applies any
+                    // pending resize, and polls pending responses.
                 }
                 default(timeout) => {
-                    // Either the sync deadline fired (flush the buffer),
+                    // Either the sync deadline fired (close the Mode 2026
+                    // window — clear SYNC_UPDATE, emit Abort, publish),
                     // an animation deadline fired (next iteration's
                     // tick_animations advances the frame), or the idle
                     // sentinel expired (harmless — loop around).

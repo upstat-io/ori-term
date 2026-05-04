@@ -127,24 +127,6 @@ fn ui_mouse_cursor_dirty_constructs() {
 }
 
 #[test]
-fn presentation_begin_sync_constructs() {
-    let effect = Effect::Presentation(PresentationEffect::Begin);
-    assert!(matches!(
-        effect,
-        Effect::Presentation(PresentationEffect::Begin)
-    ));
-}
-
-#[test]
-fn presentation_commit_sync_constructs() {
-    let effect = Effect::Presentation(PresentationEffect::Commit { snapshot_seqno: 42 });
-    assert!(matches!(
-        effect,
-        Effect::Presentation(PresentationEffect::Commit { snapshot_seqno: 42 })
-    ));
-}
-
-#[test]
 fn presentation_abort_sync_constructs() {
     let effect = Effect::Presentation(PresentationEffect::Abort {
         reason: SyncAbortReason::Timeout,
@@ -173,10 +155,6 @@ fn pty_write_kind_equality() {
 #[test]
 fn sync_abort_reason_equality() {
     assert_eq!(SyncAbortReason::Timeout, SyncAbortReason::Timeout);
-    assert_ne!(
-        SyncAbortReason::Timeout,
-        SyncAbortReason::MaxBufferBytesExceeded
-    );
 }
 
 #[test]

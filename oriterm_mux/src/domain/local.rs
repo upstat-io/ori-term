@@ -142,20 +142,15 @@ impl LocalDomain {
         // 5. Wire the message channel for PTY writes.
         let (tx, rx) = mpsc::channel();
         let notifier = PaneNotifier::new(tx);
-
-        // 6. Spawn the writer thread (owns rx + writer, sets shutdown flag).
-        //    The write_stalled flag lets the main thread detect when the
-        //    writer is blocked on a full kernel PTY buffer and send SIGINT
-        //    directly to the child process group.
         let write_stalled = Arc::new(AtomicBool::new(false));
-        let writer_thread = spawn_pty_writer(
-            writer,
-            rx,
-            Arc::clone(&shutdown),
-            Arc::clone(&write_stalled),
-        )?;
 
-        // 7. Spawn the Terminal IO thread (owns Term, VTE processors, PtyControl).
+        // 6. Create the Terminal IO thread + handle FIRST so the
+        //    writer thread receives a clone of the IO-thread wake
+        //    sender. The writer thread `try_send`s on this channel
+        //    when it sets `shutdown` so the IO thread observes
+        //    shutdown out of `select!` within one iteration —
+        //    closes the §04 Plan TPR Round 5 Codex F1 in-`select!`
+        //    window for the writer-thread setter.
         let (io_thread, mut io_handle) = io_thread::new_with_handle(io_thread::IoThreadConfig {
             terminal: io_term,
             pane_id,
@@ -174,8 +169,22 @@ impl LocalDomain {
             selection_dirty: Arc::clone(&io_selection_dirty),
         });
         let byte_tx = io_handle.byte_sender();
+        let io_wake_tx = io_handle.io_wake_sender();
         let io_join = io_thread.spawn()?;
         io_handle.set_join(io_join);
+
+        // 7. Spawn the writer thread (owns rx + writer, sets shutdown
+        //    flag, wakes the IO thread on exit). The write_stalled
+        //    flag lets the main thread detect when the writer is
+        //    blocked on a full kernel PTY buffer and send SIGINT
+        //    directly to the child process group.
+        let writer_thread = spawn_pty_writer(
+            writer,
+            rx,
+            Arc::clone(&shutdown),
+            Arc::clone(&write_stalled),
+            io_wake_tx,
+        )?;
 
         // 8. Spawn the PTY reader thread (byte forwarder only — no VTE parsing).
         let pty_reader = PtyReader::new(reader, byte_tx, Arc::clone(&shutdown));

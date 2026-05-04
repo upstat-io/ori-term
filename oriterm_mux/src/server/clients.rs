@@ -67,28 +67,39 @@ impl MuxServer {
         }
 
         // Read available bytes from the stream into the frame reader.
+        //
+        // Drain in a loop until `WouldBlock` so a single edge-triggered
+        // POLLIN event doesn't starve large inbound payloads (e.g. the 8 MiB
+        // `Input` PDUs in the BUG-11-047 e2e tests). Cap iterations to avoid
+        // monopolizing the event loop on a single client.
         let read_status = {
             let Some(conn) = self.connections.get_mut(&client_id) else {
                 return;
             };
             let mut tmp = [0u8; 4096];
-            match conn.stream_mut().read(&mut tmp) {
-                Ok(0) => ReadStatus::Closed,
-                Ok(n) => {
-                    log::trace!("{client_id}: read {n} bytes");
-                    conn.frame_reader_mut().extend(&tmp[..n]);
-                    ReadStatus::GotData
-                }
-                Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
-                    log::trace!("{client_id}: read WouldBlock");
-                    ReadStatus::WouldBlock
-                }
-                Err(e) => {
-                    log::warn!("read error from client {client_id}: {e}");
-                    self.disconnect_client(client_id);
-                    return;
+            let mut last_status = ReadStatus::WouldBlock;
+            for _ in 0..256 {
+                match conn.stream_mut().read(&mut tmp) {
+                    Ok(0) => {
+                        last_status = ReadStatus::Closed;
+                        break;
+                    }
+                    Ok(n) => {
+                        conn.frame_reader_mut().extend(&tmp[..n]);
+                        last_status = ReadStatus::GotData;
+                    }
+                    Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
+                        last_status = ReadStatus::WouldBlock;
+                        break;
+                    }
+                    Err(e) => {
+                        log::warn!("read error from client {client_id}: {e}");
+                        self.disconnect_client(client_id);
+                        return;
+                    }
                 }
             }
+            last_status
         };
 
         if read_status == ReadStatus::Closed {
@@ -158,6 +169,7 @@ impl MuxServer {
             closed_panes: &mut self.scratch_panes,
             snapshot_cache: &mut self.snapshot_cache,
             immediate_push: &mut self.scratch_immediate_push,
+            pending_host_replies: &mut self.pending_host_replies,
         };
         let result = dispatch::dispatch_request(&mut ctx, conn, decoded.pdu);
 
@@ -308,6 +320,24 @@ impl MuxServer {
             deferred.remove(&client_id);
             !deferred.is_empty()
         });
+
+        // BUG-11-011: drop pending host-replies the disconnecting client
+        // owned. Done INLINE in disconnect_client (not in
+        // remove_client_subscriptions) — that helper takes only the
+        // subscriptions HashMap, and threading pending_host_replies
+        // through it would violate SRP.
+        let dropped_host = self
+            .pending_host_replies
+            .iter()
+            .filter(|(_, v)| v.responder == client_id)
+            .count();
+        self.pending_host_replies
+            .retain(|_, v| v.responder != client_id);
+        if dropped_host > 0 {
+            log::warn!(
+                "disconnect_client {client_id}: dropped {dropped_host} pending host-request token(s) — consumer apps will time out"
+            );
+        }
 
         log::info!("client {client_id} fully disconnected");
     }

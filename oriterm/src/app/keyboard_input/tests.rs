@@ -739,8 +739,11 @@ enum MethodCall {
 }
 
 /// Test fixture for `dispatch_mark_mode`. Records every sink-method call
-/// (including `&self` query methods via RefCell) and lets each test
-/// configure resource presence + the dispatch result.
+/// in `call_log` (the SSOT — `RefCell` so `&self` query methods record
+/// too) and lets each test configure resource presence + the dispatch
+/// result. All call accounting is derived from `call_log` via the query
+/// methods on `impl RecordingSink`; no parallel counter fields per
+/// `impl-hygiene.md §SSOT`.
 #[derive(Default)]
 struct RecordingSink {
     cursor_for_pane: HashMap<PaneId, MarkCursor>,
@@ -750,27 +753,16 @@ struct RecordingSink {
     dispatch_result: Option<MarkModeResult>,
     refresh_makes_snapshot_present: bool,
     call_log: RefCell<Vec<MethodCall>>,
-    exit_mark_mode_calls: Vec<PaneId>,
-    mark_dirty_calls: usize,
-    refresh_snapshot_calls: usize,
-    dispatch_key_calls: usize,
-    set_mark_cursor_calls: Vec<(PaneId, MarkCursor)>,
-    set_pane_selection_calls: Vec<(PaneId, Selection)>,
-    clear_pane_selection_calls: Vec<PaneId>,
-    scroll_display_calls: Vec<(PaneId, isize)>,
-    copy_selection_calls: usize,
-    last_dispatch_args: Option<(
-        PaneId,
-        MarkCursor,
-        Option<Selection>,
-        MarkModeKeyEvent,
-        ModifiersState,
-    )>,
 }
 
 impl RecordingSink {
-    /// Count of `mark_mode_resources()` queries for a specific pane. Single
-    /// SSOT (the call log) for query/mutation accounting.
+    // ── Query methods (all derive from `call_log` — single SSOT) ────────
+    //
+    // Every accounting helper iterates `call_log.borrow()` to count or
+    // collect call sites. Adding a new helper means filtering on a new
+    // `MethodCall` variant, NOT adding a parallel counter field.
+
+    /// Count of `mark_mode_resources()` queries for a specific pane.
     fn mark_mode_resources_calls(&self, pane_id: PaneId) -> usize {
         self.call_log
             .borrow()
@@ -795,6 +787,126 @@ impl RecordingSink {
             .iter()
             .filter(|c| matches!(c, MethodCall::PaneSelection { pane_id: p } if *p == pane_id))
             .count()
+    }
+
+    /// Count of `refresh_pane_snapshot()` calls (any pane).
+    fn refresh_snapshot_calls(&self) -> usize {
+        self.call_log
+            .borrow()
+            .iter()
+            .filter(|c| matches!(c, MethodCall::RefreshPaneSnapshot { .. }))
+            .count()
+    }
+
+    /// Pane IDs that received `exit_mark_mode()`, in call order.
+    fn exit_mark_mode_calls(&self) -> Vec<PaneId> {
+        self.call_log
+            .borrow()
+            .iter()
+            .filter_map(|c| match c {
+                MethodCall::ExitMarkMode { pane_id } => Some(*pane_id),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// `(pane_id, cursor)` tuples passed to `set_mark_cursor()`, in call order.
+    fn set_mark_cursor_calls(&self) -> Vec<(PaneId, MarkCursor)> {
+        self.call_log
+            .borrow()
+            .iter()
+            .filter_map(|c| match c {
+                MethodCall::SetMarkCursor { pane_id, cursor } => Some((*pane_id, *cursor)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// `(pane_id, sel)` tuples passed to `set_pane_selection()`, in call order.
+    fn set_pane_selection_calls(&self) -> Vec<(PaneId, Selection)> {
+        self.call_log
+            .borrow()
+            .iter()
+            .filter_map(|c| match c {
+                MethodCall::SetPaneSelection { pane_id, sel } => Some((*pane_id, *sel)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Pane IDs that received `clear_pane_selection()`, in call order.
+    fn clear_pane_selection_calls(&self) -> Vec<PaneId> {
+        self.call_log
+            .borrow()
+            .iter()
+            .filter_map(|c| match c {
+                MethodCall::ClearPaneSelection { pane_id } => Some(*pane_id),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// `(pane_id, lines)` tuples passed to `scroll_display()`, in call order.
+    fn scroll_display_calls(&self) -> Vec<(PaneId, isize)> {
+        self.call_log
+            .borrow()
+            .iter()
+            .filter_map(|c| match c {
+                MethodCall::ScrollDisplay { pane_id, lines } => Some((*pane_id, *lines)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Count of `copy_selection()` calls.
+    fn copy_selection_calls(&self) -> usize {
+        self.call_log
+            .borrow()
+            .iter()
+            .filter(|c| matches!(c, MethodCall::CopySelection))
+            .count()
+    }
+
+    /// Count of `mark_dirty()` calls.
+    fn mark_dirty_calls(&self) -> usize {
+        self.call_log
+            .borrow()
+            .iter()
+            .filter(|c| matches!(c, MethodCall::MarkDirty))
+            .count()
+    }
+
+    /// Count of `dispatch_mark_mode_key()` calls.
+    fn dispatch_key_calls(&self) -> usize {
+        self.call_log
+            .borrow()
+            .iter()
+            .filter(|c| matches!(c, MethodCall::DispatchMarkModeKey { .. }))
+            .count()
+    }
+
+    /// Last `(pane_id, cursor, selection, event, modifiers)` tuple passed
+    /// to `dispatch_mark_mode_key()` (None if never called). Cloned out
+    /// of the call log so callers can borrow indefinitely.
+    fn last_dispatch_args(
+        &self,
+    ) -> Option<(
+        PaneId,
+        MarkCursor,
+        Option<Selection>,
+        MarkModeKeyEvent,
+        ModifiersState,
+    )> {
+        self.call_log.borrow().iter().rev().find_map(|c| match c {
+            MethodCall::DispatchMarkModeKey {
+                pane_id,
+                cursor,
+                selection,
+                event,
+                modifiers,
+            } => Some((*pane_id, *cursor, *selection, event.clone(), *modifiers)),
+            _ => None,
+        })
     }
 
     /// Snapshot of the call log for ordering / structural assertions.
@@ -830,7 +942,6 @@ impl MarkModeSink for RecordingSink {
         self.call_log
             .borrow_mut()
             .push(MethodCall::RefreshPaneSnapshot { pane_id });
-        self.refresh_snapshot_calls += 1;
         if self.refresh_makes_snapshot_present {
             self.snapshot_present.insert(pane_id, true);
         }
@@ -839,39 +950,32 @@ impl MarkModeSink for RecordingSink {
         self.call_log
             .borrow_mut()
             .push(MethodCall::ExitMarkMode { pane_id });
-        self.exit_mark_mode_calls.push(pane_id);
     }
     fn set_mark_cursor(&mut self, pane_id: PaneId, cursor: MarkCursor) {
         self.call_log
             .borrow_mut()
             .push(MethodCall::SetMarkCursor { pane_id, cursor });
-        self.set_mark_cursor_calls.push((pane_id, cursor));
     }
     fn set_pane_selection(&mut self, pane_id: PaneId, sel: Selection) {
         self.call_log
             .borrow_mut()
             .push(MethodCall::SetPaneSelection { pane_id, sel });
-        self.set_pane_selection_calls.push((pane_id, sel));
     }
     fn clear_pane_selection(&mut self, pane_id: PaneId) {
         self.call_log
             .borrow_mut()
             .push(MethodCall::ClearPaneSelection { pane_id });
-        self.clear_pane_selection_calls.push(pane_id);
     }
     fn scroll_display(&mut self, pane_id: PaneId, lines: isize) {
         self.call_log
             .borrow_mut()
             .push(MethodCall::ScrollDisplay { pane_id, lines });
-        self.scroll_display_calls.push((pane_id, lines));
     }
     fn copy_selection(&mut self) {
         self.call_log.borrow_mut().push(MethodCall::CopySelection);
-        self.copy_selection_calls += 1;
     }
     fn mark_dirty(&mut self) {
         self.call_log.borrow_mut().push(MethodCall::MarkDirty);
-        self.mark_dirty_calls += 1;
     }
     fn dispatch_mark_mode_key(&mut self, input: MarkKeyInput) -> MarkModeResult {
         self.call_log
@@ -880,17 +984,9 @@ impl MarkModeSink for RecordingSink {
                 pane_id: input.pane_id,
                 cursor: input.cursor,
                 selection: input.selection,
-                event: input.event.clone(),
+                event: input.event,
                 modifiers: input.modifiers,
             });
-        self.dispatch_key_calls += 1;
-        self.last_dispatch_args = Some((
-            input.pane_id,
-            input.cursor,
-            input.selection,
-            input.event,
-            input.modifiers,
-        ));
         self.dispatch_result
             .take()
             .expect("dispatch_result must be configured by test")
@@ -997,15 +1093,17 @@ fn dispatch_mark_mode_pressed_truth_table_pins_exit_on_missing_resource() {
                             "({mux}, {cursor}, {snapshot}, repeat={repeat}) → all present must consume"
                         );
                         assert!(
-                            sink.exit_mark_mode_calls.is_empty(),
+                            sink.exit_mark_mode_calls().is_empty(),
                             "({mux}, {cursor}, {snapshot}, repeat={repeat}) → all present must NOT exit"
                         );
                         assert_eq!(
-                            sink.dispatch_key_calls, 1,
+                            sink.dispatch_key_calls(),
+                            1,
                             "({mux}, {cursor}, {snapshot}, repeat={repeat}) → all present must dispatch"
                         );
                         assert_eq!(
-                            sink.mark_dirty_calls, 1,
+                            sink.mark_dirty_calls(),
+                            1,
                             "({mux}, {cursor}, {snapshot}, repeat={repeat}) → all present must mark_dirty"
                         );
                     } else {
@@ -1014,16 +1112,18 @@ fn dispatch_mark_mode_pressed_truth_table_pins_exit_on_missing_resource() {
                             "({mux}, {cursor}, {snapshot}, repeat={repeat}) → missing-resource must forward (false)"
                         );
                         assert_eq!(
-                            sink.exit_mark_mode_calls,
+                            sink.exit_mark_mode_calls(),
                             vec![pane_id],
                             "({mux}, {cursor}, {snapshot}, repeat={repeat}) → missing-resource must exit"
                         );
                         assert_eq!(
-                            sink.dispatch_key_calls, 0,
+                            sink.dispatch_key_calls(),
+                            0,
                             "({mux}, {cursor}, {snapshot}, repeat={repeat}) → missing-resource must NOT dispatch"
                         );
                         assert_eq!(
-                            sink.mark_dirty_calls, 0,
+                            sink.mark_dirty_calls(),
+                            0,
                             "({mux}, {cursor}, {snapshot}, repeat={repeat}) → missing-resource must NOT mark_dirty"
                         );
                     }
@@ -1086,19 +1186,22 @@ fn dispatch_mark_mode_released_event_consumes_regardless_of_resources() {
                     "({mux}, {cursor}, {snapshot}) Released → must NOT query selection"
                 );
                 assert_eq!(
-                    sink.refresh_snapshot_calls, 0,
+                    sink.refresh_snapshot_calls(),
+                    0,
                     "({mux}, {cursor}, {snapshot}) Released → must NOT refresh"
                 );
                 assert!(
-                    sink.exit_mark_mode_calls.is_empty(),
+                    sink.exit_mark_mode_calls().is_empty(),
                     "({mux}, {cursor}, {snapshot}) Released → must NOT exit"
                 );
                 assert_eq!(
-                    sink.dispatch_key_calls, 0,
+                    sink.dispatch_key_calls(),
+                    0,
                     "({mux}, {cursor}, {snapshot}) Released → must NOT dispatch"
                 );
                 assert_eq!(
-                    sink.mark_dirty_calls, 0,
+                    sink.mark_dirty_calls(),
+                    0,
                     "({mux}, {cursor}, {snapshot}) Released → must NOT mark_dirty"
                 );
                 cell_count += 1;
@@ -1159,10 +1262,10 @@ fn dispatch_mark_mode_inactive_returns_false_without_side_effects() {
                         0,
                         "inactive must NOT query selection"
                     );
-                    assert_eq!(sink.refresh_snapshot_calls, 0);
-                    assert!(sink.exit_mark_mode_calls.is_empty());
-                    assert_eq!(sink.dispatch_key_calls, 0);
-                    assert_eq!(sink.mark_dirty_calls, 0);
+                    assert_eq!(sink.refresh_snapshot_calls(), 0);
+                    assert!(sink.exit_mark_mode_calls().is_empty());
+                    assert_eq!(sink.dispatch_key_calls(), 0);
+                    assert_eq!(sink.mark_dirty_calls(), 0);
                     assert!(
                         !sink
                             .call_log
@@ -1253,8 +1356,8 @@ fn dispatch_mark_mode_handled_with_scroll_delta_calls_scroll_display() {
         },
     );
     assert!(result);
-    assert_eq!(sink.scroll_display_calls, vec![(pane_id, 5)]);
-    assert_eq!(sink.mark_dirty_calls, 1);
+    assert_eq!(sink.scroll_display_calls(), vec![(pane_id, 5)]);
+    assert_eq!(sink.mark_dirty_calls(), 1);
 }
 
 /// PIN 6 — `MarkAction::Handled { scroll_delta: None }` skips
@@ -1281,8 +1384,8 @@ fn dispatch_mark_mode_handled_without_scroll_delta_skips_scroll_display() {
         },
     );
     assert!(result);
-    assert!(sink.scroll_display_calls.is_empty());
-    assert_eq!(sink.mark_dirty_calls, 1);
+    assert!(sink.scroll_display_calls().is_empty());
+    assert_eq!(sink.mark_dirty_calls(), 1);
 }
 
 /// PIN 7 — `MarkAction::Exit { copy: true }` calls both `exit_mark_mode`
@@ -1313,9 +1416,9 @@ fn dispatch_mark_mode_exit_with_copy_calls_exit_mark_mode_and_copy_selection() {
         },
     );
     assert!(result);
-    assert_eq!(sink.exit_mark_mode_calls, vec![pane_id]);
-    assert_eq!(sink.copy_selection_calls, 1);
-    assert_eq!(sink.mark_dirty_calls, 1);
+    assert_eq!(sink.exit_mark_mode_calls(), vec![pane_id]);
+    assert_eq!(sink.copy_selection_calls(), 1);
+    assert_eq!(sink.mark_dirty_calls(), 1);
 }
 
 /// PIN 8 — `MarkAction::Exit { copy: false }` calls `exit_mark_mode` only.
@@ -1345,9 +1448,9 @@ fn dispatch_mark_mode_exit_without_copy_calls_exit_mark_mode_only() {
         },
     );
     assert!(result);
-    assert_eq!(sink.exit_mark_mode_calls, vec![pane_id]);
-    assert_eq!(sink.copy_selection_calls, 0);
-    assert_eq!(sink.mark_dirty_calls, 1);
+    assert_eq!(sink.exit_mark_mode_calls(), vec![pane_id]);
+    assert_eq!(sink.copy_selection_calls(), 0);
+    assert_eq!(sink.mark_dirty_calls(), 1);
 }
 
 /// PIN 9 — `MarkAction::Ignored` only fires `mark_dirty`.
@@ -1377,10 +1480,10 @@ fn dispatch_mark_mode_ignored_action_only_marks_dirty() {
         },
     );
     assert!(result);
-    assert!(sink.exit_mark_mode_calls.is_empty());
-    assert!(sink.scroll_display_calls.is_empty());
-    assert_eq!(sink.copy_selection_calls, 0);
-    assert_eq!(sink.mark_dirty_calls, 1);
+    assert!(sink.exit_mark_mode_calls().is_empty());
+    assert!(sink.scroll_display_calls().is_empty());
+    assert_eq!(sink.copy_selection_calls(), 0);
+    assert_eq!(sink.mark_dirty_calls(), 1);
 }
 
 /// PIN 10 — `result.new_cursor = Some(c)` calls `set_mark_cursor(pane, c)`.
@@ -1413,7 +1516,7 @@ fn dispatch_mark_mode_with_new_cursor_calls_set_mark_cursor() {
             mark_mode_active: true,
         },
     );
-    assert_eq!(sink.set_mark_cursor_calls, vec![(pane_id, new_cursor)]);
+    assert_eq!(sink.set_mark_cursor_calls(), vec![(pane_id, new_cursor)]);
 }
 
 /// PIN 11 — `result.new_cursor = None` skips `set_mark_cursor`.
@@ -1438,7 +1541,7 @@ fn dispatch_mark_mode_without_new_cursor_skips_set_mark_cursor() {
             mark_mode_active: true,
         },
     );
-    assert!(sink.set_mark_cursor_calls.is_empty());
+    assert!(sink.set_mark_cursor_calls().is_empty());
 }
 
 /// PIN 12 — `SelectionUpdate::Set(s)` calls `set_pane_selection(pane, s)`.
@@ -1468,8 +1571,8 @@ fn dispatch_mark_mode_with_selection_set_calls_set_pane_selection() {
             mark_mode_active: true,
         },
     );
-    assert_eq!(sink.set_pane_selection_calls, vec![(pane_id, sel)]);
-    assert!(sink.clear_pane_selection_calls.is_empty());
+    assert_eq!(sink.set_pane_selection_calls(), vec![(pane_id, sel)]);
+    assert!(sink.clear_pane_selection_calls().is_empty());
 }
 
 /// PIN 13 — `SelectionUpdate::Clear` calls `clear_pane_selection(pane)`.
@@ -1498,8 +1601,8 @@ fn dispatch_mark_mode_with_selection_clear_calls_clear_pane_selection() {
             mark_mode_active: true,
         },
     );
-    assert_eq!(sink.clear_pane_selection_calls, vec![pane_id]);
-    assert!(sink.set_pane_selection_calls.is_empty());
+    assert_eq!(sink.clear_pane_selection_calls(), vec![pane_id]);
+    assert!(sink.set_pane_selection_calls().is_empty());
 }
 
 /// PIN 13B — `result.new_selection = None` skips both selection mutations.
@@ -1525,8 +1628,8 @@ fn dispatch_mark_mode_with_selection_none_skips_set_and_clear() {
             mark_mode_active: true,
         },
     );
-    assert!(sink.set_pane_selection_calls.is_empty());
-    assert!(sink.clear_pane_selection_calls.is_empty());
+    assert!(sink.set_pane_selection_calls().is_empty());
+    assert!(sink.clear_pane_selection_calls().is_empty());
 }
 
 /// PIN 14a — Snapshot refresh strictly precedes the resource query. Pins
@@ -1605,9 +1708,9 @@ fn dispatch_mark_mode_pressed_refresh_can_promote_snapshot_present() {
         },
     );
     assert!(result, "refresh promoted snapshot → must proceed");
-    assert!(sink.exit_mark_mode_calls.is_empty());
-    assert_eq!(sink.dispatch_key_calls, 1);
-    assert_eq!(sink.mark_dirty_calls, 1);
+    assert!(sink.exit_mark_mode_calls().is_empty());
+    assert_eq!(sink.dispatch_key_calls(), 1);
+    assert_eq!(sink.mark_dirty_calls(), 1);
 }
 
 /// PIN 15 — Negative pin: missing-mux must NOT silently consume the
@@ -1640,15 +1743,20 @@ fn dispatch_mark_mode_missing_mux_does_not_silently_consume_keystroke() {
         "missing mux must return false (NOT silently consume)"
     );
     assert_eq!(
-        sink.exit_mark_mode_calls,
+        sink.exit_mark_mode_calls(),
         vec![pane_id],
         "missing mux must exit mark mode"
     );
     assert_eq!(
-        sink.dispatch_key_calls, 0,
+        sink.dispatch_key_calls(),
+        0,
         "missing mux must NOT dispatch key"
     );
-    assert_eq!(sink.mark_dirty_calls, 0, "missing mux must NOT mark dirty");
+    assert_eq!(
+        sink.mark_dirty_calls(),
+        0,
+        "missing mux must NOT mark dirty"
+    );
 }
 
 /// PIN 16a — Dispatch-key argument propagation. Pins that all 5 inputs
@@ -1688,7 +1796,7 @@ fn dispatch_mark_mode_propagates_args_to_dispatch_mark_mode_key() {
         &mut sink,
     );
     assert_eq!(
-        sink.last_dispatch_args,
+        sink.last_dispatch_args(),
         Some((
             pane_id,
             known_cursor,
@@ -1724,7 +1832,7 @@ fn dispatch_mark_mode_propagates_none_selection() {
         },
     );
     assert_eq!(
-        sink.last_dispatch_args.as_ref().unwrap().2,
+        sink.last_dispatch_args().as_ref().unwrap().2,
         None,
         "absent selection must propagate as None"
     );

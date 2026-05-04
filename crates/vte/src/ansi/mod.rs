@@ -37,18 +37,6 @@ pub use types::{
 /// Maximum time before a synchronized update is aborted.
 const SYNC_UPDATE_TIMEOUT: Duration = Duration::from_millis(150);
 
-/// Maximum number of bytes read in one synchronized update (2MiB).
-const SYNC_BUFFER_SIZE: usize = 0x20_0000;
-
-/// Number of bytes in the BSU/ESU CSI sequences.
-const SYNC_ESCAPE_LEN: usize = 8;
-
-/// BSU CSI sequence for beginning or extending synchronized updates.
-const BSU_CSI: [u8; SYNC_ESCAPE_LEN] = *b"\x1b[?2026h";
-
-/// ESU CSI sequence for terminating synchronized updates.
-const ESU_CSI: [u8; SYNC_ESCAPE_LEN] = *b"\x1b[?2026l";
-
 // Tests for parsing escape sequences.
 //
 // Byte sequences used in these tests are recording of pty stdout.

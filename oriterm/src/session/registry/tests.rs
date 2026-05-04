@@ -153,3 +153,130 @@ fn windows_returns_all() {
     assert!(reg.windows().contains_key(&wid(1)));
     assert!(reg.windows().contains_key(&wid(2)));
 }
+
+// pane_position regression suite — BUG-11-022.
+// See bug-tracker/plans/BUG-11-022/section-03-tdd-matrix.md.
+
+/// Edge case: empty registry — pane is registered nowhere.
+/// Pins `tab_for_pane` returning None at the head of the chain.
+#[test]
+fn pane_position_returns_none_when_pane_unknown() {
+    let reg = SessionRegistry::new();
+    assert!(reg.pane_position(pid(99)).is_none());
+}
+
+/// Baseline: one window with one tab containing one pane —
+/// resolves to (window_id, tab_index=0).
+#[test]
+fn pane_position_returns_some_for_single_window_single_tab() {
+    let mut reg = SessionRegistry::new();
+    reg.add_tab(Tab::new(tid(1), pid(10)));
+    let mut win = Window::new(wid(1));
+    win.add_tab(tid(1));
+    reg.add_window(win);
+
+    let pos = reg.pane_position(pid(10)).expect("pane is registered");
+    assert_eq!(pos.window_id, wid(1));
+    assert_eq!(pos.tab_index, 0);
+}
+
+/// Index correctness within one window: pane in the second tab
+/// resolves to tab_index=1 (not 0).
+#[test]
+fn pane_position_returns_secondary_tab_index() {
+    let mut reg = SessionRegistry::new();
+    reg.add_tab(Tab::new(tid(1), pid(10)));
+    reg.add_tab(Tab::new(tid(2), pid(20)));
+    let mut win = Window::new(wid(1));
+    win.add_tab(tid(1));
+    win.add_tab(tid(2));
+    reg.add_window(win);
+
+    let pos = reg.pane_position(pid(20)).expect("pane is in tab 2");
+    assert_eq!(pos.window_id, wid(1));
+    assert_eq!(pos.tab_index, 1);
+}
+
+/// Regression: BUG-11-022 — semantic pin AND negative pin against
+/// `active_window`-scoped routing. With two windows registered, a pane
+/// in the SECOND window must resolve to that window's id and the correct
+/// tab index in that window's tab list. A buggy implementation that
+/// scoped the lookup to "active_window" (W1) would return None or
+/// `(W1_id, ...)`. Cell #4 in §03 TDD matrix.
+#[test]
+fn pane_position_resolves_to_owning_window_for_pane_in_secondary_window() {
+    let mut reg = SessionRegistry::new();
+    // W1 first (would be "active" in App-layer state).
+    reg.add_tab(Tab::new(tid(1), pid(10)));
+    let mut w1 = Window::new(wid(1));
+    w1.add_tab(tid(1));
+    reg.add_window(w1);
+    // W2 second (would be "background"). Pane P2 is in W2's only tab.
+    reg.add_tab(Tab::new(tid(2), pid(20)));
+    let mut w2 = Window::new(wid(2));
+    w2.add_tab(tid(2));
+    reg.add_window(w2);
+
+    let pos = reg
+        .pane_position(pid(20))
+        .expect("P2 is registered in W2's only tab");
+
+    // Positive: resolves to W2's id and tab index 0.
+    assert_eq!(pos.window_id, wid(2));
+    assert_eq!(pos.tab_index, 0);
+    // Negative: rejects the broken active-window-scoped behavior.
+    assert_ne!(pos.window_id, wid(1));
+}
+
+/// Two-axis pin: window selection AND tab index in that window. W2's
+/// middle tab (index 1) resolves to (W2_id, 1) — confirms the index
+/// is computed against the OWNING window's tab list, not W1's.
+#[test]
+fn pane_position_resolves_correct_tab_index_in_secondary_window_with_multiple_tabs() {
+    let mut reg = SessionRegistry::new();
+    // W1 with one tab.
+    reg.add_tab(Tab::new(tid(1), pid(10)));
+    let mut w1 = Window::new(wid(1));
+    w1.add_tab(tid(1));
+    reg.add_window(w1);
+    // W2 with three tabs; pane is in the middle tab.
+    reg.add_tab(Tab::new(tid(20), pid(200)));
+    reg.add_tab(Tab::new(tid(21), pid(201)));
+    reg.add_tab(Tab::new(tid(22), pid(202)));
+    let mut w2 = Window::new(wid(2));
+    w2.add_tab(tid(20));
+    w2.add_tab(tid(21));
+    w2.add_tab(tid(22));
+    reg.add_window(w2);
+
+    let pos = reg
+        .pane_position(pid(201))
+        .expect("P201 is in W2's middle tab");
+    assert_eq!(pos.window_id, wid(2));
+    assert_eq!(pos.tab_index, 1);
+}
+
+/// Edge case: pane with no tab — returns None at the first `?` of
+/// the resolution chain (`tab_for_pane`).
+#[test]
+fn pane_position_returns_none_for_pane_with_no_tab() {
+    let reg = SessionRegistry::new();
+    // No tabs, no windows — the pane is registered nowhere.
+    assert!(reg.pane_position(pid(42)).is_none());
+}
+
+/// Regression: BUG-11-022 — orphan-tab edge case. Tab containing the pane
+/// exists in the registry, but the tab_id is not in any Window's tab list.
+/// Cell #7 in §03 TDD matrix.
+#[test]
+fn pane_position_returns_none_for_pane_in_tab_not_in_any_window() {
+    let mut reg = SessionRegistry::new();
+    // Tab exists with the pane, but no window claims this tab.
+    reg.add_tab(Tab::new(tid(1), pid(10)));
+    // Add a different window with a different tab so the registry has windows.
+    let mut w = Window::new(wid(1));
+    w.add_tab(tid(2));
+    reg.add_window(w);
+
+    assert!(reg.pane_position(pid(10)).is_none());
+}

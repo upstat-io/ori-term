@@ -1,16 +1,16 @@
 //! Raw VTE interceptor for sequences the high-level processor drops.
 //!
-//! The `vte::ansi::Processor` does not route OSC 133, OSC 9/99/777,
-//! or XTVERSION (CSI >q) to `Handler` trait methods. This interceptor uses
-//! a raw `vte::Parser` with a custom `Perform` impl to catch these sequences
-//! before the high-level processor discards them. OSC 7 is also handled here
+//! The `vte::ansi::Processor` does not route OSC 133 or OSC 9/99/777
+//! to `Handler` trait methods. This interceptor uses a raw `vte::Parser`
+//! with a custom `Perform` impl to catch these sequences before the
+//! high-level processor discards them. OSC 7 is also handled here
 //! (with proper URI parsing and percent-decoding) because `Term` does NOT
 //! override `Handler::set_working_directory` — the high-level handler default
 //! is a no-op. The interceptor is therefore the sole canonical path for CWD
 //! updates from OSC 7 (SSOT: `Term::set_cwd`).
 
 use oriterm_core::effect::sink::EffectSink;
-use oriterm_core::effect::{Effect, HostEffect, NotificationSource, PtyEffect, PtyWriteKind};
+use oriterm_core::effect::{Effect, HostEffect, NotificationSource};
 use oriterm_core::{PromptState, Term};
 
 /// Raw VTE interceptor state.
@@ -46,24 +46,6 @@ impl<S: EffectSink> vte::Perform for RawInterceptor<'_, S> {
             // OSC 777 — rxvt-unicode notification.
             b"777" => self.handle_notification_777(params),
             _ => {}
-        }
-    }
-
-    fn csi_dispatch(
-        &mut self,
-        _params: &vte::Params,
-        intermediates: &[u8],
-        _ignore: bool,
-        action: char,
-    ) {
-        // XTVERSION: CSI > q — report terminal name and version.
-        if action == 'q' && intermediates == [b'>'] {
-            let version = env!("CARGO_PKG_VERSION");
-            let response = format!("\x1bP>|oriterm({version})\x1b\\");
-            self.term.effect_sink().push(Effect::Pty(PtyEffect::Write {
-                bytes: response.into_bytes(),
-                kind: PtyWriteKind::Other,
-            }));
         }
     }
 }

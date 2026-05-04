@@ -7,6 +7,7 @@ use std::collections::HashMap;
 
 use oriterm_core::ClipboardType;
 
+use crate::id::ClientId;
 use crate::pane::Pane;
 use crate::{MuxNotification, MuxPdu, PaneId};
 
@@ -14,6 +15,15 @@ use crate::{MuxNotification, MuxPdu, PaneId};
 pub enum TargetClients {
     /// All clients subscribed to a specific pane.
     PaneSubscribers(PaneId),
+    /// One specific subscriber chosen by `select_responder` — used for
+    /// daemon-mode `HostRequest` routing (BUG-11-011) where a single
+    /// authoritative responder answers. The `PaneId` is structural — kept
+    /// for diagnostic logging / future routing decisions even though the
+    /// dispatch path only reads the `ClientId`.
+    SinglePaneSubscriber(
+        #[allow(dead_code, reason = "structural — read by future routing diagnostics")] PaneId,
+        ClientId,
+    ),
 }
 
 /// Wire representation of [`ClipboardType`]: 0 = Clipboard, 1 = Selection.
@@ -86,27 +96,35 @@ pub fn notification_to_pdu(
             },
         )),
 
+        MuxNotification::DesktopNotification {
+            pane_id,
+            source,
+            title,
+            body,
+        } => Some((
+            TargetClients::PaneSubscribers(*pane_id),
+            MuxPdu::NotifyDesktopNotification {
+                pane_id: *pane_id,
+                source: (*source).into(),
+                title: title.clone(),
+                body: body.clone(),
+            },
+        )),
+
+        MuxNotification::ClearPendingDesktopNotifications(pane_id) => Some((
+            TargetClients::PaneSubscribers(*pane_id),
+            MuxPdu::NotifyClearPendingDesktopNotifications { pane_id: *pane_id },
+        )),
+
         // PaneOutput is intercepted by drain_mux_events before reaching
         // this function. NewTab comes from IPC dispatch, not PTY events.
-        // DesktopNotification / ClearPendingDesktopNotifications / HostClipboardLoad /
-        // HostColorQuery are added in effect-cutover 01.1; the daemon-wire
-        // translation lives in `plans/effect-cutover/section-01-migrate-mux-consumer.md §01.4`
-        // (filed as a tracked bug — fulfillment replies require a request-ID
-        // protocol; the notification-out side is filed separately if needed).
-        // ResponseToken-carrying notifications cannot cross the IPC boundary
-        // today (process-local `Arc<Mutex<Option<T>>>`). Clients in embedded
-        // mode receive them via `in_process::event_pump`; daemon mode drops
-        // them here with a logged warning until the reply-PDU design lands.
-        // AnimationDeadlineChanged carries a process-local Instant and is
-        // consumed by the embedded-client event loop to update its
-        // RenderScheduler. It is NOT forwarded across the IPC boundary
-        // today — daemon-mode clients re-derive animation deadlines from
-        // their own snapshot consumption cadence. (A wire-format for
-        // cross-process animation clock sync would be §13.6 or later.)
+        // HostClipboardLoad / HostColorQuery carry process-local
+        // `ResponseToken`s and are routed through `host_request::host_request_to_pdu`
+        // (allocates a request_id + registers the token) rather than the
+        // stateless dispatch path. AnimationDeadlineChanged is in-process
+        // only; daemon clients re-derive deadlines from snapshot cadence.
         MuxNotification::PaneOutput(_)
         | MuxNotification::NewTab
-        | MuxNotification::DesktopNotification { .. }
-        | MuxNotification::ClearPendingDesktopNotifications(_)
         | MuxNotification::HostClipboardLoad { .. }
         | MuxNotification::HostColorQuery { .. }
         | MuxNotification::AnimationDeadlineChanged { .. } => None,

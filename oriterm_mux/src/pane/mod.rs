@@ -292,10 +292,22 @@ impl Pane {
 
     /// Send a command to the IO thread.
     ///
-    /// Used for all terminal state mutations: scroll, theme, cursor shape,
-    /// resize, search, text extraction, etc.
+    /// Used for all terminal state mutations: scroll, theme, cursor
+    /// shape, search, text extraction, etc. Resize is routed
+    /// separately through [`Self::send_resize`] (atomic coalescing
+    /// slot) — it never traverses the bounded command channel.
     pub fn send_io_command(&self, cmd: PaneIoCommand) {
         self.io_handle.send_command(cmd);
+    }
+
+    /// Request a grid + PTY resize.
+    ///
+    /// Routed through the IO thread's atomic `pending_resize` slot
+    /// rather than the bounded command channel. Last-writer-wins:
+    /// during drag-resize-during-flood, only the latest dimensions
+    /// are applied. Never blocks; never drops state.
+    pub fn send_resize(&self, rows: u16, cols: u16) {
+        self.io_handle.send_resize(rows, cols);
     }
 
     /// Borrow the pane's IO thread handle.

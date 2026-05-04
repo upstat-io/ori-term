@@ -1,6 +1,8 @@
 //! Tests for `HostRequest` / `ResponseToken` / reply formatters.
 
-use super::{AlreadyFulfilled, ResponseToken, format_clipboard_reply, format_color_reply};
+use super::{
+    AlreadyFulfilled, ResponseToken, ResponseTokenId, format_clipboard_reply, format_color_reply,
+};
 use crate::color::Rgb;
 
 #[test]
@@ -135,6 +137,46 @@ fn already_fulfilled_implements_error_trait() {
     assert!(msg.contains("already fulfilled"));
     // Error trait marker — verify the dyn cast compiles.
     let _: &dyn std::error::Error = &err;
+}
+
+/// `slot_id` is stable across clones — both clones of the same token return
+/// the same `ResponseTokenId`. Required by the daemon-mode pending-replies
+/// map, which inserts under the reader-thread clone's id and removes under
+/// the consumer-thread clone's id.
+///
+/// Regression: BUG-11-011 daemon-mode HostRequest round-trip relies on this
+/// invariant for the IO-thread→main-thread reply correlation.
+#[test]
+fn response_token_slot_id_stable_across_clones() {
+    let token: ResponseToken<String> = ResponseToken::new();
+    let id_a = token.slot_id();
+    let clone = token.clone();
+    let id_b = clone.slot_id();
+    assert_eq!(id_a, id_b, "slot_id must be stable across clones");
+}
+
+/// `slot_id` returns distinct identities for independently-allocated tokens.
+///
+/// Regression: BUG-11-011 — the pending-replies HashMap must not collide
+/// across distinct tokens (otherwise an OSC 52 reply could route to an
+/// OSC 10 token and vice versa).
+#[test]
+fn response_token_slot_id_distinct_for_independent_tokens() {
+    let a: ResponseToken<String> = ResponseToken::new();
+    let b: ResponseToken<String> = ResponseToken::new();
+    assert_ne!(
+        a.slot_id(),
+        b.slot_id(),
+        "independently-allocated tokens must have distinct slot_ids"
+    );
+}
+
+/// `ResponseTokenId` carries the standard derive set required by the
+/// daemon-mode pending-replies map (`HashMap<ResponseTokenId, _>`).
+#[test]
+fn response_token_id_satisfies_hashmap_key_bounds() {
+    fn assert_traits<T: std::hash::Hash + Eq + Copy + std::fmt::Debug>() {}
+    assert_traits::<ResponseTokenId>();
 }
 
 /// Effect-cutover §01.4 documentation pin: the `ResponseToken<T>`

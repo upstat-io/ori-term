@@ -2,7 +2,7 @@
 
 use std::collections::HashSet;
 
-use super::{ClientId, DomainId, IdAllocator, MuxId, PaneId};
+use super::{ClientId, DomainId, HostRequestId, IdAllocator, MuxId, PaneId};
 
 /// Compile-time trait bound checks: all ID types must be `Copy`, `Hash`, `Eq`.
 #[test]
@@ -122,4 +122,22 @@ fn allocator_default_same_as_new() {
     let mut b = IdAllocator::<PaneId>::default();
     assert_eq!(a.alloc(), b.alloc());
     assert_eq!(a.alloc(), b.alloc());
+}
+
+/// `HostRequestId` (added for BUG-11-011) is `Copy + Hash + Eq + Display + Debug`
+/// and round-trips through `MuxId::from_raw` / `MuxId::raw` like the other IDs.
+#[test]
+fn host_request_id_satisfies_mux_id_contract() {
+    fn assert_id_traits<T: Copy + std::hash::Hash + Eq + std::fmt::Display + std::fmt::Debug>() {}
+    assert_id_traits::<HostRequestId>();
+
+    let id = HostRequestId::from_raw(7);
+    assert_eq!(id.raw(), 7);
+    assert_eq!(format!("{id}"), "HostRequest(7)");
+
+    let allocated = IdAllocator::<HostRequestId>::new().alloc();
+    assert_eq!(allocated, HostRequestId::from_raw(1));
+
+    let trait_id = <HostRequestId as MuxId>::from_raw(42);
+    assert_eq!(<HostRequestId as MuxId>::raw(trait_id), 42);
 }

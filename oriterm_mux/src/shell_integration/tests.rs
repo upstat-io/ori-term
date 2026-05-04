@@ -913,53 +913,45 @@ fn multiple_osc133a_without_completion_creates_separate_markers() {
     assert!(term.prompt_markers()[0].output.is_none());
 }
 
-// XTVERSION (CSI > q)
+// XTVERSION (CSI > q) — BUG-11-018
 
-/// Effect sink that records `PtyEffect::Write` payloads for assertions.
-#[derive(Clone, Default)]
-struct RecordingListener {
-    pty_writes: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
-}
-
-impl RecordingListener {
-    fn new() -> Self {
-        Self::default()
-    }
-
-    fn pty_writes(&self) -> Vec<String> {
-        self.pty_writes.lock().expect("lock poisoned").clone()
-    }
-}
-
-impl EffectSink for RecordingListener {
-    fn push(&self, effect: Effect) {
-        if let Effect::Pty(PtyEffect::Write { bytes, .. }) = effect {
-            let s = String::from_utf8_lossy(&bytes).into_owned();
-            self.pty_writes.lock().expect("lock poisoned").push(s);
-        }
-    }
-
-    fn drain_into(&self, _out: &mut Vec<Effect>) {}
-}
-
+/// Regression: BUG-11-018 — XTVERSION (CSI > q) now routes through the
+/// vendored `vte::ansi::Processor` (was a `RawInterceptor::csi_dispatch`
+/// override). The dual-pass production helper runs the raw interceptor
+/// FIRST and the high-level processor SECOND on the same bytes — exactly
+/// the order the IO thread uses at `oriterm_mux/src/pane/io_thread/mod.rs`
+/// `handle_bytes`. Asserts EXACTLY one PTY write; a leftover raw-interceptor
+/// arm would produce two replies and surface here.
+/// See: bug-tracker/plans/BUG-11-018/section-03-tdd-matrix.md
 #[test]
 fn xtversion_responds_with_oriterm_version() {
-    let listener = RecordingListener::new();
-    let mut term = Term::new(24, 80, 100, Theme::Dark, listener.clone());
+    let sink = QueueingEffectSink::new();
+    let mut term = Term::new(24, 80, 100, Theme::Dark, sink);
 
-    // CSI > q — XTVERSION request.
-    let mut parser = vte::Parser::new();
-    let mut interceptor = super::interceptor::RawInterceptor::new(&mut term);
-    parser.advance(&mut interceptor, b"\x1b[>q");
+    feed_mux_and_proc(&mut term, b"\x1b[>q");
 
-    let writes = listener.pty_writes();
-    assert!(
-        !writes.is_empty(),
-        "XTVERSION should produce a PtyWrite payload, got: {writes:?}"
+    let mut effects = Vec::new();
+    term.effect_sink().drain_into(&mut effects);
+    let xtversion_writes: Vec<_> = effects
+        .iter()
+        .filter_map(|e| match e {
+            Effect::Pty(PtyEffect::Write { bytes, kind }) if bytes.starts_with(b"\x1bP>|") => {
+                Some((bytes.clone(), *kind))
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        xtversion_writes.len(),
+        1,
+        "XTVERSION must produce exactly one PTY write through the dual-pass production path, got: {xtversion_writes:?}"
     );
+    let (bytes, kind) = &xtversion_writes[0];
+    assert_eq!(*kind, oriterm_core::effect::PtyWriteKind::DeviceAttribute);
+    let s = String::from_utf8_lossy(bytes);
     assert!(
-        writes.iter().any(|w| w.contains("oriterm")),
-        "XTVERSION response should contain 'oriterm', got: {writes:?}"
+        s.contains("oriterm"),
+        "XTVERSION reply must contain 'oriterm', got: {s}"
     );
 }
 
@@ -1019,8 +1011,8 @@ mod spec_chain_helper {
     /// high-level `vte::ansi::Processor` runs on the same bytes.
     ///
     /// Both passes mutate `term`. The interceptor handles OSC 7 / 9 / 99
-    /// / 133 / 633 / 777 (and CSI > q), and the high-level processor
-    /// drives every other OSC, CSI, ESC, and DCS sequence.
+    /// / 133 / 633 / 777, and the high-level processor drives every
+    /// other OSC, CSI, ESC, and DCS sequence.
     pub(super) fn feed_mux_and_proc(term: &mut Term<QueueingEffectSink>, bytes: &[u8]) {
         // Scope the interceptor so its `&mut term` borrow ends before the
         // processor takes its own `&mut term` borrow on the next line.

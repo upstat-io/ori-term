@@ -7,6 +7,8 @@ use oriterm_mux::{MarkCursor, PaneId};
 use winit::window::WindowId;
 
 use crate::app::App;
+use crate::app::window_context::WindowContext;
+use crate::session::WindowId as SessionWindowId;
 
 impl App {
     // Active-pane resolution
@@ -162,13 +164,40 @@ impl App {
         }
     }
 
-    /// Tab index for a given pane within the active window's tab list.
+    /// Mutable [`WindowContext`] for the session window owning `session_wid`.
     ///
-    /// Traverses local session: pane → tab → window tab list to find the position.
-    pub(super) fn tab_index_for_pane(&self, pane_id: PaneId) -> Option<usize> {
-        let tab_id = self.session.tab_for_pane(pane_id)?;
-        let win_id = self.active_window?;
-        let win = self.session.get_window(win_id)?;
-        win.tabs().iter().position(|&t| t == tab_id)
+    /// Returns `None` if no winit window is currently mapped to that session
+    /// window (e.g., window closed mid-tear-off). Used by mux notification
+    /// handlers (`PaneBell`, `DesktopNotification`, `CommandComplete`) to
+    /// route per-pane UI updates to the correct OWNING window regardless of
+    /// which window is focused. Single canonical home for the
+    /// `windows.values_mut() + session_window_id() == session_wid` walk
+    /// pattern.
+    pub(super) fn owning_window_ctx_mut(
+        &mut self,
+        session_wid: SessionWindowId,
+    ) -> Option<&mut WindowContext> {
+        self.windows
+            .values_mut()
+            .find(|ctx| ctx.window.session_window_id() == session_wid)
+    }
+
+    /// Ring the tab-bar bell pulse on the OWNING window of `pane_id`.
+    ///
+    /// Resolves the pane's owning window via `pane_position`, walks to the
+    /// owning [`WindowContext`] via `owning_window_ctx_mut`, and rings the
+    /// bell on the correct tab. No-op if the pane is not in any tab or no
+    /// winit window is mapped to the owning session window.
+    ///
+    /// Single canonical home for the bell-pulse pattern shared by the
+    /// `PaneBell`, `DesktopNotification`, and `CommandComplete` arms in
+    /// `mux_pump/mod.rs`.
+    pub(super) fn ring_owning_window_tab_bell(&mut self, pane_id: PaneId, now: std::time::Instant) {
+        let Some(pos) = self.session.pane_position(pane_id) else {
+            return;
+        };
+        if let Some(ctx) = self.owning_window_ctx_mut(pos.window_id) {
+            ctx.tab_bar.ring_bell(pos.tab_index, now);
+        }
     }
 }

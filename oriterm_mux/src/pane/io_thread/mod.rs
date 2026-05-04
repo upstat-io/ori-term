@@ -26,10 +26,18 @@ use crossbeam_channel::Receiver;
 
 use oriterm_core::effect::sink::EffectSink;
 use oriterm_core::effect::{Effect, PendingResponse};
-use oriterm_core::{RenderableContent, Term};
+use oriterm_core::{RenderableContent, Term, TermMode};
+use vte::ansi::{Handler as _, NamedPrivateMode, PrivateMode};
 
 pub use commands::PaneIoCommand;
 pub use handle::{IoThreadConfig, PaneIoHandle, new_with_handle};
+// Encoding helpers stay io_thread-private (pub(super) on the items
+// makes them visible only inside io_thread). Sibling modules that
+// need them — `mod.rs::apply_pending_resize`, `tests.rs`,
+// `effect_router/tests.rs` — import via direct `use handle::...` /
+// `use super::handle::...` paths rather than re-export, so the
+// encoding stays out of the broader oriterm_mux public surface.
+use handle::{PENDING_RESIZE_NONE, unpack_pending_resize};
 pub(crate) use snapshot::SnapshotDoubleBuffer;
 
 use crate::PaneId;
@@ -75,10 +83,17 @@ pub struct PaneIoThread<S: EffectSink + 'static> {
     /// observed EOF). The `select!` arm stores here instead of emitting
     /// directly; the EOF drain sequence consumes it.
     pending_child_exit: Option<ExitStatus>,
-    /// Receives fulfillment wake signals from `PaneIoHandle::fulfill_*`.
-    /// The `select!` wake arm has an empty body — the wake IS the signal;
-    /// the next loop iteration drains commands and polls pending responses.
-    response_wake_rx: Receiver<()>,
+    /// Receives wake signals from any handle helper that mutates shared
+    /// IO-thread state without traversing `cmd_rx`/`byte_rx`:
+    /// [`PaneIoHandle::fulfill_clipboard_load`],
+    /// [`PaneIoHandle::fulfill_color_query`],
+    /// [`PaneIoHandle::send_resize`],
+    /// the [`PaneIoHandle::send_command`] Shutdown special-case,
+    /// [`PaneIoHandle::shutdown`], and the PTY writer-thread shutdown
+    /// path. The `select!` arm has an empty body — the wake IS the
+    /// signal; the next loop iteration drains commands and applies any
+    /// pending resize.
+    pub(super) io_wake_rx: Receiver<()>,
     /// Receives commands from the main thread.
     cmd_rx: Receiver<PaneIoCommand>,
     /// Receives raw PTY bytes from the reader thread.
@@ -126,6 +141,13 @@ pub struct PaneIoThread<S: EffectSink + 'static> {
     /// `None` means "no deadline currently in effect" — both the initial
     /// state and the state after all animations finish/pause.
     last_animation_deadline: Option<std::time::Instant>,
+    /// Pending resize slot — coalesces resize requests via last-writer-
+    /// wins atomic store. Encoded by [`pack_pending_resize`]; decoded
+    /// by [`unpack_pending_resize`]. `apply_pending_resize` swaps the
+    /// slot to the sentinel and processes the resize. Cloned from
+    /// [`PaneIoHandle::pending_resize`] in [`new_with_handle`].
+    /// Regression: BUG-11-025.
+    pub(super) pending_resize: Arc<AtomicU64>,
     /// Test-only counter — incremented at the top of
     /// [`Self::maybe_shrink_buffers`]. Pins that the OUTER run loop
     /// (not the `select!` `default(timeout)` arm) is the call path,
@@ -139,28 +161,64 @@ pub struct PaneIoThread<S: EffectSink + 'static> {
 }
 
 impl<S: EffectSink> PaneIoThread<S> {
+    /// Take any pending resize from the atomic slot and apply it.
+    ///
+    /// Idempotent — empty-slot fast path is one atomic load + one
+    /// branch. Called both BEFORE the `cmd_rx` drain begins (so any
+    /// command in the drain reads post-resize geometry) AND
+    /// unconditionally before each command in the drain (so a
+    /// `send_resize()` that lands during the drain still flushes
+    /// before the next command). Closes the race surfaced in §04
+    /// Plan TPR Round 1 Codex F1; broadened to all commands per
+    /// Round 3 Gemini F1.
+    pub(super) fn apply_pending_resize(&mut self) {
+        // Empty-slot fast path: an `Acquire` load + branch costs ~one
+        // cycle and avoids the full `AcqRel` read-modify-write on every
+        // call (the common case is no pending resize). A second writer
+        // landing between the load and the swap still wins last-writer-
+        // wins via the swap below — the load is purely a fast-skip
+        // gate, not the source of truth. Per §04 Plan TPR Round 1 §05
+        // Step 2 doc-comment ("Idempotent — empty-slot fast path is one
+        // atomic load + one branch") and Round 1 code-TPR codex F2 +
+        // gemini F1 (WASTE: unconditional swap in hot drain path).
+        if self.pending_resize.load(Ordering::Acquire) == PENDING_RESIZE_NONE {
+            return;
+        }
+        let packed = self
+            .pending_resize
+            .swap(PENDING_RESIZE_NONE, Ordering::AcqRel);
+        if let Some((rows, cols)) = unpack_pending_resize(packed) {
+            self.process_resize(rows, cols);
+        }
+    }
+
     /// Drain all pending commands from the command channel.
     ///
-    /// Resize commands are coalesced — only the last one in the batch is
-    /// processed. During drag resize, dozens of `Resize` commands queue up;
-    /// only the final dimensions matter. The coalesced resize is processed
-    /// after all other commands so reflow sees the latest terminal state.
+    /// `apply_pending_resize` is called unconditionally at drain entry
+    /// AND before each command so that any reply-bearing command in
+    /// this cycle reads post-resize terminal state — preserving the
+    /// `SnapshotNow` FIFO barrier contract at
+    /// `commands/mod.rs:45-56`. Cost is one atomic load per command
+    /// (negligible vs. per-command work). Pinned by §04 Plan TPR
+    /// Round 0 F1 + Round 1 Codex F1 + Round 3 Gemini F1.
     fn drain_commands(&mut self) {
-        let mut last_resize = None;
+        // Apply any pending resize FIRST so reply-bearing commands later
+        // in this cycle read terminal state AFTER the geometry change.
+        self.apply_pending_resize();
         while let Ok(cmd) = self.cmd_rx.try_recv() {
+            // Re-flush pending_resize unconditionally before EACH command
+            // so a send_resize() that landed during this drain cycle
+            // still flushes before the next command — including
+            // non-reply-bearing geometry-dependent commands like
+            // ScrollDisplay.
+            self.apply_pending_resize();
             match cmd {
-                PaneIoCommand::Resize { rows, cols } => {
-                    last_resize = Some((rows, cols));
-                }
                 PaneIoCommand::Shutdown => {
                     self.shutdown.store(true, Ordering::Release);
                     return;
                 }
                 other => self.handle_command(other),
             }
-        }
-        if let Some((rows, cols)) = last_resize {
-            self.process_resize(rows, cols);
         }
         self.poll_pending_responses();
         self.drain_effects_into_mux_events();
@@ -227,9 +285,9 @@ impl<S: EffectSink> PaneIoThread<S> {
         // 3b. Set grid_dirty after parsing — the VTE handler does not fire
         //     Event::Wakeup itself. The old reader thread did this explicitly
         //     after each parse chunk. Respects Mode 2026 (synchronized output):
-        //     when the sync buffer is non-empty, skip the dirty flag so
-        //     `maybe_produce_snapshot()` defers snapshot production.
-        if self.processor.sync_bytes_count() == 0 {
+        //     when `TermMode::SYNC_UPDATE` is set, skip the dirty flag so
+        //     `maybe_produce_snapshot()` defers snapshot publication.
+        if !self.terminal.mode().contains(TermMode::SYNC_UPDATE) {
             self.grid_dirty.store(true, Ordering::Release);
         }
 
@@ -243,48 +301,41 @@ impl<S: EffectSink> PaneIoThread<S> {
         self.drain_effects_into_mux_events();
     }
 
-    /// Handle Mode 2026 sync timeout — flush the buffered bytes and publish.
+    /// Handle Mode 2026 sync timeout — exit the sync window and publish.
     ///
-    /// Called when the `crossbeam_channel::select!` `default(timeout)` arm fires,
-    /// meaning no new bytes or commands arrived within the sync deadline. The VTE
-    /// processor's buffered bytes are replayed (not discarded), post-parse
-    /// housekeeping runs, and a snapshot is forced.
+    /// Called when the `crossbeam_channel::select!` `default(timeout)` arm
+    /// fires, meaning the application opened a Mode 2026 sync window and
+    /// did not close it with ESU within `SYNC_UPDATE_TIMEOUT`. Bytes inside
+    /// the window already dispatched inline (Mode 2026 gates snapshot
+    /// publication, not byte processing); the timeout's job is to clear
+    /// the mode flag and publish whatever the inline dispatches accumulated.
     fn handle_sync_timeout(&mut self) {
         let evicted_before = self.terminal.grid().total_evicted();
 
-        // Replay buffered bytes through VTE. The raw interceptor is NOT re-run —
-        // handle_bytes() already ran it on these bytes when they first arrived
-        // (before they entered the sync buffer).
-        self.processor.stop_sync(&mut self.terminal);
+        // Clear the SYNC_UPDATE flag via the canonical handler path so any
+        // `TermMode` consumer sees consistent state. Disarm the parser-side
+        // timer in lockstep.
+        self.terminal
+            .unset_private_mode(PrivateMode::Named(NamedPrivateMode::SyncUpdate));
+        self.processor.clear_sync_timeout();
 
-        // Post-parse housekeeping must run after replay — prompt markers, mode
-        // cache, and selection-dirty would be stale otherwise.
+        // Post-parse housekeeping refreshes mode_cache for lock-free reads.
         self.post_parse_housekeeping(evicted_before);
 
-        // sync_bytes_count() is always 0 after stop_sync(handler, None) —
-        // the buffer is unconditionally cleared.
-        debug_assert_eq!(
-            self.processor.sync_bytes_count(),
-            0,
-            "stop_sync must clear sync buffer"
-        );
-
-        // Emit the Abort effect so the sync abort is observable in production.
-        // Must happen after stop_sync returns (stop_sync borrows &mut terminal).
-        self.emit_sync_abort_effect();
-
-        // Force snapshot publication.
-        self.grid_dirty.store(true, Ordering::Release);
-        self.maybe_produce_snapshot();
-
-        // Note: effects from the sync-timeout replay (including the
-        // `PresentationEffect::Abort` emission above) stay in the sink
-        // and are drained at the top of the next outer loop iteration
-        // via `drain_commands`'s call to `drain_effects_into_mux_events`.
+        // Emit the Abort effect so the sync abort is observable in
+        // production. Effects from this emission stay in the sink and are
+        // drained at the top of the next outer loop iteration via
+        // `drain_commands`'s call to `drain_effects_into_mux_events`.
         // Intentionally NOT drained here so tests that inspect the sink
         // after `handle_sync_timeout` (e.g. `sync_timeout_emits_abort_effect`)
-        // can observe the effect. In production the next iteration
-        // runs on the same tick.
+        // can observe the effect. In production the next iteration runs on
+        // the same tick.
+        self.emit_sync_abort_effect();
+
+        // Force snapshot publication — the sync window's accumulated
+        // mutations are now ready to land.
+        self.grid_dirty.store(true, Ordering::Release);
+        self.maybe_produce_snapshot();
     }
 
     /// Emit a `PresentationEffect::Abort` through the terminal's effect sink.
@@ -302,8 +353,9 @@ impl<S: EffectSink> PaneIoThread<S> {
     /// `handle_sync_timeout()`.
     ///
     /// Runs deferred prompt marking, marker pruning for scrollback eviction,
-    /// mode cache update, and selection-dirty propagation. Must be called after
-    /// any VTE byte processing (both normal and timeout-replay paths).
+    /// mode cache update, and selection-dirty propagation. Called after the
+    /// normal byte-parse path AND after a Mode 2026 timeout closes the sync
+    /// window — both paths leave deferred state that needs flushing.
     fn post_parse_housekeeping(&mut self, evicted_before: usize) {
         // Deferred prompt marking.
         if self.terminal.prompt_mark_pending() {
@@ -374,11 +426,11 @@ impl<S: EffectSink> PaneIoThread<S> {
 
     /// Produce a snapshot if state changed and synchronized output allows it.
     ///
-    /// Respects Mode 2026 (synchronized output): when the sync buffer is
-    /// non-empty, the application is building a frame — skip snapshot
-    /// production to avoid exposing intermediate state.
+    /// Respects Mode 2026 (synchronized output): when `TermMode::SYNC_UPDATE`
+    /// is set, the application is building a frame — skip snapshot
+    /// publication to avoid exposing mid-mutation grid state.
     fn maybe_produce_snapshot(&mut self) {
-        if self.processor.sync_bytes_count() > 0 {
+        if self.terminal.mode().contains(TermMode::SYNC_UPDATE) {
             return;
         }
         if !self.grid_dirty.load(Ordering::Acquire) {

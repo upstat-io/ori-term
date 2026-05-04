@@ -5,12 +5,12 @@
 //! (tab bar layout, animation offsets).
 
 mod move_ops;
+mod sync;
 mod width_lock;
 
 use std::path::PathBuf;
 
-use winit::window::WindowId;
-
+use oriterm_mux::PaneId;
 use oriterm_mux::domain::SpawnConfig;
 
 use crate::session::{TabId, WindowId as SessionWindowId};
@@ -101,7 +101,7 @@ impl App {
         let owner_window = self.session.window_for_tab(tab_id);
 
         // Collect pane IDs from local session before removing the tab.
-        let pane_ids: Vec<oriterm_mux::PaneId> = self
+        let pane_ids: Vec<PaneId> = self
             .session
             .get_tab(tab_id)
             .map(crate::session::Tab::all_panes)
@@ -352,115 +352,6 @@ impl App {
             )
         })
     }
-
-    /// Rebuild the tab bar entries from the mux's window state.
-    ///
-    /// Reads all tabs in the active window, builds `TabEntry` list with
-    /// titles from each tab's active pane, and sets the active index.
-    pub(super) fn sync_tab_bar_from_mux(&mut self) {
-        let Some(mux) = self.mux.as_ref() else { return };
-        let Some(win_id) = self.active_window else {
-            return;
-        };
-        let Some(win) = self.session.get_window(win_id) else {
-            return;
-        };
-
-        let (entries, active_idx) = build_tab_entries(mux.as_ref(), &self.session, win);
-
-        if let Some(ctx) = self.focused_ctx_mut() {
-            ctx.tab_bar.set_tabs(entries);
-            ctx.tab_bar.set_active_index(active_idx);
-        }
-    }
-
-    /// Rebuild the tab bar for a specific window by its winit ID.
-    ///
-    /// Like [`sync_tab_bar_from_mux`] but targets a specific window instead
-    /// of the active window. Used by tear-off/merge when both source and
-    /// destination windows need their tab bars updated.
-    #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
-    pub(super) fn sync_tab_bar_for_window(&mut self, winit_id: WindowId) {
-        let session_wid = {
-            let Some(ctx) = self.windows.get(&winit_id) else {
-                return;
-            };
-            ctx.window.session_window_id()
-        };
-        let Some(mux) = self.mux.as_ref() else {
-            return;
-        };
-        let Some(win) = self.session.get_window(session_wid) else {
-            return;
-        };
-
-        let (entries, active_idx) = build_tab_entries(mux.as_ref(), &self.session, win);
-
-        if let Some(ctx) = self.windows.get_mut(&winit_id) {
-            ctx.tab_bar.set_tabs(entries);
-            ctx.tab_bar.set_active_index(active_idx);
-        }
-    }
-}
-
-/// Build tab bar entries from a session window's tab list.
-///
-/// Returns `(entries, active_tab_index)`. Shared by both
-/// `sync_tab_bar_from_mux` and `sync_tab_bar_for_window`.
-fn build_tab_entries(
-    mux: &dyn oriterm_mux::backend::MuxBackend,
-    session: &crate::session::SessionRegistry,
-    win: &crate::session::Window,
-) -> (Vec<oriterm_ui::widgets::tab_bar::TabEntry>, usize) {
-    let active_idx = win.active_tab_idx();
-    let entries = win
-        .tabs()
-        .iter()
-        .map(|&tab_id| {
-            let tab = session.get_tab(tab_id);
-            let pane_id = tab.map(crate::session::Tab::active_pane);
-            let snapshot = pane_id.and_then(|pid| mux.pane_snapshot(pid));
-            // User-set title override takes priority over OSC-derived title.
-            // OSC icons still show dynamically alongside the overridden title.
-            let has_override = tab.is_some_and(|t| t.title_override().is_some());
-            let mut title = if has_override {
-                tab.and_then(|t| t.title_override().map(str::to_owned))
-                    .unwrap_or_default()
-            } else {
-                snapshot.map(|s| s.title.clone()).unwrap_or_default()
-            };
-            let icon = snapshot
-                .and_then(|s| s.icon_name.as_deref())
-                .and_then(oriterm_ui::widgets::tab_bar::extract_emoji_icon);
-            // Strip leading emoji from title when it matches the icon
-            // (OSC 0 sets both title and icon_name to the same string).
-            // Only strip from OSC-derived titles, not user overrides.
-            if !has_override {
-                if let Some(oriterm_ui::widgets::tab_bar::TabIcon::Emoji(ref e)) = icon {
-                    let stripped = title
-                        .strip_prefix(e.as_str())
-                        .map(|r| r.trim_start().to_owned());
-                    if let Some(s) = stripped {
-                        title = s;
-                    }
-                }
-            }
-            let is_zoomed = tab.is_some_and(|t| t.zoomed_pane().is_some());
-            let display = if is_zoomed {
-                format!("{title} [Z]")
-            } else {
-                title
-            };
-            let modified =
-                tab.is_some_and(|t| t.all_panes().iter().any(|&pid| mux.has_unseen_output(pid)));
-            let has_bell = tab.is_some_and(|t| t.all_panes().iter().any(|&pid| mux.has_bell(pid)));
-            oriterm_ui::widgets::tab_bar::TabEntry::new(display)
-                .with_icon(icon)
-                .with_modified(modified)
-                .with_bell(has_bell)
-        })
-        .collect();
-    (entries, active_idx)
 }
 
 /// Wrapping index arithmetic for tab cycling.

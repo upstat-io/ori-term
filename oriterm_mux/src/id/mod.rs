@@ -27,6 +27,16 @@ pub struct DomainId(u64);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct ClientId(u64);
 
+/// Server-monotonic identifier for a daemon-mode host-request promise.
+///
+/// Allocated by the daemon when a `MuxNotification::HostClipboardLoad` /
+/// `HostColorQuery` is forwarded over the wire (the originating
+/// `ResponseToken` cannot cross IPC). The matching `MuxPdu::ReplyHostRequest`
+/// from the responding client carries this id back, letting the daemon route
+/// the reply to the right pending promise. See BUG-11-011.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) struct HostRequestId(u64);
+
 impl fmt::Display for PaneId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Pane({})", self.0)
@@ -42,6 +52,12 @@ impl fmt::Display for DomainId {
 impl fmt::Display for ClientId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Client({})", self.0)
+    }
+}
+
+impl fmt::Display for HostRequestId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "HostRequest({})", self.0)
     }
 }
 
@@ -66,6 +82,7 @@ mod sealed {
     impl Sealed for super::PaneId {}
     impl Sealed for super::DomainId {}
     impl Sealed for super::ClientId {}
+    impl Sealed for super::HostRequestId {}
 }
 
 impl MuxId for PaneId {
@@ -89,6 +106,16 @@ impl MuxId for DomainId {
 }
 
 impl MuxId for ClientId {
+    fn from_raw(raw: u64) -> Self {
+        Self::from_raw(raw)
+    }
+
+    fn raw(self) -> u64 {
+        Self::raw(self)
+    }
+}
+
+impl MuxId for HostRequestId {
     fn from_raw(raw: u64) -> Self {
         Self::from_raw(raw)
     }
@@ -158,6 +185,20 @@ impl ClientId {
 
     /// Return the underlying raw value.
     pub fn raw(self) -> u64 {
+        self.0
+    }
+}
+
+impl HostRequestId {
+    /// Create a `HostRequestId` from a raw value (deserialization / tests).
+    ///
+    /// Prefer `IdAllocator::<HostRequestId>::alloc()` for runtime allocation.
+    pub(crate) fn from_raw(raw: u64) -> Self {
+        Self(raw)
+    }
+
+    /// Return the underlying raw value (used at the wire boundary).
+    pub(crate) fn raw(self) -> u64 {
         self.0
     }
 }

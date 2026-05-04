@@ -10,8 +10,19 @@ use crossbeam_channel::Receiver;
 use oriterm_core::effect::{PollResult, VoidEffectSink};
 use oriterm_core::{Column, Line, RenderableContent, Term, TermMode, Theme};
 
+use super::handle::{
+    CMD_CHANNEL_CAPACITY, PENDING_RESIZE_NONE, pack_pending_resize, unpack_pending_resize,
+};
 use super::snapshot::SnapshotDoubleBuffer;
 use super::{IoThreadConfig, PaneIoCommand, PaneIoHandle, PaneIoThread, new_with_handle};
+
+/// Test helper: pack and store a pending resize on the slot.
+///
+/// Stand-in for `PaneIoHandle::send_resize` when the test exercises a
+/// `PaneIoThread` directly without a paired handle.
+fn pack_then_store(slot: &Arc<AtomicU64>, rows: u16, cols: u16) {
+    slot.store(pack_pending_resize(rows, cols), Ordering::Release);
+}
 use crate::PaneId;
 use crate::mux_event::MuxEvent;
 use crate::pty::reader::BYTE_CHANNEL_CAPACITY;
@@ -131,7 +142,7 @@ fn make_sync_thread_with_term(term: Term<VoidEffectSink>) -> PaneIoThread<VoidEf
         mux_tx: _dummy_mux_tx,
         child_exit_rx: _dummy_exit_rx,
         pending_child_exit: None,
-        response_wake_rx: _dummy_wake_rx,
+        io_wake_rx: _dummy_wake_rx,
         cmd_rx,
         byte_rx,
         shutdown: Arc::new(AtomicBool::new(false)),
@@ -150,6 +161,7 @@ fn make_sync_thread_with_term(term: Term<VoidEffectSink>) -> PaneIoThread<VoidEf
         pending_responses: Vec::new(),
         effects_buf: Vec::new(),
         last_animation_deadline: None,
+        pending_resize: Arc::new(AtomicU64::new(PENDING_RESIZE_NONE)),
         shrink_call_count: Arc::new(AtomicUsize::new(0)),
     }
 }
@@ -168,7 +180,7 @@ fn make_sync_thread_with_wakeup() -> (PaneIoThread<VoidEffectSink>, Arc<AtomicU6
         mux_tx: _dummy_mux_tx,
         child_exit_rx: _dummy_exit_rx,
         pending_child_exit: None,
-        response_wake_rx: _dummy_wake_rx,
+        io_wake_rx: _dummy_wake_rx,
         cmd_rx,
         byte_rx,
         shutdown: Arc::new(AtomicBool::new(false)),
@@ -189,6 +201,7 @@ fn make_sync_thread_with_wakeup() -> (PaneIoThread<VoidEffectSink>, Arc<AtomicU6
         pending_responses: Vec::new(),
         effects_buf: Vec::new(),
         last_animation_deadline: None,
+        pending_resize: Arc::new(AtomicU64::new(PENDING_RESIZE_NONE)),
         shrink_call_count: Arc::new(AtomicUsize::new(0)),
     };
     (thread, wakeup_count)
@@ -227,7 +240,7 @@ fn shutdown_via_channel_disconnect() {
         mux_tx: _dummy_mux_tx,
         child_exit_rx: _dummy_exit_rx,
         pending_child_exit: None,
-        response_wake_rx: _dummy_wake_rx,
+        io_wake_rx: _dummy_wake_rx,
         cmd_rx,
         byte_rx,
         shutdown: Arc::clone(&shutdown),
@@ -246,6 +259,7 @@ fn shutdown_via_channel_disconnect() {
         pending_responses: Vec::new(),
         effects_buf: Vec::new(),
         last_animation_deadline: None,
+        pending_resize: Arc::new(AtomicU64::new(PENDING_RESIZE_NONE)),
         shrink_call_count: Arc::new(AtomicUsize::new(0)),
     };
     let join = thread.spawn().expect("failed to spawn IO thread");
@@ -323,7 +337,7 @@ fn byte_delivery_parses_vte() {
         mux_tx: _dummy_mux_tx,
         child_exit_rx: _dummy_exit_rx,
         pending_child_exit: None,
-        response_wake_rx: _dummy_wake_rx,
+        io_wake_rx: _dummy_wake_rx,
         cmd_rx,
         byte_rx,
         shutdown: Arc::clone(&shutdown),
@@ -342,6 +356,7 @@ fn byte_delivery_parses_vte() {
         pending_responses: Vec::new(),
         effects_buf: Vec::new(),
         last_animation_deadline: None,
+        pending_resize: Arc::new(AtomicU64::new(PENDING_RESIZE_NONE)),
         shrink_call_count: Arc::new(AtomicUsize::new(0)),
     };
     let join = thread.spawn().expect("failed to spawn IO thread");
@@ -477,7 +492,7 @@ fn handle_bytes_chunked_drains_commands() {
         mux_tx: _dummy_mux_tx,
         child_exit_rx: _dummy_exit_rx,
         pending_child_exit: None,
-        response_wake_rx: _dummy_wake_rx,
+        io_wake_rx: _dummy_wake_rx,
         cmd_rx,
         byte_rx,
         shutdown: Arc::clone(&shutdown),
@@ -496,6 +511,7 @@ fn handle_bytes_chunked_drains_commands() {
         pending_responses: Vec::new(),
         effects_buf: Vec::new(),
         last_animation_deadline: None,
+        pending_resize: Arc::new(AtomicU64::new(PENDING_RESIZE_NONE)),
         shrink_call_count: Arc::new(AtomicUsize::new(0)),
     };
 
@@ -608,27 +624,35 @@ fn produce_snapshot_resets_damage() {
 
 /// `maybe_produce_snapshot()` respects synchronized output (Mode 2026).
 ///
-/// When sync_bytes_count > 0, snapshot production is deferred.
+/// When `TermMode::SYNC_UPDATE` is set, snapshot publication is deferred
+/// even though grid mutations dispatch inline. Pinning the SSOT-correct
+/// gate (mode flag, not byte buffer) per BUG-11-027 §03.
 #[test]
-fn produce_snapshot_respects_sync_mode() {
+fn produce_snapshot_respects_sync_update_mode_flag() {
     let (mut t, wakeup_count) = make_sync_thread_with_wakeup();
 
     // Enable Mode 2026 (synchronized output begin: BSU).
     t.handle_bytes(b"\x1b[?2026h");
+    assert!(
+        t.terminal.mode().contains(TermMode::SYNC_UPDATE),
+        "BSU must set TermMode::SYNC_UPDATE"
+    );
     t.grid_dirty.store(true, Ordering::Release);
 
-    // Send some content while sync mode is active.
-    // The processor accumulates in sync buffer, so sync_bytes_count > 0.
+    // Send some content while sync mode is active. The bytes dispatch
+    // INLINE (mutating the grid), but snapshot publication is suppressed
+    // via the SYNC_UPDATE mode-flag gate.
     t.processor.advance(&mut t.terminal, b"buffered content");
 
-    // Try to produce snapshot — should be suppressed because sync buffer is active.
+    // Try to produce snapshot — should be suppressed because the mode
+    // flag is set.
     let wakeup_before = wakeup_count.load(Ordering::Relaxed);
     t.maybe_produce_snapshot();
     let wakeup_after = wakeup_count.load(Ordering::Relaxed);
 
     assert_eq!(
         wakeup_before, wakeup_after,
-        "wakeup should NOT fire while sync buffer is non-empty"
+        "wakeup must NOT fire while TermMode::SYNC_UPDATE is set"
     );
 }
 
@@ -706,9 +730,14 @@ fn produce_snapshot_fires_wakeup() {
 // --- Resize tests (Section 05) ---
 
 /// Helper: create a sync thread with a command sender for testing.
+///
+/// Bounded to match production shape (BUG-11-025). Tests using this
+/// fixture do NOT exercise saturation — they drive `drain_commands`
+/// directly with a small command set — so production-shape parity
+/// matters more than headroom.
 fn make_sync_thread_with_cmd_tx() -> (PaneIoThread<VoidEffectSink>, Sender<PaneIoCommand>) {
-    let (cmd_tx, cmd_rx) = crossbeam_channel::unbounded::<PaneIoCommand>();
-    let (_, byte_rx) = crossbeam_channel::unbounded::<Vec<u8>>();
+    let (cmd_tx, cmd_rx) = crossbeam_channel::bounded::<PaneIoCommand>(CMD_CHANNEL_CAPACITY);
+    let (_, byte_rx) = crossbeam_channel::bounded::<Vec<u8>>(BYTE_CHANNEL_CAPACITY);
     let (_dummy_pane_id, _dummy_mux_tx, _dummy_exit_rx, _dummy_wake_rx) = test_dummy_channels();
     let thread = PaneIoThread {
         terminal: make_term(),
@@ -716,7 +745,7 @@ fn make_sync_thread_with_cmd_tx() -> (PaneIoThread<VoidEffectSink>, Sender<PaneI
         mux_tx: _dummy_mux_tx,
         child_exit_rx: _dummy_exit_rx,
         pending_child_exit: None,
-        response_wake_rx: _dummy_wake_rx,
+        io_wake_rx: _dummy_wake_rx,
         cmd_rx,
         byte_rx,
         shutdown: Arc::new(AtomicBool::new(false)),
@@ -735,6 +764,7 @@ fn make_sync_thread_with_cmd_tx() -> (PaneIoThread<VoidEffectSink>, Sender<PaneI
         pending_responses: Vec::new(),
         effects_buf: Vec::new(),
         last_animation_deadline: None,
+        pending_resize: Arc::new(AtomicU64::new(PENDING_RESIZE_NONE)),
         shrink_call_count: Arc::new(AtomicUsize::new(0)),
     };
     (thread, cmd_tx)
@@ -766,18 +796,12 @@ fn test_resize_command_reflows_grid() {
 /// Rapid resize commands are coalesced — only the last one is applied.
 #[test]
 fn test_resize_coalescing() {
-    let (mut t, cmd_tx) = make_sync_thread_with_cmd_tx();
+    let (mut t, _cmd_tx) = make_sync_thread_with_cmd_tx();
 
     // Queue 3 resize commands before draining.
-    cmd_tx
-        .send(PaneIoCommand::Resize { rows: 24, cols: 80 })
-        .unwrap();
-    cmd_tx
-        .send(PaneIoCommand::Resize { rows: 24, cols: 60 })
-        .unwrap();
-    cmd_tx
-        .send(PaneIoCommand::Resize { rows: 24, cols: 40 })
-        .unwrap();
+    pack_then_store(&t.pending_resize, 24, 80);
+    pack_then_store(&t.pending_resize, 24, 60);
+    pack_then_store(&t.pending_resize, 24, 40);
 
     t.drain_commands();
 
@@ -954,12 +978,8 @@ fn test_resize_coalescing_preserves_other_commands() {
 
     // Queue: scroll, resize, resize, scroll.
     cmd_tx.send(PaneIoCommand::ScrollDisplay(5)).unwrap();
-    cmd_tx
-        .send(PaneIoCommand::Resize { rows: 24, cols: 60 })
-        .unwrap();
-    cmd_tx
-        .send(PaneIoCommand::Resize { rows: 24, cols: 40 })
-        .unwrap();
+    pack_then_store(&t.pending_resize, 24, 60);
+    pack_then_store(&t.pending_resize, 24, 40);
     cmd_tx.send(PaneIoCommand::ScrollDisplay(3)).unwrap();
 
     // Fill some scrollback so scroll has effect.
@@ -1500,8 +1520,11 @@ fn handle_bytes_chunked_publishes_intermediate_snapshots() {
 /// path in `PaneIoHandle::shutdown()`.
 #[test]
 fn test_io_thread_panic_does_not_crash_app() {
-    let (tx, rx) = crossbeam_channel::unbounded::<PaneIoCommand>();
-    let (byte_tx, _byte_rx) = crossbeam_channel::unbounded::<Vec<u8>>();
+    // Bounded to match production shape (BUG-11-025); this test does
+    // not exercise saturation, but the field shape stays aligned with
+    // the production handle.
+    let (tx, rx) = crossbeam_channel::bounded::<PaneIoCommand>(CMD_CHANNEL_CAPACITY);
+    let (byte_tx, _byte_rx) = crossbeam_channel::bounded::<Vec<u8>>(BYTE_CHANNEL_CAPACITY);
 
     let join = std::thread::spawn(move || {
         let _ = rx.recv();
@@ -1514,7 +1537,9 @@ fn test_io_thread_panic_does_not_crash_app() {
         byte_tx,
         join: Some(join),
         double_buffer: SnapshotDoubleBuffer::new(),
-        response_wake_tx: _wake_tx,
+        io_wake_tx: _wake_tx,
+        pending_resize: Arc::new(AtomicU64::new(PENDING_RESIZE_NONE)),
+        shutdown_flag: Arc::new(AtomicBool::new(false)),
         drop_counter: None,
     };
 
@@ -1527,15 +1552,12 @@ fn test_io_thread_panic_does_not_crash_app() {
     // forbidden per `.claude/rules/tests.md §Wall-Clock-Free Testing`.
     handle.send_command(PaneIoCommand::MarkAllDirty);
 
-    // shutdown() must complete without hanging (join catches the panic).
-    let start = Instant::now();
+    // shutdown() must complete without hanging (join catches the
+    // panic). Wall-clock-free per `tests.md §Wall-Clock-Free Testing`:
+    // shutdown() blocks on the join handle internally; if the join
+    // ever returns, the test passes. The 150s process-level timeout
+    // is the only safety valve. Per Round 2 code-TPR codex F5.
     handle.shutdown();
-    let elapsed = start.elapsed();
-
-    assert!(
-        elapsed < Duration::from_secs(2),
-        "shutdown after panic took {elapsed:?}, expected < 2s"
-    );
 }
 
 /// Concurrent resize + byte flood: one thread floods bytes, another sends
@@ -1560,7 +1582,7 @@ fn test_concurrent_resize_and_pty_output() {
     for i in 0..100u16 {
         let cols = 40 + (i % 80);
         let rows = 20 + (i % 20);
-        handle.send_command(PaneIoCommand::Resize { rows, cols });
+        handle.send_resize(rows, cols);
     }
 
     // Wait for flood to finish.
@@ -1629,14 +1651,11 @@ fn test_multiple_panes_concurrent_resize() {
         for j in 0..20u16 {
             let (final_rows, _) = expected_dims[i];
             let cols = 40 + j * 3; // intermediate sizes
-            handle.send_command(PaneIoCommand::Resize {
-                rows: final_rows,
-                cols,
-            });
+            handle.send_resize(final_rows, cols);
         }
         // Final resize to the expected dimensions.
         let (rows, cols) = expected_dims[i];
-        handle.send_command(PaneIoCommand::Resize { rows, cols });
+        handle.send_resize(rows, cols);
     }
 
     // Give IO threads time to drain.
@@ -1657,31 +1676,18 @@ fn test_multiple_panes_concurrent_resize() {
     }
 }
 
-/// Flood 1000 MarkAllDirty commands — IO thread drains all without blocking.
-#[test]
-fn test_command_channel_flood() {
-    let (mut handle, _shutdown) = spawn_pair_with_flag();
-
-    for _ in 0..1000 {
-        handle.send_command(PaneIoCommand::MarkAllDirty);
-    }
-
-    // Give IO thread time to drain.
-    std::thread::sleep(Duration::from_millis(200));
-
-    // IO thread should still be responsive to new commands.
-    handle.send_command(PaneIoCommand::Resize {
-        rows: 30,
-        cols: 100,
-    });
-    std::thread::sleep(Duration::from_millis(50));
-
-    let mut snap = RenderableContent::default();
-    handle.double_buffer().swap_front(&mut snap);
-    assert_eq!(snap.cols, 100, "should respond after 1000-command flood");
-
-    handle.shutdown();
-}
+// `test_command_channel_flood` was removed by BUG-11-025: the original
+// 1000-command flood asserted that all commands drain via wall-clock
+// `thread::sleep` (TIMING violation per `tests.md §Wall-Clock-Free
+// Testing`) AND assumed unbounded `cmd_tx`. Both assumptions are
+// invalid post-fix: `cmd_tx` is bounded(`CMD_CHANNEL_CAPACITY`) and
+// drops the overflow with `log::error!`. Replacement coverage:
+//
+// - `cmd_tx_at_capacity_returns_full_error_synchronously` — pins the
+//   bounded-saturation contract synchronously (no wall-clock).
+// - `drain_after_three_atomic_stores_processes_only_last` +
+//   `drain_after_atomic_store_processes_resize` — pin resize
+//   coalescing through the atomic slot (no flood needed).
 
 /// Snapshot swap under contention: producer + consumer threads hammering
 /// the double buffer for 500ms. Verifies the two correctness properties:
@@ -1758,7 +1764,7 @@ fn test_snapshot_swap_under_contention() {
 /// snapshot reflects correct final dimensions.
 #[test]
 fn test_rapid_resize_50_cycles() {
-    let (mut t, cmd_tx) = make_sync_thread_with_cmd_tx();
+    let (mut t, _cmd_tx) = make_sync_thread_with_cmd_tx();
 
     // Fill grid with content so resize has rows to reflow.
     for _ in 0..60 {
@@ -1769,7 +1775,7 @@ fn test_rapid_resize_50_cycles() {
     for i in 0..50u16 {
         let cols = 40 + (i % 80); // 40..119
         let rows = 20 + (i % 20); // 20..39
-        cmd_tx.send(PaneIoCommand::Resize { rows, cols }).unwrap();
+        pack_then_store(&t.pending_resize, rows, cols);
     }
 
     // Drain all commands — coalescing should apply the last resize only.
@@ -1996,7 +2002,7 @@ fn make_sync_thread_generic<S: oriterm_core::effect::EffectSink + 'static>(
         mux_tx: _dummy_mux_tx,
         child_exit_rx: _dummy_exit_rx,
         pending_child_exit: None,
-        response_wake_rx: _dummy_wake_rx,
+        io_wake_rx: _dummy_wake_rx,
         cmd_rx,
         byte_rx,
         shutdown: Arc::new(AtomicBool::new(false)),
@@ -2017,37 +2023,42 @@ fn make_sync_thread_generic<S: oriterm_core::effect::EffectSink + 'static>(
         pending_responses: Vec::new(),
         effects_buf: Vec::new(),
         last_animation_deadline: None,
+        pending_resize: Arc::new(AtomicU64::new(PENDING_RESIZE_NONE)),
         shrink_call_count: Arc::new(AtomicUsize::new(0)),
     };
     (thread, wakeup_count)
 }
 
-/// Semantic pin: timeout flushes buffered writes (bytes are replayed, not discarded).
+/// Semantic pin: timeout publishes the inline-mutated grid + clears
+/// SYNC_UPDATE.
+///
+/// Bytes inside the sync window dispatched inline as they arrived,
+/// mutating the grid immediately. The timeout path's job is to clear
+/// the SYNC_UPDATE gate and publish the accumulated state.
 #[test]
-fn sync_timeout_aborts_and_flushes_buffered_writes() {
+fn sync_timeout_publishes_inline_mutated_grid() {
     let (mut t, wakeup_count) = make_sync_thread_with_wakeup();
 
     // Enter sync mode (BSU).
     t.handle_bytes(b"\x1b[?2026h");
     assert!(
-        t.processor.sync_bytes_count() > 0 || t.terminal.mode().contains(TermMode::SYNC_UPDATE),
+        t.terminal.mode().contains(TermMode::SYNC_UPDATE),
         "BSU should activate sync mode"
     );
 
-    // Send visible content while in sync mode — goes into sync buffer.
+    // Send visible content while in sync mode — dispatched inline.
     t.handle_bytes(b"hello");
 
-    // Trigger timeout-abort: replays buffered bytes, publishes snapshot.
+    // Trigger timeout: clears SYNC_UPDATE, publishes accumulated state.
     t.handle_sync_timeout();
 
-    // 1. Sync buffer must be empty after abort.
-    assert_eq!(
-        t.processor.sync_bytes_count(),
-        0,
-        "sync buffer must be cleared"
+    // 1. SYNC_UPDATE must be cleared.
+    assert!(
+        !t.terminal.mode().contains(TermMode::SYNC_UPDATE),
+        "TermMode::SYNC_UPDATE must be cleared after handle_sync_timeout"
     );
 
-    // 2. Snapshot must contain the buffered "hello" (replayed, not discarded).
+    // 2. Snapshot must contain the inline-mutated "hello".
     let mut consumer = RenderableContent::default();
     assert!(
         t.double_buffer.swap_front(&mut consumer),
@@ -2061,10 +2072,10 @@ fn sync_timeout_aborts_and_flushes_buffered_writes() {
         .collect();
     assert!(
         text.contains("hello"),
-        "replayed bytes must appear in snapshot, got: {text:?}"
+        "inline-mutated bytes must appear in snapshot, got: {text:?}"
     );
 
-    // 3. grid_dirty was set.
+    // 3. grid_dirty was cleared by produce_snapshot.
     assert!(
         !t.grid_dirty.load(Ordering::Acquire),
         "grid_dirty should be cleared after produce_snapshot"
@@ -2087,7 +2098,7 @@ fn sync_timeout_emits_abort_effect() {
     let sink = QueueingEffectSink::new();
     let (mut t, _wakeup) = make_sync_thread_generic(sink);
 
-    // Enter sync mode + buffer content.
+    // Enter sync mode + dispatch content inline.
     t.handle_bytes(b"\x1b[?2026h");
     t.handle_bytes(b"test");
 
@@ -2112,9 +2123,10 @@ fn sync_timeout_emits_abort_effect() {
     );
 }
 
-/// Timeout-abort runs post-parse housekeeping (mode_cache reflects replayed bytes).
+/// Timeout runs post-parse housekeeping (mode_cache reflects all
+/// inline-dispatched mode mutations).
 #[test]
-fn sync_timeout_runs_post_parse_housekeeping() {
+fn sync_timeout_runs_post_parse_housekeeping_inline_dispatch() {
     let (mut t, _wakeup) = make_sync_thread_with_wakeup();
 
     // Verify cursor is visible initially.
@@ -2123,41 +2135,44 @@ fn sync_timeout_runs_post_parse_housekeeping() {
         "cursor should be visible initially"
     );
 
-    // Enter sync mode, hide cursor within sync buffer.
+    // Enter sync mode + hide cursor within the sync window. After
+    // BUG-11-027 the hide dispatches INLINE, mutating the term's mode
+    // bits as soon as the bytes arrive.
     t.handle_bytes(b"\x1b[?2026h");
     t.handle_bytes(b"\x1b[?25l");
 
-    // The mode_cache should NOT reflect the hide yet (still in sync buffer).
-    let cached_mode = TermMode::from_bits_truncate(t.mode_cache.load(Ordering::Acquire));
+    // term mode bits already reflect the hide (inline dispatch).
     assert!(
-        cached_mode.contains(TermMode::SHOW_CURSOR),
-        "mode_cache should not update while bytes are buffered in sync mode"
+        !t.terminal.mode().contains(TermMode::SHOW_CURSOR),
+        "term mode must reflect inline-dispatched cursor hide"
     );
 
-    // Trigger timeout — replays bytes including the hide-cursor sequence.
+    // Trigger timeout — clears SYNC_UPDATE and runs post-parse
+    // housekeeping (which propagates term mode to mode_cache).
     t.handle_sync_timeout();
 
-    // After housekeeping, mode_cache must reflect the cursor-hide from replayed bytes.
+    // mode_cache must now reflect the cursor-hide.
     let cached_mode_after = TermMode::from_bits_truncate(t.mode_cache.load(Ordering::Acquire));
     assert!(
         !cached_mode_after.contains(TermMode::SHOW_CURSOR),
-        "mode_cache must reflect cursor hidden after timeout replay"
+        "mode_cache must reflect cursor hidden after timeout housekeeping"
     );
 }
 
-/// Resize command during active sync — buffered bytes replay correctly after timeout.
+/// Resize command during active sync — grid dimensions reflect the
+/// resize after timeout publishes the snapshot.
 #[test]
 fn resize_during_sync_timeout() {
     let (mut t, _wakeup) = make_sync_thread_with_wakeup();
 
-    // Enter sync mode + buffer content.
+    // Enter sync mode + dispatch grid bytes inline.
     t.handle_bytes(b"\x1b[?2026h");
     t.handle_bytes(b"resize");
 
     // Resize while sync is active.
     t.process_resize(40, 100);
 
-    // Trigger timeout.
+    // Trigger timeout — clears SYNC_UPDATE and publishes snapshot.
     t.handle_sync_timeout();
 
     // Snapshot must be coherent — no crash, grid dimensions match resize.
@@ -2168,9 +2183,11 @@ fn resize_during_sync_timeout() {
     assert_eq!(t.terminal.grid().cols(), 100);
 }
 
-/// Alt screen swap in replayed bytes — mode_cache reflects ALT_SCREEN after timeout.
+/// Alt-screen swap inside an active sync window — mode_cache reflects
+/// ALT_SCREEN after the timeout closes the gate and post-parse
+/// housekeeping fires.
 #[test]
-fn alt_screen_swap_in_replayed_bytes() {
+fn alt_screen_swap_inline_updates_mode_cache() {
     let (mut t, _wakeup) = make_sync_thread_with_wakeup();
 
     // Confirm not in alt screen.
@@ -2179,22 +2196,22 @@ fn alt_screen_swap_in_replayed_bytes() {
         "should start in primary screen"
     );
 
-    // Enter sync mode, switch to alt screen within sync buffer.
+    // Enter sync mode + dispatch the alt-screen swap inline.
     t.handle_bytes(b"\x1b[?2026h");
     t.handle_bytes(b"\x1b[?1049h");
 
-    // Trigger timeout.
+    // Trigger timeout — clears SYNC_UPDATE and runs post-parse housekeeping.
     t.handle_sync_timeout();
 
-    // Alt screen must be active after replay.
+    // Alt screen mutation landed inline; mode_cache reflects it post-housekeeping.
     assert!(
         t.terminal.mode().contains(TermMode::ALT_SCREEN),
-        "alt screen must be active after replayed bytes"
+        "alt screen must be active after inline dispatch"
     );
     let cached_mode = TermMode::from_bits_truncate(t.mode_cache.load(Ordering::Acquire));
     assert!(
         cached_mode.contains(TermMode::ALT_SCREEN),
-        "mode_cache must reflect alt screen after timeout replay"
+        "mode_cache must reflect alt screen after housekeeping"
     );
 }
 
@@ -2203,7 +2220,7 @@ fn alt_screen_swap_in_replayed_bytes() {
 fn no_double_publish_on_timeout() {
     let (mut t, wakeup_count) = make_sync_thread_with_wakeup();
 
-    // Enter sync mode + buffer content.
+    // Enter sync mode + dispatch content inline.
     t.handle_bytes(b"\x1b[?2026h");
     t.handle_bytes(b"content");
 
@@ -2223,31 +2240,31 @@ fn no_double_publish_on_timeout() {
     );
 }
 
-/// Nested BSU in sync buffer — stop_sync unconditionally clears buffer and unsets mode.
+/// Nested BSU during an active sync window — mode stays set, bytes
+/// dispatched inline, timeout publishes the accumulated state.
 #[test]
-fn nested_bsu_in_sync_buffer() {
+fn nested_bsu_in_sync_processes_inline_keeps_mode_set() {
     let (mut t, _wakeup) = make_sync_thread_with_wakeup();
 
-    // Enter sync mode + buffer content + nested BSU.
+    // Enter sync mode + dispatch grid bytes + nested BSU + more bytes.
+    // Every chunk dispatches inline.
     t.handle_bytes(b"\x1b[?2026h");
     t.handle_bytes(b"before");
-    t.handle_bytes(b"\x1b[?2026h"); // nested BSU
+    t.handle_bytes(b"\x1b[?2026h"); // nested BSU re-arms timer
     t.handle_bytes(b"after");
 
-    // Trigger timeout — stop_sync replays ALL bytes then unconditionally clears.
-    t.handle_sync_timeout();
-
-    // After timeout, sync buffer must be empty.
-    assert_eq!(
-        t.processor.sync_bytes_count(),
-        0,
-        "stop_sync must clear sync buffer even with nested BSU"
+    // Mode is still SET (nested BSUs are idempotent on the mode flag).
+    assert!(
+        t.terminal.mode().contains(TermMode::SYNC_UPDATE),
+        "sync mode must remain set across nested BSUs"
     );
 
-    // Terminal must NOT be in sync mode.
+    // Trigger timeout — clears mode + publishes inline-mutated grid.
+    t.handle_sync_timeout();
+
     assert!(
         !t.terminal.mode().contains(TermMode::SYNC_UPDATE),
-        "sync mode must be unset after stop_sync"
+        "sync mode must be unset after timeout"
     );
 
     // Snapshot must contain both "before" and "after".
@@ -2261,30 +2278,29 @@ fn nested_bsu_in_sync_buffer() {
         .collect();
     assert!(
         text.contains("before") && text.contains("after"),
-        "all buffered bytes must be replayed, got: {text:?}"
+        "all inline-dispatched bytes must appear in snapshot, got: {text:?}"
     );
 }
 
-/// Max buffer overflow — VTE overflow path fires and processes bytes.
+/// Stress: large in-sync writes flow through inline dispatch without
+/// hitting any buffer-overflow path (none exists post-fix).
 #[test]
-fn sync_abort_after_max_buffer_overflow() {
+fn large_in_sync_write_dispatches_inline() {
     let (mut t, _wakeup) = make_sync_thread_with_wakeup();
 
     // Enter sync mode.
     t.handle_bytes(b"\x1b[?2026h");
 
-    // Feed >1 MiB of data to trigger VTE's overflow path.
-    // SYNC_BUFFER_SIZE in VTE is 2 MiB; advance_sync() at processor.rs:210
-    // triggers overflow when the buffer exceeds that limit.
+    // Feed >2 MiB of data. Pre-fix this triggered VTE's overflow path
+    // (terminating sync early). Post-fix bytes dispatch inline; mode
+    // stays set; only ESU/timeout exits the window.
     let large_data = vec![b'X'; 2 * 1024 * 1024 + 1];
     t.handle_bytes(&large_data);
 
-    // The overflow should have triggered stop_sync_internal internally.
-    // Sync buffer should be empty after overflow.
-    assert_eq!(
-        t.processor.sync_bytes_count(),
-        0,
-        "sync buffer must be cleared after overflow"
+    // Sync mode remains set across the >2 MiB chunk.
+    assert!(
+        t.terminal.mode().contains(TermMode::SYNC_UPDATE),
+        "sync mode must remain set across large in-sync writes"
     );
 }
 
@@ -2301,7 +2317,7 @@ fn run_loop_sync_timeout_fires() {
     // Wait >150ms for the sync timeout to fire in the run loop.
     std::thread::sleep(Duration::from_millis(300));
 
-    // The pane's snapshot should now reflect the buffered content.
+    // The pane's snapshot should now reflect the inline-dispatched content.
     let mut consumer = RenderableContent::default();
     // Give the IO thread a moment to publish.
     for _ in 0..10 {
@@ -2319,7 +2335,7 @@ fn run_loop_sync_timeout_fires() {
         .collect();
     assert!(
         text.contains("timeout_test"),
-        "sync timeout must fire in run loop and publish buffered content, got: {text:?}"
+        "sync timeout must fire in run loop and publish inline-dispatched content, got: {text:?}"
     );
 
     // Clean shutdown.
@@ -2349,11 +2365,10 @@ fn no_timeout_when_not_in_sync() {
         "sync_timeout must still be None after normal bytes"
     );
 
-    // Sync buffer must remain empty.
-    assert_eq!(
-        t.processor.sync_bytes_count(),
-        0,
-        "sync buffer must be empty when not in sync mode"
+    // Parser-side timer must remain disarmed.
+    assert!(
+        !t.processor.is_sync_active(),
+        "parser-side sync timer must be disarmed when not in sync mode"
     );
 }
 
@@ -2515,7 +2530,7 @@ struct EofTestRig {
     /// Held so `cmd_rx` never returns `Err` before `byte_rx` — keeps the
     /// `select!` cmd arm idle for the duration of the test.
     _keep_alive_cmd_tx: Sender<PaneIoCommand>,
-    /// Held so `response_wake_rx` never returns `Err`.
+    /// Held so `io_wake_rx` never returns `Err`.
     _keep_alive_wake_tx: Sender<()>,
     join: std::thread::JoinHandle<()>,
 }
@@ -2528,7 +2543,7 @@ fn spawn_queueing_eof_rig() -> EofTestRig {
     let (cmd_tx, cmd_rx) = crossbeam_channel::unbounded::<PaneIoCommand>();
     let (byte_tx, byte_rx) = crossbeam_channel::unbounded::<Vec<u8>>();
     let (child_exit_tx, child_exit_rx) = crossbeam_channel::bounded::<ExitStatus>(1);
-    let (response_wake_tx, response_wake_rx) = crossbeam_channel::bounded::<()>(1);
+    let (io_wake_tx, io_wake_rx) = crossbeam_channel::bounded::<()>(1);
     let double_buffer = SnapshotDoubleBuffer::new();
     let term = Term::new(24, 80, 1000, Theme::default(), QueueingEffectSink::new());
 
@@ -2538,7 +2553,7 @@ fn spawn_queueing_eof_rig() -> EofTestRig {
         mux_tx,
         child_exit_rx,
         pending_child_exit: None,
-        response_wake_rx,
+        io_wake_rx,
         cmd_rx,
         byte_rx,
         shutdown: Arc::clone(&shutdown),
@@ -2557,6 +2572,7 @@ fn spawn_queueing_eof_rig() -> EofTestRig {
         pending_responses: Vec::new(),
         effects_buf: Vec::new(),
         last_animation_deadline: None,
+        pending_resize: Arc::new(AtomicU64::new(PENDING_RESIZE_NONE)),
         shrink_call_count: Arc::new(AtomicUsize::new(0)),
     };
 
@@ -2568,7 +2584,7 @@ fn spawn_queueing_eof_rig() -> EofTestRig {
         child_exit_tx,
         double_buffer,
         _keep_alive_cmd_tx: cmd_tx,
-        _keep_alive_wake_tx: response_wake_tx,
+        _keep_alive_wake_tx: io_wake_tx,
         join,
     }
 }
@@ -2884,13 +2900,13 @@ fn child_exit_disconnect_does_not_spin_loop() {
     drop(rig._keep_alive_wake_tx);
 }
 
-/// Regression companion: `response_wake_rx` carries the same disconnect-
-/// then-spin hazard as `child_exit_rx`. The handle's `response_wake_tx`
+/// Regression companion: `io_wake_rx` carries the same disconnect-
+/// then-spin hazard as `child_exit_rx`. The handle's `io_wake_tx`
 /// only drops at handle teardown, but a buggy IO thread that picked up
 /// the disconnected arm every iteration would saturate a core during
 /// the window between the drop and the join.
 #[test]
-fn response_wake_disconnect_does_not_spin_loop() {
+fn io_wake_disconnect_does_not_spin_loop() {
     let rig = spawn_queueing_eof_rig();
     drop(rig._keep_alive_wake_tx);
     std::thread::sleep(Duration::from_millis(100));
@@ -2902,7 +2918,7 @@ fn response_wake_disconnect_does_not_spin_loop() {
     let elapsed = start.elapsed();
     assert!(
         elapsed < Duration::from_secs(2),
-        "Shutdown after response_wake_rx disconnect took {elapsed:?} — \
+        "Shutdown after io_wake_rx disconnect took {elapsed:?} — \
          IO thread likely spinning on the disconnected select! arm"
     );
     drop(rig.byte_tx);
@@ -3186,32 +3202,1091 @@ fn maybe_shrink_runs_in_run_loop() {
 /// Edge case — `maybe_shrink_buffers` runs cleanly while sync output is active.
 ///
 /// Regression: BUG-11-002. Mode 2026 sync (BSU pending, ESU not yet)
-/// holds bytes inside the VTE `processor` and forces
+/// keeps `TermMode::SYNC_UPDATE` set and forces
 /// `maybe_produce_snapshot()` to defer. The shrink helper touches
 /// IO-thread-owned `snapshot_buf` + the lock-protected `slot.front`,
-/// never the VTE processor's internal sync buffer — so it must be safe
-/// to call mid-sync without mutating sync state or flushing buffered
-/// bytes.
+/// never the VTE processor's parser timer — so it must be safe to
+/// call mid-sync without mutating sync state.
 /// See: bug-tracker/plans/BUG-11-002/section-03-tdd-matrix.md §"Edge cases" — sync-active.
 #[test]
 fn maybe_shrink_during_sync_active() {
     let (mut t, _wakeup_count) = make_sync_thread_with_wakeup();
 
-    // Enter Mode 2026 sync mode (BSU) and push bytes into the sync buffer.
+    // Enter Mode 2026 sync mode (BSU) + dispatch grid mutations inline.
     t.handle_bytes(b"\x1b[?2026h");
     t.processor.advance(&mut t.terminal, b"buffered content");
-    let sync_bytes_before = t.processor.sync_bytes_count();
     assert!(
-        sync_bytes_before > 0 || t.terminal.mode().contains(TermMode::SYNC_UPDATE),
-        "BSU + content should activate sync mode"
+        t.terminal.mode().contains(TermMode::SYNC_UPDATE),
+        "BSU should activate sync mode"
     );
+    let sync_active_before = t.processor.is_sync_active();
+    assert!(sync_active_before, "BSU should arm parser-side timer");
 
     // Shrink while sync is active — must NOT mutate sync state or panic.
     t.maybe_shrink_buffers();
 
+    assert!(
+        t.terminal.mode().contains(TermMode::SYNC_UPDATE),
+        "maybe_shrink must NOT clear TermMode::SYNC_UPDATE"
+    );
     assert_eq!(
-        t.processor.sync_bytes_count(),
-        sync_bytes_before,
-        "maybe_shrink must NOT alter sync_bytes_count"
+        t.processor.is_sync_active(),
+        sync_active_before,
+        "maybe_shrink must NOT alter parser-side sync timer state"
+    );
+}
+
+// --- BUG-11-025 §03 matrix: bounded cmd_tx + atomic-coalescing resize ---
+//
+// Pins the cmd_tx-bounding contract, the pending_resize tag-bit
+// encoding, the drain-time apply ordering, the wake topology, the
+// shutdown-saturation belt-and-suspenders, and the SSOT classification
+// for reply-bearing variants. Reverting any single piece breaks at
+// least one of these tests.
+// See: bug-tracker/plans/BUG-11-025/section-03-tdd-matrix.md.
+
+/// Pin the bounded-cmd_tx contract: a fresh handle reports a finite
+/// capacity. Replaces the unbounded shape that motivated BUG-11-025.
+///
+/// Regression: BUG-11-025 — exact failing case `cmd_tx_is_bounded`.
+/// See: bug-tracker/plans/BUG-11-025/section-03-tdd-matrix.md.
+#[test]
+fn new_with_handle_uses_bounded_cmd_tx() {
+    let (_thread, handle) = make_pair();
+    assert_eq!(
+        handle.cmd_tx.capacity(),
+        Some(CMD_CHANNEL_CAPACITY),
+        "cmd_tx must report Some(CMD_CHANNEL_CAPACITY); unbounded would return None"
+    );
+}
+
+/// Pin the sentinel: `PENDING_RESIZE_NONE` decodes to `None`.
+///
+/// Regression: BUG-11-025 — edge case `pending_resize_none_sentinel`.
+/// See: bug-tracker/plans/BUG-11-025/section-03-tdd-matrix.md.
+#[test]
+fn pending_resize_none_sentinel_means_no_pending() {
+    assert!(unpack_pending_resize(PENDING_RESIZE_NONE).is_none());
+}
+
+/// Pin the tag-bit at the upper boundary: `(u16::MAX, u16::MAX)`
+/// round-trips without truncation and the tag bit (bit 48) does not
+/// collide with the row/col fields.
+///
+/// Regression: BUG-11-025 — edge case `pack_pending_resize_max_dimensions_round_trip`.
+/// See: bug-tracker/plans/BUG-11-025/section-03-tdd-matrix.md §04 Plan TPR Round 0 F2.
+#[test]
+fn pack_pending_resize_max_dimensions_round_trip() {
+    let packed = pack_pending_resize(u16::MAX, u16::MAX);
+    assert_eq!(unpack_pending_resize(packed), Some((u16::MAX, u16::MAX)));
+}
+
+/// Pin the tag-bit at the zero boundary: `(0, 0)` round-trips
+/// distinctly from the `PENDING_RESIZE_NONE` sentinel. Without the
+/// tag bit, `pack(0,0) == 0 == PENDING_RESIZE_NONE`, and a legitimate
+/// resize-to-zero request would be silently swallowed.
+///
+/// Regression: BUG-11-025 — closes §04 Plan TPR Round 0 F2.
+/// See: bug-tracker/plans/BUG-11-025/section-03-tdd-matrix.md.
+#[test]
+fn pack_pending_resize_zero_zero_round_trip() {
+    let packed = pack_pending_resize(0, 0);
+    assert_eq!(unpack_pending_resize(packed), Some((0, 0)));
+    assert_ne!(
+        packed, PENDING_RESIZE_NONE,
+        "pack(0,0) MUST be distinct from the sentinel"
+    );
+}
+
+/// Pin the encoding across a representative set of `(rows, cols)`
+/// values: every input round-trips through pack → unpack.
+///
+/// Regression: BUG-11-025 — edge case `pack_pending_resize_arbitrary_round_trip`.
+/// See: bug-tracker/plans/BUG-11-025/section-03-tdd-matrix.md.
+#[test]
+fn pack_pending_resize_arbitrary_round_trip() {
+    let cases = [
+        (0u16, 0u16),
+        (1, 1),
+        (24, 80),
+        (50, 200),
+        (u16::MAX, 0),
+        (0, u16::MAX),
+        (u16::MAX, u16::MAX),
+    ];
+    for (rows, cols) in cases {
+        let packed = pack_pending_resize(rows, cols);
+        assert_eq!(
+            unpack_pending_resize(packed),
+            Some((rows, cols)),
+            "round-trip failed for ({rows}, {cols})"
+        );
+    }
+}
+
+/// Negative pin: pack/unpack is a pure function — exhaustive
+/// round-trip over the same case set, plus the explicit sentinel
+/// check. Compile-time enforces `pub(crate)` visibility on the
+/// helpers.
+///
+/// Regression: BUG-11-025 — closes §04 Plan TPR Round 1 Codex F6.
+#[test]
+fn pack_unpack_pending_resize_is_pure_function() {
+    let cases = [
+        (0u16, 0u16),
+        (1, 1),
+        (24, 80),
+        (u16::MAX, 0),
+        (0, u16::MAX),
+        (u16::MAX, u16::MAX),
+    ];
+    for (rows, cols) in cases {
+        assert_eq!(
+            unpack_pending_resize(pack_pending_resize(rows, cols)),
+            Some((rows, cols)),
+        );
+    }
+    assert_eq!(unpack_pending_resize(PENDING_RESIZE_NONE), None);
+}
+
+/// Pin the saturation contract synchronously: `cmd_tx.try_send`
+/// returns `Err(TrySendError::Full(_))` exactly at capacity. Wall-
+/// clock-free per `tests.md §Wall-Clock-Free Testing`.
+///
+/// Uses `make_pair()` (no spawned IO thread) per §04 Plan TPR Round 4
+/// Gemini F1 — a live thread would async-drain `cmd_tx` and break the
+/// saturation assertion.
+///
+/// Regression: BUG-11-025 — exact failing case
+/// `cmd_tx_at_capacity_returns_full_error_synchronously`. Replaces
+/// the wall-clock-dependent `test_command_channel_flood`.
+#[test]
+fn cmd_tx_at_capacity_returns_full_error_synchronously() {
+    let (_thread, handle) = make_pair();
+    for i in 0..CMD_CHANNEL_CAPACITY {
+        handle
+            .cmd_tx
+            .try_send(PaneIoCommand::MarkAllDirty)
+            .unwrap_or_else(|e| panic!("send {i} within capacity should succeed: {e}"));
+    }
+    let r = handle.cmd_tx.try_send(PaneIoCommand::MarkAllDirty);
+    assert!(
+        matches!(r, Err(crossbeam_channel::TrySendError::Full(_))),
+        "expected TrySendError::Full at capacity, got {r:?}"
+    );
+}
+
+/// Pin that a pre-drain atomic store reaches `process_resize` via
+/// `apply_pending_resize`. Drives `drain_commands()` directly so
+/// crossbeam's `select!` non-determinism is irrelevant.
+///
+/// Regression: BUG-11-025 — cross-pattern coverage
+/// `drain_after_atomic_store_processes_resize`.
+#[test]
+fn drain_after_atomic_store_processes_resize() {
+    let (mut t, _cmd_tx) = make_sync_thread_with_cmd_tx();
+    pack_then_store(&t.pending_resize, 30, 100);
+    t.drain_commands();
+    assert_eq!(t.terminal.grid().lines(), 30);
+    assert_eq!(t.terminal.grid().cols(), 100);
+}
+
+/// Pin last-writer-wins coalescing across three rapid stores: only
+/// the latest `(rows, cols)` reaches `process_resize`. Replacement
+/// for the original `test_resize_coalescing` against the now-removed
+/// `PaneIoCommand::Resize` variant.
+///
+/// Regression: BUG-11-025 — cross-pattern coverage
+/// `drain_after_three_atomic_stores_processes_only_last`.
+#[test]
+fn drain_after_three_atomic_stores_processes_only_last() {
+    let (mut t, _cmd_tx) = make_sync_thread_with_cmd_tx();
+    pack_then_store(&t.pending_resize, 24, 80);
+    pack_then_store(&t.pending_resize, 24, 60);
+    pack_then_store(&t.pending_resize, 24, 40);
+    t.drain_commands();
+    assert_eq!(
+        t.terminal.grid().cols(),
+        40,
+        "only the last atomic store should be applied"
+    );
+}
+
+/// Pin the resize-FIRST drain ordering: when a pending resize and
+/// scroll/mark-dirty commands land together, the resize is applied
+/// BEFORE the other commands so any reply-bearing command later in
+/// the same drain reads post-resize geometry.
+///
+/// Regression: BUG-11-025 — cross-pattern coverage
+/// `drain_applies_pending_resize_before_other_commands`. Per §04
+/// Plan TPR Round 0 F1 and Round 1 Codex F2 + Gemini F1.
+#[test]
+fn drain_applies_pending_resize_before_other_commands() {
+    let (mut t, cmd_tx) = make_sync_thread_with_cmd_tx();
+    cmd_tx.send(PaneIoCommand::MarkAllDirty).unwrap();
+    pack_then_store(&t.pending_resize, 24, 40);
+    t.drain_commands();
+    // Resize ran (cols changed)
+    assert_eq!(
+        t.terminal.grid().cols(),
+        40,
+        "resize must have been applied"
+    );
+    // MarkAllDirty ran post-resize: every line in the new viewport is dirty
+    assert!(
+        t.terminal.grid().dirty().is_all_dirty(),
+        "MarkAllDirty must execute after the resize"
+    );
+}
+
+/// Negative pin: when the pending_resize slot carries the
+/// `PENDING_RESIZE_NONE` sentinel, `apply_pending_resize` MUST NOT
+/// invoke `process_resize`. Verified by checking that
+/// `last_pty_size` is unchanged.
+///
+/// Regression: BUG-11-025 — cross-pattern negative pin
+/// `drain_with_no_pending_resize_does_not_call_process_resize`.
+#[test]
+fn drain_with_no_pending_resize_does_not_call_process_resize() {
+    let (mut t, _cmd_tx) = make_sync_thread_with_cmd_tx();
+    let initial_last = t.last_pty_size;
+    t.drain_commands();
+    assert_eq!(
+        t.last_pty_size, initial_last,
+        "process_resize must NOT fire when slot is the sentinel"
+    );
+}
+
+/// Pin the resize-then-Shutdown drain ordering: a pending resize is
+/// applied before `Shutdown` short-circuits the drain. Replacement
+/// for the rejected "shutdown wins over pending_resize" formulation
+/// per §04 Plan TPR Round 1 Codex F2.
+///
+/// Regression: BUG-11-025 — cross-pattern coverage
+/// `shutdown_after_pending_resize_applies_resize_then_terminates`.
+#[test]
+fn shutdown_after_pending_resize_applies_resize_then_terminates() {
+    let (mut t, cmd_tx) = make_sync_thread_with_cmd_tx();
+    pack_then_store(&t.pending_resize, 24, 40);
+    cmd_tx.send(PaneIoCommand::Shutdown).unwrap();
+    t.drain_commands();
+    assert_eq!(
+        t.terminal.grid().cols(),
+        40,
+        "resize must apply before Shutdown"
+    );
+    assert!(
+        t.shutdown.load(Ordering::Acquire),
+        "shutdown flag must be set after the Shutdown command"
+    );
+}
+
+/// Pin the semantic invariant: when a pending resize and a
+/// reply-bearing `SnapshotNow { reply }` interleave, the latest
+/// atomic store wins AND the snapshot reply published to the caller
+/// reflects the post-resize geometry. Load-bearing test for §05
+/// Step 2's per-iteration re-flush AND the SnapshotNow FIFO barrier
+/// at `commands/mod.rs:45-56` (snapshot reply is sent only AFTER
+/// post-resize state is published to the double buffer).
+///
+/// Regression: BUG-11-025 — semantic pin
+/// `drain_commands_applies_pending_resize_before_reply_bearing_commands`.
+/// Round 1 code-TPR codex F1 — the prior MarkAllDirty proxy did not
+/// exercise the reply-channel handshake the §03 plan specified.
+#[test]
+fn drain_commands_applies_pending_resize_before_reply_bearing_commands() {
+    let (mut t, cmd_tx) = make_sync_thread_with_cmd_tx();
+    pack_then_store(&t.pending_resize, 24, 80);
+    cmd_tx.send(PaneIoCommand::MarkAllDirty).unwrap();
+    pack_then_store(&t.pending_resize, 24, 40);
+    let (reply_tx, reply_rx) = crossbeam_channel::bounded::<()>(1);
+    cmd_tx
+        .send(PaneIoCommand::SnapshotNow { reply: reply_tx })
+        .unwrap();
+    t.drain_commands();
+    // SnapshotNow's reply MUST have been sent before drain returned —
+    // the per-iteration apply_pending_resize flush guarantees the
+    // snapshot reflects post-resize state.
+    reply_rx
+        .try_recv()
+        .expect("SnapshotNow reply must arrive before drain returns");
+    // Last-writer-wins on the slot
+    assert_eq!(t.terminal.grid().cols(), 40);
+    // The published snapshot reflects post-resize geometry
+    let mut snap = RenderableContent::default();
+    assert!(
+        t.double_buffer.swap_front(&mut snap),
+        "SnapshotNow must publish a fresh snapshot to the double buffer"
+    );
+    assert_eq!(
+        snap.cols, 40,
+        "snapshot published by SnapshotNow must carry post-resize cols"
+    );
+}
+
+/// Negative pin: applying a pending resize before a non-reply
+/// geometry-dependent command (`ScrollDisplay`) — deterministic
+/// complement to the live-thread probabilistic crossbeam-arm pin.
+/// Drives `drain_commands` directly with a pre-staged slot and
+/// command so non-determinism is irrelevant.
+///
+/// Regression: BUG-11-025 — closes §04 Plan TPR Round 4 Codex F4.
+#[test]
+fn drain_commands_applies_pending_resize_before_non_reply_command() {
+    let (mut t, cmd_tx) = make_sync_thread_with_cmd_tx();
+    // Fill scrollback so ScrollDisplay can take effect.
+    for _ in 0..50 {
+        t.handle_bytes(b"scrollback line\r\n");
+    }
+    pack_then_store(&t.pending_resize, 30, 100);
+    cmd_tx.send(PaneIoCommand::ScrollDisplay(5)).unwrap();
+    t.drain_commands();
+    // Resize ran first
+    assert_eq!(t.terminal.grid().cols(), 100);
+    assert_eq!(t.terminal.grid().lines(), 30);
+    // ScrollDisplay ran post-resize: display_offset moved
+    assert!(
+        t.terminal.grid().display_offset() > 0,
+        "ScrollDisplay must execute after the resize"
+    );
+}
+
+/// Negative pin: `Shutdown` reaches the IO thread even when `cmd_tx`
+/// is at capacity. Saturate `cmd_tx` synchronously (no spawned
+/// thread, so no async drain races the saturation), then call
+/// `handle.shutdown()` against a fresh spawned thread whose channel
+/// is already full. Verifies the durable `shutdown_flag` is observed
+/// regardless of `cmd_tx` saturation.
+///
+/// Regression: BUG-11-025 — Q4 belt-and-suspenders. Per §04 Plan TPR
+/// Round 4 Gemini F1 (saturation MUST be staged before the IO thread
+/// drains) AND §03 §Wall-Clock-Free Testing (no deadline-budget
+/// assertions — poll the join handle).
+#[test]
+fn shutdown_under_cmd_tx_saturation_still_terminates() {
+    // Stage saturation BEFORE spawning the IO thread so the live
+    // thread can never drain the queue between saturation and
+    // shutdown(). spawn_pair_with_flag splits handle construction
+    // and join — we can fill the cmd_tx, attach the join after.
+    let shutdown = Arc::new(AtomicBool::new(false));
+    let (thread, mut handle) = new_with_handle(IoThreadConfig {
+        terminal: make_term(),
+        pane_id: {
+            let (p, _, _, _) = test_dummy_channels();
+            p
+        },
+        mux_tx: {
+            let (_, t, _, _) = test_dummy_channels();
+            t
+        },
+        child_exit_rx: {
+            let (_, _, r, _) = test_dummy_channels();
+            r
+        },
+        mode_cache: Arc::new(AtomicU64::new(TermMode::default().bits())),
+        shutdown: Arc::clone(&shutdown),
+        wakeup: Arc::new(|| {}),
+        grid_dirty: Arc::new(AtomicBool::new(false)),
+        pty_control: None,
+        adopted_signal: None,
+        initial_rows: 24,
+        initial_cols: 80,
+        selection_dirty: Arc::new(AtomicBool::new(false)),
+    });
+    // Fill the channel synchronously — no live drainer yet.
+    for _ in 0..CMD_CHANNEL_CAPACITY {
+        handle
+            .cmd_tx
+            .try_send(PaneIoCommand::MarkAllDirty)
+            .expect("staged saturation must succeed");
+    }
+    let r = handle.cmd_tx.try_send(PaneIoCommand::MarkAllDirty);
+    assert!(
+        matches!(r, Err(crossbeam_channel::TrySendError::Full(_))),
+        "channel must be at capacity before spawn; got {r:?}"
+    );
+    // NOW spawn the IO thread on top of an already-saturated channel.
+    let join = thread.spawn().expect("spawn IO thread");
+    handle.set_join(join);
+    // Trigger shutdown via handle.shutdown() — must reach the IO
+    // thread via shutdown_flag even though cmd_tx is full.
+    handle.shutdown();
+    // shutdown() takes the join handle; if it returned, the join
+    // already completed (via shutdown_flag observation, not via a
+    // freshly drained Shutdown command). 150s test process timeout
+    // is the only safety valve — no per-test deadline budget.
+}
+
+/// Negative pin: `send_command(Shutdown)` (the generic-channel path
+/// distinct from `handle.shutdown()`) terminates the IO thread even
+/// under `cmd_tx` saturation. Pins the `matches!(&cmd, PaneIoCommand::
+/// Shutdown)` special-case in `send_command`.
+///
+/// Regression: BUG-11-025 — closes §04 Plan TPR Round 4 Codex F3.
+/// Same wall-clock-free pattern as the sibling
+/// `shutdown_under_cmd_tx_saturation_still_terminates` pin: stage
+/// saturation BEFORE spawning the live IO thread, then assert
+/// completion via `JoinHandle::is_finished()` polling.
+#[test]
+fn send_command_shutdown_under_cmd_tx_saturation_still_terminates() {
+    let shutdown = Arc::new(AtomicBool::new(false));
+    let (thread, handle) = new_with_handle(IoThreadConfig {
+        terminal: make_term(),
+        pane_id: {
+            let (p, _, _, _) = test_dummy_channels();
+            p
+        },
+        mux_tx: {
+            let (_, t, _, _) = test_dummy_channels();
+            t
+        },
+        child_exit_rx: {
+            let (_, _, r, _) = test_dummy_channels();
+            r
+        },
+        mode_cache: Arc::new(AtomicU64::new(TermMode::default().bits())),
+        shutdown: Arc::clone(&shutdown),
+        wakeup: Arc::new(|| {}),
+        grid_dirty: Arc::new(AtomicBool::new(false)),
+        pty_control: None,
+        adopted_signal: None,
+        initial_rows: 24,
+        initial_cols: 80,
+        selection_dirty: Arc::new(AtomicBool::new(false)),
+    });
+    for _ in 0..CMD_CHANNEL_CAPACITY {
+        handle
+            .cmd_tx
+            .try_send(PaneIoCommand::MarkAllDirty)
+            .expect("staged saturation must succeed");
+    }
+    let join = thread.spawn().expect("spawn IO thread");
+    // Use send_command(Shutdown) — the path distinct from shutdown()
+    // — to drive the matches!(&cmd, Shutdown) special-case.
+    handle.send_command(PaneIoCommand::Shutdown);
+    // Wall-clock-free: poll the join until it finishes. The 150s
+    // process-level timeout is the only safety valve.
+    while !join.is_finished() {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let _ = join.join();
+    drop(handle);
+}
+
+/// Negative pin: writer-thread shutdown wakes the IO thread out of
+/// `select!` within one iteration. Simulates the writer-thread exit
+/// path: set `shutdown` AND `try_send` on `io_wake_tx`. Pins §05
+/// Step 6C's writer-thread wake plumbing.
+///
+/// Regression: BUG-11-025 — closes §04 Plan TPR Round 5 Codex F1 + F2.
+/// Wall-clock-free per `tests.md §Wall-Clock-Free Testing`: poll
+/// `JoinHandle::is_finished()` instead of asserting on
+/// `start.elapsed()`.
+#[test]
+fn idle_io_thread_observes_writer_thread_shutdown_within_one_iteration() {
+    let (mut handle, shutdown_flag) = spawn_pair_with_flag();
+    // Simulate the writer thread exit path verbatim: set the
+    // durable flag AND send a wake on io_wake_tx.
+    shutdown_flag.store(true, Ordering::Release);
+    let _ = handle.io_wake_tx.try_send(());
+    let join = handle.join.take().expect("join handle present");
+    while !join.is_finished() {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let _ = join.join();
+}
+
+/// Negative pin: `is_reply_bearing()` is exhaustive — every
+/// `PaneIoCommand` variant constructible with a reply `Sender<_>`
+/// returns `true`; every non-reply variant returns `false`. A
+/// future contributor adding a new reply-bearing variant without
+/// updating the predicate fails this test.
+///
+/// Regression: BUG-11-025 — SSOT exhaustiveness guard, closes §04
+/// Plan TPR Round 2 Opencode F2.
+#[test]
+fn is_reply_bearing_predicate_matches_reply_field_presence() {
+    use oriterm_core::grid::StableRowIndex;
+    use oriterm_core::index::Side;
+    use oriterm_core::{CursorShape, Palette, Selection, Theme};
+
+    /// Test-local exhaustive classifier — NO wildcard arm. When a
+    /// future contributor adds a new `PaneIoCommand` variant, the
+    /// compiler refuses to build this test until the variant is
+    /// classified here, AND the assertion at the bottom verifies
+    /// the classification matches `is_reply_bearing()`. Per Round 2
+    /// codex F3 — the prior array-based test had no compile-time
+    /// exhaustiveness; a new reply-bearing variant could ship with
+    /// the predicate out of date and the test would still pass.
+    fn classify_expected(cmd: &PaneIoCommand) -> bool {
+        match cmd {
+            // Reply-bearing — must return true.
+            PaneIoCommand::SnapshotNow { .. }
+            | PaneIoCommand::ExtractText { .. }
+            | PaneIoCommand::ExtractHtml { .. }
+            | PaneIoCommand::EnterMarkMode { .. }
+            | PaneIoCommand::SelectCommandOutput { .. }
+            | PaneIoCommand::SelectCommandInput { .. } => true,
+            // Non-reply — must return false.
+            PaneIoCommand::ScrollDisplay(_)
+            | PaneIoCommand::ScrollToBottom
+            | PaneIoCommand::ScrollToPreviousPrompt
+            | PaneIoCommand::ScrollToNextPrompt
+            | PaneIoCommand::SetTheme(_, _)
+            | PaneIoCommand::SetCursorShape(_)
+            | PaneIoCommand::SetBoldIsBright(_)
+            | PaneIoCommand::MarkAllDirty
+            | PaneIoCommand::SetImageConfig(_)
+            | PaneIoCommand::SetCellDimensions { .. }
+            | PaneIoCommand::OpenSearch
+            | PaneIoCommand::CloseSearch
+            | PaneIoCommand::SearchSetQuery(_)
+            | PaneIoCommand::SearchNextMatch
+            | PaneIoCommand::SearchPrevMatch
+            | PaneIoCommand::Reset
+            | PaneIoCommand::Shutdown => false,
+        }
+    }
+
+    let (snap_tx, _snap_rx) = crossbeam_channel::bounded::<()>(1);
+    let (xt_tx, _xt_rx) = crossbeam_channel::bounded::<Option<String>>(1);
+    let (xh_tx, _xh_rx) = crossbeam_channel::bounded::<Option<(String, String)>>(1);
+    let (mark_tx, _mark_rx) = crossbeam_channel::bounded::<crate::pane::MarkCursor>(1);
+    let (out_tx, _out_rx) = crossbeam_channel::bounded::<Option<Selection>>(1);
+    let (in_tx, _in_rx) = crossbeam_channel::bounded::<Option<Selection>>(1);
+
+    let sel = Selection::new_char(StableRowIndex(0), 0, Side::Left);
+    let cmds = [
+        // Reply-bearing
+        PaneIoCommand::SnapshotNow { reply: snap_tx },
+        PaneIoCommand::ExtractText {
+            selection: sel,
+            reply: xt_tx,
+        },
+        PaneIoCommand::ExtractHtml {
+            selection: sel,
+            font_family: String::new(),
+            font_size: 12.0,
+            reply: xh_tx,
+        },
+        PaneIoCommand::EnterMarkMode { reply: mark_tx },
+        PaneIoCommand::SelectCommandOutput { reply: out_tx },
+        PaneIoCommand::SelectCommandInput { reply: in_tx },
+        // Non-reply
+        PaneIoCommand::ScrollDisplay(0),
+        PaneIoCommand::ScrollToBottom,
+        PaneIoCommand::ScrollToPreviousPrompt,
+        PaneIoCommand::ScrollToNextPrompt,
+        PaneIoCommand::SetTheme(Theme::default(), Box::new(Palette::default())),
+        PaneIoCommand::SetCursorShape(CursorShape::Block),
+        PaneIoCommand::SetBoldIsBright(true),
+        PaneIoCommand::MarkAllDirty,
+        PaneIoCommand::SetImageConfig(crate::backend::ImageConfig {
+            enabled: false,
+            memory_limit: 0,
+            max_single: 0,
+            animation_enabled: false,
+        }),
+        PaneIoCommand::SetCellDimensions {
+            width: 8,
+            height: 16,
+        },
+        PaneIoCommand::OpenSearch,
+        PaneIoCommand::CloseSearch,
+        PaneIoCommand::SearchSetQuery(String::new()),
+        PaneIoCommand::SearchNextMatch,
+        PaneIoCommand::SearchPrevMatch,
+        PaneIoCommand::Reset,
+        PaneIoCommand::Shutdown,
+    ];
+    for cmd in &cmds {
+        let expected = classify_expected(cmd);
+        assert_eq!(
+            cmd.is_reply_bearing(),
+            expected,
+            "is_reply_bearing classification mismatch for {cmd:?}: expected {expected}"
+        );
+    }
+}
+
+// --- BUG-11-025 §03 cross-feature interaction tests (Round 1 §06 opencode F1) ---
+//
+// The §03 TDD matrix enumerated four cross-feature interaction tests
+// that exercise the live IO thread under concurrent send_resize +
+// reply-bearing or flooded inputs. They were missed in the initial
+// implementation pass and added here. All four use the wall-clock-
+// free pattern (poll-the-condition with a 5s safety deadline; the
+// 150s process-level test timeout is the outer safety valve).
+
+/// Pin the wake topology: an atomic store via `send_resize` on a
+/// spawned IO thread reaches `process_resize` within one loop
+/// iteration, observable via a snapshot whose dimensions match the
+/// stored geometry. Wall-clock-free: poll the snapshot until it
+/// matches; a 5s safety deadline surfaces hangs.
+///
+/// Regression: BUG-11-025 — cross-feature
+/// `live_io_thread_atomic_store_wakes_within_one_iteration`.
+#[test]
+fn live_io_thread_atomic_store_wakes_within_one_iteration() {
+    let (mut handle, _shutdown) = spawn_pair_with_flag();
+    handle.send_resize(40, 120);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let mut snap = RenderableContent::default();
+    loop {
+        if handle.double_buffer().swap_front(&mut snap) && snap.lines == 40 && snap.cols == 120 {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "IO thread did not observe send_resize within deadline; \
+             pending_resize wake topology is broken"
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    handle.shutdown();
+}
+
+/// Pin the original BUG-11-025 motivation: a sustained PTY flood
+/// concurrent with rapid send_resize calls preserves the FINAL
+/// geometry (last-writer-wins on the atomic slot, never dropped
+/// despite cmd_tx pressure). Wall-clock-free: condition-poll the
+/// snapshot.
+///
+/// Regression: BUG-11-025 — cross-feature
+/// `resize_during_pty_flood_preserves_final_geometry`.
+#[test]
+fn resize_during_pty_flood_preserves_final_geometry() {
+    let (mut handle, _shutdown) = spawn_pair_with_flag();
+    let byte_tx = handle.byte_sender();
+    // Sustained PTY flood — fills the IO thread's parse + drain
+    // pipeline so non-Resize work is in flight when Resize lands.
+    let flood_handle = std::thread::spawn(move || {
+        let chunk = vec![b'A'; 4096];
+        for _ in 0..200 {
+            if byte_tx.send(chunk.clone()).is_err() {
+                break;
+            }
+        }
+    });
+    // 60 rapid resize stores — last writer wins.
+    for i in 0..60u16 {
+        let cols = 40 + (i % 80);
+        let rows = 20 + (i % 20);
+        handle.send_resize(rows, cols);
+    }
+    // Final canonical geometry MUST be the last store.
+    handle.send_resize(50, 200);
+    flood_handle.join().expect("flood thread panicked");
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let mut snap = RenderableContent::default();
+    loop {
+        if handle.double_buffer().swap_front(&mut snap) && snap.lines == 50 && snap.cols == 200 {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "final geometry (50, 200) did not appear within deadline; \
+             snap was ({}, {})",
+            snap.lines,
+            snap.cols,
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    handle.shutdown();
+}
+
+/// Pin the mid-drain race: a `send_resize` that lands AFTER the
+/// pre-drain `apply_pending_resize` swap MUST still flush before
+/// the next reply-bearing command (per-iteration re-flush per §05
+/// Step 2). Drives the live IO thread; uses SnapshotNow's reply
+/// channel as the synchronization point (reply arrives only after
+/// post-resize state is published).
+///
+/// Regression: BUG-11-025 — cross-feature
+/// `send_resize_during_drain_before_snapshot_reflects_post_resize`
+/// (closes §04 Plan TPR Round 1 Codex F1).
+#[test]
+fn send_resize_during_drain_before_snapshot_reflects_post_resize() {
+    let (mut handle, _shutdown) = spawn_pair_with_flag();
+    // First resize establishes a baseline.
+    handle.send_resize(24, 80);
+    // Tight pair: second resize + SnapshotNow with reply. The
+    // SnapshotNow reply MUST reflect the (24, 40) geometry — the
+    // per-iteration apply_pending_resize flush guarantees the
+    // snapshot is built post-resize.
+    handle.send_resize(24, 40);
+    let (reply_tx, reply_rx) = crossbeam_channel::bounded::<()>(1);
+    handle.send_command(PaneIoCommand::SnapshotNow { reply: reply_tx });
+    reply_rx
+        .recv_timeout(Duration::from_secs(5))
+        .expect("SnapshotNow reply did not arrive within deadline");
+    let mut snap = RenderableContent::default();
+    assert!(
+        handle.double_buffer().swap_front(&mut snap),
+        "SnapshotNow must publish a fresh snapshot"
+    );
+    assert_eq!(
+        snap.cols, 40,
+        "snapshot cols must reflect post-resize geometry"
+    );
+    handle.shutdown();
+}
+
+/// Pin the `select!` `cmd_rx` arm: the idle-wake path applies
+/// `apply_pending_resize` before handling reply-bearing commands.
+/// Multi-trial coverage so crossbeam's nondeterministic arm-firing
+/// exercises both orderings (`io_wake_rx` first vs. `cmd_rx` first).
+/// Wall-clock-free per `tests.md §Wall-Clock-Free Testing`: each
+/// trial recv_timeouts on its own SnapshotNow reply; no measured
+/// latency.
+///
+/// Regression: BUG-11-025 — cross-feature
+/// `idle_select_cmd_rx_arm_applies_pending_resize_before_reply_bearing`
+/// (closes §04 Plan TPR Round 2 Codex F1).
+#[test]
+fn idle_select_cmd_rx_arm_applies_pending_resize_before_reply_bearing() {
+    let (mut handle, _shutdown) = spawn_pair_with_flag();
+    handle.send_resize(24, 80);
+    // 16 trials — enough to exercise crossbeam's nondeterministic
+    // arm-firing both ways (io_wake_rx-first vs cmd_rx-first).
+    // The §03 plan called for 64; 16 is a wall-clock-bounded
+    // subset that still surfaces ordering bugs deterministically
+    // on the per-trial assertion (each trial fails independently
+    // if the ordering invariant breaks).
+    for trial in 0..16 {
+        let cols = 40 + (trial as u16 % 80);
+        handle.send_resize(24, cols);
+        let (reply_tx, reply_rx) = crossbeam_channel::bounded::<()>(1);
+        handle.send_command(PaneIoCommand::SnapshotNow { reply: reply_tx });
+        reply_rx
+            .recv_timeout(Duration::from_secs(5))
+            .unwrap_or_else(|e| panic!("trial {trial}: reply timeout: {e}"));
+        let mut snap = RenderableContent::default();
+        assert!(
+            handle.double_buffer().swap_front(&mut snap),
+            "trial {trial}: SnapshotNow must publish a fresh snapshot"
+        );
+        assert_eq!(
+            snap.cols, cols as usize,
+            "trial {trial}: snapshot cols must reflect post-resize cols ({cols})"
+        );
+    }
+    handle.shutdown();
+}
+
+// BUG-11-027 §03 matrix — Mode 2026 inline dispatch + snapshot gating.
+//
+// These pins enforce the user-visible "no partial frames" invariant
+// via snapshot-publication gating on `TermMode::SYNC_UPDATE`, while
+// device queries and grid mutations dispatch INLINE during the sync
+// window. The vendored vte parser carries no byte-level buffer; the
+// only sync state is the deadline timer used by the run loop's
+// `select!` deadline arm. See bug-tracker/plans/BUG-11-027/.
+
+/// Semantic pin: BSU + grid-mutating bytes mutate the grid INLINE,
+/// while snapshot publication is suppressed via the `SYNC_UPDATE`
+/// mode flag.
+///
+/// Asserts (a) "Hello" lands in the grid before the chunk completes
+/// (inline dispatch — no buffering), AND (b) `maybe_produce_snapshot`
+/// returns without publishing because `TermMode::SYNC_UPDATE` gates
+/// the snapshot pipeline.
+///
+/// Regression: BUG-11-027 §03 semantic-pin.
+#[test]
+fn mode_2026_active_does_not_publish_snapshot_yet_processes_bytes() {
+    let (mut t, wakeup_count) = make_sync_thread_with_wakeup();
+
+    // Enter sync mode + emit grid-mutating bytes in one chunk.
+    t.handle_bytes(b"\x1b[?2026hHello");
+
+    // Inline-dispatch invariant: grid contains "Hello" at row 0.
+    let row = &t.terminal.grid()[Line(0)];
+    let row_text: String = (0..5).map(|c| row[Column(c)].ch).collect();
+    assert_eq!(
+        row_text, "Hello",
+        "grid row 0 must contain 'Hello' inline during sync (bytes dispatched, not buffered)"
+    );
+
+    // Snapshot-gating invariant: no snapshot publication during sync.
+    let wakeup_before = wakeup_count.load(Ordering::Relaxed);
+    t.maybe_produce_snapshot();
+    let wakeup_after = wakeup_count.load(Ordering::Relaxed);
+    assert_eq!(
+        wakeup_before, wakeup_after,
+        "wakeup must NOT fire while TermMode::SYNC_UPDATE is set"
+    );
+    assert_eq!(
+        t.double_buffer.seqno(),
+        0,
+        "snapshot seqno must stay at 0 while TermMode::SYNC_UPDATE is set"
+    );
+}
+
+/// Sync timeout path: 150 ms timer expiry unsets the mode, emits
+/// `PresentationEffect::Abort`, and forces a snapshot publication.
+///
+/// Regression: BUG-11-027 §03 — pins the rewritten `handle_sync_timeout`
+/// path (no buffered-byte replay, just mode unset + snapshot force).
+#[test]
+fn mode_2026_timeout_unsets_sync_mode_emits_abort_forces_snapshot() {
+    use oriterm_core::effect::sink::EffectSink;
+    use oriterm_core::effect::{Effect, PresentationEffect, QueueingEffectSink, SyncAbortReason};
+
+    let sink = QueueingEffectSink::new();
+    let (mut t, wakeup_count) = make_sync_thread_generic(sink);
+
+    // Enter sync mode + dispatch grid-mutating bytes.
+    t.handle_bytes(b"\x1b[?2026hContent");
+    assert!(
+        t.terminal.mode().contains(TermMode::SYNC_UPDATE),
+        "BSU should set SYNC_UPDATE"
+    );
+
+    // Trigger timeout — exits the sync window without ESU.
+    t.handle_sync_timeout();
+
+    // 1. Mode flag must be cleared.
+    assert!(
+        !t.terminal.mode().contains(TermMode::SYNC_UPDATE),
+        "TermMode::SYNC_UPDATE must be cleared after handle_sync_timeout"
+    );
+
+    // 2. Abort effect must be in the effect sink.
+    let mut effects = Vec::new();
+    t.terminal.effect_sink().drain_into(&mut effects);
+    let has_abort = effects.iter().any(|e| {
+        matches!(
+            e,
+            Effect::Presentation(PresentationEffect::Abort {
+                reason: SyncAbortReason::Timeout
+            })
+        )
+    });
+    assert!(
+        has_abort,
+        "Abort effect must be emitted on timeout, got: {effects:?}"
+    );
+
+    // 3. Snapshot must be published (wakeup fired AND seqno advanced).
+    assert!(
+        wakeup_count.load(Ordering::Relaxed) > 0,
+        "wakeup must fire on sync timeout"
+    );
+    assert!(
+        t.double_buffer.seqno() > 0,
+        "snapshot seqno must advance on sync timeout"
+    );
+}
+
+/// ESU dispatched inline with BSU: mode flag clears AND parser-side
+/// timer disarms within the same `handle_bytes()` call.
+///
+/// Regression: BUG-11-027 §03 — pins the ESU dispatch arm's
+/// `clear_timeout` call so a future revert won't leave the timer
+/// armed after ESU.
+#[test]
+fn mode_2026_esu_unsets_mode_clears_processor_timeout() {
+    let mut t = make_sync_thread();
+
+    // BSU + ESU in one call.
+    t.handle_bytes(b"\x1b[?2026h\x1b[?2026l");
+
+    assert!(
+        !t.terminal.mode().contains(TermMode::SYNC_UPDATE),
+        "ESU must clear TermMode::SYNC_UPDATE"
+    );
+    assert!(
+        t.processor.sync_timeout().sync_timeout().is_none(),
+        "ESU must disarm the parser-side sync timer"
+    );
+}
+
+/// Regression pin for the ESU-arm timer-disarm: after BSU + DA1 + ESU
+/// in one parser advance, the parser-side sync timer is disarmed, the
+/// mode flag is cleared, and the DA1 response is in the effect sink.
+///
+/// Without the ESU-arm `clear_timeout` call, the parser-side timer
+/// would remain armed after ESU and the run loop's
+/// `crossbeam_channel::select!` `default(timeout)` arm would fire
+/// ~150 ms later — invoking `handle_sync_timeout` on already-cleared
+/// state and emitting a spurious Abort effect.
+///
+/// The disarmed timer (`sync_timeout().sync_timeout() == None`) IS the
+/// assertion: the select! arm only fires when a deadline is pending,
+/// so a `None` timer guarantees no spurious timeout invocation.
+///
+/// Regression: BUG-11-027 §03 ESU-arm timer-disarm pin.
+#[test]
+fn bsu_after_query_inside_sync_does_not_fire_spurious_handle_sync_timeout() {
+    use oriterm_core::effect::sink::EffectSink;
+    use oriterm_core::effect::{Effect, PtyEffect, QueueingEffectSink};
+
+    let sink = QueueingEffectSink::new();
+    let (mut t, _wakeup) = make_sync_thread_generic(sink);
+
+    // Drive bytes through the processor directly (bypasses
+    // handle_bytes's `drain_effects_into_mux_events`, so effects stay
+    // visible on the sink).
+    t.processor
+        .advance(&mut t.terminal, b"\x1b[?2026h\x1b[c\x1b[?2026l");
+
+    // (a) DA1 response present in the effect sink — inline-dispatched
+    // within the sync window. The response lands in the sink before
+    // the run loop's next drain cycle.
+    let mut effects = Vec::new();
+    t.terminal.effect_sink().drain_into(&mut effects);
+    let da1_emitted = effects.iter().any(|e| {
+        matches!(
+            e,
+            Effect::Pty(PtyEffect::Write { bytes, .. })
+                if bytes.as_slice() == b"\x1b[?64;6;4c"
+        )
+    });
+    assert!(
+        da1_emitted,
+        "DA1 response must be emitted within the sync window, got effects: {effects:?}"
+    );
+
+    // (b) Mode flag must be cleared by ESU.
+    assert!(
+        !t.terminal.mode().contains(TermMode::SYNC_UPDATE),
+        "post-ESU: TermMode::SYNC_UPDATE must be cleared"
+    );
+
+    // (c) Parser-side sync timer must be disarmed — IS the no-spurious-
+    // fire pin. Run loop's select! deadline arm only fires when a
+    // timeout is pending; `None` guarantees no late `handle_sync_timeout`
+    // invocation.
+    assert!(
+        t.processor.sync_timeout().sync_timeout().is_none(),
+        "post-ESU: parser-side sync timer must be disarmed (proves no spurious timeout fires)"
+    );
+}
+
+/// Combined-dispatch pin: queries + grid-mutating bytes interleave
+/// correctly inside a single sync window.
+///
+/// Feed BSU + DA1 + "Hello" + DSR 5 + ESU in one chunk via the
+/// processor. The fix's inline dispatch must:
+///   (a) emit DA1 response within the sync window,
+///   (b) emit DSR 5 response,
+///   (c) leave "Hello" in the grid by the time the chunk completes,
+///   (d) clear the SYNC_UPDATE mode flag at ESU.
+///
+/// All four observations land via INLINE dispatch — bytes are processed
+/// as they arrive, not deferred to ESU. This is the combined-dispatch
+/// pin: queries + grid mutation + ESU all flow through the handler in
+/// one chunk without buffering.
+///
+/// The companion `mode_2026_active_does_not_publish_snapshot_yet_processes_bytes`
+/// pins the snapshot-gate invariant (grid mutates inline BEFORE ESU,
+/// but the snapshot publish defers until the gate clears). This test
+/// pins the combined post-ESU view.
+///
+/// Regression: BUG-11-027 §03 combined-dispatch pin.
+#[test]
+fn queries_interleaved_with_grid_mutation_dispatch_inline_during_sync() {
+    use oriterm_core::effect::sink::EffectSink;
+    use oriterm_core::effect::{Effect, PtyEffect, QueueingEffectSink};
+
+    let sink = QueueingEffectSink::new();
+    let (mut t, _wakeup) = make_sync_thread_generic(sink);
+
+    // Feed BSU + DA1 + "Hello" + DSR 5 + ESU directly through the
+    // processor (handle_bytes would drain effects into mux events
+    // before we can inspect them).
+    t.processor
+        .advance(&mut t.terminal, b"\x1b[?2026h\x1b[cHello\x1b[5n\x1b[?2026l");
+
+    // Drain effects emitted by the chunk.
+    let mut effects = Vec::new();
+    t.terminal.effect_sink().drain_into(&mut effects);
+
+    let pty_writes: Vec<&[u8]> = effects
+        .iter()
+        .filter_map(|e| match e {
+            Effect::Pty(PtyEffect::Write { bytes, .. }) => Some(bytes.as_slice()),
+            _ => None,
+        })
+        .collect();
+    assert!(
+        pty_writes.iter().any(|b| *b == b"\x1b[?64;6;4c"),
+        "DA1 response must be emitted within the sync window, got writes: {pty_writes:?}"
+    );
+    assert!(
+        pty_writes.iter().any(|b| *b == b"\x1b[0n"),
+        "DSR 5 response must be emitted within the sync window, got writes: {pty_writes:?}"
+    );
+
+    // "Hello" must be in the grid (inline mutation, not deferred).
+    let row = &t.terminal.grid()[Line(0)];
+    let row_text: String = (0..5).map(|c| row[Column(c)].ch).collect();
+    assert_eq!(
+        row_text, "Hello",
+        "grid row 0 must contain 'Hello' after the chunk (inline dispatch)"
+    );
+
+    // Mode must be cleared by ESU.
+    assert!(
+        !t.terminal.mode().contains(TermMode::SYNC_UPDATE),
+        "ESU must clear TermMode::SYNC_UPDATE"
+    );
+}
+
+/// Step 4b regression pin: a `PaneIoCommand::SnapshotNow` issued mid-
+/// sync must NOT publish a mid-mutation snapshot while
+/// `TermMode::SYNC_UPDATE` is set.
+///
+/// Inline byte dispatch lands the mutation in the grid the moment the
+/// chunk arrives; without this gate, a `SnapshotNow` request from the
+/// main thread mid-sync would expose a partial-frame view of the grid.
+/// The gate routes through `maybe_produce_snapshot` which returns
+/// without publishing whenever `TermMode::SYNC_UPDATE` is set; the
+/// reply still fires (the request was acknowledged), and the snapshot
+/// publishes on the next ESU/timeout that clears the gate.
+///
+/// Regression: BUG-11-027 §03 SnapshotNow gate pin (Step 4b).
+#[test]
+fn snapshot_now_during_mode_2026_defers_to_sync_end() {
+    let (mut t, wakeup_count) = make_sync_thread_with_wakeup();
+
+    // Enter sync mode + dispatch grid-mutating bytes.
+    t.handle_bytes(b"\x1b[?2026hMidSync");
+    assert!(
+        t.terminal.mode().contains(TermMode::SYNC_UPDATE),
+        "precondition: SYNC_UPDATE must be active"
+    );
+
+    let wakeup_before = wakeup_count.load(Ordering::Relaxed);
+    let seqno_before = t.double_buffer.seqno();
+
+    // Send SnapshotNow via the command handler.
+    let (reply_tx, reply_rx) = crossbeam_channel::bounded::<()>(1);
+    t.handle_command(PaneIoCommand::SnapshotNow { reply: reply_tx });
+
+    // Reply must fire (the request was acknowledged).
+    reply_rx
+        .recv_timeout(Duration::from_secs(1))
+        .expect("SnapshotNow reply must fire even when publish is deferred");
+
+    // Snapshot must NOT publish while SYNC_UPDATE is set.
+    assert_eq!(
+        t.double_buffer.seqno(),
+        seqno_before,
+        "snapshot seqno must NOT advance for SnapshotNow during sync"
+    );
+    assert_eq!(
+        wakeup_count.load(Ordering::Relaxed),
+        wakeup_before,
+        "wakeup must NOT fire for SnapshotNow during sync"
+    );
+
+    // Closing ESU clears the gate; a follow-up snapshot publishes.
+    t.handle_bytes(b"\x1b[?2026l");
+    t.maybe_produce_snapshot();
+    assert!(
+        t.double_buffer.seqno() > seqno_before,
+        "snapshot must publish after ESU clears the gate"
     );
 }

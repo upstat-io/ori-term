@@ -126,12 +126,14 @@ impl App {
                 }
 
                 // Background pane received output — mark as unseen so
-                // the tab bar shows the "modified" indicator dot.
+                // the tab bar shows the "modified" indicator dot. Sync
+                // routes to the OWNING window (not focused) so background
+                // windows show the dot on the correct tab.
                 if !is_focused {
                     if let Some(mux) = self.mux.as_mut() {
                         mux.set_unseen_output(id);
                     }
-                    self.sync_tab_bar_from_mux();
+                    self.sync_tab_bar_for_pane(id);
                 }
                 // Mark only the window containing this pane as dirty.
                 self.mark_pane_window_dirty(id);
@@ -140,7 +142,7 @@ impl App {
                 self.handle_pane_closed(pane_id);
             }
             MuxNotification::PaneMetadataChanged(id) => {
-                self.sync_tab_bar_from_mux();
+                self.sync_tab_bar_for_pane(id);
                 self.mark_pane_window_dirty(id);
             }
             MuxNotification::CommandComplete { pane_id, duration } => {
@@ -161,17 +163,15 @@ impl App {
                     }
                 }
                 let now = Instant::now();
-                if !is_focused {
-                    if let Some(idx) = self.tab_index_for_pane(id) {
-                        if let Some(ctx) = self.focused_ctx_mut() {
-                            ctx.tab_bar.ring_bell(idx, now);
-                        }
-                    }
-                }
-                // Refresh tab-bar entries from mux state so the persistent
+                // Sync the OWNING window's tab entries FIRST so the persistent
                 // bell icon (sourced from `mux.has_bell` in build_tab_entries)
-                // appears / clears immediately.
-                self.sync_tab_bar_from_mux();
+                // appears / clears immediately. Hoisted before the
+                // !is_focused branch because set_tabs replaces the entries
+                // Vec — running it after ring_bell would wipe bell_start.
+                self.sync_tab_bar_for_pane(id);
+                if !is_focused {
+                    self.ring_owning_window_tab_bell(id, now);
+                }
 
                 // Audible bell — closes BUG-08-001 by absorbing the BEL `\a`
                 // audio path into BUG-11-016. Native OS APIs respect the
@@ -184,19 +184,16 @@ impl App {
 
                 // Visual-bell flash on the pane's OWNING window — not the
                 // focused window. A bell from a background pane flashes its
-                // own window. Mirrors `mark_pane_window_dirty`'s
-                // owning-window walk (`oriterm/src/app/redraw/mod.rs`).
+                // own window. Routes via the canonical
+                // `owning_window_ctx_mut` helper.
                 if self.config.bell.is_enabled() {
                     let bell = &self.config.bell;
                     let color = crate::config::parse_bell_color_as_ui(bell.color.as_deref());
                     let easing = crate::config::bell_animation_to_easing(bell.animation);
                     let duration_ms = bell.duration_ms;
                     if let Some(session_wid) = self.session.window_for_pane(id) {
-                        for ctx in self.windows.values_mut() {
-                            if ctx.window.session_window_id() == session_wid {
-                                ctx.root.ring_visual_bell(now, duration_ms, color, easing);
-                                break;
-                            }
+                        if let Some(ctx) = self.owning_window_ctx_mut(session_wid) {
+                            ctx.root.ring_visual_bell(now, duration_ms, color, easing);
                         }
                     }
                 }
@@ -235,14 +232,10 @@ impl App {
                             mux.set_bell(pane_id);
                         }
                     }
+                    self.sync_tab_bar_for_pane(pane_id);
                     if !is_focused {
-                        if let Some(idx) = self.tab_index_for_pane(pane_id) {
-                            if let Some(ctx) = self.focused_ctx_mut() {
-                                ctx.tab_bar.ring_bell(idx, Instant::now());
-                            }
-                        }
+                        self.ring_owning_window_tab_bell(pane_id, Instant::now());
                     }
-                    self.sync_tab_bar_from_mux();
                     self.mark_pane_window_dirty(pane_id);
                 }
             }
@@ -376,18 +369,17 @@ impl App {
             duration.as_secs_f64()
         );
 
-        // Flash the tab bar (reuse bell pulse) if configured.
+        // Flash the tab bar (reuse bell pulse) on the OWNING window if
+        // configured. Routes via pane_position + owning_window_ctx_mut so
+        // a command completing in a background-window pane pulses that
+        // window's tab bar — not the focused window's.
         if behavior.notify_command_bell && !is_focused {
             if let Some(mux) = self.mux.as_mut() {
                 mux.set_bell(pane_id);
             }
-            if let Some(idx) = self.tab_index_for_pane(pane_id) {
-                if let Some(ctx) = self.focused_ctx_mut() {
-                    ctx.tab_bar.ring_bell(idx, Instant::now());
-                    ctx.root.mark_dirty();
-                }
-            }
-            self.sync_tab_bar_from_mux();
+            self.sync_tab_bar_for_pane(pane_id);
+            self.ring_owning_window_tab_bell(pane_id, Instant::now());
+            self.mark_pane_window_dirty(pane_id);
         }
 
         // Bell-focused dispatch (BUG-11-016 scope reset 2026-04-28):
@@ -426,6 +418,14 @@ impl App {
             ctx.root.mark_dirty();
         }
 
+        // Capture the owning session window BEFORE removing the pane
+        // from the session — after removal `pane_position` returns None
+        // so we can no longer resolve the owner. We need the owner so the
+        // owning window's tab bar gets re-synced (active-window-scoped
+        // sync would update the wrong window's tab bar when a background-
+        // window pane closes).
+        let owner_session_wid = self.session.window_for_pane(id);
+
         // Remove pane from local session (tree/floating/tab/window).
         let result = crate::app::pane_ops::helpers::remove_pane_from_session(&mut self.session, id);
         if let Some(wid) = result.empty_window {
@@ -433,7 +433,9 @@ impl App {
             return;
         }
 
-        self.sync_tab_bar_from_mux();
+        if let Some(session_wid) = owner_session_wid {
+            self.sync_tab_bar_for_session_window(session_wid);
+        }
         self.resize_all_panes();
     }
 

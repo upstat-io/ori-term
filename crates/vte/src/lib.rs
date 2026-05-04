@@ -982,11 +982,14 @@ pub trait Perform {
 
     /// Whether the parser should terminate prematurely.
     ///
-    /// This can be used in conjunction with
-    /// [`Parser::advance_until_terminated`] to terminate the parser after
-    /// receiving certain escape sequences like synchronized updates.
+    /// Used in conjunction with [`Parser::advance_until_terminated`]: when
+    /// this returns `true`, the parser stops consuming bytes mid-stream.
+    /// The default impl returns `false` and the in-tree `Performer`
+    /// implementations rely on the default — `advance_until_terminated`
+    /// runs to completion of the input. The hook is preserved so external
+    /// `Perform` implementations can opt into early termination.
     ///
-    /// This is checked after every parsed byte, so no expensive computation
+    /// Checked after every parsed byte, so no expensive computation
     /// should take place in this function.
     #[inline(always)]
     fn terminated(&self) -> bool {

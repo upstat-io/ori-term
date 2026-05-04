@@ -49,6 +49,16 @@ macro_rules! handler_core_methods {
         /// Identify the terminal (should write back to the pty stream).
         fn identify_terminal(&mut self, _intermediate: Option<char>) {}
 
+        /// XTVERSION (CSI > Ps q): report terminal name and version.
+        ///
+        /// Per xterm `charproc.c::CASE_REPORT_VERSION`, the parser only
+        /// invokes this method when the caller used the default/zero `Ps`
+        /// parameter (`CSI > q` or `CSI > 0 q`). Non-zero `Ps` values are
+        /// dropped at the dispatch level; consumers see a single zero-arg
+        /// call. Reply format is up to the consumer (xterm uses
+        /// `DCS > | <name>(<version>) ST`).
+        fn xtversion(&mut self) {}
+
         /// Report device status.
         fn device_status(&mut self, _: usize) {}
 

@@ -231,9 +231,11 @@ fn extract_decrqm_from_effects(h: &SpecHarness, mode_num: u16) -> u8 {
 /// For every `NamedPrivateMode` variant:
 /// DECSET, then DECRQM → expect 1 (set) for flag-mapped, 0 for others.
 ///
-/// Mode 2026 (SyncUpdate) activates VTE sync buffering, so a separate
-/// `feed()` for DECRQM would be buffered. We feed BSU+DECRQM+ESU in
-/// one call for that mode.
+/// Mode 2026 (SyncUpdate) gates snapshot publication, not byte
+/// processing — DECRQM dispatches inline regardless of whether the
+/// sync window is active. We feed BSU+DECRQM+ESU in one call so the
+/// query lands while `TermMode::SYNC_UPDATE` is set, exercising the
+/// inline-dispatch path.
 ///
 /// Self-verifying: asserts iteration count equals `EXPECTED_VARIANT_COUNT`.
 #[test]
@@ -243,8 +245,9 @@ fn decrqm_exhaustive_set_then_query() {
         let mut h = SpecHarness::new();
 
         if entry.mode_num == 2026 {
-            // Mode 2026 enables sync buffering — feed BSU+DECRQM+ESU
-            // in one call so the query is replayed before the flag clears.
+            // BSU+DECRQM+ESU in one call — DECRQM dispatches inline
+            // while the SYNC_UPDATE flag is still set, so the response
+            // correctly reports `1`. ESU then clears the flag.
             h.feed(b"\x1b[?2026h\x1b[?2026$p\x1b[?2026l");
             let val = extract_decrqm_from_effects(&h, 2026);
             assert_eq!(

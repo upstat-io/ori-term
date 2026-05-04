@@ -91,7 +91,6 @@ impl<S: EffectSink + 'static> PaneIoThread<S> {
     pub(super) fn handle_command(&mut self, cmd: PaneIoCommand) {
         log::trace!("IO thread: command {cmd:?}");
         match cmd {
-            PaneIoCommand::Resize { rows, cols } => self.process_resize(rows, cols),
             PaneIoCommand::ScrollDisplay(delta) => {
                 self.terminal.grid_mut().scroll_display(delta);
                 self.grid_dirty.store(true, Ordering::Release);
@@ -165,7 +164,20 @@ impl<S: EffectSink + 'static> PaneIoThread<S> {
             }
             PaneIoCommand::Reset => {} // No Term::reset() exists yet.
             PaneIoCommand::Shutdown => {
-                self.shutdown.store(true, Ordering::Release);
+                // Shutdown MUST be intercepted upstream — by
+                // `drain_commands` (early-return) AND by the
+                // `select!` `cmd_rx` arm (early-return). If it
+                // reaches here the upstream interception is broken;
+                // the catch-all chain in `handle_reply_command`
+                // (`_ => {}`) would otherwise silently no-op,
+                // turning a real bug into a silent hang. Per
+                // `impl-hygiene.md §Defensive Code for Impossible
+                // States`. Pinned by §04 Plan TPR Round 3
+                // Codex F1 + Opencode F1.
+                unreachable!(
+                    "Shutdown must be intercepted by drain_commands() or run_loop's \
+                     select! cmd_rx arm before reaching handle_command()"
+                );
             }
             // Request-response commands with reply channels.
             other => self.handle_reply_command(other),
@@ -226,8 +238,12 @@ impl<S: EffectSink + 'static> PaneIoThread<S> {
             PaneIoCommand::SnapshotNow { reply } => {
                 // Force grid_dirty so produce_snapshot doesn't no-op when
                 // the caller chained SnapshotNow after non-mutating commands.
+                // Route through `maybe_produce_snapshot` so Mode 2026 active
+                // sync windows defer the publish to ESU/timeout — without
+                // this gate, mid-sync SnapshotNow would expose a partial
+                // frame.
                 self.grid_dirty.store(true, Ordering::Release);
-                self.produce_snapshot();
+                self.maybe_produce_snapshot();
                 let _ = reply.send(());
             }
             _ => {} // All other variants handled in handle_command.

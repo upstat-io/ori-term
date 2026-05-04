@@ -17,6 +17,8 @@ use std::sync::mpsc;
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
+use crossbeam_channel::Sender;
+
 pub(crate) use adopt::AdoptedPtyHandle;
 pub(crate) use lifecycle::PtyLifecycle;
 pub(crate) use reader::PtyReader;
@@ -61,17 +63,31 @@ const WRITER_RECV_TIMEOUT: Duration = Duration::from_millis(100);
 /// main thread enqueues it as `Msg::Input`. If the writer lived on the
 /// reader thread, the response would be stuck behind a blocking `read()`
 /// that never returns because the shell is waiting for the DA response.
+///
+/// `io_wake_tx` is a clone of `PaneIoHandle::io_wake_tx`. When the
+/// writer thread exits, it sets `shutdown` AND wakes the IO thread so
+/// the IO thread observes shutdown without waiting on `byte_rx` EOF
+/// or the 24h `IDLE_WAKE_CEILING`. Closes the §04 Plan TPR Round 5
+/// Codex F1 in-`select!` window for the writer-thread setter.
 pub fn spawn_pty_writer(
     mut writer: Box<dyn Write + Send>,
     rx: mpsc::Receiver<Msg>,
     shutdown: Arc<AtomicBool>,
     write_stalled: Arc<AtomicBool>,
+    io_wake_tx: Sender<()>,
 ) -> io::Result<JoinHandle<()>> {
     thread::Builder::new()
         .name("pty-writer".into())
         .spawn(move || {
             pty_writer_loop(&mut *writer, &rx, &shutdown, &write_stalled);
             shutdown.store(true, Ordering::Release);
+            // Wake the IO thread so it observes shutdown out of
+            // `select!` within one iteration. Best-effort: bounded(1)
+            // — if a wake is already pending the existing wake is
+            // sufficient. Pinned by §04 Plan TPR Round 5 Codex F1
+            // and the §03 negative pin
+            // `idle_io_thread_observes_writer_thread_shutdown_within_one_iteration`.
+            let _ = io_wake_tx.try_send(());
         })
 }
 

@@ -11,7 +11,7 @@ pub use host::{
     PrintRequest,
 };
 pub use host_request::{
-    AlreadyFulfilled, HostRequest, ResponseFulfilled, ResponseToken, TokenPoll,
+    AlreadyFulfilled, HostRequest, ResponseFulfilled, ResponseToken, ResponseTokenId, TokenPoll,
     format_clipboard_reply, format_color_reply,
 };
 pub use presentation::{PresentationEffect, SyncAbortReason};

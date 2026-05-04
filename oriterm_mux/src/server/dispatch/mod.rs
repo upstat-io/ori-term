@@ -16,7 +16,10 @@ use oriterm_core::{CursorShape, Palette, Rgb};
 
 use crate::MuxPdu;
 use crate::domain::SpawnConfig;
+use crate::id::HostRequestId;
 use crate::pane::io_thread::PaneIoCommand;
+use crate::protocol::HostReplyPayload;
+use crate::server::host_request::PendingHostReplyKind;
 
 use super::connection::ClientConnection;
 
@@ -137,7 +140,7 @@ pub fn dispatch_request(
                 // Do NOT push an immediate snapshot — the IO thread will
                 // produce one after reflow completes. This prevents
                 // exposing intermediate reflow frames.
-                pane.send_io_command(PaneIoCommand::Resize { rows, cols });
+                pane.send_resize(rows, cols);
             }
             None // Fire-and-forget.
         }
@@ -331,7 +334,68 @@ pub fn dispatch_request(
 
         MuxPdu::Unsubscribe { pane_id } => {
             conn.unsubscribe(pane_id);
+            // BUG-11-011: drop pending host-replies the unsubscribing client
+            // owned for this pane — the responder is leaving the pane's
+            // notification stream and won't observe / fulfill any further
+            // notifications. Without this the daemon would leak entries
+            // that can only be reaped on full disconnect.
+            let cid = conn.id();
+            let dropped = ctx
+                .pending_host_replies
+                .iter()
+                .filter(|(_, v)| v.pane_id == pane_id && v.responder == cid)
+                .count();
+            ctx.pending_host_replies
+                .retain(|_, v| !(v.pane_id == pane_id && v.responder == cid));
+            if dropped > 0 {
+                log::warn!(
+                    "Unsubscribe {pane_id} from {cid}: dropped {dropped} pending host-request token(s)"
+                );
+            }
             Some(MuxPdu::Unsubscribed)
+        }
+
+        MuxPdu::IsWriteStalled { pane_id } => {
+            let stalled = ctx
+                .panes
+                .get(&pane_id)
+                .is_some_and(crate::pane::Pane::is_write_stalled);
+            Some(MuxPdu::WriteStalledStatus { pane_id, stalled })
+        }
+
+        MuxPdu::ReplyHostRequest {
+            request_id,
+            payload,
+        } => {
+            let request_id = HostRequestId::from_raw(request_id);
+            if let Some(pending) = ctx.take_validated_pending_host_reply(request_id, conn.id()) {
+                match (pending.kind, payload) {
+                    (
+                        PendingHostReplyKind::Clipboard(token),
+                        HostReplyPayload::ClipboardLoad { text },
+                    ) => {
+                        if let Err(e) = token.fulfill(text) {
+                            log::warn!(
+                                "ReplyHostRequest {request_id}: clipboard token already fulfilled: {e}"
+                            );
+                        }
+                    }
+                    (PendingHostReplyKind::Color(token), HostReplyPayload::ColorQuery { rgb }) => {
+                        let color = Rgb {
+                            r: rgb[0],
+                            g: rgb[1],
+                            b: rgb[2],
+                        };
+                        if let Err(e) = token.fulfill(color) {
+                            log::warn!(
+                                "ReplyHostRequest {request_id}: color token already fulfilled: {e}"
+                            );
+                        }
+                    }
+                    _ => log::warn!("ReplyHostRequest {request_id}: payload-kind mismatch (drop)"),
+                }
+            }
+            None // Fire-and-forget — no response PDU.
         }
 
         MuxPdu::GetPaneSnapshot { pane_id } => match ctx.panes.get(&pane_id) {

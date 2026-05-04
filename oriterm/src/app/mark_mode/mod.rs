@@ -58,6 +58,7 @@ enum Motion {
 /// Result of mark mode key dispatch.
 ///
 /// Contains state mutations that the caller (App) applies.
+#[must_use]
 pub(crate) struct MarkModeResult {
     /// The action to perform.
     pub action: MarkAction,
@@ -117,31 +118,25 @@ pub(crate) fn handle_mark_mode_key(ctx: &MarkModeKeyContext<'_>) -> MarkModeResu
     }
 
     // Named keys: Escape, Enter, arrow/page/home/end navigation.
-    if let Key::Named(named) = &ctx.event.logical_key {
-        match named {
-            NamedKey::Escape => {
-                return MarkModeResult {
-                    action: MarkAction::Exit { copy: false },
-                    new_cursor: None,
-                    new_selection: Some(SelectionUpdate::Clear),
-                };
-            }
-            NamedKey::Enter => {
-                return MarkModeResult {
-                    action: MarkAction::Exit { copy: true },
-                    new_cursor: None,
-                    new_selection: None,
-                };
-            }
-            _ => {
-                if let Some(m) = resolve_motion(*named, ctx.mods) {
-                    return apply_motion(ctx, m);
-                }
-            }
-        }
+    let Key::Named(named) = &ctx.event.logical_key else {
+        return noop;
+    };
+    match named {
+        NamedKey::Escape => MarkModeResult {
+            action: MarkAction::Exit { copy: false },
+            new_cursor: None,
+            new_selection: Some(SelectionUpdate::Clear),
+        },
+        NamedKey::Enter => MarkModeResult {
+            action: MarkAction::Exit { copy: true },
+            new_cursor: None,
+            new_selection: None,
+        },
+        _ => match resolve_motion(*named, ctx.mods) {
+            Some(m) => apply_motion(ctx, m),
+            None => noop,
+        },
     }
-
-    noop
 }
 
 /// Map a named key + modifiers to a cursor motion.

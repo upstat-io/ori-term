@@ -167,6 +167,9 @@ fn msg_type_roundtrip_all() {
         MsgType::SetCellDimensions,
         MsgType::RequestNewTab,
         MsgType::SetPanePriority,
+        MsgType::SignalChild,
+        MsgType::ClearBell,
+        MsgType::IsWriteStalled,
         MsgType::HelloAck,
         MsgType::PaneClosedAck,
         MsgType::Subscribed,
@@ -180,6 +183,7 @@ fn msg_type_roundtrip_all() {
         MsgType::SpawnPaneResponse,
         MsgType::ListPanesResponse,
         MsgType::NewTabAck,
+        MsgType::WriteStalledStatus,
         MsgType::Error,
         MsgType::NotifyNewTab,
         MsgType::NotifyPaneOutput,
@@ -190,6 +194,12 @@ fn msg_type_roundtrip_all() {
         MsgType::NotifyPaneSnapshot,
         MsgType::NotifyClipboardLoad,
         MsgType::NotifyPaneBell,
+        MsgType::NotifyPaneUrgencyHint,
+        MsgType::ReplyHostRequest,
+        MsgType::NotifyHostClipboardLoad,
+        MsgType::NotifyHostColorQuery,
+        MsgType::NotifyDesktopNotification,
+        MsgType::NotifyClearPendingDesktopNotifications,
     ];
     for t in types {
         let raw = t as u16;
@@ -1379,5 +1389,178 @@ fn set_pane_priority_is_fire_and_forget() {
     assert!(!pdu.is_notification());
 }
 
+// -- BUG-11-011 daemon-mode HostRequest round-trip --
+
+#[test]
+fn roundtrip_notify_host_clipboard_load() {
+    let pdu = MuxPdu::NotifyHostClipboardLoad {
+        pane_id: PaneId::from_raw(11),
+        request_id: 42,
+        selection: super::host_request::WireClipboardSelection::Primary,
+        clipboard_char: b'p',
+        terminator: "\x1b\\".into(),
+    };
+    let frame = roundtrip(60, pdu.clone());
+    assert_eq!(frame.pdu, pdu);
+    assert!(frame.pdu.is_notification());
+}
+
+#[test]
+fn roundtrip_notify_host_color_query() {
+    let pdu = MuxPdu::NotifyHostColorQuery {
+        pane_id: PaneId::from_raw(12),
+        request_id: 7,
+        prefix: "10".into(),
+        index: 256,
+        terminator: "\x07".into(),
+    };
+    let frame = roundtrip(61, pdu.clone());
+    assert_eq!(frame.pdu, pdu);
+    assert!(frame.pdu.is_notification());
+}
+
+#[test]
+fn roundtrip_reply_host_request_clipboard_payload() {
+    let pdu = MuxPdu::ReplyHostRequest {
+        request_id: 99,
+        payload: super::host_request::HostReplyPayload::ClipboardLoad {
+            text: "hello daemon".into(),
+        },
+    };
+    let frame = roundtrip(62, pdu.clone());
+    assert_eq!(frame.pdu, pdu);
+    assert!(frame.pdu.is_fire_and_forget());
+}
+
+#[test]
+fn roundtrip_reply_host_request_color_payload() {
+    let pdu = MuxPdu::ReplyHostRequest {
+        request_id: 100,
+        payload: super::host_request::HostReplyPayload::ColorQuery {
+            rgb: [0xab, 0xcd, 0xef],
+        },
+    };
+    let frame = roundtrip(63, pdu.clone());
+    assert_eq!(frame.pdu, pdu);
+    assert!(frame.pdu.is_fire_and_forget());
+}
+
+#[test]
+fn roundtrip_notify_desktop_notification_all_sources() {
+    use super::host_request::WireNotificationSource;
+    for source in [
+        WireNotificationSource::Osc9,
+        WireNotificationSource::Osc99,
+        WireNotificationSource::Osc777,
+    ] {
+        let pdu = MuxPdu::NotifyDesktopNotification {
+            pane_id: PaneId::from_raw(20),
+            source,
+            title: "Title".into(),
+            body: "Body".into(),
+        };
+        let frame = roundtrip(64, pdu.clone());
+        assert_eq!(frame.pdu, pdu);
+        assert!(frame.pdu.is_notification());
+    }
+}
+
+#[test]
+fn roundtrip_notify_clear_pending_desktop_notifications() {
+    let pdu = MuxPdu::NotifyClearPendingDesktopNotifications {
+        pane_id: PaneId::from_raw(21),
+    };
+    let frame = roundtrip(65, pdu.clone());
+    assert_eq!(frame.pdu, pdu);
+    assert!(frame.pdu.is_notification());
+}
+
+#[test]
+fn msg_type_decodes_new_host_request_ids() {
+    assert_eq!(MsgType::from_u16(0x012D), Some(MsgType::ReplyHostRequest));
+    assert_eq!(
+        MsgType::from_u16(0x030B),
+        Some(MsgType::NotifyHostClipboardLoad)
+    );
+    assert_eq!(
+        MsgType::from_u16(0x030C),
+        Some(MsgType::NotifyHostColorQuery)
+    );
+    assert_eq!(
+        MsgType::from_u16(0x030D),
+        Some(MsgType::NotifyDesktopNotification)
+    );
+    assert_eq!(
+        MsgType::from_u16(0x030E),
+        Some(MsgType::NotifyClearPendingDesktopNotifications)
+    );
+}
+
 // FrameReader forward-compat tests live in `server/tests.rs` where FrameReader
 // is accessible (it's a private server submodule).
+
+// -- BUG-11-020 IsWriteStalled / WriteStalledStatus round-trips --
+
+/// Regression: BUG-11-020 — IsWriteStalled request must round-trip losslessly.
+/// See: bug-tracker/plans/BUG-11-020/00-overview.md
+#[test]
+fn roundtrip_is_write_stalled_request() {
+    let pdu = MuxPdu::IsWriteStalled {
+        pane_id: PaneId::from_raw(7),
+    };
+    let frame = roundtrip(101, pdu.clone());
+    assert_eq!(frame.pdu, pdu);
+}
+
+/// Regression: BUG-11-020 — WriteStalledStatus { stalled: true } must round-trip losslessly.
+/// See: bug-tracker/plans/BUG-11-020/00-overview.md
+#[test]
+fn roundtrip_write_stalled_status_true() {
+    let pdu = MuxPdu::WriteStalledStatus {
+        pane_id: PaneId::from_raw(7),
+        stalled: true,
+    };
+    let frame = roundtrip(102, pdu.clone());
+    assert_eq!(frame.pdu, pdu);
+}
+
+/// Regression: BUG-11-020 — WriteStalledStatus { stalled: false } must round-trip losslessly.
+/// See: bug-tracker/plans/BUG-11-020/00-overview.md
+#[test]
+fn roundtrip_write_stalled_status_false() {
+    let pdu = MuxPdu::WriteStalledStatus {
+        pane_id: PaneId::from_raw(7),
+        stalled: false,
+    };
+    let frame = roundtrip(103, pdu.clone());
+    assert_eq!(frame.pdu, pdu);
+}
+
+/// Regression: BUG-11-020 — IsWriteStalled is not fire-and-forget; it expects a response.
+/// See: bug-tracker/plans/BUG-11-020/section-03-tdd-matrix.md (classifier pin)
+#[test]
+fn is_write_stalled_request_is_not_fire_and_forget() {
+    let pdu = MuxPdu::IsWriteStalled {
+        pane_id: PaneId::from_raw(1),
+    };
+    assert!(!pdu.is_fire_and_forget());
+}
+
+/// Regression: BUG-11-020 — WriteStalledStatus is a response, not a push notification.
+/// See: bug-tracker/plans/BUG-11-020/section-03-tdd-matrix.md (classifier pin)
+#[test]
+fn write_stalled_status_response_is_not_notification() {
+    let pdu = MuxPdu::WriteStalledStatus {
+        pane_id: PaneId::from_raw(1),
+        stalled: false,
+    };
+    assert!(!pdu.is_notification());
+}
+
+/// Regression: BUG-11-020 — MsgType IDs decode for the new variants.
+/// See: bug-tracker/plans/BUG-11-020/section-03-tdd-matrix.md
+#[test]
+fn msg_type_decodes_is_write_stalled_ids() {
+    assert_eq!(MsgType::from_u16(0x012E), Some(MsgType::IsWriteStalled));
+    assert_eq!(MsgType::from_u16(0x0219), Some(MsgType::WriteStalledStatus));
+}

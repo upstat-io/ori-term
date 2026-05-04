@@ -39,6 +39,8 @@ pub(crate) enum MsgType {
     SignalChild = 0x012A,
     SetCellDimensions = 0x012B,
     ClearBell = 0x012C,
+    ReplyHostRequest = 0x012D,
+    IsWriteStalled = 0x012E,
 
     // Responses (daemon → client).
     HelloAck = 0x0201,
@@ -54,6 +56,7 @@ pub(crate) enum MsgType {
     SpawnPaneResponse = 0x0216,
     ListPanesResponse = 0x0217,
     NewTabAck = 0x0218,
+    WriteStalledStatus = 0x0219,
     Error = 0x02FF,
 
     // Push notifications (daemon → client).
@@ -67,6 +70,10 @@ pub(crate) enum MsgType {
     NotifyPaneSnapshot = 0x0307,
     NotifyNewTab = 0x0309,
     NotifyPaneUrgencyHint = 0x030A,
+    NotifyHostClipboardLoad = 0x030B,
+    NotifyHostColorQuery = 0x030C,
+    NotifyDesktopNotification = 0x030D,
+    NotifyClearPendingDesktopNotifications = 0x030E,
 }
 
 impl MsgType {
@@ -105,6 +112,8 @@ impl MsgType {
             0x012A => Some(Self::SignalChild),
             0x012B => Some(Self::SetCellDimensions),
             0x012C => Some(Self::ClearBell),
+            0x012D => Some(Self::ReplyHostRequest),
+            0x012E => Some(Self::IsWriteStalled),
             0x0201 => Some(Self::HelloAck),
             0x0205 => Some(Self::PaneClosedAck),
             0x0207 => Some(Self::Subscribed),
@@ -118,6 +127,7 @@ impl MsgType {
             0x0216 => Some(Self::SpawnPaneResponse),
             0x0217 => Some(Self::ListPanesResponse),
             0x0218 => Some(Self::NewTabAck),
+            0x0219 => Some(Self::WriteStalledStatus),
             0x02FF => Some(Self::Error),
             0x0301 => Some(Self::NotifyPaneOutput),
             0x0302 => Some(Self::NotifyPaneExited),
@@ -129,6 +139,10 @@ impl MsgType {
             0x0307 => Some(Self::NotifyPaneSnapshot),
             0x0309 => Some(Self::NotifyNewTab),
             0x030A => Some(Self::NotifyPaneUrgencyHint),
+            0x030B => Some(Self::NotifyHostClipboardLoad),
+            0x030C => Some(Self::NotifyHostColorQuery),
+            0x030D => Some(Self::NotifyDesktopNotification),
+            0x030E => Some(Self::NotifyClearPendingDesktopNotifications),
             _ => None,
         }
     }

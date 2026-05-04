@@ -11,6 +11,19 @@ use super::id::{IdAllocator, TabId, WindowId};
 use super::tab::Tab;
 use super::window::Window;
 
+/// (Window, tab-index) location of a pane within the session.
+///
+/// `window_id` is the OWNING window — the one that contains the tab, which
+/// contains the pane. `tab_index` is the position of the owning tab within
+/// that window's tab list. Resolved purely from session model state — does
+/// NOT depend on which window is "active" or "focused" at the application
+/// level (those concerns live in `oriterm/src/app/`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PaneTabPosition {
+    pub window_id: WindowId,
+    pub tab_index: usize,
+}
+
 /// GUI-side registry of tabs and windows.
 ///
 /// Owns ID allocation for tabs and windows — the mux no longer allocates
@@ -125,6 +138,25 @@ impl SessionRegistry {
             .values()
             .find(|t| t.all_panes().contains(&pane_id))
             .map(Tab::id)
+    }
+
+    /// Resolve a pane's owning (window, tab-index) position.
+    ///
+    /// Returns `None` if the pane is not registered in any tab, if the
+    /// owning tab is not in any window's tab list, or if the tab-index
+    /// lookup against the owning window's tab list fails. Used by the
+    /// application shell to route per-pane UI updates (bell pulses,
+    /// notification icons) to the correct OWNING window — independent of
+    /// which window is focused.
+    pub fn pane_position(&self, pane_id: PaneId) -> Option<PaneTabPosition> {
+        let tab_id = self.tab_for_pane(pane_id)?;
+        let window_id = self.window_for_tab(tab_id)?;
+        let win = self.get_window(window_id)?;
+        let tab_index = win.tabs().iter().position(|&t| t == tab_id)?;
+        Some(PaneTabPosition {
+            window_id,
+            tab_index,
+        })
     }
 
     /// True when this pane is the only pane across all tabs and windows.

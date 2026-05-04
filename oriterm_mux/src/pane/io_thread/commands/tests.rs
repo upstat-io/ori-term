@@ -16,11 +16,17 @@ fn pane_io_command_is_send() {
 /// Verify the manual `Debug` impl produces readable output for simple variants.
 #[test]
 fn debug_simple_variants() {
-    let cmd = PaneIoCommand::Resize { rows: 24, cols: 80 };
+    let cmd = PaneIoCommand::SetCellDimensions {
+        width: 16,
+        height: 32,
+    };
     let s = format!("{cmd:?}");
-    assert!(s.contains("Resize"), "expected 'Resize' in: {s}");
-    assert!(s.contains("24"), "expected rows in: {s}");
-    assert!(s.contains("80"), "expected cols in: {s}");
+    assert!(
+        s.contains("SetCellDimensions"),
+        "expected 'SetCellDimensions' in: {s}"
+    );
+    assert!(s.contains("16"), "expected width in: {s}");
+    assert!(s.contains("32"), "expected height in: {s}");
 
     assert_eq!(format!("{:?}", PaneIoCommand::Shutdown), "Shutdown");
     assert_eq!(

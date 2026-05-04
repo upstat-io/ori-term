@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::id::{ClientId, PaneId};
 
+use super::host_request::{HostReplyPayload, WireClipboardSelection, WireNotificationSource};
 use super::snapshot::{PaneSnapshot, WireSelection};
 
 /// Client supports receiving `NotifyPaneSnapshot` pushed snapshots.
@@ -406,10 +407,12 @@ pub enum MuxPdu {
         text: String,
     },
 
-    /// OSC 52 clipboard load request forwarded from a pane.
+    /// Legacy OSC 52 clipboard load notification from before BUG-11-011.
     ///
-    /// The `formatter` closure from the event is not serializable — the
-    /// receiving client applies its own formatting when responding.
+    /// Superseded by [`MuxPdu::NotifyHostClipboardLoad`], which carries the
+    /// daemon-allocated `request_id` for reply correlation. Retained for
+    /// wire-format append-only compatibility — new servers do not emit
+    /// this variant; new clients drop it with a warning.
     NotifyClipboardLoad {
         /// Originating pane.
         pane_id: PaneId,
@@ -429,6 +432,77 @@ pub enum MuxPdu {
         pane_id: PaneId,
         /// Full pane state snapshot.
         snapshot: PaneSnapshot,
+    },
+
+    // -- BUG-11-011: Daemon-mode HostRequest round-trip --
+    /// Daemon-allocated OSC 52 clipboard load forwarded to a single
+    /// responder client. The client services the request locally and
+    /// replies with [`ReplyHostRequest`](Self::ReplyHostRequest).
+    NotifyHostClipboardLoad {
+        /// Originating pane.
+        pane_id: PaneId,
+        /// Server-monotonic request id (raw `HostRequestId`).
+        request_id: u64,
+        /// Wire clipboard selection (`Clipboard`/`Primary`/`Select`).
+        selection: WireClipboardSelection,
+        /// Raw OSC 52 clipboard character (`b'c'`, `b'p'`, `b's'`).
+        clipboard_char: u8,
+        /// OSC string terminator (ST or BEL) for the reply.
+        terminator: String,
+    },
+    /// Daemon-allocated OSC 4 / 10 / 11 / 12 color query forwarded to a
+    /// single responder client.
+    NotifyHostColorQuery {
+        /// Originating pane.
+        pane_id: PaneId,
+        /// Server-monotonic request id (raw `HostRequestId`).
+        request_id: u64,
+        /// OSC prefix (`"4"`, `"10"`, `"11"`, `"12"`).
+        prefix: String,
+        /// Color index (palette ≤ 270 entries fits in u32).
+        index: u32,
+        /// OSC string terminator for the reply.
+        terminator: String,
+    },
+    /// Client reply to a `NotifyHostClipboardLoad` / `NotifyHostColorQuery`.
+    ///
+    /// Fire-and-forget — the daemon dispatches the payload into its
+    /// pending host-replies map keyed by `request_id`.
+    ReplyHostRequest {
+        /// Server-allocated id from the originating notification.
+        request_id: u64,
+        /// Reply data (clipboard text or RGB triple).
+        payload: HostReplyPayload,
+    },
+    /// Desktop notification (OSC 9 / 99 / 777) forwarded from a pane.
+    ///
+    /// Stateless — no token, no reply correlation required.
+    NotifyDesktopNotification {
+        /// Originating pane.
+        pane_id: PaneId,
+        /// Wire encoding of the OSC sequence that produced the notification.
+        source: WireNotificationSource,
+        /// Notification title.
+        title: String,
+        /// Notification body.
+        body: String,
+    },
+    /// Discard pending desktop notifications for a pane (OSC `RIS` reset).
+    NotifyClearPendingDesktopNotifications {
+        /// Originating pane.
+        pane_id: PaneId,
+    },
+    /// Query a pane's PTY writer-stall state. Round-trip; daemon replies with [`WriteStalledStatus`](Self::WriteStalledStatus).
+    IsWriteStalled {
+        /// Target pane.
+        pane_id: PaneId,
+    },
+    /// Response to [`IsWriteStalled`](Self::IsWriteStalled).
+    WriteStalledStatus {
+        /// Target pane.
+        pane_id: PaneId,
+        /// Whether the pane's PTY writer thread is currently stalled on a full kernel buffer.
+        stalled: bool,
     },
     // Wire-compat: append-only — new variants must go at the end.
 }

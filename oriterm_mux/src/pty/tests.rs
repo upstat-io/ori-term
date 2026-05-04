@@ -397,6 +397,7 @@ fn writer_thread_delivers_input() {
         rx,
         Arc::clone(&shutdown),
         Arc::new(AtomicBool::new(false)),
+        crossbeam_channel::bounded::<()>(1).0,
     )
     .expect("spawn writer thread");
 
@@ -430,6 +431,7 @@ fn writer_thread_batches_queued_messages() {
         rx,
         Arc::clone(&shutdown),
         Arc::new(AtomicBool::new(false)),
+        crossbeam_channel::bounded::<()>(1).0,
     )
     .expect("spawn writer thread");
     handle.join().expect("writer thread panicked");
@@ -450,6 +452,7 @@ fn writer_thread_shutdown_sets_flag() {
         rx,
         Arc::clone(&shutdown),
         Arc::new(AtomicBool::new(false)),
+        crossbeam_channel::bounded::<()>(1).0,
     )
     .expect("spawn writer thread");
 
@@ -473,6 +476,7 @@ fn writer_thread_channel_close_sets_flag() {
         rx,
         Arc::clone(&shutdown),
         Arc::new(AtomicBool::new(false)),
+        crossbeam_channel::bounded::<()>(1).0,
     )
     .expect("spawn writer thread");
 
@@ -503,6 +507,7 @@ fn writer_thread_sets_stall_flag_during_write() {
         rx,
         Arc::clone(&shutdown),
         Arc::clone(&stalled),
+        crossbeam_channel::bounded::<()>(1).0,
     )
     .expect("spawn writer thread");
 
@@ -562,6 +567,7 @@ fn ctrl_c_stuck_behind_stalled_write() {
         rx,
         Arc::clone(&shutdown),
         Arc::clone(&stalled),
+        crossbeam_channel::bounded::<()>(1).0,
     )
     .expect("spawn writer thread");
 
@@ -626,6 +632,7 @@ fn ctrl_c_delivered_after_stall_cleared() {
         rx,
         Arc::clone(&shutdown),
         Arc::clone(&stalled),
+        crossbeam_channel::bounded::<()>(1).0,
     )
     .expect("spawn writer thread");
 
@@ -726,6 +733,7 @@ fn write_stalled_flag_clears_after_write_completes() {
         rx,
         Arc::clone(&shutdown),
         Arc::clone(&stalled),
+        crossbeam_channel::bounded::<()>(1).0,
     )
     .expect("spawn writer thread");
 
@@ -736,6 +744,77 @@ fn write_stalled_flag_clears_after_write_completes() {
     assert!(
         !stalled.load(Ordering::Acquire),
         "write_stalled must be false after a successful write"
+    );
+
+    tx.send(Msg::Shutdown).unwrap();
+    handle.join().expect("writer thread panicked");
+}
+
+/// Regression: BUG-11-020 — the `write_stalled` AtomicBool must transition
+/// `false → true → false` around a kernel-buffer-fill write that subsequently
+/// drains. The existing `write_stalled_flag_clears_after_write_completes` test
+/// only sends a small payload and verifies the flag stays `false`; it does NOT
+/// exercise the true→false transition. Plan TPR codex F6 cited this test as the
+/// pin that justifies skipping the e2e drain assertion, but the cited pin
+/// doesn't actually pin the transition. This test fills the pipe to force
+/// `stalled = true`, then drains the reader to allow the blocked `write()` to
+/// complete, then verifies the flag returns to `false`.
+/// See: bug-tracker/plans/BUG-11-020/00-overview.md
+#[test]
+#[cfg(unix)]
+fn write_stalled_flag_transitions_true_then_false_around_drained_write() {
+    use std::io::Read as _;
+    use std::thread;
+    use std::time::{Duration, Instant};
+
+    let (mut reader, writer) = std::io::pipe().expect("pipe");
+    let shutdown = Arc::new(AtomicBool::new(false));
+    let stalled = Arc::new(AtomicBool::new(false));
+    let (tx, rx) = mpsc::channel();
+
+    let handle = spawn_pty_writer(
+        Box::new(writer),
+        rx,
+        Arc::clone(&shutdown),
+        Arc::clone(&stalled),
+        crossbeam_channel::bounded::<()>(1).0,
+    )
+    .expect("spawn writer thread");
+
+    // Send a payload large enough to overflow the kernel pipe buffer (default
+    // 64 KiB on Linux). 1 MiB is comfortably over any platform's default; the
+    // writer thread will block on the second/third `write()` call once the
+    // buffer fills.
+    let payload = vec![b'x'; 1 << 20];
+    tx.send(Msg::Input(payload)).unwrap();
+
+    // Poll until `stalled` flips to `true`. Deadline-as-safety, not deadline-
+    // as-signal, per `tests.md §Wall-Clock-Free Testing`.
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while Instant::now() < deadline {
+        if stalled.load(Ordering::Acquire) {
+            break;
+        }
+        thread::sleep(Duration::from_millis(5));
+    }
+    assert!(
+        stalled.load(Ordering::Acquire),
+        "write_stalled must flip to true once the pipe buffer fills",
+    );
+
+    // Drain the reader so the writer's blocked `write()` completes.
+    let mut buf = vec![0u8; 64 * 1024];
+    let drain_deadline = Instant::now() + Duration::from_secs(5);
+    while Instant::now() < drain_deadline {
+        if !stalled.load(Ordering::Acquire) {
+            break;
+        }
+        let _ = reader.read(&mut buf);
+    }
+    // Final assertion: the flag transitioned back to false after the drain.
+    assert!(
+        !stalled.load(Ordering::Acquire),
+        "write_stalled must clear back to false after the kernel buffer drains",
     );
 
     tx.send(Msg::Shutdown).unwrap();

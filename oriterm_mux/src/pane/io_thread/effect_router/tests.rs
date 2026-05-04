@@ -12,6 +12,8 @@ use std::time::Duration;
 
 use crossbeam_channel::Receiver;
 
+use super::super::handle::PENDING_RESIZE_NONE;
+
 use oriterm_core::effect::sink::EffectSink;
 use oriterm_core::effect::{
     ClipboardSelection, Effect, HostEffect, HostRequest, NotificationSource, PollResult,
@@ -39,9 +41,13 @@ fn make_router_harness() -> (
     let (_byte_tx, byte_rx) = crossbeam_channel::unbounded::<Vec<u8>>();
     let (_exit_tx, child_exit_rx): (_, Receiver<ExitStatus>) =
         crossbeam_channel::bounded::<ExitStatus>(1);
-    let (_wake_tx, response_wake_rx) = crossbeam_channel::bounded::<()>(1);
-    // Leak the auxiliary tx ends so receivers stay open for the lifetime
-    // of the test — prevents spurious EOF from firing select! arms.
+    // Effect-router harness keeps unbounded `cmd_tx` / `byte_tx` and
+    // dummy wake / exit channels so it tests effect-routing logic
+    // without coupling to BUG-11-025's bounded-cmd_tx / atomic-resize
+    // wiring (per §05 Step 5 test-harness exception). Leak the
+    // auxiliary tx ends so receivers stay open for the lifetime of
+    // the test — prevents spurious EOF from firing select! arms.
+    let (_wake_tx, io_wake_rx) = crossbeam_channel::bounded::<()>(1);
     std::mem::forget(_cmd_tx);
     std::mem::forget(_byte_tx);
     std::mem::forget(_exit_tx);
@@ -54,7 +60,7 @@ fn make_router_harness() -> (
         mux_tx,
         child_exit_rx,
         pending_child_exit: None,
-        response_wake_rx,
+        io_wake_rx,
         cmd_rx,
         byte_rx,
         shutdown: Arc::new(AtomicBool::new(false)),
@@ -75,6 +81,7 @@ fn make_router_harness() -> (
         pending_responses: Vec::new(),
         effects_buf: Vec::new(),
         last_animation_deadline: None,
+        pending_resize: Arc::new(AtomicU64::new(PENDING_RESIZE_NONE)),
         shrink_call_count: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
     };
     (thread, mux_rx, wakeup_count)
@@ -423,14 +430,6 @@ fn child_exit_effect_routes_to_pane_exited() {
 #[test]
 fn presentation_effects_do_not_produce_mux_events() {
     let (mut t, mux_rx, _wake) = make_router_harness();
-    t.terminal
-        .effect_sink()
-        .push(Effect::Presentation(PresentationEffect::Begin));
-    t.terminal
-        .effect_sink()
-        .push(Effect::Presentation(PresentationEffect::Commit {
-            snapshot_seqno: 1,
-        }));
     t.terminal
         .effect_sink()
         .push(Effect::Presentation(PresentationEffect::Abort {
@@ -892,6 +891,70 @@ fn decrqm_reset_byte_parse_emits_value_two() {
         }
         other => panic!("expected PtyWrite, got {other:?}"),
     }
+}
+
+/// Regression: BUG-11-018 — XTVERSION (CSI > q) emits DCS terminal-version response.
+///
+/// Joins the BUG-11-004 cluster covering every response kind handled in
+/// `oriterm_core/src/term/handler/status.rs`. XTVERSION's reply pipeline:
+/// raw bytes → vte CSI dispatch arm `('q', [b'>'])` (Ps=0 gate) →
+/// `Handler::xtversion()` → `Term::status_xtversion()` → `effect_sink` →
+/// `drain_effects_into_mux_events` → `MuxEvent::PtyWrite`.
+///
+/// See: bug-tracker/plans/BUG-11-018/section-03-tdd-matrix.md
+#[test]
+fn xtversion_byte_parse_emits_pty_write_response() {
+    let (mut t, mux_rx, _wake) = make_router_harness();
+    t.handle_bytes(b"\x1b[>q");
+    let event = mux_rx
+        .recv_timeout(Duration::from_millis(100))
+        .expect("expected MuxEvent::PtyWrite for XTVERSION response");
+    match event {
+        MuxEvent::PtyWrite { data, .. } => {
+            let s = String::from_utf8_lossy(&data);
+            assert!(
+                s.starts_with("\x1bP>|oriterm("),
+                "XTVERSION reply must begin with DCS > | oriterm( prefix, got: {s}"
+            );
+            assert!(
+                s.ends_with("\x1b\\"),
+                "XTVERSION reply must end with ST, got: {s}"
+            );
+        }
+        other => panic!("expected PtyWrite, got {other:?}"),
+    }
+}
+
+/// Regression: BUG-11-018 — split-chunk XTVERSION still emits exactly one response.
+///
+/// Pins that the parser handles partial-byte input correctly: feeding
+/// `\x1b[>` then `q` as separate `handle_bytes` calls must produce the
+/// same single PtyWrite as the single-chunk case.
+#[test]
+fn xtversion_split_chunk_byte_parse_emits_pty_write_response() {
+    let (mut t, mux_rx, _wake) = make_router_harness();
+    t.handle_bytes(b"\x1b[>");
+    t.handle_bytes(b"q");
+    let event = mux_rx
+        .recv_timeout(Duration::from_millis(100))
+        .expect("expected MuxEvent::PtyWrite after split-chunk XTVERSION parse");
+    match event {
+        MuxEvent::PtyWrite { data, .. } => {
+            assert!(
+                String::from_utf8_lossy(&data).contains("oriterm"),
+                "XTVERSION split-chunk reply must contain 'oriterm'"
+            );
+        }
+        other => panic!("expected PtyWrite, got {other:?}"),
+    }
+    // Negative pin: handle_bytes() is synchronous — any second event would
+    // already be queued by the time we reach this assertion. try_recv() is
+    // wall-clock-free per `.claude/rules/tests.md` §Wall-Clock-Free Testing
+    // (no `recv_timeout` deadline; deterministic against scheduler jitter).
+    assert!(
+        mux_rx.try_recv().is_err(),
+        "XTVERSION must produce exactly one PtyWrite even on split-chunk input"
+    );
 }
 
 /// Regression: BUG-11-004 — DECRQM unknown mode reports value 0 (unrecognized).

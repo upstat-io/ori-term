@@ -16,8 +16,9 @@ use crate::in_process::ClosePaneResult;
 use crate::mux_event::{MuxEvent, MuxNotification};
 use crate::registry::PaneEntry;
 
+use crate::backend::HostReply;
 use crate::protocol::messages::theme_to_wire;
-use crate::protocol::{MuxPdu, WireSelection};
+use crate::protocol::{HostReplyPayload, MuxPdu, WireSelection};
 use crate::{DomainId, PaneId};
 
 use super::MuxClient;
@@ -342,6 +343,20 @@ impl MuxBackend for MuxClient {
         }
     }
 
+    fn is_write_stalled(&mut self, pane_id: PaneId) -> bool {
+        match self.rpc(MuxPdu::IsWriteStalled { pane_id }) {
+            Ok(MuxPdu::WriteStalledStatus { stalled, .. }) => stalled,
+            Ok(other) => {
+                log::error!("is_write_stalled: unexpected response: {other:?}");
+                false
+            }
+            Err(e) => {
+                log::error!("is_write_stalled: RPC failed: {e}");
+                false
+            }
+        }
+    }
+
     fn set_bell(&mut self, pane_id: PaneId) {
         // Patch the locally-cached snapshot so the trait-default
         // `has_bell()` (which reads from the cached snapshot, single SSOT
@@ -403,6 +418,40 @@ impl MuxBackend for MuxClient {
 
     fn is_daemon_mode(&self) -> bool {
         true
+    }
+
+    fn fulfill_host_request(&mut self, _pane_id: PaneId, reply: HostReply) -> io::Result<()> {
+        // BUG-11-011: package the reply into a `MuxPdu::ReplyHostRequest` and
+        // fire it back to the daemon. The pending entry — created by the
+        // reader thread when it received the originating notification — is
+        // looked up by the token's `slot_id` to recover the daemon-allocated
+        // `request_id` that must be echoed back.
+        let transport = self.transport.as_mut().ok_or_else(|| {
+            io::Error::new(io::ErrorKind::NotConnected, "not connected to daemon")
+        })?;
+        let (slot_id, payload) = match reply {
+            HostReply::ClipboardLoad { token, text } => {
+                (token.slot_id(), HostReplyPayload::ClipboardLoad { text })
+            }
+            HostReply::ColorQuery { token, color } => (
+                token.slot_id(),
+                HostReplyPayload::ColorQuery {
+                    rgb: [color.r, color.g, color.b],
+                },
+            ),
+        };
+        let Some(pending) = transport.take_pending_reply(slot_id) else {
+            log::warn!(
+                "fulfill_host_request: no pending reply for slot_id {slot_id:?} \
+                 (token already replied or never registered)"
+            );
+            return Ok(());
+        };
+        let request_id = pending.request_id();
+        transport.try_fire_and_forget(MuxPdu::ReplyHostRequest {
+            request_id,
+            payload,
+        })
     }
 
     // -- Snapshot access --
