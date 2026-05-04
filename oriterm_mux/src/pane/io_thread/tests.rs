@@ -2336,7 +2336,7 @@ fn run_loop_sync_timeout_fires() {
         .collect();
     assert!(
         text.contains("timeout_test"),
-        "sync timeout must fire in run loop and publish buffered content, got: {text:?}"
+        "sync timeout must fire in run loop and publish inline-dispatched content, got: {text:?}"
     );
 
     // Clean shutdown.
