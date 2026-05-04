@@ -372,7 +372,12 @@ fn app_module_touched_set_under_500_lines() {
     // The 10 files this refactor touches. Paths are relative to oriterm/src/.
     const TOUCHED_FILES: &[&str] = &[
         "app/mod.rs",
-        "app/pane_accessors.rs",
+        // pane_accessors became a directory module to host its sibling
+        // tests file (the file gained a `is_pane_in_focused_tab_impl`
+        // pure helper plus 7 unit tests under tests.rs). Path pin is
+        // mod.rs for the production code; the new tests.rs is exempt
+        // from the 500-line cap per code-hygiene.md.
+        "app/pane_accessors/mod.rs",
         "app/redraw/mod.rs",
         "app/mux_pump/mod.rs",
         "app/config_reload/mod.rs",

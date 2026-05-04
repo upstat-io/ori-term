@@ -52,13 +52,26 @@ pub const MAX_PAYLOAD: u32 = 16 * 1024 * 1024;
 pub const FRAME_MAGIC: u16 = 0x4F54;
 
 /// Current protocol version. Incremented on breaking wire changes.
-pub const PROTOCOL_VERSION: u8 = 1;
+///
+/// v2 — bumped when `PaneSnapshot::has_bell` and `MuxPdu::ClearBell`
+/// were stripped from the wire (bell state moved to client-local
+/// `bell_panes`). v1 → v2 is a hard break in bincode-encoded
+/// `PaneSnapshot` layout and `MsgType` enum codepoints; a v1 peer
+/// connecting to a v2 peer will silently misdecode every snapshot
+/// frame. The Hello handshake rejects any non-equal version pair so
+/// the mismatch surfaces as a connection error instead.
+pub const PROTOCOL_VERSION: u8 = 2;
 
 /// Flag: payload is zstd-compressed.
 pub const FLAG_COMPRESSED: u8 = 0x01;
 
 /// Current IPC protocol version for Hello/HelloAck negotiation.
-pub const CURRENT_PROTOCOL_VERSION: u8 = 1;
+///
+/// Same value as `PROTOCOL_VERSION`; kept as a separate symbol so the
+/// frame-header version (used in every encode) and the handshake
+/// version (used in `MuxPdu::Hello` / `MuxPdu::HelloAck`) have
+/// independent doc comments.
+pub const CURRENT_PROTOCOL_VERSION: u8 = 2;
 
 /// Feature flag: client and server support zstd compression.
 pub const FEAT_ZSTD: u64 = 1;

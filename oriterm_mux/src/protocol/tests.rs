@@ -1021,7 +1021,7 @@ fn wire_bytes_stable_for_hello() {
 
     // Pin header bytes: magic, version, flags, msg_type, seq, payload_len.
     assert_eq!(buf[0..2], [0x54, 0x4F]); // FRAME_MAGIC LE
-    assert_eq!(buf[2], 1); // PROTOCOL_VERSION
+    assert_eq!(buf[2], PROTOCOL_VERSION); // PROTOCOL_VERSION (currently 2)
     assert_eq!(buf[3], 0); // flags
     assert_eq!(buf[4..6], [0x01, 0x01]); // MsgType::Hello
     assert_eq!(buf[6..10], [0x01, 0x00, 0x00, 0x00]); // seq=1
