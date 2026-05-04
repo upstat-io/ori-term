@@ -106,11 +106,12 @@ impl<S: EffectSink> PaneIoThread<S> {
 
             // 5. Block until the next event.
             //
-            // Mode 2026 (synchronized output): when a sync buffer is pending,
-            // the VTE processor's StdSyncHandler tracks a deadline; we must
-            // wake before the sync deadline to call stop_sync and flush the
-            // buffer — otherwise an app that crashes mid-sync hangs the
-            // terminal forever.
+            // Mode 2026 (synchronized output): when a sync window is active,
+            // the VTE processor's StdSyncHandler carries a deadline; we must
+            // wake before that deadline to call `handle_sync_timeout`, which
+            // clears `TermMode::SYNC_UPDATE` and publishes the accumulated
+            // snapshot — otherwise an app that crashes mid-sync would leave
+            // the gate set and snapshots would never publish again.
             //
             // Animation: when at least one pane has an active animation,
             // `animation_deadline` carries the next-frame instant so the
@@ -191,7 +192,8 @@ impl<S: EffectSink> PaneIoThread<S> {
                     // pending resize, and polls pending responses.
                 }
                 default(timeout) => {
-                    // Either the sync deadline fired (flush the buffer),
+                    // Either the sync deadline fired (close the Mode 2026
+                    // window — clear SYNC_UPDATE, emit Abort, publish),
                     // an animation deadline fired (next iteration's
                     // tick_animations advances the frame), or the idle
                     // sentinel expired (harmless — loop around).
