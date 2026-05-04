@@ -2099,7 +2099,7 @@ fn sync_timeout_emits_abort_effect() {
     let sink = QueueingEffectSink::new();
     let (mut t, _wakeup) = make_sync_thread_generic(sink);
 
-    // Enter sync mode + buffer content.
+    // Enter sync mode + dispatch content inline.
     t.handle_bytes(b"\x1b[?2026h");
     t.handle_bytes(b"test");
 
@@ -4134,10 +4134,9 @@ fn bsu_after_query_inside_sync_does_not_fire_spurious_handle_sync_timeout() {
     t.processor
         .advance(&mut t.terminal, b"\x1b[?2026h\x1b[c\x1b[?2026l");
 
-    // (a) DA1 response present in the effect sink (inline-dispatched
-    // within the sync window — buffered until ESU on HEAD, inline
-    // after fix; either way the response must be in the sink before
-    // the run loop returns to drain effects).
+    // (a) DA1 response present in the effect sink — inline-dispatched
+    // within the sync window. The response lands in the sink before
+    // the run loop's next drain cycle.
     let mut effects = Vec::new();
     t.terminal.effect_sink().drain_into(&mut effects);
     let da1_emitted = effects.iter().any(|e| {

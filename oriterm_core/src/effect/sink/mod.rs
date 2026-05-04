@@ -27,11 +27,7 @@ use super::Effect;
 /// if A is pushed before B, A appears before B in `drain_into()`.
 /// Effects are NOT ordered relative to state changes — an effect
 /// pushed during VTE handling may be drained before or after the
-/// next snapshot publication. Consumers that need to correlate
-/// effects with state must use `PresentationEffect::Commit`
-/// which carries the `snapshot_seqno` at the time of commit.
-/// This is the ONLY synchronization point between the effect
-/// stream and the state stream.
+/// next snapshot publication.
 ///
 /// # Thread safety
 ///

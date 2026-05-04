@@ -729,6 +729,6 @@ fn bsu_twice_in_one_feed_extends_timeout() {
     );
     assert!(
         handler.identity_reported,
-        "DA1 between the two BSUs must dispatch inline (HEAD: buffered after first BSU's terminated=true)"
+        "DA1 between the two BSUs must reach the handler inline"
     );
 }

@@ -123,9 +123,7 @@ fn legacy_format_effect(effect: &Effect) -> Option<String> {
         Effect::HostRequest(HostRequest::ColorQuery { index, .. }) => {
             format!("ColorRequest({index})")
         }
-        Effect::Presentation(PresentationEffect::Begin)
-        | Effect::Presentation(PresentationEffect::Commit { .. })
-        | Effect::Presentation(PresentationEffect::Abort { .. }) => return None,
+        Effect::Presentation(PresentationEffect::Abort { .. }) => return None,
     })
 }
 

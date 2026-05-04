@@ -432,14 +432,6 @@ fn presentation_effects_do_not_produce_mux_events() {
     let (mut t, mux_rx, _wake) = make_router_harness();
     t.terminal
         .effect_sink()
-        .push(Effect::Presentation(PresentationEffect::Begin));
-    t.terminal
-        .effect_sink()
-        .push(Effect::Presentation(PresentationEffect::Commit {
-            snapshot_seqno: 1,
-        }));
-    t.terminal
-        .effect_sink()
         .push(Effect::Presentation(PresentationEffect::Abort {
             reason: SyncAbortReason::Timeout,
         }));
