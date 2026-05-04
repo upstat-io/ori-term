@@ -617,7 +617,6 @@ fn parse_decrsps_default_ps_is_zero() {
     assert_eq!(handler.decrsps_calls, vec![(0, Vec::<u8>::new())]);
 }
 
-// =====================================================================
 // BUG-11-027 §03 matrix — Mode 2026 inline dispatch (vte-layer pins).
 //
 // These pins enforce that the parser's Mode 2026 handling dispatches
@@ -625,7 +624,6 @@ fn parse_decrsps_default_ps_is_zero() {
 // no buffering, no deferred replay. The only sync state the parser
 // holds is the deadline timer used by the run loop's `select!`
 // deadline arm to bound a sync window. See bug-tracker/plans/BUG-11-027/.
-// =====================================================================
 
 /// Negative pin: `SyncState` carries no byte buffer.
 ///

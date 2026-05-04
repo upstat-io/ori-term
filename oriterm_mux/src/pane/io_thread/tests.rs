@@ -639,9 +639,9 @@ fn produce_snapshot_respects_sync_update_mode_flag() {
     );
     t.grid_dirty.store(true, Ordering::Release);
 
-    // Send some content while sync mode is active. After BUG-11-027 the
-    // bytes dispatch INLINE (mutating the grid), but snapshot publication
-    // is still suppressed via the SYNC_UPDATE mode-flag gate.
+    // Send some content while sync mode is active. The bytes dispatch
+    // INLINE (mutating the grid), but snapshot publication is suppressed
+    // via the SYNC_UPDATE mode-flag gate.
     t.processor.advance(&mut t.terminal, b"buffered content");
 
     // Try to produce snapshot — should be suppressed because the mode
@@ -2032,10 +2032,9 @@ fn make_sync_thread_generic<S: oriterm_core::effect::EffectSink + 'static>(
 /// Semantic pin: timeout publishes the inline-mutated grid + clears
 /// SYNC_UPDATE.
 ///
-/// After BUG-11-027 there is no byte buffer to flush — bytes inside the
-/// sync window dispatched inline as they arrived, mutating the grid
-/// immediately. The timeout path's job is to clear the SYNC_UPDATE
-/// gate and publish the accumulated state.
+/// Bytes inside the sync window dispatched inline as they arrived,
+/// mutating the grid immediately. The timeout path's job is to clear
+/// the SYNC_UPDATE gate and publish the accumulated state.
 #[test]
 fn sync_timeout_publishes_inline_mutated_grid() {
     let (mut t, wakeup_count) = make_sync_thread_with_wakeup();
@@ -2248,7 +2247,7 @@ fn nested_bsu_in_sync_processes_inline_keeps_mode_set() {
     let (mut t, _wakeup) = make_sync_thread_with_wakeup();
 
     // Enter sync mode + dispatch grid bytes + nested BSU + more bytes.
-    // After BUG-11-027 every chunk dispatches inline.
+    // Every chunk dispatches inline.
     t.handle_bytes(b"\x1b[?2026h");
     t.handle_bytes(b"before");
     t.handle_bytes(b"\x1b[?2026h"); // nested BSU re-arms timer
@@ -3975,7 +3974,6 @@ fn idle_select_cmd_rx_arm_applies_pending_resize_before_reply_bearing() {
     handle.shutdown();
 }
 
-// =====================================================================
 // BUG-11-027 §03 matrix — Mode 2026 inline dispatch + snapshot gating.
 //
 // These pins enforce the user-visible "no partial frames" invariant
@@ -3984,7 +3982,6 @@ fn idle_select_cmd_rx_arm_applies_pending_resize_before_reply_bearing() {
 // window. The vendored vte parser carries no byte-level buffer; the
 // only sync state is the deadline timer used by the run loop's
 // `select!` deadline arm. See bug-tracker/plans/BUG-11-027/.
-// =====================================================================
 
 /// Semantic pin: BSU + grid-mutating bytes mutate the grid INLINE,
 /// while snapshot publication is suppressed via the `SYNC_UPDATE`

@@ -112,11 +112,7 @@ impl<T: Timeout> Processor<T> {
         H: Handler,
     {
         let mut performer = Performer::new(&mut self.state, handler);
-        let mut processed = 0;
-        while processed != bytes.len() {
-            processed +=
-                self.parser.advance_until_terminated(&mut performer, &bytes[processed..]);
-        }
+        self.parser.advance(&mut performer, bytes);
     }
 
     /// Process bytes from the PTY, recording raw `Perform` callbacks via
@@ -138,12 +134,7 @@ impl<T: Timeout> Processor<T> {
         O: super::observer::PerformObserver,
     {
         let mut observed = ObservedPerformer::new(&mut self.state, handler, observer);
-        let mut processed = 0;
-        while processed != bytes.len() {
-            processed += self
-                .parser
-                .advance_until_terminated(&mut observed, &bytes[processed..]);
-        }
+        self.parser.advance(&mut observed, bytes);
     }
 
     /// True iff a Mode 2026 sync window is active (parser-side timer

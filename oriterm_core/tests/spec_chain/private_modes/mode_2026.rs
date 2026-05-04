@@ -166,7 +166,6 @@ fn mode_2026_does_not_touch_unrelated_flags() {
     );
 }
 
-// =====================================================================
 // BUG-11-027 §03 matrix — device-query bytes inside Mode 2026 dispatch
 // inline, not deferred to ESU/timeout.
 //
@@ -178,7 +177,6 @@ fn mode_2026_does_not_touch_unrelated_flags() {
 //
 // All 11 query classes from §01 blast radius are covered, plus the
 // DECRQM unknown / set / reset axes added by Plan TPR rounds 0-1.
-// =====================================================================
 
 /// Helper: assert a specific PTY response is in the harness transcript.
 ///
