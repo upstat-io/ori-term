@@ -1554,7 +1554,7 @@ fn roundtrip_write_stalled_status_false() {
 /// Regression: IsWriteStalled is not fire-and-forget; it expects a response.
 /// See: bug-tracker/plans//section-03-tdd-matrix.md (classifier pin)
 #[test]
-fn is_write_stalled_request_is_not_fire_and_forget() {
+fn write_stalled_request_classified_as_round_trip_rpc() {
     let pdu = MuxPdu::IsWriteStalled {
         pane_id: PaneId::from_raw(1),
     };

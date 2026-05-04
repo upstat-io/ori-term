@@ -35,6 +35,18 @@ use super::App;
 /// `mux_pump/tests.rs::apply_bell_focus_decision_*`: focused-tab
 /// input ⇒ `clear_bell` only; non-focused-tab input ⇒ `set_bell`
 /// only; the partner method is never called on the wrong branch.
+///
+/// **Intentional asymmetry: `handle_command_complete` does NOT call
+/// this helper.** Command completion is a "set on background only"
+/// trigger — a finishing command on a background pane lights the
+/// indicator, but completion on a focused-tab pane is a no-op. It
+/// must NEVER call `clear_bell`, because doing so would erase a
+/// pre-existing background bell on the same pane (e.g. a long-running
+/// shell that rang `\a` then printed an OSC 133;D marker as it
+/// exited). The `PaneBell` + `DesktopNotification` arms own the
+/// silence semantics; `CommandComplete` owns the strict-set
+/// semantics. The helper unifies the former; the latter inlines the
+/// guard.
 fn apply_bell_focus_decision(is_in_focused_tab: bool, mux: &mut dyn MuxBackend, pane_id: PaneId) {
     if is_in_focused_tab {
         mux.clear_bell(pane_id);
@@ -246,14 +258,7 @@ impl App {
                     audio::play_bell();
                 }
                 if mode.is_visual() {
-                    if let Some(mux) = self.mux.as_mut() {
-                        apply_bell_focus_decision(is_in_focused_tab, mux.as_mut(), pane_id);
-                    }
-                    self.sync_tab_bar_for_pane(pane_id);
-                    if !is_in_focused_tab {
-                        self.ring_owning_window_tab_bell(pane_id, Instant::now());
-                    }
-                    self.mark_pane_window_dirty(pane_id);
+                    self.dispatch_desktop_notification_visual(pane_id, is_in_focused_tab);
                 }
             }
             MuxNotification::ClearPendingDesktopNotifications(_pane_id) => {
@@ -469,6 +474,24 @@ impl App {
     fn handle_daemon_disconnect(&self) {
         log::warn!("daemon connection lost, closing window");
         self.exit_app();
+    }
+
+    /// Apply visual-mode side-effects of a `DesktopNotification`.
+    ///
+    /// Extracted from `handle_mux_notification`'s arm to keep the match
+    /// arm under the nesting-depth cap. Performs the focus-gated bell
+    /// state mutation, owning-window tab-bar sync, background-pane bell
+    /// pulse, and window-dirty mark — i.e. the visual-mode counterpart
+    /// to the audible-bell branch in the parent arm.
+    fn dispatch_desktop_notification_visual(&mut self, pane_id: PaneId, is_in_focused_tab: bool) {
+        if let Some(mux) = self.mux.as_mut() {
+            apply_bell_focus_decision(is_in_focused_tab, mux.as_mut(), pane_id);
+        }
+        self.sync_tab_bar_for_pane(pane_id);
+        if !is_in_focused_tab {
+            self.ring_owning_window_tab_bell(pane_id, Instant::now());
+        }
+        self.mark_pane_window_dirty(pane_id);
     }
 }
 
