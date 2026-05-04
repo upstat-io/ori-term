@@ -365,11 +365,13 @@ impl MuxBackend for MuxClient {
     }
 
     fn cleanup_closed_pane(&mut self, pane_id: PaneId) {
-        // The trait default body is a no-op. Without this override
-        // `bell_panes` leaks for every notification-driven pane closure
-        // (shell exit, PTY EOF), accumulating stale pane IDs across
-        // pane open/close cycles.
-        self.bell_panes.remove(&pane_id);
+        // The trait default body is a no-op. Without this override the
+        // notification-driven close path (shell exit, PTY EOF) would
+        // leak every per-pane backend cache. `remove_snapshot` is the
+        // SSOT for client-side close cleanup — it drains
+        // `pane_snapshots`, `dirty_panes`, `pending_refresh`,
+        // `bell_panes`, and the transport's pushed-snapshot cache in
+        // one place.
         self.remove_snapshot(pane_id);
     }
 

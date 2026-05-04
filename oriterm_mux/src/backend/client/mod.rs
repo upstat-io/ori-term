@@ -119,11 +119,20 @@ impl MuxClient {
         self.pane_snapshots.insert(pane_id, snapshot);
     }
 
-    /// Remove a cached snapshot (used when a pane is closed).
+    /// Remove all per-pane caches for `pane_id` (used when a pane is closed).
+    ///
+    /// Drains every backend-local index keyed by `PaneId` so explicit
+    /// `close_pane`, notification-driven `cleanup_closed_pane`, and any
+    /// other close path share one cleanup point. `bell_panes` is included
+    /// here because the App-level focus gate populates it independently of
+    /// `pane_snapshots`; without dropping it here a `close_pane` (RPC
+    /// path) would leave a stale `has_bell == true` for a recycled
+    /// `PaneId`.
     pub(crate) fn remove_snapshot(&mut self, pane_id: PaneId) {
         self.pane_snapshots.remove(&pane_id);
         self.dirty_panes.remove(&pane_id);
         self.pending_refresh.remove(&pane_id);
+        self.bell_panes.remove(&pane_id);
         if let Some(transport) = &self.transport {
             transport.invalidate_pushed_snapshot(pane_id);
         }

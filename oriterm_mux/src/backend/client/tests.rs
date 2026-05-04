@@ -1379,3 +1379,27 @@ fn cleanup_closed_pane_drains_bell_panes_in_client_mode() {
         "cleanup_closed_pane must drain bell_panes — leak guard"
     );
 }
+
+/// `remove_snapshot` MUST drain `bell_panes` along with the other
+/// per-pane caches. Pinned because every client-side close path —
+/// explicit `close_pane`, notification-driven `cleanup_closed_pane`,
+/// reconnect's stale-key cleanup — funnels through `remove_snapshot`.
+/// A regression that re-introduced a separate explicit drain only on
+/// some paths would leave stale bell entries on the others.
+#[test]
+fn remove_snapshot_drains_bell_panes() {
+    use crate::backend::MuxBackend;
+
+    let mut client = MuxClient::new();
+    let p = PaneId::from_raw(1);
+
+    client.set_bell(p);
+    assert!(client.has_bell(p));
+
+    client.remove_snapshot(p);
+
+    assert!(
+        !client.has_bell(p),
+        "remove_snapshot must drain bell_panes — every close path uses it"
+    );
+}

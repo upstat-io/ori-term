@@ -140,13 +140,19 @@ impl ApplicationHandler<TermEvent> for App {
                         // never clears. Runs BEFORE blink re-evaluation,
                         // send_focus_event, and opacity adjustment so no
                         // transient bell-icon flicker shows during the
-                        // focus cascade.
+                        // focus cascade. The follow-up tab-bar sync is
+                        // load-bearing: `clear_tab_bells` only updates
+                        // `bell_panes` on the backend; the tab-bar
+                        // widget's entries (which carry `has_bell` per
+                        // tab) still reflect the pre-clear state until
+                        // a sync re-reads `mux.has_bell` for each pane.
                         if let Some(active_tab_id) = self
                             .session
                             .get_window(mux_id)
                             .and_then(crate::session::Window::active_tab)
                         {
                             self.clear_tab_bells(active_tab_id);
+                            self.sync_tab_bar_for_session_window(mux_id);
                         }
                     }
                     // Re-evaluate blink from config + pane's terminal mode.
