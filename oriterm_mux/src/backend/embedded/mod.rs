@@ -39,6 +39,11 @@ pub struct EmbeddedMux {
     wakeup_pending: Arc<AtomicBool>,
     snapshot_cache: HashMap<PaneId, PaneSnapshot>,
     snapshot_dirty: HashSet<PaneId>,
+    /// Client-local bell-indicator state. SSOT for `has_bell()` queries
+    /// in embedded mode — uniform with `MuxClient::bell_panes` per
+    /// BUG-11-028. Decouples bell state from snapshot replication so
+    /// future architectural consistency holds across backends.
+    bell_panes: HashSet<PaneId>,
     /// Per-pane [`RenderableContent`] cache, filled by
     /// [`refresh_pane_snapshot`](MuxBackend::refresh_pane_snapshot) and
     /// consumed by [`swap_renderable_content`](MuxBackend::swap_renderable_content).
@@ -73,6 +78,7 @@ impl EmbeddedMux {
             snapshot_cache: HashMap::new(),
             snapshot_dirty: HashSet::new(),
             renderable_cache: HashMap::new(),
+            bell_panes: HashSet::new(),
         }
     }
 }
@@ -335,31 +341,19 @@ impl MuxBackend for EmbeddedMux {
             .is_some_and(|p| p.signal_child(signal))
     }
 
+    fn has_bell(&self, pane_id: PaneId) -> bool {
+        // Per BUG-11-028: bell state lives in client-local `bell_panes`,
+        // uniform with MuxClient. Decoupled from snapshot replication.
+        self.bell_panes.contains(&pane_id)
+    }
+
     fn set_bell(&mut self, pane_id: PaneId) {
-        if let Some(pane) = self.panes.get_mut(&pane_id) {
-            pane.set_bell();
-        }
-        // Patch the cached snapshot in-place so the trait-default
-        // `has_bell()` (which reads from the cached snapshot, single SSOT
-        // across embedded + daemon backends) sees the fresh value
-        // immediately, without waiting for the IO thread to publish a new
-        // snapshot.
-        if let Some(snap) = self.snapshot_cache.get_mut(&pane_id) {
-            snap.has_bell = true;
-        }
+        self.bell_panes.insert(pane_id);
     }
 
     fn clear_bell(&mut self, pane_id: PaneId) {
-        if let Some(pane) = self.panes.get_mut(&pane_id) {
-            pane.clear_bell();
-        }
-        if let Some(snap) = self.snapshot_cache.get_mut(&pane_id) {
-            snap.has_bell = false;
-        }
+        self.bell_panes.remove(&pane_id);
     }
-
-    // `has_bell` uses the `MuxBackend` trait default which reads from
-    // the cached snapshot — same code path as the daemon client.
 
     fn set_unseen_output(&mut self, pane_id: PaneId) {
         if let Some(pane) = self.panes.get_mut(&pane_id) {
@@ -384,6 +378,11 @@ impl MuxBackend for EmbeddedMux {
             self.snapshot_cache.remove(&pane_id);
             self.snapshot_dirty.remove(&pane_id);
             self.renderable_cache.remove(&pane_id);
+            // Per BUG-11-028: also clear local bell state — without this
+            // bell_panes accumulates stale pane IDs across pane open/close
+            // cycles, leaking memory and producing icon ghosts on tab
+            // re-render (cleared pane id matches a future recycled id).
+            self.bell_panes.remove(&pane_id);
             // Drop on a background thread to avoid blocking the event loop.
             // Pane destruction involves PTY kill, reader thread join, and child reap.
             std::thread::spawn(move || drop(pane));

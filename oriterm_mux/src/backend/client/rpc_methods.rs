@@ -37,25 +37,15 @@ impl MuxBackend for MuxClient {
             transport.poll_notifications(&mut self.notifications);
         }
 
-        // Scan buffered notifications to mark panes dirty for rendering AND
-        // patch the cached snapshot's `has_bell` flag for instant tab-bell-
-        // icon feedback. The daemon also pushes the bell flag in the next
-        // snapshot, but that may lag the PaneBell / CommandComplete PDU by
-        // a tick — patching here gives the consumer arms (which read
-        // `has_bell` via the trait default → cached snapshot) fresh state
-        // immediately.
+        // Scan buffered notifications ONLY to mark panes dirty for rendering.
+        // Bell-indicator state lives in `self.bell_panes` and is mutated by
+        // the App's MuxNotification::PaneBell arm (via `set_bell`) AFTER its
+        // focus-gate decision — `poll_events` does NOT make focus decisions
+        // and must NOT mutate bell state. Per BUG-11-028 + Plan TPR Round 1
+        // gemini F2: App is the SSOT for focus-decided bell state.
         for notif in &self.notifications {
-            match notif {
-                MuxNotification::PaneOutput(pane_id) => {
-                    self.dirty_panes.insert(*pane_id);
-                }
-                MuxNotification::PaneBell(pane_id)
-                | MuxNotification::CommandComplete { pane_id, .. } => {
-                    if let Some(snap) = self.pane_snapshots.get_mut(pane_id) {
-                        snap.has_bell = true;
-                    }
-                }
-                _ => {}
+            if let MuxNotification::PaneOutput(pane_id) = notif {
+                self.dirty_panes.insert(*pane_id);
             }
         }
     }
@@ -357,30 +347,31 @@ impl MuxBackend for MuxClient {
         }
     }
 
+    fn has_bell(&self, pane_id: PaneId) -> bool {
+        // Bell-indicator state is client-local UI state per BUG-11-028.
+        // Reads from `bell_panes`, NOT `pane_snapshots[*].has_bell`
+        // (which has been removed from the wire as of this fix). The App
+        // populates `bell_panes` via `set_bell` after its focus-gate
+        // decision; `clear_bell` (focus-clear path) and
+        // `cleanup_closed_pane` (pane lifecycle) remove entries.
+        self.bell_panes.contains(&pane_id)
+    }
+
     fn set_bell(&mut self, pane_id: PaneId) {
-        // Patch the locally-cached snapshot so the trait-default
-        // `has_bell()` (which reads from the cached snapshot, single SSOT
-        // across embedded + daemon backends) sees the fresh value
-        // immediately. The daemon's IO thread also sets the flag on its
-        // own pane via `event_pump.rs` and will include it in the next
-        // pushed snapshot — this local patch just removes the inter-tick
-        // latency.
-        if let Some(snap) = self.pane_snapshots.get_mut(&pane_id) {
-            snap.has_bell = true;
-        }
+        self.bell_panes.insert(pane_id);
     }
 
     fn clear_bell(&mut self, pane_id: PaneId) {
-        // Patch the local cache for instant icon dismiss on tab focus.
-        if let Some(snap) = self.pane_snapshots.get_mut(&pane_id) {
-            snap.has_bell = false;
-        }
-        // Forward to the daemon so its `Pane.has_bell` clears too —
-        // otherwise the next pushed snapshot would re-introduce
-        // `has_bell = true` after the client cleared it locally.
-        if let Some(transport) = &mut self.transport {
-            transport.fire_and_forget(MuxPdu::ClearBell { pane_id });
-        }
+        self.bell_panes.remove(&pane_id);
+    }
+
+    fn cleanup_closed_pane(&mut self, pane_id: PaneId) {
+        // Per BUG-11-028 Plan TPR Round 1 critical (gemini+opencode
+        // agreement): without this override the trait default at
+        // `backend/mod.rs:346` is a no-op and `bell_panes` leaks for
+        // every notification-driven pane closure (shell exit, PTY EOF).
+        self.bell_panes.remove(&pane_id);
+        self.remove_snapshot(pane_id);
     }
 
     fn signal_child(&mut self, pane_id: PaneId, signal: crate::Signal) -> bool {
