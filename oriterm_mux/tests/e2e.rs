@@ -2104,21 +2104,25 @@ fn configure_pane_for_stall(client: &mut MuxClient, pane_id: PaneId) {
     );
 }
 
-/// Pump 8 MiB chunks until `client.is_write_stalled(pane_id)` returns `true`
+/// Pump 1 MiB chunks until `client.is_write_stalled(pane_id)` returns `true`
 /// or the deadline expires. Returns `true` if stall was observed, `false` on
 /// timeout. Deadline-as-safety, not deadline-as-signal, per
 /// `tests.md §Wall-Clock-Free Testing`.
+///
+/// 1 MiB chunks plus a per-poll deadline check keep the per-iteration RPC
+/// budget bounded. The pre-fix shape (8 MiB chunks + a 50-deep inner poll
+/// loop with no inner deadline) burned ~250 s per outer iter on
+/// CPU-constrained CI runners once any RPC saw the 5 s `RPC_TIMEOUT`. See
+/// BUG-11-047 §05 step 5.
 fn pump_until_stalled(client: &mut MuxClient, pane_id: PaneId) -> bool {
-    let payload = vec![b'x'; 8 * 1024 * 1024];
+    let payload = vec![b'x'; 1024 * 1024];
     let deadline = Instant::now() + Duration::from_secs(30);
     while Instant::now() < deadline {
         client.send_input(pane_id, &payload);
-        for _ in 0..50 {
-            if client.is_write_stalled(pane_id) {
-                return true;
-            }
-            thread::sleep(Duration::from_millis(2));
+        if client.is_write_stalled(pane_id) {
+            return true;
         }
+        thread::sleep(Duration::from_millis(2));
     }
     false
 }

@@ -1,18 +1,18 @@
 //! Background reader thread for the IPC transport.
 //!
-//! The reader thread owns the IPC stream. It drains outbound requests from
-//! an mpsc channel, writes them to the stream, reads responses and
-//! notifications, and dispatches them to the correct reply channel or
-//! notification channel.
+//! The reader thread owns the cloned read half of the IPC stream. It
+//! reads frames, dispatches replies to the shared pending map, and routes
+//! push notifications. Outbound writes belong to the writer thread
+//! (`writer.rs`); the reader is read-only so a backpressured write never
+//! blocks reply delivery (BUG-11-047).
 
 // Platform FFI for poll(2), pipe read/drain.
 
 use std::collections::HashMap;
 use std::io;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc;
-use std::sync::{Arc, Mutex};
-use std::time::Instant;
+use std::sync::{Arc, Mutex, PoisonError};
 
 #[cfg(unix)]
 use std::os::fd::{AsRawFd, RawFd};
@@ -26,7 +26,7 @@ use crate::protocol::{DecodedFrame, MuxPdu, ProtocolCodec};
 use crate::{PaneId, PaneSnapshot};
 
 use super::super::notification::pdu_to_notification;
-use super::{PING_INTERVAL, PendingClientReply, READ_POLL_INTERVAL, SendRequest};
+use super::{PendingClientReply, READ_POLL_INTERVAL};
 
 /// Dispatch a received notification PDU.
 ///
@@ -47,7 +47,7 @@ fn dispatch_notification(
         MuxPdu::NotifyPaneSnapshot { pane_id, snapshot } => {
             pushed_snapshots
                 .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .unwrap_or_else(PoisonError::into_inner)
                 .insert(pane_id, snapshot);
             let _ = notif_tx.send(MuxNotification::PaneOutput(pane_id));
             (wakeup)();
@@ -55,7 +55,7 @@ fn dispatch_notification(
         MuxPdu::NotifyPaneOutput { pane_id } => {
             pushed_snapshots
                 .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .unwrap_or_else(PoisonError::into_inner)
                 .remove(&pane_id);
             let _ = notif_tx.send(MuxNotification::PaneOutput(pane_id));
             (wakeup)();
@@ -70,7 +70,7 @@ fn dispatch_notification(
             let token = ResponseToken::<String>::new();
             pending_replies
                 .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .unwrap_or_else(PoisonError::into_inner)
                 .insert(
                     token.slot_id(),
                     PendingClientReply::Clipboard { request_id },
@@ -94,7 +94,7 @@ fn dispatch_notification(
             let token = ResponseToken::<oriterm_core::color::Rgb>::new();
             pending_replies
                 .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .unwrap_or_else(PoisonError::into_inner)
                 .insert(token.slot_id(), PendingClientReply::Color { request_id });
             let _ = notif_tx.send(MuxNotification::HostColorQuery {
                 pane_id,
@@ -187,12 +187,15 @@ fn wait_for_readable(stream: &ClientStream, wake_read: RawFd, timeout_ms: i32) -
 
 /// Background reader thread event loop.
 ///
-/// Owns the IPC stream. Drains outbound requests from the send channel,
-/// writes them to the stream, reads responses and notifications, and
-/// dispatches them to the correct reply channel or notification channel.
+/// Owns the cloned read half of the IPC stream. Pure reader: blocks on
+/// socket readability via `poll(2)` (with the wake pipe as a shutdown
+/// signal), reads frames, and dispatches them to the shared pending map
+/// (RPC replies) or notification channel (push notifications). Outbound
+/// writes are owned by the writer thread (BUG-11-047 architectural split).
 ///
-/// Uses `poll(2)` via the wake pipe to instantly unblock when the main
-/// thread queues an outbound request, eliminating polling latency.
+/// `outstanding_ping_seq` is shared with the writer thread: writer sets
+/// it on Ping send, reader clears it on `PingAck`. `0` is the "no
+/// outstanding ping" sentinel.
 #[allow(
     clippy::needless_pass_by_value,
     clippy::too_many_arguments,
@@ -200,12 +203,13 @@ fn wait_for_readable(stream: &ClientStream, wake_read: RawFd, timeout_ms: i32) -
 )]
 pub(super) fn reader_loop(
     mut stream: ClientStream,
-    send_rx: mpsc::Receiver<SendRequest>,
     notif_tx: mpsc::Sender<MuxNotification>,
     wakeup: Arc<dyn Fn() + Send + Sync>,
     alive: Arc<AtomicBool>,
     pushed_snapshots: Arc<Mutex<HashMap<PaneId, PaneSnapshot>>>,
     pending_replies: Arc<Mutex<HashMap<ResponseTokenId, PendingClientReply>>>,
+    pending: Arc<Mutex<HashMap<u32, mpsc::Sender<MuxPdu>>>>,
+    outstanding_ping_seq: Arc<AtomicU64>,
     #[cfg(unix)] wake_read: RawFd,
 ) {
     // Set a short read timeout as a safety net for edge cases where poll(2)
@@ -216,73 +220,25 @@ pub(super) fn reader_loop(
         return;
     }
 
-    let mut pending: HashMap<u32, mpsc::Sender<MuxPdu>> = HashMap::new();
     let mut codec = ProtocolCodec::new();
 
-    // Health-check ping state.
-    let mut last_ping_sent = Instant::now();
-    let mut outstanding_ping_seq: Option<u32> = None;
-    // Ping seqs count down from u32::MAX to avoid colliding with RPC seqs.
-    let mut ping_seq_counter = u32::MAX;
-
     loop {
-        // 1. Drain outbound requests.
-        loop {
-            match send_rx.try_recv() {
-                Ok(req) => {
-                    if let Some(reply_tx) = req.reply_tx {
-                        pending.insert(req.seq, reply_tx);
-                    }
-                    if let Err(e) = ProtocolCodec::encode_frame(&mut stream, req.seq, &req.pdu) {
-                        log::error!("mux-client-reader: write error: {e}");
-                        alive.store(false, Ordering::Release);
-                        return;
-                    }
-                }
-                Err(mpsc::TryRecvError::Empty) => break,
-                Err(mpsc::TryRecvError::Disconnected) => {
-                    // Transport dropped — shut down.
-                    alive.store(false, Ordering::Release);
-                    return;
-                }
-            }
+        if !alive.load(Ordering::Acquire) {
+            return;
         }
 
-        // 2. Health-check ping.
-        if last_ping_sent.elapsed() >= PING_INTERVAL {
-            if let Some(_seq) = outstanding_ping_seq {
-                // Previous ping unanswered — daemon is unresponsive.
-                log::warn!("mux-client-reader: ping timeout, marking connection dead");
-                alive.store(false, Ordering::Release);
-                return;
-            }
-            let seq = ping_seq_counter;
-            ping_seq_counter = ping_seq_counter.wrapping_sub(1);
-            if let Err(e) = ProtocolCodec::encode_frame(&mut stream, seq, &MuxPdu::Ping) {
-                log::error!("mux-client-reader: ping write error: {e}");
-                alive.store(false, Ordering::Release);
-                return;
-            }
-            outstanding_ping_seq = Some(seq);
-            last_ping_sent = Instant::now();
-        }
-
-        // 3. Wait for socket data or wake signal (or health-check timeout).
+        // 1. Wait for socket data or wake signal (shutdown).
         //
-        // First try a non-blocking poll (0ms timeout) to avoid any timer
-        // granularity overhead. Only fall back to a blocking poll if there
-        // are no pending outbound requests (send_rx is empty).
+        // First try a non-blocking poll (0ms timeout) to skip kernel timer
+        // granularity. Fall back to a blocking poll bounded by a short
+        // safety interval so we periodically observe the alive flag.
         #[cfg(unix)]
         let socket_ready = {
-            // Fast path: non-blocking check.
             if wait_for_readable(&stream, wake_read, 0) {
                 true
             } else {
-                // Slow path: block up to the remaining ping interval.
-                let timeout_ms = PING_INTERVAL
-                    .saturating_sub(last_ping_sent.elapsed())
-                    .as_millis() as i32;
-                wait_for_readable(&stream, wake_read, timeout_ms.max(1))
+                // 1-second safety bound — alive-flag observation cadence.
+                wait_for_readable(&stream, wake_read, 1000)
             }
         };
         #[cfg(not(unix))]
@@ -292,16 +248,15 @@ pub(super) fn reader_loop(
         };
 
         if !socket_ready {
-            // Woken by pipe or timeout — loop back to drain outbound + ping.
             continue;
         }
 
-        // 4. Read and dispatch all available frames.
+        // 2. Read and dispatch all available frames.
         if !read_and_dispatch_frames(
             &mut stream,
             &mut codec,
-            &mut pending,
-            &mut outstanding_ping_seq,
+            &pending,
+            &outstanding_ping_seq,
             &pushed_snapshots,
             &pending_replies,
             &notif_tx,
@@ -325,8 +280,8 @@ pub(super) fn reader_loop(
 fn read_and_dispatch_frames(
     stream: &mut ClientStream,
     codec: &mut ProtocolCodec,
-    pending: &mut HashMap<u32, mpsc::Sender<MuxPdu>>,
-    outstanding_ping_seq: &mut Option<u32>,
+    pending: &Mutex<HashMap<u32, mpsc::Sender<MuxPdu>>>,
+    outstanding_ping_seq: &AtomicU64,
     pushed_snapshots: &Mutex<HashMap<PaneId, PaneSnapshot>>,
     pending_replies: &Mutex<HashMap<ResponseTokenId, PendingClientReply>>,
     notif_tx: &mpsc::Sender<MuxNotification>,
@@ -335,8 +290,9 @@ fn read_and_dispatch_frames(
     loop {
         match codec.decode_frame(stream) {
             Ok(DecodedFrame { seq, pdu }) => {
-                if *outstanding_ping_seq == Some(seq) && pdu == MuxPdu::PingAck {
-                    *outstanding_ping_seq = None;
+                let expected_ping = outstanding_ping_seq.load(Ordering::Acquire);
+                if expected_ping != 0 && expected_ping == u64::from(seq) && pdu == MuxPdu::PingAck {
+                    outstanding_ping_seq.store(0, Ordering::Release);
                     #[cfg(unix)]
                     if !codec.has_buffered_data() && !socket_has_data(stream) {
                         break;
@@ -346,12 +302,18 @@ fn read_and_dispatch_frames(
 
                 if seq == 0 || pdu.is_notification() {
                     dispatch_notification(pdu, pushed_snapshots, pending_replies, notif_tx, wakeup);
-                } else if let Some(reply_tx) = pending.remove(&seq) {
-                    let _ = reply_tx.send(pdu);
                 } else {
-                    log::warn!(
-                        "mux-client-reader: no pending request for seq={seq}, dropping response"
-                    );
+                    let entry = pending
+                        .lock()
+                        .unwrap_or_else(PoisonError::into_inner)
+                        .remove(&seq);
+                    if let Some(reply_tx) = entry {
+                        let _ = reply_tx.send(pdu);
+                    } else {
+                        log::warn!(
+                            "mux-client-reader: no pending request for seq={seq}, dropping response"
+                        );
+                    }
                 }
 
                 // Break early if no more data in buffer or on socket —

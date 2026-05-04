@@ -143,8 +143,8 @@ impl ClientStream {
     /// Returns a new `ClientStream` whose handle is a `DuplicateHandle` of
     /// this stream's handle. Both handles reference the same named-pipe
     /// instance. For duplex pipes opened with `GENERIC_READ | GENERIC_WRITE`,
-    /// concurrent ReadFile via one handle and WriteFile via the other from
-    /// different threads is supported by the Win32 I/O subsystem — the
+    /// concurrent `ReadFile` via one handle and `WriteFile` via the other
+    /// from different threads is supported by the Win32 I/O subsystem — the
     /// internal read/write queues for a duplex pipe are independent.
     ///
     /// Used by the `MuxClient` transport to give a dedicated writer thread

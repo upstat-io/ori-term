@@ -6,14 +6,17 @@
 
 // Platform FFI for self-pipe wakeup (pipe2, poll, read, write, close).
 
+mod handshake;
 mod reader;
+mod wake_pipe;
+mod writer;
 
 use std::collections::HashMap;
 use std::io;
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::thread::JoinHandle;
 use std::time::Duration;
 
@@ -26,7 +29,7 @@ use oriterm_core::effect::ResponseTokenId;
 
 use crate::id::ClientId;
 use crate::mux_event::MuxNotification;
-use crate::protocol::{MuxPdu, ProtocolCodec};
+use crate::protocol::MuxPdu;
 use crate::{PaneId, PaneSnapshot};
 
 /// Bookkeeping for a host-request received from the daemon, awaiting the
@@ -80,23 +83,33 @@ struct SendRequest {
 
 /// IPC transport to the mux daemon.
 ///
-/// Manages a background reader thread that owns the stream. The main thread
-/// sends requests via an mpsc channel and blocks on per-request oneshot
-/// replies. Push notifications are buffered in a separate channel.
+/// Manages background **reader** and **writer** threads (BUG-11-047
+/// architectural split): the writer drains the outbound mpsc and writes
+/// frames to its half of the cloned stream; the reader pulls inbound
+/// frames from its half and dispatches them to the shared pending map or
+/// notification channel. Splitting reads from writes lets the reader
+/// always service replies even while the writer is blocked on a
+/// backpressured `write()`.
+///
+/// The main thread sends requests via the mpsc channel and blocks on
+/// per-request oneshot replies. Push notifications are buffered in a
+/// separate channel.
 pub(super) struct ClientTransport {
-    /// Channel to queue outbound requests for the reader thread.
+    /// Channel to queue outbound requests for the writer thread.
     /// Wrapped in `Option` so `Drop` can close the channel before joining
-    /// the reader thread (Rust drops fields *after* `Drop::drop` runs).
+    /// the writer thread (Rust drops fields *after* `Drop::drop` runs).
     send_tx: Option<mpsc::Sender<SendRequest>>,
     /// Channel to receive push notifications from the reader thread.
     notif_rx: mpsc::Receiver<MuxNotification>,
     /// Monotonic sequence counter for request/response correlation.
     next_seq: u32,
-    /// Reader thread handle (joined on drop).
+    /// Writer thread handle (joined on drop, before the reader).
+    writer_handle: Option<JoinHandle<()>>,
+    /// Reader thread handle (joined on drop, after the writer).
     reader_handle: Option<JoinHandle<()>>,
     /// Client ID assigned by the daemon during handshake.
     client_id: ClientId,
-    /// Set to `false` when the reader thread exits.
+    /// Set to `false` when either thread exits.
     alive: Arc<AtomicBool>,
     /// Shared snapshot slot: reader thread inserts pushed snapshots,
     /// main thread takes them at render time. Bounds memory to `O(num_panes)`.
@@ -105,8 +118,8 @@ pub(super) struct ClientTransport {
     /// during flood output. Set by the guarded wakeup closure, cleared
     /// by [`clear_wakeup_pending`](Self::clear_wakeup_pending) in `poll_events`.
     wakeup_pending: Arc<AtomicBool>,
-    /// Write end of the self-pipe used to wake the reader thread instantly
-    /// when an outbound request is queued (Unix only).
+    /// Write end of the self-pipe used to wake the reader thread on
+    /// shutdown (Unix only).
     #[cfg(unix)]
     wake_write: RawFd,
     /// Pending host-request replies received from the daemon — keyed by
@@ -125,73 +138,18 @@ impl ClientTransport {
     /// can wake and process them.
     #[allow(
         clippy::too_many_lines,
-        reason = "linear handshake + state-init sequence; splitting would scatter setup"
+        reason = "linear setup sequence — channels, threads, struct init; splitting would scatter ownership"
     )]
     pub(super) fn connect(path: &Path, wakeup: Arc<dyn Fn() + Send + Sync>) -> io::Result<Self> {
         let mut stream = ClientStream::connect(path)?;
-
-        // Send Hello handshake.
-        let pid = std::process::id();
-        ProtocolCodec::encode_frame(
-            &mut stream,
-            1,
-            &MuxPdu::Hello {
-                pid,
-                protocol_version: crate::protocol::CURRENT_PROTOCOL_VERSION,
-                features: crate::protocol::FEAT_ZSTD,
-            },
-        )?;
-
-        // Read HelloAck (blocking, no timeout — daemon should respond quickly).
-        let frame = ProtocolCodec::new()
-            .decode_frame(&mut stream)
-            .map_err(|e| {
-                io::Error::new(
-                    io::ErrorKind::ConnectionRefused,
-                    format!("handshake failed: {e}"),
-                )
-            })?;
-
-        let client_id = match frame.pdu {
-            MuxPdu::HelloAck {
-                client_id,
-                protocol_version,
-                features,
-            } => {
-                log::info!(
-                    "connected to daemon at {}, assigned {client_id} \
-                     (server v={protocol_version}, features=0x{features:X})",
-                    path.display(),
-                );
-                client_id
-            }
-            MuxPdu::Error { message } => {
-                return Err(io::Error::other(format!(
-                    "daemon rejected handshake: {message}"
-                )));
-            }
-            other => {
-                return Err(io::Error::other(format!(
-                    "unexpected handshake response: {other:?}"
-                )));
-            }
-        };
-
-        // Advertise capabilities (fire-and-forget, no ack expected).
-        let cap_seq = 2; // seq 1 was Hello; we'll start RPC seqs from 3.
-        ProtocolCodec::encode_frame(
-            &mut stream,
-            cap_seq,
-            &MuxPdu::SetCapabilities {
-                flags: crate::protocol::messages::CAP_SNAPSHOT_PUSH,
-            },
-        )?;
+        let client_id = handshake::run_handshake(&mut stream, path)?;
 
         // Set up channels.
         let (send_tx, send_rx) = mpsc::channel::<SendRequest>();
         let (notif_tx, notif_rx) = mpsc::channel::<MuxNotification>();
         let alive = Arc::new(AtomicBool::new(true));
-        let alive_flag = alive.clone();
+        let alive_reader = Arc::clone(&alive);
+        let alive_writer = Arc::clone(&alive);
         let pushed_snapshots = Arc::new(Mutex::new(HashMap::new()));
         let pushed_snapshots_reader = Arc::clone(&pushed_snapshots);
 
@@ -207,26 +165,63 @@ impl ClientTransport {
             }) as Arc<dyn Fn() + Send + Sync>
         };
 
-        // Create self-pipe for waking the reader thread on outbound requests.
+        // Create self-pipe for waking the reader thread on shutdown.
         #[cfg(unix)]
-        let (wake_read, wake_write) = create_self_pipe()?;
+        let (wake_read, wake_write) = wake_pipe::create_self_pipe()?;
 
         let pending_replies: Arc<Mutex<HashMap<ResponseTokenId, PendingClientReply>>> =
             Arc::new(Mutex::new(HashMap::new()));
         let pending_replies_reader = Arc::clone(&pending_replies);
 
+        // Pending RPC reply senders, shared between writer (insert on
+        // dispatch) and reader (remove on response).
+        let pending: Arc<Mutex<HashMap<u32, mpsc::Sender<MuxPdu>>>> =
+            Arc::new(Mutex::new(HashMap::new()));
+        let pending_writer = Arc::clone(&pending);
+        let pending_reader = Arc::clone(&pending);
+
+        // Outstanding ping seq, shared between writer (set on Ping send) and
+        // reader (clear on PingAck). 0 = no outstanding ping.
+        let outstanding_ping_seq = Arc::new(AtomicU64::new(0));
+        let outstanding_ping_seq_writer = Arc::clone(&outstanding_ping_seq);
+        let outstanding_ping_seq_reader = Arc::clone(&outstanding_ping_seq);
+
+        // Split the stream into independent read + write halves so the
+        // reader thread can drain replies while the writer thread is
+        // blocked on a backpressured write (BUG-11-047).
+        let write_stream = stream
+            .try_clone()
+            .map_err(|e| io::Error::other(format!("failed to clone IPC stream for writer: {e}")))?;
+        let read_stream = stream;
+
+        // Spawn writer thread first; reader thread depends on the writer
+        // for the heartbeat ping cadence.
+        let writer_handle = std::thread::Builder::new()
+            .name("mux-client-writer".into())
+            .spawn(move || {
+                writer::writer_loop(
+                    write_stream,
+                    send_rx,
+                    pending_writer,
+                    alive_writer,
+                    outstanding_ping_seq_writer,
+                );
+            })
+            .map_err(|e| io::Error::other(format!("failed to spawn writer thread: {e}")))?;
+
         // Spawn reader thread.
-        let handle = std::thread::Builder::new()
+        let reader_handle = std::thread::Builder::new()
             .name("mux-client-reader".into())
             .spawn(move || {
                 reader::reader_loop(
-                    stream,
-                    send_rx,
+                    read_stream,
                     notif_tx,
                     guarded_wakeup,
-                    alive_flag,
+                    alive_reader,
                     pushed_snapshots_reader,
                     pending_replies_reader,
+                    pending_reader,
+                    outstanding_ping_seq_reader,
                     #[cfg(unix)]
                     wake_read,
                 );
@@ -242,7 +237,8 @@ impl ClientTransport {
             send_tx: Some(send_tx),
             notif_rx,
             next_seq: 3, // seq 1 = Hello, seq 2 = SetCapabilities
-            reader_handle: Some(handle),
+            writer_handle: Some(writer_handle),
+            reader_handle: Some(reader_handle),
             client_id,
             alive,
             pushed_snapshots,
@@ -355,7 +351,7 @@ impl ClientTransport {
     ) -> Option<PendingClientReply> {
         self.pending_replies
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .unwrap_or_else(PoisonError::into_inner)
             .remove(&slot_id)
     }
 
@@ -373,7 +369,7 @@ impl ClientTransport {
     pub(super) fn take_pushed_snapshot(&self, pane_id: PaneId) -> Option<PaneSnapshot> {
         self.pushed_snapshots
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .unwrap_or_else(PoisonError::into_inner)
             .remove(&pane_id)
     }
 
@@ -384,7 +380,7 @@ impl ClientTransport {
     pub(super) fn invalidate_pushed_snapshot(&self, pane_id: PaneId) {
         self.pushed_snapshots
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .unwrap_or_else(PoisonError::into_inner)
             .remove(&pane_id);
     }
 
@@ -443,55 +439,31 @@ impl ClientTransport {
     }
 }
 
-/// Create a non-blocking, close-on-exec self-pipe pair `(read_fd, write_fd)`.
-#[cfg(unix)]
-fn create_self_pipe() -> io::Result<(RawFd, RawFd)> {
-    let mut fds = [0i32; 2];
-    #[cfg(target_os = "linux")]
-    #[allow(unsafe_code, reason = "pipe2(2) to create non-blocking self-pipe")]
-    let ret = unsafe { libc::pipe2(fds.as_mut_ptr(), libc::O_NONBLOCK | libc::O_CLOEXEC) };
-    #[cfg(not(target_os = "linux"))]
-    #[allow(unsafe_code, reason = "pipe(2) to create self-pipe (non-Linux)")]
-    let ret = unsafe { libc::pipe(fds.as_mut_ptr()) };
-    if ret != 0 {
-        return Err(io::Error::last_os_error());
-    }
-    #[cfg(not(target_os = "linux"))]
-    for &fd in &fds {
-        #[allow(unsafe_code, reason = "fcntl(2) to set O_NONBLOCK and FD_CLOEXEC")]
-        unsafe {
-            if libc::fcntl(fd, libc::F_SETFL, libc::O_NONBLOCK) == -1 {
-                log::warn!(
-                    "fcntl(F_SETFL, O_NONBLOCK) failed: {}",
-                    io::Error::last_os_error()
-                );
-            }
-            if libc::fcntl(fd, libc::F_SETFD, libc::FD_CLOEXEC) == -1 {
-                log::warn!(
-                    "fcntl(F_SETFD, FD_CLOEXEC) failed: {}",
-                    io::Error::last_os_error()
-                );
-            }
-        }
-    }
-    #[expect(
-        clippy::tuple_array_conversions,
-        reason = "pipe returns [i32; 2], need (RawFd, RawFd)"
-    )]
-    Ok((fds[0], fds[1]))
-}
-
 impl Drop for ClientTransport {
     fn drop(&mut self) {
-        // Close the send channel first so the reader thread sees
-        // `Disconnected` on `try_recv` and exits. This must happen before
-        // joining, because Rust drops fields *after* `Drop::drop` returns.
+        // 1. Close the send channel so the writer thread sees `Disconnected`
+        //    on `recv_timeout` and exits, draining its pending RPC reply
+        //    senders so callers see `BrokenPipe` (Codex-001 round 1 pin).
         self.send_tx.take();
-        // Signal the wake pipe to unblock the reader thread from poll(2).
+
+        // 2. Join the writer thread first. Once it exits it sets
+        //    `alive = false` (or it was already false from an earlier write
+        //    error), which the reader observes on its next loop iteration.
+        if let Some(handle) = self.writer_handle.take() {
+            let _ = handle.join();
+        }
+
+        // 3. Belt-and-suspenders: ensure the reader sees `alive = false`
+        //    even on the rare path where the writer never ran a loop body.
+        self.alive.store(false, Ordering::Release);
+
+        // 4. Wake the reader from poll(2) so it observes `alive = false`
+        //    immediately and exits.
         self.signal_wake();
         if let Some(handle) = self.reader_handle.take() {
             let _ = handle.join();
         }
+
         #[cfg(unix)]
         #[allow(unsafe_code, reason = "close(2) for self-pipe write end")]
         unsafe {
@@ -499,3 +471,6 @@ impl Drop for ClientTransport {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;
