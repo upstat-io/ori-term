@@ -645,3 +645,39 @@ fn is_write_stalled_returns_false_for_unknown_pane_in_embedded() {
         "embedded is_write_stalled must return false for an unknown pane",
     );
 }
+
+// -- bell_panes contract tests --
+
+/// `set_bell` then `clear_bell` makes `has_bell` false in embedded mode,
+/// independent of any snapshot refresh. Pins the embedded backend's
+/// `bell_panes` SSOT.
+#[test]
+fn embedded_clear_bell_clears_has_bell() {
+    let mut mux = EmbeddedMux::new(test_wakeup());
+    let p = PaneId::from_raw(1);
+
+    mux.set_bell(p);
+    assert!(mux.has_bell(p));
+
+    mux.clear_bell(p);
+    assert!(!mux.has_bell(p), "embedded clear_bell must clear has_bell");
+}
+
+/// Embedded backend's `cleanup_closed_pane` drains `bell_panes` along
+/// with the rest of the per-pane state. Mirrors the client-side
+/// regression guard.
+#[test]
+fn embedded_cleanup_closed_pane_drains_bell_panes() {
+    let mut mux = EmbeddedMux::new(test_wakeup());
+    let p = PaneId::from_raw(1);
+
+    mux.set_bell(p);
+    assert!(mux.has_bell(p));
+
+    mux.cleanup_closed_pane(p);
+
+    assert!(
+        !mux.has_bell(p),
+        "embedded cleanup_closed_pane must drain bell_panes"
+    );
+}

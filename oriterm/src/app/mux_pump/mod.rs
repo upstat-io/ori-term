@@ -149,14 +149,15 @@ impl App {
                 self.handle_command_complete(pane_id, duration);
             }
             MuxNotification::PaneBell(id) => {
-                // Bells on the focused pane are silent: the user is already
-                // looking at it, so the sound + bell icon would just be noise.
-                // The IO thread's `event_pump` already set `pane.has_bell`
-                // before this arm fires; clear it here so the icon never
-                // appears on the focused tab.
-                let is_focused = self.active_pane_id() == Some(id);
+                // Bells on the focused tab are silent: the user is looking
+                // at it, so any sound, icon, or visual flash would just be
+                // noise. The gate is tab-scoped, not single-active-pane
+                // scoped — a bell from a non-active split inside the
+                // focused tab also counts as "background-worthy = no"
+                // because the user IS looking at the tab.
+                let is_in_focused_tab = self.is_pane_in_focused_tab(id);
                 if let Some(mux) = self.mux.as_mut() {
-                    if is_focused {
+                    if is_in_focused_tab {
                         mux.clear_bell(id);
                     } else {
                         mux.set_bell(id);
@@ -166,10 +167,10 @@ impl App {
                 // Sync the OWNING window's tab entries FIRST so the persistent
                 // bell icon (sourced from `mux.has_bell` in build_tab_entries)
                 // appears / clears immediately. Hoisted before the
-                // !is_focused branch because set_tabs replaces the entries
+                // background branch because set_tabs replaces the entries
                 // Vec — running it after ring_bell would wipe bell_start.
                 self.sync_tab_bar_for_pane(id);
-                if !is_focused {
+                if !is_in_focused_tab {
                     self.ring_owning_window_tab_bell(id, now);
                 }
 
@@ -177,16 +178,17 @@ impl App {
                 // audio path into. Native OS APIs respect the
                 // user's system mute / sound-effects settings. Skip the
                 // audible bell entirely when the bell-ringing pane is
-                // already the user's focus.
-                if !is_focused && self.config.behavior.notification.is_audible() {
+                // inside the focused tab.
+                if !is_in_focused_tab && self.config.behavior.notification.is_audible() {
                     audio::play_bell();
                 }
 
                 // Visual-bell flash on the pane's OWNING window — not the
-                // focused window. A bell from a background pane flashes its
-                // own window. Routes via the canonical
-                // `owning_window_ctx_mut` helper.
-                if self.config.bell.is_enabled() {
+                // focused window. A bell from a background-tab pane flashes
+                // its own window. Suppressed for focused-tab panes:
+                // "focused-pane bells silent + iconless" extends to the
+                // visual flash too.
+                if !is_in_focused_tab && self.config.bell.is_enabled() {
                     let bell = &self.config.bell;
                     let color = crate::config::parse_bell_color_as_ui(bell.color.as_deref());
                     let easing = crate::config::bell_animation_to_easing(bell.animation);
@@ -214,26 +216,25 @@ impl App {
                 body: _body,
                 ..
             } => {
-                // Bell-focused dispatch ( scope reset 2026-04-28)
                 // OSC 9 / OSC 99 / OSC 777 fire the bell sound + tab bell
                 // icon on the owning pane's tab. Skip both when the
-                // bell-ringing pane is already focused — user is looking
-                // at it.
-                let is_focused = self.active_pane_id() == Some(pane_id);
+                // bell-ringing pane lives in the focused tab — the focus
+                // gate is tab-scoped, not single-active-pane scoped.
+                let is_in_focused_tab = self.is_pane_in_focused_tab(pane_id);
                 let mode = self.config.behavior.notification;
-                if !is_focused && mode.is_audible() {
+                if !is_in_focused_tab && mode.is_audible() {
                     audio::play_bell();
                 }
                 if mode.is_visual() {
                     if let Some(mux) = self.mux.as_mut() {
-                        if is_focused {
+                        if is_in_focused_tab {
                             mux.clear_bell(pane_id);
                         } else {
                             mux.set_bell(pane_id);
                         }
                     }
                     self.sync_tab_bar_for_pane(pane_id);
-                    if !is_focused {
+                    if !is_in_focused_tab {
                         self.ring_owning_window_tab_bell(pane_id, Instant::now());
                     }
                     self.mark_pane_window_dirty(pane_id);
@@ -359,8 +360,15 @@ impl App {
             return;
         }
 
-        let is_focused = self.active_pane_id() == Some(pane_id);
-        if mode == NotifyOnCommandFinish::Unfocused && is_focused {
+        // The "focused-pane bells silent + iconless" invariant applies
+        // uniformly to ALL bell triggers — PaneBell, DesktopNotification,
+        // AND CommandComplete. A command completing in a non-active
+        // split within the focused tab still lights the tab icon via the
+        // OR-across-panes tab-bar lookup; that contradicts the
+        // silent-iconless invariant the same way the primary repro does.
+        // Use the tab-scoped predicate.
+        let is_in_focused_tab = self.is_pane_in_focused_tab(pane_id);
+        if mode == NotifyOnCommandFinish::Unfocused && is_in_focused_tab {
             return;
         }
 
@@ -373,7 +381,7 @@ impl App {
         // configured. Routes via pane_position + owning_window_ctx_mut so
         // a command completing in a background-window pane pulses that
         // window's tab bar — not the focused window's.
-        if behavior.notify_command_bell && !is_focused {
+        if behavior.notify_command_bell && !is_in_focused_tab {
             if let Some(mux) = self.mux.as_mut() {
                 mux.set_bell(pane_id);
             }
@@ -382,12 +390,10 @@ impl App {
             self.mark_pane_window_dirty(pane_id);
         }
 
-        // Bell-focused dispatch ( scope reset 2026-04-28)
         // command-complete (OSC 133;D) fires the native bell sound; the
         // tab-bell pulse above already handles the visual feedback. Skip
-        // entirely when the command's pane is already focused — user
-        // is looking at it.
-        if !is_focused && self.config.behavior.notification.is_audible() {
+        // entirely when the command's pane lives in the focused tab.
+        if !is_in_focused_tab && self.config.behavior.notification.is_audible() {
             audio::play_bell();
         }
     }

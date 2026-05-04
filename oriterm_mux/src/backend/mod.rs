@@ -297,25 +297,31 @@ pub trait MuxBackend {
         self.pane_snapshot(pane_id).and_then(|s| s.cwd.as_deref())
     }
 
-    /// Mark the bell as active for a pane.
+    /// Record a bell on a pane in the backend's local `bell_panes` set.
     ///
-    /// In embedded mode, sets the pane's bell flag. In client mode this is
-    /// a no-op — the bell state is driven by `MuxNotification::PaneBell`.
+    /// Called by the App's `MuxNotification::PaneBell` /
+    /// `DesktopNotification` / `CommandComplete` arms after the focus
+    /// gate decides the bell is "background-worthy." Both `EmbeddedMux`
+    /// and `MuxClient` override this with a `bell_panes.insert`. The
+    /// trait default is a no-op for any future backend that opts out.
     fn set_bell(&mut self, _pane_id: PaneId) {}
 
-    /// Clear the bell flag for a pane.
+    /// Clear the bell on a pane.
     ///
-    /// In embedded mode, clears the pane's bell flag. In client mode this is
-    /// a no-op — the client manages bell state locally.
+    /// Called from the focused-pane bell arm and the focus-change clear
+    /// sweep. Both real backends override with `bell_panes.remove`; the
+    /// trait default is a no-op.
     fn clear_bell(&mut self, _pane_id: PaneId) {}
 
-    /// Whether the bell has fired for a pane since it was last focused.
+    /// Whether the bell is currently active for a pane.
     ///
-    /// Reads from the pane's snapshot (single source of truth across
-    /// embedded + daemon backends — the bell flag travels in
-    /// [`PaneSnapshot::has_bell`] just like `has_unseen_output`).
-    fn has_bell(&self, pane_id: PaneId) -> bool {
-        self.pane_snapshot(pane_id).is_some_and(|s| s.has_bell)
+    /// Default fallback for backends that don't override. Both
+    /// `EmbeddedMux` and `MuxClient` override this with their local
+    /// `bell_panes` set — bells are client-local UI state, not
+    /// server-replicated. The default returns `false` because no
+    /// snapshot field carries bell state any more.
+    fn has_bell(&self, _pane_id: PaneId) -> bool {
+        false
     }
 
     /// Mark a pane as having unseen output.

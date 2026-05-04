@@ -199,7 +199,6 @@ fn fill_pane_metadata(pane: &Pane, out: &mut PaneSnapshot) {
     out.icon_name = pane.icon_name().map(str::to_owned);
     out.cwd = pane.cwd().map(str::to_owned);
     out.has_unseen_output = pane.has_unseen_output();
-    out.has_bell = pane.has_bell();
 }
 
 /// Fill search state in a [`PaneSnapshot`] from [`RenderableContent`] fields.

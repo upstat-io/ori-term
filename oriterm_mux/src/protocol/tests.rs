@@ -168,7 +168,6 @@ fn msg_type_roundtrip_all() {
         MsgType::RequestNewTab,
         MsgType::SetPanePriority,
         MsgType::SignalChild,
-        MsgType::ClearBell,
         MsgType::IsWriteStalled,
         MsgType::HelloAck,
         MsgType::PaneClosedAck,
@@ -528,7 +527,6 @@ fn sample_snapshot() -> PaneSnapshot {
         search_focused: None,
         search_total_matches: 0,
         has_unseen_output: false,
-        has_bell: false,
         mouse_cursor_icon: None,
     }
 }
@@ -618,7 +616,6 @@ fn snapshot_with_cjk_emoji_combining() {
         search_focused: None,
         search_total_matches: 0,
         has_unseen_output: false,
-        has_bell: false,
         mouse_cursor_icon: None,
     };
 
@@ -1116,7 +1113,6 @@ fn roundtrip_large_pane_snapshot() {
         search_focused: None,
         search_total_matches: 0,
         has_unseen_output: false,
-        has_bell: false,
         mouse_cursor_icon: None,
     };
 

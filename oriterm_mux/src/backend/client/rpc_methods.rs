@@ -41,8 +41,7 @@ impl MuxBackend for MuxClient {
         // Bell-indicator state lives in `self.bell_panes` and is mutated by
         // the App's MuxNotification::PaneBell arm (via `set_bell`) AFTER its
         // focus-gate decision — `poll_events` does NOT make focus decisions
-        // and must NOT mutate bell state. Per BUG-11-028 + Plan TPR Round 1
-        // gemini F2: App is the SSOT for focus-decided bell state.
+        // and must NOT mutate bell state. App owns focus-decided bell state.
         for notif in &self.notifications {
             if let MuxNotification::PaneOutput(pane_id) = notif {
                 self.dirty_panes.insert(*pane_id);
@@ -348,12 +347,12 @@ impl MuxBackend for MuxClient {
     }
 
     fn has_bell(&self, pane_id: PaneId) -> bool {
-        // Bell-indicator state is client-local UI state per BUG-11-028.
-        // Reads from `bell_panes`, NOT `pane_snapshots[*].has_bell`
-        // (which has been removed from the wire as of this fix). The App
-        // populates `bell_panes` via `set_bell` after its focus-gate
-        // decision; `clear_bell` (focus-clear path) and
-        // `cleanup_closed_pane` (pane lifecycle) remove entries.
+        // Bell-indicator state is client-local UI state. Reads from
+        // `bell_panes`, NOT from any snapshot field — the snapshot wire
+        // does not carry bell state. The App populates `bell_panes` via
+        // `set_bell` after its focus-gate decision; `clear_bell`
+        // (focus-clear path) and `cleanup_closed_pane` (pane lifecycle)
+        // remove entries.
         self.bell_panes.contains(&pane_id)
     }
 
@@ -366,10 +365,10 @@ impl MuxBackend for MuxClient {
     }
 
     fn cleanup_closed_pane(&mut self, pane_id: PaneId) {
-        // Per BUG-11-028 Plan TPR Round 1 critical (gemini+opencode
-        // agreement): without this override the trait default at
-        // `backend/mod.rs:346` is a no-op and `bell_panes` leaks for
-        // every notification-driven pane closure (shell exit, PTY EOF).
+        // The trait default body is a no-op. Without this override
+        // `bell_panes` leaks for every notification-driven pane closure
+        // (shell exit, PTY EOF), accumulating stale pane IDs across
+        // pane open/close cycles.
         self.bell_panes.remove(&pane_id);
         self.remove_snapshot(pane_id);
     }

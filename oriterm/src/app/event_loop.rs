@@ -134,6 +134,20 @@ impl ApplicationHandler<TermEvent> for App {
                         .map(|ctx| ctx.window.session_window_id())
                     {
                         self.active_window = Some(mux_id);
+                        // Clear pre-existing bell indicators on the newly
+                        // focused window's active tab. Without this an
+                        // Alt+Tab into a window with a stale bell icon
+                        // never clears. Runs BEFORE blink re-evaluation,
+                        // send_focus_event, and opacity adjustment so no
+                        // transient bell-icon flicker shows during the
+                        // focus cascade.
+                        if let Some(active_tab_id) = self
+                            .session
+                            .get_window(mux_id)
+                            .and_then(crate::session::Window::active_tab)
+                        {
+                            self.clear_tab_bells(active_tab_id);
+                        }
                     }
                     // Re-evaluate blink from config + pane's terminal mode.
                     // Formula: cursor_should_blink(). Two sites exist by design:

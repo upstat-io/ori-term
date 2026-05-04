@@ -217,12 +217,16 @@ impl App {
             return;
         }
 
-        // Clear bell/unseen-output badges on the newly active pane.
-        if let Some(id) = self.active_pane_id() {
-            if let Some(mux) = self.mux.as_mut() {
-                mux.clear_bell(id);
-                mux.mark_output_seen(id);
-            }
+        // Clear bell/unseen-output badges across ALL panes in the newly
+        // active tab, not just the active pane. A tab with N split panes
+        // whose non-active pane retained `has_bell` from a prior
+        // background-bell would never clear its icon otherwise.
+        if let Some(active_tab_id) = self
+            .session
+            .get_window(win_id)
+            .and_then(crate::session::Window::active_tab)
+        {
+            self.clear_tab_bells(active_tab_id);
         }
 
         if let Some(ctx) = self.focused_ctx_mut() {
@@ -249,12 +253,9 @@ impl App {
             win.set_active_tab_idx(idx);
         }
 
-        if let Some(id) = self.active_pane_id() {
-            if let Some(mux) = self.mux.as_mut() {
-                mux.clear_bell(id);
-                mux.mark_output_seen(id);
-            }
-        }
+        // Clear bells across ALL panes in the newly focused tab, not
+        // just `active_pane_id`.
+        self.clear_tab_bells(tab_id);
 
         if let Some(ctx) = self.focused_ctx_mut() {
             ctx.pane_cache.invalidate_all();
@@ -263,6 +264,27 @@ impl App {
         }
         self.resize_all_panes();
         self.sync_tab_bar_from_mux();
+    }
+
+    /// Clear bell + unseen-output indicators on every pane in `tab_id`.
+    ///
+    /// Focus-change clear paths drain bell state across ALL panes in the
+    /// newly-active tab, not just the keyboard-focused split.
+    /// `Tab::all_panes` returns an owned `Vec<PaneId>` so we collect
+    /// first to drop the immutable session borrow before taking
+    /// `&mut self.mux`.
+    pub(super) fn clear_tab_bells(&mut self, tab_id: TabId) {
+        let pane_ids = self
+            .session
+            .get_tab(tab_id)
+            .map(crate::session::Tab::all_panes)
+            .unwrap_or_default();
+        if let Some(mux) = self.mux.as_mut() {
+            for pid in pane_ids {
+                mux.clear_bell(pid);
+                mux.mark_output_seen(pid);
+            }
+        }
     }
 
     /// Switch to a tab by its index in the active window.

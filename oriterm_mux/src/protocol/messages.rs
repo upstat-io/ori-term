@@ -161,13 +161,6 @@ pub enum MuxPdu {
         pane_id: PaneId,
     },
 
-    /// Clear the bell flag on a pane (called when the tab gains focus).
-    /// Fire-and-forget.
-    ClearBell {
-        /// Target pane.
-        pane_id: PaneId,
-    },
-
     /// Open search for a pane (initializes empty search state).
     /// Fire-and-forget.
     OpenSearch {

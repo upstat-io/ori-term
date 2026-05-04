@@ -89,7 +89,6 @@ fn test_snapshot() -> PaneSnapshot {
         search_focused: None,
         search_total_matches: 0,
         has_unseen_output: false,
-        has_bell: false,
         mouse_cursor_icon: None,
     }
 }
@@ -323,7 +322,6 @@ fn empty_snapshot_no_cells() {
         search_focused: None,
         search_total_matches: 0,
         has_unseen_output: false,
-        has_bell: false,
         mouse_cursor_icon: None,
     };
 
@@ -358,7 +356,6 @@ fn empty_snapshot_frame_input() {
         search_focused: None,
         search_total_matches: 0,
         has_unseen_output: false,
-        has_bell: false,
         mouse_cursor_icon: None,
     };
 
@@ -429,7 +426,6 @@ fn wide_char_flag_preserved() {
         search_focused: None,
         search_total_matches: 0,
         has_unseen_output: false,
-        has_bell: false,
         mouse_cursor_icon: None,
     };
 
@@ -580,7 +576,6 @@ fn large_snapshot_through_extract() {
         search_focused: None,
         search_total_matches: 0,
         has_unseen_output: false,
-        has_bell: false,
         mouse_cursor_icon: None,
     };
 

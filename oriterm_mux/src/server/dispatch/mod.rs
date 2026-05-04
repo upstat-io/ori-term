@@ -228,13 +228,6 @@ pub fn dispatch_request(
             None
         }
 
-        MuxPdu::ClearBell { pane_id } => {
-            if let Some(pane) = ctx.panes.get_mut(&pane_id) {
-                pane.clear_bell();
-            }
-            None
-        }
-
         MuxPdu::OpenSearch { pane_id } => {
             if let Some(pane) = ctx.panes.get_mut(&pane_id) {
                 pane.open_search();

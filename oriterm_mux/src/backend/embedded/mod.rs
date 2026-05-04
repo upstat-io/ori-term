@@ -40,9 +40,9 @@ pub struct EmbeddedMux {
     snapshot_cache: HashMap<PaneId, PaneSnapshot>,
     snapshot_dirty: HashSet<PaneId>,
     /// Client-local bell-indicator state. SSOT for `has_bell()` queries
-    /// in embedded mode — uniform with `MuxClient::bell_panes` per
-    /// BUG-11-028. Decouples bell state from snapshot replication so
-    /// future architectural consistency holds across backends.
+    /// in embedded mode — uniform with `MuxClient::bell_panes`.
+    /// Decouples bell state from snapshot replication so the contract
+    /// holds identically across backends.
     bell_panes: HashSet<PaneId>,
     /// Per-pane [`RenderableContent`] cache, filled by
     /// [`refresh_pane_snapshot`](MuxBackend::refresh_pane_snapshot) and
@@ -342,8 +342,8 @@ impl MuxBackend for EmbeddedMux {
     }
 
     fn has_bell(&self, pane_id: PaneId) -> bool {
-        // Per BUG-11-028: bell state lives in client-local `bell_panes`,
-        // uniform with MuxClient. Decoupled from snapshot replication.
+        // Bell state lives in client-local `bell_panes`, uniform with
+        // MuxClient. Decoupled from snapshot replication.
         self.bell_panes.contains(&pane_id)
     }
 
@@ -374,15 +374,17 @@ impl MuxBackend for EmbeddedMux {
     }
 
     fn cleanup_closed_pane(&mut self, pane_id: PaneId) {
+        // bell_panes is populated by App-level focus-gate decisions
+        // (set_bell from MuxNotification::PaneBell), which can run for
+        // any pane id — independent of whether `self.panes` still holds
+        // the Pane object. Drain it unconditionally to match
+        // MuxClient::cleanup_closed_pane and prevent the leak that
+        // surfaces during teardown races.
+        self.bell_panes.remove(&pane_id);
         if let Some(pane) = self.panes.remove(&pane_id) {
             self.snapshot_cache.remove(&pane_id);
             self.snapshot_dirty.remove(&pane_id);
             self.renderable_cache.remove(&pane_id);
-            // Per BUG-11-028: also clear local bell state — without this
-            // bell_panes accumulates stale pane IDs across pane open/close
-            // cycles, leaking memory and producing icon ghosts on tab
-            // re-render (cleared pane id matches a future recycled id).
-            self.bell_panes.remove(&pane_id);
             // Drop on a background thread to avoid blocking the event loop.
             // Pane destruction involves PTY kill, reader thread join, and child reap.
             std::thread::spawn(move || drop(pane));

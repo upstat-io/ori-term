@@ -61,8 +61,8 @@ pub struct MuxClient {
     /// in daemon mode — decoupled from `pane_snapshots` so a daemon-pushed
     /// snapshot replace cannot relight a locally-cleared bell. Populated
     /// by the App's `MuxNotification::PaneBell` arm via `set_bell`; cleared
-    /// by `clear_bell` (focus-clear path) and `cleanup_closed_pane`. Per
-    /// BUG-11-028: bells are transient client UI state, not server-replicated.
+    /// by `clear_bell` (focus-clear path) and `cleanup_closed_pane`. Bells
+    /// are transient client UI state, not server-replicated.
     bell_panes: HashSet<PaneId>,
 }
 

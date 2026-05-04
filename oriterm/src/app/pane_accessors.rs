@@ -36,6 +36,34 @@ impl App {
         Some(tab.active_pane())
     }
 
+    /// Whether `pane_id` lives in the currently focused window's active tab.
+    ///
+    /// Broader than `active_pane_id() == Some(pane_id)` — passes for ANY
+    /// pane in the visually-focused tab, including non-active splits.
+    /// Bell/notification gates compare against the tab the user is
+    /// "looking at," not the single keyboard-focused pane within it.
+    pub(super) fn is_pane_in_focused_tab(&self, pane_id: PaneId) -> bool {
+        let Some(active_session_wid) = self.active_window else {
+            return false;
+        };
+        let Some(owning_session_wid) = self.session.window_for_pane(pane_id) else {
+            return false;
+        };
+        if owning_session_wid != active_session_wid {
+            return false;
+        }
+        let Some(window) = self.session.get_window(owning_session_wid) else {
+            return false;
+        };
+        let Some(active_tab_id) = window.active_tab() else {
+            return false;
+        };
+        let Some(pane_tab_id) = self.session.tab_for_pane(pane_id) else {
+            return false;
+        };
+        active_tab_id == pane_tab_id
+    }
+
     /// Terminal mode flags for a pane.
     ///
     /// Delegates to [`MuxBackend::pane_mode`] — embedded mode reads the
