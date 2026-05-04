@@ -132,6 +132,25 @@ fn header_version_field_preserved() {
     assert_eq!(decoded.version, 5);
 }
 
+/// Regression pin: `CURRENT_PROTOCOL_VERSION` is an alias of
+/// `PROTOCOL_VERSION`. The frame-header version (every encoded
+/// frame) and the Hello payload version (Hello/HelloAck handshake)
+/// MUST agree byte-for-byte; a future bump that touches one literal
+/// without the other would silently produce a frame whose header
+/// claims version N while the handshake advertises N±1, causing
+/// every handshake to fail with `version mismatch` even though the
+/// peers think they're talking the same protocol. The alias makes
+/// this physically impossible.
+#[test]
+fn protocol_version_constants_agree() {
+    use super::CURRENT_PROTOCOL_VERSION;
+    assert_eq!(
+        PROTOCOL_VERSION, CURRENT_PROTOCOL_VERSION,
+        "frame-header PROTOCOL_VERSION and handshake CURRENT_PROTOCOL_VERSION \
+         must be the same byte — alias enforces this at compile time"
+    );
+}
+
 // -- MsgType tests --
 
 #[test]

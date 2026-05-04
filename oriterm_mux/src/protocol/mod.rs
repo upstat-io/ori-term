@@ -62,6 +62,13 @@ pub const FRAME_MAGIC: u16 = 0x4F54;
 /// connecting to a v2 peer will silently misdecode every snapshot
 /// frame. The Hello handshake rejects any non-equal version pair so
 /// the mismatch surfaces as a connection error instead.
+///
+/// SSOT: this constant is the single literal source for the wire
+/// version; [`CURRENT_PROTOCOL_VERSION`] is a re-export, NOT an
+/// independent definition. A reviewer who bumps one without the
+/// other would otherwise produce a frame-header version that
+/// disagrees with the Hello payload — caught at compile-time now
+/// because the alias propagates the bump automatically.
 pub const PROTOCOL_VERSION: u8 = 2;
 
 /// Flag: payload is zstd-compressed.
@@ -69,11 +76,12 @@ pub const FLAG_COMPRESSED: u8 = 0x01;
 
 /// Current IPC protocol version for Hello/HelloAck negotiation.
 ///
-/// Same value as `PROTOCOL_VERSION`; kept as a separate symbol so the
-/// frame-header version (used in every encode) and the handshake
-/// version (used in `MuxPdu::Hello` / `MuxPdu::HelloAck`) have
-/// independent doc comments.
-pub const CURRENT_PROTOCOL_VERSION: u8 = 2;
+/// Re-export of [`PROTOCOL_VERSION`] — the frame-header version
+/// (used in every encode via `FrameHeader.version`) and the
+/// handshake version (used in `MuxPdu::Hello` / `MuxPdu::HelloAck`
+/// payload) MUST agree. Defined as an alias rather than a duplicate
+/// literal so a future bump touches one place.
+pub const CURRENT_PROTOCOL_VERSION: u8 = PROTOCOL_VERSION;
 
 /// Feature flag: client and server support zstd compression.
 pub const FEAT_ZSTD: u64 = 1;
