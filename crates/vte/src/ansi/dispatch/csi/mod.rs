@@ -29,7 +29,6 @@ pub(super) fn dispatch<H: Handler, T: Timeout>(
     handler: &mut H,
     preceding_char: &mut Option<char>,
     sync_timeout: &mut T,
-    terminated: &mut bool,
     params: &Params,
     intermediates: &[u8],
     has_ignored_intermediates: bool,
@@ -105,10 +104,12 @@ pub(super) fn dispatch<H: Handler, T: Timeout>(
         },
         ('h', [b'?']) => {
             for param in params_iter.map(|param| param[0]) {
-                // Handle sync updates opaquely.
+                // BSU arms the run-loop deadline so a sync window with
+                // no ESU still terminates after SYNC_UPDATE_TIMEOUT.
+                // Handler dispatch continues inline — Mode 2026 gates
+                // snapshot publication, not byte processing.
                 if param == NamedPrivateMode::SyncUpdate as u16 {
                     sync_timeout.set_timeout(SYNC_UPDATE_TIMEOUT);
-                    *terminated = true;
                 }
 
                 handler.set_private_mode(PrivateMode::new(param))
@@ -198,6 +199,13 @@ pub(super) fn dispatch<H: Handler, T: Timeout>(
         },
         ('l', [b'?']) => {
             for param in params_iter.map(|param| param[0]) {
+                // ESU disarms the run-loop deadline so it does NOT
+                // fire after the sync window legitimately ends. Owns
+                // the full timer-state transition that pairs with the
+                // BSU arm's `set_timeout`.
+                if param == NamedPrivateMode::SyncUpdate as u16 {
+                    sync_timeout.clear_timeout();
+                }
                 handler.unset_private_mode(PrivateMode::new(param))
             }
         },

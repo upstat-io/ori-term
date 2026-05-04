@@ -3,14 +3,11 @@
 extern crate alloc;
 
 use alloc::vec::Vec;
-use core::mem;
 use core::time::Duration;
 #[cfg(feature = "std")]
 use std::time::Instant;
 
 use super::handler::Handler;
-use super::types::NamedPrivateMode;
-use super::{BSU_CSI, ESU_CSI, SYNC_BUFFER_SIZE, SYNC_ESCAPE_LEN, SYNC_UPDATE_TIMEOUT};
 
 /// Maximum APC payload size (32 MiB). Prevents OOM from malicious input.
 pub(super) const MAX_APC_LEN: usize = 32 * 1024 * 1024;
@@ -63,19 +60,15 @@ pub(super) struct ProcessorState<T: Timeout> {
 }
 
 /// State for synchronized terminal updates.
-#[derive(Debug)]
+///
+/// Mode 2026 (synchronized output) gates SNAPSHOT publication, not byte
+/// processing. Bytes inside a BSU/ESU window dispatch through the
+/// handler inline; the only state held here is the deadline timer used
+/// by the run loop's `select!` deadline arm to bound the sync window.
+#[derive(Debug, Default)]
 pub(super) struct SyncState<T: Timeout> {
-    /// Handler for synchronized updates.
+    /// Sync window deadline (set by BSU, cleared by ESU/timeout).
     pub(super) timeout: T,
-
-    /// Bytes read during the synchronized update.
-    pub(super) buffer: Vec<u8>,
-}
-
-impl<T: Timeout> Default for SyncState<T> {
-    fn default() -> Self {
-        Self { buffer: Vec::with_capacity(SYNC_BUFFER_SIZE), timeout: Default::default() }
-    }
 }
 
 /// The processor wraps a `crate::Parser` to ultimately call methods on a
@@ -108,20 +101,21 @@ impl<T: Timeout> Processor<T> {
     }
 
     /// Process a new byte from the PTY.
+    ///
+    /// Mode 2026 (synchronized output) does NOT gate byte processing —
+    /// handler dispatch happens inline regardless of whether a sync
+    /// window is active. Sync gating lives one layer up at the snapshot-
+    /// publication boundary.
     #[inline]
     pub fn advance<H>(&mut self, handler: &mut H, bytes: &[u8])
     where
         H: Handler,
     {
+        let mut performer = Performer::new(&mut self.state, handler);
         let mut processed = 0;
         while processed != bytes.len() {
-            if self.state.sync_state.timeout.pending_timeout() {
-                processed += self.advance_sync(handler, &bytes[processed..]);
-            } else {
-                let mut performer = Performer::new(&mut self.state, handler);
-                processed +=
-                    self.parser.advance_until_terminated(&mut performer, &bytes[processed..]);
-            }
+            processed +=
+                self.parser.advance_until_terminated(&mut performer, &bytes[processed..]);
         }
     }
 
@@ -130,13 +124,9 @@ impl<T: Timeout> Processor<T> {
     ///
     /// This is the observation-enabled counterpart to [`advance`](Self::advance).
     /// The observer sees every raw parser action (CSI, OSC, ESC, execute,
-    /// print, DCS, APC) before the `Handler` processes it.
-    ///
-    /// Note: synchronized-update buffering (`advance_sync`) bypasses the
-    /// observer — bytes are stored raw and replayed through the normal
-    /// `Performer` when the sync completes. This means the observer sees
-    /// the actions in their replayed order, not their arrival order, which
-    /// is the correct semantic for spec conformance verification.
+    /// print, DCS, APC) in arrival order — Mode 2026 does NOT defer
+    /// dispatch, so observed actions match the byte-stream order
+    /// exactly.
     #[inline]
     pub fn advance_with_observer<H, O>(
         &mut self,
@@ -147,125 +137,31 @@ impl<T: Timeout> Processor<T> {
         H: Handler,
         O: super::observer::PerformObserver,
     {
+        let mut observed = ObservedPerformer::new(&mut self.state, handler, observer);
         let mut processed = 0;
         while processed != bytes.len() {
-            if self.state.sync_state.timeout.pending_timeout() {
-                // Sync buffering — observer will see actions during replay.
-                processed += self.advance_sync(handler, &bytes[processed..]);
-            } else {
-                let mut observed =
-                    ObservedPerformer::new(&mut self.state, handler, observer);
-                processed += self
-                    .parser
-                    .advance_until_terminated(&mut observed, &bytes[processed..]);
-            }
+            processed += self
+                .parser
+                .advance_until_terminated(&mut observed, &bytes[processed..]);
         }
     }
 
-    /// End a synchronized update.
-    pub fn stop_sync<H>(&mut self, handler: &mut H)
-    where
-        H: Handler,
-    {
-        self.stop_sync_internal(handler, None);
-    }
-
-    /// End a synchronized update.
-    ///
-    /// The `bsu_offset` parameter should be passed if the sync buffer contains
-    /// a new BSU escape that is not part of the current synchronized
-    /// update.
-    fn stop_sync_internal<H>(&mut self, handler: &mut H, bsu_offset: Option<usize>)
-    where
-        H: Handler,
-    {
-        // Process all synchronized bytes.
-        //
-        // NOTE: We do not use `advance_until_terminated` here since BSU sequences are
-        // processed automatically during the synchronized update.
-        let buffer = mem::take(&mut self.state.sync_state.buffer);
-        let offset = bsu_offset.unwrap_or(buffer.len());
-        let mut performer = Performer::new(&mut self.state, handler);
-        self.parser.advance(&mut performer, &buffer[..offset]);
-        self.state.sync_state.buffer = buffer;
-
-        match bsu_offset {
-            // Just clear processed bytes if there is a new BSU.
-            //
-            // NOTE: We do not need to re-process for a new ESU since the `advance_sync`
-            // function checks for BSUs in reverse.
-            Some(bsu_offset) => {
-                let new_len = self.state.sync_state.buffer.len() - bsu_offset;
-                self.state.sync_state.buffer.copy_within(bsu_offset.., 0);
-                self.state.sync_state.buffer.truncate(new_len);
-            },
-            // Report mode and clear state if no new BSU is present.
-            None => {
-                handler.unset_private_mode(NamedPrivateMode::SyncUpdate.into());
-                self.state.sync_state.timeout.clear_timeout();
-                self.state.sync_state.buffer.clear();
-            },
-        }
-    }
-
-    /// Number of bytes in the synchronization buffer.
+    /// True iff a Mode 2026 sync window is active (parser-side timer
+    /// armed). Used by tests; the run loop relies on
+    /// [`Self::sync_timeout`] for `select!` deadline computation.
     #[inline]
-    pub fn sync_bytes_count(&self) -> usize {
-        self.state.sync_state.buffer.len()
+    pub fn is_sync_active(&self) -> bool {
+        self.state.sync_state.timeout.pending_timeout()
     }
 
-    /// Process a new byte during a synchronized update.
+    /// Disarm the parser-side sync timer.
     ///
-    /// Returns the number of bytes processed.
-    #[cold]
-    fn advance_sync<H>(&mut self, handler: &mut H, bytes: &[u8]) -> usize
-    where
-        H: Handler,
-    {
-        // Advance sync parser or stop sync if we'd exceed the maximum buffer size.
-        if self.state.sync_state.buffer.len() + bytes.len() >= SYNC_BUFFER_SIZE - 1 {
-            // Terminate the synchronized update.
-            self.stop_sync_internal(handler, None);
-
-            // Just parse the bytes normally.
-            let mut performer = Performer::new(&mut self.state, handler);
-            self.parser.advance_until_terminated(&mut performer, bytes)
-        } else {
-            self.state.sync_state.buffer.extend(bytes);
-            self.advance_sync_csi(handler, bytes.len());
-            bytes.len()
-        }
-    }
-
-    /// Handle BSU/ESU CSI sequences during synchronized update.
-    fn advance_sync_csi<H>(&mut self, handler: &mut H, new_bytes: usize)
-    where
-        H: Handler,
-    {
-        // Get constraints within which a new escape character might be relevant.
-        let buffer_len = self.state.sync_state.buffer.len();
-        let start_offset = (buffer_len - new_bytes).saturating_sub(SYNC_ESCAPE_LEN - 1);
-        let end_offset = buffer_len.saturating_sub(SYNC_ESCAPE_LEN - 1);
-        let search_buffer = &self.state.sync_state.buffer[start_offset..end_offset];
-
-        // Search for termination/extension escapes in the added bytes.
-        //
-        // NOTE: It is technically legal to specify multiple private modes in the same
-        // escape, but we only allow EXACTLY `\e[?2026h`/`\e[?2026l` to keep the parser
-        // more simple.
-        let mut bsu_offset = None;
-        for index in memchr::memchr_iter(0x1B, search_buffer).rev() {
-            let offset = start_offset + index;
-            let escape = &self.state.sync_state.buffer[offset..offset + SYNC_ESCAPE_LEN];
-
-            if escape == BSU_CSI {
-                self.state.sync_state.timeout.set_timeout(SYNC_UPDATE_TIMEOUT);
-                bsu_offset = Some(offset);
-            } else if escape == ESU_CSI {
-                self.stop_sync_internal(handler, bsu_offset);
-                break;
-            }
-        }
+    /// Called from the IO thread's `handle_sync_timeout` after the run
+    /// loop's deadline arm fires; ESU dispatch handles disarm via the
+    /// handler-level dispatcher.
+    #[inline]
+    pub fn clear_sync_timeout(&mut self) {
+        self.state.sync_state.timeout.clear_timeout();
     }
 }
 
@@ -276,16 +172,13 @@ impl<T: Timeout> Processor<T> {
 pub(super) struct Performer<'a, H: Handler, T: Timeout> {
     pub(super) state: &'a mut ProcessorState<T>,
     pub(super) handler: &'a mut H,
-
-    /// Whether the parser should be prematurely terminated.
-    pub(super) terminated: bool,
 }
 
 impl<'a, H: Handler + 'a, T: Timeout> Performer<'a, H, T> {
     /// Create a performer.
     #[inline]
     pub fn new<'b>(state: &'b mut ProcessorState<T>, handler: &'b mut H) -> Performer<'b, H, T> {
-        Performer { state, handler, terminated: Default::default() }
+        Performer { state, handler }
     }
 }
 
@@ -353,7 +246,6 @@ pub(super) struct ObservedPerformer<
     pub(super) state: &'a mut ProcessorState<T>,
     pub(super) handler: &'a mut H,
     pub(super) observer: &'a mut O,
-    pub(super) terminated: bool,
 }
 
 impl<'a, H: Handler + 'a, T: Timeout, O: super::observer::PerformObserver>
@@ -365,6 +257,6 @@ impl<'a, H: Handler + 'a, T: Timeout, O: super::observer::PerformObserver>
         handler: &'b mut H,
         observer: &'b mut O,
     ) -> ObservedPerformer<'b, H, T, O> {
-        ObservedPerformer { state, handler, observer, terminated: false }
+        ObservedPerformer { state, handler, observer }
     }
 }

@@ -101,7 +101,6 @@ where
             &mut *self.handler,
             &mut self.state.preceding_char,
             &mut self.state.sync_state.timeout,
-            &mut self.terminated,
             params,
             intermediates,
             has_ignored_intermediates,
@@ -117,10 +116,5 @@ where
             byte,
         });
         super::dispatch_esc(self.handler, intermediates, byte);
-    }
-
-    #[inline]
-    fn terminated(&self) -> bool {
-        self.terminated
     }
 }

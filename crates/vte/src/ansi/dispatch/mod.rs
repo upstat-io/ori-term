@@ -287,7 +287,6 @@ where
             &mut *self.handler,
             &mut self.state.preceding_char,
             &mut self.state.sync_state.timeout,
-            &mut self.terminated,
             params,
             intermediates,
             has_ignored_intermediates,
@@ -298,11 +297,6 @@ where
     #[inline]
     fn esc_dispatch(&mut self, intermediates: &[u8], _ignore: bool, byte: u8) {
         dispatch_esc(self.handler, intermediates, byte);
-    }
-
-    #[inline]
-    fn terminated(&self) -> bool {
-        self.terminated
     }
 }
 

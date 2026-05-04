@@ -26,7 +26,8 @@ use crossbeam_channel::Receiver;
 
 use oriterm_core::effect::sink::EffectSink;
 use oriterm_core::effect::{Effect, PendingResponse};
-use oriterm_core::{RenderableContent, Term};
+use oriterm_core::{RenderableContent, Term, TermMode};
+use vte::ansi::{Handler as _, NamedPrivateMode, PrivateMode};
 
 pub use commands::PaneIoCommand;
 pub use handle::{IoThreadConfig, PaneIoHandle, new_with_handle};
@@ -284,9 +285,9 @@ impl<S: EffectSink> PaneIoThread<S> {
         // 3b. Set grid_dirty after parsing — the VTE handler does not fire
         //     Event::Wakeup itself. The old reader thread did this explicitly
         //     after each parse chunk. Respects Mode 2026 (synchronized output):
-        //     when the sync buffer is non-empty, skip the dirty flag so
-        //     `maybe_produce_snapshot()` defers snapshot production.
-        if self.processor.sync_bytes_count() == 0 {
+        //     when `TermMode::SYNC_UPDATE` is set, skip the dirty flag so
+        //     `maybe_produce_snapshot()` defers snapshot publication.
+        if !self.terminal.mode().contains(TermMode::SYNC_UPDATE) {
             self.grid_dirty.store(true, Ordering::Release);
         }
 
@@ -300,48 +301,41 @@ impl<S: EffectSink> PaneIoThread<S> {
         self.drain_effects_into_mux_events();
     }
 
-    /// Handle Mode 2026 sync timeout — flush the buffered bytes and publish.
+    /// Handle Mode 2026 sync timeout — exit the sync window and publish.
     ///
-    /// Called when the `crossbeam_channel::select!` `default(timeout)` arm fires,
-    /// meaning no new bytes or commands arrived within the sync deadline. The VTE
-    /// processor's buffered bytes are replayed (not discarded), post-parse
-    /// housekeeping runs, and a snapshot is forced.
+    /// Called when the `crossbeam_channel::select!` `default(timeout)` arm
+    /// fires, meaning the application opened a Mode 2026 sync window and
+    /// did not close it with ESU within `SYNC_UPDATE_TIMEOUT`. Bytes inside
+    /// the window already dispatched inline (Mode 2026 gates snapshot
+    /// publication, not byte processing); the timeout's job is to clear
+    /// the mode flag and publish whatever the inline dispatches accumulated.
     fn handle_sync_timeout(&mut self) {
         let evicted_before = self.terminal.grid().total_evicted();
 
-        // Replay buffered bytes through VTE. The raw interceptor is NOT re-run —
-        // handle_bytes() already ran it on these bytes when they first arrived
-        // (before they entered the sync buffer).
-        self.processor.stop_sync(&mut self.terminal);
+        // Clear the SYNC_UPDATE flag via the canonical handler path so any
+        // `TermMode` consumer sees consistent state. Disarm the parser-side
+        // timer in lockstep.
+        self.terminal
+            .unset_private_mode(PrivateMode::Named(NamedPrivateMode::SyncUpdate));
+        self.processor.clear_sync_timeout();
 
-        // Post-parse housekeeping must run after replay — prompt markers, mode
-        // cache, and selection-dirty would be stale otherwise.
+        // Post-parse housekeeping refreshes mode_cache for lock-free reads.
         self.post_parse_housekeeping(evicted_before);
 
-        // sync_bytes_count() is always 0 after stop_sync(handler, None) —
-        // the buffer is unconditionally cleared.
-        debug_assert_eq!(
-            self.processor.sync_bytes_count(),
-            0,
-            "stop_sync must clear sync buffer"
-        );
-
-        // Emit the Abort effect so the sync abort is observable in production.
-        // Must happen after stop_sync returns (stop_sync borrows &mut terminal).
-        self.emit_sync_abort_effect();
-
-        // Force snapshot publication.
-        self.grid_dirty.store(true, Ordering::Release);
-        self.maybe_produce_snapshot();
-
-        // Note: effects from the sync-timeout replay (including the
-        // `PresentationEffect::Abort` emission above) stay in the sink
-        // and are drained at the top of the next outer loop iteration
-        // via `drain_commands`'s call to `drain_effects_into_mux_events`.
+        // Emit the Abort effect so the sync abort is observable in
+        // production. Effects from this emission stay in the sink and are
+        // drained at the top of the next outer loop iteration via
+        // `drain_commands`'s call to `drain_effects_into_mux_events`.
         // Intentionally NOT drained here so tests that inspect the sink
         // after `handle_sync_timeout` (e.g. `sync_timeout_emits_abort_effect`)
-        // can observe the effect. In production the next iteration
-        // runs on the same tick.
+        // can observe the effect. In production the next iteration runs on
+        // the same tick.
+        self.emit_sync_abort_effect();
+
+        // Force snapshot publication — the sync window's accumulated
+        // mutations are now ready to land.
+        self.grid_dirty.store(true, Ordering::Release);
+        self.maybe_produce_snapshot();
     }
 
     /// Emit a `PresentationEffect::Abort` through the terminal's effect sink.
@@ -431,11 +425,11 @@ impl<S: EffectSink> PaneIoThread<S> {
 
     /// Produce a snapshot if state changed and synchronized output allows it.
     ///
-    /// Respects Mode 2026 (synchronized output): when the sync buffer is
-    /// non-empty, the application is building a frame — skip snapshot
-    /// production to avoid exposing intermediate state.
+    /// Respects Mode 2026 (synchronized output): when `TermMode::SYNC_UPDATE`
+    /// is set, the application is building a frame — skip snapshot
+    /// publication to avoid exposing mid-mutation grid state.
     fn maybe_produce_snapshot(&mut self) {
-        if self.processor.sync_bytes_count() > 0 {
+        if self.terminal.mode().contains(TermMode::SYNC_UPDATE) {
             return;
         }
         if !self.grid_dirty.load(Ordering::Acquire) {

@@ -624,27 +624,35 @@ fn produce_snapshot_resets_damage() {
 
 /// `maybe_produce_snapshot()` respects synchronized output (Mode 2026).
 ///
-/// When sync_bytes_count > 0, snapshot production is deferred.
+/// When `TermMode::SYNC_UPDATE` is set, snapshot publication is deferred
+/// even though grid mutations dispatch inline. Pinning the SSOT-correct
+/// gate (mode flag, not byte buffer) per BUG-11-027 §03.
 #[test]
-fn produce_snapshot_respects_sync_mode() {
+fn produce_snapshot_respects_sync_update_mode_flag() {
     let (mut t, wakeup_count) = make_sync_thread_with_wakeup();
 
     // Enable Mode 2026 (synchronized output begin: BSU).
     t.handle_bytes(b"\x1b[?2026h");
+    assert!(
+        t.terminal.mode().contains(TermMode::SYNC_UPDATE),
+        "BSU must set TermMode::SYNC_UPDATE"
+    );
     t.grid_dirty.store(true, Ordering::Release);
 
-    // Send some content while sync mode is active.
-    // The processor accumulates in sync buffer, so sync_bytes_count > 0.
+    // Send some content while sync mode is active. After BUG-11-027 the
+    // bytes dispatch INLINE (mutating the grid), but snapshot publication
+    // is still suppressed via the SYNC_UPDATE mode-flag gate.
     t.processor.advance(&mut t.terminal, b"buffered content");
 
-    // Try to produce snapshot — should be suppressed because sync buffer is active.
+    // Try to produce snapshot — should be suppressed because the mode
+    // flag is set.
     let wakeup_before = wakeup_count.load(Ordering::Relaxed);
     t.maybe_produce_snapshot();
     let wakeup_after = wakeup_count.load(Ordering::Relaxed);
 
     assert_eq!(
         wakeup_before, wakeup_after,
-        "wakeup should NOT fire while sync buffer is non-empty"
+        "wakeup must NOT fire while TermMode::SYNC_UPDATE is set"
     );
 }
 
@@ -2021,32 +2029,37 @@ fn make_sync_thread_generic<S: oriterm_core::effect::EffectSink + 'static>(
     (thread, wakeup_count)
 }
 
-/// Semantic pin: timeout flushes buffered writes (bytes are replayed, not discarded).
+/// Semantic pin: timeout publishes the inline-mutated grid + clears
+/// SYNC_UPDATE.
+///
+/// After BUG-11-027 there is no byte buffer to flush — bytes inside the
+/// sync window dispatched inline as they arrived, mutating the grid
+/// immediately. The timeout path's job is to clear the SYNC_UPDATE
+/// gate and publish the accumulated state.
 #[test]
-fn sync_timeout_aborts_and_flushes_buffered_writes() {
+fn sync_timeout_publishes_inline_mutated_grid() {
     let (mut t, wakeup_count) = make_sync_thread_with_wakeup();
 
     // Enter sync mode (BSU).
     t.handle_bytes(b"\x1b[?2026h");
     assert!(
-        t.processor.sync_bytes_count() > 0 || t.terminal.mode().contains(TermMode::SYNC_UPDATE),
+        t.terminal.mode().contains(TermMode::SYNC_UPDATE),
         "BSU should activate sync mode"
     );
 
-    // Send visible content while in sync mode — goes into sync buffer.
+    // Send visible content while in sync mode — dispatched inline.
     t.handle_bytes(b"hello");
 
-    // Trigger timeout-abort: replays buffered bytes, publishes snapshot.
+    // Trigger timeout: clears SYNC_UPDATE, publishes accumulated state.
     t.handle_sync_timeout();
 
-    // 1. Sync buffer must be empty after abort.
-    assert_eq!(
-        t.processor.sync_bytes_count(),
-        0,
-        "sync buffer must be cleared"
+    // 1. SYNC_UPDATE must be cleared.
+    assert!(
+        !t.terminal.mode().contains(TermMode::SYNC_UPDATE),
+        "TermMode::SYNC_UPDATE must be cleared after handle_sync_timeout"
     );
 
-    // 2. Snapshot must contain the buffered "hello" (replayed, not discarded).
+    // 2. Snapshot must contain the inline-mutated "hello".
     let mut consumer = RenderableContent::default();
     assert!(
         t.double_buffer.swap_front(&mut consumer),
@@ -2060,10 +2073,10 @@ fn sync_timeout_aborts_and_flushes_buffered_writes() {
         .collect();
     assert!(
         text.contains("hello"),
-        "replayed bytes must appear in snapshot, got: {text:?}"
+        "inline-mutated bytes must appear in snapshot, got: {text:?}"
     );
 
-    // 3. grid_dirty was set.
+    // 3. grid_dirty was cleared by produce_snapshot.
     assert!(
         !t.grid_dirty.load(Ordering::Acquire),
         "grid_dirty should be cleared after produce_snapshot"
@@ -2111,9 +2124,10 @@ fn sync_timeout_emits_abort_effect() {
     );
 }
 
-/// Timeout-abort runs post-parse housekeeping (mode_cache reflects replayed bytes).
+/// Timeout runs post-parse housekeeping (mode_cache reflects all
+/// inline-dispatched mode mutations).
 #[test]
-fn sync_timeout_runs_post_parse_housekeeping() {
+fn sync_timeout_runs_post_parse_housekeeping_inline_dispatch() {
     let (mut t, _wakeup) = make_sync_thread_with_wakeup();
 
     // Verify cursor is visible initially.
@@ -2122,25 +2136,27 @@ fn sync_timeout_runs_post_parse_housekeeping() {
         "cursor should be visible initially"
     );
 
-    // Enter sync mode, hide cursor within sync buffer.
+    // Enter sync mode + hide cursor within the sync window. After
+    // BUG-11-027 the hide dispatches INLINE, mutating the term's mode
+    // bits as soon as the bytes arrive.
     t.handle_bytes(b"\x1b[?2026h");
     t.handle_bytes(b"\x1b[?25l");
 
-    // The mode_cache should NOT reflect the hide yet (still in sync buffer).
-    let cached_mode = TermMode::from_bits_truncate(t.mode_cache.load(Ordering::Acquire));
+    // term mode bits already reflect the hide (inline dispatch).
     assert!(
-        cached_mode.contains(TermMode::SHOW_CURSOR),
-        "mode_cache should not update while bytes are buffered in sync mode"
+        !t.terminal.mode().contains(TermMode::SHOW_CURSOR),
+        "term mode must reflect inline-dispatched cursor hide"
     );
 
-    // Trigger timeout — replays bytes including the hide-cursor sequence.
+    // Trigger timeout — clears SYNC_UPDATE and runs post-parse
+    // housekeeping (which propagates term mode to mode_cache).
     t.handle_sync_timeout();
 
-    // After housekeeping, mode_cache must reflect the cursor-hide from replayed bytes.
+    // mode_cache must now reflect the cursor-hide.
     let cached_mode_after = TermMode::from_bits_truncate(t.mode_cache.load(Ordering::Acquire));
     assert!(
         !cached_mode_after.contains(TermMode::SHOW_CURSOR),
-        "mode_cache must reflect cursor hidden after timeout replay"
+        "mode_cache must reflect cursor hidden after timeout housekeeping"
     );
 }
 
@@ -2222,31 +2238,31 @@ fn no_double_publish_on_timeout() {
     );
 }
 
-/// Nested BSU in sync buffer — stop_sync unconditionally clears buffer and unsets mode.
+/// Nested BSU during an active sync window — mode stays set, bytes
+/// dispatched inline, timeout publishes the accumulated state.
 #[test]
-fn nested_bsu_in_sync_buffer() {
+fn nested_bsu_in_sync_processes_inline_keeps_mode_set() {
     let (mut t, _wakeup) = make_sync_thread_with_wakeup();
 
-    // Enter sync mode + buffer content + nested BSU.
+    // Enter sync mode + dispatch grid bytes + nested BSU + more bytes.
+    // After BUG-11-027 every chunk dispatches inline.
     t.handle_bytes(b"\x1b[?2026h");
     t.handle_bytes(b"before");
-    t.handle_bytes(b"\x1b[?2026h"); // nested BSU
+    t.handle_bytes(b"\x1b[?2026h"); // nested BSU re-arms timer
     t.handle_bytes(b"after");
 
-    // Trigger timeout — stop_sync replays ALL bytes then unconditionally clears.
-    t.handle_sync_timeout();
-
-    // After timeout, sync buffer must be empty.
-    assert_eq!(
-        t.processor.sync_bytes_count(),
-        0,
-        "stop_sync must clear sync buffer even with nested BSU"
+    // Mode is still SET (nested BSUs are idempotent on the mode flag).
+    assert!(
+        t.terminal.mode().contains(TermMode::SYNC_UPDATE),
+        "sync mode must remain set across nested BSUs"
     );
 
-    // Terminal must NOT be in sync mode.
+    // Trigger timeout — clears mode + publishes inline-mutated grid.
+    t.handle_sync_timeout();
+
     assert!(
         !t.terminal.mode().contains(TermMode::SYNC_UPDATE),
-        "sync mode must be unset after stop_sync"
+        "sync mode must be unset after timeout"
     );
 
     // Snapshot must contain both "before" and "after".
@@ -2260,30 +2276,29 @@ fn nested_bsu_in_sync_buffer() {
         .collect();
     assert!(
         text.contains("before") && text.contains("after"),
-        "all buffered bytes must be replayed, got: {text:?}"
+        "all inline-dispatched bytes must appear in snapshot, got: {text:?}"
     );
 }
 
-/// Max buffer overflow — VTE overflow path fires and processes bytes.
+/// Stress: large in-sync writes flow through inline dispatch without
+/// hitting any buffer-overflow path (none exists post-fix).
 #[test]
-fn sync_abort_after_max_buffer_overflow() {
+fn large_in_sync_write_dispatches_inline() {
     let (mut t, _wakeup) = make_sync_thread_with_wakeup();
 
     // Enter sync mode.
     t.handle_bytes(b"\x1b[?2026h");
 
-    // Feed >1 MiB of data to trigger VTE's overflow path.
-    // SYNC_BUFFER_SIZE in VTE is 2 MiB; advance_sync() at processor.rs:210
-    // triggers overflow when the buffer exceeds that limit.
+    // Feed >2 MiB of data. Pre-fix this triggered VTE's overflow path
+    // (terminating sync early). Post-fix bytes dispatch inline; mode
+    // stays set; only ESU/timeout exits the window.
     let large_data = vec![b'X'; 2 * 1024 * 1024 + 1];
     t.handle_bytes(&large_data);
 
-    // The overflow should have triggered stop_sync_internal internally.
-    // Sync buffer should be empty after overflow.
-    assert_eq!(
-        t.processor.sync_bytes_count(),
-        0,
-        "sync buffer must be cleared after overflow"
+    // Sync mode remains set across the >2 MiB chunk.
+    assert!(
+        t.terminal.mode().contains(TermMode::SYNC_UPDATE),
+        "sync mode must remain set across large in-sync writes"
     );
 }
 
@@ -2348,11 +2363,10 @@ fn no_timeout_when_not_in_sync() {
         "sync_timeout must still be None after normal bytes"
     );
 
-    // Sync buffer must remain empty.
-    assert_eq!(
-        t.processor.sync_bytes_count(),
-        0,
-        "sync buffer must be empty when not in sync mode"
+    // Parser-side timer must remain disarmed.
+    assert!(
+        !t.processor.is_sync_active(),
+        "parser-side sync timer must be disarmed when not in sync mode"
     );
 }
 
@@ -3186,33 +3200,37 @@ fn maybe_shrink_runs_in_run_loop() {
 /// Edge case — `maybe_shrink_buffers` runs cleanly while sync output is active.
 ///
 /// Regression: BUG-11-002. Mode 2026 sync (BSU pending, ESU not yet)
-/// holds bytes inside the VTE `processor` and forces
+/// keeps `TermMode::SYNC_UPDATE` set and forces
 /// `maybe_produce_snapshot()` to defer. The shrink helper touches
 /// IO-thread-owned `snapshot_buf` + the lock-protected `slot.front`,
-/// never the VTE processor's internal sync buffer — so it must be safe
-/// to call mid-sync without mutating sync state or flushing buffered
-/// bytes.
+/// never the VTE processor's parser timer — so it must be safe to
+/// call mid-sync without mutating sync state.
 /// See: bug-tracker/plans/BUG-11-002/section-03-tdd-matrix.md §"Edge cases" — sync-active.
 #[test]
 fn maybe_shrink_during_sync_active() {
     let (mut t, _wakeup_count) = make_sync_thread_with_wakeup();
 
-    // Enter Mode 2026 sync mode (BSU) and push bytes into the sync buffer.
+    // Enter Mode 2026 sync mode (BSU) + dispatch grid mutations inline.
     t.handle_bytes(b"\x1b[?2026h");
     t.processor.advance(&mut t.terminal, b"buffered content");
-    let sync_bytes_before = t.processor.sync_bytes_count();
     assert!(
-        sync_bytes_before > 0 || t.terminal.mode().contains(TermMode::SYNC_UPDATE),
-        "BSU + content should activate sync mode"
+        t.terminal.mode().contains(TermMode::SYNC_UPDATE),
+        "BSU should activate sync mode"
     );
+    let sync_active_before = t.processor.is_sync_active();
+    assert!(sync_active_before, "BSU should arm parser-side timer");
 
     // Shrink while sync is active — must NOT mutate sync state or panic.
     t.maybe_shrink_buffers();
 
+    assert!(
+        t.terminal.mode().contains(TermMode::SYNC_UPDATE),
+        "maybe_shrink must NOT clear TermMode::SYNC_UPDATE"
+    );
     assert_eq!(
-        t.processor.sync_bytes_count(),
-        sync_bytes_before,
-        "maybe_shrink must NOT alter sync_bytes_count"
+        t.processor.is_sync_active(),
+        sync_active_before,
+        "maybe_shrink must NOT alter parser-side sync timer state"
     );
 }
 
@@ -3813,10 +3831,7 @@ fn live_io_thread_atomic_store_wakes_within_one_iteration() {
     let deadline = Instant::now() + Duration::from_secs(5);
     let mut snap = RenderableContent::default();
     loop {
-        if handle.double_buffer().swap_front(&mut snap)
-            && snap.lines == 40
-            && snap.cols == 120
-        {
+        if handle.double_buffer().swap_front(&mut snap) && snap.lines == 40 && snap.cols == 120 {
             break;
         }
         assert!(
@@ -3863,10 +3878,7 @@ fn resize_during_pty_flood_preserves_final_geometry() {
     let deadline = Instant::now() + Duration::from_secs(5);
     let mut snap = RenderableContent::default();
     loop {
-        if handle.double_buffer().swap_front(&mut snap)
-            && snap.lines == 50
-            && snap.cols == 200
-        {
+        if handle.double_buffer().swap_front(&mut snap) && snap.lines == 50 && snap.cols == 200 {
             break;
         }
         assert!(
@@ -3911,7 +3923,10 @@ fn send_resize_during_drain_before_snapshot_reflects_post_resize() {
         handle.double_buffer().swap_front(&mut snap),
         "SnapshotNow must publish a fresh snapshot"
     );
-    assert_eq!(snap.cols, 40, "snapshot cols must reflect post-resize geometry");
+    assert_eq!(
+        snap.cols, 40,
+        "snapshot cols must reflect post-resize geometry"
+    );
     handle.shutdown();
 }
 
@@ -3950,10 +3965,331 @@ fn idle_select_cmd_rx_arm_applies_pending_resize_before_reply_bearing() {
             "trial {trial}: SnapshotNow must publish a fresh snapshot"
         );
         assert_eq!(
-            snap.cols,
-            cols as usize,
+            snap.cols, cols as usize,
             "trial {trial}: snapshot cols must reflect post-resize cols ({cols})"
         );
     }
     handle.shutdown();
+}
+
+// =====================================================================
+// BUG-11-027 §03 matrix — Mode 2026 inline dispatch + snapshot gating.
+//
+// These pins prove the user-visible "no partial frames" invariant is
+// preserved by snapshot-publication gating on `TermMode::SYNC_UPDATE`,
+// while device queries and grid mutations dispatch INLINE during the
+// sync window (the byte-level buffer in the vendored vte parser is
+// gone after the fix). See bug-tracker/plans/BUG-11-027/.
+// =====================================================================
+
+/// Semantic pin: BSU + grid-mutating bytes mutate the grid INLINE,
+/// while snapshot publication is suppressed via the `SYNC_UPDATE`
+/// mode flag.
+///
+/// On HEAD the bytes get buffered in vte; the grid is NOT mutated
+/// until ESU/timeout, so the assertion that "Hello" appears in the
+/// grid fails. After the fix the bytes dispatch inline (grid is
+/// mutated immediately) but `maybe_produce_snapshot` defers because
+/// `TermMode::SYNC_UPDATE` is set.
+///
+/// Regression: BUG-11-027 §03 semantic-pin.
+#[test]
+fn mode_2026_active_does_not_publish_snapshot_yet_processes_bytes() {
+    let (mut t, wakeup_count) = make_sync_thread_with_wakeup();
+
+    // Enter sync mode + emit grid-mutating bytes in one chunk.
+    t.handle_bytes(b"\x1b[?2026hHello");
+
+    // Inline-dispatch invariant: grid contains "Hello" at row 0.
+    let row = &t.terminal.grid()[Line(0)];
+    let row_text: String = (0..5).map(|c| row[Column(c)].ch).collect();
+    assert_eq!(
+        row_text, "Hello",
+        "grid row 0 must contain 'Hello' inline during sync (bytes dispatched, not buffered)"
+    );
+
+    // Snapshot-gating invariant: no snapshot publication during sync.
+    let wakeup_before = wakeup_count.load(Ordering::Relaxed);
+    t.maybe_produce_snapshot();
+    let wakeup_after = wakeup_count.load(Ordering::Relaxed);
+    assert_eq!(
+        wakeup_before, wakeup_after,
+        "wakeup must NOT fire while TermMode::SYNC_UPDATE is set"
+    );
+    assert_eq!(
+        t.double_buffer.seqno(),
+        0,
+        "snapshot seqno must stay at 0 while TermMode::SYNC_UPDATE is set"
+    );
+}
+
+/// Sync timeout path: 150 ms timer expiry unsets the mode, emits
+/// `PresentationEffect::Abort`, and forces a snapshot publication.
+///
+/// Regression: BUG-11-027 §03 — pins the rewritten `handle_sync_timeout`
+/// path (no buffered-byte replay, just mode unset + snapshot force).
+#[test]
+fn mode_2026_timeout_unsets_sync_mode_emits_abort_forces_snapshot() {
+    use oriterm_core::effect::sink::EffectSink;
+    use oriterm_core::effect::{Effect, PresentationEffect, QueueingEffectSink, SyncAbortReason};
+
+    let sink = QueueingEffectSink::new();
+    let (mut t, wakeup_count) = make_sync_thread_generic(sink);
+
+    // Enter sync mode + dispatch grid-mutating bytes.
+    t.handle_bytes(b"\x1b[?2026hContent");
+    assert!(
+        t.terminal.mode().contains(TermMode::SYNC_UPDATE),
+        "BSU should set SYNC_UPDATE"
+    );
+
+    // Trigger timeout — exits the sync window without ESU.
+    t.handle_sync_timeout();
+
+    // 1. Mode flag must be cleared.
+    assert!(
+        !t.terminal.mode().contains(TermMode::SYNC_UPDATE),
+        "TermMode::SYNC_UPDATE must be cleared after handle_sync_timeout"
+    );
+
+    // 2. Abort effect must be in the effect sink.
+    let mut effects = Vec::new();
+    t.terminal.effect_sink().drain_into(&mut effects);
+    let has_abort = effects.iter().any(|e| {
+        matches!(
+            e,
+            Effect::Presentation(PresentationEffect::Abort {
+                reason: SyncAbortReason::Timeout
+            })
+        )
+    });
+    assert!(
+        has_abort,
+        "Abort effect must be emitted on timeout, got: {effects:?}"
+    );
+
+    // 3. Snapshot must be published (wakeup fired AND seqno advanced).
+    assert!(
+        wakeup_count.load(Ordering::Relaxed) > 0,
+        "wakeup must fire on sync timeout"
+    );
+    assert!(
+        t.double_buffer.seqno() > 0,
+        "snapshot seqno must advance on sync timeout"
+    );
+}
+
+/// ESU dispatched inline with BSU: mode flag clears AND parser-side
+/// timer disarms within the same `handle_bytes()` call.
+///
+/// Regression: BUG-11-027 §03 — pins the ESU dispatch arm's new
+/// `clear_timeout` call (Step 3) so a future revert won't leave the
+/// timer armed after ESU.
+#[test]
+fn mode_2026_esu_unsets_mode_clears_processor_timeout() {
+    let mut t = make_sync_thread();
+
+    // BSU + ESU in one call.
+    t.handle_bytes(b"\x1b[?2026h\x1b[?2026l");
+
+    assert!(
+        !t.terminal.mode().contains(TermMode::SYNC_UPDATE),
+        "ESU must clear TermMode::SYNC_UPDATE"
+    );
+    assert!(
+        t.processor.sync_timeout().sync_timeout().is_none(),
+        "ESU must disarm the parser-side sync timer"
+    );
+}
+
+/// Regression pin for the ESU-arm timer-disarm fix (Step 3): after
+/// BSU + ESU in one parser advance, the parser-side sync timer is
+/// disarmed AND the mode flag is cleared.
+///
+/// Without Step 3's `clear_timeout` call in the ESU dispatch arm, the
+/// parser-side timer would still be armed after ESU once the byte
+/// buffer is removed (Step 1 deletes `stop_sync_internal`, the previous
+/// disarm path), and the run loop's `crossbeam_channel::select!`
+/// `default(timeout)` arm would fire ~150 ms after ESU — invoking
+/// `handle_sync_timeout` on already-cleared state.
+///
+/// The disarmed timer (`sync_timeout().sync_timeout() == None`) IS the
+/// assertion: the select! arm only fires when a deadline is pending,
+/// so a `None` timer guarantees no spurious timeout invocation.
+///
+/// Regression: BUG-11-027 §03 ESU-arm timer-disarm pin.
+#[test]
+fn bsu_after_query_inside_sync_does_not_fire_spurious_handle_sync_timeout() {
+    use oriterm_core::effect::sink::EffectSink;
+    use oriterm_core::effect::{Effect, PtyEffect, QueueingEffectSink};
+
+    let sink = QueueingEffectSink::new();
+    let (mut t, _wakeup) = make_sync_thread_generic(sink);
+
+    // Drive bytes through the processor directly (bypasses
+    // handle_bytes's `drain_effects_into_mux_events`, so effects stay
+    // visible on the sink).
+    t.processor
+        .advance(&mut t.terminal, b"\x1b[?2026h\x1b[c\x1b[?2026l");
+
+    // (a) DA1 response present in the effect sink (inline-dispatched
+    // within the sync window — buffered until ESU on HEAD, inline
+    // after fix; either way the response must be in the sink before
+    // the run loop returns to drain effects).
+    let mut effects = Vec::new();
+    t.terminal.effect_sink().drain_into(&mut effects);
+    let da1_emitted = effects.iter().any(|e| {
+        matches!(
+            e,
+            Effect::Pty(PtyEffect::Write { bytes, .. })
+                if bytes.as_slice() == b"\x1b[?64;6;4c"
+        )
+    });
+    assert!(
+        da1_emitted,
+        "DA1 response must be emitted within the sync window, got effects: {effects:?}"
+    );
+
+    // (b) Mode flag must be cleared by ESU.
+    assert!(
+        !t.terminal.mode().contains(TermMode::SYNC_UPDATE),
+        "post-ESU: TermMode::SYNC_UPDATE must be cleared"
+    );
+
+    // (c) Parser-side sync timer must be disarmed — IS the no-spurious-
+    // fire pin. Run loop's select! deadline arm only fires when a
+    // timeout is pending; `None` guarantees no late `handle_sync_timeout`
+    // invocation.
+    assert!(
+        t.processor.sync_timeout().sync_timeout().is_none(),
+        "post-ESU: parser-side sync timer must be disarmed (proves no spurious timeout fires)"
+    );
+}
+
+/// Combined-dispatch pin: queries + grid-mutating bytes interleave
+/// correctly inside a single sync window.
+///
+/// Feed BSU + DA1 + "Hello" + DSR 5 + ESU in one chunk via the
+/// processor. The fix's inline dispatch must:
+///   (a) emit DA1 response within the sync window,
+///   (b) emit DSR 5 response,
+///   (c) leave "Hello" in the grid by the time the chunk completes,
+///   (d) clear the SYNC_UPDATE mode flag at ESU.
+///
+/// On HEAD the byte-level sync buffer means all of (a)-(c) are deferred
+/// until the ESU dispatch arm calls `stop_sync_internal`, which replays
+/// the buffered bytes — so on HEAD this test happens to pass via the
+/// replay path. After the fix the same observations hold via inline
+/// dispatch — pure regression pin.
+///
+/// The companion `mode_2026_active_does_not_publish_snapshot_yet_processes_bytes`
+/// is the red-first pin against the byte-buffer behavior (asserts grid
+/// mutation lands inline, BEFORE ESU). This test pins the combined
+/// post-ESU view.
+///
+/// Regression: BUG-11-027 §03 combined-dispatch pin.
+#[test]
+fn queries_interleaved_with_grid_mutation_dispatch_inline_during_sync() {
+    use oriterm_core::effect::sink::EffectSink;
+    use oriterm_core::effect::{Effect, PtyEffect, QueueingEffectSink};
+
+    let sink = QueueingEffectSink::new();
+    let (mut t, _wakeup) = make_sync_thread_generic(sink);
+
+    // Feed BSU + DA1 + "Hello" + DSR 5 + ESU directly through the
+    // processor (handle_bytes would drain effects into mux events
+    // before we can inspect them).
+    t.processor
+        .advance(&mut t.terminal, b"\x1b[?2026h\x1b[cHello\x1b[5n\x1b[?2026l");
+
+    // Drain effects emitted by the chunk.
+    let mut effects = Vec::new();
+    t.terminal.effect_sink().drain_into(&mut effects);
+
+    let pty_writes: Vec<&[u8]> = effects
+        .iter()
+        .filter_map(|e| match e {
+            Effect::Pty(PtyEffect::Write { bytes, .. }) => Some(bytes.as_slice()),
+            _ => None,
+        })
+        .collect();
+    assert!(
+        pty_writes.iter().any(|b| *b == b"\x1b[?64;6;4c"),
+        "DA1 response must be emitted within the sync window, got writes: {pty_writes:?}"
+    );
+    assert!(
+        pty_writes.iter().any(|b| *b == b"\x1b[0n"),
+        "DSR 5 response must be emitted within the sync window, got writes: {pty_writes:?}"
+    );
+
+    // "Hello" must be in the grid (inline mutation, not deferred).
+    let row = &t.terminal.grid()[Line(0)];
+    let row_text: String = (0..5).map(|c| row[Column(c)].ch).collect();
+    assert_eq!(
+        row_text, "Hello",
+        "grid row 0 must contain 'Hello' after the chunk (inline dispatch)"
+    );
+
+    // Mode must be cleared by ESU.
+    assert!(
+        !t.terminal.mode().contains(TermMode::SYNC_UPDATE),
+        "ESU must clear TermMode::SYNC_UPDATE"
+    );
+}
+
+/// Step 4b regression pin: a `PaneIoCommand::SnapshotNow` issued mid-
+/// sync must NOT publish a mid-mutation snapshot while
+/// `TermMode::SYNC_UPDATE` is set.
+///
+/// On HEAD the SnapshotNow handler at `handler.rs:238-242` calls
+/// `produce_snapshot()` directly, bypassing the sync gate. Bytes are
+/// buffered, so the grid is NOT mid-mutation on HEAD — the snapshot
+/// publishes empty content. After Step 1 (byte-buffer removal) the
+/// grid IS mid-mutation, and without Step 4b the SnapshotNow would
+/// expose that intermediate state. Step 4b adds the gate so the
+/// publish defers until ESU/timeout.
+///
+/// Regression: BUG-11-027 §03 SnapshotNow gate pin (Step 4b).
+#[test]
+fn snapshot_now_during_mode_2026_defers_to_sync_end() {
+    let (mut t, wakeup_count) = make_sync_thread_with_wakeup();
+
+    // Enter sync mode + dispatch grid-mutating bytes.
+    t.handle_bytes(b"\x1b[?2026hMidSync");
+    assert!(
+        t.terminal.mode().contains(TermMode::SYNC_UPDATE),
+        "precondition: SYNC_UPDATE must be active"
+    );
+
+    let wakeup_before = wakeup_count.load(Ordering::Relaxed);
+    let seqno_before = t.double_buffer.seqno();
+
+    // Send SnapshotNow via the command handler.
+    let (reply_tx, reply_rx) = crossbeam_channel::bounded::<()>(1);
+    t.handle_command(PaneIoCommand::SnapshotNow { reply: reply_tx });
+
+    // Reply must fire (the request was acknowledged).
+    reply_rx
+        .recv_timeout(Duration::from_secs(1))
+        .expect("SnapshotNow reply must fire even when publish is deferred");
+
+    // Snapshot must NOT publish while SYNC_UPDATE is set.
+    assert_eq!(
+        t.double_buffer.seqno(),
+        seqno_before,
+        "snapshot seqno must NOT advance for SnapshotNow during sync"
+    );
+    assert_eq!(
+        wakeup_count.load(Ordering::Relaxed),
+        wakeup_before,
+        "wakeup must NOT fire for SnapshotNow during sync"
+    );
+
+    // Closing ESU clears the gate; a follow-up snapshot publishes.
+    t.handle_bytes(b"\x1b[?2026l");
+    t.maybe_produce_snapshot();
+    assert!(
+        t.double_buffer.seqno() > seqno_before,
+        "snapshot must publish after ESU clears the gate"
+    );
 }
