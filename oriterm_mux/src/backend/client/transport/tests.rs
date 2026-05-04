@@ -80,6 +80,98 @@ fn writer_module_drains_pending_on_error_exit() {
     );
 }
 
+#[cfg(unix)]
+mod drain_pending_behavioral_pin {
+    //! Behavioral pin paired with the source-grep
+    //! `writer_module_drains_pending_on_error_exit` test above. Pre-fix
+    //! (writer doesn't drain), an in-flight RPC waits the full RPC_TIMEOUT
+    //! (5 s) for a phantom response after the connection breaks. Post-fix,
+    //! the writer drains the shared pending map on its error-exit path so
+    //! the application's `reply_rx` observes `Disconnected` immediately.
+    //!
+    //! The pin is paired-source-and-behavior so a future regression that
+    //! removes the `drain_pending` call (passing the source-grep on the
+    //! word's continued presence in a comment, for instance) is still
+    //! caught by the wall-clock pin: an RPC that takes >1 s to fail after
+    //! the connection drops fails this test.
+    //!
+    //! Codex round 1 finding F2 pin.
+
+    use std::os::unix::net::UnixListener;
+    use std::sync::Arc;
+    use std::thread;
+    use std::time::{Duration, Instant};
+
+    use crate::id::ClientId;
+    use crate::protocol::{MuxPdu, ProtocolCodec};
+
+    use super::super::ClientTransport;
+
+    /// When the daemon abruptly closes the connection mid-flight, an RPC
+    /// caller observes `BrokenPipe` (or another non-`TimedOut`) error
+    /// within 1 second — NOT after the 5-second `RPC_TIMEOUT`. The writer
+    /// thread's `drain_pending` is what closes the gap: without it,
+    /// `reply_rx` waits for a sender that nobody will ever drop until
+    /// `Drop::drop` runs.
+    #[test]
+    fn rpc_after_connection_drop_observes_disconnected_within_one_second() {
+        let dir = tempfile::tempdir().unwrap();
+        let sock = dir.path().join("drain.sock");
+        let listener = UnixListener::bind(&sock).unwrap();
+
+        let server_handle = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut codec = ProtocolCodec::new();
+            // Hello / HelloAck.
+            let frame = codec.decode_frame(&mut stream).unwrap();
+            assert!(matches!(frame.pdu, MuxPdu::Hello { .. }));
+            ProtocolCodec::encode_frame(
+                &mut stream,
+                frame.seq,
+                &MuxPdu::HelloAck {
+                    client_id: ClientId::from_raw(1),
+                    protocol_version: crate::protocol::CURRENT_PROTOCOL_VERSION,
+                    features: 0,
+                },
+            )
+            .unwrap();
+            // SetCapabilities (fire-and-forget).
+            let _ = codec.decode_frame(&mut stream);
+            // Drop the stream immediately — daemon side disappears.
+            drop(stream);
+        });
+
+        let wakeup: Arc<dyn Fn() + Send + Sync> = Arc::new(|| {});
+        let mut transport = ClientTransport::connect(&sock, wakeup).unwrap();
+        let _ = server_handle.join();
+
+        // Brief settle so the writer's next `recv_timeout` cycle observes
+        // the broken connection. The exact mechanism doesn't matter — what
+        // matters is that a subsequent RPC must not block for 5 seconds.
+        thread::sleep(Duration::from_millis(50));
+
+        let start = Instant::now();
+        let result = transport.rpc(MuxPdu::Ping);
+        let elapsed = start.elapsed();
+
+        assert!(result.is_err(), "RPC must fail after the daemon dropped");
+        let err = result.unwrap_err();
+        assert_ne!(
+            err.kind(),
+            std::io::ErrorKind::TimedOut,
+            "drain_pending must wake reply_rx with `BrokenPipe` (or transport \
+             death) — observing `TimedOut` means the writer's error path did \
+             not drain the pending map. Codex round 1 finding F2 pin."
+        );
+        assert!(
+            elapsed < Duration::from_secs(1),
+            "drain_pending pin: rpc() must return within 1 s after the daemon \
+             drops, not wait `RPC_TIMEOUT` (5 s) for a phantom response (got \
+             {elapsed:?})"
+        );
+    }
+}
+
 #[test]
 fn pending_map_is_shared_arc_mutex() {
     let mod_src = include_str!("mod.rs");

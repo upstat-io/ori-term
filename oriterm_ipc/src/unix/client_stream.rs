@@ -1,6 +1,7 @@
 //! Client-side blocking IPC stream (Unix domain socket).
 
 use std::io;
+use std::net::Shutdown;
 use std::os::fd::{AsRawFd, RawFd};
 use std::os::unix::net::UnixStream;
 use std::path::Path;
@@ -51,6 +52,21 @@ impl ClientStream {
     /// write starved RPC reply reads (BUG-11-047).
     pub fn try_clone(&self) -> io::Result<Self> {
         Ok(Self(self.0.try_clone()?))
+    }
+
+    /// Shut down the writing direction of the underlying socket.
+    ///
+    /// Used by `MuxClient::Drop` to break a writer thread that is
+    /// blocked inside a backpressured `write()` so the join completes
+    /// promptly even when the daemon has stopped draining (BUG-11-047
+    /// follow-up — round 1 codex finding).
+    ///
+    /// `Shutdown::Write` is socket-scoped on Unix domain sockets, so
+    /// calling it on any fd duplicate referring to the same kernel
+    /// socket aborts the pending `write()` with `EPIPE`. Reads on the
+    /// reader-thread duplicate are unaffected.
+    pub fn shutdown_write(&self) -> io::Result<()> {
+        self.0.shutdown(Shutdown::Write)
     }
 }
 

@@ -122,6 +122,11 @@ pub(super) struct ClientTransport {
     /// shutdown (Unix only).
     #[cfg(unix)]
     wake_write: RawFd,
+    /// Cloned IPC stream handle reserved for `Drop` to abort a writer
+    /// blocked inside `encode_frame` on a backpressured `write()` (the
+    /// daemon-wedged scenario where dropping `send_tx` alone is not
+    /// enough to unblock the writer thread). Codex round 1 finding pin.
+    write_shutdown_handle: Option<ClientStream>,
     /// Pending host-request replies received from the daemon — keyed by
     /// the local `ResponseToken`'s `slot_id` so `MuxClient::fulfill_host_request`
     /// can look up the original `request_id` and echo it back in
@@ -192,6 +197,12 @@ impl ClientTransport {
         let write_stream = stream
             .try_clone()
             .map_err(|e| io::Error::other(format!("failed to clone IPC stream for writer: {e}")))?;
+        // Third clone reserved for `Drop` — calls `shutdown_write` so a
+        // writer blocked in `encode_frame` exits promptly without waiting
+        // for the daemon to drain (codex round 1 finding pin).
+        let write_shutdown_handle = write_stream.try_clone().map_err(|e| {
+            io::Error::other(format!("failed to clone IPC stream for shutdown: {e}"))
+        })?;
         let read_stream = stream;
 
         // Spawn writer thread first; reader thread depends on the writer
@@ -246,6 +257,7 @@ impl ClientTransport {
             #[cfg(unix)]
             wake_write,
             pending_replies,
+            write_shutdown_handle: Some(write_shutdown_handle),
         })
     }
 
@@ -442,22 +454,35 @@ impl ClientTransport {
 impl Drop for ClientTransport {
     fn drop(&mut self) {
         // 1. Close the send channel so the writer thread sees `Disconnected`
-        //    on `recv_timeout` and exits, draining its pending RPC reply
-        //    senders so callers see `BrokenPipe` (Codex-001 round 1 pin).
+        //    on `recv_timeout` between PDUs and exits, draining its pending
+        //    RPC reply senders so callers see `BrokenPipe` (Codex-001
+        //    round 1 pin from §02 fix-consensus).
         self.send_tx.take();
 
-        // 2. Join the writer thread first. Once it exits it sets
-        //    `alive = false` (or it was already false from an earlier write
-        //    error), which the reader observes on its next loop iteration.
+        // 2. Abort any `write()` the writer is currently blocked on. When
+        //    the daemon is wedged (alive but unresponsive), step 1 alone
+        //    is not enough — the writer's `encode_frame` does not consult
+        //    `send_rx` mid-write. `shutdown(SHUT_WR)` (Unix) /
+        //    `CancelIoEx` (Windows) on the reserved clone handle returns
+        //    `EPIPE` to the blocked write so the writer exits via its
+        //    error path. Codex round 1 finding pin.
+        if let Some(handle) = self.write_shutdown_handle.take() {
+            let _ = handle.shutdown_write();
+        }
+
+        // 3. Join the writer thread. Once it exits it sets `alive = false`
+        //    (via `drain_pending` on the error path or natural exit on
+        //    `Disconnected`), which the reader observes on its next loop
+        //    iteration.
         if let Some(handle) = self.writer_handle.take() {
             let _ = handle.join();
         }
 
-        // 3. Belt-and-suspenders: ensure the reader sees `alive = false`
+        // 4. Belt-and-suspenders: ensure the reader sees `alive = false`
         //    even on the rare path where the writer never ran a loop body.
         self.alive.store(false, Ordering::Release);
 
-        // 4. Wake the reader from poll(2) so it observes `alive = false`
+        // 5. Wake the reader from poll(2) so it observes `alive = false`
         //    immediately and exits.
         self.signal_wake();
         if let Some(handle) = self.reader_handle.take() {

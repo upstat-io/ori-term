@@ -157,6 +157,35 @@ impl ClientStream {
             read_timeout: self.read_timeout,
         })
     }
+
+    /// Cancel any pending I/O on the underlying handle so a blocked writer
+    /// thread can exit promptly during shutdown (BUG-11-047 follow-up —
+    /// round 1 codex finding).
+    ///
+    /// On Windows there is no socket-scoped `shutdown(SHUT_WR)`. The
+    /// equivalent for a named pipe is `CancelIoEx`, which aborts pending
+    /// `WriteFile` calls on the handle.
+    pub fn shutdown_write(&self) -> io::Result<()> {
+        use std::os::windows::io::AsRawHandle;
+        let handle: windows_sys::Win32::Foundation::HANDLE = self.handle.as_raw_handle().cast();
+        // SAFETY: `handle` is owned by `self.handle` for the duration of
+        // this call (we hold `&self`). `CancelIoEx` is documented as safe
+        // to call from any thread; passing a null `OVERLAPPED` cancels all
+        // pending I/O on the handle.
+        #[allow(unsafe_code, reason = "CancelIoEx FFI call for shutdown signaling")]
+        let ok = unsafe { CancelIoEx(handle, std::ptr::null_mut()) };
+        if ok == 0 {
+            // CancelIoEx returns 0 on failure with GetLastError. Most
+            // common: ERROR_NOT_FOUND when no I/O is pending — that's
+            // the success case (writer already exited), not a real error.
+            let err = io::Error::last_os_error();
+            if err.raw_os_error() == Some(windows_sys::Win32::Foundation::ERROR_NOT_FOUND as i32) {
+                return Ok(());
+            }
+            return Err(err);
+        }
+        Ok(())
+    }
 }
 
 impl io::Read for ClientStream {
