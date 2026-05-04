@@ -2221,7 +2221,7 @@ fn alt_screen_swap_inline_updates_mode_cache() {
 fn no_double_publish_on_timeout() {
     let (mut t, wakeup_count) = make_sync_thread_with_wakeup();
 
-    // Enter sync mode + buffer content.
+    // Enter sync mode + dispatch content inline.
     t.handle_bytes(b"\x1b[?2026h");
     t.handle_bytes(b"content");
 
@@ -2318,7 +2318,7 @@ fn run_loop_sync_timeout_fires() {
     // Wait >150ms for the sync timeout to fire in the run loop.
     std::thread::sleep(Duration::from_millis(300));
 
-    // The pane's snapshot should now reflect the buffered content.
+    // The pane's snapshot should now reflect the inline-dispatched content.
     let mut consumer = RenderableContent::default();
     // Give the IO thread a moment to publish.
     for _ in 0..10 {
