@@ -37,6 +37,21 @@ impl ClientStream {
     pub fn set_write_timeout(&mut self, timeout: Option<Duration>) -> io::Result<()> {
         self.0.set_write_timeout(timeout)
     }
+
+    /// Duplicate the underlying socket handle for split-thread ownership.
+    ///
+    /// Returns a new `ClientStream` whose `UnixStream` is a `dup()` of this
+    /// stream's fd. Both fds reference the same kernel socket; concurrent
+    /// reads via one stream and writes via the other from different threads
+    /// is safe — the kernel queues for read vs. write are independent.
+    ///
+    /// Used by the `MuxClient` transport to give a dedicated writer thread
+    /// exclusive write ownership while the reader thread retains read
+    /// ownership, eliminating the head-of-line block where a backpressured
+    /// write starved RPC reply reads (BUG-11-047).
+    pub fn try_clone(&self) -> io::Result<Self> {
+        Ok(Self(self.0.try_clone()?))
+    }
 }
 
 impl AsRawFd for ClientStream {

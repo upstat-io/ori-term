@@ -137,6 +137,26 @@ impl ClientStream {
         use std::os::windows::io::AsRawHandle;
         self.handle.as_raw_handle().cast()
     }
+
+    /// Duplicate the underlying named-pipe handle for split-thread ownership.
+    ///
+    /// Returns a new `ClientStream` whose handle is a `DuplicateHandle` of
+    /// this stream's handle. Both handles reference the same named-pipe
+    /// instance. For duplex pipes opened with `GENERIC_READ | GENERIC_WRITE`,
+    /// concurrent ReadFile via one handle and WriteFile via the other from
+    /// different threads is supported by the Win32 I/O subsystem — the
+    /// internal read/write queues for a duplex pipe are independent.
+    ///
+    /// Used by the `MuxClient` transport to give a dedicated writer thread
+    /// exclusive write ownership while the reader thread retains read
+    /// ownership, eliminating the head-of-line block where a backpressured
+    /// write starved RPC reply reads (BUG-11-047).
+    pub fn try_clone(&self) -> io::Result<Self> {
+        Ok(Self {
+            handle: self.handle.try_clone()?,
+            read_timeout: self.read_timeout,
+        })
+    }
 }
 
 impl io::Read for ClientStream {
