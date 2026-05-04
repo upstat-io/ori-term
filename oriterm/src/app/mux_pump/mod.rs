@@ -11,6 +11,7 @@ use std::time::{Duration, Instant};
 
 use oriterm_mux::MuxNotification;
 use oriterm_mux::PaneId;
+use oriterm_mux::backend::MuxBackend;
 
 use crate::config::NotifyOnCommandFinish;
 use crate::platform::audio;
@@ -18,6 +19,29 @@ use crate::platform::audio;
 use self::host_color_query::resolve_host_color_query;
 use self::notification_purge::purge_pending_desktop_notifications;
 use super::App;
+
+/// Apply the focus-gated bell decision to the mux backend.
+///
+/// Centralizes the one-line bell branch shared by the `PaneBell` and
+/// `DesktopNotification` arms of [`App::handle_mux_notification`]:
+/// when `is_in_focused_tab` is true the user is looking at the tab,
+/// so the bell is silenced via `clear_bell`; otherwise the
+/// background-pane convention applies and `set_bell` lights the
+/// persistent tab indicator.
+///
+/// Free function (not `impl App`) so the focus-decision step is
+/// directly testable against a real `MuxBackend` without constructing
+/// a full `App`. The behavioral pin lives in
+/// `mux_pump/tests.rs::apply_bell_focus_decision_*`: focused-tab
+/// input ⇒ `clear_bell` only; non-focused-tab input ⇒ `set_bell`
+/// only; the partner method is never called on the wrong branch.
+fn apply_bell_focus_decision(is_in_focused_tab: bool, mux: &mut dyn MuxBackend, pane_id: PaneId) {
+    if is_in_focused_tab {
+        mux.clear_bell(pane_id);
+    } else {
+        mux.set_bell(pane_id);
+    }
+}
 
 impl App {
     /// Drain the notification buffer and invoke `handler` on each notification.
@@ -157,11 +181,7 @@ impl App {
                 // because the user IS looking at the tab.
                 let is_in_focused_tab = self.is_pane_in_focused_tab(id);
                 if let Some(mux) = self.mux.as_mut() {
-                    if is_in_focused_tab {
-                        mux.clear_bell(id);
-                    } else {
-                        mux.set_bell(id);
-                    }
+                    apply_bell_focus_decision(is_in_focused_tab, mux.as_mut(), id);
                 }
                 let now = Instant::now();
                 // Sync the OWNING window's tab entries FIRST so the persistent
@@ -227,11 +247,7 @@ impl App {
                 }
                 if mode.is_visual() {
                     if let Some(mux) = self.mux.as_mut() {
-                        if is_in_focused_tab {
-                            mux.clear_bell(pane_id);
-                        } else {
-                            mux.set_bell(pane_id);
-                        }
+                        apply_bell_focus_decision(is_in_focused_tab, mux.as_mut(), pane_id);
                     }
                     self.sync_tab_bar_for_pane(pane_id);
                     if !is_in_focused_tab {
