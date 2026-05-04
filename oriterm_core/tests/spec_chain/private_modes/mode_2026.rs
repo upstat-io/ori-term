@@ -171,10 +171,10 @@ fn mode_2026_does_not_touch_unrelated_flags() {
 // inline, not deferred to ESU/timeout.
 //
 // Each test below feeds `BSU + query` in ONE harness.feed() call with
-// NO ESU. With byte-level sync buffering on HEAD, the query is buffered
-// and produces no PTY response (assertion fails). After the fix
-// dispatches handler calls inline during sync, the response arrives
-// within the same feed() call (assertion passes).
+// NO ESU. The query MUST dispatch INLINE during the sync window — its
+// PTY response appears in the harness's effect transcript before ESU
+// is even processed. If a regression re-introduced byte buffering, the
+// response would be deferred and these assertions would fail.
 //
 // All 11 query classes from §01 blast radius are covered, plus the
 // DECRQM unknown / set / reset axes added by Plan TPR rounds 0-1.

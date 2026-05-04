@@ -2160,19 +2160,20 @@ fn sync_timeout_runs_post_parse_housekeeping_inline_dispatch() {
     );
 }
 
-/// Resize command during active sync — buffered bytes replay correctly after timeout.
+/// Resize command during active sync — grid dimensions reflect the
+/// resize after timeout publishes the snapshot.
 #[test]
 fn resize_during_sync_timeout() {
     let (mut t, _wakeup) = make_sync_thread_with_wakeup();
 
-    // Enter sync mode + buffer content.
+    // Enter sync mode + dispatch grid bytes inline.
     t.handle_bytes(b"\x1b[?2026h");
     t.handle_bytes(b"resize");
 
     // Resize while sync is active.
     t.process_resize(40, 100);
 
-    // Trigger timeout.
+    // Trigger timeout — clears SYNC_UPDATE and publishes snapshot.
     t.handle_sync_timeout();
 
     // Snapshot must be coherent — no crash, grid dimensions match resize.
@@ -2183,9 +2184,11 @@ fn resize_during_sync_timeout() {
     assert_eq!(t.terminal.grid().cols(), 100);
 }
 
-/// Alt screen swap in replayed bytes — mode_cache reflects ALT_SCREEN after timeout.
+/// Alt-screen swap inside an active sync window — mode_cache reflects
+/// ALT_SCREEN after the timeout closes the gate and post-parse
+/// housekeeping fires.
 #[test]
-fn alt_screen_swap_in_replayed_bytes() {
+fn alt_screen_swap_inline_updates_mode_cache() {
     let (mut t, _wakeup) = make_sync_thread_with_wakeup();
 
     // Confirm not in alt screen.
@@ -2194,22 +2197,22 @@ fn alt_screen_swap_in_replayed_bytes() {
         "should start in primary screen"
     );
 
-    // Enter sync mode, switch to alt screen within sync buffer.
+    // Enter sync mode + dispatch the alt-screen swap inline.
     t.handle_bytes(b"\x1b[?2026h");
     t.handle_bytes(b"\x1b[?1049h");
 
-    // Trigger timeout.
+    // Trigger timeout — clears SYNC_UPDATE and runs post-parse housekeeping.
     t.handle_sync_timeout();
 
-    // Alt screen must be active after replay.
+    // Alt screen mutation landed inline; mode_cache reflects it post-housekeeping.
     assert!(
         t.terminal.mode().contains(TermMode::ALT_SCREEN),
-        "alt screen must be active after replayed bytes"
+        "alt screen must be active after inline dispatch"
     );
     let cached_mode = TermMode::from_bits_truncate(t.mode_cache.load(Ordering::Acquire));
     assert!(
         cached_mode.contains(TermMode::ALT_SCREEN),
-        "mode_cache must reflect alt screen after timeout replay"
+        "mode_cache must reflect alt screen after housekeeping"
     );
 }
 
@@ -4176,16 +4179,15 @@ fn bsu_after_query_inside_sync_does_not_fire_spurious_handle_sync_timeout() {
 ///   (c) leave "Hello" in the grid by the time the chunk completes,
 ///   (d) clear the SYNC_UPDATE mode flag at ESU.
 ///
-/// On HEAD the byte-level sync buffer means all of (a)-(c) are deferred
-/// until the ESU dispatch arm calls `stop_sync_internal`, which replays
-/// the buffered bytes — so on HEAD this test happens to pass via the
-/// replay path. After the fix the same observations hold via inline
-/// dispatch — pure regression pin.
+/// All four observations land via INLINE dispatch — bytes are processed
+/// as they arrive, not deferred to ESU. This is the combined-dispatch
+/// pin: queries + grid mutation + ESU all flow through the handler in
+/// one chunk without buffering.
 ///
 /// The companion `mode_2026_active_does_not_publish_snapshot_yet_processes_bytes`
-/// is the red-first pin against the byte-buffer behavior (asserts grid
-/// mutation lands inline, BEFORE ESU). This test pins the combined
-/// post-ESU view.
+/// pins the snapshot-gate invariant (grid mutates inline BEFORE ESU,
+/// but the snapshot publish defers until the gate clears). This test
+/// pins the combined post-ESU view.
 ///
 /// Regression: BUG-11-027 §03 combined-dispatch pin.
 #[test]

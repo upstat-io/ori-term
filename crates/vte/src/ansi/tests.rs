@@ -620,20 +620,19 @@ fn parse_decrsps_default_ps_is_zero() {
 // =====================================================================
 // BUG-11-027 §03 matrix — Mode 2026 inline dispatch (vte-layer pins).
 //
-// These pins prove the parser's Mode 2026 handling no longer buffers
-// bytes for deferred replay — handler dispatch happens inline within
-// the same `advance()` call as the BSU. The byte-level sync buffer is
-// gone; the only remaining sync state is the parser timer (used by
-// the run loop's `select!` deadline arm to bound a sync window).
-// See bug-tracker/plans/BUG-11-027/.
+// These pins enforce that the parser's Mode 2026 handling dispatches
+// the handler INLINE within the same `advance()` call as the BSU —
+// no buffering, no deferred replay. The only sync state the parser
+// holds is the deadline timer used by the run loop's `select!`
+// deadline arm to bound a sync window. See bug-tracker/plans/BUG-11-027/.
 // =====================================================================
 
-/// Negative pin: `SyncState` carries no byte buffer after the fix.
+/// Negative pin: `SyncState` carries no byte buffer.
 ///
 /// Asserts that `SyncState<TestSyncHandler>` has the SAME size as
-/// `TestSyncHandler` alone (the only field is `timeout: T`). On HEAD
-/// `SyncState` adds a `buffer: Vec<u8>` (24 bytes on 64-bit), so the
-/// sizes diverge and the assertion fails.
+/// `TestSyncHandler` alone (the only field is `timeout: T`). If a
+/// future refactor re-introduces a `buffer: Vec<u8>` field (24 bytes
+/// on 64-bit), the sizes diverge and this assertion fires.
 ///
 /// Regression: BUG-11-027 §03 negative-pin (no byte-level buffering).
 #[test]
@@ -663,11 +662,10 @@ fn processor_no_sync_buffer_during_active_sync() {
 /// Inline-dispatch pin: BSU + DA1 + grid-mutating SGR all dispatch
 /// within the SAME `advance()` call.
 ///
-/// On HEAD the BSU sets `terminated = true` so the parser stops; DA1 +
-/// SGR are buffered. After the fix `terminated = true` is dropped (Step
-/// 2) and all three dispatches land inline. Asserting both the DA1
-/// `identify_terminal` callback AND the SGR `terminal_attribute`
-/// callback fired pins inline dispatch from two angles.
+/// Asserting both the DA1 `identify_terminal` callback AND the SGR
+/// `terminal_attribute` callback fired pins inline dispatch from two
+/// angles — if a regression re-introduced parser termination after BSU,
+/// DA1 and SGR would not reach the handler in this chunk.
 ///
 /// Regression: BUG-11-027 §03 inline-dispatch pin.
 #[test]
@@ -711,14 +709,11 @@ fn esu_without_bsu_is_noop() {
 /// Two BSUs in one feed re-arm the timer (TestSyncHandler increments
 /// its `is_sync` counter on each `set_timeout`).
 ///
-/// On HEAD: first BSU sets `terminated = true` → parser stops. The
-/// second BSU is buffered, never reaching the dispatch arm, so
-/// `is_sync == 1` (only the first BSU armed the timer).
-///
-/// After the fix: `terminated = true` is gone. Both BSUs dispatch
-/// inline through the same advance() call — `is_sync == 2`. The intra-
-/// BSU DA1 also dispatches (handler.identity_reported == true), pinning
-/// the same inline-dispatch invariant from a different angle.
+/// Both BSUs dispatch inline through the same `advance()` call — the
+/// counter advances to 2, demonstrating the second BSU reached the
+/// dispatch arm rather than being deferred. The intra-chunk DA1 also
+/// dispatches (`handler.identity_reported == true`), pinning the same
+/// inline-dispatch invariant from a different angle.
 ///
 /// Regression: BUG-11-027 §03 nested-BSU pin.
 #[test]
