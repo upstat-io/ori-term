@@ -13,6 +13,9 @@ pre-commit:
     test:
       glob: "*.rs"
       run: cargo test
+    prose-lint:
+      glob: "{*.rs,*.md}"
+      run: python3 scripts/prose-lint.py .
 
 commit-msg:
   commands:
