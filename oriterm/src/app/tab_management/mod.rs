@@ -11,11 +11,42 @@ mod width_lock;
 use std::path::PathBuf;
 
 use oriterm_mux::PaneId;
+use oriterm_mux::backend::MuxBackend;
 use oriterm_mux::domain::SpawnConfig;
 
-use crate::session::{TabId, WindowId as SessionWindowId};
+use crate::session::{SessionRegistry, Tab, TabId, WindowId as SessionWindowId};
 
 use super::App;
+
+/// Pure helper underlying [`App::clear_tab_bells`].
+///
+/// For each pane in `tab_id`'s `all_panes()` set, calls
+/// `mux.clear_bell(pane_id)` and `mux.mark_output_seen(pane_id)`.
+/// Iteration order matches `Tab::all_panes()` (depth-first split-tree
+/// traversal); the order does not affect correctness but is stable for
+/// test pins. The function reads `session` immutably and mutates `mux`
+/// — the App method is responsible for the borrow-split.
+///
+/// Exposed at module scope (not `impl App`) so the cross-pane sweep can
+/// be exercised directly against a real `EmbeddedMux` in tests, without
+/// constructing a full `App`. The behavioral pin lives in
+/// `tab_management/tests.rs`: a tab with N split panes registers N
+/// `clear_bell` + `mark_output_seen` calls, regardless of which pane
+/// the tab marks as active.
+pub(super) fn clear_tab_bells_impl(
+    session: &SessionRegistry,
+    mux: &mut dyn MuxBackend,
+    tab_id: TabId,
+) {
+    let pane_ids = session
+        .get_tab(tab_id)
+        .map(Tab::all_panes)
+        .unwrap_or_default();
+    for pid in pane_ids {
+        mux.clear_bell(pid);
+        mux.mark_output_seen(pid);
+    }
+}
 
 impl App {
     /// Create a new tab in the given window.
@@ -66,7 +97,7 @@ impl App {
 
         // Local tab creation.
         let tab_id = self.session.alloc_tab_id();
-        let tab = crate::session::Tab::new(tab_id, pane_id);
+        let tab = Tab::new(tab_id, pane_id);
         self.session.add_tab(tab);
         if let Some(win) = self.session.get_window_mut(window_id) {
             win.add_tab(tab_id);
@@ -104,7 +135,7 @@ impl App {
         let pane_ids: Vec<PaneId> = self
             .session
             .get_tab(tab_id)
-            .map(crate::session::Tab::all_panes)
+            .map(Tab::all_panes)
             .unwrap_or_default();
 
         // Close each pane through the mux (unregisters from pane registry,
@@ -270,20 +301,15 @@ impl App {
     ///
     /// Focus-change clear paths drain bell state across ALL panes in the
     /// newly-active tab, not just the keyboard-focused split.
-    /// `Tab::all_panes` returns an owned `Vec<PaneId>` so we collect
-    /// first to drop the immutable session borrow before taking
-    /// `&mut self.mux`.
+    /// Delegates to the free function [`clear_tab_bells_impl`] (the
+    /// testable form; the App method is the production caller). The
+    /// free function is exercised directly against `EmbeddedMux` in
+    /// `tab_management/tests.rs` so the per-pane sweep — `clear_bell` +
+    /// `mark_output_seen` for every pane in `Tab::all_panes()`, not
+    /// just the active pane — has a behavioral regression pin.
     pub(super) fn clear_tab_bells(&mut self, tab_id: TabId) {
-        let pane_ids = self
-            .session
-            .get_tab(tab_id)
-            .map(crate::session::Tab::all_panes)
-            .unwrap_or_default();
         if let Some(mux) = self.mux.as_mut() {
-            for pid in pane_ids {
-                mux.clear_bell(pid);
-                mux.mark_output_seen(pid);
-            }
+            clear_tab_bells_impl(&self.session, mux.as_mut(), tab_id);
         }
     }
 

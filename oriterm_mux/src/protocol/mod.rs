@@ -14,7 +14,9 @@
 //! ```
 //!
 //! - `magic`: `0x4F54` ("OT") — early detection of non-oriterm connections.
-//! - `ver`: protocol version (currently `1`).
+//! - `ver`: protocol version. See [`PROTOCOL_VERSION`] for the
+//!   canonical value (currently `2`); the constant doc comment
+//!   carries the reason for the latest bump.
 //! - `flags`: `0x01` = `COMPRESSED` (payload is zstd-compressed). Unknown bits
 //!   are silently ignored on decode for forward compatibility.
 //! - `type`: message type ID for pre-routing and debugging.
