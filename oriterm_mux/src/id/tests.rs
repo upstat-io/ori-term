@@ -124,7 +124,7 @@ fn allocator_default_same_as_new() {
     assert_eq!(a.alloc(), b.alloc());
 }
 
-/// `HostRequestId` (added for BUG-11-011) is `Copy + Hash + Eq + Display + Debug`
+/// `HostRequestId` (added for ) is `Copy + Hash + Eq + Display + Debug`
 /// and round-trips through `MuxId::from_raw` / `MuxId::raw` like the other IDs.
 #[test]
 fn host_request_id_satisfies_mux_id_contract() {

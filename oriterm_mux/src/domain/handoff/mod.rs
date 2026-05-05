@@ -138,7 +138,7 @@ pub fn adopt_pane(
 
     // 4. Writer channel + handle. The writer thread spawns AFTER
     //    the IO thread so it can clone `io_wake_tx` (Step 6C of
-    //    BUG-11-025).
+    // ).
     let (tx, rx) = mpsc::channel();
     let notifier = PaneNotifier::new(tx);
 

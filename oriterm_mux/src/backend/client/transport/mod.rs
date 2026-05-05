@@ -8,8 +8,13 @@
 
 mod handshake;
 mod reader;
+mod spawn;
+mod types;
 mod wake_pipe;
 mod writer;
+
+use self::spawn::{spawn_reader_thread, spawn_writer_thread};
+use self::types::{PendingClientReply, SendRequest};
 
 use std::collections::HashMap;
 use std::io;
@@ -32,30 +37,6 @@ use crate::mux_event::MuxNotification;
 use crate::protocol::MuxPdu;
 use crate::{PaneId, PaneSnapshot};
 
-/// Bookkeeping for a host-request received from the daemon, awaiting the
-/// App's `MuxBackend::fulfill_host_request` call (BUG-11-011).
-pub(super) enum PendingClientReply {
-    /// OSC 52 clipboard load — `request_id` echoed back in the reply PDU.
-    Clipboard {
-        /// Server-allocated id from the originating notification.
-        request_id: u64,
-    },
-    /// OSC 4 / 10 / 11 / 12 color query.
-    Color {
-        /// Server-allocated id from the originating notification.
-        request_id: u64,
-    },
-}
-
-impl PendingClientReply {
-    /// Echo-back `request_id` regardless of variant.
-    pub(super) fn request_id(&self) -> u64 {
-        match self {
-            Self::Clipboard { request_id } | Self::Color { request_id } => *request_id,
-        }
-    }
-}
-
 /// RPC timeout for blocking responses.
 const RPC_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -71,19 +52,9 @@ const READ_POLL_INTERVAL: Duration = Duration::from_millis(1);
 /// the connection is declared dead (implicit timeout = `PING_INTERVAL`).
 const PING_INTERVAL: Duration = Duration::from_secs(5);
 
-/// A request queued for the reader thread to send.
-struct SendRequest {
-    /// Sequence number assigned by the transport.
-    seq: u32,
-    /// PDU to encode and write.
-    pdu: MuxPdu,
-    /// Reply channel. `None` for fire-and-forget messages.
-    reply_tx: Option<mpsc::Sender<MuxPdu>>,
-}
-
 /// IPC transport to the mux daemon.
 ///
-/// Manages background **reader** and **writer** threads (BUG-11-047
+/// Manages background **reader** and **writer** threads (
 /// architectural split): the writer drains the outbound mpsc and writes
 /// frames to its half of the cloned stream; the reader pulls inbound
 /// frames from its half and dispatches them to the shared pending map or
@@ -122,6 +93,11 @@ pub(super) struct ClientTransport {
     /// shutdown (Unix only).
     #[cfg(unix)]
     wake_write: RawFd,
+    /// Cloned IPC stream handle reserved for `Drop` to abort a writer
+    /// blocked inside `encode_frame` on a backpressured `write()` (the
+    /// daemon-wedged scenario where dropping `send_tx` alone is not
+    /// enough to unblock the writer thread). Codex round 1 finding pin.
+    write_shutdown_handle: Option<ClientStream>,
     /// Pending host-request replies received from the daemon — keyed by
     /// the local `ResponseToken`'s `slot_id` so `MuxClient::fulfill_host_request`
     /// can look up the original `request_id` and echo it back in
@@ -136,10 +112,6 @@ impl ClientTransport {
     ///
     /// `wakeup` is called when push notifications arrive, so the event loop
     /// can wake and process them.
-    #[allow(
-        clippy::too_many_lines,
-        reason = "linear setup sequence — channels, threads, struct init; splitting would scatter ownership"
-    )]
     pub(super) fn connect(path: &Path, wakeup: Arc<dyn Fn() + Send + Sync>) -> io::Result<Self> {
         let mut stream = ClientStream::connect(path)?;
         let client_id = handshake::run_handshake(&mut stream, path)?;
@@ -188,50 +160,39 @@ impl ClientTransport {
 
         // Split the stream into independent read + write halves so the
         // reader thread can drain replies while the writer thread is
-        // blocked on a backpressured write (BUG-11-047).
+        // blocked on a backpressured write ().
         let write_stream = stream
             .try_clone()
             .map_err(|e| io::Error::other(format!("failed to clone IPC stream for writer: {e}")))?;
+        // Third clone reserved for `Drop` — calls `shutdown_write` so a
+        // writer blocked in `encode_frame` exits promptly without waiting
+        // for the daemon to drain ( round 1 finding pin).
+        let write_shutdown_handle = write_stream.try_clone().map_err(|e| {
+            io::Error::other(format!("failed to clone IPC stream for shutdown: {e}"))
+        })?;
         let read_stream = stream;
 
         // Spawn writer thread first; reader thread depends on the writer
         // for the heartbeat ping cadence.
-        let writer_handle = std::thread::Builder::new()
-            .name("mux-client-writer".into())
-            .spawn(move || {
-                writer::writer_loop(
-                    write_stream,
-                    send_rx,
-                    pending_writer,
-                    alive_writer,
-                    outstanding_ping_seq_writer,
-                );
-            })
-            .map_err(|e| io::Error::other(format!("failed to spawn writer thread: {e}")))?;
-
-        // Spawn reader thread.
-        let reader_handle = std::thread::Builder::new()
-            .name("mux-client-reader".into())
-            .spawn(move || {
-                reader::reader_loop(
-                    read_stream,
-                    notif_tx,
-                    guarded_wakeup,
-                    alive_reader,
-                    pushed_snapshots_reader,
-                    pending_replies_reader,
-                    pending_reader,
-                    outstanding_ping_seq_reader,
-                    #[cfg(unix)]
-                    wake_read,
-                );
-                #[cfg(unix)]
-                #[allow(unsafe_code, reason = "close(2) for self-pipe read end")]
-                unsafe {
-                    libc::close(wake_read);
-                }
-            })
-            .map_err(|e| io::Error::other(format!("failed to spawn reader thread: {e}")))?;
+        let writer_handle = spawn_writer_thread(
+            write_stream,
+            send_rx,
+            pending_writer,
+            alive_writer,
+            outstanding_ping_seq_writer,
+        )?;
+        let reader_handle = spawn_reader_thread(
+            read_stream,
+            notif_tx,
+            guarded_wakeup,
+            alive_reader,
+            pushed_snapshots_reader,
+            pending_replies_reader,
+            pending_reader,
+            outstanding_ping_seq_reader,
+            #[cfg(unix)]
+            wake_read,
+        )?;
 
         Ok(Self {
             send_tx: Some(send_tx),
@@ -246,6 +207,7 @@ impl ClientTransport {
             #[cfg(unix)]
             wake_write,
             pending_replies,
+            write_shutdown_handle: Some(write_shutdown_handle),
         })
     }
 
@@ -277,7 +239,7 @@ impl ClientTransport {
             pdu,
             reply_tx: Some(reply_tx),
         })
-        .map_err(|_send_err| io::Error::new(io::ErrorKind::BrokenPipe, "reader thread gone"))?;
+        .map_err(|_send_err| io::Error::new(io::ErrorKind::BrokenPipe, "writer thread gone"))?;
         self.signal_wake();
 
         match reply_rx.recv_timeout(RPC_TIMEOUT) {
@@ -317,7 +279,7 @@ impl ClientTransport {
     /// Fallible version of `fire_and_forget` — surfaces transport
     /// liveness / mpsc failures as `io::Error` so callers (notably
     /// `MuxClient::fulfill_host_request`) can propagate them rather than
-    /// silently dropping data (codex-004 round 1 finding).
+    /// silently dropping data (-004 round 1 finding).
     pub(super) fn try_fire_and_forget(&mut self, pdu: MuxPdu) -> io::Result<()> {
         if !self.is_alive() {
             return Err(io::Error::new(
@@ -335,7 +297,7 @@ impl ClientTransport {
             pdu,
             reply_tx: None,
         })
-        .map_err(|_send_err| io::Error::new(io::ErrorKind::BrokenPipe, "reader thread gone"))?;
+        .map_err(|_send_err| io::Error::new(io::ErrorKind::BrokenPipe, "writer thread gone"))?;
         self.signal_wake();
         Ok(())
     }
@@ -442,23 +404,36 @@ impl ClientTransport {
 impl Drop for ClientTransport {
     fn drop(&mut self) {
         // 1. Close the send channel so the writer thread sees `Disconnected`
-        //    on `recv_timeout` and exits, draining its pending RPC reply
-        //    senders so callers see `BrokenPipe` (Codex-001 round 1 pin).
+        // on `recv_timeout` between PDUs and exits, draining its pending
+        // RPC reply senders so callers see `BrokenPipe` (Codex-001
+        // round 1 pin from §02 fix-consensus).
         self.send_tx.take();
 
-        // 2. Join the writer thread first. Once it exits it sets
-        //    `alive = false` (or it was already false from an earlier write
-        //    error), which the reader observes on its next loop iteration.
+        // 2. Abort any `write()` the writer is currently blocked on. When
+        // the daemon is wedged (alive but unresponsive), step 1 alone
+        // is not enough — the writer's `encode_frame` does not consult
+        // `send_rx` mid-write. `shutdown(SHUT_WR)` (Unix) /
+        // `CancelIoEx` (Windows) on the reserved clone handle returns
+        // `EPIPE` to the blocked write so the writer exits via its
+        // error path. Codex round 1 finding pin.
+        if let Some(handle) = self.write_shutdown_handle.take() {
+            let _ = handle.shutdown_write();
+        }
+
+        // 3. Join the writer thread. Once it exits it sets `alive = false`
+        // (via `drain_pending` on the error path or natural exit on
+        // `Disconnected`), which the reader observes on its next loop
+        // iteration.
         if let Some(handle) = self.writer_handle.take() {
             let _ = handle.join();
         }
 
-        // 3. Belt-and-suspenders: ensure the reader sees `alive = false`
-        //    even on the rare path where the writer never ran a loop body.
+        // 4. Belt-and-suspenders: ensure the reader sees `alive = false`
+        // even on the rare path where the writer never ran a loop body.
         self.alive.store(false, Ordering::Release);
 
-        // 4. Wake the reader from poll(2) so it observes `alive = false`
-        //    immediately and exits.
+        // 5. Wake the reader from poll(2) so it observes `alive = false`
+        // immediately and exits.
         self.signal_wake();
         if let Some(handle) = self.reader_handle.take() {
             let _ = handle.join();

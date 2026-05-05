@@ -272,11 +272,11 @@ impl SixelParser {
 
         // Background fill for undrawn pixels depends on bg_mode per
         // DEC STD 070 §6.2.2:
-        //   NoChange (P2=1):       undrawn pixels transparent (α=0)
-        //   DeviceDefault (P2=0):  undrawn pixels opaque, VT340 device
-        //                          default — palette color 0 (black)
-        //   SetToBg (P2=2):        undrawn pixels opaque, terminal bg
-        //                          captured at DCS-hook time
+        // NoChange (P2=1): undrawn pixels transparent (α=0)
+        // DeviceDefault (P2=0): undrawn pixels opaque, VT340 device
+        // default — palette color 0 (black)
+        // SetToBg (P2=2): undrawn pixels opaque, terminal bg
+        // captured at DCS-hook time
         let bg = match self.bg_mode {
             SixelBgMode::NoChange => [0u8, 0, 0, 0],
             SixelBgMode::DeviceDefault => [0, 0, 0, 255],

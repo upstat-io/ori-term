@@ -19,16 +19,16 @@
 //! VTE correctly handles every CSI query) tack:
 //!
 //! - Emits 6 sub-tests on the initial `s` press alone (before any
-//!   `n`). These are the "auto" sub-tests that don't need user
-//!   input between them.
+//! `n`). These are the "auto" sub-tests that don't need user
+//! input between them.
 //! - Emits 1 sub-test per `n` press at steps 1 and 2.
 //! - Emits 8 sub-tests per `n` press at step 3 (the DECRQSS group
-//!   through DECRQUPSS) — one batched burst.
+//! through DECRQUPSS) — one batched burst.
 //! - Continues with irregular batch sizes for the remaining walks.
 //! - Total sub-tests: 33 under ori_term vs 32 under xterm-256color.
-//!   The extra sub-test is `(DSR) Screen size (CSI 6 n)` at index
-//!   3, which tack only emits when it got a valid CPR response
-//!   from the preceding "Cursor position" sub-test.
+//! The extra sub-test is `(DSR) Screen size (CSI 6 n)` at index
+//! 3, which tack only emits when it got a valid CPR response
+//! from the preceding "Cursor position" sub-test.
 //!
 //! A `ScenarioSpec::menu_path` with per-step `wait_for` anchors
 //! cannot handle batching — we cannot predict which label to wait
@@ -110,7 +110,7 @@ fn tack_status_reports_inventory() {
     // quiesce) to ~19 n presses and produces a clean "Tools Menu"
     // exit marker. Shorter quiesces cause tack to walk past the
     // status-reports sub-submenu into adjacent test sections
-    // (mode status, status line, ...) that `q` cannot unwind from
+    // (mode status, status line,...) that `q` cannot unwind from
     // cleanly, breaking teardown.
     //
     // Empirical cost (2026-04-08): ~3.5 s per iteration under

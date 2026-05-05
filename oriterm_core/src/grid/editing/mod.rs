@@ -75,7 +75,7 @@ impl Grid {
                 .template
                 .flags
                 .intersects(CellFlags::INTERNAL_CELL_STATE),
-            "cursor template must not carry internal cell-state bits (DRAWN/WRAP/wide spacers) — see BUG-08-017"
+            "cursor template must not carry internal cell-state bits (DRAWN/WRAP/wide spacers)"
         );
 
         let line = self.cursor.line();
@@ -116,7 +116,7 @@ impl Grid {
                 .template
                 .flags
                 .intersects(CellFlags::INTERNAL_CELL_STATE),
-            "cursor template must not carry internal cell-state bits (DRAWN/WRAP/wide spacers) — see BUG-08-017"
+            "cursor template must not carry internal cell-state bits (DRAWN/WRAP/wide spacers)"
         );
 
         let width = UnicodeWidthChar::width(ch).unwrap_or(1);
@@ -239,7 +239,7 @@ impl Grid {
         }
 
         let target = &mut self.rows[line][Column(prev_col)];
-        // Combining-mark modification IS a draw operation (BUG-08-017).
+        // Combining-mark modification IS a draw operation ().
         // In current production paths the target was just written and
         // already carries DRAWN, but the invariant is cheap to enforce
         // here and defends against future callers.

@@ -237,7 +237,7 @@ fn sgr_0_clears_all_set_flags() {
 
 /// Empty SGR (`CSI m`) is equivalent to `CSI 0 m` per ECMA-48 §8.3.117.
 ///
-/// Negative pin that doubles as the "bare SGR resets" positive: after
+/// Regression guard that doubles as the "bare SGR resets" positive: after
 /// setting BOLD, a lone `CSI m` must clear it. A regression that
 /// treated empty-param SGR as a no-op would fail here.
 #[test]
@@ -264,7 +264,7 @@ fn empty_sgr_resets_like_sgr_0() {
 
 // --- Negative pins ---------------------------------------------------------
 
-/// Negative pin: SGR 1 must NOT set INVERSE (cross-mode isolation).
+/// Regression guard: SGR 1 must NOT set INVERSE (cross-mode isolation).
 ///
 /// Without this pin, a regression that bulk-set multiple flags on any
 /// SGR sequence would pass the positive per-mode pins above (each

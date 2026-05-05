@@ -148,7 +148,7 @@ fn prepare_line_wide_char() {
     let mut runs = Vec::new();
     prepare_line(&cells, cells.len(), &fc, &mut runs);
 
-    // With embedded-only font, both chars resolve to Regular (CJK is .notdef).
+    // With embedded-only font, both chars resolve to Regular (CJK is.notdef).
     // They may be in the same run or different depending on face resolution.
     // Key check: spacer is NOT in any run's text.
     for run in &runs {
@@ -550,7 +550,7 @@ fn shape_wide_char_notdef_graceful() {
     let fc = test_collection();
 
     // CJK Extension B character — unlikely to have font coverage even with
-    // CJK fallbacks. Tests the .notdef path for wide characters.
+    // CJK fallbacks. Tests the.notdef path for wide characters.
     let cells = vec![
         Cell {
             ch: '\u{2A6DF}',

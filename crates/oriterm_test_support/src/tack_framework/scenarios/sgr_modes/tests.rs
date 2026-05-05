@@ -35,7 +35,7 @@ fn parse_sgr_modes_screen_handles_empty_grid() {
 
 #[test]
 fn parse_sgr_modes_screen_finds_full_80_mode_grid() {
-    // SEMANTIC PIN for the 06.2 contract: a canonically-formatted
+    // Verifies for the 06.2 contract: a canonically-formatted
     // tack SGR grid returns exactly the full 80-mode count. Pins
     // the `Mode %2d` token format against accidental parser drift.
     let grid = synthetic_full_grid();
@@ -85,7 +85,7 @@ fn parse_sgr_modes_screen_handles_only_low_modes() {
 fn parse_sgr_modes_screen_handles_only_high_modes() {
     // Mirror of the low-modes pin: the last row (Mode 70..79)
     // returns count=10. Pins that the parser's single-digit
-    // padding (`Mode  0`) does not accidentally match high-mode
+    // padding (`Mode 0`) does not accidentally match high-mode
     // tokens.
     let mut grid = String::from("header\n");
     for n in 70..80_u32 {
@@ -110,8 +110,8 @@ fn parse_sgr_modes_screen_handles_header_only_grid() {
 
 #[test]
 fn parse_sgr_modes_screen_does_not_confuse_mode_7_with_mode_70() {
-    // SEMANTIC PIN: the parser must NOT match `Mode  7` inside
-    // `Mode 70`. `grid_has_token("Mode  7")` checks that the
+    // Verifies: the parser must NOT match `Mode 7` inside
+    // `Mode 70`. `grid_has_token("Mode 7")` checks that the
     // byte AFTER the matched token is ASCII whitespace. In
     // `Mode 70` the byte after the single-space + `7` is `0`,
     // which is NOT whitespace — so the token is correctly
@@ -121,17 +121,17 @@ fn parse_sgr_modes_screen_does_not_confuse_mode_7_with_mode_70() {
     // count_mode_labels should find exactly 70 and 71 — NOT
     // 7 and 71.
     assert_eq!(count_mode_labels(grid), 2);
-    // Double-check by confirming the bare `Mode  7` token is
-    // NOT a substring even though `Mode  7` would be a legal
+    // Double-check by confirming the bare `Mode 7` token is
+    // NOT a substring even though `Mode 7` would be a legal
     // search pattern against `Mode 70`. The token format's
-    // width-aware padding defeats it: `Mode  7` (two spaces)
+    // width-aware padding defeats it: `Mode 7` (two spaces)
     // never appears inside `Mode 70` (one space).
     assert!(!grid.contains("Mode  7"));
 }
 
 #[test]
 fn parse_sgr_modes_screen_rejects_substring_collisions_in_english_text() {
-    // SEMANTIC PIN: the parser uses `grid_has_token` which is
+    // Verifies: the parser uses `grid_has_token` which is
     // whitespace-bounded. A regression that swapped to raw
     // `str::contains` would false-positive on English text
     // containing "Mode 1" as a prefix of "Mode 13 is wrong" or
@@ -142,7 +142,7 @@ Mode selector missing from the UI.
 See Modes 0..79 in the spec.
 No tack output was captured here.
 ";
-    // Nothing in this grid matches `Mode  0`..`Mode 79` with the
+    // Nothing in this grid matches `Mode 0`..`Mode 79` with the
     // exact `Mode %2d` padding tack emits, so count must be 0.
     // If a regression added a `grid.contains("Mode")` fast-path
     // outside the padded-token path it would false-positive here.
@@ -169,7 +169,7 @@ fn parse_sgr_modes_screen_handles_trailing_whitespace_padding() {
 
 #[test]
 fn parse_sgr_modes_screen_handles_minimum_expected_modes_constant() {
-    // SEMANTIC PIN: `MIN_EXPECTED_MODES` is the canonical
+    // Verifies: `MIN_EXPECTED_MODES` is the canonical
     // threshold both the parser sibling tests and the 80x24 test
     // wrapper reference. Pin the value to 80 so a well-meaning
     // refactor that lowered the threshold to match a broken

@@ -88,21 +88,21 @@ pub struct Parser<const OSC_RAW_BUF_SIZE: usize = MAX_OSC_RAW> {
 }
 
 impl Parser {
-    /// Create a new Parser
+ /// Create a new Parser
     pub fn new() -> Parser {
         Default::default()
     }
 }
 
 impl<const OSC_RAW_BUF_SIZE: usize> Parser<OSC_RAW_BUF_SIZE> {
-    /// Create a new Parser with a custom size for the Operating System Command
-    /// buffer.
-    ///
-    /// Call with a const-generic param on `Parser`, like:
-    ///
-    /// ```rust
-    /// let mut p = vte::Parser::<64>::new_with_size();
-    /// ```
+ /// Create a new Parser with a custom size for the Operating System Command
+ /// buffer.
+ ///
+ /// Call with a const-generic param on `Parser`, like:
+ ///
+ /// ```rust
+ /// let mut p = vte::Parser::<64>::new_with_size();
+ /// ```
     #[cfg(not(feature = "std"))]
     pub fn new_with_size() -> Parser<OSC_RAW_BUF_SIZE> {
         Default::default()
@@ -118,16 +118,16 @@ impl<const OSC_RAW_BUF_SIZE: usize> Parser<OSC_RAW_BUF_SIZE> {
         &self.intermediates[..self.intermediate_idx]
     }
 
-    /// Advance the parser state.
-    ///
-    /// Requires a [`Perform`] implementation to handle the triggered actions.
-    ///
-    /// [`Perform`]: trait.Perform.html
+ /// Advance the parser state.
+ ///
+ /// Requires a [`Perform`] implementation to handle the triggered actions.
+ ///
+ /// [`Perform`]: trait.Perform.html
     #[inline]
     pub fn advance<P: Perform>(&mut self, performer: &mut P, bytes: &[u8]) {
         let mut i = 0;
 
-        // Handle partial codepoints from previous calls to `advance`.
+ // Handle partial codepoints from previous calls to `advance`.
         if self.partial_utf8_len != 0 {
             i += self.advance_partial_utf8(performer, bytes);
         }
@@ -136,7 +136,7 @@ impl<const OSC_RAW_BUF_SIZE: usize> Parser<OSC_RAW_BUF_SIZE> {
             match self.state {
                 State::Ground => i += self.advance_ground(performer, &bytes[i..]),
                 _ => {
-                    // Inlining it results in worse codegen.
+ // Inlining it results in worse codegen.
                     let byte = bytes[i];
                     self.change_state(performer, byte);
                     i += 1;
@@ -145,14 +145,14 @@ impl<const OSC_RAW_BUF_SIZE: usize> Parser<OSC_RAW_BUF_SIZE> {
         }
     }
 
-    /// Partially advance the parser state.
-    ///
-    /// This is equivalent to [`Self::advance`], but stops when
-    /// [`Perform::terminated`] is true after reading a byte.
-    ///
-    /// Returns the number of bytes read before termination.
-    ///
-    /// See [`Perform::advance`] for more details.
+ /// Partially advance the parser state.
+ ///
+ /// This is equivalent to [`Self::advance`], but stops when
+ /// [`Perform::terminated`] is true after reading a byte.
+ ///
+ /// Returns the number of bytes read before termination.
+ ///
+ /// See [`Perform::advance`] for more details.
     #[inline]
     #[must_use = "Returned value should be used to processs the remaining bytes"]
     pub fn advance_until_terminated<P: Perform>(
@@ -162,7 +162,7 @@ impl<const OSC_RAW_BUF_SIZE: usize> Parser<OSC_RAW_BUF_SIZE> {
     ) -> usize {
         let mut i = 0;
 
-        // Handle partial codepoints from previous calls to `advance`.
+ // Handle partial codepoints from previous calls to `advance`.
         if self.partial_utf8_len != 0 {
             i += self.advance_partial_utf8(performer, bytes);
         }
@@ -171,7 +171,7 @@ impl<const OSC_RAW_BUF_SIZE: usize> Parser<OSC_RAW_BUF_SIZE> {
             match self.state {
                 State::Ground => i += self.advance_ground(performer, &bytes[i..]),
                 _ => {
-                    // Inlining it results in worse codegen.
+ // Inlining it results in worse codegen.
                     let byte = bytes[i];
                     self.change_state(performer, byte);
                     i += 1;
@@ -345,12 +345,12 @@ impl<const OSC_RAW_BUF_SIZE: usize> Parser<OSC_RAW_BUF_SIZE> {
                 performer.execute(byte);
                 self.state = State::Ground
             },
-            // ESC mid-DCS is ambiguous at this byte: it could begin the
-            // 2-byte ST terminator (`ESC \` = 0x1B 0x5C) — a normal
-            // finish — or any other escape sequence, which aborts the
-            // DCS per DEC STD 070 §6.4. Defer the decision to
-            // DcsEscape so unhook can fire with the correct `aborted`
-            // flag once the next byte arrives.
+ // ESC mid-DCS is ambiguous at this byte: it could begin the
+ // 2-byte ST terminator (`ESC \` = 0x1B 0x5C) — a normal
+ // finish — or any other escape sequence, which aborts the
+ // DCS per DEC STD 070 §6.4. Defer the decision to
+ // DcsEscape so unhook can fire with the correct `aborted`
+ // flag once the next byte arrives.
             0x1B => {
                 self.state = State::DcsEscape;
             },
@@ -363,39 +363,39 @@ impl<const OSC_RAW_BUF_SIZE: usize> Parser<OSC_RAW_BUF_SIZE> {
         }
     }
 
-    // VENDORED PATCH (oriterm): spec-conformance §12 — DcsEscape state.
-    // Deferred ESC-mid-DCS unhook so `ESC \` ST termination is not
-    // conflated with abort. Entered from advance_dcs_passthrough.
-    /// Handle the byte following an ESC (0x1B) encountered mid-DCS.
-    ///
-    /// `0x5C` completes the 2-byte ST terminator — the DCS finishes
-    /// normally (no abort). C0 controls (`0x00..=0x17 | 0x19 |
-    /// 0x1C..=0x1F`) execute transparently and the state remains
-    /// DcsEscape (per DEC ANSI parser state machine — C0 controls pass
-    /// through escape sequences). DEL (`0x7F`) is ignored (same rule).
-    /// Any other byte starts a new escape sequence, which aborts the
-    /// in-flight DCS per DEC STD 070 §6.4: the abort is signaled,
-    /// unhook fires with `aborted = true`, and the byte is
-    /// re-dispatched through the Escape state so the new sequence
-    /// begins cleanly.
+ // VENDORED PATCH (oriterm): spec-conformance §12 — DcsEscape state.
+ // Deferred ESC-mid-DCS unhook so `ESC \` ST termination is not
+ // conflated with abort. Entered from advance_dcs_passthrough.
+ /// Handle the byte following an ESC (0x1B) encountered mid-DCS.
+ ///
+ /// `0x5C` completes the 2-byte ST terminator — the DCS finishes
+ /// normally (no abort). C0 controls (`0x00..=0x17 | 0x19 |
+ /// 0x1C..=0x1F`) execute transparently and the state remains
+ /// DcsEscape (per DEC ANSI parser state machine — C0 controls pass
+ /// through escape sequences). DEL (`0x7F`) is ignored (same rule).
+ /// Any other byte starts a new escape sequence, which aborts the
+ /// in-flight DCS per DEC STD 070 §6.4: the abort is signaled,
+ /// unhook fires with `aborted = true`, and the byte is
+ /// re-dispatched through the Escape state so the new sequence
+ /// begins cleanly.
     #[inline(always)]
     fn advance_dcs_escape<P: Perform>(&mut self, performer: &mut P, byte: u8) {
         match byte {
-            // C0 controls pass through — execute, stay in DcsEscape.
+ // C0 controls pass through — execute, stay in DcsEscape.
             0x00..=0x17 | 0x19 | 0x1C..=0x1F => performer.execute(byte),
-            // DEL is ignored in escape/DcsEscape state.
+ // DEL is ignored in escape/DcsEscape state.
             0x7F => (),
-            // ESC `\` completes the 2-byte ST terminator.
+ // ESC `\` completes the 2-byte ST terminator.
             0x5C => {
                 performer.unhook();
                 self.state = State::Ground;
             }
-            // Anything else (including a second ESC `0x1B`): abort the
-            // DCS and re-dispatch the byte through advance_esc so the
-            // new escape sequence begins. The first ESC `0x1B` could
-            // not have been an ST-introducer (ST is `ESC \`), so any
-            // non-`\` successor means the DCS must abort per
-            // DEC STD 070 §6.4.
+ // Anything else (including a second ESC `0x1B`): abort the
+ // DCS and re-dispatch the byte through advance_esc so the
+ // new escape sequence begins. The first ESC `0x1B` could
+ // not have been an ST-introducer (ST is `ESC \`), so any
+ // non-`\` successor means the DCS must abort per
+ // DEC STD 070 §6.4.
             _ => {
                 performer.notify_dcs_abort();
                 performer.unhook();
@@ -453,7 +453,7 @@ impl<const OSC_RAW_BUF_SIZE: usize> Parser<OSC_RAW_BUF_SIZE> {
                 performer.esc_dispatch(self.intermediates(), self.ignoring, byte);
                 self.state = State::Ground
             },
-            // Anywhere.
+ // Anywhere.
             0x18 | 0x1A => {
                 performer.execute(byte);
                 self.state = State::Ground
@@ -517,21 +517,21 @@ impl<const OSC_RAW_BUF_SIZE: usize> Parser<OSC_RAW_BUF_SIZE> {
     #[inline(always)]
     fn advance_apc_string<P: Perform>(&mut self, performer: &mut P, byte: u8) {
         match byte {
-            // Printable + C0 controls (except terminators): pass through.
+ // Printable + C0 controls (except terminators): pass through.
             0x00..=0x17 | 0x19 | 0x1C..=0x7F => performer.apc_put(byte),
-            // CAN/SUB: cancel APC, return to ground.
+ // CAN/SUB: cancel APC, return to ground.
             0x18 | 0x1A => {
                 performer.apc_end();
                 performer.execute(byte);
                 self.state = State::Ground
             },
-            // ESC: could be ST (`ESC \`) or a new sequence.
+ // ESC: could be ST (`ESC \`) or a new sequence.
             0x1B => {
                 performer.apc_end();
                 self.reset_params();
                 self.state = State::Escape
             },
-            // C1 ST (0x9C): terminate APC.
+ // C1 ST (0x9C): terminate APC.
             0x9C => {
                 performer.apc_end();
                 self.state = State::Ground
@@ -589,7 +589,7 @@ impl<const OSC_RAW_BUF_SIZE: usize> Parser<OSC_RAW_BUF_SIZE> {
         }
     }
 
-    /// Advance to the next subparameter.
+ /// Advance to the next subparameter.
     #[inline]
     fn action_subparam(&mut self) {
         if self.params.is_full() {
@@ -600,7 +600,7 @@ impl<const OSC_RAW_BUF_SIZE: usize> Parser<OSC_RAW_BUF_SIZE> {
         }
     }
 
-    /// Advance to the next parameter.
+ /// Advance to the next parameter.
     #[inline]
     fn action_param(&mut self) {
         if self.params.is_full() {
@@ -611,32 +611,32 @@ impl<const OSC_RAW_BUF_SIZE: usize> Parser<OSC_RAW_BUF_SIZE> {
         }
     }
 
-    /// Advance inside the parameter without terminating it.
+ /// Advance inside the parameter without terminating it.
     #[inline]
     fn action_paramnext(&mut self, byte: u8) {
         if self.params.is_full() {
             self.ignoring = true;
         } else {
-            // Continue collecting bytes into param.
+ // Continue collecting bytes into param.
             self.param = self.param.saturating_mul(10);
             self.param = self.param.saturating_add((byte - b'0') as u16);
         }
     }
 
-    /// Add OSC param separator.
+ /// Add OSC param separator.
     #[inline]
     fn action_osc_put_param(&mut self) {
         let idx = self.osc_raw.len();
 
         let param_idx = self.osc_num_params;
         match param_idx {
-            // First param is special - 0 to current byte index.
+ // First param is special - 0 to current byte index.
             0 => self.osc_params[param_idx] = (0, idx),
 
-            // Only process up to MAX_OSC_PARAMS.
+ // Only process up to MAX_OSC_PARAMS.
             MAX_OSC_PARAMS => return,
 
-            // All other params depend on previous indexing.
+ // All other params depend on previous indexing.
             _ => {
                 let prev = self.osc_params[param_idx - 1];
                 let begin = prev.1;
@@ -671,7 +671,7 @@ impl<const OSC_RAW_BUF_SIZE: usize> Parser<OSC_RAW_BUF_SIZE> {
         self.osc_num_params = 0;
     }
 
-    /// Reset escape sequence parameters and intermediates.
+ /// Reset escape sequence parameters and intermediates.
     #[inline]
     fn reset_params(&mut self) {
         self.intermediate_idx = 0;
@@ -681,9 +681,9 @@ impl<const OSC_RAW_BUF_SIZE: usize> Parser<OSC_RAW_BUF_SIZE> {
         self.params.clear();
     }
 
-    /// Separate method for osc_dispatch that borrows self as read-only
-    ///
-    /// The aliasing is needed here for multiple slices into self.osc_raw
+ /// Separate method for osc_dispatch that borrows self as read-only
+ ///
+ /// The aliasing is needed here for multiple slices into self.osc_raw
     #[inline]
     fn osc_dispatch<P: Perform>(&self, performer: &mut P, byte: u8) {
         let mut slices: [MaybeUninit<&[u8]>; MAX_OSC_PARAMS] =
@@ -701,18 +701,18 @@ impl<const OSC_RAW_BUF_SIZE: usize> Parser<OSC_RAW_BUF_SIZE> {
         }
     }
 
-    /// Advance the parser state from ground.
-    ///
-    /// The ground state is handled separately since it can only be left using
-    /// the escape character (`\x1b`). This allows more efficient parsing by
-    /// using SIMD search with [`memchr`].
+ /// Advance the parser state from ground.
+ ///
+ /// The ground state is handled separately since it can only be left using
+ /// the escape character (`\x1b`). This allows more efficient parsing by
+ /// using SIMD search with [`memchr`].
     #[inline]
     fn advance_ground<P: Perform>(&mut self, performer: &mut P, bytes: &[u8]) -> usize {
-        // Find the next escape character.
+ // Find the next escape character.
         let num_bytes = bytes.len();
         let plain_chars = memchr::memchr(0x1B, bytes).unwrap_or(num_bytes);
 
-        // If the next character is ESC, just process it and short-circuit.
+ // If the next character is ESC, just process it and short-circuit.
         if plain_chars == 0 {
             self.state = State::Escape;
             self.reset_params();
@@ -724,7 +724,7 @@ impl<const OSC_RAW_BUF_SIZE: usize> Parser<OSC_RAW_BUF_SIZE> {
                 Self::ground_dispatch(performer, parsed);
                 let mut processed = plain_chars;
 
-                // If there's another character, it must be escape so process it directly.
+ // If there's another character, it must be escape so process it directly.
                 if processed < num_bytes {
                     self.state = State::Escape;
                     self.reset_params();
@@ -733,9 +733,9 @@ impl<const OSC_RAW_BUF_SIZE: usize> Parser<OSC_RAW_BUF_SIZE> {
 
                 processed
             },
-            // Handle invalid and partial utf8.
+ // Handle invalid and partial utf8.
             Err(err) => {
-                // Dispatch all the valid bytes.
+ // Dispatch all the valid bytes.
                 let valid_bytes = err.valid_up_to();
                 let parsed = unsafe { str::from_utf8_unchecked(&bytes[..valid_bytes]) };
                 Self::ground_dispatch(performer, parsed);
@@ -748,22 +748,22 @@ impl<const OSC_RAW_BUF_SIZE: usize> Parser<OSC_RAW_BUF_SIZE> {
                             performer.print('�');
                         }
 
-                        // Restart processing after the invalid bytes.
-                        //
-                        // While we could theoretically try to just re-parse
-                        // `bytes[valid_bytes + len..plain_chars]`, it's easier
-                        // to just skip it and invalid utf8 is pretty rare anyway.
+ // Restart processing after the invalid bytes.
+ //
+ // While we could theoretically try to just re-parse
+ // `bytes[valid_bytes + len..plain_chars]`, it's easier
+ // to just skip it and invalid utf8 is pretty rare anyway.
                         valid_bytes + len
                     },
                     None => {
                         if plain_chars < num_bytes {
-                            // Process bytes cut off by escape.
+ // Process bytes cut off by escape.
                             performer.print('�');
                             self.state = State::Escape;
                             self.reset_params();
                             plain_chars + 1
                         } else {
-                            // Process bytes cut off by the buffer end.
+ // Process bytes cut off by the buffer end.
                             let extra_bytes = num_bytes - valid_bytes;
                             let partial_len = self.partial_utf8_len + extra_bytes;
                             self.partial_utf8[self.partial_utf8_len..partial_len]
@@ -777,9 +777,9 @@ impl<const OSC_RAW_BUF_SIZE: usize> Parser<OSC_RAW_BUF_SIZE> {
         }
     }
 
-    /// Dispatch an 8-bit C1 control byte (0x80–0x9F) detected during UTF-8
-    /// error recovery. Sequence introducers transition the parser state;
-    /// other C1 bytes are dispatched via `execute()`.
+ /// Dispatch an 8-bit C1 control byte (0x80–0x9F) detected during UTF-8
+ /// error recovery. Sequence introducers transition the parser state;
+ /// other C1 bytes are dispatched via `execute()`.
     #[inline]
     fn dispatch_c1<P: Perform>(&mut self, performer: &mut P, byte: u8) {
         match byte {
@@ -793,7 +793,7 @@ impl<const OSC_RAW_BUF_SIZE: usize> Parser<OSC_RAW_BUF_SIZE> {
                 self.state = State::CsiEntry;
             },
             0x9C => {
-                // ST on ground is a no-op (nothing to terminate).
+ // ST on ground is a no-op (nothing to terminate).
             },
             0x9D => {
                 self.osc_raw.clear();
@@ -809,18 +809,18 @@ impl<const OSC_RAW_BUF_SIZE: usize> Parser<OSC_RAW_BUF_SIZE> {
         }
     }
 
-    /// Advance the parser while processing a partial utf8 codepoint.
+ /// Advance the parser while processing a partial utf8 codepoint.
     #[inline]
     fn advance_partial_utf8<P: Perform>(&mut self, performer: &mut P, bytes: &[u8]) -> usize {
-        // Try to copy up to 3 more characters, to ensure the codepoint is complete.
+ // Try to copy up to 3 more characters, to ensure the codepoint is complete.
         let old_bytes = self.partial_utf8_len;
         let to_copy = bytes.len().min(self.partial_utf8.len() - old_bytes);
         self.partial_utf8[old_bytes..old_bytes + to_copy].copy_from_slice(&bytes[..to_copy]);
         self.partial_utf8_len += to_copy;
 
-        // Parse the unicode character.
+ // Parse the unicode character.
         match str::from_utf8(&self.partial_utf8[..self.partial_utf8_len]) {
-            // If the entire buffer is valid, use the first character and continue parsing.
+ // If the entire buffer is valid, use the first character and continue parsing.
             Ok(parsed) => {
                 let c = unsafe { parsed.chars().next().unwrap_unchecked() };
                 performer.print(c);
@@ -830,9 +830,9 @@ impl<const OSC_RAW_BUF_SIZE: usize> Parser<OSC_RAW_BUF_SIZE> {
             },
             Err(err) => {
                 let valid_bytes = err.valid_up_to();
-                // If we have any valid bytes, that means we partially copied another
-                // utf8 character into `partial_utf8`. Since we only care about the
-                // first character, we just ignore the rest.
+ // If we have any valid bytes, that means we partially copied another
+ // utf8 character into `partial_utf8`. Since we only care about the
+ // first character, we just ignore the rest.
                 if valid_bytes > 0 {
                     let c = unsafe {
                         let parsed = str::from_utf8_unchecked(&self.partial_utf8[..valid_bytes]);
@@ -846,22 +846,22 @@ impl<const OSC_RAW_BUF_SIZE: usize> Parser<OSC_RAW_BUF_SIZE> {
                 }
 
                 match err.error_len() {
-                    // If the partial character was also invalid, emit the replacement
-                    // character.
+ // If the partial character was also invalid, emit the replacement
+ // character.
                     Some(invalid_len) => {
                         performer.print('�');
 
                         self.partial_utf8_len = 0;
                         invalid_len - old_bytes
                     },
-                    // If the character still isn't complete, wait for more data.
+ // If the character still isn't complete, wait for more data.
                     None => to_copy,
                 }
             },
         }
     }
 
-    /// Handle ground dispatch of print/execute for all characters in a string.
+ /// Handle ground dispatch of print/execute for all characters in a string.
     #[inline]
     fn ground_dispatch<P: Perform>(performer: &mut P, text: &str) {
         for c in text.chars() {
@@ -905,57 +905,57 @@ enum State {
 /// referenced if something isn't clear. If the site disappears at some point in
 /// the future, consider checking archive.org.
 pub trait Perform {
-    /// Draw a character to the screen and update states.
+ /// Draw a character to the screen and update states.
     fn print(&mut self, _c: char) {}
 
-    /// Execute a C0 or C1 control function.
+ /// Execute a C0 or C1 control function.
     fn execute(&mut self, _byte: u8) {}
 
-    /// Invoked when a final character arrives in first part of device control
-    /// string.
-    ///
-    /// The control function should be determined from the private marker, final
-    /// character, and execute with a parameter list. A handler should be
-    /// selected for remaining characters in the string; the handler
-    /// function should subsequently be called by `put` for every character in
-    /// the control string.
-    ///
-    /// The `ignore` flag indicates that more than two intermediates arrived and
-    /// subsequent characters were ignored.
+ /// Invoked when a final character arrives in first part of device control
+ /// string.
+ ///
+ /// The control function should be determined from the private marker, final
+ /// character, and execute with a parameter list. A handler should be
+ /// selected for remaining characters in the string; the handler
+ /// function should subsequently be called by `put` for every character in
+ /// the control string.
+ ///
+ /// The `ignore` flag indicates that more than two intermediates arrived and
+ /// subsequent characters were ignored.
     fn hook(&mut self, _params: &Params, _intermediates: &[u8], _ignore: bool, _action: char) {}
 
-    /// Pass bytes as part of a device control string to the handle chosen in
-    /// `hook`. C0 controls will also be passed to the handler.
+ /// Pass bytes as part of a device control string to the handle chosen in
+ /// `hook`. C0 controls will also be passed to the handler.
     fn put(&mut self, _byte: u8) {}
 
-    /// Called when a device control string is terminated.
-    ///
-    /// The previously selected handler should be notified that the DCS has
-    /// terminated.
+ /// Called when a device control string is terminated.
+ ///
+ /// The previously selected handler should be notified that the DCS has
+ /// terminated.
     fn unhook(&mut self) {}
 
-    // VENDORED PATCH (oriterm): spec-conformance §12 — DCS abort plumbing.
-    // Added so the dispatch layer can distinguish a normal ST finish from
-    // a CAN/SUB/ESC-to-new-sequence abort per DEC STD 070 §6.4.
-    /// Called by the parser immediately before `unhook()` when the DCS
-    /// was terminated by CAN (0x18), SUB (0x1A), or an ESC (0x1B) that
-    /// started a new escape sequence mid-DCS.
-    ///
-    /// The dispatch layer uses this hook to flag the pending unhook as
-    /// an abort so semantic handlers (sixel, DECRQSS, DECRSPS) can
-    /// discard the in-flight payload instead of committing it. Default
-    /// impl is empty — implementors that do not care about abort
-    /// distinction can ignore it.
+ // VENDORED PATCH (oriterm): spec-conformance §12 — DCS abort plumbing.
+ // Added so the dispatch layer can distinguish a normal ST finish from
+ // a CAN/SUB/ESC-to-new-sequence abort per DEC STD 070 §6.4.
+ /// Called by the parser immediately before `unhook()` when the DCS
+ /// was terminated by CAN (0x18), SUB (0x1A), or an ESC (0x1B) that
+ /// started a new escape sequence mid-DCS.
+ ///
+ /// The dispatch layer uses this hook to flag the pending unhook as
+ /// an abort so semantic handlers (sixel, DECRQSS, DECRSPS) can
+ /// discard the in-flight payload instead of committing it. Default
+ /// impl is empty — implementors that do not care about abort
+ /// distinction can ignore it.
     fn notify_dcs_abort(&mut self) {}
 
-    /// Dispatch an operating system command.
+ /// Dispatch an operating system command.
     fn osc_dispatch(&mut self, _params: &[&[u8]], _bell_terminated: bool) {}
 
-    /// A final character has arrived for a CSI sequence
-    ///
-    /// The `ignore` flag indicates that either more than two intermediates
-    /// arrived or the number of parameters exceeded the maximum supported
-    /// length, and subsequent characters were ignored.
+ /// A final character has arrived for a CSI sequence
+ ///
+ /// The `ignore` flag indicates that either more than two intermediates
+ /// arrived or the number of parameters exceeded the maximum supported
+ /// length, and subsequent characters were ignored.
     fn csi_dispatch(
         &mut self,
         _params: &Params,
@@ -965,32 +965,32 @@ pub trait Perform {
     ) {
     }
 
-    /// The final character of an escape sequence has arrived.
-    ///
-    /// The `ignore` flag indicates that more than two intermediates arrived and
-    /// subsequent characters were ignored.
+ /// The final character of an escape sequence has arrived.
+ ///
+ /// The `ignore` flag indicates that more than two intermediates arrived and
+ /// subsequent characters were ignored.
     fn esc_dispatch(&mut self, _intermediates: &[u8], _ignore: bool, _byte: u8) {}
 
-    /// Called when an APC sequence begins (`ESC _`).
+ /// Called when an APC sequence begins (`ESC _`).
     fn apc_start(&mut self) {}
 
-    /// Called for each byte in the APC string body.
+ /// Called for each byte in the APC string body.
     fn apc_put(&mut self, _byte: u8) {}
 
-    /// Called when the APC string is terminated (ST or cancel).
+ /// Called when the APC string is terminated (ST or cancel).
     fn apc_end(&mut self) {}
 
-    /// Whether the parser should terminate prematurely.
-    ///
-    /// Used in conjunction with [`Parser::advance_until_terminated`]: when
-    /// this returns `true`, the parser stops consuming bytes mid-stream.
-    /// The default impl returns `false` and the in-tree `Performer`
-    /// implementations rely on the default — `advance_until_terminated`
-    /// runs to completion of the input. The hook is preserved so external
-    /// `Perform` implementations can opt into early termination.
-    ///
-    /// Checked after every parsed byte, so no expensive computation
-    /// should take place in this function.
+ /// Whether the parser should terminate prematurely.
+ ///
+ /// Used in conjunction with [`Parser::advance_until_terminated`]: when
+ /// this returns `true`, the parser stops consuming bytes mid-stream.
+ /// The default impl returns `false` and the in-tree `Performer`
+ /// implementations rely on the default — `advance_until_terminated`
+ /// runs to completion of the input. The hook is preserved so external
+ /// `Perform` implementations can opt into early termination.
+ ///
+ /// Checked after every parsed byte, so no expensive computation
+ /// should take place in this function.
     #[inline(always)]
     fn terminated(&self) -> bool {
         false

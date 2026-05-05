@@ -1,7 +1,7 @@
 //! Real automated test for tack's `?) help` begin-testing entry.
 //!
 //! Classification: `BeginTestingStatus::Duplicate { covered_by:
-//! "tack_help_redisplays_begin_testing_menu in oriterm_core/tests/tack/test_menu/help.rs ..." }`
+//! "tack_help_redisplays_begin_testing_menu in oriterm_core/tests/tack/test_menu/help.rs..." }`
 //! per `crates/oriterm_test_support/src/tack_framework/scenarios/begin_testing_inventory/mod.rs`.
 //!
 //! # What this test does
@@ -12,23 +12,23 @@
 //! re-displays the same menu inline. The test:
 //!
 //! 1. Gates on `ScenarioRunner::available()` (the canonical
-//!    AND-combine of `tack_available`, `tic_available`, and
-//!    `tack_version_supported`) per
+//! AND-combine of `tack_available`, `tic_available`, and
+//! `tack_version_supported`) per
 //! 2. Spawns tack via `PtySession`.
 //! 3. Sends `n` and waits for the begin-testing menu prompt
-//!    (`tack/test [n] >`) via the framework's `wait_for(...)`
-//!    contract — NO fixed sleeps, per
+//! (`tack/test [n] >`) via the framework's `wait_for(...)`
+//! contract — NO fixed sleeps, per
 //! 4. Sends `?` and waits for the menu prompt to re-appear via
-//!    `wait_for(...)`.
+//! `wait_for(...)`.
 //! 5. Asserts every entry from `BEGIN_TESTING_INVENTORY` (the
-//!    SSOT — NOT a hardcoded copy, per ) is still
-//!    visible (proves `?` did not navigate away).
+//! SSOT — NOT a hardcoded copy, per ) is still
+//! visible (proves `?` did not navigate away).
 //! 6. Snapshots the post-`?` grid via insta for byte-level
-//!    visual regression.
+//! visual regression.
 //! 7. Quits tack via the framework's `quit_tack(5)` contract
-//!    and asserts the child exits cleanly via `success()` —
-//!    matches every other Section 05 scenario teardown path,
-//!    per
+//! and asserts the child exits cleanly via `success()` —
+//! matches every other Section 05 scenario teardown path,
+//! per
 //!
 //! If a future tack release makes `?` a distinct help screen,
 //! the per-entry assertions will fail and the insta snapshot
@@ -85,7 +85,7 @@ use oriterm_test_support::terminfo::TerminfoEnv;
 
 #[test]
 fn tack_help_redisplays_begin_testing_menu() {
-    // SEMANTIC PIN for gate on the canonical
+    // Verifies for gate on the canonical
     // `ScenarioRunner::available()` AND-combine (tack_available
     // + tic_available + tack_version_supported), NOT on the
     // bare `tack_available() && tic_available()` pair. The

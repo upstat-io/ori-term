@@ -229,7 +229,7 @@ impl Keymap {
 
     // Searchable Menu navigation — same actions as `Menu` but **without**
     // `Space` so printable filter input reaches `MenuWidget::on_input` for
-    // the searchable popup's filter-character handling. See BUG-03-003.
+    // the searchable popup's filter-character handling. See.
     fn push_searchable_menu_bindings(b: &mut Vec<KeyBinding>) {
         let m = Modifiers::NONE;
         let ctx = Some("MenuSearchable");

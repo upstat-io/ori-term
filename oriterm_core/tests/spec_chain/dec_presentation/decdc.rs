@@ -105,7 +105,7 @@ fn decdc_declrmm_constrains_to_margin_band() {
     assert_eq!(row[Column(9)].ch, 'J');
 }
 
-/// Negative pin: DECDC with the cursor OUTSIDE the DECLRMM band is a
+/// Regression guard: DECDC with the cursor OUTSIDE the DECLRMM band is a
 /// no-op — every cell in the row is byte-identical after the sequence.
 /// Anchor: catalog row `DECPRES-DECDC` (cursor-outside-band no-op).
 #[test]
@@ -123,7 +123,7 @@ fn decdc_cursor_outside_declrmm_band_is_noop() {
     }
 }
 
-/// Negative pin: rows outside the active scroll region (DECSTBM) are
+/// Regression guard: rows outside the active scroll region (DECSTBM) are
 /// NOT touched by DECDC — only rows inside the vertical region are
 /// affected. Guards against the common bug of deleting on all rows
 /// regardless of DECSTBM. Anchor: catalog row `DECPRES-DECDC`

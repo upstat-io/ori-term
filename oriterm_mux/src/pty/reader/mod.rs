@@ -29,7 +29,7 @@ const READ_BUFFER_SIZE: usize = 0x2_0000; // 128 KB
 /// lockstep with `READ_BUFFER_SIZE` if either changes. 1 MiB per pane
 /// is the back-pressure trigger point: tighter starves the child via
 /// kernel PTY back-pressure; looser defeats the bounded-growth invariant
-/// pinned by §03 Pin 1 in `bug-tracker/plans/BUG-11-002/`.
+/// pinned by §03 Pin 1 in `bug-tracker/plans//`.
 pub(crate) const BYTE_CHANNEL_MEMORY_BUDGET: usize = 1024 * 1024; // 1 MiB
 
 /// Bounded capacity for the reader → IO thread byte channel, in messages.
@@ -39,7 +39,7 @@ pub(crate) const BYTE_CHANNEL_MEMORY_BUDGET: usize = 1024 * 1024; // 1 MiB
 /// is full, propagating back-pressure through the kernel PTY buffer to
 /// the child process. On Windows (`ConPTY`), the existing 1 ms inter-read
 /// sleep below is now secondary back-pressure — the bounded `send()` is
-/// the primary mechanism. Regression: BUG-11-002.
+/// the primary mechanism. Regression:.
 pub(crate) const BYTE_CHANNEL_CAPACITY: usize = BYTE_CHANNEL_MEMORY_BUDGET / READ_BUFFER_SIZE;
 
 const _: () = assert!(

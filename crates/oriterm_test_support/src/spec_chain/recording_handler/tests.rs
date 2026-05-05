@@ -90,7 +90,7 @@ fn apc_dispatch_records_per_transmission_kitty_command() {
     assert_eq!(cmd.transmission, KittyTransmission::File);
 }
 
-/// Negative pin: a non-`G` APC payload must NOT record the typed
+/// Regression guard: a non-`G` APC payload must NOT record the typed
 /// variant — the record stays on the `Other` fallback arm. Proves the
 /// first-byte gate runs before parsing so malformed APCs of other
 /// protocols are not misclassified. Anchor: HYG-13.1-003 §13.1 close-out.
@@ -119,7 +119,7 @@ fn apc_dispatch_non_g_prefix_falls_back_to_other() {
     assert!(other_apc, "non-G APC must fall back to Other arm");
 }
 
-/// Negative pin: a kitty APC with malformed base64 payload falls back
+/// Regression guard: a kitty APC with malformed base64 payload falls back
 /// to `Other` rather than recording a partial command. Matches
 /// `parse_kitty_command`'s documented `KittyError::InvalidBase64`
 /// contract. Anchor: HYG-13.1-003 §13.1 close-out.

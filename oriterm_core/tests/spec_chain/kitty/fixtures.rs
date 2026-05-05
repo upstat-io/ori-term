@@ -83,7 +83,7 @@ pub(super) fn reply_contains(h: &SpecHarness, needle: &[u8]) -> bool {
 
 /// Count how many `ImageProtocolReply` writes matched `expected` byte-for-byte.
 /// Used to distinguish "second command produced its own reply" from "first
-/// command's reply was already in the transcript" (per the §13.1 TPR round 0
+/// command's reply was already in the transcript" (per the §13.1 review round 0
 /// finding that multi-step tests were satisfied by aggregated transcripts).
 pub(super) fn count_replies_exact(h: &SpecHarness, expected: &[u8]) -> usize {
     count_exact_pty_writes(h, PtyWriteKind::ImageProtocolReply, expected)

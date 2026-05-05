@@ -382,7 +382,7 @@ fn overlay_dismissed_on_outside_click() {
     // starts the dismiss animation.
     // The overlay is no longer in the active overlay list.
     // (Dismissing overlays may still exist in the dismissing list, so
-    //  has_overlays() might still be true during fade-out.)
+    // has_overlays() might still be true during fade-out.)
 }
 
 /// Moving the cursor over an active overlay must NOT make background widgets
@@ -832,7 +832,7 @@ fn rebuild_gcs_stale_registrations() {
     );
 }
 
-// -- Visual bell tests (BUG-11-008) --
+// -- Visual bell tests () --
 
 /// Returns the current opacity of the in-flight flash overlay layer, or
 /// `None` if no flash is present. Tests use this to probe the fade curve.
@@ -846,11 +846,11 @@ fn tick(root: &mut WindowRoot, start: Instant, delta: Duration) {
     root.tick_overlay_animations(start + delta);
 }
 
-/// Regression: BUG-11-008 — `ring_visual_bell` pushes a single full-viewport
+/// Regression: `ring_visual_bell` pushes a single full-viewport
 /// flash overlay at full intensity (opacity 1.0) and marks the window dirty.
 /// Pins the entry-point invariant: a configured BEL produces an observable
 /// overlay before the fade-out tween begins.
-/// See: bug-tracker/plans/BUG-11-008/section-03-tdd-matrix.md test 1.
+/// See: bug-tracker/plans//section-03-tdd-matrix.md test 1.
 #[test]
 fn ring_visual_bell_starts_flash_overlay_at_full_intensity() {
     let mut root = WindowRoot::new(LabelWidget::new("bell"));
@@ -865,11 +865,11 @@ fn ring_visual_bell_starts_flash_overlay_at_full_intensity() {
     assert!(root.is_dirty(), "ring_visual_bell must mark window dirty");
 }
 
-/// Regression: BUG-11-008 — flash opacity decreases monotonically over the
+/// Regression: flash opacity decreases monotonically over the
 /// configured `duration_ms`, computed by `Easing::EaseOut.apply(t)`.
 /// Pins the fade-out tween: the overlay does not stay at full opacity, and
 /// each successive sample is strictly less than the prior.
-/// See: bug-tracker/plans/BUG-11-008/section-03-tdd-matrix.md test 2.
+/// See: bug-tracker/plans//section-03-tdd-matrix.md test 2.
 #[test]
 fn ring_visual_bell_fades_monotonically_over_duration() {
     let mut root = WindowRoot::new(LabelWidget::new("bell"));
@@ -901,13 +901,13 @@ fn ring_visual_bell_fades_monotonically_over_duration() {
     );
 }
 
-/// Regression: BUG-11-008 — `duration_ms == 0` is a no-op: no overlay is
+/// Regression: `duration_ms == 0` is a no-op: no overlay is
 /// pushed, no animation scheduled, the window is not marked dirty.
 /// Pins the defense-in-depth zero-duration gate. The caller
 /// (`mux_pump`) is also expected to gate on `BellConfig::is_enabled()`,
 /// but `WindowRoot::ring_visual_bell` defends in depth so the API is
 /// safe to call unconditionally.
-/// See: bug-tracker/plans/BUG-11-008/section-03-tdd-matrix.md test 3.
+/// See: bug-tracker/plans//section-03-tdd-matrix.md test 3.
 #[test]
 fn ring_visual_bell_with_zero_duration_is_a_noop() {
     let mut root = WindowRoot::new(LabelWidget::new("bell"));
@@ -924,12 +924,11 @@ fn ring_visual_bell_with_zero_duration_is_a_noop() {
     );
 }
 
-/// Regression: BUG-11-008 — the flash overlay never captures input. It
+/// Regression: the flash overlay never captures input. It
 /// lives on the dismissing list (not the active overlays list) and event
 /// routing iterates `overlays` only, so `process_mouse_event` returns
 /// `PassThrough` even with a flash in flight. Pins the "does not
-/// intercept input" contract per CLAUDE.md visual-bell distinguishability.
-/// See: bug-tracker/plans/BUG-11-008/section-03-tdd-matrix.md test 4.
+/// intercept input" contract for visual-bell distinguishability.
 #[test]
 fn ring_visual_bell_does_not_intercept_input() {
     let mut root = WindowRoot::new(LabelWidget::new("bell"));
@@ -946,10 +945,10 @@ fn ring_visual_bell_does_not_intercept_input() {
     );
 }
 
-/// Regression: BUG-11-008 — the flash overlay's bounds always equal the
+/// Regression: the flash overlay's bounds always equal the
 /// current viewport. Distinguishability from the per-tab pulse: visual
 /// bell covers the whole window, audible bell flashes one tab.
-/// See: bug-tracker/plans/BUG-11-008/section-03-tdd-matrix.md test 5.
+/// See: bug-tracker/plans//section-03-tdd-matrix.md test 5.
 #[test]
 fn ring_visual_bell_overlay_covers_full_viewport() {
     let mut root = WindowRoot::new(LabelWidget::new("bell"));
@@ -962,10 +961,10 @@ fn ring_visual_bell_overlay_covers_full_viewport() {
     );
 }
 
-/// Regression: BUG-11-008 — `Easing::Linear` produces a proportional fade.
+/// Regression: `Easing::Linear` produces a proportional fade.
 /// At t=50ms of 200ms (phase=0.25), `Easing::Linear.apply(0.25) = 0.25`,
 /// so opacity = 1.0 - 0.25 = 0.75 ± 0.01.
-/// See: bug-tracker/plans/BUG-11-008/section-03-tdd-matrix.md test 6.
+/// See: bug-tracker/plans//section-03-tdd-matrix.md test 6.
 #[test]
 fn ring_visual_bell_linear_curve_fades_proportionally() {
     let mut root = WindowRoot::new(LabelWidget::new("bell"));
@@ -987,11 +986,11 @@ fn ring_visual_bell_linear_curve_fades_proportionally() {
     );
 }
 
-/// Regression: BUG-11-008 — a second `ring_visual_bell` while the first is
+/// Regression: a second `ring_visual_bell` while the first is
 /// still in flight REPLACES the first overlay (single-flash invariant).
 /// `flash_overlay_count` stays at 1 — the overlay does not stack. Prevents
 /// heap accumulation under bell-storm scenarios.
-/// See: bug-tracker/plans/BUG-11-008/section-03-tdd-matrix.md test 7.
+/// See: bug-tracker/plans//section-03-tdd-matrix.md test 7.
 #[test]
 fn ring_visual_bell_replaces_in_flight_animation() {
     let mut root = WindowRoot::new(LabelWidget::new("bell"));
@@ -1019,11 +1018,11 @@ fn ring_visual_bell_replaces_in_flight_animation() {
     );
 }
 
-/// Regression: BUG-11-008 — when the viewport changes during an in-flight
+/// Regression: when the viewport changes during an in-flight
 /// flash, the overlay's bounds update to the new viewport. Without this,
 /// an interactive resize during a bell would leave a flash overlay covering
 /// only part of the new window.
-/// See: bug-tracker/plans/BUG-11-008/section-03-tdd-matrix.md test 14.
+/// See: bug-tracker/plans//section-03-tdd-matrix.md test 14.
 #[test]
 fn ring_visual_bell_during_resize_repositions_overlay() {
     let small = Rect::new(0.0, 0.0, 800.0, 600.0);
@@ -1042,10 +1041,10 @@ fn ring_visual_bell_during_resize_repositions_overlay() {
     );
 }
 
-/// Regression: BUG-11-008 — 10 back-to-back `ring_visual_bell` calls under
+/// Regression: 10 back-to-back `ring_visual_bell` calls under
 /// a bell storm produce exactly one in-flight overlay; each call replaces
 /// the previous. Prevents heap growth under shell-emitted BEL storms.
-/// See: bug-tracker/plans/BUG-11-008/section-03-tdd-matrix.md test 15.
+/// See: bug-tracker/plans//section-03-tdd-matrix.md test 15.
 #[test]
 fn ring_visual_bell_storm_replaces_overlay_each_time_no_accumulation() {
     let mut root = WindowRoot::new(LabelWidget::new("bell"));
@@ -1106,10 +1105,10 @@ fn compute_layout_gcs_stale_registrations() {
     );
 }
 
-// -- BUG-03-003: Overlay key dispatch goes through keymap --
-// Regression tests for BUG-03-003 — overlay key dispatch was bypassing the
+// -- : Overlay key dispatch goes through keymap --
+// Regression tests for — overlay key dispatch was bypassing the
 // keymap path for non-Escape keys, breaking ArrowDown/ArrowUp/Enter on
-// MenuWidget-backed popup overlays. See bug-tracker/plans/BUG-03-003/.
+// MenuWidget-backed popup overlays. See bug-tracker/plans//.
 
 fn menu_with_items(items: &[&str]) -> MenuWidget {
     let entries: Vec<MenuEntry> = items
@@ -1126,7 +1125,7 @@ fn key_event(k: Key) -> KeyEvent {
     }
 }
 
-/// Semantic pin: pressing ArrowDown on a non-searchable MenuWidget popup
+/// Property: pressing ArrowDown on a non-searchable MenuWidget popup
 /// must advance the hovered index via the keymap path (NavigateDown →
 /// handle_keymap_action → navigate_keyboard). Pre-fix: routes through
 /// on_input which returns ignored() for non-searchable mode, so hovered
@@ -1137,8 +1136,8 @@ fn key_event(k: Key) -> KeyEvent {
 /// keymap path is broken, ArrowDown is swallowed without state change
 /// and Enter would emit `Selected { index: 0 }` — the assertion fails.
 ///
-/// Regression: BUG-03-003 — overlay key dispatch bypassed keymap for
-/// non-Escape keys. See bug-tracker/plans/completed/BUG-03-003/.
+/// Regression: overlay key dispatch bypassed keymap for
+/// non-Escape keys. See bug-tracker/plans/completed/.
 #[test]
 fn arrow_down_on_menu_overlay_advances_hover_via_keymap() {
     let menu = menu_with_items(&["Alpha", "Beta", "Gamma"]);
@@ -1204,13 +1203,13 @@ fn arrow_down_on_menu_overlay_advances_hover_via_keymap() {
     }
 }
 
-/// Negative pin: pressing Space inside a SEARCHABLE MenuWidget popup must
+/// Regression guard: pressing Space inside a SEARCHABLE MenuWidget popup must
 /// NOT trigger Confirm via keymap — it must reach on_input where it is
 /// appended to the filter query as a literal space character. Rejects the
 /// regression where the keymap-first dispatch wires Space→Confirm for the
 /// "MenuSearchable" context (which would steal printable filter input).
 ///
-/// Regression: BUG-03-003 design pin — searchable Menu uses a distinct
+/// Regression: design pin — searchable Menu uses a distinct
 /// "MenuSearchable" key_context that intentionally omits the Space binding.
 #[test]
 fn space_on_searchable_menu_overlay_does_not_confirm() {
@@ -1240,7 +1239,7 @@ fn space_on_searchable_menu_overlay_does_not_confirm() {
     // would be Delivered { action: Some(Selected) } via try_select_hovered.
     match result {
         OverlayEventResult::Delivered { response, .. } => {
-            // Negative pin: NO Selected action emitted. Either no action at all
+            // Regression guard: NO Selected action emitted. Either no action at all
             // (filter character path) or a non-Selected action.
             assert!(
                 !matches!(
@@ -1271,8 +1270,8 @@ fn space_on_searchable_menu_overlay_does_not_confirm() {
 /// this test to produce `Dismissed(id)` is via the keymap path's
 /// `widget::Dismiss → Dismissed(id)` translation.
 ///
-/// Regression: BUG-03-003 codex Round 0 + Phase 5 code TPR Round 0
-/// (codex F3 + gemini F2 agreement).
+/// Regression: Round 0 + Phase 5 code review round 0
+/// ( F3 + F2 agreement).
 #[test]
 fn dialog_escape_dismisses_via_keymap_translation() {
     use crate::action::{KeyBinding, Keystroke, keymap_action::Dismiss};
@@ -1334,8 +1333,8 @@ fn dialog_escape_dismisses_via_keymap_translation() {
 /// per-overlay focus paths, this test becomes the regression guard that
 /// flags the behavior change.
 ///
-/// Regression: BUG-03-003 Phase 2.5 Plan TPR design pin — codex F3 +
-/// gemini F2 + opencode F4 (3-of-3 agreement).
+/// Regression: Phase 2.5 Plan TPR design pin — F3 +
+/// F2 + F4 (3-of-3 agreement).
 #[test]
 fn enter_on_dialog_with_focused_button_does_not_activate_via_keymap() {
     // DialogWidget is a Modal overlay with key_context()=="Dialog".
@@ -1365,7 +1364,7 @@ fn enter_on_dialog_with_focused_button_does_not_activate_via_keymap() {
     // through the keymap path.
     match result {
         OverlayEventResult::Delivered { response, .. } => {
-            // Negative pin: NO action implies the keymap miss path was
+            // Regression guard: NO action implies the keymap miss path was
             // taken (Button's Activate would have produced an action via
             // dispatch_keymap_action).
             assert!(

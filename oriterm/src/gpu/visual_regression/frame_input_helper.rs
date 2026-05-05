@@ -26,10 +26,10 @@ use crate::gpu::frame_input::{FrameInput, FramePalette, ViewportSize};
 /// spec-conformance goldens pass `false` for deterministic pixel output.
 ///
 /// Both vttest and tack GPU goldens consume this — having two copies
-/// is `LEAK:algorithmic-duplication` per `impl-hygiene.md`.
+/// is `LEAK:algorithmic-duplication`.
 ///
 /// **NOT** the canonical xterm/`oriterm_core::palette` foreground (`0xE5E5E5`
-/// after BUG-08-016); the value here is a stable historical baseline that
+/// after ); the value here is a stable historical baseline that
 /// existing golden snapshots were captured against. Re-baselining all
 /// goldens to query the live palette is a separate refactor.
 pub(in crate::gpu::visual_regression) fn frame_input(
@@ -45,7 +45,7 @@ pub(in crate::gpu::visual_regression) fn frame_input(
     let content = session.term().renderable_content();
 
     // Stable fixture-specific foreground — see fn doc comment for the
-    // SSOT note re BUG-08-016.
+    // SSOT note re.
     let fg = Rgb {
         r: 211,
         g: 215,

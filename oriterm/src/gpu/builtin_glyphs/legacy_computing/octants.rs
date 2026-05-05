@@ -9,13 +9,13 @@
 //!
 //! ```text
 //! +-----+-----+
-//! | b0  | b1  |  row 0 (top)
+//! | b0 | b1 | row 0 (top)
 //! +-----+-----+
-//! | b2  | b3  |  row 1 (upper-mid)
+//! | b2 | b3 | row 1 (upper-mid)
 //! +-----+-----+
-//! | b4  | b5  |  row 2 (lower-mid)
+//! | b4 | b5 | row 2 (lower-mid)
 //! +-----+-----+
-//! | b6  | b7  |  row 3 (bottom)
+//! | b6 | b7 | row 3 (bottom)
 //! +-----+-----+
 //! ```
 //!

@@ -18,11 +18,11 @@
 //! Section 06 task-checkbox traceability:
 //! - Declare per-sub-test ScenarioSpec consts → SUBSUMED (batching).
 //! - Sibling parser tests → land in
-//!   `scenarios::status_reports::tests`.
+//! `scenarios::status_reports::tests`.
 //! - `#[test] fn` wrappers → collapsed into one walker test here that
-//!   asserts every curated sub-test has a parseable response.
+//! asserts every curated sub-test has a parseable response.
 //! - Cap coverage extension → `cap_coverage/section_06.rs` moves `u6`
-//!   + `u7` from `exempt` to `covered`.
+//! + `u7` from `exempt` to `covered`.
 
 use std::collections::BTreeMap;
 

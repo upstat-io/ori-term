@@ -34,7 +34,7 @@ impl<S: EffectSink> Term<S> {
         // in-flight XTSMGRAPHICS mutations during this DCS do NOT
         // retroactively change the active parser. The decoder honors
         // the count by wrapping `#idx` register indices modulo this
-        // value in `apply_color` (BUG-06-024).
+        // value in `apply_color` ().
         self.sixel_parser = Some(SixelParser::new(
             params,
             [bg.r, bg.g, bg.b],

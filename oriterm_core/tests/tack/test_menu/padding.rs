@@ -20,7 +20,7 @@
 //! Against `extra/ori_term.info` the captured grid after the test is:
 //!
 //! ```text
-//! (rs1) reset_1string, not present.  (rs1) Done
+//! (rs1) reset_1string, not present. (rs1) Done
 //! ```
 //!
 //! Tack only probes `rs1` and reports it as `not present` because
@@ -62,13 +62,13 @@ fn tack_padding() {
     // the canonical semantic claims for 05.4b cap-coverage:
     //
     // 1. "(rs1)" — proves tack referenced the rs1 cap by its
-    //    terminfo short name (the canonical tack output format
-    //    matching the (am)/(os)/(bel)/(colors)/(pairs)/(clear)
-    //    pattern from prior screens). This is the cap-coverage
-    //    pin for `rs1` in 05.5.
+    // terminfo short name (the canonical tack output format
+    // matching the (am)/(os)/(bel)/(colors)/(pairs)/(clear)
+    // pattern from prior screens). This is the cap-coverage
+    // pin for `rs1` in 05.5.
     // 2. "reset_1string" — proves tack referenced the cap by its
-    //    terminfo full name. Catches a regression where tack
-    //    swaps to a different cap probe.
+    // terminfo full name. Catches a regression where tack
+    // swaps to a different cap probe.
     //
     // The `not present` part of tack's output is NOT pinned
     // because that's a property of the current ori_term.info

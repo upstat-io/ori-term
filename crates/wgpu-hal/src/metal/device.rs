@@ -22,14 +22,14 @@ struct CompiledShader {
     wg_size: MTLSize,
     wg_memory_sizes: Vec<u32>,
 
-    /// Bindings of WGSL `storage` globals that contain variable-sized arrays.
-    ///
-    /// In order to implement bounds checks and the `arrayLength` function for
-    /// WGSL runtime-sized arrays, we pass the entry point a struct with a
-    /// member for each global variable that contains such an array. That member
-    /// is a `u32` holding the variable's total size in bytes---which is simply
-    /// the size of the `Buffer` supplying that variable's contents for the
-    /// draw call.
+ /// Bindings of WGSL `storage` globals that contain variable-sized arrays.
+ ///
+ /// In order to implement bounds checks and the `arrayLength` function for
+ /// WGSL runtime-sized arrays, we pass the entry point a struct with a
+ /// member for each global variable that contains such an array. That member
+ /// is a `u32` holding the variable's total size in bytes---which is simply
+ /// the size of the `Buffer` supplying that variable's contents for the
+ /// draw call.
     sized_bindings: Vec<naga::ResourceBinding>,
 
     immutable_buffer_mask: usize,
@@ -171,7 +171,7 @@ impl super::Device {
                         index: bounds_check_policy,
                         buffer: bounds_check_policy,
                         image_load: bounds_check_policy,
-                        // TODO: support bounds checks on binding arrays
+ // TODO: support bounds checks on binding arrays
                         binding_array: naga::proc::BoundsCheckPolicy::Unchecked,
                     },
                     zero_initialize_workgroup_memory: stage.zero_initialize_workgroup_memory,
@@ -242,7 +242,7 @@ impl super::Device {
                         crate::PipelineError::EntryPoint(naga_stage)
                     })?;
 
-                // collect sizes indices, immutable buffers, and work group memory sizes
+ // collect sizes indices, immutable buffers, and work group memory sizes
                 let ep_info = &module_info.get_entry_point(ep_index);
                 let mut wg_memory_sizes = Vec::new();
                 let mut sized_bindings = Vec::new();
@@ -267,7 +267,7 @@ impl super::Device {
                                 _ => false,
                             };
 
-                            // check for an immutable buffer
+ // check for an immutable buffer
                             if !ep_info[var_handle].is_empty() && !storage_access_store {
                                 let slot = ep_resources.resources[&br].buffer.unwrap();
                                 immutable_buffer_mask |= 1 << slot;
@@ -373,14 +373,14 @@ impl crate::Device for super::Device {
 
         let mut options = MTLResourceOptions::empty();
         options |= if map_read || map_write {
-            // `crate::MemoryFlags::PREFER_COHERENT` is ignored here
+ // `crate::MemoryFlags::PREFER_COHERENT` is ignored here
             MTLResourceOptions::StorageModeShared
         } else {
             MTLResourceOptions::StorageModePrivate
         };
         options.set(MTLResourceOptions::CPUCacheModeWriteCombined, map_write);
 
-        //TODO: HazardTrackingModeUntracked
+ //TODO: HazardTrackingModeUntracked
 
         objc::rc::autoreleasepool(|| {
             let raw = self.shared.device.new_buffer(desc.size, options);
@@ -519,8 +519,8 @@ impl crate::Device for super::Device {
                 .is_full_resource(desc.format, texture.mip_levels, texture.array_layers);
 
         let raw = if format_equal && type_equal && range_full_resource {
-            // Some images are marked as framebuffer-only, and we can't create aliases of them.
-            // Also helps working around Metal bugs with aliased array textures.
+ // Some images are marked as framebuffer-only, and we can't create aliases of them.
+ // Also helps working around Metal bugs with aliased array textures.
             texture.raw.to_owned()
         } else {
             let mip_level_count = desc
@@ -583,7 +583,7 @@ impl crate::Device for super::Device {
             descriptor.set_address_mode_t(conv::map_address_mode(t));
             descriptor.set_address_mode_r(conv::map_address_mode(r));
 
-            // Anisotropy is always supported on mac up to 16x
+ // Anisotropy is always supported on mac up to 16x
             descriptor.set_max_anisotropy(desc.anisotropy_clamp as _);
 
             descriptor.set_lod_min_clamp(desc.lod_clamp.start);
@@ -684,20 +684,20 @@ impl crate::Device for super::Device {
         });
         let mut bind_group_infos = arrayvec::ArrayVec::new();
 
-        // First, place the immediates
+ // First, place the immediates
         for info in stage_data.iter_mut() {
             info.pc_limit = desc.immediate_size;
 
-            // handle the immediate data buffer assignment and shader overrides
+ // handle the immediate data buffer assignment and shader overrides
             if info.pc_limit != 0 {
                 info.pc_buffer = Some(info.counters.buffers);
                 info.counters.buffers += 1;
             }
         }
 
-        // Second, place the described resources
+ // Second, place the described resources
         for (group_index, &bgl) in desc.bind_group_layouts.iter().enumerate() {
-            // remember where the resources for this set start at each shader stage
+ // remember where the resources for this set start at each shader stage
             let base_resource_indices = stage_data.map_ref(|info| info.counters.clone());
 
             for entry in bgl.entries.iter() {
@@ -719,7 +719,7 @@ impl crate::Device for super::Device {
                     }
 
                     let mut target = naga::back::msl::BindTarget::default();
-                    // Bindless path
+ // Bindless path
                     if let Some(_) = entry.count {
                         target.buffer = Some(info.counters.buffers as _);
                         info.counters.buffers += 1;
@@ -783,11 +783,11 @@ impl crate::Device for super::Device {
             });
         }
 
-        // Finally, make sure we fit the limits
+ // Finally, make sure we fit the limits
         for info in stage_data.iter_mut() {
             if info.need_sizes_buffer || info.stage == naga::ShaderStage::Vertex {
-                // Set aside space for the sizes_buffer, which is required
-                // for variable-length buffers, or to support vertex pulling.
+ // Set aside space for the sizes_buffer, which is required
+ // for variable-length buffers, or to support vertex pulling.
                 info.sizes_buffer = Some(info.counters.buffers);
                 info.counters.buffers += 1;
             }
@@ -860,7 +860,7 @@ impl crate::Device for super::Device {
                     (entry, layout)
                 });
                 for (entry, layout) in layout_and_entry_iter {
-                    // Bindless path
+ // Bindless path
                     if layout.count.is_some() {
                         if !layout.visibility.contains(stage_bit) {
                             continue;
@@ -871,7 +871,7 @@ impl crate::Device for super::Device {
                         let stages = conv::map_render_stages(layout.visibility);
                         let uses = conv::map_resource_usage(&layout.ty);
 
-                        // Create argument buffer for this array
+ // Create argument buffer for this array
                         let buffer = self.shared.device.new_buffer(
                             8 * count as u64,
                             MTLResourceOptions::HazardTrackingModeUntracked
@@ -912,8 +912,8 @@ impl crate::Device for super::Device {
 
                                 for (idx, &sampler) in samplers.iter().enumerate() {
                                     contents[idx] = sampler.raw.gpu_resource_id();
-                                    // Samplers aren't resources like buffers and textures, so don't
-                                    // need to be passed to useResource
+ // Samplers aren't resources like buffers and textures, so don't
+ // need to be passed to useResource
                                 }
                             }
                             _ => {
@@ -932,7 +932,7 @@ impl crate::Device for super::Device {
 
                         bg.argument_buffers.push(buffer)
                     }
-                    // Bindfull path
+ // Bindfull path
                     else {
                         if let wgt::BindingType::Buffer {
                             has_dynamic_offset: true,
@@ -954,8 +954,8 @@ impl crate::Device for super::Device {
                                 let end = start + 1;
                                 bg.buffers
                                     .extend(desc.buffers[start..end].iter().map(|source| {
-                                        // Given the restrictions on `BufferBinding::offset`,
-                                        // this should never be `None`.
+ // Given the restrictions on `BufferBinding::offset`,
+ // this should never be `None`.
                                         let remaining_size = wgt::BufferSize::new(
                                             source.buffer.size - source.offset,
                                         );
@@ -1000,8 +1000,8 @@ impl crate::Device for super::Device {
                             }
                             wgt::BindingType::AccelerationStructure { .. } => unimplemented!(),
                             wgt::BindingType::ExternalTexture => {
-                                // We don't yet support binding arrays of external textures.
-                                // https://github.com/gfx-rs/wgpu/issues/8027
+ // We don't yet support binding arrays of external textures.
+ // https://github.com/gfx-rs/wgpu/issues/8027
                                 assert_eq!(entry.count, 1);
                                 let external_texture =
                                     &desc.external_textures[entry.resource_index as usize];
@@ -1054,7 +1054,7 @@ impl crate::Device for super::Device {
                 num_workgroups,
             } => {
                 let options = metal::CompileOptions::new();
-                // Obtain the device from shared
+ // Obtain the device from shared
                 let device = &self.shared.device;
                 let library = device
                     .new_library_with_source(source, &options)
@@ -1143,19 +1143,19 @@ impl crate::Device for super::Device {
             let ts_info;
             let ms_info;
 
-            // Create the pipeline descriptor and do vertex/mesh pipeline specific setup
+ // Create the pipeline descriptor and do vertex/mesh pipeline specific setup
             let descriptor = match desc.vertex_processor {
                 crate::VertexProcessor::Standard {
                     vertex_buffers,
                     ref vertex_stage,
                 } => {
-                    // Vertex pipeline specific setup
+ // Vertex pipeline specific setup
 
                     let descriptor = metal::RenderPipelineDescriptor::new();
                     ts_info = None;
                     ms_info = None;
 
-                    // Collect vertex buffer mappings
+ // Collect vertex buffer mappings
                     let mut vertex_buffer_mappings =
                         Vec::<naga::back::msl::VertexBufferMapping>::new();
                     for (i, vbl) in vertex_buffers.iter().enumerate() {
@@ -1195,7 +1195,7 @@ impl crate::Device for super::Device {
                         vertex_buffer_mappings.push(mapping);
                     }
 
-                    // Setup vertex shader
+ // Setup vertex shader
                     {
                         let vs = self.load_shader(
                             vertex_stage,
@@ -1224,7 +1224,7 @@ impl crate::Device for super::Device {
                         });
                     }
 
-                    // Validate vertex buffer count
+ // Validate vertex buffer count
                     if desc.layout.total_counters.vs.buffers + (vertex_buffers.len() as u32)
                         > self.shared.private_caps.max_vertex_buffers
                     {
@@ -1239,7 +1239,7 @@ impl crate::Device for super::Device {
                         ));
                     }
 
-                    // Set the pipeline vertex buffer info
+ // Set the pipeline vertex buffer info
                     if !vertex_buffers.is_empty() {
                         let vertex_descriptor = metal::VertexDescriptor::new();
                         for (i, vb) in vertex_buffers.iter().enumerate() {
@@ -1248,9 +1248,9 @@ impl crate::Device for super::Device {
                             let buffer_desc =
                                 vertex_descriptor.layouts().object_at(buffer_index).unwrap();
 
-                            // Metal expects the stride to be the actual size of the attributes.
-                            // The semantics of array_stride == 0 can be achieved by setting
-                            // the step function to constant and rate to 0.
+ // Metal expects the stride to be the actual size of the attributes.
+ // The semantics of array_stride == 0 can be achieved by setting
+ // the step function to constant and rate to 0.
                             if vb.array_stride == 0 {
                                 let stride = vb
                                     .attributes
@@ -1285,12 +1285,12 @@ impl crate::Device for super::Device {
                     ref task_stage,
                     ref mesh_stage,
                 } => {
-                    // Mesh pipeline specific setup
+ // Mesh pipeline specific setup
 
                     vs_info = None;
                     let descriptor = metal::MeshRenderPipelineDescriptor::new();
 
-                    // Setup task stage
+ // Setup task stage
                     if let Some(ref task_stage) = task_stage {
                         let ts = self.load_shader(
                             task_stage,
@@ -1319,7 +1319,7 @@ impl crate::Device for super::Device {
                         ts_info = None;
                     }
 
-                    // Setup mesh stage
+ // Setup mesh stage
                     {
                         let ms = self.load_shader(
                             mesh_stage,
@@ -1359,7 +1359,7 @@ impl crate::Device for super::Device {
                 ),
             };
 
-            // Fragment shader
+ // Fragment shader
             let fs_info = match desc.fragment_stage {
                 Some(ref stage) => {
                     let fs = self.load_shader(
@@ -1389,8 +1389,8 @@ impl crate::Device for super::Device {
                     })
                 }
                 None => {
-                    // TODO: This is a workaround for what appears to be a Metal validation bug
-                    // A pixel format is required even though no attachments are provided
+ // TODO: This is a workaround for what appears to be a Metal validation bug
+ // A pixel format is required even though no attachments are provided
                     if desc.color_targets.is_empty() && desc.depth_stencil.is_none() {
                         descriptor.set_depth_attachment_pixel_format(MTLPixelFormat::Depth32Float);
                     }
@@ -1398,7 +1398,7 @@ impl crate::Device for super::Device {
                 }
             };
 
-            // Setup pipeline color attachments
+ // Setup pipeline color attachments
             for (i, ct) in desc.color_targets.iter().enumerate() {
                 let at_descriptor = descriptor.color_attachments().object_at(i as u64).unwrap();
                 let ct = if let Some(color_target) = ct.as_ref() {
@@ -1427,7 +1427,7 @@ impl crate::Device for super::Device {
                 }
             }
 
-            // Setup depth stencil state
+ // Setup depth stencil state
             let depth_stencil = match desc.depth_stencil {
                 Some(ref ds) => {
                     let raw_format = self.shared.private_caps.map_format(ds.format);
@@ -1446,9 +1446,9 @@ impl crate::Device for super::Device {
                 None => None,
             };
 
-            // Setup multisample state
+ // Setup multisample state
             if desc.multisample.count != 1 {
-                //TODO: handle sample mask
+ //TODO: handle sample mask
                 match descriptor {
                     MetalGenericRenderPipelineDescriptor::Standard(ref inner) => {
                         inner.set_sample_count(desc.multisample.count as u64);
@@ -1459,10 +1459,10 @@ impl crate::Device for super::Device {
                 }
                 descriptor
                     .set_alpha_to_coverage_enabled(desc.multisample.alpha_to_coverage_enabled);
-                //descriptor.set_alpha_to_one_enabled(desc.multisample.alpha_to_one_enabled);
+ //descriptor.set_alpha_to_one_enabled(desc.multisample.alpha_to_one_enabled);
             }
 
-            // Set debug label
+ // Set debug label
             if let Some(name) = desc.label {
                 descriptor.set_label(name);
             }
@@ -1470,7 +1470,7 @@ impl crate::Device for super::Device {
                 descriptor.set_max_vertex_amplification_count(mv.get().count_ones() as u64);
             }
 
-            // Create the pipeline from descriptor
+ // Create the pipeline from descriptor
             let raw = match descriptor {
                 MetalGenericRenderPipelineDescriptor::Standard(d) => {
                     self.shared.device.new_render_pipeline_state(&d)
@@ -1612,7 +1612,7 @@ impl crate::Device for super::Device {
                 wgt::QueryType::Occlusion => {
                     let size = desc.count as u64 * crate::QUERY_SIZE;
                     let options = MTLResourceOptions::empty();
-                    //TODO: HazardTrackingModeUntracked
+ //TODO: HazardTrackingModeUntracked
                     let raw_buffer = self.shared.device.new_buffer(size, options);
                     if let Some(label) = desc.label {
                         raw_buffer.set_label(label);
@@ -1795,7 +1795,7 @@ impl crate::Device for super::Device {
     }
 
     fn check_if_oom(&self) -> Result<(), crate::DeviceError> {
-        // TODO: see https://github.com/gfx-rs/wgpu/issues/7460
+ // TODO: see https://github.com/gfx-rs/wgpu/issues/7460
 
         Ok(())
     }

@@ -9,7 +9,7 @@
 //! after a successful frame, or `RenderOutcome::Skipped` when there is
 //! nothing to render (no dirty windows).
 //!
-//! Per `.claude/rules/impl-hygiene.md` SSOT: only [`gate_outcome`] reads
+//! Per SSOT: only [`gate_outcome`] reads
 //! `GpuHealth` to make the gate decision. The dispatcher and any caller
 //! that needs to know "is render allowed?" routes through this function;
 //! no consumer pattern-matches `GpuHealth` directly outside the recovery

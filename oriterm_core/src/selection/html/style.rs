@@ -180,7 +180,7 @@ impl CellStyle {
             // CSS applies the same color to BOTH decorations (single
             // text-decoration-color per element). The GPU renders overline
             // in fg unconditionally; the divergence is a known minor drift
-            // tracked in BUG-06-014 §3.
+            // tracked in §3.
             if let Some(uc) = self.underline_color {
                 let _ = write!(
                     buf,
@@ -193,7 +193,7 @@ impl CellStyle {
             VerticalAlign::None => {}
             // No font-size shrink: glyph-size reduction breaks the monospace
             // grid inside <pre> AND diverges from the GPU which renders
-            // vertical offset only (no shrink). See fix-BUG-06-014 §1.5.
+            // vertical offset only (no shrink). See fix- §1.5.
             VerticalAlign::Super => buf.push_str("vertical-align:super;"),
             VerticalAlign::Sub => buf.push_str("vertical-align:sub;"),
         }

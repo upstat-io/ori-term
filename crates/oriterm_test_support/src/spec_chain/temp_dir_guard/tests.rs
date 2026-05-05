@@ -1,6 +1,6 @@
 //! Tests for `TempDirGuard`.
 //!
-//! The semantic pin is `temp_dir_guard_cleans_up_on_panic_unwinding` —
+//! The property is `temp_dir_guard_cleans_up_on_panic_unwinding` —
 //! proves the RAII contract holds when an assertion inside the guard's
 //! scope panics during unwind, which is the exact failure mode the
 //! manual `fs::remove_*` tails did NOT cover.
@@ -30,8 +30,8 @@ fn temp_dir_guard_path_exists_while_guard_alive() {
 
 /// Pins: the RAII `Drop` chain removes the directory when the guard
 /// exits normal scope. Paired positive case for the panic-unwinding
-/// semantic pin below. Anchor: `HYG-13.1-005` §13.1 close-out,
-/// `.claude/rules/code-hygiene.md` §Temporal Coupling & RAII Guards.
+/// property below. Anchor: `HYG-13.1-005` §13.1 close-out,
+/// §Temporal Coupling & RAII Guards.
 #[test]
 fn temp_dir_guard_cleans_up_on_normal_drop() {
     let path: PathBuf = {
@@ -43,13 +43,13 @@ fn temp_dir_guard_cleans_up_on_normal_drop() {
     assert!(!path.exists(), "dir must be removed on guard drop");
 }
 
-/// SEMANTIC PIN: the RAII `Drop` chain runs during panic unwinding —
+/// Verifies: the RAII `Drop` chain runs during panic unwinding —
 /// the exact path manual `fs::remove_*` tails cannot cover. The guard
 /// is constructed INSIDE the `catch_unwind` closure so the panic
 /// actually unwinds past its scope, triggering `Drop`; a side-channel
 /// `Arc<Mutex<Option<PathBuf>>>` records the path before the panic so
 /// the outer scope can assert on it. Anchor: `HYG-13.1-005` §13.1
-/// close-out, `.claude/rules/code-hygiene.md` §Temporal Coupling &
+/// close-out, §Temporal Coupling &
 /// RAII Guards.
 #[test]
 fn temp_dir_guard_cleans_up_on_panic_unwinding() {

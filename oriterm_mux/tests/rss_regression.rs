@@ -13,8 +13,8 @@
 //! take ≥6 samples across the workload and assert the post-warmup window
 //! does NOT show monotonic growth past a 256 KiB OS-noise tolerance.
 //!
-//! Regression: BUG-11-002.
-//! See: bug-tracker/plans/BUG-11-002/section-03-tdd-matrix.md.
+//! Regression:.
+//! See: bug-tracker/plans//section-03-tdd-matrix.md.
 
 #![cfg(target_os = "linux")]
 
@@ -38,7 +38,7 @@ const NOISE_TOLERANCE: usize = 256 * 1024;
 /// `MEASURE_LOCK` pattern in `oriterm_core/tests/alloc_regression.rs`.
 /// Poisoning is ignored: each test resets its own measurement state, so
 /// a prior panic cannot corrupt our samples.
-/// Regression: BUG-11-002 / Code TPR Round 2 — codex F1.
+/// Regression: / Code review round 2 — F1.
 static RSS_LOCK: Mutex<()> = Mutex::new(());
 
 #[must_use]
@@ -114,7 +114,7 @@ fn fmt_mb(samples: &[usize]) -> Vec<String> {
 
 /// Repro test — RSS plateaus under sustained PTY flood.
 ///
-/// Regression: BUG-11-002. Pre-fix the byte channel was unbounded, so
+/// Regression:. Pre-fix the byte channel was unbounded, so
 /// `yes`'s ~10 MB/s output grew the queue heap proportionally to flood
 /// duration. Post-fix the bounded channel back-pressures through the
 /// kernel PTY buffer to the child, capping per-pane queue heap at
@@ -159,10 +159,10 @@ fn mux_rss_plateaus_under_sustained_flood() {
     );
 }
 
-/// Negative pin — RSS does NOT exhibit unbounded-growth pattern.
+/// Regression guard — RSS does NOT exhibit unbounded-growth pattern.
 ///
-/// Regression: BUG-11-002. Forbid-output pin per
-/// `.claude/rules/tests.md §Negative Testing Protocol`. Pre-fix the
+/// Regression:. Forbid-output pin per
+/// Testing Protocol`. Pre-fix the
 /// unbounded queue grew the heap by ~128 KiB per queued message; over a
 /// multi-second `yes` flood at ~10 MB/s output the heap would grow by
 /// hundreds of MB. Asserts the absolute post-warmup max-min delta is
@@ -204,7 +204,7 @@ fn mux_rss_negative_no_unbounded_growth() {
 
 /// Baseline — empty pane RSS does not grow without flood input.
 ///
-/// Regression: BUG-11-002 §03 edge case "empty pane". Spawns `cat`
+/// Regression: §03 edge case "empty pane". Spawns `cat`
 /// (which blocks reading PTY stdin and produces no output) and verifies
 /// the no-flood baseline doesn't exhibit growth — proves the trend
 /// shape is sensitive to actual workload, not test harness overhead.
@@ -236,7 +236,7 @@ fn mux_rss_bounded_empty_pane() {
 
 /// Cross-pane interaction — multiple panes flooding simultaneously.
 ///
-/// Regression: BUG-11-002 §03 edge case "multiple panes". Spawns 4
+/// Regression: §03 edge case "multiple panes". Spawns 4
 /// flooding panes; each bounded byte channel caps at 1 MiB, so the
 /// expected worst-case queue heap is ~4 MiB regardless of flood
 /// duration. Pins the N-pane scaling property: bounded growth scales
@@ -277,12 +277,12 @@ fn mux_rss_plateaus_with_multiple_panes() {
 
 /// Resize during flood — bounded channels do not deadlock the resize path.
 ///
-/// Regression: BUG-11-002 §03 cross-feature interaction "resize during
+/// Regression: §03 cross-feature interaction "resize during
 /// flood". Sends a Resize command mid-flood; verifies the IO thread
 /// completes the resize (snapshot reports rows=30, cols=100) AND RSS
 /// still plateaus. Pins that the bounded byte channel doesn't block
 /// the resize command path — `cmd_tx` remains unbounded by design
-/// (BUG-11-025 owns the Resize-coalescing-via-AtomicU64 follow-up).
+/// ( owns the Resize-coalescing-via-AtomicU64 follow-up).
 #[test]
 fn mux_rss_plateaus_through_resize() {
     let _guard = RssTestGuard::new();

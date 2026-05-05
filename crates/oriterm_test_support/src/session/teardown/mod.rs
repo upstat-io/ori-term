@@ -74,32 +74,32 @@ impl PtySession {
     /// **Two-phase exit observation.**
     ///
     /// Phase 1 (in-loop, `max_iterations` send budget):
-    ///   1. Calls [`Self::send_raw`] with `b"q"` — bare `q`, NO
-    ///      newline. Tack reads input character-by-character in raw
-    ///      mode, and a trailing `\n` gets queued as a second
-    ///      keystroke that confuses the next menu's input state
-    ///      (verified empirically — `q\n` from a nested sub-menu
-    ///      causes the second `q` to be ignored). Errors from the
-    ///      writer are swallowed because the child may have already
-    ///      exited on the previous `q` and the PTY writer will
-    ///      return EPIPE / `ERROR_BROKEN_PIPE`.
-    ///   2. `drain_blocking(150)` — bounded drain of any PTY
-    ///      output produced by tack acknowledging the `q`. Bounded
-    ///      so we don't block indefinitely if tack produces no
-    ///      repaint between iterations.
-    ///   3. `try_wait()` — if the child has exited, return the
-    ///      [`ExitStatus`] immediately, before the next `q`.
+    /// 1. Calls [`Self::send_raw`] with `b"q"` — bare `q`, NO
+    ///    newline. Tack reads input character-by-character in raw
+    ///    mode, and a trailing `\n` gets queued as a second
+    ///    keystroke that confuses the next menu's input state
+    ///    (verified empirically — `q\n` from a nested sub-menu
+    ///    causes the second `q` to be ignored). Errors from the
+    ///    writer are swallowed because the child may have already
+    ///    exited on the previous `q` and the PTY writer will
+    ///    return EPIPE / `ERROR_BROKEN_PIPE`.
+    /// 2. `drain_blocking(150)` — bounded drain of any PTY
+    ///    output produced by tack acknowledging the `q`. Bounded
+    ///    so we don't block indefinitely if tack produces no
+    ///    repaint between iterations.
+    /// 3. `try_wait()` — if the child has exited, return the
+    ///    [`ExitStatus`] immediately, before the next `q`.
     ///
     /// Phase 2 (after the iteration loop):
-    ///   - Falls through to [`Self::wait_for_child_exit`] with a
-    ///     2 s timeout for canonical bounded-poll exit observation.
-    ///     Even if Phase 1 sent every `q` it was supposed to and
-    ///     observed `try_wait() == None` after the last one, the
-    ///     child may still be milliseconds away from exiting (tack
-    ///     does final cleanup before its main returns); Phase 2 is
-    ///     the canonical place to wait for that exit. If the child
-    ///     truly never exits, [`Self::wait_for_child_exit`] panics
-    ///     with the current grid as its diagnostic message.
+    /// - Falls through to [`Self::wait_for_child_exit`] with a
+    ///   2 s timeout for canonical bounded-poll exit observation.
+    ///   Even if Phase 1 sent every `q` it was supposed to and
+    ///   observed `try_wait() == None` after the last one, the
+    ///   child may still be milliseconds away from exiting (tack
+    ///   does final cleanup before its main returns); Phase 2 is
+    ///   the canonical place to wait for that exit. If the child
+    ///   truly never exits, [`Self::wait_for_child_exit`] panics
+    ///   with the current grid as its diagnostic message.
     ///
     /// Why a loop instead of a fixed `q × N`: `tack` accepts a
     /// variable number of `q`s depending on which sub-menu the test

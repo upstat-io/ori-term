@@ -14,20 +14,20 @@ use crate::session::PtySession;
 /// reasons:
 ///
 /// 1. **Grandchild orphan avoidance.** Wrapping a real subprocess
-///    in `cmd.exe /C "child …"` makes the wrapper the immediate
-///    child and the real subprocess a grandchild attached to the
-///    `ConPTY`. When `PtySession::drop` terminates `cmd.exe`, the
-///    grandchild becomes orphaned and remains attached to the
-///    pseudoconsole as a still-alive console client.
-///    `ClosePseudoConsole` (called when `_master` drops) then
-///    blocks waiting for the orphaned grandchild to release the
-///    HPCON.
+/// in `cmd.exe /C "child …"` makes the wrapper the immediate
+/// child and the real subprocess a grandchild attached to the
+/// `ConPTY`. When `PtySession::drop` terminates `cmd.exe`, the
+/// grandchild becomes orphaned and remains attached to the
+/// pseudoconsole as a still-alive console client.
+/// `ClosePseudoConsole` (called when `_master` drops) then
+/// blocks waiting for the orphaned grandchild to release the
+/// HPCON.
 /// 2. **No shared kernel resources.** `ping.exe` (and similar
-///    network-touching helpers) contend on Windows ICMP loopback
-///    rate limits when many tests run in parallel, ballooning
-///    per-test wall-clock from <1 s to 10+ s. `pause` is a pure
-///    user-mode busy-loop on console input — no network, no file
-///    I/O, no inherited resource contention.
+/// network-touching helpers) contend on Windows ICMP loopback
+/// rate limits when many tests run in parallel, ballooning
+/// per-test wall-clock from <1 s to 10+ s. `pause` is a pure
+/// user-mode busy-loop on console input — no network, no file
+/// I/O, no inherited resource contention.
 ///
 /// `pause` consumes one byte from stdin and exits. None of the
 /// silent-long-lived consumers write to the child after spawn,
@@ -117,7 +117,7 @@ fn pty_session_wait_for_with_context_uses_custom_message() {
 
 #[test]
 fn pty_session_wait_for_with_context_bounded_poll_invariant() {
-    // Bounded-poll SEMANTIC PIN for the wait_for_with_context consumer
+    // Bounded-poll Verifies for the wait_for_with_context consumer
     // of poll_until. With a 500 ms deadline, no match, and the silent
     // long-lived child producing no output, drain_blocking(50) returns
     // 0 every iteration and the 10 ms idle sleep keeps wall-clock
@@ -189,7 +189,7 @@ fn pty_session_wait_for_any_returns_some_alt_when_alternate_matches() {
 
 #[test]
 fn pty_session_wait_for_any_returns_none_on_timeout() {
-    // Semantic pin for the non-panicking contract: wait_for_any must
+    // Property for the non-panicking contract: wait_for_any must
     // return Option::None on timeout, NOT panic. A future refactor
     // that swapped the body for catch_unwind on wait_for_with_context
     // would panic inside the call and this test's assert_eq would
@@ -309,7 +309,7 @@ fn pty_session_repeated_spawn_drop_cycle_succeeds_on_subsequent_cmd_exe_spawn() 
 
 #[test]
 fn pty_session_wait_for_any_bounded_poll_invariant() {
-    // Bounded-poll SEMANTIC PIN for the third poll_until consumer.
+    // Bounded-poll Verifies for the third poll_until consumer.
     // Mirror of the wait_for_with_context bounded-poll test — pins
     // that the 10 ms idle-sleep discipline is preserved when
     // poll_until is invoked via the wait_for_any predicate shape.
@@ -333,7 +333,7 @@ fn pty_session_wait_for_any_bounded_poll_invariant() {
 
 #[test]
 fn pty_session_drain_writes_osc_responses_back() {
-    // SEMANTIC PIN for Section 06.0.c: `drain_blocking` must flush the
+    // Verifies for Section 06.0.c: `drain_blocking` must flush the
     // `PtyResponder::osc_responses` queue back through `self.writer`
     // after each VTE advance, exactly the same way it already flushes
     // `take_responses` (DA/DSR path). Proof-of-work: spawn a stdin-echo
@@ -345,7 +345,7 @@ fn pty_session_drain_writes_osc_responses_back() {
     // Why palette-inspection proves the round-trip. The only path that
     // sets palette[10] to 0xabcdef is: (1) child echoes query bytes back
     // through PTY read → (2) VTE parses OSC 10 query → (3) Term emits
-    // `Effect::HostRequest(HostRequest::ColorQuery { prefix: "10", .. })`
+    // `Effect::HostRequest(HostRequest::ColorQuery { prefix: "10",.. })`
     // → (4) PtyResponder formats the canonical reply for `TEST_COLOR`
     // and buffers it into `osc_responses` → (5) `drain_blocking`'s
     // `write_osc_responses_back`
@@ -468,12 +468,12 @@ impl PtySession {
 
 #[test]
 fn drain_until_returns_none_immediately_on_channel_disconnect() {
-    // SEMANTIC PIN for drain_until's contract: channel closure
+    // Verifies for drain_until's contract: channel closure
     // (the reader thread has hung up because the child exited or
     // the PTY closed) returns None IMMEDIATELY, not after burning
     // the full timeout budget.
     //
-    // The earlier draft used `let Ok(chunk) = ... else { continue; }`
+    // The earlier draft used `let Ok(chunk) =... else { continue; }`
     // which collapsed both Timeout and Disconnected into "loop
     // again," so a child that exited before the phase anchor
     // appeared would burn the full 5 s deadline before reporting

@@ -58,7 +58,7 @@ const DEFAULT_BLINK_INTERVAL: Duration = Duration::from_millis(530);
 ///
 /// ```text
 /// |← visible plateau →|← fade out →|← hidden plateau →|← fade in →|
-/// |    1.0 constant    | 1.0 → 0.0  |   0.0 constant   | 0.0 → 1.0 |
+/// | 1.0 constant | 1.0 → 0.0 | 0.0 constant | 0.0 → 1.0 |
 /// ```
 ///
 /// Each phase's plateau occupies `1 - FADE_FRACTION` of the phase duration,

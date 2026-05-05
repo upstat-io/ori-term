@@ -77,7 +77,7 @@ fn navigator_panics_when_anchor_already_present_in_pre_grid() {
     TackNavigator::navigate(&mut session, steps);
 }
 
-/// Targeted alternate-anchor test (M4b SEMANTIC PIN). Spawns a child
+/// Targeted alternate-anchor test (M4b Verifies). Spawns a child
 /// that delays for ~500 ms and then prints `alt_anchor`. The
 /// navigator sends an empty step whose primary anchor is impossible
 /// and whose only alternate is `alt_anchor`. After `send(b"")` (which

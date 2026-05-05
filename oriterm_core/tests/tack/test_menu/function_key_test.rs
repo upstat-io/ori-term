@@ -23,9 +23,9 @@
 //! - Load `extra/ori_term.info` via `terminfo`.
 //! - Iterate every `kf*` cap declared in the terminfo entry.
 //! - Map each cap to ori_term's internal key code via the
-//!   keymap dispatch.
+//! keymap dispatch.
 //! - Assert the encoded byte sequence ori_term would write back
-//!   to the PTY matches the cap's terminfo string EXACTLY.
+//! to the PTY matches the cap's terminfo string EXACTLY.
 //!
 //! **NOTE:** The file `oriterm/src/key_encoding/terminfo_xcheck.rs`
 //! does NOT yet exist in the workspace. Until that lands,

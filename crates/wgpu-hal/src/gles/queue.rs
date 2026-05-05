@@ -14,10 +14,10 @@ fn extract_marker<'a>(data: &'a [u8], range: &core::ops::Range<u32>) -> &'a str 
 }
 
 fn to_debug_str(s: &str) -> &str {
-    // The spec mentions that if the length given to debug functions is negative,
-    // the implementation will access the ptr and look for a null that terminates
-    // the string but some implementations will try to access the ptr even if the
-    // length is 0.
+ // The spec mentions that if the length given to debug functions is negative,
+ // the implementation will access the ptr and look for a null that terminates
+ // the string but some implementations will try to access the ptr even if the
+ // length is 0.
     if s.is_empty() {
         "<empty>"
     } else {
@@ -51,7 +51,7 @@ fn get_z_offset(target: u32, base: &crate::TextureCopyBase) -> u32 {
 }
 
 impl super::Queue {
-    /// Performs a manual shader clear, used as a workaround for a clearing bug on mesa
+ /// Performs a manual shader clear, used as a workaround for a clearing bug on mesa
     unsafe fn perform_shader_clear(&self, gl: &glow::Context, draw_buffer: u32, color: [f32; 4]) {
         let shader_clear = self
             .shader_clear_program
@@ -77,7 +77,7 @@ impl super::Queue {
 
         let draw_buffer_count = self.draw_buffer_count.load(Ordering::Relaxed);
         if draw_buffer_count != 0 {
-            // Reset the draw buffers to what they were before the clear
+ // Reset the draw buffers to what they were before the clear
             let indices = (0..draw_buffer_count as u32)
                 .map(|i| glow::COLOR_ATTACHMENT0 + i)
                 .collect::<ArrayVec<_, { crate::MAX_COLOR_ATTACHMENTS }>>();
@@ -213,9 +213,9 @@ impl super::Queue {
                         gl.uniform_1_u32(first_instance_location.as_ref(), first_instance);
                     }
 
-                    // Don't use `gl.draw_arrays` for `instance_count == 1`.
-                    // Angle has a bug where it doesn't consider the instance divisor when `DYNAMIC_DRAW` is used in `draw_arrays`.
-                    // See https://github.com/gfx-rs/wgpu/issues/3578
+ // Don't use `gl.draw_arrays` for `instance_count == 1`.
+ // Angle has a bug where it doesn't consider the instance divisor when `DYNAMIC_DRAW` is used in `draw_arrays`.
+ // See https://github.com/gfx-rs/wgpu/issues/3578
                     unsafe {
                         gl.draw_arrays_instanced(
                             topology,
@@ -258,9 +258,9 @@ impl super::Queue {
 
                     if base_vertex == 0 {
                         unsafe {
-                            // Don't use `gl.draw_elements`/`gl.draw_elements_base_vertex` for `instance_count == 1`.
-                            // Angle has a bug where it doesn't consider the instance divisor when `DYNAMIC_DRAW` is used in `gl.draw_elements`/`gl.draw_elements_base_vertex`.
-                            // See https://github.com/gfx-rs/wgpu/issues/3578
+ // Don't use `gl.draw_elements`/`gl.draw_elements_base_vertex` for `instance_count == 1`.
+ // Angle has a bug where it doesn't consider the instance divisor when `DYNAMIC_DRAW` is used in `gl.draw_elements`/`gl.draw_elements_base_vertex`.
+ // See https://github.com/gfx-rs/wgpu/issues/3578
                             gl.draw_elements_instanced(
                                 topology,
                                 index_count as i32,
@@ -270,7 +270,7 @@ impl super::Queue {
                             )
                         }
                     } else {
-                        // If we've gotten here, wgpu-core has already validated that this function exists via the DownlevelFlags::BASE_VERTEX feature.
+ // If we've gotten here, wgpu-core has already validated that this function exists via the DownlevelFlags::BASE_VERTEX feature.
                         unsafe {
                             gl.draw_elements_instanced_base_vertex(
                                 topology,
@@ -325,14 +325,14 @@ impl super::Queue {
                 ref range,
             } => match dst.raw {
                 Some(buffer) => {
-                    // When `INDEX_BUFFER_ROLE_CHANGE` isn't available, we can't copy into the
-                    // index buffer from the zero buffer. This would fail in Chrome with the
-                    // following message:
-                    //
-                    // > Cannot copy into an element buffer destination from a non-element buffer
-                    // > source
-                    //
-                    // Instead, we'll upload zeroes into the buffer.
+ // When `INDEX_BUFFER_ROLE_CHANGE` isn't available, we can't copy into the
+ // index buffer from the zero buffer. This would fail in Chrome with the
+ // following message:
+ //
+ // > Cannot copy into an element buffer destination from a non-element buffer
+ // > source
+ //
+ // Instead, we'll upload zeroes into the buffer.
                     let can_use_zero_buffer = self
                         .shared
                         .private_caps
@@ -385,7 +385,7 @@ impl super::Queue {
                     && dst_target == glow::ELEMENT_ARRAY_BUFFER
                     || src_target == glow::ELEMENT_ARRAY_BUFFER;
 
-                // WebGL not allowed to copy data from other targets to element buffer and can't copy element data to other buffers
+ // WebGL not allowed to copy data from other targets to element buffer and can't copy element data to other buffers
                 let copy_dst_target = if is_index_buffer_only_element_dst {
                     glow::ELEMENT_ARRAY_BUFFER
                 } else {
@@ -675,10 +675,10 @@ impl super::Queue {
                 dst_target,
                 ref copy,
             } => {
-                //TODO: handle 3D copies
+ //TODO: handle 3D copies
                 unsafe { gl.bind_framebuffer(glow::READ_FRAMEBUFFER, Some(self.copy_fbo)) };
                 if is_layered_target(src_target) {
-                    //TODO: handle GLES without framebuffer_texture_3d
+ //TODO: handle GLES without framebuffer_texture_3d
                     unsafe {
                         gl.framebuffer_texture_layer(
                             glow::READ_FRAMEBUFFER,
@@ -998,8 +998,8 @@ impl super::Queue {
                     && dst.raw.is_some()
                 {
                     unsafe {
-                        // We're assuming that the only relevant queries are 8 byte timestamps or
-                        // occlusion tests.
+ // We're assuming that the only relevant queries are 8 byte timestamps or
+ // occlusion tests.
                         let query_size = 8;
 
                         let query_range_size = query_size * query_range.len();
@@ -1197,24 +1197,24 @@ impl super::Queue {
                 unsafe { gl.clear_buffer_i32_slice(glow::COLOR, draw_buffer, color) };
             }
             C::ClearDepth(depth) => {
-                // Prefer `clear` as `clear_buffer` functions have issues on Sandy Bridge
-                // on Windows.
+ // Prefer `clear` as `clear_buffer` functions have issues on Sandy Bridge
+ // on Windows.
                 unsafe {
                     gl.clear_depth_f32(depth);
                     gl.clear(glow::DEPTH_BUFFER_BIT);
                 }
             }
             C::ClearStencil(value) => {
-                // Prefer `clear` as `clear_buffer` functions have issues on Sandy Bridge
-                // on Windows.
+ // Prefer `clear` as `clear_buffer` functions have issues on Sandy Bridge
+ // on Windows.
                 unsafe {
                     gl.clear_stencil(value as i32);
                     gl.clear(glow::STENCIL_BUFFER_BIT);
                 }
             }
             C::ClearDepthAndStencil(depth, stencil_value) => {
-                // Prefer `clear` as `clear_buffer` functions have issues on Sandy Bridge
-                // on Windows.
+ // Prefer `clear` as `clear_buffer` functions have issues on Sandy Bridge
+ // on Windows.
                 unsafe {
                     gl.clear_depth_f32(depth);
                     gl.clear_stencil(stencil_value as i32);
@@ -1257,10 +1257,10 @@ impl super::Queue {
                 }
                 unsafe { gl.memory_barrier(flags) };
             }
-            // because `STORAGE_WRITE_ONLY` and `STORAGE_READ_WRITE` are only states
-            // we can transit from due OpenGL memory barriers are used to make _subsequent_
-            // operations see changes from the _shader_ side. We filter out usage changes that are
-            // does not comes from the shader side in `transition_textures`
+ // because `STORAGE_WRITE_ONLY` and `STORAGE_READ_WRITE` are only states
+ // we can transit from due OpenGL memory barriers are used to make _subsequent_
+ // operations see changes from the _shader_ side. We filter out usage changes that are
+ // does not comes from the shader side in `transition_textures`
             C::TextureBarrier(usage) => {
                 let mut flags = 0;
                 if usage.contains(wgt::TextureUses::RESOURCE) {
@@ -1344,8 +1344,8 @@ impl super::Queue {
                         },
                     }
 
-                    //Note: there is apparently a bug on AMD 3500U:
-                    // this call is ignored if the current array is disabled.
+ //Note: there is apparently a bug on AMD 3500U:
+ // this call is ignored if the current array is disabled.
                     unsafe { gl.vertex_attrib_binding(vat.location, vat.buffer_index) };
                 } else {
                     match vat.format_desc.attrib_kind {
@@ -1433,14 +1433,14 @@ impl super::Queue {
                     unsafe { gl.disable(glow::CULL_FACE) };
                 }
                 if self.features.contains(wgt::Features::DEPTH_CLIP_CONTROL) {
-                    //Note: this is a bit tricky, since we are controlling the clip, not the clamp.
+ //Note: this is a bit tricky, since we are controlling the clip, not the clamp.
                     if state.unclipped_depth {
                         unsafe { gl.enable(glow::DEPTH_CLAMP) };
                     } else {
                         unsafe { gl.disable(glow::DEPTH_CLAMP) };
                     }
                 }
-                // POLYGON_MODE_LINE also implies POLYGON_MODE_POINT
+ // POLYGON_MODE_LINE also implies POLYGON_MODE_POINT
                 if self.features.contains(wgt::Features::POLYGON_MODE_LINE) {
                     unsafe { gl.polygon_mode(glow::FRONT_AND_BACK, state.polygon_mode) };
                 }
@@ -1653,9 +1653,9 @@ impl super::Queue {
                 let location = Some(&uniform.location);
 
                 match uniform.ty {
-                    //
-                    // --- Float 1-4 Component ---
-                    //
+ //
+ // --- Float 1-4 Component ---
+ //
                     naga::TypeInner::Scalar(naga::Scalar::F32) => {
                         let data = get_data::<f32, 1>(data_bytes, offset)[0];
                         unsafe { gl.uniform_1_f32(location, data) };
@@ -1682,9 +1682,9 @@ impl super::Queue {
                         unsafe { gl.uniform_4_f32_slice(location, data) };
                     }
 
-                    //
-                    // --- Int 1-4 Component ---
-                    //
+ //
+ // --- Int 1-4 Component ---
+ //
                     naga::TypeInner::Scalar(naga::Scalar::I32) => {
                         let data = get_data::<i32, 1>(data_bytes, offset)[0];
                         unsafe { gl.uniform_1_i32(location, data) };
@@ -1711,9 +1711,9 @@ impl super::Queue {
                         unsafe { gl.uniform_4_i32_slice(location, data) };
                     }
 
-                    //
-                    // --- Uint 1-4 Component ---
-                    //
+ //
+ // --- Uint 1-4 Component ---
+ //
                     naga::TypeInner::Scalar(naga::Scalar::U32) => {
                         let data = get_data::<u32, 1>(data_bytes, offset)[0];
                         unsafe { gl.uniform_1_u32(location, data) };
@@ -1740,9 +1740,9 @@ impl super::Queue {
                         unsafe { gl.uniform_4_u32_slice(location, data) };
                     }
 
-                    //
-                    // --- Matrix 2xR ---
-                    //
+ //
+ // --- Matrix 2xR ---
+ //
                     naga::TypeInner::Matrix {
                         columns: naga::VectorSize::Bi,
                         rows: naga::VectorSize::Bi,
@@ -1756,7 +1756,7 @@ impl super::Queue {
                         rows: naga::VectorSize::Tri,
                         scalar: naga::Scalar::F32,
                     } => {
-                        // repack 2 vec3s into 6 values.
+ // repack 2 vec3s into 6 values.
                         let unpacked_data = &get_data::<f32, 8>(data_bytes, offset);
                         #[rustfmt::skip]
                         let packed_data = [
@@ -1774,9 +1774,9 @@ impl super::Queue {
                         unsafe { gl.uniform_matrix_2x4_f32_slice(location, false, data) };
                     }
 
-                    //
-                    // --- Matrix 3xR ---
-                    //
+ //
+ // --- Matrix 3xR ---
+ //
                     naga::TypeInner::Matrix {
                         columns: naga::VectorSize::Tri,
                         rows: naga::VectorSize::Bi,
@@ -1790,7 +1790,7 @@ impl super::Queue {
                         rows: naga::VectorSize::Tri,
                         scalar: naga::Scalar::F32,
                     } => {
-                        // repack 3 vec3s into 9 values.
+ // repack 3 vec3s into 9 values.
                         let unpacked_data = &get_data::<f32, 12>(data_bytes, offset);
                         #[rustfmt::skip]
                         let packed_data = [
@@ -1809,9 +1809,9 @@ impl super::Queue {
                         unsafe { gl.uniform_matrix_3x4_f32_slice(location, false, data) };
                     }
 
-                    //
-                    // --- Matrix 4xR ---
-                    //
+ //
+ // --- Matrix 4xR ---
+ //
                     naga::TypeInner::Matrix {
                         columns: naga::VectorSize::Quad,
                         rows: naga::VectorSize::Bi,
@@ -1825,7 +1825,7 @@ impl super::Queue {
                         rows: naga::VectorSize::Tri,
                         scalar: naga::Scalar::F32,
                     } => {
-                        // repack 4 vec3s into 12 values.
+ // repack 4 vec3s into 12 values.
                         let unpacked_data = &get_data::<f32, 16>(data_bytes, offset);
                         #[rustfmt::skip]
                         let packed_data = [
@@ -1851,12 +1851,12 @@ impl super::Queue {
                 old_count,
                 new_count,
             } => {
-                // Disable clip planes that are no longer active
+ // Disable clip planes that are no longer active
                 for i in new_count..old_count {
                     unsafe { gl.disable(glow::CLIP_DISTANCE0 + i) };
                 }
 
-                // Enable clip planes that are now active
+ // Enable clip planes that are now active
                 for i in old_count..new_count {
                     unsafe { gl.enable(glow::CLIP_DISTANCE0 + i) };
                 }
@@ -1877,10 +1877,10 @@ impl crate::Queue for super::Queue {
         let shared = Arc::clone(&self.shared);
         let gl = &shared.context.lock();
         for cmd_buf in command_buffers.iter() {
-            // The command encoder assumes a default state when encoding the command buffer.
-            // Always reset the state between command_buffers to reflect this assumption. Do
-            // this at the beginning of the loop in case something outside of wgpu modified
-            // this state prior to commit.
+ // The command encoder assumes a default state when encoding the command buffer.
+ // Always reset the state between command_buffers to reflect this assumption. Do
+ // this at the beginning of the loop in case something outside of wgpu modified
+ // this state prior to commit.
             unsafe { self.reset_state(gl) };
             if let Some(ref label) = cmd_buf.label {
                 if self
@@ -1915,9 +1915,9 @@ impl crate::Queue for super::Queue {
         signal_fence.maintain(gl);
         signal_fence.signal(gl, signal_value)?;
 
-        // This is extremely important. If we don't flush, the above fences may never
-        // be signaled, particularly in headless contexts. Headed contexts will
-        // often flush every so often, but headless contexts may not.
+ // This is extremely important. If we don't flush, the above fences may never
+ // be signaled, particularly in headless contexts. Headed contexts will
+ // often flush every so often, but headless contexts may not.
         unsafe { gl.flush() };
 
         Ok(())

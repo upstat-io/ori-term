@@ -3,7 +3,7 @@
 //! These tests verify that the crate responsibility boundaries are maintained.
 //! If a test fails, it means code has drifted into the wrong crate.
 //!
-//! See `.claude/rules/crate-boundaries.md` for the full ownership rules.
+//! See for the full ownership rules.
 
 use oriterm_ui::action::WidgetAction;
 use oriterm_ui::geometry::Point;
@@ -223,13 +223,13 @@ fn oriterm_ipc_is_standalone() {
     }
 }
 
-// BUG-09-001: move_tab_to_new_window_embedded must mirror tear_off_tab's
+// : move_tab_to_new_window_embedded must mirror tear_off_tab's
 // working sequence (create_window_bare → release width lock → insert →
 // pump events → seed → sync → refresh → pre-render new (focused-id swap)
 // → pre-render source → set_visible). Without all of these, the new
 // window appears blank or with stale source-window dimensions. These
 // grep-based pins catch accidental removal.
-// See bug-tracker/plans/completed/BUG-09-001/00-overview.md.
+// See bug-tracker/plans/completed/00-overview.md.
 
 /// `move_tab_to_new_window_embedded` must include the canonical call
 /// sequence from `tear_off_tab` (no visible-then-render flash). Bounded
@@ -286,7 +286,7 @@ fn move_to_new_window_embedded_mirrors_tear_off_sequence() {
             Some(rel) => cursor += rel + required.len(),
             None => panic!(
                 "move_tab_to_new_window_embedded must call `{required}` AFTER the prior step \
-                 (BUG-09-001 mirror invariant). Either the call is missing or the canonical \
+                 (mirror invariant). Either the call is missing or the canonical \
                  sequence has been reordered.",
             ),
         }
@@ -323,8 +323,8 @@ fn extract_fn_body<'a>(file_body: &'a str, fn_signature_prefix: &str) -> &'a str
 }
 
 /// `move_tab_to_window` must NOT come back — it had a known correctness
-/// bug (BUG-09-002: used `resize_all_panes()` against the focused window
-/// instead of the destination) and was removed during the BUG-09-001 fix.
+/// bug (: used `resize_all_panes()` against the focused window
+/// instead of the destination) and was removed during the fix.
 /// Resurrecting it without first fixing `resize_all_panes` would
 /// re-introduce the bug.
 #[test]
@@ -336,43 +336,48 @@ fn move_tab_to_window_helper_remains_removed() {
     .unwrap();
     assert!(
         !body.contains("fn move_tab_to_window("),
-        "fn move_tab_to_window must remain removed; resurrecting it would re-introduce BUG-09-002 \
-         (resize_all_panes targets focused window, not destination). If a cross-window move \
-         helper is needed, design it with destination-targeted layout from day 1.",
+        "fn move_tab_to_window must remain removed; resurrecting it would re-introduce a regression \
+         where resize_all_panes targets the focused window, not the destination. If a cross-window \
+         move helper is needed, design it with destination-targeted layout from day 1.",
     );
 }
 
-/// File-size pin for the BUG-03-004 refactor — ensures `oriterm/src/app/mod.rs`
-/// stays under the 500-line hard limit per `.claude/rules/code-hygiene.md §File Size`,
+/// File-size pin for the refactor — ensures `oriterm/src/app/mod.rs`
+/// stays under the 500-line hard limit Size`,
 /// and that the relocation didn't regress any of the 10 touched files.
 ///
 /// Touched-set (10 paths total):
 /// - `oriterm/src/app/mod.rs` (574 → < 500 after relocation)
 /// - 5 existing destinations that absorbed methods (`pane_accessors.rs`, `redraw/mod.rs`,
-///   `mux_pump/mod.rs`, `config_reload/mod.rs`, `mouse_input.rs`) — all must stay under
-///   500 after the additions.
+/// `mux_pump/mod.rs`, `config_reload/mod.rs`, `mouse_input.rs`) — all must stay under
+/// 500 after the additions.
 /// - `oriterm/src/app/tab_management/mod.rs` (gains `mod width_lock;` line) — must stay
-///   under 500.
+/// under 500.
 /// - 3 new submodules created by the refactor (`focus_accessors.rs`, `dpi_change.rs`,
-///   `tab_management/width_lock.rs`) — must each be under 500 from creation.
+/// `tab_management/width_lock.rs`) — must each be under 500 from creation.
 ///
 /// Path discovery uses `oriterm_test_support::paths::term_workspace_root()` per
-/// `.claude/rules/test-organization.md §Wrapper/Subrepo Path Discovery`. Every touched
+/// /Subrepo Path Discovery`. Every touched
 /// file MUST exist post-fix — a missing file means the relocation regressed and the
 /// pin fails immediately (no silent skip). The pin's correctness depends on every path
 /// in the touched-set being checked.
 ///
 /// Other over-budget files in `oriterm/src/app/` (`event_loop.rs` 532,
 /// `init/mod.rs` 611, `event_loop_helpers/mod.rs` 504) are tracked separately
-/// (BUG-09-004, BUG-09-005, etc.) and are not in this refactor's touched-set.
+/// (, etc.) and are not in this refactor's touched-set.
 ///
-/// See: bug-tracker/plans/BUG-03-004/
+/// See: bug-tracker/plans//
 #[test]
 fn app_module_touched_set_under_500_lines() {
     // The 10 files this refactor touches. Paths are relative to oriterm/src/.
     const TOUCHED_FILES: &[&str] = &[
         "app/mod.rs",
-        "app/pane_accessors.rs",
+        // pane_accessors became a directory module to host its sibling
+        // tests file (the file gained a `is_pane_in_focused_tab_impl`
+        // pure helper plus 7 unit tests under tests.rs). Path pin is
+        // mod.rs for the production code; the new tests.rs is exempt
+        // from the 500-line cap per code-hygiene.md.
+        "app/pane_accessors/mod.rs",
         "app/redraw/mod.rs",
         "app/mux_pump/mod.rs",
         "app/config_reload/mod.rs",
@@ -417,8 +422,7 @@ fn app_module_touched_set_under_500_lines() {
     // new submodules (e.g., reverting just `focus_accessors.rs`) silently pass.
     assert!(
         missing.is_empty(),
-        "BUG-03-004 file-size pin: required touched-set files missing on disk: {missing:?}. \
-         See bug-tracker/plans/BUG-03-004/ for the expected file layout.",
+        "file-size pin: required touched-set files missing on disk: {missing:?}.",
     );
     assert_eq!(
         checked,
@@ -434,7 +438,7 @@ fn app_module_touched_set_under_500_lines() {
             .collect::<Vec<_>>()
             .join("\n");
         panic!(
-            "BUG-03-004 file-size pin violated. The following files exceed the {FILE_SIZE_LIMIT}-line hard limit:\n{detail}\n\nSee bug-tracker/plans/BUG-03-004/ for the relocation plan."
+            "File-size pin violated. The following files exceed the {FILE_SIZE_LIMIT}-line hard limit:\n{detail}"
         );
     }
 }

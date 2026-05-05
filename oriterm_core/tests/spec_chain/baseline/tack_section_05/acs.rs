@@ -69,7 +69,7 @@ fn bel_drives_to_host_effect_apex() {
     }
 }
 
-/// Negative pin: a non-BEL byte must NOT emit a Host effect.
+/// Regression guard: a non-BEL byte must NOT emit a Host effect.
 ///
 /// Proves the dispatch routing is BEL-specific, not "any C0 control
 /// emits Host". Without this, a regression that fired Host on every

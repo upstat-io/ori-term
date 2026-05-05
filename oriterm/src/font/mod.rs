@@ -419,14 +419,14 @@ pub fn subpx_offset(bin: u8) -> f32 {
 }
 
 bitflags! {
-    /// Flags indicating synthetic style transformations needed at render time.
+ /// Flags indicating synthetic style transformations needed at render time.
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
     pub struct SyntheticFlags: u8 {
-        /// No synthetic transformations.
+ /// No synthetic transformations.
         const NONE   = 0;
-        /// Synthetic emboldening needed (no real bold variant).
+ /// Synthetic emboldening needed (no real bold variant).
         const BOLD   = 0b01;
-        /// Synthetic slant needed (no real italic variant).
+ /// Synthetic slant needed (no real italic variant).
         const ITALIC = 0b10;
     }
 }

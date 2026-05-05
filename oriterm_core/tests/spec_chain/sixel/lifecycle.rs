@@ -311,9 +311,9 @@ fn sixel_placement_preserved_across_cell_dimension_change() {
     );
 }
 
-// Negative pin — no-sixel placements: on_resize is a no-op.
+// Regression guard — no-sixel placements: on_resize is a no-op.
 
-/// Negative pin — §07 handler fires only on relevant placements.
+/// Regression guard — §07 handler fires only on relevant placements.
 ///
 /// With zero sixel placements in the cache, `Term::resize` (which calls
 /// `ImageCache::on_resize` via the internal resize path) must not spawn

@@ -104,7 +104,7 @@ fn spawn_test_pane(client: &mut MuxClient) -> PaneId {
 
 /// Check whether `python3` is on PATH. Returns true iff the binary is
 /// invocable. Used by tests that drive a python wrapper through the PTY
-/// to gate cleanly per `.claude/rules/tests.md §Graceful Skip Protocol`.
+/// to gate cleanly Skip Protocol`.
 fn python3_available() -> bool {
     std::process::Command::new("python3")
         .arg("--version")
@@ -235,17 +235,17 @@ fn poll_until(
 /// Sequence (parent ⟂ child are scheduled independently after `fork`):
 /// 1. Child: `setpgid(0, 0)` → blocks on `read(pipe_r)`. No output yet.
 /// 2. Parent: redundant `setpgid(pid, pid)` (covers race). Parent is still
-///    in the shell's PGID, which is the PTY's foreground PGID — parent
-///    can still read from stdin without `SIGTTIN`-suspending itself.
+/// in the shell's PGID, which is the PTY's foreground PGID — parent
+/// can still read from stdin without `SIGTTIN`-suspending itself.
 /// 3. Parent prints `FG_READY` — sentinel that proves the parent has
-///    reached the ack point.
+/// reached the ack point.
 /// 4. Parent reads one line from stdin — blocks until the test acks via
-///    `send_input(b"\n")`. Reading stdin BEFORE `tcsetpgrp` is critical:
-///    after `tcsetpgrp(0, pid)` the parent is no longer in the foreground
-///    PGID and any stdin read would `SIGTTIN`-suspend it.
+/// `send_input(b"\n")`. Reading stdin BEFORE `tcsetpgrp` is critical:
+/// after `tcsetpgrp(0, pid)` the parent is no longer in the foreground
+/// PGID and any stdin read would `SIGTTIN`-suspend it.
 /// 5. Parent calls `tcsetpgrp(0, pid)` — fg PGID is now `yes`'s PGID. The
-///    pipe unblock that follows is the load-bearing sync that ensures
-///    `tcsetpgrp` completed before `yes` floods.
+/// pipe unblock that follows is the load-bearing sync that ensures
+/// `tcsetpgrp` completed before `yes` floods.
 /// 6. Parent writes 1 byte to `pipe_w`; child unblocks, `execvp('yes')`.
 /// 7. Parent `waitpid`s; on `yes` death prints `FG_GONE`.
 ///
@@ -265,12 +265,12 @@ fn poll_until(
 /// Tests using this wrapper MUST:
 /// 1. Poll for `FG_READY` in the snapshot.
 /// 2. Send `b"\n"` via `send_input` to ack — unblocks the parent's stdin
-///    read; parent then calls `tcsetpgrp` and unblocks the child.
+/// read; parent then calls `tcsetpgrp` and unblocks the child.
 /// 3. Wait for `y` flooding to start (proves `tcsetpgrp` completed).
 /// 4. Send Ctrl+C / `signal_child` to kill the foreground job.
 /// 5. Wait for `FG_GONE` to confirm the parent regained control.
 ///
-/// See `.claude/rules/tests.md §Wall-Clock-Free Testing`.
+/// See -Clock-Free Testing`.
 const YES_FOREGROUND_WRAPPER: &str = "python3 -uc \"\
 import os, sys; \
 r, w = os.pipe(); \
@@ -318,14 +318,14 @@ fn client_spawn_pane_type_see_output() {
 /// 44.3: Push notification flow — daemon PaneOutput → client PaneOutput
 /// → snapshot refresh → rendered content.
 ///
-/// Regression: BUG-11-006 — earlier version asserted on the FIRST observed
+/// Regression: earlier version asserted on the FIRST observed
 /// dirty flag and required `PUSH_TEST` to be present in that snapshot.
 /// The dirty flag fires multiple times (input echo, prompt redraw, real
 /// output) and the FIRST snapshot may predate `PUSH_TEST`. The correct
 /// invariant is: dirty flag MUST fire at some point AND the snapshot MUST
 /// eventually contain `PUSH_TEST`. Tracking the dirty observation across
 /// the wait, then asserting on the awaited content, removes the race.
-/// See `.claude/rules/tests.md §Wall-Clock-Free Testing`.
+/// See -Clock-Free Testing`.
 #[test]
 fn push_notification_triggers_dirty_flag() {
     let daemon = TestDaemon::start();
@@ -1565,9 +1565,9 @@ fn multi_client_independent_panes() {
 /// `signal_child_alone_kills_flooding_process` below — this test acts as a
 /// smoke test that the combined path doesn't regress.
 ///
-/// Regression: BUG-11-005 — `signal_child` now uses `tcgetpgrp(master_fd)` to
+/// Regression: `signal_child` now uses `tcgetpgrp(master_fd)` to
 /// route SIGINT to the foreground PGID instead of the shell PGID.
-/// See: bug-tracker/plans/completed/BUG-11-005/00-overview.md
+/// See: bug-tracker/plans/completed/00-overview.md
 ///
 /// Flake fix (nightly run 25106848046, 2026-04-29): the previous wrapper let
 /// the child `execvp('yes')` BEFORE the parent's `tcsetpgrp` completed; on
@@ -1629,7 +1629,7 @@ fn ctrl_c_during_flood_via_signal_child() {
     // (\x03 → SIGINT to fg PGID) or signal_child (tcgetpgrp → SIGINT to
     // fg PGID) must kill `yes`. The canonical signal-only pin is
     // `signal_child_alone_kills_flooding_process` below; the canonical
-    // stall-specific regression pin (BUG-11-020 — daemon-mode
+    // stall-specific regression pin ( — daemon-mode
     // `is_write_stalled` RPC now wired) is
     // `signal_child_after_is_write_stalled_kills_writer_via_daemon`.
     client.send_input(pane_id, b"\x03");
@@ -1637,7 +1637,7 @@ fn ctrl_c_during_flood_via_signal_child() {
 
     // The python wrapper prints FG_GONE after waitpid returns. Generous
     // 30-second deadline — the assertion is on the *condition*, not the
-    // wall clock, per `.claude/rules/tests.md §Wall-Clock-Free Testing`.
+    // wall clock,-Clock-Free Testing`.
     // The deadline is a safety valve to surface a hang, not a flake source.
     let deadline = Instant::now() + Duration::from_secs(30);
     let mut saw_fg_gone = false;
@@ -1750,14 +1750,14 @@ fn plain_ctrl_c_without_signal_child() {
     client.close_pane(pane_id);
 }
 
-/// Canonical regression pin for BUG-11-005: `signal_child(Interrupt)` alone
+/// Canonical regression pin for : `signal_child(Interrupt)` alone
 /// (no `\x03` via PTY input) must kill the foreground job (`yes`) and return
 /// the prompt. Pre-fix, `kill(-shell_pid, SIGINT)` did not reach the `yes`
 /// process group; post-fix, `tcgetpgrp(master_fd)` routes SIGINT to the
 /// PTY's foreground PGID.
 ///
-/// Regression: BUG-11-005.
-/// See: bug-tracker/plans/completed/BUG-11-005/00-overview.md
+/// Regression:.
+/// See: bug-tracker/plans/completed/00-overview.md
 ///
 /// Uses `YES_FOREGROUND_WRAPPER` (pipe-gated) so the parent's `tcsetpgrp`
 /// is observed via the `FG_READY` sentinel before `signal_child` is called.
@@ -1856,7 +1856,7 @@ fn signal_child_alone_kills_flooding_process() {
 }
 
 // ---------------------------------------------------------------------------
-// BUG-11-011: Daemon-mode HostRequest round-trip
+// : Daemon-mode HostRequest round-trip
 // ---------------------------------------------------------------------------
 
 /// Wait until `client.drain_notifications` produces a notification matched by
@@ -1884,7 +1884,7 @@ where
     }
 }
 
-/// BUG-11-011: OSC 52 clipboard read from a daemon-mode pane round-trips
+/// : OSC 52 clipboard read from a daemon-mode pane round-trips
 /// through the new `NotifyHostClipboardLoad` → client fulfill →
 /// `ReplyHostRequest` wire path and the daemon writes the canonical OSC 52
 /// reply (`\x1b]52;c;<base64>\x1b\\`) back to the pane's PTY.
@@ -1928,7 +1928,7 @@ fn daemon_osc_52_clipboard_read_round_trip() {
     client.close_pane(pane_id);
 }
 
-/// BUG-11-011: OSC 10 (default foreground) color query round-trips and the
+/// : OSC 10 (default foreground) color query round-trips and the
 /// daemon emits the `XParseColor` `rgb:RRRR/GGGG/BBBB` reply.
 #[test]
 fn daemon_osc_10_color_query_round_trip() {
@@ -1975,7 +1975,7 @@ fn daemon_osc_10_color_query_round_trip() {
     client.close_pane(pane_id);
 }
 
-/// BUG-11-011: pending host-replies for a closed pane are reaped during
+/// : pending host-replies for a closed pane are reaped during
 /// `cleanup_pane_state` — no leak across the close boundary. Verifies that
 /// re-issuing the same OSC 52 query against a fresh pane succeeds (the
 /// daemon's `pending_host_replies` map is not unbounded).
@@ -2036,13 +2036,11 @@ fn daemon_host_request_cleanup_on_pane_close() {
 // e2e test would expand the public API without a real consumer. The unit
 // test verifies the pure dispatch logic (priority comparison + tie break).
 
-// ---------------------------------------------------------------------------
-// BUG-11-020 — daemon-mode `is_write_stalled` RPC tests
-// ---------------------------------------------------------------------------
+// — daemon-mode `is_write_stalled` RPC tests
 
-/// Regression: BUG-11-020 — a freshly spawned daemon-mode pane with no traffic
+/// Regression: a freshly spawned daemon-mode pane with no traffic
 /// must report `is_write_stalled == false` (writer is idle, not blocked).
-/// See: bug-tracker/plans/BUG-11-020/00-overview.md
+/// See: bug-tracker/plans//00-overview.md
 #[test]
 fn is_write_stalled_returns_false_for_idle_pane_via_daemon() {
     let daemon = TestDaemon::start();
@@ -2057,10 +2055,10 @@ fn is_write_stalled_returns_false_for_idle_pane_via_daemon() {
     client.close_pane(pane_id);
 }
 
-/// Regression: BUG-11-020 — querying `is_write_stalled` for a pane the daemon
+/// Regression: querying `is_write_stalled` for a pane the daemon
 /// has never seen must return `false` (mirrors `EmbeddedMux` semantics) and
 /// must not panic.
-/// See: bug-tracker/plans/BUG-11-020/00-overview.md
+/// See: bug-tracker/plans//00-overview.md
 #[test]
 fn is_write_stalled_returns_false_for_unknown_pane_via_daemon() {
     let daemon = TestDaemon::start();
@@ -2075,12 +2073,12 @@ fn is_write_stalled_returns_false_for_unknown_pane_via_daemon() {
     let _ = daemon;
 }
 
-/// Regression: BUG-11-020 — under sustained PTY-buffer-fill, the daemon-mode
+/// Regression: under sustained PTY-buffer-fill, the daemon-mode
 /// `is_write_stalled` query must eventually flip to `true`. This is the
 /// semantic positive pin: before the fix, the trait default returns `false`
 /// regardless of writer state, so this test loops without ever observing
 /// `true` and times out.
-/// See: bug-tracker/plans/BUG-11-020/00-overview.md
+/// See: bug-tracker/plans//00-overview.md
 /// Configure a daemon-mode pane for deterministic write-stall observation:
 /// puts the line discipline in raw mode (no echo, no canonical buffering),
 /// then runs `sleep 600` as the foreground job. Bytes sent via `send_input`
@@ -2113,7 +2111,7 @@ fn configure_pane_for_stall(client: &mut MuxClient, pane_id: PaneId) {
 /// budget bounded. The pre-fix shape (8 MiB chunks + a 50-deep inner poll
 /// loop with no inner deadline) burned ~250 s per outer iter on
 /// CPU-constrained CI runners once any RPC saw the 5 s `RPC_TIMEOUT`. See
-/// BUG-11-047 §05 step 5.
+/// §05 step 5.
 fn pump_until_stalled(client: &mut MuxClient, pane_id: PaneId) -> bool {
     let payload = vec![b'x'; 1024 * 1024];
     let deadline = Instant::now() + Duration::from_secs(30);
@@ -2145,11 +2143,11 @@ fn is_write_stalled_returns_true_when_writer_blocked_via_daemon() {
     client.close_pane(pane_id);
 }
 
-/// Regression: BUG-11-020 — `is_write_stalled` is keyed per-pane, not a global
+/// Regression: `is_write_stalled` is keyed per-pane, not a global
 /// flag. With one pane stalled by flooding, a sibling idle pane must report
 /// `is_write_stalled == false` (multi-pane isolation pin per Plan TPR
 /// 3-of-3 reviewer agreement).
-/// See: bug-tracker/plans/BUG-11-020/00-overview.md
+/// See: bug-tracker/plans//00-overview.md
 #[test]
 fn is_write_stalled_isolates_per_pane_via_daemon() {
     let daemon = TestDaemon::start();
@@ -2176,11 +2174,11 @@ fn is_write_stalled_isolates_per_pane_via_daemon() {
     client.close_pane(idle_pane);
 }
 
-/// Regression: BUG-11-020 — once daemon-mode `is_write_stalled` reports `true`,
+/// Regression: once daemon-mode `is_write_stalled` reports `true`,
 /// `signal_child` must successfully kill the flooding process. This replaces
 /// the "either path kills `yes`" smoke-test framing of
 /// `ctrl_c_during_flood_via_signal_child` with a stall-specific pin.
-/// See: bug-tracker/plans/BUG-11-020/00-overview.md
+/// See: bug-tracker/plans//00-overview.md
 #[test]
 fn signal_child_after_is_write_stalled_kills_writer_via_daemon() {
     let daemon = TestDaemon::start();

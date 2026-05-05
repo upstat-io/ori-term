@@ -1084,7 +1084,7 @@ fn sgr_reset_clears_all_attributes() {
     assert!(x.flags.contains(CellFlags::STRIKETHROUGH));
 
     // Y after reset has no SGR flags. DRAWN remains (it's set on every
-    // cell write per BUG-08-017; SGR reset only clears SGR bits, not
+    // cell write per ; SGR reset only clears SGR bits, not
     // the structural write-history marker).
     let y = &content.cells[1];
     let sgr_mask = CellFlags::BOLD

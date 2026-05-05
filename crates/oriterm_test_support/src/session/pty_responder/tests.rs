@@ -193,7 +193,7 @@ fn pty_responder_still_captures_pty_write() {
 
 #[test]
 fn pty_responder_ignores_non_round_trip_effects() {
-    // Negative pin locking in the `_ => {}` catch-all: non-round-trip
+    // Regression guard locking in the `_ => {}` catch-all: non-round-trip
     // effect variants must not populate any queue. Future extensions that
     // add a new effect variant cannot silently leak into these queues
     // without this test failing.

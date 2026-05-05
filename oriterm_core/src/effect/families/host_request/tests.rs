@@ -144,7 +144,7 @@ fn already_fulfilled_implements_error_trait() {
 /// map, which inserts under the reader-thread clone's id and removes under
 /// the consumer-thread clone's id.
 ///
-/// Regression: BUG-11-011 daemon-mode HostRequest round-trip relies on this
+/// Regression: daemon-mode HostRequest round-trip relies on this
 /// invariant for the IO-thread→main-thread reply correlation.
 #[test]
 fn response_token_slot_id_stable_across_clones() {
@@ -157,7 +157,7 @@ fn response_token_slot_id_stable_across_clones() {
 
 /// `slot_id` returns distinct identities for independently-allocated tokens.
 ///
-/// Regression: BUG-11-011 — the pending-replies HashMap must not collide
+/// Regression: the pending-replies HashMap must not collide
 /// across distinct tokens (otherwise an OSC 52 reply could route to an
 /// OSC 10 token and vice versa).
 #[test]
@@ -179,13 +179,11 @@ fn response_token_id_satisfies_hashmap_key_bounds() {
     assert_traits::<ResponseTokenId>();
 }
 
-/// Effect-cutover §01.4 documentation pin: the `ResponseToken<T>`
-/// doc comment MUST explicitly state that the token is process-local
-/// (cannot cross IPC) AND name the bug-tracker artifact tracking the
-/// daemon-mode follow-up. This pin keeps the `00-overview.md` Path B
-/// rationale anchored in source — if a future change strips the
-/// process-locality warning from the doc comment, this test surfaces
-/// the regression at compile/test time.
+/// Documentation pin: the `ResponseToken<T>` doc comment MUST explicitly
+/// state that the token is process-local (cannot cross IPC) AND mention
+/// the daemon-mode follow-up. If a future change strips the process-locality
+/// warning from the doc comment, this test surfaces the regression at
+/// compile/test time.
 #[test]
 fn host_request_process_locality_is_documented() {
     let source = include_str!("mod.rs");
@@ -195,11 +193,7 @@ fn host_request_process_locality_is_documented() {
         "ResponseToken<T> doc comment must include the `Process-local — cannot cross IPC` warning"
     );
     assert!(
-        source.contains("BUG-11-011"),
-        "ResponseToken<T> doc comment must cite the daemon-mode follow-up artifact (BUG-11-011)"
-    );
-    assert!(
-        source.contains("§01.4"),
-        "ResponseToken<T> doc comment must point at §01.4 for the deferral rationale"
+        source.contains("daemon-mode"),
+        "ResponseToken<T> doc comment must mention the daemon-mode follow-up gap"
     );
 }

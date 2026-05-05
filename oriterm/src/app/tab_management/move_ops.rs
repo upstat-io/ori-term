@@ -118,7 +118,7 @@ impl App {
     ///
     /// The previous implementation used `create_window()` (which spawned an
     /// unwanted initial tab) and never explicitly pre-rendered the new
-    /// window — the result was a blank window flash (BUG-09-001).
+    /// window — the result was a blank window flash ().
     fn move_tab_to_new_window_embedded(
         &mut self,
         tab_id: TabId,

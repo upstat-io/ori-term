@@ -154,7 +154,7 @@ fn tack_cap_xcheck_ms_osc_52_load_select_buffer() {
 
 #[test]
 fn tack_cap_xcheck_ms_osc_52_invalid_base64_does_not_panic() {
-    // NEGATIVE PIN — invalid base64 must be a no-op (the handler
+    // REGRESSION GUARD — invalid base64 must be a no-op (the handler
     // logs a debug warning and returns), NOT a panic. Catches a
     // regression where a malformed clipboard payload would
     // crash the terminal.

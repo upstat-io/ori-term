@@ -3,7 +3,7 @@
 //! Walks `attrs_from_sgr_parameters` in
 //! `crates/vte/src/ansi/dispatch/csi/sgr.rs` and emits one
 //! `(CSI, [], <n>, m)` tuple per distinct SGR parameter code. The
-//! match is `match param { [0] => ..., [38] => ..., [38, params @ ..] => ..., ... }`
+//! match is `match param { [0] =>..., [38] =>..., [38, params @..] =>...,... }`
 //! — we take the FIRST numeric literal of each slice pattern as
 //! the SGR code.
 
@@ -14,7 +14,7 @@ use super::walk_match_exprs;
 
 pub(super) fn extract_sgr_params(file: &syn::File, out: &mut BTreeSet<Tuple>) {
     // Find the `attrs_from_sgr_parameters` function and walk its
-    // `match param { [0] => ..., ... }` to extract every supported
+    // `match param { [0] =>...,... }` to extract every supported
     // numeric SGR parameter.
     for item in &file.items {
         let syn::Item::Fn(func) = item else { continue };
@@ -26,7 +26,7 @@ pub(super) fn extract_sgr_params(file: &syn::File, out: &mut BTreeSet<Tuple>) {
 }
 
 fn collect_sgr_numeric_from_block(block: &syn::Block, out: &mut BTreeSet<Tuple>) {
-    // The SGR `match param { ... }` is the single top-level match
+    // The SGR `match param {... }` is the single top-level match
     // we care about — return false from the closure so the walker
     // does not descend into nested matches.
     walk_match_exprs(block, |m| {
@@ -38,9 +38,9 @@ fn collect_sgr_numeric_from_block(block: &syn::Block, out: &mut BTreeSet<Tuple>)
 }
 
 fn collect_sgr_arm(pat: &syn::Pat, out: &mut BTreeSet<Tuple>) {
-    // Arm is a slice pattern: `[0]`, `[4, 0]`, `[38]`, `[38, params @ ..]`.
+    // Arm is a slice pattern: `[0]`, `[4, 0]`, `[38]`, `[38, params @..]`.
     // We extract the FIRST numeric literal as the SGR parameter code,
-    // since `[38, ...]` variants all belong to SGR 38.
+    // since `[38,...]` variants all belong to SGR 38.
     let slice = match pat {
         syn::Pat::Slice(s) => s,
         syn::Pat::Or(or) => {

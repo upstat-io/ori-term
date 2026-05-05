@@ -109,7 +109,7 @@ impl<S: EffectSink> Term<S> {
                 if width == 0 || height == 0 {
                     return Err("EINVAL: missing s= or v= for raw RGBA".to_string());
                 }
-                // BUG-08-029: width/height are u32 from the kitty APC parameter
+                // : width/height are u32 from the kitty APC parameter
                 // parser and attacker-controlled. `(w as usize) * (h as usize) * 4`
                 // panics in debug or wraps in release on extreme dimensions.
                 // Reject with EINVAL when the byte count cannot be represented.
@@ -131,7 +131,7 @@ impl<S: EffectSink> Term<S> {
                 if width == 0 || height == 0 {
                     return Err("EINVAL: missing s= or v= for raw RGB".to_string());
                 }
-                // BUG-08-029: same overflow shape — pre-check the RGB byte count
+                // : same overflow shape — pre-check the RGB byte count
                 // before passing the payload to `rgb_to_rgba` so an oversized
                 // `width * height * 3` cannot wrap silently.
                 let _expected = (width as usize)

@@ -104,7 +104,7 @@ impl SnapshotDoubleBuffer {
     /// preserved. Required because the front buffer at quiescence
     /// (no further `flip_swap` activity) holds the most-recent
     /// peak-flood content; without this helper the front capacity
-    /// persists indefinitely. Regression: BUG-11-002.
+    /// persists indefinitely. Regression:.
     pub fn maybe_shrink_front(&self) {
         let mut slot = self.inner.lock();
         slot.front.maybe_shrink();

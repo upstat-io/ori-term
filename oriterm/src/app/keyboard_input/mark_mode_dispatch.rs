@@ -5,8 +5,8 @@
 //!
 //! Production: `impl MarkModeSink for App` delegates to `&mut self` methods.
 //! Tests: `RecordingSink` in `tests.rs` records every call without
-//! constructing `App`. Per `impl-hygiene.md §Platform & External Resource
-//! Abstraction`. Mirrors the BUG-08-032 pattern in
+//! constructing `App`. Per & External Resource
+//! Abstraction. Mirrors the pattern in
 //! `term_repo/oriterm/src/app/mouse_report/wheel_dispatch.rs`.
 
 use winit::event::ElementState;
@@ -46,10 +46,10 @@ pub(super) struct MarkModeResources {
 /// single-threaded `App` context (no mutation of `mark_cursors` between
 /// `is_mark_mode` and `pane_mark_cursor`). The recovery path is
 /// intentional defense-in-depth, deliberately diverging from
-/// `.claude/rules/impl-hygiene.md §Defensive Code for Impossible States`
+/// the Defensive-Code-for-Impossible-States rule
 /// — silently swallowing keystrokes when an "unreachable" precondition
 /// fails is the bug this guard exists to prevent. See
-/// `bug-tracker/plans/completed/BUG-08-031/section-02-fix-consensus.md`
+/// `bug-tracker/plans/completed/section-02-fix-consensus.md`
 /// "Reviewer notes adopted" for the full justification.
 #[must_use]
 pub(super) fn mark_mode_should_exit(resources: MarkModeResources) -> bool {
@@ -58,7 +58,7 @@ pub(super) fn mark_mode_should_exit(resources: MarkModeResources) -> bool {
 
 /// Inputs to [`dispatch_mark_mode`] — one cohesive carrier for the
 /// dispatch decision surface. Six fields: data-carrier struct exempt
-/// from `impl-hygiene.md §Parameter Hygiene` >4 rule (which applies
+/// from the Hygiene rule >4 rule (which applies
 /// to function/method signatures, not struct field counts).
 pub(super) struct MarkModeDispatch {
     /// The key event whose dispatch this struct describes.
@@ -101,8 +101,8 @@ pub(super) struct MarkKeyInput {
 ///
 /// Extracted so the mark-mode-key wiring can be matrix-tested headlessly
 /// (a `RecordingSink` impl in `tests.rs` records calls; production uses
-/// `impl MarkModeSink for App`). Per `impl-hygiene.md §Platform & External
-/// Resource Abstraction` — the logic layer must not embed concrete runtime
+/// `impl MarkModeSink for App`). Per & External
+/// Resource Abstraction — the logic layer must not embed concrete runtime
 /// resources, so the side effects flow through this trait.
 ///
 /// Method-name overlap with `App` inherent methods: six trait methods
@@ -110,11 +110,11 @@ pub(super) struct MarkKeyInput {
 /// (`pane_mark_cursor`, `pane_selection`, `exit_mark_mode`,
 /// `set_pane_selection`, `clear_pane_selection`, `copy_selection`).
 /// The `impl MarkModeSink for App` block uses UFCS-via-`Self::method(self,
-/// ...)` to resolve each call to the inherent method without recursing
+///...)` to resolve each call to the inherent method without recursing
 /// through the trait — see the safety comment at the top of that impl
 /// block.
 pub(super) trait MarkModeSink {
-    /// Resource snapshot for the BUG-08-031 gate. `&mut self` because
+    /// Resource snapshot for the gate. `&mut self` because
     /// the production impl reads mux state which can require `&mut`
     /// borrow paths.
     fn mark_mode_resources(&mut self, pane_id: PaneId) -> MarkModeResources;
@@ -150,22 +150,22 @@ pub(super) trait MarkModeSink {
     /// constructed `SnapshotGrid`. Tests return a pre-configured
     /// `MarkModeResult` via `take()` (`MarkModeResult` is non-`Clone`).
     ///
-    /// Infallible per `impl-hygiene.md §Defensive Code for Impossible
-    /// States` — `mark_mode_should_exit` synchronously gates resource
-    /// presence; the snapshot is guaranteed by the caller.
+    /// Infallible per the Defensive-Code-for-Impossible-States rule:
+    /// `mark_mode_should_exit` synchronously gates resource presence;
+    /// the snapshot is guaranteed by the caller.
     fn dispatch_mark_mode_key(&mut self, input: MarkKeyInput) -> MarkModeResult;
 }
 
 /// Wire a mark-mode key event through the gate decision and, if all
 /// resources are present, into [`MarkModeSink::dispatch_mark_mode_key`].
 /// Generic over the sink type for static dispatch per
-/// `impl-hygiene.md §Dispatch Choice`.
+/// Choice.
 ///
 /// Returns `false` when:
 /// - `input.active_pane_id == None` (no pane to dispatch against);
 /// - `input.mark_mode_active == false` (mark mode not active — caller
 ///   forwards to keybinding/PTY);
-/// - `mark_mode_should_exit(resources) == true` (BUG-08-031 path —
+/// - `mark_mode_should_exit(resources) == true` ( path —
 ///   `sink.exit_mark_mode` called, caller forwards to keybinding/PTY).
 ///
 /// Returns `true` when:

@@ -56,7 +56,7 @@ fn image_quads_above_present_passes() {
     );
 }
 
-/// Regression: image quad observer (Section 04.4) — negative pin: empty lists.
+/// Regression: image quad observer (Section 04.4) — regression guard: empty lists.
 #[test]
 fn image_quads_empty_fails() {
     let vp = ViewportSize::new(100, 100);

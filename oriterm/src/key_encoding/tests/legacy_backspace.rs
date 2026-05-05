@@ -10,7 +10,7 @@ use super::{Modifiers, decbkm_mode, enc, no_mode};
 
 // ── Default (DECBKM reset) ──────────────────────────────────────────
 
-/// Semantic pin: plain Backspace → DEL (0x7f) when DECBKM is reset.
+/// Property: plain Backspace → DEL (0x7f) when DECBKM is reset.
 #[test]
 fn backspace_sends_del_when_decbkm_reset() {
     let r = enc(
@@ -34,7 +34,7 @@ fn ctrl_backspace_sends_bs_when_decbkm_reset() {
 
 // ── DECBKM set ──────────────────────────────────────────────────────
 
-/// Semantic pin: plain Backspace → BS (0x08) when DECBKM is set.
+/// Property: plain Backspace → BS (0x08) when DECBKM is set.
 #[test]
 fn backspace_sends_bs_when_decbkm_set() {
     let r = enc(
@@ -45,7 +45,7 @@ fn backspace_sends_bs_when_decbkm_set() {
     assert_eq!(r, vec![0x08]);
 }
 
-/// Semantic pin: Ctrl+Backspace → DEL (0x7f) when DECBKM is set (inverted).
+/// Property: Ctrl+Backspace → DEL (0x7f) when DECBKM is set (inverted).
 #[test]
 fn ctrl_backspace_sends_del_when_decbkm_set() {
     let r = enc(
@@ -102,7 +102,7 @@ fn alt_ctrl_backspace_decbkm_set() {
 
 // ── Shift does not participate in DECBKM polarity ───────────────────
 
-/// Negative pin: Shift+Backspace unchanged by DECBKM (still DEL/BS per Ctrl).
+/// Regression guard: Shift+Backspace unchanged by DECBKM (still DEL/BS per Ctrl).
 #[test]
 fn shift_backspace_unchanged_by_decbkm_reset() {
     let r = enc(Key::Named(NamedKey::Backspace), Modifiers::SHIFT, no_mode());

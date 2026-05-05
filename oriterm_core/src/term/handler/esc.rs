@@ -54,7 +54,7 @@ impl<S: EffectSink> Term<S> {
         // popping, the next OSC 133 ; A / ; D still restores to an empty
         // stack rather than leaving child-pushed modes active. Bits
         // snapshot matches: `Some(NO_MODE)` means "restore to no kitty
-        // bits set". Inactive-screen live bits reset to NO_MODE. BUG-08-012.
+        // bits set". Inactive-screen live bits reset to NO_MODE.
         self.pre_command_kb_stack_snapshot = Some(VecDeque::new());
         self.inactive_pre_command_kb_stack_snapshot = Some(VecDeque::new());
         self.pre_command_kb_mode_bits_snapshot = Some(KeyboardModes::NO_MODE);
@@ -91,7 +91,7 @@ impl<S: EffectSink> Term<S> {
         // §09A.6: DECSACE attribute-change extent mode.
         self.ace_mode = crate::term::AceMode::default();
 
-        // BUG-06-022: XTSMGRAPHICS Pi=1 color-register count back to default.
+        // : XTSMGRAPHICS Pi=1 color-register count back to default.
         self.color_register_count = crate::image::sixel::COLOR_REGISTERS_MAX;
     }
 
@@ -123,7 +123,7 @@ impl<S: EffectSink> Term<S> {
         self.cursor_shape = crate::grid::CursorShape::default();
         self.keyboard_mode_stack.clear();
         self.inactive_keyboard_mode_stack.clear();
-        // Same paired-snapshot seeding as RIS — see BUG-08-012.
+        // Same paired-snapshot seeding as RIS — see.
         self.pre_command_kb_stack_snapshot = Some(VecDeque::new());
         self.inactive_pre_command_kb_stack_snapshot = Some(VecDeque::new());
         self.pre_command_kb_mode_bits_snapshot = Some(KeyboardModes::NO_MODE);

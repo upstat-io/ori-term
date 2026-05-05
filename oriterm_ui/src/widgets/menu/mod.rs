@@ -417,7 +417,7 @@ impl MenuWidget {
     /// Recomputes `display_indices` from `entries` + `query` + `searchable`.
     /// Resets scroll to top and prunes `hovered` if it no longer matches.
     /// Mirrors `SearchableDropdownPopupWidget::rebuild_filter` semantically;
-    /// the `MenuWidget` consolidation is the canonical home post-BUG-02-012.
+    /// the `MenuWidget` consolidation is the canonical home post-.
     pub(super) fn rebuild_display_indices(&mut self) {
         if self.searchable {
             let q = self.query.to_lowercase();

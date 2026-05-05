@@ -4,7 +4,7 @@
 //! Unit tests for cache basics (store, evict, viewport, dirty flag,
 //! animation) live in `image/tests.rs`. This file covers the lifecycle
 //! methods in `cache/lifecycle.rs` — `on_resize`, `remap_placements`,
-//! and the `Term::renderable_content` negative pin.
+//! and the `Term::renderable_content` regression guard.
 
 use std::sync::Arc;
 
@@ -331,7 +331,7 @@ fn removed_placement_not_in_renderable_content() {
     // Resize: drops the col=90 placement.
     term.resize(24, 80, true);
 
-    // Negative pin: the removed placement must NOT appear in the
+    // Regression guard: the removed placement must NOT appear in the
     // rendered snapshot.
     let mut after = RenderableContent::default();
     term.renderable_content_into(&mut after);

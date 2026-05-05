@@ -8,7 +8,42 @@ use winit::window::WindowId;
 
 use crate::app::App;
 use crate::app::window_context::WindowContext;
-use crate::session::WindowId as SessionWindowId;
+use crate::session::{SessionRegistry, WindowId as SessionWindowId};
+
+/// Pure helper underlying [`App::is_pane_in_focused_tab`].
+///
+/// Decides whether `pane_id` lives in the currently focused window's
+/// active tab. Returns `false` when no window is focused, when the
+/// pane has no owning window, when the owning window is not the
+/// focused one, when the focused window has no active tab, or when
+/// the pane's owning tab differs from the focused tab. The function
+/// reads only the session registry — no mutation, no IO — so it can
+/// be exercised against synthetic registries in unit tests.
+pub(super) fn is_pane_in_focused_tab_impl(
+    active_window: Option<SessionWindowId>,
+    session: &SessionRegistry,
+    pane_id: PaneId,
+) -> bool {
+    let Some(active_session_wid) = active_window else {
+        return false;
+    };
+    let Some(owning_session_wid) = session.window_for_pane(pane_id) else {
+        return false;
+    };
+    if owning_session_wid != active_session_wid {
+        return false;
+    }
+    let Some(window) = session.get_window(owning_session_wid) else {
+        return false;
+    };
+    let Some(active_tab_id) = window.active_tab() else {
+        return false;
+    };
+    let Some(pane_tab_id) = session.tab_for_pane(pane_id) else {
+        return false;
+    };
+    active_tab_id == pane_tab_id
+}
 
 impl App {
     // Active-pane resolution
@@ -34,6 +69,18 @@ impl App {
         let tab_id = win.active_tab()?;
         let tab = self.session.get_tab(tab_id)?;
         Some(tab.active_pane())
+    }
+
+    /// Whether `pane_id` lives in the currently focused window's active tab.
+    ///
+    /// Broader than `active_pane_id() == Some(pane_id)` — passes for ANY
+    /// pane in the visually-focused tab, including non-active splits.
+    /// Bell/notification gates compare against the tab the user is
+    /// "looking at," not the single keyboard-focused pane within it.
+    /// Delegates to [`is_pane_in_focused_tab_impl`] (the free function
+    /// is the testable form; the App method is the production caller).
+    pub(super) fn is_pane_in_focused_tab(&self, pane_id: PaneId) -> bool {
+        is_pane_in_focused_tab_impl(self.active_window, &self.session, pane_id)
     }
 
     /// Terminal mode flags for a pane.
@@ -201,3 +248,6 @@ impl App {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

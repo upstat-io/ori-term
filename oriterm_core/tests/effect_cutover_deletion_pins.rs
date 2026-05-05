@@ -10,7 +10,7 @@
 //!
 //! Each pin uses `grep -rn` on the workspace source. On Windows (where
 //! `grep` is not part of the base install) the pin skips gracefully per
-//! `.claude/rules/tests.md` §Graceful Skip Protocol — the test still
+//! §Graceful Skip Protocol — the test still
 //! shows up in the runnable set with a clear `SKIP:` message.
 
 use std::path::{Path, PathBuf};
@@ -21,7 +21,7 @@ use std::process::Command;
 /// directory, so we walk up two levels from this file's
 /// `CARGO_MANIFEST_DIR` (`oriterm_core`) to reach the workspace root.
 /// Resolve the term_repo workspace root via the canonical SSOT helper per
-/// `.claude/rules/test-organization.md §Wrapper/Subrepo Path Discovery` —
+/// /Subrepo Path Discovery` —
 /// never reintroduce ad-hoc `manifest_dir.parent()` arithmetic.
 fn workspace_root() -> PathBuf {
     oriterm_test_support::paths::term_workspace_root().to_path_buf()
@@ -205,7 +205,7 @@ fn no_desktop_notification_record_references() {
     );
 }
 
-/// Effect-cutover §01.3 negative pin: the `Event` enum carries only
+/// Effect-cutover §01.3 regression guard: the `Event` enum carries only
 /// the legacy variants that survive the cutover. `ClipboardLoad`,
 /// `ColorRequest`, `ChildExit`, and `Wakeup` (plus the closure-bearing
 /// shapes) are gone — `HostRequest` and `HostEffect::ChildExit` cover

@@ -206,7 +206,7 @@ fn install_chrome_subclass(window: &Window, border_width: f32, caption_height: f
         // can composite the system accent border (set immediately below via
         // `DWMWA_BORDER_COLOR = DWMWA_COLOR_DEFAULT`) when the user has
         // "Show accent color on title bars and window borders" enabled in
-        // Settings > Personalization > Colors. Closing BUG-10-001.
+        // Settings > Personalization > Colors. Closing.
         let margins = MARGINS {
             cxLeftWidth: 1,
             cxRightWidth: 1,
@@ -215,7 +215,7 @@ fn install_chrome_subclass(window: &Window, border_width: f32, caption_height: f
         };
         DwmExtendFrameIntoClientArea(hwnd, &raw const margins);
 
-        // BUG-10-001: paint the active-window border with the system accent
+        // : paint the active-window border with the system accent
         // color. `DWMWA_COLOR_DEFAULT` does NOT auto-track focus on
         // custom-framed windows, so we read the accent color explicitly via
         // `DwmGetColorizationColor` and apply it here. The chrome subclass

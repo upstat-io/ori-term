@@ -4,7 +4,7 @@
 //! Each test strengthens its assertion beyond "emits OK" so a regression
 //! that misroutes an action to a different arm (animate / query) cannot
 //! silently pass — the per-action clamps are addressed in the §13.1 TPR
-//! round 0 codex F1/F2 + codex F3 / gemini F2 agreement findings.
+//! round 0 F1/F2 + F3 / F2 agreement findings.
 
 use oriterm_test_support::spec_chain::SpecHarness;
 
@@ -16,7 +16,7 @@ use super::fixtures::{
 /// Catalog row: `KG-ACTION-TRANSMIT` (a=t).
 ///
 /// Pure transmit stores the image without creating a placement. Strengthened
-/// per §13.1 TPR round 0 codex F1: a follow-up `a=p,i=1` proves the image
+/// per §13.1 review round 0 F1: a follow-up `a=p,i=1` proves the image
 /// was actually stored — this fails with ENOENT if `a=t` had been rerouted
 /// to a no-op action (query / animate) that emitted OK without storing.
 #[test]
@@ -49,7 +49,7 @@ fn kitty_action_transmit_stores_image_without_placement() {
     assert!(
         !reply_contains(&h, enoent_bytes),
         "a=p,i=1 MUST NOT emit ENOENT — proves a=t reached kitty_store_image \
-         and not a cache-less no-op; transcript: {:?}",
+ and not a cache-less no-op; transcript: {:?}",
         String::from_utf8_lossy(&reply_bytes(&h)),
     );
 }
@@ -114,7 +114,7 @@ fn kitty_action_delete_removes_visible_placement() {
 /// Catalog row: `KG-ACTION-FRAME` (a=f — full verification in §13.3; §13.1 smoke-tests dispatch).
 ///
 /// Frame on a prior-transmitted image adds an animation frame and emits OK.
-/// Strengthened per §13.1 TPR round 0 codex F3 / gemini F2 agreement: the
+/// Strengthened per §13.1 review round 0 F3 / F2 agreement: the
 /// count_replies_exact check asserts the second command produced its OWN
 /// OK reply, not just that the prior transmit's OK is still in the transcript.
 #[test]
@@ -144,25 +144,25 @@ fn kitty_action_frame_on_prior_transmit_emits_ok_reply() {
         count_replies_exact(&h, &ok_reply_for(5)),
         1,
         "a=t emits `i=5;OK` (unchanged); a=f emits `i=5,r=2;OK` (new \
-         ,r= qualifier), so the bare-i=5 form stays at 1 — transcript: {:?}",
+,r= qualifier), so the bare-i=5 form stays at 1 — transcript: {:?}",
         String::from_utf8_lossy(&reply_bytes(&h)),
     );
     assert_eq!(
         count_replies_exact(&h, &ok_reply_frame2),
         1,
         "a=f MUST emit its OWN OK reply with `,r=2` qualifier for the \
-         newly-added frame — transcript: {:?}",
+ newly-added frame — transcript: {:?}",
         String::from_utf8_lossy(&reply_bytes(&h)),
     );
     // Dispatch-identity pin: a=f adds animation frames, NOT placements.
     // If a=f had been rerouted to kitty_place, placement_count would be 1.
     // This uniquely distinguishes frame from place at the existing-image apex
-    // (addresses §13.1 TPR round 2 codex F1 + gemini F1 agreement finding).
+    // (addresses §13.1 review round 2 F1 + F1 agreement finding).
     assert_eq!(
         placement_count(&h),
         0,
         "a=f MUST NOT create a placement — if rerouted to kitty_place, \
-         placement_count would be 1",
+ placement_count would be 1",
     );
 }
 
@@ -191,24 +191,24 @@ fn kitty_action_animate_on_prior_transmit_emits_ok_reply() {
         count_replies_exact(&h, &ok_reply_for(6)),
         2,
         "a=a MUST emit its OWN OK reply for i=6 (total should now be 2) — \
-         transcript: {:?}",
+ transcript: {:?}",
         String::from_utf8_lossy(&reply_bytes(&h)),
     );
     // Dispatch-identity pin: a=a mutates animation playback state, NOT
     // placements. If a=a had been rerouted to kitty_place, placement_count
-    // would be 1 (addresses §13.1 TPR round 2 gemini F2 finding).
+    // would be 1 (addresses §13.1 review round 2 F2 finding).
     assert_eq!(
         placement_count(&h),
         0,
         "a=a MUST NOT create a placement — if rerouted to kitty_place, \
-         placement_count would be 1",
+ placement_count would be 1",
     );
 }
 
 /// Catalog row: `KG-ACTION-QUERY` (a=q).
 ///
-/// Query emits OK without state change. Strengthened per §13.1 TPR round 0
-/// codex F2: a prior transmit seeds a known image, the query is sent on a
+/// Query emits OK without state change. Strengthened per §13.1 review round 0
+/// F2: a prior transmit seeds a known image, the query is sent on a
 /// DIFFERENT id, and we assert (a) the prior image is still fully intact
 /// (follow-up a=p on the seeded id creates a placement) AND (b) the query
 /// produced its own OK reply. This distinguishes query from a rerouted
@@ -254,13 +254,13 @@ fn kitty_action_query_emits_ok_reply_without_state_change() {
         placement_count(&h),
         1,
         "a=p,i=50 MUST succeed after a=q — proves a=q did NOT evict or \
-         corrupt the seeded image (which a rerouted delete would have)",
+ corrupt the seeded image (which a rerouted delete would have)",
     );
 }
 
 // Semantic + negative pins.
 
-/// Catalog row: `KG-ACTION-FALLBACK-TRANSMITANDPLACE` (semantic pin for a=c fallback).
+/// Catalog row: `KG-ACTION-FALLBACK-TRANSMITANDPLACE` (property for a=c fallback).
 ///
 /// `a=c` (unknown action value) MUST fall through parser `parse.rs:199`
 /// to `KittyAction::TransmitAndPlace`, so a placement is created AND an
@@ -283,7 +283,7 @@ fn kitty_action_fallback_transmit_and_place_on_unknown_a_value() {
     );
 }
 
-/// Negative pin paired with the semantic pin above: unknown `a=x` routes
+/// Regression guard paired with the property above: unknown `a=x` routes
 /// through the parser fallback to `TransmitAndPlace`, which MUST create
 /// exactly one placement. If a future refactor narrows `parse.rs:199` to
 /// reject unknown values or to route them to `Transmit` (zero placements),
@@ -297,14 +297,14 @@ fn kitty_action_unknown_a_value_routes_to_transmit_and_place_fallback() {
         placement_count(&h),
         1,
         "unknown a=x MUST route to TransmitAndPlace (creates one placement); \
-         if rerouted to Transmit the count would be 0, if rejected with Err \
-         the count would also be 0",
+ if rerouted to Transmit the count would be 0, if rejected with Err \
+ the count would also be 0",
     );
 }
 
 // Dispatch-identity pins — each action has a unique observable signature
 // that distinguishes it from every other KittyAction at the public harness
-// level. Addresses §13.1 TPR round 1 codex F1 + F2: the positive tests
+// level. Addresses §13.1 review round 1 F1 + F2: the positive tests
 // above share behavior with `a=q`/`a=a` (both emit OK on unknown images),
 // so these negative pins close the clamp by asserting signatures no other
 // action can produce.
@@ -324,9 +324,9 @@ fn kitty_action_query_without_image_id_emits_ok_for_id_zero() {
     assert!(
         reply_contains(&h, &ok_reply_for(0)),
         "a=q without i= MUST emit OK reply for i=0 — transcript: {:?}. \
-         This distinguishes query from animate (which returns early with \
-         no reply when i= is absent) and from transmit/place/frame \
-         (which emit error replies on the missing fields).",
+ This distinguishes query from animate (which returns early with \
+ no reply when i= is absent) and from transmit/place/frame \
+ (which emit error replies on the missing fields).",
         String::from_utf8_lossy(&reply_bytes(&h)),
     );
 }
@@ -334,7 +334,7 @@ fn kitty_action_query_without_image_id_emits_ok_for_id_zero() {
 /// Catalog row: `KG-ACTION-ANIMATE` (dispatch-identity pin — ENOENT-on-missing-id signature).
 ///
 /// `a=a` without `i=` (and without `I=` fallback) emits `ENOENT` per
-/// BUG-08-024 fix — mirrors `kitty_place`'s missing-identifier path
+/// fix — mirrors `kitty_place`'s missing-identifier path
 /// (`place.rs:16-19`). Every kitty action handler now returns a reply
 /// on error; silent drop is no longer a valid distinguishing signature.
 #[test]
@@ -346,8 +346,8 @@ fn kitty_action_animate_without_image_id_emits_enoent() {
     let s = String::from_utf8_lossy(&replies);
     assert!(
         s.contains("ENOENT"),
-        "a=a without i= MUST emit ENOENT (per BUG-08-024) — got {s:?}. \
-         Mirrors kitty_place's missing-identifier path."
+        "a=a without i= MUST emit ENOENT — got {s:?}. \
+ Mirrors kitty_place's missing-identifier path."
     );
 }
 
@@ -369,19 +369,19 @@ fn kitty_action_frame_on_missing_image_emits_enoent_reply() {
     assert!(
         s.contains("\u{1b}_Gi=99;ENOENT"),
         "a=f on missing image MUST emit ENOENT reply for i=99 — got {s:?}. \
-         This distinguishes frame from query/animate (which emit OK for \
-         unknown ids) at the dispatch apex.",
+ This distinguishes frame from query/animate (which emit OK for \
+ unknown ids) at the dispatch apex.",
     );
     assert!(
         !reply_contains(&h, &ok_reply_for(99)),
         "a=f on missing image MUST NOT emit OK for i=99 (that would be a \
-         query/animate misroute) — transcript: {s:?}",
+ query/animate misroute) — transcript: {s:?}",
     );
 }
 
 // Matrix completeness.
 
-/// Self-verifying matrix completeness per `.claude/rules/tests.md`
+/// Self-verifying matrix completeness
 /// §Self-Verifying Matrix Completeness — asserts each (action, format,
 /// transmission) cell actually dispatched a typed `DispatchArgs::KittyApc`
 /// with matching `cmd.action` / `cmd.format` / `cmd.transmission`. This

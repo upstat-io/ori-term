@@ -438,21 +438,21 @@ mod font_config {
         );
     }
 
-    /// Regression: BUG-04-004 round-1 TPR finding TPR-04-004-codex.
+    /// Regression: round-1 TPR finding TPR-04-004-.
     ///
     /// Pins the source-side emoji-reinject ordering that mirrors the
     /// production config-reload call sequence
     /// (`oriterm/src/app/config_reload/mod.rs:187-197`):
     ///
     /// - `WindowRenderer::replace_ui_font_sizes` is storage-only — it MUST
-    ///   NOT inject emoji, because `rebuild_ui_font_sizes` calls it BEFORE
-    ///   `replace_font_collection` installs the new terminal font. If
-    ///   injection fired here it would pull stale emoji from the previous
-    ///   terminal font.
+    /// NOT inject emoji, because `rebuild_ui_font_sizes` calls it BEFORE
+    /// `replace_font_collection` installs the new terminal font. If
+    /// injection fired here it would pull stale emoji from the previous
+    /// terminal font.
     /// - `WindowRenderer::replace_font_collection` is the canonical
-    ///   reinject trigger — it installs the new terminal font AND
-    ///   re-wires emoji into whatever UI registry is currently stored,
-    ///   so the post-reload state carries the NEW terminal font's emoji.
+    /// reinject trigger — it installs the new terminal font AND
+    /// re-wires emoji into whatever UI registry is currently stored,
+    /// so the post-reload state carries the NEW terminal font's emoji.
     ///
     /// Uses `FontSet::ui_embedded()` (empty fallbacks) for the UI side
     /// to mirror production — the embedded test helper uses
@@ -491,7 +491,7 @@ mod font_config {
         assert_eq!(
             ui_fallback_count(&renderer),
             0,
-            "replace_ui_font_sizes must NOT inject — it is storage-only (BUG-04-004 round-1 fix)"
+            "replace_ui_font_sizes must NOT inject — it is storage-only"
         );
 
         // Step 2: install a new terminal font collection. This is the
@@ -520,7 +520,7 @@ mod font_config {
         assert_eq!(
             ui_fallback.len(),
             1,
-            "replace_font_collection must reinject emoji from the NEW terminal font (BUG-04-004)"
+            "replace_font_collection must reinject emoji from the NEW terminal font"
         );
         assert!(
             std::sync::Arc::ptr_eq(&ui_fallback[0].data, &expected_fallback_arc),

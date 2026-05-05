@@ -104,7 +104,7 @@ fn build_throttle_section(theme: &UiTheme) -> Box<dyn Widget> {
 
 /// Desktop Notifications section: notification mode + command-completion gating.
 ///
-/// BUG-11-016 — surfaces all four `behavior.*` notification fields to the
+/// — surfaces all four `behavior.*` notification fields to the
 /// settings dialog: `notification` (mode), `notify_on_command_finish`
 /// (when to fire on long-running commands), `notify_command_bell` (tab-bar
 /// pulse on command-complete), `notify_command_threshold_secs` (minimum

@@ -17,7 +17,7 @@ fn grid_has_token_finds_whitespace_bounded_match() {
 
 #[test]
 fn grid_has_token_rejects_substring_collision() {
-    // Semantic pin for the M3 fix: `am` is a substring of `name` and
+    // Property for the M3 fix: `am` is a substring of `name` and
     // `xenl` is a substring of `xenlabel`. Blind `str::contains` would
     // false-positive both. The whitespace-bounded check rejects them.
     assert!(!grid_has_token("name bce bw", "am"));
@@ -52,7 +52,7 @@ fn grid_find_field_returns_trailing_value() {
 
 #[test]
 fn grid_find_field_rejects_substring_collision_on_right_boundary() {
-    // SEMANTIC PIN for the right-boundary fix. The
+    // Verifies for the right-boundary fix. The
     // earlier draft only checked the LEFT boundary, so this would
     // false-positive and return "oreground". With both boundaries
     // enforced, the helper correctly returns None.
@@ -62,7 +62,7 @@ fn grid_find_field_rejects_substring_collision_on_right_boundary() {
 
 #[test]
 fn grid_find_field_finds_real_token_after_substring_collision_on_same_line() {
-    // SEMANTIC PIN for the all-hits-per-line fix. The
+    // Verifies for the all-hits-per-line fix. The
     // earlier draft only inspected the FIRST find() hit per line,
     // so the leading substring `xsetaf` (which fails the left
     // boundary) hid the real `setaf` token later on the same line.

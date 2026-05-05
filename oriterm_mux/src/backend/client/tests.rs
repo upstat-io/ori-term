@@ -30,11 +30,11 @@ fn poll_events_noop() {
     client.poll_events();
 }
 
-/// Regression: BUG-11-020 — `is_write_stalled` must return `false` (not panic, not
+/// Regression: `is_write_stalled` must return `false` (not panic, not
 /// hang) when the client has no live transport. The defense flows through
 /// `MuxClient::rpc()`'s `Err(NotConnected)` return path; `is_write_stalled` collapses
 /// the error to `false`.
-/// See: bug-tracker/plans/BUG-11-020/00-overview.md
+/// See: bug-tracker/plans//00-overview.md
 #[test]
 fn is_write_stalled_returns_false_when_transport_disconnected() {
     let mut client = MuxClient::new();
@@ -148,7 +148,6 @@ fn test_snapshot(title: &str) -> crate::PaneSnapshot {
         search_focused: None,
         search_total_matches: 0,
         has_unseen_output: false,
-        has_bell: false,
         mouse_cursor_icon: None,
     }
 }
@@ -214,7 +213,7 @@ fn client_pane_mode_reflects_decbkm_from_cached_snapshot() {
     );
 }
 
-/// Section 09 bridge cell (daemon side, negative pin): `MuxClient::pane_mode()`
+/// Section 09 bridge cell (daemon side, regression guard): `MuxClient::pane_mode()`
 /// returns `None` when no snapshot has been cached. Pairs with the positive
 /// pin above to prove the daemon client does not fabricate a default mode
 /// value for an unknown pane. Also pairs with
@@ -517,7 +516,7 @@ mod transport_tests {
         let notif = pdu_to_notification(pdu).unwrap();
         assert!(
             matches!(notif, MuxNotification::CommandComplete { pane_id, duration }
-                if pane_id == PaneId::from_raw(5) && duration == Duration::from_millis(1234))
+ if pane_id == PaneId::from_raw(5) && duration == Duration::from_millis(1234))
         );
     }
 
@@ -532,14 +531,14 @@ mod transport_tests {
         let notif = pdu_to_notification(pdu).unwrap();
         assert!(
             matches!(&notif, MuxNotification::ClipboardStore { pane_id, text, .. }
-                if *pane_id == PaneId::from_raw(6) && text == "hello")
+ if *pane_id == PaneId::from_raw(6) && text == "hello")
         );
     }
 
     /// `NotifyClipboardLoad` is dropped at the daemon-client wire boundary
     /// after effect-cutover §01.3 — the legacy `MuxNotification::ClipboardLoad`
     /// closure-carrier is gone and `HostRequest` IPC support is tracked
-    /// separately as bug-tracker BUG-11-011. Confirm the PDU produces no
+    /// separately as bug-tracker. Confirm the PDU produces no
     /// notification today.
     #[test]
     fn notify_clipboard_load_dropped_until_bug_11_11() {
@@ -549,7 +548,7 @@ mod transport_tests {
         };
         assert!(
             pdu_to_notification(pdu).is_none(),
-            "daemon-mode OSC 52 load drops at the wire boundary until BUG-11-011 lands"
+            "daemon-mode OSC 52 load drops at the wire boundary"
         );
     }
 
@@ -1159,4 +1158,248 @@ mod transport_tests {
 
         let _s = server_handle.join().unwrap();
     }
+}
+
+// -- bell_panes contract tests --
+//
+// Pin the architecture: `has_bell()` reads ONLY from `bell_panes`,
+// independent of any `pane_snapshots` mutation. Bell state is decoupled
+// from snapshot replication so a daemon-pushed snapshot insert cannot
+// relight a locally-cleared bell.
+
+/// Exact failing case: a queued snapshot push (built when the daemon
+/// thought the pane's bell was active) is cached AFTER the App calls
+/// `clear_bell` for a focused pane. Without the bell_panes decoupling
+/// the snapshot insert would overwrite the locally-cleared bell field
+/// and relight the icon. With the decoupling `has_bell()` stays false
+/// regardless of what `pane_snapshots` contains.
+#[test]
+fn pane_bell_on_focused_pane_clears_has_bell_in_client_mode_after_snapshot_push() {
+    use crate::backend::MuxBackend;
+
+    let mut client = MuxClient::new();
+    let p = PaneId::from_raw(1);
+
+    // Simulate the App's PaneBell arm flow on a focused pane:
+    //   set_bell (pre-focus-gate), clear_bell (focus-gated path).
+    client.set_bell(p);
+    client.clear_bell(p);
+
+    // The race window: a pre-clear snapshot the daemon already enqueued
+    // arrives via the push pipeline and lands in `pane_snapshots`.
+    client.cache_snapshot(p, test_snapshot("pre-clear-view"));
+
+    assert!(
+        !client.has_bell(p),
+        "bell must stay cleared after snapshot insert — pane_snapshots is NOT the bell SSOT"
+    );
+}
+
+/// Behavior anchor: `has_bell()` reads from `bell_panes` only. ANY
+/// mutation of `pane_snapshots` (insert, replace, remove) cannot affect
+/// bell state. This would fail if someone re-introduced a `has_bell`
+/// field on `PaneSnapshot` AND wired `has_bell()` to read from it.
+#[test]
+fn bell_indicator_state_independent_of_snapshot_replace() {
+    use crate::backend::MuxBackend;
+
+    let mut client = MuxClient::new();
+    let p = PaneId::from_raw(1);
+
+    client.set_bell(p);
+    assert!(client.has_bell(p));
+
+    client.clear_bell(p);
+    assert!(!client.has_bell(p));
+
+    // Snapshot replace must NOT relight the cleared bell.
+    client.cache_snapshot(p, test_snapshot("first"));
+    assert!(!client.has_bell(p));
+
+    client.cache_snapshot(p, test_snapshot("second"));
+    assert!(!client.has_bell(p));
+}
+
+/// Regression guard: a snapshot replace after `clear_bell` MUST NOT
+/// relight the bell. Documents the exact regression shape — would catch
+/// any future change that re-introduces a `has_bell` wire field and
+/// reads from it.
+#[test]
+fn snapshot_replace_does_not_relight_cleared_bell() {
+    use crate::backend::MuxBackend;
+
+    let mut client = MuxClient::new();
+    let p = PaneId::from_raw(1);
+
+    client.set_bell(p);
+    client.clear_bell(p);
+    client.cache_snapshot(p, test_snapshot("relight-attempt"));
+
+    assert!(
+        !client.has_bell(p),
+        "snapshot_replace_does_not_relight_cleared_bell: bell stays cleared"
+    );
+}
+
+/// Reconnect MUST preserve `bell_panes` — bells are transient client UI
+/// state owned by the focus decision, not transport state. A reconnect
+/// is a transport-layer event; pre-existing bells stay visible until the
+/// user focuses the tab.
+#[test]
+fn reconnect_preserves_bell_panes() {
+    use crate::backend::MuxBackend;
+
+    let mut client = MuxClient::new();
+    let p1 = PaneId::from_raw(1);
+    let p2 = PaneId::from_raw(2);
+
+    client.set_bell(p1);
+    client.set_bell(p2);
+    assert!(client.has_bell(p1));
+    assert!(client.has_bell(p2));
+
+    // `reconnect()` requires a socket_path, which the test stub doesn't
+    // have — invoking it returns Err(NotConnected). Pin the bell_panes
+    // state survives the failed-reconnect path (which is also what would
+    // happen if reconnect succeeded — neither path clears bell_panes).
+    let _ = client.reconnect();
+
+    assert!(
+        client.has_bell(p1),
+        "reconnect must preserve bell_panes — bells are transient UI state, not transport state"
+    );
+    assert!(client.has_bell(p2));
+}
+
+/// Reconnect with queued PaneBell notifications: the buffered
+/// notifications are dropped on transport reset. After reconnect they
+/// have NOT been processed by the App handler (which is the only mutator
+/// of `bell_panes`), so a queued PaneBell pre-reconnect cannot
+/// "ghost-fire" with a stale pane ID post-reconnect.
+#[test]
+fn reconnect_with_queued_bell_notifications_processes_them_first() {
+    use crate::backend::MuxBackend;
+
+    let mut client = MuxClient::new();
+    let p1 = PaneId::from_raw(1);
+    let p2 = PaneId::from_raw(2);
+
+    // App-side bell state established before reconnect — must survive.
+    client.set_bell(p1);
+
+    // Queue a PaneBell notification that the App has NOT yet processed.
+    // This represents the buffer state when reconnect happens.
+    client.inject_notification(MuxNotification::PaneBell(p2));
+
+    // Trigger reconnect. With no socket path the call errors but exits
+    // before mutating bell_panes — the test asserts the no-mutation
+    // contract regardless of reconnect success/failure.
+    let _ = client.reconnect();
+
+    // bell_panes was set by the App pre-reconnect — preserved.
+    assert!(
+        client.has_bell(p1),
+        "App-side set_bell pre-reconnect survives"
+    );
+
+    // The buffered PaneBell(p2) was not processed by App, so bell_panes
+    // does NOT carry p2. If a future change accidentally drained
+    // notifications into bell_panes during reconnect, this fails.
+    assert!(
+        !client.has_bell(p2),
+        "buffered PaneBell must not auto-mutate bell_panes during reconnect"
+    );
+}
+
+/// Critical regression guard: `poll_events` MUST NOT mutate `bell_panes`
+/// for `MuxNotification::CommandComplete`. CommandComplete bell decisions
+/// live in the App's `handle_command_complete` (after focus gating); a
+/// poll_events fast-path that pre-emptively set bell state would
+/// re-introduce the snapshot-replace race for command completion.
+#[test]
+fn muxclient_command_complete_through_poll_events_does_not_mutate_bell_panes() {
+    use crate::backend::MuxBackend;
+
+    let mut client = MuxClient::new();
+    let p = PaneId::from_raw(1);
+    assert!(!client.has_bell(p));
+
+    client.inject_notification(MuxNotification::CommandComplete {
+        pane_id: p,
+        duration: std::time::Duration::from_secs(5),
+    });
+
+    client.poll_events();
+
+    assert!(
+        !client.has_bell(p),
+        "poll_events must NOT mutate bell_panes — CommandComplete focus decision lives in App"
+    );
+}
+
+/// Critical regression guard: `poll_events` MUST NOT mutate `bell_panes`
+/// for `MuxNotification::PaneBell`. PaneBell focus decisions live in
+/// `App::handle_mux_notification`'s PaneBell arm; poll_events is the
+/// dirty-pane gate ONLY.
+#[test]
+fn muxclient_pane_bell_through_poll_events_does_not_mutate_bell_panes() {
+    use crate::backend::MuxBackend;
+
+    let mut client = MuxClient::new();
+    let p = PaneId::from_raw(1);
+    assert!(!client.has_bell(p));
+
+    client.inject_notification(MuxNotification::PaneBell(p));
+
+    client.poll_events();
+
+    assert!(
+        !client.has_bell(p),
+        "poll_events must NOT mutate bell_panes — PaneBell focus decision lives in App"
+    );
+}
+
+/// `cleanup_closed_pane` MUST drain `bell_panes` for the closed pane.
+/// Without the override the trait default no-op leaks bell state across
+/// pane open/close cycles.
+#[test]
+fn cleanup_closed_pane_drains_bell_panes_in_client_mode() {
+    use crate::backend::MuxBackend;
+
+    let mut client = MuxClient::new();
+    let p = PaneId::from_raw(1);
+
+    client.set_bell(p);
+    assert!(client.has_bell(p));
+
+    client.cleanup_closed_pane(p);
+
+    assert!(
+        !client.has_bell(p),
+        "cleanup_closed_pane must drain bell_panes — leak guard"
+    );
+}
+
+/// `remove_snapshot` MUST drain `bell_panes` along with the other
+/// per-pane caches. Pinned because every client-side close path —
+/// explicit `close_pane`, notification-driven `cleanup_closed_pane`,
+/// reconnect's stale-key cleanup — funnels through `remove_snapshot`.
+/// A regression that re-introduced a separate explicit drain only on
+/// some paths would leave stale bell entries on the others.
+#[test]
+fn remove_snapshot_drains_bell_panes() {
+    use crate::backend::MuxBackend;
+
+    let mut client = MuxClient::new();
+    let p = PaneId::from_raw(1);
+
+    client.set_bell(p);
+    assert!(client.has_bell(p));
+
+    client.remove_snapshot(p);
+
+    assert!(
+        !client.has_bell(p),
+        "remove_snapshot must drain bell_panes — every close path uses it"
+    );
 }

@@ -152,8 +152,6 @@ pub struct Pane {
     has_explicit_title: bool,
     /// Duration of the last completed command (from OSC 133 C→D timing).
     last_command_duration: Option<std::time::Duration>,
-    /// Bell indicator (set on bell event, cleared on focus).
-    has_bell: bool,
     /// Unseen output indicator (set when output arrives while not focused).
     ///
     /// Cleared when the pane becomes the active/focused tab. Used by the
@@ -213,7 +211,6 @@ impl Pane {
             cwd: None,
             has_explicit_title: false,
             last_command_duration: None,
-            has_bell: false,
             has_unseen_output: false,
             selection: None,
             mark_cursor: None,
@@ -378,23 +375,6 @@ impl Pane {
     /// Store the duration of a completed command.
     pub fn set_last_command_duration(&mut self, duration: std::time::Duration) {
         self.last_command_duration = Some(duration);
-    }
-
-    /// Whether the bell has fired since the pane was last focused.
-    #[allow(dead_code, reason = "used when bell indicator is wired to App")]
-    pub fn has_bell(&self) -> bool {
-        self.has_bell
-    }
-
-    /// Clear the bell indicator (call when the pane gains focus).
-    #[allow(dead_code, reason = "used when bell indicator is wired to App")]
-    pub fn clear_bell(&mut self) {
-        self.has_bell = false;
-    }
-
-    /// Set the bell indicator.
-    pub fn set_bell(&mut self) {
-        self.has_bell = true;
     }
 
     /// Whether the pane has output the user hasn't seen yet.

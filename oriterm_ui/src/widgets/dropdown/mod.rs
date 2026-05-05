@@ -144,7 +144,7 @@ impl DropdownWidget {
                 // Click-to-focus so subsequent keymap actions (Confirm, NavigateUp/Down)
                 // dispatch to this widget. Without `FocusController`, clicking the
                 // trigger does NOT move focus and the keyboard nav is wedged
-                // behind the prior focus owner — codex F1 finding from §06 Round 1.
+                // behind the prior focus owner — F1 finding from §06 Round 1.
                 Box::new(FocusController::new()),
             ],
             animator: VisualStateAnimator::new(vec![common_states(

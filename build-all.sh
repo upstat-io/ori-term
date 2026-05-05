@@ -11,4 +11,11 @@ echo "=== cargo build --workspace (${TARGET}, release) ==="
 cargo build --workspace --target "${TARGET}" --release
 
 echo ""
-echo "Build succeeded (debug + release)."
+echo "=== prose-lint (term_repo) ==="
+if ! python3 scripts/prose-lint.py .; then
+    echo "prose-lint failed — see violations above."
+    exit 1
+fi
+
+echo ""
+echo "Build succeeded (debug + release + prose-lint clean)."

@@ -23,7 +23,7 @@
 //! would look like an oversight.
 //!
 //! No `#[test]` functions live here — empty-body tests violate
-//! `.claude/rules/tests.md` §Test Hygiene Rule 1 ("every test file
+//! §Test Hygiene Rule 1 ("every test file
 //! must contain at least one assertion"). The module's `//!` rustdoc
 //! is the documentation artifact; `mod.rs` pulls this file into the
 //! crate's module tree so the rustdoc is discoverable via `cargo doc`.

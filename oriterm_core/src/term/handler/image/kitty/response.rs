@@ -11,8 +11,8 @@ use crate::term::Term;
 /// data. Matches kitty's `finish_command_response` reply-framing contract:
 /// echoes every identifier/metadata the request provided so the client can
 /// correlate the reply to the originating command. Replaces an earlier 4-ary
-/// `kitty_respond` signature that outgrew its call sites (per `.claude/rules/
-/// code-hygiene.md §Parameter Hygiene`: 4+ params → config struct).
+/// `kitty_respond` signature that outgrew its call sites (4+ params
+/// → config struct).
 #[derive(Debug, Default, Clone, Copy)]
 pub(in crate::term::handler::image::kitty) struct KittyReplyContext {
     /// Image id from `i=`; `0` means absent.

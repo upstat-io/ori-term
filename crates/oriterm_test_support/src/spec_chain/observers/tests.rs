@@ -254,7 +254,7 @@ fn effect_observer_fails_on_wrong_sub_variant() {
 //
 // Stub-regression pins. With the original `RungResult::pass(rung)`-only
 // stub, the mismatch tests below would PASS the assertion (stub returned
-// `passed: true`), so the test would FAIL — the negative pin is what
+// `passed: true`), so the test would FAIL — the regression guard is what
 // proves the observer actually inspects the snapshot. After the observer
 // implementation lands, both the matching and the mismatched expectations
 // behave correctly: positive case passes, negative case fails.
@@ -300,7 +300,7 @@ fn renderable_observer_fails_on_wrong_hyperlink_uri() {
 
 #[test]
 fn renderable_observer_fails_when_hyperlink_absent() {
-    // Negative pin: cell exists but has NO hyperlink attached; expecting
+    // Regression guard: cell exists but has NO hyperlink attached; expecting
     // one must fail (the stub would have passed this too).
     let mut harness = SpecHarness::new();
     harness.feed(b"X");

@@ -1248,13 +1248,13 @@ fn dispatch_utf8_boundary_one_past_max_drops() {
 // at the encoding layer:
 //
 // - Same-cell motion deduplication: App::report_mouse_motion skips reporting
-//   when mouse.last_reported_cell() matches the current cell. The dedup
-//   happens before encode_mouse_event is ever called.
+// when mouse.last_reported_cell() matches the current cell. The dedup
+// happens before encode_mouse_event is ever called.
 //
 // - Focus-loss button release synthesis: When the window loses focus with
-//   buttons held, the app should synthesize release events for all held
-//   buttons. This prevents apps (vim, tmux) from thinking buttons are still
-//   held after focus returns.
+// buttons held, the app should synthesize release events for all held
+// buttons. This prevents apps (vim, tmux) from thinking buttons are still
+// held after focus returns.
 
 // -- parse_wheel_delta tests --
 
@@ -1437,7 +1437,7 @@ fn bridge_parser_to_alt_scroll_decision() {
     assert!(!should_translate_wheel_to_arrows(mode, false));
 }
 
-// BUG-08-015: tier2_alt_scroll_payload + classify_wheel_event matrix.
+// : tier2_alt_scroll_payload + classify_wheel_event matrix.
 // Verifies DECCKM-aware Tier-2 alt-scroll byte selection, the WheelTier
 // dispatcher, and ANY_MOUSE_ENCODING isolation per xterm spec
 // (ctlseqs.txt:2465-2473 + scrollbar.c:711-727).
@@ -1447,11 +1447,11 @@ use super::{
     tier2_alt_scroll_payload,
 };
 
-// --- Exact failing case (from BUG-08-015 repro) ---
+// --- Exact failing case (from repro) ---
 
 /// Catalog row: DEC-ALT-SCROLL
 /// Repro: `printf '\x1b[?1049h\x1b[?1007h\x1b[?1h'` then wheel up.
-/// Pinned by BUG-08-015 (Phase 1 root cause §1A).
+/// Pinned by (Phase 1 root cause §1A).
 #[test]
 fn tier2_alt_scroll_payload_alt_screen_plus_alternate_scroll_app_cursor_emits_ss3_arrow_up() {
     let mode = TermMode::ALT_SCREEN | TermMode::ALTERNATE_SCROLL | TermMode::APP_CURSOR;
@@ -1471,7 +1471,7 @@ fn tier2_alt_scroll_payload_alt_screen_plus_alternate_scroll_app_cursor_emits_ss
 /// xterm spec: ctlseqs.txt:2465-2473 (`Cursor Up | CSI A | SS3 A` table).
 /// xterm impl: scrollbar.c:711-727 (`MODE_DECCKM ? ANSI_SS3 : ANSI_CSI`).
 /// Ghostty impl: Surface.zig:3492-3506 (mirrors xterm DECCKM split).
-/// Pinned by BUG-08-015 (Phase 1.75 codex consensus).
+/// Pinned by (Phase 1.75 consensus).
 #[test]
 fn tier2_alt_scroll_payload_app_cursor_set_scroll_up_emits_ss3_a() {
     let mode = TermMode::ALT_SCREEN | TermMode::ALTERNATE_SCROLL | TermMode::APP_CURSOR;
@@ -1555,7 +1555,7 @@ fn tier2_alt_scroll_payload_shift_held_returns_none() {
     );
 }
 
-// --- Shift-bypass × DECCKM × direction (per Plan-TPR R1 [TPR-04-007-codex]) ---
+// --- Shift-bypass × DECCKM × direction (per Plan-TPR R1 [TPR-04-007-]) ---
 
 /// Catalog row: DEC-ALT-SCROLL
 #[test]
@@ -1615,13 +1615,13 @@ fn tier2_alt_scroll_payload_with_mouse_report_click_still_returns_some() {
     assert_eq!(payload.repeat, 1);
 }
 
-// --- Semantic pin (DECCKM-aware byte selection per xterm spec) ---
+// --- Property (DECCKM-aware byte selection per xterm spec) ---
 
 /// Catalog row: DEC-ALT-SCROLL
 /// xterm spec: ctlseqs.txt:2465-2473 (`Cursor Up | CSI A | SS3 A` table).
 /// xterm impl: scrollbar.c:711-727 (`MODE_DECCKM ? ANSI_SS3 : ANSI_CSI`).
 /// Ghostty impl: Surface.zig:3492-3506 (mirrors xterm DECCKM split).
-/// Pinned by BUG-08-015 §1B — load-bearing semantic pin: prevents
+/// Pinned by §1B — load-bearing property: prevents
 /// regression to hardcoded-SS3 implementation.
 #[test]
 fn tier2_alt_scroll_payload_decckm_aware_byte_selection_per_xterm_ctlseqs() {
@@ -1655,10 +1655,10 @@ fn tier2_alt_scroll_payload_decckm_aware_byte_selection_per_xterm_ctlseqs() {
     );
 }
 
-// --- Negative pin (rejects pre-fix hardcoded SS3) ---
+// --- Regression guard (rejects pre-fix hardcoded SS3) ---
 
 /// Catalog row: DEC-ALT-SCROLL
-/// Negative pin: rejects the pre-fix hardcoded `if scroll_up { b"\x1bOA" } else { b"\x1bOB" }`
+/// Regression guard: rejects the pre-fix hardcoded `if scroll_up { b"\x1bOA" } else { b"\x1bOB" }`
 /// implementation that emitted SS3 unconditionally regardless of DECCKM.
 #[test]
 fn tier2_alt_scroll_payload_does_not_hardcode_ss3_when_decckm_clear() {
@@ -1755,7 +1755,7 @@ fn classify_wheel_event_mouse_x10_with_alt_scroll_set_returns_mouse_report() {
     assert_eq!(classify_wheel_event(mode, false), WheelTier::MouseReport);
 }
 
-// --- Shift-bypass × ANY_MOUSE (per Plan-TPR R3 [TPR-04-022-gemini]) ---
+// --- Shift-bypass × ANY_MOUSE (per Plan-TPR R3 [TPR-04-022-]) ---
 
 /// Catalog row: DEC-ALT-SCROLL
 #[test]
@@ -1786,7 +1786,7 @@ fn classify_wheel_event_shift_held_mouse_x10_with_alt_scroll_returns_viewport_sc
 }
 
 /// Catalog row: DEC-ALT-SCROLL
-/// Pure Tier-2 shift-bypass (no ANY_MOUSE flags) per Plan-TPR R5 [TPR-04-029-gemini].
+/// Pure Tier-2 shift-bypass (no ANY_MOUSE flags) per Plan-TPR R5 [TPR-04-029-].
 #[test]
 fn classify_wheel_event_shift_held_alt_scroll_only_returns_viewport_scroll() {
     let mode = TermMode::ALT_SCREEN | TermMode::ALTERNATE_SCROLL;
@@ -1807,7 +1807,7 @@ fn classify_wheel_event_empty_mode_with_shift_held_returns_viewport_scroll() {
 // --- ANY_MOUSE_ENCODING isolation negative pins ---
 
 /// Catalog row: DEC-ALT-SCROLL
-/// Negative pin: MOUSE_SGR is in ANY_MOUSE_ENCODING (encoding format),
+/// Regression guard: MOUSE_SGR is in ANY_MOUSE_ENCODING (encoding format),
 /// NOT in ANY_MOUSE (tracking trigger). Pins the bit-mask separation —
 /// defensive against future drift that lumps encoding flags into ANY_MOUSE.
 #[test]
@@ -1865,13 +1865,13 @@ fn classify_wheel_event_any_mouse_member_count_assertion() {
     );
 }
 
-// --- BUG-08-032: dispatch_wheel wiring matrix ---
+// --- : dispatch_wheel wiring matrix ---
 //
 // Tests pin the wiring layer extracted from `App::handle_mouse_wheel`:
 // `dispatch_wheel<S: WheelSink>(WheelDispatch, &mut S)` consumes a sink
 // trait so the side-effect surface (PTY writes, viewport scroll, mark-dirty)
 // can be matrix-tested without constructing the unconstructible-in-#[test]
-// `App`. BUG-08-015 already pinned the pure decision functions
+// `App`. already pinned the pure decision functions
 // (parse_wheel_delta, classify_wheel_event, tier2_alt_scroll_payload);
 // these tests pin that the dispatcher's match arms call those decisions'
 // implications on the sink in the right order, with the right operand
@@ -1883,8 +1883,8 @@ use oriterm_mux::PaneId;
 use super::wheel_dispatch::{WheelDispatch, WheelSink, dispatch_wheel};
 
 /// Test sink that records every call. Lives in tests.rs (single consumer
-/// per `impl-hygiene.md §No Premature Abstraction`); promote to
-/// `oriterm_test_support` only when a second sink type (e.g., BUG-08-034's
+/// Premature Abstraction`); promote to
+/// `oriterm_test_support` only when a second sink type (e.g., 's
 /// keyboard-wiring sink) creates a second concrete consumer.
 ///
 /// `cell_for_report_value` is the value `dispatch_wheel`'s Tier-1 arm
@@ -1972,7 +1972,7 @@ fn sink_with_cell(cell: Option<(usize, usize)>) -> RecordingSink {
 
 // --- Tier 1 (mouse-report) wiring cells ---
 
-/// Regression: BUG-08-032 — Tier-1 single-line dispatch.
+/// Regression: Tier-1 single-line dispatch.
 /// Pins `lines=1` produces exactly one `write_pane_input` call and one
 /// `mark_dirty`. Catches a regression that drops the per-line loop
 /// entirely (would produce zero writes).
@@ -1989,9 +1989,9 @@ fn dispatch_wheel_mouse_report_lines_eq_1_writes_once_marks_dirty() {
     );
 }
 
-/// Regression: BUG-08-032 — Tier-1 fan-out semantic pin.
+/// Regression: Tier-1 fan-out property.
 /// `lines=3` MUST produce exactly 3 writes (not 0, not 1, not 6). This is
-/// the headline negative pin: a dispatcher that drops the loop, mishandles
+/// the headline regression guard: a dispatcher that drops the loop, mishandles
 /// payload.repeat, or double-writes per iteration would all fail this cell.
 #[test]
 fn dispatch_wheel_mouse_report_lines_eq_3_writes_thrice_marks_dirty_once() {
@@ -2006,7 +2006,7 @@ fn dispatch_wheel_mouse_report_lines_eq_3_writes_thrice_marks_dirty_once() {
     assert_eq!(sink.mark_dirty_calls, 1, "mark_dirty fires exactly once");
 }
 
-/// Regression: BUG-08-032 — Tier-1 ScrollUp byte payload.
+/// Regression: Tier-1 ScrollUp byte payload.
 /// Recomputes the expected payload via the canonical `encode_mouse_event`
 /// path and asserts the wiring writes those exact bytes — pinning that the
 /// dispatcher passes the right `MouseButton::ScrollUp` to the encoder.
@@ -2029,7 +2029,7 @@ fn dispatch_wheel_mouse_report_carries_scroll_up_bytes() {
     assert_eq!(sink.writes[0].1, expected.as_bytes().to_vec());
 }
 
-/// Regression: BUG-08-032 — Tier-1 ScrollDown byte payload.
+/// Regression: Tier-1 ScrollDown byte payload.
 #[test]
 fn dispatch_wheel_mouse_report_carries_scroll_down_bytes() {
     let mut sink = sink_with_cell(Some((7, 3)));
@@ -2047,7 +2047,7 @@ fn dispatch_wheel_mouse_report_carries_scroll_down_bytes() {
     assert_eq!(sink.writes[0].1, expected.as_bytes().to_vec());
 }
 
-/// Regression: BUG-08-032 — Tier-1 cell_for_report=None early-return.
+/// Regression: Tier-1 cell_for_report=None early-return.
 /// When `mouse_cell_clamped` returns None, Tier-1 returns BEFORE
 /// `mark_dirty`. This cell pins `mark_dirty_calls == 0` so a regression
 /// that hoists `sink.mark_dirty()` ahead of the cell_for_report check
@@ -2075,7 +2075,7 @@ fn dispatch_wheel_mouse_report_cell_for_report_none_writes_nothing_no_mark_dirty
 
 const ALT_SCROLL_MODE: TermMode = TermMode::ALT_SCREEN.union(TermMode::ALTERNATE_SCROLL);
 
-/// Regression: BUG-08-032 — Tier-2 lines=1 wiring.
+/// Regression: Tier-2 lines=1 wiring.
 #[test]
 fn dispatch_wheel_alt_scroll_lines_eq_1_writes_once_csi_a() {
     let mut sink = RecordingSink::default();
@@ -2086,7 +2086,7 @@ fn dispatch_wheel_alt_scroll_lines_eq_1_writes_once_csi_a() {
     assert_eq!(sink.mark_dirty_calls, 1);
 }
 
-/// Regression: BUG-08-032 — Tier-2 fan-out semantic pin.
+/// Regression: Tier-2 fan-out property.
 /// `payload.repeat == lines` MUST produce exactly that many writes. Catches
 /// a regression that drops the loop or double-writes.
 #[test]
@@ -2106,8 +2106,8 @@ fn dispatch_wheel_alt_scroll_lines_eq_3_writes_thrice_csi_a() {
     assert_eq!(sink.mark_dirty_calls, 1);
 }
 
-/// Regression: BUG-08-032 — DECCKM × direction byte selection wiring
-/// (BUG-08-015 made the decision SS3-vs-CSI; this pins the wiring writes
+/// Regression: DECCKM × direction byte selection wiring
+/// ( made the decision SS3-vs-CSI; this pins the wiring writes
 /// the chosen bytes through the loop).
 #[test]
 fn dispatch_wheel_alt_scroll_app_cursor_set_up_emits_ss3_a() {
@@ -2121,7 +2121,7 @@ fn dispatch_wheel_alt_scroll_app_cursor_set_up_emits_ss3_a() {
     }
 }
 
-/// Regression: BUG-08-032 — DECCKM set + ScrollDown writes SS3 B
+/// Regression: DECCKM set + ScrollDown writes SS3 B
 /// (`\x1bOB`) `lines` times via the dispatcher.
 #[test]
 fn dispatch_wheel_alt_scroll_app_cursor_set_down_emits_ss3_b() {
@@ -2135,8 +2135,8 @@ fn dispatch_wheel_alt_scroll_app_cursor_set_down_emits_ss3_b() {
     }
 }
 
-/// Regression: BUG-08-032 — DECCKM clear + ScrollUp writes CSI A
-/// (`\x1b[A`); confirms BUG-08-015's DECCKM-aware byte selection
+/// Regression: DECCKM clear + ScrollUp writes CSI A
+/// (`\x1b[A`); confirms 's DECCKM-aware byte selection
 /// stays load-bearing across the wiring path.
 #[test]
 fn dispatch_wheel_alt_scroll_app_cursor_clear_up_emits_csi_a() {
@@ -2148,7 +2148,7 @@ fn dispatch_wheel_alt_scroll_app_cursor_clear_up_emits_csi_a() {
     }
 }
 
-/// Regression: BUG-08-032 — DECCKM clear + ScrollDown writes CSI B
+/// Regression: DECCKM clear + ScrollDown writes CSI B
 /// (`\x1b[B`); negative-pin counterpart to the SS3 B / CSI A cells.
 #[test]
 fn dispatch_wheel_alt_scroll_app_cursor_clear_down_emits_csi_b() {
@@ -2162,7 +2162,7 @@ fn dispatch_wheel_alt_scroll_app_cursor_clear_down_emits_csi_b() {
 
 // --- Tier 3 (viewport-scroll) wiring cells ---
 
-/// Regression: BUG-08-032 — viewport scroll up positive sign.
+/// Regression: viewport scroll up positive sign.
 #[test]
 fn dispatch_wheel_viewport_scroll_up_calls_scroll_pane_positive_lines() {
     let mut sink = RecordingSink::default();
@@ -2173,7 +2173,7 @@ fn dispatch_wheel_viewport_scroll_up_calls_scroll_pane_positive_lines() {
     assert_eq!(sink.mark_dirty_calls, 1);
 }
 
-/// Regression: BUG-08-032 — viewport scroll down negative sign pin.
+/// Regression: viewport scroll down negative sign pin.
 /// Catches a regression that flips the sign or always passes positive.
 #[test]
 fn dispatch_wheel_viewport_scroll_down_calls_scroll_pane_negative_lines() {
@@ -2187,7 +2187,7 @@ fn dispatch_wheel_viewport_scroll_down_calls_scroll_pane_negative_lines() {
 
 // --- Cross-tier precedence wiring ---
 
-/// Regression: BUG-08-032 — when MOUSE_REPORT and ALT_SCROLL flags are
+/// Regression: when MOUSE_REPORT and ALT_SCROLL flags are
 /// BOTH set, `classify_wheel_event` returns Tier 1; this pins the WIRING
 /// follows that verdict (writes mouse-report bytes, NOT SS3/CSI arrows).
 /// Counterpart to the pure-classifier test at tests.rs ~1732.
@@ -2211,7 +2211,7 @@ fn dispatch_wheel_mouse_report_takes_priority_over_alt_scroll() {
 
 // --- Shift-bypass × all three tiers ---
 
-/// Regression: BUG-08-032 — Shift bypasses Tier-1 mouse-report → Tier-3.
+/// Regression: Shift bypasses Tier-1 mouse-report → Tier-3.
 /// Catches a regression where the shift gate stops working for mouse-report
 /// alone (only working when alt-scroll is also set).
 #[test]
@@ -2231,7 +2231,7 @@ fn dispatch_wheel_shift_held_with_mouse_report_routes_to_viewport_scroll() {
     );
 }
 
-/// Regression: BUG-08-032 — Shift bypasses Tier-2 alt-scroll → Tier-3.
+/// Regression: Shift bypasses Tier-2 alt-scroll → Tier-3.
 #[test]
 fn dispatch_wheel_shift_held_with_alt_scroll_routes_to_viewport_scroll() {
     let mut sink = RecordingSink::default();
@@ -2242,7 +2242,7 @@ fn dispatch_wheel_shift_held_with_alt_scroll_routes_to_viewport_scroll() {
     assert_eq!(sink.mark_dirty_calls, 1);
 }
 
-/// Regression: BUG-08-032 — Shift bypass on plain mouse-report (no
+/// Regression: Shift bypass on plain mouse-report (no
 /// ALT_SCREEN) preserves direction sign through Tier-3.
 #[test]
 fn dispatch_wheel_shift_held_with_mouse_report_no_alt_screen_direction_preserved() {
@@ -2258,7 +2258,7 @@ fn dispatch_wheel_shift_held_with_mouse_report_no_alt_screen_direction_preserved
 
 // --- Cross-tier early-return invariants ---
 
-/// Regression: BUG-08-032 — parse_wheel_delta=None → no dispatch at all.
+/// Regression: parse_wheel_delta=None → no dispatch at all.
 /// Zero-magnitude line delta produces no writes / scrolls / mark_dirty.
 #[test]
 fn dispatch_wheel_parse_wheel_delta_none_no_dispatch() {
@@ -2279,9 +2279,9 @@ fn dispatch_wheel_parse_wheel_delta_none_no_dispatch() {
     );
 }
 
-/// Regression: BUG-08-032 — pane_id=None → no dispatch at all.
-/// The `Option<PaneId>` lift in WheelDispatch (codex's catch — the
-/// `let Some(pane_id) = ... else { return }` gate exists in the dispatcher,
+/// Regression: pane_id=None → no dispatch at all.
+/// The `Option<PaneId>` lift in WheelDispatch ('s catch — the
+/// `let Some(pane_id) =... else { return }` gate exists in the dispatcher,
 /// not just on the App side) makes this seam testable headlessly.
 #[test]
 fn dispatch_wheel_pane_id_none_no_dispatch() {
@@ -2302,7 +2302,7 @@ fn dispatch_wheel_pane_id_none_no_dispatch() {
     );
 }
 
-/// Regression: BUG-08-032 — Tier-1 mods (Alt/Ctrl/Shift, with Shift NOT
+/// Regression: Tier-1 mods (Alt/Ctrl/Shift, with Shift NOT
 /// held to avoid Tier-3 bypass) flow through the dispatcher into
 /// `encode_mouse_event` so the encoded byte payload reflects the modifiers.
 /// Pins that `dispatch_wheel` passes `input.mods` to the encoder rather
@@ -2351,7 +2351,7 @@ fn dispatch_wheel_mouse_report_propagates_alt_ctrl_modifiers_to_encoded_bytes() 
     assert_eq!(sink.mark_dirty_calls, 1);
 }
 
-/// Regression: BUG-08-032 — empty-bytes guard preserved from BUG-08-015
+/// Regression: empty-bytes guard preserved from
 /// at the dispatcher seam. Normal (X10-style coordinate-encoded) mode +
 /// `col > 222` makes `encode_mouse_event` return empty bytes; the
 /// `if !bytes.is_empty()` guard must skip the write loop AND
@@ -2383,7 +2383,7 @@ fn dispatch_wheel_mouse_report_empty_bytes_skips_writes_but_marks_dirty() {
     );
 }
 
-/// Regression: BUG-08-032 TPR R1 — Tier-2 alt-scroll dispatch MUST NOT
+/// Regression: TPR R1 — Tier-2 alt-scroll dispatch MUST NOT
 /// query `WheelSink::cell_for_report`. Restores pre-fix lazy semantics
 /// where `mouse_cell_clamped()` was scoped to the Tier-1 arm; a regression
 /// that re-introduces eager hit-testing would land here.
@@ -2399,7 +2399,7 @@ fn dispatch_wheel_alt_scroll_does_not_query_cell_for_report() {
     );
 }
 
-/// Regression: BUG-08-032 TPR R1 — Tier-3 viewport-scroll dispatch MUST
+/// Regression: TPR R1 — Tier-3 viewport-scroll dispatch MUST
 /// NOT query `WheelSink::cell_for_report`. Counterpart to the Tier-2 lazy
 /// pin; pins the cell-extraction is gated by tier classification.
 #[test]
@@ -2414,9 +2414,9 @@ fn dispatch_wheel_viewport_scroll_does_not_query_cell_for_report() {
     );
 }
 
-// --- BUG-08-033: cross-site convergence pin ---
+// --- : cross-site convergence pin ---
 //
-// Pinned by Plan-TPR Round 0 codex F2: keyboard arrow encoding via the public
+// Pinned by Plan-review round 0 F2: keyboard arrow encoding via the public
 // `encode_key` dispatcher must produce IDENTICAL bytes to mouse-wheel
 // `tier2_alt_scroll_payload` for the (DECCKM × direction) cells the wheel
 // path touches (Up/Down × app_cursor/normal). Any future divergence between

@@ -49,7 +49,7 @@ pub const TACK_MODES_AM: ScenarioSpec = ScenarioSpec {
         MenuStep::new(b"x", "tack/test/mode [n] >"),
         // Step 2: from the modes controls menu, send `n` to
         // actually run the standard tests. Tack runs through the
-        // mode tests (am, bce, bw, ...) and reports results before
+        // mode tests (am, bce, bw,...) and reports results before
         // returning to a prompt. The exact post-run prompt is
         // tack-version-specific and was discovered empirically by
         // running with INSTA_UPDATE=1 and reading the navigator's
@@ -66,7 +66,7 @@ pub const TACK_MODES_AM: ScenarioSpec = ScenarioSpec {
 /// `(cap_name)` via the [`grid_has_paren_token`] tokenized helper.
 ///
 /// **Why a tokenized helper, not blind `str::contains`.** Tack's
-/// modes test reports each cap as `(am) ...`, `(os) ...` etc. —
+/// modes test reports each cap as `(am)...`, `(os)...` etc. —
 /// the cap name is wrapped in parentheses, NOT surrounded by
 /// whitespace. Plain [`crate::tack_framework::parser::tokens::grid_has_token`]
 /// (whitespace-bounded) correctly rejects this because `(` is not
@@ -76,7 +76,7 @@ pub const TACK_MODES_AM: ScenarioSpec = ScenarioSpec {
 /// tokenized helper, not raw `contains`", and this satisfies it.
 ///
 /// **Viewport scope.** Tack's modes test produces output for many
-/// caps (`am`, `bce`, `bw`, ...) sequentially, then ends with `os`
+/// caps (`am`, `bce`, `bw`,...) sequentially, then ends with `os`
 /// (over-strike) at the bottom of the screen. Earlier caps scroll
 /// off the visible 24-row viewport before the test completes, so
 /// `grid_text()` only captures the LAST tested cap. We assert on
@@ -124,7 +124,7 @@ pub fn parse_modes_screen(grid: &str) -> ScreenFacts {
 // `PtySession::drain_until` primitive (added in 05.0.b).
 //
 // Each scenario has a UNIQUE `screen_id` (`tack_modes_phase_am`,
-// `tack_modes_phase_bce`, ...) so insta and Section 07 GPU
+// `tack_modes_phase_bce`,...) so insta and Section 07 GPU
 // goldens cannot silently overwrite each other.
 //
 // # Empirical reality (recorded for future readers)
@@ -144,18 +144,18 @@ pub fn parse_modes_screen(grid: &str) -> ScreenFacts {
 // the plan's spec regardless** because:
 //
 // 1. The spec is the deliverable, not runtime success against a
-//    specific tack version.
+// specific tack version.
 // 2. A future tack release (or a different invocation flow we
-//    haven't yet discovered) may emit per-cap labels.
+// haven't yet discovered) may emit per-cap labels.
 // 3. Section 07's GPU goldens reference these const screen_ids
-//    via the SSOT module path; deleting them would force a
-//    cross-section rewrite.
+// via the SSOT module path; deleting them would force a
+// cross-section rewrite.
 // 4. The runtime test wrappers in
-//    `oriterm_core/tests/tack/test_menu/modes.rs` carry
-//    `#[ignore]` with a clear empirical-finding rationale, so
-//    `cargo test` stays green while preserving the spec in code.
-//    Run with `--ignored` to attempt them against an alternate
-//    tack version.
+// `oriterm_core/tests/tack/test_menu/modes.rs` carry
+// `#[ignore]` with a clear empirical-finding rationale, so
+// `cargo test` stays green while preserving the spec in code.
+// Run with `--ignored` to attempt them against an alternate
+// tack version.
 // ============================================================
 
 /// Per-cap parser for the modes phase-capture scenarios.

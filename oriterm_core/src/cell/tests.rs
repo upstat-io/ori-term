@@ -48,7 +48,7 @@ fn is_empty_false_after_setting_char() {
     assert!(!cell.is_empty());
 }
 
-/// Regression: BUG-08-017. `CellFlags::DRAWN` must default clear so
+/// Regression:. `CellFlags::DRAWN` must default clear so
 /// pristine cells are correctly distinguished from application-written
 /// ones by `compute_rect_checksum`.
 #[test]
@@ -56,7 +56,7 @@ fn default_cell_has_drawn_clear() {
     assert!(!Cell::default().flags.contains(CellFlags::DRAWN));
 }
 
-/// Regression: BUG-08-017 TPR codex F1. `is_empty()` stays orthogonal
+/// Regression: TPR F1. `is_empty()` stays orthogonal
 /// to DRAWN — it answers "visually empty", NOT "never written". A
 /// cell that was written by the application as a plain space under
 /// default SGR still LOOKS empty (same pixels as a pristine cell),
@@ -78,7 +78,7 @@ fn is_empty_stays_true_when_only_drawn_is_set() {
     );
 }
 
-/// Regression: BUG-08-017 TPR codex F1. A cell with DRAWN + any other
+/// Regression: TPR F1. A cell with DRAWN + any other
 /// flag (SGR or structural) is NOT is_empty — the non-DRAWN flag bit
 /// is what makes it visually non-empty, not DRAWN itself.
 #[test]
@@ -91,7 +91,7 @@ fn is_empty_false_when_drawn_plus_sgr_flag() {
     );
 }
 
-/// Regression: BUG-08-017. `Cell::reset(&template)` copies flags from
+/// Regression:. `Cell::reset(&template)` copies flags from
 /// the template wholesale. A DRAWN-clear template must produce a
 /// DRAWN-clear cell, so every reset path automatically clears DRAWN
 /// without explicit instrumentation.
@@ -103,7 +103,7 @@ fn cell_reset_from_default_template_clears_drawn() {
     assert!(!cell.flags.contains(CellFlags::DRAWN));
 }
 
-/// Regression: BUG-08-017. BCE template (`Cell::from(bg)`) must not
+/// Regression:. BCE template (`Cell::from(bg)`) must not
 /// carry DRAWN either — BCE-erased cells are NOT drawn per xterm.
 #[test]
 fn bce_template_has_drawn_clear() {
@@ -111,7 +111,7 @@ fn bce_template_has_drawn_clear() {
     assert!(!template.flags.contains(CellFlags::DRAWN));
 }
 
-/// Regression: BUG-08-017. `CellFlags::INTERNAL_CELL_STATE` is the
+/// Regression:. `CellFlags::INTERNAL_CELL_STATE` is the
 /// union of bits that must never appear on `cursor.template.flags`.
 /// Every structural / write-history bit belongs here; SGR attrs stay
 /// out. Pin the exact membership so drift at the definition site trips
@@ -125,7 +125,7 @@ fn internal_cell_state_union_pins_exact_membership() {
         | CellFlags::LEADING_WIDE_CHAR_SPACER;
     assert_eq!(CellFlags::INTERNAL_CELL_STATE, expected);
 
-    // Negative pin: SGR attributes MUST NOT be in the internal set.
+    // Regression guard: SGR attributes MUST NOT be in the internal set.
     assert!(!CellFlags::INTERNAL_CELL_STATE.contains(CellFlags::BOLD));
     assert!(!CellFlags::INTERNAL_CELL_STATE.contains(CellFlags::UNDERLINE));
     assert!(!CellFlags::INTERNAL_CELL_STATE.contains(CellFlags::INVERSE));
@@ -133,7 +133,7 @@ fn internal_cell_state_union_pins_exact_membership() {
     assert!(!CellFlags::INTERNAL_CELL_STATE.contains(CellFlags::BLINK));
 }
 
-/// Regression: BUG-08-017. Size invariant MUST hold after adding DRAWN.
+/// Regression:. Size invariant MUST hold after adding DRAWN.
 /// The existing `size_assertion` test covers the same property, but
 /// this test explicitly cross-references the bug so future additions
 /// to CellFlags (e.g. future §09A.8 PROTECTED bit) re-check it with

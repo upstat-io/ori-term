@@ -5,8 +5,8 @@
 //! (which delegates to free fn `dispatch_hook`). Both free functions
 //! own the actual `match` table the extractor walks:
 //!
-//! - `dispatch_esc`: `match (byte, intermediates) { (b'D', []) => ... }`
-//! - `dispatch_hook`: `match action { 'q' if intermediates.is_empty() => ... }`
+//! - `dispatch_esc`: `match (byte, intermediates) { (b'D', []) =>... }`
+//! - `dispatch_hook`: `match action { 'q' if intermediates.is_empty() =>... }`
 //!
 //! The walker visits both impl methods AND the free functions
 //! (`dispatch_hook` / `dispatch_esc`) — `match` arms can live in

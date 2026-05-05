@@ -14,7 +14,9 @@
 //! ```
 //!
 //! - `magic`: `0x4F54` ("OT") — early detection of non-oriterm connections.
-//! - `ver`: protocol version (currently `1`).
+//! - `ver`: protocol version. See [`PROTOCOL_VERSION`] for the
+//!   canonical value (currently `2`); the constant doc comment
+//!   carries the reason for the latest bump.
 //! - `flags`: `0x01` = `COMPRESSED` (payload is zstd-compressed). Unknown bits
 //!   are silently ignored on decode for forward compatibility.
 //! - `type`: message type ID for pre-routing and debugging.
@@ -52,13 +54,34 @@ pub const MAX_PAYLOAD: u32 = 16 * 1024 * 1024;
 pub const FRAME_MAGIC: u16 = 0x4F54;
 
 /// Current protocol version. Incremented on breaking wire changes.
-pub const PROTOCOL_VERSION: u8 = 1;
+///
+/// v2 — bumped when `PaneSnapshot::has_bell` and `MuxPdu::ClearBell`
+/// were stripped from the wire (bell state moved to client-local
+/// `bell_panes`). v1 → v2 is a hard break in bincode-encoded
+/// `PaneSnapshot` layout and `MsgType` enum codepoints; a v1 peer
+/// connecting to a v2 peer will silently misdecode every snapshot
+/// frame. The Hello handshake rejects any non-equal version pair so
+/// the mismatch surfaces as a connection error instead.
+///
+/// SSOT: this constant is the single literal source for the wire
+/// version; [`CURRENT_PROTOCOL_VERSION`] is a re-export, NOT an
+/// independent definition. A reviewer who bumps one without the
+/// other would otherwise produce a frame-header version that
+/// disagrees with the Hello payload — caught at compile-time now
+/// because the alias propagates the bump automatically.
+pub const PROTOCOL_VERSION: u8 = 2;
 
 /// Flag: payload is zstd-compressed.
 pub const FLAG_COMPRESSED: u8 = 0x01;
 
 /// Current IPC protocol version for Hello/HelloAck negotiation.
-pub const CURRENT_PROTOCOL_VERSION: u8 = 1;
+///
+/// Re-export of [`PROTOCOL_VERSION`] — the frame-header version
+/// (used in every encode via `FrameHeader.version`) and the
+/// handshake version (used in `MuxPdu::Hello` / `MuxPdu::HelloAck`
+/// payload) MUST agree. Defined as an alias rather than a duplicate
+/// literal so a future bump touches one place.
+pub const CURRENT_PROTOCOL_VERSION: u8 = PROTOCOL_VERSION;
 
 /// Feature flag: client and server support zstd compression.
 pub const FEAT_ZSTD: u64 = 1;

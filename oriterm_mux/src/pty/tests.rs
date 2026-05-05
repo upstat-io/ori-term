@@ -586,20 +586,20 @@ fn ctrl_c_stuck_behind_stalled_write() {
     assert!(saw_stall, "writer must be stalled on full pipe");
 
     // 2. Queue Ctrl+C. It sits in the channel — the writer thread is
-    //    blocked in write_all() and cannot recv() from the channel.
+    // blocked in write_all() and cannot recv() from the channel.
     tx.send(Msg::Input(vec![0x03])).unwrap();
 
     // 3. The pipe is NOT drained. In the real scenario the child (`yes`)
-    //    never reads stdin. The writer is stuck forever.
+    // never reads stdin. The writer is stuck forever.
     //
-    //    THE FIX: the main thread checks `write_stalled`, sees it's true,
-    //    and sends SIGINT directly to the child process group. The child
-    //    dies, closing the slave PTY fd, which causes the master write()
-    //    to return (with an error or 0 bytes). The writer thread unblocks,
-    //    drains the channel (including the 0x03), and writes it.
+    // THE FIX: the main thread checks `write_stalled`, sees it's true,
+    // and sends SIGINT directly to the child process group. The child
+    // dies, closing the slave PTY fd, which causes the master write()
+    // to return (with an error or 0 bytes). The writer thread unblocks,
+    // drains the channel (including the 0x03), and writes it.
     //
-    //    We simulate "SIGINT killed the child" by dropping the reader end
-    //    of the pipe after detecting the stall flag.
+    // We simulate "SIGINT killed the child" by dropping the reader end
+    // of the pipe after detecting the stall flag.
     assert!(
         stalled.load(Ordering::Acquire),
         "stall flag must be observable by the main thread"
@@ -609,7 +609,7 @@ fn ctrl_c_stuck_behind_stalled_write() {
     drop(reader);
 
     // 4. Writer unblocks (write returns error because reader closed).
-    //    The writer may have already exited (broken pipe), so ignore SendError.
+    // The writer may have already exited (broken pipe), so ignore SendError.
     let _ = tx.send(Msg::Shutdown);
     handle.join().expect("writer thread panicked");
 }
@@ -672,7 +672,7 @@ fn ctrl_c_delivered_after_stall_cleared() {
 
 // PtyLifecycle trait dispatch
 //
-// Phase 1A semantic pin: verify that boxing a `PtyHandle` as
+// Phase 1A property: verify that boxing a `PtyHandle` as
 // `Box<dyn PtyLifecycle + Send>` correctly dispatches `process_id()`,
 // `kill()`, and `wait()` through the trait vtable. This test ONLY passes
 // if the `impl PtyLifecycle for PtyHandle` is wired correctly — if any
@@ -702,7 +702,7 @@ fn pty_handle_dispatches_through_pty_lifecycle_trait() {
     let mut boxed: Box<dyn PtyLifecycle + Send> = Box::new(pty);
 
     // Trait dispatch must return the same PID as the inherent call.
-    // This is the semantic pin: it only passes if the impl correctly
+    // This is the property: it only passes if the impl correctly
     // delegates `PtyLifecycle::process_id` to `PtyHandle::process_id`.
     let trait_pid = boxed.process_id();
     assert_eq!(
@@ -750,16 +750,16 @@ fn write_stalled_flag_clears_after_write_completes() {
     handle.join().expect("writer thread panicked");
 }
 
-/// Regression: BUG-11-020 — the `write_stalled` AtomicBool must transition
+/// Regression: the `write_stalled` AtomicBool must transition
 /// `false → true → false` around a kernel-buffer-fill write that subsequently
 /// drains. The existing `write_stalled_flag_clears_after_write_completes` test
 /// only sends a small payload and verifies the flag stays `false`; it does NOT
-/// exercise the true→false transition. Plan TPR codex F6 cited this test as the
+/// exercise the true→false transition. Plan TPR F6 cited this test as the
 /// pin that justifies skipping the e2e drain assertion, but the cited pin
 /// doesn't actually pin the transition. This test fills the pipe to force
 /// `stalled = true`, then drains the reader to allow the blocked `write()` to
 /// complete, then verifies the flag returns to `false`.
-/// See: bug-tracker/plans/BUG-11-020/00-overview.md
+/// See: bug-tracker/plans//00-overview.md
 #[test]
 #[cfg(unix)]
 fn write_stalled_flag_transitions_true_then_false_around_drained_write() {

@@ -1298,11 +1298,11 @@ fn extract_text_spanning_scrollback_and_visible() {
 
     // Select from scrollback row 0 through visible row 0.
     // Scrollback has 2 rows, so absolute:
-    //   scrollback[0] = "scrolled" (StableRowIndex 0)
-    //   scrollback[1] = "also_scr" (StableRowIndex 1)
-    //   visible[0] = "visible0" (StableRowIndex 2)
-    //   visible[1] = "visible1" (StableRowIndex 3)
-    //   visible[2] = "bottom" (StableRowIndex 4) — wait, scroll_up shifts content.
+    // scrollback[0] = "scrolled" (StableRowIndex 0)
+    // scrollback[1] = "also_scr" (StableRowIndex 1)
+    // visible[0] = "visible0" (StableRowIndex 2)
+    // visible[1] = "visible1" (StableRowIndex 3)
+    // visible[2] = "bottom" (StableRowIndex 4) — wait, scroll_up shifts content.
     // Let's verify by selecting first two stable rows.
     let sel = Selection {
         mode: SelectionMode::Char,
@@ -1441,7 +1441,7 @@ fn word_boundaries_word_at_col_zero() {
 #[test]
 fn word_boundaries_word_at_last_col() {
     let mut grid = Grid::new(1, 10);
-    // "ABC  hello" — "hello" ends at col 9 (last col).
+    // "ABC hello" — "hello" ends at col 9 (last col).
     write_str(&mut grid, 0, "ABC  hello");
 
     let (s, e) = word_boundaries(&grid, 0, 9, DEFAULT_WORD_DELIMITERS);
@@ -1597,7 +1597,7 @@ fn extract_text_scrollback_with_display_offset() {
     write_str(&mut grid, 0, "row_D");
     write_str(&mut grid, 1, "row_E");
     // scrollback: [row_A (SRI 0), row_B (SRI 1)]
-    // visible:    [row_D (SRI 2), row_E (SRI 3), blank (SRI 4)]
+    // visible: [row_D (SRI 2), row_E (SRI 3), blank (SRI 4)]
 
     // Scroll viewport back 1 line into history.
     grid.scroll_display(1);

@@ -2,16 +2,16 @@
 //! cross-crate `kxIN`/`kxOUT` xcheck.
 //!
 //! These tests pin both:
-//!   1. The literal byte values of `FOCUS_IN_SEQ` / `FOCUS_OUT_SEQ`
-//!      against the `kxIN`/`kxOUT` cap declarations in
-//!      `extra/ori_term.info` (via the canonical
-//!      `oriterm_test_support::tack_framework::cap_coverage::declared_cap_value`
-//!      helper consolidates the parser into one
-//!      canonical home).
-//!   2. The actual emission-path decision via
-//!      [`super::focus_event_seq_for_mode`] (fix —
-//!      tests the load-bearing pure kernel of `send_focus_event`,
-//!      not just the constants).
+//! 1. The literal byte values of `FOCUS_IN_SEQ` / `FOCUS_OUT_SEQ`
+//! against the `kxIN`/`kxOUT` cap declarations in
+//! `extra/ori_term.info` (via the canonical
+//! `oriterm_test_support::tack_framework::cap_coverage::declared_cap_value`
+//! helper consolidates the parser into one
+//! canonical home).
+//! 2. The actual emission-path decision via
+//! [`super::focus_event_seq_for_mode`] (fix —
+//! tests the load-bearing pure kernel of `send_focus_event`,
+//! not just the constants).
 
 use oriterm_core::TermMode;
 use oriterm_test_support::tack_framework::cap_coverage::declared_cap_value;
@@ -66,7 +66,7 @@ fn focus_in_and_out_seqs_are_distinct() {
 
 #[test]
 fn focus_event_seq_for_mode_returns_none_when_focus_in_out_disabled() {
-    // NEGATIVE PIN — without DECSET 1004 (FOCUS_IN_OUT), the
+    // REGRESSION GUARD — without DECSET 1004 (FOCUS_IN_OUT), the
     // function MUST return None regardless of the focused flag.
     // This is the load-bearing gate that prevents focus events
     // from leaking to terminals that didn't ask for them.
@@ -95,7 +95,7 @@ fn focus_event_seq_for_mode_returns_focus_out_seq_when_focused_false() {
 
 #[test]
 fn focus_event_seq_for_mode_only_checks_the_focus_in_out_flag() {
-    // SEMANTIC PIN — even with other unrelated mode flags set,
+    // Verifies — even with other unrelated mode flags set,
     // the function continues to honor the FOCUS_IN_OUT flag and
     // ignores the others. Catches a regression where a refactor
     // accidentally added an extra mode predicate that gated

@@ -268,7 +268,7 @@ fn emit_cell_applies_blink_alpha_to_bg() {
         "BLINK glyph alpha should be 0.5 (fg_dim * text_blink_opacity), got {glyph_alpha}"
     );
 
-    // Negative pin: bg must stay at alpha=1.0 regardless of blink state.
+    // Regression guard: bg must stay at alpha=1.0 regardless of blink state.
     // push_rect writes the color into the bg slot (offset 60), fg slot is zeroed.
     assert_eq!(bg_count(&frame), 1, "bg pushed even when blink=0.5");
     let b = frame.backgrounds.as_bytes();
@@ -309,7 +309,7 @@ fn emit_cell_applies_super_sub_glyph_offset_to_glyph_only() {
 }
 
 #[test]
-/// Negative pin: decoration y is anchored to cell-top, NOT to the glyph_y offset.
+/// Regression guard: decoration y is anchored to cell-top, NOT to the glyph_y offset.
 /// If SGR 74 (subscript) were accidentally applied to the decoration draw call,
 /// the underline would appear below its correct position.
 fn emit_cell_anchors_decoration_to_cell_top_y() {
@@ -397,7 +397,7 @@ fn emit_cell_applies_blink_alpha_to_decoration() {
         "BLINK deco_alpha must equal text_blink_opacity=0.5, got {deco_alpha}"
     );
 
-    // Negative pin: bg quad must NOT be dimmed by BLINK (bg alpha always 1.0).
+    // Regression guard: bg quad must NOT be dimmed by BLINK (bg alpha always 1.0).
     let bg_idx = (0..n)
         .find(|&i| (instance_y(b, i) - 0.0_f32).abs() < 0.1)
         .expect("bg rect at y=0 must exist");

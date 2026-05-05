@@ -3,8 +3,8 @@
 //! Owns [`enumerate_mono_families()`], the sibling [`family_paths()`] lookup
 //! used by the resolution-bridge, and the test/bench seam
 //! [`enumerate_mono_families_from_roots()`]. Extracted from `mod.rs` to keep
-//! that file under the 500-line size limit (closes Round 1 codex F4 +
-//! opencode F1 BLOAT findings — `bug-tracker/plans/BUG-02-012/section-06-tpr-findings.md`).
+//! that file under the 500-line size limit (closes Round 1 F4 +
+//! F1 BLOAT findings — `bug-tracker/plans//section-06-tpr-findings.md`).
 
 use std::collections::HashMap;
 use std::sync::OnceLock;

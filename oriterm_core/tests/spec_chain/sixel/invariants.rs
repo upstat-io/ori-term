@@ -8,12 +8,12 @@
 //!
 //! Catalog rows covered:
 //! - `SIXEL-BG-DeviceDefault` / `SIXEL-BG-SetToBg` — undrawn-pixel RGB
-//!   semantics under the two opaque-bg modes.
+//! semantics under the two opaque-bg modes.
 //! - `SIXEL-BG-NoChange` — α=0 transparency invariant.
 //! - `SIXEL-PALETTE-RESET-PER-DCS` — palette is rebuilt per DCS q.
 //! - `SIXEL-REPEAT-CLAMP` — `!N?` with `N > MAX_DIMENSION` is clamped.
 //! - `SIXEL-PIXEL-BUFFER-CAP` — raster attrs beyond `MAX_PIXEL_BYTES`
-//!   aborts via `ImageError::OversizedImage` with no 900 MB allocation.
+//! aborts via `ImageError::OversizedImage` with no 900 MB allocation.
 
 use oriterm_test_support::spec_chain::SpecHarness;
 use oriterm_test_support::spec_chain::sixel_fixtures::placement_count;
@@ -44,7 +44,7 @@ fn set_terminal_bg(harness: &mut SpecHarness, r: u8, g: u8, b: u8) {
 
 /// Catalog rows: `SIXEL-BG-DeviceDefault` + `SIXEL-BG-SetToBg`.
 ///
-/// Semantic pin: under a non-black terminal bg, identical pixel data
+/// Property: under a non-black terminal bg, identical pixel data
 /// emitted with P2=0 (DeviceDefault) vs P2=2 (SetToBg) MUST produce
 /// different RGBA output on undrawn pixels.
 ///
@@ -120,7 +120,7 @@ fn bg_mode_no_change_undrawn_pixels_have_alpha_zero() {
 
 /// Catalog row: `SIXEL-BG-SetToBg` (DECSCNM interaction).
 ///
-/// Semantic pin — DECSCNM (reverse video, mode 5) swaps the terminal's
+/// Property — DECSCNM (reverse video, mode 5) swaps the terminal's
 /// default fg/bg at render time; `SetToBg` captures the *effective*
 /// background at DCS-hook time, so under reverse video P2=2 must fill
 /// undrawn pixels with the FOREGROUND slot (the now-swapped bg), not
@@ -157,7 +157,7 @@ fn bg_mode_set_to_bg_honors_decscnm_reverse_video() {
     );
 }
 
-// Palette reset per DCS q (semantic pin).
+// Palette reset per DCS q (property).
 
 /// Catalog row: `SIXEL-PALETTE-RESET-PER-DCS`.
 ///
@@ -267,9 +267,9 @@ fn raster_attrs_exceeding_max_pixel_bytes_aborts_cleanly() {
     );
 }
 
-// Color-register-wrap invariant (BUG-06-024).
+// Color-register-wrap invariant ().
 
-/// Catalog row: `SIXEL-COLOR-REGISTER-WRAP`. Regression: BUG-06-024.
+/// Catalog row: `SIXEL-COLOR-REGISTER-WRAP`. Regression:.
 ///
 /// End-to-end pin for the XTSMGRAPHICS Pi=1 Pa=3 → `Term::color_register_count`
 /// → `handle_sixel_start` → `SixelParser::new` → `apply_color` wrap chain.

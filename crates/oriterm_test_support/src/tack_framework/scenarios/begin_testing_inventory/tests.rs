@@ -105,7 +105,7 @@ fn drift_gate_detects_empty_discovered_set() {
 
 #[test]
 fn pinned_inventory_is_non_empty() {
-    // Negative pin: the inventory cannot regress to the failing-
+    // Regression guard: the inventory cannot regress to the failing-
     // first empty-array state without breaking this test. Without
     // this guard, a future PR that accidentally clears
     // BEGIN_TESTING_INVENTORY would make every drift-gate test

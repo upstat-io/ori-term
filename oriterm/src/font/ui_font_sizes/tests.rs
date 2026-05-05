@@ -24,7 +24,7 @@ fn test_registry() -> UiFontSizes {
 /// Helper: build a `UiFontSizes` from IBM Plex Mono (UI font) with empty
 /// fallbacks, a single preloaded size, and default settings.
 ///
-/// Used by the BUG-04-004 regression suite where the test needs a clean
+/// Used by the regression suite where the test needs a clean
 /// "no-fallback" baseline so that an injected fallback is unambiguously
 /// observable on every rebuild path.
 fn ui_test_registry() -> UiFontSizes {
@@ -272,13 +272,13 @@ fn create_default_collection_applies_post_rebuild_hook() {
     );
 }
 
-// BUG-04-004 regression: emoji fallback must survive every UiFontSizes
+// regression: emoji fallback must survive every UiFontSizes
 // rebuild path (set_dpi, ensure_size, create_default_collection) and
 // inject_fallbacks must be idempotent so DPI changes + GPU-recovery
 // re-injection cannot grow the fallback chain unboundedly.
-// See bug-tracker/plans/completed/BUG-04-004/00-overview.md.
+// See bug-tracker/plans/completed/00-overview.md.
 
-/// Regression: BUG-04-004 — emoji vanishes from tab titles after DPI change.
+/// Regression: emoji vanishes from tab titles after DPI change.
 /// Pins that the default collection retains its injected fallback across
 /// `rebuild_all` (triggered by `set_dpi`).
 #[test]
@@ -301,11 +301,11 @@ fn set_dpi_preserves_injected_fallbacks() {
     assert_eq!(
         default_fallback_count(&reg),
         1,
-        "DPI rebuild must preserve injected fallback (BUG-04-004)"
+        "DPI rebuild must preserve injected fallback"
     );
 }
 
-/// Regression: BUG-04-004 — every preloaded size (not only the default)
+/// Regression: every preloaded size (not only the default)
 /// must retain the injected fallback after rebuild.
 #[test]
 fn set_dpi_preserves_injected_fallbacks_all_collections() {
@@ -326,7 +326,7 @@ fn set_dpi_preserves_injected_fallbacks_all_collections() {
     }
 }
 
-/// Negative pin: `set_dpi` that is a no-op (same DPI) must not duplicate or
+/// Regression guard: `set_dpi` that is a no-op (same DPI) must not duplicate or
 /// drop fallbacks. Guards against a regression that re-enters the rebuild
 /// path unnecessarily.
 #[test]
@@ -355,7 +355,7 @@ fn inject_fallbacks_empty_data_is_noop() {
     assert_eq!(default_fallback_count(&reg), before);
 }
 
-/// Regression: BUG-04-004 — `ensure_size` path.
+/// Regression: `ensure_size` path.
 /// A size added AFTER `inject_fallbacks` must still carry the injected
 /// fallback. Pins the "new-collection factory produces a complete
 /// collection" invariant on the runtime-size-registration path.
@@ -378,7 +378,7 @@ fn ensure_size_applies_injected_fallbacks() {
     );
 }
 
-/// Regression: BUG-04-004 — `create_default_collection` path.
+/// Regression: `create_default_collection` path.
 /// The standalone default collection returned by `create_default_collection`
 /// must carry injected fallbacks. Used by `WindowRenderer::new_ui_only`
 /// for dialog/tab-bar flows where a standalone terminal-font slot is built
@@ -440,7 +440,7 @@ fn init_order_hook_first_then_injection_survives_dpi() {
     // Step 2: inject (mirrors `WindowRenderer::new`'s post-construction step).
     reg.inject_fallbacks(&[test_emoji_font_data()]);
 
-    // Step 3: DPI rebuild (the BUG-04-004 trigger).
+    // Step 3: DPI rebuild (the trigger).
     reg.set_dpi(192.0).expect("DPI rebuild must succeed");
 
     let fc = reg.default_collection().unwrap();
@@ -488,7 +488,7 @@ fn repeated_dpi_transitions_do_not_grow_fallbacks() {
     }
 }
 
-/// Semantic pin: after a DPI rebuild, the fallback's underlying `Arc`
+/// Property: after a DPI rebuild, the fallback's underlying `Arc`
 /// matches the originally-injected `Arc` (bytes are the same data, not a
 /// fresh load). This distinguishes the `append_fallback_data` replay path
 /// (which clones `Arc` references) from alternative (A) — mutating

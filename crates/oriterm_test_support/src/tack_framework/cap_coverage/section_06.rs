@@ -11,7 +11,7 @@
 //!
 //! All 27 caps live in `covered`. The `exempt` slice is empty;
 //! Section 06 leaves no terminfo cap unowned. The
-//! stale-exemption negative pin in
+//! stale-exemption regression guard in
 //! `oriterm_core/tests/tack/test_menu/cap_coverage_matrix.rs`
 //! verifies no cap appears in both lists.
 

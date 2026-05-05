@@ -220,18 +220,18 @@ fn consumed_seqno_tracks_consumer() {
     assert_eq!(db.consumed_seqno(), 3);
 }
 
-// --- BUG-11-002: front-buffer shrink at quiescence ---
+// --- : front-buffer shrink at quiescence ---
 
 /// `maybe_shrink_front` reduces front-buffer capacity at quiescence.
 ///
-/// Regression: BUG-11-002. After a flood, the front buffer holds the
+/// Regression:. After a flood, the front buffer holds the
 /// most-recent peak content — without an explicit shrink it retains the
 /// peak capacity indefinitely. Pins that `maybe_shrink_front` calls
 /// `RenderableContent::maybe_shrink` on the front (cap > 4*len &&
 /// cap > 4096 → shrink_to(2*len)) without mutating `seqno` /
 /// `consumed_seqno`. Sync-suppression invariants pinned by callers of
 /// `seqno()` / `consumed_seqno()` must be preserved.
-/// See: bug-tracker/plans/BUG-11-002/section-03-tdd-matrix.md §"Edge cases" — front-buffer shrink.
+/// See: bug-tracker/plans//section-03-tdd-matrix.md §"Edge cases" — front-buffer shrink.
 #[test]
 fn front_buffer_shrinks_at_quiescence() {
     let db = SnapshotDoubleBuffer::new();

@@ -146,13 +146,13 @@ pub struct PaneIoThread<S: EffectSink + 'static> {
     /// by [`unpack_pending_resize`]. `apply_pending_resize` swaps the
     /// slot to the sentinel and processes the resize. Cloned from
     /// [`PaneIoHandle::pending_resize`] in [`new_with_handle`].
-    /// Regression: BUG-11-025.
+    /// Regression:.
     pub(super) pending_resize: Arc<AtomicU64>,
     /// Test-only counter — incremented at the top of
     /// [`Self::maybe_shrink_buffers`]. Pins that the OUTER run loop
     /// (not the `select!` `default(timeout)` arm) is the call path,
-    /// per §03 negative pin 3 in
-    /// `bug-tracker/plans/BUG-11-002/section-03-tdd-matrix.md`.
+    /// per §03 regression guard 3 in
+    /// `bug-tracker/plans//section-03-tdd-matrix.md`.
     /// Production builds carry zero overhead — the field is `#[cfg(test)]`.
     /// Shared with the spawning test thread via `Arc` so the test can
     /// observe the counter while the IO thread runs.
@@ -169,7 +169,7 @@ impl<S: EffectSink> PaneIoThread<S> {
     /// unconditionally before each command in the drain (so a
     /// `send_resize()` that lands during the drain still flushes
     /// before the next command). Closes the race surfaced in §04
-    /// Plan TPR Round 1 Codex F1; broadened to all commands per
+    /// review round 1 Codex F1; broadened to all commands per
     /// Round 3 Gemini F1.
     pub(super) fn apply_pending_resize(&mut self) {
         // Empty-slot fast path: an `Acquire` load + branch costs ~one
@@ -177,10 +177,9 @@ impl<S: EffectSink> PaneIoThread<S> {
         // call (the common case is no pending resize). A second writer
         // landing between the load and the swap still wins last-writer-
         // wins via the swap below — the load is purely a fast-skip
-        // gate, not the source of truth. Per §04 Plan TPR Round 1 §05
-        // Step 2 doc-comment ("Idempotent — empty-slot fast path is one
-        // atomic load + one branch") and Round 1 code-TPR codex F2 +
-        // gemini F1 (WASTE: unconditional swap in hot drain path).
+        // gate, not the source of truth (idempotent: empty-slot fast path
+        // is one atomic load + one branch — WASTE-finding fix avoiding an
+        // unconditional swap in the hot drain path).
         if self.pending_resize.load(Ordering::Acquire) == PENDING_RESIZE_NONE {
             return;
         }
@@ -283,10 +282,10 @@ impl<S: EffectSink> PaneIoThread<S> {
         self.processor.advance(&mut self.terminal, bytes);
 
         // 3b. Set grid_dirty after parsing — the VTE handler does not fire
-        //     Event::Wakeup itself. The old reader thread did this explicitly
-        //     after each parse chunk. Respects Mode 2026 (synchronized output):
-        //     when `TermMode::SYNC_UPDATE` is set, skip the dirty flag so
-        //     `maybe_produce_snapshot()` defers snapshot publication.
+        // Event::Wakeup itself. The old reader thread did this explicitly
+        // after each parse chunk. Respects Mode 2026 (synchronized output):
+        // when `TermMode::SYNC_UPDATE` is set, skip the dirty flag so
+        // `maybe_produce_snapshot()` defers snapshot publication.
         if !self.terminal.mode().contains(TermMode::SYNC_UPDATE) {
             self.grid_dirty.store(true, Ordering::Release);
         }
@@ -295,9 +294,9 @@ impl<S: EffectSink> PaneIoThread<S> {
         self.post_parse_housekeeping(evicted_before);
 
         // 4. Drain queued effects into MuxEvents. Placed INSIDE per-chunk
-        //    boundary (not only at the top of handle_bytes_chunked) so a
-        //    1 MB forwarded read doesn't accumulate 16 chunks worth of
-        //    effects before they reach the main thread.
+        // boundary (not only at the top of handle_bytes_chunked) so a
+        // 1 MB forwarded read doesn't accumulate 16 chunks worth of
+        // effects before they reach the main thread.
         self.drain_effects_into_mux_events();
     }
 
@@ -392,7 +391,7 @@ impl<S: EffectSink> PaneIoThread<S> {
     /// the IO thread re-enters `select!`. This is the canonical "about
     /// to block waiting for work" boundary — see §02 fix-consensus
     /// agreement against the `select!` default-arm anchor in
-    /// `bug-tracker/plans/BUG-11-002/`.
+    /// `bug-tracker/plans//`.
     ///
     /// Two surfaces shrink:
     /// 1. `snapshot_buf` — IO-thread scratch buffer. Receives the OLD
@@ -413,9 +412,9 @@ impl<S: EffectSink> PaneIoThread<S> {
     /// `maybe_shrink_vec(&mut effects_buf)` here would gate-fire
     /// (`cap > 4*0 && cap > 4096`) and `shrink_to(0)`, forcing
     /// reallocation on every effect push during the next flood. Pinned
-    /// by §03 negative pin "`effects_buf` preserved".
+    /// by §03 regression guard "`effects_buf` preserved".
     ///
-    /// Regression: BUG-11-002.
+    /// Regression:.
     fn maybe_shrink_buffers(&mut self) {
         #[cfg(test)]
         self.shrink_call_count.fetch_add(1, Ordering::Release);

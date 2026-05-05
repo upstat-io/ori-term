@@ -35,7 +35,7 @@ fn main() -> ExitCode {
 
     // Wrapper-resident gate: catalog, baseline, audit-files all live at the
     // wrapper root. Standalone term_repo checkout = graceful skip + exit 0
-    // per `.claude/rules/tests.md §Graceful Skip Protocol`. Explicit gates
+    // Skip Protocol`. Explicit gates
     // (catalog/baseline/audits) require the wrapper; without it there is
     // nothing this binary can do. `paths::catalog_dir()` is the SSOT entry
     // point — every wrapper-relative subpath below derives from it.
@@ -147,7 +147,7 @@ fn main() -> ExitCode {
 /// categories are alphabetically ordered), then the full sorted list
 /// (by category, then `final_byte`). The histogram surfaces at a
 /// glance which categories drive the backlog; without it, an
-/// unsorted dump (BUG-07-019 retrospective: 49 entries pre-fix) is
+/// unsorted dump ( retrospective: 49 entries pre-fix) is
 /// hard to scan.
 fn report_uncataloged_backlog(
     spool_dir: &Path,

@@ -26,7 +26,7 @@ use wheel_dispatch::{WheelDispatch, dispatch_wheel};
 /// Direction of a mouse wheel event after `parse_wheel_delta` normalization.
 ///
 /// Replaces the historical `scroll_up: bool` pattern per
-/// `impl-hygiene.md §Parameter Hygiene` — boolean parameters with
+/// Hygiene — boolean parameters with
 /// implicit semantics are a design smell.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ScrollDirection {
@@ -121,7 +121,7 @@ fn classify_wheel_event(mode: TermMode, shift_held: bool) -> WheelTier {
 /// §"The cursor keys transmit the following escape sequences depending
 /// on the mode specified via the DECCKM escape sequence"; xterm
 /// `scrollbar.c` `MODE_DECCKM ? ANSI_SS3 : ANSI_CSI` selection).
-/// See BUG-08-015 root cause analysis §1B. The (DECCKM × direction) →
+/// See root cause analysis §1B. The (DECCKM × direction) →
 /// bytes mapping is the SSOT defined in [`crate::key_encoding::cursor_keys`];
 /// keyboard cursor-arrow encoding (`legacy.rs::encode_legacy`) and Kitty's
 /// CSI-u terminator selection (`kitty.rs::legacy_csi_info`) route through

@@ -4,12 +4,12 @@
 //! `Processor` and asserts the correct apex effect:
 //!
 //! - `Pc` ∈ {`c`, `s`, `p`} + base64 payload → `Effect::Host(HostEffect::
-//!   ClipboardStore { selection, data })` (fire-and-forget store).
+//! ClipboardStore { selection, data })` (fire-and-forget store).
 //! - `Pc` ∈ {`c`, `s`, `p`} + `?` payload → `Effect::HostRequest(HostRequest::
-//!   ClipboardLoad { selection, clipboard_char, terminator, reply })` (load
-//!   request carrying a `ResponseToken` the consumer fulfills).
+//! ClipboardLoad { selection, clipboard_char, terminator, reply })` (load
+//! request carrying a `ResponseToken` the consumer fulfills).
 //! - Unknown `Pc` (e.g. `q`) and invalid base64 are silently dropped; no
-//!   effect is emitted.
+//! effect is emitted.
 //!
 //! The `ResponseToken` round-trip to `PtyEffect::Write` is verified in
 //! `oriterm_mux/src/pane/io_thread/response_poll/tests.rs` (`osc52_register_
@@ -122,7 +122,7 @@ fn osc52_store_clipboard_p() {
     assert_eq!(data, "primary");
 }
 
-/// Negative pin: `Pc = q` has no `ClipboardSelection` variant, so the
+/// Regression guard: `Pc = q` has no `ClipboardSelection` variant, so the
 /// handler silently drops the payload without emitting any effect.
 ///
 /// `ClipboardSelection` at `oriterm_core/src/effect/families/host.rs:110-117`
@@ -137,7 +137,7 @@ fn osc52_store_clipboard_q_dropped() {
     assert_no_clipboard_effect(&harness);
 }
 
-/// Negative pin: the store path rejects invalid base64 silently.
+/// Regression guard: the store path rejects invalid base64 silently.
 ///
 /// `osc_clipboard_store` (`oriterm_core/src/term/handler/osc.rs:115-121`)
 /// uses `Base64.decode` and returns without emitting when decoding fails.

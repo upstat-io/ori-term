@@ -132,6 +132,25 @@ fn header_version_field_preserved() {
     assert_eq!(decoded.version, 5);
 }
 
+/// Regression pin: `CURRENT_PROTOCOL_VERSION` is an alias of
+/// `PROTOCOL_VERSION`. The frame-header version (every encoded
+/// frame) and the Hello payload version (Hello/HelloAck handshake)
+/// MUST agree byte-for-byte; a future bump that touches one literal
+/// without the other would silently produce a frame whose header
+/// claims version N while the handshake advertises N±1, causing
+/// every handshake to fail with `version mismatch` even though the
+/// peers think they're talking the same protocol. The alias makes
+/// this physically impossible.
+#[test]
+fn protocol_version_constants_agree() {
+    use super::CURRENT_PROTOCOL_VERSION;
+    assert_eq!(
+        PROTOCOL_VERSION, CURRENT_PROTOCOL_VERSION,
+        "frame-header PROTOCOL_VERSION and handshake CURRENT_PROTOCOL_VERSION \
+         must be the same byte — alias enforces this at compile time"
+    );
+}
+
 // -- MsgType tests --
 
 #[test]
@@ -168,7 +187,6 @@ fn msg_type_roundtrip_all() {
         MsgType::RequestNewTab,
         MsgType::SetPanePriority,
         MsgType::SignalChild,
-        MsgType::ClearBell,
         MsgType::IsWriteStalled,
         MsgType::HelloAck,
         MsgType::PaneClosedAck,
@@ -528,7 +546,6 @@ fn sample_snapshot() -> PaneSnapshot {
         search_focused: None,
         search_total_matches: 0,
         has_unseen_output: false,
-        has_bell: false,
         mouse_cursor_icon: None,
     }
 }
@@ -618,7 +635,6 @@ fn snapshot_with_cjk_emoji_combining() {
         search_focused: None,
         search_total_matches: 0,
         has_unseen_output: false,
-        has_bell: false,
         mouse_cursor_icon: None,
     };
 
@@ -1024,7 +1040,7 @@ fn wire_bytes_stable_for_hello() {
 
     // Pin header bytes: magic, version, flags, msg_type, seq, payload_len.
     assert_eq!(buf[0..2], [0x54, 0x4F]); // FRAME_MAGIC LE
-    assert_eq!(buf[2], 1); // PROTOCOL_VERSION
+    assert_eq!(buf[2], PROTOCOL_VERSION); // PROTOCOL_VERSION (currently 2)
     assert_eq!(buf[3], 0); // flags
     assert_eq!(buf[4..6], [0x01, 0x01]); // MsgType::Hello
     assert_eq!(buf[6..10], [0x01, 0x00, 0x00, 0x00]); // seq=1
@@ -1116,7 +1132,6 @@ fn roundtrip_large_pane_snapshot() {
         search_focused: None,
         search_total_matches: 0,
         has_unseen_output: false,
-        has_bell: false,
         mouse_cursor_icon: None,
     };
 
@@ -1389,7 +1404,7 @@ fn set_pane_priority_is_fire_and_forget() {
     assert!(!pdu.is_notification());
 }
 
-// -- BUG-11-011 daemon-mode HostRequest round-trip --
+// -- daemon-mode HostRequest round-trip --
 
 #[test]
 fn roundtrip_notify_host_clipboard_load() {
@@ -1499,10 +1514,10 @@ fn msg_type_decodes_new_host_request_ids() {
 // FrameReader forward-compat tests live in `server/tests.rs` where FrameReader
 // is accessible (it's a private server submodule).
 
-// -- BUG-11-020 IsWriteStalled / WriteStalledStatus round-trips --
+// -- IsWriteStalled / WriteStalledStatus round-trips --
 
-/// Regression: BUG-11-020 — IsWriteStalled request must round-trip losslessly.
-/// See: bug-tracker/plans/BUG-11-020/00-overview.md
+/// Regression: IsWriteStalled request must round-trip losslessly.
+/// See: bug-tracker/plans//00-overview.md
 #[test]
 fn roundtrip_is_write_stalled_request() {
     let pdu = MuxPdu::IsWriteStalled {
@@ -1512,8 +1527,8 @@ fn roundtrip_is_write_stalled_request() {
     assert_eq!(frame.pdu, pdu);
 }
 
-/// Regression: BUG-11-020 — WriteStalledStatus { stalled: true } must round-trip losslessly.
-/// See: bug-tracker/plans/BUG-11-020/00-overview.md
+/// Regression: WriteStalledStatus { stalled: true } must round-trip losslessly.
+/// See: bug-tracker/plans//00-overview.md
 #[test]
 fn roundtrip_write_stalled_status_true() {
     let pdu = MuxPdu::WriteStalledStatus {
@@ -1524,8 +1539,8 @@ fn roundtrip_write_stalled_status_true() {
     assert_eq!(frame.pdu, pdu);
 }
 
-/// Regression: BUG-11-020 — WriteStalledStatus { stalled: false } must round-trip losslessly.
-/// See: bug-tracker/plans/BUG-11-020/00-overview.md
+/// Regression: WriteStalledStatus { stalled: false } must round-trip losslessly.
+/// See: bug-tracker/plans//00-overview.md
 #[test]
 fn roundtrip_write_stalled_status_false() {
     let pdu = MuxPdu::WriteStalledStatus {
@@ -1536,18 +1551,18 @@ fn roundtrip_write_stalled_status_false() {
     assert_eq!(frame.pdu, pdu);
 }
 
-/// Regression: BUG-11-020 — IsWriteStalled is not fire-and-forget; it expects a response.
-/// See: bug-tracker/plans/BUG-11-020/section-03-tdd-matrix.md (classifier pin)
+/// Regression: IsWriteStalled is not fire-and-forget; it expects a response.
+/// See: bug-tracker/plans//section-03-tdd-matrix.md (classifier pin)
 #[test]
-fn is_write_stalled_request_is_not_fire_and_forget() {
+fn write_stalled_request_classified_as_round_trip_rpc() {
     let pdu = MuxPdu::IsWriteStalled {
         pane_id: PaneId::from_raw(1),
     };
     assert!(!pdu.is_fire_and_forget());
 }
 
-/// Regression: BUG-11-020 — WriteStalledStatus is a response, not a push notification.
-/// See: bug-tracker/plans/BUG-11-020/section-03-tdd-matrix.md (classifier pin)
+/// Regression: WriteStalledStatus is a response, not a push notification.
+/// See: bug-tracker/plans//section-03-tdd-matrix.md (classifier pin)
 #[test]
 fn write_stalled_status_response_is_not_notification() {
     let pdu = MuxPdu::WriteStalledStatus {
@@ -1557,8 +1572,8 @@ fn write_stalled_status_response_is_not_notification() {
     assert!(!pdu.is_notification());
 }
 
-/// Regression: BUG-11-020 — MsgType IDs decode for the new variants.
-/// See: bug-tracker/plans/BUG-11-020/section-03-tdd-matrix.md
+/// Regression: MsgType IDs decode for the new variants.
+/// See: bug-tracker/plans//section-03-tdd-matrix.md
 #[test]
 fn msg_type_decodes_is_write_stalled_ids() {
     assert_eq!(MsgType::from_u16(0x012E), Some(MsgType::IsWriteStalled));

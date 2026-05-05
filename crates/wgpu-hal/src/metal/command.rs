@@ -110,21 +110,21 @@ impl super::CommandEncoder {
             debug_assert!(self.state.render.is_none() && self.state.compute.is_none());
             let cmd_buf = self.raw_cmd_buf.as_ref().unwrap();
 
-            // Take care of pending timer queries.
-            // If we can't use `sample_counters_in_buffer` we have to create a dummy blit encoder!
-            //
-            // There is a known bug in Metal where blit encoders won't write timestamps if they don't have a blit operation.
-            // See https://github.com/gpuweb/gpuweb/issues/2046#issuecomment-1205793680 & https://source.chromium.org/chromium/chromium/src/+/006c4eb70c96229834bbaf271290f40418144cd3:third_party/dawn/src/dawn/native/metal/BackendMTL.mm;l=350
-            //
-            // To make things worse:
-            // * what counts as a blit operation is a bit unclear, experimenting seemed to indicate that resolve_counters doesn't count.
-            // * in some cases (when?) using `set_start_of_encoder_sample_index` doesn't work, so we have to use `set_end_of_encoder_sample_index` instead
-            //
-            // All this means that pretty much the only *reliable* thing as of writing is to:
-            // * create a dummy blit encoder using set_end_of_encoder_sample_index
-            // * do a dummy write that is known to be not optimized out.
-            // * close the encoder since we used set_end_of_encoder_sample_index and don't want to get any extra stuff in there.
-            // * create another encoder for whatever we actually had in mind.
+ // Take care of pending timer queries.
+ // If we can't use `sample_counters_in_buffer` we have to create a dummy blit encoder!
+ //
+ // There is a known bug in Metal where blit encoders won't write timestamps if they don't have a blit operation.
+ // See https://github.com/gpuweb/gpuweb/issues/2046#issuecomment-1205793680 & https://source.chromium.org/chromium/chromium/src/+/006c4eb70c96229834bbaf271290f40418144cd3:third_party/dawn/src/dawn/native/metal/BackendMTL.mm;l=350
+ //
+ // To make things worse:
+ // * what counts as a blit operation is a bit unclear, experimenting seemed to indicate that resolve_counters doesn't count.
+ // * in some cases (when?) using `set_start_of_encoder_sample_index` doesn't work, so we have to use `set_end_of_encoder_sample_index` instead
+ //
+ // All this means that pretty much the only *reliable* thing as of writing is to:
+ // * create a dummy blit encoder using set_end_of_encoder_sample_index
+ // * do a dummy write that is known to be not optimized out.
+ // * close the encoder since we used set_end_of_encoder_sample_index and don't want to get any extra stuff in there.
+ // * create another encoder for whatever we actually had in mind.
             let supports_sample_counters_in_buffer = self
                 .shared
                 .private_caps
@@ -144,8 +144,8 @@ impl super::CommandEncoder {
                         sba_descriptor
                             .set_sample_buffer(set.counter_sample_buffer.as_ref().unwrap());
 
-                        // Here be dragons:
-                        // As mentioned above, for some reasons using the start of the encoder won't yield any results sometimes!
+ // Here be dragons:
+ // As mentioned above, for some reasons using the start of the encoder won't yield any results sometimes!
                         sba_descriptor
                             .set_start_of_encoder_sample_index(metal::COUNTER_DONT_SAMPLE);
                         sba_descriptor.set_end_of_encoder_sample_index(index as _);
@@ -154,9 +154,9 @@ impl super::CommandEncoder {
                     }
                     let encoder = cmd_buf.blit_command_encoder_with_descriptor(descriptor);
 
-                    // As explained above, we need to do some write:
-                    // Conveniently, we have a buffer with every query set, that we can use for this for a dummy write,
-                    // since we know that it is going to be overwritten again on timer resolve and HAL doesn't define its state before that.
+ // As explained above, we need to do some write:
+ // Conveniently, we have a buffer with every query set, that we can use for this for a dummy write,
+ // since we know that it is going to be overwritten again on timer resolve and HAL doesn't define its state before that.
                     let raw_range = NSRange {
                         location: last_query.as_ref().unwrap().1 as u64 * crate::QUERY_SIZE,
                         length: 1,
@@ -177,8 +177,8 @@ impl super::CommandEncoder {
 
             let encoder = self.state.blit.as_ref().unwrap();
 
-            // UNTESTED:
-            // If the above described issue with empty blit encoder applies to `sample_counters_in_buffer` as well, we should use the same workaround instead!
+ // UNTESTED:
+ // If the above described issue with empty blit encoder applies to `sample_counters_in_buffer` as well, we should use the same workaround instead!
             for (set, index) in self.state.pending_timer_queries.drain(..) {
                 debug_assert!(supports_sample_counters_in_buffer);
                 encoder.sample_counters_in_buffer(
@@ -214,7 +214,7 @@ impl super::CommandEncoder {
         self.leave_blit();
     }
 
-    /// Updates the bindings for a single shader stage, called in `set_bind_group`.
+ /// Updates the bindings for a single shader stage, called in `set_bind_group`.
     fn update_bind_group_state(
         &mut self,
         encoder: Encoder<'_>,
@@ -327,8 +327,8 @@ impl super::CommandState {
                 .unwrap_or_default()
         }));
 
-        // Extend with the sizes of the mapped vertex buffers, in the order
-        // they were added to the map.
+ // Extend with the sizes of the mapped vertex buffers, in the order
+ // they were added to the map.
         result_sizes.extend(stage_info.vertex_buffer_mappings.iter().map(|vbm| {
             self.vertex_buffer_size_map
                 .get(&(vbm.id as u64))
@@ -369,8 +369,8 @@ impl crate::CommandEncoder for super::CommandEncoder {
 
     unsafe fn discard_encoding(&mut self) {
         self.leave_blit();
-        // when discarding, we don't have a guarantee that
-        // everything is in a good state, so check carefully
+ // when discarding, we don't have a guarantee that
+ // everything is in a good state, so check carefully
         if let Some(encoder) = self.state.render.take() {
             encoder.end_encoding();
         }
@@ -381,7 +381,7 @@ impl crate::CommandEncoder for super::CommandEncoder {
     }
 
     unsafe fn end_encoding(&mut self) -> Result<super::CommandBuffer, crate::DeviceError> {
-        // Handle pending timer query if any.
+ // Handle pending timer query if any.
         if !self.state.pending_timer_queries.is_empty() {
             self.leave_blit();
             self.enter_blit();
@@ -401,7 +401,7 @@ impl crate::CommandEncoder for super::CommandEncoder {
     where
         I: Iterator<Item = super::CommandBuffer>,
     {
-        //do nothing
+ //do nothing
     }
 
     unsafe fn transition_buffers<'a, T>(&mut self, _barriers: T)
@@ -462,7 +462,7 @@ impl crate::CommandEncoder for super::CommandEncoder {
         for copy in regions {
             let src_origin = conv::map_origin(&copy.src_base.origin);
             let dst_origin = conv::map_origin(&copy.dst_base.origin);
-            // no clamping is done: Metal expects physical sizes here
+ // no clamping is done: Metal expects physical sizes here
             let extent = conv::map_copy_extent(&copy.size);
             encoder.copy_from_texture(
                 &src.raw,
@@ -489,7 +489,7 @@ impl crate::CommandEncoder for super::CommandEncoder {
         let encoder = self.enter_blit();
         for copy in regions {
             let dst_origin = conv::map_origin(&copy.texture_base.origin);
-            // Metal expects buffer-texture copies in virtual sizes
+ // Metal expects buffer-texture copies in virtual sizes
             let extent = copy
                 .texture_base
                 .max_copy_size(&dst.copy_size)
@@ -500,9 +500,9 @@ impl crate::CommandEncoder for super::CommandEncoder {
                     .rows_per_image
                     .map_or(0, |v| v as u64 * bytes_per_row)
             } else {
-                // Don't pass a stride when updating a single layer, otherwise metal validation
-                // fails when updating a subset of the image due to the stride being larger than
-                // the amount of data to copy.
+ // Don't pass a stride when updating a single layer, otherwise metal validation
+ // fails when updating a subset of the image due to the stride being larger than
+ // the amount of data to copy.
                 0
             };
             encoder.copy_from_buffer_to_texture(
@@ -532,7 +532,7 @@ impl crate::CommandEncoder for super::CommandEncoder {
         let encoder = self.enter_blit();
         for copy in regions {
             let src_origin = conv::map_origin(&copy.texture_base.origin);
-            // Metal expects texture-buffer copies in virtual sizes
+ // Metal expects texture-buffer copies in virtual sizes
             let extent = copy
                 .texture_base
                 .max_copy_size(&src.copy_size)
@@ -602,8 +602,8 @@ impl crate::CommandEncoder for super::CommandEncoder {
         let sample_buffer = set.counter_sample_buffer.as_ref().unwrap();
         let with_barrier = true;
 
-        // Try to use an existing encoder for timestamp query if possible.
-        // This works only if it's supported for the active encoder.
+ // Try to use an existing encoder for timestamp query if possible.
+ // This works only if it's supported for the active encoder.
         if let (true, Some(encoder)) = (
             support.contains(TimestampQuerySupport::ON_BLIT_ENCODER),
             self.state.blit.as_ref(),
@@ -620,14 +620,14 @@ impl crate::CommandEncoder for super::CommandEncoder {
         ) {
             encoder.sample_counters_in_buffer(sample_buffer, index as _, with_barrier);
         } else {
-            // If we're here it means we either have no encoder open, or it's not supported to sample within them.
-            // If this happens with render/compute open, this is an invalid usage!
+ // If we're here it means we either have no encoder open, or it's not supported to sample within them.
+ // If this happens with render/compute open, this is an invalid usage!
             debug_assert!(self.state.render.is_none() && self.state.compute.is_none());
 
-            // But otherwise it means we'll put defer this to the next created encoder.
+ // But otherwise it means we'll put defer this to the next created encoder.
             self.state.pending_timer_queries.push((set.clone(), index));
 
-            // Ensure we didn't already have a blit open.
+ // Ensure we didn't already have a blit open.
             self.leave_blit();
         };
     }
@@ -673,7 +673,7 @@ impl crate::CommandEncoder for super::CommandEncoder {
         }
     }
 
-    // render
+ // render
 
     unsafe fn begin_render_pass(
         &mut self,
@@ -697,7 +697,7 @@ impl crate::CommandEncoder for super::CommandEncoder {
                         at_descriptor.set_depth_plane(depth_slice as u64);
                     }
                     if let Some(ref resolve) = at.resolve_target {
-                        //Note: the selection of levels and slices is already handled by `TextureView`
+ //Note: the selection of levels and slices is already handled by `TextureView`
                         at_descriptor.set_resolve_texture(Some(&resolve.view.raw));
                     }
                     let load_action = if at.ops.contains(crate::AttachmentOps::LOAD) {
@@ -821,19 +821,19 @@ impl crate::CommandEncoder for super::CommandEncoder {
                 descriptor
                     .set_visibility_result_buffer(Some(occlusion_query_set.raw_buffer.as_ref()))
             }
-            // This strangely isn't mentioned in https://developer.apple.com/documentation/metal/improving-rendering-performance-with-vertex-amplification.
-            // The docs for [`renderTargetArrayLength`](https://developer.apple.com/documentation/metal/mtlrenderpassdescriptor/rendertargetarraylength)
-            // also say "The number of active layers that all attachments must have for layered rendering," implying it is only for layered rendering.
-            // However, when I don't set this, I get undefined behavior in nonzero layers, and all non-apple examples of vertex amplification set it.
-            // So this is just one of those undocumented requirements.
+ // This strangely isn't mentioned in https://developer.apple.com/documentation/metal/improving-rendering-performance-with-vertex-amplification.
+ // The docs for [`renderTargetArrayLength`](https://developer.apple.com/documentation/metal/mtlrenderpassdescriptor/rendertargetarraylength)
+ // also say "The number of active layers that all attachments must have for layered rendering," implying it is only for layered rendering.
+ // However, when I don't set this, I get undefined behavior in nonzero layers, and all non-apple examples of vertex amplification set it.
+ // So this is just one of those undocumented requirements.
             if let Some(mv) = desc.multiview_mask {
                 descriptor.set_render_target_array_length(32 - mv.leading_zeros() as u64);
             }
             let raw = self.raw_cmd_buf.as_ref().unwrap();
             let encoder = raw.new_render_command_encoder(descriptor);
             if let Some(mv) = desc.multiview_mask {
-                // Most likely the API just wasn't thought about enough. It's not like they ever allow you
-                // to use enough views to overflow a 32-bit bitmask.
+ // Most likely the API just wasn't thought about enough. It's not like they ever allow you
+ // to use enough views to overflow a 32-bit bitmask.
                 let mv = mv.get();
                 let msb = 32 - mv.leading_zeros();
                 let mut maps: SmallVec<[metal::VertexAmplificationViewMapping; 32]> =
@@ -874,7 +874,7 @@ impl crate::CommandEncoder for super::CommandEncoder {
         if let Some(encoder) = render_encoder {
             self.update_bind_group_state(
                 Encoder::Vertex(&encoder),
-                // All zeros, as vs comes first
+ // All zeros, as vs comes first
                 super::ResourceData::default(),
                 bg_info,
                 dynamic_offsets,
@@ -883,7 +883,7 @@ impl crate::CommandEncoder for super::CommandEncoder {
             );
             self.update_bind_group_state(
                 Encoder::Task(&encoder),
-                // All zeros, as ts comes first
+ // All zeros, as ts comes first
                 super::ResourceData::default(),
                 bg_info,
                 dynamic_offsets,
@@ -916,7 +916,7 @@ impl crate::CommandEncoder for super::CommandEncoder {
                 group_index,
                 group,
             );
-            // Call useResource on all textures and buffers used indirectly so they are alive
+ // Call useResource on all textures and buffers used indirectly so they are alive
             for (resource, use_info) in group.resources_to_use.iter() {
                 encoder.use_resource_at(resource.as_native(), use_info.uses, use_info.stages);
             }
@@ -943,7 +943,7 @@ impl crate::CommandEncoder for super::CommandEncoder {
                 group_index,
                 group,
             );
-            // Call useResource on all textures and buffers used indirectly so they are alive
+ // Call useResource on all textures and buffers used indirectly so they are alive
             for (resource, use_info) in group.resources_to_use.iter() {
                 if !use_info.visible_in_compute {
                     continue;
@@ -1088,7 +1088,7 @@ impl crate::CommandEncoder for super::CommandEncoder {
             }
         }
         if let Some(ts_info) = &pipeline.ts_info {
-            // update the threadgroup memory sizes
+ // update the threadgroup memory sizes
             while self.state.stage_infos.ms.work_group_memory_sizes.len()
                 < ts_info.work_group_memory_sizes.len()
             {
@@ -1121,11 +1121,11 @@ impl crate::CommandEncoder for super::CommandEncoder {
             }
         }
         if let Some(_ms_info) = &pipeline.ms_info {
-            // So there isn't an equivalent to
-            // https://developer.apple.com/documentation/metal/mtlrendercommandencoder/setthreadgroupmemorylength(_:offset:index:)
-            // for mesh shaders. This is probably because the CPU has less control over the dispatch sizes and such. Interestingly
-            // it also affects mesh shaders without task/object shaders, even though none of compute, task or fragment shaders
-            // behave this way.
+ // So there isn't an equivalent to
+ // https://developer.apple.com/documentation/metal/mtlrendercommandencoder/setthreadgroupmemorylength(_:offset:index:)
+ // for mesh shaders. This is probably because the CPU has less control over the dispatch sizes and such. Interestingly
+ // it also affects mesh shaders without task/object shaders, even though none of compute, task or fragment shaders
+ // behave this way.
             if let Some((index, sizes)) = self
                 .state
                 .make_sizes_buffer_update(naga::ShaderStage::Mesh, &mut self.temp.binding_sizes)
@@ -1204,7 +1204,7 @@ impl crate::CommandEncoder for super::CommandEncoder {
         });
     }
     unsafe fn set_scissor_rect(&mut self, rect: &crate::Rect<u32>) {
-        //TODO: support empty scissors by modifying the viewport
+ //TODO: support empty scissors by modifying the viewport
         let scissor = MTLScissorRect {
             x: rect.x as _,
             y: rect.y as _,
@@ -1376,7 +1376,7 @@ impl crate::CommandEncoder for super::CommandEncoder {
         _count_offset: wgt::BufferAddress,
         _max_count: u32,
     ) {
-        //TODO
+ //TODO
     }
     unsafe fn draw_indexed_indirect_count(
         &mut self,
@@ -1386,7 +1386,7 @@ impl crate::CommandEncoder for super::CommandEncoder {
         _count_offset: wgt::BufferAddress,
         _max_count: u32,
     ) {
-        //TODO
+ //TODO
     }
 
     unsafe fn draw_mesh_tasks_indirect_count(
@@ -1400,7 +1400,7 @@ impl crate::CommandEncoder for super::CommandEncoder {
         unreachable!()
     }
 
-    // compute
+ // compute
 
     unsafe fn begin_compute_pass(&mut self, desc: &crate::ComputePassDescriptor<super::QuerySet>) {
         self.begin_pass();
@@ -1412,8 +1412,8 @@ impl crate::CommandEncoder for super::CommandEncoder {
         let raw = self.raw_cmd_buf.as_ref().unwrap();
 
         objc::rc::autoreleasepool(|| {
-            // TimeStamp Queries and ComputePassDescriptor were both introduced in Metal 2.3 (macOS 11, iOS 14)
-            // and we currently only need ComputePassDescriptor for timestamp queries
+ // TimeStamp Queries and ComputePassDescriptor were both introduced in Metal 2.3 (macOS 11, iOS 14)
+ // and we currently only need ComputePassDescriptor for timestamp queries
             let encoder = if self.shared.private_caps.timestamp_query_support.is_empty() {
                 raw.new_compute_command_encoder()
             } else {
@@ -1491,7 +1491,7 @@ impl crate::CommandEncoder for super::CommandEncoder {
             );
         }
 
-        // update the threadgroup memory sizes
+ // update the threadgroup memory sizes
         for (i, current_size) in self
             .state
             .stage_infos
@@ -1569,15 +1569,15 @@ impl crate::CommandEncoder for super::CommandEncoder {
 
 impl Drop for super::CommandEncoder {
     fn drop(&mut self) {
-        // Metal raises an assert when a MTLCommandEncoder is deallocated without a call
-        // to endEncoding. This isn't documented in the general case at
-        // https://developer.apple.com/documentation/metal/mtlcommandencoder, but for the
-        // more-specific MTLComputeCommandEncoder it is stated as a requirement at
-        // https://developer.apple.com/documentation/metal/mtlcomputecommandencoder. It
-        // appears to be a requirement for all MTLCommandEncoder objects. Failing to call
-        // endEncoding causes a crash with the message 'Command encoder released without
-        // endEncoding'. To prevent this, we explicitiy call discard_encoding, which
-        // calls end_encoding on any still-held metal::CommandEncoders.
+ // Metal raises an assert when a MTLCommandEncoder is deallocated without a call
+ // to endEncoding. This isn't documented in the general case at
+ // https://developer.apple.com/documentation/metal/mtlcommandencoder, but for the
+ // more-specific MTLComputeCommandEncoder it is stated as a requirement at
+ // https://developer.apple.com/documentation/metal/mtlcomputecommandencoder. It
+ // appears to be a requirement for all MTLCommandEncoder objects. Failing to call
+ // endEncoding causes a crash with the message 'Command encoder released without
+ // endEncoding'. To prevent this, we explicitiy call discard_encoding, which
+ // calls end_encoding on any still-held metal::CommandEncoders.
         unsafe {
             self.discard_encoding();
         }

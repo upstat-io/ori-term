@@ -538,7 +538,7 @@ fn resize_to_minimum_1x1() {
 
 #[test]
 fn reflow_sparse_cells_preserves_interior_blanks() {
-    // "a  b  c" with interior spaces — reflow must not collapse them.
+    // "a b c" with interior spaces — reflow must not collapse them.
     let mut grid = Grid::new(10, 10);
     grid[Line(0)][Column(0)] = cell('a');
     grid[Line(0)][Column(3)] = cell('b');
@@ -2957,7 +2957,7 @@ fn real_world_resize_ghosting_with_scroll_up() {
         grid.resize(10, new_cols, true);
 
         // 2. Shell responds: scroll_up to push old top rows, then erase + redraw.
-        //    scroll_up resets resize_pushed — this is the bug trigger.
+        // scroll_up resets resize_pushed — this is the bug trigger.
         grid.scroll_up(4);
 
         grid.cursor_mut().set_line(0);
@@ -3129,7 +3129,7 @@ fn reflow_mapping_none_when_cols_unchanged() {
     );
 }
 
-// ---- BUG-08-017 regression tests: DRAWN preserved/restored on reflow ----
+// ---- regression tests: DRAWN preserved/restored on reflow ----
 
 /// `Grid::put_char` path sets DRAWN on every written cell. After a
 /// grow-resize (which triggers reflow), the cloned cells preserve

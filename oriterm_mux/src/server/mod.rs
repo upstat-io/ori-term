@@ -105,7 +105,7 @@ pub struct MuxServer {
     scratch_immediate_push: Vec<PaneId>,
     /// Reusable scratch buffer for closed-pane IDs collected during the
     /// `drain_mux_events` cleanup pass — preserves capacity across cycles
-    /// per `impl-hygiene.md §WASTE`.
+    ///.
     scratch_pane_closed: Vec<PaneId>,
 
     // Server-push state.
@@ -119,7 +119,7 @@ pub struct MuxServer {
     /// `RenderableContent` so the server layer never touches it directly.
     snapshot_cache: SnapshotCache,
 
-    // Daemon-mode HostRequest plumbing (BUG-11-011).
+    // Daemon-mode HostRequest plumbing ().
     /// Pending host-request tokens awaiting client `ReplyHostRequest`.
     pub(super) pending_host_replies: HashMap<HostRequestId, PendingHostReply>,
     /// Allocator for `HostRequestId`s.
@@ -412,7 +412,7 @@ impl MuxServer {
     /// Shared between the host-request dispatch path
     /// (`dispatch_host_request_notification`) and the stateless-fallback
     /// `SinglePaneSubscriber` arm so single-responder queueing has one
-    /// canonical home (per `impl-hygiene.md §SSOT` / §LEAK:algorithmic-duplication).
+    /// canonical home ( / §LEAK:algorithmic-duplication).
     /// `kind` is a short string slug (e.g. `"HostRequest"`,
     /// `"single-responder notification"`) used purely for diagnostic logs
     /// when the queue or the responder is unavailable.
@@ -432,12 +432,12 @@ impl MuxServer {
     }
 
     /// Route a host-request notification to a single responder + register
-    /// the pending entry on successful queueing (BUG-11-011).
+    /// the pending entry on successful queueing ().
     ///
     /// `notif` MUST be `HostClipboardLoad` or `HostColorQuery`; the caller
     /// (`drain_mux_events`) already checked the variant. Token entries are
     /// registered only after a successful `queue_frame` so a failed delivery
-    /// does not leak a token the consumer will never see — codex-002 round 1
+    /// does not leak a token the consumer will never see — -002 round 1
     /// finding.
     fn dispatch_host_request_notification(&mut self, notif: MuxNotification) {
         let pane_id = match &notif {
@@ -487,7 +487,7 @@ impl MuxServer {
         for conn in self.connections.values_mut() {
             conn.unsubscribe(pane_id);
         }
-        // BUG-11-011: drop any pending host-replies for the closed pane
+        // : drop any pending host-replies for the closed pane
         // (consumer apps inside the pane no longer exist; the IO thread
         // returns Cancelled via Arc::strong_count).
         let dropped = self

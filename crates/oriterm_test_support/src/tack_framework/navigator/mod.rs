@@ -29,7 +29,7 @@ pub struct TackNavigator;
 const STEP_TIMEOUT_MS: u64 = 5_000;
 
 /// Stack-friendly upper bound for a single [`MenuStep`]'s combined
-/// `[primary, ...alternates]` anchor slice. Tack menus in practice
+/// `[primary,...alternates]` anchor slice. Tack menus in practice
 /// never produce more than two or three alternates, so 8 is a
 /// comfortable cap with no heap allocation in the navigator loop.
 const MAX_ANCHORS_PER_STEP: usize = 8;
@@ -78,7 +78,7 @@ impl TackNavigator {
     /// appear in the grid, via a single
     /// [`PtySession::wait_for_any`] call.
     ///
-    /// Builds a fixed-size stack array of `[primary, ...alternates]`
+    /// Builds a fixed-size stack array of `[primary,...alternates]`
     /// (capped at [`MAX_ANCHORS_PER_STEP`]) and passes it to
     /// `wait_for_any`. On `Some(_)` the step succeeds. On `None` the
     /// navigator panics with a full-context message listing every

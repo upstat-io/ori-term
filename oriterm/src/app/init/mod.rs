@@ -97,7 +97,7 @@ impl App {
         }
 
         // 4. Allocate a GUI-local window ID (mux is a flat pane server).
-        //    In daemon mode, the window may already be claimed via `--window`.
+        // In daemon mode, the window may already be claimed via `--window`.
         let session_wid = if let Some(claimed) = self.active_window {
             claimed
         } else {
@@ -511,7 +511,7 @@ impl App {
         // `InProcessMux::adopt_standalone_pane` can apply them via
         // `Pane::set_title`/`Pane::set_icon_name` before the pane is
         // registered — `set_title` flips `has_explicit_title` so OSC
-        // 0/2 from the shell can later override but the .lnk-derived
+        // 0/2 from the shell can later override but the.lnk-derived
         // title is what users see first.
         let title_for_log = title.clone();
         let icon_for_log = icon_path.clone();

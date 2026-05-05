@@ -21,7 +21,7 @@
 //! intersection of its output with `extract_namedprivatemode_tuples`
 //! is empty. `--check` unions both sets.
 //!
-//! Organization (per `.claude/rules/code-hygiene.md` §File Size):
+//! Organization ( §File Size)
 //! the walkers live in per-category submodules so no single file
 //! approaches the 500-line limit:
 //!
@@ -273,10 +273,10 @@ pub fn extract_dispatch_map(
 /// descent at this node. csi/osc walkers return `true` when their
 /// scrutinee predicate does NOT match (so nested matches still get
 /// visited); the sgr walker always returns `false` (the SGR
-/// `match param { ... }` is the single top-level match it cares about).
+/// `match param {... }` is the single top-level match it cares about).
 ///
 /// Replaces three identical inline `*Visitor` struct + impl blocks
-/// (csi/osc/sgr) per `impl-hygiene.md §Algorithmic DRY` (3+ instances).
+/// (csi/osc/sgr) — algorithmic DRY (3+ instances).
 pub(super) fn walk_match_exprs<F>(block: &syn::Block, callback: F)
 where
     F: FnMut(&syn::ExprMatch) -> bool,

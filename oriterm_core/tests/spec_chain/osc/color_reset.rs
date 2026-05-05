@@ -145,7 +145,7 @@ fn osc104_specific_indices_resets_only_those() {
     }
 }
 
-/// Negative pin: `OSC 104 ; 999 ; abc ST` contains one out-of-range
+/// Regression guard: `OSC 104 ; 999 ; abc ST` contains one out-of-range
 /// numeric index and one non-numeric token. `parse_number` returns
 /// `None` for `abc`, routing to `unhandled` without mutating any
 /// palette entry. Index 999 is beyond `NUM_COLORS` (270) so
@@ -332,7 +332,7 @@ fn osc_reset_round_trip_with_query() {
     );
 }
 
-// ── Semantic pin: OSC 104 marks the grid dirty ──────────────────────
+// ── Property: OSC 104 marks the grid dirty ──────────────────────
 
 /// OSC 104 (non-cursor index) must mark every visible row dirty so a
 /// damage-aware renderer repaints the reset palette. `Term::

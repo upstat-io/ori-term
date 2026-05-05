@@ -4,7 +4,7 @@
 //! reads frames, dispatches replies to the shared pending map, and routes
 //! push notifications. Outbound writes belong to the writer thread
 //! (`writer.rs`); the reader is read-only so a backpressured write never
-//! blocks reply delivery (BUG-11-047).
+//! blocks reply delivery ().
 
 // Platform FFI for poll(2), pipe read/drain.
 
@@ -31,7 +31,7 @@ use super::{PendingClientReply, READ_POLL_INTERVAL};
 /// Dispatch a received notification PDU.
 ///
 /// `NotifyPaneSnapshot` and `NotifyPaneOutput` are intercepted here
-/// (stored/invalidated in the shared snapshot map). The 4 BUG-11-011
+/// (stored/invalidated in the shared snapshot map). The 4
 /// host-request / desktop-notification variants are also intercepted —
 /// they need the shared `pending_replies` map (host-request side) or a
 /// direct `MuxNotification` translation (desktop-notification side).
@@ -191,7 +191,7 @@ fn wait_for_readable(stream: &ClientStream, wake_read: RawFd, timeout_ms: i32) -
 /// socket readability via `poll(2)` (with the wake pipe as a shutdown
 /// signal), reads frames, and dispatches them to the shared pending map
 /// (RPC replies) or notification channel (push notifications). Outbound
-/// writes are owned by the writer thread (BUG-11-047 architectural split).
+/// writes are owned by the writer thread ( architectural split).
 ///
 /// `outstanding_ping_seq` is shared with the writer thread: writer sets
 /// it on Ping send, reader clears it on `PingAck`. `0` is the "no
@@ -229,18 +229,12 @@ pub(super) fn reader_loop(
 
         // 1. Wait for socket data or wake signal (shutdown).
         //
-        // First try a non-blocking poll (0ms timeout) to skip kernel timer
-        // granularity. Fall back to a blocking poll bounded by a short
-        // safety interval so we periodically observe the alive flag.
+        // `poll(2)` returns immediately if either fd is already ready, so
+        // a single 1-second-bounded call covers both the "data already
+        // waiting" and "block until ready or shutdown" paths. The bound
+        // gives `alive`-flag observation cadence on quiet connections.
         #[cfg(unix)]
-        let socket_ready = {
-            if wait_for_readable(&stream, wake_read, 0) {
-                true
-            } else {
-                // 1-second safety bound — alive-flag observation cadence.
-                wait_for_readable(&stream, wake_read, 1000)
-            }
-        };
+        let socket_ready = wait_for_readable(&stream, wake_read, 1000);
         #[cfg(not(unix))]
         let socket_ready = {
             std::thread::sleep(READ_POLL_INTERVAL);

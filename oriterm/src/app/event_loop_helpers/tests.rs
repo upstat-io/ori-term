@@ -288,7 +288,7 @@ fn text_blink_wins_when_sooner_than_scheduler_wake() {
 /// `WaitUntil(scheduler_wake)` instead of the naked `Wait` — otherwise
 /// the deadline is masked by the render gate and the animation stalls
 /// until the next unrelated MuxWakeup arrives.
-/// Regression: §13.3 TPR round 1 codex F1.
+/// Regression: §13.3 review round 1 F1.
 #[test]
 fn still_dirty_budget_not_elapsed_honors_scheduler_wake_when_sooner() {
     let mut input = idle_input();
@@ -333,7 +333,7 @@ fn still_dirty_budget_not_elapsed_ignores_past_due_scheduler_wake() {
 /// `WaitUntil(past)` which fires immediately and spins the event loop. The
 /// canonical drain site is `about_to_wait`'s `promote_deferred` sweep; this
 /// guard inside `compute_control_flow` is belt-and-suspenders.
-/// Regression: §13.3 TPR round 2 codex F1 / gemini F3.
+/// Regression: §13.3 review round 2 F1 / F3.
 #[test]
 fn idle_branch_ignores_past_due_scheduler_wake() {
     let mut input = idle_input();

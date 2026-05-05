@@ -12,63 +12,63 @@ use super::colors::Rgb;
 #[derive(Debug, Copy, Clone, Eq, PartialEq, PartialOrd, Ord)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum NamedColor {
-    /// Black.
+ /// Black.
     Black = 0,
-    /// Red.
+ /// Red.
     Red,
-    /// Green.
+ /// Green.
     Green,
-    /// Yellow.
+ /// Yellow.
     Yellow,
-    /// Blue.
+ /// Blue.
     Blue,
-    /// Magenta.
+ /// Magenta.
     Magenta,
-    /// Cyan.
+ /// Cyan.
     Cyan,
-    /// White.
+ /// White.
     White,
-    /// Bright black.
+ /// Bright black.
     BrightBlack,
-    /// Bright red.
+ /// Bright red.
     BrightRed,
-    /// Bright green.
+ /// Bright green.
     BrightGreen,
-    /// Bright yellow.
+ /// Bright yellow.
     BrightYellow,
-    /// Bright blue.
+ /// Bright blue.
     BrightBlue,
-    /// Bright magenta.
+ /// Bright magenta.
     BrightMagenta,
-    /// Bright cyan.
+ /// Bright cyan.
     BrightCyan,
-    /// Bright white.
+ /// Bright white.
     BrightWhite,
-    /// The foreground color.
+ /// The foreground color.
     Foreground = 256,
-    /// The background color.
+ /// The background color.
     Background,
-    /// Color for the cursor itself.
+ /// Color for the cursor itself.
     Cursor,
-    /// Dim black.
+ /// Dim black.
     DimBlack,
-    /// Dim red.
+ /// Dim red.
     DimRed,
-    /// Dim green.
+ /// Dim green.
     DimGreen,
-    /// Dim yellow.
+ /// Dim yellow.
     DimYellow,
-    /// Dim blue.
+ /// Dim blue.
     DimBlue,
-    /// Dim magenta.
+ /// Dim magenta.
     DimMagenta,
-    /// Dim cyan.
+ /// Dim cyan.
     DimCyan,
-    /// Dim white.
+ /// Dim white.
     DimWhite,
-    /// The bright foreground color.
+ /// The bright foreground color.
     BrightForeground,
-    /// Dim foreground.
+ /// Dim foreground.
     DimForeground,
 }
 
@@ -136,72 +136,72 @@ pub enum Color {
 /// Terminal character attributes.
 #[derive(Debug, Eq, PartialEq)]
 pub enum Attr {
-    /// Clear all special abilities.
+ /// Clear all special abilities.
     Reset,
-    /// Bold text.
+ /// Bold text.
     Bold,
-    /// Dim or secondary color.
+ /// Dim or secondary color.
     Dim,
-    /// Italic text.
+ /// Italic text.
     Italic,
-    /// Underline text.
+ /// Underline text.
     Underline,
-    /// Underlined twice.
+ /// Underlined twice.
     DoubleUnderline,
-    /// Undercurled text.
+ /// Undercurled text.
     Undercurl,
-    /// Dotted underlined text.
+ /// Dotted underlined text.
     DottedUnderline,
-    /// Dashed underlined text.
+ /// Dashed underlined text.
     DashedUnderline,
-    /// Blink cursor slowly.
+ /// Blink cursor slowly.
     BlinkSlow,
-    /// Blink cursor fast.
+ /// Blink cursor fast.
     BlinkFast,
-    /// Invert colors.
+ /// Invert colors.
     Reverse,
-    /// Do not display characters.
+ /// Do not display characters.
     Hidden,
-    /// Strikeout text.
+ /// Strikeout text.
     Strike,
-    /// Cancel bold.
+ /// Cancel bold.
     CancelBold,
-    /// Cancel bold and dim.
+ /// Cancel bold and dim.
     CancelBoldDim,
-    /// Cancel italic.
+ /// Cancel italic.
     CancelItalic,
-    /// Cancel all underlines.
+ /// Cancel all underlines.
     CancelUnderline,
-    /// Cancel blink.
+ /// Cancel blink.
     CancelBlink,
-    /// Cancel inversion.
+ /// Cancel inversion.
     CancelReverse,
-    /// Cancel text hiding.
+ /// Cancel text hiding.
     CancelHidden,
-    /// Cancel strikeout.
+ /// Cancel strikeout.
     CancelStrike,
-    /// Overlined text (SGR 53).
+ /// Overlined text (SGR 53).
     Overline,
-    /// Cancel overline (SGR 55).
+ /// Cancel overline (SGR 55).
     CancelOverline,
-    /// Superscript (SGR 73).
+ /// Superscript (SGR 73).
     Superscript,
-    /// Subscript (SGR 74).
+ /// Subscript (SGR 74).
     Subscript,
-    /// Cancel superscript/subscript (SGR 75).
+ /// Cancel superscript/subscript (SGR 75).
     CancelSuperSubscript,
-    /// Set indexed foreground color.
+ /// Set indexed foreground color.
     Foreground(Color),
-    /// Set indexed background color.
+ /// Set indexed background color.
     Background(Color),
-    /// Underline color.
+ /// Underline color.
     UnderlineColor(Option<Color>),
 }
 
 /// Identifiers which can be assigned to a graphic character set.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum CharsetIndex {
-    /// Default set, is designated as ASCII at startup.
+ /// Default set, is designated as ASCII at startup.
     #[default]
     G0,
     G1,
@@ -218,8 +218,8 @@ pub enum StandardCharset {
 }
 
 impl StandardCharset {
-    /// Switch/Map character to the active charset. Ascii is the common case and
-    /// for that we want to do as little as possible.
+ /// Switch/Map character to the active charset. Ascii is the common case and
+ /// for that we want to do as little as possible.
     #[inline]
     pub fn map(self, c: char) -> char {
         match self {
@@ -266,13 +266,13 @@ impl StandardCharset {
 /// SCP control's first parameter which determines character path.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ScpCharPath {
-    /// SCP's first parameter value of 0. Behavior is implementation defined.
+ /// SCP's first parameter value of 0. Behavior is implementation defined.
     Default,
-    /// SCP's first parameter value of 1 which sets character path to
-    /// LEFT-TO-RIGHT.
+ /// SCP's first parameter value of 1 which sets character path to
+ /// LEFT-TO-RIGHT.
     LTR,
-    /// SCP's first parameter value of 2 which sets character path to
-    /// RIGHT-TO-LEFT.
+ /// SCP's first parameter value of 2 which sets character path to
+ /// RIGHT-TO-LEFT.
     RTL,
 }
 
@@ -280,86 +280,86 @@ pub enum ScpCharPath {
 /// between components.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ScpUpdateMode {
-    /// SCP's second parameter value of 0 (the default). Implementation
-    /// dependant update.
+ /// SCP's second parameter value of 0 (the default). Implementation
+ /// dependant update.
     ImplementationDependant,
-    /// SCP's second parameter value of 1.
-    ///
-    /// Reflect data component changes in the presentation component.
+ /// SCP's second parameter value of 1.
+ ///
+ /// Reflect data component changes in the presentation component.
     DataToPresentation,
-    /// SCP's second parameter value of 2.
-    ///
-    /// Reflect presentation component changes in the data component.
+ /// SCP's second parameter value of 2.
+ ///
+ /// Reflect presentation component changes in the data component.
     PresentationToData,
 }
 
 /// C0 set of 7-bit control characters (from ANSI X3.4-1977).
 #[allow(non_snake_case)]
 pub mod C0 {
-    /// Null filler, terminal should ignore this character.
+ /// Null filler, terminal should ignore this character.
     pub const NUL: u8 = 0x00;
-    /// Start of Header.
+ /// Start of Header.
     pub const SOH: u8 = 0x01;
-    /// Start of Text, implied end of header.
+ /// Start of Text, implied end of header.
     pub const STX: u8 = 0x02;
-    /// End of Text, causes some terminal to respond with ACK or NAK.
+ /// End of Text, causes some terminal to respond with ACK or NAK.
     pub const ETX: u8 = 0x03;
-    /// End of Transmission.
+ /// End of Transmission.
     pub const EOT: u8 = 0x04;
-    /// Enquiry, causes terminal to send ANSWER-BACK ID.
+ /// Enquiry, causes terminal to send ANSWER-BACK ID.
     pub const ENQ: u8 = 0x05;
-    /// Acknowledge, usually sent by terminal in response to ETX.
+ /// Acknowledge, usually sent by terminal in response to ETX.
     pub const ACK: u8 = 0x06;
-    /// Bell, triggers the bell, buzzer, or beeper on the terminal.
+ /// Bell, triggers the bell, buzzer, or beeper on the terminal.
     pub const BEL: u8 = 0x07;
-    /// Backspace, can be used to define overstruck characters.
+ /// Backspace, can be used to define overstruck characters.
     pub const BS: u8 = 0x08;
-    /// Horizontal Tabulation, move to next predetermined position.
+ /// Horizontal Tabulation, move to next predetermined position.
     pub const HT: u8 = 0x09;
-    /// Linefeed, move to same position on next line (see also NL).
+ /// Linefeed, move to same position on next line (see also NL).
     pub const LF: u8 = 0x0A;
-    /// Vertical Tabulation, move to next predetermined line.
+ /// Vertical Tabulation, move to next predetermined line.
     pub const VT: u8 = 0x0B;
-    /// Form Feed, move to next form or page.
+ /// Form Feed, move to next form or page.
     pub const FF: u8 = 0x0C;
-    /// Carriage Return, move to first character of current line.
+ /// Carriage Return, move to first character of current line.
     pub const CR: u8 = 0x0D;
-    /// Shift Out, switch to G1 (other half of character set).
+ /// Shift Out, switch to G1 (other half of character set).
     pub const SO: u8 = 0x0E;
-    /// Shift In, switch to G0 (normal half of character set).
+ /// Shift In, switch to G0 (normal half of character set).
     pub const SI: u8 = 0x0F;
-    /// Data Link Escape, interpret next control character specially.
+ /// Data Link Escape, interpret next control character specially.
     pub const DLE: u8 = 0x10;
-    /// (DC1) Terminal is allowed to resume transmitting.
+ /// (DC1) Terminal is allowed to resume transmitting.
     pub const XON: u8 = 0x11;
-    /// Device Control 2, causes ASR-33 to activate paper-tape reader.
+ /// Device Control 2, causes ASR-33 to activate paper-tape reader.
     pub const DC2: u8 = 0x12;
-    /// (DC2) Terminal must pause and refrain from transmitting.
+ /// (DC2) Terminal must pause and refrain from transmitting.
     pub const XOFF: u8 = 0x13;
-    /// Device Control 4, causes ASR-33 to deactivate paper-tape reader.
+ /// Device Control 4, causes ASR-33 to deactivate paper-tape reader.
     pub const DC4: u8 = 0x14;
-    /// Negative Acknowledge, used sometimes with ETX and ACK.
+ /// Negative Acknowledge, used sometimes with ETX and ACK.
     pub const NAK: u8 = 0x15;
-    /// Synchronous Idle, used to maintain timing in Sync communication.
+ /// Synchronous Idle, used to maintain timing in Sync communication.
     pub const SYN: u8 = 0x16;
-    /// End of Transmission block.
+ /// End of Transmission block.
     pub const ETB: u8 = 0x17;
-    /// Cancel (makes VT100 abort current escape sequence if any).
+ /// Cancel (makes VT100 abort current escape sequence if any).
     pub const CAN: u8 = 0x18;
-    /// End of Medium.
+ /// End of Medium.
     pub const EM: u8 = 0x19;
-    /// Substitute (VT100 uses this to display parity errors).
+ /// Substitute (VT100 uses this to display parity errors).
     pub const SUB: u8 = 0x1A;
-    /// Prefix to an escape sequence.
+ /// Prefix to an escape sequence.
     pub const ESC: u8 = 0x1B;
-    /// File Separator.
+ /// File Separator.
     pub const FS: u8 = 0x1C;
-    /// Group Separator.
+ /// Group Separator.
     pub const GS: u8 = 0x1D;
-    /// Record Separator (sent by VT132 in block-transfer mode).
+ /// Record Separator (sent by VT132 in block-transfer mode).
     pub const RS: u8 = 0x1E;
-    /// Unit Separator.
+ /// Unit Separator.
     pub const US: u8 = 0x1F;
-    /// Delete, should be ignored by terminal.
+ /// Delete, should be ignored by terminal.
     pub const DEL: u8 = 0x7F;
 }

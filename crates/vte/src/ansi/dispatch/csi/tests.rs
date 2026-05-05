@@ -2,11 +2,11 @@
 //!
 //! Each new dispatch arm gets a parse test (raw bytes → handler method called
 //! with expected params, observed via `RecordingHandler`) plus an unhandled
-//! negative pin (same final byte with a different intermediate falls through
+//! regression guard (same final byte with a different intermediate falls through
 //! to `unhandled!()`).
 //!
 //! Parser-level tests for `ansi/mod.rs` live at `crates/vte/src/ansi/tests.rs`
-//! per `.claude/rules/test-organization.md` §Sibling tests.rs Pattern.
+//! §Sibling tests.rs Pattern.
 
 use core::time::Duration;
 
@@ -400,8 +400,8 @@ fn csi_question_xtsmgraphics_pi2_pa3_dispatches_graphics_attribute_2_3_256() {
 
 #[test]
 fn csi_question_xtsmgraphics_subparam_in_first_uses_first_subvalue() {
-    // 3 top-level params (first has subparam `:2`). `next_param_or`
-    // takes the first sub-value; subsequent subs are ignored.
+ // 3 top-level params (first has subparam `:2`). `next_param_or`
+ // takes the first sub-value; subsequent subs are ignored.
     let calls = run(b"\x1b[?1:2;1;0S");
     assert_eq!(calls, vec![Call::GraphicsAttribute { pi: 1, pa: 1, pv: 0 }]);
 }
@@ -426,10 +426,10 @@ fn csi_question_xtsmgraphics_four_params_falls_through_unhandled() {
 
 #[test]
 fn csi_question_with_subparam_arity_check_uses_iter_count_not_len() {
-    // `\x1b[?1:2:3;1;0S` has 1 top-level param (with 2 subparams),
-    // then 2 more top-level params = 3 groups total. `params.len()`
-    // would return 5 (all values), incorrectly rejecting this query.
-    // `params.iter().count()` returns 3, correctly dispatching.
+ // `\x1b[?1:2:3;1;0S` has 1 top-level param (with 2 subparams),
+ // then 2 more top-level params = 3 groups total. `params.len()`
+ // would return 5 (all values), incorrectly rejecting this query.
+ // `params.iter().count()` returns 3, correctly dispatching.
     let calls = run(b"\x1b[?1:2:3;1;0S");
     assert_eq!(
         calls,
@@ -440,15 +440,15 @@ fn csi_question_with_subparam_arity_check_uses_iter_count_not_len() {
 
 #[test]
 fn csi_other_intermediate_s_does_not_dispatch_graphics_attribute() {
-    // `\x1b[$S` has intermediate `$` (not `?`) — must NOT dispatch
-    // graphics_attribute.
+ // `\x1b[$S` has intermediate `$` (not `?`) — must NOT dispatch
+ // graphics_attribute.
     let calls = run(b"\x1b[$S");
     assert!(calls.is_empty());
 }
 
-// ── XTVERSION (CSI > Ps q) — BUG-11-018 ─────────────────────────────
+// ── XTVERSION (CSI > Ps q) — ─────────────────────────────
 
-/// Regression: BUG-11-018 — XTVERSION default Ps dispatches via the
+/// Regression: XTVERSION default Ps dispatches via the
 /// CSI dispatch arm with `>` intermediate (not via the raw mux interceptor).
 /// Per xterm `charproc.c::CASE_REPORT_VERSION`, default/zero Ps fires
 /// the response.
@@ -458,14 +458,14 @@ fn xtversion_csi_gt_q_calls_xtversion() {
     assert_eq!(calls, vec![Call::Xtversion]);
 }
 
-/// Regression: BUG-11-018 — explicit Ps=0 is identical to default.
+/// Regression: explicit Ps=0 is identical to default.
 #[test]
 fn xtversion_csi_gt_0_q_calls_xtversion() {
     let calls = run(b"\x1b[>0q");
     assert_eq!(calls, vec![Call::Xtversion]);
 }
 
-/// Regression: BUG-11-018 — Ps=1 negative pin. xterm replies only when
+/// Regression: Ps=1 regression guard. xterm replies only when
 /// `GetParam(0) <= 0` (`charproc.c::CASE_REPORT_VERSION`); we drop
 /// non-default Ps via the dispatch-arm gate.
 #[test]
@@ -475,7 +475,7 @@ fn xtversion_csi_gt_1_q_does_not_call_xtversion() {
         "XTVERSION must not fire for non-default Ps; got: {calls:?}");
 }
 
-/// Regression: BUG-11-018 — subparam form `CSI > 0:0 q` still dispatches.
+/// Regression: subparam form `CSI > 0:0 q` still dispatches.
 /// `Params::iter().next()` returns `&[0, 0]`; `next_param_or(0)` matches
 /// the leading `0`, so the gate behaves identically to `\x1b[>0q`.
 #[test]
@@ -484,7 +484,7 @@ fn xtversion_csi_gt_zero_subparam_calls_xtversion() {
     assert_eq!(calls, vec![Call::Xtversion]);
 }
 
-/// Regression: BUG-11-018 — subparam form `CSI > 1:0 q` is rejected
+/// Regression: subparam form `CSI > 1:0 q` is rejected
 /// because the leading subparam is non-zero.
 #[test]
 fn xtversion_csi_gt_one_subparam_does_not_call_xtversion() {
@@ -493,7 +493,7 @@ fn xtversion_csi_gt_one_subparam_does_not_call_xtversion() {
         "XTVERSION must not fire for non-default leading subparam; got: {calls:?}");
 }
 
-/// Regression: BUG-11-018 — the `>` intermediate is required.
+/// Regression: the `>` intermediate is required.
 /// `CSI q` with no intermediate is not the XTVERSION arm.
 #[test]
 fn xtversion_intermediate_required_csi_q_does_not_call_xtversion() {

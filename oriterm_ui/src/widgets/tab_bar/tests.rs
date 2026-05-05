@@ -2074,7 +2074,7 @@ fn golden_metrics() -> TabBarMetrics {
     }
 }
 
-/// Creates a tab bar with `n` tabs named "Tab 1", "Tab 2", ... and renders it.
+/// Creates a tab bar with `n` tabs named "Tab 1", "Tab 2",... and renders it.
 fn render_tab_bar(n: usize, window_width: f32) -> String {
     let metrics = golden_metrics();
     let mut widget = TabBarWidget::with_theme_and_metrics(window_width, &UiTheme::dark(), metrics);

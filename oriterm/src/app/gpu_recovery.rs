@@ -100,7 +100,7 @@ impl App {
     /// 2. ⏳ Drop in-flight `SurfaceTexture`s and `wgpu::Surface<'static>`
     ///    fields per window — **5.16.3**.
     /// 3. ⏳ Drop per-window `WindowRenderer`s, preserving `FontCollection`
-    ///    + `UiFontSizes` on the stack — **5.16.3**.
+    /// + `UiFontSizes` on the stack — **5.16.3**.
     /// 4. ⏳ Drop `self.pipelines` — **5.16.3**.
     /// 5. ⏳ Drop `self.gpu` (`GpuState`) — **5.16.3**.
     /// 6. ⏳ `GpuState::recreate(...)` → recreate per-window surfaces →
@@ -193,7 +193,7 @@ impl App {
     ///
     /// Gated behind `cfg(any(test, feature = "gpu-tests"))` so the helper
     /// is unreachable from release builds. The
-    /// `#[expect(dead_code, ...)]` attribute reflects that 5.16.13's
+    /// `#[expect(dead_code,...)]` attribute reflects that 5.16.13's
     /// integration test is the one true caller — once that test lands the
     /// expect will become unfulfilled and force its own removal.
     #[cfg(any(test, feature = "gpu-tests"))]

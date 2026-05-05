@@ -3,7 +3,7 @@
 //! `TIOCSWINSZ`) and Windows ConPTY (`CreatePseudoConsole`) backends.
 //!
 //! Each platform branch runs two cases: a primary `33×97` and a
-//! `50×40` negative pin proving the helper assertion is parameterized
+//! `50×40` regression guard proving the helper assertion is parameterized
 //! and not coincidentally hardcoded against `33×97`.
 
 #[cfg(any(unix, windows))]
@@ -38,14 +38,14 @@ fn assert_pty_reports_size(
     // stdin, so we don't need stdin-EOF to wake the child — we can wait
     // for it to exit naturally, THEN drop the writer + master. This:
     //
-    //   * Removes the documented macOS race in `crates/portable-pty/
-    //     examples/whoami.rs` ("data we send to the kernel to trigger
-    //     EOF is interleaved with the data read by the reader") — no
-    //     EOF data is sent to the kernel until after the child is gone.
-    //   * Fixes the Windows ConPTY path where dropping the writer
-    //     mid-startup caused `cmd /c` to quit before executing the
-    //     inner command, leaking only the cmd.exe init handshake
-    //     (DSR query, focus toggle, title set) to the reader.
+    // * Removes the documented macOS race in `crates/portable-pty/
+    // examples/whoami.rs` ("data we send to the kernel to trigger
+    // EOF is interleaved with the data read by the reader") — no
+    // EOF data is sent to the kernel until after the child is gone.
+    // * Fixes the Windows ConPTY path where dropping the writer
+    // mid-startup caused `cmd /c` to quit before executing the
+    // inner command, leaking only the cmd.exe init handshake
+    // (DSR query, focus toggle, title set) to the reader.
     //
     // The whoami.rs pattern (drop writer before child.wait) is correct
     // for the general case where the child may block on stdin EOF;
@@ -86,13 +86,13 @@ fn assert_pty_reports_size(
     // (focus reporting toggle, screen clear, title set) does. The
     // failure mode depends entirely on writer-drop timing:
     //
-    //   * writer dropped early → ConPTY abandons the DSR wait via stdin
-    //     EOF, but kills `cmd /c` mid-startup so `mode con` never runs;
-    //     parser sees only the init handshake and panics on missing
-    //     `Lines:`.
-    //   * writer held until after `child.wait` → ConPTY blocks forever
-    //     waiting for DSR; child never produces output; child.wait
-    //     blocks; the CI job hits its 10-minute kill.
+    // * writer dropped early → ConPTY abandons the DSR wait via stdin
+    // EOF, but kills `cmd /c` mid-startup so `mode con` never runs;
+    // parser sees only the init handshake and panics on missing
+    // `Lines:`.
+    // * writer held until after `child.wait` → ConPTY blocks forever
+    // waiting for DSR; child never produces output; child.wait
+    // blocks; the CI job hits its 10-minute kill.
     //
     // Writing any well-formed CPR response (`\x1b[r;cR`, 1-indexed) is
     // sufficient — ConPTY only needs the protocol question answered.
@@ -104,7 +104,7 @@ fn assert_pty_reports_size(
     // `ParseIntError`. POSIX `openpty` does not have ConPTY's DSR
     // gate; nothing waits on a CPR response.
     //
-    // Source: third-party-review consensus 2026-04-27 (codex + gemini)
+    // Source: third-party-review consensus 2026-04-27 ( + )
     // verified the DSR origin against `psuedocon.rs:87`.
     #[cfg(windows)]
     {
@@ -156,7 +156,7 @@ fn parse_stty_size_output(raw: &str) -> (u16, u16) {
     (rows, cols)
 }
 
-/// Regression: BUG-07-004 — Windows PTY size propagation test removed.
+/// Regression: Windows PTY size propagation test removed.
 /// Pins `portable_pty::native_pty_system()` POSIX path: `openpty` with
 /// `PtySize { rows, cols }` delivers the requested size to the child.
 /// Two cases (33×97 and 50×40) clamp the matrix from both sides — proves
@@ -202,7 +202,7 @@ fn parse_mode_con_output(raw: &str) -> (u16, u16) {
     )
 }
 
-/// Regression: BUG-07-004 — Windows PTY size propagation test removed.
+/// Regression: Windows PTY size propagation test removed.
 /// Pins `portable_pty::native_pty_system()` ConPTY path: `openpty` with
 /// `PtySize { rows, cols }` delivers the requested size via
 /// `CreatePseudoConsole`. Uses `cmd /d /c mode con` to bypass AutoRun.

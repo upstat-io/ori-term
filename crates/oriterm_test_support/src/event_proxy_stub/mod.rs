@@ -7,8 +7,8 @@
 //! up a real winit `EventLoopProxy`.
 //!
 //! The local [`RecordedTermEvent`] enum keeps `oriterm_test_support`
-//! dependency-free of the `oriterm` crate (per the §02 BUG-11-026 fix
-//! consensus, codex revision: avoid dev-dep direction inversion).
+//! dependency-free of the `oriterm` crate (per the §02 fix
+//! consensus, revision: avoid dev-dep direction inversion).
 
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -59,7 +59,7 @@ impl RecordedProxy {
     /// observation log AND sends it through the mpsc channel for
     /// poll-the-condition tests via
     /// [`wait_for_wakeup`](Self::wait_for_wakeup). Both writes use
-    /// `let _ = ...` semantics so the closure is byte-loss-safe even
+    /// `let _ =...` semantics so the closure is byte-loss-safe even
     /// when the receiver has been dropped — matches the production
     /// `let _ = proxy.send_event(TermEvent::MuxWakeup)` semantics.
     pub fn make_mux_wakeup(&self) -> Arc<dyn Fn() + Send + Sync> {
@@ -75,8 +75,7 @@ impl RecordedProxy {
 
     /// Block until the next wakeup arrives or `deadline` elapses.
     ///
-    /// Per `.claude/rules/tests.md §Wall-Clock-Free Testing`, the
-    /// deadline is the safety valve to surface a hang — the awaited
+    /// The deadline is the safety valve to surface a hang — the awaited
     /// condition is the channel receive, not the elapsed time.
     ///
     /// # Errors

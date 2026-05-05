@@ -10,7 +10,7 @@ use super::{LENGTH_DRIFT_FINAL_LABEL, STATUS_REPORTS_INVENTORY, TOTAL_SUB_TESTS}
 
 #[test]
 fn pinned_inventory_is_non_empty() {
-    // Negative pin: the curated inventory cannot regress to an
+    // Regression guard: the curated inventory cannot regress to an
     // empty slice without breaking this test. Without this guard, a
     // future PR that cleared `STATUS_REPORTS_INVENTORY` would make
     // the integration test trivially pass (empty loop) on hosts

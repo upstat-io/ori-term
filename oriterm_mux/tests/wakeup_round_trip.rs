@@ -1,4 +1,4 @@
-//! BUG-11-026 Layer 3 — wakeup-callback contract pinned via [`RecordedProxy`].
+//! Layer 3 — wakeup-callback contract pinned via [`RecordedProxy`].
 //!
 //! Tests reproduce the App-layer wiring shape from `oriterm/src/app/constructors.rs:46-48`
 //! (daemon mode) and `:93-97` (embedded mode) — the closure shape
@@ -7,20 +7,20 @@
 //! Tests then drive a real PTY shell and observe:
 //!
 //! 1. `gate_blocks_when_no_wakeup` — `mux.has_pending_wakeup()` returns
-//!    false after startup-wakeup drain; gate's early-exit at
-//!    `oriterm/src/app/mux_pump/mod.rs:35-37` is sound.
+//! false after startup-wakeup drain; gate's early-exit at
+//! `oriterm/src/app/mux_pump/mod.rs:35-37` is sound.
 //! 2. `gate_passes_after_io_emit` — DA1 query → `has_pending_wakeup()`
-//!    becomes true → drain delivers response bytes back to child stdin.
+//! becomes true → drain delivers response bytes back to child stdin.
 //! 3. `recorded_proxy_observes_wakeup` — proxy receives
-//!    `RecordedTermEvent::MuxWakeup` for every IO-thread effect emission.
+//! `RecordedTermEvent::MuxWakeup` for every IO-thread effect emission.
 //! 4. `recorded_proxy_does_not_double_signal` — coalescing guard at
-//!    `oriterm_mux/src/backend/embedded/mod.rs:62-66` fires the wakeup
-//!    AT MOST once per parse cycle.
+//! `oriterm_mux/src/backend/embedded/mod.rs:62-66` fires the wakeup
+//! AT MOST once per parse cycle.
 //! 5. `flag_clears_on_poll_events` — `wakeup_pending.store(false)` at
-//!    `oriterm_mux/src/backend/embedded/mod.rs:86` runs before drain.
+//! `oriterm_mux/src/backend/embedded/mod.rs:86` runs before drain.
 //!
 //! These tests live in `oriterm_mux/tests/` (NOT `oriterm/tests/`) per
-//! the `.claude/rules/crate-boundaries.md §Litmus Test`: the tests
+//! the Test`: the tests
 //! construct only mux-layer types (`EmbeddedMux`, `RecordedProxy`,
 //! `SpawnConfig`) and exercise only mux-crate code. The doc comments
 //! cite `constructors.rs:94-97` as the reference closure shape this
@@ -54,7 +54,7 @@ fn test_spawn_config() -> SpawnConfig {
 /// in a poll-the-condition loop until the wakeup flag clears AND no
 /// further wakeups land within a brief settling window.
 ///
-/// Per `.claude/rules/tests.md §Wall-Clock-Free Testing`, the deadline
+/// Per -Clock-Free Testing`, the deadline
 /// is the safety valve; the awaited condition is the flag transition.
 fn drain_startup_wakeups(mux: &mut EmbeddedMux, deadline: Duration) {
     let stop = Instant::now() + deadline;
@@ -110,7 +110,7 @@ fn spawn_ready_pane(mux: &mut EmbeddedMux) -> PaneId {
     }
 }
 
-/// Semantic pin: the gate's early-exit path at
+/// Property: the gate's early-exit path at
 /// `oriterm/src/app/mux_pump/mod.rs:35-37` — `has_pending_wakeup()`
 /// returns false after startup drain; subsequent gate checks NEVER
 /// trigger `poll_events` because no IO activity is happening.
@@ -143,11 +143,11 @@ fn gate_blocks_when_no_wakeup() {
     );
 }
 
-/// Semantic pin: gate-flag transitions correctly under the App-pattern
+/// Property: gate-flag transitions correctly under the App-pattern
 /// drain.
 ///
 /// Sends an `echo` (which fires a wakeup as IO thread emits PaneOutput
-/// notification — verified by the BUG-11-004 effect-router tests),
+/// notification — verified by the effect-router tests),
 /// then mirrors `App::pump_mux_events`'s gate logic at
 /// `oriterm/src/app/mux_pump/mod.rs:35-43`: only call `poll_events`
 /// when `has_pending_wakeup()` returns true.
@@ -216,13 +216,13 @@ fn gate_passes_after_io_emit() {
     }
 }
 
-/// Semantic pin: the [`RecordedProxy`] callback fires when an IO-thread
+/// Property: the [`RecordedProxy`] callback fires when an IO-thread
 /// effect lands. Reproduces `oriterm/src/app/constructors.rs:94-97`'s
 /// closure shape — every `MuxEvent::PtyWrite` trips the wakeup, which
 /// reaches the recorder.
 ///
 /// Uses an `echo` command rather than a device-query because shell-
-/// prompt-framework consumption (see BUG-11-029 in section-11-mux.md)
+/// prompt-framework consumption (see in section-11-mux.md)
 /// can suppress query-response wakeups in the user's interactive
 /// shell environment. `echo` produces shell-stdout bytes that ALWAYS
 /// flow through the IO thread → fire the wakeup callback regardless
@@ -285,7 +285,7 @@ fn recorded_proxy_observes_wakeup() {
     );
 }
 
-/// Negative pin: the coalescing guard at
+/// Regression guard: the coalescing guard at
 /// `oriterm_mux/src/backend/embedded/mod.rs:62-66` (`pending.swap(true,
 /// Release)`) prevents wakeup spam — many effects in one parse cycle
 /// fire AT MOST a small bounded number of wakeups until `poll_events`
@@ -360,7 +360,7 @@ fn recorded_proxy_does_not_double_signal() {
     );
 }
 
-/// Negative pin: `wakeup_pending.store(false, Release)` at
+/// Regression guard: `wakeup_pending.store(false, Release)` at
 /// `oriterm_mux/src/backend/embedded/mod.rs:86` runs at the START of
 /// `poll_events`. After draining, `has_pending_wakeup()` returns false
 /// until the next IO emit. Pins the gate's flag-clear ordering.

@@ -3,9 +3,9 @@
 //! Every test encodes protocol-spec behavior per kitty
 //! graphics-protocol.rst §Deleting images (§Deleting images, lines 742–788
 //! of `~/projects/reference_repos/console_repos/kitty/docs/graphics-protocol.rst`).
-//! Tests pin the CORRECT spec behavior — not the current BUG-08-007 /
-//! BUG-08-008 baseline. This is red-before-green TDD per
-//! `.claude/rules/tests.md` §TDD for Bugs.
+//! Tests pin the CORRECT spec behavior — not the current /
+//! baseline. This is red-before-green TDD per
+//! §TDD for Bugs.
 //!
 //! Catalog rows: KG-ACTION-DELETE, KG-DELETE-a, KG-DELETE-A, KG-DELETE-i,
 //! KG-DELETE-I, KG-DELETE-p, KG-DELETE-P, KG-DELETE-c, KG-DELETE-C,
@@ -91,7 +91,7 @@ fn placement_count(t: &Term<VoidEffectSink>) -> usize {
 }
 
 // ---------------------------------------------------------------------------
-// KG-DELETE-a / A  —  Delete all placements VISIBLE ON SCREEN.
+// KG-DELETE-a / A — Delete all placements VISIBLE ON SCREEN.
 // ---------------------------------------------------------------------------
 
 /// KG-DELETE-a: `d=a` deletes only visible placements; keeps image data.
@@ -114,8 +114,8 @@ fn delete_a_removes_visible_placement_only_keeps_image_data() {
     assert_eq!(image_count(&t), 2, "lowercase d=a must NOT free image data");
 }
 
-/// KG-DELETE-a negative pin: d=a must NOT call cache.clear() (would drop the
-/// off-screen placement too). Regression guard for BUG-08-007.
+/// KG-DELETE-a regression guard: d=a must NOT call cache.clear() (would drop the
+/// off-screen placement too).
 #[test]
 fn delete_a_negative_pin_does_not_clear_entire_cache() {
     let mut t = term();
@@ -124,11 +124,7 @@ fn delete_a_negative_pin_does_not_clear_entire_cache() {
 
     delete(&mut t, b'a', |_| {});
 
-    assert_eq!(
-        placement_count(&t),
-        1,
-        "BUG-08-007 regression: d=a cleared off-screen placement"
-    );
+    assert_eq!(placement_count(&t), 1, "d=a cleared off-screen placement");
     assert_eq!(image_count(&t), 1);
 }
 
@@ -152,7 +148,7 @@ fn delete_a_uppercase_removes_visible_placement_and_frees_image_data() {
 }
 
 // ---------------------------------------------------------------------------
-// KG-DELETE-i / I  —  By image id (+ optional p= placement filter).
+// KG-DELETE-i / I — By image id (+ optional p= placement filter).
 // ---------------------------------------------------------------------------
 
 /// KG-DELETE-i: `d=i,i=<id>` deletes all placements of image id; keeps image.
@@ -239,11 +235,11 @@ fn delete_i_uppercase_removes_image_data_and_placements() {
 }
 
 // ---------------------------------------------------------------------------
-// KG-DELETE-p / P  —  At cell (x, y) intersection (1-based spec).
+// KG-DELETE-p / P — At cell (x, y) intersection (1-based spec).
 // ---------------------------------------------------------------------------
 
 /// KG-DELETE-p: `d=p,x=X,y=Y` deletes placements intersecting cell (X-1, Y-1).
-/// BUG-08-007 regression: current impl used `placement_id` instead of cell.
+/// regression: current impl used `placement_id` instead of cell.
 #[test]
 fn delete_p_uses_cell_position_not_placement_id() {
     let mut t = term();
@@ -267,8 +263,8 @@ fn delete_p_uses_cell_position_not_placement_id() {
     assert_eq!(image_count(&t), 3, "lowercase keeps image data");
 }
 
-/// KG-DELETE-p negative pin: d=p MUST NOT use placement_id. Regression for
-/// BUG-08-007 — old impl required i= and p= and silently dropped x=/y=.
+/// KG-DELETE-p regression guard: d=p MUST NOT use placement_id. Regression for
+/// — old impl required i= and p= and silently dropped x=/y=.
 #[test]
 fn delete_p_negative_pin_ignores_placement_id_key() {
     let mut t = term();
@@ -285,7 +281,7 @@ fn delete_p_negative_pin_ignores_placement_id_key() {
     assert_eq!(
         placement_count(&t),
         0,
-        "BUG-08-007 regression: d=p consulted p= or i= instead of (x,y)"
+        "d=p consulted p= or i= instead of (x,y)"
     );
 }
 
@@ -306,11 +302,11 @@ fn delete_p_uppercase_frees_orphaned_image_data() {
 }
 
 // ---------------------------------------------------------------------------
-// KG-DELETE-c / C  —  At cursor (col, row) intersection.
+// KG-DELETE-c / C — At cursor (col, row) intersection.
 // ---------------------------------------------------------------------------
 
 /// KG-DELETE-c: `d=c` uses CURSOR POSITION (col, row) — not column alone.
-/// BUG-08-007 regression: current impl only matched the column.
+/// regression: current impl only matched the column.
 #[test]
 fn delete_c_uses_cursor_row_not_column_only() {
     let mut t = term();
@@ -332,7 +328,7 @@ fn delete_c_uses_cursor_row_not_column_only() {
     );
 }
 
-/// KG-DELETE-c negative pin: d=c MUST NOT delete placements at a different row.
+/// KG-DELETE-c regression guard: d=c MUST NOT delete placements at a different row.
 #[test]
 fn delete_c_negative_pin_does_not_delete_entire_cursor_column() {
     let mut t = term();
@@ -347,7 +343,7 @@ fn delete_c_negative_pin_does_not_delete_entire_cursor_column() {
     assert_eq!(
         placement_count(&t),
         3,
-        "BUG-08-007 regression: d=c deleted by column only, ignoring cursor row"
+        "d=c deleted by column only, ignoring cursor row"
     );
 }
 
@@ -365,7 +361,7 @@ fn delete_c_uppercase_prunes_orphaned_image_data() {
 }
 
 // ---------------------------------------------------------------------------
-// KG-DELETE-x / X  —  At column x= (1-based).
+// KG-DELETE-x / X — At column x= (1-based).
 // ---------------------------------------------------------------------------
 
 /// KG-DELETE-x: `d=x,x=N` deletes placements intersecting column N-1 (1-based).
@@ -397,7 +393,7 @@ fn delete_x_uppercase_frees_orphaned_image_data() {
 }
 
 // ---------------------------------------------------------------------------
-// KG-DELETE-y / Y  —  At row y= (1-based, viewport-relative).
+// KG-DELETE-y / Y — At row y= (1-based, viewport-relative).
 // ---------------------------------------------------------------------------
 
 /// KG-DELETE-y: `d=y,y=N` deletes placements at viewport row N-1.
@@ -429,7 +425,7 @@ fn delete_y_uppercase_frees_orphaned_image_data() {
 }
 
 // ---------------------------------------------------------------------------
-// KG-DELETE-z / Z  —  At z-index z=.
+// KG-DELETE-z / Z — At z-index z=.
 // ---------------------------------------------------------------------------
 
 /// KG-DELETE-z: `d=z,z=Z` deletes placements with z-index = Z.
@@ -461,11 +457,11 @@ fn delete_z_uppercase_frees_orphaned_image_data() {
 }
 
 // ---------------------------------------------------------------------------
-// KG-DELETE-r / R  —  Image-id range [x, y] (kitty 0.33.0+).
+// KG-DELETE-r / R — Image-id range [x, y] (kitty 0.33.0+).
 // ---------------------------------------------------------------------------
 
 /// KG-DELETE-r: `d=r,x=lo,y=hi` deletes images (by id) in inclusive range.
-/// BUG-08-007 regression: current impl deleted by CURSOR POSITION.
+/// regression: current impl deleted by CURSOR POSITION.
 #[test]
 fn delete_r_uses_id_range_not_cursor_position() {
     let mut t = term();
@@ -489,8 +485,8 @@ fn delete_r_uses_id_range_not_cursor_position() {
     );
 }
 
-/// KG-DELETE-r negative pin: d=r MUST NOT use cursor position.
-/// Regression for BUG-08-007 — old impl called `remove_by_position(cursor_col, cursor_row)`.
+/// KG-DELETE-r regression guard: d=r MUST NOT use cursor position.
+/// Regression for — old impl called `remove_by_position(cursor_col, cursor_row)`.
 #[test]
 fn delete_r_negative_pin_does_not_use_cursor_position() {
     let mut t = term();
@@ -506,7 +502,7 @@ fn delete_r_negative_pin_does_not_use_cursor_position() {
     assert_eq!(
         placement_count(&t),
         1,
-        "BUG-08-007 regression: d=r deleted at cursor position instead of by id range"
+        "d=r deleted at cursor position instead of by id range"
     );
 }
 
@@ -528,7 +524,7 @@ fn delete_r_uppercase_frees_image_data_in_range() {
 }
 
 // ---------------------------------------------------------------------------
-// KG-DELETE-n / N  —  Newest image by image number I=.
+// KG-DELETE-n / N — Newest image by image number I=.
 // ---------------------------------------------------------------------------
 
 /// KG-DELETE-n: `d=n,I=<num>` deletes placements of the newest image with that number.
@@ -571,7 +567,7 @@ fn delete_n_uppercase_frees_newest_image_data_by_number() {
 }
 
 // ---------------------------------------------------------------------------
-// KG-DELETE-q / Q  —  Cell (x, y) + z-index intersection.
+// KG-DELETE-q / Q — Cell (x, y) + z-index intersection.
 // ---------------------------------------------------------------------------
 
 /// KG-DELETE-q: `d=q,x=X,y=Y,z=Z` deletes placements at (X-1, Y-1) with z==Z.
@@ -616,7 +612,7 @@ fn delete_q_uppercase_frees_orphaned_image_data() {
 }
 
 // ---------------------------------------------------------------------------
-// KG-DELETE-f / F  —  Delete animation frames.
+// KG-DELETE-f / F — Delete animation frames.
 // ---------------------------------------------------------------------------
 
 /// KG-DELETE-f with no extra frames is a no-op (static image stays).
@@ -663,7 +659,7 @@ fn delete_f_uppercase_on_static_image_removes_image_entirely() {
 /// dispatch path — a basic smoke that confirms each arm is wired (no
 /// fallthrough to the catch-all warn path for any named spec value).
 ///
-/// Per `.claude/rules/tests.md` §Self-Verifying Matrix Completeness, the
+/// Per §Self-Verifying Matrix Completeness, the
 /// count assertion proves every matrix cell was visited.
 #[test]
 fn delete_specifier_matrix_completeness() {
@@ -796,7 +792,7 @@ fn delete_case_pair_contract_lowercase_keeps_data_uppercase_frees() {
 }
 
 // ---------------------------------------------------------------------------
-// Round-0 TPR regressions (codex F1, F2, F3, F4, F5).
+// Round-0 TPR regressions ( F1, F2, F3, F4, F5).
 // ---------------------------------------------------------------------------
 
 /// Stage a multi-cell placement covering a rectangle.
@@ -840,7 +836,7 @@ fn stage_rect(
 
 /// Catalog row: KG-DELETE-p
 ///
-/// Regression (codex F1): `d=p` deletes multi-cell placements that
+/// Regression ( F1): `d=p` deletes multi-cell placements that
 /// INTERSECT the target cell — not only placements whose origin matches.
 #[test]
 fn delete_p_removes_placement_when_target_cell_is_inside_span() {
@@ -865,7 +861,7 @@ fn delete_p_removes_placement_when_target_cell_is_inside_span() {
 
 /// Catalog row: KG-DELETE-c
 ///
-/// Regression (codex F1): `d=c` deletes multi-cell placements whose
+/// Regression ( F1): `d=c` deletes multi-cell placements whose
 /// rectangle contains the cursor, not only placements at cursor origin.
 #[test]
 fn delete_c_removes_placement_when_cursor_is_inside_span() {
@@ -874,7 +870,7 @@ fn delete_c_removes_placement_when_cursor_is_inside_span() {
     // whose top-left is (0, 0) — the cursor is inside the span.
     stage_rect(&mut t, 1, 0, 0, 3, 2);
     // Move the cursor to col=2, row=1 — still inside the rectangle.
-    // CUP is 1-based: ESC [ 2 ; 3 H → row 1, col 2 (0-based).
+    // CUP is 1-based: ESC [ 2; 3 H → row 1, col 2 (0-based).
     use vte::ansi::Processor;
     let mut processor: Processor = Processor::new();
     processor.advance(&mut t, b"\x1b[2;3H");
@@ -891,7 +887,7 @@ fn delete_c_removes_placement_when_cursor_is_inside_span() {
 
 /// Catalog row: KG-DELETE-q
 ///
-/// Regression (codex F2): `d=q` deletes multi-cell placements that
+/// Regression ( F2): `d=q` deletes multi-cell placements that
 /// intersect the target cell AND carry the specified z-index.
 #[test]
 fn delete_q_removes_placement_when_target_cell_is_inside_span_and_z_matches() {
@@ -941,7 +937,7 @@ fn delete_q_removes_placement_when_target_cell_is_inside_span_and_z_matches() {
 
 /// Catalog row: KG-DELETE-n
 ///
-/// Regression (codex F3): `d=n` resolves "newest" by creation order
+/// Regression ( F3): `d=n` resolves "newest" by creation order
 /// (`store_order`), not by LRU recency (`last_accessed`). Touching an
 /// older image via a cache access MUST NOT make it "newer" for d=n/N.
 #[test]
@@ -968,7 +964,7 @@ fn delete_n_resolves_by_creation_order_not_lru_recency() {
 
 /// Catalog row: KG-DELETE-f, KG-DELETE-F
 ///
-/// Regression (codex F4): `d=f/F` accepts `I=` (image number) when `i=`
+/// Regression ( F4): `d=f/F` accepts `I=` (image number) when `i=`
 /// is absent, resolved via `newest_by_image_number` per kitty
 /// graphics.c:1685-1689.
 #[test]
@@ -987,7 +983,7 @@ fn delete_f_uppercase_accepts_image_number_when_image_id_absent() {
 
 /// Catalog row: KG-DELETE-f
 ///
-/// Regression (codex F5): when root-frame deletion promotes the next
+/// Regression ( F5): when root-frame deletion promotes the next
 /// frame, `current_frame` adjusts based on its pre-removal position
 /// relative to the removed index — NOT post-clamp double-decrement.
 ///
@@ -1051,12 +1047,12 @@ fn delete_f_root_frame_leaves_current_frame_pointing_at_same_logical_frame() {
 }
 
 // ---------------------------------------------------------------------------
-// Round-1 TPR regressions (codex R1 F1/F2/F3 + gemini R1 F1/F2/F4).
+// Round-1 TPR regressions ( R1 F1/F2/F3 + R1 F1/F2/F4).
 // ---------------------------------------------------------------------------
 
 /// Catalog row: KG-ACTION-DELETE
 ///
-/// Regression (round-1 codex F1): a delete command arriving between two
+/// Regression (round-1 F1): a delete command arriving between two
 /// chunked-transmission chunks (`m=1` then `m=0`) must abort the in-flight
 /// upload so the final chunk cannot resurrect a deleted image. Per
 /// kitty/graphics.c:2093 `handle_delete_command` frees `currently_loading`
@@ -1091,7 +1087,7 @@ fn delete_aborts_in_flight_chunked_upload() {
 
 /// Catalog row: KG-DELETE-f
 ///
-/// Regression (round-1 codex F2 / gemini F1): when the root frame is
+/// Regression (round-1 F2 / F1): when the root frame is
 /// removed while a later frame is displayed, `ImageData.data` must sync
 /// to the new current frame's bytes — NOT to the promoted frame 0. The
 /// visible image must not drift backwards.
@@ -1141,13 +1137,13 @@ fn delete_f_root_syncs_image_data_to_surviving_current_frame() {
     assert_eq!(
         stored.data[0], 0xCC,
         "ImageData.data must sync to surviving current frame (F2, 0xCC), \
-         not promoted root (F1, 0xBB) — round-1 visual-drift regression"
+ not promoted root (F1, 0xBB) — round-1 visual-drift regression"
     );
 }
 
 /// Catalog row: KG-DELETE-f
 ///
-/// Regression (round-1 gemini F2): `remove_animation_frame` must reset
+/// Regression (round-1 F2): `remove_animation_frame` must reset
 /// `frame_starts[id]` so `advance_animations` re-initializes timing for
 /// the new current frame. Leaving the old start timestamp would cause the
 /// next frame switch to fire prematurely (or not at all if the current
@@ -1227,7 +1223,7 @@ fn delete_f_resets_frame_starts_so_animation_timer_reinitializes() {
 
 /// Catalog row: KG-DELETE-p, KG-DELETE-q
 ///
-/// Regression (round-1 codex F3 / gemini F4): a placement with `cols==0`
+/// Regression (round-1 F3 / F4): a placement with `cols==0`
 /// or `rows==0` occupies NO cells and MUST NOT match any
 /// `d=p`/`d=c`/`d=q` intersection query. Pre-fix `saturating_sub(1)`
 /// falsely reported a hit at the origin cell.
@@ -1278,12 +1274,12 @@ fn delete_p_does_not_match_zero_span_placement() {
 }
 
 // ---------------------------------------------------------------------------
-// Round-2 TPR regressions (codex R2 F1 / gemini R2 F1, F2, F4).
+// Round-2 TPR regressions ( R2 F1 / R2 F1, F2, F4).
 // ---------------------------------------------------------------------------
 
 /// Catalog rows: KG-DELETE-a, KG-DELETE-A
 ///
-/// Regression (round-2 codex F1 / gemini F2): zero-height placements must
+/// Regression (round-2 F1 / F2): zero-height placements must
 /// NOT count as viewport-visible; `ImagePlacement::intersects_viewport`
 /// must reject `rows==0` symmetric to `placement_intersects_cell`.
 #[test]
@@ -1330,7 +1326,7 @@ fn delete_a_does_not_match_zero_height_placement() {
 
 /// Catalog row: KG-ACTION-DELETE
 ///
-/// Regression (round-2 gemini F1): `remove_image` on an animated image
+/// Regression (round-2 F1): `remove_image` on an animated image
 /// whose `current_frame > 0` must use `animation_frames` as the SSOT for
 /// memory accounting — NOT `img.data.len()` (which tracks the currently
 /// displayed frame and drifts as the animation advances). Symmetric to
@@ -1396,7 +1392,7 @@ fn delete_animated_image_after_advance_correctly_releases_memory() {
         cache.memory_used(),
         0,
         "remove_image must release ALL frame bytes regardless of current_frame; \
-         pre-fix drift = F0-F_current when frames have unequal sizes"
+ pre-fix drift = F0-F_current when frames have unequal sizes"
     );
     // Silence unused-import warnings if compilation model changes.
     let _ = Instant::now();

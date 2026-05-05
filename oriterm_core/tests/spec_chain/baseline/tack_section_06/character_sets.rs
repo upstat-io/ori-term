@@ -474,9 +474,9 @@ fn preview_pane_renders_box_drawing_after_g1_dec_graphics() {
     );
 }
 
-// --- Negative pin ---------------------------------------------------------
+// --- Regression guard ---------------------------------------------------------
 
-/// Negative pin: `ESC ) 0` must be inert on G0 rendering until `SO` fires.
+/// Regression guard: `ESC ) 0` must be inert on G0 rendering until `SO` fires.
 ///
 /// Designating DEC Special Graphics to G1 (`ESC ) 0`) must NOT change
 /// what `q` looks like while G0 is still the active charset. Only
@@ -498,7 +498,7 @@ fn esc_g1_dec_graphics_is_inert_before_so() {
     );
 }
 
-/// Negative pin: `ESC ( B` (ASCII) in a fresh harness must NOT render `q` as `─`.
+/// Regression guard: `ESC ( B` (ASCII) in a fresh harness must NOT render `q` as `─`.
 ///
 /// Proves the translation layer is conditional on the active
 /// charset, not blanketly applied. A regression that always

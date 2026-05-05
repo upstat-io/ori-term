@@ -3,12 +3,12 @@
 //! Drives every sixel DCS-level operator through the `SpecHarness` →
 //! `Term` → `SixelParser` seam. Observations are via:
 //! - Dispatch: `harness.outcome().dispatched_calls` (sixel_start /
-//!   sixel_put / sixel_end method names recorded by the `RecordingHandler`).
+//! sixel_put / sixel_end method names recorded by the `RecordingHandler`).
 //! - State effect: `harness.term().renderable_content()` — the public
-//!   snapshot API whose `images` / `image_data` vectors expose the
-//!   placement created by `handle_sixel_end`. (`ImageCache::placement_count`
-//!   is `pub(crate)` so not reachable from integration tests; the
-//!   renderable snapshot is the public surface per the §12.0 plan.)
+//! snapshot API whose `images` / `image_data` vectors expose the
+//! placement created by `handle_sixel_end`. (`ImageCache::placement_count`
+//! is `pub(crate)` so not reachable from integration tests; the
+//! renderable snapshot is the public surface per the §12.0 plan.)
 //!
 //! Catalog rows covered: SIXEL-DCS-q, SIXEL-P1-ASPECT, SIXEL-BG-DeviceDefault,
 //! SIXEL-BG-NoChange, SIXEL-BG-SetToBg, SIXEL-P3-HGRID, SIXEL-RASTER-ATTRS,
@@ -114,11 +114,11 @@ fn dcs_envelope(p1: u16, p2: u16, p3: u16, body: &[u8]) -> Vec<u8> {
 /// 1. `sixel_start` dispatch fires exactly once (parser reached Term).
 /// 2. A placement is committed (the state-effect observation).
 /// 3. P2 drives observable bg semantics: P2=1 (NoChange) yields undrawn
-///    pixels with α=0 (transparent); P2=0 (DeviceDefault) and P2=2
-///    (SetToBg) yield opaque undrawn pixels (α=255). The RGB distinction
-///    between DeviceDefault (VT340 black) and SetToBg (terminal bg) is
-///    pinned by §12.2 `invariants.rs`; this test only asserts the α
-///    invariant because the default harness terminal bg is black.
+/// pixels with α=0 (transparent); P2=0 (DeviceDefault) and P2=2
+/// (SetToBg) yield opaque undrawn pixels (α=255). The RGB distinction
+/// between DeviceDefault (VT340 black) and SetToBg (terminal bg) is
+/// pinned by §12.2 `invariants.rs`; this test only asserts the α
+/// invariant because the default harness terminal bg is black.
 #[test]
 fn dcs_q_introducer_p1_p2_p3_cartesian_product() {
     const P1_VALUES: [u16; 2] = [0, 7];
@@ -511,7 +511,7 @@ fn data_byte_range_decodes_six_bit_column() {
 /// §12.1 plan (section-12-sixel.md:167-169) and §12.N completion
 /// checklist, no placement should be committed when the DCS is aborted
 /// mid-stream. Today `handle_sixel_end` stores unconditionally — this
-/// test is the negative pin that exposes the bug; the §12.1 plan calls
+/// test is the regression guard that exposes the bug; the §12.1 plan calls
 /// for filing BUG-12-* and fixing in-scope.
 #[test]
 fn dcs_abort_can_commits_no_placement() {
@@ -599,10 +599,10 @@ fn dcs_abort_esc_commits_no_placement() {
 /// BEL (`0x07`, a C0) that executes in place, then the `\` finalizing
 /// the 2-byte ST terminator, and asserts:
 /// 1. BEL dispatches to `Handler::bell` through `advance_dcs_escape` —
-///    proves the C0 pass-through branch at `lib.rs advance_dcs_escape`.
+/// proves the C0 pass-through branch at `lib.rs advance_dcs_escape`.
 /// 2. The sixel completes normally — `sixel_end(aborted = false)` fires
-///    and a placement is committed because the pending `ESC \` ST
-///    terminator is completed by the `\` immediately after BEL.
+/// and a placement is committed because the pending `ESC \` ST
+/// terminator is completed by the `\` immediately after BEL.
 #[test]
 fn dcs_escape_c0_control_passes_through_transparently() {
     let mut harness = SpecHarness::new();

@@ -15,13 +15,13 @@
 //! Enter the bank ()*+,-./ followed by the character set 0123456789:;<=>? for
 //! private use, and @A...Z[\]^_`a...z{|}~ for standard sets.
 //!
-//! G1 GL    !"#$%&'()*+,-./0123456789:;<=>?
-//!         @ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^
-//!         ◆▒␉␌␍␊°±␤␋┘┐┌└┼⎺⎻─⎼⎽├┤┴┬│≤≥π≠£·   DEL <>
+//! G1 GL !"#$%&'()*+,-./0123456789:;<=>?
+//! @ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^
+//! ◆▒␉␌␍␊°±␤␋┘┐┌└┼⎺⎻─⎼⎽├┤┴┬│≤≥π≠£· DEL <>
 //!
-//! G1 GR   <high-bit chars>
-//!         <high-bit chars>
-//!         <high-bit chars>   DEL <…>
+//! G1 GR <high-bit chars>
+//! <high-bit chars>
+//! <high-bit chars> DEL <…>
 //!
 //! bank+set>
 //! ```
@@ -41,17 +41,17 @@
 //! graphics and waits for the redrawn screen. Empirical capture
 //! against tack v1.08 shows that:
 //!
-//!   1. The post-`c` screen ALREADY renders DEC special graphics in
-//!      the G1 GL preview pane (no extra send needed).
-//!   2. The `─` (and every other box-drawing) glyph is therefore
-//!      already on screen BEFORE the `)0` send, so the
-//!      `TackNavigator` pre-existing-anchor guard would fire on any
-//!      anchor that contains a box-drawing char — and "DEC" is also
-//!      not present on the screen as a literal substring (tack
-//!      labels the pane "G1 GL", not "DEC graphics").
-//!   3. Sending `)0` to tack v1.08 at the `bank+set>` prompt is a
-//!      no-op against the rendered preview because G1 is ALREADY
-//!      DEC graphics — the redraw produces a byte-identical screen.
+//! 1. The post-`c` screen ALREADY renders DEC special graphics in
+//!    the G1 GL preview pane (no extra send needed).
+//! 2. The `─` (and every other box-drawing) glyph is therefore
+//!    already on screen BEFORE the `)0` send, so the
+//!    `TackNavigator` pre-existing-anchor guard would fire on any
+//!    anchor that contains a box-drawing char — and "DEC" is also
+//!    not present on the screen as a literal substring (tack
+//!    labels the pane "G1 GL", not "DEC graphics").
+//! 3. Sending `)0` to tack v1.08 at the `bank+set>` prompt is a
+//!    no-op against the rendered preview because G1 is ALREADY
+//!    DEC graphics — the redraw produces a byte-identical screen.
 //!
 //! Per the "expand the mission, never scope down" rule, the
 //! coverage is NOT reduced — the post-`c` screen already exercises
@@ -126,7 +126,7 @@
 //! against this implementation.
 //!
 //! Per the "expand the mission, never scope down" rule, the test is
-//! NOT deleted — it is repurposed as a NEGATIVE pin
+//! NOT deleted — it is repurposed as a Regression guard
 //! ([`tests::parse_character_sets_raw_ascii_line_drawing_does_not_match`])
 //! that asserts the parser correctly REJECTS raw ASCII line-drawing
 //! letters (which carry no Unicode box-drawing code points). A
@@ -216,12 +216,12 @@ pub const TACK_TOOLS_G0_DEC_GRAPHICS: ScenarioSpec = ScenarioSpec {
 ///
 /// The exit path: send `\r` (CR, 0x0d). At the inner loop's first
 /// iteration with `j == 1`:
-///   1. `putchp('\r')` echoes the CR.
-///   2. `j == 1 && '\r' > '/'` is false (0x0d < 0x2f), so `j` stays at 1.
-///   3. `bank[1] = '\r'`.
-///   4. `'\r' < ' '` is true → break inner loop.
-///   5. After the inner loop, `j == 1` → break outer `for (; bank[0];)` loop.
-///   6. `tools_charset()` returns to the tools-menu dispatcher.
+/// 1. `putchp('\r')` echoes the CR.
+/// 2. `j == 1 && '\r' > '/'` is false (0x0d < 0x2f), so `j` stays at 1.
+/// 3. `bank[1] = '\r'`.
+/// 4. `'\r' < ' '` is true → break inner loop.
+/// 5. After the inner loop, `j == 1` → break outer `for (; bank[0];)` loop.
+/// 6. `tools_charset()` returns to the tools-menu dispatcher.
 ///
 /// After the sub-tool exits, the standard `quit_tack(5)` chain
 /// drains the tools menu and main menu via `q` keystrokes (which

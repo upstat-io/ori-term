@@ -74,13 +74,13 @@ fn da3_produces_tertiary_device_attributes() {
     );
 }
 
-// --- XTVERSION (CSI > q) tests — BUG-11-018 ---
+// --- XTVERSION (CSI > q) tests — ---
 
-/// Regression: BUG-11-018 — XTVERSION reply construction lives in
+/// Regression: XTVERSION reply construction lives in
 /// `oriterm_core::Term::status_xtversion` (was in `oriterm_mux` interceptor).
 /// Pins reply byte format AND `PtyWriteKind::DeviceAttribute` classification
 /// alongside the DA1/DA2/DA3 family.
-/// See: bug-tracker/plans/BUG-11-018/section-03-tdd-matrix.md
+/// See: bug-tracker/plans//section-03-tdd-matrix.md
 #[test]
 fn xtversion_responds_with_dcs_version_string() {
     let mut t = term_with_effect_sink();
@@ -104,7 +104,7 @@ fn xtversion_responds_with_dcs_version_string() {
     );
 }
 
-/// Regression: BUG-11-018 — XTVERSION must not fire for non-default Ps.
+/// Regression: XTVERSION must not fire for non-default Ps.
 /// Per xterm `charproc.c::CASE_REPORT_VERSION`, only `GetParam(0) <= 0`
 /// triggers a reply; non-zero Ps falls through to unhandled at the
 /// parser dispatch arm.
@@ -595,12 +595,12 @@ fn decrqm_verifies_default_mode_flags() {
 // replies, those apps default to conservative sizes or skip sixel.
 //
 // Pi values per xterm ctlseqs / `charproc.c:5153-5279`:
-//   1 = number of color registers
-//   2 = sixel graphics geometry (pixels)
-//   3 = ReGIS graphics geometry (unsupported — Ps=3 failure)
+// 1 = number of color registers
+// 2 = sixel graphics geometry (pixels)
+// 3 = ReGIS graphics geometry (unsupported — Ps=3 failure)
 //
 // Pa values:
-//   1 = read, 2 = reset, 3 = set, 4 = read maximum
+// 1 = read, 2 = reset, 3 = set, 4 = read maximum
 //
 // Reply format: `CSI ? Pi ; Ps [; Pv [; Pv2]] S`. Ps=0 success, Ps=1
 // bad-value (unknown Pi), Ps=2 bad-item (unknown Pa), Ps=3 failure.
@@ -608,7 +608,7 @@ fn decrqm_verifies_default_mode_flags() {
 // Test grid: default 24x80 with cell_pixel_width=8, cell_pixel_height=16,
 // so Pi=2 geometry replies report 640x384 pixels.
 //
-// Regression: BUG-06-022 — XTSMGRAPHICS query had no reply path before
+// Regression: XTSMGRAPHICS query had no reply path before
 // this fix; vte CSI dispatch had no `('S', [b'?'])` arm and Handler
 // trait had no `graphics_attribute` method.
 
@@ -1016,7 +1016,7 @@ fn xtsmgraphics_ris_resets_color_register_count_to_default() {
             >= 1,
         "Pa=1 read after RIS should reply ?1;0;256S (default restored), got: {events:?}"
     );
-    // Negative pin: the post-RIS read MUST NOT reflect the pre-RIS set value.
+    // Regression guard: the post-RIS read MUST NOT reflect the pre-RIS set value.
     let post_ris_set_value = events
         .iter()
         .filter(|e| **e == "PtyWrite(\x1b[?1;0;100S)")
@@ -1192,7 +1192,7 @@ fn xtsmgraphics_reply_uses_graphics_attribute_report_kind() {
             .all(|k| *k == PtyWriteKind::GraphicsAttributeReport),
         "XTSMGRAPHICS replies must use GraphicsAttributeReport kind, got: {xtsm_writes:?}"
     );
-    // Negative pin: must NOT use DeviceAttribute (which is for DA1/DA2/DA3).
+    // Regression guard: must NOT use DeviceAttribute (which is for DA1/DA2/DA3).
     assert!(
         xtsm_writes
             .iter()
@@ -1279,7 +1279,7 @@ fn xtsmgraphics_pi3_unaffected_by_image_protocol_disabled() {
 
 #[test]
 fn xtsmgraphics_disabled_pa3_set_does_not_leak_color_register_count() {
-    // Regression: round-0 TPR (opencode F1 high-severity finding) — state
+    // Regression: round-0 TPR ( F1 high-severity finding) — state
     // mutation MUST NOT execute when image_protocol_enabled is false.
     // Per xterm `charproc.c:5198-5200`, the gate sits at the TOP of the
     // Pi=1 block, BEFORE any Pa dispatch. If the gate fires AFTER the

@@ -1,7 +1,7 @@
 //! Tests for the `effect_filters` helper surface.
 //!
 //! Every helper gets a positive test (exercises the happy path) and a
-//! negative pin (proves the filter does not over-match or silently
+//! regression guard (proves the filter does not over-match or silently
 //! aggregate unrelated writes). DA1 (`CSI c`) and DSR cursor-position
 //! (`CSI 6 n`) are the fixture sequences — both drive the production
 //! handler path and emit distinct `PtyWriteKind` variants, letting the
@@ -72,7 +72,7 @@ fn pty_writes_of_kind_filters_by_kind() {
     assert_eq!(cpr, vec![DSR_CPR_HOME]);
 }
 
-/// Negative pin: a kind with no matching writes yields an empty
+/// Regression guard: a kind with no matching writes yields an empty
 /// iterator. Proves the filter is not leaking unrelated writes through.
 /// Anchor: HYG-13.1-002 §13.1 close-out.
 #[test]
@@ -92,7 +92,7 @@ fn pty_write_concat_joins_all_writes_of_kind() {
     assert_eq!(concat, DA1_REPLY);
 }
 
-/// Negative pin: concat returns empty when no writes of the requested
+/// Regression guard: concat returns empty when no writes of the requested
 /// kind exist. Proves an unrelated kind does not dump DA1's bytes into
 /// the output buffer. Anchor: HYG-13.1-002 §13.1 close-out.
 #[test]
@@ -132,7 +132,7 @@ fn pty_write_contains_rejects_needle_absent_from_transcript() {
     ));
 }
 
-/// Negative pin: a needle that matches a DIFFERENT kind's bytes must
+/// Regression guard: a needle that matches a DIFFERENT kind's bytes must
 /// not falsely match under the filtered kind. Proves the kind filter
 /// runs BEFORE the byte search. Anchor: HYG-13.1-002 §13.1 close-out.
 #[test]
@@ -166,7 +166,7 @@ fn pty_write_contains_empty_needle_matches_when_any_write_of_kind_exists() {
 }
 
 /// Pins: `count_exact_pty_writes` tallies writes whose bytes equal
-/// `expected` byte-for-byte — the §13.1 TPR round 0 "multi-step tests
+/// `expected` byte-for-byte — the §13.1 review round 0 "multi-step tests
 /// satisfied by aggregated transcripts" regression guard. Three DA1
 /// queries produce three distinct DA1 reply writes, so exact-count must
 /// return 3 (not 1-because-concat, not 0-because-not-found). Anchor:
@@ -179,7 +179,7 @@ fn count_exact_pty_writes_counts_byte_for_byte_matches() {
     assert_eq!(got, 3, "three DA1 queries produce three exact replies");
 }
 
-/// Negative pin: a near-match (same kind, different bytes) must NOT
+/// Regression guard: a near-match (same kind, different bytes) must NOT
 /// count. Proves the count uses exact byte comparison, not a prefix or
 /// loose match. Anchor: HYG-13.1-002 §13.1 close-out.
 #[test]
@@ -203,7 +203,7 @@ fn last_pty_write_returns_most_recent_write_cloned() {
     assert_eq!(kind, PtyWriteKind::CursorReport);
 }
 
-/// Negative pin: `last_pty_write` returns `None` on an empty transcript.
+/// Regression guard: `last_pty_write` returns `None` on an empty transcript.
 /// Proves the helper does not panic when no writes have been emitted.
 /// Anchor: HYG-13.1-002 §13.1 close-out.
 #[test]
@@ -229,7 +229,7 @@ fn assert_no_pty_writes_passes_on_empty_transcript() {
     assert_no_pty_writes(&h);
 }
 
-/// Negative pin: an expected payload that matches a different kind's
+/// Regression guard: an expected payload that matches a different kind's
 /// bytes must return zero under the filtered kind. Pairs with the
 /// `pty_write_contains_kind_filter_runs_before_byte_search` pin for
 /// the exact-count path. Anchor: HYG-13.1-002 §13.1 close-out.

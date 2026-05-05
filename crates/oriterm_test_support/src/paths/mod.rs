@@ -16,9 +16,8 @@
 //! - [`wrapper_root`] — wrapper repo root, found by walking up from
 //!   `CARGO_MANIFEST_DIR` until `plans/spec-conformance/` is encountered.
 //!   Returns `None` on standalone `term_repo` checkout. Consumers MUST handle
-//!   the `None` case via graceful skip per `.claude/rules/tests.md
-//!   §Graceful Skip Protocol` — never panic, never `include_bytes!` against
-//!   wrapper-resident files.
+//!   the `None` case via graceful skip — never panic, never `include_bytes!`
+//!   against wrapper-resident files.
 //!
 //! Convenience helpers ([`spec_conformance_dir`], [`catalog_dir`],
 //! [`captures_dir`], [`specs_dir`], [`audits_dir`],

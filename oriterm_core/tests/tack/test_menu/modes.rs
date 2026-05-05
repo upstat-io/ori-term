@@ -21,8 +21,8 @@
 //!
 //! ```text
 //! \x1B[H\x1B[2J(os) should be true, not false.
-//! (os) should be           false.
-//! (os) over-strike is false in the data base.  (os) Done
+//! (os) should be false.
+//! (os) over-strike is false in the data base. (os) Done
 //! ```
 //!
 //! No `(am)`, `(bce)`, `(bw)`, `(km)`, `(mir)`, `(msgr)`, or

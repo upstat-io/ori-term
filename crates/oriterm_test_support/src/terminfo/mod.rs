@@ -75,18 +75,18 @@ impl TerminfoVariant {
 /// machinery to steer child processes to it.
 ///
 /// At construction, this type:
-///   1. Creates a temp directory via [`tempfile::TempDir`].
-///   2. Writes the embedded [`ORI_TERM_INFO`] source to a scratch
-///      file inside the tempdir.
-///   3. Invokes `tic -x -o <tempdir> <scratch>` as a subprocess.
-///   4. Best-effort sanity check via `infocmp -A <tempdir> <entry>`
-///      that the entry we asked `tic` to write is visible through
-///      ncurses. Skipped when `infocmp` is not installed so the
-///      hard dependency remains `tic` only. This replaces the
-///      previous `Path::exists` probe on `<tempdir>/<bucket>/<entry>`,
-///      which only worked on the directory backend and panicked on
-///      hashed-db hosts (e.g. macOS). The full `infocmp -A` content
-///      round-trip lives in the 02.4 test suite, not here.
+/// 1. Creates a temp directory via [`tempfile::TempDir`].
+/// 2. Writes the embedded [`ORI_TERM_INFO`] source to a scratch
+///    file inside the tempdir.
+/// 3. Invokes `tic -x -o <tempdir> <scratch>` as a subprocess.
+/// 4. Best-effort sanity check via `infocmp -A <tempdir> <entry>`
+///    that the entry we asked `tic` to write is visible through
+///    ncurses. Skipped when `infocmp` is not installed so the
+///    hard dependency remains `tic` only. This replaces the
+///    previous `Path::exists` probe on `<tempdir>/<bucket>/<entry>`,
+///    which only worked on the directory backend and panicked on
+///    hashed-db hosts (e.g. macOS). The full `infocmp -A` content
+///    round-trip lives in the 02.4 test suite, not here.
 ///
 /// Drop cleans up the temp directory automatically (RAII via
 /// [`TempDir`]).

@@ -102,7 +102,7 @@ pub fn reconcile(
     let top_down_sigs: BTreeSet<TupleSig> =
         top_down_entries.iter().map(|e| e.sig.clone()).collect();
 
-    // 3. Captures: all .cap files → signatures.
+    // 3. Captures: all.cap files → signatures.
     let mut capture_sigs: BTreeSet<TupleSig> = BTreeSet::new();
     if captures_dir.exists() {
         let entries = std::fs::read_dir(captures_dir)

@@ -39,7 +39,7 @@
 //! # Plan deviation — success path, not failure path
 //!
 //! The 06.4 plan as authored anticipated the FAILURE-path diagnostic
-//! (`ENQ sequence from (u9):`, `ACK received:`, `Length of ACK ...`,
+//! (`ENQ sequence from (u9):`, `ACK received:`, `Length of ACK...`,
 //! `Terminating character found in (u8):`) — that's the output
 //! `probe_enq_ok()` produces when the terminal does NOT respond
 //! within 400 ms or the ACK is empty. The plan author assumed

@@ -42,7 +42,7 @@ pub(in crate::server) struct DispatchContext<'a> {
         reason = "read by clients.rs; dispatch no longer populates after IO thread migration"
     )]
     pub immediate_push: &'a mut Vec<PaneId>,
-    /// Pending host-request tokens (BUG-11-011). Threaded into dispatch so
+    /// Pending host-request tokens (). Threaded into dispatch so
     /// the `ReplyHostRequest` arm can fulfill the matching token + the
     /// `Unsubscribe` arm can drop entries the unsubscribing client owned.
     pub pending_host_replies: &'a mut HashMap<HostRequestId, PendingHostReply>,

@@ -31,7 +31,7 @@ fn handoff_server_constructs_and_exposes_iunknown() {
     let server = HandoffServer::new(tx);
     let unknown: IUnknown = server.into();
     // Casting back to ITerminalHandoff3 via the typed cast confirms the
-    // vtable was wired correctly. This is a semantic pin: if the
+    // vtable was wired correctly. This is a property: if the
     // interface UUID or vtable layout drifts, the cast fails at runtime.
     let _terminal: ITerminalHandoff3 = unknown
         .cast()

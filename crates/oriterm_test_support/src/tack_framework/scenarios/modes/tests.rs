@@ -51,7 +51,7 @@ fn parse_modes_phase_screen_handles_missing_caps() {
 
 #[test]
 fn parse_modes_phase_screen_rejects_substring_collisions() {
-    // SEMANTIC PIN: the parser MUST use grid_has_paren_token, not
+    // Verifies: the parser MUST use grid_has_paren_token, not
     // raw `str::contains`. Words like `name` contain `am`, `xname`
     // contains `xnam`, and `bcename` contains both `bce` and `name`
     // — none of which are real cap labels (they lack the
@@ -92,7 +92,7 @@ fn parse_modes_phase_screen_each_known_cap_in_isolation() {
 
 #[test]
 fn parse_modes_phase_screen_uses_grid_has_paren_token() {
-    // SEMANTIC PIN: feed bare cap labels (no parens) and assert
+    // Verifies: feed bare cap labels (no parens) and assert
     // NONE of them are returned. The whole point of the helper is
     // that `am` matches inside `name` via plain contains() but
     // `(am)` does not. If a future regression switches the parser

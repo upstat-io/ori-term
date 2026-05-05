@@ -128,7 +128,7 @@ fn check_rejects_duplicate_row_id() {
 fn check_with_workspace_root_runs_dispatch_coverage() {
     // Two ownership domains: catalog lives at the wrapper root, vte source
     // lives at the term workspace root. Use the canonical SSOT helpers per
-    // `bug-tracker/plans/completed/BUG-08-028/`.
+    // `bug-tracker/plans/completed/`.
     let term_root = crate::paths::term_workspace_root();
     let Some(catalog_dir) = crate::paths::catalog_dir() else {
         eprintln!(

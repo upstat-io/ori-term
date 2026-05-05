@@ -144,7 +144,7 @@ fn kitty_arrow_up_report_all() {
     assert_eq!(r, b"\x1b[1A");
 }
 
-// --- BUG-08-033 Plan-TPR Round 1: kitty-mode terminator coverage for the 8
+// --- Plan-review round 1: kitty-mode terminator coverage for the 8
 // helper-backed keys that pre-fix kitty_precedence.rs missed. After the
 // `legacy_csi_info` migration, these exercise `cursor_key_for_named` +
 // `CursorKey::terminator()` (Down/Right/Left/Home/End) and
@@ -319,11 +319,11 @@ fn kitty_plain_text() {
     assert_eq!(r, b"a");
 }
 
-/// Regression: BUG-08-013 — `Key::Character("a")` in Kitty DISAMBIGUATE with
+/// Regression: `Key::Character("a")` in Kitty DISAMBIGUATE with
 /// no `text` must fall back to the logical-char byte rather than returning
 /// empty. Prior to the fix this returned an empty vec and the shell silently
 /// dropped the keystroke on backends that don't populate `text`.
-/// See: bug-tracker/plans/completed/BUG-08-013/00-overview.md
+/// See: bug-tracker/plans/completed/00-overview.md
 #[test]
 fn kitty_plain_char_no_text_field_falls_back_to_logical_char() {
     let r = enc(
@@ -1000,9 +1000,9 @@ fn kitty_alternate_key_not_reported_without_flag() {
     assert_eq!(r, b"\x1b[122;5u");
 }
 
-// --- BUG-08-012 semantic pin: post-crash restore produces plain ASCII ---
+// --- property: post-crash restore produces plain ASCII ---
 
-/// Regression: BUG-08-012 — headline user-visible symptom pin.
+/// Regression: headline user-visible symptom pin.
 ///
 /// After a kitty-aware child program crashes mid-command and the shell
 /// emits its next OSC 133 ; A prompt, the `keyboard_mode_stack` must be
@@ -1011,7 +1011,7 @@ fn kitty_alternate_key_not_reported_without_flag() {
 /// shell prompt produces plain ASCII `b"a"`, NOT the raw CSI u fragments
 /// (`0;1;100u7;1;97u`) that the shell doesn't understand.
 ///
-/// See: bug-tracker/plans/completed/BUG-08-012/00-overview.md §2 (Semantic pin).
+/// See: bug-tracker/plans/completed/00-overview.md §2 (Property).
 #[test]
 fn legacy_key_encoding_after_child_crash_produces_raw_ascii_not_csi_u() {
     use oriterm_core::effect::VoidEffectSink;
@@ -1051,7 +1051,7 @@ fn legacy_key_encoding_after_child_crash_produces_raw_ascii_not_csi_u() {
     );
 }
 
-// BUG-08-026: Kitty numpad disambiguation — codepoints 57399-57426.
+// : Kitty numpad disambiguation — codepoints 57399-57426.
 
 /// Encode helper with `KeyLocation::Numpad`.
 fn enc_numpad(key: Key, mode: TermMode) -> Vec<u8> {
@@ -1066,7 +1066,7 @@ fn enc_numpad(key: Key, mode: TermMode) -> Vec<u8> {
     })
 }
 
-/// BUG-08-026: numpad 1 with kitty active emits CSI 57400 u, NOT `b"1"`.
+/// : numpad 1 with kitty active emits CSI 57400 u, NOT `b"1"`.
 #[test]
 fn kitty_numpad_one_emits_codepoint_57400() {
     let r = enc_numpad(Key::Character("1".into()), kitty_disambiguate());
@@ -1076,36 +1076,36 @@ fn kitty_numpad_one_emits_codepoint_57400() {
     );
 }
 
-/// BUG-08-026: numpad 0 → 57399 (low end of the codepoint range).
+/// : numpad 0 → 57399 (low end of the codepoint range).
 #[test]
 fn kitty_numpad_zero_emits_codepoint_57399() {
     let r = enc_numpad(Key::Character("0".into()), kitty_disambiguate());
     assert_eq!(r, b"\x1b[57399u");
 }
 
-/// BUG-08-026: numpad Enter → 57414 (transition between digits and arrows).
+/// : numpad Enter → 57414 (transition between digits and arrows).
 #[test]
 fn kitty_numpad_enter_emits_codepoint_57414() {
     let r = enc_numpad(Key::Named(NamedKey::Enter), kitty_disambiguate());
     assert_eq!(r, b"\x1b[57414u");
 }
 
-/// BUG-08-026: numpad ArrowLeft → 57417 (start of named-key range).
+/// : numpad ArrowLeft → 57417 (start of named-key range).
 #[test]
 fn kitty_numpad_arrow_left_emits_codepoint_57417() {
     let r = enc_numpad(Key::Named(NamedKey::ArrowLeft), kitty_disambiguate());
     assert_eq!(r, b"\x1b[57417u");
 }
 
-/// BUG-08-026: numpad Delete → 57426 (high end of the codepoint range).
+/// : numpad Delete → 57426 (high end of the codepoint range).
 #[test]
 fn kitty_numpad_delete_emits_codepoint_57426() {
     let r = enc_numpad(Key::Named(NamedKey::Delete), kitty_disambiguate());
     assert_eq!(r, b"\x1b[57426u");
 }
 
-/// BUG-08-026 negative pin: same key on Standard location MUST NOT use the
-/// numpad codepoint range. Distinguishes the BUG-08-026 fix from a blanket
+/// regression guard: same key on Standard location MUST NOT use the
+/// numpad codepoint range. Distinguishes the fix from a blanket
 /// disambiguation that would also affect main-row digits.
 #[test]
 fn kitty_main_row_one_does_not_use_numpad_codepoint() {

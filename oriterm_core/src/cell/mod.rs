@@ -13,7 +13,7 @@ use unicode_width::UnicodeWidthChar;
 use vte::ansi::Color;
 
 bitflags! {
-    /// Per-cell attribute flags (SGR and internal).
+ /// Per-cell attribute flags (SGR and internal).
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub struct CellFlags: u32 {
         const BOLD              = 1 << 0;
@@ -31,51 +31,51 @@ bitflags! {
         const DOTTED_UNDERLINE  = 1 << 12;
         const DASHED_UNDERLINE  = 1 << 13;
         const DOUBLE_UNDERLINE  = 1 << 14;
-        /// Padding cell before a wide char that wrapped to the next line.
-        ///
-        /// Inserted at `cols - 1` when a wide char can't fit and wraps.
-        /// Skipped during text extraction, selection, search, and reflow
-        /// to avoid spurious spaces.
+ /// Padding cell before a wide char that wrapped to the next line.
+ ///
+ /// Inserted at `cols - 1` when a wide char can't fit and wraps.
+ /// Skipped during text extraction, selection, search, and reflow
+ /// to avoid spurious spaces.
         const LEADING_WIDE_CHAR_SPACER  = 1 << 15;
         const OVERLINE          = 1 << 16;
         const SUPERSCRIPT       = 1 << 17;
         const SUBSCRIPT         = 1 << 18;
 
-        /// Cell has been written by the application (xterm CHARDRAWN
-        /// equivalent). Set at every put_char / wide-spacer / leading-
-        /// wide-spacer / DECALN / reflow-synthesized-spacer /
-        /// push_zerowidth write site; cleared at every reset path via
-        /// template copy (templates must never carry DRAWN — enforced
-        /// by `debug_assert!` in the Grid write paths). Consumed by
-        /// DECRQCRA (`CSI * y`) to distinguish application-written
-        /// blanks from pristine cells per xterm `screen.c:3178-3180`.
+ /// Cell has been written by the application (xterm CHARDRAWN
+ /// equivalent). Set at every put_char / wide-spacer / leading-
+ /// wide-spacer / DECALN / reflow-synthesized-spacer /
+ /// push_zerowidth write site; cleared at every reset path via
+ /// template copy (templates must never carry DRAWN — enforced
+ /// by `debug_assert!` in the Grid write paths). Consumed by
+ /// DECRQCRA (`CSI * y`) to distinguish application-written
+ /// blanks from pristine cells per xterm `screen.c:3178-3180`.
         const DRAWN             = 1 << 19;
 
-        /// DECSCA per-character protection attribute. Set on cells
-        /// written while `Term::char_protection == true` (DECSCA Ps=1).
-        /// Consumed by DECSERA (`CSI $ {`) — protected cells survive
-        /// selective erase. DECERA (`CSI $ z`) erases unconditionally.
-        /// This is a semantic per-character attribute (spec-defined),
-        /// NOT a structural internal-state bit; it does NOT join
-        /// `INTERNAL_CELL_STATE` and cells may legitimately carry it
-        /// without violating the cursor-template invariant.
+ /// DECSCA per-character protection attribute. Set on cells
+ /// written while `Term::char_protection == true` (DECSCA Ps=1).
+ /// Consumed by DECSERA (`CSI $ {`) — protected cells survive
+ /// selective erase. DECERA (`CSI $ z`) erases unconditionally.
+ /// This is a semantic per-character attribute (spec-defined),
+ /// NOT a structural internal-state bit; it does NOT join
+ /// `INTERNAL_CELL_STATE` and cells may legitimately carry it
+ /// without violating the cursor-template invariant.
         const PROTECTED         = 1 << 20;
 
-        /// Union of all underline variants for mutual exclusion.
+ /// Union of all underline variants for mutual exclusion.
         const ALL_UNDERLINES = Self::UNDERLINE.bits()
             | Self::DOUBLE_UNDERLINE.bits()
             | Self::CURLY_UNDERLINE.bits()
             | Self::DOTTED_UNDERLINE.bits()
             | Self::DASHED_UNDERLINE.bits();
 
-        /// Internal cell-state bits that must NEVER appear on a
-        /// `cursor.template.flags` value. SGR attributes (BOLD /
-        /// UNDERLINE / COLORED / …) are template-legal; these
-        /// structural bits are set only by concrete cell-write paths
-        /// and would corrupt written cells if they leaked via the
-        /// template. `Grid::put_char_ascii` and `Grid::put_char_slow`
-        /// debug_assert that `cursor.template.flags & INTERNAL_CELL_STATE`
-        /// is empty on every write.
+ /// Internal cell-state bits that must NEVER appear on a
+ /// `cursor.template.flags` value. SGR attributes (BOLD /
+ /// UNDERLINE / COLORED / …) are template-legal; these
+ /// structural bits are set only by concrete cell-write paths
+ /// and would corrupt written cells if they leaked via the
+ /// template. `Grid::put_char_ascii` and `Grid::put_char_slow`
+ /// debug_assert that `cursor.template.flags & INTERNAL_CELL_STATE`
+ /// is empty on every write.
         const INTERNAL_CELL_STATE = Self::DRAWN.bits()
             | Self::WRAP.bits()
             | Self::WIDE_CHAR.bits()
@@ -195,13 +195,13 @@ impl Cell {
     /// Test helper: construct a drawn cell carrying the given character
     /// with default SGR + `CellFlags::DRAWN` set.
     ///
-    /// Cuts the `Cell { ch: 'X', flags: CellFlags::DRAWN, ..Cell::default() }`
+    /// Cuts the `Cell { ch: 'X', flags: CellFlags::DRAWN,..Cell::default() }`
     /// boilerplate that appears repeatedly in grid/rect-op/row tests.
     /// Use this (not bare `Cell::default` + flag insert) whenever a
     /// test needs to construct a cell that behaves like it was written
     /// by the application — so `compute_rect_checksum` and
     /// `Row::is_blank`/`content_len` see the correct write-history
-    /// state per BUG-08-017.
+    /// state per.
     #[cfg(test)]
     #[must_use]
     pub fn drawn(ch: char) -> Self {

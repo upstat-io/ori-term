@@ -56,6 +56,14 @@ pub struct MuxClient {
     /// `MarkAllDirty` request. Prevents `clear_pane_snapshot_dirty` from
     /// clearing the dirty flag prematurely (before the snapshot arrives).
     pending_refresh: HashSet<PaneId>,
+
+    /// Client-local bell-indicator state. The SSOT for `has_bell()` queries
+    /// in daemon mode — decoupled from `pane_snapshots` so a daemon-pushed
+    /// snapshot replace cannot relight a locally-cleared bell. Populated
+    /// by the App's `MuxNotification::PaneBell` arm via `set_bell`; cleared
+    /// by `clear_bell` (focus-clear path) and `cleanup_closed_pane`. Bells
+    /// are transient client UI state, not server-replicated.
+    bell_panes: HashSet<PaneId>,
 }
 
 impl MuxClient {
@@ -77,6 +85,7 @@ impl MuxClient {
             pane_snapshots: HashMap::new(),
             dirty_panes: HashSet::new(),
             pending_refresh: HashSet::new(),
+            bell_panes: HashSet::new(),
         })
     }
 
@@ -93,7 +102,16 @@ impl MuxClient {
             pane_snapshots: HashMap::new(),
             dirty_panes: HashSet::new(),
             pending_refresh: HashSet::new(),
+            bell_panes: HashSet::new(),
         }
+    }
+
+    /// Test-only helper: inject a notification into the buffer so `poll_events`
+    /// can scan it without going through the real transport. Used by tests
+    /// that pin the no-op-mutation contract on `poll_events`.
+    #[cfg(test)]
+    pub fn inject_notification(&mut self, notif: MuxNotification) {
+        self.notifications.push(notif);
     }
 
     /// Cache a snapshot for a pane (used when subscribe responses arrive).
@@ -101,11 +119,20 @@ impl MuxClient {
         self.pane_snapshots.insert(pane_id, snapshot);
     }
 
-    /// Remove a cached snapshot (used when a pane is closed).
+    /// Remove all per-pane caches for `pane_id` (used when a pane is closed).
+    ///
+    /// Drains every backend-local index keyed by `PaneId` so explicit
+    /// `close_pane`, notification-driven `cleanup_closed_pane`, and any
+    /// other close path share one cleanup point. `bell_panes` is included
+    /// here because the App-level focus gate populates it independently of
+    /// `pane_snapshots`; without dropping it here a `close_pane` (RPC
+    /// path) would leave a stale `has_bell == true` for a recycled
+    /// `PaneId`.
     pub(crate) fn remove_snapshot(&mut self, pane_id: PaneId) {
         self.pane_snapshots.remove(&pane_id);
         self.dirty_panes.remove(&pane_id);
         self.pending_refresh.remove(&pane_id);
+        self.bell_panes.remove(&pane_id);
         if let Some(transport) = &self.transport {
             transport.invalidate_pushed_snapshot(pane_id);
         }

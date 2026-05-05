@@ -1,6 +1,6 @@
 //! Exhaustive semantic raster sweep for every subcell-glyph codepoint.
 //!
-//! Per `.claude/rules/tests.md §Matrix Testing Rule` and the §11.2 plan,
+//! Per Testing Rule` and the §11.2 plan,
 //! sparse golden pins establish the visual anchor for each family while
 //! this sweep proves per-codepoint dispatch wiring across all 706
 //! codepoints in the five covered ranges.
@@ -8,29 +8,29 @@
 //! For every codepoint in every range, this module asserts:
 //! 1. `font::is_builtin(ch) == true` — the font shaper bypasses this codepoint.
 //! 2. `builtin_glyphs::rasterize(ch, cell_w, cell_h)` returns `Some(glyph)` —
-//!    the built-in dispatch fires and produces a bitmap.
+//! the built-in dispatch fires and produces a bitmap.
 //! 3. The rendered bitmap has at least one non-zero alpha pixel — the glyph
-//!    actually writes ink. Codepoints like `SPACE` that render nothing are
-//!    not in scope (the five ranges here are all geometric glyphs).
+//! actually writes ink. Codepoints like `SPACE` that render nothing are
+//! not in scope (the five ranges here are all geometric glyphs).
 //!
 //! Correctness of the specific bitmask values is anchored by:
 //! - **Octants**: `legacy_computing::tests::octants_table_matches_canonical_artifact`
-//!   pins every entry in `OCTANT_MASKS` against the §11.0 canonical artifact.
+//! pins every entry in `OCTANT_MASKS` against the §11.0 canonical artifact.
 //! - **Sextants**: `sextants_bit_decomposition_matches_canonical_formula` below
-//!   checks every codepoint's 2×3 subcell pattern against the Ghostty formula
-//!   `bits = idx + idx/0x14 + 1`.
+//! checks every codepoint's 2×3 subcell pattern against the Ghostty formula
+//! `bits = idx + idx/0x14 + 1`.
 //! - **Block elements (non-quadrant)**: `block_elements_non_quadrant_fill_regions_match_unicode_spec`
-//!   below checks fill regions for half-blocks, eighths, and shades against
-//!   Unicode's canonical geometry.
+//! below checks fill regions for half-blocks, eighths, and shades against
+//! Unicode's canonical geometry.
 //! - **Quadrants**: `quadrant_subcells_match_codepoint_semantics` below.
 //! - **Braille**: `braille_dot_bits_match_codepoint_low_byte` below.
 //! - **Box drawing**: pixel-exact pinned by the `subcell_box_drawings_double_cross`
-//!   sparse golden (U+256C) plus the `box_drawing_builtin_wins_over_configured_font`
-//!   precedence test. Box-drawing glyphs encode stroke weights (light / heavy /
-//!   double) over a 12-cell grid rather than a simple bit-per-subcell mask, so a
-//!   per-codepoint bit decomposition would just re-encode `box_drawing.rs`'s
-//!   weight table (tautological). Coverage is `is_builtin + rasterize + ink`
-//!   across all 128 codepoints here + 1 sparse golden + 1 precedence pin.
+//! sparse golden (U+256C) plus the `box_drawing_builtin_wins_over_configured_font`
+//! precedence test. Box-drawing glyphs encode stroke weights (light / heavy /
+//! double) over a 12-cell grid rather than a simple bit-per-subcell mask, so a
+//! per-codepoint bit decomposition would just re-encode `box_drawing.rs`'s
+//! weight table (tautological). Coverage is `is_builtin + rasterize + ink`
+//! across all 128 codepoints here + 1 sparse golden + 1 precedence pin.
 
 use crate::font::is_builtin;
 use crate::gpu::builtin_glyphs::rasterize;
@@ -131,9 +131,9 @@ fn braille_exhaustive_raster() {
     assert_every_codepoint_rasterizes(0x2801, 0x28FF, "BRAILLE", true);
 }
 
-/// Additional semantic pin: for braille, the 8 low bits of the codepoint
+/// Additional property: for braille, the 8 low bits of the codepoint
 /// drive which dots are set, per Unicode. Dot-1 = bit 0, dot-2 = bit 1,
-/// ..., dot-8 = bit 7. Proves the dispatch is reading codepoint bits in
+///..., dot-8 = bit 7. Proves the dispatch is reading codepoint bits in
 /// the canonical order — not scrambled.
 ///
 /// Methodology: for each braille codepoint, sample four corner positions
@@ -144,10 +144,10 @@ fn braille_exhaustive_raster() {
 fn braille_dot_bits_match_codepoint_low_byte() {
     // The braille implementation (oriterm/src/gpu/builtin_glyphs/braille.rs)
     // places each dot at a column × row derived from its Unicode bit index:
-    //   bit 0..=2 → left column,  rows 0, 1, 2
-    //   bit 3..=5 → right column, rows 0, 1, 2
-    //   bit 6     → left column,  row 3
-    //   bit 7     → right column, row 3
+    // bit 0..=2 → left column, rows 0, 1, 2
+    // bit 3..=5 → right column, rows 0, 1, 2
+    // bit 6 → left column, row 3
+    // bit 7 → right column, row 3
     //
     // We sample a 2-column × 4-row grid of representative positions inside
     // each dot's expected cell region and confirm the rendered bitmap's
@@ -203,7 +203,7 @@ fn braille_dot_bits_match_codepoint_low_byte() {
     }
 }
 
-/// Additional semantic pin: for sextants U+1FB00..=U+1FB3B, the 2×3 subcell
+/// Additional property: for sextants U+1FB00..=U+1FB3B, the 2×3 subcell
 /// grid's 6-bit mask is derived from the codepoint via the Ghostty arithmetic
 /// formula `bits = idx + idx/0x14 + 1` (where `idx = cp - 0x1FB00`), with bit
 /// ordering `tl, tr, ml, mr, bl, br`. Sample the center of each of the six
@@ -217,9 +217,9 @@ fn sextants_bit_decomposition_matches_canonical_formula() {
     let cell_w = TEST_CELL_W;
     let cell_h = TEST_CELL_H;
     // Subcell sample centers match the `draw_sextant` geometry:
-    //   hw = round(cell_w / 2) = 10
-    //   th = round(cell_h / 3) = 13
-    //   th2 = round(cell_h * 2 / 3) = 27
+    // hw = round(cell_w / 2) = 10
+    // th = round(cell_h / 3) = 13
+    // th2 = round(cell_h * 2 / 3) = 27
     // Bits: bit 0 = tl, bit 1 = tr, bit 2 = ml, bit 3 = mr, bit 4 = bl, bit 5 = br.
     let subcell_centers = [
         (cell_w / 4, cell_h / 6),         // tl (bit 0)
@@ -259,7 +259,7 @@ fn sextants_bit_decomposition_matches_canonical_formula() {
     }
 }
 
-/// Additional semantic pin: for non-quadrant block elements U+2580..=U+2595,
+/// Additional property: for non-quadrant block elements U+2580..=U+2595,
 /// each codepoint has a canonical fill region per Unicode (upper half, lower
 /// N/8, full block, left N/8, right half, 25%/50%/75% shade, upper 1/8, right
 /// 1/8). Sample points inside-vs-outside the expected fill region and verify
@@ -390,7 +390,7 @@ fn block_elements_non_quadrant_fill_regions_match_unicode_spec() {
     }
 }
 
-/// Additional semantic pin: for quadrants U+2596..=U+259F, the four 2×2
+/// Additional property: for quadrants U+2596..=U+259F, the four 2×2
 /// subcells correspond to explicit bit positions per Unicode (TL, TR, BL,
 /// BR). Sample the center of each subcell and verify the filled pattern
 /// matches the codepoint's canonical quadrant semantics.

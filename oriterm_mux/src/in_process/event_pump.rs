@@ -62,9 +62,10 @@ impl InProcessMux {
                         .push(MuxNotification::CommandComplete { pane_id, duration });
                 }
                 MuxEvent::PaneBell(id) => {
-                    if let Some(pane) = panes.get_mut(&id) {
-                        pane.set_bell();
-                    }
+                    // Bells are client-local UI state owned by the App's
+                    // focus gate, not pane state. The notification
+                    // reaches the App's PaneBell arm, which calls
+                    // `mux.set_bell` after the focus decision.
                     self.notifications.push(MuxNotification::PaneBell(id));
                 }
                 MuxEvent::PaneUrgencyHint(id) => {

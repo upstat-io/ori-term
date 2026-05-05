@@ -9,17 +9,17 @@
 //! # Submodule layout
 //!
 //! - `tools_menu_inventory` (06.0) — discovery + drift gate for the
-//!   `t)` submenu key set.
+//! `t)` submenu key set.
 //! - `status_reports_inventory` (06.0.b) + `status_reports` (06.1) —
-//!   nested sub-submenu walker for `s) ANSI status reports`.
+//! nested sub-submenu walker for `s) ANSI status reports`.
 //! - `sgr_modes` (06.2) — 80-mode SGR table capture.
 //! - `character_sets` (06.3) — DEC special graphics G1 bank table.
 //! - `enq_ack` (06.4) — ENQ/ACK handshake success-path capture.
 //! - 06.6 doc-only stubs for the interactive tools (`echo_tool`,
-//!   `reply_tool`, `hex_output`, `change_debug_level`,
-//!   `performance_testing`, `send_reset_init`). Each carries a
-//!   module rustdoc explaining why the corresponding tack tool is
-//!   excluded from end-to-end automation.
+//! `reply_tool`, `hex_output`, `change_debug_level`,
+//! `performance_testing`, `send_reset_init`). Each carries a
+//! module rustdoc explaining why the corresponding tack tool is
+//! excluded from end-to-end automation.
 
 pub mod change_debug_level;
 pub mod character_sets;

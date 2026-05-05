@@ -76,7 +76,7 @@ fn decsace_updates_ace_mode_on_term() {
 }
 
 /// DECCARA with SGR 7 (reverse) applies the INVERSE flag to every
-/// cell inside the clamped rectangle. Negative pin: cells OUTSIDE the
+/// cell inside the clamped rectangle. Regression guard: cells OUTSIDE the
 /// rectangle must not be touched.
 #[test]
 fn deccara_sets_reverse_flag_in_rect() {
@@ -126,7 +126,7 @@ fn deccra_copies_rect_to_destination() {
 }
 
 /// DECFRA fills a rectangle with character Pc (ASCII 'X' = 0x58) +
-/// current SGR. Negative pin: cells OUTSIDE the rect are unchanged.
+/// current SGR. Regression guard: cells OUTSIDE the rect are unchanged.
 #[test]
 fn decfra_fills_rect_with_character() {
     use crate::index::{Column, Line};
@@ -247,7 +247,7 @@ fn compute_rect_checksum_folds_combining_marks_in_notrim_mode() {
     let mut t = Term::new(1, 1, 0, Theme::default(), VoidEffectSink);
     // Install a cell with 'a' + combining acute accent (U+0301) at (0,0).
     // DRAWN set so the checksum treats this as an application-written
-    // cell per xterm CHARDRAWN semantics (BUG-08-017).
+    // cell per xterm CHARDRAWN semantics ().
     let mut extra = CellExtra::new();
     extra.zerowidth.push('\u{0301}');
     let cell = Cell {
@@ -278,14 +278,14 @@ fn compute_rect_checksum_folds_combining_marks_in_notrim_mode() {
 /// leading synthetic-space cell pushes into `trimmed` or gets dropped.
 ///
 /// On a pristine 2×3 grid:
-///   - Hoisted (correct, xterm parity): row 0 col 0 has `first=true`,
-///     contributes `' '` to `trimmed`. End-of-row reset sets
-///     `first=false` (matching `screen.c:3256`). Row 1 col 0 has
-///     `first=false` → synthetic space drops. Total `trimmed = 0x20`,
-///     negate → `0xFFE0`.
-///   - Buggy (per-row reset): each row's col 0 has `first=true` again,
-///     contributing `' '` twice. Total `trimmed = 0x40`, negate →
-///     `0xFFC0`.
+/// - Hoisted (correct, xterm parity): row 0 col 0 has `first=true`,
+/// contributes `' '` to `trimmed`. End-of-row reset sets
+/// `first=false` (matching `screen.c:3256`). Row 1 col 0 has
+/// `first=false` → synthetic space drops. Total `trimmed = 0x20`,
+/// negate → `0xFFE0`.
+/// - Buggy (per-row reset): each row's col 0 has `first=true` again,
+/// contributing `' '` twice. Total `trimmed = 0x40`, negate →
+/// `0xFFC0`.
 ///
 /// The test asserts the hoisted value (`0xFFE0`) so any regression to
 /// per-row reset trips it. Regression pin for round-1 F1 + round-2 F2.
@@ -309,7 +309,7 @@ fn compute_rect_checksum_wide_char_spacer_not_trimmed() {
     use crate::cell::{Cell, CellFlags};
     let mut t = Term::new(1, 2, 0, Theme::default(), VoidEffectSink);
     // Both cells are application-written: 'A' with DRAWN, and a
-    // wide-char spacer (structurally drawn) with DRAWN (BUG-08-017).
+    // wide-char spacer (structurally drawn) with DRAWN ().
     t.grid_mut()[crate::index::Line(0)][Column(0)] = Cell {
         ch: 'A',
         flags: CellFlags::DRAWN,
@@ -328,7 +328,7 @@ fn compute_rect_checksum_wide_char_spacer_not_trimmed() {
 }
 
 /// DECRQCRA emits exactly one `PtyEffect::Write { kind: ChecksumReport }`
-/// — no `HostRequest`, no pipeline round-trip. Negative pin for the
+/// — no `HostRequest`, no pipeline round-trip. Regression guard for the
 /// synchronous-emission design decision in §09A.5.
 #[test]
 fn decrqcra_emits_synchronous_pty_write_only() {

@@ -37,25 +37,14 @@ impl MuxBackend for MuxClient {
             transport.poll_notifications(&mut self.notifications);
         }
 
-        // Scan buffered notifications to mark panes dirty for rendering AND
-        // patch the cached snapshot's `has_bell` flag for instant tab-bell-
-        // icon feedback. The daemon also pushes the bell flag in the next
-        // snapshot, but that may lag the PaneBell / CommandComplete PDU by
-        // a tick — patching here gives the consumer arms (which read
-        // `has_bell` via the trait default → cached snapshot) fresh state
-        // immediately.
+        // Scan buffered notifications ONLY to mark panes dirty for rendering.
+        // Bell-indicator state lives in `self.bell_panes` and is mutated by
+        // the App's MuxNotification::PaneBell arm (via `set_bell`) AFTER its
+        // focus-gate decision — `poll_events` does NOT make focus decisions
+        // and must NOT mutate bell state. App owns focus-decided bell state.
         for notif in &self.notifications {
-            match notif {
-                MuxNotification::PaneOutput(pane_id) => {
-                    self.dirty_panes.insert(*pane_id);
-                }
-                MuxNotification::PaneBell(pane_id)
-                | MuxNotification::CommandComplete { pane_id, .. } => {
-                    if let Some(snap) = self.pane_snapshots.get_mut(pane_id) {
-                        snap.has_bell = true;
-                    }
-                }
-                _ => {}
+            if let MuxNotification::PaneOutput(pane_id) = notif {
+                self.dirty_panes.insert(*pane_id);
             }
         }
     }
@@ -357,30 +346,33 @@ impl MuxBackend for MuxClient {
         }
     }
 
+    fn has_bell(&self, pane_id: PaneId) -> bool {
+        // Bell-indicator state is client-local UI state. Reads from
+        // `bell_panes`, NOT from any snapshot field — the snapshot wire
+        // does not carry bell state. The App populates `bell_panes` via
+        // `set_bell` after its focus-gate decision; `clear_bell`
+        // (focus-clear path) and `cleanup_closed_pane` (pane lifecycle)
+        // remove entries.
+        self.bell_panes.contains(&pane_id)
+    }
+
     fn set_bell(&mut self, pane_id: PaneId) {
-        // Patch the locally-cached snapshot so the trait-default
-        // `has_bell()` (which reads from the cached snapshot, single SSOT
-        // across embedded + daemon backends) sees the fresh value
-        // immediately. The daemon's IO thread also sets the flag on its
-        // own pane via `event_pump.rs` and will include it in the next
-        // pushed snapshot — this local patch just removes the inter-tick
-        // latency.
-        if let Some(snap) = self.pane_snapshots.get_mut(&pane_id) {
-            snap.has_bell = true;
-        }
+        self.bell_panes.insert(pane_id);
     }
 
     fn clear_bell(&mut self, pane_id: PaneId) {
-        // Patch the local cache for instant icon dismiss on tab focus.
-        if let Some(snap) = self.pane_snapshots.get_mut(&pane_id) {
-            snap.has_bell = false;
-        }
-        // Forward to the daemon so its `Pane.has_bell` clears too —
-        // otherwise the next pushed snapshot would re-introduce
-        // `has_bell = true` after the client cleared it locally.
-        if let Some(transport) = &mut self.transport {
-            transport.fire_and_forget(MuxPdu::ClearBell { pane_id });
-        }
+        self.bell_panes.remove(&pane_id);
+    }
+
+    fn cleanup_closed_pane(&mut self, pane_id: PaneId) {
+        // The trait default body is a no-op. Without this override the
+        // notification-driven close path (shell exit, PTY EOF) would
+        // leak every per-pane backend cache. `remove_snapshot` is the
+        // SSOT for client-side close cleanup — it drains
+        // `pane_snapshots`, `dirty_panes`, `pending_refresh`,
+        // `bell_panes`, and the transport's pushed-snapshot cache in
+        // one place.
+        self.remove_snapshot(pane_id);
     }
 
     fn signal_child(&mut self, pane_id: PaneId, signal: crate::Signal) -> bool {
@@ -421,7 +413,7 @@ impl MuxBackend for MuxClient {
     }
 
     fn fulfill_host_request(&mut self, _pane_id: PaneId, reply: HostReply) -> io::Result<()> {
-        // BUG-11-011: package the reply into a `MuxPdu::ReplyHostRequest` and
+        // : package the reply into a `MuxPdu::ReplyHostRequest` and
         // fire it back to the daemon. The pending entry — created by the
         // reader thread when it received the originating notification — is
         // looked up by the token's `slot_id` to recover the daemon-allocated

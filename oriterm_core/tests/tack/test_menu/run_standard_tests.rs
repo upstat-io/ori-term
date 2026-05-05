@@ -21,15 +21,15 @@
 //! tack with a precise menu_path bypassing the `n) run standard
 //! tests` sequencer:
 //! - `oriterm_core/tests/tack/test_menu/modes.rs` (Section 04 +
-//!   05.1 phase scenarios) — covers `x`.
+//! 05.1 phase scenarios) — covers `x`.
 //! - `oriterm_core/tests/tack/test_menu/acs.rs` and
-//!   `graphic_rendition.rs` (Section 05.2) — cover `a`.
+//! `graphic_rendition.rs` (Section 05.2) — cover `a`.
 //! - `oriterm_core/tests/tack/test_menu/color.rs` (Section 05.3)
-//!   — covers `c`.
+//! — covers `c`.
 //! - `oriterm_core/tests/tack/test_menu/cursor_movement.rs`
-//!   (Section 05.4) — covers `m`.
+//! (Section 05.4) — covers `m`.
 //! - `oriterm_core/tests/tack/test_menu/padding.rs` (Section
-//!   05.4b) — covers `p`.
+//! 05.4b) — covers `p`.
 //!
 //! Per-test isolation is stronger than the `n)` sequencer because
 //! each test runs in a fresh tack invocation with no inter-test

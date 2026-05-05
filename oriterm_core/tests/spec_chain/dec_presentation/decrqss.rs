@@ -82,7 +82,7 @@ fn decrqss_decsca_reports_protected_after_setter() {
     assert_eq!(bytes, b"\x1bP1$r1\"q\x1b\\");
 }
 
-/// Negative pin: an unrecognized Pt (here, bare `Z`) replies with the
+/// Regression guard: an unrecognized Pt (here, bare `Z`) replies with the
 /// invalid-request shape `DCS 0 $ r ST` — proves DECRQSS does NOT silently
 /// drop unknown targets and does NOT echo Pt back verbatim with Ps=1.
 /// Anchor: catalog row `DECPRES-DECRQSS` (invalid-Pt branch).
@@ -96,13 +96,13 @@ fn decrqss_unknown_pt_reports_invalid() {
     assert_eq!(bytes, b"\x1bP0$r\x1b\\");
 }
 
-/// Negative pin: the baseline DECSCL (`" p`) branch continues to reply
+/// Regression guard: the baseline DECSCL (`" p`) branch continues to reply
 /// `DCS 1 $ r 64;1 " p ST` after §09A.9 widens the match table — guards
 /// against accidentally shadowing pre-existing targets when adding DECSCUSR /
 /// DECSCA branches. Anchor: catalog row `DECPRES-DECRQSS` (DECSCL branch).
 #[test]
 fn decrqss_decscl_baseline_still_replies() {
-    // Negative pin: baseline DECSCL branch must continue to reply after §09A.9
+    // Regression guard: baseline DECSCL branch must continue to reply after §09A.9
     // extends the match table — guards against accidentally shadowing the
     // pre-existing targets when adding new ones.
     let mut h = SpecHarness::with_size(24, 80);

@@ -229,9 +229,9 @@ fn underline_and_strikethrough_combined() {
     assert!(html.contains("text-decoration:underline line-through"));
 }
 
-// -- Overline / superscript / subscript (BUG-06-014) --
+// -- Overline / superscript / subscript () --
 
-/// Regression: BUG-06-014 — semantic pin for SGR 53 (overline) HTML mapping.
+/// Regression: property for SGR 53 (overline) HTML mapping.
 #[test]
 fn overline_text_gets_text_decoration_overline() {
     let mut grid = Grid::new(5, 20);
@@ -249,7 +249,7 @@ fn overline_text_gets_text_decoration_overline() {
     );
 }
 
-/// Regression: BUG-06-014 — OVERLINE + UNDERLINE combine in single text-decoration value.
+/// Regression: OVERLINE + UNDERLINE combine in single text-decoration value.
 #[test]
 fn overline_and_underline_combined_in_single_text_decoration() {
     let mut grid = Grid::new(5, 20);
@@ -268,7 +268,7 @@ fn overline_and_underline_combined_in_single_text_decoration() {
     );
 }
 
-/// Regression: BUG-06-014 — OVERLINE + STRIKETHROUGH combine.
+/// Regression: OVERLINE + STRIKETHROUGH combine.
 #[test]
 fn overline_and_strikethrough_combined_in_single_text_decoration() {
     let mut grid = Grid::new(5, 20);
@@ -286,8 +286,8 @@ fn overline_and_strikethrough_combined_in_single_text_decoration() {
     );
 }
 
-/// Regression: BUG-06-014 — three-way decoration combination
-/// Pins Vec-join correctness for combined-decoration CSS output (BUG-06-014).
+/// Regression: three-way decoration combination
+/// Pins Vec-join correctness for combined-decoration CSS output ().
 #[test]
 fn overline_underline_strikethrough_three_way_combined() {
     let mut grid = Grid::new(5, 20);
@@ -313,8 +313,8 @@ fn overline_underline_strikethrough_three_way_combined() {
     );
 }
 
-/// Regression: BUG-06-014 — semantic pin for SGR 73 (superscript) HTML mapping.
-/// MUST emit `vertical-align:super` and MUST NOT emit `font-size` (BUG-06-014).
+/// Regression: property for SGR 73 (superscript) HTML mapping.
+/// MUST emit `vertical-align:super` and MUST NOT emit `font-size` ().
 #[test]
 fn superscript_emits_vertical_align_super_without_font_size_change() {
     let mut grid = Grid::new(5, 20);
@@ -344,7 +344,7 @@ fn superscript_emits_vertical_align_super_without_font_size_change() {
     );
 }
 
-/// Regression: BUG-06-014 — semantic pin for SGR 74 (subscript) HTML mapping.
+/// Regression: property for SGR 74 (subscript) HTML mapping.
 #[test]
 fn subscript_emits_vertical_align_sub_without_font_size_change() {
     let mut grid = Grid::new(5, 20);
@@ -371,7 +371,7 @@ fn subscript_emits_vertical_align_sub_without_font_size_change() {
     );
 }
 
-/// Regression: BUG-06-014 — SUPERSCRIPT + UNDERLINE compose (both attributes
+/// Regression: SUPERSCRIPT + UNDERLINE compose (both attributes
 /// emit; vertical-align does not interfere with text-decoration).
 #[test]
 fn superscript_and_underline_combine_in_span_css() {
@@ -388,7 +388,7 @@ fn superscript_and_underline_combine_in_span_css() {
     assert!(html.contains("vertical-align:super"), "html: {html}");
 }
 
-/// Regression: BUG-06-014 — negative pin: cell with no OVERLINE/SUPER/SUB flags
+/// Regression: regression guard: cell with no OVERLINE/SUPER/SUB flags
 /// produces no related CSS in default span output.
 #[test]
 fn no_overline_super_sub_emits_no_related_css() {

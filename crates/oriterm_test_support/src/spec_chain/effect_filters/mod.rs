@@ -1,11 +1,11 @@
 //! PTY write filter helpers for `spec_chain` tests.
 //!
 //! Canonical home for the `effects_emitted.iter().filter_map(|e| matches!(e,
-//! Effect::Pty(PtyEffect::Write { bytes, .. })) ...)` skeleton — a pattern
+//! Effect::Pty(PtyEffect::Write { bytes,.. }))...)` skeleton — a pattern
 //! that was independently re-implemented across the `spec_chain` suite
 //! (§08 baseline, §09 DEC private modes, §09A DEC presentation, §10 OSC,
 //! §12 sixel, §13 kitty, DEC rect ops, pilots). Consolidated per
-//! `.claude/rules/impl-hygiene.md` §Algorithmic DRY — 3+ instances
+//! §Algorithmic DRY — 3+ instances
 //! mandate extraction.
 //!
 //! All helpers borrow the harness; callers that need owning storage

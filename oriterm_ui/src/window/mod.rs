@@ -251,7 +251,7 @@ fn apply_platform_attributes(attrs: WindowAttributes, config: &WindowConfig) -> 
 ///
 /// macOS decoration modes:
 /// - `Frameless` / `TransparentTitlebar`: transparent titlebar + fullsize content view
-///   (traffic lights visible, content extends behind titlebar).
+/// (traffic lights visible, content extends behind titlebar).
 /// - `Buttonless`: same as above but hides traffic light buttons.
 /// - `Native`: standard macOS titlebar (no transparency, no fullsize content).
 #[cfg(target_os = "macos")]
@@ -298,11 +298,11 @@ fn apply_platform_attributes(attrs: WindowAttributes, _config: &WindowConfig) ->
 ///   matching the frameless CSD aesthetic.
 /// - `DWMWA_BORDER_COLOR = DWMWA_COLOR_DEFAULT` — opt the window into the
 ///   system accent color border. Frameless windows with `WS_THICKFRAME +
-///   DwmExtendFrameIntoClientArea` do not inherit the accent border by
+/// DwmExtendFrameIntoClientArea` do not inherit the accent border by
 ///   default; the `DWMWA_COLOR_DEFAULT (0xFFFFFFFF)` sentinel tells DWM
 ///   "use the system theme" (i.e., follow the user's
 ///   `Settings > Personalization > Colors > Show accent color on title bars
-///   and window borders` choice). This attribute is Windows 11 build 22000+;
+/// and window borders` choice). This attribute is Windows 11 build 22000+;
 ///   silently no-ops on older Windows. Reference: `WezTerm` + Alacritty both
 ///   apply this exact pattern; Microsoft Learn documents
 ///   `DWMWA_COLOR_DEFAULT` as the canonical accent-color opt-in.

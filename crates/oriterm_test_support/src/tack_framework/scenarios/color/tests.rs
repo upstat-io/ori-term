@@ -56,7 +56,7 @@ fn parse_color_screen_finds_each_color_in_isolation() {
 
 #[test]
 fn parse_color_screen_rejects_substring_collisions() {
-    // SEMANTIC PIN for the M3 fix: the parser MUST use
+    // Verifies for the M3 fix: the parser MUST use
     // `grid_has_token`, not raw `str::contains`. The plan
     // explicitly calls out: `red` matches inside
     // `redirect`/`rendered`/`reduce`, `blue` inside
@@ -92,7 +92,7 @@ fn parse_color_screen_handles_partial_palette() {
 
 #[test]
 fn parse_color_screen_returns_colors_in_canonical_order() {
-    // SEMANTIC PIN: the parser walks NAMED_COLORS in declaration
+    // Verifies: the parser walks NAMED_COLORS in declaration
     // order and pushes matches in that order, so the returned
     // `capability_labels` vec MUST appear in canonical
     // [black, red, green, yellow, blue, magenta, cyan, white] order
@@ -118,7 +118,7 @@ fn parse_color_screen_returns_colors_in_canonical_order() {
 
 #[test]
 fn parse_color_screen_handles_realistic_tack_v108_output() {
-    // SEMANTIC PIN: against the actual tack v1.08 color test
+    // Verifies: against the actual tack v1.08 color test
     // output (verified empirically — see module rustdoc), the
     // parser returns no named colors because tack v1.08's color
     // test only probes (colors) and (pairs) cap names — it does

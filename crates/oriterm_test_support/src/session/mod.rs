@@ -16,7 +16,7 @@
 //! ([`PtyResponder`]) lives in the [`pty_responder`] submodule so its
 //! dispatch + sibling tests can grow without pushing `session/mod.rs`
 //! over the 500-line hygiene limit. Each leaf module owns its own
-//! sibling `tests.rs` per `.claude/rules/test-organization.md`.
+//! sibling `tests.rs`.
 
 use std::io::{Read, Write};
 #[cfg(windows)]

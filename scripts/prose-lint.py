@@ -1,15 +1,20 @@
 #!/usr/bin/env python3
 """
-prose-lint: scan authored .md files for prose-creep violations.
+prose-lint: scan authored .md and compiler source for forbidden vocabulary.
 
-Enforces the rule defined in `.claude/skills/improve-tooling/SKILL.md`
-section "No Prose in Authored .md Files - ABSOLUTE" (mirrored from global
-CLAUDE.md). Prescriptive authored files (skills, commands, rules, design
-logs) must be bullets/tables/imperative sentences; banned patterns include
-dated narrative, rationale tails, history comparisons, and paragraphs
-longer than 2 sentences.
+Two pattern packs, dispatched by file extension:
 
-Scope (default): .claude/skills, .claude/commands, .claude/rules.
+  - Authored .md (.claude/skills, .claude/commands, .claude/rules) \u2014 prose
+    creep: dated narrative, history keywords, rationale tails, paragraphs
+    longer than the configured sentence threshold. Rule: global CLAUDE.md
+    \u00a7"NO PROSE IN AUTHORED .md FILES" + .claude/skills/improve-tooling/SKILL.md
+    \u00a7"No Prose in Authored .md Files".
+
+  - Compiler source (.rs, .ori under compiler_repo) \u2014 internal-vocabulary
+    leaks into the public OSS repo: bug IDs, methodology vocabulary,
+    reviewer-tool names, internal-doc paths. Rule: project CLAUDE.md
+    \u00a7"Public Repo Never Leaks Private-Repo Identifiers".
+
 Exit codes: 0 clean (or --exit-zero), 1 violations found, 2 usage error.
 """
 
@@ -20,16 +25,89 @@ import sys
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
-# Ban patterns - high-signal keywords + dated refs
+# Pattern packs \u2014 (regex, label, flags). flags=0 means case-sensitive.
 # ---------------------------------------------------------------------------
 
+# Authored .md prose-creep patterns (history-keywords, dated refs, etc).
 KEYWORD_PATTERNS = [
-    (r"\b(previously|originally|restoring|defeating)\b", "history-keyword"),
-    (r"\bas of 20\d{2}(-\d{2}(-\d{2})?)?\b", "dated-ref-as-of"),
-    (r"\bsince 20\d{2}(-\d{2}(-\d{2})?)?\b", "dated-ref-since"),
-    (r"\u2014 causes\b", "rationale-tail-em-dash-causes"),
-    (r"\bwas (originally|previously)\b", "history-phrase-was-originally"),
+    (r"\b(previously|originally|restoring|defeating)\b", "history-keyword", re.IGNORECASE),
+    (r"\bas of 20\d{2}(-\d{2}(-\d{2})?)?\b", "dated-ref-as-of", re.IGNORECASE),
+    (r"\bsince 20\d{2}(-\d{2}(-\d{2})?)?\b", "dated-ref-since", re.IGNORECASE),
+    (r"\u2014 causes\b", "rationale-tail-em-dash-causes", re.IGNORECASE),
+    (r"\bwas (originally|previously)\b", "history-phrase-was-originally", re.IGNORECASE),
 ]
+
+# Compiler source internal-vocabulary leak patterns. Each catches a category
+# of private-repo identifier that must not appear in the public compiler repo.
+SOURCE_KEYWORD_PATTERNS = [
+    # Bug-tracker IDs \u2014 internal scheme, never public.
+    (r"\bBUG-\d{2}-\d{3}\b", "bug-id", 0),
+    # Methodology vocabulary \u2014 review-loop and TDD-discipline names.
+    (r"\bINVERTED-TDD\b", "methodology-inverted-tdd", 0),
+    (r"\bPlan\s+TPR\s+Round\b", "methodology-plan-tpr", re.IGNORECASE),
+    (r"\bTPR\s+Round\b", "methodology-tpr-round", re.IGNORECASE),
+    (r"\b(?:semantic|negative)\s+pin\b", "methodology-pin-vocab", re.IGNORECASE),
+    (r"\bTDD\s+matrix\b", "methodology-tdd-matrix", re.IGNORECASE),
+    # Reviewer-tool names \u2014 case-sensitive lowercase only (the literal CLI
+    # invocation form). Capitalized "Codex" or "Gemini" in product-name
+    # context can land via prose-lint: allow if a legit reference appears.
+    (r"\b(?:codex|gemini|opencode)\b", "reviewer-name", 0),
+    # Reviewer-emphasis \u2014 uppercase-only "AGREEMENT" appears exclusively in
+    # review-trail comments ("codex+opencode AGREEMENT"); regular prose uses
+    # lowercase.
+    (r"\bAGREEMENT\b", "reviewer-emphasis", 0),
+    # Internal-doc paths \u2014 references to private rule files and CLAUDE.md.
+    (r"\bCLAUDE\.md\b", "internal-doc-claude-md", 0),
+    (r"\.claude/(?:rules|skills|commands|hooks)/", "internal-doc-claude-path", 0),
+    (r"\bimpl-hygiene\.md\b", "internal-doc-impl-hygiene", re.IGNORECASE),
+    (r"\baims-rules\.md\b", "internal-doc-aims-rules", re.IGNORECASE),
+    (r"\bcodegen-rules\.md\b", "internal-doc-codegen-rules", re.IGNORECASE),
+    (r"\btypeck\.md\b", "internal-doc-typeck", re.IGNORECASE),
+    (r"\bcanon\.md\b", "internal-doc-canon", re.IGNORECASE),
+]
+
+# Reference-language attribution patterns. The compiler is implemented in
+# Rust and emits LLVM, so plain mentions of those identifiers are fine
+# (code-fence tags, Cargo.toml lint sections, "Rust aligns to 8 bytes").
+# What gets flagged is *attribution form* — telling the reader the design
+# was copied from another compiler. Allowed by exemption when the attribution
+# is genuinely scholarly (academic citation with author + year, e.g.
+# "Maranget (2008)") via `// prose-lint: allow`.
+_REFERENCE_LANGS = (
+    r"(?:Rust|Swift|Koka|Zig|Gleam|Elm|Roc|Golang|TypeScript|"
+    r"Lean\s*4|Lean4|GHC|OxCaml|Haskell|OCaml)"
+)
+SOURCE_KEYWORD_PATTERNS.extend([
+    (
+        rf"\b{_REFERENCE_LANGS}'s\s+"
+        r"(?:pattern|approach|design|implementation|model|version|way|"
+        r"equivalent|style|incremental|compile-time|compiler|caching|"
+        r"tracking|exhaustiveness|borrow\s+checker|trait\s+system)\b",
+        "reference-lang-possessive",
+        0,
+    ),
+    (
+        rf"\b(?:[Ff]ollowing|[Ii]nspired by|[Pp]atterned (?:on|after)|"
+        rf"[Dd]erived from|[Mm]irrors|[Bb]ased on|[Aa]s in)\s+{_REFERENCE_LANGS}\b",
+        "reference-lang-attribution-verb",
+        0,
+    ),
+    (
+        rf"\b{_REFERENCE_LANGS}-(?:derived|inspired|style|like|pattern|equivalent)\b",
+        "reference-lang-hyphenated",
+        0,
+    ),
+    (
+        rf"^\s*//[/!]*\s*[-*]?\s*\*?\*?{_REFERENCE_LANGS}\*?\*?\s*[:`]",
+        "reference-lang-bullet-header",
+        re.MULTILINE,
+    ),
+    (
+        rf"\b{_REFERENCE_LANGS}\s+`[^`]*\.(?:hs|rs|swift|zig|ml|lean)`",
+        "reference-lang-source-cite",
+        0,
+    ),
+])
 
 # Suppressions (false-positive guards)
 COMPOUND_ADJ_RE = re.compile(
@@ -41,10 +119,14 @@ STATE_LABEL_RE = re.compile(
     re.IGNORECASE,
 )
 
-# Directive markers
+# Directive markers \u2014 .md uses HTML comments, source uses // line comments.
 LINT_OFF_RE = re.compile(r"<!--\s*prose-lint:\s*off\s*-->")
 LINT_ON_RE = re.compile(r"<!--\s*prose-lint:\s*on\s*-->")
 LINT_ALLOW_LINE_RE = re.compile(r"<!--\s*prose-lint:\s*allow\s*-->")
+
+SOURCE_LINT_OFF_RE = re.compile(r"//\s*prose-lint:\s*off\b")
+SOURCE_LINT_ON_RE = re.compile(r"//\s*prose-lint:\s*on\b")
+SOURCE_ALLOW_LINE_RE = re.compile(r"//\s*prose-lint:\s*allow\b")
 
 # Design-log section headers where prose is allowed (see Exceptions table)
 EXEMPT_HEADER_RE = re.compile(r"^##\s+\u00a7[46]\b")
@@ -55,6 +137,14 @@ INDENT_CONTINUATION_RE = re.compile(r"^\s{2,}\S")
 
 DEFAULT_ROOTS = [".claude/skills", ".claude/commands", ".claude/rules"]
 DEFAULT_MAX_SENTENCES = 2
+
+# File-extension dispatch.
+MD_EXT = ".md"
+SOURCE_EXTS = {".rs", ".ori"}
+LINT_EXTENSIONS = {MD_EXT} | SOURCE_EXTS
+
+# Directories never traversed during recursive scans.
+EXCLUDE_DIRS = {"target", ".git", "node_modules", "build", "dist", "__pycache__", ".venv"}
 
 
 # ---------------------------------------------------------------------------
@@ -70,8 +160,19 @@ def is_exempt_path(path: Path) -> bool:
     # Rule-definition file itself (self-reference)
     if path.name == "SKILL.md" and "improve-tooling" in s:
         return True
-    # CHANGELOG / HISTORY
-    if path.name in ("CHANGELOG.md", "HISTORY.md"):
+    # CHANGELOG / HISTORY / README — documentation, not prescriptive Claude artifacts.
+    # README.md files describe a crate's purpose and need explanatory prose.
+    if path.name in ("CHANGELOG.md", "HISTORY.md", "README.md"):
+        return True
+    # Error-code documentation files (e.g., E1015.md, E2007.md, E4001.md) —
+    # these explain compiler errors to users with prose, not prescriptive
+    # rules. Match `errors/EXXXX.md` shape.
+    if "errors" in path.parts and re.match(r"^E\d{4}\.md$", path.name):
+        return True
+    # Rosetta-style task descriptions in test fixtures — external problem
+    # statements copied from public task corpora (Rosetta Code etc.), not
+    # authored compiler docs.
+    if "_tasks" in path.parts and "rosetta" in path.parts:
         return True
     return False
 
@@ -80,28 +181,39 @@ def is_exempt_path(path: Path) -> bool:
 # Region exemption - fences, design-log sections, lint-off blocks
 # ---------------------------------------------------------------------------
 
-def compute_exempt_lines(lines, path):
+def compute_exempt_lines(lines, path, kind):
+    """Return the set of 1-indexed line numbers that the keyword scan must skip.
+
+    kind: 'md' or 'source'. Selects which off/on directive form is honored
+    and whether design-log section exemption + fenced-code-block tracking
+    apply (.md only).
+    """
+    if kind == "md":
+        off_re, on_re = LINT_OFF_RE, LINT_ON_RE
+    else:
+        off_re, on_re = SOURCE_LINT_OFF_RE, SOURCE_LINT_ON_RE
+
     exempt = set()
     in_fence = False
     lint_off = False
     in_design_exempt = False
-    design = is_design_log(path)
+    design = is_design_log(path) if kind == "md" else False
     for idx, line in enumerate(lines, 1):
         stripped = line.strip()
-        if stripped.startswith("```"):
+        if kind == "md" and stripped.startswith("```"):
             in_fence = not in_fence
             exempt.add(idx)
             continue
         if in_fence:
             exempt.add(idx)
             continue
-        if LINT_OFF_RE.search(line):
+        if off_re.search(line):
             lint_off = True
         if design and line.startswith("## "):
             in_design_exempt = bool(EXEMPT_HEADER_RE.match(line))
         if lint_off or in_design_exempt:
             exempt.add(idx)
-        if LINT_ON_RE.search(line):
+        if on_re.search(line):
             lint_off = False
     return exempt
 
@@ -183,18 +295,27 @@ def find_long_paragraphs(lines, exempt, max_sentences):
 # Keyword scan
 # ---------------------------------------------------------------------------
 
-def keyword_scan(lines, exempt):
+def keyword_scan(lines, exempt, patterns, allow_re, apply_md_suppressors):
+    """Scan lines for forbidden keywords/regexes.
+
+    patterns: list of (regex, label, flags) tuples.
+    allow_re: per-line allow-comment marker (md vs source form).
+    apply_md_suppressors: when True, applies STATE_LABEL_RE (suppress
+        **CONFIRMED|REGRESSED|FIXED ... previously ...** lines) and
+        COMPOUND_ADJ_RE masking ("previously-failing" etc) — both are
+        prose-pack false-positive guards, irrelevant for source scans.
+    """
     findings = []
     for idx, line in enumerate(lines, 1):
         if idx in exempt:
             continue
-        if LINT_ALLOW_LINE_RE.search(line):
+        if allow_re.search(line):
             continue
-        if STATE_LABEL_RE.search(line):
+        if apply_md_suppressors and STATE_LABEL_RE.search(line):
             continue
-        masked = COMPOUND_ADJ_RE.sub("<compound>", line)
-        for pat, label in KEYWORD_PATTERNS:
-            m = re.search(pat, masked, re.IGNORECASE)
+        masked = COMPOUND_ADJ_RE.sub("<compound>", line) if apply_md_suppressors else line
+        for regex, label, flags in patterns:
+            m = re.search(regex, masked, flags)
             if m:
                 findings.append({
                     "line": idx,
@@ -218,9 +339,29 @@ def scan_file(path: Path, max_sentences: int):
         text = path.read_text(encoding="utf-8")
     except OSError as e:
         return [{"file": str(path), "line": 0, "type": "read-error", "message": str(e)}]
+
+    suffix = path.suffix.lower()
+    if suffix == MD_EXT:
+        kind = "md"
+        patterns = KEYWORD_PATTERNS
+        allow_re = LINT_ALLOW_LINE_RE
+    elif suffix in SOURCE_EXTS:
+        kind = "source"
+        patterns = SOURCE_KEYWORD_PATTERNS
+        allow_re = SOURCE_ALLOW_LINE_RE
+    else:
+        return []
+
     lines = text.splitlines()
-    exempt = compute_exempt_lines(lines, path)
-    items = keyword_scan(lines, exempt) + find_long_paragraphs(lines, exempt, max_sentences)
+    exempt = compute_exempt_lines(lines, path, kind)
+    items = keyword_scan(
+        lines, exempt,
+        patterns=patterns,
+        allow_re=allow_re,
+        apply_md_suppressors=(kind == "md"),
+    )
+    if kind == "md":
+        items.extend(find_long_paragraphs(lines, exempt, max_sentences))
     return [{"file": str(path), **f} for f in items]
 
 
@@ -228,10 +369,15 @@ def collect_paths(roots):
     out = []
     for r in roots:
         p = Path(r)
-        if p.is_file() and p.suffix == ".md":
+        if p.is_file() and p.suffix in LINT_EXTENSIONS:
             out.append(p)
         elif p.is_dir():
-            out.extend(p.rglob("*.md"))
+            for fp in p.rglob("*"):
+                if not fp.is_file() or fp.suffix not in LINT_EXTENSIONS:
+                    continue
+                if any(part in EXCLUDE_DIRS for part in fp.parts):
+                    continue
+                out.append(fp)
     return sorted(set(out))
 
 
@@ -269,20 +415,41 @@ def format_human(findings, scanned):
 def main():
     parser = argparse.ArgumentParser(
         prog="prose-lint",
-        description="Scan authored .md files for prose-creep violations.",
+        description="Scan authored .md and compiler source for forbidden vocabulary.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""\
 Scope (default): .claude/skills .claude/commands .claude/rules
 
+Pattern packs (dispatched by file extension):
+
+  Authored .md:
+    history-keyword          previously, originally, restoring, defeating
+    dated-ref-as-of/since    "as of YYYY", "since YYYY"
+    rationale-tail           "\u2014 causes \u2026"
+    history-phrase           "was originally|previously"
+    paragraph-too-long       paragraph exceeds --max-paragraph-sentences
+
+  Compiler source (.rs, .ori):
+    bug-id                   BUG-XX-NNN
+    methodology-*            INVERTED-TDD, Plan TPR Round, TPR Round,
+                             semantic/negative pin, TDD matrix
+    reviewer-name            codex, gemini, opencode (case-sensitive)
+    reviewer-emphasis        AGREEMENT (uppercase only)
+    internal-doc-*           CLAUDE.md, .claude/{rules,skills,commands,hooks}/,
+                             impl-hygiene.md, aims-rules.md, codegen-rules.md,
+                             typeck.md, canon.md
+
 Exempts:
-  - Fenced code blocks.
-  - Design-log sections: ## \u00a74 Lessons and ## \u00a76 Improvement Log.
-  - Rule-definition self-reference file: .claude/skills/improve-tooling/SKILL.md.
-  - CHANGELOG.md / HISTORY.md files.
-  - Regions between <!-- prose-lint: off --> and <!-- prose-lint: on -->.
-  - Individual lines with <!-- prose-lint: allow -->.
-  - State-label definitions (**CONFIRMED|REGRESSED|FIXED** - previously ...).
-  - Hyphenated compound adjectives (previously-failing/valid/completed/...).
+  - Fenced code blocks (.md only).
+  - Design-log sections: ## \u00a74 Lessons and ## \u00a76 Improvement Log (.md only).
+  - Rule-definition self-reference: .claude/skills/improve-tooling/SKILL.md.
+  - CHANGELOG.md / HISTORY.md.
+  - .md regions between <!-- prose-lint: off --> ... <!-- prose-lint: on -->.
+  - Source regions between // prose-lint: off ... // prose-lint: on.
+  - Lines with <!-- prose-lint: allow --> (.md) or // prose-lint: allow (source).
+  - State-label definitions (**CONFIRMED|REGRESSED|FIXED** ... previously ...) \u2014 .md only.
+  - Hyphenated compound adjectives (previously-failing/valid/...) \u2014 .md only.
+  - target/, .git/, node_modules/, build/, dist/, __pycache__/, .venv/.
 
 Exit codes: 0 clean, 1 violations found, 2 usage error.
 """,

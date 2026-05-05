@@ -1,6 +1,6 @@
 //! Unit tests for the DECCKM cursor-key SSOT helper.
 //!
-//! Pinned by BUG-08-033 (xterm `ctlseqs.txt:2465-2473`).
+//! Pinned by (xterm `ctlseqs.txt:2465-2473`).
 
 use crate::key_encoding::cursor_keys::{CursorKey, cursor_key_bytes};
 

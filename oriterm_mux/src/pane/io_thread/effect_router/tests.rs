@@ -43,7 +43,7 @@ fn make_router_harness() -> (
         crossbeam_channel::bounded::<ExitStatus>(1);
     // Effect-router harness keeps unbounded `cmd_tx` / `byte_tx` and
     // dummy wake / exit channels so it tests effect-routing logic
-    // without coupling to BUG-11-025's bounded-cmd_tx / atomic-resize
+    // without coupling to 's bounded-cmd_tx / atomic-resize
     // wiring (per §05 Step 5 test-harness exception). Leak the
     // auxiliary tx ends so receivers stay open for the lifetime of
     // the test — prevents spurious EOF from firing select! arms.
@@ -348,7 +348,7 @@ fn clear_pending_notifications_collapses_preceding_in_batch() {
     assert!(
         matches!(&events[0], MuxEvent::ClearPendingDesktopNotifications(_)),
         "the clear marker MUST surface as ClearPendingDesktopNotifications so \
-         downstream staging buffers can purge cross-batch entries; got {:?}",
+ downstream staging buffers can purge cross-batch entries; got {:?}",
         events[0]
     );
 }
@@ -552,7 +552,7 @@ fn drain_call_lives_inside_handle_bytes_per_chunk() {
     assert!(
         body.contains("self.drain_effects_into_mux_events()"),
         "drain MUST be called inside handle_bytes per blind-spot §5; \
-         body did not contain the drain call:\n{body}"
+ body did not contain the drain call:\n{body}"
     );
 }
 
@@ -577,7 +577,7 @@ fn router_routes_mux_events_only_via_send_mux_event() {
     assert_eq!(
         occurrences, 1,
         "router must route MuxEvents only through send_mux_event; \
-         unexpected `self.mux_tx.send(..)` site bypasses the wakeup pair"
+ unexpected `self.mux_tx.send(..)` site bypasses the wakeup pair"
     );
 }
 
@@ -613,7 +613,7 @@ fn no_cloned_host_clipboard_load_notification_in_staging() {
                 if line.contains(forbidden) && line.contains(".clone()") {
                     panic!(
                         "{path}: forbidden clone of {forbidden} detected — \
-                         move semantics required (Vec::drain / mem::replace / match-move):\n  {line}"
+ move semantics required (Vec::drain / mem::replace / match-move):\n {line}"
                     );
                 }
             }
@@ -621,14 +621,14 @@ fn no_cloned_host_clipboard_load_notification_in_staging() {
     }
 }
 
-/// BUG-11-008 preservation pin (§03 test 19): after the router-arm
+/// preservation pin (§03 test 19): after the router-arm
 /// split removes `HostEffect::VisualBell` and routes
 /// `HostEffect::AudioRequest` to a dedicated log-only arm,
-/// `AudioRequest` MUST NOT emit any `MuxEvent` — BUG-11-009 stays open
+/// `AudioRequest` MUST NOT emit any `MuxEvent` — stays open
 /// and the audio-pipeline producer-side gap remains tracked.
 ///
-/// Regression: BUG-11-008 — split combined VisualBell|AudioRequest|PrintRequest arm
-/// See: bug-tracker/plans/BUG-11-008/00-overview.md
+/// Regression: split combined VisualBell|AudioRequest|PrintRequest arm
+/// See: bug-tracker/plans//00-overview.md
 #[test]
 fn audio_request_remains_log_only() {
     use oriterm_core::effect::{AudioKind, AudioRequest as AudioReq};
@@ -646,17 +646,17 @@ fn audio_request_remains_log_only() {
 
     assert!(
         mux_rx.try_recv().is_err(),
-        "AudioRequest must not emit a MuxEvent (BUG-11-009 stays log-only); \
-         the router's split arm preserves the pre-fix log-only behavior"
+        "AudioRequest must not emit a MuxEvent \
+ the router's split arm preserves the pre-fix log-only behavior"
     );
 }
 
-/// BUG-11-008 preservation pin (§03 test 20): after the router-arm
+/// preservation pin (§03 test 20): after the router-arm
 /// split, `HostEffect::PrintRequest` MUST NOT emit any `MuxEvent` —
-/// BUG-11-010 stays open.
+/// stays open.
 ///
-/// Regression: BUG-11-008 — split combined VisualBell|AudioRequest|PrintRequest arm
-/// See: bug-tracker/plans/BUG-11-008/00-overview.md
+/// Regression: split combined VisualBell|AudioRequest|PrintRequest arm
+/// See: bug-tracker/plans//00-overview.md
 #[test]
 fn print_request_remains_log_only() {
     use oriterm_core::effect::{PrintKind, PrintRequest as PrintReq};
@@ -672,12 +672,12 @@ fn print_request_remains_log_only() {
 
     assert!(
         mux_rx.try_recv().is_err(),
-        "PrintRequest must not emit a MuxEvent (BUG-11-010 stays log-only); \
-         the router's split arm preserves the pre-fix log-only behavior"
+        "PrintRequest must not emit a MuxEvent \
+ the router's split arm preserves the pre-fix log-only behavior"
     );
 }
 
-/// Effect-cutover §01.N negative pin: `ClearPendingNotifications` does
+/// Effect-cutover §01.N regression guard: `ClearPendingNotifications` does
 /// NOT retroactively collapse `DesktopNotification` effects that
 /// landed in an EARLIER drain batch. Cross-batch staging-buffer
 /// purging is the responsibility of `mux_pump`'s
@@ -734,16 +734,16 @@ fn clear_pending_notifications_does_not_retro_collapse_across_drains() {
     );
 }
 
-// --- BUG-11-004 — DA/DSR/CSI 18t/DECRQM byte-parse → MuxEvent round-trip ---
+// --- — DA/DSR/CSI 18t/DECRQM byte-parse → MuxEvent round-trip ---
 //
 // These tests pin the byte-parse → effect-emit → router → MuxEvent leg for
 // every response kind handled in oriterm_core/src/term/handler/status.rs.
 // Each test calls handle_bytes() with the canonical query bytes and asserts
 // mux_rx receives MuxEvent::PtyWrite with the byte-exact response.
-// See bug-tracker/plans/completed/BUG-11-004/.
+// See bug-tracker/plans/completed/.
 
-/// Regression: BUG-11-004 — DA1 (CSI c) emits VT420-class device attributes.
-/// See: bug-tracker/plans/completed/BUG-11-004/section-03-tdd-matrix.md
+/// Regression: DA1 (CSI c) emits VT420-class device attributes.
+/// See: bug-tracker/plans/completed/section-03-tdd-matrix.md
 #[test]
 fn da1_byte_parse_emits_pty_write_response() {
     let (mut t, mux_rx, _wake) = make_router_harness();
@@ -759,7 +759,7 @@ fn da1_byte_parse_emits_pty_write_response() {
     }
 }
 
-/// Regression: BUG-11-004 — DA3 (CSI = c) emits DCS unit-ID response.
+/// Regression: DA3 (CSI = c) emits DCS unit-ID response.
 #[test]
 fn da3_byte_parse_emits_pty_write_response() {
     let (mut t, mux_rx, _wake) = make_router_harness();
@@ -778,7 +778,7 @@ fn da3_byte_parse_emits_pty_write_response() {
     }
 }
 
-/// Regression: BUG-11-004 — DSR 5 (CSI 5 n) emits terminal-OK status.
+/// Regression: DSR 5 (CSI 5 n) emits terminal-OK status.
 #[test]
 fn dsr5_byte_parse_emits_pty_write_response() {
     let (mut t, mux_rx, _wake) = make_router_harness();
@@ -794,7 +794,7 @@ fn dsr5_byte_parse_emits_pty_write_response() {
     }
 }
 
-/// Regression: BUG-11-004 — DSR 6 (CSI 6 n) at default cursor reports (1,1).
+/// Regression: DSR 6 (CSI 6 n) at default cursor reports (1,1).
 #[test]
 fn dsr6_byte_parse_at_default_cursor_emits_position_one_one() {
     let (mut t, mux_rx, _wake) = make_router_harness();
@@ -813,7 +813,7 @@ fn dsr6_byte_parse_at_default_cursor_emits_position_one_one() {
     }
 }
 
-/// Regression: BUG-11-004 — CSI 18t at default 24x80 grid reports `\x1b[8;24;80t`.
+/// Regression: CSI 18t at default 24x80 grid reports `\x1b[8;24;80t`.
 #[test]
 fn csi_18t_byte_parse_at_default_grid_emits_size_24_80() {
     let (mut t, mux_rx, _wake) = make_router_harness();
@@ -832,7 +832,7 @@ fn csi_18t_byte_parse_at_default_grid_emits_size_24_80() {
     }
 }
 
-/// Regression: BUG-11-004 — DA2 (CSI > c) emits versioned response prefix `\x1b[>0;` + version + `;1c`.
+/// Regression: DA2 (CSI > c) emits versioned response prefix `\x1b[>0;` + version + `;1c`.
 #[test]
 fn da2_byte_parse_emits_pty_write_response_with_version() {
     let (mut t, mux_rx, _wake) = make_router_harness();
@@ -848,14 +848,14 @@ fn da2_byte_parse_emits_pty_write_response_with_version() {
             );
             assert!(
                 data.ends_with(b";1c"),
-                "DA2 response must end with ;1c, got {data:?}"
+                "DA2 response must end with;1c, got {data:?}"
             );
         }
         other => panic!("expected PtyWrite, got {other:?}"),
     }
 }
 
-/// Regression: BUG-11-004 — DECRQM SET (mode 25 cursor visible) reports value 1.
+/// Regression: DECRQM SET (mode 25 cursor visible) reports value 1.
 #[test]
 fn decrqm_set_byte_parse_emits_value_one() {
     let (mut t, mux_rx, _wake) = make_router_harness();
@@ -874,7 +874,7 @@ fn decrqm_set_byte_parse_emits_value_one() {
     }
 }
 
-/// Regression: BUG-11-004 — DECRQM RESET (mode 1049 alt screen off by default) reports value 2.
+/// Regression: DECRQM RESET (mode 1049 alt screen off by default) reports value 2.
 #[test]
 fn decrqm_reset_byte_parse_emits_value_two() {
     let (mut t, mux_rx, _wake) = make_router_harness();
@@ -893,15 +893,15 @@ fn decrqm_reset_byte_parse_emits_value_two() {
     }
 }
 
-/// Regression: BUG-11-018 — XTVERSION (CSI > q) emits DCS terminal-version response.
+/// Regression: XTVERSION (CSI > q) emits DCS terminal-version response.
 ///
-/// Joins the BUG-11-004 cluster covering every response kind handled in
+/// Joins the cluster covering every response kind handled in
 /// `oriterm_core/src/term/handler/status.rs`. XTVERSION's reply pipeline:
 /// raw bytes → vte CSI dispatch arm `('q', [b'>'])` (Ps=0 gate) →
 /// `Handler::xtversion()` → `Term::status_xtversion()` → `effect_sink` →
 /// `drain_effects_into_mux_events` → `MuxEvent::PtyWrite`.
 ///
-/// See: bug-tracker/plans/BUG-11-018/section-03-tdd-matrix.md
+/// See: bug-tracker/plans//section-03-tdd-matrix.md
 #[test]
 fn xtversion_byte_parse_emits_pty_write_response() {
     let (mut t, mux_rx, _wake) = make_router_harness();
@@ -925,7 +925,7 @@ fn xtversion_byte_parse_emits_pty_write_response() {
     }
 }
 
-/// Regression: BUG-11-018 — split-chunk XTVERSION still emits exactly one response.
+/// Regression: split-chunk XTVERSION still emits exactly one response.
 ///
 /// Pins that the parser handles partial-byte input correctly: feeding
 /// `\x1b[>` then `q` as separate `handle_bytes` calls must produce the
@@ -947,9 +947,9 @@ fn xtversion_split_chunk_byte_parse_emits_pty_write_response() {
         }
         other => panic!("expected PtyWrite, got {other:?}"),
     }
-    // Negative pin: handle_bytes() is synchronous — any second event would
+    // Regression guard: handle_bytes() is synchronous — any second event would
     // already be queued by the time we reach this assertion. try_recv() is
-    // wall-clock-free per `.claude/rules/tests.md` §Wall-Clock-Free Testing
+    // wall-clock-free §Wall-Clock-Free Testing
     // (no `recv_timeout` deadline; deterministic against scheduler jitter).
     assert!(
         mux_rx.try_recv().is_err(),
@@ -957,7 +957,7 @@ fn xtversion_split_chunk_byte_parse_emits_pty_write_response() {
     );
 }
 
-/// Regression: BUG-11-004 — DECRQM unknown mode reports value 0 (unrecognized).
+/// Regression: DECRQM unknown mode reports value 0 (unrecognized).
 #[test]
 fn decrqm_unknown_mode_emits_value_zero() {
     let (mut t, mux_rx, _wake) = make_router_harness();
@@ -976,7 +976,7 @@ fn decrqm_unknown_mode_emits_value_zero() {
     }
 }
 
-/// Regression: BUG-06-022 — XTSMGRAPHICS query had no reply path.
+/// Regression: XTSMGRAPHICS query had no reply path.
 ///
 /// Pins the full pipeline: raw bytes → vte parser → CSI dispatch arm
 /// `('S', [b'?'])` → `Handler::graphics_attribute` → `Term`'s

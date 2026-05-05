@@ -33,7 +33,7 @@ pub struct ClientId(u64);
 /// `HostColorQuery` is forwarded over the wire (the originating
 /// `ResponseToken` cannot cross IPC). The matching `MuxPdu::ReplyHostRequest`
 /// from the responding client carries this id back, letting the daemon route
-/// the reply to the right pending promise. See BUG-11-011.
+/// the reply to the right pending promise. See.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) struct HostRequestId(u64);
 

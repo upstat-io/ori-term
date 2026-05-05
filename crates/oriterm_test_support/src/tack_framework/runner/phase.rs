@@ -2,7 +2,7 @@
 //!
 //! These methods drive tack scenarios where the captured fact is
 //! visible only briefly mid-run — the modes test sweep that prints
-//! `(am)`, `(bce)`, `(bw)`, ... and scrolls each line off the
+//! `(am)`, `(bce)`, `(bw)`,... and scrolls each line off the
 //! 24-row viewport in under ~500 ms. The stable-screen
 //! [`super::stable`] path cannot capture these because the 300 ms
 //! [`crate::session::PtySession::send`] quiesce + 200 ms
@@ -75,7 +75,7 @@
 //! and discarding any unread bytes in the chunk. This is a
 //! DIFFERENT algorithm from `poll_until` (incremental feed +
 //! per-byte check vs. chunk-at-a-time + per-iteration check), so
-//! the impl-hygiene.md "3+ instances of the same skeleton" rule
+//! the "3+ instances of the same skeleton" rule
 //! does not apply: the two algorithms serve different purposes
 //! and live in two distinct canonical homes (`session::poll_until`
 //! for chunk-based polling, `session::PtySession::drain_until` for

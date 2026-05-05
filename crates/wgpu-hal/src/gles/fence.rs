@@ -64,19 +64,19 @@ impl Fence {
 
         for gl_fence in self.pending.iter() {
             if gl_fence.value <= max_value {
-                // We already know this was good, no need to check again
+ // We already know this was good, no need to check again
                 continue;
             }
             let status = unsafe { gl.get_sync_status(gl_fence.sync) };
             if status == glow::SIGNALED {
                 max_value = gl_fence.value;
             } else {
-                // Anything after the first unsignalled is guaranteed to also be unsignalled
+ // Anything after the first unsignalled is guaranteed to also be unsignalled
                 break;
             }
         }
 
-        // Track the latest value, to save ourselves some querying later
+ // Track the latest value, to save ourselves some querying later
         self.last_completed.fetch_max(max_value, Ordering::AcqRel);
 
         max_value
@@ -110,16 +110,16 @@ impl Fence {
             return Ok(last_completed >= wait_value);
         }
 
-        // We already know this fence has been signalled to that value. Return signalled.
+ // We already know this fence has been signalled to that value. Return signalled.
         if last_completed >= wait_value {
             return Ok(true);
         }
 
-        // Find a matching fence
+ // Find a matching fence
         let gl_fence = self
             .pending
             .iter()
-            // Greater or equal as an abundance of caution, but there should be one fence per value
+ // Greater or equal as an abundance of caution, but there should be one fence per value
             .find(|gl_fence| gl_fence.value >= wait_value);
 
         let Some(gl_fence) = gl_fence else {
@@ -127,7 +127,7 @@ impl Fence {
             return Ok(false);
         };
 
-        // We should have found a fence with the exact value.
+ // We should have found a fence with the exact value.
         debug_assert_eq!(gl_fence.value, wait_value);
 
         let status = unsafe {

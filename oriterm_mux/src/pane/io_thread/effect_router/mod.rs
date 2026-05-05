@@ -46,7 +46,7 @@ impl<S: EffectSink> PaneIoThread<S> {
     #[allow(
         clippy::too_many_lines,
         reason = "single-match-statement router: dispatch table for 20+ Effect variants \
-                  belongs in one place; splitting would violate SSOT (LEAK:duplicated-dispatch)"
+ belongs in one place; splitting would violate SSOT (LEAK:duplicated-dispatch)"
     )]
     pub(crate) fn drain_effects_into_mux_events(&mut self) {
         self.terminal
@@ -73,7 +73,7 @@ impl<S: EffectSink> PaneIoThread<S> {
 
         // Second pass: route each effect. `std::mem::take` moves the
         // Vec out so we can `drain(..)` it without holding `&mut self`
-        // across the match arms that call `send_mux_event(&self, ..)`.
+        // across the match arms that call `send_mux_event(&self,..)`.
         // Capacity is restored at the end so the hot path stays
         // zero-alloc after warmup.
         let mut effects = std::mem::take(&mut self.effects_buf);
@@ -145,8 +145,8 @@ impl<S: EffectSink> PaneIoThread<S> {
                     // contract is "clear discards preceding only" per
                     // host.rs:42-50 and plan blind-spot §7.
                     let suppressed = matches!(
-                        last_clear_index,
-                        Some(clear_at) if idx < clear_at
+                     last_clear_index,
+                     Some(clear_at) if idx < clear_at
                     );
                     if !suppressed {
                         self.send_mux_event(MuxEvent::DesktopNotification {
@@ -172,7 +172,7 @@ impl<S: EffectSink> PaneIoThread<S> {
                 Effect::Host(HostEffect::AudioRequest(_) | HostEffect::PrintRequest(_)) => {
                     log::info!(
                         "PaneIoThread ({}): dropping fire-and-forget host effect (no MuxEvent \
-                         variant yet — tracked as BUG-11-009 / BUG-11-010)",
+ variant yet — tracked as)",
                         self.pane_id,
                     );
                 }

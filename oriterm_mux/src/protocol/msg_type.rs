@@ -38,7 +38,6 @@ pub(crate) enum MsgType {
     SetPanePriority = 0x0129,
     SignalChild = 0x012A,
     SetCellDimensions = 0x012B,
-    ClearBell = 0x012C,
     ReplyHostRequest = 0x012D,
     IsWriteStalled = 0x012E,
 
@@ -111,7 +110,6 @@ impl MsgType {
             0x0129 => Some(Self::SetPanePriority),
             0x012A => Some(Self::SignalChild),
             0x012B => Some(Self::SetCellDimensions),
-            0x012C => Some(Self::ClearBell),
             0x012D => Some(Self::ReplyHostRequest),
             0x012E => Some(Self::IsWriteStalled),
             0x0201 => Some(Self::HelloAck),

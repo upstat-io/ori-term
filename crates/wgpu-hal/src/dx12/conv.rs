@@ -74,7 +74,7 @@ pub fn map_address_mode(mode: wgt::AddressMode) -> Direct3D12::D3D12_TEXTURE_ADD
         Am::MirrorRepeat => Direct3D12::D3D12_TEXTURE_ADDRESS_MODE_MIRROR,
         Am::ClampToEdge => Direct3D12::D3D12_TEXTURE_ADDRESS_MODE_CLAMP,
         Am::ClampToBorder => Direct3D12::D3D12_TEXTURE_ADDRESS_MODE_BORDER,
-        //Am::MirrorClamp => Direct3D12::D3D12_TEXTURE_ADDRESS_MODE_MIRROR_ONCE,
+ //Am::MirrorClamp => Direct3D12::D3D12_TEXTURE_ADDRESS_MODE_MIRROR_ONCE,
     }
 }
 
@@ -142,9 +142,9 @@ pub fn map_binding_type(ty: &wgt::BindingType) -> Direct3D12::D3D12_DESCRIPTOR_R
         }
         | Bt::StorageTexture { .. } => Direct3D12::D3D12_DESCRIPTOR_RANGE_TYPE_UAV,
         Bt::AccelerationStructure { .. } => Direct3D12::D3D12_DESCRIPTOR_RANGE_TYPE_SRV,
-        // External textures require multiple bindings and therefore cannot
-        // be mapped to a single descriptor range type. They must be handled
-        // separately by the caller.
+ // External textures require multiple bindings and therefore cannot
+ // be mapped to a single descriptor range type. They must be handled
+ // separately by the caller.
         Bt::ExternalTexture => unreachable!("External textures must be handled separately"),
     }
 }
@@ -183,8 +183,8 @@ pub fn map_buffer_usage_to_state(usage: wgt::BufferUses) -> Direct3D12::D3D12_RE
 pub fn map_texture_usage_to_state(usage: wgt::TextureUses) -> Direct3D12::D3D12_RESOURCE_STATES {
     use wgt::TextureUses as Tu;
     let mut state = Direct3D12::D3D12_RESOURCE_STATE_COMMON;
-    //Note: `RESOLVE_SOURCE` and `RESOLVE_DEST` are not used here
-    //Note: `PRESENT` is the same as `COMMON`
+ //Note: `RESOLVE_SOURCE` and `RESOLVE_DEST` are not used here
+ //Note: `PRESENT` is the same as `COMMON`
     if usage == wgt::TextureUses::UNINITIALIZED {
         return state;
     }

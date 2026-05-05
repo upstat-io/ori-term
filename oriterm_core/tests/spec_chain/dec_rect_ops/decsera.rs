@@ -63,7 +63,7 @@ fn decsera_decsca_protected_cell_not_erased() {
     // Positive pin: protected X survives.
     assert_eq!(row[Column(0)].ch, 'X');
     assert!(row[Column(0)].flags.contains(CellFlags::PROTECTED));
-    // Negative pin: adjacent un-written cell still blank (and unprotected).
+    // Regression guard: adjacent un-written cell still blank (and unprotected).
     assert_eq!(row[Column(4)].ch, ' ');
 }
 

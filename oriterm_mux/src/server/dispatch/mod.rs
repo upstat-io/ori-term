@@ -52,19 +52,15 @@ pub fn dispatch_request(
             protocol_version,
             features,
         } => {
-            if protocol_version > crate::protocol::CURRENT_PROTOCOL_VERSION {
-                log::warn!(
-                    "client {} version mismatch: client={protocol_version}, server={}",
-                    conn.id(),
-                    crate::protocol::CURRENT_PROTOCOL_VERSION,
-                );
-                Some(MuxPdu::Error {
-                    message: format!(
-                        "version mismatch: server speaks v{}, client wants v{protocol_version}",
-                        crate::protocol::CURRENT_PROTOCOL_VERSION,
-                    ),
-                })
-            } else {
+            // Accept ONLY equal version. The wire format (bincode-
+            // encoded `PaneSnapshot`, `MuxPdu` enum codepoints) is not
+            // forward- OR backward-compatible across major versions —
+            // a v1 client connecting to a v2 daemon would silently
+            // misdecode every snapshot just as a v2 client would
+            // misdecode v1. The asymmetric `>` check used previously
+            // accepted older clients into a newer daemon and produced
+            // corrupt rendering; the equality check catches both sides.
+            if protocol_version == crate::protocol::CURRENT_PROTOCOL_VERSION {
                 let server_features = crate::protocol::FEAT_ZSTD;
                 let negotiated = features & server_features;
                 log::info!(
@@ -75,6 +71,18 @@ pub fn dispatch_request(
                     client_id: conn.id(),
                     protocol_version: crate::protocol::CURRENT_PROTOCOL_VERSION,
                     features: negotiated,
+                })
+            } else {
+                log::warn!(
+                    "client {} version mismatch: client={protocol_version}, server={}",
+                    conn.id(),
+                    crate::protocol::CURRENT_PROTOCOL_VERSION,
+                );
+                Some(MuxPdu::Error {
+                    message: format!(
+                        "version mismatch: server speaks v{}, client wants v{protocol_version}",
+                        crate::protocol::CURRENT_PROTOCOL_VERSION,
+                    ),
                 })
             }
         }
@@ -228,13 +236,6 @@ pub fn dispatch_request(
             None
         }
 
-        MuxPdu::ClearBell { pane_id } => {
-            if let Some(pane) = ctx.panes.get_mut(&pane_id) {
-                pane.clear_bell();
-            }
-            None
-        }
-
         MuxPdu::OpenSearch { pane_id } => {
             if let Some(pane) = ctx.panes.get_mut(&pane_id) {
                 pane.open_search();
@@ -334,7 +335,7 @@ pub fn dispatch_request(
 
         MuxPdu::Unsubscribe { pane_id } => {
             conn.unsubscribe(pane_id);
-            // BUG-11-011: drop pending host-replies the unsubscribing client
+            // : drop pending host-replies the unsubscribing client
             // owned for this pane — the responder is leaving the pane's
             // notification stream and won't observe / fulfill any further
             // notifications. Without this the daemon would leak entries

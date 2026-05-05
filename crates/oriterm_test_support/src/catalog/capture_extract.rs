@@ -150,7 +150,7 @@ impl vte::Perform for TupleSink {
         };
         // SSOT: selector → `final_byte`; payload
         // placeholders → `params`. `osc_placeholder` is keyed on
-        // raw payload position (idx 1, 2, ...), unchanged.
+        // raw payload position (idx 1, 2,...), unchanged.
         let payload: Vec<String> = params
             .iter()
             .enumerate()

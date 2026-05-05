@@ -3,7 +3,7 @@
 //! Used by both Linux/macOS filename-index builders AND the family enumeration
 //! pipeline. Closes the algorithmic-duplication LEAK between
 //! `linux.rs::index_font_dir` and `macos.rs::index_font_dir` (per
-//! `.claude/rules/impl-hygiene.md` §Algorithmic DRY).
+//! §Algorithmic DRY).
 
 #![cfg(any(target_os = "linux", target_os = "macos"))]
 

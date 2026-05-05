@@ -44,13 +44,13 @@ impl App {
         }
 
         // Surface error dispatch (5.16.1 detection plumbing).
-        // - `Outdated`  → benign reconfigure (existing path).
-        // - `Lost`      → escalate to the recovery state machine via the
-        //                 `TermEvent::GpuDeviceLost` event.
-        // - `Other`     → soft device loss; carries the wgpu detail string.
+        // - `Outdated` → benign reconfigure (existing path).
+        // - `Lost` → escalate to the recovery state machine via the
+        // `TermEvent::GpuDeviceLost` event.
+        // - `Other` → soft device loss; carries the wgpu detail string.
         // - `OutOfMemory` → escalate; the recovery state machine will
-        //                 transition straight to `Unavailable` per 5.16.10.
-        // - `Timeout`   → retryable, log and let the next frame retry.
+        // transition straight to `Unavailable` per 5.16.10.
+        // - `Timeout` → retryable, log and let the next frame retry.
         match render_result {
             Ok(()) => log::trace!("render ok"),
             Err(SurfaceError::Outdated) => {

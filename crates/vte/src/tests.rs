@@ -1089,7 +1089,7 @@ fn c1_matrix_midseq_0x9c_in_pm() {
     assert!(d.dispatched.iter().any(|s| matches!(s, Sequence::Print('B'))));
 }
 
-// ── Negative pin: BSU/ESU 7-bit form not matched by 8-bit CSI ───────
+// ── Regression guard: BSU/ESU 7-bit form not matched by 8-bit CSI ───────
 
 /// 8-bit CSI `\x9b?2026h` must NOT trigger sync update (BSU matcher
 /// expects 7-bit ESC [ form).
@@ -1107,7 +1107,7 @@ fn bsu_esu_7bit_not_matched_by_8bit_csi() {
     assert!(matches!(&d.dispatched[0], Sequence::Csi(..)));
 }
 
-// ── Semantic pin: 8-bit CSI SGR reset only works with C1 support ────
+// ── Property: 8-bit CSI SGR reset only works with C1 support ────
 
 /// `\x9b0m` resets SGR — this test ONLY passes when 8-bit C1 routing
 /// correctly enters CSI state from ground via the 0x9B byte.

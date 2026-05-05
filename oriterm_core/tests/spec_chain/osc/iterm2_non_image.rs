@@ -202,7 +202,7 @@ fn osc1337_file_still_routes_to_iterm2_file() {
 
 // ── Unknown keys drop silently ──────────────────────────────────────
 
-/// Negative pin: an unrecognized `OSC 1337 ; NotARealKey=value ST`
+/// Regression guard: an unrecognized `OSC 1337 ; NotARealKey=value ST`
 /// sub-op is silently dropped — baseline CWD / remote-host / prompt
 /// markers / user_vars state is untouched. Guards against the
 /// dispatcher accidentally mutating state for keys it does not
@@ -223,7 +223,7 @@ fn osc1337_unknown_key_dropped() {
     assert_eq!(harness.term().user_vars_len(), 0);
 }
 
-/// NEGATIVE PIN (blind-spot #9 Section 14 de-risk) — a `File=` payload
+/// REGRESSION GUARD (blind-spot #9 Section 14 de-risk) — a `File=` payload
 /// that includes an unknown sub-key still routes to `iterm2_file`; the
 /// sub-dispatcher must not drop the entire payload because a newer
 /// iTerm2 attribute is present alongside the recognized ones.
@@ -298,9 +298,9 @@ fn osc1337_user_vars_reinsert_does_not_refresh_position() {
     assert_eq!(harness.term().user_var("D"), Some("d"));
 }
 
-// ── Negative pins (invalid base64) ──────────────────────────────────
+// ── Regression guards (invalid base64) ──────────────────────────────────
 
-/// Negative pin: an `OSC 1337 ; Copy=:<garbage> ST` with invalid base64
+/// Regression guard: an `OSC 1337 ; Copy=:<garbage> ST` with invalid base64
 /// must NOT emit a `ClipboardStore` effect — the decoder rejects before
 /// reaching the clipboard handler. Anchor: catalog row
 /// `ITERM2-1337-COPY` (invalid-base64 drop).
@@ -311,7 +311,7 @@ fn osc1337_copy_invalid_base64_dropped() {
     assert_no_clipboard_store(&harness);
 }
 
-/// Negative pin: an `OSC 1337 ; SetUserVar=KEY=<garbage> ST` with
+/// Regression guard: an `OSC 1337 ; SetUserVar=KEY=<garbage> ST` with
 /// invalid base64 must NOT record the key in `user_vars` — the decoder
 /// rejects before reaching the set-user-var handler, keeping the map
 /// empty. Anchor: catalog row `ITERM2-1337-SETUSERVAR`
@@ -326,15 +326,15 @@ fn osc1337_set_user_var_invalid_base64_dropped() {
 
 // ── Matrix pins (Copy selection variants, missing separator) ────────
 //
-// Each negative pin asserts BOTH that the dispatch reached the handler
+// Each regression guard asserts BOTH that the dispatch reached the handler
 // AND that the handler dropped without side effects. Without the
 // dispatch assertion a "no effect" check could also pass if the OSC
 // was silently rejected at the parser — which would hide a real
-// dispatch regression (the negative pin passes for the wrong reason).
+// dispatch regression (the regression guard passes for the wrong reason).
 
 /// Pins: `OSC 1337 ; Copy=<payload-without-colon> ST` drops — the handler
 /// dispatches but short-circuits before base64 decode because the
-/// selection-char separator is missing. Negative pin paired with
+/// selection-char separator is missing. Regression guard paired with
 /// `osc1337_copy`. Anchor: catalog row `ITERM2-1337-COPY` (malformed-payload
 /// drop path).
 #[test]
@@ -370,7 +370,7 @@ fn osc1337_copy_explicit_selection_chars() {
 
 /// Pins: unknown selection characters dispatch but drop — the handler
 /// reaches the selection match but falls through to `_ => return` rather
-/// than routing to a default variant. Negative pin paired with
+/// than routing to a default variant. Regression guard paired with
 /// `osc1337_copy_explicit_selection_chars`. Anchor: catalog row
 /// `ITERM2-1337-COPY` (unknown-selection-char drop path).
 #[test]
@@ -437,7 +437,7 @@ fn osc1337_invalid_utf8_dropped() {
 // The SSOT invariant under test is: both OSC 7 (via interceptor calling
 // `Term::set_cwd`) and OSC 1337 CurrentDir (via `Handler::iterm2_current_dir`
 // → `Term::set_cwd`) write the SAME `Term::cwd` field — any second CWD
-// field would break either test.  We simulate the OSC 7 side by calling
+// field would break either test. We simulate the OSC 7 side by calling
 // `set_cwd` directly (exactly what the interceptor does post-URI-parse).
 
 /// DIRECTION A: OSC 7 sets cwd first (via `set_cwd`, as the interceptor
@@ -458,7 +458,7 @@ fn osc1337_ssot_cwd_direction_a() {
 }
 
 /// DIRECTION B: OSC 1337 CurrentDir sets cwd first (via the Handler
-/// path); OSC 7's `set_cwd` overwrites it.  Pins that BOTH directions
+/// path); OSC 7's `set_cwd` overwrites it. Pins that BOTH directions
 /// flow through the SAME field — a future regression where either OSC
 /// writes a second field is caught here.
 /// Anchor: catalog rows `ITERM2-1337-CURRENTDIR` + `OSC-7` (SSOT shared-field contract).

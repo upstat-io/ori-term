@@ -79,7 +79,7 @@ fn process_id_returns_none_when_constructor_passed_none() {
 
 #[test]
 fn pty_lifecycle_kill_is_no_op() {
-    // Semantic pin: ori_term did not spawn the process for an adopted PTY,
+    // Property: ori_term did not spawn the process for an adopted PTY,
     // so `kill()` is intentionally a no-op that returns `Ok(())`. This
     // test ONLY passes if `PtyLifecycle::kill` is implemented as such —
     // if it accidentally calls `unimplemented!()` or returns an error, the
@@ -161,7 +161,7 @@ fn wait_returns_immediately_if_signal_already_delivered() {
 
 #[test]
 fn taken_reader_yields_constructor_bytes() {
-    // Semantic pin: the boxed reader stored in `AdoptedPtyHandle` must be
+    // Property: the boxed reader stored in `AdoptedPtyHandle` must be
     // returned unchanged via `take_reader()`. If `new()` accidentally
     // wraps or substitutes the reader, the bytes won't match.
     let mut handle = handle_with_fixture(1);
@@ -181,7 +181,7 @@ fn taken_writer_accepts_writes() {
 
 #[test]
 fn adopted_signal_resize_with_null_handle_errors() {
-    // Semantic pin: AdoptedSignal::resize must reject the test stub
+    // Property: AdoptedSignal::resize must reject the test stub
     // (null signal handle) so a misconfigured production wiring fails
     // loudly instead of silently no-op'ing every resize. The real
     // signal pipe wiring is tested via the IO thread integration in

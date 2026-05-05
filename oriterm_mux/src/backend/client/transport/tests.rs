@@ -1,6 +1,6 @@
 //! Tests for the split reader/writer transport architecture.
 //!
-//! Pins the BUG-11-047 architectural invariant: outbound writes happen on
+//! Pins the architectural invariant: outbound writes happen on
 //! a dedicated `writer.rs` thread; the `reader.rs` thread is read-only.
 //! Source-grep semantic pins lock the split so a regression that re-merges
 //! the threads fails to compile (or fails the source-grep pin) rather than
@@ -18,9 +18,9 @@ fn reader_does_not_drain_send_rx() {
     for pat in bad_patterns {
         assert!(
             !reader_src.contains(pat),
-            "BUG-11-047 architectural invariant: reader.rs MUST NOT drain or own \
-             send_rx (found `{pat}`). Outbound writes belong in writer.rs so the \
-             reader thread can always read replies regardless of write backpressure."
+            "architectural invariant: reader.rs MUST NOT drain or own \
+ send_rx (found `{pat}`). Outbound writes belong in writer.rs so the \
+ reader thread can always read replies regardless of write backpressure."
         );
     }
 }
@@ -30,14 +30,16 @@ fn reader_does_not_send_pings() {
     let reader_src = include_str!("reader.rs");
     // Match `Ping` followed by punctuation — `MuxPdu::Ping` as a value, not
     // the `MuxPdu::PingAck` variant which the reader still observes.
-    let bad_patterns = ["MuxPdu::Ping,", "MuxPdu::Ping)", "encode_frame(&mut stream"];
+    // `encode_frame` is forbidden as a bare token (catches any receiver name,
+    // not just `&mut stream`) — the reader is read-only post-fix.
+    let bad_patterns = ["MuxPdu::Ping,", "MuxPdu::Ping)", "encode_frame"];
     for pat in bad_patterns {
         assert!(
             !reader_src.contains(pat),
-            "BUG-11-047 architectural invariant: reader.rs MUST NOT call \
-             `encode_frame` or send `MuxPdu::Ping` (found `{pat}`). The writer \
-             thread owns the heartbeat pings; merging them back into the reader \
-             re-introduces the head-of-line block under backpressure."
+            "architectural invariant: reader.rs MUST NOT call \
+ `encode_frame` or send `MuxPdu::Ping` (found `{pat}`). The writer \
+ thread owns the heartbeat pings; merging them back into the reader \
+ re-introduces the head-of-line block under backpressure."
         );
     }
 }
@@ -47,12 +49,12 @@ fn writer_module_owns_send_rx_drain() {
     let writer_src = include_str!("writer.rs");
     assert!(
         writer_src.contains("send_rx"),
-        "BUG-11-047 architectural invariant: writer.rs MUST own send_rx draining."
+        "architectural invariant: writer.rs MUST own send_rx draining."
     );
     assert!(
         writer_src.contains("encode_frame"),
-        "BUG-11-047 architectural invariant: writer.rs MUST own outbound \
-         encode_frame calls."
+        "architectural invariant: writer.rs MUST own outbound \
+ encode_frame calls."
     );
 }
 
@@ -61,9 +63,9 @@ fn writer_module_owns_ping_heartbeat() {
     let writer_src = include_str!("writer.rs");
     assert!(
         writer_src.contains("MuxPdu::Ping"),
-        "BUG-11-047 architectural invariant: writer.rs MUST own the heartbeat \
-         Ping send (moved here from reader.rs so a backpressured write does \
-         not block the heartbeat)."
+        "architectural invariant: writer.rs MUST own the heartbeat \
+ Ping send (moved here from reader.rs so a backpressured write does \
+ not block the heartbeat)."
     );
 }
 
@@ -72,10 +74,102 @@ fn writer_module_drains_pending_on_error_exit() {
     let writer_src = include_str!("writer.rs");
     assert!(
         writer_src.contains("drain_pending") || writer_src.contains("drain()"),
-        "BUG-11-047 / Codex review pin: writer.rs MUST drain pending RPC reply \
-         senders on error exit so callers see Disconnected (BrokenPipe) \
-         instead of waiting RPC_TIMEOUT (5s) for a phantom response."
+        "review pin: writer.rs MUST drain pending RPC reply \
+ senders on error exit so callers see Disconnected (BrokenPipe) \
+ instead of waiting RPC_TIMEOUT (5s) for a phantom response."
     );
+}
+
+#[cfg(unix)]
+mod drain_pending_behavioral_pin {
+    //! Behavioral pin paired with the source-grep
+    //! `writer_module_drains_pending_on_error_exit` test above. Pre-fix
+    //! (writer doesn't drain), an in-flight RPC waits the full RPC_TIMEOUT
+    //! (5 s) for a phantom response after the connection breaks. Post-fix,
+    //! the writer drains the shared pending map on its error-exit path so
+    //! the application's `reply_rx` observes `Disconnected` immediately.
+    //!
+    //! The pin is paired-source-and-behavior so a future regression that
+    //! removes the `drain_pending` call (passing the source-grep on the
+    //! word's continued presence in a comment, for instance) is still
+    //! caught by the wall-clock pin: an RPC that takes >1 s to fail after
+    //! the connection drops fails this test.
+    //!
+    //! Codex round 1 finding F2 pin.
+
+    use std::os::unix::net::UnixListener;
+    use std::sync::Arc;
+    use std::thread;
+    use std::time::{Duration, Instant};
+
+    use crate::id::ClientId;
+    use crate::protocol::{MuxPdu, ProtocolCodec};
+
+    use super::super::ClientTransport;
+
+    /// When the daemon abruptly closes the connection mid-flight, an RPC
+    /// caller observes `BrokenPipe` (or another non-`TimedOut`) error
+    /// within 1 second — NOT after the 5-second `RPC_TIMEOUT`. The writer
+    /// thread's `drain_pending` is what closes the gap: without it,
+    /// `reply_rx` waits for a sender that nobody will ever drop until
+    /// `Drop::drop` runs.
+    #[test]
+    fn rpc_after_connection_drop_observes_disconnected_within_one_second() {
+        let dir = tempfile::tempdir().unwrap();
+        let sock = dir.path().join("drain.sock");
+        let listener = UnixListener::bind(&sock).unwrap();
+
+        let server_handle = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut codec = ProtocolCodec::new();
+            // Hello / HelloAck.
+            let frame = codec.decode_frame(&mut stream).unwrap();
+            assert!(matches!(frame.pdu, MuxPdu::Hello { .. }));
+            ProtocolCodec::encode_frame(
+                &mut stream,
+                frame.seq,
+                &MuxPdu::HelloAck {
+                    client_id: ClientId::from_raw(1),
+                    protocol_version: crate::protocol::CURRENT_PROTOCOL_VERSION,
+                    features: 0,
+                },
+            )
+            .unwrap();
+            // SetCapabilities (fire-and-forget).
+            let _ = codec.decode_frame(&mut stream);
+            // Drop the stream immediately — daemon side disappears.
+            drop(stream);
+        });
+
+        let wakeup: Arc<dyn Fn() + Send + Sync> = Arc::new(|| {});
+        let mut transport = ClientTransport::connect(&sock, wakeup).unwrap();
+        let _ = server_handle.join();
+
+        // Brief settle so the writer's next `recv_timeout` cycle observes
+        // the broken connection. The exact mechanism doesn't matter — what
+        // matters is that a subsequent RPC must not block for 5 seconds.
+        thread::sleep(Duration::from_millis(50));
+
+        let start = Instant::now();
+        let result = transport.rpc(MuxPdu::Ping);
+        let elapsed = start.elapsed();
+
+        assert!(result.is_err(), "RPC must fail after the daemon dropped");
+        let err = result.unwrap_err();
+        assert_ne!(
+            err.kind(),
+            std::io::ErrorKind::TimedOut,
+            "drain_pending must wake reply_rx with `BrokenPipe` (or transport \
+ death) — observing `TimedOut` means the writer's error path did \
+ not drain the pending map. Codex round 1 finding F2 pin."
+        );
+        assert!(
+            elapsed < Duration::from_secs(1),
+            "drain_pending pin: rpc() must return within 1 s after the daemon \
+ drops, not wait `RPC_TIMEOUT` (5 s) for a phantom response (got \
+ {elapsed:?})"
+        );
+    }
 }
 
 #[test]
@@ -83,10 +177,10 @@ fn pending_map_is_shared_arc_mutex() {
     let mod_src = include_str!("mod.rs");
     assert!(
         mod_src.contains("Arc<Mutex<HashMap<u32, mpsc::Sender<MuxPdu>>>>"),
-        "BUG-11-047 architectural invariant: the pending RPC reply-sender map \
-         must be Arc<Mutex<HashMap<...>>> so writer.rs (insert) and reader.rs \
-         (remove) can share it across thread boundaries. Pre-fix layout (a \
-         reader-local HashMap) is what enabled the head-of-line block."
+        "architectural invariant: the pending RPC reply-sender map \
+ must be Arc<Mutex<HashMap<...>>> so writer.rs (insert) and reader.rs \
+ (remove) can share it across thread boundaries. Pre-fix layout (a \
+ reader-local HashMap) is what enabled the head-of-line block."
     );
 }
 
@@ -94,9 +188,9 @@ fn pending_map_is_shared_arc_mutex() {
 fn writer_module_is_declared_in_mod_rs() {
     let mod_src = include_str!("mod.rs");
     assert!(
-        mod_src.contains("mod writer;") || mod_src.contains("mod writer ;"),
-        "BUG-11-047: mod.rs must declare `mod writer;` so the writer thread \
-         lives in its canonical home (transport/writer.rs)."
+        mod_src.contains("mod writer;") || mod_src.contains("mod writer;"),
+        "mod.rs must declare `mod writer;` so the writer thread \
+ lives in its canonical home (transport/writer.rs)."
     );
 }
 
@@ -218,11 +312,11 @@ mod backpressure_pins {
 
         assert!(
             got_notif,
-            "BUG-11-047 architectural invariant: reader thread must dispatch \
-             notifications while writer thread is backpressured on a 2 MiB \
-             write. Pre-fix: same thread owns both reads and writes, so the \
-             notification waits behind the 2 MiB encode_frame and never \
-             arrives within the deadline."
+            "architectural invariant: reader thread must dispatch \
+ notifications while writer thread is backpressured on a 2 MiB \
+ write. Pre-fix: same thread owns both reads and writes, so the \
+ notification waits behind the 2 MiB encode_frame and never \
+ arrives within the deadline."
         );
 
         drop(transport);

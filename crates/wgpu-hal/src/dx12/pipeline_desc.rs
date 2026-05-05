@@ -109,10 +109,10 @@ pub(super) struct RenderPipelineStateStream<'a> {
 
 impl<'a> RenderPipelineStateStream<'a> {
     fn new() -> Self {
-        // Dynamic allocation is used here because the resulting stream can become very large.
-        // We pre-allocate the size based on an estimate of the size of the struct plus some extra space
-        // per member for tags and alignment padding. In practice this will always be too big, as not
-        // all members will be used.
+ // Dynamic allocation is used here because the resulting stream can become very large.
+ // We pre-allocate the size based on an estimate of the size of the struct plus some extra space
+ // per member for tags and alignment padding. In practice this will always be too big, as not
+ // all members will be used.
         let size_of_stream_desc = size_of::<RenderPipelineStateStreamDesc>();
         let members = 20; // Approximate number of members we might push
         let capacity = size_of_stream_desc + members * 8; // Extra space for tags and alignment
@@ -122,26 +122,26 @@ impl<'a> RenderPipelineStateStream<'a> {
         }
     }
 
-    /// Align the internal byte buffer to the given alignment,
-    /// padding with zeros as necessary.
+ /// Align the internal byte buffer to the given alignment,
+ /// padding with zeros as necessary.
     fn align_to(&mut self, alignment: usize) {
         let aligned_length = self.bytes.len().next_multiple_of(alignment);
         self.bytes.resize(aligned_length, 0);
     }
 
-    /// Adds a subobject to the pipeline state stream.
+ /// Adds a subobject to the pipeline state stream.
     fn add_object<T: RenderPipelineStreamObject>(&mut self, object: T) {
-        // Ensure 8-byte alignment for the subobject start.
+ // Ensure 8-byte alignment for the subobject start.
         self.align_to(8);
 
-        // Append the type tag (u32)
+ // Append the type tag (u32)
         let tag: u32 = T::SUBOBJECT_TYPE.0 as u32;
         self.bytes.extend_from_slice(&tag.to_ne_bytes());
 
-        // Align the data to its natural alignment.
+ // Align the data to its natural alignment.
         self.align_to(align_of_val::<T>(&object));
 
-        // Append the data itself, as raw bytes
+ // Append the data itself, as raw bytes
         let data_ptr: *const T = &object;
         let data_u8_ptr: *const u8 = data_ptr.cast::<u8>();
         let data_size = size_of_val::<T>(&object);
@@ -149,10 +149,10 @@ impl<'a> RenderPipelineStateStream<'a> {
         self.bytes.extend_from_slice(slice);
     }
 
-    /// Creates a pipeline state object from the stream.
-    ///
-    /// Safety:
-    /// - All unsafety invariants required by [`ID3D12Device2::CreatePipelineState`] must be upheld by the caller.
+ /// Creates a pipeline state object from the stream.
+ ///
+ /// Safety:
+ /// - All unsafety invariants required by [`ID3D12Device2::CreatePipelineState`] must be upheld by the caller.
     pub unsafe fn create_pipeline_state(
         &mut self,
         device: &ID3D12Device2,
@@ -162,8 +162,8 @@ impl<'a> RenderPipelineStateStream<'a> {
             pPipelineStateSubobjectStream: self.bytes.as_mut_ptr().cast(),
         };
 
-        // Safety: lifetime on Self preserved the contents
-        // of the stream. Other unsafety invariants are upheld by the caller.
+ // Safety: lifetime on Self preserved the contents
+ // of the stream. Other unsafety invariants are upheld by the caller.
         unsafe { device.CreatePipelineState(&stream_desc) }
     }
 }
@@ -186,13 +186,13 @@ pub struct RenderPipelineStateStreamDesc<'a> {
     pub flags: D3D12_PIPELINE_STATE_FLAGS,
     pub view_instancing: Option<D3D12_VIEW_INSTANCING_DESC>,
 
-    // Vertex pipeline specific
+ // Vertex pipeline specific
     pub vertex_shader: D3D12_SHADER_BYTECODE,
     pub input_layout: D3D12_INPUT_LAYOUT_DESC,
     pub index_buffer_strip_cut_value: D3D12_INDEX_BUFFER_STRIP_CUT_VALUE,
     pub stream_output: D3D12_STREAM_OUTPUT_DESC,
 
-    // Mesh pipeline specific
+ // Mesh pipeline specific
     pub task_shader: D3D12_SHADER_BYTECODE,
     pub mesh_shader: D3D12_SHADER_BYTECODE,
 }
@@ -201,16 +201,16 @@ impl RenderPipelineStateStreamDesc<'_> {
     pub fn to_stream(&self) -> RenderPipelineStateStream<'_> {
         let mut stream = RenderPipelineStateStream::new();
 
-        // Importantly here, the ID3D12RootSignature _itself_ is the pointer we're
-        // trying to serialize into the stream, not a pointer to the pointer.
-        //
-        // This is correct because as_raw() returns turns that smart object into the raw
-        // pointer that _is_ the com object handle.
+ // Importantly here, the ID3D12RootSignature _itself_ is the pointer we're
+ // trying to serialize into the stream, not a pointer to the pointer.
+ //
+ // This is correct because as_raw() returns turns that smart object into the raw
+ // pointer that _is_ the com object handle.
         let root_sig_pointer = self
             .root_signature
             .map(|a| NonNull::new(a.as_raw()).unwrap());
-        // Because the stream object borrows from self for its entire lifetime,
-        // it is safe to store the pointer into it.
+ // Because the stream object borrows from self for its entire lifetime,
+ // it is safe to store the pointer into it.
         stream.add_object(RootSignature(root_sig_pointer));
 
         stream.add_object(self.blend_state);
@@ -254,10 +254,10 @@ impl RenderPipelineStateStreamDesc<'_> {
         stream
     }
 
-    /// Returns a traditional D3D12_GRAPHICS_PIPELINE_STATE_DESC.
-    ///
-    /// Safety:
-    /// - This returned struct must not outlive self.
+ /// Returns a traditional D3D12_GRAPHICS_PIPELINE_STATE_DESC.
+ ///
+ /// Safety:
+ /// - This returned struct must not outlive self.
     pub unsafe fn to_graphics_pipeline_descriptor(&self) -> D3D12_GRAPHICS_PIPELINE_STATE_DESC {
         D3D12_GRAPHICS_PIPELINE_STATE_DESC {
             pRootSignature: if let Some(rsig) = self.root_signature {
@@ -316,29 +316,29 @@ mod tests {
 
         assert_eq!(stream.bytes.len(), 32);
 
-        // Object 1: u16
+ // Object 1: u16
 
-        // Tag at the beginning
+ // Tag at the beginning
         assert_eq!(&stream.bytes[0..4], &1u32.to_ne_bytes());
-        // Data tucked in, aligned to the natural alignment of u16
+ // Data tucked in, aligned to the natural alignment of u16
         assert_eq!(&stream.bytes[4..6], &42u16.to_ne_bytes());
-        // Padding to align the next subobject to an 8 byte boundary.
+ // Padding to align the next subobject to an 8 byte boundary.
         assert_eq!(&stream.bytes[6..8], &[0, 0]);
 
-        // Object 2: u32
+ // Object 2: u32
 
-        // Tag at the beginning
+ // Tag at the beginning
         assert_eq!(&stream.bytes[8..12], &2u32.to_ne_bytes());
-        // Data tucked in, aligned to the natural alignment of u32
+ // Data tucked in, aligned to the natural alignment of u32
         assert_eq!(&stream.bytes[12..16], &84u32.to_ne_bytes());
 
-        // Object 3: u64
+ // Object 3: u64
 
-        // Tag at the beginning
+ // Tag at the beginning
         assert_eq!(&stream.bytes[16..20], &3u32.to_ne_bytes());
-        // Padding to align the u64 to an 8 byte boundary.
+ // Padding to align the u64 to an 8 byte boundary.
         assert_eq!(&stream.bytes[20..24], &[0, 0, 0, 0]);
-        // Data tucked in, aligned to the natural alignment of u64
+ // Data tucked in, aligned to the natural alignment of u64
         assert_eq!(&stream.bytes[24..32], &168u64.to_ne_bytes());
     }
 }

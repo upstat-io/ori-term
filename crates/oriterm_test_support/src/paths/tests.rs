@@ -80,7 +80,7 @@ fn walk_up_returns_none_when_no_marker_anywhere() {
     }
 }
 
-/// Negative pin: marker is a regular file (not a directory) → walk-up
+/// Regression guard: marker is a regular file (not a directory) → walk-up
 /// distinguishes file from dir, returns None.
 #[test]
 fn walk_up_distinguishes_dir_marker_from_file_marker() {
@@ -99,7 +99,7 @@ fn walk_up_distinguishes_dir_marker_from_file_marker() {
     }
 }
 
-/// Negative pin: only `plans/` exists, not `plans/spec-conformance/` → walk-up keeps walking.
+/// Regression guard: only `plans/` exists, not `plans/spec-conformance/` → walk-up keeps walking.
 #[test]
 fn walk_up_ignores_partial_marker_subdir() {
     let tmp = TempDir::new().expect("tempdir");

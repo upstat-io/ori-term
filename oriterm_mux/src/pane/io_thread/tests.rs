@@ -626,7 +626,7 @@ fn produce_snapshot_resets_damage() {
 ///
 /// When `TermMode::SYNC_UPDATE` is set, snapshot publication is deferred
 /// even though grid mutations dispatch inline. Pinning the SSOT-correct
-/// gate (mode flag, not byte buffer) per BUG-11-027 §03.
+/// gate (mode flag, not byte buffer) per §03.
 #[test]
 fn produce_snapshot_respects_sync_update_mode_flag() {
     let (mut t, wakeup_count) = make_sync_thread_with_wakeup();
@@ -731,7 +731,7 @@ fn produce_snapshot_fires_wakeup() {
 
 /// Helper: create a sync thread with a command sender for testing.
 ///
-/// Bounded to match production shape (BUG-11-025). Tests using this
+/// Bounded to match production shape (). Tests using this
 /// fixture do NOT exercise saturation — they drive `drain_commands`
 /// directly with a small command set — so production-shape parity
 /// matters more than headroom.
@@ -872,12 +872,12 @@ fn test_spawn_size_resize_is_deduped() {
 /// Section 03.9 Phase 4 / TPR-4: process_resize routes to
 /// `adopted_signal.resize()` when `pty_control` is `None`.
 ///
-/// Semantic pin: install a stub `AdoptedSignal` (which always errors on
+/// Property: install a stub `AdoptedSignal` (which always errors on
 /// resize) and verify that process_resize:
 /// 1. Calls the grid reflow path (terminal dimensions update).
 /// 2. Calls the signal resize path (we can't observe the call directly,
-///    but we can verify last_pty_size advances — proving the dedup
-///    guard saw the call).
+/// but we can verify last_pty_size advances — proving the dedup
+/// guard saw the call).
 /// 3. Does NOT panic on the signal error path.
 #[cfg(test)]
 #[test]
@@ -1520,7 +1520,7 @@ fn handle_bytes_chunked_publishes_intermediate_snapshots() {
 /// path in `PaneIoHandle::shutdown()`.
 #[test]
 fn test_io_thread_panic_does_not_crash_app() {
-    // Bounded to match production shape (BUG-11-025); this test does
+    // Bounded to match production shape (); this test does
     // not exercise saturation, but the field shape stays aligned with
     // the production handle.
     let (tx, rx) = crossbeam_channel::bounded::<PaneIoCommand>(CMD_CHANNEL_CAPACITY);
@@ -1549,14 +1549,14 @@ fn test_io_thread_panic_does_not_crash_app() {
     // the panicked thread when it lands) or arrives after (joining
     // cleanly) — both paths satisfy "shutdown does not hang on panic",
     // which is the only invariant this test pins. Wall-clock sleep is
-    // forbidden per `.claude/rules/tests.md §Wall-Clock-Free Testing`.
+    // forbidden-Clock-Free Testing`.
     handle.send_command(PaneIoCommand::MarkAllDirty);
 
     // shutdown() must complete without hanging (join catches the
     // panic). Wall-clock-free per `tests.md §Wall-Clock-Free Testing`:
     // shutdown() blocks on the join handle internally; if the join
     // ever returns, the test passes. The 150s process-level timeout
-    // is the only safety valve. Per Round 2 code-TPR codex F5.
+    // is the only safety valve. Per Round 2 code-TPR F5.
     handle.shutdown();
 }
 
@@ -1676,7 +1676,7 @@ fn test_multiple_panes_concurrent_resize() {
     }
 }
 
-// `test_command_channel_flood` was removed by BUG-11-025: the original
+// `test_command_channel_flood` was removed by : the original
 // 1000-command flood asserted that all commands drain via wall-clock
 // `thread::sleep` (TIMING violation per `tests.md §Wall-Clock-Free
 // Testing`) AND assumed unbounded `cmd_tx`. Both assumptions are
@@ -1684,10 +1684,10 @@ fn test_multiple_panes_concurrent_resize() {
 // drops the overflow with `log::error!`. Replacement coverage:
 //
 // - `cmd_tx_at_capacity_returns_full_error_synchronously` — pins the
-//   bounded-saturation contract synchronously (no wall-clock).
+// bounded-saturation contract synchronously (no wall-clock).
 // - `drain_after_three_atomic_stores_processes_only_last` +
-//   `drain_after_atomic_store_processes_resize` — pin resize
-//   coalescing through the atomic slot (no flood needed).
+// `drain_after_atomic_store_processes_resize` — pin resize
+// coalescing through the atomic slot (no flood needed).
 
 /// Snapshot swap under contention: producer + consumer threads hammering
 /// the double buffer for 500ms. Verifies the two correctness properties:
@@ -2029,7 +2029,7 @@ fn make_sync_thread_generic<S: oriterm_core::effect::EffectSink + 'static>(
     (thread, wakeup_count)
 }
 
-/// Semantic pin: timeout publishes the inline-mutated grid + clears
+/// Property: timeout publishes the inline-mutated grid + clears
 /// SYNC_UPDATE.
 ///
 /// Bytes inside the sync window dispatched inline as they arrived,
@@ -2089,7 +2089,7 @@ fn sync_timeout_publishes_inline_mutated_grid() {
     assert_eq!(seqno, 1, "snapshot_seqno should advance by 1");
 }
 
-/// Semantic pin: timeout emits PresentationEffect::Abort effect.
+/// Property: timeout emits PresentationEffect::Abort effect.
 #[test]
 fn sync_timeout_emits_abort_effect() {
     use oriterm_core::effect::sink::EffectSink;
@@ -2136,7 +2136,7 @@ fn sync_timeout_runs_post_parse_housekeeping_inline_dispatch() {
     );
 
     // Enter sync mode + hide cursor within the sync window. After
-    // BUG-11-027 the hide dispatches INLINE, mutating the term's mode
+    // the hide dispatches INLINE, mutating the term's mode
     // bits as soon as the bytes arrive.
     t.handle_bytes(b"\x1b[?2026h");
     t.handle_bytes(b"\x1b[?25l");
@@ -2343,7 +2343,7 @@ fn run_loop_sync_timeout_fires() {
     handle.send_command(PaneIoCommand::Shutdown);
 }
 
-/// Negative pin: timeout arm must NOT fire when not in sync mode.
+/// Regression guard: timeout arm must NOT fire when not in sync mode.
 #[test]
 fn no_timeout_when_not_in_sync() {
     let (mut t, _wakeup) = make_sync_thread_with_wakeup();
@@ -2872,10 +2872,10 @@ fn multi_chunk_parse_drains_between_chunks() {
 ///
 /// We assert two things after dropping `child_exit_tx`:
 /// 1. A subsequent `Shutdown` command still joins quickly (the spin
-///    must not starve `cmd_rx` delivery).
+/// must not starve `cmd_rx` delivery).
 /// 2. Iteration count between disconnect and shutdown is bounded —
-///    measured indirectly by total wall time, which would balloon if
-///    `select!` were spinning at multi-MHz.
+/// measured indirectly by total wall time, which would balloon if
+/// `select!` were spinning at multi-MHz.
 #[test]
 fn child_exit_disconnect_does_not_spin_loop() {
     let rig = spawn_queueing_eof_rig();
@@ -2926,7 +2926,7 @@ fn io_wake_disconnect_does_not_spin_loop() {
     drop(rig.child_exit_tx);
 }
 
-// --- BUG-11-002: bounded byte channel + symmetric IO-thread shrink ---
+// --- : bounded byte channel + symmetric IO-thread shrink ---
 
 /// Helper: fill a `RenderableContent` with `n` placeholder cells.
 ///
@@ -2954,12 +2954,12 @@ fn populate_renderable(buf: &mut RenderableContent, n: usize) {
 
 /// Pin 1 — bounded byte-channel capacity.
 ///
-/// Regression: BUG-11-002 — pre-fix the byte channel was
+/// Regression: pre-fix the byte channel was
 /// `crossbeam_channel::unbounded()`, so a flooded reader could grow the
 /// queue heap without bound. Pins that `try_send` returns
 /// `TrySendError::Full` exactly when the queue holds
 /// `BYTE_CHANNEL_CAPACITY` messages.
-/// See: bug-tracker/plans/BUG-11-002/section-03-tdd-matrix.md §"Semantic pins" Pin 1.
+/// See: bug-tracker/plans//section-03-tdd-matrix.md §"Semantic pins" Pin 1.
 #[test]
 fn byte_channel_capacity_blocks_at_bound() {
     let (_thread, handle) = make_pair();
@@ -2980,9 +2980,9 @@ fn byte_channel_capacity_blocks_at_bound() {
 
 /// Pin 2 — `byte_tx` reports `BYTE_CHANNEL_CAPACITY` via `Sender::capacity`.
 ///
-/// Regression: BUG-11-002. Pins both the cap value AND the bounded shape
+/// Regression:. Pins both the cap value AND the bounded shape
 /// (an unbounded `Sender::capacity` returns `None`).
-/// See: bug-tracker/plans/BUG-11-002/section-03-tdd-matrix.md §"Semantic pins" Pin 2.
+/// See: bug-tracker/plans//section-03-tdd-matrix.md §"Semantic pins" Pin 2.
 #[test]
 fn byte_tx_capacity_reports_bound() {
     let (_thread, handle) = make_pair();
@@ -2996,12 +2996,12 @@ fn byte_tx_capacity_reports_bound() {
 
 /// Pin 4 — Drop counter increments on pane close within deadline.
 ///
-/// Regression: BUG-11-002. Spawns N IO threads, drops their handles, and
+/// Regression:. Spawns N IO threads, drops their handles, and
 /// polls the cfg-gated `drop_counter` until it reaches N within a 5 s
-/// safety deadline (per `.claude/rules/tests.md §Wall-Clock-Free Testing`
+/// safety deadline (-Clock-Free Testing`
 /// — poll the condition, not the clock). Pins that `PaneIoHandle::Drop`
 /// runs `shutdown()` then increments the counter.
-/// See: bug-tracker/plans/BUG-11-002/section-03-tdd-matrix.md §"Semantic pins" Pin 4.
+/// See: bug-tracker/plans//section-03-tdd-matrix.md §"Semantic pins" Pin 4.
 #[test]
 fn drop_counter_reaches_n_within_deadline() {
     let n = 4usize;
@@ -3030,13 +3030,13 @@ fn drop_counter_reaches_n_within_deadline() {
 
 /// Pin 3a — `maybe_shrink_buffers` shrinks `snapshot_buf`.
 ///
-/// Regression: BUG-11-002. Pre-fix the IO thread had no symmetric
+/// Regression:. Pre-fix the IO thread had no symmetric
 /// `maybe_shrink` discipline against the main-thread side; after a
 /// flood, `snapshot_buf` retained peak capacity indefinitely. Populates
 /// the buffer past the shrink-gate threshold (cap > 4*len && cap > 4096),
 /// truncates to a small viewport, calls the helper, and asserts capacity
 /// reduces without losing content.
-/// See: bug-tracker/plans/BUG-11-002/section-03-tdd-matrix.md §"Semantic pins" Pin 3.
+/// See: bug-tracker/plans//section-03-tdd-matrix.md §"Semantic pins" Pin 3.
 #[test]
 fn maybe_shrink_buffers_shrinks_snapshot_buf() {
     let mut t = make_sync_thread();
@@ -3064,16 +3064,16 @@ fn maybe_shrink_buffers_shrinks_snapshot_buf() {
     );
 }
 
-/// Negative pin — `effects_buf` capacity is preserved by `maybe_shrink_buffers`.
+/// Regression guard — `effects_buf` capacity is preserved by `maybe_shrink_buffers`.
 ///
-/// Regression: BUG-11-002. The drain pattern in
+/// Regression:. The drain pattern in
 /// `oriterm_mux/src/pane/io_thread/effect_router/mod.rs` always leaves
 /// `effects_buf.len() == 0` with retained capacity. A naïve
 /// `maybe_shrink_vec` would gate-fire (cap > 4*0 && cap > 4096) and
 /// `shrink_to(0)`, forcing reallocation on every effect push during the
 /// next flood. Pins that the helper deliberately excludes effects_buf —
-/// gemini /tpr-review round 1 critical finding.
-/// See: bug-tracker/plans/BUG-11-002/section-03-tdd-matrix.md §"Negative pins" pin "effects_buf preserved".
+/// /tpr-review round 1 critical finding.
+/// See: bug-tracker/plans//section-03-tdd-matrix.md §"Negative pins" pin "effects_buf preserved".
 #[test]
 fn effects_buf_capacity_preserved_after_shrink() {
     let mut t = make_sync_thread();
@@ -3095,17 +3095,17 @@ fn effects_buf_capacity_preserved_after_shrink() {
     );
 }
 
-/// Negative pin 2 — Drop accounting lives on `PaneIoHandle`, not on `EffectSink`.
+/// Regression guard 2 — Drop accounting lives on `PaneIoHandle`, not on `EffectSink`.
 ///
-/// Regression: BUG-11-002. /tp-help round 1 (codex + opencode) rejected
-/// gemini's proposal to track lifecycle via the `EffectSink` trait —
+/// Regression:. /tp-help round 1 ( + ) rejected
+/// 's proposal to track lifecycle via the `EffectSink` trait —
 /// per-pane lifecycle accounting in a generic effect-routing abstraction
-/// is `LEAK:layer-bleeding` per `.claude/rules/impl-hygiene.md
+/// is `LEAK:layer-bleeding`
 /// §Finding Categories`. This pin is type-level: a minimal `EffectSink`
 /// impl with only `push` and `drain_into` compiles unchanged — proving
 /// no required lifecycle method leaked into the trait. Drop accounting
 /// is installed via `PaneIoHandle::set_drop_counter` (cfg(test) field).
-/// See: bug-tracker/plans/BUG-11-002/section-03-tdd-matrix.md §"Negative pins" pin 2.
+/// See: bug-tracker/plans//section-03-tdd-matrix.md §"Negative pins" pin 2.
 #[test]
 fn effect_sink_remains_lifecycle_pure() {
     use oriterm_core::effect::Effect;
@@ -3129,10 +3129,10 @@ fn effect_sink_remains_lifecycle_pure() {
     }
 }
 
-/// Negative pin 3 — `maybe_shrink_buffers` runs from the OUTER run loop,
+/// Regression guard 3 — `maybe_shrink_buffers` runs from the OUTER run loop,
 /// not from the `select!` `default(timeout)` arm.
 ///
-/// Regression: BUG-11-002. /tp-help round 1 (codex + opencode) rejected
+/// Regression:. /tp-help round 1 ( + ) rejected
 /// anchoring the shrink call to the `select!` default arm: on an idle
 /// pane that arm fires once per `IDLE_WAKE_CEILING = 24h`, so a default-
 /// arm anchor would never trigger in observable time. Pin spawns a real
@@ -3142,7 +3142,7 @@ fn effect_sink_remains_lifecycle_pure() {
 /// refactor moves `maybe_shrink_buffers()` to the `default(timeout)`
 /// arm or removes the call entirely, the counter stays at 0 and this
 /// test fails.
-/// See: bug-tracker/plans/BUG-11-002/section-03-tdd-matrix.md §"Negative pins" pin 3.
+/// See: bug-tracker/plans//section-03-tdd-matrix.md §"Negative pins" pin 3.
 #[test]
 fn maybe_shrink_runs_in_run_loop() {
     let shutdown = Arc::new(AtomicBool::new(false));
@@ -3201,13 +3201,13 @@ fn maybe_shrink_runs_in_run_loop() {
 
 /// Edge case — `maybe_shrink_buffers` runs cleanly while sync output is active.
 ///
-/// Regression: BUG-11-002. Mode 2026 sync (BSU pending, ESU not yet)
+/// Regression:. Mode 2026 sync (BSU pending, ESU not yet)
 /// keeps `TermMode::SYNC_UPDATE` set and forces
 /// `maybe_produce_snapshot()` to defer. The shrink helper touches
 /// IO-thread-owned `snapshot_buf` + the lock-protected `slot.front`,
 /// never the VTE processor's parser timer — so it must be safe to
 /// call mid-sync without mutating sync state.
-/// See: bug-tracker/plans/BUG-11-002/section-03-tdd-matrix.md §"Edge cases" — sync-active.
+/// See: bug-tracker/plans//section-03-tdd-matrix.md §"Edge cases" — sync-active.
 #[test]
 fn maybe_shrink_during_sync_active() {
     let (mut t, _wakeup_count) = make_sync_thread_with_wakeup();
@@ -3236,20 +3236,20 @@ fn maybe_shrink_during_sync_active() {
     );
 }
 
-// --- BUG-11-025 §03 matrix: bounded cmd_tx + atomic-coalescing resize ---
+// --- §03 matrix: bounded cmd_tx + atomic-coalescing resize ---
 //
 // Pins the cmd_tx-bounding contract, the pending_resize tag-bit
 // encoding, the drain-time apply ordering, the wake topology, the
 // shutdown-saturation belt-and-suspenders, and the SSOT classification
 // for reply-bearing variants. Reverting any single piece breaks at
 // least one of these tests.
-// See: bug-tracker/plans/BUG-11-025/section-03-tdd-matrix.md.
+// See: bug-tracker/plans//section-03-tdd-matrix.md.
 
 /// Pin the bounded-cmd_tx contract: a fresh handle reports a finite
-/// capacity. Replaces the unbounded shape that motivated BUG-11-025.
+/// capacity. Replaces the unbounded shape that motivated.
 ///
-/// Regression: BUG-11-025 — exact failing case `cmd_tx_is_bounded`.
-/// See: bug-tracker/plans/BUG-11-025/section-03-tdd-matrix.md.
+/// Regression: exact failing case `cmd_tx_is_bounded`.
+/// See: bug-tracker/plans//section-03-tdd-matrix.md.
 #[test]
 fn new_with_handle_uses_bounded_cmd_tx() {
     let (_thread, handle) = make_pair();
@@ -3262,8 +3262,8 @@ fn new_with_handle_uses_bounded_cmd_tx() {
 
 /// Pin the sentinel: `PENDING_RESIZE_NONE` decodes to `None`.
 ///
-/// Regression: BUG-11-025 — edge case `pending_resize_none_sentinel`.
-/// See: bug-tracker/plans/BUG-11-025/section-03-tdd-matrix.md.
+/// Regression: edge case `pending_resize_none_sentinel`.
+/// See: bug-tracker/plans//section-03-tdd-matrix.md.
 #[test]
 fn pending_resize_none_sentinel_means_no_pending() {
     assert!(unpack_pending_resize(PENDING_RESIZE_NONE).is_none());
@@ -3273,8 +3273,8 @@ fn pending_resize_none_sentinel_means_no_pending() {
 /// round-trips without truncation and the tag bit (bit 48) does not
 /// collide with the row/col fields.
 ///
-/// Regression: BUG-11-025 — edge case `pack_pending_resize_max_dimensions_round_trip`.
-/// See: bug-tracker/plans/BUG-11-025/section-03-tdd-matrix.md §04 Plan TPR Round 0 F2.
+/// Regression: edge case `pack_pending_resize_max_dimensions_round_trip`.
+/// See: bug-tracker/plans//section-03-tdd-matrix.md §04 review round 0 F2.
 #[test]
 fn pack_pending_resize_max_dimensions_round_trip() {
     let packed = pack_pending_resize(u16::MAX, u16::MAX);
@@ -3286,8 +3286,8 @@ fn pack_pending_resize_max_dimensions_round_trip() {
 /// tag bit, `pack(0,0) == 0 == PENDING_RESIZE_NONE`, and a legitimate
 /// resize-to-zero request would be silently swallowed.
 ///
-/// Regression: BUG-11-025 — closes §04 Plan TPR Round 0 F2.
-/// See: bug-tracker/plans/BUG-11-025/section-03-tdd-matrix.md.
+/// Regression: closes §04 review round 0 F2.
+/// See: bug-tracker/plans//section-03-tdd-matrix.md.
 #[test]
 fn pack_pending_resize_zero_zero_round_trip() {
     let packed = pack_pending_resize(0, 0);
@@ -3301,8 +3301,8 @@ fn pack_pending_resize_zero_zero_round_trip() {
 /// Pin the encoding across a representative set of `(rows, cols)`
 /// values: every input round-trips through pack → unpack.
 ///
-/// Regression: BUG-11-025 — edge case `pack_pending_resize_arbitrary_round_trip`.
-/// See: bug-tracker/plans/BUG-11-025/section-03-tdd-matrix.md.
+/// Regression: edge case `pack_pending_resize_arbitrary_round_trip`.
+/// See: bug-tracker/plans//section-03-tdd-matrix.md.
 #[test]
 fn pack_pending_resize_arbitrary_round_trip() {
     let cases = [
@@ -3324,12 +3324,12 @@ fn pack_pending_resize_arbitrary_round_trip() {
     }
 }
 
-/// Negative pin: pack/unpack is a pure function — exhaustive
+/// Regression guard: pack/unpack is a pure function — exhaustive
 /// round-trip over the same case set, plus the explicit sentinel
 /// check. Compile-time enforces `pub(crate)` visibility on the
 /// helpers.
 ///
-/// Regression: BUG-11-025 — closes §04 Plan TPR Round 1 Codex F6.
+/// Regression: closes §04 review round 1 Codex F6.
 #[test]
 fn pack_unpack_pending_resize_is_pure_function() {
     let cases = [
@@ -3353,11 +3353,11 @@ fn pack_unpack_pending_resize_is_pure_function() {
 /// returns `Err(TrySendError::Full(_))` exactly at capacity. Wall-
 /// clock-free per `tests.md §Wall-Clock-Free Testing`.
 ///
-/// Uses `make_pair()` (no spawned IO thread) per §04 Plan TPR Round 4
+/// Uses `make_pair()` (no spawned IO thread) per §04 review round 4
 /// Gemini F1 — a live thread would async-drain `cmd_tx` and break the
 /// saturation assertion.
 ///
-/// Regression: BUG-11-025 — exact failing case
+/// Regression: exact failing case
 /// `cmd_tx_at_capacity_returns_full_error_synchronously`. Replaces
 /// the wall-clock-dependent `test_command_channel_flood`.
 #[test]
@@ -3380,7 +3380,7 @@ fn cmd_tx_at_capacity_returns_full_error_synchronously() {
 /// `apply_pending_resize`. Drives `drain_commands()` directly so
 /// crossbeam's `select!` non-determinism is irrelevant.
 ///
-/// Regression: BUG-11-025 — cross-pattern coverage
+/// Regression: cross-pattern coverage
 /// `drain_after_atomic_store_processes_resize`.
 #[test]
 fn drain_after_atomic_store_processes_resize() {
@@ -3396,7 +3396,7 @@ fn drain_after_atomic_store_processes_resize() {
 /// for the original `test_resize_coalescing` against the now-removed
 /// `PaneIoCommand::Resize` variant.
 ///
-/// Regression: BUG-11-025 — cross-pattern coverage
+/// Regression: cross-pattern coverage
 /// `drain_after_three_atomic_stores_processes_only_last`.
 #[test]
 fn drain_after_three_atomic_stores_processes_only_last() {
@@ -3417,9 +3417,9 @@ fn drain_after_three_atomic_stores_processes_only_last() {
 /// BEFORE the other commands so any reply-bearing command later in
 /// the same drain reads post-resize geometry.
 ///
-/// Regression: BUG-11-025 — cross-pattern coverage
+/// Regression: cross-pattern coverage
 /// `drain_applies_pending_resize_before_other_commands`. Per §04
-/// Plan TPR Round 0 F1 and Round 1 Codex F2 + Gemini F1.
+/// review round 0 F1 and Round 1 Codex F2 + Gemini F1.
 #[test]
 fn drain_applies_pending_resize_before_other_commands() {
     let (mut t, cmd_tx) = make_sync_thread_with_cmd_tx();
@@ -3439,12 +3439,12 @@ fn drain_applies_pending_resize_before_other_commands() {
     );
 }
 
-/// Negative pin: when the pending_resize slot carries the
+/// Regression guard: when the pending_resize slot carries the
 /// `PENDING_RESIZE_NONE` sentinel, `apply_pending_resize` MUST NOT
 /// invoke `process_resize`. Verified by checking that
 /// `last_pty_size` is unchanged.
 ///
-/// Regression: BUG-11-025 — cross-pattern negative pin
+/// Regression: cross-pattern regression guard
 /// `drain_with_no_pending_resize_does_not_call_process_resize`.
 #[test]
 fn drain_with_no_pending_resize_does_not_call_process_resize() {
@@ -3460,9 +3460,9 @@ fn drain_with_no_pending_resize_does_not_call_process_resize() {
 /// Pin the resize-then-Shutdown drain ordering: a pending resize is
 /// applied before `Shutdown` short-circuits the drain. Replacement
 /// for the rejected "shutdown wins over pending_resize" formulation
-/// per §04 Plan TPR Round 1 Codex F2.
+/// per §04 review round 1 Codex F2.
 ///
-/// Regression: BUG-11-025 — cross-pattern coverage
+/// Regression: cross-pattern coverage
 /// `shutdown_after_pending_resize_applies_resize_then_terminates`.
 #[test]
 fn shutdown_after_pending_resize_applies_resize_then_terminates() {
@@ -3489,9 +3489,9 @@ fn shutdown_after_pending_resize_applies_resize_then_terminates() {
 /// at `commands/mod.rs:45-56` (snapshot reply is sent only AFTER
 /// post-resize state is published to the double buffer).
 ///
-/// Regression: BUG-11-025 — semantic pin
+/// Regression: property
 /// `drain_commands_applies_pending_resize_before_reply_bearing_commands`.
-/// Round 1 code-TPR codex F1 — the prior MarkAllDirty proxy did not
+/// Round 1 code-TPR F1 — the prior MarkAllDirty proxy did not
 /// exercise the reply-channel handshake the §03 plan specified.
 #[test]
 fn drain_commands_applies_pending_resize_before_reply_bearing_commands() {
@@ -3524,13 +3524,13 @@ fn drain_commands_applies_pending_resize_before_reply_bearing_commands() {
     );
 }
 
-/// Negative pin: applying a pending resize before a non-reply
+/// Regression guard: applying a pending resize before a non-reply
 /// geometry-dependent command (`ScrollDisplay`) — deterministic
 /// complement to the live-thread probabilistic crossbeam-arm pin.
 /// Drives `drain_commands` directly with a pre-staged slot and
 /// command so non-determinism is irrelevant.
 ///
-/// Regression: BUG-11-025 — closes §04 Plan TPR Round 4 Codex F4.
+/// Regression: closes §04 review round 4 Codex F4.
 #[test]
 fn drain_commands_applies_pending_resize_before_non_reply_command() {
     let (mut t, cmd_tx) = make_sync_thread_with_cmd_tx();
@@ -3551,14 +3551,14 @@ fn drain_commands_applies_pending_resize_before_non_reply_command() {
     );
 }
 
-/// Negative pin: `Shutdown` reaches the IO thread even when `cmd_tx`
+/// Regression guard: `Shutdown` reaches the IO thread even when `cmd_tx`
 /// is at capacity. Saturate `cmd_tx` synchronously (no spawned
 /// thread, so no async drain races the saturation), then call
 /// `handle.shutdown()` against a fresh spawned thread whose channel
 /// is already full. Verifies the durable `shutdown_flag` is observed
 /// regardless of `cmd_tx` saturation.
 ///
-/// Regression: BUG-11-025 — Q4 belt-and-suspenders. Per §04 Plan TPR
+/// Regression: Q4 belt-and-suspenders. Per §04 Plan TPR
 /// Round 4 Gemini F1 (saturation MUST be staged before the IO thread
 /// drains) AND §03 §Wall-Clock-Free Testing (no deadline-budget
 /// assertions — poll the join handle).
@@ -3617,12 +3617,12 @@ fn shutdown_under_cmd_tx_saturation_still_terminates() {
     // is the only safety valve — no per-test deadline budget.
 }
 
-/// Negative pin: `send_command(Shutdown)` (the generic-channel path
+/// Regression guard: `send_command(Shutdown)` (the generic-channel path
 /// distinct from `handle.shutdown()`) terminates the IO thread even
 /// under `cmd_tx` saturation. Pins the `matches!(&cmd, PaneIoCommand::
 /// Shutdown)` special-case in `send_command`.
 ///
-/// Regression: BUG-11-025 — closes §04 Plan TPR Round 4 Codex F3.
+/// Regression: closes §04 review round 4 Codex F3.
 /// Same wall-clock-free pattern as the sibling
 /// `shutdown_under_cmd_tx_saturation_still_terminates` pin: stage
 /// saturation BEFORE spawning the live IO thread, then assert
@@ -3673,12 +3673,12 @@ fn send_command_shutdown_under_cmd_tx_saturation_still_terminates() {
     drop(handle);
 }
 
-/// Negative pin: writer-thread shutdown wakes the IO thread out of
+/// Regression guard: writer-thread shutdown wakes the IO thread out of
 /// `select!` within one iteration. Simulates the writer-thread exit
 /// path: set `shutdown` AND `try_send` on `io_wake_tx`. Pins §05
 /// Step 6C's writer-thread wake plumbing.
 ///
-/// Regression: BUG-11-025 — closes §04 Plan TPR Round 5 Codex F1 + F2.
+/// Regression: closes §04 review round 5 Codex F1 + F2.
 /// Wall-clock-free per `tests.md §Wall-Clock-Free Testing`: poll
 /// `JoinHandle::is_finished()` instead of asserting on
 /// `start.elapsed()`.
@@ -3696,14 +3696,14 @@ fn idle_io_thread_observes_writer_thread_shutdown_within_one_iteration() {
     let _ = join.join();
 }
 
-/// Negative pin: `is_reply_bearing()` is exhaustive — every
+/// Regression guard: `is_reply_bearing()` is exhaustive — every
 /// `PaneIoCommand` variant constructible with a reply `Sender<_>`
 /// returns `true`; every non-reply variant returns `false`. A
 /// future contributor adding a new reply-bearing variant without
 /// updating the predicate fails this test.
 ///
-/// Regression: BUG-11-025 — SSOT exhaustiveness guard, closes §04
-/// Plan TPR Round 2 Opencode F2.
+/// Regression: SSOT exhaustiveness guard, closes §04
+/// review round 2 Opencode F2.
 #[test]
 fn is_reply_bearing_predicate_matches_reply_field_presence() {
     use oriterm_core::grid::StableRowIndex;
@@ -3715,7 +3715,7 @@ fn is_reply_bearing_predicate_matches_reply_field_presence() {
     /// compiler refuses to build this test until the variant is
     /// classified here, AND the assertion at the bottom verifies
     /// the classification matches `is_reply_bearing()`. Per Round 2
-    /// codex F3 — the prior array-based test had no compile-time
+    /// F3 — the prior array-based test had no compile-time
     /// exhaustiveness; a new reply-bearing variant could ship with
     /// the predicate out of date and the test would still pass.
     fn classify_expected(cmd: &PaneIoCommand) -> bool {
@@ -3809,9 +3809,9 @@ fn is_reply_bearing_predicate_matches_reply_field_presence() {
     }
 }
 
-// --- BUG-11-025 §03 cross-feature interaction tests (Round 1 §06 opencode F1) ---
+// --- §03 cross-feature interaction tests (Round 1 §06 F1) ---
 //
-// The §03 TDD matrix enumerated four cross-feature interaction tests
+// The §03 test matrix enumerated four cross-feature interaction tests
 // that exercise the live IO thread under concurrent send_resize +
 // reply-bearing or flooded inputs. They were missed in the initial
 // implementation pass and added here. All four use the wall-clock-
@@ -3824,7 +3824,7 @@ fn is_reply_bearing_predicate_matches_reply_field_presence() {
 /// stored geometry. Wall-clock-free: poll the snapshot until it
 /// matches; a 5s safety deadline surfaces hangs.
 ///
-/// Regression: BUG-11-025 — cross-feature
+/// Regression: cross-feature
 /// `live_io_thread_atomic_store_wakes_within_one_iteration`.
 #[test]
 fn live_io_thread_atomic_store_wakes_within_one_iteration() {
@@ -3846,13 +3846,13 @@ fn live_io_thread_atomic_store_wakes_within_one_iteration() {
     handle.shutdown();
 }
 
-/// Pin the original BUG-11-025 motivation: a sustained PTY flood
+/// Pin the original motivation: a sustained PTY flood
 /// concurrent with rapid send_resize calls preserves the FINAL
 /// geometry (last-writer-wins on the atomic slot, never dropped
 /// despite cmd_tx pressure). Wall-clock-free: condition-poll the
 /// snapshot.
 ///
-/// Regression: BUG-11-025 — cross-feature
+/// Regression: cross-feature
 /// `resize_during_pty_flood_preserves_final_geometry`.
 #[test]
 fn resize_during_pty_flood_preserves_final_geometry() {
@@ -3902,9 +3902,9 @@ fn resize_during_pty_flood_preserves_final_geometry() {
 /// channel as the synchronization point (reply arrives only after
 /// post-resize state is published).
 ///
-/// Regression: BUG-11-025 — cross-feature
+/// Regression: cross-feature
 /// `send_resize_during_drain_before_snapshot_reflects_post_resize`
-/// (closes §04 Plan TPR Round 1 Codex F1).
+/// (closes §04 review round 1 Codex F1).
 #[test]
 fn send_resize_during_drain_before_snapshot_reflects_post_resize() {
     let (mut handle, _shutdown) = spawn_pair_with_flag();
@@ -3940,9 +3940,9 @@ fn send_resize_during_drain_before_snapshot_reflects_post_resize() {
 /// trial recv_timeouts on its own SnapshotNow reply; no measured
 /// latency.
 ///
-/// Regression: BUG-11-025 — cross-feature
+/// Regression: cross-feature
 /// `idle_select_cmd_rx_arm_applies_pending_resize_before_reply_bearing`
-/// (closes §04 Plan TPR Round 2 Codex F1).
+/// (closes §04 review round 2 Codex F1).
 #[test]
 fn idle_select_cmd_rx_arm_applies_pending_resize_before_reply_bearing() {
     let (mut handle, _shutdown) = spawn_pair_with_flag();
@@ -3974,16 +3974,16 @@ fn idle_select_cmd_rx_arm_applies_pending_resize_before_reply_bearing() {
     handle.shutdown();
 }
 
-// BUG-11-027 §03 matrix — Mode 2026 inline dispatch + snapshot gating.
+// §03 matrix — Mode 2026 inline dispatch + snapshot gating.
 //
 // These pins enforce the user-visible "no partial frames" invariant
 // via snapshot-publication gating on `TermMode::SYNC_UPDATE`, while
 // device queries and grid mutations dispatch INLINE during the sync
 // window. The vendored vte parser carries no byte-level buffer; the
 // only sync state is the deadline timer used by the run loop's
-// `select!` deadline arm. See bug-tracker/plans/BUG-11-027/.
+// `select!` deadline arm. See bug-tracker/plans//.
 
-/// Semantic pin: BSU + grid-mutating bytes mutate the grid INLINE,
+/// Property: BSU + grid-mutating bytes mutate the grid INLINE,
 /// while snapshot publication is suppressed via the `SYNC_UPDATE`
 /// mode flag.
 ///
@@ -3992,7 +3992,7 @@ fn idle_select_cmd_rx_arm_applies_pending_resize_before_reply_bearing() {
 /// returns without publishing because `TermMode::SYNC_UPDATE` gates
 /// the snapshot pipeline.
 ///
-/// Regression: BUG-11-027 §03 semantic-pin.
+/// Regression: §03 semantic-pin.
 #[test]
 fn mode_2026_active_does_not_publish_snapshot_yet_processes_bytes() {
     let (mut t, wakeup_count) = make_sync_thread_with_wakeup();
@@ -4026,7 +4026,7 @@ fn mode_2026_active_does_not_publish_snapshot_yet_processes_bytes() {
 /// Sync timeout path: 150 ms timer expiry unsets the mode, emits
 /// `PresentationEffect::Abort`, and forces a snapshot publication.
 ///
-/// Regression: BUG-11-027 §03 — pins the rewritten `handle_sync_timeout`
+/// Regression: §03 — pins the rewritten `handle_sync_timeout`
 /// path (no buffered-byte replay, just mode unset + snapshot force).
 #[test]
 fn mode_2026_timeout_unsets_sync_mode_emits_abort_forces_snapshot() {
@@ -4082,7 +4082,7 @@ fn mode_2026_timeout_unsets_sync_mode_emits_abort_forces_snapshot() {
 /// ESU dispatched inline with BSU: mode flag clears AND parser-side
 /// timer disarms within the same `handle_bytes()` call.
 ///
-/// Regression: BUG-11-027 §03 — pins the ESU dispatch arm's
+/// Regression: §03 — pins the ESU dispatch arm's
 /// `clear_timeout` call so a future revert won't leave the timer
 /// armed after ESU.
 #[test]
@@ -4116,7 +4116,7 @@ fn mode_2026_esu_unsets_mode_clears_processor_timeout() {
 /// assertion: the select! arm only fires when a deadline is pending,
 /// so a `None` timer guarantees no spurious timeout invocation.
 ///
-/// Regression: BUG-11-027 §03 ESU-arm timer-disarm pin.
+/// Regression: §03 ESU-arm timer-disarm pin.
 #[test]
 fn bsu_after_query_inside_sync_does_not_fire_spurious_handle_sync_timeout() {
     use oriterm_core::effect::sink::EffectSink;
@@ -4169,10 +4169,10 @@ fn bsu_after_query_inside_sync_does_not_fire_spurious_handle_sync_timeout() {
 ///
 /// Feed BSU + DA1 + "Hello" + DSR 5 + ESU in one chunk via the
 /// processor. The fix's inline dispatch must:
-///   (a) emit DA1 response within the sync window,
-///   (b) emit DSR 5 response,
-///   (c) leave "Hello" in the grid by the time the chunk completes,
-///   (d) clear the SYNC_UPDATE mode flag at ESU.
+/// (a) emit DA1 response within the sync window,
+/// (b) emit DSR 5 response,
+/// (c) leave "Hello" in the grid by the time the chunk completes,
+/// (d) clear the SYNC_UPDATE mode flag at ESU.
 ///
 /// All four observations land via INLINE dispatch — bytes are processed
 /// as they arrive, not deferred to ESU. This is the combined-dispatch
@@ -4184,7 +4184,7 @@ fn bsu_after_query_inside_sync_does_not_fire_spurious_handle_sync_timeout() {
 /// but the snapshot publish defers until the gate clears). This test
 /// pins the combined post-ESU view.
 ///
-/// Regression: BUG-11-027 §03 combined-dispatch pin.
+/// Regression: §03 combined-dispatch pin.
 #[test]
 fn queries_interleaved_with_grid_mutation_dispatch_inline_during_sync() {
     use oriterm_core::effect::sink::EffectSink;
@@ -4246,7 +4246,7 @@ fn queries_interleaved_with_grid_mutation_dispatch_inline_during_sync() {
 /// reply still fires (the request was acknowledged), and the snapshot
 /// publishes on the next ESU/timeout that clears the gate.
 ///
-/// Regression: BUG-11-027 §03 SnapshotNow gate pin (Step 4b).
+/// Regression: §03 SnapshotNow gate pin (Step 4b).
 #[test]
 fn snapshot_now_during_mode_2026_defers_to_sync_end() {
     let (mut t, wakeup_count) = make_sync_thread_with_wakeup();

@@ -27,5 +27,5 @@
 //! classification immediately.
 //!
 //! No `#[test]` functions live here — empty-body tests violate
-//! `.claude/rules/tests.md` §Test Hygiene Rule 1. The `//!` rustdoc
+//! §Test Hygiene Rule 1. The `//!` rustdoc
 //! is the artifact; `mod.rs` pulls this file into the module tree.

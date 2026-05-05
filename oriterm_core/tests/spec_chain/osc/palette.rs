@@ -4,10 +4,10 @@
 //! set + query arms:
 //!
 //! - `OSC 4 ; Ps ; spec BEL|ST` — set palette index `Ps` to `spec`.
-//! - `OSC 4 ; Ps ; ? BEL|ST`    — query index `Ps`; emits
-//!   `Effect::HostRequest(HostRequest::ColorQuery { prefix: "4;Ps", index: Ps, .. })`.
+//! - `OSC 4 ; Ps ; ? BEL|ST` — query index `Ps`; emits
+//! `Effect::HostRequest(HostRequest::ColorQuery { prefix: "4;Ps", index: Ps,.. })`.
 //! - Multi-param chunks walk `(index, spec)` pairs in pairs from
-//!   `params[1..]`.
+//! `params[1..]`.
 //!
 //! Dispatch: `crates/vte/src/ansi/dispatch/osc.rs` `b"4"` arm → `xparse_color`
 //! → `Handler::set_color` OR `Handler::dynamic_color_sequence` (for `?`).
@@ -72,7 +72,7 @@ fn osc4_set_palette_index() {
 }
 
 /// `OSC 4 ; 5 ; ? ST` emits `Effect::HostRequest(HostRequest::ColorQuery
-/// { prefix: "4;5", index: 5, .. })`. The dispatcher builds the prefix
+/// { prefix: "4;5", index: 5,.. })`. The dispatcher builds the prefix
 /// via `format!("4;{index}")` at `crates/vte/src/ansi/dispatch/osc.rs:108`
 /// so BOTH the OSC number and palette index survive into the reply
 /// formatter. Reply bytes are produced by the consumer (out of spec_chain
@@ -115,7 +115,7 @@ fn osc4_multi_param_sets_multiple_indices() {
     );
 }
 
-/// Negative pin: `OSC 4 ; 999 ; rgb:ff/ff/ff ST` names an out-of-range
+/// Regression guard: `OSC 4 ; 999 ; rgb:ff/ff/ff ST` names an out-of-range
 /// index. `Palette::set` has an internal `index < NUM_COLORS` bounds
 /// check (`oriterm_core/src/color/palette/mod.rs:239-243`) so the
 /// mutation is silently dropped. No assertion panics; the call is a
@@ -137,7 +137,7 @@ fn osc4_out_of_range_dropped() {
     }
 }
 
-/// Negative pin: `OSC 4 ; 5 ; NOT_A_COLOR ST` fails the `xparse_color`
+/// Regression guard: `OSC 4 ; 5 ; NOT_A_COLOR ST` fails the `xparse_color`
 /// branch in the dispatch arm — the chunk routes to `unhandled` without
 /// mutating index 5. Verify index 5 still holds its theme-default value.
 #[test]

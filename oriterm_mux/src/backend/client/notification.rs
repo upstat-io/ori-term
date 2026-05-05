@@ -56,13 +56,13 @@ pub(super) fn pdu_to_notification(pdu: MuxPdu) -> Option<MuxNotification> {
             text,
         }),
         MuxPdu::NotifyClipboardLoad { pane_id, .. } => {
-            // Legacy from before BUG-11-011 — superseded by
+            // Legacy from before — superseded by
             // `NotifyHostClipboardLoad` (with request_id + reply correlation).
             // New servers do not emit this variant; the legacy arm logs and
             // drops on the rare wire-compat fallback path.
             log::warn!(
                 "daemon-mode legacy NotifyClipboardLoad (pane {pane_id}) dropped — \
-                 superseded by NotifyHostClipboardLoad (BUG-11-011)"
+ superseded by NotifyHostClipboardLoad ()"
             );
             None
         }

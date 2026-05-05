@@ -88,9 +88,9 @@ unsafe extern "system" fn egl_debug_proc(
     let log_severity = match message_type {
         EGL_DEBUG_MSG_CRITICAL_KHR | EGL_DEBUG_MSG_ERROR_KHR => log::Level::Error,
         EGL_DEBUG_MSG_WARN_KHR => log::Level::Warn,
-        // We intentionally suppress info messages down to debug
-        // so that users are not innundated with info messages from
-        // the runtime.
+ // We intentionally suppress info messages down to debug
+ // so that users are not innundated with info messages from
+ // the runtime.
         EGL_DEBUG_MSG_INFO_KHR => log::Level::Debug,
         _ => log::Level::Trace,
     };
@@ -115,7 +115,7 @@ enum DisplayRef {
 }
 
 impl DisplayRef {
-    /// Convenience for getting the underlying pointer
+ /// Convenience for getting the underlying pointer
     fn as_ptr(&self) -> *mut ffi::c_void {
         match *self {
             Self::X11(ptr) => ptr.as_ptr(),
@@ -206,11 +206,11 @@ fn test_wayland_display() -> Option<DisplayOwner> {
 
 #[derive(Clone, Copy, Debug)]
 enum SrgbFrameBufferKind {
-    /// No support for SRGB surface
+ /// No support for SRGB surface
     None,
-    /// Using EGL 1.5's support for colorspaces
+ /// Using EGL 1.5's support for colorspaces
     Core,
-    /// Using EGL_KHR_gl_colorspace
+ /// Using EGL_KHR_gl_colorspace
     Khr,
 }
 
@@ -220,7 +220,7 @@ fn choose_config(
     display: khronos_egl::Display,
     srgb_kind: SrgbFrameBufferKind,
 ) -> Result<(khronos_egl::Config, bool), crate::InstanceError> {
-    //TODO: EGL_SLOW_CONFIG
+ //TODO: EGL_SLOW_CONFIG
     let tiers = [
         (
             "off-screen",
@@ -251,7 +251,7 @@ fn choose_config(
         for &(_, tier_attr) in tiers[..=tier_max].iter() {
             attributes.extend_from_slice(tier_attr);
         }
-        // make sure the Alpha is enough to support sRGB
+ // make sure the Alpha is enough to support sRGB
         match srgb_kind {
             SrgbFrameBufferKind::None => {}
             _ => {
@@ -264,11 +264,11 @@ fn choose_config(
         match egl.choose_first_config(display, &attributes) {
             Ok(Some(config)) => {
                 if tier_max == 1 {
-                    //Note: this has been confirmed to malfunction on Intel+NV laptops,
-                    // but also on Angle.
+ //Note: this has been confirmed to malfunction on Intel+NV laptops,
+ // but also on Angle.
                     log::info!("EGL says it can present to the window but not natively",);
                 }
-                // Android emulator can't natively present either.
+ // Android emulator can't natively present either.
                 let tier_threshold =
                     if cfg!(target_os = "android") || cfg!(windows) || cfg!(target_env = "ohos") {
                         1
@@ -286,7 +286,7 @@ fn choose_config(
         }
     }
 
-    // TODO: include diagnostic details that are currently logged
+ // TODO: include diagnostic details that are currently logged
     Err(crate::InstanceError::new(String::from(
         "unable to find an acceptable EGL framebuffer configuration",
     )))
@@ -330,23 +330,23 @@ impl AdapterContext {
         self.egl.is_some()
     }
 
-    /// Returns the EGL instance.
-    ///
-    /// This provides access to EGL functions and the ability to load GL and EGL extension functions.
+ /// Returns the EGL instance.
+ ///
+ /// This provides access to EGL functions and the ability to load GL and EGL extension functions.
     pub fn egl_instance(&self) -> Option<&EglInstance> {
         self.egl.as_ref().map(|egl| &*egl.instance)
     }
 
-    /// Returns the EGLDisplay corresponding to the adapter context.
-    ///
-    /// Returns [`None`] if the adapter was externally created.
+ /// Returns the EGLDisplay corresponding to the adapter context.
+ ///
+ /// Returns [`None`] if the adapter was externally created.
     pub fn raw_display(&self) -> Option<&khronos_egl::Display> {
         self.egl.as_ref().map(|egl| &egl.display)
     }
 
-    /// Returns the EGL version the adapter context was created with.
-    ///
-    /// Returns [`None`] if the adapter was externally created.
+ /// Returns the EGL version the adapter context was created with.
+ ///
+ /// Returns [`None`] if the adapter was externally created.
     pub fn egl_version(&self) -> Option<(i32, i32)> {
         self.egl.as_ref().map(|egl| egl.version)
     }
@@ -368,18 +368,18 @@ impl Drop for AdapterContext {
             }
         }
 
-        // Context must be current when dropped. See safety docs on
-        // `glow::HasContext`.
-        //
-        // NOTE: This is only set to `None` by `Adapter::new_external` which
-        // requires the context to be current when anything that may be holding
-        // the `Arc<AdapterShared>` is dropped.
+ // Context must be current when dropped. See safety docs on
+ // `glow::HasContext`.
+ //
+ // NOTE: This is only set to `None` by `Adapter::new_external` which
+ // requires the context to be current when anything that may be holding
+ // the `Arc<AdapterShared>` is dropped.
         let _guard = self.egl.as_ref().map(|egl| {
             egl.make_current();
             CurrentGuard(egl)
         });
         let glow = self.glow.get_mut();
-        // SAFETY: Field not used after this.
+ // SAFETY: Field not used after this.
         unsafe { ManuallyDrop::drop(glow) };
     }
 }
@@ -414,17 +414,17 @@ impl<'a> Drop for AdapterContextLock<'a> {
 }
 
 impl AdapterContext {
-    /// Get's the [`glow::Context`] without waiting for a lock
-    ///
-    /// # Safety
-    ///
-    /// This should only be called when you have manually made sure that the current thread has made
-    /// the EGL context current and that no other thread also has the EGL context current.
-    /// Additionally, you must manually make the EGL context **not** current after you are done with
-    /// it, so that future calls to `lock()` will not fail.
-    ///
-    /// > **Note:** Calling this function **will** still lock the [`glow::Context`] which adds an
-    /// > extra safe-guard against accidental concurrent access to the context.
+ /// Get's the [`glow::Context`] without waiting for a lock
+ ///
+ /// # Safety
+ ///
+ /// This should only be called when you have manually made sure that the current thread has made
+ /// the EGL context current and that no other thread also has the EGL context current.
+ /// Additionally, you must manually make the EGL context **not** current after you are done with
+ /// it, so that future calls to `lock()` will not fail.
+ ///
+ /// > **Note:** Calling this function **will** still lock the [`glow::Context`] which adds an
+ /// > extra safe-guard against accidental concurrent access to the context.
     pub unsafe fn get_without_egl_lock(&self) -> MappedMutexGuard<'_, glow::Context> {
         let guard = self
             .glow
@@ -433,14 +433,14 @@ impl AdapterContext {
         MutexGuard::map(guard, |glow| &mut **glow)
     }
 
-    /// Obtain a lock to the EGL context and get handle to the [`glow::Context`] that can be used to
-    /// do rendering.
+ /// Obtain a lock to the EGL context and get handle to the [`glow::Context`] that can be used to
+ /// do rendering.
     #[track_caller]
     pub fn lock<'a>(&'a self) -> AdapterContextLock<'a> {
         let glow = self
             .glow
-            // Don't lock forever. If it takes longer than 1 second to get the lock we've got a
-            // deadlock and should panic to show where we got stuck
+ // Don't lock forever. If it takes longer than 1 second to get the lock we've got a
+ // deadlock and should panic to show where we got stuck
             .try_lock_for(Duration::from_secs(CONTEXT_LOCK_TIMEOUT_SECS))
             .expect("Could not lock adapter context. This is most-likely a deadlock.");
 
@@ -458,8 +458,8 @@ impl AdapterContext {
 
 #[derive(Debug)]
 struct Inner {
-    /// Note: the context contains a dummy pbuffer (1x1).
-    /// Required for `eglMakeCurrent` on platforms that doesn't supports `EGL_KHR_surfaceless_context`.
+ /// Note: the context contains a dummy pbuffer (1x1).
+ /// Required for `eglMakeCurrent` on platforms that doesn't supports `EGL_KHR_surfaceless_context`.
     egl: EglContext,
     #[allow(unused)]
     version: (i32, i32),
@@ -469,7 +469,7 @@ struct Inner {
     wl_display: Option<*mut ffi::c_void>,
     #[cfg_attr(Emscripten, allow(dead_code))]
     force_gles_minor_version: wgt::Gles3MinorVersion,
-    /// Method by which the framebuffer should support srgb
+ /// Method by which the framebuffer should support srgb
     srgb_kind: SrgbFrameBufferKind,
 }
 
@@ -486,9 +486,9 @@ fn initialize_display(
     let mut guard = DISPLAYS_REFERENCE_COUNT.lock();
     *guard.entry(display.as_ptr() as usize).or_default() += 1;
 
-    // We don't need to check the reference count here since according to the `eglInitialize`
-    // documentation, initializing an already initialized EGL display connection has no effect
-    // besides returning the version numbers.
+ // We don't need to check the reference count here since according to the `eglInitialize`
+ // documentation, initializing an already initialized EGL display connection has no effect
+ // besides returning the version numbers.
     egl.initialize(display)
 }
 
@@ -686,7 +686,7 @@ impl Inner {
                 };
 
                 match (result, robustness) {
-                    // We have a context at the requested robustness level
+ // We have a context at the requested robustness level
                     (Ok(_), robustness) => {
                         match robustness {
                             Some(Robustness::Core) => {
@@ -703,11 +703,11 @@ impl Inner {
                         break result;
                     }
 
-                    // BadAttribute could mean that context creation is not supported at the requested robustness level
-                    // We try the next robustness level.
+ // BadAttribute could mean that context creation is not supported at the requested robustness level
+ // We try the next robustness level.
                     (Err(khronos_egl::Error::BadAttribute), Some(r)) => {
-                        // Trying EXT robustness if Core robustness is not working
-                        // and EXT robustness is supported.
+ // Trying EXT robustness if Core robustness is not working
+ // and EXT robustness is supported.
                         robustness = if matches!(r, Robustness::Core)
                             && display_extensions.contains("EGL_EXT_create_context_robustness")
                         {
@@ -719,7 +719,7 @@ impl Inner {
                         continue;
                     }
 
-                    // Any other error, or depleted robustness levels, we give up.
+ // Any other error, or depleted robustness levels, we give up.
                     _ => break result,
                 }
             }
@@ -731,8 +731,8 @@ impl Inner {
             })
         }?;
 
-        // Testing if context can be binded without surface
-        // and creating dummy pbuffer surface if not.
+ // Testing if context can be binded without surface
+ // and creating dummy pbuffer surface if not.
         let pbuffer = if version >= (1, 5)
             || display_extensions.contains("EGL_KHR_surfaceless_context")
             || cfg!(Emscripten)
@@ -821,7 +821,7 @@ impl Instance {
             .display
     }
 
-    /// Returns the version of the EGL display.
+ /// Returns the version of the EGL display.
     pub fn egl_version(&self) -> (i32, i32) {
         self.inner
             .try_lock()
@@ -1148,8 +1148,8 @@ impl crate::Instance for Instance {
             })
         };
 
-        // In contrast to OpenGL ES, OpenGL requires explicitly enabling sRGB conversions,
-        // as otherwise the user has to do the sRGB conversion.
+ // In contrast to OpenGL ES, OpenGL requires explicitly enabling sRGB conversions,
+ // as otherwise the user has to do the sRGB conversion.
         if !matches!(inner.srgb_kind, SrgbFrameBufferKind::None) {
             unsafe { gl.enable(glow::FRAMEBUFFER_SRGB) };
         }
@@ -1166,9 +1166,9 @@ impl crate::Instance for Instance {
             unsafe { gl.debug_message_callback(super::gl_debug_message_callback) };
         }
 
-        // Wrap in ManuallyDrop to make it easier to "current" the GL context before dropping this
-        // GLOW context, which could also happen if a panic occurs after we uncurrent the context
-        // below but before AdapterContext is constructed.
+ // Wrap in ManuallyDrop to make it easier to "current" the GL context before dropping this
+ // GLOW context, which could also happen if a panic occurs after we uncurrent the context
+ // below but before AdapterContext is constructed.
         let gl = ManuallyDrop::new(gl);
         inner.egl.unmake_current();
 
@@ -1187,15 +1187,15 @@ impl crate::Instance for Instance {
 }
 
 impl super::Adapter {
-    /// Creates a new external adapter using the specified loader function.
-    ///
-    /// # Safety
-    ///
-    /// - The underlying OpenGL ES context must be current.
-    /// - The underlying OpenGL ES context must be current when interfacing with any objects returned by
-    ///   wgpu-hal from this adapter.
-    /// - The underlying OpenGL ES context must be current when dropping this adapter and when
-    ///   dropping any objects returned from this adapter.
+ /// Creates a new external adapter using the specified loader function.
+ ///
+ /// # Safety
+ ///
+ /// - The underlying OpenGL ES context must be current.
+ /// - The underlying OpenGL ES context must be current when interfacing with any objects returned by
+ /// wgpu-hal from this adapter.
+ /// - The underlying OpenGL ES context must be current when dropping this adapter and when
+ /// dropping any objects returned from this adapter.
     pub unsafe fn new_external(
         fun: impl FnMut(&str) -> *const ffi::c_void,
         options: wgt::GlBackendOptions,
@@ -1218,7 +1218,7 @@ impl super::Adapter {
 }
 
 impl super::Device {
-    /// Returns the underlying EGL context.
+ /// Returns the underlying EGL context.
     pub fn context(&self) -> &AdapterContext {
         &self.shared.context
     }
@@ -1230,7 +1230,7 @@ pub struct Swapchain {
     wl_window: Option<*mut ffi::c_void>,
     framebuffer: glow::Framebuffer,
     renderbuffer: glow::Renderbuffer,
-    /// Extent because the window lies
+ /// Extent because the window lies
     extent: wgt::Extent3d,
     format: wgt::TextureFormat,
     format_desc: super::TextureFormatDesc,
@@ -1284,14 +1284,14 @@ impl Surface {
         unsafe { gl.bind_framebuffer(glow::READ_FRAMEBUFFER, Some(sc.framebuffer)) };
 
         if !matches!(self.srgb_kind, SrgbFrameBufferKind::None) {
-            // Disable sRGB conversions for `glBlitFramebuffer` as behavior does diverge between
-            // drivers and formats otherwise and we want to ensure no sRGB conversions happen.
+ // Disable sRGB conversions for `glBlitFramebuffer` as behavior does diverge between
+ // drivers and formats otherwise and we want to ensure no sRGB conversions happen.
             unsafe { gl.disable(glow::FRAMEBUFFER_SRGB) };
         }
 
-        // Note the Y-flipping here. GL's presentation is not flipped,
-        // but main rendering is. Therefore, we Y-flip the output positions
-        // in the shader, and also this blit.
+ // Note the Y-flipping here. GL's presentation is not flipped,
+ // but main rendering is. Therefore, we Y-flip the output positions
+ // in the shader, and also this blit.
         unsafe {
             gl.blit_framebuffer(
                 0,
@@ -1319,7 +1319,7 @@ impl Surface {
             .map_err(|e| {
                 log::error!("swap_buffers failed: {e}");
                 crate::SurfaceError::Lost
-                // TODO: should we unset the current context here?
+ // TODO: should we unset the current context here?
             })?;
         self.egl
             .instance
@@ -1419,7 +1419,7 @@ impl crate::Surface for Surface {
                         #[cfg(target_os = "macos")]
                         let window_ptr = {
                             use objc::{msg_send, runtime::Object, sel, sel_impl};
-                            // ns_view always have a layer and don't need to verify that it exists.
+ // ns_view always have a layer and don't need to verify that it exists.
                             let layer: *mut Object =
                                 msg_send![handle.ns_view.as_ptr().cast::<Object>(), layer];
                             layer.cast::<ffi::c_void>()
@@ -1438,9 +1438,9 @@ impl crate::Surface for Surface {
 
                 let mut attributes = vec![
                     khronos_egl::RENDER_BUFFER,
-                    // We don't want any of the buffering done by the driver, because we
-                    // manage a swapchain on our side.
-                    // Some drivers just fail on surface creation seeing `EGL_SINGLE_BUFFER`.
+ // We don't want any of the buffering done by the driver, because we
+ // manage a swapchain on our side.
+ // Some drivers just fail on surface creation seeing `EGL_SINGLE_BUFFER`.
                     if cfg!(any(
                         target_os = "android",
                         target_os = "macos",
@@ -1474,7 +1474,7 @@ impl crate::Surface for Surface {
                 #[cfg(Emscripten)]
                 let egl1_5: Option<&Arc<EglInstance>> = Some(&self.egl.instance);
 
-                // Careful, we can still be in 1.4 version even if `upcast` succeeds
+ // Careful, we can still be in 1.4 version even if `upcast` succeeds
                 let raw_result = match egl1_5 {
                     Some(egl) if self.wsi.kind != WindowKind::Unknown => {
                         let attributes_usize = attributes

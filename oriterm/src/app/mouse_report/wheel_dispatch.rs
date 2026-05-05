@@ -5,8 +5,8 @@
 //!
 //! Production: `impl WheelSink for App` delegates to `&mut self` methods.
 //! Tests: `RecordingSink` in `tests.rs` records every call without
-//! constructing `App`. Per `impl-hygiene.md §Platform & External Resource
-//! Abstraction`.
+//! constructing `App`. Per & External Resource
+//! Abstraction.
 
 use winit::event::MouseScrollDelta;
 
@@ -23,8 +23,8 @@ use super::{
 ///
 /// Extracted so the wheel-event wiring can be matrix-tested headlessly
 /// (a `RecordingSink` impl in `tests.rs` records calls; production uses
-/// `impl WheelSink for App`). Per `impl-hygiene.md §Platform & External
-/// Resource Abstraction` — the logic layer must not embed concrete
+/// `impl WheelSink for App`). Per & External
+/// Resource Abstraction — the logic layer must not embed concrete
 /// runtime resources, so the side effects flow through this trait.
 pub(super) trait WheelSink {
     /// Write `bytes` to the PTY of `pane_id`.
@@ -40,8 +40,8 @@ pub(super) trait WheelSink {
     fn cell_for_report(&mut self) -> Option<(usize, usize)>;
 }
 
-/// Inputs to [`dispatch_wheel`] — grouped per `impl-hygiene.md
-/// §Parameter Hygiene` (>4 parameters → config struct).
+/// Inputs to [`dispatch_wheel`] — grouped
+/// §Parameter Hygiene (>4 parameters → config struct).
 ///
 /// `pane_id` is `Option<PaneId>` so the "no active pane → no dispatch"
 /// early return is exercised by the dispatcher itself, keeping the
@@ -58,7 +58,7 @@ pub(super) struct WheelDispatch {
 
 /// Wire a wheel event through the 3-tier dispatcher to the side-effect
 /// sink. Generic over the sink type for static dispatch per
-/// `impl-hygiene.md §Dispatch Choice`.
+/// Choice.
 ///
 /// The dispatcher exits early (without firing `mark_dirty`) on three
 /// conditions:

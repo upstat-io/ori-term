@@ -161,7 +161,7 @@ fn oversized_sixel_rejected() {
     assert!(result.is_err());
 }
 
-/// Catalog row: SIXEL-COLOR-REGISTER-WRAP. Regression: BUG-06-024 — sixel decoder
+/// Catalog row: SIXEL-COLOR-REGISTER-WRAP. Regression: — sixel decoder
 /// MUST wrap color register indices modulo the negotiated count (matches xterm
 /// `graphics_sixel.c:697-698` `s_Pregister %= valid_registers;`). With the default
 /// count (256), `#300` wraps to register 44 (`300 % 256`) and a definition+select
@@ -245,7 +245,7 @@ fn raster_attributes_set_dimensions() {
     assert_eq!(h, 12);
 }
 
-// §12.2 — SetToBg plumbing + palette-leak negative pin.
+// §12.2 — SetToBg plumbing + palette-leak regression guard.
 
 /// §12.2: `SixelBgMode::SetToBg` fills undrawn pixels with the terminal
 /// bg captured at DCS-hook time — NOT opaque black. DeviceDefault
@@ -267,7 +267,7 @@ fn set_to_bg_uses_terminal_background_not_black() {
     );
 }
 
-/// §12.2 semantic pin: `DeviceDefault` and `SetToBg` must diverge on
+/// §12.2 property: `DeviceDefault` and `SetToBg` must diverge on
 /// identical pixel data when the terminal bg is not black. If both
 /// render identically, the bg-mode invariant is broken.
 #[test]
@@ -300,7 +300,7 @@ fn device_default_and_set_to_bg_diverge_under_non_black_terminal_bg() {
     );
 }
 
-/// §12.2 negative pin — palette-leak guard is live.
+/// §12.2 regression guard — palette-leak guard is live.
 ///
 /// Under normal operation, `SixelParser::new` rebuilds VT340 defaults so
 /// a selector `#5` (no definition) maps to cyan `[51, 204, 204]`. Under
@@ -311,7 +311,7 @@ fn device_default_and_set_to_bg_diverge_under_non_black_terminal_bg() {
 /// fail — proving the regression guard is load-bearing rather than a
 /// coincidence of zero-init. The guard's `Drop` impl restores the
 /// thread-local flag even if an assertion panics between bypass-enable
-/// and end-of-test, per `.claude/rules/impl-hygiene.md §Temporal
+/// and end-of-test,
 /// Coupling & RAII Guards`.
 #[test]
 fn palette_reset_per_dcs_negative_pin_bypass_breaks_vt340_fingerprint() {
@@ -346,13 +346,13 @@ fn palette_reset_per_dcs_negative_pin_bypass_breaks_vt340_fingerprint() {
     );
 }
 
-// BUG-06-024 — color-register-wrap matrix tests.
+// — color-register-wrap matrix tests.
 //
 // Pin xterm-style modulo wrap on color register indices in `apply_color`
 // (`graphics_sixel.c:697-698`: `s_Pregister %= valid_registers;`). The
 // `color_registers` value is snapshotted into `SixelParser::new` at DCS-hook
 // time; in-flight XTSMGRAPHICS mutations do NOT retroactively affect the
-// active parser. See `bug-tracker/plans/BUG-06-024/section-03-tdd-matrix.md`
+// active parser. See `bug-tracker/plans//section-03-tdd-matrix.md`
 // for the full matrix; the tests below cover the `idx-class × count × op-class`
 // dimensions called out there.
 
@@ -379,7 +379,7 @@ fn count_default_idx_max_no_wrap() {
 }
 
 /// Boundary: count=256, idx=256 wraps to 0. Proves modulo engages at the max
-/// legal bound (256 % 256 = 0). Plan TPR Round 0 F4 (gemini) addition.
+/// legal bound (256 % 256 = 0). review round 0 F4 () addition.
 #[test]
 fn count_default_idx_at_count_wraps_to_zero() {
     let mut p = parser_with_count(COLOR_REGISTERS_MAX);
@@ -452,14 +452,14 @@ fn count_mid_idx_at_double_count_wraps_to_zero() {
 /// the bare selection lands on:
 /// - Correct impl: `999_999 % 17 = 8` → `current_color = 8` → palette[8] = red.
 /// - Buggy impl `(params[0] as u16) % count`: `(999999 as u16) = 16959;
-///   16959 % 17 = 10` → `current_color = 10` → palette[10] = green.
+/// 16959 % 17 = 10` → `current_color = 10` → palette[10] = green.
 ///
 /// Without the pre-defined distinct colors at the two competing slots,
 /// the original `#999999;...;#999999@` shape would route both define
 /// AND select through the same buggy idx and the test would coincide
 /// (both impls draw "red", just at different palette slots, with the
 /// final pixel still red — no observable difference). Plan Code TPR
-/// Round 0 F1 (codex singleton).
+/// Round 0 F1 ( singleton).
 #[test]
 fn count_prime_idx_huge_wraps_correctly() {
     let mut p = parser_with_count(17);
@@ -493,11 +493,11 @@ fn count_minimum_two_wrap_works() {
 }
 
 /// Bare-selection (no prior definition): count=16, `#17@` wraps to palette[1]
-/// which is VT340 default register 1 = `[51, 51, 204]` blue. NEGATIVE PIN
+/// which is VT340 default register 1 = `[51, 51, 204]` blue. REGRESSION GUARD
 /// against the wrap-only-on-definition bug — without wrap on selection,
 /// `current_color = 17` would draw palette[17] = `[0, 0, 0]` (zeroed default
 /// beyond the 16-entry VT340 table) → black, distinguishable from blue.
-/// Plan TPR Round 0 F2 (codex+opencode agreement).
+/// review round 0 F2 (+ agreement).
 #[test]
 fn bare_selection_under_count_wraps_to_vt340_register_one() {
     let mut p = parser_with_count(16);

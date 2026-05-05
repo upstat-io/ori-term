@@ -117,8 +117,8 @@ impl GpuState {
 
         // Auto-detection: platform-native backend first, then fallbacks.
         // Windows: DX12 (DComp) → DX12 → Vulkan → others.
-        //   DX12 with vendored wgpu-hal patch: DXGI_SCALING_NONE instead of
-        //   STRETCH prevents DWM from stretching the old frame during resize.
+        // DX12 with vendored wgpu-hal patch: DXGI_SCALING_NONE instead of
+        // STRETCH prevents DWM from stretching the old frame during resize.
         // macOS: Metal → others.
         // Linux: Vulkan → others.
         #[cfg(target_os = "windows")]

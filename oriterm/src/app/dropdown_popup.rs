@@ -5,7 +5,7 @@
 //! `MenuWidget` sized to the trigger anchor with identical styling +
 //! initial-state semantics. This module is the canonical home for that
 //! construction so the two call sites share one implementation
-//! (per `.claude/rules/impl-hygiene.md §LEAK:algorithmic-duplication`).
+//! (algorithmic-duplication).
 
 use oriterm_ui::geometry::Rect;
 use oriterm_ui::theme::UiTheme;

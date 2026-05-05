@@ -14,16 +14,16 @@ const GL_UNMASKED_VENDOR_WEBGL: u32 = 0x9245;
 const GL_UNMASKED_RENDERER_WEBGL: u32 = 0x9246;
 
 impl super::Adapter {
-    /// Note that this function is intentionally lenient in regards to parsing,
-    /// and will try to recover at least the first two version numbers without
-    /// resulting in an `Err`.
-    /// # Notes
-    /// `WebGL 2` version returned as `OpenGL ES 3.0`
+ /// Note that this function is intentionally lenient in regards to parsing,
+ /// and will try to recover at least the first two version numbers without
+ /// resulting in an `Err`.
+ /// # Notes
+ /// `WebGL 2` version returned as `OpenGL ES 3.0`
     fn parse_version(mut src: &str) -> Result<(u8, u8), crate::InstanceError> {
         let webgl_sig = "WebGL ";
-        // According to the WebGL specification
-        // VERSION  WebGL<space>1.0<space><vendor-specific information>
-        // SHADING_LANGUAGE_VERSION WebGL<space>GLSL<space>ES<space>1.0<space><vendor-specific information>
+ // According to the WebGL specification
+ // VERSION WebGL<space>1.0<space><vendor-specific information>
+ // SHADING_LANGUAGE_VERSION WebGL<space>GLSL<space>ES<space>1.0<space><vendor-specific information>
         let is_webgl = src.starts_with(webgl_sig);
         if is_webgl {
             let pos = src.rfind(webgl_sig).unwrap_or(0);
@@ -53,7 +53,7 @@ impl super::Adapter {
 
         Self::parse_full_version(src).map(|(major, minor)| {
             (
-                // Return WebGL 2.0 version as OpenGL ES 3.0
+ // Return WebGL 2.0 version as OpenGL ES 3.0
                 if is_webgl && !is_glsl {
                     major + 1
                 } else {
@@ -64,29 +64,29 @@ impl super::Adapter {
         })
     }
 
-    /// According to the OpenGL specification, the version information is
-    /// expected to follow the following syntax:
-    ///
-    /// ~~~bnf
-    /// <major>       ::= <number>
-    /// <minor>       ::= <number>
-    /// <revision>    ::= <number>
-    /// <vendor-info> ::= <string>
-    /// <release>     ::= <major> "." <minor> ["." <release>]
-    /// <version>     ::= <release> [" " <vendor-info>]
-    /// ~~~
-    ///
-    /// Note that this function is intentionally lenient in regards to parsing,
-    /// and will try to recover at least the first two version numbers without
-    /// resulting in an `Err`.
+ /// According to the OpenGL specification, the version information is
+ /// expected to follow the following syntax:
+ ///
+ /// ~~~bnf
+ /// <major> ::= <number>
+ /// <minor> ::= <number>
+ /// <revision> ::= <number>
+ /// <vendor-info> ::= <string>
+ /// <release> ::= <major> "." <minor> ["." <release>]
+ /// <version> ::= <release> [" " <vendor-info>]
+ /// ~~~
+ ///
+ /// Note that this function is intentionally lenient in regards to parsing,
+ /// and will try to recover at least the first two version numbers without
+ /// resulting in an `Err`.
     pub(super) fn parse_full_version(src: &str) -> Result<(u8, u8), crate::InstanceError> {
         let (version, _vendor_info) = match src.find(' ') {
             Some(i) => (&src[..i], src[i + 1..].to_owned()),
             None => (src, String::new()),
         };
 
-        // TODO: make this even more lenient so that we can also accept
-        // `<major> "." <minor> [<???>]`
+ // TODO: make this even more lenient so that we can also accept
+ // `<major> "." <minor> [<???>]`
         let mut it = version.split('.');
         let major = it.next().and_then(|s| s.parse().ok());
         let minor = it.next().and_then(|s| {
@@ -110,7 +110,7 @@ impl super::Adapter {
         let vendor = vendor_orig.to_lowercase();
         let renderer = renderer_orig.to_lowercase();
 
-        // opengl has no way to discern device_type, so we can try to infer it from the renderer string
+ // opengl has no way to discern device_type, so we can try to infer it from the renderer string
         let strings_that_imply_integrated = [
             " xpress", // space here is on purpose so we don't match express
             "amd renoir",
@@ -139,7 +139,7 @@ impl super::Adapter {
         ];
         let strings_that_imply_cpu = ["mesa offscreen", "swiftshader", "llvmpipe"];
 
-        //TODO: handle Intel Iris XE as discreet
+ //TODO: handle Intel Iris XE as discreet
         let inferred_device_type = if vendor.contains("qualcomm")
             || vendor.contains("intel")
             || strings_that_imply_integrated
@@ -150,15 +150,15 @@ impl super::Adapter {
         } else if strings_that_imply_cpu.iter().any(|&s| renderer.contains(s)) {
             wgt::DeviceType::Cpu
         } else {
-            // At this point the Device type is Unknown.
-            // It's most likely DiscreteGpu, but we do not know for sure.
-            // Use "Other" to avoid possibly making incorrect assumptions.
-            // Note that if this same device is available under some other API (ex: Vulkan),
-            // It will mostly likely get a different device type (probably DiscreteGpu).
+ // At this point the Device type is Unknown.
+ // It's most likely DiscreteGpu, but we do not know for sure.
+ // Use "Other" to avoid possibly making incorrect assumptions.
+ // Note that if this same device is available under some other API (ex: Vulkan),
+ // It will mostly likely get a different device type (probably DiscreteGpu).
             wgt::DeviceType::Other
         };
 
-        // source: Sascha Willems at Vulkan
+ // source: Sascha Willems at Vulkan
         let vendor_id = if vendor.contains("amd") {
             db::amd::VENDOR
         } else if vendor.contains("imgtec") {
@@ -204,8 +204,8 @@ impl super::Adapter {
         let extensions = gl.supported_extensions();
 
         let (vendor_const, renderer_const) = if extensions.contains("WEBGL_debug_renderer_info") {
-            // emscripten doesn't enable "WEBGL_debug_renderer_info" extension by default. so, we do it manually.
-            // See https://github.com/gfx-rs/wgpu/issues/3245 for context
+ // emscripten doesn't enable "WEBGL_debug_renderer_info" extension by default. so, we do it manually.
+ // See https://github.com/gfx-rs/wgpu/issues/3245 for context
             #[cfg(Emscripten)]
             if unsafe {
                 super::emscripten::enable_extension(c"WEBGL_debug_renderer_info".to_str().unwrap())
@@ -214,7 +214,7 @@ impl super::Adapter {
             } else {
                 (glow::VENDOR, glow::RENDERER)
             }
-            // glow already enables WEBGL_debug_renderer_info on wasm32-unknown-unknown target by default.
+ // glow already enables WEBGL_debug_renderer_info on wasm32-unknown-unknown target by default.
             #[cfg(not(Emscripten))]
             (GL_UNMASKED_VENDOR_WEBGL, GL_UNMASKED_RENDERER_WEBGL)
         } else {
@@ -282,7 +282,7 @@ impl super::Adapter {
             if full_ver.is_some() {
                 let (sl_major, sl_minor) = Self::parse_full_version(&sl_version).ok()?;
                 let mut value = sl_major as u16 * 100 + sl_minor as u16 * 10;
-                // Naga doesn't think it supports GL 460+, so we cap it at 450
+ // Naga doesn't think it supports GL 460+, so we cap it at 450
                 if value > 450 {
                     value = 450;
                 }
@@ -311,14 +311,14 @@ impl super::Adapter {
             es_supported || full_supported
         };
 
-        // Naga won't let you emit storage buffers at versions below this, so
-        // we currently can't support GL_ARB_shader_storage_buffer_object.
+ // Naga won't let you emit storage buffers at versions below this, so
+ // we currently can't support GL_ARB_shader_storage_buffer_object.
         let supports_storage = supported((3, 1), (4, 3));
-        // Same with compute shaders and GL_ARB_compute_shader
+ // Same with compute shaders and GL_ARB_compute_shader
         let supports_compute = supported((3, 1), (4, 3));
         let supports_work_group_params = supports_compute;
 
-        // ANGLE provides renderer strings like: "ANGLE (Apple, Apple M1 Pro, OpenGL 4.1)"
+ // ANGLE provides renderer strings like: "ANGLE (Apple, Apple M1 Pro, OpenGL 4.1)"
         let is_angle = renderer.contains("ANGLE");
 
         let vertex_shader_storage_blocks = if supports_storage {
@@ -326,8 +326,8 @@ impl super::Adapter {
                 (unsafe { gl.get_parameter_i32(glow::MAX_VERTEX_SHADER_STORAGE_BLOCKS) } as u32);
 
             if value == 0 && extensions.contains("GL_ARB_shader_storage_buffer_object") {
-                // The driver for AMD Radeon HD 5870 returns zero here, so assume the value matches the compute shader storage block count.
-                // Windows doesn't recognize `GL_MAX_VERTEX_ATTRIB_STRIDE`.
+ // The driver for AMD Radeon HD 5870 returns zero here, so assume the value matches the compute shader storage block count.
+ // Windows doesn't recognize `GL_MAX_VERTEX_ATTRIB_STRIDE`.
                 let new = (unsafe { gl.get_parameter_i32(glow::MAX_COMPUTE_SHADER_STORAGE_BLOCKS) }
                     as u32);
                 log::debug!("Max vertex shader storage blocks is zero, but GL_ARB_shader_storage_buffer_object is specified. Assuming the compute value {new}");
@@ -360,15 +360,15 @@ impl super::Adapter {
         };
         let max_element_index = unsafe { gl.get_parameter_i32(glow::MAX_ELEMENT_INDEX) } as u32;
 
-        // WORKAROUND: In order to work around an issue with GL on RPI4 and similar, we ignore a
-        // zero vertex ssbo count if there are vertex sstos. (more info:
-        // https://github.com/gfx-rs/wgpu/pull/1607#issuecomment-874938961) The hardware does not
-        // want us to write to these SSBOs, but GLES cannot express that. We detect this case and
-        // disable writing to SSBOs.
+ // WORKAROUND: In order to work around an issue with GL on RPI4 and similar, we ignore a
+ // zero vertex ssbo count if there are vertex sstos. (more info:
+ // https://github.com/gfx-rs/wgpu/pull/1607#issuecomment-874938961) The hardware does not
+ // want us to write to these SSBOs, but GLES cannot express that. We detect this case and
+ // disable writing to SSBOs.
         let vertex_ssbo_false_zero =
             vertex_shader_storage_blocks == 0 && vertex_shader_storage_textures != 0;
         if vertex_ssbo_false_zero {
-            // We only care about fragment here as the 0 is a lie.
+ // We only care about fragment here as the 0 is a lie.
             log::debug!("Max vertex shader SSBO == 0 and SSTO != 0. Interpreting as false zero.");
         }
 
@@ -382,7 +382,7 @@ impl super::Adapter {
         } else {
             vertex_shader_storage_textures.min(fragment_shader_storage_textures)
         };
-        // NOTE: GL_ARB_compute_shader adds support for indirect dispatch
+ // NOTE: GL_ARB_compute_shader adds support for indirect dispatch
         let indirect_execution = supported((3, 1), (4, 3))
             || (extensions.contains("GL_ARB_draw_indirect") && supports_compute);
 
@@ -420,7 +420,7 @@ impl super::Adapter {
             wgt::DownlevelFlags::BUFFER_BINDINGS_NOT_16_BYTE_ALIGNED,
             !(cfg!(any(webgl, Emscripten)) || is_angle),
         );
-        // see https://registry.khronos.org/webgl/specs/latest/2.0/#BUFFER_OBJECT_BINDING
+ // see https://registry.khronos.org/webgl/specs/latest/2.0/#BUFFER_OBJECT_BINDING
         downlevel_flags.set(
             wgt::DownlevelFlags::UNRESTRICTED_INDEX_BUFFER,
             !cfg!(any(webgl, Emscripten)),
@@ -528,7 +528,7 @@ impl super::Adapter {
         };
         features.set(wgt::Features::TEXTURE_COMPRESSION_ETC2, has_etc);
 
-        // `OES_texture_compression_astc` provides 2D + 3D, LDR + HDR support
+ // `OES_texture_compression_astc` provides 2D + 3D, LDR + HDR support
         if extensions.contains("WEBGL_compressed_texture_astc")
             || extensions.contains("GL_OES_texture_compression_astc")
         {
@@ -582,7 +582,7 @@ impl super::Adapter {
             features |= wgt::Features::POLYGON_MODE_LINE | wgt::Features::POLYGON_MODE_POINT;
         }
 
-        // We *might* be able to emulate bgra8unorm-storage but currently don't attempt to.
+ // We *might* be able to emulate bgra8unorm-storage but currently don't attempt to.
 
         let mut private_caps = super::PrivateCapabilities::empty();
         private_caps.set(
@@ -645,12 +645,12 @@ impl super::Adapter {
                 super::PrivateCapabilities::FULLY_FEATURED_INSTANCING,
                 supported,
             );
-            // Desktop 4.2 and greater specify the first instance parameter.
-            //
-            // For all other versions, the behavior is undefined.
-            //
-            // We only support indirect first instance when we also have ARB_shader_draw_parameters as
-            // that's the only way to get gl_InstanceID to work correctly.
+ // Desktop 4.2 and greater specify the first instance parameter.
+ //
+ // For all other versions, the behavior is undefined.
+ //
+ // We only support indirect first instance when we also have ARB_shader_draw_parameters as
+ // that's the only way to get gl_InstanceID to work correctly.
             features.set(wgt::Features::INDIRECT_FIRST_INSTANCE, supported);
         }
 
@@ -683,7 +683,7 @@ impl super::Adapter {
                 .min(gl.get_parameter_i32(glow::MAX_DRAW_BUFFERS)) as u32
         };
 
-        // 16 bytes per sample is the maximum size of a color attachment.
+ // 16 bytes per sample is the maximum size of a color attachment.
         let max_color_attachment_bytes_per_sample =
             max_color_attachments * wgt::TextureFormat::MAX_TARGET_PIXEL_BYTE_COST;
 
@@ -728,14 +728,14 @@ impl super::Adapter {
             {
                 if let Some(full_ver) = full_ver {
                     if full_ver >= (4, 4) {
-                        // We can query `GL_MAX_VERTEX_ATTRIB_STRIDE` in OpenGL 4.4+
+ // We can query `GL_MAX_VERTEX_ATTRIB_STRIDE` in OpenGL 4.4+
                         let value =
                             (unsafe { gl.get_parameter_i32(glow::MAX_VERTEX_ATTRIB_STRIDE) })
                                 as u32;
 
                         if value == 0 {
-                            // This should be at least 2048, but the driver for AMD Radeon HD 5870 on
-                            // Windows doesn't recognize `GL_MAX_VERTEX_ATTRIB_STRIDE`.
+ // This should be at least 2048, but the driver for AMD Radeon HD 5870 on
+ // Windows doesn't recognize `GL_MAX_VERTEX_ATTRIB_STRIDE`.
 
                             log::debug!("Max vertex attribute stride is 0. Assuming it is the OpenGL minimum spec 2048");
                             2048
@@ -756,13 +756,13 @@ impl super::Adapter {
             min_uniform_buffer_offset_alignment,
             min_storage_buffer_offset_alignment,
             max_inter_stage_shader_components: {
-                // MAX_VARYING_COMPONENTS may return 0, because it is deprecated since OpenGL 3.2 core,
-                // and an OpenGL Context with the core profile and with forward-compatibility=true,
-                // will make deprecated constants unavailable.
+ // MAX_VARYING_COMPONENTS may return 0, because it is deprecated since OpenGL 3.2 core,
+ // and an OpenGL Context with the core profile and with forward-compatibility=true,
+ // will make deprecated constants unavailable.
                 let max_varying_components =
                     unsafe { gl.get_parameter_i32(glow::MAX_VARYING_COMPONENTS) } as u32;
                 if max_varying_components == 0 {
-                    // default value for max_inter_stage_shader_components
+ // default value for max_inter_stage_shader_components
                     60
                 } else {
                     max_varying_components
@@ -830,8 +830,8 @@ impl super::Adapter {
         );
 
         let r = renderer.to_lowercase();
-        // Check for Mesa sRGB clear bug. See
-        // [`super::PrivateCapabilities::MESA_I915_SRGB_SHADER_CLEAR`].
+ // Check for Mesa sRGB clear bug. See
+ // [`super::PrivateCapabilities::MESA_I915_SRGB_SHADER_CLEAR`].
         if context.is_owned()
             && r.contains("mesa")
             && r.contains("intel")
@@ -848,9 +848,9 @@ impl super::Adapter {
         let downlevel_defaults = wgt::DownlevelLimits {};
         let max_samples = unsafe { gl.get_parameter_i32(glow::MAX_SAMPLES) };
 
-        // Drop the GL guard so we can move the context into AdapterShared
-        // ( on Wasm the gl handle is just a ref so we tell clippy to allow
-        // dropping the ref )
+ // Drop the GL guard so we can move the context into AdapterShared
+ // ( on Wasm the gl handle is just a ref so we tell clippy to allow
+ // dropping the ref )
         #[cfg_attr(target_arch = "wasm32", allow(dropping_references))]
         drop(gl);
 
@@ -882,15 +882,15 @@ impl super::Adapter {
                 alignments: crate::Alignments {
                     buffer_copy_offset: wgt::BufferSize::new(4).unwrap(),
                     buffer_copy_pitch: wgt::BufferSize::new(4).unwrap(),
-                    // #6151: `wgpu_hal::gles` doesn't ask Naga to inject bounds
-                    // checks in GLSL, and it doesn't request extensions like
-                    // `KHR_robust_buffer_access_behavior` that would provide
-                    // them, so we can't really implement the checks promised by
-                    // [`crate::BufferBinding`].
-                    //
-                    // Since this is a pre-existing condition, for the time
-                    // being, provide 1 as the value here, to cause as little
-                    // trouble as possible.
+ // #6151: `wgpu_hal::gles` doesn't ask Naga to inject bounds
+ // checks in GLSL, and it doesn't request extensions like
+ // `KHR_robust_buffer_access_behavior` that would provide
+ // them, so we can't really implement the checks promised by
+ // [`crate::BufferBinding`].
+ //
+ // Since this is a pre-existing condition, for the time
+ // being, provide 1 as the value here, to cause as little
+ // trouble as possible.
                     uniform_bounds_check_alignment: wgt::BufferSize::new(1).unwrap(),
                     raw_tlas_instance_size: 0,
                     ray_tracing_scratch_buffer_alignment: 0,
@@ -910,10 +910,10 @@ impl super::Adapter {
         } else {
             let version = gl.version();
             if version.major == 3 && version.minor == 0 {
-                // OpenGL 3.0 only supports this format
+ // OpenGL 3.0 only supports this format
                 format!("#version 130\n{source}")
             } else {
-                // OpenGL 3.1+ support this format
+ // OpenGL 3.1+ support this format
                 format!("#version 140\n{source}")
             }
         };
@@ -1001,8 +1001,8 @@ impl crate::Adapter for super::Adapter {
         let zeroes = vec![0u8; super::ZERO_BUFFER_SIZE];
         unsafe { gl.buffer_data_u8_slice(glow::COPY_READ_BUFFER, &zeroes, glow::STATIC_DRAW) };
 
-        // Compile the shader program we use for doing manual clears to work around Mesa fastclear
-        // bug.
+ // Compile the shader program we use for doing manual clears to work around Mesa fastclear
+ // bug.
 
         let shader_clear_program = if self
             .shared
@@ -1014,7 +1014,7 @@ impl crate::Adapter for super::Adapter {
                     .ok_or(crate::DeviceError::Lost)?
             })
         } else {
-            // If we don't need the workaround, don't waste time and resources compiling the clear program
+ // If we don't need the workaround, don't waste time and resources compiling the clear program
             None
         };
 
@@ -1059,18 +1059,18 @@ impl crate::Adapter for super::Adapter {
             } else if max_samples >= 8 {
                 Tfc::MULTISAMPLE_X2 | Tfc::MULTISAMPLE_X4 | Tfc::MULTISAMPLE_X8
             } else {
-                // The lowest supported level in GLE3.0/WebGL2 is 4X
-                // (see GL_MAX_SAMPLES in https://registry.khronos.org/OpenGL-Refpages/es3.0/html/glGet.xhtml).
-                // On some platforms, like iOS Safari, `get_parameter_i32(MAX_SAMPLES)` returns 0,
-                // so we always fall back to supporting 4x here.
+ // The lowest supported level in GLE3.0/WebGL2 is 4X
+ // (see GL_MAX_SAMPLES in https://registry.khronos.org/OpenGL-Refpages/es3.0/html/glGet.xhtml).
+ // On some platforms, like iOS Safari, `get_parameter_i32(MAX_SAMPLES)` returns 0,
+ // so we always fall back to supporting 4x here.
                 Tfc::MULTISAMPLE_X2 | Tfc::MULTISAMPLE_X4
             }
         };
 
-        // Base types are pulled from the table in the OpenGLES 3.0 spec in section 3.8.
-        //
-        // The storage types are based on table 8.26, in section
-        // "TEXTURE IMAGE LOADS AND STORES" of OpenGLES-3.2 spec.
+ // Base types are pulled from the table in the OpenGLES 3.0 spec in section 3.8.
+ //
+ // The storage types are based on table 8.26, in section
+ // "TEXTURE IMAGE LOADS AND STORES" of OpenGLES-3.2 spec.
         let empty = Tfc::empty();
         let base = Tfc::COPY_SRC | Tfc::COPY_DST;
         let unfilterable = base | Tfc::SAMPLED;
@@ -1319,7 +1319,7 @@ mod tests {
             (3, 2)
         );
         assert_eq!(
-            // WebGL 2.0 should parse as OpenGL ES 3.0
+ // WebGL 2.0 should parse as OpenGL ES 3.0
             Adapter::parse_version("WebGL 2.0 (OpenGL ES 3.0 Chromium)").unwrap(),
             (3, 0)
         );

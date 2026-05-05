@@ -177,33 +177,33 @@ pub struct PaneSnapshot {
     ///
     /// | Bit | Mode |
     /// |-----|------|
-    /// | 0   | `SHOW_CURSOR` (DECTCEM) |
-    /// | 1   | `APP_CURSOR` (DECCKM) |
-    /// | 2   | `APP_KEYPAD` (DECKPAM/DECKPNM) |
-    /// | 3   | `MOUSE_REPORT_CLICK` (mode 1000) |
-    /// | 4   | `MOUSE_DRAG` (mode 1002) |
-    /// | 5   | `MOUSE_MOTION` (mode 1003) |
-    /// | 6   | `MOUSE_SGR` (mode 1006) |
-    /// | 7   | `MOUSE_UTF8` (mode 1005) |
-    /// | 8   | `ALT_SCREEN` (mode 1049) |
-    /// | 9   | `LINE_WRAP` (DECAWM) |
-    /// | 10  | `ORIGIN` (DECOM) |
-    /// | 11  | `INSERT` (IRM) |
-    /// | 12  | `FOCUS_IN_OUT` (mode 1004) |
-    /// | 13  | `BRACKETED_PASTE` (mode 2004) |
-    /// | 14  | `SYNC_UPDATE` (mode 2026) |
-    /// | 15  | `URGENCY_HINTS` (mode 1042) |
-    /// | 16  | `CURSOR_BLINKING` (ATT610) |
-    /// | 17  | `LINE_FEED_NEW_LINE` (LNM) |
-    /// | 18  | `DISAMBIGUATE_ESC_CODES` (Kitty) |
-    /// | 19  | `REPORT_EVENT_TYPES` (Kitty) |
-    /// | 20  | `REPORT_ALTERNATE_KEYS` (Kitty) |
-    /// | 21  | `REPORT_ALL_KEYS_AS_ESC` (Kitty) |
-    /// | 22  | `REPORT_ASSOCIATED_TEXT` (Kitty) |
-    /// | 23  | `ALTERNATE_SCROLL` (mode 1007) |
-    /// | 24  | `REVERSE_WRAP` (mode 45) |
-    /// | 25  | `MOUSE_URXVT` (mode 1015) |
-    /// | 26  | `MOUSE_X10` (mode 9) |
+    /// | 0 | `SHOW_CURSOR` (DECTCEM) |
+    /// | 1 | `APP_CURSOR` (DECCKM) |
+    /// | 2 | `APP_KEYPAD` (DECKPAM/DECKPNM) |
+    /// | 3 | `MOUSE_REPORT_CLICK` (mode 1000) |
+    /// | 4 | `MOUSE_DRAG` (mode 1002) |
+    /// | 5 | `MOUSE_MOTION` (mode 1003) |
+    /// | 6 | `MOUSE_SGR` (mode 1006) |
+    /// | 7 | `MOUSE_UTF8` (mode 1005) |
+    /// | 8 | `ALT_SCREEN` (mode 1049) |
+    /// | 9 | `LINE_WRAP` (DECAWM) |
+    /// | 10 | `ORIGIN` (DECOM) |
+    /// | 11 | `INSERT` (IRM) |
+    /// | 12 | `FOCUS_IN_OUT` (mode 1004) |
+    /// | 13 | `BRACKETED_PASTE` (mode 2004) |
+    /// | 14 | `SYNC_UPDATE` (mode 2026) |
+    /// | 15 | `URGENCY_HINTS` (mode 1042) |
+    /// | 16 | `CURSOR_BLINKING` (ATT610) |
+    /// | 17 | `LINE_FEED_NEW_LINE` (LNM) |
+    /// | 18 | `DISAMBIGUATE_ESC_CODES` (Kitty) |
+    /// | 19 | `REPORT_EVENT_TYPES` (Kitty) |
+    /// | 20 | `REPORT_ALTERNATE_KEYS` (Kitty) |
+    /// | 21 | `REPORT_ALL_KEYS_AS_ESC` (Kitty) |
+    /// | 22 | `REPORT_ASSOCIATED_TEXT` (Kitty) |
+    /// | 23 | `ALTERNATE_SCROLL` (mode 1007) |
+    /// | 24 | `REVERSE_WRAP` (mode 45) |
+    /// | 25 | `MOUSE_URXVT` (mode 1015) |
+    /// | 26 | `MOUSE_X10` (mode 9) |
     pub modes: u64,
     /// Number of scrollback rows above the viewport.
     pub scrollback_len: u32,
@@ -216,10 +216,6 @@ pub struct PaneSnapshot {
     pub stable_row_base: u64,
     /// Whether the pane has output the user hasn't seen (background tab).
     pub has_unseen_output: bool,
-    /// Whether the bell has fired since the pane was last focused.
-    /// Drives the persistent bell icon on the tab. Cleared by
-    /// `mux.clear_bell()` on tab focus change.
-    pub has_bell: bool,
     /// Grid column count.
     ///
     /// Explicit to avoid fragile `cells[0].len()` inference.

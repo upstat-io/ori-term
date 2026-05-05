@@ -51,7 +51,7 @@ fn parse_graphic_rendition_screen_finds_all_six_labels_at_once() {
 
 #[test]
 fn parse_graphic_rendition_screen_rejects_substring_collisions() {
-    // SEMANTIC PIN for the M3 fix: the parser MUST use
+    // Verifies for the M3 fix: the parser MUST use
     // grid_has_token, not raw `str::contains`. Words like
     // `bolder`, `dimmer`, `blinking`, `underlined`, `reversed`,
     // `invisible` all CONTAIN one of the SGR labels but are not
@@ -72,7 +72,7 @@ invisible blinking
 
 #[test]
 fn parse_graphic_rendition_screen_handles_realistic_tack_v108_output() {
-    // SEMANTIC PIN: against the actual tack v1.08 ACS test
+    // Verifies: against the actual tack v1.08 ACS test
     // output (verified empirically — see module rustdoc), the
     // parser returns no SGR labels because tack v1.08's ACS test
     // only probes (bel) and reports Done. The parser does NOT
@@ -106,7 +106,7 @@ fn parse_graphic_rendition_screen_handles_label_at_end_of_line() {
 
 #[test]
 fn parse_graphic_rendition_screen_returns_labels_in_canonical_order() {
-    // SEMANTIC PIN for the parser walks SGR_LABELS in
+    // Verifies for the parser walks SGR_LABELS in
     // declaration order and pushes matches in that order, so the
     // returned `capability_labels` vec MUST appear in the canonical
     // [bold, dim, underline, blink, reverse, invis] order REGARDLESS
@@ -131,7 +131,7 @@ fn parse_graphic_rendition_screen_returns_labels_in_canonical_order() {
 
 #[test]
 fn parse_graphic_rendition_screen_returns_partial_subset_in_canonical_order() {
-    // SEMANTIC PIN for when only a subset of SGR labels
+    // Verifies for when only a subset of SGR labels
     // is present, the parser returns just those labels — still in
     // canonical order, with no padding/empty entries for missing
     // labels. Pin 3 of 6 (bold, underline, reverse) to catch a

@@ -60,7 +60,6 @@ fn test_snapshot_full(
         search_focused: None,
         search_total_matches: 0,
         has_unseen_output: false,
-        has_bell: false,
         mouse_cursor_icon: None,
     }
 }

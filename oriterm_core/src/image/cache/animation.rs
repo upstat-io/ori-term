@@ -247,7 +247,7 @@ impl ImageCache {
                 let state = e.get_mut();
                 state.frame_durations.push(gap);
                 state.total_frames = anim_frames.len();
-                // BUG-08-025: in s=2 wait-mode, an animation that has
+                // : in s=2 wait-mode, an animation that has
                 // exhausted its loops resumes when a new frame arrives.
                 // Reset loops_completed so is_finished() returns false
                 // and advance() can tick into the newly-appended frames.
@@ -271,7 +271,7 @@ impl ImageCache {
         if let Some(state) = self.animations.get_mut(&id) {
             match action {
                 1 => state.paused = true,
-                // BUG-08-025: s=2 is run-wait — animation runs through its
+                // : s=2 is run-wait — animation runs through its
                 // loop count then halts at the last frame waiting for new
                 // frames (via a=f) to extend it. s=3 is run — same loop
                 // playthrough but stops permanently when loops exhaust.

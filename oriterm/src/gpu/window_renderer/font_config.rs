@@ -22,7 +22,7 @@ impl WindowRenderer {
     /// calls [`replace_ui_font_sizes`] (fresh registry, no emoji) and
     /// [`replace_font_collection`] (new terminal font) in sequence;
     /// regardless of order, the reinject here pulls from the current
-    /// terminal font AFTER both installs are complete. See BUG-04-004.
+    /// terminal font AFTER both installs are complete. See.
     pub fn replace_font_collection(&mut self, collection: FontCollection, gpu: &GpuState) {
         self.font_collection = collection;
         self.clear_and_recache(gpu);
@@ -39,7 +39,7 @@ impl WindowRenderer {
     /// does NOT inject: during config reload the fresh registry passed
     /// here would otherwise pick up the OLD terminal font's emoji (since
     /// the new `FontCollection` has not been installed yet). See
-    /// BUG-04-004 Codex F1 for the ordering gotcha.
+    /// Codex F1 for the ordering gotcha.
     pub fn replace_ui_font_sizes(&mut self, sizes: UiFontSizes) {
         self.ui_font_sizes = Some(sizes);
     }

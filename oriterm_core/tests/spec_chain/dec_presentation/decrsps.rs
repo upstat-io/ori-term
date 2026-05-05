@@ -42,7 +42,7 @@ fn decrsps_ps2_emits_no_pty_write() {
     assert_eq!(pty_writes(&h).count(), 0);
 }
 
-/// Negative pin: a DECRSPS Ps=1 payload that a full implementation would
+/// Regression guard: a DECRSPS Ps=1 payload that a full implementation would
 /// parse as "move cursor" must NOT mutate cursor row or column — the stub
 /// logs and drops. Guards against accidental cursor-mutation if someone
 /// wires the parse path before completing the full state restoration.
