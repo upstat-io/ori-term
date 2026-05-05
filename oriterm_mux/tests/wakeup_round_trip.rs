@@ -13,11 +13,12 @@
 //! becomes true → drain delivers response bytes back to child stdin.
 //! 3. `recorded_proxy_observes_wakeup` — proxy receives
 //! `RecordedTermEvent::MuxWakeup` for every IO-thread effect emission.
-//! 4. `recorded_proxy_does_not_double_signal` — coalescing guard at
-//! `oriterm_mux/src/backend/embedded/mod.rs:62-66` fires the wakeup
+//! 4. `recorded_proxy_does_not_double_signal` — coalescing guard via
+//! `crate::backend::wakeup::guarded_wakeup` (called from
+//! `oriterm_mux/src/backend/embedded/mod.rs:64`) fires the wakeup
 //! AT MOST once per parse cycle.
 //! 5. `flag_clears_on_poll_events` — `wakeup_pending.store(false)` at
-//! `oriterm_mux/src/backend/embedded/mod.rs:86` runs before drain.
+//! `oriterm_mux/src/backend/embedded/mod.rs:84` runs before drain.
 //!
 //! These tests live in `oriterm_mux/tests/` (NOT `oriterm/tests/`) per
 //! the Test`: the tests
@@ -285,11 +286,12 @@ fn recorded_proxy_observes_wakeup() {
     );
 }
 
-/// Regression guard: the coalescing guard at
-/// `oriterm_mux/src/backend/embedded/mod.rs:62-66` (`pending.swap(true,
-/// Release)`) prevents wakeup spam — many effects in one parse cycle
-/// fire AT MOST a small bounded number of wakeups until `poll_events`
-/// clears the flag.
+/// Regression guard: the coalescing guard now lives in
+/// `crate::backend::wakeup::guarded_wakeup` (called from
+/// `oriterm_mux/src/backend/embedded/mod.rs:64`); the helper preserves
+/// the `pending.swap(true, Release)` ordering. Many effects in one
+/// parse cycle fire AT MOST a small bounded number of wakeups until
+/// `poll_events` clears the flag.
 ///
 /// Sends multi-line shell output (a `seq | xargs echo` burst) which
 /// produces many PaneOutput effects in rapid succession. Without the
@@ -361,7 +363,7 @@ fn recorded_proxy_does_not_double_signal() {
 }
 
 /// Regression guard: `wakeup_pending.store(false, Release)` at
-/// `oriterm_mux/src/backend/embedded/mod.rs:86` runs at the START of
+/// `oriterm_mux/src/backend/embedded/mod.rs:84` runs at the START of
 /// `poll_events`. After draining, `has_pending_wakeup()` returns false
 /// until the next IO emit. Pins the gate's flag-clear ordering.
 #[test]

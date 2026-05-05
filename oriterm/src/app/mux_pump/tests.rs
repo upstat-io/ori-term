@@ -530,7 +530,9 @@ impl MuxBackend for RecordingMuxBackend {
         self.calls.borrow_mut().push(RecordedCall::PollEvents);
     }
     fn drain_notifications(&mut self, out: &mut Vec<MuxNotification>) {
-        self.calls.borrow_mut().push(RecordedCall::DrainNotifications);
+        self.calls
+            .borrow_mut()
+            .push(RecordedCall::DrainNotifications);
         // Match production semantics: InProcessMux::drain_notifications
         // (`oriterm_mux/src/in_process/event_pump.rs`) clears the caller's
         // buffer THEN swaps in the new notifications. A naive `extend`
@@ -541,7 +543,9 @@ impl MuxBackend for RecordingMuxBackend {
     }
 
     fn discard_notifications(&mut self) {
-        unimplemented!("RecordingMuxBackend: pump_mux_events_core does not call discard_notifications")
+        unimplemented!(
+            "RecordingMuxBackend: pump_mux_events_core does not call discard_notifications"
+        )
     }
     fn get_pane_entry(&self, _: PaneId) -> Option<PaneEntry> {
         unimplemented!("RecordingMuxBackend: pump_mux_events_core does not call get_pane_entry")
@@ -574,7 +578,9 @@ impl MuxBackend for RecordingMuxBackend {
         unimplemented!("RecordingMuxBackend: pump_mux_events_core does not call set_image_config")
     }
     fn set_cell_dimensions(&mut self, _: PaneId, _: u16, _: u16) {
-        unimplemented!("RecordingMuxBackend: pump_mux_events_core does not call set_cell_dimensions")
+        unimplemented!(
+            "RecordingMuxBackend: pump_mux_events_core does not call set_cell_dimensions"
+        )
     }
     fn scroll_display(&mut self, _: PaneId, _: isize) {
         unimplemented!("RecordingMuxBackend: pump_mux_events_core does not call scroll_display")
@@ -583,10 +589,14 @@ impl MuxBackend for RecordingMuxBackend {
         unimplemented!("RecordingMuxBackend: pump_mux_events_core does not call scroll_to_bottom")
     }
     fn scroll_to_previous_prompt(&mut self, _: PaneId) {
-        unimplemented!("RecordingMuxBackend: pump_mux_events_core does not call scroll_to_previous_prompt")
+        unimplemented!(
+            "RecordingMuxBackend: pump_mux_events_core does not call scroll_to_previous_prompt"
+        )
     }
     fn scroll_to_next_prompt(&mut self, _: PaneId) {
-        unimplemented!("RecordingMuxBackend: pump_mux_events_core does not call scroll_to_next_prompt")
+        unimplemented!(
+            "RecordingMuxBackend: pump_mux_events_core does not call scroll_to_next_prompt"
+        )
     }
     fn open_search(&mut self, _: PaneId) {
         unimplemented!("RecordingMuxBackend: pump_mux_events_core does not call open_search")
@@ -634,22 +644,32 @@ impl MuxBackend for RecordingMuxBackend {
         unimplemented!("RecordingMuxBackend: pump_mux_events_core does not call pane_snapshot")
     }
     fn is_pane_snapshot_dirty(&self, _: PaneId) -> bool {
-        unimplemented!("RecordingMuxBackend: pump_mux_events_core does not call is_pane_snapshot_dirty")
+        unimplemented!(
+            "RecordingMuxBackend: pump_mux_events_core does not call is_pane_snapshot_dirty"
+        )
     }
     fn refresh_pane_snapshot(&mut self, _: PaneId) -> Option<&PaneSnapshot> {
-        unimplemented!("RecordingMuxBackend: pump_mux_events_core does not call refresh_pane_snapshot")
+        unimplemented!(
+            "RecordingMuxBackend: pump_mux_events_core does not call refresh_pane_snapshot"
+        )
     }
     fn sync_pane_snapshot(&mut self, _: PaneId) -> Option<PaneSnapshot> {
         unimplemented!("RecordingMuxBackend: pump_mux_events_core does not call sync_pane_snapshot")
     }
     fn clear_pane_snapshot_dirty(&mut self, _: PaneId) {
-        unimplemented!("RecordingMuxBackend: pump_mux_events_core does not call clear_pane_snapshot_dirty")
+        unimplemented!(
+            "RecordingMuxBackend: pump_mux_events_core does not call clear_pane_snapshot_dirty"
+        )
     }
     fn swap_renderable_content(&mut self, _: PaneId, _: &mut RenderableContent) -> bool {
-        unimplemented!("RecordingMuxBackend: pump_mux_events_core does not call swap_renderable_content")
+        unimplemented!(
+            "RecordingMuxBackend: pump_mux_events_core does not call swap_renderable_content"
+        )
     }
     fn fulfill_host_request(&mut self, _: PaneId, _: HostReply) -> io::Result<()> {
-        unimplemented!("RecordingMuxBackend: pump_mux_events_core does not call fulfill_host_request")
+        unimplemented!(
+            "RecordingMuxBackend: pump_mux_events_core does not call fulfill_host_request"
+        )
     }
 }
 
@@ -663,7 +683,11 @@ fn pump_mux_events_core_mux_is_none_returns_no_mux() {
     let mut buf: Vec<MuxNotification> = Vec::new();
     let result = pump_mux_events_core(None, &mut buf);
     assert_eq!(result, PumpResult::NoMux);
-    assert!(buf.is_empty(), "buffer must be untouched; len={}", buf.len());
+    assert!(
+        buf.is_empty(),
+        "buffer must be untouched; len={}",
+        buf.len()
+    );
 }
 
 /// Regression: daemon-mode disconnected backend returns
@@ -678,7 +702,10 @@ fn pump_mux_events_core_daemon_disconnected_returns_daemon_disconnect() {
     assert_eq!(result, PumpResult::DaemonDisconnect);
     assert!(buf.is_empty());
     let calls = backend.calls();
-    assert_eq!(calls, vec![RecordedCall::IsDaemonMode, RecordedCall::IsConnected]);
+    assert_eq!(
+        calls,
+        vec![RecordedCall::IsDaemonMode, RecordedCall::IsConnected]
+    );
 }
 
 /// Regression: daemon-mode connected backend with closed gate
@@ -808,7 +835,9 @@ fn pump_mux_events_core_daemon_gate_open_drain_yields_one_returns_has_notificati
     let calls = backend.calls();
     let is_daemon_idx = calls.iter().position(|c| *c == RecordedCall::IsDaemonMode);
     let is_connected_idx = calls.iter().position(|c| *c == RecordedCall::IsConnected);
-    let has_pending_idx = calls.iter().position(|c| *c == RecordedCall::HasPendingWakeup);
+    let has_pending_idx = calls
+        .iter()
+        .position(|c| *c == RecordedCall::HasPendingWakeup);
     assert!(
         is_daemon_idx.is_some()
             && is_connected_idx.is_some()
@@ -879,7 +908,10 @@ fn pump_mux_events_core_daemon_gate_open_drain_yields_many_returns_has_notificat
     ));
     let calls = backend.calls();
     let idx = calls.iter().position(|c| *c == RecordedCall::IsConnected);
-    assert!(idx.is_some(), "daemon mode MUST consult is_connected; recorded: {calls:?}");
+    assert!(
+        idx.is_some(),
+        "daemon mode MUST consult is_connected; recorded: {calls:?}"
+    );
 }
 
 // -- Order pin --

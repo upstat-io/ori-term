@@ -10,6 +10,7 @@
 
 pub mod client;
 pub mod embedded;
+mod wakeup;
 
 use std::io;
 use std::sync::mpsc;
