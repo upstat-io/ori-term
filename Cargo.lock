@@ -1343,7 +1343,7 @@ dependencies = [
  "bitflags 2.11.1",
  "libc",
  "plain",
- "redox_syscall 0.7.4",
+ "redox_syscall 0.7.5",
 ]
 
 [[package]]
@@ -1907,7 +1907,7 @@ dependencies = [
 
 [[package]]
 name = "oriterm"
-version = "0.2.0-alpha.20260504"
+version = "0.2.0-alpha.20260505"
 dependencies = [
  "anyhow",
  "arboard",
@@ -1957,7 +1957,7 @@ dependencies = [
 
 [[package]]
 name = "oriterm_core"
-version = "0.2.0-alpha.20260504"
+version = "0.2.0-alpha.20260505"
 dependencies = [
  "base64",
  "bitflags 2.11.1",
@@ -1980,7 +1980,7 @@ dependencies = [
 
 [[package]]
 name = "oriterm_ipc"
-version = "0.2.0-alpha.20260504"
+version = "0.2.0-alpha.20260505"
 dependencies = [
  "libc",
  "log",
@@ -1991,7 +1991,7 @@ dependencies = [
 
 [[package]]
 name = "oriterm_mux"
-version = "0.2.0-alpha.20260504"
+version = "0.2.0-alpha.20260505"
 dependencies = [
  "base64",
  "bincode",
@@ -2014,7 +2014,7 @@ dependencies = [
 
 [[package]]
 name = "oriterm_test_support"
-version = "0.2.0-alpha.20260504"
+version = "0.2.0-alpha.20260505"
 dependencies = [
  "base64",
  "clap",
@@ -2027,7 +2027,7 @@ dependencies = [
 
 [[package]]
 name = "oriterm_ui"
-version = "0.2.0-alpha.20260504"
+version = "0.2.0-alpha.20260505"
 dependencies = [
  "criterion",
  "image",
@@ -2290,9 +2290,9 @@ checksum = "a993555f31e5a609f617c12db6250dedcac1b0a85076912c436e6fc9b2c8e6a3"
 
 [[package]]
 name = "quick-xml"
-version = "0.39.2"
+version = "0.39.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "958f21e8e7ceb5a1aa7fa87fab28e7c75976e0bfe7e23ff069e0a260f894067d"
+checksum = "721da970c312655cde9b4ffe0547f20a8494866a4af5ff51f18b7c633d0c870b"
 dependencies = [
  "memchr",
 ]
@@ -2380,9 +2380,9 @@ dependencies = [
 
 [[package]]
 name = "redox_syscall"
-version = "0.7.4"
+version = "0.7.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f450ad9c3b1da563fb6948a8e0fb0fb9269711c9c73d9ea1de5058c79c8d643a"
+checksum = "4666a1a60d8412eab19d94f6d13dcc9cea0a5ef4fdf6a5db306537413c661b1b"
 dependencies = [
  "bitflags 2.11.1",
 ]
