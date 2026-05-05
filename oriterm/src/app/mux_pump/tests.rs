@@ -531,6 +531,12 @@ impl MuxBackend for RecordingMuxBackend {
     }
     fn drain_notifications(&mut self, out: &mut Vec<MuxNotification>) {
         self.calls.borrow_mut().push(RecordedCall::DrainNotifications);
+        // Match production semantics: InProcessMux::drain_notifications
+        // (`oriterm_mux/src/in_process/event_pump.rs`) clears the caller's
+        // buffer THEN swaps in the new notifications. A naive `extend`
+        // would let pre-existing entries leak through, masking real
+        // production behavior.
+        out.clear();
         out.extend(self.drain_returns.drain(..));
     }
 
@@ -1061,12 +1067,13 @@ fn pump_mux_events_core_no_pending_wakeup_preserves_pre_existing_buf() {
     ));
 }
 
-/// Regression: pre-populated notification_buf is appended-to (not
-/// overwritten) when drain runs and yields more entries. Pins the
-/// invariant that pump_mux_events_core uses Vec::extend semantics
-/// (append) rather than Vec::clear-then-extend.
+/// Regression: pre-populated notification_buf is REPLACED (not
+/// appended-to) when drain runs and yields entries. Pins the
+/// production invariant from `oriterm_mux/src/in_process/event_pump.rs`
+/// `drain_notifications`: `out.clear(); std::mem::swap(...)`. Pre-
+/// existing entries are LOST — only post-drain entries survive.
 #[test]
-fn pump_mux_events_core_drain_appends_to_pre_existing_buf() {
+fn pump_mux_events_core_drain_replaces_pre_existing_buf() {
     let pane = PaneId::from_raw(99);
     let mut buf = vec![dn(pane, "PRE_EXISTING")];
     let mut backend = RecordingMuxBackend::new();
@@ -1075,16 +1082,50 @@ fn pump_mux_events_core_drain_appends_to_pre_existing_buf() {
     backend.drain_returns = vec![dn(pane, "FROM_DRAIN")];
     let result = pump_mux_events_core(Some(&mut backend), &mut buf);
     assert_eq!(result, PumpResult::HasNotifications);
-    // Pre-existing PRE_EXISTING + drained FROM_DRAIN. Note: the purge
-    // step doesn't touch DesktopNotifications absent a Clear marker, so
-    // both entries survive.
-    assert_eq!(buf.len(), 2, "drain extends pre-existing buf; got {buf:?}");
-    let titles: Vec<&str> = buf
-        .iter()
-        .filter_map(|n| match n {
-            MuxNotification::DesktopNotification { title, .. } => Some(title.as_str()),
-            _ => None,
-        })
-        .collect();
-    assert_eq!(titles, vec!["PRE_EXISTING", "FROM_DRAIN"]);
+    // PRE_EXISTING was cleared by drain_notifications's `out.clear()`;
+    // only FROM_DRAIN survives. Defends against a regression that
+    // would let pre-existing entries leak through.
+    assert_eq!(buf.len(), 1, "drain replaced pre-existing buf; got {buf:?}");
+    assert!(matches!(
+        &buf[0],
+        MuxNotification::DesktopNotification { title, .. } if title == "FROM_DRAIN"
+    ));
+}
+
+/// Regression: pre-populated notification_buf is preserved when daemon-
+/// disconnect arm fires (drain not called → buf untouched).
+#[test]
+fn pump_mux_events_core_daemon_disconnect_preserves_pre_existing_buf() {
+    let pane = PaneId::from_raw(99);
+    let mut buf = vec![dn(pane, "PRE_EXISTING")];
+    let mut backend = RecordingMuxBackend::new();
+    backend.is_daemon_mode_value = true;
+    backend.is_connected_value = false;
+    let result = pump_mux_events_core(Some(&mut backend), &mut buf);
+    assert_eq!(result, PumpResult::DaemonDisconnect);
+    assert_eq!(buf.len(), 1, "daemon-disconnect early-exit preserves buf");
+    assert!(matches!(
+        &buf[0],
+        MuxNotification::DesktopNotification { title, .. } if title == "PRE_EXISTING"
+    ));
+}
+
+/// Regression: EmptyDrain branch — gate open, drain runs and yields
+/// zero entries. The pre-existing PRE_EXISTING is LOST because
+/// drain_notifications cleared the buf before swap (production semantics).
+/// Buf is empty post-call, returns PumpResult::EmptyDrain.
+#[test]
+fn pump_mux_events_core_empty_drain_clears_pre_existing_buf() {
+    let pane = PaneId::from_raw(99);
+    let mut buf = vec![dn(pane, "PRE_EXISTING")];
+    let mut backend = RecordingMuxBackend::new();
+    backend.is_daemon_mode_value = false;
+    backend.has_pending_wakeup_value = true;
+    backend.drain_returns = Vec::new();
+    let result = pump_mux_events_core(Some(&mut backend), &mut buf);
+    assert_eq!(result, PumpResult::EmptyDrain);
+    assert!(
+        buf.is_empty(),
+        "drain_notifications cleared pre-existing buf; got {buf:?}"
+    );
 }
