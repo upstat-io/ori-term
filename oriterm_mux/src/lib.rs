@@ -24,7 +24,7 @@ pub mod one_shot;
 pub mod pane;
 pub mod protocol;
 pub mod pty;
-pub(crate) mod registry;
+pub mod registry;
 pub mod server;
 pub mod shell_integration;
 
@@ -38,3 +38,4 @@ pub use protocol::{
     WireRgb,
 };
 pub use pty::adopt::{AdoptedPtyHandle, AdoptedSignal};
+pub use registry::PaneEntry;

@@ -122,6 +122,15 @@ STATE_LABEL_RE = re.compile(
 # Directive markers \u2014 .md uses HTML comments, source uses // line comments.
 LINT_OFF_RE = re.compile(r"<!--\s*prose-lint:\s*off\s*-->")
 LINT_ON_RE = re.compile(r"<!--\s*prose-lint:\s*on\s*-->")
+# Regression doc-comment exemption: `///` doc comments leading with
+# "Regression: BUG-XX-NNN" or "See: bug-tracker/plans/BUG-XX-NNN/..." are
+# the canonical pin format per .claude/rules/tests.md §Regression
+# Discipline. The bug-id rule must not fire on these lines.
+REGRESSION_DOC_COMMENT_RE = re.compile(
+    r"^\s*//[/!]\s*(?:Regression\s*:|See\s*:\s*bug-tracker/)",
+    re.IGNORECASE,
+)
+
 LINT_ALLOW_LINE_RE = re.compile(r"<!--\s*prose-lint:\s*allow\s*-->")
 
 SOURCE_LINT_OFF_RE = re.compile(r"//\s*prose-lint:\s*off\b")
@@ -312,6 +321,14 @@ def keyword_scan(lines, exempt, patterns, allow_re, apply_md_suppressors):
         if allow_re.search(line):
             continue
         if apply_md_suppressors and STATE_LABEL_RE.search(line):
+            continue
+        # Regression doc comments are provenance metadata per
+        # .claude/rules/tests.md §Regression Discipline — they legitimately
+        # cite bug IDs (BUG-XX-NNN), TDD vocabulary (semantic pin,
+        # negative pin, TDD matrix), and internal docs (CLAUDE.md). The
+        # surrounding prose is still scanned; only this single doc-comment
+        # line is exempt.
+        if REGRESSION_DOC_COMMENT_RE.search(line):
             continue
         masked = COMPOUND_ADJ_RE.sub("<compound>", line) if apply_md_suppressors else line
         for regex, label, flags in patterns:

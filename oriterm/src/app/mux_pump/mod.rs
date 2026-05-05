@@ -5,6 +5,7 @@
 //! then handles resulting `MuxNotification`s (dirty, close, clipboard, etc.).
 
 mod command_complete;
+mod core;
 mod host_color_query;
 mod notification_purge;
 
@@ -20,8 +21,8 @@ use self::command_complete::{
     AppCommandCompleteSink, CommandCompleteAction, CommandCompleteInputs, command_complete_action,
     dispatch_command_complete,
 };
+use self::core::{PumpResult, pump_mux_events_core};
 use self::host_color_query::resolve_host_color_query;
-use self::notification_purge::purge_pending_desktop_notifications;
 use super::App;
 
 /// Apply the focus-gated bell decision to the mux backend.
@@ -91,47 +92,22 @@ impl App {
     /// Pump mux events and process resulting notifications.
     ///
     /// Drains PTY reader thread messages via the mux, then handles each
-    /// notification (dirty, close, clipboard, etc.).
+    /// notification (dirty, close, clipboard, etc.). Side-effect protocol
+    /// and decision logic live in [`pump_mux_events_core`]; this method
+    /// only invokes the App-coupled callbacks for the `DaemonDisconnect`
+    /// and `HasNotifications` dispositions.
     pub(super) fn pump_mux_events(&mut self) {
-        let Some(mux) = &mut self.mux else { return };
-
-        // Check daemon connectivity.
-        if mux.is_daemon_mode() && !mux.is_connected() {
-            log::warn!("daemon connection lost");
-            self.handle_daemon_disconnect();
-            return;
+        let result = pump_mux_events_core(self.mux.as_deref_mut(), &mut self.notification_buf);
+        match result {
+            PumpResult::NoMux | PumpResult::NoPendingWakeup | PumpResult::EmptyDrain => {}
+            PumpResult::DaemonDisconnect => {
+                log::warn!("daemon connection lost");
+                self.handle_daemon_disconnect();
+            }
+            PumpResult::HasNotifications => {
+                self.with_drained_notifications(Self::handle_mux_notification);
+            }
         }
-
-        // Skip polling when no PTY wakeup has arrived since the last poll.
-        // The try_recv() inside poll_events() is cheap but acquires the
-        // channel lock; skipping it entirely avoids even that overhead.
-        if !mux.has_pending_wakeup() {
-            return;
-        }
-
-        // 1. Process incoming MuxEvents from PTY reader threads.
-        mux.poll_events();
-
-        // 2. Drain notifications into our reusable buffer.
-        mux.drain_notifications(&mut self.notification_buf);
-        if self.notification_buf.is_empty() {
-            return;
-        }
-
-        // 2a. Honor cross-batch `ClearPendingDesktopNotifications`
-        // markers BEFORE dispatching: each clear marker discards
-        // all preceding `DesktopNotification` entries for the same
-        // pane that landed in earlier IO-thread batches and
-        // accumulated in this drain. The IO-thread router already
-        // handles intra-batch collapse; this purge handles the
-        // case where a notification reached `notification_buf` in
-        // an earlier drain cycle and the clear catches it before
-        // the next dispatch tick. Per effect-cutover §01.1
-        // success criterion 24.
-        purge_pending_desktop_notifications(&mut self.notification_buf);
-
-        // 3. Handle each notification.
-        self.with_drained_notifications(Self::handle_mux_notification);
     }
 
     /// Process a single mux notification.
