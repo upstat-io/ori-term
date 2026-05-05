@@ -18,8 +18,7 @@ use crate::platform::audio;
 
 /// Inputs to [`command_complete_action`]. Wraps the full threshold,
 /// mode, focus, and per-surface state into one struct so the helper
-/// signature stays under the four-parameter cap from
-/// `.claude/rules/impl-hygiene.md` §Clean Code Patterns / Parameter Hygiene.
+/// signature stays under the four-parameter cap.
 pub(super) struct CommandCompleteInputs {
     pub mode: NotifyOnCommandFinish,
     pub duration: Duration,
@@ -68,7 +67,7 @@ pub(super) fn command_complete_action(inputs: &CommandCompleteInputs) -> Command
         NotifyOnCommandFinish::Unfocused if inputs.is_in_focused_tab => {
             return CommandCompleteAction::Suppress;
         }
-        _ => {}
+        NotifyOnCommandFinish::Unfocused | NotifyOnCommandFinish::Always => {}
     }
     let background = !inputs.is_in_focused_tab;
     CommandCompleteAction::Fire(CommandCompleteSurfaces {

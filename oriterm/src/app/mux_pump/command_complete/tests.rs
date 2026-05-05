@@ -38,11 +38,10 @@ fn surfaces(set_bell: bool, transient_pulse: bool, audio: bool) -> CommandComple
     }
 }
 
-// ── Helper-level tests: command_complete_action ─────────────────────────
+// Helper-level tests: command_complete_action
 
 /// Regression: BUG-02-013 — duration < threshold must Suppress regardless
 /// of mode/focus/per-surface flags.
-/// See: bug-tracker/plans/BUG-02-013/00-overview.md
 #[test]
 fn command_complete_action_below_threshold_returns_suppress() {
     let result = command_complete_action(&inputs(
@@ -81,7 +80,7 @@ fn command_complete_action_with_mode_unfocused_and_focused_pane_returns_suppress
     assert_eq!(result, CommandCompleteAction::Suppress);
 }
 
-// ── Per-surface decision pins (Fire branch) ─────────────────────────────
+// Per-surface decision pins (Fire branch)
 
 /// Regression: BUG-02-013 — PRIMARY REPRO FIX. Always+focused must Fire
 /// transient_pulse + audio (set_bell stays background-only by design).
@@ -216,7 +215,7 @@ fn command_complete_action_with_no_gates_open_fires_nothing() {
     );
 }
 
-// ── Semantic + negative pins ────────────────────────────────────────────
+// Semantic + negative pins
 
 /// Regression: BUG-02-013 — semantic pin. Always+focused with all gates
 /// open returns the EXACT Fire(surfaces) shape that survives the bug fix.
@@ -264,7 +263,7 @@ fn command_complete_action_focused_does_not_fire_set_bell() {
     }
 }
 
-// ── Dispatch-spy tests: dispatch_command_complete ───────────────────────
+// Dispatch-spy tests: dispatch_command_complete
 
 #[derive(Default)]
 struct SpySink {
@@ -436,7 +435,7 @@ fn dispatch_command_complete_with_no_surfaces_only_logs_completion() {
     assert_eq!(sink.log_calls.borrow().len(), 1);
 }
 
-// ── Combined helper × dispatch end-to-end pin ───────────────────────────
+// Combined helper × dispatch end-to-end pin
 
 /// Regression: BUG-02-013 — PRIMARY REPRO FIX END-TO-END. Composes
 /// command_complete_action(Always+focused) → Fire(surfaces) →
