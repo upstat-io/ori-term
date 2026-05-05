@@ -324,14 +324,25 @@ def keyword_scan(lines, exempt, patterns, allow_re, apply_md_suppressors):
             continue
         # Regression doc comments are provenance metadata per
         # .claude/rules/tests.md §Regression Discipline — they legitimately
-        # cite bug IDs (BUG-XX-NNN), TDD vocabulary (semantic pin,
-        # negative pin, TDD matrix), and internal docs (CLAUDE.md). The
-        # surrounding prose is still scanned; only this single doc-comment
-        # line is exempt.
-        if REGRESSION_DOC_COMMENT_RE.search(line):
-            continue
+        # cite bug IDs (BUG-XX-NNN) and TDD vocabulary (semantic pin,
+        # negative pin, TDD matrix, INVERTED-TDD, TPR Round). Other
+        # keyword rules (reference-lang attribution, internal-doc paths,
+        # reviewer names like codex/gemini, dated-ref) MUST still apply
+        # even on regression doc-comment lines — those are real leaks
+        # regardless of doc-comment context.
+        regression_doc_line = REGRESSION_DOC_COMMENT_RE.search(line) is not None
+        regression_exempt_labels = {
+            "bug-id",
+            "methodology-inverted-tdd",
+            "methodology-plan-tpr",
+            "methodology-tpr-round",
+            "methodology-pin-vocab",
+            "methodology-tdd-matrix",
+        }
         masked = COMPOUND_ADJ_RE.sub("<compound>", line) if apply_md_suppressors else line
         for regex, label, flags in patterns:
+            if regression_doc_line and label in regression_exempt_labels:
+                continue
             m = re.search(regex, masked, flags)
             if m:
                 findings.append({
