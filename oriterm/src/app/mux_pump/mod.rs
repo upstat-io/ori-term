@@ -4,6 +4,7 @@
 //! Processes `MuxEvent`s from PTY reader threads via `MuxBackend::poll_events`,
 //! then handles resulting `MuxNotification`s (dirty, close, clipboard, etc.).
 
+mod command_complete;
 mod host_color_query;
 mod notification_purge;
 
@@ -13,9 +14,12 @@ use oriterm_mux::MuxNotification;
 use oriterm_mux::PaneId;
 use oriterm_mux::backend::MuxBackend;
 
-use crate::config::NotifyOnCommandFinish;
 use crate::platform::audio;
 
+use self::command_complete::{
+    AppCommandCompleteSink, CommandCompleteAction, CommandCompleteInputs, command_complete_action,
+    dispatch_command_complete,
+};
 use self::host_color_query::resolve_host_color_query;
 use self::notification_purge::purge_pending_desktop_notifications;
 use super::App;
@@ -37,16 +41,18 @@ use super::App;
 /// only; the partner method is never called on the wrong branch.
 ///
 /// **Intentional asymmetry: `handle_command_complete` does NOT call
-/// this helper.** Command completion is a "set on background only"
-/// trigger — a finishing command on a background pane lights the
-/// indicator, but completion on a focused-tab pane is a no-op. It
-/// must NEVER call `clear_bell`, because doing so would erase a
-/// pre-existing background bell on the same pane (e.g. a long-running
-/// shell that rang `\a` then printed an OSC 133;D marker as it
-/// exited). The `PaneBell` + `DesktopNotification` arms own the
-/// silence semantics; `CommandComplete` owns the strict-set
-/// semantics. The helper unifies the former; the latter inlines the
-/// guard.
+/// this helper.** Persistent `set_bell` is background-only —
+/// `handle_command_complete` MUST NEVER call `clear_bell` on a focused
+/// tab (would erase pre-existing background bells from `\a` + OSC 133;D
+/// in the same byte batch). Transient pulse + audio fire on
+/// `Always+focused` — those are user-perceptible alerts the user
+/// explicitly opted in to. The persistent-indicator invariant
+/// (focused-tab bells silent + iconless) survives at the per-surface
+/// gate level: `set_bell` and the tab-bar sync that follows fire only
+/// on background panes, regardless of mode. The `PaneBell` +
+/// `DesktopNotification` arms own the silence semantics via this
+/// helper; `CommandComplete` owns its strict-set semantics in
+/// `command_complete::dispatch_command_complete`.
 fn apply_bell_focus_decision(is_in_focused_tab: bool, mux: &mut dyn MuxBackend, pane_id: PaneId) {
     if is_in_focused_tab {
         mux.clear_bell(pane_id);
@@ -367,56 +373,33 @@ impl App {
 
     /// Handle a command completing in a pane.
     ///
-    /// Checks config threshold and focus state to decide whether to flash
-    /// the tab bar (bell pulse) and/or log the completion.
+    /// Delegates threshold + mode + per-surface gating to
+    /// [`command_complete_action`]; on `Fire`, dispatches per-surface side
+    /// effects via [`dispatch_command_complete`] through an
+    /// [`AppCommandCompleteSink`] adapter.
+    ///
+    /// The "focused-pane bells silent + iconless" invariant applies
+    /// uniformly to ALL bell triggers — `PaneBell`, `DesktopNotification`,
+    /// AND `CommandComplete`. The per-surface gates inside
+    /// `command_complete_action` enforce it: persistent `set_bell` +
+    /// tab-bar sync stay background-only by UX design; transient pulse +
+    /// audio fire when the user opts in via `Always`.
     fn handle_command_complete(&mut self, pane_id: PaneId, duration: Duration) {
         let behavior = &self.config.behavior;
-        let threshold = Duration::from_secs(behavior.notify_command_threshold_secs);
-        if duration < threshold {
-            return;
-        }
-
-        let mode = behavior.notify_on_command_finish;
-        if mode == NotifyOnCommandFinish::Never {
-            return;
-        }
-
-        // The "focused-pane bells silent + iconless" invariant applies
-        // uniformly to ALL bell triggers — PaneBell, DesktopNotification,
-        // AND CommandComplete. A command completing in a non-active
-        // split within the focused tab still lights the tab icon via the
-        // OR-across-panes tab-bar lookup; that contradicts the
-        // silent-iconless invariant the same way the primary repro does.
-        // Use the tab-scoped predicate.
         let is_in_focused_tab = self.is_pane_in_focused_tab(pane_id);
-        if mode == NotifyOnCommandFinish::Unfocused && is_in_focused_tab {
+        let action = command_complete_action(&CommandCompleteInputs {
+            mode: behavior.notify_on_command_finish,
+            duration,
+            threshold: Duration::from_secs(behavior.notify_command_threshold_secs),
+            is_in_focused_tab,
+            notify_command_bell: behavior.notify_command_bell,
+            is_audible: behavior.notification.is_audible(),
+        });
+        let CommandCompleteAction::Fire(surfaces) = action else {
             return;
-        }
-
-        log::info!(
-            "command completed in {pane_id} after {:.1}s",
-            duration.as_secs_f64()
-        );
-
-        // Flash the tab bar (reuse bell pulse) on the OWNING window if
-        // configured. Routes via pane_position + owning_window_ctx_mut so
-        // a command completing in a background-window pane pulses that
-        // window's tab bar — not the focused window's.
-        if behavior.notify_command_bell && !is_in_focused_tab {
-            if let Some(mux) = self.mux.as_mut() {
-                mux.set_bell(pane_id);
-            }
-            self.sync_tab_bar_for_pane(pane_id);
-            self.ring_owning_window_tab_bell(pane_id, Instant::now());
-            self.mark_pane_window_dirty(pane_id);
-        }
-
-        // command-complete (OSC 133;D) fires the native bell sound; the
-        // tab-bell pulse above already handles the visual feedback. Skip
-        // entirely when the command's pane lives in the focused tab.
-        if !is_in_focused_tab && self.config.behavior.notification.is_audible() {
-            audio::play_bell();
-        }
+        };
+        let mut sink = AppCommandCompleteSink { app: self };
+        dispatch_command_complete(pane_id, duration, surfaces, &mut sink);
     }
 
     /// Handle a pane being closed (shell exit, PTY EOF, or explicit close).
