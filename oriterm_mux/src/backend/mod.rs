@@ -105,7 +105,7 @@ pub struct AdoptPaneRequest {
 /// terminal state lives in-process ([`EmbeddedMux`]) or in a remote
 /// daemon ([`MuxClient`]). All methods are synchronous.
 pub trait MuxBackend {
-    // -- Event pump --
+    // Event pump
 
     /// Whether a PTY wakeup has arrived since the last `poll_events` call.
     ///
@@ -131,7 +131,7 @@ pub trait MuxBackend {
     /// Look up a pane's metadata entry.
     fn get_pane_entry(&self, pane_id: PaneId) -> Option<PaneEntry>;
 
-    // -- Pane operations --
+    // Pane operations
 
     /// Spawn a pane with a new PTY process.
     ///
@@ -164,7 +164,7 @@ pub trait MuxBackend {
     /// Close a single pane.
     fn close_pane(&mut self, pane_id: PaneId) -> ClosePaneResult;
 
-    // -- Grid operations --
+    // Grid operations
 
     /// Resize a pane's terminal grid and PTY.
     ///
@@ -173,7 +173,7 @@ pub trait MuxBackend {
     /// resize). In daemon mode, sends a fire-and-forget `Resize` PDU.
     fn resize_pane_grid(&mut self, pane_id: PaneId, rows: u16, cols: u16);
 
-    // -- Mode query --
+    // Mode query
 
     /// Terminal mode bits for a pane (raw `u64`).
     ///
@@ -183,7 +183,7 @@ pub trait MuxBackend {
     /// DECLRMM (mode 69 = bit 32).
     fn pane_mode(&self, pane_id: PaneId) -> Option<u64>;
 
-    // -- Theme + palette + cursor operations --
+    // Theme + palette + cursor operations
 
     /// Apply a theme and palette to a pane's terminal.
     fn set_pane_theme(&mut self, pane_id: PaneId, theme: Theme, palette: oriterm_core::Palette);
@@ -207,7 +207,7 @@ pub trait MuxBackend {
     /// output), not static TOML config.
     fn set_cell_dimensions(&mut self, pane_id: PaneId, width: u16, height: u16);
 
-    // -- Scroll operations --
+    // Scroll operations
 
     /// Scroll the viewport by `delta` lines (positive = toward history).
     fn scroll_display(&mut self, pane_id: PaneId, delta: isize);
@@ -221,7 +221,7 @@ pub trait MuxBackend {
     /// Scroll to the nearest prompt below the current viewport.
     fn scroll_to_next_prompt(&mut self, pane_id: PaneId);
 
-    // -- Search operations --
+    // Search operations
 
     /// Open search for a pane (initializes empty search state).
     fn open_search(&mut self, pane_id: PaneId);
@@ -241,7 +241,7 @@ pub trait MuxBackend {
     /// Whether search is currently active for a pane.
     fn is_search_active(&self, pane_id: PaneId) -> bool;
 
-    // -- Clipboard text extraction --
+    // Clipboard text extraction
 
     /// Extract plain text from a selection range.
     ///
@@ -260,7 +260,7 @@ pub trait MuxBackend {
         font_size: f32,
     ) -> Option<(String, String)>;
 
-    // -- Input --
+    // Input
 
     /// Send raw bytes to a pane's PTY.
     ///
@@ -289,7 +289,7 @@ pub trait MuxBackend {
         false
     }
 
-    // -- Pane metadata --
+    // Pane metadata
 
     /// Current working directory of a pane (from OSC 7).
     ///
@@ -381,7 +381,7 @@ pub trait MuxBackend {
     /// All pane IDs currently stored in the backend.
     fn pane_ids(&self) -> Vec<PaneId>;
 
-    // -- Event channel --
+    // Event channel
 
     /// Event sender for spawning new panes (embedded: mpsc; client: None).
     fn event_tx(&self) -> Option<&mpsc::Sender<MuxEvent>>;
@@ -402,7 +402,7 @@ pub trait MuxBackend {
     /// Embedded mode returns `false`. Client mode returns `true`.
     fn is_daemon_mode(&self) -> bool;
 
-    // -- Snapshot access --
+    // Snapshot access
 
     /// Swap the cached [`RenderableContent`] for a pane into `target`.
     ///

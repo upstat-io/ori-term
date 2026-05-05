@@ -129,13 +129,35 @@ fn guarded_wakeup_two_independent_instances_isolate_state() {
     let (guarded_b, pending_b) = guarded_wakeup(raw_b);
     guarded_a();
     guarded_a();
-    assert_eq!(counter_a.load(Ordering::Acquire), 1);
-    assert_eq!(counter_b.load(Ordering::Acquire), 0);
-    assert!(pending_a.load(Ordering::Acquire));
-    assert!(!pending_b.load(Ordering::Acquire));
+    assert_eq!(
+        counter_a.load(Ordering::Acquire),
+        1,
+        "A's raw fired exactly once after two A calls (coalesced)"
+    );
+    assert_eq!(
+        counter_b.load(Ordering::Acquire),
+        0,
+        "B's raw must not fire when only A was called (state isolation)"
+    );
+    assert!(
+        pending_a.load(Ordering::Acquire),
+        "A's flag is set after A calls"
+    );
+    assert!(
+        !pending_b.load(Ordering::Acquire),
+        "B's flag must not be set when only A was called (flag isolation)"
+    );
     guarded_b();
-    assert_eq!(counter_a.load(Ordering::Acquire), 1);
-    assert_eq!(counter_b.load(Ordering::Acquire), 1);
+    assert_eq!(
+        counter_a.load(Ordering::Acquire),
+        1,
+        "A's raw count unchanged after B-only call (counter isolation)"
+    );
+    assert_eq!(
+        counter_b.load(Ordering::Acquire),
+        1,
+        "B's raw fired on its first call (independent leading-edge)"
+    );
 }
 
 /// Structural assertion for the wakeup-coalescing helper (helper-call presence).
@@ -167,8 +189,10 @@ fn wakeup_coalescing_ssot_helper_call_present() {
 /// either by reallocating an `AtomicBool` flag (covered by the
 /// `Arc::new(AtomicBool::new(false))` literal) OR by reusing an
 /// existing flag with a fresh swap-guard closure (covered by the
-/// `swap(true, Ordering::Release)` literal). False-positive boundary
-/// + scoping rationale documented in §03 of the bug plan.
+/// `swap(true, Ordering::Release)` literal). False-positive boundary:
+/// if a future change adds an unrelated `AtomicBool::new(false)` to
+/// either backend file, this canary will fire and the developer must
+/// verify the addition is not a coalescing-pattern reintroduction.
 #[test]
 fn wakeup_coalescing_ssot_old_scaffold_absent() {
     let root = term_workspace_root();
