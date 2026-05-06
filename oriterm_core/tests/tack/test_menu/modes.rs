@@ -60,7 +60,7 @@ use oriterm_test_support::tack_framework::scenarios::modes::{
 #[test]
 fn tack_modes_am() {
     if !ScenarioRunner::available() {
-        eprintln!("tack or tic not installed, skipping tack_modes_am");
+        eprintln!("SKIP: tack or tic not installed");
         return;
     }
 

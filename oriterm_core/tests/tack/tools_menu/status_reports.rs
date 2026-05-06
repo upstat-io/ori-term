@@ -40,7 +40,7 @@ const MAX_N_PRESSES: usize = 40;
 #[test]
 fn tack_tools_status_reports_walker() {
     if !tack_available() || !tic_available() {
-        eprintln!("tack or tic not installed, skipping tack_tools_status_reports_walker");
+        eprintln!("SKIP: tack or tic not installed");
         return;
     }
 

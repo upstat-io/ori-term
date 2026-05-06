@@ -35,7 +35,7 @@ const TACK_TOOLS_MENU: ScenarioSpec = ScenarioSpec::snapshot_only(
 #[test]
 fn tack_tools_menu_inventory() {
     if !ScenarioRunner::available() {
-        eprintln!("tack or tic not installed, skipping tack_tools_menu_inventory");
+        eprintln!("SKIP: tack or tic not installed");
         return;
     }
 
