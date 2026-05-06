@@ -150,7 +150,7 @@ fn vttest_blink_multi_frame() {
 
     // Advance to screen 13 (SGR test — dark background with blink text).
     for _ in 1..13 {
-        s.send(b"\r");
+        s.send_enter();
     }
 
     // Verify we actually have BLINK cells in this screen.

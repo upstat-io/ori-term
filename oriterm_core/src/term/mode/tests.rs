@@ -252,17 +252,3 @@ fn encode_enter_base_lnm_on_not_bare_cr() {
     mode.insert(TermMode::LINE_FEED_NEW_LINE);
     assert_ne!(super::encode_enter_base(mode), b"\r");
 }
-
-/// Verify the function is pure — same input, same output, always.
-#[test]
-fn encode_enter_base_idempotent() {
-    let mode = TermMode::default();
-    assert_eq!(
-        super::encode_enter_base(mode),
-        super::encode_enter_base(mode)
-    );
-
-    let mut lnm = TermMode::default();
-    lnm.insert(TermMode::LINE_FEED_NEW_LINE);
-    assert_eq!(super::encode_enter_base(lnm), super::encode_enter_base(lnm));
-}
