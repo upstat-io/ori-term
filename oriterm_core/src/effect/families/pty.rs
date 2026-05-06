@@ -33,5 +33,8 @@ pub enum PtyWriteKind {
     ChecksumReport,
     /// XTSMGRAPHICS (CSI ? Pi ; Pa ; Pv S) reply — `CSI ? Pi ; Ps [;Pv [;Pv2]] S`.
     GraphicsAttributeReport,
+    /// ENQ (`0x05`) answerback reply — outbound bytes from the configured
+    /// answerback string. Empty default suppresses emission entirely.
+    Answerback,
     Other,
 }

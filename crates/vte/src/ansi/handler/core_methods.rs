@@ -91,6 +91,11 @@ macro_rules! handler_core_methods {
  /// Hopefully this is never implemented.
         fn bell(&mut self) {}
 
+ /// ENQ (`0x05`) — Enquiry / Answerback. Per ECMA-48 §8.3.40, the
+ /// terminal sends the configured answerback string back to the host.
+ /// Default impl is no-op so existing handlers compile without change.
+        fn enquiry(&mut self) {}
+
  /// Substitute char under cursor.
         fn substitute(&mut self) {}
 

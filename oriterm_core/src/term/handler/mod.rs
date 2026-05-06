@@ -331,6 +331,9 @@ impl<S: EffectSink> Handler for Term<S> {
     fn device_status(&mut self, arg: usize) {
         self.status_device_status(arg);
     }
+    fn enquiry(&mut self) {
+        self.status_enquiry();
+    }
     fn text_area_size_chars(&mut self) {
         self.status_text_area_size_chars();
     }

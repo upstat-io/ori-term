@@ -41,6 +41,7 @@ fn dispatch_execute<H: Handler>(handler: &mut H, byte: u8) {
         C0::CR => handler.carriage_return(),
         C0::LF | C0::VT | C0::FF => handler.linefeed(),
         C0::BEL => handler.bell(),
+        C0::ENQ => handler.enquiry(),
         C0::SUB => handler.substitute(),
         C0::SI => handler.set_active_charset(CharsetIndex::G0),
         C0::SO => handler.set_active_charset(CharsetIndex::G1),

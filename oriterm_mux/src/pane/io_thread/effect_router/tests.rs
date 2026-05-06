@@ -127,6 +127,7 @@ fn pty_write_all_kinds_preserve_bytes() {
         PtyWriteKind::FocusEvent,
         PtyWriteKind::ChecksumReport,
         PtyWriteKind::GraphicsAttributeReport,
+        PtyWriteKind::Answerback,
         PtyWriteKind::Other,
     ];
     for kind in kinds {
@@ -1012,6 +1013,31 @@ fn xtsmgraphics_byte_parse_emits_pty_write_response() {
             assert_eq!(
                 data, b"\x1b[?1;0;256S",
                 "XTSMGRAPHICS Pi=1 Pa=1 response bytes mismatch"
+            );
+        }
+        other => panic!("expected PtyWrite, got {other:?}"),
+    }
+}
+
+/// Regression: BUG-08-006 — ENQ (`0x05`) byte-parse through router emits
+/// `MuxEvent::PtyWrite` carrying the configured answerback bytes.
+/// Distinguishes the kinds-array test (which proves preservation given an
+/// Answerback effect) from the real-byte-parse path (which proves the
+/// dispatch chain produces the effect when ENQ byte arrives at the mux).
+/// See: bug-tracker/plans/BUG-08-006/section-03-tdd-matrix.md
+#[test]
+fn enq_byte_through_router_emits_pty_write_with_answerback_bytes() {
+    let (mut t, mux_rx, _wake) = make_router_harness();
+    t.terminal.set_answerback(b"oriterm-X".to_vec());
+    t.handle_bytes(b"\x05");
+    let event = mux_rx
+        .recv_timeout(Duration::from_millis(100))
+        .expect("expected MuxEvent::PtyWrite for ENQ Answerback");
+    match event {
+        MuxEvent::PtyWrite { data, .. } => {
+            assert_eq!(
+                data, b"oriterm-X",
+                "ENQ must emit configured answerback bytes through the router"
             );
         }
         other => panic!("expected PtyWrite, got {other:?}"),

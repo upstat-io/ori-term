@@ -397,6 +397,22 @@ impl<S: EffectSink> Term<S> {
         }));
     }
 
+    /// ENQ (`0x05`) answerback emission. Per ECMA-48 §8.3.40, the terminal
+    /// sends the configured answerback string to the host. Writes the
+    /// configured answerback bytes to the PTY only when non-empty (matches
+    /// `WezTerm` `term/src/terminalstate/performer.rs:473-479` exactly —
+    /// empty answerback is a no-op, no `Effect::Pty` emitted).
+    pub(super) fn status_enquiry(&mut self) {
+        if self.answerback.is_empty() {
+            return;
+        }
+        let bytes = self.answerback.clone();
+        self.effect_sink.push(Effect::Pty(PtyEffect::Write {
+            bytes,
+            kind: PtyWriteKind::Answerback,
+        }));
+    }
+
     /// DECRSPS: Restore Presentation Status (DCS Ps $ t Pt ST).
     ///
     /// Parse-and-acknowledge stub. Full state restoration (DECCIR cursor

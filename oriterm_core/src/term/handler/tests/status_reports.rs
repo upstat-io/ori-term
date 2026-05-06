@@ -1365,3 +1365,103 @@ fn xtsmgraphics_set_image_protocol_enabled_re_enables_replies() {
         "should be 1 downgrade reply (during disabled), got: {events:?}"
     );
 }
+
+// --- ENQ / Answerback ---
+
+/// Regression: BUG-08-006 — empty answerback (default) suppresses emission entirely.
+/// Per `WezTerm` `term/src/terminalstate/performer.rs:473-479`, only emit when non-empty.
+/// See: bug-tracker/plans/BUG-08-006/section-03-tdd-matrix.md
+#[test]
+fn enq_with_empty_answerback_emits_no_pty_write() {
+    let mut t = term_with_effect_sink();
+    feed(&mut t, b"\x05");
+
+    let mut effects = Vec::new();
+    t.effect_sink().drain_into(&mut effects);
+
+    let pty_writes: Vec<_> = effects
+        .iter()
+        .filter(|e| matches!(e, Effect::Pty(PtyEffect::Write { .. })))
+        .collect();
+    assert!(
+        pty_writes.is_empty(),
+        "ENQ with empty answerback must emit ZERO Effect::Pty writes, got: {pty_writes:?}"
+    );
+}
+
+/// Regression: BUG-08-006 — non-empty answerback emits exact bytes with Answerback kind.
+#[test]
+fn enq_with_configured_answerback_emits_exact_bytes_with_answerback_kind() {
+    let mut t = term_with_effect_sink();
+    t.set_answerback(b"oriterm-answer".to_vec());
+    feed(&mut t, b"\x05");
+
+    let mut effects = Vec::new();
+    t.effect_sink().drain_into(&mut effects);
+
+    let answerback_writes: Vec<_> = effects
+        .iter()
+        .filter_map(|e| match e {
+            Effect::Pty(PtyEffect::Write { bytes, kind }) if *kind == PtyWriteKind::Answerback => {
+                Some(bytes.as_slice())
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        answerback_writes.len(),
+        1,
+        "ENQ must emit exactly one Answerback PTY write"
+    );
+    assert_eq!(
+        answerback_writes[0], b"oriterm-answer",
+        "Answerback bytes must match configured string verbatim"
+    );
+}
+
+/// Regression: BUG-08-006 — multiple ENQ bytes each fire independently.
+#[test]
+fn enq_repeats_answerback_for_each_invocation() {
+    let mut t = term_with_effect_sink();
+    t.set_answerback(b"X".to_vec());
+    feed(&mut t, b"\x05\x05\x05");
+
+    let mut effects = Vec::new();
+    t.effect_sink().drain_into(&mut effects);
+
+    let answerback_writes: Vec<_> = effects
+        .iter()
+        .filter(|e| {
+            matches!(
+                e,
+                Effect::Pty(PtyEffect::Write { kind, .. }) if *kind == PtyWriteKind::Answerback
+            )
+        })
+        .collect();
+    assert_eq!(
+        answerback_writes.len(),
+        3,
+        "Three ENQ bytes must fire three independent Answerback writes (no caching)"
+    );
+}
+
+/// Regression: BUG-08-006 — ACK (0x06, adjacent C0 byte) must NOT emit answerback.
+/// Proves the dispatch routing is byte-exact, not "any unhandled C0 emits answerback."
+#[test]
+fn ack_0x06_does_not_emit_pty_write() {
+    let mut t = term_with_effect_sink();
+    t.set_answerback(b"X".to_vec());
+    feed(&mut t, b"\x06");
+
+    let mut effects = Vec::new();
+    t.effect_sink().drain_into(&mut effects);
+
+    let pty_writes: Vec<_> = effects
+        .iter()
+        .filter(|e| matches!(e, Effect::Pty(PtyEffect::Write { .. })))
+        .collect();
+    assert!(
+        pty_writes.is_empty(),
+        "ACK (0x06) must NOT emit any PTY write — dispatch is ENQ-byte-exact, got: {pty_writes:?}"
+    );
+}
