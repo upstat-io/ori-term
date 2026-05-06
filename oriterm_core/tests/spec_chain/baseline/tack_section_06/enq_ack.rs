@@ -21,6 +21,22 @@ use oriterm_test_support::spec_chain::{
     SpecHarness, SpecScenario, effect_filters::pty_writes_of_kind,
 };
 
+/// Snapshot visible-row cell chars across the entire grid for
+/// renderable-state clamp comparisons (ENQ-no-mutation pin helper).
+fn snapshot_visible_chars(harness: &SpecHarness) -> Vec<char> {
+    let grid = harness.term().grid();
+    let lines = grid.lines();
+    let cols = grid.cols();
+    let mut buf = Vec::with_capacity(lines * cols);
+    for line in 0..lines {
+        let row = &grid[oriterm_core::index::Line(line as i32)];
+        for col in 0..cols {
+            buf.push(row[oriterm_core::index::Column(col)].ch);
+        }
+    }
+    buf
+}
+
 /// ENQ drives parser → dispatch → effect-emit when answerback configured.
 ///
 /// Regression: BUG-08-006 — drives `ECMA48-C0-ENQ` end-to-end and pins
@@ -58,19 +74,7 @@ fn ecma48_c0_enq_drives_to_pty_write_apex() {
         harness.term().grid().cursor().line(),
         harness.term().grid().cursor().col(),
     );
-    let pre_grid_chars: Vec<char> = {
-        let grid = harness.term().grid();
-        let lines = grid.lines();
-        let cols = grid.cols();
-        let mut buf = Vec::with_capacity(lines * cols);
-        for line in 0..lines {
-            let row = &grid[oriterm_core::index::Line(line as i32)];
-            for col in 0..cols {
-                buf.push(row[oriterm_core::index::Column(col)].ch);
-            }
-        }
-        buf
-    };
+    let pre_grid_chars = snapshot_visible_chars(&harness);
 
     let results = harness.run_scenario(&scenario);
     for r in &results {
@@ -112,19 +116,7 @@ fn ecma48_c0_enq_drives_to_pty_write_apex() {
         pre_cursor, post_cursor,
         "ENQ must NOT mutate cursor (renderable state)"
     );
-    let post_grid_chars: Vec<char> = {
-        let grid = harness.term().grid();
-        let lines = grid.lines();
-        let cols = grid.cols();
-        let mut buf = Vec::with_capacity(lines * cols);
-        for line in 0..lines {
-            let row = &grid[oriterm_core::index::Line(line as i32)];
-            for col in 0..cols {
-                buf.push(row[oriterm_core::index::Column(col)].ch);
-            }
-        }
-        buf
-    };
+    let post_grid_chars = snapshot_visible_chars(&harness);
     assert_eq!(
         pre_grid_chars, post_grid_chars,
         "ENQ must NOT mutate visible grid cells (renderable state)"

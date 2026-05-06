@@ -745,7 +745,7 @@ fn clear_pending_notifications_does_not_retro_collapse_across_drains() {
 // See bug-tracker/plans/completed/.
 
 /// Regression: DA1 (CSI c) emits VT420-class device attributes.
-/// See: bug-tracker/plans/completed/section-03-tdd-matrix.md
+/// See: bug-tracker/plans/completed/BUG-11-004/section-03-tdd-matrix.md
 #[test]
 fn da1_byte_parse_emits_pty_write_response() {
     let (mut t, mux_rx, _wake) = make_router_harness();
@@ -903,7 +903,7 @@ fn decrqm_reset_byte_parse_emits_value_two() {
 /// `Handler::xtversion()` → `Term::status_xtversion()` → `effect_sink` →
 /// `drain_effects_into_mux_events` → `MuxEvent::PtyWrite`.
 ///
-/// See: bug-tracker/plans//section-03-tdd-matrix.md
+/// See: bug-tracker/plans/completed/BUG-11-004/section-03-tdd-matrix.md
 #[test]
 fn xtversion_byte_parse_emits_pty_write_response() {
     let (mut t, mux_rx, _wake) = make_router_harness();

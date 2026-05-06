@@ -1390,10 +1390,13 @@ fn enq_with_empty_answerback_emits_no_pty_write() {
 }
 
 /// Regression: BUG-08-006 — non-empty answerback emits exact bytes with Answerback kind.
+/// Fixture intentionally includes non-text bytes (NUL `\x00`, high `\xff`) to prove
+/// Vec<u8> byte-channel preservation per WezTerm reference (PTY answerback may
+/// carry arbitrary bytes per ECMA-48 §8.3.40 host-defined response).
 #[test]
 fn enq_with_configured_answerback_emits_exact_bytes_with_answerback_kind() {
     let mut t = term_with_effect_sink();
-    t.set_answerback(b"oriterm-answer".to_vec());
+    t.set_answerback(b"oriterm\x00\xff-answer".to_vec());
     feed(&mut t, b"\x05");
 
     let mut effects = Vec::new();
@@ -1414,8 +1417,8 @@ fn enq_with_configured_answerback_emits_exact_bytes_with_answerback_kind() {
         "ENQ must emit exactly one Answerback PTY write"
     );
     assert_eq!(
-        answerback_writes[0], b"oriterm-answer",
-        "Answerback bytes must match configured string verbatim"
+        answerback_writes[0], b"oriterm\x00\xff-answer",
+        "Answerback bytes must match configured byte sequence verbatim (incl. non-text bytes)"
     );
 }
 
