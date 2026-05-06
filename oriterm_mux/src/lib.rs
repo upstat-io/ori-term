@@ -38,3 +38,4 @@ pub use protocol::{
     WireRgb,
 };
 pub use pty::adopt::{AdoptedPtyHandle, AdoptedSignal};
+pub use registry::PaneEntry;

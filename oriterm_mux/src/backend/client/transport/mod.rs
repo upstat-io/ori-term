@@ -127,15 +127,7 @@ impl ClientTransport {
 
         // Wrap wakeup with coalescing flag to prevent redundant PostMessage
         // syscalls during flood output (hundreds per second → at most one).
-        let wakeup_pending = Arc::new(AtomicBool::new(false));
-        let guarded_wakeup = {
-            let pending = wakeup_pending.clone();
-            Arc::new(move || {
-                if !pending.swap(true, Ordering::Release) {
-                    (wakeup)();
-                }
-            }) as Arc<dyn Fn() + Send + Sync>
-        };
+        let (guarded_wakeup, wakeup_pending) = crate::backend::wakeup::guarded_wakeup(wakeup);
 
         // Create self-pipe for waking the reader thread on shutdown.
         #[cfg(unix)]

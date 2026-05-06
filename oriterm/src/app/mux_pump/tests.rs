@@ -5,7 +5,8 @@ use oriterm_mux::{MuxNotification, PaneId};
 
 use oriterm_core::color::Rgb;
 
-use super::{purge_pending_desktop_notifications, resolve_host_color_query};
+use super::notification_purge::purge_pending_desktop_notifications;
+use super::resolve_host_color_query;
 
 fn dn(pane_id: PaneId, title: &str) -> MuxNotification {
     MuxNotification::DesktopNotification {
@@ -449,5 +450,714 @@ fn apply_bell_focus_decision_does_not_mutate_unrelated_panes() {
     assert!(
         !mux.has_bell(focused_pane),
         "focused_pane bell IS cleared (positive pair to the unrelated assertion)",
+    );
+}
+
+// -- pump_mux_events_core regression pins --
+//
+// `pump_mux_events_core` carves the side-effect protocol out of
+// `App::pump_mux_events` so the gate check + daemon-connectivity check +
+// `poll_events → drain_notifications → empty-check → purge` ordering can
+// be tested against a recording `MuxBackend` without an `App` fixture.
+//
+// `RecordingMuxBackend` implements only the 5 methods `pump_mux_events_core`
+// actually calls; every other trait method is `unimplemented!()` because
+// reaching it would mean the helper deviated from its documented protocol.
+
+use std::cell::RefCell;
+use std::io;
+use std::sync::mpsc::Sender;
+
+use oriterm_core::{CursorShape, Palette, RenderableContent, Selection, Theme as CoreTheme};
+use oriterm_mux::in_process::ClosePaneResult;
+use oriterm_mux::mux_event::MuxEvent;
+use oriterm_mux::{DomainId, HostReply, ImageConfig, PaneEntry, PaneSnapshot, SpawnConfig};
+
+use super::{PumpResult, pump_mux_events_core};
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum RecordedCall {
+    IsDaemonMode,
+    IsConnected,
+    HasPendingWakeup,
+    PollEvents,
+    DrainNotifications,
+}
+
+struct RecordingMuxBackend {
+    is_daemon_mode_value: bool,
+    is_connected_value: bool,
+    has_pending_wakeup_value: bool,
+    drain_returns: Vec<MuxNotification>,
+    calls: RefCell<Vec<RecordedCall>>,
+}
+
+impl RecordingMuxBackend {
+    fn new() -> Self {
+        Self {
+            is_daemon_mode_value: false,
+            is_connected_value: true,
+            has_pending_wakeup_value: false,
+            drain_returns: Vec::new(),
+            calls: RefCell::new(Vec::new()),
+        }
+    }
+
+    fn calls(&self) -> Vec<RecordedCall> {
+        self.calls.borrow().clone()
+    }
+}
+
+#[expect(
+    clippy::unimplemented,
+    reason = "RecordingMuxBackend implements only the 5 methods pump_mux_events_core calls; \
+              reaching any other method means the helper deviated from its protocol"
+)]
+impl MuxBackend for RecordingMuxBackend {
+    fn is_daemon_mode(&self) -> bool {
+        self.calls.borrow_mut().push(RecordedCall::IsDaemonMode);
+        self.is_daemon_mode_value
+    }
+    fn is_connected(&self) -> bool {
+        self.calls.borrow_mut().push(RecordedCall::IsConnected);
+        self.is_connected_value
+    }
+    fn has_pending_wakeup(&self) -> bool {
+        self.calls.borrow_mut().push(RecordedCall::HasPendingWakeup);
+        self.has_pending_wakeup_value
+    }
+    fn poll_events(&mut self) {
+        self.calls.borrow_mut().push(RecordedCall::PollEvents);
+    }
+    fn drain_notifications(&mut self, out: &mut Vec<MuxNotification>) {
+        self.calls
+            .borrow_mut()
+            .push(RecordedCall::DrainNotifications);
+        // Match production semantics: InProcessMux::drain_notifications
+        // (`oriterm_mux/src/in_process/event_pump.rs`) clears the caller's
+        // buffer THEN swaps in the new notifications. A naive `extend`
+        // would let pre-existing entries leak through, masking real
+        // production behavior.
+        out.clear();
+        out.extend(self.drain_returns.drain(..));
+    }
+
+    fn discard_notifications(&mut self) {
+        unimplemented!(
+            "RecordingMuxBackend: pump_mux_events_core does not call discard_notifications"
+        )
+    }
+    fn get_pane_entry(&self, _: PaneId) -> Option<PaneEntry> {
+        unimplemented!("RecordingMuxBackend: pump_mux_events_core does not call get_pane_entry")
+    }
+    fn spawn_pane(&mut self, _: &SpawnConfig, _: CoreTheme) -> io::Result<PaneId> {
+        unimplemented!("RecordingMuxBackend: pump_mux_events_core does not call spawn_pane")
+    }
+    fn close_pane(&mut self, _: PaneId) -> ClosePaneResult {
+        unimplemented!("RecordingMuxBackend: pump_mux_events_core does not call close_pane")
+    }
+    fn resize_pane_grid(&mut self, _: PaneId, _: u16, _: u16) {
+        unimplemented!("RecordingMuxBackend: pump_mux_events_core does not call resize_pane_grid")
+    }
+    fn pane_mode(&self, _: PaneId) -> Option<u64> {
+        unimplemented!("RecordingMuxBackend: pump_mux_events_core does not call pane_mode")
+    }
+    fn set_pane_theme(&mut self, _: PaneId, _: CoreTheme, _: Palette) {
+        unimplemented!("RecordingMuxBackend: pump_mux_events_core does not call set_pane_theme")
+    }
+    fn set_cursor_shape(&mut self, _: PaneId, _: CursorShape) {
+        unimplemented!("RecordingMuxBackend: pump_mux_events_core does not call set_cursor_shape")
+    }
+    fn set_bold_is_bright(&mut self, _: PaneId, _: bool) {
+        unimplemented!("RecordingMuxBackend: pump_mux_events_core does not call set_bold_is_bright")
+    }
+    fn mark_all_dirty(&mut self, _: PaneId) {
+        unimplemented!("RecordingMuxBackend: pump_mux_events_core does not call mark_all_dirty")
+    }
+    fn set_image_config(&mut self, _: PaneId, _: ImageConfig) {
+        unimplemented!("RecordingMuxBackend: pump_mux_events_core does not call set_image_config")
+    }
+    fn set_cell_dimensions(&mut self, _: PaneId, _: u16, _: u16) {
+        unimplemented!(
+            "RecordingMuxBackend: pump_mux_events_core does not call set_cell_dimensions"
+        )
+    }
+    fn scroll_display(&mut self, _: PaneId, _: isize) {
+        unimplemented!("RecordingMuxBackend: pump_mux_events_core does not call scroll_display")
+    }
+    fn scroll_to_bottom(&mut self, _: PaneId) {
+        unimplemented!("RecordingMuxBackend: pump_mux_events_core does not call scroll_to_bottom")
+    }
+    fn scroll_to_previous_prompt(&mut self, _: PaneId) {
+        unimplemented!(
+            "RecordingMuxBackend: pump_mux_events_core does not call scroll_to_previous_prompt"
+        )
+    }
+    fn scroll_to_next_prompt(&mut self, _: PaneId) {
+        unimplemented!(
+            "RecordingMuxBackend: pump_mux_events_core does not call scroll_to_next_prompt"
+        )
+    }
+    fn open_search(&mut self, _: PaneId) {
+        unimplemented!("RecordingMuxBackend: pump_mux_events_core does not call open_search")
+    }
+    fn close_search(&mut self, _: PaneId) {
+        unimplemented!("RecordingMuxBackend: pump_mux_events_core does not call close_search")
+    }
+    fn search_set_query(&mut self, _: PaneId, _: String) {
+        unimplemented!("RecordingMuxBackend: pump_mux_events_core does not call search_set_query")
+    }
+    fn search_next_match(&mut self, _: PaneId) {
+        unimplemented!("RecordingMuxBackend: pump_mux_events_core does not call search_next_match")
+    }
+    fn search_prev_match(&mut self, _: PaneId) {
+        unimplemented!("RecordingMuxBackend: pump_mux_events_core does not call search_prev_match")
+    }
+    fn is_search_active(&self, _: PaneId) -> bool {
+        unimplemented!("RecordingMuxBackend: pump_mux_events_core does not call is_search_active")
+    }
+    fn extract_text(&mut self, _: PaneId, _: &Selection) -> Option<String> {
+        unimplemented!("RecordingMuxBackend: pump_mux_events_core does not call extract_text")
+    }
+    fn extract_html(
+        &mut self,
+        _: PaneId,
+        _: &Selection,
+        _: &str,
+        _: f32,
+    ) -> Option<(String, String)> {
+        unimplemented!("RecordingMuxBackend: pump_mux_events_core does not call extract_html")
+    }
+    fn send_input(&mut self, _: PaneId, _: &[u8]) {
+        unimplemented!("RecordingMuxBackend: pump_mux_events_core does not call send_input")
+    }
+    fn pane_ids(&self) -> Vec<PaneId> {
+        unimplemented!("RecordingMuxBackend: pump_mux_events_core does not call pane_ids")
+    }
+    fn event_tx(&self) -> Option<&Sender<MuxEvent>> {
+        unimplemented!("RecordingMuxBackend: pump_mux_events_core does not call event_tx")
+    }
+    fn default_domain(&self) -> DomainId {
+        unimplemented!("RecordingMuxBackend: pump_mux_events_core does not call default_domain")
+    }
+    fn pane_snapshot(&self, _: PaneId) -> Option<&PaneSnapshot> {
+        unimplemented!("RecordingMuxBackend: pump_mux_events_core does not call pane_snapshot")
+    }
+    fn is_pane_snapshot_dirty(&self, _: PaneId) -> bool {
+        unimplemented!(
+            "RecordingMuxBackend: pump_mux_events_core does not call is_pane_snapshot_dirty"
+        )
+    }
+    fn refresh_pane_snapshot(&mut self, _: PaneId) -> Option<&PaneSnapshot> {
+        unimplemented!(
+            "RecordingMuxBackend: pump_mux_events_core does not call refresh_pane_snapshot"
+        )
+    }
+    fn sync_pane_snapshot(&mut self, _: PaneId) -> Option<PaneSnapshot> {
+        unimplemented!("RecordingMuxBackend: pump_mux_events_core does not call sync_pane_snapshot")
+    }
+    fn clear_pane_snapshot_dirty(&mut self, _: PaneId) {
+        unimplemented!(
+            "RecordingMuxBackend: pump_mux_events_core does not call clear_pane_snapshot_dirty"
+        )
+    }
+    fn swap_renderable_content(&mut self, _: PaneId, _: &mut RenderableContent) -> bool {
+        unimplemented!(
+            "RecordingMuxBackend: pump_mux_events_core does not call swap_renderable_content"
+        )
+    }
+    fn fulfill_host_request(&mut self, _: PaneId, _: HostReply) -> io::Result<()> {
+        unimplemented!(
+            "RecordingMuxBackend: pump_mux_events_core does not call fulfill_host_request"
+        )
+    }
+}
+
+// -- Decision-matrix coverage --
+
+/// Regression: None mux short-circuits to NoMux without
+/// touching any backend trait method.
+
+#[test]
+fn pump_mux_events_core_mux_is_none_returns_no_mux() {
+    let mut buf: Vec<MuxNotification> = Vec::new();
+    let result = pump_mux_events_core(None, &mut buf);
+    assert_eq!(result, PumpResult::NoMux);
+    assert!(
+        buf.is_empty(),
+        "buffer must be untouched; len={}",
+        buf.len()
+    );
+}
+
+/// Regression: daemon-mode disconnected backend returns
+/// DaemonDisconnect after recording IsDaemonMode + IsConnected only.
+#[test]
+fn pump_mux_events_core_daemon_disconnected_returns_daemon_disconnect() {
+    let mut backend = RecordingMuxBackend::new();
+    backend.is_daemon_mode_value = true;
+    backend.is_connected_value = false;
+    let mut buf = Vec::new();
+    let result = pump_mux_events_core(Some(&mut backend), &mut buf);
+    assert_eq!(result, PumpResult::DaemonDisconnect);
+    assert!(buf.is_empty());
+    let calls = backend.calls();
+    assert_eq!(
+        calls,
+        vec![RecordedCall::IsDaemonMode, RecordedCall::IsConnected]
+    );
+}
+
+/// Regression: daemon-mode connected backend with closed gate
+/// returns NoPendingWakeup.
+#[test]
+fn pump_mux_events_core_daemon_connected_no_wakeup_returns_no_pending_wakeup() {
+    let mut backend = RecordingMuxBackend::new();
+    backend.is_daemon_mode_value = true;
+    backend.is_connected_value = true;
+    backend.has_pending_wakeup_value = false;
+    let mut buf = Vec::new();
+    let result = pump_mux_events_core(Some(&mut backend), &mut buf);
+    assert_eq!(result, PumpResult::NoPendingWakeup);
+    assert!(buf.is_empty());
+}
+
+/// Regression: embedded backend never consults is_connected
+/// (daemon-disconnect arm short-circuits via is_daemon_mode==false).
+#[test]
+fn pump_mux_events_core_embedded_no_wakeup_returns_no_pending_wakeup() {
+    let mut backend = RecordingMuxBackend::new();
+    backend.is_daemon_mode_value = false;
+    backend.has_pending_wakeup_value = false;
+    let mut buf = Vec::new();
+    let result = pump_mux_events_core(Some(&mut backend), &mut buf);
+    assert_eq!(result, PumpResult::NoPendingWakeup);
+    let calls = backend.calls();
+    assert!(
+        !calls.contains(&RecordedCall::IsConnected),
+        "embedded mode must not consult is_connected; recorded: {calls:?}"
+    );
+}
+
+/// Regression: embedded mode with `is_connected=false` and
+/// gate closed still returns NoPendingWakeup; the daemon-disconnect arm
+/// short-circuits via is_daemon_mode==false BEFORE is_connected is consulted.
+#[test]
+fn pump_mux_events_core_embedded_disconnected_value_irrelevant_returns_no_pending_wakeup() {
+    let mut backend = RecordingMuxBackend::new();
+    backend.is_daemon_mode_value = false;
+    backend.is_connected_value = false; // would matter if daemon mode
+    backend.has_pending_wakeup_value = false;
+    let mut buf = Vec::new();
+    let result = pump_mux_events_core(Some(&mut backend), &mut buf);
+    assert_eq!(result, PumpResult::NoPendingWakeup);
+}
+
+/// Regression: embedded mode, gate open, drain produces
+/// zero notifications → EmptyDrain. Buffer untouched after drain.
+#[test]
+fn pump_mux_events_core_embedded_gate_open_drain_empty_returns_empty_drain() {
+    let mut backend = RecordingMuxBackend::new();
+    backend.is_daemon_mode_value = false;
+    backend.has_pending_wakeup_value = true;
+    backend.drain_returns = Vec::new();
+    let mut buf = Vec::new();
+    let result = pump_mux_events_core(Some(&mut backend), &mut buf);
+    assert_eq!(result, PumpResult::EmptyDrain);
+    assert!(buf.is_empty());
+    let calls = backend.calls();
+    assert!(calls.contains(&RecordedCall::PollEvents));
+    assert!(calls.contains(&RecordedCall::DrainNotifications));
+    assert!(
+        !calls.contains(&RecordedCall::IsConnected),
+        "embedded must not consult is_connected; recorded: {calls:?}"
+    );
+}
+
+/// Regression: daemon mode, gate open, drain produces zero
+/// notifications → EmptyDrain. Pins daemon-mode call sequence.
+#[test]
+fn pump_mux_events_core_daemon_gate_open_drain_empty_returns_empty_drain() {
+    let mut backend = RecordingMuxBackend::new();
+    backend.is_daemon_mode_value = true;
+    backend.is_connected_value = true;
+    backend.has_pending_wakeup_value = true;
+    backend.drain_returns = Vec::new();
+    let mut buf = Vec::new();
+    let result = pump_mux_events_core(Some(&mut backend), &mut buf);
+    assert_eq!(result, PumpResult::EmptyDrain);
+    let calls = backend.calls();
+    assert_eq!(
+        calls,
+        vec![
+            RecordedCall::IsDaemonMode,
+            RecordedCall::IsConnected,
+            RecordedCall::HasPendingWakeup,
+            RecordedCall::PollEvents,
+            RecordedCall::DrainNotifications,
+        ]
+    );
+}
+
+/// Regression: embedded mode, drain yields one notification
+/// → HasNotifications. Buffer carries the notification.
+#[test]
+fn pump_mux_events_core_embedded_gate_open_drain_yields_one_returns_has_notifications() {
+    let mut backend = RecordingMuxBackend::new();
+    backend.is_daemon_mode_value = false;
+    backend.has_pending_wakeup_value = true;
+    backend.drain_returns = vec![MuxNotification::PaneOutput(PaneId::from_raw(1))];
+    let mut buf = Vec::new();
+    let result = pump_mux_events_core(Some(&mut backend), &mut buf);
+    assert_eq!(result, PumpResult::HasNotifications);
+    assert_eq!(buf.len(), 1);
+    let calls = backend.calls();
+    assert!(
+        !calls.contains(&RecordedCall::IsConnected),
+        "embedded must not consult is_connected; recorded: {calls:?}"
+    );
+}
+
+/// Regression: daemon mode, drain yields one notification
+/// → HasNotifications. is_connected MUST appear in call sequence between
+/// is_daemon_mode and has_pending_wakeup.
+#[test]
+fn pump_mux_events_core_daemon_gate_open_drain_yields_one_returns_has_notifications() {
+    let mut backend = RecordingMuxBackend::new();
+    backend.is_daemon_mode_value = true;
+    backend.is_connected_value = true;
+    backend.has_pending_wakeup_value = true;
+    backend.drain_returns = vec![MuxNotification::PaneOutput(PaneId::from_raw(1))];
+    let mut buf = Vec::new();
+    let result = pump_mux_events_core(Some(&mut backend), &mut buf);
+    assert_eq!(result, PumpResult::HasNotifications);
+    assert_eq!(buf.len(), 1);
+    let calls = backend.calls();
+    let is_daemon_idx = calls.iter().position(|c| *c == RecordedCall::IsDaemonMode);
+    let is_connected_idx = calls.iter().position(|c| *c == RecordedCall::IsConnected);
+    let has_pending_idx = calls
+        .iter()
+        .position(|c| *c == RecordedCall::HasPendingWakeup);
+    assert!(
+        is_daemon_idx.is_some()
+            && is_connected_idx.is_some()
+            && has_pending_idx.is_some()
+            && is_daemon_idx < is_connected_idx
+            && is_connected_idx < has_pending_idx,
+        "daemon-mode sequence must be IsDaemonMode → IsConnected → HasPendingWakeup; got: {calls:?}"
+    );
+}
+
+/// Regression: embedded mode, drain yields multiple
+/// notifications including a ClearPendingDesktopNotifications mid-batch
+/// → HasNotifications. Purge runs; preceding DesktopNotifications dropped.
+#[test]
+fn pump_mux_events_core_embedded_gate_open_drain_yields_many_returns_has_notifications() {
+    let pane = PaneId::from_raw(1);
+    let mut backend = RecordingMuxBackend::new();
+    backend.is_daemon_mode_value = false;
+    backend.has_pending_wakeup_value = true;
+    backend.drain_returns = vec![
+        dn(pane, "A"),
+        dn(pane, "B"),
+        MuxNotification::ClearPendingDesktopNotifications(pane),
+        dn(pane, "C"),
+    ];
+    let mut buf = Vec::new();
+    let result = pump_mux_events_core(Some(&mut backend), &mut buf);
+    assert_eq!(result, PumpResult::HasNotifications);
+    // Purge ran: A and B (preceding the clear) dropped; clear marker + C survive.
+    assert_eq!(buf.len(), 2, "got {buf:?}");
+    assert!(matches!(
+        &buf[0],
+        MuxNotification::ClearPendingDesktopNotifications(_)
+    ));
+    assert!(matches!(
+        &buf[1],
+        MuxNotification::DesktopNotification { title, .. } if title == "C"
+    ));
+}
+
+/// Regression: daemon mode, drain yields multiple
+/// notifications with mid-batch clear marker → HasNotifications. Pins
+/// that purge runs in daemon mode and that is_connected appears in the
+/// recorded sequence.
+#[test]
+fn pump_mux_events_core_daemon_gate_open_drain_yields_many_returns_has_notifications() {
+    let pane = PaneId::from_raw(1);
+    let mut backend = RecordingMuxBackend::new();
+    backend.is_daemon_mode_value = true;
+    backend.is_connected_value = true;
+    backend.has_pending_wakeup_value = true;
+    backend.drain_returns = vec![
+        dn(pane, "A"),
+        MuxNotification::ClearPendingDesktopNotifications(pane),
+        dn(pane, "B"),
+    ];
+    let mut buf = Vec::new();
+    let result = pump_mux_events_core(Some(&mut backend), &mut buf);
+    assert_eq!(result, PumpResult::HasNotifications);
+    assert_eq!(buf.len(), 2);
+    assert!(matches!(
+        &buf[0],
+        MuxNotification::ClearPendingDesktopNotifications(_)
+    ));
+    assert!(matches!(
+        &buf[1],
+        MuxNotification::DesktopNotification { title, .. } if title == "B"
+    ));
+    let calls = backend.calls();
+    let idx = calls.iter().position(|c| *c == RecordedCall::IsConnected);
+    assert!(
+        idx.is_some(),
+        "daemon mode MUST consult is_connected; recorded: {calls:?}"
+    );
+}
+
+// -- Order pin --
+
+/// Regression: embedded happy-path call sequence.
+/// Reordering ANY pair (e.g., draining before polling) fails.
+#[test]
+fn pump_mux_events_core_embedded_mode_records_calls_in_canonical_order() {
+    let mut backend = RecordingMuxBackend::new();
+    backend.is_daemon_mode_value = false;
+    backend.has_pending_wakeup_value = true;
+    backend.drain_returns = vec![MuxNotification::PaneOutput(PaneId::from_raw(1))];
+    let mut buf = Vec::new();
+    let _ = pump_mux_events_core(Some(&mut backend), &mut buf);
+    let calls = backend.calls();
+    assert_eq!(
+        calls,
+        vec![
+            RecordedCall::IsDaemonMode,
+            RecordedCall::HasPendingWakeup,
+            RecordedCall::PollEvents,
+            RecordedCall::DrainNotifications,
+        ]
+    );
+}
+
+/// Regression: daemon happy-path call sequence with the
+/// extra IsConnected step between IsDaemonMode and HasPendingWakeup.
+#[test]
+fn pump_mux_events_core_daemon_mode_records_calls_in_canonical_order() {
+    let mut backend = RecordingMuxBackend::new();
+    backend.is_daemon_mode_value = true;
+    backend.is_connected_value = true;
+    backend.has_pending_wakeup_value = true;
+    backend.drain_returns = vec![MuxNotification::PaneOutput(PaneId::from_raw(1))];
+    let mut buf = Vec::new();
+    let _ = pump_mux_events_core(Some(&mut backend), &mut buf);
+    let calls = backend.calls();
+    assert_eq!(
+        calls,
+        vec![
+            RecordedCall::IsDaemonMode,
+            RecordedCall::IsConnected,
+            RecordedCall::HasPendingWakeup,
+            RecordedCall::PollEvents,
+            RecordedCall::DrainNotifications,
+        ]
+    );
+}
+
+// -- Negative pins --
+
+/// Regression: None mux records ZERO calls and leaves buf empty.
+#[test]
+fn pump_mux_events_core_no_mux_records_zero_calls() {
+    let mut buf = Vec::new();
+    let result = pump_mux_events_core(None, &mut buf);
+    assert_eq!(result, PumpResult::NoMux);
+    assert!(buf.is_empty());
+}
+
+/// Regression: daemon-disconnect skips poll_events,
+/// drain_notifications, AND has_pending_wakeup (the entire post-gate
+/// branch). Pins the EXACT short-circuit boundary.
+#[test]
+fn pump_mux_events_core_daemon_disconnect_skips_poll_and_drain() {
+    let mut backend = RecordingMuxBackend::new();
+    backend.is_daemon_mode_value = true;
+    backend.is_connected_value = false;
+    backend.has_pending_wakeup_value = true; // value irrelevant — must not be consulted
+    let mut buf = Vec::new();
+    let _ = pump_mux_events_core(Some(&mut backend), &mut buf);
+    let calls = backend.calls();
+    assert!(!calls.contains(&RecordedCall::HasPendingWakeup));
+    assert!(!calls.contains(&RecordedCall::PollEvents));
+    assert!(!calls.contains(&RecordedCall::DrainNotifications));
+}
+
+/// Regression: embedded gate-closed records exactly
+/// IsDaemonMode + HasPendingWakeup; no PollEvents or DrainNotifications.
+#[test]
+fn pump_mux_events_core_embedded_no_pending_wakeup_skips_poll_and_drain() {
+    let mut backend = RecordingMuxBackend::new();
+    backend.is_daemon_mode_value = false;
+    backend.has_pending_wakeup_value = false;
+    let mut buf = Vec::new();
+    let _ = pump_mux_events_core(Some(&mut backend), &mut buf);
+    let calls = backend.calls();
+    assert_eq!(
+        calls,
+        vec![RecordedCall::IsDaemonMode, RecordedCall::HasPendingWakeup]
+    );
+}
+
+/// Regression: daemon-connected gate-closed records
+/// IsDaemonMode + IsConnected + HasPendingWakeup; no PollEvents or DrainNotifications.
+#[test]
+fn pump_mux_events_core_daemon_connected_no_pending_wakeup_skips_poll_and_drain() {
+    let mut backend = RecordingMuxBackend::new();
+    backend.is_daemon_mode_value = true;
+    backend.is_connected_value = true;
+    backend.has_pending_wakeup_value = false;
+    let mut buf = Vec::new();
+    let _ = pump_mux_events_core(Some(&mut backend), &mut buf);
+    let calls = backend.calls();
+    assert_eq!(
+        calls,
+        vec![
+            RecordedCall::IsDaemonMode,
+            RecordedCall::IsConnected,
+            RecordedCall::HasPendingWakeup
+        ]
+    );
+}
+
+// -- Precedence pins --
+
+/// Regression: None mux short-circuits regardless of any
+/// hypothetical other field state. The early-return at the
+/// `Option<&mut dyn MuxBackend>` match arm fires unconditionally.
+#[test]
+fn pump_mux_events_core_no_mux_short_circuits_other_fields() {
+    let mut buf = Vec::new();
+    let result = pump_mux_events_core(None, &mut buf);
+    assert_eq!(result, PumpResult::NoMux);
+}
+
+/// Regression: daemon-disconnect short-circuits BEFORE the
+/// gate check, even when has_pending_wakeup would also return false.
+/// Pins that the daemon-disconnect early-return fires first; swapping
+/// the two early-return blocks would not fail any other test.
+#[test]
+fn pump_mux_events_core_daemon_disconnect_short_circuits_pending_wakeup() {
+    let mut backend = RecordingMuxBackend::new();
+    backend.is_daemon_mode_value = true;
+    backend.is_connected_value = false;
+    backend.has_pending_wakeup_value = false; // would also yield NoPendingWakeup
+    let mut buf = Vec::new();
+    let result = pump_mux_events_core(Some(&mut backend), &mut buf);
+    assert_eq!(
+        result,
+        PumpResult::DaemonDisconnect,
+        "daemon-disconnect arm MUST fire before the gate check"
+    );
+}
+
+// -- Buffer-state matrix --
+
+/// Regression: pre-populated notification_buf is preserved when mux=None
+/// (early-exit at NoMux must not clear or mutate the buf — production
+/// invariant: caller owns buffer lifecycle).
+#[test]
+fn pump_mux_events_core_no_mux_preserves_pre_existing_buf() {
+    let pane = PaneId::from_raw(99);
+    let mut buf = vec![dn(pane, "PRE_EXISTING")];
+    let result = pump_mux_events_core(None, &mut buf);
+    assert_eq!(result, PumpResult::NoMux);
+    assert_eq!(
+        buf.len(),
+        1,
+        "buf must retain its 1 pre-existing entry; got len={}",
+        buf.len()
+    );
+    assert!(matches!(
+        &buf[0],
+        MuxNotification::DesktopNotification { title, .. } if title == "PRE_EXISTING"
+    ));
+}
+
+/// Regression: pre-populated notification_buf is preserved when gate is
+/// closed (NoPendingWakeup early-exit must not clear or mutate buf).
+#[test]
+fn pump_mux_events_core_no_pending_wakeup_preserves_pre_existing_buf() {
+    let pane = PaneId::from_raw(99);
+    let mut buf = vec![dn(pane, "PRE_EXISTING")];
+    let mut backend = RecordingMuxBackend::new();
+    backend.is_daemon_mode_value = false;
+    backend.has_pending_wakeup_value = false;
+    let result = pump_mux_events_core(Some(&mut backend), &mut buf);
+    assert_eq!(result, PumpResult::NoPendingWakeup);
+    assert_eq!(buf.len(), 1, "buf preserved on gate-closed early-exit");
+    assert!(matches!(
+        &buf[0],
+        MuxNotification::DesktopNotification { title, .. } if title == "PRE_EXISTING"
+    ));
+}
+
+/// Regression: pre-populated notification_buf is REPLACED (not
+/// appended-to) when drain runs and yields entries. Pins the
+/// production invariant from `oriterm_mux/src/in_process/event_pump.rs`
+/// `drain_notifications`: `out.clear(); std::mem::swap(...)`. Pre-
+/// existing entries are LOST — only post-drain entries survive.
+#[test]
+fn pump_mux_events_core_drain_replaces_pre_existing_buf() {
+    let pane = PaneId::from_raw(99);
+    let mut buf = vec![dn(pane, "PRE_EXISTING")];
+    let mut backend = RecordingMuxBackend::new();
+    backend.is_daemon_mode_value = false;
+    backend.has_pending_wakeup_value = true;
+    backend.drain_returns = vec![dn(pane, "FROM_DRAIN")];
+    let result = pump_mux_events_core(Some(&mut backend), &mut buf);
+    assert_eq!(result, PumpResult::HasNotifications);
+    // PRE_EXISTING was cleared by drain_notifications's `out.clear()`;
+    // only FROM_DRAIN survives. Defends against a regression that
+    // would let pre-existing entries leak through.
+    assert_eq!(buf.len(), 1, "drain replaced pre-existing buf; got {buf:?}");
+    assert!(matches!(
+        &buf[0],
+        MuxNotification::DesktopNotification { title, .. } if title == "FROM_DRAIN"
+    ));
+}
+
+/// Regression: pre-populated notification_buf is preserved when daemon-
+/// disconnect arm fires (drain not called → buf untouched).
+#[test]
+fn pump_mux_events_core_daemon_disconnect_preserves_pre_existing_buf() {
+    let pane = PaneId::from_raw(99);
+    let mut buf = vec![dn(pane, "PRE_EXISTING")];
+    let mut backend = RecordingMuxBackend::new();
+    backend.is_daemon_mode_value = true;
+    backend.is_connected_value = false;
+    let result = pump_mux_events_core(Some(&mut backend), &mut buf);
+    assert_eq!(result, PumpResult::DaemonDisconnect);
+    assert_eq!(buf.len(), 1, "daemon-disconnect early-exit preserves buf");
+    assert!(matches!(
+        &buf[0],
+        MuxNotification::DesktopNotification { title, .. } if title == "PRE_EXISTING"
+    ));
+}
+
+/// Regression: EmptyDrain branch — gate open, drain runs and yields
+/// zero entries. The pre-existing PRE_EXISTING is LOST because
+/// drain_notifications cleared the buf before swap (production semantics).
+/// Buf is empty post-call, returns PumpResult::EmptyDrain.
+#[test]
+fn pump_mux_events_core_empty_drain_clears_pre_existing_buf() {
+    let pane = PaneId::from_raw(99);
+    let mut buf = vec![dn(pane, "PRE_EXISTING")];
+    let mut backend = RecordingMuxBackend::new();
+    backend.is_daemon_mode_value = false;
+    backend.has_pending_wakeup_value = true;
+    backend.drain_returns = Vec::new();
+    let result = pump_mux_events_core(Some(&mut backend), &mut buf);
+    assert_eq!(result, PumpResult::EmptyDrain);
+    assert!(
+        buf.is_empty(),
+        "drain_notifications cleared pre-existing buf; got {buf:?}"
     );
 }

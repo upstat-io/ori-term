@@ -61,15 +61,7 @@ impl EmbeddedMux {
     /// The closure is wrapped with an [`AtomicBool`] guard so that only
     /// one wakeup is posted per poll cycle during flood output.
     pub fn new(wakeup: Arc<dyn Fn() + Send + Sync>) -> Self {
-        let wakeup_pending = Arc::new(AtomicBool::new(false));
-        let guarded_wakeup = {
-            let pending = wakeup_pending.clone();
-            Arc::new(move || {
-                if !pending.swap(true, Ordering::Release) {
-                    (wakeup)();
-                }
-            }) as Arc<dyn Fn() + Send + Sync>
-        };
+        let (guarded_wakeup, wakeup_pending) = crate::backend::wakeup::guarded_wakeup(wakeup);
         Self {
             mux: InProcessMux::new(),
             panes: HashMap::new(),
