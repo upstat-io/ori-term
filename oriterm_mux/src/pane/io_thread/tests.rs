@@ -2321,29 +2321,30 @@ fn run_loop_sync_timeout_fires() {
     byte_tx.send(b"\x1b[?2026h".to_vec()).unwrap();
     byte_tx.send(b"timeout_test".to_vec()).unwrap();
 
-    // Wait >150ms for the sync timeout to fire in the run loop.
-    std::thread::sleep(Duration::from_millis(300));
-
-    // The pane's snapshot should now reflect the inline-dispatched content.
+    // Poll for the sync timeout to fire in the run loop.
+    // Wall-clock-free: poll the snapshot until the content appears;
+    // a 5s safety deadline surfaces true hangs.
+    let deadline = Instant::now() + Duration::from_secs(5);
     let mut consumer = RenderableContent::default();
-    // Give the IO thread a moment to publish.
-    for _ in 0..10 {
+    loop {
         if handle.double_buffer().swap_front(&mut consumer) {
-            break;
+            let text: String = consumer
+                .cells
+                .iter()
+                .filter(|c| c.ch != ' ' && c.ch != '\0')
+                .map(|c| c.ch)
+                .collect();
+            if text.contains("timeout_test") {
+                break;
+            }
         }
-        std::thread::sleep(Duration::from_millis(50));
+        assert!(
+            Instant::now() < deadline,
+            "IO thread sync timeout did not fire within 5s deadline; \
+             run-loop deadline arm or handle_sync_timeout is broken"
+        );
+        std::thread::sleep(Duration::from_millis(20));
     }
-
-    let text: String = consumer
-        .cells
-        .iter()
-        .filter(|c| c.ch != ' ' && c.ch != '\0')
-        .map(|c| c.ch)
-        .collect();
-    assert!(
-        text.contains("timeout_test"),
-        "sync timeout must fire in run loop and publish inline-dispatched content, got: {text:?}"
-    );
 
     // Clean shutdown.
     shutdown.store(true, Ordering::Release);
