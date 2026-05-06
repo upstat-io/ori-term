@@ -100,8 +100,8 @@ pub(super) fn enumerate_mono_families_from_roots(roots: &[PathBuf]) -> Vec<Famil
 
 /// Parse font file(s) into [`RawFaceInfo`] entries.
 ///
-/// For `.ttc` collections, returns one entry per face (BUG-04-007). For
-/// standalone `.ttf`/`.otf`, returns a single-element `Vec`.
+/// For `.ttc` collections, returns one entry per face. For standalone
+/// `.ttf`/`.otf`, returns a single-element `Vec`.
 #[expect(
     unsafe_code,
     reason = "memmap2::Mmap::map is unsafe by API; font files are read-only system resources"
@@ -125,7 +125,7 @@ fn parse_face_info(path: &Path) -> Vec<RawFaceInfo> {
     let face_pairs: Vec<(skrifa::FontRef<'_>, u32)> = match file_ref {
         FileRef::Font(f) => vec![(f, 0u32)],
         FileRef::Collection(c) => {
-            let count = c.len() as u32;
+            let count = c.len();
             (0..count)
                 .filter_map(|i| c.get(i).ok().map(|f| (f, i)))
                 .collect()

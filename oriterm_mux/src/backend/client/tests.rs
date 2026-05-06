@@ -1404,7 +1404,7 @@ fn remove_snapshot_drains_bell_panes() {
     );
 }
 
-// -- BUG-11-046: subscribe_pane / set_pane_priority public API tests --
+// -- subscribe_pane / set_pane_priority public API tests --
 
 /// Regression: BUG-11-046 — subscribe_pane was `pub(crate)`, blocking e2e
 /// multi-client priority routing tests. Must be `pub` and return `io::Result`.

@@ -442,8 +442,7 @@ impl App {
     ///
     /// Checks drag state before `handle_release` clears it, then either
     /// copies to primary (after drag) or clears the click selection (no drag).
-    /// Extracted from [`handle_mouse_input`] to reduce nesting depth
-    /// (BUG-03-005).
+    /// Extracted from [`handle_mouse_input`] to reduce nesting depth.
     fn handle_left_release(&mut self) {
         let had_drag = self.mouse.drag_was_active();
         mouse_selection::handle_release(&mut self.mouse);

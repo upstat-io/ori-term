@@ -401,8 +401,14 @@ impl App {
 
 /// Draw the debug performance overlay if enabled (Ctrl+Shift+F12).
 ///
-/// Extracted from [`App::handle_redraw`] to reduce function length
-/// (BUG-06-023). Updates EWMA FPS and renders the overlay scene.
+/// Extracted from [`App::handle_redraw`] to reduce function length.
+/// Updates EWMA FPS and renders the overlay scene.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "EWMA fps, last-render time, scale, and the four GPU/window threads are each \
+              independent inputs for a single debug-overlay paint pass; coalescing into a \
+              DebugOverlayCtx adds construction noise without reducing argument cardinality."
+)]
 fn draw_debug_overlay_if_enabled(
     enabled: bool,
     debug_fps: &mut f32,

@@ -1,7 +1,6 @@
 //! Frame shaping — converts terminal grid cells into glyph runs.
 //!
-//! Extracted from `helpers/mod.rs` to keep the file under 500 lines
-//! (BUG-06-015).
+//! Extracted from `helpers/mod.rs` to keep the file under 500 lines.
 
 use crate::gpu::frame_input::FrameInput;
 use crate::gpu::prepare::ShapedFrame;

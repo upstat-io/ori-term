@@ -12,12 +12,14 @@ mod harness_input;
 mod harness_inspect;
 mod mock_measurer;
 mod query;
+mod recording_widget;
 pub mod render_assert;
 pub mod scene_snapshot;
 
 pub use harness::WidgetTestHarness;
 pub use harness_inspect::WidgetRef;
 pub use mock_measurer::MockMeasurer;
+pub use recording_widget::{RecordedEvents, RecordingWidget};
 pub use scene_snapshot::scene_to_snapshot;
 
 use crate::theme::UiTheme;

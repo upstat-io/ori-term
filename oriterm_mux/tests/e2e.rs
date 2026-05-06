@@ -2048,7 +2048,7 @@ fn daemon_multi_client_subscribe_and_priority() {
         Duration::from_secs(30),
     );
 
-    // Client B subscribes to the same pane (this was pub(crate) before BUG-11-046).
+    // Client B subscribes to the same pane via the public subscribe_pane API.
     let mut client_b = daemon.connect_client();
     client_b
         .subscribe_pane(pane_id)

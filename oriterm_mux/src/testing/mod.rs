@@ -100,7 +100,7 @@ impl MuxBackend for MockMuxBackend {
     fn drain_notifications(&mut self, out: &mut Vec<MuxNotification>) {
         self.calls.borrow_mut().push(MockCall::DrainNotifications);
         out.clear();
-        out.extend(self.drain_returns.drain(..));
+        out.append(&mut self.drain_returns);
     }
     fn discard_notifications(&mut self) {
         self.drain_returns.clear();
