@@ -53,11 +53,24 @@ fn ecma48_c0_enq_drives_to_pty_write_apex() {
         .term_mut()
         .set_answerback(b"oriterm-answer".to_vec());
 
-    // Snapshot pre-feed grid state for renderable-clamp.
+    // Snapshot pre-feed grid state for renderable-clamp (cursor + visible-row cells).
     let pre_cursor = (
         harness.term().grid().cursor().line(),
         harness.term().grid().cursor().col(),
     );
+    let pre_grid_chars: Vec<char> = {
+        let grid = harness.term().grid();
+        let lines = grid.lines();
+        let cols = grid.cols();
+        let mut buf = Vec::with_capacity(lines * cols);
+        for line in 0..lines {
+            let row = &grid[oriterm_core::index::Line(line as i32)];
+            for col in 0..cols {
+                buf.push(row[oriterm_core::index::Column(col)].ch);
+            }
+        }
+        buf
+    };
 
     let results = harness.run_scenario(&scenario);
     for r in &results {
@@ -98,6 +111,23 @@ fn ecma48_c0_enq_drives_to_pty_write_apex() {
     assert_eq!(
         pre_cursor, post_cursor,
         "ENQ must NOT mutate cursor (renderable state)"
+    );
+    let post_grid_chars: Vec<char> = {
+        let grid = harness.term().grid();
+        let lines = grid.lines();
+        let cols = grid.cols();
+        let mut buf = Vec::with_capacity(lines * cols);
+        for line in 0..lines {
+            let row = &grid[oriterm_core::index::Line(line as i32)];
+            for col in 0..cols {
+                buf.push(row[oriterm_core::index::Column(col)].ch);
+            }
+        }
+        buf
+    };
+    assert_eq!(
+        pre_grid_chars, post_grid_chars,
+        "ENQ must NOT mutate visible grid cells (renderable state)"
     );
 }
 

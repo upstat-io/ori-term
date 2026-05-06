@@ -113,29 +113,16 @@ fn pty_write_preserves_non_utf8_bytes() {
 }
 
 /// Blind-spot §15 companion: every `PtyWriteKind` preserves bytes.
+/// Tests all variants from the canonical `PtyWriteKind::all()` SSOT.
 #[test]
 fn pty_write_all_kinds_preserve_bytes() {
-    let kinds = [
-        PtyWriteKind::DeviceAttribute,
-        PtyWriteKind::CursorReport,
-        PtyWriteKind::DeviceStatus,
-        PtyWriteKind::ModeReport,
-        PtyWriteKind::StatusString,
-        PtyWriteKind::ImageProtocolReply,
-        PtyWriteKind::MouseEvent,
-        PtyWriteKind::KeyboardEvent,
-        PtyWriteKind::FocusEvent,
-        PtyWriteKind::ChecksumReport,
-        PtyWriteKind::GraphicsAttributeReport,
-        PtyWriteKind::Answerback,
-        PtyWriteKind::Other,
-    ];
+    let kinds = PtyWriteKind::all();
     for kind in kinds {
         let (mut t, mux_rx, _wake) = make_router_harness();
         let bytes = vec![0x90, 0xFF, 0xC0];
         t.terminal.effect_sink().push(Effect::Pty(PtyEffect::Write {
             bytes: bytes.clone(),
-            kind,
+            kind: *kind,
         }));
         t.drain_effects_into_mux_events();
         match mux_rx.recv_timeout(Duration::from_millis(100)).unwrap() {

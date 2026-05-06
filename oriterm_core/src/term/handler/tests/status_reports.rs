@@ -1429,13 +1429,15 @@ fn enq_repeats_answerback_for_each_invocation() {
     let mut effects = Vec::new();
     t.effect_sink().drain_into(&mut effects);
 
-    let answerback_writes: Vec<_> = effects
+    let answerback_writes: Vec<&[u8]> = effects
         .iter()
-        .filter(|e| {
-            matches!(
-                e,
-                Effect::Pty(PtyEffect::Write { kind, .. }) if *kind == PtyWriteKind::Answerback
-            )
+        .filter_map(|e| match e {
+            Effect::Pty(PtyEffect::Write { bytes, kind })
+                if *kind == PtyWriteKind::Answerback =>
+            {
+                Some(bytes.as_slice())
+            }
+            _ => None,
         })
         .collect();
     assert_eq!(
@@ -1443,6 +1445,12 @@ fn enq_repeats_answerback_for_each_invocation() {
         3,
         "Three ENQ bytes must fire three independent Answerback writes (no caching)"
     );
+    for (i, w) in answerback_writes.iter().enumerate() {
+        assert_eq!(
+            *w, b"X",
+            "Answerback write #{i} must contain configured bytes, got {w:?}"
+        );
+    }
 }
 
 /// Regression: BUG-08-006 — ACK (0x06, adjacent C0 byte) must NOT emit answerback.

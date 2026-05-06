@@ -38,3 +38,28 @@ pub enum PtyWriteKind {
     Answerback,
     Other,
 }
+
+impl PtyWriteKind {
+    /// Returns all `PtyWriteKind` variants as a static slice.
+    /// This is the canonical SSOT for PTY write kind coverage in tests —
+    /// callers MUST iterate `Self::all()` rather than maintain parallel
+    /// `let kinds = [...]` arrays (per `.claude/rules/impl-hygiene.md
+    /// §Registration Sync Points`). Resolves BUG-11-055.
+    pub fn all() -> &'static [Self] {
+        &[
+            Self::DeviceAttribute,
+            Self::CursorReport,
+            Self::DeviceStatus,
+            Self::ModeReport,
+            Self::StatusString,
+            Self::ImageProtocolReply,
+            Self::MouseEvent,
+            Self::KeyboardEvent,
+            Self::FocusEvent,
+            Self::ChecksumReport,
+            Self::GraphicsAttributeReport,
+            Self::Answerback,
+            Self::Other,
+        ]
+    }
+}
