@@ -20,7 +20,6 @@ references:
 
 ## Resolution
 
-Added encode_enter_base() as SSOT in oriterm_core, consumed by both the
-application key encoder (legacy.rs) and PtySession::send_enter(). Updated
-walk_vttest_screens() to use LNM-aware Enter simulation. vttest menu 6
-sub-item 2 now shows CR+LF OK instead of bare CR failure.
+- Added `encode_enter_base()` as SSOT in `oriterm_core`, consumed by both the application key encoder (`legacy.rs`) and `PtySession::send_enter()`.
+- Updated `walk_vttest_screens()` to use LNM-aware Enter simulation.
+- vttest menu 6 sub-item 2 now shows CR+LF OK instead of bare CR failure.
