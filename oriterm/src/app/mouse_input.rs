@@ -380,25 +380,7 @@ impl App {
                 } else {
                     match state {
                         ElementState::Pressed => self.handle_mouse_press(),
-                        ElementState::Released => {
-                            // Check drag_was_active before handle_release clears it.
-                            // Note: is_dragging() would always return false here
-                            // because the event loop clears the button state before
-                            // dispatch.
-                            let had_drag = self.mouse.drag_was_active();
-                            mouse_selection::handle_release(&mut self.mouse);
-                            if had_drag {
-                                // CopyOnSelect: auto-copy to primary selection after drag.
-                                if self.config.behavior.copy_on_select {
-                                    self.copy_selection_to_primary();
-                                }
-                            } else {
-                                // Click-without-drag: clear the zero-width char
-                                // selection created by the press. Word and line
-                                // selections (double/triple click) are deliberate.
-                                self.clear_click_selection();
-                            }
-                        }
+                        ElementState::Released => self.handle_left_release(),
                     }
                 }
             }
@@ -453,6 +435,24 @@ impl App {
             if let Some(ctx) = self.focused_ctx_mut() {
                 ctx.root.mark_dirty();
             }
+        }
+    }
+
+    /// Handle left-button release when not reporting to PTY.
+    ///
+    /// Checks drag state before `handle_release` clears it, then either
+    /// copies to primary (after drag) or clears the click selection (no drag).
+    /// Extracted from [`handle_mouse_input`] to reduce nesting depth
+    /// (BUG-03-005).
+    fn handle_left_release(&mut self) {
+        let had_drag = self.mouse.drag_was_active();
+        mouse_selection::handle_release(&mut self.mouse);
+        if had_drag {
+            if self.config.behavior.copy_on_select {
+                self.copy_selection_to_primary();
+            }
+        } else {
+            self.clear_click_selection();
         }
     }
 }
