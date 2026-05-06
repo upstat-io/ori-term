@@ -19,6 +19,7 @@ mod snapshot;
 
 pub use charset::CharsetState;
 pub use mode::TermMode;
+pub use mode::encode_enter_base;
 // `AceMode` is declared below next to the `Term` struct so keep its
 // re-export close to the rest of `term/mod.rs`'s public surface.
 pub use renderable::{

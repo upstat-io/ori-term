@@ -228,3 +228,41 @@ fn termmode_to_keyboard_modes_masks_non_kitty_bits() {
         "non-kitty bits must be dropped by the TermMode -> KeyboardModes inverse"
     );
 }
+
+// ── encode_enter_base ──
+
+#[test]
+fn encode_enter_base_lnm_off_sends_cr() {
+    let mode = TermMode::default();
+    assert!(!mode.contains(TermMode::LINE_FEED_NEW_LINE));
+    assert_eq!(super::encode_enter_base(mode), b"\r");
+}
+
+#[test]
+fn encode_enter_base_lnm_on_sends_crlf() {
+    let mut mode = TermMode::default();
+    mode.insert(TermMode::LINE_FEED_NEW_LINE);
+    assert_eq!(super::encode_enter_base(mode), b"\r\n");
+}
+
+/// LNM on must NOT return bare CR — the fix is to produce CR+LF.
+#[test]
+fn encode_enter_base_lnm_on_not_bare_cr() {
+    let mut mode = TermMode::default();
+    mode.insert(TermMode::LINE_FEED_NEW_LINE);
+    assert_ne!(super::encode_enter_base(mode), b"\r");
+}
+
+/// Verify the function is pure — same input, same output, always.
+#[test]
+fn encode_enter_base_idempotent() {
+    let mode = TermMode::default();
+    assert_eq!(
+        super::encode_enter_base(mode),
+        super::encode_enter_base(mode)
+    );
+
+    let mut lnm = TermMode::default();
+    lnm.insert(TermMode::LINE_FEED_NEW_LINE);
+    assert_eq!(super::encode_enter_base(lnm), super::encode_enter_base(lnm));
+}

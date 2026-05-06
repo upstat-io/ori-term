@@ -48,7 +48,7 @@ where
         }
         on_screen(session, &text, screen);
         count += 1;
-        session.send(b"\r");
+        session.send_enter();
         screen += 1;
     }
     count

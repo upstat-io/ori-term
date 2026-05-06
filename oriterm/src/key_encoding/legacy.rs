@@ -138,11 +138,7 @@ pub(super) fn encode_legacy(
 fn encode_simple_named(named: NamedKey, mods: Modifiers, mode: TermMode) -> Vec<u8> {
     match named {
         NamedKey::Enter => {
-            let base = if mode.contains(TermMode::LINE_FEED_NEW_LINE) {
-                &b"\r\n"[..]
-            } else {
-                &b"\r"[..]
-            };
+            let base = oriterm_core::encode_enter_base(mode);
             if mods.contains(Modifiers::ALT) {
                 let mut v = Vec::with_capacity(1 + base.len());
                 v.push(0x1b);
