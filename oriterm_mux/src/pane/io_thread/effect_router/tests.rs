@@ -506,14 +506,27 @@ fn pending_response_not_cancelled_if_fulfilled_before_drop() {
     assert!(t.pending_responses.is_empty());
 }
 
-/// `PollResult::Cancelled` variant is reachable (regression pin for
-/// exhaustive `response_poll::poll_pending_responses` match).
+/// Regression: BUG-11-049 — `PollResult` variants must stay exhaustive in
+/// `response_poll::poll_pending_responses`. An added variant without a
+/// consumer-match arm would silently fall through the catch-all.
+/// See: bug-tracker/plans/completed/BUG-11-049/00-overview.md
 #[test]
 fn poll_result_variants_all_constructible() {
     let bell = Effect::Host(HostEffect::Bell);
-    let _ready = PollResult::Ready(bell);
-    let _pending = PollResult::Pending;
-    let _cancelled = PollResult::Cancelled;
+    let ready = PollResult::Ready(bell);
+    let pending = PollResult::Pending;
+    let cancelled = PollResult::Cancelled;
+
+    assert!(matches!(ready, PollResult::Ready(_)));
+    assert!(matches!(pending, PollResult::Pending));
+    assert!(matches!(cancelled, PollResult::Cancelled));
+
+    // All three discriminants must be distinct — a 4th variant would
+    // cause the consumer match in poll_pending_responses to go stale.
+    let dis = std::mem::discriminant;
+    assert_ne!(dis(&ready), dis(&pending));
+    assert_ne!(dis(&pending), dis(&cancelled));
+    assert_ne!(dis(&cancelled), dis(&ready));
 }
 
 /// Blind-spot §5: drain happens INSIDE `handle_bytes` (per chunk), not
