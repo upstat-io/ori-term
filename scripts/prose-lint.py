@@ -420,6 +420,15 @@ def format_human(findings, scanned):
     for f in findings:
         by_file.setdefault(f["file"], []).append(f)
     out = [f"prose-lint: {len(findings)} violation(s) across {len(by_file)} file(s) (of {scanned} scanned)"]
+    has_bug_id = any(f.get("pattern") == "bug-id" for f in findings)
+    has_internal_doc = any(
+        isinstance(f.get("pattern"), str) and f["pattern"].startswith("internal-doc-")
+        for f in findings
+    )
+    has_wrapper_path = any(
+        isinstance(f.get("pattern"), str) and f["pattern"].startswith("wrapper-")
+        for f in findings
+    )
     for file, fs in sorted(by_file.items()):
         out.append("")
         out.append(file)
@@ -436,6 +445,22 @@ def format_human(findings, scanned):
                 out.append(f"      {f['excerpt']}")
             else:
                 out.append(f"  :{f['line']}  [{t}] {f.get('message','')}")
+    if has_bug_id or has_internal_doc or has_wrapper_path:
+        out.append("")
+        out.append("Hints (per .claude/rules/tests.md §Regression Discipline + impl-hygiene.md):")
+        if has_bug_id:
+            out.append("  bug-id violations exempt these line prefixes:")
+            out.append("    /// Regression: BUG-XX-NNN ...        (canonical regression-anchor doc comment)")
+            out.append("    /// See: bug-tracker/plans/...        (canonical plan-pointer doc comment)")
+            out.append("    // <!-- prose-lint: allow -->         (per-line escape hatch)")
+        if has_internal_doc:
+            out.append("  internal-doc-* matches reference wrapper-private rule files (e.g., impl-hygiene.md).")
+            out.append("    Public source MUST NOT cite wrapper docs — refactor the comment to describe")
+            out.append("    intent rather than cite the wrapper rule by name.")
+        if has_wrapper_path:
+            out.append("  wrapper-* matches reference wrapper-only paths (e.g., bug-tracker/plans/).")
+            out.append("    These are exempt only on canonical `/// See: bug-tracker/plans/...` regression")
+            out.append("    doc-comment lines; otherwise refactor or use the prose-lint allow marker.")
     out.append("")
     return "\n".join(out)
 

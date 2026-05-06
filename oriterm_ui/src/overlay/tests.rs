@@ -2,11 +2,14 @@
 
 use std::time::{Duration, Instant};
 
+use crate::action::Keymap;
 use crate::compositor::layer_animator::LayerAnimator;
 use crate::compositor::layer_tree::LayerTree;
 use crate::draw::Scene;
 use crate::geometry::{Point, Rect, Size};
 use crate::input::{Key, KeyEvent, Modifiers, MouseButton, MouseEvent, MouseEventKind};
+use crate::sense::Sense;
+use crate::testing::RecordingWidget;
 use crate::theme::UiTheme;
 use crate::widgets::button::ButtonWidget;
 use crate::widgets::container::ContainerWidget;
@@ -2335,10 +2338,6 @@ fn modal_dim_rect_opacity_tracks_dim_layer() {
 // focus toggle lives. The gate routes FocusNext/FocusPrev through the
 // legacy `process_key_event` so `on_input` continues to receive Tab.
 
-use crate::action::Keymap;
-use crate::sense::Sense;
-use crate::testing::RecordingWidget;
-
 /// Regression: BUG-03-003 R1-F1 — FocusNext/FocusPrev fall-through gate at
 /// `oriterm_ui/src/overlay/manager/key_dispatch.rs:221`. Replaced bespoke
 /// FocusFallthroughProbe with shared `oriterm_ui::testing::RecordingWidget`.
@@ -2468,8 +2467,7 @@ fn recording_widget_handle_keymap_action_returns_none() {
 
     let (mut probe, _) = RecordingWidget::new(Some("FocusFallthroughProbe"), Sense::none());
     let action = FocusNext;
-    let result =
-        <RecordingWidget as Widget>::handle_keymap_action(&mut probe, &action, anchor());
+    let result = <RecordingWidget as Widget>::handle_keymap_action(&mut probe, &action, anchor());
     assert!(
         result.is_none(),
         "RecordingWidget must NOT impl handle_keymap_action — the FocusNext \

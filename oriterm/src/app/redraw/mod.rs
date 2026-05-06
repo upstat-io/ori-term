@@ -11,11 +11,11 @@ mod search_bar;
 use std::time::Instant;
 
 use super::App;
-use super::window_context::WindowContext;
 use super::mouse_selection::{self, GridCtx};
 use super::perf_stats::FramePhases;
-use crate::gpu::recovery::gate_outcome;
+use super::window_context::WindowContext;
 use crate::gpu::GpuState;
+use crate::gpu::recovery::gate_outcome;
 use crate::gpu::{
     FrameSearch, FrameSelection, MarkCursorOverride, ViewportSize, extract_frame_from_snapshot,
     extract_frame_from_snapshot_into, snapshot_palette,
@@ -405,9 +405,10 @@ impl App {
 /// Updates EWMA FPS and renders the overlay scene.
 #[expect(
     clippy::too_many_arguments,
-    reason = "EWMA fps, last-render time, scale, and the four GPU/window threads are each \
-              independent inputs for a single debug-overlay paint pass; coalescing into a \
-              DebugOverlayCtx adds construction noise without reducing argument cardinality."
+    reason = "Six independent inputs threaded into one paint pass: enabled flag, EWMA fps \
+              accumulator, last-render Instant, &mut WindowContext, &GpuState, scale factor. \
+              Coalescing into a DebugOverlayCtx adds construction noise without reducing \
+              argument cardinality."
 )]
 fn draw_debug_overlay_if_enabled(
     enabled: bool,

@@ -15,12 +15,10 @@ use wgpu::{
 
 use super::super::atlas::GlyphAtlas;
 use super::super::prepare::ShapedFrame;
-use crate::font::{
-    FontCollection, FontRealm, GlyphFormat, GlyphStyle, RasterKey, size_key,
-};
+use crate::font::{FontCollection, FontRealm, GlyphFormat, GlyphStyle, RasterKey, size_key};
 
 use super::super::prepare::AtlasLookup;
-pub(super) use shape::{shape_frame, ShapingScratch};
+pub(super) use shape::{ShapingScratch, shape_frame};
 
 // Atlas lookup bridge
 

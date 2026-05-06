@@ -2,24 +2,24 @@
 //!
 //! Extracted from `helpers/mod.rs` to keep the file under 500 lines.
 
-use crate::gpu::frame_input::FrameInput;
-use crate::gpu::prepare::ShapedFrame;
-use crate::gpu::maybe_shrink_vec;
 use crate::font::{
     FontCollection, build_col_glyph_map, prepare_line, shape_prepared_runs, size_key,
 };
+use crate::gpu::frame_input::FrameInput;
+use crate::gpu::maybe_shrink_vec;
+use crate::gpu::prepare::ShapedFrame;
 
 /// Per-frame scratch buffers reused across frames to avoid per-frame allocation.
 pub(crate) struct ShapingScratch {
     /// The shaped frame populated during Prepare.
-    pub(crate)frame: ShapedFrame,
-    pub(crate)runs: Vec<crate::font::ShapingRun>,
-    pub(crate)glyphs: Vec<oriterm_ui::text::ShapedGlyph>,
-    pub(crate)col_starts: Vec<usize>,
+    pub(crate) frame: ShapedFrame,
+    pub(crate) runs: Vec<crate::font::ShapingRun>,
+    pub(crate) glyphs: Vec<oriterm_ui::text::ShapedGlyph>,
+    pub(crate) col_starts: Vec<usize>,
     /// Column-to-glyph map for the current row.
-    pub(crate)col_map: Vec<Option<usize>>,
+    pub(crate) col_map: Vec<Option<usize>>,
     /// Rustybuzz buffer reused across frames to avoid per-frame allocation.
-    pub(crate)unicode_buffer: Option<rustybuzz::UnicodeBuffer>,
+    pub(crate) unicode_buffer: Option<rustybuzz::UnicodeBuffer>,
     /// Rustybuzz Face objects reused across frames.
     ///
     /// Stored with `'static` lifetime because `ShapingScratch` has no lifetime
@@ -27,11 +27,11 @@ pub(crate) struct ShapingScratch {
     /// transmutes the actual `'a` borrow to `'static`. This is sound because
     /// the Vec is cleared before every fill and only accessed while
     /// `FontCollection` is borrowed (within `shape_frame`).
-    pub(crate)faces_buf: Vec<Option<rustybuzz::Face<'static>>>,
+    pub(crate) faces_buf: Vec<Option<rustybuzz::Face<'static>>>,
 }
 
 impl ShapingScratch {
-    pub(crate)fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             frame: ShapedFrame::new(0, 0),
             runs: Vec::new(),
@@ -44,7 +44,7 @@ impl ShapingScratch {
     }
 
     /// Shrink per-row scratch buffers if capacity vastly exceeds usage.
-    pub(crate)fn maybe_shrink(&mut self) {
+    pub(crate) fn maybe_shrink(&mut self) {
         self.frame.maybe_shrink();
         maybe_shrink_vec(&mut self.runs);
         maybe_shrink_vec(&mut self.glyphs);

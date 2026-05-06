@@ -13,14 +13,14 @@ use std::sync::mpsc;
 use oriterm_core::selection::Selection;
 use oriterm_core::{RenderableContent, Theme};
 
+use crate::PaneId;
+use crate::PaneSnapshot;
 use crate::backend::{AdoptPaneRequest, HostReply, ImageConfig, MuxBackend};
 use crate::domain::SpawnConfig;
 use crate::in_process::ClosePaneResult;
 use crate::mux_event::{MuxEvent, MuxNotification};
 use crate::pane::MarkCursor;
 use crate::registry::PaneEntry;
-use crate::PaneId;
-use crate::PaneSnapshot;
 use crate::{DomainId, Signal};
 
 /// A recorded call to a [`MuxBackend`] method.
@@ -215,18 +215,24 @@ impl MuxBackend for MockMuxBackend {
         self.bell_panes.borrow().contains(&pane_id)
     }
     fn set_unseen_output(&mut self, pane_id: PaneId) {
-        self.calls.borrow_mut().push(MockCall::SetUnseenOutput(pane_id));
+        self.calls
+            .borrow_mut()
+            .push(MockCall::SetUnseenOutput(pane_id));
         self.unseen_output.borrow_mut().push(pane_id);
     }
     fn mark_output_seen(&mut self, pane_id: PaneId) {
-        self.calls.borrow_mut().push(MockCall::MarkOutputSeen(pane_id));
+        self.calls
+            .borrow_mut()
+            .push(MockCall::MarkOutputSeen(pane_id));
         self.unseen_output.borrow_mut().retain(|p| *p != pane_id);
     }
     fn has_unseen_output(&self, _: PaneId) -> bool {
         false
     }
     fn is_selection_dirty(&self, pane_id: PaneId) -> bool {
-        self.calls.borrow_mut().push(MockCall::IsSelectionDirty(pane_id));
+        self.calls
+            .borrow_mut()
+            .push(MockCall::IsSelectionDirty(pane_id));
         self.selection_dirty.borrow().contains(&pane_id)
     }
     fn clear_selection_dirty(&mut self, pane_id: PaneId) {
@@ -275,11 +281,7 @@ impl MuxBackend for MockMuxBackend {
         self.calls.borrow_mut().push(MockCall::IsDaemonMode);
         self.is_daemon_mode
     }
-    fn swap_renderable_content(
-        &mut self,
-        _: PaneId,
-        _: &mut RenderableContent,
-    ) -> bool {
+    fn swap_renderable_content(&mut self, _: PaneId, _: &mut RenderableContent) -> bool {
         unimplemented!("MockMuxBackend: App dispatch does not call swap_renderable_content")
     }
     fn pane_snapshot(&self, _: PaneId) -> Option<&PaneSnapshot> {

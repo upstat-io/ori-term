@@ -86,10 +86,9 @@ impl RecordedEvents {
 impl RecordingWidget {
     /// Creates a recording widget paired with its events handle.
     ///
-    /// The widget records every `InputEvent` reaching its `on_input`
-    /// callback into the shared event log. The returned [`RecordedEvents`]
-    /// handle is cloneable and lets the test inspect the log after the
-    /// widget is consumed by overlay or window-root construction.
+    /// The widget moves into the harness; the cloneable [`RecordedEvents`]
+    /// handle stays with the test for assertions on what reached `on_input`.
+    #[must_use]
     pub fn new(key_context: Option<&'static str>, sense: Sense) -> (Self, RecordedEvents) {
         let events = Rc::new(RefCell::new(Vec::new()));
         let widget = Self {
