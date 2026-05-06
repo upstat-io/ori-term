@@ -27,6 +27,7 @@ pub mod pty;
 pub(crate) mod registry;
 pub mod server;
 pub mod shell_integration;
+pub mod testing;
 
 pub use backend::{EmbeddedMux, HostReply, ImageConfig, MuxBackend, MuxClient};
 pub use domain::{AdoptConfig, SpawnConfig, adopt_pane};
@@ -39,3 +40,4 @@ pub use protocol::{
 };
 pub use pty::adopt::{AdoptedPtyHandle, AdoptedSignal};
 pub use registry::PaneEntry;
+pub use testing::{MockCall, MockMuxBackend};
