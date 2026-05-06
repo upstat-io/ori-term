@@ -158,6 +158,13 @@ pub struct PaneIoThread<S: EffectSink + 'static> {
     /// observe the counter while the IO thread runs.
     #[cfg(test)]
     pub(crate) shrink_call_count: Arc<std::sync::atomic::AtomicUsize>,
+    /// Test-only barrier — `run()` waits at the top of the first iteration
+    /// so tests can stage saturation / mid-drain state before the IO thread
+    /// begins processing. `None` in production and most tests; set to
+    /// `Some(Arc<Barrier>)` by tests that need deterministic IO-thread entry
+    /// control.
+    #[cfg(test)]
+    pub(super) start_barrier: Option<Arc<std::sync::Barrier>>,
 }
 
 impl<S: EffectSink> PaneIoThread<S> {
