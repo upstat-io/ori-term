@@ -73,7 +73,10 @@ impl MuxBackend for MuxClient {
         match self.rpc(pdu)? {
             MuxPdu::SpawnPaneResponse { pane_id } => {
                 // Subscribe to the new pane and cache its initial snapshot.
-                self.subscribe_pane(pane_id);
+                if let Err(e) = self.subscribe_pane(pane_id) {
+                    self.close_pane(pane_id);
+                    return Err(e);
+                }
                 log::info!("daemon spawned pane {pane_id}");
                 Ok(pane_id)
             }
