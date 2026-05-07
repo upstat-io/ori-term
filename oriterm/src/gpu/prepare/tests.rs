@@ -4735,7 +4735,7 @@ mod dirty_skip_traces {
         FrameInput, PreparedFrame, ViewportSize, key_atlas_with, prepare_frame_shaped_into,
         shaped_multi_row,
     };
-    use crate::gpu::prepare::trace_capture::{CapturedRecord, with_capture};
+    use oriterm_test_support::log_capture::{CapturedRecord, with_capture};
 
     const DIRTY_SKIP_TARGET: &str = "oriterm::gpu::prepare::dirty_skip::selection_damage";
     const DIRTY_SKIP_MOD_TARGET: &str = "oriterm::gpu::prepare::dirty_skip";

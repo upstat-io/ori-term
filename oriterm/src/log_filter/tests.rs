@@ -79,7 +79,7 @@ fn enabled_uses_longest_matching_prefix() {
 
 #[test]
 fn enabled_falls_through_to_default_only_for_oriterm_targets() {
-    // TPR-04-001 pin: default applies ONLY to oriterm targets.
+    // Default applies ONLY to oriterm targets.
     let f = LogFilter::parse("trace");
     assert!(f.enabled("oriterm_core::grid::dirty", Level::Trace));
     assert!(f.enabled("oriterm::gpu::prepare", Level::Trace));
@@ -90,11 +90,10 @@ fn enabled_falls_through_to_default_only_for_oriterm_targets() {
 
 #[test]
 fn enabled_directive_for_non_oriterm_target_is_silently_dropped() {
-    // TPR-04-001 + TPR-06-001 pin: directives that name non-oriterm
-    // targets cannot accidentally enable wgpu/naga spam AND cannot raise
-    // the global max_level (which would defeat the trace! macro
-    // short-circuit for oriterm per-cell calls). Non-oriterm directives
-    // are dropped at PARSE time, not just at enabled() time.
+    // Directives that name non-oriterm targets cannot accidentally enable
+    // wgpu/naga spam AND cannot raise the global max_level (which would
+    // defeat the trace! macro short-circuit for oriterm per-cell calls).
+    // Non-oriterm directives are dropped at PARSE time, not at enabled() time.
     let f = LogFilter::parse("wgpu=trace,naga=trace");
     assert!(!f.enabled("wgpu_hal::vulkan", Level::Trace));
     assert!(!f.enabled("naga", Level::Trace));
@@ -106,8 +105,8 @@ fn enabled_directive_for_non_oriterm_target_is_silently_dropped() {
 
 #[test]
 fn parse_drops_non_oriterm_directives_from_max_level() {
-    // TPR-06-001: a bare-level + a non-oriterm directive should NOT raise
-    // global max_level above the bare level. The non-oriterm directive is
+    // A bare-level + a non-oriterm directive must NOT raise global
+    // max_level above the bare level. The non-oriterm directive is
     // silently dropped at parse time.
     let f = LogFilter::parse("info,wgpu=trace");
     assert_eq!(f.max_level(), LevelFilter::Info);

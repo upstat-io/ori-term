@@ -49,7 +49,7 @@ pub fn build_dirty_set(
 
     if log::log_enabled!(log::Level::Trace) {
         // Trace-only counting path — the per-source counts and total
-        // never run when tracing is disabled (TPR-04-002 hot-path pin).
+        // never run when tracing is disabled.
         let damage_count = input
             .content
             .damage

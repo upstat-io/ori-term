@@ -16,6 +16,7 @@
 pub mod catalog;
 pub mod event_proxy_stub;
 pub mod fixtures;
+pub mod log_capture;
 pub mod paths;
 pub mod session;
 pub mod spec_chain;

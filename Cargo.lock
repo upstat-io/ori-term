@@ -2018,6 +2018,7 @@ version = "0.2.0-alpha.20260506"
 dependencies = [
  "base64",
  "clap",
+ "log",
  "oriterm_core",
  "portable-pty",
  "syn",

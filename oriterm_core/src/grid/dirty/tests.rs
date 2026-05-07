@@ -1,6 +1,6 @@
 use log::{Level, LevelFilter};
+use oriterm_test_support::log_capture::{CapturedRecord, with_capture};
 
-use super::trace_capture::{CapturedRecord, with_capture};
 use super::{DirtyLine, DirtyTracker};
 
 const TARGET: &str = "oriterm_core::grid::dirty";
@@ -451,9 +451,9 @@ fn drain_drop_partial_iter_reports_cleared_remainder() {
 
 #[test]
 fn drain_drop_with_mark_all_counts_remainder() {
-    // TPR-04-003 pin: when all_dirty is set, the drop-cleared count must
-    // include lines that aren't individually marked but ARE logically dirty
-    // under the all_dirty contract.
+    // When all_dirty is set, the drop-cleared count must include lines
+    // that aren't individually marked but ARE logically dirty under the
+    // all_dirty contract.
     with_capture(LevelFilter::Trace, |sink| {
         let mut tracker = DirtyTracker::new(5, 80);
         tracker.mark_all();

@@ -14,16 +14,8 @@ use crate::event::TermEvent;
 /// and runs the application. This is the main entry point called by the
 /// binary.
 pub fn run() {
-    // Section 03.9 Phase 4 — Windows Default Terminal handoff path.
-    //
-    // `conhost.exe` activates `oriterm.exe` with the `-Embedding` flag
-    // (and nothing else) when a registered default terminal needs to
-    // receive a console session. We must intercept this BEFORE clap
-    // parses, because `-Embedding` is not a clap-defined flag and
-    // `Cli::parse()` would reject it.
-    //
-    // The handoff path skips the normal startup (jump list, daemon
-    // discovery, etc.) and goes straight to the COM server lifecycle.
+    // Intercept `-Embedding` BEFORE clap — conhost.exe passes only that
+    // flag for default-terminal activation and clap would reject it.
     #[cfg(target_os = "windows")]
     if has_embedding_arg() {
         run_default_terminal_handoff();
@@ -146,10 +138,8 @@ fn run_default_terminal_handoff() {
         }
     };
 
-    // Build the event loop and the App with the adopted pane payload.
-    // No jump list submission — that uses APARTMENTTHREADED COM and
-    // would conflict with the MULTITHREADED initialization
-    // `run_com_server` already performed.
+    // No jump list submission — APARTMENTTHREADED COM would conflict
+    // with the MULTITHREADED init `run_com_server` already performed.
     let event_loop = build_event_loop();
     let proxy = event_loop.create_proxy();
     let config = Config::load();

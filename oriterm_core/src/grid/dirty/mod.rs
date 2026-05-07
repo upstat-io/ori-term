@@ -274,6 +274,3 @@ impl Drop for DirtyIter<'_> {
 
 #[cfg(test)]
 mod tests;
-
-#[cfg(test)]
-mod trace_capture;

@@ -337,6 +337,3 @@ pub(crate) fn fill_frame_shaped(
 
 #[cfg(test)]
 mod tests;
-
-#[cfg(test)]
-mod trace_capture;

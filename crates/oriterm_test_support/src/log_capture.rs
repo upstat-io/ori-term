@@ -1,19 +1,23 @@
-//! Process-wide log-capture helper for `DirtyTracker` trace tests.
+//! Process-wide log-capture helper for trace tests.
 //!
-//! `set_logger` is global + one-shot, but `cargo test` runs tests in parallel
-//! within a binary AND non-capturing tests in this module also fire traces
-//! (`mark`, `drain`, etc.). To prevent cross-test contamination the captured
-//! sink is held in a `thread_local!` and the global logger only routes
-//! records whose firing thread has an installed sink. Concurrent tests that
-//! never installed a sink see their traces silently dropped — exactly what
-//! they want.
+//! `log::set_logger` is global + one-shot, but `cargo test` runs tests in
+//! parallel within a binary AND non-capturing tests in the same module
+//! also fire traces (e.g. `mark`, `drain`, `process_incremental_cells`).
+//! The captured sink lives in a `thread_local!` and the global logger
+//! routes records only when the firing thread has an installed sink —
+//! concurrent tests on other threads see their traces silently dropped.
+//!
+//! Canonical home for trace-emission tests across the workspace: previously
+//! duplicated in `oriterm_core/src/grid/dirty/trace_capture.rs` and
+//! `oriterm/src/gpu/prepare/trace_capture.rs` (impl-hygiene F-01 LEAK:
+//! algorithmic-duplication, surfaced 2026-05-07).
 
 use std::cell::RefCell;
 use std::sync::{Arc, Mutex, OnceLock};
 
 use log::{Level, LevelFilter, Log, Metadata, Record};
 
-/// Captured record snapshot — the fields a test typically asserts on.
+/// One captured log record snapshot — the fields a test typically asserts on.
 #[derive(Debug, Clone)]
 pub struct CapturedRecord {
     pub target: String,
@@ -21,30 +25,41 @@ pub struct CapturedRecord {
     pub message: String,
 }
 
+/// Shared `Vec<CapturedRecord>` cloneable handle. Internally `Arc<Mutex<...>>`
+/// so the test body and the capturing logger see the same buffer.
 #[derive(Default, Clone)]
 pub struct MemorySink {
     inner: Arc<Mutex<Vec<CapturedRecord>>>,
 }
 
 impl MemorySink {
+    /// Create an empty sink.
     pub fn new() -> Self {
         Self {
             inner: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
+    /// Snapshot the captured records.
+    ///
+    /// Panics if the internal mutex was poisoned by a panic in another
+    /// thread — that's a real bug to surface, not a silent empty-Vec.
     pub fn records(&self) -> Vec<CapturedRecord> {
-        self.inner.lock().map(|g| g.clone()).unwrap_or_default()
+        self.inner
+            .lock()
+            .expect("log_capture sink mutex poisoned")
+            .clone()
     }
 
     fn push(&self, record: &Record<'_>) {
-        if let Ok(mut g) = self.inner.lock() {
-            g.push(CapturedRecord {
+        self.inner
+            .lock()
+            .expect("log_capture sink mutex poisoned")
+            .push(CapturedRecord {
                 target: record.target().to_string(),
                 level: record.level(),
                 message: format!("{}", record.args()),
             });
-        }
     }
 }
 
@@ -76,7 +91,6 @@ static LOGGER_INSTALLED: OnceLock<()> = OnceLock::new();
 
 fn install_logger_once() {
     LOGGER_INSTALLED.get_or_init(|| {
-        // The TestLogger is a zero-sized type with no state; safe to leak.
         let logger: &'static TestLogger = &TestLogger;
         let _ = log::set_logger(logger);
         // Set the global max to Trace so the macro short-circuit doesn't
@@ -92,8 +106,8 @@ fn install_logger_once() {
 /// thread-local sink installed). Records fired on this thread go into the
 /// fresh `MemorySink` for the duration of `body`. Per-thread isolation
 /// avoids the race where tests that don't use `with_capture` (e.g. the
-/// existing `mark_single_line` test) emit traces that contaminate the
-/// captured sink of a concurrent `with_capture` body.
+/// existing `mark_single_line` test in `dirty/tests.rs`) emit traces that
+/// contaminate the captured sink of a concurrent `with_capture` body.
 pub fn with_capture(level: LevelFilter, body: impl FnOnce(&MemorySink)) {
     install_logger_once();
     let sink = MemorySink::new();
