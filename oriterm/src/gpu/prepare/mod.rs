@@ -142,6 +142,17 @@ pub fn prepare_frame_shaped_into(
     // Subsequent calls: previous frame's terminal-tier moves into
     // saved_tier, making it visible to the can_incremental check.
     out.save_terminal_tier();
+    // Invariant: save_terminal_tier swaps the live terminal-tier writers
+    // out into saved_tier and clears the live writers — the live writers
+    // MUST be empty here for the dispatch branches below to populate
+    // them from a clean baseline.
+    debug_assert!(
+        out.backgrounds.is_empty()
+            && out.glyphs.is_empty()
+            && out.subpixel_glyphs.is_empty()
+            && out.color_glyphs.is_empty(),
+        "save_terminal_tier must leave live terminal-tier writers empty"
+    );
 
     // Frame-level state guards on the dispatch predicate. The incremental
     // branch's `replay_clean_row` reuses per-cell instances frozen at the
@@ -164,10 +175,7 @@ pub fn prepare_frame_shaped_into(
     // only the cells under the previous and current hover positions; we
     // dirty those rows in `build_dirty_set` (O(1)) instead of falling
     // back to a full rebuild (O(N)) for every mouse move.
-    let search_fingerprint = input
-        .search
-        .as_ref()
-        .map(super::frame_input::FrameSearch::damage_fingerprint);
+    let search_fingerprint = input.search_fingerprint();
     let can_incremental = !input.content.all_dirty
         && out.saved_tier.has_cached_rows()
         && out.viewport == input.viewport

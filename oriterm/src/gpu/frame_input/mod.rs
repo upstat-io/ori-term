@@ -290,6 +290,17 @@ impl FrameInput {
         self.content_cols
     }
 
+    /// Active search-state fingerprint, or `None` when no search is active.
+    ///
+    /// Single source of truth for the search-state damage key consumed
+    /// by both the prepare-phase dispatch predicate (`can_incremental`)
+    /// and the renderer's cursor-blink-only fast-path gate
+    /// (`has_visual_change`); collapsing the duplicated `as_ref().map(...)`
+    /// chain into one helper closes the per-call-site DRIFT risk.
+    pub fn search_fingerprint(&self) -> Option<(usize, usize, u64, u64)> {
+        self.search.as_ref().map(FrameSearch::damage_fingerprint)
+    }
+
     /// Number of grid rows in the content.
     ///
     /// Returns the content-derived row count. See [`columns()`](Self::columns).

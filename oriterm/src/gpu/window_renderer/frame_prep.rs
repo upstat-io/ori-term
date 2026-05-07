@@ -41,11 +41,7 @@ impl WindowRenderer {
         if input.hovered_cell != self.prepared.prev_hovered_cell {
             return true;
         }
-        let search_fingerprint = input
-            .search
-            .as_ref()
-            .map(super::super::frame_input::FrameSearch::damage_fingerprint);
-        if search_fingerprint != self.prepared.prev_search_fingerprint {
+        if input.search_fingerprint() != self.prepared.prev_search_fingerprint {
             return true;
         }
         false
