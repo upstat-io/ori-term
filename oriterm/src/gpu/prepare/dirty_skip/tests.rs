@@ -25,13 +25,16 @@ fn snap(start: usize, end: usize) -> SelectionDamageSnapshot {
 }
 
 /// Helper: call `build_dirty_set` with a reusable scratch buffer and return it.
+/// Uses the raw `input.content.cursor` as the resolved cursor (no mark mode
+/// override applies in these tests).
 fn dirty_set(
     input: &FrameInput,
     num_rows: usize,
     prev_sel: Option<SelectionDamageSnapshot>,
 ) -> Vec<bool> {
     let mut buf = Vec::new();
-    build_dirty_set(input, num_rows, prev_sel, None, &mut buf);
+    let resolved = input.content.cursor;
+    build_dirty_set(input, num_rows, &resolved, prev_sel, None, &mut buf);
     buf
 }
 
@@ -43,7 +46,15 @@ fn dirty_set_with_prev_cursor(
     prev_cursor_line: Option<usize>,
 ) -> Vec<bool> {
     let mut buf = Vec::new();
-    build_dirty_set(input, num_rows, prev_sel, prev_cursor_line, &mut buf);
+    let resolved = input.content.cursor;
+    build_dirty_set(
+        input,
+        num_rows,
+        &resolved,
+        prev_sel,
+        prev_cursor_line,
+        &mut buf,
+    );
     buf
 }
 

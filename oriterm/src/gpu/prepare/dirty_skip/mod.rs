@@ -274,9 +274,15 @@ pub(crate) fn fill_frame_incremental(
     let num_rows = input.rows();
     let prev_sel = frame.prev_selection_snapshot;
     let prev_cursor_line = frame.prev_cursor_line;
+    // Resolve cursor BEFORE build_dirty_set so the dirty-set tracks the
+    // actually-rendered cursor row (which may be the mark-mode cursor)
+    // rather than the raw terminal cursor — otherwise the wrong row's
+    // per-cell colors get the cursor-cell exclusion treatment.
+    let resolved_cursor = resolve_cursor(&input.content.cursor, input.mark_cursor.as_ref());
     build_dirty_set(
         input,
         num_rows,
+        &resolved_cursor,
         prev_sel,
         prev_cursor_line,
         &mut frame.scratch_dirty,
@@ -289,7 +295,7 @@ pub(crate) fn fill_frame_incremental(
         palette: &input.palette,
         sel: input.selection.as_ref(),
         search: input.search.as_ref(),
-        cursor: resolve_cursor(&input.content.cursor, input.mark_cursor.as_ref()),
+        cursor: resolved_cursor,
         cursor_opacity,
         hovered_cell: input.hovered_cell,
         cell_size: &input.cell_size,

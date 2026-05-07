@@ -156,6 +156,13 @@ pub struct PreparedFrame {
     /// without the stale "with cursor" colors baked into `saved_tier`)
     /// AND the current cursor row.
     pub(crate) prev_cursor_line: Option<usize>,
+    /// Previous frame's hovered cell `(viewport_line, column)`. Drives the
+    /// dispatch predicate to invalidate `saved_tier` when the hover target
+    /// changes — the explicit-OSC-8 hyperlink hover path emits a SOLID
+    /// underline into the terminal-tier `backgrounds` buffer (see
+    /// `prepare/decorations.rs`), so a hover delta without an
+    /// `all_dirty` signal would replay stale hover state from the cache.
+    pub(crate) prev_hovered_cell: Option<(usize, usize)>,
     /// Whether the last prepare pass used the incremental path.
     ///
     /// When true, `scratch_dirty` and `saved_tier.row_ranges` are valid and
@@ -198,6 +205,7 @@ impl PreparedFrame {
             prev_content_cols: None,
             prev_content_rows: None,
             prev_cursor_line: None,
+            prev_hovered_cell: None,
             was_incremental: false,
             scratch_dirty: Vec::new(),
             viewport,
@@ -244,6 +252,7 @@ impl PreparedFrame {
             prev_content_cols: None,
             prev_content_rows: None,
             prev_cursor_line: None,
+            prev_hovered_cell: None,
             was_incremental: false,
             scratch_dirty: Vec::new(),
             viewport,

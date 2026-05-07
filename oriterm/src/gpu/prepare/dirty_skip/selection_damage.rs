@@ -3,6 +3,7 @@
 //! Extracted from `dirty_skip/mod.rs` to keep each file under 500 lines.
 
 use log::trace;
+use oriterm_core::RenderableCursor;
 
 use crate::gpu::frame_input::{FrameInput, SelectionDamageSnapshot};
 
@@ -15,13 +16,25 @@ use crate::gpu::frame_input::{FrameInput, SelectionDamageSnapshot};
 /// When the selection changes between frames, the affected rows are marked
 /// dirty so their instances are regenerated with correct selection colors.
 ///
-/// `prev_cursor_line` is the cursor row from the previous frame (when
-/// visible). When the cursor moves between frames, the previous cursor
-/// row is dirtied so its cells regenerate without inheriting the "with
-/// cursor" per-cell colors baked into `saved_tier`.
+/// `resolved_cursor` is the cursor that will actually render this frame
+/// (raw `content.cursor` overlaid with `mark_cursor` when mark mode is
+/// active). Drives the "current cursor row is always dirty" rule below
+/// — using the raw `content.cursor.line` would dirty the wrong row when
+/// mark mode relocates the visible cursor.
+///
+/// `prev_cursor_line` is the resolved cursor row from the previous frame
+/// (when visible). When the cursor moves between frames, the previous
+/// cursor row is dirtied so its cells regenerate without inheriting the
+/// "with cursor" per-cell colors baked into `saved_tier`.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "every parameter is independent frame state read by build_dirty_set; \
+              wrapping into a struct would just shift the constructor's argument list"
+)]
 pub fn build_dirty_set(
     input: &FrameInput,
     num_rows: usize,
+    resolved_cursor: &RenderableCursor,
     prev_selection: Option<SelectionDamageSnapshot>,
     prev_cursor_line: Option<usize>,
     dirty: &mut Vec<bool>,
@@ -43,8 +56,8 @@ pub fn build_dirty_set(
     }
 
     // The cursor row is always dirty (cursor blink state may have changed).
-    if input.content.cursor.visible && input.content.cursor.line < num_rows {
-        dirty[input.content.cursor.line] = true;
+    if resolved_cursor.visible && resolved_cursor.line < num_rows {
+        dirty[resolved_cursor.line] = true;
     }
 
     // Cursor-move dirties the previous cursor row too — the cursor cell
@@ -55,7 +68,7 @@ pub fn build_dirty_set(
     if let Some(prev_line) = prev_cursor_line
         && prev_line < num_rows
     {
-        let cursor_moved = !input.content.cursor.visible || input.content.cursor.line != prev_line;
+        let cursor_moved = !resolved_cursor.visible || resolved_cursor.line != prev_line;
         if cursor_moved {
             dirty[prev_line] = true;
             previous_cursor_dirtied = true;

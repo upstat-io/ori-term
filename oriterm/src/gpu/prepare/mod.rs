@@ -168,7 +168,8 @@ pub fn prepare_frame_shaped_into(
         && out.prev_content_rows == Some(input.content_rows)
         && (out.prev_origin.0 - origin.0).abs() < f32::EPSILON
         && (out.prev_origin.1 - origin.1).abs() < f32::EPSILON
-        && (out.prev_text_blink_opacity - input.text_blink_opacity).abs() < f32::EPSILON;
+        && (out.prev_text_blink_opacity - input.text_blink_opacity).abs() < f32::EPSILON
+        && out.prev_hovered_cell == input.hovered_cell;
 
     if can_incremental {
         // Incremental path: saved_tier is already populated by the
@@ -213,11 +214,16 @@ pub fn prepare_frame_shaped_into(
     out.prev_origin = origin;
     out.prev_content_cols = Some(input.content_cols);
     out.prev_content_rows = Some(input.content_rows);
-    out.prev_cursor_line = if input.content.cursor.visible {
-        Some(input.content.cursor.line)
+    // Use the resolved cursor (mark-mode override applied) so the next
+    // frame's build_dirty_set dirties the correct previous-cursor row
+    // when the cursor moves.
+    let resolved_cursor = resolve_cursor(&input.content.cursor, input.mark_cursor.as_ref());
+    out.prev_cursor_line = if resolved_cursor.visible {
+        Some(resolved_cursor.line)
     } else {
         None
     };
+    out.prev_hovered_cell = input.hovered_cell;
 }
 
 /// Cursor-blink-only fast path: rebuild only cursor instances.
