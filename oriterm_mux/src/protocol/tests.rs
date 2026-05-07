@@ -1630,9 +1630,18 @@ fn set_answerback_bincode_discriminant_appended_after_write_stalled_status() {
     let new_bytes = bincode::serialize(&new).expect("serialize new");
     let prior_disc = u32::from_le_bytes(prior_bytes[..4].try_into().expect("u32 slice"));
     let new_disc = u32::from_le_bytes(new_bytes[..4].try_into().expect("u32 slice"));
-    assert!(
-        new_disc > prior_disc,
-        "SetAnswerback bincode discriminant ({new_disc}) must be > WriteStalledStatus's ({prior_disc}); \
-         placing the variant mid-enum silently breaks wire compatibility for every subsequent variant"
+    // Strict immediately-after pin (not just `>`): SetAnswerback is the
+    // very next variant after WriteStalledStatus per the append-only
+    // comment at messages.rs:500. A future contributor inserting any
+    // variant between them would shift SetAnswerback's discriminant by
+    // ≥1 and FAIL this pin. Looser `>` would silently allow such an
+    // insertion to pass.
+    assert_eq!(
+        new_disc,
+        prior_disc + 1,
+        "SetAnswerback bincode discriminant ({new_disc}) must be exactly WriteStalledStatus's + 1 \
+         ({}); placing the variant mid-enum silently breaks wire compatibility for every \
+         subsequent variant",
+        prior_disc + 1
     );
 }
