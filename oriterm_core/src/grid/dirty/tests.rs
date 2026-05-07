@@ -1,6 +1,6 @@
 use log::{Level, LevelFilter};
 
-use super::trace_capture::{with_capture, CapturedRecord};
+use super::trace_capture::{CapturedRecord, with_capture};
 use super::{DirtyLine, DirtyTracker};
 
 const TARGET: &str = "oriterm_core::grid::dirty";
@@ -334,7 +334,12 @@ fn mark_emits_trace_with_line() {
         tracker.mark(5);
 
         let recs = matching(&sink.records(), "mark line=5");
-        assert_eq!(recs.len(), 1, "expected one trace; got {:?}", sink.records());
+        assert_eq!(
+            recs.len(),
+            1,
+            "expected one trace; got {:?}",
+            sink.records()
+        );
         assert!(recs[0].message.contains("mark line=5"));
     });
 }
@@ -472,7 +477,11 @@ fn out_of_bounds_mark_emits_no_trace() {
         tracker.mark(100);
 
         let recs = matching(&sink.records(), "mark line=100");
-        assert!(recs.is_empty(), "expected no trace for OOB mark; got {:?}", sink.records());
+        assert!(
+            recs.is_empty(),
+            "expected no trace for OOB mark; got {:?}",
+            sink.records()
+        );
     });
 }
 
@@ -500,7 +509,8 @@ fn traces_disabled_at_warn_level_emit_nothing() {
 
         let recs = sink.records();
         assert!(
-            recs.iter().all(|r| r.target != TARGET || r.level < Level::Trace),
+            recs.iter()
+                .all(|r| r.target != TARGET || r.level < Level::Trace),
             "expected zero trace records at Warn level; got {:?}",
             recs
         );

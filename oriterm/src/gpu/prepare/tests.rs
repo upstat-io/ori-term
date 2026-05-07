@@ -4752,18 +4752,18 @@ mod dirty_skip_traces {
             .collect()
     }
 
-    fn drive_two_frames_for_incremental(
-        cols: usize,
-        rows: usize,
-    ) -> (PreparedFrame, FrameInput) {
+    fn drive_two_frames_for_incremental(cols: usize, rows: usize) -> (PreparedFrame, FrameInput) {
         let size_q6 = 768;
         let text: String = std::iter::repeat_n('A', cols * rows).collect();
         let input = FrameInput::test_grid(cols, rows, &text);
         let (shaped, ids) = shaped_multi_row(cols, rows, 10, size_q6);
         let atlas = key_atlas_with(&ids, size_q6);
 
-        let mut frame =
-            PreparedFrame::new(ViewportSize::new(1, 1), oriterm_core::Rgb { r: 0, g: 0, b: 0 }, 1.0);
+        let mut frame = PreparedFrame::new(
+            ViewportSize::new(1, 1),
+            oriterm_core::Rgb { r: 0, g: 0, b: 0 },
+            1.0,
+        );
         // Frame 1: full rebuild populates row_ranges + saved_tier.
         prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
         frame.save_terminal_tier();
@@ -4792,7 +4792,12 @@ mod dirty_skip_traces {
             assert!(frame.was_incremental, "second prepare must be incremental");
 
             let recs = matching_substr(&sink.records(), "build_dirty_set all_dirty=false");
-            assert_eq!(recs.len(), 1, "expected ONE per-source summary; got {:?}", recs);
+            assert_eq!(
+                recs.len(),
+                1,
+                "expected ONE per-source summary; got {:?}",
+                recs
+            );
             let msg = &recs[0].message;
             assert!(msg.contains("damage="), "msg={msg}");
             assert!(msg.contains("cursor=true"), "msg={msg}");

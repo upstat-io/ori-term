@@ -41,8 +41,18 @@ impl LogFilter {
                 continue;
             }
             if let Some((target, lvl)) = piece.split_once('=') {
+                let target = target.trim();
+                // Noise gate: non-oriterm directives are silently dropped
+                // at parse time so they cannot raise the global max_level
+                // and defeat the runtime trace! short-circuit for oriterm
+                // calls (the directive's enabled() check would have vetoed
+                // the record anyway, but the macro overhead would still
+                // run on every per-cell mark/mark_cols call).
+                if !target.starts_with("oriterm") {
+                    continue;
+                }
                 if let Ok(lvl) = lvl.trim().parse::<LevelFilter>() {
-                    directives.push((target.trim().to_string(), lvl));
+                    directives.push((target.to_string(), lvl));
                 }
             } else if let Ok(lvl) = piece.parse::<LevelFilter>() {
                 default = lvl;

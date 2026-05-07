@@ -21,9 +21,8 @@ fn parse_single_directive() {
 
 #[test]
 fn parse_multiple_directives_full_recipe() {
-    let f = LogFilter::parse(
-        "oriterm_core::grid::dirty=trace,oriterm::gpu::prepare::dirty_skip=trace",
-    );
+    let f =
+        LogFilter::parse("oriterm_core::grid::dirty=trace,oriterm::gpu::prepare::dirty_skip=trace");
     assert_eq!(f.max_level(), LevelFilter::Trace);
     assert!(f.enabled("oriterm_core::grid::dirty", Level::Trace));
     assert!(f.enabled("oriterm::gpu::prepare::dirty_skip", Level::Trace));
@@ -91,20 +90,34 @@ fn enabled_falls_through_to_default_only_for_oriterm_targets() {
 
 #[test]
 fn enabled_directive_for_non_oriterm_target_is_silently_dropped() {
-    // TPR-04-001 pin: directives that name non-oriterm targets cannot
-    // accidentally enable wgpu/naga spam.
+    // TPR-04-001 + TPR-06-001 pin: directives that name non-oriterm
+    // targets cannot accidentally enable wgpu/naga spam AND cannot raise
+    // the global max_level (which would defeat the trace! macro
+    // short-circuit for oriterm per-cell calls). Non-oriterm directives
+    // are dropped at PARSE time, not just at enabled() time.
     let f = LogFilter::parse("wgpu=trace,naga=trace");
     assert!(!f.enabled("wgpu_hal::vulkan", Level::Trace));
     assert!(!f.enabled("naga", Level::Trace));
-    // Directive prefixes are still in the parsed list (they were valid
-    // syntax), but the noise gate vetoes their effect at enabled().
+    // max_level must NOT include the dropped directives — falls back to
+    // the default Info because the input had no bare-level + no surviving
+    // directives.
+    assert_eq!(f.max_level(), LevelFilter::Info);
+}
+
+#[test]
+fn parse_drops_non_oriterm_directives_from_max_level() {
+    // TPR-06-001: a bare-level + a non-oriterm directive should NOT raise
+    // global max_level above the bare level. The non-oriterm directive is
+    // silently dropped at parse time.
+    let f = LogFilter::parse("info,wgpu=trace");
+    assert_eq!(f.max_level(), LevelFilter::Info);
+    assert!(f.enabled("oriterm", Level::Info));
+    assert!(!f.enabled("wgpu_hal", Level::Trace));
 }
 
 #[test]
 fn set_max_level_uses_max_across_directives_and_default() {
-    let f = LogFilter::parse(
-        "info,oriterm_core::grid::dirty=trace,oriterm_core::term=warn",
-    );
+    let f = LogFilter::parse("info,oriterm_core::grid::dirty=trace,oriterm_core::term=warn");
     // Max across {info, trace, warn} = trace.
     assert_eq!(f.max_level(), LevelFilter::Trace);
 }

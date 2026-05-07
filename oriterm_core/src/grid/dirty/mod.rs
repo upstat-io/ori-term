@@ -268,10 +268,7 @@ impl Drop for DirtyIter<'_> {
             }
             bounds.reset();
         }
-        trace!(
-            "drain end yielded={} drop_cleared={cleared}",
-            self.yielded
-        );
+        trace!("drain end yielded={} drop_cleared={cleared}", self.yielded);
     }
 }
 
