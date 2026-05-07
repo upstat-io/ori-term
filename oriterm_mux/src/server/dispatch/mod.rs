@@ -218,6 +218,13 @@ pub fn dispatch_request(
             None
         }
 
+        MuxPdu::SetAnswerback { pane_id, bytes } => {
+            if let Some(pane) = ctx.panes.get(&pane_id) {
+                pane.send_io_command(PaneIoCommand::SetAnswerback(bytes));
+            }
+            None
+        }
+
         MuxPdu::SetCellDimensions {
             pane_id,
             width,

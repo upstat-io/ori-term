@@ -136,6 +136,9 @@ impl MuxBackend for MockMuxBackend {
     fn set_bold_is_bright(&mut self, _: PaneId, _: bool) {
         unimplemented!("MockMuxBackend: App dispatch does not call set_bold_is_bright")
     }
+    fn set_answerback(&mut self, _: PaneId, _: Vec<u8>) {
+        unimplemented!("MockMuxBackend: App dispatch does not call set_answerback")
+    }
     fn mark_all_dirty(&mut self, _: PaneId) {
         unimplemented!("MockMuxBackend: App dispatch does not call mark_all_dirty")
     }

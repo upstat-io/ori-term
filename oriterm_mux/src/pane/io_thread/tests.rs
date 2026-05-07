@@ -3760,7 +3760,8 @@ fn is_reply_bearing_predicate_matches_reply_field_presence() {
             | PaneIoCommand::SearchNextMatch
             | PaneIoCommand::SearchPrevMatch
             | PaneIoCommand::Reset
-            | PaneIoCommand::Shutdown => false,
+            | PaneIoCommand::Shutdown
+            | PaneIoCommand::SetAnswerback(_) => false,
         }
     }
 

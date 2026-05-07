@@ -354,6 +354,20 @@ impl App {
             }
             log::info!("config reload: bold_is_bright={enabled}");
         }
+
+        if new.behavior.answerback != self.config.behavior.answerback {
+            // Snapshot the new bytes once; clone per pane below.
+            // Intentionally NO mark_all_dirty: answerback affects only
+            // ENQ response, no visible state change.
+            let bytes = new.behavior.answerback.clone().into_bytes();
+            let len = bytes.len();
+            if let Some(mux) = self.mux.as_mut() {
+                for pane_id in mux.pane_ids() {
+                    mux.set_answerback(pane_id, bytes.clone());
+                }
+            }
+            log::info!("config reload: answerback={len} bytes");
+        }
     }
 
     /// Detect and apply image protocol config changes.

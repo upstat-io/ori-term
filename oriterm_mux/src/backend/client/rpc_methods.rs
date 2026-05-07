@@ -158,6 +158,18 @@ impl MuxBackend for MuxClient {
         self.dirty_panes.insert(pane_id);
     }
 
+    fn set_answerback(&mut self, pane_id: PaneId, bytes: Vec<u8>) {
+        if let Some(transport) = &mut self.transport {
+            transport.fire_and_forget(MuxPdu::SetAnswerback { pane_id, bytes });
+            // Intentionally NO transport.invalidate_pushed_snapshot:
+            // answerback doesn't change rendered cells. Deliberately
+            // diverges from set_bold_is_bright AND set_image_config
+            // (both call invalidate at this same site) because answerback
+            // has zero visual effect on either backend.
+        }
+        // Intentionally NO self.dirty_panes.insert: same reason.
+    }
+
     fn mark_all_dirty(&mut self, pane_id: PaneId) {
         if let Some(transport) = &mut self.transport {
             transport.fire_and_forget(MuxPdu::MarkAllDirty { pane_id });

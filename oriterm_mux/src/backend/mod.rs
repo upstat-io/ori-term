@@ -194,6 +194,16 @@ pub trait MuxBackend {
     /// Set whether bold text promotes ANSI colors 0–7 to bright 8–15.
     fn set_bold_is_bright(&mut self, pane_id: PaneId, enabled: bool);
 
+    /// Update the ENQ answerback string emitted on `\x05` per ECMA-48
+    /// §8.3.40 + `WezTerm` parity (`term/src/terminalstate/performer.rs:473-478`).
+    ///
+    /// Empty bytes (default) suppress emission. Non-empty bytes are
+    /// written verbatim to the PTY on each ENQ byte received.
+    /// Implementations MUST NOT mark the pane snapshot dirty —
+    /// answerback affects only the ENQ outbound write and never
+    /// changes any rendered cell.
+    fn set_answerback(&mut self, pane_id: PaneId, bytes: Vec<u8>);
+
     /// Mark all lines in a pane as dirty (forces full re-render).
     fn mark_all_dirty(&mut self, pane_id: PaneId);
 

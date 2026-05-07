@@ -571,6 +571,9 @@ impl MuxBackend for RecordingMuxBackend {
     fn set_bold_is_bright(&mut self, _: PaneId, _: bool) {
         unimplemented!("RecordingMuxBackend: pump_mux_events_core does not call set_bold_is_bright")
     }
+    fn set_answerback(&mut self, _: PaneId, _: Vec<u8>) {
+        unimplemented!("RecordingMuxBackend: pump_mux_events_core does not call set_answerback")
+    }
     fn mark_all_dirty(&mut self, _: PaneId) {
         unimplemented!("RecordingMuxBackend: pump_mux_events_core does not call mark_all_dirty")
     }

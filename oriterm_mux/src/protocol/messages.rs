@@ -497,6 +497,18 @@ pub enum MuxPdu {
         /// Whether the pane's PTY writer thread is currently stalled on a full kernel buffer.
         stalled: bool,
     },
+
+    /// Update the ENQ answerback string for a pane. Fire-and-forget.
+    ///
+    /// Empty bytes (default) suppress emission per ECMA-48 §8.3.40 +
+    /// `WezTerm` parity. Non-empty bytes are written verbatim to the PTY
+    /// on each `\x05` byte received from the application.
+    SetAnswerback {
+        /// Target pane.
+        pane_id: PaneId,
+        /// Raw bytes to emit on ENQ; empty disables emission.
+        bytes: Vec<u8>,
+    },
     // Wire-compat: append-only — new variants must go at the end.
 }
 

@@ -98,6 +98,17 @@ pub enum PaneIoCommand {
     SelectCommandInput { reply: Sender<Option<Selection>> },
     /// Shut down the IO thread (sent during pane close).
     Shutdown,
+    /// Update the ENQ answerback string on the IO thread's `Term`.
+    ///
+    /// Empty (default) suppresses emission per ECMA-48 §8.3.40 + `WezTerm`
+    /// parity (`term/src/terminalstate/performer.rs:473-478`). Non-empty
+    /// bytes are written to the PTY verbatim on each `ENQ` byte received.
+    /// Routed via `MuxBackend::set_answerback` from `Config.behavior.answerback`
+    /// at every spawn site + on hot-reload. The handler arm DOES NOT mark
+    /// `grid_dirty` because answerback affects only the ENQ outbound write,
+    /// not any visible state — matches the `SetImageConfig` non-visual
+    /// precedent at `handler.rs:120-126`.
+    SetAnswerback(Vec<u8>),
 }
 
 impl PaneIoCommand {
@@ -154,6 +165,7 @@ impl fmt::Debug for PaneIoCommand {
             Self::SelectCommandOutput { .. } => write!(f, "SelectCommandOutput {{ .. }}"),
             Self::SelectCommandInput { .. } => write!(f, "SelectCommandInput {{ .. }}"),
             Self::Shutdown => write!(f, "Shutdown"),
+            Self::SetAnswerback(bytes) => write!(f, "SetAnswerback({} bytes)", bytes.len()),
         }
     }
 }

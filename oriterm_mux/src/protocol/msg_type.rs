@@ -40,6 +40,7 @@ pub(crate) enum MsgType {
     SetCellDimensions = 0x012B,
     ReplyHostRequest = 0x012D,
     IsWriteStalled = 0x012E,
+    SetAnswerback = 0x012F,
 
     // Responses (daemon → client).
     HelloAck = 0x0201,
@@ -112,6 +113,7 @@ impl MsgType {
             0x012B => Some(Self::SetCellDimensions),
             0x012D => Some(Self::ReplyHostRequest),
             0x012E => Some(Self::IsWriteStalled),
+            0x012F => Some(Self::SetAnswerback),
             0x0201 => Some(Self::HelloAck),
             0x0205 => Some(Self::PaneClosedAck),
             0x0207 => Some(Self::Subscribed),
