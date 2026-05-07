@@ -114,15 +114,17 @@ SOURCE_KEYWORD_PATTERNS.extend([
         "reference-impl-bullet-header",
         re.MULTILINE,
     ),
-    (
-        # Allowed by attribution: verbatim file:line cite of the reference
-        # implementation (e.g. WezTerm `term/src/terminalstate/performer.rs:473-478`).
-        # Common terminal-emulator source extensions: Rust, Go, C, Zig, C++.
-        rf"\b{_REFERENCE_LANGS}\s+`[^`]*\.(?:rs|go|c|h|cc|cpp|zig)`",
-        "reference-impl-source-cite",
-        0,
-    ),
 ])
+
+# Exemption: a line carrying a verbatim file:line cite of the reference
+# implementation (e.g. WezTerm `term/src/terminalstate/performer.rs:473-478`)
+# is the canonical attribution form per CLAUDE.md §Reference Repos. Such a
+# line is an explicit, verifiable citation — not an unattributed copy claim —
+# so reference-impl-* patterns on the same line are suppressed.
+# Common terminal-emulator source extensions: Rust, Go, C, Zig, C++.
+REFERENCE_IMPL_CITE_RE = re.compile(
+    rf"\b{_REFERENCE_LANGS}\s+`[^`]*\.(?:rs|go|c|h|cc|cpp|zig)`"
+)
 
 # Suppressions (false-positive guards)
 COMPOUND_ADJ_RE = re.compile(
@@ -357,9 +359,15 @@ def keyword_scan(lines, exempt, patterns, allow_re, apply_md_suppressors):
             "methodology-pin-vocab",
             "methodology-tdd-matrix",
         }
+        # Lines carrying a verbatim file:line cite of a reference impl are
+        # exempt from all reference-impl-* attribution patterns — the cite IS
+        # the attribution.
+        cite_line = REFERENCE_IMPL_CITE_RE.search(line) is not None
         masked = COMPOUND_ADJ_RE.sub("<compound>", line) if apply_md_suppressors else line
         for regex, label, flags in patterns:
             if regression_doc_line and label in regression_exempt_labels:
+                continue
+            if cite_line and label.startswith("reference-impl-"):
                 continue
             m = re.search(regex, masked, flags)
             if m:
