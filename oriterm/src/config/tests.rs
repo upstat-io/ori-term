@@ -66,6 +66,83 @@ bold_is_bright = false
     assert!(!parsed.behavior.bold_is_bright);
 }
 
+/// `BehaviorConfig.answerback` defaults to
+/// the empty string per ECMA-48 §8.3.40 + WezTerm parity (empty
+/// suppresses ENQ emission).
+#[test]
+fn behavior_config_answerback_default_is_empty_string() {
+    let cfg = BehaviorConfig::default();
+    assert_eq!(cfg.answerback, "");
+}
+
+/// explicit `answerback = "ori-term-2026"`
+/// in TOML round-trips into `BehaviorConfig.answerback`.
+#[test]
+fn behavior_config_answerback_parses_from_toml() {
+    let toml_str = r#"
+[behavior]
+answerback = "ori-term-2026"
+"#;
+    let parsed: Config = toml::from_str(toml_str).expect("deserialize");
+    assert_eq!(parsed.behavior.answerback, "ori-term-2026");
+}
+
+/// omitted `answerback` falls back to the
+/// empty default (omitted == empty == default).
+#[test]
+fn behavior_config_answerback_default_when_omitted() {
+    let toml_str = r#"
+[behavior]
+copy_on_select = true
+"#;
+    let parsed: Config = toml::from_str(toml_str).expect("deserialize");
+    assert_eq!(parsed.behavior.answerback, "");
+}
+
+/// explicit empty string in TOML parses
+/// cleanly (explicit empty == omitted == default — no SSOT drift).
+#[test]
+fn behavior_config_answerback_accepts_empty_explicit() {
+    let toml_str = r#"
+[behavior]
+answerback = ""
+"#;
+    let parsed: Config = toml::from_str(toml_str).expect("deserialize");
+    assert_eq!(parsed.behavior.answerback, "");
+}
+
+/// non-ASCII UTF-8 string survives the
+/// `clone().into_bytes()` conversion at propagation sites byte-for-byte.
+#[test]
+fn behavior_config_answerback_round_trips_non_ascii_utf8_byte_exact() {
+    let toml_str = "[behavior]\nanswerback = \"ori-térm\"\n";
+    let parsed: Config = toml::from_str(toml_str).expect("deserialize");
+    assert_eq!(parsed.behavior.answerback, "ori-térm");
+    let bytes = parsed.behavior.answerback.clone().into_bytes();
+    // "ori-térm" = o(0x6f) r(0x72) i(0x69) -(0x2d) t(0x74) é(0xc3 0xa9) r(0x72) m(0x6d) — 9 bytes total.
+    assert_eq!(
+        bytes,
+        vec![0x6f, 0x72, 0x69, 0x2d, 0x74, 0xc3, 0xa9, 0x72, 0x6d]
+    );
+}
+
+/// TOML basic-string `\u0000` Unicode escape
+/// resolves to byte 0x00 at parse time. TOML 1.0 prohibits literal NUL
+/// inside basic strings, so the only way to get a byte-zero answerback
+/// is the `\u0000` escape (which is what users would write in
+/// settings.toml).
+///
+/// In Rust source the TOML literal `\u0000` is written `\\u0000` because
+/// Rust requires `\\` to produce a literal backslash; the parser
+/// (toml crate) then resolves the 6-character TOML escape to byte 0x00.
+#[test]
+fn behavior_config_answerback_round_trips_escaped_nul_byte_exact() {
+    let toml_str = "[behavior]\nanswerback = \"a\\u0000b\"\n";
+    let parsed: Config = toml::from_str(toml_str).expect("deserialize");
+    let bytes = parsed.behavior.answerback.clone().into_bytes();
+    assert_eq!(bytes, vec![0x61, 0x00, 0x62]);
+}
+
 /// Regression: `behavior.notification` parses the four
 /// modes ("none", "visual", "sound", "both") and `is_visual` /
 /// `is_audible` predicates correctly classify each mode for the

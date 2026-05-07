@@ -1,90 +1,249 @@
-//! Spec_chain conversion note for the tack `enq_ack` scenario family.
+//! Spec_chain conversion of the tack `enq_ack` scenario family.
 //!
-//! Per `crates/oriterm_test_support/src/tack_framework/scenarios/enq_ack/mod.rs`,
-//! tack's `t -> u) test ENQ/ACK (DA1) handshake` test sends the `u9`
-//! cap (declared as `\E[c` in `extra/ori_term.info:115`, i.e. a DA1
-//! query — NOT a bare `ENQ` byte) and waits for a matching `u8` ACK
-//! regex. The success path exercises DA1 round-trip, which is already
-//! covered by `oriterm_core/tests/spec_chain/pilots/da1_query.rs`.
+//! Drives `ECMA48-C0-ENQ` (`0x05`, ECMA-48 §8.3.40) end-to-end through
+//! parser → dispatch → effect emission, plus reset/alt-screen interaction
+//! cells pinning the terminal-global-config invariant for `Term<S>::answerback`.
 //!
 //! # Catalog rows verified
 //!
-//! None. The scenario family's only distinctive catalog row is
-//! `ECMA48-C0-ENQ` (`0x05`, Answerback / enquiry), which is currently
-//! `status: missing` in the catalog pending **``**
+//! - `ECMA48-C0-ENQ` — Enquiry / Answerback control character (`0x05`) →
+//!   `Effect::Pty(PtyEffect::Write { kind: PtyWriteKind::Answerback, .. })`
+//!   when answerback is configured non-empty; no effect when empty (default).
 //!
-//! > `[][low]` **ENQ/Answerback not implemented** — Repro
-//! > vttest menu 6 sub-item 1 (answerback test). No response
-//! > displayed. Detail: ENQ (0x05) control code not handled in VTE
-//! > C0 dispatcher. WezTerm implements it (defaults to empty
-//! > string), Alacritty does not. Would need: (1) add ENQ to VTE C0
-//! > dispatch, (2) add handler method to Handler trait, (3)
-//! > implement in Term.
-//! > — `bug-tracker/section-08-core-terminal.md:33`
-//!
-//! DA1 round-trip coverage (the actual byte sequence tack v1.08
-//! sends as `tty_ENQ` because `u9=\E[c`) is already driven through
-//! the DA1 pilot, so the enq_ack family contributes zero NEW
-//! spec_chain coverage here — and cannot contribute `ECMA48-C0-ENQ`
-//! coverage until is resolved.
-//!
-//! # Why the module file exists
-//!
-//! Declared as a stub module so the per-family conversion map in
-//! `mod.rs` is complete: a future reader searching for "where is
-//! tack `enq_ack` converted?" lands here and sees the blocked-on-bug
-//! classification immediately. When is fixed, a
-//! spec_chain test driving `ECMA48-C0-ENQ` (parser Execute 0x05,
-//! dispatch to a new `answerback`/`enquiry` method, effect
-//! `PtyWriteKind::Other` with the empty answerback byte string) will
-//! land here, replacing the regression guard below.
-//!
-//! The test in this module is a **load-bearing regression guard**
-//! against, not a tautology. When the catalog row
-//! `ECMA48-C0-ENQ` is flipped from `status: missing` to any other
-//! value (i.e. someone implemented ENQ), the assertion below will
-//! fail, forcing whoever fixes to open this file and
-//! replace the guard with the real spec_chain test the module
-//! rustdoc describes. Without this pin, could be silently
-//! closed without the corresponding spec_chain coverage ever landing.
+//! Replaces the load-bearing regression guard
+//! `ecma48_c0_enq_catalog_row_still_missing` that pinned the catalog status
+//! until the answerback dispatch chain landed.
+//! See: bug-tracker/plans/BUG-08-006/00-overview.md
 
-/// Pins: the ECMA-48 C0 ENQ catalog row remains `missing` until
-/// lands. Reads the catalog markdown directly and asserts the ENQ row's
-/// verification-status column still reads `missing`. When is
-/// resolved, the catalog row's status will flip (to `verified` or similar),
-/// this assertion will fail, and the failing test reminds the implementer
-/// that the spec_chain coverage for this family needs to land here — not
-/// just the implementation elsewhere.
+use oriterm_core::effect::{Effect, PtyWriteKind};
+use oriterm_test_support::spec_chain::{
+    ApexLayer, DispatchExpectation, EffectExpectation, ParserExpectation, ScenarioExpectations,
+    SpecHarness, SpecScenario, effect_filters::pty_writes_of_kind,
+};
+
+/// Snapshot visible-row cell chars across the entire grid for
+/// renderable-state clamp comparisons (ENQ-no-mutation pin helper).
+fn snapshot_visible_chars(harness: &SpecHarness) -> Vec<char> {
+    let grid = harness.term().grid();
+    let lines = grid.lines();
+    let cols = grid.cols();
+    let mut buf = Vec::with_capacity(lines * cols);
+    for line in 0..lines {
+        let row = &grid[oriterm_core::index::Line(line as i32)];
+        for col in 0..cols {
+            buf.push(row[oriterm_core::index::Column(col)].ch);
+        }
+    }
+    buf
+}
+
+/// ENQ drives parser → dispatch → effect-emit when answerback configured.
 ///
-/// Anchor: / HYG-13.1-011.
+/// Regression: BUG-08-006 — drives `ECMA48-C0-ENQ` end-to-end and pins
+/// byte-exact answerback emission with `PtyWriteKind::Answerback` kind.
+/// Side-effect clamps assert ENQ does NOT emit Host effects or mutate
+/// renderable state.
+/// See: bug-tracker/plans/BUG-08-006/section-03-tdd-matrix.md
 #[test]
-fn ecma48_c0_enq_catalog_row_still_missing() {
-    // The spec-conformance catalog lives in the wrapper repo. When the test
-    // runs from a standalone term_repo checkout (no wrapper present), the
-    // file is absent — graceful skip
-    // Skip Protocol`. Path discovery via the SSOT helper introduced in
-    //; never reintroduce ad-hoc `manifest_dir.parent()` arithmetic.
-    let Some(catalog_dir) = oriterm_test_support::paths::catalog_dir() else {
-        eprintln!("SKIP: ECMA-48 catalog not present (term_repo running without wrapper)");
-        return;
+fn ecma48_c0_enq_drives_to_pty_write_apex() {
+    let scenario = SpecScenario {
+        catalog_row_id: "ECMA48-C0-ENQ",
+        bytes: b"\x05",
+        apex_layer: ApexLayer::EffectPtyWrite,
+        setup: b"",
+        expectations: ScenarioExpectations {
+            parser: Some(ParserExpectation {
+                action: '\x05',
+                params: &[],
+                intermediates: &[],
+                osc_command: None,
+            }),
+            dispatch: Some(DispatchExpectation::method("enquiry")),
+            effect: Some(EffectExpectation::pty("Answerback")),
+            ..ScenarioExpectations::default()
+        },
     };
-    let catalog_path = catalog_dir.join("ecma-48.md");
-    // Wrapper is confirmed present (catalog_dir is Some); a read failure here
-    // is a real I/O error, not a graceful-skip case. Propagate per
-    // Handling at Boundaries`.
-    let catalog = std::fs::read_to_string(&catalog_path)
-        .unwrap_or_else(|e| panic!("read {}: {e}", catalog_path.display()));
 
-    let row = catalog
-        .lines()
-        .find(|l| l.starts_with("| ECMA48-C0-ENQ "))
-        .expect("ECMA48-C0-ENQ row must exist in catalog/ecma-48.md");
+    let mut harness = SpecHarness::new();
+    harness
+        .term_mut()
+        .set_answerback(b"oriterm-answer".to_vec());
 
+    // Snapshot pre-feed grid state for renderable-clamp (cursor + visible-row cells).
+    let pre_cursor = (
+        harness.term().grid().cursor().line(),
+        harness.term().grid().cursor().col(),
+    );
+    let pre_grid_chars = snapshot_visible_chars(&harness);
+
+    let results = harness.run_scenario(&scenario);
+    for r in &results {
+        assert!(
+            r.passed,
+            "rung {:?} failed: {}",
+            r.rung_name,
+            r.failure.as_deref().unwrap_or("(no message)")
+        );
+    }
+
+    // Byte-exact post-assertion — apex pins kind, NOT bytes; this assertion pins the bytes.
+    let answerback_writes: Vec<_> =
+        pty_writes_of_kind(&harness, PtyWriteKind::Answerback).collect();
+    assert_eq!(
+        answerback_writes.len(),
+        1,
+        "ENQ must emit exactly one Answerback write"
+    );
+    assert_eq!(
+        answerback_writes[0], b"oriterm-answer",
+        "Answerback bytes must match configured string verbatim"
+    );
+
+    // Side-effect clamps — ENQ must not emit any non-PTY effects nor mutate renderable state.
+    let host_effect_count = harness
+        .outcome()
+        .effects_emitted
+        .iter()
+        .filter(|e| matches!(e, Effect::Host(_)))
+        .count();
+    assert_eq!(host_effect_count, 0, "ENQ must NOT emit any Effect::Host");
+
+    let post_cursor = (
+        harness.term().grid().cursor().line(),
+        harness.term().grid().cursor().col(),
+    );
+    assert_eq!(
+        pre_cursor, post_cursor,
+        "ENQ must NOT mutate cursor (renderable state)"
+    );
+    let post_grid_chars = snapshot_visible_chars(&harness);
+    assert_eq!(
+        pre_grid_chars, post_grid_chars,
+        "ENQ must NOT mutate visible grid cells (renderable state)"
+    );
+}
+
+/// Empty-answerback no-emit policy holds even with concurrent unrelated PTY writes.
+///
+/// Regression: BUG-08-006 — kind-specific negative pin proves no false-positive
+/// when DA1 reply (PtyWriteKind::DeviceAttribute) is emitted in the same transcript.
+#[test]
+fn enq_without_configured_answerback_emits_no_answerback_effect_in_mixed_transcript() {
+    let mut harness = SpecHarness::new();
+    // Default empty answerback (no set_answerback call).
+    harness.feed(b"\x1b[c\x05"); // DA1, then ENQ
+
+    // DA1 reply present (proves unrelated PTY writes flow normally).
+    let da_writes: Vec<_> = pty_writes_of_kind(&harness, PtyWriteKind::DeviceAttribute).collect();
+    assert_eq!(
+        da_writes.len(),
+        1,
+        "DA1 reply must be present (proves PTY writes flow), got: {da_writes:?}"
+    );
+
+    // No Answerback writes (proves empty-answerback policy holds in mixed transcript).
+    let answerback_writes: Vec<_> =
+        pty_writes_of_kind(&harness, PtyWriteKind::Answerback).collect();
     assert!(
-        row.contains("| missing |"),
-        "ECMA48-C0-ENQ is no longer marked `missing` in the catalog — \
- has been fixed. Replace this regression guard with a \
- real spec_chain test driving the ENQ probe, per the module \
- rustdoc. Row line:\n {row}"
+        answerback_writes.is_empty(),
+        "ENQ with empty answerback must NOT emit Answerback effect, got: {answerback_writes:?}"
+    );
+}
+
+/// Configured answerback survives RIS (ESC c).
+///
+/// Regression: BUG-08-006 — `answerback` is terminal-global config (alongside
+/// `bold_is_bright` / `image_protocol_enabled`). `esc_reset_state` does
+/// field-by-field resets that explicitly omit `answerback`.
+#[test]
+fn enq_after_ris_preserves_configured_answerback() {
+    let mut harness = SpecHarness::new();
+    harness.term_mut().set_answerback(b"X".to_vec());
+    harness.feed(b"\x1bc\x05"); // RIS, then ENQ
+
+    let writes: Vec<_> = pty_writes_of_kind(&harness, PtyWriteKind::Answerback).collect();
+    assert_eq!(
+        writes.len(),
+        1,
+        "Answerback must survive RIS — `esc_reset_state` excludes terminal-global config"
+    );
+    assert_eq!(writes[0], b"X");
+}
+
+/// Configured answerback survives DECSTR (CSI ! p).
+///
+/// Regression: BUG-08-006 — `soft_reset` is narrower than RIS and likewise
+/// excludes terminal-global config.
+#[test]
+fn enq_after_decstr_preserves_configured_answerback() {
+    let mut harness = SpecHarness::new();
+    harness.term_mut().set_answerback(b"X".to_vec());
+    harness.feed(b"\x1b[!p\x05"); // DECSTR, then ENQ
+
+    let writes: Vec<_> = pty_writes_of_kind(&harness, PtyWriteKind::Answerback).collect();
+    assert_eq!(
+        writes.len(),
+        1,
+        "Answerback must survive DECSTR — `soft_reset` excludes terminal-global config"
+    );
+    assert_eq!(writes[0], b"X");
+}
+
+/// Configured answerback emits in both primary and alt screens (3 DECSET modes).
+///
+/// Regression: BUG-08-006 — alt-screen toggle swaps grid + charset state +
+/// origin-mode + keyboard-mode stacks, NOT terminal-global config. Tests all
+/// 3 distinct alt-screen DECSET modes (47 / 1047 / 1049).
+#[test]
+fn enq_during_alt_screen_emits_terminal_global_answerback() {
+    for (mode_set, mode_reset) in [
+        (b"\x1b[?47h".as_slice(), b"\x1b[?47l".as_slice()),
+        (b"\x1b[?1047h".as_slice(), b"\x1b[?1047l".as_slice()),
+        (b"\x1b[?1049h".as_slice(), b"\x1b[?1049l".as_slice()),
+    ] {
+        let mut harness = SpecHarness::new();
+        harness.term_mut().set_answerback(b"X".to_vec());
+
+        // ENQ in alt-screen
+        harness.feed(mode_set);
+        harness.feed(b"\x05");
+        // ENQ in primary (after alt-screen exit)
+        harness.feed(mode_reset);
+        harness.feed(b"\x05");
+
+        let writes: Vec<_> = pty_writes_of_kind(&harness, PtyWriteKind::Answerback).collect();
+        assert_eq!(
+            writes.len(),
+            2,
+            "Two ENQs (one per screen) must emit two Answerback writes for mode_set={:?}, mode_reset={:?}",
+            std::str::from_utf8(mode_set).unwrap_or("<bytes>"),
+            std::str::from_utf8(mode_reset).unwrap_or("<bytes>")
+        );
+        assert!(writes.iter().all(|w| *w == b"X"));
+    }
+}
+
+/// DECSC/DECRC does NOT clobber answerback.
+///
+/// Regression: BUG-08-006 — DECSC saves cursor + active charset + origin-mode
+/// only; DECRC restores those fields. Terminal-global config (including
+/// answerback) is unaffected.
+#[test]
+fn decsc_decrc_does_not_clobber_answerback() {
+    let mut harness = SpecHarness::new();
+    harness.term_mut().set_answerback(b"X".to_vec());
+    harness.feed(b"\x1b7"); // DECSC
+    harness.term_mut().set_answerback(b"Y".to_vec());
+    harness.feed(b"\x1b8\x05"); // DECRC, then ENQ
+
+    let writes: Vec<_> = pty_writes_of_kind(&harness, PtyWriteKind::Answerback).collect();
+    assert_eq!(
+        writes.len(),
+        1,
+        "ENQ must emit one Answerback write after DECRC"
+    );
+    assert_eq!(
+        writes[0], b"Y",
+        "DECRC must NOT restore answerback to its DECSC-time value — answerback is terminal-global, not saved by DECSC"
     );
 }

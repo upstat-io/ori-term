@@ -3,8 +3,9 @@
 //! `Grid::resize` is the main entry point: it handles dimension changes,
 //! scroll region reset, cursor clamping, and optional text reflow on
 //! column changes. Row resize manages scrollback interaction (shrink
-//! pushes rows to scrollback, grow pulls them back). Column reflow uses
-//! Ghostty-style cell-by-cell rewriting to wrap/unwrap soft-wrapped lines.
+//! pushes rows to scrollback, grow pulls them back). Column reflow rewrites
+//! cell-by-cell to wrap/unwrap soft-wrapped lines (matches Ghostty
+//! `src/terminal/Screen.zig` reflow).
 
 use crate::cell::{Cell, CellFlags};
 use crate::index::Column;

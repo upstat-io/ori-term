@@ -330,6 +330,17 @@ impl PtySession {
         self.rows
     }
 
+    /// Send an Enter keypress, respecting LNM (Line Feed/New Line) mode.
+    ///
+    /// When LNM is set, Enter encodes as CR+LF (`\r\n`); otherwise CR (`\r`).
+    /// This is the canonical Enter-simulation primitive for headless tests —
+    /// it queries [`oriterm_core::encode_enter_base`] so the test harness and
+    /// the application key encoder share the same SSOT.
+    pub fn send_enter(&mut self) {
+        let bytes = oriterm_core::encode_enter_base(self.term().mode());
+        self.send(bytes);
+    }
+
     /// Send bytes to the child via the PTY writer, then wait for the
     /// screen to settle (300ms quiet period).
     ///

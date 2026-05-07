@@ -3,8 +3,8 @@
 //! Every mutation returns a new tree; unchanged subtrees share memory via
 //! `Arc`. This enables undo/redo by storing a history of tree versions.
 //!
-//! Inspired by Ghostty's `SplitTree` — ratio-based splits, computed layout,
-//! and persistent history.
+//! Mirrors the model in Ghostty `src/SplitTree.zig` — ratio-based splits,
+//! computed layout, and persistent history.
 
 mod mutations;
 

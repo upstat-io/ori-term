@@ -676,7 +676,7 @@ fn floating_pane_above_minimum_is_unchanged() {
     assert_eq!(float_layout.rows, 10);
 }
 
-// ── Exact pixel values (WezTerm-style pinned assertions) ────────
+// ── Exact pixel values (pinned assertions, matches WezTerm) ────────
 
 #[test]
 fn vertical_split_50_50_exact_pixel_values() {

@@ -68,20 +68,21 @@ impl WindowRenderer {
                 .as_ref()
                 .expect("cache just ensured");
             let clear = self.clear_color();
+            let desc = RenderPassDescriptor {
+                label: Some("content_cache_pass"),
+                color_attachments: &[Some(RenderPassColorAttachment {
+                    view: cache_view,
+                    resolve_target: None,
+                    ops: Operations {
+                        load: LoadOp::Clear(clear),
+                        store: StoreOp::Store,
+                    },
+                    depth_slice: None,
+                })],
+                ..Default::default()
+            };
             {
-                let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
-                    label: Some("content_cache_pass"),
-                    color_attachments: &[Some(RenderPassColorAttachment {
-                        view: cache_view,
-                        resolve_target: None,
-                        ops: Operations {
-                            load: LoadOp::Clear(clear),
-                            store: StoreOp::Store,
-                        },
-                        depth_slice: None,
-                    })],
-                    ..Default::default()
-                });
+                let mut pass = encoder.begin_render_pass(&desc);
                 Self::record_cached_content_passes(pipelines, self, &mut pass);
             }
         } else {
@@ -161,7 +162,7 @@ impl WindowRenderer {
         let clear = self.clear_color();
 
         {
-            let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+            let terminal_desc = RenderPassDescriptor {
                 label: Some("terminal_pass"),
                 color_attachments: &[Some(RenderPassColorAttachment {
                     view: target,
@@ -173,7 +174,8 @@ impl WindowRenderer {
                     depth_slice: None,
                 })],
                 ..Default::default()
-            });
+            };
+            let mut pass = encoder.begin_render_pass(&terminal_desc);
 
             Self::record_cached_content_passes(pipelines, self, &mut pass);
             Self::record_overlay_pass(pipelines, self, &mut pass);
@@ -312,20 +314,21 @@ impl WindowRenderer {
                 .as_ref()
                 .expect("cache just ensured");
             let clear = self.clear_color();
+            let desc = RenderPassDescriptor {
+                label: Some("content_cache_pass"),
+                color_attachments: &[Some(RenderPassColorAttachment {
+                    view: cache_view,
+                    resolve_target: None,
+                    ops: Operations {
+                        load: LoadOp::Clear(clear),
+                        store: StoreOp::Store,
+                    },
+                    depth_slice: None,
+                })],
+                ..Default::default()
+            };
             {
-                let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
-                    label: Some("content_cache_pass"),
-                    color_attachments: &[Some(RenderPassColorAttachment {
-                        view: cache_view,
-                        resolve_target: None,
-                        ops: Operations {
-                            load: LoadOp::Clear(clear),
-                            store: StoreOp::Store,
-                        },
-                        depth_slice: None,
-                    })],
-                    ..Default::default()
-                });
+                let mut pass = encoder.begin_render_pass(&desc);
                 Self::record_cached_content_passes(pipelines, self, &mut pass);
             }
         } else {
@@ -357,20 +360,21 @@ impl WindowRenderer {
             format: Some(gpu.render_format()),
             ..Default::default()
         });
+        let overlay_desc = RenderPassDescriptor {
+            label: Some("overlay_cursor_pass"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &surface_view,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Load,
+                    store: StoreOp::Store,
+                },
+                depth_slice: None,
+            })],
+            ..Default::default()
+        };
         {
-            let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
-                label: Some("overlay_cursor_pass"),
-                color_attachments: &[Some(RenderPassColorAttachment {
-                    view: &surface_view,
-                    resolve_target: None,
-                    ops: Operations {
-                        load: LoadOp::Load,
-                        store: StoreOp::Store,
-                    },
-                    depth_slice: None,
-                })],
-                ..Default::default()
-            });
+            let mut pass = encoder.begin_render_pass(&overlay_desc);
             Self::record_overlay_pass(pipelines, self, &mut pass);
             Self::record_cursor_pass(pipelines, self, &mut pass);
         }

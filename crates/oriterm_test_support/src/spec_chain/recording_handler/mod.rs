@@ -200,6 +200,7 @@ impl<S: EffectSink> Handler for RecordingHandler<S> {
     delegate_other!(put_tab, count: u16);
     delegate_other!(substitute);
     delegate_other!(newline);
+    delegate_other!(enquiry);
     delegate_other!(set_horizontal_tabstop);
     delegate_other!(scroll_up, rows: usize);
     delegate_other!(scroll_down, rows: usize);

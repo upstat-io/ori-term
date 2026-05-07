@@ -43,6 +43,11 @@ impl<S: EffectSink> PaneIoThread<S> {
         self.grid_dirty.store(true, Ordering::Release);
         self.produce_snapshot();
 
+        #[cfg(test)]
+        if let Some(ref barrier) = self.start_barrier {
+            barrier.wait();
+        }
+
         loop {
             // 1. Drain all pending commands (priority over bytes).
             self.drain_commands();

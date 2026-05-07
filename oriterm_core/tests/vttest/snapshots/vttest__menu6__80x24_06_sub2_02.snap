@@ -5,6 +5,6 @@ expression: text
 Test of LineFeed/NewLine mode.                                                  
                                                                                 
 NewLine mode set. Push the RETURN key:                                          
- <13>  -- Not expected                                                          
+ <13> <10>  -- OK                                                               
                                                                                 
 NewLine mode reset. Push the RETURN key:

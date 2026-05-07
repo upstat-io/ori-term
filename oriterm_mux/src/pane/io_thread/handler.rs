@@ -163,6 +163,12 @@ impl<S: EffectSink + 'static> PaneIoThread<S> {
                 }
             }
             PaneIoCommand::Reset => {} // No Term::reset() exists yet.
+            PaneIoCommand::SetAnswerback(bytes) => {
+                // Intentionally NO grid_dirty: answerback affects only the
+                // ENQ outbound write, no visible state change. Matches the
+                // SetImageConfig non-visual precedent (this same file:120).
+                self.terminal.set_answerback(bytes);
+            }
             PaneIoCommand::Shutdown => {
                 // Shutdown MUST be intercepted upstream — by
                 // `drain_commands` (early-return) AND by the

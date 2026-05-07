@@ -73,7 +73,10 @@ impl MuxBackend for MuxClient {
         match self.rpc(pdu)? {
             MuxPdu::SpawnPaneResponse { pane_id } => {
                 // Subscribe to the new pane and cache its initial snapshot.
-                self.subscribe_pane(pane_id);
+                if let Err(e) = self.subscribe_pane(pane_id) {
+                    self.close_pane(pane_id);
+                    return Err(e);
+                }
                 log::info!("daemon spawned pane {pane_id}");
                 Ok(pane_id)
             }
@@ -153,6 +156,18 @@ impl MuxBackend for MuxClient {
             transport.invalidate_pushed_snapshot(pane_id);
         }
         self.dirty_panes.insert(pane_id);
+    }
+
+    fn set_answerback(&mut self, pane_id: PaneId, bytes: Vec<u8>) {
+        if let Some(transport) = &mut self.transport {
+            transport.fire_and_forget(MuxPdu::SetAnswerback { pane_id, bytes });
+            // Intentionally NO transport.invalidate_pushed_snapshot:
+            // answerback doesn't change rendered cells. Deliberately
+            // diverges from set_bold_is_bright AND set_image_config
+            // (both call invalidate at this same site) because answerback
+            // has zero visual effect on either backend.
+        }
+        // Intentionally NO self.dirty_panes.insert: same reason.
     }
 
     fn mark_all_dirty(&mut self, pane_id: PaneId) {

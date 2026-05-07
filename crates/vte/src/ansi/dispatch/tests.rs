@@ -30,6 +30,11 @@ struct RecordingHandler {
     iterm2_file_calls: u32,
     decbi_calls: u32,
     decfi_calls: u32,
+    enquiry_calls: u32,
+    bell_calls: u32,
+    backspace_calls: u32,
+    linefeed_calls: u32,
+    carriage_return_calls: u32,
 }
 
 impl Handler for RecordingHandler {
@@ -62,6 +67,21 @@ impl Handler for RecordingHandler {
     }
     fn decfi(&mut self) {
         self.decfi_calls += 1;
+    }
+    fn enquiry(&mut self) {
+        self.enquiry_calls += 1;
+    }
+    fn bell(&mut self) {
+        self.bell_calls += 1;
+    }
+    fn backspace(&mut self) {
+        self.backspace_calls += 1;
+    }
+    fn linefeed(&mut self) {
+        self.linefeed_calls += 1;
+    }
+    fn carriage_return(&mut self) {
+        self.carriage_return_calls += 1;
     }
 }
 
@@ -190,4 +210,17 @@ fn esc_6_with_intermediate_does_not_route_to_decbi() {
 fn esc_9_with_intermediate_does_not_route_to_decfi() {
     let h = feed(b"\x1b#9");
     assert_eq!(h.decfi_calls, 0);
+}
+
+/// Regression: BUG-08-006 — ENQ (`0x05`) routes to `Handler::enquiry`.
+/// Negative pins clamp the byte-specific dispatch — other C0 handlers must not fire.
+/// See: bug-tracker/plans/BUG-08-006/section-03-tdd-matrix.md
+#[test]
+fn enq_byte_routes_to_handler_enquiry() {
+    let h = feed(b"\x05");
+    assert_eq!(h.enquiry_calls, 1, "ENQ must route to Handler::enquiry");
+    assert_eq!(h.bell_calls, 0, "ENQ must NOT trigger bell");
+    assert_eq!(h.backspace_calls, 0, "ENQ must NOT trigger backspace");
+    assert_eq!(h.linefeed_calls, 0, "ENQ must NOT trigger linefeed");
+    assert_eq!(h.carriage_return_calls, 0, "ENQ must NOT trigger carriage_return");
 }

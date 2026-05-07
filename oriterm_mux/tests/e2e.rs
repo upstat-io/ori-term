@@ -2028,13 +2028,66 @@ fn daemon_host_request_cleanup_on_pane_close() {
     client.close_pane(pane_id2);
 }
 
-// `select_responder` priority routing is unit-tested in
-// `oriterm_mux/src/server/host_request/tests.rs::select_responder_*`. An
-// end-to-end version would require exposing `subscribe_pane` and
-// `set_pane_priority` on the public `MuxBackend` trait — those are internal
-// embedded/daemon-mode mechanisms today and exposing them solely for one
-// e2e test would expand the public API without a real consumer. The unit
-// test verifies the pure dispatch logic (priority comparison + tie break).
+/// Regression: BUG-11-046 — `subscribe_pane` and `set_pane_priority` were
+/// not publicly accessible, blocking e2e multi-client priority routing tests.
+/// This test proves that a second client can subscribe to a pane spawned by
+/// another client and receive its snapshots independently.
+/// See: bug-tracker/plans/BUG-11-046/00-overview.md
+#[test]
+fn daemon_multi_client_subscribe_and_priority() {
+    let daemon = TestDaemon::start();
+
+    // Client A spawns a pane and sends identifiable output.
+    let mut client_a = daemon.connect_client();
+    let pane_id = spawn_test_pane_ready(&mut client_a);
+    client_a.send_input(pane_id, b"echo CLIENT_A_SUBSCRIBED\n");
+    wait_for_text_in_snapshot(
+        &mut client_a,
+        pane_id,
+        "CLIENT_A_SUBSCRIBED",
+        Duration::from_secs(30),
+    );
+
+    // Client B subscribes to the same pane via the public subscribe_pane API.
+    let mut client_b = daemon.connect_client();
+    client_b
+        .subscribe_pane(pane_id)
+        .expect("subscribe_pane must succeed for connected client");
+
+    // Client B can now see the pane's content independently.
+    let snap_b = client_b
+        .pane_snapshot(pane_id)
+        .expect("snapshot cached after subscribe");
+    assert!(
+        snapshot_contains(&snap_b, "CLIENT_A_SUBSCRIBED"),
+        "client B must see output produced before it subscribed"
+    );
+
+    // Set priorities — lower u8 = higher priority.
+    client_a
+        .set_pane_priority(pane_id, 0)
+        .expect("set_pane_priority must succeed");
+    client_b
+        .set_pane_priority(pane_id, 10)
+        .expect("set_pane_priority must succeed");
+
+    // Send more output from client A — both clients should see it.
+    client_a.send_input(pane_id, b"echo POST_PRIORITY_OUTPUT\n");
+    wait_for_text_in_snapshot(
+        &mut client_a,
+        pane_id,
+        "POST_PRIORITY_OUTPUT",
+        Duration::from_secs(30),
+    );
+    wait_for_text_in_snapshot(
+        &mut client_b,
+        pane_id,
+        "POST_PRIORITY_OUTPUT",
+        Duration::from_secs(30),
+    );
+
+    client_a.close_pane(pane_id);
+}
 
 // — daemon-mode `is_write_stalled` RPC tests
 

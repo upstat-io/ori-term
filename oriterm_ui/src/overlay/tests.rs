@@ -2,11 +2,14 @@
 
 use std::time::{Duration, Instant};
 
+use crate::action::Keymap;
 use crate::compositor::layer_animator::LayerAnimator;
 use crate::compositor::layer_tree::LayerTree;
 use crate::draw::Scene;
 use crate::geometry::{Point, Rect, Size};
 use crate::input::{Key, KeyEvent, Modifiers, MouseButton, MouseEvent, MouseEventKind};
+use crate::sense::Sense;
+use crate::testing::RecordingWidget;
 use crate::theme::UiTheme;
 use crate::widgets::button::ButtonWidget;
 use crate::widgets::container::ContainerWidget;
@@ -2335,63 +2338,15 @@ fn modal_dim_rect_opacity_tracks_dim_layer() {
 // focus toggle lives. The gate routes FocusNext/FocusPrev through the
 // legacy `process_key_event` so `on_input` continues to receive Tab.
 
-use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
-
-use crate::action::Keymap;
-use crate::input::InputEvent;
-use crate::layout::LayoutBox;
-use crate::sense::Sense;
-use crate::widget_id::WidgetId;
-use crate::widgets::{LayoutCtx, OnInputResult};
-
-/// Test-only widget that records each `KeyDown` it receives via `on_input`.
+/// Regression: BUG-03-003 R1-F1 — FocusNext/FocusPrev fall-through gate at
+/// `oriterm_ui/src/overlay/manager/key_dispatch.rs:221`. Replaced bespoke
+/// FocusFallthroughProbe with shared `oriterm_ui::testing::RecordingWidget`.
 ///
-/// Returns `key_context() == Some("FocusFallthroughProbe")` (a context with
-/// no keymap binding, so only the global Tab/Shift+Tab → FocusNext/FocusPrev
-/// bindings can match). Does NOT override `handle_keymap_action`, so the
-/// trait default returning `None` applies — the same shape as `DialogWidget`.
-struct FocusFallthroughProbe {
-    id: WidgetId,
-    on_input_keys: Arc<AtomicUsize>,
-}
-
-impl FocusFallthroughProbe {
-    fn new() -> (Self, Arc<AtomicUsize>) {
-        let counter = Arc::new(AtomicUsize::new(0));
-        let probe = Self {
-            id: WidgetId::next(),
-            on_input_keys: Arc::clone(&counter),
-        };
-        (probe, counter)
-    }
-}
-
-impl Widget for FocusFallthroughProbe {
-    fn id(&self) -> WidgetId {
-        self.id
-    }
-
-    fn layout(&self, _ctx: &LayoutCtx<'_>) -> LayoutBox {
-        LayoutBox::leaf(120.0, 40.0).with_widget_id(self.id)
-    }
-
-    fn key_context(&self) -> Option<&'static str> {
-        Some("FocusFallthroughProbe")
-    }
-
-    fn on_input(&mut self, event: &InputEvent, _bounds: Rect) -> OnInputResult {
-        if matches!(event, InputEvent::KeyDown { .. }) {
-            self.on_input_keys.fetch_add(1, Ordering::SeqCst);
-        }
-        OnInputResult::handled()
-    }
-
-    fn sense(&self) -> Sense {
-        Sense::none()
-    }
-}
-
+/// See: bug-tracker/plans/completed/BUG-07-023/00-overview.md
+///
+/// Pins: Tab on a modal overlay reaches `on_input` via the FocusNext
+/// fall-through gate (without it, Tab would be silently consumed by
+/// `dispatch_keymap_action`).
 #[test]
 fn tab_on_overlay_falls_through_to_on_input_via_focus_gate() {
     let mut mgr = OverlayManager::new(viewport());
@@ -2400,7 +2355,7 @@ fn tab_on_overlay_falls_through_to_on_input_via_focus_gate() {
     let now = Instant::now();
     let keymap = Keymap::defaults();
 
-    let (probe, on_input_calls) = FocusFallthroughProbe::new();
+    let (probe, events) = RecordingWidget::new(Some("FocusFallthroughProbe"), Sense::none());
     mgr.push_modal(
         Box::new(probe),
         anchor(),
@@ -2431,14 +2386,21 @@ fn tab_on_overlay_falls_through_to_on_input_via_focus_gate() {
         "Tab on a modal overlay must Deliver, got {result:?}",
     );
     assert_eq!(
-        on_input_calls.load(Ordering::SeqCst),
+        events.count_keydowns(),
         1,
         "Tab MUST reach widget.on_input via the FocusNext fall-through gate \
-         (key_dispatch.rs:221). 0 calls means the gate was removed and Tab \
+         (key_dispatch.rs:221). 0 KeyDowns means the gate was removed and Tab \
          was silently swallowed by dispatch_keymap_action.",
     );
 }
 
+/// Regression: BUG-03-003 R1-F1 (FocusPrev branch). Migrated to shared
+/// RecordingWidget helper.
+///
+/// See: bug-tracker/plans/completed/BUG-07-023/00-overview.md
+///
+/// Pins: Shift+Tab on a modal overlay reaches `on_input` via the FocusPrev
+/// fall-through gate. Pairs with the FocusNext test as a symmetric peer.
 #[test]
 fn shift_tab_on_overlay_falls_through_to_on_input_via_focus_gate() {
     let mut mgr = OverlayManager::new(viewport());
@@ -2447,7 +2409,7 @@ fn shift_tab_on_overlay_falls_through_to_on_input_via_focus_gate() {
     let now = Instant::now();
     let keymap = Keymap::defaults();
 
-    let (probe, on_input_calls) = FocusFallthroughProbe::new();
+    let (probe, events) = RecordingWidget::new(Some("FocusFallthroughProbe"), Sense::none());
     mgr.push_modal(
         Box::new(probe),
         anchor(),
@@ -2482,32 +2444,34 @@ fn shift_tab_on_overlay_falls_through_to_on_input_via_focus_gate() {
         "Shift+Tab on a modal overlay must Deliver, got {result:?}",
     );
     assert_eq!(
-        on_input_calls.load(Ordering::SeqCst),
+        events.count_keydowns(),
         1,
         "Shift+Tab MUST reach widget.on_input via the FocusPrev fall-through \
-         gate (key_dispatch.rs:221). 0 calls means the gate was removed.",
+         gate (key_dispatch.rs:221). 0 KeyDowns means the gate was removed.",
     );
 }
 
+/// Regression: BUG-03-003 R1-F1 — runtime no-override pin. Migrated to
+/// shared RecordingWidget helper.
+///
+/// See: bug-tracker/plans/completed/BUG-07-023/00-overview.md
+///
+/// Pins: `<RecordingWidget as Widget>::handle_keymap_action(...)` returns
+/// `None` at runtime via the trait default. Pairs with the structural
+/// source-grep pin in `testing/tests.rs::recording_widget_source_does_not_
+/// define_handle_keymap_action` — the structural pin catches the
+/// explicit-override-returning-`None` case that defeats this runtime pin.
 #[test]
-fn focus_fallthrough_probe_handle_keymap_action_returns_none() {
+fn recording_widget_handle_keymap_action_returns_none() {
     use crate::action::keymap_action::FocusNext;
 
-    // Pin the contract that makes the fall-through gate necessary: the probe
-    // (and any overlay-root widget without a `handle_keymap_action` override
-    // — DialogWidget, ButtonWidget for non-Activate, etc.) MUST return None
-    // when dispatch_keymap_action runs against it. Without this contract, a
-    // future widget could "rescue" FocusNext via handle_keymap_action and
-    // make the gate appear redundant, hiding a regression for the widgets
-    // that genuinely depend on it.
-    let (mut probe, _) = FocusFallthroughProbe::new();
+    let (mut probe, _) = RecordingWidget::new(Some("FocusFallthroughProbe"), Sense::none());
     let action = FocusNext;
-    let result =
-        <FocusFallthroughProbe as Widget>::handle_keymap_action(&mut probe, &action, anchor());
+    let result = <RecordingWidget as Widget>::handle_keymap_action(&mut probe, &action, anchor());
     assert!(
         result.is_none(),
-        "FocusFallthroughProbe must NOT impl handle_keymap_action — the \
-         FocusNext fall-through gate exists precisely because widgets without \
-         this impl would otherwise see Tab silently consumed.",
+        "RecordingWidget must NOT impl handle_keymap_action — the FocusNext \
+         fall-through gate exists precisely because widgets without this \
+         impl would otherwise see Tab silently consumed.",
     );
 }

@@ -95,7 +95,7 @@ fn color_bold_no_promote_above_7() {
 #[test]
 fn color_bold_bright_disabled() {
     if !reseq_available() {
-        eprintln!("reseq not installed, skipping");
+        eprintln!("SKIP: reseq not installed");
         return;
     }
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))

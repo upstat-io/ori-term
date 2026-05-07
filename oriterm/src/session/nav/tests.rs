@@ -532,7 +532,7 @@ fn navigate_with_no_vertical_overlap() {
     assert_eq!(navigate(&layouts, p(1), Direction::Down), Some(p(2)));
 }
 
-// ── 5-pane asymmetric layout (Ghostty-style) ─────────────────────
+// ── 5-pane asymmetric layout (matches Ghostty navigation) ─────────────────────
 
 /// Complex 5-pane layout:
 /// ```text

@@ -16,7 +16,7 @@
 //! | `status_reports`           | (none — grid-parsing helpers; zero new rows)                           | `status_reports.rs`           |
 //! | `sgr_modes`                | `ECMA48-SGR-0`, `ECMA48-SGR-1`, `ECMA48-SGR-4`, `ECMA48-SGR-7`         | `sgr_modes.rs`                |
 //! | `character_sets`           | `ECMA48-ESC-0`, `ECMA48-ESC-B`, `ECMA48-C0-SO`, `ECMA48-C0-SI`         | `character_sets.rs`           |
-//! | `enq_ack` | (none — blocked on ``; `ECMA48-C0-ENQ` remains `missing`) | `enq_ack.rs` |
+//! | `enq_ack`                  | `ECMA48-C0-ENQ` (ENQ → Answerback effect)                            | `enq_ack.rs`                  |
 //!
 //! DA1 (`ECMA48-CSI-DA1`) is covered by the pre-existing DA1 pilot at
 //! `oriterm_core/tests/spec_chain/pilots/da1_query.rs` — tack's

@@ -60,15 +60,13 @@ pub(super) fn build_font_index_from_roots(roots: &[PathBuf]) -> HashMap<String, 
 /// `Bold`/`Italic`/`BoldItalic`-only collections are dropped (no anchor face).
 pub(super) fn enumerate_mono_families_from_roots(roots: &[PathBuf]) -> Vec<FamilyEntry> {
     let mut faces_by_family: HashMap<String, Vec<RawFaceInfo>> = HashMap::new();
-    walk_font_dirs(roots, &mut |path| match parse_face_info(path) {
-        Some(face) => faces_by_family
-            .entry(face.display_name.clone())
-            .or_default()
-            .push(face),
-        None => log::trace!(
-            "font enumeration: skipping {} (parse error or non-monospace)",
-            path.display()
-        ),
+    walk_font_dirs(roots, &mut |path| {
+        for face in parse_face_info(path) {
+            faces_by_family
+                .entry(face.display_name.clone())
+                .or_default()
+                .push(face);
+        }
     });
 
     let mut entries: Vec<FamilyEntry> = Vec::with_capacity(faces_by_family.len());
@@ -100,69 +98,90 @@ pub(super) fn enumerate_mono_families_from_roots(roots: &[PathBuf]) -> Vec<Famil
     entries
 }
 
-/// Parse a single font file into a [`RawFaceInfo`], or return `None` on any
-/// failure (unreadable file, non-font magic, missing tables, non-monospace).
+/// Parse font file(s) into [`RawFaceInfo`] entries.
+///
+/// For `.ttc` collections, returns one entry per face. For standalone
+/// `.ttf`/`.otf`, returns a single-element `Vec`.
 #[expect(
     unsafe_code,
-    reason = "memmap2::Mmap::map is unsafe by API; font files are read-only system resources, immutable Mmap matches loading.rs convention"
+    reason = "memmap2::Mmap::map is unsafe by API; font files are read-only system resources"
 )]
-fn parse_face_info(path: &Path) -> Option<RawFaceInfo> {
-    let file = std::fs::File::open(path).ok()?;
-    // SAFETY: Font files are read-only system resources that are not modified
-    // or truncated while the terminal is running. The mapping is immutable.
-    let mmap: Mmap = unsafe { Mmap::map(&file).ok()? };
-
-    let file_ref = FileRef::new(&mmap).ok()?;
-    let (font, face_index) = match file_ref {
-        FileRef::Font(f) => (f, 0u32),
-        // v1: only face index 0 from collections — full TTC enumeration is
-        // tracked separately and does not block this catalog.
-        FileRef::Collection(c) => (c.get(0).ok()?, 0u32),
+fn parse_face_info(path: &Path) -> Vec<RawFaceInfo> {
+    let file = match std::fs::File::open(path) {
+        Ok(f) => f,
+        Err(_) => return Vec::new(),
+    };
+    // SAFETY: Font files are read-only system resources.
+    let mmap: Mmap = match unsafe { Mmap::map(&file) } {
+        Ok(m) => m,
+        Err(_) => return Vec::new(),
     };
 
-    // Monospace gate at enumeration time: anything else gets dropped.
-    let post = font.post().ok()?;
-    if post.is_fixed_pitch() == 0 {
-        return None;
-    }
-
-    // Family name: prefer the typographic family (id 16); fall back to the
-    // legacy family name (id 1). Reject empty/whitespace-only results.
-    let raw_name = font
-        .localized_strings(StringId::TYPOGRAPHIC_FAMILY_NAME)
-        .english_or_first()
-        .or_else(|| {
-            font.localized_strings(StringId::FAMILY_NAME)
-                .english_or_first()
-        })?;
-    let trimmed = raw_name.to_string().trim().to_owned();
-    if trimmed.is_empty() {
-        return None;
-    }
-
-    // Style detection: try `OS/2` `fsSelection` first; fall back to the legacy
-    // `head.macStyle` for Apple-shipped fonts that omit `OS/2`. Without the
-    // fallback, those fonts are silently dropped.
-    let (is_bold, is_italic) = if let Ok(os2) = font.os2() {
-        let fs = os2.fs_selection();
-        (
-            fs.contains(SelectionFlags::BOLD),
-            fs.contains(SelectionFlags::ITALIC),
-        )
-    } else if let Ok(head) = font.head() {
-        let mac = head.mac_style();
-        (mac.contains(MacStyle::BOLD), mac.contains(MacStyle::ITALIC))
-    } else {
-        return None;
+    let file_ref = match FileRef::new(&mmap) {
+        Ok(r) => r,
+        Err(_) => return Vec::new(),
     };
 
-    Some(RawFaceInfo {
-        display_name: trimmed,
-        path: path.to_path_buf(),
-        face_index,
-        is_bold,
-        is_italic,
-    })
+    let face_pairs: Vec<(skrifa::FontRef<'_>, u32)> = match file_ref {
+        FileRef::Font(f) => vec![(f, 0u32)],
+        FileRef::Collection(c) => {
+            let count = c.len();
+            (0..count)
+                .filter_map(|i| c.get(i).ok().map(|f| (f, i)))
+                .collect()
+        }
+    };
+
+    let mut out = Vec::with_capacity(face_pairs.len());
+    for (font, face_index) in face_pairs {
+        // Monospace gate at enumeration time.
+        let post = match font.post() {
+            Ok(p) => p,
+            Err(_) => continue,
+        };
+        if post.is_fixed_pitch() == 0 {
+            continue;
+        }
+
+        // Family name: prefer typographic (id 16); fall back to legacy (id 1).
+        let raw_name = match font
+            .localized_strings(StringId::TYPOGRAPHIC_FAMILY_NAME)
+            .english_or_first()
+            .or_else(|| {
+                font.localized_strings(StringId::FAMILY_NAME)
+                    .english_or_first()
+            }) {
+            Some(n) => n,
+            None => continue,
+        };
+        let trimmed = raw_name.to_string().trim().to_owned();
+        if trimmed.is_empty() {
+            continue;
+        }
+
+        // Style: `OS/2` `fsSelection` first; fall back to `head.macStyle`.
+        let (is_bold, is_italic) = if let Ok(os2) = font.os2() {
+            let fs = os2.fs_selection();
+            (
+                fs.contains(SelectionFlags::BOLD),
+                fs.contains(SelectionFlags::ITALIC),
+            )
+        } else if let Ok(head) = font.head() {
+            let mac = head.mac_style();
+            (mac.contains(MacStyle::BOLD), mac.contains(MacStyle::ITALIC))
+        } else {
+            continue;
+        };
+
+        out.push(RawFaceInfo {
+            display_name: trimmed,
+            path: path.to_path_buf(),
+            face_index,
+            is_bold,
+            is_italic,
+        });
+    }
+    out
 }
 
 /// Resolve a user-specified family name via the catalog bridge plus filename

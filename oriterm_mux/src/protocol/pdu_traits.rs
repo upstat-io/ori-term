@@ -77,6 +77,7 @@ impl MuxPdu {
             }
             Self::IsWriteStalled { .. } => MsgType::IsWriteStalled,
             Self::WriteStalledStatus { .. } => MsgType::WriteStalledStatus,
+            Self::SetAnswerback { .. } => MsgType::SetAnswerback,
         }
     }
 
@@ -91,6 +92,7 @@ impl MuxPdu {
                 | Self::SetTheme { .. }
                 | Self::SetCursorShape { .. }
                 | Self::SetBoldIsBright { .. }
+                | Self::SetAnswerback { .. }
                 | Self::MarkAllDirty { .. }
                 | Self::OpenSearch { .. }
                 | Self::CloseSearch { .. }

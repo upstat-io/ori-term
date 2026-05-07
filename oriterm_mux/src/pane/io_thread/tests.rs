@@ -163,6 +163,7 @@ fn make_sync_thread_with_term(term: Term<VoidEffectSink>) -> PaneIoThread<VoidEf
         last_animation_deadline: None,
         pending_resize: Arc::new(AtomicU64::new(PENDING_RESIZE_NONE)),
         shrink_call_count: Arc::new(AtomicUsize::new(0)),
+        start_barrier: None,
     }
 }
 
@@ -203,6 +204,7 @@ fn make_sync_thread_with_wakeup() -> (PaneIoThread<VoidEffectSink>, Arc<AtomicU6
         last_animation_deadline: None,
         pending_resize: Arc::new(AtomicU64::new(PENDING_RESIZE_NONE)),
         shrink_call_count: Arc::new(AtomicUsize::new(0)),
+        start_barrier: None,
     };
     (thread, wakeup_count)
 }
@@ -261,6 +263,7 @@ fn shutdown_via_channel_disconnect() {
         last_animation_deadline: None,
         pending_resize: Arc::new(AtomicU64::new(PENDING_RESIZE_NONE)),
         shrink_call_count: Arc::new(AtomicUsize::new(0)),
+        start_barrier: None,
     };
     let join = thread.spawn().expect("failed to spawn IO thread");
 
@@ -358,6 +361,7 @@ fn byte_delivery_parses_vte() {
         last_animation_deadline: None,
         pending_resize: Arc::new(AtomicU64::new(PENDING_RESIZE_NONE)),
         shrink_call_count: Arc::new(AtomicUsize::new(0)),
+        start_barrier: None,
     };
     let join = thread.spawn().expect("failed to spawn IO thread");
 
@@ -513,6 +517,7 @@ fn handle_bytes_chunked_drains_commands() {
         last_animation_deadline: None,
         pending_resize: Arc::new(AtomicU64::new(PENDING_RESIZE_NONE)),
         shrink_call_count: Arc::new(AtomicUsize::new(0)),
+        start_barrier: None,
     };
 
     cmd_tx.send(PaneIoCommand::Shutdown).unwrap();
@@ -766,6 +771,7 @@ fn make_sync_thread_with_cmd_tx() -> (PaneIoThread<VoidEffectSink>, Sender<PaneI
         last_animation_deadline: None,
         pending_resize: Arc::new(AtomicU64::new(PENDING_RESIZE_NONE)),
         shrink_call_count: Arc::new(AtomicUsize::new(0)),
+        start_barrier: None,
     };
     (thread, cmd_tx)
 }
@@ -2025,6 +2031,7 @@ fn make_sync_thread_generic<S: oriterm_core::effect::EffectSink + 'static>(
         last_animation_deadline: None,
         pending_resize: Arc::new(AtomicU64::new(PENDING_RESIZE_NONE)),
         shrink_call_count: Arc::new(AtomicUsize::new(0)),
+        start_barrier: None,
     };
     (thread, wakeup_count)
 }
@@ -2314,29 +2321,30 @@ fn run_loop_sync_timeout_fires() {
     byte_tx.send(b"\x1b[?2026h".to_vec()).unwrap();
     byte_tx.send(b"timeout_test".to_vec()).unwrap();
 
-    // Wait >150ms for the sync timeout to fire in the run loop.
-    std::thread::sleep(Duration::from_millis(300));
-
-    // The pane's snapshot should now reflect the inline-dispatched content.
+    // Poll for the sync timeout to fire in the run loop.
+    // Wall-clock-free: poll the snapshot until the content appears;
+    // a 5s safety deadline surfaces true hangs.
+    let deadline = Instant::now() + Duration::from_secs(5);
     let mut consumer = RenderableContent::default();
-    // Give the IO thread a moment to publish.
-    for _ in 0..10 {
+    loop {
         if handle.double_buffer().swap_front(&mut consumer) {
-            break;
+            let text: String = consumer
+                .cells
+                .iter()
+                .filter(|c| c.ch != ' ' && c.ch != '\0')
+                .map(|c| c.ch)
+                .collect();
+            if text.contains("timeout_test") {
+                break;
+            }
         }
-        std::thread::sleep(Duration::from_millis(50));
+        assert!(
+            Instant::now() < deadline,
+            "IO thread sync timeout did not fire within 5s deadline; \
+             run-loop deadline arm or handle_sync_timeout is broken"
+        );
+        std::thread::sleep(Duration::from_millis(20));
     }
-
-    let text: String = consumer
-        .cells
-        .iter()
-        .filter(|c| c.ch != ' ' && c.ch != '\0')
-        .map(|c| c.ch)
-        .collect();
-    assert!(
-        text.contains("timeout_test"),
-        "sync timeout must fire in run loop and publish inline-dispatched content, got: {text:?}"
-    );
 
     // Clean shutdown.
     shutdown.store(true, Ordering::Release);
@@ -2574,6 +2582,7 @@ fn spawn_queueing_eof_rig() -> EofTestRig {
         last_animation_deadline: None,
         pending_resize: Arc::new(AtomicU64::new(PENDING_RESIZE_NONE)),
         shrink_call_count: Arc::new(AtomicUsize::new(0)),
+        start_barrier: None,
     };
 
     let join = thread.spawn().expect("spawn IO thread");
@@ -3552,24 +3561,19 @@ fn drain_commands_applies_pending_resize_before_non_reply_command() {
 }
 
 /// Regression guard: `Shutdown` reaches the IO thread even when `cmd_tx`
-/// is at capacity. Saturate `cmd_tx` synchronously (no spawned
-/// thread, so no async drain races the saturation), then call
-/// `handle.shutdown()` against a fresh spawned thread whose channel
-/// is already full. Verifies the durable `shutdown_flag` is observed
-/// regardless of `cmd_tx` saturation.
+/// is at capacity AND the IO thread was blocked at the loop-entry barrier.
+/// Saturates `cmd_tx` synchronously, spawns the IO thread (held at the
+/// barrier), signals shutdown via the atomic flag + try_send + wake
+/// WITHOUT joining (would deadlock at the barrier), then releases the
+/// barrier. The IO thread drains the saturated queue, observes the
+/// shutdown flag, and exits deterministically.
 ///
-/// Regression: Q4 belt-and-suspenders. Per §04 Plan TPR
-/// Round 4 Gemini F1 (saturation MUST be staged before the IO thread
-/// drains) AND §03 §Wall-Clock-Free Testing (no deadline-budget
-/// assertions — poll the join handle).
+/// Regression: Q4 belt-and-suspenders — uses loop-entry `Barrier` so
+/// saturation is staged before the IO thread begins draining.
 #[test]
 fn shutdown_under_cmd_tx_saturation_still_terminates() {
-    // Stage saturation BEFORE spawning the IO thread so the live
-    // thread can never drain the queue between saturation and
-    // shutdown(). spawn_pair_with_flag splits handle construction
-    // and join — we can fill the cmd_tx, attach the join after.
     let shutdown = Arc::new(AtomicBool::new(false));
-    let (thread, mut handle) = new_with_handle(IoThreadConfig {
+    let (mut thread, handle) = new_with_handle(IoThreadConfig {
         terminal: make_term(),
         pane_id: {
             let (p, _, _, _) = test_dummy_channels();
@@ -3593,6 +3597,10 @@ fn shutdown_under_cmd_tx_saturation_still_terminates() {
         initial_cols: 80,
         selection_dirty: Arc::new(AtomicBool::new(false)),
     });
+    // Test-only barrier — IO thread waits at loop entry so we can stage
+    // saturation BEFORE it begins draining.
+    let barrier = Arc::new(std::sync::Barrier::new(2));
+    thread.start_barrier = Some(Arc::clone(&barrier));
     // Fill the channel synchronously — no live drainer yet.
     for _ in 0..CMD_CHANNEL_CAPACITY {
         handle
@@ -3605,32 +3613,37 @@ fn shutdown_under_cmd_tx_saturation_still_terminates() {
         matches!(r, Err(crossbeam_channel::TrySendError::Full(_))),
         "channel must be at capacity before spawn; got {r:?}"
     );
-    // NOW spawn the IO thread on top of an already-saturated channel.
+    // Spawn — IO thread waits at the barrier.
     let join = thread.spawn().expect("spawn IO thread");
-    handle.set_join(join);
-    // Trigger shutdown via handle.shutdown() — must reach the IO
-    // thread via shutdown_flag even though cmd_tx is full.
-    handle.shutdown();
-    // shutdown() takes the join handle; if it returned, the join
-    // already completed (via shutdown_flag observation, not via a
-    // freshly drained Shutdown command). 150s test process timeout
-    // is the only safety valve — no per-test deadline budget.
+    // Signal shutdown WITHOUT joining (join would deadlock while the IO
+    // thread is blocked at the barrier). The atomic flag is the durable
+    // signal; try_send + wake are best-effort on a saturated channel.
+    handle.shutdown_flag.store(true, Ordering::Release);
+    let _ = handle.cmd_tx.try_send(PaneIoCommand::Shutdown);
+    let _ = handle.io_wake_tx.try_send(());
+    // Release the barrier — IO thread now enters drain_commands, drains
+    // the saturated queue, observes the shutdown flag, and exits.
+    barrier.wait();
+    // Wall-clock-free: poll join until finished. 150s process-level
+    // timeout is the only safety valve.
+    while !join.is_finished() {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let _ = join.join();
 }
 
 /// Regression guard: `send_command(Shutdown)` (the generic-channel path
 /// distinct from `handle.shutdown()`) terminates the IO thread even
-/// under `cmd_tx` saturation. Pins the `matches!(&cmd, PaneIoCommand::
-/// Shutdown)` special-case in `send_command`.
+/// under `cmd_tx` saturation, with the IO thread held at the loop-entry
+/// barrier. Pins the `matches!(&cmd, PaneIoCommand::Shutdown)` special-
+/// case in `send_command`.
 ///
-/// Regression: closes §04 review round 4 Codex F3.
-/// Same wall-clock-free pattern as the sibling
-/// `shutdown_under_cmd_tx_saturation_still_terminates` pin: stage
-/// saturation BEFORE spawning the live IO thread, then assert
-/// completion via `JoinHandle::is_finished()` polling.
+/// Regression: closes §04 review round 4 Codex F3 — uses loop-entry
+/// `Barrier` for deterministic shutdown-via-send_command under saturation.
 #[test]
 fn send_command_shutdown_under_cmd_tx_saturation_still_terminates() {
     let shutdown = Arc::new(AtomicBool::new(false));
-    let (thread, handle) = new_with_handle(IoThreadConfig {
+    let (mut thread, handle) = new_with_handle(IoThreadConfig {
         terminal: make_term(),
         pane_id: {
             let (p, _, _, _) = test_dummy_channels();
@@ -3654,6 +3667,8 @@ fn send_command_shutdown_under_cmd_tx_saturation_still_terminates() {
         initial_cols: 80,
         selection_dirty: Arc::new(AtomicBool::new(false)),
     });
+    let barrier = Arc::new(std::sync::Barrier::new(2));
+    thread.start_barrier = Some(Arc::clone(&barrier));
     for _ in 0..CMD_CHANNEL_CAPACITY {
         handle
             .cmd_tx
@@ -3661,11 +3676,12 @@ fn send_command_shutdown_under_cmd_tx_saturation_still_terminates() {
             .expect("staged saturation must succeed");
     }
     let join = thread.spawn().expect("spawn IO thread");
-    // Use send_command(Shutdown) — the path distinct from shutdown()
-    // — to drive the matches!(&cmd, Shutdown) special-case.
+    // send_command(Shutdown) sets the durable flag + try_sends via the
+    // matches! special-case; no join involved — no deadlock at barrier.
     handle.send_command(PaneIoCommand::Shutdown);
-    // Wall-clock-free: poll the join until it finishes. The 150s
-    // process-level timeout is the only safety valve.
+    // Release the IO thread — it drains the saturated queue, encounters
+    // Shutdown, sets the local shutdown flag, and exits.
+    barrier.wait();
     while !join.is_finished() {
         std::thread::sleep(Duration::from_millis(20));
     }
@@ -3744,7 +3760,8 @@ fn is_reply_bearing_predicate_matches_reply_field_presence() {
             | PaneIoCommand::SearchNextMatch
             | PaneIoCommand::SearchPrevMatch
             | PaneIoCommand::Reset
-            | PaneIoCommand::Shutdown => false,
+            | PaneIoCommand::Shutdown
+            | PaneIoCommand::SetAnswerback(_) => false,
         }
     }
 
@@ -3895,25 +3912,64 @@ fn resize_during_pty_flood_preserves_final_geometry() {
     handle.shutdown();
 }
 
-/// Pin the mid-drain race: a `send_resize` that lands AFTER the
-/// pre-drain `apply_pending_resize` swap MUST still flush before
-/// the next reply-bearing command (per-iteration re-flush per §05
-/// Step 2). Drives the live IO thread; uses SnapshotNow's reply
-/// channel as the synchronization point (reply arrives only after
-/// post-resize state is published).
+/// Pin the mid-drain race: a `send_resize` that lands WHILE
+/// `drain_commands` is actively draining a saturated channel MUST still
+/// flush before the next reply-bearing command (per-iteration re-flush).
+/// Uses a loop-entry `Barrier` to hold the IO thread until saturation is
+/// staged, then releases the barrier so the IO thread enters drain with a
+/// full queue. The second resize + SnapshotNow land while the IO thread is
+/// mid-drain (256 commands ≠ instant), guaranteeing the re-flush is
+/// exercised deterministically.
 ///
 /// Regression: cross-feature
 /// `send_resize_during_drain_before_snapshot_reflects_post_resize`
-/// (closes §04 review round 1 Codex F1).
+/// (closes §04 review round 1 Codex F1 — loop-entry `Barrier` pins the
+/// mid-drain race deterministically).
 #[test]
 fn send_resize_during_drain_before_snapshot_reflects_post_resize() {
-    let (mut handle, _shutdown) = spawn_pair_with_flag();
-    // First resize establishes a baseline.
+    let (mut thread, mut handle) = new_with_handle(IoThreadConfig {
+        terminal: make_term(),
+        pane_id: {
+            let (p, _, _, _) = test_dummy_channels();
+            p
+        },
+        mux_tx: {
+            let (_, t, _, _) = test_dummy_channels();
+            t
+        },
+        child_exit_rx: {
+            let (_, _, r, _) = test_dummy_channels();
+            r
+        },
+        mode_cache: Arc::new(AtomicU64::new(TermMode::default().bits())),
+        shutdown: Arc::new(AtomicBool::new(false)),
+        wakeup: Arc::new(|| {}),
+        grid_dirty: Arc::new(AtomicBool::new(false)),
+        pty_control: None,
+        adopted_signal: None,
+        initial_rows: 24,
+        initial_cols: 80,
+        selection_dirty: Arc::new(AtomicBool::new(false)),
+    });
+    // Loop-entry barrier — IO thread pauses before the first drain.
+    let barrier = Arc::new(std::sync::Barrier::new(2));
+    thread.start_barrier = Some(Arc::clone(&barrier));
+    // Stage first resize (lands in atomic slot) and saturate cmd_tx
+    // BEFORE the IO thread starts draining.
     handle.send_resize(24, 80);
-    // Tight pair: second resize + SnapshotNow with reply. The
-    // SnapshotNow reply MUST reflect the (24, 40) geometry — the
-    // per-iteration apply_pending_resize flush guarantees the
-    // snapshot is built post-resize.
+    for _ in 0..CMD_CHANNEL_CAPACITY {
+        handle
+            .cmd_tx
+            .try_send(PaneIoCommand::MarkAllDirty)
+            .expect("staged saturation must succeed");
+    }
+    // Spawn — IO thread waits at the barrier.
+    let join = thread.spawn().expect("spawn IO thread");
+    handle.set_join(join);
+    // Release the barrier — IO thread enters drain_commands with a
+    // saturated queue (256 MarkAllDirty commands). Mid-drain: the second
+    // resize + SnapshotNow land while the IO thread is still draining.
+    barrier.wait();
     handle.send_resize(24, 40);
     let (reply_tx, reply_rx) = crossbeam_channel::bounded::<()>(1);
     handle.send_command(PaneIoCommand::SnapshotNow { reply: reply_tx });
@@ -3927,7 +3983,8 @@ fn send_resize_during_drain_before_snapshot_reflects_post_resize() {
     );
     assert_eq!(
         snap.cols, 40,
-        "snapshot cols must reflect post-resize geometry"
+        "snapshot cols must reflect post-resize geometry; per-command \
+         apply_pending_resize flush must pick up the mid-drain send_resize"
     );
     handle.shutdown();
 }

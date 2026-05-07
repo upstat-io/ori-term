@@ -83,6 +83,7 @@ fn make_router_harness() -> (
         last_animation_deadline: None,
         pending_resize: Arc::new(AtomicU64::new(PENDING_RESIZE_NONE)),
         shrink_call_count: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+        start_barrier: None,
     };
     (thread, mux_rx, wakeup_count)
 }
@@ -112,28 +113,16 @@ fn pty_write_preserves_non_utf8_bytes() {
 }
 
 /// Blind-spot §15 companion: every `PtyWriteKind` preserves bytes.
+/// Tests all variants from the canonical `PtyWriteKind::all()` SSOT.
 #[test]
 fn pty_write_all_kinds_preserve_bytes() {
-    let kinds = [
-        PtyWriteKind::DeviceAttribute,
-        PtyWriteKind::CursorReport,
-        PtyWriteKind::DeviceStatus,
-        PtyWriteKind::ModeReport,
-        PtyWriteKind::StatusString,
-        PtyWriteKind::ImageProtocolReply,
-        PtyWriteKind::MouseEvent,
-        PtyWriteKind::KeyboardEvent,
-        PtyWriteKind::FocusEvent,
-        PtyWriteKind::ChecksumReport,
-        PtyWriteKind::GraphicsAttributeReport,
-        PtyWriteKind::Other,
-    ];
+    let kinds = PtyWriteKind::all();
     for kind in kinds {
         let (mut t, mux_rx, _wake) = make_router_harness();
         let bytes = vec![0x90, 0xFF, 0xC0];
         t.terminal.effect_sink().push(Effect::Pty(PtyEffect::Write {
             bytes: bytes.clone(),
-            kind,
+            kind: *kind,
         }));
         t.drain_effects_into_mux_events();
         match mux_rx.recv_timeout(Duration::from_millis(100)).unwrap() {
@@ -505,14 +494,27 @@ fn pending_response_not_cancelled_if_fulfilled_before_drop() {
     assert!(t.pending_responses.is_empty());
 }
 
-/// `PollResult::Cancelled` variant is reachable (regression pin for
-/// exhaustive `response_poll::poll_pending_responses` match).
+/// Regression: BUG-11-049 — `PollResult` variants must stay exhaustive in
+/// `response_poll::poll_pending_responses`. An added variant without a
+/// consumer-match arm would silently fall through the catch-all.
+/// See: bug-tracker/plans/completed/BUG-11-049/00-overview.md
 #[test]
 fn poll_result_variants_all_constructible() {
     let bell = Effect::Host(HostEffect::Bell);
-    let _ready = PollResult::Ready(bell);
-    let _pending = PollResult::Pending;
-    let _cancelled = PollResult::Cancelled;
+    let ready = PollResult::Ready(bell);
+    let pending = PollResult::Pending;
+    let cancelled = PollResult::Cancelled;
+
+    assert!(matches!(ready, PollResult::Ready(_)));
+    assert!(matches!(pending, PollResult::Pending));
+    assert!(matches!(cancelled, PollResult::Cancelled));
+
+    // All three discriminants must be distinct — a 4th variant would
+    // cause the consumer match in poll_pending_responses to go stale.
+    let dis = std::mem::discriminant;
+    assert_ne!(dis(&ready), dis(&pending));
+    assert_ne!(dis(&pending), dis(&cancelled));
+    assert_ne!(dis(&cancelled), dis(&ready));
 }
 
 /// Blind-spot §5: drain happens INSIDE `handle_bytes` (per chunk), not
@@ -743,7 +745,7 @@ fn clear_pending_notifications_does_not_retro_collapse_across_drains() {
 // See bug-tracker/plans/completed/.
 
 /// Regression: DA1 (CSI c) emits VT420-class device attributes.
-/// See: bug-tracker/plans/completed/section-03-tdd-matrix.md
+/// See: bug-tracker/plans/completed/BUG-11-004/section-03-tdd-matrix.md
 #[test]
 fn da1_byte_parse_emits_pty_write_response() {
     let (mut t, mux_rx, _wake) = make_router_harness();
@@ -901,7 +903,7 @@ fn decrqm_reset_byte_parse_emits_value_two() {
 /// `Handler::xtversion()` → `Term::status_xtversion()` → `effect_sink` →
 /// `drain_effects_into_mux_events` → `MuxEvent::PtyWrite`.
 ///
-/// See: bug-tracker/plans//section-03-tdd-matrix.md
+/// See: bug-tracker/plans/completed/BUG-11-004/section-03-tdd-matrix.md
 #[test]
 fn xtversion_byte_parse_emits_pty_write_response() {
     let (mut t, mux_rx, _wake) = make_router_harness();
@@ -998,6 +1000,31 @@ fn xtsmgraphics_byte_parse_emits_pty_write_response() {
             assert_eq!(
                 data, b"\x1b[?1;0;256S",
                 "XTSMGRAPHICS Pi=1 Pa=1 response bytes mismatch"
+            );
+        }
+        other => panic!("expected PtyWrite, got {other:?}"),
+    }
+}
+
+/// Regression: BUG-08-006 — ENQ (`0x05`) byte-parse through router emits
+/// `MuxEvent::PtyWrite` carrying the configured answerback bytes.
+/// Distinguishes the kinds-array test (which proves preservation given an
+/// Answerback effect) from the real-byte-parse path (which proves the
+/// dispatch chain produces the effect when ENQ byte arrives at the mux).
+/// See: bug-tracker/plans/BUG-08-006/section-03-tdd-matrix.md
+#[test]
+fn enq_byte_through_router_emits_pty_write_with_answerback_bytes() {
+    let (mut t, mux_rx, _wake) = make_router_harness();
+    t.terminal.set_answerback(b"oriterm-X".to_vec());
+    t.handle_bytes(b"\x05");
+    let event = mux_rx
+        .recv_timeout(Duration::from_millis(100))
+        .expect("expected MuxEvent::PtyWrite for ENQ Answerback");
+    match event {
+        MuxEvent::PtyWrite { data, .. } => {
+            assert_eq!(
+                data, b"oriterm-X",
+                "ENQ must emit configured answerback bytes through the router"
             );
         }
         other => panic!("expected PtyWrite, got {other:?}"),

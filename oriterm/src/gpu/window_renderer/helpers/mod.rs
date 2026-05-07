@@ -5,6 +5,8 @@
 //! borrowed independently — e.g. `font_collection` immutably while
 //! `scratch` is borrowed mutably.
 
+mod shape;
+
 use std::collections::HashSet;
 
 use wgpu::{
@@ -12,15 +14,11 @@ use wgpu::{
 };
 
 use super::super::atlas::GlyphAtlas;
-use super::super::frame_input::FrameInput;
-use super::super::maybe_shrink_vec;
 use super::super::prepare::ShapedFrame;
-use crate::font::{
-    FontCollection, FontRealm, GlyphFormat, GlyphStyle, RasterKey, build_col_glyph_map,
-    prepare_line, shape_prepared_runs, size_key,
-};
+use crate::font::{FontCollection, FontRealm, GlyphFormat, GlyphStyle, RasterKey, size_key};
 
 use super::super::prepare::AtlasLookup;
+pub(super) use shape::{ShapingScratch, shape_frame};
 
 // Atlas lookup bridge
 
@@ -42,99 +40,6 @@ impl AtlasLookup for CombinedAtlasLookup<'_> {
             .lookup(key)
             .or_else(|| self.subpixel.lookup(key))
             .or_else(|| self.color.lookup(key))
-    }
-}
-
-/// Reusable per-frame scratch buffers for the shaping pipeline.
-///
-/// Stored on [`WindowRenderer`](super::WindowRenderer) and cleared each frame to
-/// avoid per-frame allocation of the shaping intermediaries and output.
-pub(super) struct ShapingScratch {
-    /// Shaped frame output (glyph positions + col maps).
-    pub(super) frame: ShapedFrame,
-    /// Shaping run segments for the current row.
-    runs: Vec<crate::font::ShapingRun>,
-    /// Shaped glyphs for the current row.
-    glyphs: Vec<oriterm_ui::text::ShapedGlyph>,
-    /// Parallel `col_starts` for the current row.
-    col_starts: Vec<usize>,
-    /// Column-to-glyph map for the current row.
-    col_map: Vec<Option<usize>>,
-    /// Rustybuzz buffer reused across frames to avoid per-frame allocation.
-    unicode_buffer: Option<rustybuzz::UnicodeBuffer>,
-    /// Rustybuzz Face objects reused across frames.
-    ///
-    /// Stored with `'static` lifetime because `ShapingScratch` has no lifetime
-    /// parameter. Filled via [`FontCollection::fill_shaping_faces`] which
-    /// transmutes the actual `'a` borrow to `'static`. This is sound because
-    /// the Vec is cleared before every fill and only accessed while
-    /// `FontCollection` is borrowed (within `shape_frame`).
-    faces_buf: Vec<Option<rustybuzz::Face<'static>>>,
-}
-
-impl ShapingScratch {
-    pub(super) fn new() -> Self {
-        Self {
-            frame: ShapedFrame::new(0, 0),
-            runs: Vec::new(),
-            glyphs: Vec::new(),
-            col_starts: Vec::new(),
-            col_map: Vec::new(),
-            unicode_buffer: None,
-            faces_buf: Vec::new(),
-        }
-    }
-
-    /// Shrink per-row scratch buffers if capacity vastly exceeds usage.
-    ///
-    /// Called after rendering to bound memory waste. Only fires when
-    /// capacity > 4× length AND > 4096 elements.
-    pub(super) fn maybe_shrink(&mut self) {
-        self.frame.maybe_shrink();
-        maybe_shrink_vec(&mut self.runs);
-        maybe_shrink_vec(&mut self.glyphs);
-        maybe_shrink_vec(&mut self.col_starts);
-        maybe_shrink_vec(&mut self.col_map);
-        maybe_shrink_vec(&mut self.faces_buf);
-    }
-}
-
-/// Shape all visible rows into the scratch `ShapedFrame`.
-pub(super) fn shape_frame(
-    input: &FrameInput,
-    fonts: &FontCollection,
-    scratch: &mut ShapingScratch,
-) {
-    let cols = input.columns();
-    let size_q6 = size_key(fonts.size_px());
-    let hinted = fonts.hinting_mode().hint_flag();
-    scratch.frame.clear(cols, size_q6, hinted);
-    if cols == 0 {
-        return;
-    }
-    // Clamp rows to actual cell data — viewport dimensions may race ahead
-    // of the terminal grid during async resize.
-    let rows = input.rows().min(input.content.cells.len() / cols);
-    fonts.fill_shaping_faces(&mut scratch.faces_buf);
-
-    for row_idx in 0..rows {
-        let start = row_idx * cols;
-        let end = start + cols;
-        let row_cells = &input.content.cells[start..end];
-
-        prepare_line(row_cells, cols, fonts, &mut scratch.runs);
-        shape_prepared_runs(
-            &scratch.runs,
-            &scratch.faces_buf,
-            fonts,
-            &mut scratch.glyphs,
-            &mut scratch.col_starts,
-            &mut scratch.unicode_buffer,
-        );
-        build_col_glyph_map(&scratch.col_starts, cols, &mut scratch.col_map);
-        scratch
-            .frame
-            .push_row(&scratch.glyphs, &scratch.col_starts, &scratch.col_map);
     }
 }
 

@@ -377,6 +377,8 @@ pub fn new_with_handle<S: EffectSink + 'static>(
         pending_resize: Arc::clone(&pending_resize),
         #[cfg(test)]
         shrink_call_count: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+        #[cfg(test)]
+        start_barrier: None,
     };
     let handle = PaneIoHandle {
         cmd_tx,

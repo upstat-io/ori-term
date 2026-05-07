@@ -200,7 +200,7 @@ fn capture_deccolm_screen(cols: u16, rows: u16) -> Vec<Vec<char>> {
     s.send(b"1\r");
 
     // Screen 01 (min_cols border) — skip it.
-    s.send(b"\r");
+    s.send_enter();
 
     // Screen 02 (max_cols=132 border after DECCOLM set).
     s.grid_chars()

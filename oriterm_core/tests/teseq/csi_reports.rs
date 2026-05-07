@@ -13,7 +13,7 @@ use super::harness::{
 /// Returns the outcome for callers to perform additional response assertions.
 fn run_scenario(name: &str) -> Option<ScenarioOutcome> {
     if !reseq_available() {
-        eprintln!("reseq not installed, skipping");
+        eprintln!("SKIP: reseq not installed");
         return None;
     }
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))

@@ -192,6 +192,16 @@ impl MuxBackend for EmbeddedMux {
         }
     }
 
+    fn set_answerback(&mut self, pane_id: PaneId, bytes: Vec<u8>) {
+        if let Some(pane) = self.panes.get(&pane_id) {
+            pane.send_io_command(PaneIoCommand::SetAnswerback(bytes));
+            // Intentionally NO snapshot_dirty insert: answerback affects
+            // only ENQ response, no visible state. Matches set_image_config
+            // (line 202-205 of this file) — the existing non-visual
+            // precedent.
+        }
+    }
+
     fn mark_all_dirty(&mut self, pane_id: PaneId) {
         if let Some(pane) = self.panes.get(&pane_id) {
             pane.send_io_command(PaneIoCommand::MarkAllDirty);

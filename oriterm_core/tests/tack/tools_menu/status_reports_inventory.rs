@@ -75,7 +75,7 @@ fn record_seen_labels(grid: &str, seen: &mut BTreeSet<&'static str>) {
 #[test]
 fn tack_status_reports_inventory() {
     if !tack_available() || !tic_available() {
-        eprintln!("tack or tic not installed, skipping tack_status_reports_inventory");
+        eprintln!("SKIP: tack or tic not installed");
         return;
     }
 

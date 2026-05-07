@@ -109,6 +109,15 @@ pub(crate) struct BehaviorConfig {
     /// terminal has mouse reporting enabled (e.g., vim, tmux mouse mode).
     /// Default: `true`.
     pub hide_mouse_when_typing: bool,
+    /// Answerback string emitted on `ENQ` (`0x05`).
+    ///
+    /// Empty (default) suppresses emission per ECMA-48 §8.3.40 and
+    /// `WezTerm` (`term/src/terminalstate/performer.rs:473-478`). Non-empty
+    /// bytes are written to the PTY verbatim on each ENQ byte received.
+    /// The string is converted to bytes via `clone().into_bytes()` at
+    /// each propagation site, so non-ASCII UTF-8 and TOML basic-string
+    /// `\u0000` escapes survive byte-for-byte.
+    pub answerback: String,
 }
 
 impl Default for BehaviorConfig {
@@ -127,6 +136,7 @@ impl Default for BehaviorConfig {
             notification: NotificationMode::default(),
             prompt_markers: false,
             hide_mouse_when_typing: true,
+            answerback: String::new(),
         }
     }
 }

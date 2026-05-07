@@ -150,6 +150,9 @@ fn clipboard_selection_variants() {
 fn pty_write_kind_equality() {
     assert_eq!(PtyWriteKind::DeviceAttribute, PtyWriteKind::DeviceAttribute);
     assert_ne!(PtyWriteKind::DeviceAttribute, PtyWriteKind::CursorReport);
+    // Pin the Answerback variant alongside existing reply families.
+    assert_eq!(PtyWriteKind::Answerback, PtyWriteKind::Answerback);
+    assert_ne!(PtyWriteKind::Answerback, PtyWriteKind::DeviceAttribute);
 }
 
 #[test]

@@ -33,5 +33,33 @@ pub enum PtyWriteKind {
     ChecksumReport,
     /// XTSMGRAPHICS (CSI ? Pi ; Pa ; Pv S) reply — `CSI ? Pi ; Ps [;Pv [;Pv2]] S`.
     GraphicsAttributeReport,
+    /// ENQ (`0x05`) answerback reply — outbound bytes from the configured
+    /// answerback string. Empty default suppresses emission entirely.
+    Answerback,
     Other,
+}
+
+impl PtyWriteKind {
+    /// Returns all `PtyWriteKind` variants as a static slice.
+    /// This is the canonical source for PTY write kind coverage in tests —
+    /// callers MUST iterate `Self::all()` rather than maintain parallel
+    /// `let kinds = [...]` arrays, so a new variant lights up every consumer
+    /// without manual sync.
+    pub fn all() -> &'static [Self] {
+        &[
+            Self::DeviceAttribute,
+            Self::CursorReport,
+            Self::DeviceStatus,
+            Self::ModeReport,
+            Self::StatusString,
+            Self::ImageProtocolReply,
+            Self::MouseEvent,
+            Self::KeyboardEvent,
+            Self::FocusEvent,
+            Self::ChecksumReport,
+            Self::GraphicsAttributeReport,
+            Self::Answerback,
+            Self::Other,
+        ]
+    }
 }

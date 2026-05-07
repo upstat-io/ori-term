@@ -13,6 +13,8 @@ use std::time::Instant;
 use super::App;
 use super::mouse_selection::{self, GridCtx};
 use super::perf_stats::FramePhases;
+use super::window_context::WindowContext;
+use crate::gpu::GpuState;
 use crate::gpu::recovery::gate_outcome;
 use crate::gpu::{
     FrameSearch, FrameSelection, MarkCursorOverride, ViewportSize, extract_frame_from_snapshot,
@@ -365,56 +367,14 @@ impl App {
             phases.widgets = widgets_start.elapsed();
 
             // Debug performance overlay (Ctrl+Shift+F12).
-            if self.debug_overlay_enabled {
-                // Update EWMA FPS from last render interval.
-                let elapsed = self.last_render.elapsed().as_secs_f32();
-                if elapsed > 0.0 {
-                    let instant_fps = 1.0 / elapsed;
-                    // EWMA with alpha=0.1 for smooth display.
-                    self.debug_fps = if self.debug_fps < 1.0 {
-                        instant_fps
-                    } else {
-                        0.1 * instant_fps + 0.9 * self.debug_fps
-                    };
-                }
-
-                let renderer = ctx.renderer.as_mut().expect("renderer checked");
-                let stats = debug_overlay::DebugStats {
-                    fps: self.debug_fps,
-                    dirty_rows: renderer
-                        .prepared
-                        .scratch_dirty
-                        .iter()
-                        .filter(|&&d| d)
-                        .count(),
-                    total_rows: renderer.prepared.scratch_dirty.len(),
-                    instances: renderer.prepared.total_instances(),
-                    draw_calls: renderer.prepared.count_draw_calls(),
-                    mono_atlas: (renderer.atlas().len(), renderer.atlas().page_count()),
-                    subpixel_atlas: (
-                        renderer.subpixel_atlas().len(),
-                        renderer.subpixel_atlas().page_count(),
-                    ),
-                    color_atlas: (
-                        renderer.color_atlas().len(),
-                        renderer.color_atlas().page_count(),
-                    ),
-                };
-                let (pw, ph) = ctx.window.size_px();
-                let lw = pw as f32 / scale;
-                let lh = ph as f32 / scale;
-                Self::draw_debug_overlay(
-                    &stats,
-                    renderer,
-                    &mut ctx.chrome_scene,
-                    &mut ctx.debug_overlay_buf,
-                    lw,
-                    lh,
-                    scale,
-                    gpu,
-                    &ctx.text_cache,
-                );
-            }
+            draw_debug_overlay_if_enabled(
+                self.debug_overlay_enabled,
+                &mut self.debug_fps,
+                &self.last_render,
+                ctx,
+                gpu,
+                scale,
+            );
 
             // Re-borrow renderer for GPU submission (prior borrow ended
             // when render_chrome returned via NLL).
@@ -437,4 +397,76 @@ impl App {
 
         phases
     }
+}
+
+/// Draw the debug performance overlay if enabled (Ctrl+Shift+F12).
+///
+/// Extracted from [`App::handle_redraw`] to reduce function length.
+/// Updates EWMA FPS and renders the overlay scene.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Six independent inputs threaded into one paint pass: enabled flag, EWMA fps \
+              accumulator, last-render Instant, &mut WindowContext, &GpuState, scale factor. \
+              Coalescing into a DebugOverlayCtx adds construction noise without reducing \
+              argument cardinality."
+)]
+fn draw_debug_overlay_if_enabled(
+    enabled: bool,
+    debug_fps: &mut f32,
+    last_render: &Instant,
+    ctx: &mut WindowContext,
+    gpu: &GpuState,
+    scale: f32,
+) {
+    if !enabled {
+        return;
+    }
+    // Update EWMA FPS from last render interval.
+    let elapsed = last_render.elapsed().as_secs_f32();
+    if elapsed > 0.0 {
+        let instant_fps = 1.0 / elapsed;
+        // EWMA with alpha=0.1 for smooth display.
+        *debug_fps = if *debug_fps < 1.0 {
+            instant_fps
+        } else {
+            0.1 * instant_fps + 0.9 * *debug_fps
+        };
+    }
+
+    let renderer = ctx.renderer.as_mut().expect("renderer checked");
+    let stats = debug_overlay::DebugStats {
+        fps: *debug_fps,
+        dirty_rows: renderer
+            .prepared
+            .scratch_dirty
+            .iter()
+            .filter(|&&d| d)
+            .count(),
+        total_rows: renderer.prepared.scratch_dirty.len(),
+        instances: renderer.prepared.total_instances(),
+        draw_calls: renderer.prepared.count_draw_calls(),
+        mono_atlas: (renderer.atlas().len(), renderer.atlas().page_count()),
+        subpixel_atlas: (
+            renderer.subpixel_atlas().len(),
+            renderer.subpixel_atlas().page_count(),
+        ),
+        color_atlas: (
+            renderer.color_atlas().len(),
+            renderer.color_atlas().page_count(),
+        ),
+    };
+    let (pw, ph) = ctx.window.size_px();
+    let lw = pw as f32 / scale;
+    let lh = ph as f32 / scale;
+    App::draw_debug_overlay(
+        &stats,
+        renderer,
+        &mut ctx.chrome_scene,
+        &mut ctx.debug_overlay_buf,
+        lw,
+        lh,
+        scale,
+        gpu,
+        &ctx.text_cache,
+    );
 }

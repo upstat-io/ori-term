@@ -130,7 +130,7 @@ fn esc_paren_b_restores_ascii() {
 
 // --- ESC edge cases (from reference repos: Ghostty, WezTerm) ---
 
-/// Ghostty: saveCursor saves/restores SGR attributes, not just position.
+/// saveCursor saves/restores SGR attributes, not just position.
 #[test]
 fn esc7_esc8_preserves_sgr_attributes() {
     let mut t = term();
@@ -158,7 +158,7 @@ fn esc7_esc8_preserves_sgr_attributes() {
     );
 }
 
-/// Ghostty: saveCursor pending wrap state — cursor at end of line, restore wraps.
+/// saveCursor pending wrap state — cursor at end of line, restore wraps.
 #[test]
 fn esc7_esc8_preserves_wrap_pending() {
     // 5-column terminal.
@@ -184,7 +184,7 @@ fn esc7_esc8_preserves_wrap_pending() {
     assert_eq!(ch, 'X');
 }
 
-/// Ghostty: configuring G1 without activating has no effect on G0 output.
+/// configuring G1 without activating has no effect on G0 output.
 #[test]
 fn configure_g1_does_not_affect_g0() {
     let mut t = term();
@@ -196,7 +196,7 @@ fn configure_g1_does_not_affect_g0() {
     assert_eq!(ch, 'q', "Configuring G1 should not affect G0 output");
 }
 
-/// WezTerm: SO/SI (Shift Out/Shift In) switching between G0 and G1.
+/// SO/SI (Shift Out/Shift In) switching between G0 and G1.
 #[test]
 fn so_si_charset_switching() {
     let mut t = term();
@@ -219,7 +219,7 @@ fn so_si_charset_switching() {
     assert_eq!(ch2, 'B', "After SI, G0 (ASCII) should be active again");
 }
 
-/// Ghostty: single shift (SS2/SS3) applies to exactly one character.
+/// single shift (SS2/SS3) applies to exactly one character.
 #[test]
 fn single_shift_applies_to_one_character() {
     let mut t = term();
@@ -236,7 +236,7 @@ fn single_shift_applies_to_one_character() {
     assert_eq!(ch1, 'q', "After SS2, should revert to G0 (ASCII)");
 }
 
-/// WezTerm: DEC special graphics full alphabet mapping.
+/// DEC special graphics full alphabet mapping.
 #[test]
 fn dec_special_graphics_full_mapping() {
     let mut t = term();
@@ -254,7 +254,7 @@ fn dec_special_graphics_full_mapping() {
     }
 }
 
-/// Ghostty: fullReset resets pen/attributes to defaults.
+/// fullReset resets pen/attributes to defaults.
 #[test]
 fn esc_c_ris_resets_pen_attributes() {
     let mut t = term();
@@ -285,7 +285,7 @@ fn esc_c_ris_resets_pen_attributes() {
     );
 }
 
-/// Ghostty: fullReset clears saved cursor.
+/// fullReset clears saved cursor.
 #[test]
 fn esc_c_ris_clears_saved_cursor() {
     let mut t = term();
@@ -304,7 +304,7 @@ fn esc_c_ris_clears_saved_cursor() {
     );
 }
 
-/// Ghostty: fullReset from alt screen returns to primary.
+/// fullReset from alt screen returns to primary.
 #[test]
 fn esc_c_ris_exits_alt_screen() {
     let mut t = term();
@@ -320,7 +320,7 @@ fn esc_c_ris_exits_alt_screen() {
     );
 }
 
-/// Ghostty: fullReset resets palette to defaults.
+/// fullReset resets palette to defaults.
 #[test]
 fn esc_c_ris_resets_palette() {
     use vte::ansi::Color;
@@ -340,7 +340,7 @@ fn esc_c_ris_resets_palette() {
     );
 }
 
-/// Ghostty: reverseIndex from middle just moves cursor up, no scroll.
+/// reverseIndex from middle just moves cursor up, no scroll.
 #[test]
 fn reverse_index_from_middle_moves_up() {
     let mut t = term();
@@ -359,7 +359,7 @@ fn reverse_index_from_middle_moves_up() {
     assert_eq!(ch0, 'A');
 }
 
-/// Ghostty: reverseIndex at top of scroll region scrolls within region.
+/// reverseIndex at top of scroll region scrolls within region.
 #[test]
 fn reverse_index_top_of_scroll_region() {
     let mut t = Term::new(10, 2, 0, Theme::default(), crate::effect::VoidEffectSink);
@@ -387,7 +387,7 @@ fn reverse_index_top_of_scroll_region() {
     assert_eq!(ch2, 'A', "Content should shift down within scroll region");
 }
 
-/// Ghostty: reverseIndex outside scroll region just moves cursor up.
+/// reverseIndex outside scroll region just moves cursor up.
 #[test]
 fn reverse_index_outside_scroll_region() {
     let mut t = Term::new(5, 5, 0, Theme::default(), crate::effect::VoidEffectSink);
@@ -409,7 +409,7 @@ fn reverse_index_outside_scroll_region() {
     assert_eq!(ch1, 'B');
 }
 
-/// Ghostty: fullReset clears hyperlink on cursor template.
+/// fullReset clears hyperlink on cursor template.
 #[test]
 fn esc_c_ris_clears_hyperlink() {
     let mut t = term();
@@ -437,7 +437,7 @@ fn esc_c_ris_clears_hyperlink() {
     assert!(!has_link, "RIS should clear hyperlink on cursor template");
 }
 
-/// Ghostty: fullReset resets origin mode.
+/// fullReset resets origin mode.
 #[test]
 fn esc_c_ris_resets_origin_mode() {
     let mut t = term();
@@ -460,7 +460,7 @@ fn esc_c_ris_resets_origin_mode() {
     assert_eq!(t.grid().cursor().col().0, 0);
 }
 
-/// Ghostty: saveCursor doesn't modify hyperlink state.
+/// saveCursor doesn't modify hyperlink state.
 #[test]
 fn esc7_esc8_preserves_hyperlink() {
     let mut t = term();
@@ -488,7 +488,7 @@ fn esc7_esc8_preserves_hyperlink() {
     );
 }
 
-/// Ghostty: DEC special charset only maps ASCII-range characters.
+/// DEC special charset only maps ASCII-range characters.
 #[test]
 fn dec_special_charset_ignores_non_ascii() {
     let mut t = term();

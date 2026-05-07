@@ -21,9 +21,10 @@ use crate::PtySession;
 ///    `grid_text()` allocation cost.
 /// 3. `usize screen` — the 1-based screen index.
 ///
-/// After the closure returns, `\r` is sent to advance to the next
-/// screen via [`PtySession::send`] (which already includes the 300ms
-/// quiescent wait that every original walker relied on).
+/// After the closure returns, an Enter keypress is sent via
+/// [`PtySession::send_enter`], which respects LNM (Line Feed/New Line)
+/// mode and includes the 300 ms quiescent wait. See
+/// [`oriterm_core::encode_enter_base`] for the SSOT.
 ///
 /// Returns the number of screens for which `on_screen` was called.
 pub fn walk_vttest_screens<F>(
@@ -48,7 +49,7 @@ where
         }
         on_screen(session, &text, screen);
         count += 1;
-        session.send(b"\r");
+        session.send_enter();
         screen += 1;
     }
     count

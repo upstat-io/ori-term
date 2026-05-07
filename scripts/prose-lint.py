@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-prose-lint: scan authored .md and compiler source for forbidden vocabulary.
+prose-lint: scan authored .md and ori_term source for forbidden vocabulary.
 
 Two pattern packs, dispatched by file extension:
 
@@ -10,10 +10,13 @@ Two pattern packs, dispatched by file extension:
     \u00a7"NO PROSE IN AUTHORED .md FILES" + .claude/skills/improve-tooling/SKILL.md
     \u00a7"No Prose in Authored .md Files".
 
-  - Compiler source (.rs, .ori under compiler_repo) \u2014 internal-vocabulary
-    leaks into the public OSS repo: bug IDs, methodology vocabulary,
-    reviewer-tool names, internal-doc paths. Rule: project CLAUDE.md
-    \u00a7"Public Repo Never Leaks Private-Repo Identifiers".
+  - ori_term source (.rs under term_repo) \u2014 internal-vocabulary leaks into
+    the public OSS repo: bug IDs, methodology vocabulary, reviewer-tool
+    names, internal-doc paths, and unattributed references to other
+    terminal emulators (tmux, alacritty, wezterm, ghostty, ratatui, etc.).
+    Reference-implementation citations are allowed when paired with a
+    verifiable file:line path. Rule: project CLAUDE.md \u00a7"Public Repo
+    Never Leaks Private-Repo Identifiers" + \u00a7"Reference Repos".
 
 Exit codes: 0 clean (or --exit-zero), 1 violations found, 2 usage error.
 """
@@ -37,8 +40,9 @@ KEYWORD_PATTERNS = [
     (r"\bwas (originally|previously)\b", "history-phrase-was-originally", re.IGNORECASE),
 ]
 
-# Compiler source internal-vocabulary leak patterns. Each catches a category
-# of private-repo identifier that must not appear in the public compiler repo.
+# ori_term source internal-vocabulary leak patterns. Each catches a category
+# of private-repo identifier that must not appear in the public terminal-
+# emulator repo.
 SOURCE_KEYWORD_PATTERNS = [
     # Bug-tracker IDs \u2014 internal scheme, never public.
     (r"\bBUG-\d{2}-\d{3}\b", "bug-id", 0),
@@ -66,48 +70,61 @@ SOURCE_KEYWORD_PATTERNS = [
     (r"\bcanon\.md\b", "internal-doc-canon", re.IGNORECASE),
 ]
 
-# Reference-language attribution patterns. The compiler is implemented in
-# Rust and emits LLVM, so plain mentions of those identifiers are fine
-# (code-fence tags, Cargo.toml lint sections, "Rust aligns to 8 bytes").
-# What gets flagged is *attribution form* — telling the reader the design
-# was copied from another compiler. Allowed by exemption when the attribution
-# is genuinely scholarly (academic citation with author + year, e.g.
-# "Maranget (2008)") via `// prose-lint: allow`.
+# Reference-implementation attribution patterns. ori_term is a Rust
+# terminal emulator using wgpu / winit / vte / portable-pty, and the
+# project explicitly compares itself against established terminal
+# emulators (tmux, alacritty, wezterm, ghostty, ptyxis, notcurses) and
+# Rust UI frameworks (ratatui, crossterm) plus Go TUI libs (bubbletea,
+# lipgloss, termenv) — see CLAUDE.md §Reference Repos. Plain mentions
+# (`tmux's grid stores extended cells`, citing a reference path verbatim)
+# are fine. What gets flagged is *attribution form* — telling the reader
+# the design was copied from another terminal emulator without a
+# verifiable file:line citation. Allowed by exemption when the
+# attribution carries a verifiable file:line cite (e.g.
+# "WezTerm `term/src/terminalstate/performer.rs:473-478`") via the
+# `reference-lang-source-cite` pattern below, or via explicit
+# `// prose-lint: allow`.
 _REFERENCE_LANGS = (
-    r"(?:Rust|Swift|Koka|Zig|Gleam|Elm|Roc|Golang|TypeScript|"
-    r"Lean\s*4|Lean4|GHC|OxCaml|Haskell|OCaml)"
+    r"(?:tmux|[Aa]lacritty|[Ww]ez[Tt]erm|[Gg]hostty|[Pp]tyxis|"
+    r"[Nn]otcurses|[Rr]atatui|[Cc]rossterm|[Bb]ubbletea|[Ll]ipgloss|"
+    r"[Tt]ermenv)"
 )
 SOURCE_KEYWORD_PATTERNS.extend([
     (
         rf"\b{_REFERENCE_LANGS}'s\s+"
         r"(?:pattern|approach|design|implementation|model|version|way|"
-        r"equivalent|style|incremental|compile-time|compiler|caching|"
-        r"tracking|exhaustiveness|borrow\s+checker|trait\s+system)\b",
-        "reference-lang-possessive",
+        r"equivalent|style|grid|reflow|selection|damage|cursor|"
+        r"tracking|escape\s+handling|VT\s+parser|terminfo)\b",
+        "reference-impl-possessive",
         0,
     ),
     (
         rf"\b(?:[Ff]ollowing|[Ii]nspired by|[Pp]atterned (?:on|after)|"
         rf"[Dd]erived from|[Mm]irrors|[Bb]ased on|[Aa]s in)\s+{_REFERENCE_LANGS}\b",
-        "reference-lang-attribution-verb",
+        "reference-impl-attribution-verb",
         0,
     ),
     (
         rf"\b{_REFERENCE_LANGS}-(?:derived|inspired|style|like|pattern|equivalent)\b",
-        "reference-lang-hyphenated",
+        "reference-impl-hyphenated",
         0,
     ),
     (
         rf"^\s*//[/!]*\s*[-*]?\s*\*?\*?{_REFERENCE_LANGS}\*?\*?\s*[:`]",
-        "reference-lang-bullet-header",
+        "reference-impl-bullet-header",
         re.MULTILINE,
     ),
-    (
-        rf"\b{_REFERENCE_LANGS}\s+`[^`]*\.(?:hs|rs|swift|zig|ml|lean)`",
-        "reference-lang-source-cite",
-        0,
-    ),
 ])
+
+# Exemption: a line carrying a verbatim file:line cite of the reference
+# implementation (e.g. WezTerm `term/src/terminalstate/performer.rs:473-478`)
+# is the canonical attribution form per CLAUDE.md §Reference Repos. Such a
+# line is an explicit, verifiable citation — not an unattributed copy claim —
+# so reference-impl-* patterns on the same line are suppressed.
+# Common terminal-emulator source extensions: Rust, Go, C, Zig, C++.
+REFERENCE_IMPL_CITE_RE = re.compile(
+    rf"\b{_REFERENCE_LANGS}\s+`[^`]*\.(?:rs|go|c|h|cc|cpp|zig)`"
+)
 
 # Suppressions (false-positive guards)
 COMPOUND_ADJ_RE = re.compile(
@@ -149,7 +166,10 @@ DEFAULT_MAX_SENTENCES = 2
 
 # File-extension dispatch.
 MD_EXT = ".md"
-SOURCE_EXTS = {".rs", ".ori"}
+# ori_term is pure Rust — no `.ori` source files (that suffix belongs to the
+# ori_lang compiler this script was originally written for; dropped here to
+# stop scanning a non-existent file class on every invocation).
+SOURCE_EXTS = {".rs"}
 LINT_EXTENSIONS = {MD_EXT} | SOURCE_EXTS
 
 # Directories never traversed during recursive scans.
@@ -339,9 +359,15 @@ def keyword_scan(lines, exempt, patterns, allow_re, apply_md_suppressors):
             "methodology-pin-vocab",
             "methodology-tdd-matrix",
         }
+        # Lines carrying a verbatim file:line cite of a reference impl are
+        # exempt from all reference-impl-* attribution patterns — the cite IS
+        # the attribution.
+        cite_line = REFERENCE_IMPL_CITE_RE.search(line) is not None
         masked = COMPOUND_ADJ_RE.sub("<compound>", line) if apply_md_suppressors else line
         for regex, label, flags in patterns:
             if regression_doc_line and label in regression_exempt_labels:
+                continue
+            if cite_line and label.startswith("reference-impl-"):
                 continue
             m = re.search(regex, masked, flags)
             if m:
@@ -420,6 +446,15 @@ def format_human(findings, scanned):
     for f in findings:
         by_file.setdefault(f["file"], []).append(f)
     out = [f"prose-lint: {len(findings)} violation(s) across {len(by_file)} file(s) (of {scanned} scanned)"]
+    has_bug_id = any(f.get("pattern") == "bug-id" for f in findings)
+    has_internal_doc = any(
+        isinstance(f.get("pattern"), str) and f["pattern"].startswith("internal-doc-")
+        for f in findings
+    )
+    has_wrapper_path = any(
+        isinstance(f.get("pattern"), str) and f["pattern"].startswith("wrapper-")
+        for f in findings
+    )
     for file, fs in sorted(by_file.items()):
         out.append("")
         out.append(file)
@@ -436,6 +471,22 @@ def format_human(findings, scanned):
                 out.append(f"      {f['excerpt']}")
             else:
                 out.append(f"  :{f['line']}  [{t}] {f.get('message','')}")
+    if has_bug_id or has_internal_doc or has_wrapper_path:
+        out.append("")
+        out.append("Hints (per .claude/rules/tests.md §Regression Discipline + impl-hygiene.md):")
+        if has_bug_id:
+            out.append("  bug-id violations exempt these line prefixes:")
+            out.append("    /// Regression: BUG-XX-NNN ...        (canonical regression-anchor doc comment)")
+            out.append("    /// See: bug-tracker/plans/...        (canonical plan-pointer doc comment)")
+            out.append("    // <!-- prose-lint: allow -->         (per-line escape hatch)")
+        if has_internal_doc:
+            out.append("  internal-doc-* matches reference wrapper-private rule files (e.g., impl-hygiene.md).")
+            out.append("    Public source MUST NOT cite wrapper docs — refactor the comment to describe")
+            out.append("    intent rather than cite the wrapper rule by name.")
+        if has_wrapper_path:
+            out.append("  wrapper-* matches reference wrapper-only paths (e.g., bug-tracker/plans/).")
+            out.append("    These are exempt only on canonical `/// See: bug-tracker/plans/...` regression")
+            out.append("    doc-comment lines; otherwise refactor or use the prose-lint allow marker.")
     out.append("")
     return "\n".join(out)
 

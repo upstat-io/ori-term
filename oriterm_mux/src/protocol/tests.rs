@@ -218,6 +218,7 @@ fn msg_type_roundtrip_all() {
         MsgType::NotifyHostColorQuery,
         MsgType::NotifyDesktopNotification,
         MsgType::NotifyClearPendingDesktopNotifications,
+        MsgType::SetAnswerback,
     ];
     for t in types {
         let raw = t as u16;
@@ -1578,4 +1579,69 @@ fn write_stalled_status_response_is_not_notification() {
 fn msg_type_decodes_is_write_stalled_ids() {
     assert_eq!(MsgType::from_u16(0x012E), Some(MsgType::IsWriteStalled));
     assert_eq!(MsgType::from_u16(0x0219), Some(MsgType::WriteStalledStatus));
+}
+
+/// Regression: `MsgType::SetAnswerback = 0x012F` decodes via `from_u16`
+/// and round-trips through the catalog, pinning the wire-protocol entry
+/// for the answerback config-propagation chain.
+#[test]
+fn msg_type_decodes_set_answerback_id() {
+    assert_eq!(MsgType::from_u16(0x012F), Some(MsgType::SetAnswerback));
+}
+
+/// Wire-protocol round-trip pin for `MuxPdu::SetAnswerback`. Verifies
+/// `bincode::serialize` + `bincode::deserialize` preserves the variant
+/// AND that `msg_type()` resolves to the matching `MsgType::SetAnswerback`.
+/// Covers backward-compat of variant addition without `PROTOCOL_VERSION`
+/// bump — old servers reject unknown msg_type at decode time.
+#[test]
+fn pdu_round_trip_set_answerback() {
+    let pdu = MuxPdu::SetAnswerback {
+        pane_id: PaneId::from_raw(7),
+        bytes: b"oriterm".to_vec(),
+    };
+    let encoded = bincode::serialize(&pdu).expect("serialize");
+    let decoded: MuxPdu = bincode::deserialize(&encoded).expect("deserialize");
+    assert_eq!(pdu, decoded);
+    assert_eq!(decoded.msg_type(), MsgType::SetAnswerback);
+    assert!(decoded.is_fire_and_forget());
+}
+
+/// Append-only wire-compat invariant pin for `MuxPdu::SetAnswerback`.
+/// `bincode` serializes enum variants by 0-based discriminant in the
+/// first 4 bytes (little-endian u32). Placing `SetAnswerback`
+/// mid-enum would shift every subsequent variant's wire encoding
+/// silently. This test asserts the new variant's discriminant is
+/// strictly greater than `WriteStalledStatus`'s — failing if a
+/// future contributor inserts the variant earlier in the enum.
+/// Anchors the `// Wire-compat: append-only` comment at
+/// `messages.rs:500`.
+#[test]
+fn set_answerback_bincode_discriminant_appended_after_write_stalled_status() {
+    let prior = MuxPdu::WriteStalledStatus {
+        pane_id: PaneId::from_raw(0),
+        stalled: false,
+    };
+    let new = MuxPdu::SetAnswerback {
+        pane_id: PaneId::from_raw(0),
+        bytes: Vec::new(),
+    };
+    let prior_bytes = bincode::serialize(&prior).expect("serialize prior");
+    let new_bytes = bincode::serialize(&new).expect("serialize new");
+    let prior_disc = u32::from_le_bytes(prior_bytes[..4].try_into().expect("u32 slice"));
+    let new_disc = u32::from_le_bytes(new_bytes[..4].try_into().expect("u32 slice"));
+    // Strict immediately-after pin (not just `>`): SetAnswerback is the
+    // very next variant after WriteStalledStatus per the append-only
+    // comment at messages.rs:500. A future contributor inserting any
+    // variant between them would shift SetAnswerback's discriminant by
+    // ≥1 and FAIL this pin. Looser `>` would silently allow such an
+    // insertion to pass.
+    assert_eq!(
+        new_disc,
+        prior_disc + 1,
+        "SetAnswerback bincode discriminant ({new_disc}) must be exactly WriteStalledStatus's + 1 \
+         ({}); placing the variant mid-enum silently breaks wire compatibility for every \
+         subsequent variant",
+        prior_disc + 1
+    );
 }

@@ -194,5 +194,21 @@ impl From<TermMode> for vte::ansi::KeyboardModes {
     }
 }
 
+/// Enter-key base bytes under LNM (Line Feed/New Line) mode.
+///
+/// SSOT for the rule "LNM controls what Enter transmits." When LNM is set,
+/// Enter sends CR+LF (`\r\n`); otherwise it sends CR (`\r`). Both the
+/// application key encoder (`oriterm/src/key_encoding/legacy.rs`) and the
+/// headless test harness (`PtySession::send_enter`) query this function.
+#[inline]
+#[must_use]
+pub fn encode_enter_base(mode: TermMode) -> &'static [u8] {
+    if mode.contains(TermMode::LINE_FEED_NEW_LINE) {
+        b"\r\n"
+    } else {
+        b"\r"
+    }
+}
+
 #[cfg(test)]
 mod tests;

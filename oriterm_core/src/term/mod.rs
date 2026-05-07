@@ -19,6 +19,7 @@ mod snapshot;
 
 pub use charset::CharsetState;
 pub use mode::TermMode;
+pub use mode::encode_enter_base;
 // `AceMode` is declared below next to the `Term` struct so keep its
 // re-export close to the rest of `term/mod.rs`'s public surface.
 pub use renderable::{
@@ -283,6 +284,11 @@ pub struct Term<S: EffectSink> {
     /// Stored on Term per the §09A.6/09A.8 LEAK guard: this is a mode
     /// concern, never a grid concern.
     ace_mode: AceMode,
+    /// Configured answerback string emitted on `ENQ` (`0x05`).
+    /// Empty by default; emission suppressed when empty (matches `WezTerm`
+    /// `term/src/terminalstate/performer.rs:473-479`). Terminal-global
+    /// config — survives RIS / DECSTR / DECSC/DECRC / alt-screen toggle.
+    answerback: Vec<u8>,
 }
 
 /// DECSACE attribute-change extent mode.
@@ -361,7 +367,17 @@ impl<S: EffectSink> Term<S> {
             active_status_display: 0,
             status_line_type: 0,
             ace_mode: AceMode::default(),
+            answerback: Vec::new(),
         }
+    }
+
+    /// Set the answerback string emitted on `ENQ` (`0x05`).
+    ///
+    /// Empty (default) suppresses emission entirely per ECMA-48 §8.3.40
+    /// and the `WezTerm` reference behavior. Non-empty bytes are written
+    /// to the PTY verbatim on each `ENQ` byte received.
+    pub fn set_answerback(&mut self, bytes: Vec<u8>) {
+        self.answerback = bytes;
     }
 
     /// Mouse cursor icon requested by the shell (OSC 22).

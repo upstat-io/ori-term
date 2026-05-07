@@ -6,7 +6,7 @@ use super::harness::{self, TeseqHarness, reseq_available};
 
 fn run_scenario(name: &str) {
     if !reseq_available() {
-        eprintln!("reseq not installed, skipping");
+        eprintln!("SKIP: reseq not installed");
         return;
     }
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -35,7 +35,7 @@ fn ed_all() {
 #[test]
 fn ed_scrollback() {
     if !reseq_available() {
-        eprintln!("reseq not installed, skipping");
+        eprintln!("SKIP: reseq not installed");
         return;
     }
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
