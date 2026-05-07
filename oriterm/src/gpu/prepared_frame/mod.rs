@@ -11,6 +11,8 @@
 use oriterm_core::Rgb;
 use oriterm_core::image::ImageId;
 
+use crate::font::CellMetrics;
+
 use super::frame_input::{SelectionDamageSnapshot, ViewportSize};
 use super::instance_writer::InstanceWriter;
 use super::prepare::dirty_skip::{RowInstanceRanges, SavedTerminalTier};
@@ -129,6 +131,31 @@ pub struct PreparedFrame {
     /// Previous frame's text blink opacity — detects blink timer changes
     /// that require a full instance rebuild (not just cursor-only update).
     pub(crate) prev_text_blink_opacity: f32,
+    /// Previous frame's cell metrics — invalidates [`SavedTerminalTier`]
+    /// when scale, font, or DPI changes leave the pixel viewport
+    /// unchanged but reposition cells. `None` before the first prepare;
+    /// `saved_tier` is empty in that case so the dispatch predicate's
+    /// preceding `has_cached_rows()` clause already short-circuits — the
+    /// `Option` layer just removes the need for a sentinel
+    /// [`CellMetrics`] value.
+    pub(crate) prev_cell_size: Option<CellMetrics>,
+    /// Previous frame's origin (x, y in pixels). Saved-tier rows carry
+    /// pixel positions baked at emit time; an origin change must dispatch
+    /// full-rebuild so cells render at the new origin.
+    pub(crate) prev_origin: (f32, f32),
+    /// Previous frame's content grid columns. The `viewport` guard
+    /// catches pixel-size changes; this field catches content-grid
+    /// changes that can race ahead of the viewport during async resize
+    /// (snapshot vs. surface mismatch). Saved-tier `row_ranges` are sized
+    /// to the prior content grid; mismatch invalidates clean-row replay.
+    pub(crate) prev_content_cols: Option<usize>,
+    /// Previous frame's content grid rows. Companion to `prev_content_cols`.
+    pub(crate) prev_content_rows: Option<usize>,
+    /// Previous frame's cursor row when visible. Drives `build_dirty_set`
+    /// to dirty BOTH the previous cursor row (so its cells regenerate
+    /// without the stale "with cursor" colors baked into `saved_tier`)
+    /// AND the current cursor row.
+    pub(crate) prev_cursor_line: Option<usize>,
     /// Whether the last prepare pass used the incremental path.
     ///
     /// When true, `scratch_dirty` and `saved_tier.row_ranges` are valid and
@@ -166,6 +193,11 @@ impl PreparedFrame {
             saved_tier: SavedTerminalTier::new(),
             prev_selection_snapshot: None,
             prev_text_blink_opacity: 1.0,
+            prev_cell_size: None,
+            prev_origin: (0.0, 0.0),
+            prev_content_cols: None,
+            prev_content_rows: None,
+            prev_cursor_line: None,
             was_incremental: false,
             scratch_dirty: Vec::new(),
             viewport,
@@ -207,6 +239,11 @@ impl PreparedFrame {
             saved_tier: SavedTerminalTier::new(),
             prev_selection_snapshot: None,
             prev_text_blink_opacity: 1.0,
+            prev_cell_size: None,
+            prev_origin: (0.0, 0.0),
+            prev_content_cols: None,
+            prev_content_rows: None,
+            prev_cursor_line: None,
             was_incremental: false,
             scratch_dirty: Vec::new(),
             viewport,

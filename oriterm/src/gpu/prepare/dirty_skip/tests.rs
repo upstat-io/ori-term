@@ -31,8 +31,65 @@ fn dirty_set(
     prev_sel: Option<SelectionDamageSnapshot>,
 ) -> Vec<bool> {
     let mut buf = Vec::new();
-    build_dirty_set(input, num_rows, prev_sel, &mut buf);
+    build_dirty_set(input, num_rows, prev_sel, None, &mut buf);
     buf
+}
+
+/// Helper: call `build_dirty_set` with the previous-cursor-row argument.
+fn dirty_set_with_prev_cursor(
+    input: &FrameInput,
+    num_rows: usize,
+    prev_sel: Option<SelectionDamageSnapshot>,
+    prev_cursor_line: Option<usize>,
+) -> Vec<bool> {
+    let mut buf = Vec::new();
+    build_dirty_set(input, num_rows, prev_sel, prev_cursor_line, &mut buf);
+    buf
+}
+
+/// Regression: BUG-06-027 — when the cursor moves between frames, the
+/// previous cursor row must also be marked dirty so its cells regenerate
+/// without inheriting the "with cursor" per-cell colors that were baked
+/// into `saved_tier`.
+#[test]
+fn cursor_move_dirties_previous_cursor_row() {
+    let mut input = FrameInput::test_grid(10, 5, "");
+    input.content.all_dirty = false;
+    input.content.cursor = RenderableCursor {
+        line: 2,
+        column: Column(0),
+        visible: true,
+        shape: CursorShape::Block,
+    };
+    input.content.damage.clear();
+
+    // Previous frame had cursor on row 0; current frame moved it to row 2.
+    let dirty = dirty_set_with_prev_cursor(&input, 5, None, Some(0));
+    assert!(dirty[0], "previous cursor row (0) marked dirty after move");
+    assert!(dirty[2], "current cursor row (2) always dirty");
+    assert!(!dirty[1], "non-cursor row stays clean");
+}
+
+/// Regression: BUG-06-027 negative pin — when the cursor stays put,
+/// `build_dirty_set` must not gratuitously dirty extra rows.
+#[test]
+fn cursor_stationary_does_not_dirty_previous_cursor_row() {
+    let mut input = FrameInput::test_grid(10, 5, "");
+    input.content.all_dirty = false;
+    input.content.cursor = RenderableCursor {
+        line: 2,
+        column: Column(0),
+        visible: true,
+        shape: CursorShape::Block,
+    };
+    input.content.damage.clear();
+
+    let dirty = dirty_set_with_prev_cursor(&input, 5, None, Some(2));
+    assert!(dirty[2], "current cursor row dirty");
+    assert!(!dirty[0]);
+    assert!(!dirty[1]);
+    assert!(!dirty[3]);
+    assert!(!dirty[4]);
 }
 
 #[test]

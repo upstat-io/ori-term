@@ -273,7 +273,14 @@ pub(crate) fn fill_frame_incremental(
     // Setup that must read frame fields before frame is moved into ctx.
     let num_rows = input.rows();
     let prev_sel = frame.prev_selection_snapshot;
-    build_dirty_set(input, num_rows, prev_sel, &mut frame.scratch_dirty);
+    let prev_cursor_line = frame.prev_cursor_line;
+    build_dirty_set(
+        input,
+        num_rows,
+        prev_sel,
+        prev_cursor_line,
+        &mut frame.scratch_dirty,
+    );
 
     let mut ctx = EmitCtx {
         fg_dim: input.fg_dim,

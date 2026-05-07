@@ -14,10 +14,16 @@ use crate::gpu::frame_input::{FrameInput, SelectionDamageSnapshot};
 /// `prev_selection` is the selection snapshot from the previous frame.
 /// When the selection changes between frames, the affected rows are marked
 /// dirty so their instances are regenerated with correct selection colors.
+///
+/// `prev_cursor_line` is the cursor row from the previous frame (when
+/// visible). When the cursor moves between frames, the previous cursor
+/// row is dirtied so its cells regenerate without inheriting the "with
+/// cursor" per-cell colors baked into `saved_tier`.
 pub fn build_dirty_set(
     input: &FrameInput,
     num_rows: usize,
     prev_selection: Option<SelectionDamageSnapshot>,
+    prev_cursor_line: Option<usize>,
     dirty: &mut Vec<bool>,
 ) {
     dirty.clear();
@@ -39,6 +45,19 @@ pub fn build_dirty_set(
     // The cursor row is always dirty (cursor blink state may have changed).
     if input.content.cursor.visible && input.content.cursor.line < num_rows {
         dirty[input.content.cursor.line] = true;
+    }
+
+    // Cursor-move dirties the previous cursor row too — the cursor cell
+    // can carry inverted FG/BG colors that bake per-cell at emit time.
+    // Without this, clean-row replay leaves stale "with cursor" colors
+    // on the row the cursor just left.
+    if let Some(prev_line) = prev_cursor_line
+        && prev_line < num_rows
+    {
+        let cursor_moved = !input.content.cursor.visible || input.content.cursor.line != prev_line;
+        if cursor_moved {
+            dirty[prev_line] = true;
+        }
     }
 
     // Selection damage: mark rows that changed selection state.

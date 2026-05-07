@@ -4296,10 +4296,15 @@ fn shaped_multi_row(
     (sf, all_ids)
 }
 
+/// Regression: BUG-06-027 — three-frame sequence proves both that the
+/// production fix populates `saved_tier` (Frame 1 dispatches incremental)
+/// AND that the `!all_dirty` guard remains load-bearing (Frame 2 with
+/// `all_dirty=true` dispatches full-rebuild even when `saved_tier` is
+/// populated).
+///
+/// See: bug-tracker/plans/BUG-06-027/
 #[test]
 fn incremental_all_dirty_matches_full_rebuild() {
-    // When all rows are dirty, the incremental path should produce the
-    // same instance data as a full rebuild.
     let size_q6 = 768;
     let cols = 4;
     let rows = 3;
@@ -4309,17 +4314,46 @@ fn incremental_all_dirty_matches_full_rebuild() {
     let (shaped, ids) = shaped_multi_row(cols, rows, 10, size_q6);
     let atlas = key_atlas_with(&ids, size_q6);
 
-    // Full rebuild (fresh frame).
+    // Full rebuild (fresh frame, used as the negative-pin baseline).
     let fresh = prepare_frame_shaped(&input, &atlas, &shaped, (0.0, 0.0));
 
-    // First pass: full rebuild into reusable frame to populate row_ranges.
+    // Frame 0: full rebuild — production save_terminal_tier publishes
+    // empty tier into saved_tier (no-op the first time).
     let mut frame = PreparedFrame::new(ViewportSize::new(1, 1), Rgb { r: 0, g: 0, b: 0 }, 1.0);
     prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+    assert!(
+        !frame.was_incremental,
+        "Frame 0 always full-rebuild (saved_tier empty before first prepare)"
+    );
 
-    // Second pass: all_dirty = true means full rebuild again.
+    // Frame 1: with all_dirty=false, must take the incremental path.
+    // This proves the production fix's pre-dispatch save_terminal_tier
+    // populated saved_tier from Frame 0's terminal-tier.
+    input.content.all_dirty = false;
+    input.content.cursor.visible = false;
+    input.content.damage.clear();
+    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+    assert!(
+        frame.was_incremental,
+        "Frame 1 must dispatch to incremental (proves production fix populated saved_tier)"
+    );
+    assert!(
+        frame.saved_tier.has_cached_rows(),
+        "saved_tier must hold prev-frame data for the all_dirty fallback assertion to be meaningful"
+    );
+
+    // Frame 2: all_dirty=true must dispatch back to full-rebuild EVEN
+    // THOUGH saved_tier is populated.
     input.content.all_dirty = true;
     prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+    assert!(
+        !frame.was_incremental,
+        "all_dirty=true must dispatch to full-rebuild even when saved_tier is populated \
+         (the !all_dirty guard remains load-bearing)"
+    );
 
+    // Output equivalence: the full-rebuild branch produces output identical
+    // to a fresh prepare on the same input (rebuild is idempotent).
     assert_eq!(
         fresh.backgrounds.as_bytes(),
         frame.backgrounds.as_bytes(),
@@ -4360,15 +4394,27 @@ fn incremental_no_dirty_rows_matches_cached() {
     input.content.damage.clear();
     prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
 
+    // Regression anchor: second prepare must hit the incremental path.
+    // Without the unconditional pre-dispatch save_terminal_tier,
+    // saved_tier would only populate inside the incremental branch itself
+    // (chicken-and-egg) and this dispatch would always fall to
+    // full-rebuild — the output-equivalence assertions below would pass
+    // vacuously because both passes were full-rebuild.
+    assert!(
+        frame.was_incremental,
+        "second pass must hit the incremental path (production dispatch \
+         should resolve can_incremental=true with saved_tier populated)"
+    );
+
     assert_eq!(
         full_bg,
         frame.backgrounds.as_bytes(),
-        "clean rows should copy cached backgrounds"
+        "clean rows should copy cached backgrounds (replay matches full rebuild)"
     );
     assert_eq!(
         full_fg,
         frame.glyphs.as_bytes(),
-        "clean rows should copy cached glyphs"
+        "clean rows should copy cached glyphs (replay matches full rebuild)"
     );
 }
 
@@ -4398,14 +4444,12 @@ fn incremental_clears_chrome_and_overlay_buffers() {
 
     let mut frame = PreparedFrame::new(ViewportSize::new(1, 1), Rgb { r: 0, g: 0, b: 0 }, 1.0);
 
-    // Frame N: full rebuild populates row_ranges, then explicitly publish
-    // them to saved_tier so Frame N+1 takes the incremental path. In
-    // production this swap happens implicitly inside the incremental
-    // branch on consecutive frames; tests must do it by hand because the
-    // first prepare always lands on the full-rebuild branch (saved_tier
-    // empty → can_incremental=false).
+    // Frame N: full rebuild populates row_ranges. The production
+    // pre-dispatch `save_terminal_tier()` swaps Frame N's terminal-tier
+    // into saved_tier on the NEXT prepare, so Frame N+1 sees populated
+    // saved_tier and dispatches to the incremental path. No explicit
+    // test-side swap needed.
     prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
-    frame.save_terminal_tier();
 
     // Simulate post-prepare chrome + overlay rendering — production calls
     // `chrome::render_chrome` after `prepare()` returns, appending into
@@ -4544,10 +4588,10 @@ fn full_and_incremental_paths_both_clear_chrome_buffers() {
         "full-rebuild path must clear chrome and overlay tiers"
     );
 
-    // Path B: incremental (saved_tier populated → can_incremental=true).
+    // Path B: incremental — Frame N seeds, the production fix's
+    // pre-dispatch save_terminal_tier publishes saved_tier on Frame N+1.
     let mut frame_inc = PreparedFrame::new(ViewportSize::new(1, 1), Rgb { r: 0, g: 0, b: 0 }, 1.0);
     prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame_inc, (0.0, 0.0), 1.0);
-    frame_inc.save_terminal_tier();
     frame_inc.ui_glyphs.push_rect(rect, bg, 1.0);
     frame_inc.overlay_glyphs.push_rect(rect, bg, 1.0);
     input.content.all_dirty = false;
@@ -4561,6 +4605,409 @@ fn full_and_incremental_paths_both_clear_chrome_buffers() {
     assert!(
         frame_inc.ui_glyphs.is_empty() && frame_inc.overlay_glyphs.is_empty(),
         "incremental path must clear chrome and overlay tiers (parity with full-rebuild path)"
+    );
+}
+
+// ── Incremental dispatch reachability tests ──
+
+/// Helper: drive a steady-state Frame 0 (full rebuild) populating the
+/// production fix's saved_tier swap, returning the frame ready for Frame 1.
+fn prepare_frame0_steady(
+    cols: usize,
+    rows: usize,
+) -> (PreparedFrame, FrameInput, ShapedFrame, KeyTestAtlas) {
+    let size_q6 = 768;
+    let text: String = std::iter::repeat_n('A', cols * rows).collect();
+    let input = FrameInput::test_grid(cols, rows, &text);
+    let (shaped, ids) = shaped_multi_row(cols, rows, 10, size_q6);
+    let atlas = key_atlas_with(&ids, size_q6);
+    let mut frame = PreparedFrame::new(ViewportSize::new(1, 1), Rgb { r: 0, g: 0, b: 0 }, 1.0);
+    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+    (frame, input, shaped, atlas)
+}
+
+/// Regression: BUG-06-027 — Frame 1 dispatches incremental.
+///
+/// Before the fix, `saved_tier` was populated only INSIDE the incremental
+/// branch itself, so the dispatch predicate at `prepare/mod.rs` saw an
+/// empty `saved_tier` on every frame and full-rebuild ran every time.
+/// Post-fix, the unconditional `out.save_terminal_tier()` at the top of
+/// `prepare_frame_shaped_into` publishes Frame N's terminal-tier into
+/// `saved_tier`, so Frame N+1's dispatch observes populated `saved_tier`.
+#[test]
+fn incremental_second_frame_after_full_rebuild_dispatches_incremental() {
+    let cols = 4;
+    let rows = 3;
+    let (mut frame, mut input, shaped, atlas) = prepare_frame0_steady(cols, rows);
+    assert!(
+        !frame.was_incremental,
+        "Frame 0 always full-rebuild (saved_tier empty before first prepare)"
+    );
+
+    input.content.all_dirty = false;
+    input.content.cursor.visible = false;
+    input.content.damage.clear();
+    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+
+    assert!(
+        frame.was_incremental,
+        "Frame 1 must dispatch incremental: production fix's pre-dispatch \
+         save_terminal_tier populated saved_tier from Frame 0"
+    );
+    assert!(
+        frame.saved_tier.has_cached_rows(),
+        "saved_tier holds Frame 0's terminal-tier rows"
+    );
+}
+
+/// Regression: BUG-06-027 — chained steady-state frames stay incremental.
+///
+/// Frame 0 full-rebuild → Frame 1 incremental → Frame 2 incremental.
+/// Pre-fix the incremental optimization was dormant; post-fix it remains
+/// active across consecutive steady-state frames.
+#[test]
+fn incremental_chained_frames_remain_incremental() {
+    let cols = 4;
+    let rows = 3;
+    let (mut frame, mut input, shaped, atlas) = prepare_frame0_steady(cols, rows);
+
+    input.content.all_dirty = false;
+    input.content.cursor.visible = false;
+    input.content.damage.clear();
+
+    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+    assert!(frame.was_incremental, "Frame 1 incremental");
+
+    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+    assert!(frame.was_incremental, "Frame 2 incremental");
+}
+
+/// Regression: BUG-06-027 — `all_dirty=true` interruption does not
+/// permanently break the incremental chain. Frame 0 full-rebuild → Frame 1
+/// incremental → Frame 2 `all_dirty=true` full-rebuild → Frame 3 incremental.
+/// Pins that the dispatch predicate's `!all_dirty` clause is the only
+/// gate, not a sticky disablement.
+#[test]
+fn incremental_all_dirty_recovery_resumes_incremental() {
+    let cols = 4;
+    let rows = 3;
+    let (mut frame, mut input, shaped, atlas) = prepare_frame0_steady(cols, rows);
+
+    input.content.all_dirty = false;
+    input.content.cursor.visible = false;
+    input.content.damage.clear();
+    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+    assert!(frame.was_incremental, "Frame 1 incremental");
+
+    input.content.all_dirty = true;
+    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+    assert!(!frame.was_incremental, "Frame 2 forced full-rebuild");
+
+    input.content.all_dirty = false;
+    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+    assert!(
+        frame.was_incremental,
+        "Frame 3 must re-enter incremental — all_dirty interruption is not sticky"
+    );
+}
+
+/// Regression: BUG-06-027 — replay of clean rows produces output identical
+/// to a fresh full rebuild. The equivalence assertion in the existing
+/// `incremental_no_dirty_rows_matches_cached` test would pass vacuously
+/// if both passes were full-rebuild. This stand-alone test asserts
+/// `was_incremental` AND output equivalence, proving the fix drives
+/// replay correctly across the terminal-tier buffers.
+///
+/// See: bug-tracker/plans/BUG-06-027/
+#[test]
+fn incremental_replay_clean_rows_matches_fresh_rebuild_output_across_all_buffers() {
+    let size_q6 = 768;
+    let cols = 4;
+    let rows = 3;
+    let text: String = std::iter::repeat_n('A', cols * rows).collect();
+    let mut input = FrameInput::test_grid(cols, rows, &text);
+    let (shaped, ids) = shaped_multi_row(cols, rows, 10, size_q6);
+    let atlas = key_atlas_with(&ids, size_q6);
+
+    let fresh = prepare_frame_shaped(&input, &atlas, &shaped, (0.0, 0.0));
+
+    let mut frame = PreparedFrame::new(ViewportSize::new(1, 1), Rgb { r: 0, g: 0, b: 0 }, 1.0);
+    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+
+    input.content.all_dirty = false;
+    input.content.cursor.visible = false;
+    input.content.damage.clear();
+    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+
+    assert!(
+        frame.was_incremental,
+        "Frame 1 must dispatch incremental for the equivalence assertion below \
+         to pin actual replay output (not vacuously equal full-rebuild bytes)"
+    );
+    assert_eq!(
+        fresh.backgrounds.as_bytes(),
+        frame.backgrounds.as_bytes(),
+        "incremental replay backgrounds match fresh full-rebuild"
+    );
+    assert_eq!(
+        fresh.glyphs.as_bytes(),
+        frame.glyphs.as_bytes(),
+        "incremental replay mono glyphs match fresh full-rebuild"
+    );
+    assert_eq!(
+        fresh.subpixel_glyphs.as_bytes(),
+        frame.subpixel_glyphs.as_bytes(),
+        "incremental replay subpixel glyphs match fresh full-rebuild"
+    );
+    assert_eq!(
+        fresh.color_glyphs.as_bytes(),
+        frame.color_glyphs.as_bytes(),
+        "incremental replay color glyphs match fresh full-rebuild"
+    );
+}
+
+/// Regression: BUG-06-027 — viewport change forces full-rebuild. Three-frame
+/// sequence: Frame 0 full rebuild populates saved_tier; Frame 1 same
+/// viewport proves incremental reachable; Frame 2 with changed viewport
+/// asserts dispatch falls back to full-rebuild because saved_tier rows
+/// were laid out for the old viewport.
+#[test]
+fn incremental_dispatch_falls_back_on_viewport_change() {
+    let size_q6 = 768;
+    let cols = 4;
+    let rows = 3;
+    let text: String = std::iter::repeat_n('A', cols * rows).collect();
+    let mut input = FrameInput::test_grid(cols, rows, &text);
+    let (shaped, ids) = shaped_multi_row(cols, rows, 10, size_q6);
+    let atlas = key_atlas_with(&ids, size_q6);
+
+    let mut frame = PreparedFrame::new(ViewportSize::new(32, 48), Rgb { r: 0, g: 0, b: 0 }, 1.0);
+    input.viewport = ViewportSize::new(32, 48);
+    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+    assert!(!frame.was_incremental, "Frame 0 full rebuild");
+
+    input.content.all_dirty = false;
+    input.content.cursor.visible = false;
+    input.content.damage.clear();
+    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+    assert!(frame.was_incremental, "Frame 1 reaches incremental path");
+
+    input.viewport = ViewportSize::new(64, 48);
+    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+    assert!(
+        !frame.was_incremental,
+        "Frame 2 viewport change must dispatch full-rebuild"
+    );
+    // Per-buffer equivalence with a fresh rebuild — proves the full
+    // rebuild produces correct output despite stale saved_tier.
+    let fresh = prepare_frame_shaped(&input, &atlas, &shaped, (0.0, 0.0));
+    assert_eq!(
+        fresh.backgrounds.as_bytes(),
+        frame.backgrounds.as_bytes(),
+        "post-fallback backgrounds match fresh rebuild"
+    );
+    assert_eq!(
+        fresh.glyphs.as_bytes(),
+        frame.glyphs.as_bytes(),
+        "post-fallback glyphs match fresh rebuild"
+    );
+}
+
+/// Regression: BUG-06-027 — cell-size change (scale or font swap) forces
+/// full-rebuild. The dispatch predicate's `prev_cell_size` guard catches
+/// per-cell-layout changes that leave the pixel viewport unchanged.
+#[test]
+fn incremental_dispatch_falls_back_on_cell_size_change() {
+    let size_q6 = 768;
+    let cols = 4;
+    let rows = 3;
+    let text: String = std::iter::repeat_n('A', cols * rows).collect();
+    let mut input = FrameInput::test_grid(cols, rows, &text);
+    let (shaped, ids) = shaped_multi_row(cols, rows, 10, size_q6);
+    let atlas = key_atlas_with(&ids, size_q6);
+
+    let mut frame = PreparedFrame::new(ViewportSize::new(1, 1), Rgb { r: 0, g: 0, b: 0 }, 1.0);
+    input.cell_size = CellMetrics::new(10.0, 20.0, 14.0, 2.0, 1.0, 4.0);
+    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+    assert!(!frame.was_incremental, "Frame 0 full rebuild");
+
+    input.content.all_dirty = false;
+    input.content.cursor.visible = false;
+    input.content.damage.clear();
+    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+    assert!(frame.was_incremental, "Frame 1 incremental reachable");
+
+    input.cell_size = CellMetrics::new(20.0, 40.0, 28.0, 4.0, 1.0, 8.0);
+    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+    assert!(
+        !frame.was_incremental,
+        "cell_size change must dispatch full-rebuild (saved_tier rows are pixel-positioned for old metrics)"
+    );
+}
+
+/// Regression: BUG-06-027 — incremental dispatch with partial damage
+/// replays clean rows from saved_tier across all populated terminal-tier
+/// buffers (backgrounds + glyphs). Frame 0 full rebuild populates row
+/// ranges; Frame 1 with damage on row 1 only must replay rows 0 and 2
+/// from saved_tier and regenerate row 1 fresh.
+#[test]
+fn incremental_dispatch_with_partial_damage_replays_clean_rows_across_all_buffers() {
+    let size_q6 = 768;
+    let cols = 4;
+    let rows = 3;
+    let text: String = std::iter::repeat_n('A', cols * rows).collect();
+    let mut input = FrameInput::test_grid(cols, rows, &text);
+    let (shaped, ids) = shaped_multi_row(cols, rows, 10, size_q6);
+    let atlas = key_atlas_with(&ids, size_q6);
+
+    let fresh = prepare_frame_shaped(&input, &atlas, &shaped, (0.0, 0.0));
+    let mut frame = PreparedFrame::new(ViewportSize::new(1, 1), Rgb { r: 0, g: 0, b: 0 }, 1.0);
+    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+
+    input.content.all_dirty = false;
+    input.content.cursor.visible = false;
+    input.content.damage.clear();
+    input.content.damage.push(oriterm_core::DamageLine {
+        line: 1,
+        left: Column(0),
+        right: Column(cols - 1),
+    });
+    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+
+    assert!(
+        frame.was_incremental,
+        "Frame 1 with partial damage must dispatch incremental"
+    );
+    // With identical input cells, the replay-and-regenerate path produces
+    // output identical to a fresh full rebuild on each populated buffer.
+    assert_eq!(
+        fresh.backgrounds.as_bytes(),
+        frame.backgrounds.as_bytes(),
+        "row 0 + row 2 backgrounds replayed from saved_tier; row 1 regenerated"
+    );
+    assert_eq!(
+        fresh.glyphs.as_bytes(),
+        frame.glyphs.as_bytes(),
+        "row 0 + row 2 mono glyphs replayed from saved_tier; row 1 regenerated"
+    );
+}
+
+/// Regression: BUG-06-027 — scrollback shift via caller's `all_dirty=true`
+/// signal dispatches full-rebuild. Three-frame sequence proves incremental
+/// is reachable in steady state and the fallback is structural, not
+/// vacuous.
+#[test]
+fn incremental_dispatch_invalidates_on_scrollback_shift() {
+    let cols = 4;
+    let rows = 3;
+    let (mut frame, mut input, shaped, atlas) = prepare_frame0_steady(cols, rows);
+
+    input.content.all_dirty = false;
+    input.content.cursor.visible = false;
+    input.content.damage.clear();
+    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+    assert!(frame.was_incremental, "Frame 1 incremental");
+
+    // Caller signals scrollback shift via all_dirty=true.
+    input.content.all_dirty = true;
+    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+    assert!(
+        !frame.was_incremental,
+        "scrollback shift (all_dirty=true) dispatches full-rebuild"
+    );
+}
+
+/// Regression: BUG-06-027 — cursor move dirties BOTH the previous cursor
+/// row AND the current cursor row when the cursor cell can carry inverted
+/// per-cell colors. Pre-fix, `build_dirty_set` only marked the current
+/// cursor row dirty; the previous cursor row replayed stale "with cursor"
+/// colors from saved_tier. Post-fix, `build_dirty_set` accepts
+/// `prev_cursor_line` and dirties the previous row too.
+#[test]
+fn incremental_dispatch_with_cursor_move_dirties_current_and_previous_cursor_rows() {
+    let size_q6 = 768;
+    let cols = 4;
+    let rows = 3;
+    let text: String = std::iter::repeat_n('A', cols * rows).collect();
+    let mut input = FrameInput::test_grid(cols, rows, &text);
+    let (shaped, ids) = shaped_multi_row(cols, rows, 10, size_q6);
+    let atlas = key_atlas_with(&ids, size_q6);
+
+    // Frame 0: full rebuild with cursor at row 0.
+    input.content.cursor.visible = true;
+    input.content.cursor.line = 0;
+    input.content.cursor.column = Column(0);
+    let mut frame = PreparedFrame::new(ViewportSize::new(1, 1), Rgb { r: 0, g: 0, b: 0 }, 1.0);
+    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+    assert!(!frame.was_incremental, "Frame 0 full rebuild");
+
+    // Frame 1: cursor moved to row 1 — both row 0 (prev) and row 1
+    // (current) must be dirty so neither row replays stale cursor colors
+    // from saved_tier.
+    input.content.all_dirty = false;
+    input.content.cursor.line = 1;
+    input.content.damage.clear();
+    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+    assert!(
+        frame.was_incremental,
+        "Frame 1 cursor move dispatches incremental"
+    );
+    // The dirty-set dirtied row 0 (previous cursor) AND row 1 (current
+    // cursor). We assert on the inner scratch_dirty buffer captured during
+    // the prepare call.
+    assert!(
+        frame.scratch_dirty[0],
+        "previous cursor row (0) MUST be marked dirty after cursor move"
+    );
+    assert!(
+        frame.scratch_dirty[1],
+        "current cursor row (1) MUST be marked dirty"
+    );
+}
+
+/// Regression: BUG-06-027 — text blink opacity change forces full-rebuild.
+/// Per-cell instances bake `text_blink_opacity` at emit time; replaying
+/// clean rows would carry stale opacity. The dispatch predicate's
+/// `prev_text_blink_opacity` guard catches this.
+#[test]
+fn incremental_dispatch_falls_back_on_text_blink_opacity_change() {
+    let cols = 4;
+    let rows = 3;
+    let (mut frame, mut input, shaped, atlas) = prepare_frame0_steady(cols, rows);
+
+    input.content.all_dirty = false;
+    input.content.cursor.visible = false;
+    input.content.damage.clear();
+    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+    assert!(frame.was_incremental, "Frame 1 incremental reachable");
+
+    input.text_blink_opacity = 0.5;
+    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+    assert!(
+        !frame.was_incremental,
+        "text_blink_opacity change must dispatch full-rebuild"
+    );
+}
+
+/// Regression: BUG-06-027 — origin change (e.g., scroll without all_dirty)
+/// dispatches full-rebuild. Without an origin guard the saved_tier's
+/// pixel-positioned cell instances would render at the wrong Y.
+#[test]
+fn incremental_dispatch_falls_back_on_origin_change() {
+    let cols = 4;
+    let rows = 3;
+    let (mut frame, mut input, shaped, atlas) = prepare_frame0_steady(cols, rows);
+
+    input.content.all_dirty = false;
+    input.content.cursor.visible = false;
+    input.content.damage.clear();
+    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+    assert!(frame.was_incremental, "Frame 1 incremental reachable");
+
+    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, -10.0), 1.0);
+    assert!(
+        !frame.was_incremental,
+        "origin change must dispatch full-rebuild (saved_tier cells are pixel-positioned for prev origin)"
     );
 }
 
@@ -4764,9 +5211,12 @@ mod dirty_skip_traces {
             oriterm_core::Rgb { r: 0, g: 0, b: 0 },
             1.0,
         );
-        // Frame 1: full rebuild populates row_ranges + saved_tier.
+        // Frame 1: full rebuild populates row_ranges. Production's
+        // pre-dispatch save_terminal_tier swaps the terminal tier into
+        // saved_tier on the next prepare call, so callers using this
+        // helper produce a frame whose Frame N+1 prepare will take the
+        // incremental path automatically.
         prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
-        frame.save_terminal_tier();
         (frame, input)
     }
 

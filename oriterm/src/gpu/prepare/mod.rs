@@ -133,17 +133,51 @@ pub fn prepare_frame_shaped_into(
     origin: (f32, f32),
     cursor_opacity: f32,
 ) {
-    let can_incremental = !input.content.all_dirty && out.saved_tier.has_cached_rows();
+    // Publish the previous frame's terminal-tier into saved_tier BEFORE
+    // the dispatch decision. Without this bootstrap, the incremental path
+    // is unreachable — saved_tier would only populate INSIDE the
+    // incremental branch itself, so frame 0 leaves saved_tier empty and
+    // every subsequent frame falls through to full rebuild. First call:
+    // terminal-tier and saved_tier both empty, swap is a no-op.
+    // Subsequent calls: previous frame's terminal-tier moves into
+    // saved_tier, making it visible to the can_incremental check.
+    out.save_terminal_tier();
+
+    // Frame-level state guards on the dispatch predicate. The incremental
+    // branch's `replay_clean_row` reuses per-cell instances frozen at the
+    // previous frame's emit time — any frame-level state that affects
+    // per-cell pixel positioning, color, or layout MUST match between
+    // frames, OR the upstream caller must signal `all_dirty=true` to
+    // force a full rebuild. Each guard's reasoning:
+    //   - viewport: pixel-dimension change (resize) repositions everything.
+    //   - cell_size: scale or font-metric change leaves viewport unchanged
+    //     but reflows per-cell pixel positions.
+    //   - content_cols/content_rows: snapshot grid topology can race
+    //     ahead of the pixel viewport during async resize; saved_tier
+    //     row_ranges encode the prior topology and don't transfer.
+    //   - origin: scroll without all_dirty would render saved cells at
+    //     the prior origin Y.
+    //   - text_blink_opacity: blink alpha is baked into per-cell instances
+    //     at emit time; build_dirty_set does NOT mark blink-sensitive
+    //     rows dirty on opacity change.
+    let can_incremental = !input.content.all_dirty
+        && out.saved_tier.has_cached_rows()
+        && out.viewport == input.viewport
+        && out.prev_cell_size == Some(input.cell_size)
+        && out.prev_content_cols == Some(input.content_cols)
+        && out.prev_content_rows == Some(input.content_rows)
+        && (out.prev_origin.0 - origin.0).abs() < f32::EPSILON
+        && (out.prev_origin.1 - origin.1).abs() < f32::EPSILON
+        && (out.prev_text_blink_opacity - input.text_blink_opacity).abs() < f32::EPSILON;
 
     if can_incremental {
-        // Incremental path: save old instances, clear buffers, merge.
-        // save_terminal_tier swaps terminal-tier data to saved_tier and
-        // clears the live writers. clear_ephemeral_tiers drops cursor,
-        // chrome, and overlay tiers — without it those buffers accumulate
-        // frame-after-frame on this path, leaving stale glyphs visible
-        // when chrome or overlay content shrinks (e.g., shorter tab title
-        // after OSC 0/2 updates during high-throughput PTY output).
-        out.save_terminal_tier();
+        // Incremental path: saved_tier is already populated by the
+        // unconditional save_terminal_tier above. clear_ephemeral_tiers
+        // drops cursor, chrome, and overlay tiers — without it those
+        // buffers accumulate frame-after-frame on this path, leaving
+        // stale glyphs visible when chrome or overlay content shrinks
+        // (e.g., shorter tab title after OSC 0/2 updates during
+        // high-throughput PTY output).
         out.clear_ephemeral_tiers();
         out.image_quads_below.clear();
         out.image_quads_above.clear();
@@ -152,7 +186,13 @@ pub fn prepare_frame_shaped_into(
         out.was_incremental = true;
         fill_frame_incremental(input, atlas, shaped, out, origin, cursor_opacity);
     } else {
-        // Full rebuild path.
+        // Full rebuild path. The redundant terminal-tier double-clear
+        // (after save_terminal_tier) is accepted: a clear_non_terminal()
+        // helper would create a second sync point that drifts when new
+        // fields are added to PreparedFrame. The double-clear is O(1) on
+        // empty buffers, has no observable cost, and keeps clear() /
+        // clear_ephemeral_tiers() as the SSOT for buffer-clearing field
+        // lists.
         out.was_incremental = false;
         out.clear();
         out.viewport = input.viewport;
@@ -160,13 +200,24 @@ pub fn prepare_frame_shaped_into(
         fill_frame_shaped(input, atlas, shaped, out, origin, cursor_opacity);
     }
 
-    // Update selection and blink snapshots for next frame's damage tracking.
+    // Update post-prepare snapshots for next frame's dispatch. Every
+    // dispatch-predicate field needs a matching tail update or the
+    // predicate's invariant doesn't hold across frames.
     let num_rows = input.rows();
     out.prev_selection_snapshot = input
         .selection
         .as_ref()
         .and_then(|s| s.damage_snapshot(num_rows));
     out.prev_text_blink_opacity = input.text_blink_opacity;
+    out.prev_cell_size = Some(input.cell_size);
+    out.prev_origin = origin;
+    out.prev_content_cols = Some(input.content_cols);
+    out.prev_content_rows = Some(input.content_rows);
+    out.prev_cursor_line = if input.content.cursor.visible {
+        Some(input.content.cursor.line)
+    } else {
+        None
+    };
 }
 
 /// Cursor-blink-only fast path: rebuild only cursor instances.
