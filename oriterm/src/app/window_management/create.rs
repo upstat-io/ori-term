@@ -78,7 +78,12 @@ impl App {
                     &mut **mux,
                     &self.config,
                     pid,
-                    crate::app::post_spawn::PostSpawnArgs { theme, palette, cell_w, cell_h },
+                    crate::app::post_spawn::PostSpawnArgs {
+                        theme,
+                        palette,
+                        cell_w,
+                        cell_h,
+                    },
                 );
                 mux.discard_notifications();
                 pid

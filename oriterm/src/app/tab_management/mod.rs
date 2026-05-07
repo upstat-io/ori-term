@@ -88,7 +88,12 @@ impl App {
                     &mut **mux,
                     cfg,
                     pid,
-                    crate::app::post_spawn::PostSpawnArgs { theme, palette, cell_w, cell_h },
+                    crate::app::post_spawn::PostSpawnArgs {
+                        theme,
+                        palette,
+                        cell_w,
+                        cell_h,
+                    },
                 );
                 pid
             }

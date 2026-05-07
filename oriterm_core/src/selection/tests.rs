@@ -608,7 +608,7 @@ fn extract_text_block_mode() {
 
 #[test]
 fn single_cell_left_to_right() {
-    // Alacritty: single_cell_left_to_right.
+    // Reference (alacritty selection tests): single_cell_left_to_right.
     let sel = Selection {
         mode: SelectionMode::Char,
         anchor: SelectionPoint {
@@ -634,7 +634,7 @@ fn single_cell_left_to_right() {
 
 #[test]
 fn single_cell_right_to_left() {
-    // Alacritty: single_cell_right_to_left — reversed direction.
+    // Reference (alacritty selection tests): single_cell_right_to_left — reversed direction.
     let sel = Selection {
         mode: SelectionMode::Char,
         anchor: SelectionPoint {
@@ -658,7 +658,7 @@ fn single_cell_right_to_left() {
 
 #[test]
 fn between_adjacent_cells_is_empty() {
-    // Alacritty: between_adjacent_cells_left_to_right.
+    // Reference (alacritty selection tests): between_adjacent_cells_left_to_right.
     // Right side of col 3 + Left side of col 4 = gap between cells = nothing.
     let sel = Selection {
         mode: SelectionMode::Char,
@@ -686,7 +686,7 @@ fn between_adjacent_cells_is_empty() {
 
 #[test]
 fn block_selection_empty_same_column_same_side() {
-    // Alacritty: block_is_empty edge cases.
+    // Reference (alacritty selection tests): block_is_empty edge cases.
     let sel = Selection {
         mode: SelectionMode::Block,
         anchor: SelectionPoint {

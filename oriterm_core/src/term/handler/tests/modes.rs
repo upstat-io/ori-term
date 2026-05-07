@@ -604,11 +604,11 @@ fn csi_s_zero_zero_params_mode_69_on_resets_margins() {
 }
 
 // --- DECSC/DECRC scope: margins + DECLRMM are NOT in the save set ---
-// Per DEC STD 070 §5.6.1 and cross-verified against wezterm / alacritty /
-// ghostty: the DECSC save set is cursor position + attributes + charsets +
-// wrap flag + DECOM flag. Left/right margins and the DECLRMM mode flag are
-// NOT saved. Reset paths (RIS, DECSTR, DECCOLM, DECALN, resize, explicit
-// DECRST ?69) handle margin clearing — DECSC/DECRC do not touch margins.
+// Per DEC STD 070 §5.6.1 (cross-verified against wezterm / alacritty / ghostty)
+// the DECSC save set is cursor position + attributes + charsets + wrap flag +
+// DECOM flag. Left/right margins and the DECLRMM mode flag are NOT saved.
+// Reset paths (RIS, DECSTR, DECCOLM, DECALN, resize, explicit DECRST ?69)
+// handle margin clearing — DECSC/DECRC do not touch margins.
 
 #[test]
 fn decrc_does_not_restore_horizontal_margins() {

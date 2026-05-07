@@ -532,7 +532,12 @@ impl App {
             &mut **mux,
             cfg,
             pane_id,
-            crate::app::post_spawn::PostSpawnArgs { theme, palette, cell_w, cell_h },
+            crate::app::post_spawn::PostSpawnArgs {
+                theme,
+                palette,
+                cell_w,
+                cell_h,
+            },
         );
 
         // Local tab creation (mirrors create_initial_tab).
@@ -594,7 +599,12 @@ impl App {
             &mut **mux,
             cfg,
             pane_id,
-            crate::app::post_spawn::PostSpawnArgs { theme, palette, cell_w, cell_h },
+            crate::app::post_spawn::PostSpawnArgs {
+                theme,
+                palette,
+                cell_w,
+                cell_h,
+            },
         );
 
         // Local tab creation.

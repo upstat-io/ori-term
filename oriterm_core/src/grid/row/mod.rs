@@ -16,8 +16,9 @@ pub struct Row {
     /// Upper bound on cells modified since last `reset()`.
     ///
     /// After `reset()`, occ is 0. `IndexMut` bumps occ to track writes.
-    /// The value may exceed the true occupancy (lazy dirty-tracking, matching
-    /// Alacritty's pattern). Use `clamp_occ` / `set_occ` for O(1) adjustments.
+    /// The value may exceed the true occupancy (lazy dirty-tracking, matches
+    /// alacritty `alacritty_terminal/src/grid/row.rs`). Use `clamp_occ` /
+    /// `set_occ` for O(1) adjustments.
     occ: usize,
 }
 

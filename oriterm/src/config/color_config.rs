@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 pub(crate) enum AlphaBlending {
     /// Standard sRGB surface format blending.
     Linear,
-    /// Ghostty-style luminance-based alpha correction for even text weight.
+    /// Luminance-based alpha correction for even text weight (matches Ghostty).
     #[default]
     LinearCorrected,
 }

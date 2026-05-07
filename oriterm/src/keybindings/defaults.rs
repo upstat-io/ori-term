@@ -60,7 +60,7 @@ pub(crate) fn default_bindings() -> Vec<KeyBinding> {
         bind(named(NamedKey::Enter), alt, Action::ToggleFullscreen),
         // Mark mode (vi-style selection navigation).
         bind(ch("m"), cs, Action::EnterMarkMode),
-        // Pane splitting and navigation (Ghostty-style).
+        // Pane splitting and navigation (matches Ghostty defaults).
         bind(ch("o"), cs, Action::SplitRight),
         bind(ch("e"), cs, Action::SplitDown),
         bind(named(NamedKey::ArrowUp), ca, Action::FocusPaneUp),

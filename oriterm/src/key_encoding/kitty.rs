@@ -23,9 +23,9 @@ use oriterm_core::TermMode;
 /// — that gating happens at the `encode_kitty` entry, so this helper just
 /// performs the table lookup.
 ///
-/// Codepoint table mirrors alacritty's `try_build_numpad`
-/// (alacritty/src/input/keyboard.rs:434-466) and wezterm's `Numpad(n)`
-/// mapping. Without this disambiguation, numpad keys are indistinguishable
+/// Codepoint table follows alacritty `src/input/keyboard.rs:434-466`
+/// (`try_build_numpad`) and the equivalent wezterm `Numpad(n)` mapping.
+/// Without this disambiguation, numpad keys are indistinguishable
 /// from their main-row counterparts at the application layer ().
 fn resolve_numpad_codepoint(input: &KeyInput<'_>) -> Option<u32> {
     if input.location != KeyLocation::Numpad {

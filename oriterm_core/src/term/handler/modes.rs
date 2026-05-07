@@ -210,8 +210,8 @@ impl<S: EffectSink> Term<S> {
     /// When Mode 40 (`ENABLE_MODE_3`) is active, the grid is resized to
     /// 132 columns (set) or 80 columns (reset). When Mode 40 is NOT
     /// active, only the side effects run — the grid is not resized.
-    /// This matches Ghostty's approach (Alacritty/WezTerm skip resize
-    /// entirely; Ghostty gates it behind Mode 40).
+    /// This matches Ghostty `src/terminal/Terminal.zig` (alacritty/wezterm
+    /// skip the resize entirely; ghostty gates it behind Mode 40).
     /// DECSCNM (private mode 5) set/reset helper — extracted so the DECSET
     /// and DECRST paths stay within the per-function line limit.
     ///
