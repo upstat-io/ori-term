@@ -16,6 +16,7 @@ pub(crate) mod font;
 pub mod gpu;
 pub(crate) mod key_encoding;
 pub(crate) mod keybindings;
+pub(crate) mod log_filter;
 pub(crate) mod platform;
 pub(crate) mod scheme;
 pub(crate) mod session;

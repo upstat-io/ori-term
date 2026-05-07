@@ -165,29 +165,38 @@ fn run_default_terminal_handoff() {
 /// Writes to `oriterm.log` in the same directory as the binary.
 /// This avoids needing an external logging crate while still capturing
 /// errors from the GUI-subsystem binary (which has no console).
+///
+/// `RUST_LOG` accepts either a bare level (`trace`, `debug`, `info`, `warn`,
+/// `error`) or an `env_logger`-style directive list
+/// (`oriterm_core::grid::dirty=trace,oriterm::gpu::prepare::dirty_skip=trace`).
+/// Directives that name non-`oriterm*` targets are silently dropped to
+/// preserve the original wgpu/naga noise gate — operators cannot accidentally
+/// turn on driver-stack spam through `RUST_LOG`.
 fn init_logger() {
     use std::io::Write;
     use std::sync::Mutex;
 
-    struct FileLogger(Mutex<std::fs::File>);
+    struct FileLogger {
+        file: Mutex<std::fs::File>,
+        filter: crate::log_filter::LogFilter,
+    }
 
     impl log::Log for FileLogger {
         fn enabled(&self, metadata: &log::Metadata<'_>) -> bool {
-            // Only log our crate's messages, not wgpu/naga noise.
-            metadata.target().starts_with("oriterm")
+            self.filter.enabled(metadata.target(), metadata.level())
         }
 
         fn log(&self, record: &log::Record<'_>) {
             if !self.enabled(record.metadata()) {
                 return;
             }
-            if let Ok(mut f) = self.0.lock() {
+            if let Ok(mut f) = self.file.lock() {
                 let _ = writeln!(f, "[{}] {}", record.level(), record.args());
             }
         }
 
         fn flush(&self) {
-            if let Ok(f) = self.0.lock() {
+            if let Ok(f) = self.file.lock() {
                 let _ = Write::flush(&mut &*f);
             }
         }
@@ -199,15 +208,16 @@ fn init_logger() {
         .unwrap_or_else(|| std::path::PathBuf::from("oriterm.log"));
 
     if let Ok(file) = std::fs::File::create(&path) {
-        let logger = Box::new(FileLogger(Mutex::new(file)));
+        let rust_log = std::env::var("RUST_LOG").ok();
+        let filter = crate::log_filter::LogFilter::parse(rust_log.as_deref().unwrap_or(""));
+        let max_level = filter.max_level();
+        let logger = Box::new(FileLogger {
+            file: Mutex::new(file),
+            filter,
+        });
         if log::set_logger(Box::leak(logger)).is_ok() {
-            let rust_log = std::env::var("RUST_LOG").ok();
-            let level = rust_log
-                .as_deref()
-                .and_then(|s| s.parse().ok())
-                .unwrap_or(log::LevelFilter::Info);
-            log::set_max_level(level);
-            log::info!("log level: {level} (RUST_LOG={rust_log:?})");
+            log::set_max_level(max_level);
+            log::info!("log max_level: {max_level} (RUST_LOG={rust_log:?})");
         }
     }
 }

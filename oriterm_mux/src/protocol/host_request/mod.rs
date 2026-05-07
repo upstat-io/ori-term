@@ -72,9 +72,9 @@ pub enum WireNotificationSource {
     /// OSC 9 — `iTerm2`-style.
     #[default]
     Osc9 = 0,
-    /// OSC 99 — kitty-style.
+    /// OSC 99 — kitty notification protocol.
     Osc99 = 1,
-    /// OSC 777 — urxvt-style.
+    /// OSC 777 — urxvt notification protocol.
     Osc777 = 2,
 }
 

@@ -348,7 +348,7 @@ fn palette_reset_per_dcs_negative_pin_bypass_breaks_vt340_fingerprint() {
 
 // — color-register-wrap matrix tests.
 //
-// Pin xterm-style modulo wrap on color register indices in `apply_color`
+// Pin the xterm modulo wrap on color register indices in `apply_color`
 // (`graphics_sixel.c:697-698`: `s_Pregister %= valid_registers;`). The
 // `color_registers` value is snapshotted into `SixelParser::new` at DCS-hook
 // time; in-flight XTSMGRAPHICS mutations do NOT retroactively affect the

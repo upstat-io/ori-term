@@ -35,8 +35,8 @@ struct ClampedRect {
 
 /// XTCHECKSUM bitmask constants (xterm patch-336; `screen.c:3149`).
 ///
-/// Every bit opts *out* of the default behavior. Default (`0`) matches
-/// xterm: negate-on, attribs-included, trim trailing blanks, skip
+/// Every bit opts *out* of the default behavior. Default (`0`) matches the
+/// xterm defaults: negate-on, attribs-included, trim trailing blanks, skip
 /// never-drawn cells, DEC-translate the character.
 const CS_POSITIVE: u16 = 1; // do NOT negate final sum
 const CS_ATTRIBS: u16 = 2; // EXCLUDE SGR attrs from sum
@@ -234,7 +234,7 @@ impl<S: EffectSink> Term<S> {
 
     /// Compute the DECRQCRA checksum over a 1-based inclusive rectangle.
     ///
-    /// Mirrors xterm `xtermCheckRect()` at `screen.c:3136`. Maintains
+    /// Matches xterm `xtermCheckRect()` at `screen.c:3136`. Maintains
     /// `total` (every counted cell) and `trimmed` (same, minus trailing
     /// blanks per row); the final checksum is `trimmed` in default mode
     /// and `total` when `csNOTRIM` is set. Undrawn cells (detected via
@@ -339,7 +339,7 @@ impl<S: EffectSink> Term<S> {
                     }
                 }
 
-                // Trim accounting mirrors xterm `screen.c:3236-3241`.
+                // Trim accounting matches xterm `screen.c:3236-3241`.
                 // The third disjunct (`drawn`) is ori_term's
                 // `DRAWX_MASK` analog: xterm uses
                 // `(ld->attribs[col] & DRAWX_MASK)` where

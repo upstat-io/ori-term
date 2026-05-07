@@ -14,7 +14,10 @@ pre-commit:
       glob: "*.rs"
       run: cargo test
     prose-lint:
-      glob: "{*.rs,*.md}"
+      # No glob — prose-lint is a whole-repo scan and MUST run on every
+      # commit regardless of staged file types. A commit touching only
+      # .toml / .sh / .json must still fail when authored .md / .rs prose
+      # violations exist. The script handles its own scope (term_repo/).
       run: python3 scripts/prose-lint.py .
 
 commit-msg:

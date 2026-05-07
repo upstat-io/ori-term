@@ -733,7 +733,7 @@ fn c1_sequence_introducers_enter_states() {
 
 #[test]
 fn parse_apc_st_terminated() {
-    // ESC _ G payload ESC \ (APC with Kitty-style 'G' command).
+    // ESC _ G payload ESC \ (APC with the kitty 'G' graphics command).
     const INPUT: &[u8] = b"\x1b_Gf=32;AAAA\x1b\\";
     let mut dispatcher = Dispatcher::default();
     let mut parser = Parser::new();

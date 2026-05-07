@@ -2,6 +2,8 @@
 //!
 //! Extracted from `dirty_skip/mod.rs` to keep each file under 500 lines.
 
+use log::trace;
+
 use crate::gpu::frame_input::{FrameInput, SelectionDamageSnapshot};
 
 /// Build a fast dirty-row lookup from `RenderableContent` damage info.
@@ -21,6 +23,9 @@ pub fn build_dirty_set(
     dirty.clear();
     if input.content.all_dirty {
         dirty.resize(num_rows, true);
+        if log::log_enabled!(log::Level::Trace) {
+            trace!("build_dirty_set all_dirty=true rows={num_rows}");
+        }
         return;
     }
 
@@ -41,7 +46,28 @@ pub fn build_dirty_set(
         .selection
         .as_ref()
         .and_then(|s| s.damage_snapshot(num_rows));
-    mark_selection_damage(dirty, prev_selection, new_selection);
+
+    if log::log_enabled!(log::Level::Trace) {
+        // Trace-only counting path — the per-source counts and total
+        // never run when tracing is disabled (TPR-04-002 hot-path pin).
+        let damage_count = input
+            .content
+            .damage
+            .iter()
+            .filter(|d| d.line < num_rows)
+            .count();
+        let cursor_contributed =
+            input.content.cursor.visible && input.content.cursor.line < num_rows;
+        let pre = dirty.iter().filter(|d| **d).count();
+        mark_selection_damage(dirty, prev_selection, new_selection);
+        let post = dirty.iter().filter(|d| **d).count();
+        let selection_added = post.saturating_sub(pre);
+        trace!(
+            "build_dirty_set all_dirty=false rows={num_rows} damage={damage_count} cursor={cursor_contributed} selection_added={selection_added} total={post}"
+        );
+    } else {
+        mark_selection_damage(dirty, prev_selection, new_selection);
+    }
 }
 
 /// Mark rows dirty that changed selection state between frames.

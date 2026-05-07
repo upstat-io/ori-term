@@ -275,8 +275,8 @@ pub(super) fn dispatch<H: Handler, T: Timeout>(
         ('q', [b'>']) => {
  // XTVERSION (CSI > Ps q) — report terminal name and version.
  //
- // xterm `charproc.c::CASE_REPORT_VERSION` replies only when
- // `GetParam(0) <= 0` (default/zero Ps). Non-zero Ps falls
+ // Reply policy from xterm `charproc.c::CASE_REPORT_VERSION`: replies
+ // only when `GetParam(0) <= 0` (default/zero Ps). Non-zero Ps falls
  // through to unhandled. We mirror that gate at the dispatch
  // layer so the Handler method only fires on the requested form.
             if next_param_or(0) == 0 {
@@ -309,8 +309,8 @@ pub(super) fn dispatch<H: Handler, T: Timeout>(
         ('S', []) => handler.scroll_up(next_param_or(1) as usize),
         ('S', [b'?']) => {
  // XTSMGRAPHICS — `CSI ? Pi ; Pa ; Pv S`. Exactly 3 top-level
- // params required; malformed arity is silently dropped per
- // xterm `charproc.c:5159` (`if nparam != 3`).
+ // params required; malformed arity is silently dropped per the check
+ // at xterm `charproc.c:5159` (`if nparam != 3`).
  //
  // CRITICAL: `params.len()` (per `crates/vte/src/params.rs`)
  // returns "total number of parameters and subparameters" —

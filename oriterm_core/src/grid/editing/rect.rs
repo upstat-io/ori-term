@@ -251,8 +251,8 @@ impl Grid {
     /// DECRARA primitive: toggle SGR `params` on every cell in the rect.
     ///
     /// Ps=0 toggles every reversible bit (BOLD | UNDERLINE | BLINK |
-    /// INVERSE | HIDDEN); Ps=N toggles only the matching bit. Matches
-    /// xterm `screen.c:2984-3004`.
+    /// INVERSE | HIDDEN); Ps=N toggles only the matching bit. Matches the
+    /// behavior in xterm `screen.c:2984-3004`.
     #[expect(
         clippy::too_many_arguments,
         reason = "rectangle bounds + SGR params + DECSACE mode map 1:1 to DEC spec inputs"

@@ -258,7 +258,7 @@ impl<S: EffectSink> Term<S> {
             (0, grid.cols().saturating_sub(1))
         };
         if col == right_bound {
-            // xterm `util.c:805` issues `xtermColScroll(1, True,
+            // Per xterm `util.c:805`: issues `xtermColScroll(1, True,
             // ScrnLeftMargin)` — toLeft=True is a *delete* at the left
             // margin, which scrolls the band left by one and fills the
             // right margin with blanks.

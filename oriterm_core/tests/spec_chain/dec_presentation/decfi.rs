@@ -6,7 +6,7 @@
 //! ESC 9 — Forward Index. Cursor at the right margin (or last column
 //! when DECLRMM is inactive): delete a column at the left margin on
 //! every row of the scroll region (scrolling the band left by one).
-//! Otherwise: move cursor right by one column. Mirrors xterm
+//! Otherwise: move cursor right by one column. Matches xterm
 //! `util.c:803 xtermColIndex(toLeft=False)`.
 
 use oriterm_core::index::{Column, Line};
@@ -22,7 +22,7 @@ fn seed_abcdef(h: &mut SpecHarness) {
 
 /// Pins: DECFI with the cursor NOT at the right margin moves the cursor
 /// right by one column and leaves every grid cell unchanged — matches
-/// xterm `util.c:803 xtermColIndex(toLeft=False)` cursor-move branch.
+/// the xterm `util.c:803 xtermColIndex(toLeft=False)` cursor-move branch.
 /// Anchor: catalog row `DECPRES-DECFI` (move-branch).
 #[test]
 fn decfi_not_at_margin_moves_cursor_right_only() {
@@ -40,7 +40,7 @@ fn decfi_not_at_margin_moves_cursor_right_only() {
 /// Pins: DECFI at the last column (no DECLRMM) scrolls every row of the
 /// scroll region left by one column — leftmost cell ('A') drops off,
 /// blanks fill the right edge; cursor stays at the last column (per
-/// xterm `xtermColScroll` which does not move the cursor).
+/// the xterm `xtermColScroll` which does not move the cursor).
 /// Anchor: catalog row `DECPRES-DECFI` (scroll-band-left branch).
 #[test]
 fn decfi_at_last_column_scrolls_band_left() {
@@ -61,7 +61,7 @@ fn decfi_at_last_column_scrolls_band_left() {
         assert_eq!(row[Column(9)].ch, ' ', "line={line}");
     }
     // Cursor stays at last column after the scroll branch (matches
-    // xterm: `xtermColScroll` does not move the cursor).
+    // the xterm `xtermColScroll` does not move the cursor).
     assert_eq!(h.term().grid().cursor().col().0, 9);
 }
 

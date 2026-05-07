@@ -22,7 +22,7 @@ use oriterm_test_support::spec_chain::SpecHarness;
 use super::fixtures::{b64, kitty_apc, ok_reply_for, reply_bytes, reply_contains, rgba_4x4_red};
 
 /// Build an `a=f` OK-reply expectation with the `,r=<frame_num>` qualifier
-/// kitty `finish_command_response` appends for frame-loading replies.
+/// per kitty `finish_command_response` for frame-loading replies.
 fn ok_reply_with_frame(id: u32, frame_num: u32) -> Vec<u8> {
     format!("\x1b_Gi={id},r={frame_num};OK\x1b\\").into_bytes()
 }

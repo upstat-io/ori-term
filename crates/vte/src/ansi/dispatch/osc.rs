@@ -99,8 +99,8 @@ pub(super) fn dispatch<H: Handler>(handler: &mut H, params: &[&[u8]], bell_termi
         },
 
  // VENDORED PATCH (oriterm): OSC 5 — special color set/query (Section 10.9).
- // `OSC 5 ; Ps ; spec` set a special color slot (Ps ∈ 0..=4 per
- // xterm: bold / underline / blink / reverse / italics). `spec = ?`
+ // `OSC 5 ; Ps ; spec` set a special color slot (Ps ∈ 0..=4 per the
+ // xterm slot mapping: bold / underline / blink / reverse / italics). `spec = ?`
  // queries the slot — handler replies over PTY. Malformed forms
  // (<3 params, non-numeric Ps, unparseable color) route to `unhandled`
  // without mutating state.

@@ -6,7 +6,7 @@
 //! ESC 6 — Back Index. Cursor at the left margin (or column 0 when
 //! DECLRMM is inactive): insert a blank column at the left margin on
 //! every row of the scroll region. Otherwise: move cursor left by
-//! one column. Mirrors xterm `util.c:788 xtermColIndex(toLeft=True)`.
+//! one column. Matches xterm `util.c:788 xtermColIndex(toLeft=True)`.
 
 use oriterm_core::index::{Column, Line};
 use oriterm_test_support::spec_chain::SpecHarness;
@@ -21,7 +21,7 @@ fn seed_abcdef(h: &mut SpecHarness) {
 
 /// Pins: DECBI with the cursor NOT at the left margin moves the cursor
 /// left by one column and leaves every grid cell unchanged — matches
-/// xterm `util.c:788 xtermColIndex(toLeft=True)` cursor-move branch.
+/// the xterm `util.c:788 xtermColIndex(toLeft=True)` cursor-move branch.
 /// Anchor: catalog row `DECPRES-DECBI` (move-branch).
 #[test]
 fn decbi_not_at_margin_moves_cursor_left_only() {

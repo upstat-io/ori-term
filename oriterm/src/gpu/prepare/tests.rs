@@ -4718,3 +4718,175 @@ fn non_blink_cell_ignores_text_blink_opacity() {
         glyph.fg_color[3],
     );
 }
+
+// Dirty-skip trace-emission tests.
+//
+// These tests drive the production `prepare_frame_shaped_into()` path
+// (NOT a stub harness) and assert the trace contract via the thread-local
+// log capture in `crate::gpu::prepare::trace_capture`. Emission tests must
+// observe the real prepare path so the `process_incremental_cells` trace
+// is exercised through `frame.was_incremental`.
+
+mod dirty_skip_traces {
+    use log::{Level, LevelFilter};
+    use oriterm_core::Column;
+
+    use super::{
+        FrameInput, PreparedFrame, ViewportSize, key_atlas_with, prepare_frame_shaped_into,
+        shaped_multi_row,
+    };
+    use crate::gpu::prepare::trace_capture::{CapturedRecord, with_capture};
+
+    const DIRTY_SKIP_TARGET: &str = "oriterm::gpu::prepare::dirty_skip::selection_damage";
+    const DIRTY_SKIP_MOD_TARGET: &str = "oriterm::gpu::prepare::dirty_skip";
+
+    fn matching_substr(records: &[CapturedRecord], substr: &str) -> Vec<CapturedRecord> {
+        records
+            .iter()
+            .filter(|r| {
+                (r.target == DIRTY_SKIP_TARGET || r.target == DIRTY_SKIP_MOD_TARGET)
+                    && r.level == Level::Trace
+                    && r.message.contains(substr)
+            })
+            .cloned()
+            .collect()
+    }
+
+    fn drive_two_frames_for_incremental(
+        cols: usize,
+        rows: usize,
+    ) -> (PreparedFrame, FrameInput) {
+        let size_q6 = 768;
+        let text: String = std::iter::repeat_n('A', cols * rows).collect();
+        let input = FrameInput::test_grid(cols, rows, &text);
+        let (shaped, ids) = shaped_multi_row(cols, rows, 10, size_q6);
+        let atlas = key_atlas_with(&ids, size_q6);
+
+        let mut frame =
+            PreparedFrame::new(ViewportSize::new(1, 1), oriterm_core::Rgb { r: 0, g: 0, b: 0 }, 1.0);
+        // Frame 1: full rebuild populates row_ranges + saved_tier.
+        prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+        frame.save_terminal_tier();
+        (frame, input)
+    }
+
+    #[test]
+    fn incremental_emits_build_dirty_set_per_source_summary() {
+        with_capture(LevelFilter::Trace, |sink| {
+            let cols = 4;
+            let rows = 3;
+            let (mut frame, mut input) = drive_two_frames_for_incremental(cols, rows);
+            // Frame 2: damage on row 1 only — incremental path.
+            input.content.all_dirty = false;
+            input.content.cursor.visible = true;
+            input.content.cursor.line = 0;
+            input.content.damage.clear();
+            input.content.damage.push(oriterm_core::DamageLine {
+                line: 1,
+                left: Column(0),
+                right: Column(cols - 1),
+            });
+            let (shaped, ids) = shaped_multi_row(cols, rows, 10, 768);
+            let atlas = key_atlas_with(&ids, 768);
+            prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+            assert!(frame.was_incremental, "second prepare must be incremental");
+
+            let recs = matching_substr(&sink.records(), "build_dirty_set all_dirty=false");
+            assert_eq!(recs.len(), 1, "expected ONE per-source summary; got {:?}", recs);
+            let msg = &recs[0].message;
+            assert!(msg.contains("damage="), "msg={msg}");
+            assert!(msg.contains("cursor=true"), "msg={msg}");
+            assert!(msg.contains("selection_added="), "msg={msg}");
+            assert!(msg.contains("total="), "msg={msg}");
+        });
+    }
+
+    #[test]
+    fn full_rebuild_via_all_dirty_does_not_emit_build_dirty_set_trace() {
+        // `prepare/mod.rs` gates `can_incremental = !all_dirty && saved_tier.has_cached_rows()`.
+        // When `all_dirty == true`, the full-rebuild path runs and `build_dirty_set`
+        // is not invoked. This pins that production behavior — operators
+        // observing ZERO build_dirty_set traces in a frame correctly conclude
+        // the prepare path took the full-rebuild branch.
+        with_capture(LevelFilter::Trace, |sink| {
+            let cols = 4;
+            let rows = 3;
+            let (mut frame, mut input) = drive_two_frames_for_incremental(cols, rows);
+            input.content.all_dirty = true;
+            let (shaped, ids) = shaped_multi_row(cols, rows, 10, 768);
+            let atlas = key_atlas_with(&ids, 768);
+            prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+            assert!(
+                !frame.was_incremental,
+                "all_dirty=true must take the full-rebuild path"
+            );
+
+            let recs = matching_substr(&sink.records(), "build_dirty_set");
+            assert!(
+                recs.is_empty(),
+                "build_dirty_set must not fire on full-rebuild path; got {:?}",
+                recs
+            );
+        });
+    }
+
+    #[test]
+    fn incremental_emits_process_incremental_cells_summary() {
+        with_capture(LevelFilter::Trace, |sink| {
+            let cols = 4;
+            let rows = 3;
+            let (mut frame, mut input) = drive_two_frames_for_incremental(cols, rows);
+            input.content.all_dirty = false;
+            input.content.cursor.visible = false;
+            input.content.damage.clear();
+            input.content.damage.push(oriterm_core::DamageLine {
+                line: 1,
+                left: Column(0),
+                right: Column(cols - 1),
+            });
+            let (shaped, ids) = shaped_multi_row(cols, rows, 10, 768);
+            let atlas = key_atlas_with(&ids, 768);
+            prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+            assert!(frame.was_incremental);
+
+            let recs = matching_substr(&sink.records(), "process_incremental_cells");
+            assert_eq!(recs.len(), 1, "got: {:?}", recs);
+            let msg = &recs[0].message;
+            assert!(msg.contains("clean_rows="), "msg={msg}");
+            assert!(msg.contains("dirty_rows="), "msg={msg}");
+            assert!(msg.contains("emitted_cells="), "msg={msg}");
+        });
+    }
+
+    #[test]
+    fn full_rebuild_path_does_not_emit_process_incremental_cells_trace() {
+        with_capture(LevelFilter::Trace, |sink| {
+            let cols = 4;
+            let rows = 3;
+            let size_q6 = 768;
+            let text: String = std::iter::repeat_n('A', cols * rows).collect();
+            let input = FrameInput::test_grid(cols, rows, &text);
+            let (shaped, ids) = shaped_multi_row(cols, rows, 10, size_q6);
+            let atlas = key_atlas_with(&ids, size_q6);
+
+            let mut frame = PreparedFrame::new(
+                ViewportSize::new(1, 1),
+                oriterm_core::Rgb { r: 0, g: 0, b: 0 },
+                1.0,
+            );
+            // First prepare with no saved_tier → can_incremental=false → full rebuild.
+            prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+            assert!(
+                !frame.was_incremental,
+                "first prepare must take the full-rebuild path"
+            );
+
+            let recs = matching_substr(&sink.records(), "process_incremental_cells");
+            assert!(
+                recs.is_empty(),
+                "process_incremental_cells trace must NOT fire on full-rebuild path; got {:?}",
+                recs
+            );
+        });
+    }
+}

@@ -1,4 +1,4 @@
-//! Legacy xterm-style key encoding and `APP_KEYPAD` numpad sequences.
+//! Legacy xterm key encoding and `APP_KEYPAD` numpad sequences.
 //!
 //! Produces VT/xterm escape sequences for named keys (arrows, function keys),
 //! C0 control codes for Ctrl+letter, and ESC-prefixed bytes for Alt+key. This
