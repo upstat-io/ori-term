@@ -137,9 +137,14 @@ pub fn prepare_frame_shaped_into(
 
     if can_incremental {
         // Incremental path: save old instances, clear buffers, merge.
-        // save_terminal_tier swaps old data to saved_tier and clears writers.
+        // save_terminal_tier swaps terminal-tier data to saved_tier and
+        // clears the live writers. clear_ephemeral_tiers drops cursor,
+        // chrome, and overlay tiers — without it those buffers accumulate
+        // frame-after-frame on this path, leaving stale glyphs visible
+        // when chrome or overlay content shrinks (e.g., shorter tab title
+        // after OSC 0/2 updates during high-throughput PTY output).
         out.save_terminal_tier();
-        out.cursors.clear();
+        out.clear_ephemeral_tiers();
         out.image_quads_below.clear();
         out.image_quads_above.clear();
         out.viewport = input.viewport;

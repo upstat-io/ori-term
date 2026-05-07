@@ -4372,6 +4372,198 @@ fn incremental_no_dirty_rows_matches_cached() {
     );
 }
 
+/// Regression: BUG-06-025 — chrome and overlay tier buffers
+/// (`ui_rects`, `ui_glyphs`, `ui_subpixel_glyphs`, `ui_color_glyphs`,
+/// `overlay_*`) accumulated frame-after-frame on the incremental prepare
+/// path. Production wires `chrome::render_chrome` AFTER `prepare()` and
+/// appends fresh chrome instances each frame; without this clear the
+/// buffer grew unbounded and stale glyphs from prior frames remained
+/// visible whenever chrome content shrank (e.g., shorter tab title after
+/// OSC 0/2 updates during high-throughput PTY output like /commit-push).
+/// The fix routes the incremental path through the SSOT helper
+/// `clear_ephemeral_tiers()` so the chrome+overlay clear contract matches
+/// the cursor-blink fast path.
+#[test]
+fn incremental_clears_chrome_and_overlay_buffers() {
+    use crate::gpu::instance_writer::ScreenRect;
+
+    let size_q6 = 768;
+    let cols = 4;
+    let rows = 3;
+    let text: String = std::iter::repeat_n('A', cols * rows).collect();
+    let mut input = FrameInput::test_grid(cols, rows, &text);
+
+    let (shaped, ids) = shaped_multi_row(cols, rows, 10, size_q6);
+    let atlas = key_atlas_with(&ids, size_q6);
+
+    let mut frame = PreparedFrame::new(ViewportSize::new(1, 1), Rgb { r: 0, g: 0, b: 0 }, 1.0);
+
+    // Frame N: full rebuild populates row_ranges, then explicitly publish
+    // them to saved_tier so Frame N+1 takes the incremental path. In
+    // production this swap happens implicitly inside the incremental
+    // branch on consecutive frames; tests must do it by hand because the
+    // first prepare always lands on the full-rebuild branch (saved_tier
+    // empty → can_incremental=false).
+    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+    frame.save_terminal_tier();
+
+    // Simulate post-prepare chrome + overlay rendering — production calls
+    // `chrome::render_chrome` after `prepare()` returns, appending into
+    // these tiers.
+    let rect = ScreenRect {
+        x: 0.0,
+        y: 0.0,
+        w: 10.0,
+        h: 10.0,
+    };
+    let bg = Rgb { r: 0, g: 0, b: 0 };
+    frame.ui_rects.push_ui_rect(
+        rect,
+        [1.0; 4],
+        [0.0; 4],
+        [0.0; 4],
+        [[0.0; 4]; 4],
+        [0.0, 0.0, 100.0, 100.0],
+    );
+    frame.ui_glyphs.push_rect(rect, bg, 1.0);
+    frame.ui_subpixel_glyphs.push_rect(rect, bg, 1.0);
+    frame.ui_color_glyphs.push_rect(rect, bg, 1.0);
+    frame.overlay_rects.push_ui_rect(
+        rect,
+        [1.0; 4],
+        [0.0; 4],
+        [0.0; 4],
+        [[0.0; 4]; 4],
+        [0.0, 0.0, 100.0, 100.0],
+    );
+    frame.overlay_glyphs.push_rect(rect, bg, 1.0);
+    frame.overlay_subpixel_glyphs.push_rect(rect, bg, 1.0);
+    frame.overlay_color_glyphs.push_rect(rect, bg, 1.0);
+
+    // Confirm the simulated chrome appended (otherwise the assertions
+    // below would pass vacuously).
+    assert!(!frame.ui_rects.is_empty(), "ui_rects pre-populated");
+    assert!(!frame.ui_glyphs.is_empty(), "ui_glyphs pre-populated");
+    assert!(
+        !frame.overlay_glyphs.is_empty(),
+        "overlay_glyphs pre-populated"
+    );
+
+    // Frame N+1: only one row dirty → triggers the incremental path
+    // (the path that was missing the chrome/overlay clear).
+    input.content.all_dirty = false;
+    input.content.cursor.visible = false;
+    input.content.damage.clear();
+    input.content.damage.push(oriterm_core::DamageLine {
+        line: 1,
+        left: Column(0),
+        right: Column(cols - 1),
+    });
+    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+
+    assert!(
+        frame.was_incremental,
+        "test must hit the incremental path to exercise the fix"
+    );
+
+    // Chrome + overlay tiers MUST be cleared by the incremental path so
+    // the post-prepare chrome render writes into a fresh buffer.
+    assert!(
+        frame.ui_rects.is_empty(),
+        "ui_rects must be cleared on the incremental path"
+    );
+    assert!(
+        frame.ui_glyphs.is_empty(),
+        "ui_glyphs must be cleared on the incremental path"
+    );
+    assert!(
+        frame.ui_subpixel_glyphs.is_empty(),
+        "ui_subpixel_glyphs must be cleared on the incremental path"
+    );
+    assert!(
+        frame.ui_color_glyphs.is_empty(),
+        "ui_color_glyphs must be cleared on the incremental path"
+    );
+    assert!(
+        frame.overlay_rects.is_empty(),
+        "overlay_rects must be cleared on the incremental path"
+    );
+    assert!(
+        frame.overlay_glyphs.is_empty(),
+        "overlay_glyphs must be cleared on the incremental path"
+    );
+    assert!(
+        frame.overlay_subpixel_glyphs.is_empty(),
+        "overlay_subpixel_glyphs must be cleared on the incremental path"
+    );
+    assert!(
+        frame.overlay_color_glyphs.is_empty(),
+        "overlay_color_glyphs must be cleared on the incremental path"
+    );
+}
+
+/// Regression: BUG-06-025 negative pin — confirms that the chrome and
+/// overlay clear contract holds across BOTH non-cursor-blink prepare
+/// paths (full rebuild via `out.clear()` AND incremental via
+/// `out.clear_ephemeral_tiers()`). If the incremental path ever drops
+/// the helper call again, the parity assertion fails before the
+/// production symptom (stale chrome glyphs) reaches the renderer.
+#[test]
+fn full_and_incremental_paths_both_clear_chrome_buffers() {
+    use crate::gpu::instance_writer::ScreenRect;
+
+    let size_q6 = 768;
+    let cols = 4;
+    let rows = 3;
+    let text: String = std::iter::repeat_n('A', cols * rows).collect();
+    let mut input = FrameInput::test_grid(cols, rows, &text);
+
+    let (shaped, ids) = shaped_multi_row(cols, rows, 10, size_q6);
+    let atlas = key_atlas_with(&ids, size_q6);
+
+    let rect = ScreenRect {
+        x: 0.0,
+        y: 0.0,
+        w: 10.0,
+        h: 10.0,
+    };
+    let bg = Rgb { r: 0, g: 0, b: 0 };
+
+    // Path A: full rebuild (saved_tier empty → can_incremental=false →
+    // takes `out.clear()` path).
+    let mut frame_full = PreparedFrame::new(ViewportSize::new(1, 1), Rgb { r: 0, g: 0, b: 0 }, 1.0);
+    frame_full.ui_glyphs.push_rect(rect, bg, 1.0);
+    frame_full.overlay_glyphs.push_rect(rect, bg, 1.0);
+    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame_full, (0.0, 0.0), 1.0);
+    assert!(
+        !frame_full.was_incremental,
+        "first prepare without saved_tier MUST take the full-rebuild path"
+    );
+    assert!(
+        frame_full.ui_glyphs.is_empty() && frame_full.overlay_glyphs.is_empty(),
+        "full-rebuild path must clear chrome and overlay tiers"
+    );
+
+    // Path B: incremental (saved_tier populated → can_incremental=true).
+    let mut frame_inc = PreparedFrame::new(ViewportSize::new(1, 1), Rgb { r: 0, g: 0, b: 0 }, 1.0);
+    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame_inc, (0.0, 0.0), 1.0);
+    frame_inc.save_terminal_tier();
+    frame_inc.ui_glyphs.push_rect(rect, bg, 1.0);
+    frame_inc.overlay_glyphs.push_rect(rect, bg, 1.0);
+    input.content.all_dirty = false;
+    input.content.cursor.visible = false;
+    input.content.damage.clear();
+    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame_inc, (0.0, 0.0), 1.0);
+    assert!(
+        frame_inc.was_incremental,
+        "second prepare with saved_tier MUST take the incremental path"
+    );
+    assert!(
+        frame_inc.ui_glyphs.is_empty() && frame_inc.overlay_glyphs.is_empty(),
+        "incremental path must clear chrome and overlay tiers (parity with full-rebuild path)"
+    );
+}
+
 // ── Grid text Y rounding tests ──
 
 /// Verify all glyph instance Y positions are integer-aligned at fractional
