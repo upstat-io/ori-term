@@ -156,13 +156,19 @@ pub struct PreparedFrame {
     /// without the stale "with cursor" colors baked into `saved_tier`)
     /// AND the current cursor row.
     pub(crate) prev_cursor_line: Option<usize>,
-    /// Previous frame's hovered cell `(viewport_line, column)`. Drives the
-    /// dispatch predicate to invalidate `saved_tier` when the hover target
-    /// changes — the explicit-OSC-8 hyperlink hover path emits a SOLID
-    /// underline into the terminal-tier `backgrounds` buffer (see
-    /// `prepare/decorations.rs`), so a hover delta without an
-    /// `all_dirty` signal would replay stale hover state from the cache.
+    /// Previous frame's hovered cell `(viewport_line, column)`. Drives
+    /// `build_dirty_set` to dirty BOTH the previous hover row (so its
+    /// cells regenerate without the stale "solid hyperlink underline"
+    /// baked into `saved_tier` from `prepare/decorations.rs:82`) AND
+    /// the current hover row. Row-granular dirtying is O(1) per hover
+    /// change versus full-rebuild dispatch invalidation.
     pub(crate) prev_hovered_cell: Option<(usize, usize)>,
+    /// Previous frame's `fg_dim` alpha multiplier. Pane focus / dimming
+    /// is baked into per-cell glyph alpha at emit time (`emit_cell.rs`
+    /// reads `ctx.fg_dim`), so a `fg_dim` change without `all_dirty`
+    /// would replay stale alpha. The dispatch predicate guards this
+    /// like `prev_text_blink_opacity` — both feed cell-instance alpha.
+    pub(crate) prev_fg_dim: f32,
     /// Whether the last prepare pass used the incremental path.
     ///
     /// When true, `scratch_dirty` and `saved_tier.row_ranges` are valid and
@@ -206,6 +212,7 @@ impl PreparedFrame {
             prev_content_rows: None,
             prev_cursor_line: None,
             prev_hovered_cell: None,
+            prev_fg_dim: 1.0,
             was_incremental: false,
             scratch_dirty: Vec::new(),
             viewport,
@@ -253,6 +260,7 @@ impl PreparedFrame {
             prev_content_rows: None,
             prev_cursor_line: None,
             prev_hovered_cell: None,
+            prev_fg_dim: 1.0,
             was_incremental: false,
             scratch_dirty: Vec::new(),
             viewport,

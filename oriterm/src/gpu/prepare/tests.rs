@@ -5080,6 +5080,60 @@ fn incremental_dispatch_with_cursor_move_dirties_current_and_previous_cursor_row
     );
 }
 
+/// Regression: BUG-06-027 — `fg_dim` (pane focus dimming) change forces
+/// full-rebuild. Per-cell glyph alpha bakes `fg_dim` at emit time
+/// (`emit_cell.rs::fg_alpha`), so a focus change without `all_dirty`
+/// would replay stale dimmed alpha from saved_tier.
+#[test]
+fn incremental_dispatch_falls_back_on_fg_dim_change() {
+    let cols = 4;
+    let rows = 3;
+    let (mut frame, mut input, shaped, atlas) = prepare_frame0_steady(cols, rows);
+
+    input.content.all_dirty = false;
+    input.content.cursor.visible = false;
+    input.content.damage.clear();
+    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+    assert!(frame.was_incremental, "Frame 1 incremental reachable");
+
+    input.fg_dim = 0.5;
+    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+    assert!(
+        !frame.was_incremental,
+        "fg_dim change must dispatch full-rebuild"
+    );
+}
+
+/// Regression: BUG-06-027 — hover changes stay on the incremental path
+/// (no full-rebuild fallback) and dirty just the affected rows. Hover is
+/// row-granular, not frame-granular: full-rebuild on every mouse move
+/// would be O(N) waste vs the O(1) row-dirty pattern.
+#[test]
+fn incremental_dispatch_with_hover_change_stays_incremental_and_dirties_affected_rows() {
+    let cols = 4;
+    let rows = 3;
+    let (mut frame, mut input, shaped, atlas) = prepare_frame0_steady(cols, rows);
+
+    input.content.all_dirty = false;
+    input.content.cursor.visible = false;
+    input.content.damage.clear();
+    input.hovered_cell = Some((0, 1));
+    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+    assert!(frame.was_incremental, "Frame 1 incremental");
+
+    // Move hover from row 0 to row 2. Must stay on incremental path,
+    // must dirty rows 0 and 2 only.
+    input.hovered_cell = Some((2, 1));
+    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+    assert!(
+        frame.was_incremental,
+        "hover change must NOT trigger full-rebuild"
+    );
+    assert!(frame.scratch_dirty[0], "previous hover row (0) dirty");
+    assert!(frame.scratch_dirty[2], "current hover row (2) dirty");
+    assert!(!frame.scratch_dirty[1], "non-hover row stays clean");
+}
+
 /// Regression: BUG-06-027 — text blink opacity change forces full-rebuild.
 /// Per-cell instances bake `text_blink_opacity` at emit time; replaying
 /// clean rows would carry stale opacity. The dispatch predicate's

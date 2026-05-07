@@ -26,6 +26,14 @@ use crate::gpu::frame_input::{FrameInput, SelectionDamageSnapshot};
 /// (when visible). When the cursor moves between frames, the previous
 /// cursor row is dirtied so its cells regenerate without inheriting the
 /// "with cursor" per-cell colors baked into `saved_tier`.
+///
+/// `prev_hovered_cell` is the hovered cell from the previous frame. The
+/// explicit-OSC-8 hyperlink hover path emits a SOLID underline rect into
+/// the terminal-tier `backgrounds` buffer (see `prepare/decorations.rs`);
+/// when the hover target moves, the rows containing the previous and
+/// current hovered cells must regenerate so the solid underline migrates
+/// with the mouse. Row-granular dirtying is O(1) per hover change versus
+/// the O(N) cost of full-rebuild dispatch invalidation.
 #[expect(
     clippy::too_many_arguments,
     reason = "every parameter is independent frame state read by build_dirty_set; \
@@ -37,6 +45,7 @@ pub fn build_dirty_set(
     resolved_cursor: &RenderableCursor,
     prev_selection: Option<SelectionDamageSnapshot>,
     prev_cursor_line: Option<usize>,
+    prev_hovered_cell: Option<(usize, usize)>,
     dirty: &mut Vec<bool>,
 ) {
     dirty.clear();
@@ -75,6 +84,29 @@ pub fn build_dirty_set(
         }
     }
 
+    // Hover delta: when the hovered cell moves, dirty the rows containing
+    // the previous and current hover positions. The hyperlink hover path
+    // bakes a solid underline into the terminal-tier `backgrounds` buffer
+    // for the hovered cell, so a hover delta requires those rows to
+    // regenerate.
+    let mut hover_rows_dirtied = 0u32;
+    if prev_hovered_cell != input.hovered_cell {
+        if let Some((prev_row, _)) = prev_hovered_cell
+            && prev_row < num_rows
+            && !dirty[prev_row]
+        {
+            dirty[prev_row] = true;
+            hover_rows_dirtied += 1;
+        }
+        if let Some((curr_row, _)) = input.hovered_cell
+            && curr_row < num_rows
+            && !dirty[curr_row]
+        {
+            dirty[curr_row] = true;
+            hover_rows_dirtied += 1;
+        }
+    }
+
     // Selection damage: mark rows that changed selection state.
     let new_selection = input
         .selection
@@ -97,7 +129,7 @@ pub fn build_dirty_set(
         let post = dirty.iter().filter(|d| **d).count();
         let selection_added = post.saturating_sub(pre);
         trace!(
-            "build_dirty_set all_dirty=false rows={num_rows} damage={damage_count} cursor={cursor_contributed} previous_cursor_dirtied={previous_cursor_dirtied} selection_added={selection_added} total={post}"
+            "build_dirty_set all_dirty=false rows={num_rows} damage={damage_count} cursor={cursor_contributed} previous_cursor_dirtied={previous_cursor_dirtied} hover_rows_dirtied={hover_rows_dirtied} selection_added={selection_added} total={post}"
         );
     } else {
         mark_selection_damage(dirty, prev_selection, new_selection);

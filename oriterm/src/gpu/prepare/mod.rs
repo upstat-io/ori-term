@@ -160,6 +160,10 @@ pub fn prepare_frame_shaped_into(
     //   - text_blink_opacity: blink alpha is baked into per-cell instances
     //     at emit time; build_dirty_set does NOT mark blink-sensitive
     //     rows dirty on opacity change.
+    // Note: `hovered_cell` is NOT a dispatch guard. Hover state affects
+    // only the cells under the previous and current hover positions; we
+    // dirty those rows in `build_dirty_set` (O(1)) instead of falling
+    // back to a full rebuild (O(N)) for every mouse move.
     let can_incremental = !input.content.all_dirty
         && out.saved_tier.has_cached_rows()
         && out.viewport == input.viewport
@@ -169,7 +173,7 @@ pub fn prepare_frame_shaped_into(
         && (out.prev_origin.0 - origin.0).abs() < f32::EPSILON
         && (out.prev_origin.1 - origin.1).abs() < f32::EPSILON
         && (out.prev_text_blink_opacity - input.text_blink_opacity).abs() < f32::EPSILON
-        && out.prev_hovered_cell == input.hovered_cell;
+        && (out.prev_fg_dim - input.fg_dim).abs() < f32::EPSILON;
 
     if can_incremental {
         // Incremental path: saved_tier is already populated by the
@@ -224,6 +228,7 @@ pub fn prepare_frame_shaped_into(
         None
     };
     out.prev_hovered_cell = input.hovered_cell;
+    out.prev_fg_dim = input.fg_dim;
 }
 
 /// Cursor-blink-only fast path: rebuild only cursor instances.

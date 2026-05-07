@@ -279,12 +279,14 @@ pub(crate) fn fill_frame_incremental(
     // rather than the raw terminal cursor — otherwise the wrong row's
     // per-cell colors get the cursor-cell exclusion treatment.
     let resolved_cursor = resolve_cursor(&input.content.cursor, input.mark_cursor.as_ref());
+    let prev_hovered_cell = frame.prev_hovered_cell;
     build_dirty_set(
         input,
         num_rows,
         &resolved_cursor,
         prev_sel,
         prev_cursor_line,
+        prev_hovered_cell,
         &mut frame.scratch_dirty,
     );
 
