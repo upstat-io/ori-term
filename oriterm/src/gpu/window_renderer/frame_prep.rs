@@ -55,9 +55,10 @@ impl WindowRenderer {
     ///
     /// The cursor-blink-only fast path bypasses the full dispatch
     /// predicate; if any of `viewport`, `cell_size`, `content_cols`,
-    /// `content_rows` differs between frames, the saved geometry is
-    /// stale and the fast path would render at the wrong positions.
-    fn has_geometry_change(&self, input: &FrameInput) -> bool {
+    /// `content_rows`, or `origin` differs between frames, the saved
+    /// geometry is stale and the fast path would render at the wrong
+    /// positions.
+    fn has_geometry_change(&self, input: &FrameInput, origin: (f32, f32)) -> bool {
         if self.prepared.viewport != input.viewport {
             return true;
         }
@@ -68,6 +69,11 @@ impl WindowRenderer {
             return true;
         }
         if self.prepared.prev_content_rows != Some(input.content_rows) {
+            return true;
+        }
+        if (self.prepared.prev_origin.0 - origin.0).abs() > f32::EPSILON
+            || (self.prepared.prev_origin.1 - origin.1).abs() > f32::EPSILON
+        {
             return true;
         }
         false
@@ -112,7 +118,7 @@ impl WindowRenderer {
         let cols = input.columns();
         let cached_valid = self.shaping.frame.rows() > 0 && self.shaping.frame.cols() == cols;
         let visual_changed = self.has_visual_change(input);
-        let geometry_changed = self.has_geometry_change(input);
+        let geometry_changed = self.has_geometry_change(input, origin);
         if !content_changed
             && !visual_changed
             && !geometry_changed
