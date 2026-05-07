@@ -178,8 +178,11 @@ pub struct PreparedFrame {
     /// is active; `Some(FrameSearch::damage_fingerprint())` otherwise.
     /// Search match highlights are baked into per-cell colors at emit
     /// time (`emit_cell.rs::cell_match_type`), so any search-state
-    /// change must invalidate the cache.
-    pub(crate) prev_search_fingerprint: Option<(usize, usize, u64)>,
+    /// change must invalidate the cache. The fingerprint is content-
+    /// aware (hashes match positions) so two distinct match sets with
+    /// the same `(count, focused, base_stable)` but different positions
+    /// produce different fingerprints.
+    pub(crate) prev_search_fingerprint: Option<(usize, usize, u64, u64)>,
     /// Whether the last prepare pass used the incremental path.
     ///
     /// When true, `scratch_dirty` and `saved_tier.row_ranges` are valid and

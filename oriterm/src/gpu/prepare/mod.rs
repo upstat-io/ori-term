@@ -242,8 +242,11 @@ pub fn prepare_frame_shaped_into(
 /// Cursor-blink-only fast path: rebuild only cursor instances.
 ///
 /// All non-cursor content (backgrounds, glyphs, images, chrome, overlays)
-/// is already rendered into the content cache texture. This function only
-/// updates the cursor instance buffer for the blink overlay pass.
+/// is already rendered into the content cache texture. This function
+/// rebuilds the cursor instance buffer plus other cursor-tier overlays
+/// (URL hover underline, prompt markers) that the full prepare path
+/// emits to the cursor buffer — without re-emitting them here, those
+/// overlays would disappear on every cursor blink.
 pub fn update_cursor_only(
     input: &FrameInput,
     out: &mut PreparedFrame,
@@ -275,6 +278,14 @@ pub fn update_cursor_only(
             cursor_opacity,
         );
     }
+
+    // URL hover underline + prompt markers also live on the cursors
+    // buffer (per `emit::draw_url_hover_underline` /
+    // `emit::draw_prompt_markers`); the cursors.clear() above drops them,
+    // so re-emit them on every cursor-only refresh.
+    let (ox, oy) = origin;
+    draw_url_hover_underline(input, out, ox, oy);
+    draw_prompt_markers(input, out, ox, oy);
 }
 
 /// Shaped rendering: emit background, glyph, and cursor instances from shaped data.

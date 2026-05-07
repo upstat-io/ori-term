@@ -51,6 +51,28 @@ impl WindowRenderer {
         false
     }
 
+    /// Whether geometry/topology state changed since the last frame.
+    ///
+    /// The cursor-blink-only fast path bypasses the full dispatch
+    /// predicate; if any of `viewport`, `cell_size`, `content_cols`,
+    /// `content_rows` differs between frames, the saved geometry is
+    /// stale and the fast path would render at the wrong positions.
+    fn has_geometry_change(&self, input: &FrameInput) -> bool {
+        if self.prepared.viewport != input.viewport {
+            return true;
+        }
+        if self.prepared.prev_cell_size != Some(input.cell_size) {
+            return true;
+        }
+        if self.prepared.prev_content_cols != Some(input.content_cols) {
+            return true;
+        }
+        if self.prepared.prev_content_rows != Some(input.content_rows) {
+            return true;
+        }
+        false
+    }
+
     /// Run the Prepare phase: shape text and build GPU instance buffers.
     ///
     /// Fills `self.prepared` via buffer reuse (no per-frame allocation after
@@ -90,7 +112,12 @@ impl WindowRenderer {
         let cols = input.columns();
         let cached_valid = self.shaping.frame.rows() > 0 && self.shaping.frame.cols() == cols;
         let visual_changed = self.has_visual_change(input);
-        if !content_changed && !visual_changed && cached_valid && self.prepared.has_terminal_data()
+        let geometry_changed = self.has_geometry_change(input);
+        if !content_changed
+            && !visual_changed
+            && !geometry_changed
+            && cached_valid
+            && self.prepared.has_terminal_data()
         {
             self.atlas.begin_frame();
             self.subpixel_atlas.begin_frame();
