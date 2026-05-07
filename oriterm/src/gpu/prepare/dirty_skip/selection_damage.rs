@@ -51,12 +51,14 @@ pub fn build_dirty_set(
     // can carry inverted FG/BG colors that bake per-cell at emit time.
     // Without this, clean-row replay leaves stale "with cursor" colors
     // on the row the cursor just left.
+    let mut previous_cursor_dirtied = false;
     if let Some(prev_line) = prev_cursor_line
         && prev_line < num_rows
     {
         let cursor_moved = !input.content.cursor.visible || input.content.cursor.line != prev_line;
         if cursor_moved {
             dirty[prev_line] = true;
+            previous_cursor_dirtied = true;
         }
     }
 
@@ -82,7 +84,7 @@ pub fn build_dirty_set(
         let post = dirty.iter().filter(|d| **d).count();
         let selection_added = post.saturating_sub(pre);
         trace!(
-            "build_dirty_set all_dirty=false rows={num_rows} damage={damage_count} cursor={cursor_contributed} selection_added={selection_added} total={post}"
+            "build_dirty_set all_dirty=false rows={num_rows} damage={damage_count} cursor={cursor_contributed} previous_cursor_dirtied={previous_cursor_dirtied} selection_added={selection_added} total={post}"
         );
     } else {
         mark_selection_damage(dirty, prev_selection, new_selection);

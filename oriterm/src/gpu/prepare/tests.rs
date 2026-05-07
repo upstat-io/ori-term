@@ -952,6 +952,37 @@ fn key_atlas_with(glyph_ids: &[u16], size_q6: u32) -> KeyTestAtlas {
     KeyTestAtlas(map)
 }
 
+/// Build a `KeyTestAtlas` whose glyph IDs route to all three terminal-tier
+/// atlas kinds (mono, subpixel, color) so cross-buffer replay assertions
+/// have non-empty buffers to compare. Glyph IDs are partitioned by index
+/// modulo 3: 0 → Mono, 1 → Subpixel, 2 → Color. Caller-supplied IDs must
+/// be at least three glyphs long for full kind coverage.
+fn key_atlas_mixed_kinds(glyph_ids: &[u16], size_q6: u32) -> KeyTestAtlas {
+    let mut map = HashMap::new();
+    let kinds = [AtlasKind::Mono, AtlasKind::Subpixel, AtlasKind::Color];
+    for (i, &gid) in glyph_ids.iter().enumerate() {
+        let key = RasterKey {
+            glyph_id: gid.into(),
+            face_idx: FaceIdx::REGULAR,
+            weight: 0,
+            size_q6,
+            synthetic: SyntheticFlags::NONE,
+            hinted: true,
+            subpx_x: 0,
+            font_realm: FontRealm::Terminal,
+        };
+        let kind = kinds[i % kinds.len()];
+        map.insert(
+            key,
+            AtlasEntry {
+                kind,
+                ..test_entry_for_glyph(gid)
+            },
+        );
+    }
+    KeyTestAtlas(map)
+}
+
 /// Build a ShapedFrame for a 1-row grid from a slice of ShapedGlyphs.
 fn shaped_one_row(
     cols: usize,
@@ -4712,24 +4743,36 @@ fn incremental_all_dirty_recovery_resumes_incremental() {
 }
 
 /// Regression: BUG-06-027 — replay of clean rows produces output identical
-/// to a fresh full rebuild. The equivalence assertion in the existing
-/// `incremental_no_dirty_rows_matches_cached` test would pass vacuously
-/// if both passes were full-rebuild. This stand-alone test asserts
-/// `was_incremental` AND output equivalence, proving the fix drives
-/// replay correctly across the terminal-tier buffers.
+/// to a fresh full rebuild across all four terminal-tier buffers
+/// (backgrounds + mono glyphs + subpixel glyphs + color glyphs). The
+/// equivalence assertion in the existing `incremental_no_dirty_rows_matches_cached`
+/// test would pass vacuously if both passes were full-rebuild. This
+/// stand-alone test uses a mixed-kind atlas (mono + subpixel + color
+/// entries) and `subpixel_positioning = true` to populate every buffer,
+/// then asserts `was_incremental` AND non-empty buffers AND output
+/// equivalence.
 ///
 /// See: bug-tracker/plans/BUG-06-027/
 #[test]
 fn incremental_replay_clean_rows_matches_fresh_rebuild_output_across_all_buffers() {
     let size_q6 = 768;
-    let cols = 4;
+    let cols = 3;
     let rows = 3;
     let text: String = std::iter::repeat_n('A', cols * rows).collect();
     let mut input = FrameInput::test_grid(cols, rows, &text);
+    input.subpixel_positioning = true; // route AtlasKind::Subpixel to subpixel_glyphs
     let (shaped, ids) = shaped_multi_row(cols, rows, 10, size_q6);
-    let atlas = key_atlas_with(&ids, size_q6);
+    let atlas = key_atlas_mixed_kinds(&ids, size_q6);
 
     let fresh = prepare_frame_shaped(&input, &atlas, &shaped, (0.0, 0.0));
+    assert!(
+        !fresh.subpixel_glyphs.is_empty(),
+        "fixture must populate subpixel_glyphs for cross-buffer assertion to be non-vacuous"
+    );
+    assert!(
+        !fresh.color_glyphs.is_empty(),
+        "fixture must populate color_glyphs for cross-buffer assertion to be non-vacuous"
+    );
 
     let mut frame = PreparedFrame::new(ViewportSize::new(1, 1), Rgb { r: 0, g: 0, b: 0 }, 1.0);
     prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
@@ -4798,8 +4841,9 @@ fn incremental_dispatch_falls_back_on_viewport_change() {
         !frame.was_incremental,
         "Frame 2 viewport change must dispatch full-rebuild"
     );
-    // Per-buffer equivalence with a fresh rebuild — proves the full
-    // rebuild produces correct output despite stale saved_tier.
+    // Per-buffer equivalence with a fresh rebuild across all four
+    // terminal-tier buffers — proves the full rebuild produces correct
+    // output despite stale saved_tier.
     let fresh = prepare_frame_shaped(&input, &atlas, &shaped, (0.0, 0.0));
     assert_eq!(
         fresh.backgrounds.as_bytes(),
@@ -4809,7 +4853,59 @@ fn incremental_dispatch_falls_back_on_viewport_change() {
     assert_eq!(
         fresh.glyphs.as_bytes(),
         frame.glyphs.as_bytes(),
-        "post-fallback glyphs match fresh rebuild"
+        "post-fallback mono glyphs match fresh rebuild"
+    );
+    assert_eq!(
+        fresh.subpixel_glyphs.as_bytes(),
+        frame.subpixel_glyphs.as_bytes(),
+        "post-fallback subpixel glyphs match fresh rebuild"
+    );
+    assert_eq!(
+        fresh.color_glyphs.as_bytes(),
+        frame.color_glyphs.as_bytes(),
+        "post-fallback color glyphs match fresh rebuild"
+    );
+}
+
+/// Regression: BUG-06-027 — content grid topology change (cols × rows)
+/// dispatches full-rebuild even when the pixel viewport stays the same.
+/// Pixel viewport tracks (width_px, height_px); content grid tracks
+/// (cols, rows). During async resize in daemon mode the snapshot grid
+/// can race ahead of the pixel viewport — the `prev_content_cols` /
+/// `prev_content_rows` guards must catch this without relying on the
+/// viewport guard. Three-frame sequence proves incremental is reachable
+/// in steady state and the fallback fires on grid topology change in
+/// isolation from viewport.
+#[test]
+fn incremental_dispatch_falls_back_on_content_grid_change() {
+    let size_q6 = 768;
+    let cols = 4;
+    let rows = 3;
+    let text: String = std::iter::repeat_n('A', cols * rows).collect();
+    let mut input = FrameInput::test_grid(cols, rows, &text);
+    let (shaped, ids) = shaped_multi_row(cols, rows, 10, size_q6);
+    let atlas = key_atlas_with(&ids, size_q6);
+
+    let mut frame = PreparedFrame::new(ViewportSize::new(1, 1), Rgb { r: 0, g: 0, b: 0 }, 1.0);
+    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+    assert!(!frame.was_incremental, "Frame 0 full rebuild");
+
+    input.content.all_dirty = false;
+    input.content.cursor.visible = false;
+    input.content.damage.clear();
+    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+    assert!(frame.was_incremental, "Frame 1 incremental reachable");
+
+    // Bump content_cols WITHOUT changing the pixel viewport. The
+    // viewport guard does NOT catch this; only the prev_content_cols
+    // guard does.
+    let prev_viewport = input.viewport;
+    input.content_cols = cols + 1;
+    assert_eq!(input.viewport, prev_viewport, "viewport unchanged");
+    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+    assert!(
+        !frame.was_incremental,
+        "content_cols change must dispatch full-rebuild even when pixel viewport is unchanged"
     );
 }
 
@@ -4846,21 +4942,30 @@ fn incremental_dispatch_falls_back_on_cell_size_change() {
 }
 
 /// Regression: BUG-06-027 — incremental dispatch with partial damage
-/// replays clean rows from saved_tier across all populated terminal-tier
-/// buffers (backgrounds + glyphs). Frame 0 full rebuild populates row
-/// ranges; Frame 1 with damage on row 1 only must replay rows 0 and 2
-/// from saved_tier and regenerate row 1 fresh.
+/// replays clean rows from saved_tier across all four terminal-tier
+/// buffers (backgrounds + mono + subpixel + color glyphs). Frame 0 full
+/// rebuild populates row ranges; Frame 1 with damage on row 1 only must
+/// replay rows 0 and 2 from saved_tier and regenerate row 1 fresh. Mixed-
+/// kind atlas + `subpixel_positioning = true` ensure the subpixel and
+/// color buffers are non-empty so the cross-buffer assertions catch a
+/// real replay bug.
 #[test]
 fn incremental_dispatch_with_partial_damage_replays_clean_rows_across_all_buffers() {
     let size_q6 = 768;
-    let cols = 4;
+    let cols = 3;
     let rows = 3;
     let text: String = std::iter::repeat_n('A', cols * rows).collect();
     let mut input = FrameInput::test_grid(cols, rows, &text);
+    input.subpixel_positioning = true;
     let (shaped, ids) = shaped_multi_row(cols, rows, 10, size_q6);
-    let atlas = key_atlas_with(&ids, size_q6);
+    let atlas = key_atlas_mixed_kinds(&ids, size_q6);
 
     let fresh = prepare_frame_shaped(&input, &atlas, &shaped, (0.0, 0.0));
+    assert!(
+        !fresh.subpixel_glyphs.is_empty() && !fresh.color_glyphs.is_empty(),
+        "fixture must populate subpixel + color buffers"
+    );
+
     let mut frame = PreparedFrame::new(ViewportSize::new(1, 1), Rgb { r: 0, g: 0, b: 0 }, 1.0);
     prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
 
@@ -4889,6 +4994,16 @@ fn incremental_dispatch_with_partial_damage_replays_clean_rows_across_all_buffer
         fresh.glyphs.as_bytes(),
         frame.glyphs.as_bytes(),
         "row 0 + row 2 mono glyphs replayed from saved_tier; row 1 regenerated"
+    );
+    assert_eq!(
+        fresh.subpixel_glyphs.as_bytes(),
+        frame.subpixel_glyphs.as_bytes(),
+        "row 0 + row 2 subpixel glyphs replayed from saved_tier; row 1 regenerated"
+    );
+    assert_eq!(
+        fresh.color_glyphs.as_bytes(),
+        frame.color_glyphs.as_bytes(),
+        "row 0 + row 2 color glyphs replayed from saved_tier; row 1 regenerated"
     );
 }
 

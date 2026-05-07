@@ -27,6 +27,7 @@ mod dialog_helpers;
 mod edge_case_tests;
 mod frame_input_helper;
 mod golden_lane_config;
+mod incremental_dispatch_cached_tests;
 pub(crate) use golden_lane_config::GoldenLaneConfig;
 mod main_window;
 mod meta_tests;
