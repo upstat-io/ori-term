@@ -35,6 +35,7 @@ mod mux_pump;
 mod pane_accessors;
 mod pane_ops;
 mod perf_stats;
+mod post_spawn;
 mod redraw;
 mod render_dispatch;
 mod search_ui;

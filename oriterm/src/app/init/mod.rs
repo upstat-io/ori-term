@@ -523,14 +523,17 @@ impl App {
             initial_title: title,
             initial_icon: icon_path,
         };
+        let cfg = &self.config;
         let mux = self.mux.as_mut().ok_or("mux backend missing")?;
         let pane_id = mux.adopt_pane(adopted, request)?;
 
         // Apply the same per-pane setup the spawn path uses.
-        mux.set_pane_theme(pane_id, theme, palette);
-        mux.set_image_config(pane_id, self.config.terminal.image_config());
-        mux.set_bold_is_bright(pane_id, self.config.behavior.bold_is_bright);
-        mux.set_cell_dimensions(pane_id, cell_w, cell_h);
+        crate::app::post_spawn::apply_post_spawn_setup(
+            &mut **mux,
+            cfg,
+            pane_id,
+            crate::app::post_spawn::PostSpawnArgs { theme, palette, cell_w, cell_h },
+        );
 
         // Local tab creation (mirrors create_initial_tab).
         let tab_id = self.session.alloc_tab_id();
@@ -580,23 +583,19 @@ impl App {
 
         let palette = config_reload::build_palette_from_config(&self.config.colors, theme);
 
+        let cfg = &self.config;
         let mux = self.mux.as_mut().ok_or("mux backend missing")?;
         let pane_id = mux.spawn_pane(&config, theme)?;
 
-        // Apply color scheme + user overrides to the pane's terminal palette.
-        mux.set_pane_theme(pane_id, theme, palette);
-
-        // Apply image protocol config.
-        mux.set_image_config(pane_id, self.config.terminal.image_config());
-
-        // Apply bold-is-bright config.
-        mux.set_bold_is_bright(pane_id, self.config.behavior.bold_is_bright);
-
-        // Seed cell metrics so FixedPixels image placements compute
-        // correct coverage from the first frame. Without this the
-        // IO-thread `Term` holds its `8x16` default until the next
-        // resize / DPI event.
-        mux.set_cell_dimensions(pane_id, cell_w, cell_h);
+        // Apply per-pane setup (theme, image config, bold-is-bright,
+        // cell metrics) via the consolidated helper. Cell metrics seed
+        // FixedPixels image placement coverage from the first frame.
+        crate::app::post_spawn::apply_post_spawn_setup(
+            &mut **mux,
+            cfg,
+            pane_id,
+            crate::app::post_spawn::PostSpawnArgs { theme, palette, cell_w, cell_h },
+        );
 
         // Local tab creation.
         let tab_id = self.session.alloc_tab_id();

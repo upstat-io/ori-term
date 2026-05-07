@@ -74,10 +74,12 @@ impl App {
         let clear_palette = palette.clone();
         let pane_id = match mux.spawn_pane(&spawn_config, theme) {
             Ok(pid) => {
-                mux.set_pane_theme(pid, theme, palette);
-                mux.set_image_config(pid, self.config.terminal.image_config());
-                mux.set_bold_is_bright(pid, self.config.behavior.bold_is_bright);
-                mux.set_cell_dimensions(pid, cell_w, cell_h);
+                crate::app::post_spawn::apply_post_spawn_setup(
+                    &mut **mux,
+                    &self.config,
+                    pid,
+                    crate::app::post_spawn::PostSpawnArgs { theme, palette, cell_w, cell_h },
+                );
                 mux.discard_notifications();
                 pid
             }
