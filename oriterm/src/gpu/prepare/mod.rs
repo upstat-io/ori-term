@@ -164,6 +164,10 @@ pub fn prepare_frame_shaped_into(
     // only the cells under the previous and current hover positions; we
     // dirty those rows in `build_dirty_set` (O(1)) instead of falling
     // back to a full rebuild (O(N)) for every mouse move.
+    let search_fingerprint = input
+        .search
+        .as_ref()
+        .map(super::frame_input::FrameSearch::damage_fingerprint);
     let can_incremental = !input.content.all_dirty
         && out.saved_tier.has_cached_rows()
         && out.viewport == input.viewport
@@ -173,7 +177,9 @@ pub fn prepare_frame_shaped_into(
         && (out.prev_origin.0 - origin.0).abs() < f32::EPSILON
         && (out.prev_origin.1 - origin.1).abs() < f32::EPSILON
         && (out.prev_text_blink_opacity - input.text_blink_opacity).abs() < f32::EPSILON
-        && (out.prev_fg_dim - input.fg_dim).abs() < f32::EPSILON;
+        && (out.prev_fg_dim - input.fg_dim).abs() < f32::EPSILON
+        && out.prev_subpixel_positioning == input.subpixel_positioning
+        && out.prev_search_fingerprint == search_fingerprint;
 
     if can_incremental {
         // Incremental path: saved_tier is already populated by the
@@ -229,6 +235,8 @@ pub fn prepare_frame_shaped_into(
     };
     out.prev_hovered_cell = input.hovered_cell;
     out.prev_fg_dim = input.fg_dim;
+    out.prev_subpixel_positioning = input.subpixel_positioning;
+    out.prev_search_fingerprint = search_fingerprint;
 }
 
 /// Cursor-blink-only fast path: rebuild only cursor instances.

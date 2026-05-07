@@ -5134,6 +5134,67 @@ fn incremental_dispatch_with_hover_change_stays_incremental_and_dirties_affected
     assert!(!frame.scratch_dirty[1], "non-hover row stays clean");
 }
 
+/// Regression: BUG-06-027 — subpixel-positioning toggle forces full-rebuild.
+/// The flag routes `AtlasKind::Subpixel` glyphs to either `subpixel_glyphs`
+/// (when true) or `glyphs` (when false); a toggle would leave saved cells
+/// in the wrong buffer.
+#[test]
+fn incremental_dispatch_falls_back_on_subpixel_positioning_toggle() {
+    let cols = 4;
+    let rows = 3;
+    let (mut frame, mut input, shaped, atlas) = prepare_frame0_steady(cols, rows);
+
+    input.content.all_dirty = false;
+    input.content.cursor.visible = false;
+    input.content.damage.clear();
+    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+    assert!(frame.was_incremental, "Frame 1 incremental");
+
+    input.subpixel_positioning = !input.subpixel_positioning;
+    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+    assert!(
+        !frame.was_incremental,
+        "subpixel_positioning toggle must dispatch full-rebuild"
+    );
+}
+
+/// Regression: BUG-06-027 — search-state change forces full-rebuild.
+/// Search match highlighting bakes per-cell colors at emit time; without
+/// a guard, the cache would replay stale highlights when the user types
+/// a new query, navigates between matches, or scrolls.
+#[test]
+fn incremental_dispatch_falls_back_on_search_state_change() {
+    use crate::gpu::frame_input::FrameSearch;
+    use oriterm_core::{SearchMatch, StableRowIndex};
+
+    let cols = 4;
+    let rows = 3;
+    let (mut frame, mut input, shaped, atlas) = prepare_frame0_steady(cols, rows);
+
+    input.content.all_dirty = false;
+    input.content.cursor.visible = false;
+    input.content.damage.clear();
+    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+    assert!(frame.was_incremental, "Frame 1 incremental");
+
+    // Activate search with one match — different fingerprint from None.
+    input.search = Some(FrameSearch::for_test(
+        vec![SearchMatch {
+            start_row: StableRowIndex(0),
+            start_col: 0,
+            end_row: StableRowIndex(0),
+            end_col: 0,
+        }],
+        0,
+        0,
+    ));
+    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+    assert!(
+        !frame.was_incremental,
+        "search activation must dispatch full-rebuild"
+    );
+}
+
 /// Regression: BUG-06-027 — text blink opacity change forces full-rebuild.
 /// Per-cell instances bake `text_blink_opacity` at emit time; replaying
 /// clean rows would carry stale opacity. The dispatch predicate's

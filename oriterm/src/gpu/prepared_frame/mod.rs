@@ -169,6 +169,17 @@ pub struct PreparedFrame {
     /// would replay stale alpha. The dispatch predicate guards this
     /// like `prev_text_blink_opacity` — both feed cell-instance alpha.
     pub(crate) prev_fg_dim: f32,
+    /// Previous frame's subpixel-positioning flag. The flag routes
+    /// `AtlasKind::Subpixel` glyphs to either `subpixel_glyphs` or
+    /// `glyphs` (see `emit.rs`); a toggle would leave saved cells in
+    /// the wrong buffer.
+    pub(crate) prev_subpixel_positioning: bool,
+    /// Previous frame's search-state fingerprint. `None` when no search
+    /// is active; `Some(FrameSearch::damage_fingerprint())` otherwise.
+    /// Search match highlights are baked into per-cell colors at emit
+    /// time (`emit_cell.rs::cell_match_type`), so any search-state
+    /// change must invalidate the cache.
+    pub(crate) prev_search_fingerprint: Option<(usize, usize, u64)>,
     /// Whether the last prepare pass used the incremental path.
     ///
     /// When true, `scratch_dirty` and `saved_tier.row_ranges` are valid and
@@ -213,6 +224,8 @@ impl PreparedFrame {
             prev_cursor_line: None,
             prev_hovered_cell: None,
             prev_fg_dim: 1.0,
+            prev_subpixel_positioning: false,
+            prev_search_fingerprint: None,
             was_incremental: false,
             scratch_dirty: Vec::new(),
             viewport,
@@ -261,6 +274,8 @@ impl PreparedFrame {
             prev_cursor_line: None,
             prev_hovered_cell: None,
             prev_fg_dim: 1.0,
+            prev_subpixel_positioning: false,
+            prev_search_fingerprint: None,
             was_incremental: false,
             scratch_dirty: Vec::new(),
             viewport,

@@ -134,6 +134,15 @@ impl FrameSearch {
         &self.query
     }
 
+    /// Stable damage fingerprint — `(match_count, focused, base_stable)`.
+    /// Used by the prepare phase's incremental dispatch to detect when
+    /// search highlight state has changed between frames; per-cell
+    /// colors bake the search match type at emit time, so any change
+    /// to this tuple must invalidate clean-row replay from `saved_tier`.
+    pub fn damage_fingerprint(&self) -> (usize, usize, u64) {
+        (self.match_count, self.focused, self.base_stable)
+    }
+
     /// Build a test search snapshot from manually constructed matches.
     ///
     /// `focused` is the index into `matches` of the focused match.

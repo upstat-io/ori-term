@@ -11,9 +11,16 @@ use super::helpers::{CombinedAtlasLookup, ensure_glyphs_cached, grid_raster_keys
 use super::{EMPTY_KEYS_CAP, WindowRenderer};
 
 impl WindowRenderer {
-    /// Whether visual-only state (selection) changed since the last frame.
+    /// Whether visual-only state (selection, blink, hover, search,
+    /// pane focus dim, subpixel positioning) changed since the last
+    /// frame. Visual changes need a full instance rebuild but NOT
+    /// re-shaping.
     ///
-    /// Visual changes need a full instance rebuild but NOT re-shaping.
+    /// Every dispatch-predicate field that affects per-cell instances
+    /// AND can change while the snapshot itself stays put is checked
+    /// here. Missing fields would cause the cursor-blink-only fast
+    /// path to skip prepare entirely, leaving stale per-cell state
+    /// (highlights, dim alpha, etc.) on the cached terminal tier.
     fn has_visual_change(&self, input: &FrameInput) -> bool {
         let new_sel = input
             .selection
@@ -22,9 +29,26 @@ impl WindowRenderer {
         if new_sel != self.prepared.prev_selection_snapshot {
             return true;
         }
-        // Text blink opacity change requires full instance rebuild so
-        // BLINK-flagged cells get the updated alpha.
-        (input.text_blink_opacity - self.prepared.prev_text_blink_opacity).abs() > 0.001
+        if (input.text_blink_opacity - self.prepared.prev_text_blink_opacity).abs() > 0.001 {
+            return true;
+        }
+        if (input.fg_dim - self.prepared.prev_fg_dim).abs() > 0.001 {
+            return true;
+        }
+        if input.subpixel_positioning != self.prepared.prev_subpixel_positioning {
+            return true;
+        }
+        if input.hovered_cell != self.prepared.prev_hovered_cell {
+            return true;
+        }
+        let search_fingerprint = input
+            .search
+            .as_ref()
+            .map(super::super::frame_input::FrameSearch::damage_fingerprint);
+        if search_fingerprint != self.prepared.prev_search_fingerprint {
+            return true;
+        }
+        false
     }
 
     /// Run the Prepare phase: shape text and build GPU instance buffers.
