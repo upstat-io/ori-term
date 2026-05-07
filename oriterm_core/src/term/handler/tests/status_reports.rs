@@ -1435,9 +1435,7 @@ fn enq_repeats_answerback_for_each_invocation() {
     let answerback_writes: Vec<&[u8]> = effects
         .iter()
         .filter_map(|e| match e {
-            Effect::Pty(PtyEffect::Write { bytes, kind })
-                if *kind == PtyWriteKind::Answerback =>
-            {
+            Effect::Pty(PtyEffect::Write { bytes, kind }) if *kind == PtyWriteKind::Answerback => {
                 Some(bytes.as_slice())
             }
             _ => None,
