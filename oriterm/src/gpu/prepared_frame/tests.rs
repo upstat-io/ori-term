@@ -308,6 +308,8 @@ fn prev_cursor_line_field_access_removed() {
             "out.prev_cursor_line",
             "self.prepared.prev_cursor_line",
             "pub(crate) prev_cursor_line:",
+            "prev_cursor_line: None",
+            "prev_cursor_line: Some",
         ] {
             if source.contains(needle) {
                 offending.push(format!("{}: {needle}", path.display()));
@@ -332,10 +334,21 @@ fn walk_rs_files(dir: &std::path::Path, visitor: &mut dyn FnMut(&std::path::Path
         if path.is_dir() {
             walk_rs_files(&path, visitor);
         } else if path.extension().and_then(|s| s.to_str()) == Some("rs") {
-            // Skip test files — they may contain source-scan needles
-            // as string literals (this very test, for example) and the
-            // SSOT contract is about production code, not test fixtures.
-            if path.file_name().and_then(|s| s.to_str()) == Some("tests.rs") {
+            // Skip ONLY the file that physically contains this test's needle
+            // list (otherwise the scan would self-report). Other test files
+            // remain in scope so test helpers using the renamed field-access
+            // patterns still get caught.
+            let is_self = path
+                .file_name()
+                .and_then(|s| s.to_str())
+                .map(|n| n == "tests.rs")
+                .unwrap_or(false)
+                && path
+                    .parent()
+                    .and_then(|p| p.file_name())
+                    .and_then(|s| s.to_str())
+                    == Some("prepared_frame");
+            if is_self {
                 continue;
             }
             visitor(&path);
