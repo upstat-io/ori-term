@@ -920,30 +920,39 @@ fn cell_colors_correct_after_cursor_moves_within_search_match() {
 // (at `frame_prep.rs:104-108`). Future field additions to either site that lack a
 // matching test will leave a coverage hole this matrix is designed to catch.
 
-/// Helper: assert that mutating a single dispatch-fingerprint input across two
-/// `has_dispatch_change` calls invalidates the cache. Mirrors the shape of
-/// `opacity_change_invalidates_cache` but parameterized by a mutation closure.
+/// Helper: drive a baseline + steady-state + mutation sequence through the
+/// integrated `prepare()` path and assert the SSOT predicate
+/// `WindowRenderer::cache_invalidated_this_frame()` fires when the mutation
+/// flips a dispatch-fingerprint input. Tests the production invariant, not
+/// the intermediate `has_dispatch_change` helper.
 #[cfg(feature = "gpu-tests")]
 fn assert_dispatch_field_change_invalidates<F>(label: &str, mutate: F)
 where
     F: FnOnce(&mut crate::gpu::frame_input::FrameInput, &mut (f32, f32)),
 {
-    let Some((_gpu, _pip, mut renderer)) = headless_env() else {
+    let Some((gpu, pipelines, mut renderer)) = headless_env() else {
         eprintln!("SKIP: GPU adapter unavailable");
         return;
     };
     let mut input = crate::gpu::frame_input::FrameInput::test_grid(10, 10, "");
     let mut origin = (0.0_f32, 0.0_f32);
-    let baseline = crate::gpu::prepare::compute_dispatch_fingerprint(&input, origin);
-    renderer.prepared.prev_dispatch_fingerprint = Some(baseline);
+
+    // Frame 1: full prepare populates shaping cache, prev_dispatch_fingerprint, prev row state, terminal data.
+    renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, true);
+    // Frame 2: identical input + content_changed=false → steady state, cache reusable.
+    renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, false);
     assert!(
-        !renderer.has_dispatch_change(&input, origin),
-        "{label}: identical input must NOT invalidate fingerprint (sanity check)"
+        !renderer.cache_invalidated_this_frame(),
+        "{label}: identical baseline must NOT invalidate cache (sanity check)"
     );
+
+    // Mutate one field, prepare with content_changed=false → SSOT predicate must fire
+    // via the production path (dispatch_changed → !can_reuse_content_cache).
     mutate(&mut input, &mut origin);
+    renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, false);
     assert!(
-        renderer.has_dispatch_change(&input, origin),
-        "{label}: mutation must invalidate dispatch fingerprint"
+        renderer.cache_invalidated_this_frame(),
+        "{label}: mutation must invalidate cache via cache_invalidated_this_frame() SSOT"
     );
 }
 
@@ -1075,19 +1084,23 @@ fn subpixel_positioning_change_invalidates_cache() {
     });
 }
 
-// --- Search (1) — SKIPPED: FrameSearch construction requires PaneSnapshot ---
-//
-// `FrameSearch::from_snapshot` is the only public constructor; it needs a
-// `PaneSnapshot` which requires PtySession-level setup. Adding a `#[cfg(test)]
-// pub fn new_test()` constructor to `FrameSearch` would expand this matrix's
-// scope to `frame_input/search.rs` and is filed separately.
-//
-// Coverage rationale: `compute_dispatch_fingerprint` hashes
-// `input.search_fingerprint()` which returns `Option<(usize, usize, u64, u64)>`.
-// The Option discriminant flip (None → Some) and any tuple-component change
-// would invalidate the fingerprint by Hash trait derivation; the bitwise
-// hash is exercised by `palette.opacity` and other f32/Option-discriminant
-// fields above. The risk of an untested search-axis regression is bounded.
+// --- Search (1) ---
+
+#[cfg(feature = "gpu-tests")]
+#[test]
+fn search_fingerprint_change_invalidates_cache() {
+    assert_dispatch_field_change_invalidates("search_fingerprint", |input, _| {
+        // None → Some flips the Option discriminant in input.search_fingerprint(),
+        // which compute_dispatch_fingerprint hashes via Hash trait derivation.
+        // FrameSearch::for_test is the cfg(test)-gated constructor that bypasses
+        // PaneSnapshot, scoped to test-only construction.
+        input.search = Some(crate::gpu::frame_input::FrameSearch::for_test(
+            Vec::new(),
+            0,
+            0,
+        ));
+    });
+}
 
 // --- Top-level predicate clauses (3) ---
 
@@ -1121,11 +1134,27 @@ fn cached_invalid_invalidates_cache() {
     };
     let input = crate::gpu::frame_input::FrameInput::test_grid(10, 10, "");
     let origin = (0.0_f32, 0.0_f32);
-    // First prepare on a fresh renderer: shaping.frame.rows() == 0 → !cached_valid → invalidate.
+
+    // Frame 1: full prepare populates shaping cache, prev_dispatch_fingerprint, prev row state, terminal data.
+    renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, true);
+    // Frame 2: identical input + content_changed=false → steady state, cache reusable.
+    renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, false);
+    assert!(
+        !renderer.cache_invalidated_this_frame(),
+        "baseline frame must reuse cache (sanity check)"
+    );
+
+    // Reset shaping.frame ONLY — preserves prepared.terminal_data,
+    // prev_dispatch_fingerprint, and prev_resolved_cursor so cached_valid
+    // is the SOLE clause flipping false on Frame 3.
+    renderer.shaping.frame = crate::gpu::prepare::ShapedFrame::new(0, 0);
+
+    // Frame 3: identical input but cached_valid=false (rows() == 0). SSOT predicate must fire
+    // via the cached_valid clause alone (content_changed/dispatch/row_state all unchanged).
     renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, false);
     assert!(
         renderer.cache_invalidated_this_frame(),
-        "fresh renderer (rows == 0 → !cached_valid) MUST invalidate cache"
+        "!cached_valid (shaping.frame.rows() == 0) MUST invalidate cache via cache_invalidated_this_frame() SSOT"
     );
 }
 
@@ -1162,19 +1191,29 @@ fn no_terminal_data_invalidates_cache() {
 /// "ignored field" for this rejection check.
 #[cfg(feature = "gpu-tests")]
 #[test]
-fn prompt_marker_rows_change_does_not_invalidate_dispatch() {
-    let Some((_gpu, _pip, mut renderer)) = headless_env() else {
+fn prompt_marker_rows_change_does_not_invalidate_cache() {
+    let Some((gpu, pipelines, mut renderer)) = headless_env() else {
         eprintln!("SKIP: GPU adapter unavailable");
         return;
     };
     let mut input = crate::gpu::frame_input::FrameInput::test_grid(10, 10, "");
     let origin = (0.0_f32, 0.0_f32);
-    let baseline = crate::gpu::prepare::compute_dispatch_fingerprint(&input, origin);
-    renderer.prepared.prev_dispatch_fingerprint = Some(baseline);
-    input.prompt_marker_rows = vec![0, 1, 2];
+
+    // Frame 1: full prepare populates baseline state.
+    renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, true);
+    // Frame 2: identical input + content_changed=false → steady state, cache reusable.
+    renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, false);
     assert!(
-        !renderer.has_dispatch_change(&input, origin),
-        "prompt_marker_rows mutation must NOT invalidate dispatch fingerprint \
-         (field is not in compute_dispatch_fingerprint hash)"
+        !renderer.cache_invalidated_this_frame(),
+        "baseline must reuse cache (sanity check)"
+    );
+
+    // Mutate prompt_marker_rows — NOT in compute_dispatch_fingerprint, NOT in row_state inputs.
+    // Frame 3: cache MUST stay reusable via cache_invalidated_this_frame() SSOT.
+    input.prompt_marker_rows = vec![0, 1, 2];
+    renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, false);
+    assert!(
+        !renderer.cache_invalidated_this_frame(),
+        "prompt_marker_rows mutation must NOT invalidate cache (field outside dispatch fingerprint and row_state)"
     );
 }
