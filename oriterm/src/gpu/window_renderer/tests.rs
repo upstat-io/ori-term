@@ -913,7 +913,7 @@ fn cell_colors_correct_after_cursor_moves_within_search_match() {
     );
 }
 
-// --- BUG-06-037: full predicate-clause matrix coverage for cache_invalidated_this_frame ---
+// --- Full predicate-clause matrix for cache_invalidated_this_frame ---
 //
 // Pins every dispatch-fingerprint field (`compute_dispatch_fingerprint` at
 // `gpu/prepare/mod.rs:66`) and every top-level clause of `can_reuse_content_cache`
@@ -1079,7 +1079,7 @@ fn subpixel_positioning_change_invalidates_cache() {
 //
 // `FrameSearch::from_snapshot` is the only public constructor; it needs a
 // `PaneSnapshot` which requires PtySession-level setup. Adding a `#[cfg(test)]
-// pub fn new_test()` constructor to `FrameSearch` would expand BUG-06-037's
+// pub fn new_test()` constructor to `FrameSearch` would expand this matrix's
 // scope to `frame_input/search.rs` and is filed separately.
 //
 // Coverage rationale: `compute_dispatch_fingerprint` hashes
@@ -1153,13 +1153,13 @@ fn no_terminal_data_invalidates_cache() {
     );
 }
 
-// --- Negative pin (≥1) ---
+// --- Reject case: mutating an ignored field MUST NOT invalidate ---
 
-/// Negative pin: mutating a FrameInput field that is NOT in the dispatch
+/// Reject case: mutating a FrameInput field that is NOT in the dispatch
 /// fingerprint AND NOT in row_state inputs MUST NOT invalidate the cache.
 /// `prompt_marker_rows` is rendered as decoration but is not currently
 /// hashed into `compute_dispatch_fingerprint`, making it the canonical
-/// "ignored field" for this negative pin.
+/// "ignored field" for this rejection check.
 #[cfg(feature = "gpu-tests")]
 #[test]
 fn prompt_marker_rows_change_does_not_invalidate_dispatch() {

@@ -225,7 +225,7 @@ impl App {
                     win.active_tab()
                 });
                 if let Some(tid) = tab_id {
-                    self.move_tab_to_new_window_deferred(tid);
+                    self.move_tab_to_new_window_deferred(tid, None);
                 }
                 true
             }
