@@ -1249,10 +1249,47 @@ mod cache_invalidated_pins {
         );
     }
 
-    /// Behavioral pin: cursor move within an active selection MUST cause the
-    /// prepare path to re-emit per-cell instances. Proves the full prepare
-    /// runs (not just the gate decision) — both old and new cursor cells get
-    /// fresh background instances, not stale frame-1 colors.
+    /// Decode an instance's bg_color from the InstanceWriter byte buffer.
+    /// Layout (matches `prepare/tests.rs::decode_instance`):
+    /// bytes 0-7: pos (x, y as f32); 8-15: size; 16-31: uv; 32-47: fg_color;
+    /// 48-63: bg_color; 64: kind. INSTANCE_SIZE is 96 bytes per the GPU spec.
+    fn decode_bg_at_pos(bytes: &[u8], target_x: f32, target_y: f32) -> Option<[f32; 4]> {
+        const INSTANCE_SIZE: usize = 96;
+        let count = bytes.len() / INSTANCE_SIZE;
+        for i in 0..count {
+            let off = i * INSTANCE_SIZE;
+            let pos_x = f32::from_le_bytes(bytes[off..off + 4].try_into().unwrap());
+            let pos_y = f32::from_le_bytes(bytes[off + 4..off + 8].try_into().unwrap());
+            if (pos_x - target_x).abs() < 0.01 && (pos_y - target_y).abs() < 0.01 {
+                return Some([
+                    f32::from_le_bytes(bytes[off + 48..off + 52].try_into().unwrap()),
+                    f32::from_le_bytes(bytes[off + 52..off + 56].try_into().unwrap()),
+                    f32::from_le_bytes(bytes[off + 56..off + 60].try_into().unwrap()),
+                    f32::from_le_bytes(bytes[off + 60..off + 64].try_into().unwrap()),
+                ]);
+            }
+        }
+        None
+    }
+
+    /// sRGB-to-linear conversion matches the GPU pipeline's color packing
+    /// (see `crate::gpu::srgb_to_linear`). Decoded instance bg_color values
+    /// are in linear space; expected values must convert to match.
+    fn rgb_to_f32(r: u8, g: u8, b: u8) -> [f32; 4] {
+        [
+            crate::gpu::srgb_to_linear(r),
+            crate::gpu::srgb_to_linear(g),
+            crate::gpu::srgb_to_linear(b),
+            1.0,
+        ]
+    }
+
+    /// Behavioral pin: cursor moves within an active selection. Asserts:
+    /// (a) gate fires (cache invalidated), (b) full prepare re-emits the
+    /// same cell count, AND (c) actual bg_color at the OLD cursor cell is
+    /// selection-inverted while the NEW cursor cell is block-cursor-
+    /// suppressed (cell.bg). Decodes the instance buffer to read colors
+    /// directly from emitted bytes.
     #[test]
     fn cell_colors_correct_after_cursor_moves_within_selection() {
         use oriterm_core::{Selection, Side, StableRowIndex};
@@ -1266,6 +1303,10 @@ mod cache_invalidated_pins {
         input.hovered_cell = None;
         set_cursor(&mut input, 1, 3, CursorShape::Block, true);
 
+        // Capture the cell.fg/cell.bg pair (per FrameInput::test_grid setup).
+        let cell_fg = input.content.cells[0].fg;
+        let cell_bg = input.content.cells[0].bg;
+
         let mut sel = Selection::new_char(StableRowIndex(1), 0, Side::Left);
         sel.end = oriterm_core::SelectionPoint {
             row: StableRowIndex(1),
@@ -1276,38 +1317,56 @@ mod cache_invalidated_pins {
 
         renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, true);
         let frame1_bg_bytes = renderer.prepared.backgrounds.byte_len();
-        assert!(
-            frame1_bg_bytes > 0,
-            "frame 1 must emit per-cell background instances"
-        );
+        assert!(frame1_bg_bytes > 0, "frame 1 must emit instances");
 
-        // Frame 2: cursor moves within the selection; content unchanged.
+        // Frame 2: cursor moves within the selection.
         set_cursor(&mut input, 1, 7, CursorShape::Block, true);
         renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, false);
 
         assert!(
             renderer.cache_invalidated_this_frame(),
-            "cursor move within selection MUST force full prepare (gate-level)"
+            "cursor move within selection MUST force full prepare"
         );
-        // The full prepare re-emits per-cell instances — buffer is non-empty
-        // AND the byte count matches the previous full prepare's count
-        // (same grid dims, same cell count emitting bg quads). If the fast
-        // path had taken, backgrounds would NOT have been re-emitted.
         assert_eq!(
             renderer.prepared.backgrounds.byte_len(),
             frame1_bg_bytes,
-            "frame 2 must re-emit the same number of per-cell instances as \
-             frame 1; mismatch indicates a partial-emit or fast-path leak"
+            "frame 2 must re-emit the same per-cell instance count"
+        );
+
+        // Cell positions: test_grid uses 8.0 × 16.0 cells.
+        // OLD cursor (1, 3) at pixel (24.0, 16.0) — must now be selection-inverted.
+        // NEW cursor (1, 7) at pixel (56.0, 16.0) — must be block-cursor-suppressed.
+        let bytes = renderer.prepared.backgrounds.as_bytes();
+
+        // OLD cursor cell — selection inversion swaps fg↔bg, so bg_color = cell.fg.
+        let old_bg = decode_bg_at_pos(bytes, 24.0, 16.0)
+            .expect("OLD cursor cell (1,3) bg instance MUST be in the buffer");
+        assert_eq!(
+            old_bg,
+            rgb_to_f32(cell_fg.r, cell_fg.g, cell_fg.b),
+            "OLD cursor cell at (1,3) MUST emit selection-inverted bg = cell.fg \
+             after frame 2; stale Block-cursor-suppressed colors would leak \
+             without the prev_resolved_cursor fast-path gate"
+        );
+
+        // NEW cursor cell — block-cursor-suppressed, so bg_color = cell.bg.
+        let new_bg = decode_bg_at_pos(bytes, 56.0, 16.0)
+            .expect("NEW cursor cell (1,7) bg instance MUST be in the buffer");
+        assert_eq!(
+            new_bg,
+            rgb_to_f32(cell_bg.r, cell_bg.g, cell_bg.b),
+            "NEW cursor cell at (1,7) MUST emit block-cursor-suppressed bg = cell.bg"
         );
     }
 
-    /// Behavioral pin: cursor move within a search match suppresses the
-    /// search-highlight color at the OLD cursor cell on frame 1, then
-    /// restores it on frame 2 after the cursor moves. Coarse pin via
-    /// instance count (proves full prepare ran), parallel to the selection
-    /// counterpart above.
+    /// Behavioral pin: cursor moves within an active search match. Asserts
+    /// (a) gate fires, (b) full prepare re-emits, AND (c) actual bg_color
+    /// at OLD cursor cell is SEARCH_MATCH_BG (yellow) while NEW cursor cell
+    /// is block-cursor-suppressed.
     #[test]
     fn cell_colors_correct_after_cursor_moves_within_search_match() {
+        use oriterm_core::{SearchMatch, StableRowIndex};
+
         let Some((gpu, pipelines, mut renderer)) = headless_env() else {
             eprintln!("SKIP: GPU adapter unavailable");
             return;
@@ -1318,11 +1377,28 @@ mod cache_invalidated_pins {
         input.hovered_cell = None;
         set_cursor(&mut input, 2, 6, CursorShape::Block, true);
 
+        let cell_bg = input.content.cells[0].bg;
+        // SEARCH_MATCH_BG from prepare/resolve.rs:14-18 — yellow-tinted.
+        let search_match_bg = rgb_to_f32(100, 100, 30);
+
+        // Search match covers row 2 cols 4-10 (focused index 999 = no focus).
+        let m = SearchMatch {
+            start_row: StableRowIndex(2),
+            start_col: 4,
+            end_row: StableRowIndex(2),
+            end_col: 10,
+        };
+        input.search = Some(crate::gpu::frame_input::FrameSearch::for_test(
+            vec![m],
+            999,
+            0,
+        ));
+
         renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, true);
         let frame1_bg_bytes = renderer.prepared.backgrounds.byte_len();
         assert!(frame1_bg_bytes > 0, "frame 1 must emit instances");
 
-        // Frame 2: cursor moves; content unchanged.
+        // Frame 2: cursor moves to (2, 4); content + search unchanged.
         set_cursor(&mut input, 2, 4, CursorShape::Block, true);
         renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, false);
 
@@ -1333,8 +1409,28 @@ mod cache_invalidated_pins {
         assert_eq!(
             renderer.prepared.backgrounds.byte_len(),
             frame1_bg_bytes,
-            "frame 2 must re-emit the same number of per-cell instances; \
-             mismatch indicates the full prepare did not run"
+            "frame 2 must re-emit the same per-cell instance count"
+        );
+
+        // OLD cursor (2, 6) at (48.0, 32.0) — must now show SEARCH_MATCH_BG.
+        // NEW cursor (2, 4) at (32.0, 32.0) — must show block-cursor-suppressed cell.bg.
+        let bytes = renderer.prepared.backgrounds.as_bytes();
+
+        let old_bg = decode_bg_at_pos(bytes, 48.0, 32.0)
+            .expect("OLD cursor cell (2,6) MUST be in the buffer");
+        assert_eq!(
+            old_bg, search_match_bg,
+            "OLD cursor cell at (2,6) MUST emit SEARCH_MATCH_BG after cursor moves \
+             off — stale block-cursor suppression would leak without the gate"
+        );
+
+        let new_bg = decode_bg_at_pos(bytes, 32.0, 32.0)
+            .expect("NEW cursor cell (2,4) MUST be in the buffer");
+        assert_eq!(
+            new_bg,
+            rgb_to_f32(cell_bg.r, cell_bg.g, cell_bg.b),
+            "NEW cursor cell at (2,4) MUST emit block-cursor-suppressed bg = cell.bg \
+             (search highlight suppressed by is_block_cursor_cell)"
         );
     }
 }

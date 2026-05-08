@@ -122,8 +122,10 @@ pub fn build_dirty_set(
             .iter()
             .filter(|d| d.line < num_rows)
             .count();
-        let cursor_contributed =
-            input.content.cursor.visible && input.content.cursor.line < num_rows;
+        // Trace the resolved cursor (mark-mode override applied) so the
+        // counter matches the actual dirty-set's row source — downstream
+        // logic dirties `resolved_cursor.line`, not raw terminal cursor.
+        let cursor_contributed = resolved_cursor.visible && resolved_cursor.line < num_rows;
         let pre = dirty.iter().filter(|d| **d).count();
         mark_selection_damage(dirty, prev_selection, new_selection);
         let post = dirty.iter().filter(|d| **d).count();
