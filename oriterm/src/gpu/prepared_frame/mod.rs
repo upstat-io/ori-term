@@ -314,9 +314,17 @@ impl PreparedFrame {
     /// Whether the terminal tier has rendered data from a prior frame.
     ///
     /// Used by the cursor-blink-only fast path to decide whether to skip
-    /// the full prepare pipeline and just update cursor instances.
+    /// the full prepare pipeline and just update cursor instances. Checks
+    /// every terminal-tier instance buffer because frames with all-default-bg
+    /// content emit zero background instances (the window clear color shows
+    /// through) but still populate `glyphs`/`subpixel_glyphs`/`color_glyphs`.
+    /// Keying only on `backgrounds` would block fast-path reuse for the
+    /// common case of text on default background.
     pub fn has_terminal_data(&self) -> bool {
         !self.backgrounds.is_empty()
+            || !self.glyphs.is_empty()
+            || !self.subpixel_glyphs.is_empty()
+            || !self.color_glyphs.is_empty()
     }
 
     /// Reset all buffers for the next frame, retaining allocated memory.
