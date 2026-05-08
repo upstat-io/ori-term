@@ -335,9 +335,10 @@ impl App {
 
             // Track text-blink opacity for multi-pane pane-cache invalidation
             // (read by `redraw/multi_pane/mod.rs` `blink_opacity_changed`).
-            // The single-pane "blink-changed" predicate moved into
-            // `WindowRenderer::has_visual_change` (frame_prep.rs), which
-            // chrome queries via `cache_invalidated_this_frame()`.
+            // The single-pane "blink-changed" predicate now flows through
+            // `WindowRenderer::has_dispatch_change` (the dispatch fingerprint
+            // hashes `text_blink_opacity`), which chrome queries via
+            // `cache_invalidated_this_frame()`.
             ctx.prev_text_blink_opacity = text_blink_opacity;
 
             // Chrome: tab bar, overlays, search bar, status bar, window border.
