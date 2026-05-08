@@ -30,7 +30,7 @@ impl<S: EffectSink> Term<S> {
         }
         let bg = self.effective_background();
         // Snapshot the negotiated color-register count at DCS-hook time —
-        // mirrors xterm's `init_graphic` (`graphics.c:802-812`) so
+        // matches xterm `init_graphic` (`graphics.c:802-812`) so
         // in-flight XTSMGRAPHICS mutations during this DCS do NOT
         // retroactively change the active parser. The decoder honors
         // the count by wrapping `#idx` register indices modulo this

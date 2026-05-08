@@ -559,7 +559,7 @@ fn kitty_alt_ctrl_a() {
 
 #[test]
 fn kitty_multi_char_text_passthrough() {
-    // Kitty: multi-char Character key → send as text (can't encode as single codepoint).
+    // Per the kitty spec, multi-char Character key → send as text (can't encode as single codepoint).
     let r = enc_text(
         Key::Character("ñ".into()),
         Modifiers::empty(),

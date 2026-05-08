@@ -17,10 +17,21 @@ export RUSTFLAGS="${RUSTFLAGS:+$RUSTFLAGS }-D warnings"
 # move post-test to detect genuine new sequences.
 rm -rf target/spec-chain-uncataloged
 
-# Spec-conformance coverage gates run FIRST — same ordering as CI's
-# `test-linux` job ("Spec coverage lint" + "Audit-files lint" before
-# "Run tests"). Fail-fast on catalog drift so we don't burn a 5-minute
-# test run before discovering the citation scanner missed a row.
+# prose-lint runs FIRST — fail-fast on authored-doc style drift before
+# burning 5-min on tests OR letting the assistant claim "test-all green"
+# while a prose-lint violation slips into a /commit-push pre-flight.
+# Duplicates the build-all.sh gate intentionally: test-all runs after every
+# change per CLAUDE.md §Commands and is the canonical "everything green"
+# check; prose-lint must be impossible to bypass via the test-all path.
+echo "=== prose-lint (term_repo) ==="
+if ! python3 scripts/prose-lint.py .; then
+    echo "prose-lint failed — see violations above."
+    exit 1
+fi
+
+echo ""
+# Spec-conformance coverage gates run after prose-lint — same ordering
+# CI uses to fail-fast on doc + catalog drift before any cargo work.
 echo "=== spec-coverage-report --check (static gates) ==="
 cargo run --quiet -p oriterm_test_support --bin spec-coverage-report -- --check
 

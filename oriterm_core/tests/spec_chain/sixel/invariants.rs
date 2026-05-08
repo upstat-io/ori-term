@@ -277,7 +277,7 @@ fn raster_attrs_exceeding_max_pixel_bytes_aborts_cleanly() {
 /// defines palette[0] red and bare-selects `#16` (which under count=16 wraps
 /// to register 0). The decoded image's drawn pixel must be red.
 ///
-/// Mirrors xterm `graphics_sixel.c:697-698` (`s_Pregister %= valid_registers;`)
+/// Matches xterm `graphics_sixel.c:697-698` (`s_Pregister %= valid_registers;`)
 /// and `graphics.c:802-812` (snapshot at `init_graphic` time). Without the
 /// wrap, `current_color = 16` would draw palette[16] which holds a zeroed
 /// VT340 default beyond the 16-entry table = black, NOT red.

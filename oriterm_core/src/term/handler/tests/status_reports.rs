@@ -824,7 +824,7 @@ fn xtsmgraphics_pi2_pa4_read_max_returns_width_height() {
 
 #[test]
 fn xtsmgraphics_pi2_pa2_reset_replies_status3_no_geometry() {
-    // xterm `charproc.c:5211` Pa=2 falls through to empty-block; status=3.
+    // Per xterm `charproc.c:5211`: Pa=2 falls through to empty-block; status=3.
     let (mut t, listener) = term_with_recorder();
     feed(&mut t, b"\x1b[?2;2;0S");
 

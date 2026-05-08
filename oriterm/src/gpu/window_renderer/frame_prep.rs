@@ -11,9 +11,16 @@ use super::helpers::{CombinedAtlasLookup, ensure_glyphs_cached, grid_raster_keys
 use super::{EMPTY_KEYS_CAP, WindowRenderer};
 
 impl WindowRenderer {
-    /// Whether visual-only state (selection) changed since the last frame.
+    /// Whether visual-only state (selection, blink, hover, search,
+    /// pane focus dim, subpixel positioning) changed since the last
+    /// frame. Visual changes need a full instance rebuild but NOT
+    /// re-shaping.
     ///
-    /// Visual changes need a full instance rebuild but NOT re-shaping.
+    /// Every dispatch-predicate field that affects per-cell instances
+    /// AND can change while the snapshot itself stays put is checked
+    /// here. Missing fields would cause the cursor-blink-only fast
+    /// path to skip prepare entirely, leaving stale per-cell state
+    /// (highlights, dim alpha, etc.) on the cached terminal tier.
     fn has_visual_change(&self, input: &FrameInput) -> bool {
         let new_sel = input
             .selection
@@ -22,9 +29,50 @@ impl WindowRenderer {
         if new_sel != self.prepared.prev_selection_snapshot {
             return true;
         }
-        // Text blink opacity change requires full instance rebuild so
-        // BLINK-flagged cells get the updated alpha.
-        (input.text_blink_opacity - self.prepared.prev_text_blink_opacity).abs() > 0.001
+        if (input.text_blink_opacity - self.prepared.prev_text_blink_opacity).abs() > 0.001 {
+            return true;
+        }
+        if (input.fg_dim - self.prepared.prev_fg_dim).abs() > 0.001 {
+            return true;
+        }
+        if input.subpixel_positioning != self.prepared.prev_subpixel_positioning {
+            return true;
+        }
+        if input.hovered_cell != self.prepared.prev_hovered_cell {
+            return true;
+        }
+        if input.search_fingerprint() != self.prepared.prev_search_fingerprint {
+            return true;
+        }
+        false
+    }
+
+    /// Whether geometry/topology state changed since the last frame.
+    ///
+    /// The cursor-blink-only fast path bypasses the full dispatch
+    /// predicate; if any of `viewport`, `cell_size`, `content_cols`,
+    /// `content_rows`, or `origin` differs between frames, the saved
+    /// geometry is stale and the fast path would render at the wrong
+    /// positions.
+    fn has_geometry_change(&self, input: &FrameInput, origin: (f32, f32)) -> bool {
+        if self.prepared.viewport != input.viewport {
+            return true;
+        }
+        if self.prepared.prev_cell_size != Some(input.cell_size) {
+            return true;
+        }
+        if self.prepared.prev_content_cols != Some(input.content_cols) {
+            return true;
+        }
+        if self.prepared.prev_content_rows != Some(input.content_rows) {
+            return true;
+        }
+        if (self.prepared.prev_origin.0 - origin.0).abs() > f32::EPSILON
+            || (self.prepared.prev_origin.1 - origin.1).abs() > f32::EPSILON
+        {
+            return true;
+        }
+        false
     }
 
     /// Run the Prepare phase: shape text and build GPU instance buffers.
@@ -66,7 +114,12 @@ impl WindowRenderer {
         let cols = input.columns();
         let cached_valid = self.shaping.frame.rows() > 0 && self.shaping.frame.cols() == cols;
         let visual_changed = self.has_visual_change(input);
-        if !content_changed && !visual_changed && cached_valid && self.prepared.has_terminal_data()
+        let geometry_changed = self.has_geometry_change(input, origin);
+        if !content_changed
+            && !visual_changed
+            && !geometry_changed
+            && cached_valid
+            && self.prepared.has_terminal_data()
         {
             self.atlas.begin_frame();
             self.subpixel_atlas.begin_frame();

@@ -1,8 +1,8 @@
 //! Animation support for the image cache.
 //!
 //! Timer-driven frame switching for animated images (GIF multi-frame,
-//! Kitty `a=animate`). Only images visible in the viewport are animated
-//! to save CPU/GPU.
+//! kitty graphics protocol `a=animate`). Only images visible in the
+//! viewport are animated to save CPU/GPU.
 
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;

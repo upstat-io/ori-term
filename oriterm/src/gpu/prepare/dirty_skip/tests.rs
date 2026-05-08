@@ -25,14 +25,139 @@ fn snap(start: usize, end: usize) -> SelectionDamageSnapshot {
 }
 
 /// Helper: call `build_dirty_set` with a reusable scratch buffer and return it.
+/// Uses the raw `input.content.cursor` as the resolved cursor (no mark mode
+/// override applies in these tests).
 fn dirty_set(
     input: &FrameInput,
     num_rows: usize,
     prev_sel: Option<SelectionDamageSnapshot>,
 ) -> Vec<bool> {
     let mut buf = Vec::new();
-    build_dirty_set(input, num_rows, prev_sel, &mut buf);
+    let resolved = input.content.cursor;
+    build_dirty_set(input, num_rows, &resolved, prev_sel, None, None, &mut buf);
     buf
+}
+
+/// Helper: call `build_dirty_set` with the previous-cursor-row argument.
+fn dirty_set_with_prev_cursor(
+    input: &FrameInput,
+    num_rows: usize,
+    prev_sel: Option<SelectionDamageSnapshot>,
+    prev_cursor_line: Option<usize>,
+) -> Vec<bool> {
+    let mut buf = Vec::new();
+    let resolved = input.content.cursor;
+    build_dirty_set(
+        input,
+        num_rows,
+        &resolved,
+        prev_sel,
+        prev_cursor_line,
+        None,
+        &mut buf,
+    );
+    buf
+}
+
+/// Helper: call `build_dirty_set` with the previous-hovered-cell argument.
+fn dirty_set_with_prev_hover(
+    input: &FrameInput,
+    num_rows: usize,
+    prev_hovered_cell: Option<(usize, usize)>,
+) -> Vec<bool> {
+    let mut buf = Vec::new();
+    let resolved = input.content.cursor;
+    build_dirty_set(
+        input,
+        num_rows,
+        &resolved,
+        None,
+        None,
+        prev_hovered_cell,
+        &mut buf,
+    );
+    buf
+}
+
+/// Regression: BUG-06-027 — when the cursor moves between frames, the
+/// previous cursor row must also be marked dirty so its cells regenerate
+/// without inheriting the "with cursor" per-cell colors that were baked
+/// into `saved_tier`.
+#[test]
+fn cursor_move_dirties_previous_cursor_row() {
+    let mut input = FrameInput::test_grid(10, 5, "");
+    input.content.all_dirty = false;
+    input.content.cursor = RenderableCursor {
+        line: 2,
+        column: Column(0),
+        visible: true,
+        shape: CursorShape::Block,
+    };
+    input.content.damage.clear();
+
+    // Previous frame had cursor on row 0; current frame moved it to row 2.
+    let dirty = dirty_set_with_prev_cursor(&input, 5, None, Some(0));
+    assert!(dirty[0], "previous cursor row (0) marked dirty after move");
+    assert!(dirty[2], "current cursor row (2) always dirty");
+    assert!(!dirty[1], "non-cursor row stays clean");
+}
+
+/// Regression: BUG-06-027 — when the hovered cell moves, both the
+/// previous and current hover rows must be dirtied so the hyperlink
+/// solid-underline decoration migrates with the mouse without falling
+/// back to a full rebuild.
+#[test]
+fn hover_move_dirties_previous_and_current_hover_rows() {
+    let mut input = FrameInput::test_grid(10, 5, "");
+    input.content.all_dirty = false;
+    input.content.cursor.visible = false;
+    input.content.damage.clear();
+    input.hovered_cell = Some((3, 4));
+
+    // Previous hover at row 1, new hover at row 3. Both rows must be
+    // dirty so the hover decoration is regenerated correctly.
+    let dirty = dirty_set_with_prev_hover(&input, 5, Some((1, 2)));
+    assert!(dirty[1], "previous hover row dirty");
+    assert!(dirty[3], "current hover row dirty");
+    assert!(!dirty[0]);
+    assert!(!dirty[2]);
+    assert!(!dirty[4]);
+}
+
+/// Regression: BUG-06-027 negative pin — when the hovered cell does not
+/// change, `build_dirty_set` must not dirty hover rows.
+#[test]
+fn hover_stationary_does_not_dirty_hover_rows() {
+    let mut input = FrameInput::test_grid(10, 5, "");
+    input.content.all_dirty = false;
+    input.content.cursor.visible = false;
+    input.content.damage.clear();
+    input.hovered_cell = Some((2, 3));
+
+    let dirty = dirty_set_with_prev_hover(&input, 5, Some((2, 3)));
+    assert!(dirty.iter().all(|&d| !d), "no rows dirtied");
+}
+
+/// Regression: BUG-06-027 negative pin — when the cursor stays put,
+/// `build_dirty_set` must not gratuitously dirty extra rows.
+#[test]
+fn cursor_stationary_does_not_dirty_previous_cursor_row() {
+    let mut input = FrameInput::test_grid(10, 5, "");
+    input.content.all_dirty = false;
+    input.content.cursor = RenderableCursor {
+        line: 2,
+        column: Column(0),
+        visible: true,
+        shape: CursorShape::Block,
+    };
+    input.content.damage.clear();
+
+    let dirty = dirty_set_with_prev_cursor(&input, 5, None, Some(2));
+    assert!(dirty[2], "current cursor row dirty");
+    assert!(!dirty[0]);
+    assert!(!dirty[1]);
+    assert!(!dirty[3]);
+    assert!(!dirty[4]);
 }
 
 #[test]

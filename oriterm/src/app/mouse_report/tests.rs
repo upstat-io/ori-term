@@ -1470,7 +1470,7 @@ fn tier2_alt_scroll_payload_alt_screen_plus_alternate_scroll_app_cursor_emits_ss
 /// Catalog row: DEC-ALT-SCROLL
 /// xterm spec: ctlseqs.txt:2465-2473 (`Cursor Up | CSI A | SS3 A` table).
 /// xterm impl: scrollbar.c:711-727 (`MODE_DECCKM ? ANSI_SS3 : ANSI_CSI`).
-/// Ghostty impl: Surface.zig:3492-3506 (mirrors xterm DECCKM split).
+/// Ghostty impl: Surface.zig:3492-3506 (parity with xterm DECCKM split).
 /// Pinned by (Phase 1.75 consensus).
 #[test]
 fn tier2_alt_scroll_payload_app_cursor_set_scroll_up_emits_ss3_a() {
@@ -1620,7 +1620,7 @@ fn tier2_alt_scroll_payload_with_mouse_report_click_still_returns_some() {
 /// Catalog row: DEC-ALT-SCROLL
 /// xterm spec: ctlseqs.txt:2465-2473 (`Cursor Up | CSI A | SS3 A` table).
 /// xterm impl: scrollbar.c:711-727 (`MODE_DECCKM ? ANSI_SS3 : ANSI_CSI`).
-/// Ghostty impl: Surface.zig:3492-3506 (mirrors xterm DECCKM split).
+/// Ghostty impl: Surface.zig:3492-3506 (parity with xterm DECCKM split).
 /// Pinned by §1B — load-bearing property: prevents
 /// regression to hardcoded-SS3 implementation.
 #[test]

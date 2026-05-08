@@ -9,6 +9,7 @@ mod selection_damage;
 
 use std::ops::Range;
 
+use log::trace;
 use oriterm_core::{CellFlags, CursorShape, RenderableCell};
 
 use super::emit::{build_cursor, draw_prompt_markers, draw_url_hover_underline};
@@ -183,6 +184,10 @@ fn process_incremental_cells(
     let mut row_is_clean = false;
     let mut row_off_screen = false;
 
+    let mut clean_replay_rows = 0usize;
+    let mut dirty_emitted_rows = 0usize;
+    let mut emitted_cells = 0usize;
+
     let mut i = 0;
     while i < cells.len() {
         let cell = &cells[i];
@@ -196,12 +201,14 @@ fn process_incremental_cells(
             let is_dirty = ctx.frame.scratch_dirty.get(row).copied().unwrap_or(true);
             if !is_dirty {
                 replay_clean_row(ctx.frame, row);
+                clean_replay_rows += 1;
                 row_is_clean = true;
                 while i < cells.len() && cells[i].line == row {
                     i += 1;
                 }
                 continue;
             }
+            dirty_emitted_rows += 1;
             row_start = BufferLengths::capture(ctx.frame);
             row_is_clean = false;
             let row_y = (oy + row as f32 * ch).round();
@@ -225,7 +232,12 @@ fn process_incremental_cells(
         // Round Y to integer pixels (see prepare/mod.rs for rationale).
         let y = (oy + row as f32 * ch).round();
         super::emit_cell::emit_cell(cell, x, y, ctx);
+        emitted_cells += 1;
     }
+
+    trace!(
+        "process_incremental_cells clean_rows={clean_replay_rows} dirty_rows={dirty_emitted_rows} emitted_cells={emitted_cells}"
+    );
 
     RowLoopResult {
         current_row,
@@ -261,7 +273,22 @@ pub(crate) fn fill_frame_incremental(
     // Setup that must read frame fields before frame is moved into ctx.
     let num_rows = input.rows();
     let prev_sel = frame.prev_selection_snapshot;
-    build_dirty_set(input, num_rows, prev_sel, &mut frame.scratch_dirty);
+    let prev_cursor_line = frame.prev_cursor_line;
+    // Resolve cursor BEFORE build_dirty_set so the dirty-set tracks the
+    // actually-rendered cursor row (which may be the mark-mode cursor)
+    // rather than the raw terminal cursor — otherwise the wrong row's
+    // per-cell colors get the cursor-cell exclusion treatment.
+    let resolved_cursor = resolve_cursor(&input.content.cursor, input.mark_cursor.as_ref());
+    let prev_hovered_cell = frame.prev_hovered_cell;
+    build_dirty_set(
+        input,
+        num_rows,
+        &resolved_cursor,
+        prev_sel,
+        prev_cursor_line,
+        prev_hovered_cell,
+        &mut frame.scratch_dirty,
+    );
 
     let mut ctx = EmitCtx {
         fg_dim: input.fg_dim,
@@ -270,7 +297,7 @@ pub(crate) fn fill_frame_incremental(
         palette: &input.palette,
         sel: input.selection.as_ref(),
         search: input.search.as_ref(),
-        cursor: resolve_cursor(&input.content.cursor, input.mark_cursor.as_ref()),
+        cursor: resolved_cursor,
         cursor_opacity,
         hovered_cell: input.hovered_cell,
         cell_size: &input.cell_size,

@@ -134,6 +134,35 @@ impl FrameSearch {
         &self.query
     }
 
+    /// Stable damage fingerprint — `(match_count, focused, base_stable,
+    /// positions_hash)`. Used by the prepare phase's incremental dispatch
+    /// to detect when search highlight state has changed between frames;
+    /// per-cell colors bake the search match type at emit time, so any
+    /// change to this tuple must invalidate clean-row replay from
+    /// `saved_tier`.
+    ///
+    /// `positions_hash` is a content-aware hash of every match's
+    /// `(start_row, start_col, end_row, end_col)` so two distinct match
+    /// sets with the same `(count, focused, base_stable)` but different
+    /// positions produce different fingerprints.
+    pub fn damage_fingerprint(&self) -> (usize, usize, u64, u64) {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        for m in &self.matches {
+            m.start_row.0.hash(&mut hasher);
+            m.start_col.hash(&mut hasher);
+            m.end_row.0.hash(&mut hasher);
+            m.end_col.hash(&mut hasher);
+        }
+        let positions_hash = hasher.finish();
+        (
+            self.match_count,
+            self.focused,
+            self.base_stable,
+            positions_hash,
+        )
+    }
+
     /// Build a test search snapshot from manually constructed matches.
     ///
     /// `focused` is the index into `matches` of the focused match.

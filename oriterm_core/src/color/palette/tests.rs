@@ -667,7 +667,7 @@ fn set_default_changes_reset_baseline() {
 
 /// Regression: `ANSI_COLORS` previously held the GNOME/Tango
 /// palette under a "Standard xterm" comment. Yellow must be 0xCDCD00 (the
-/// xterm `ttyDefaultColors` value), not 0xC4A000 (Tango "Butter Dark" —
+/// value in xterm `ttyDefaultColors`), not 0xC4A000 (Tango "Butter Dark" —
 /// orange-tinged), the user-most-visible divergence.
 /// See: bug-tracker/plans/completed/00-overview.md
 #[test]
@@ -751,8 +751,8 @@ fn default_color_11_is_not_tango_bright_yellow() {
     assert_ne!(p.resolve(Color::Indexed(11)), tango_bright_yellow);
 }
 
-/// Regression: full 16-entry matrix pin against the canonical
-/// xterm `ttyDefaultColors` table (`xterm/charproc.c`). Catches any
+/// Regression: full 16-entry matrix pin against the canonical table
+/// in xterm `ttyDefaultColors` (`xterm/charproc.c`). Catches any
 /// single-entry drift the targeted pins above might miss.
 #[test]
 fn default_ansi_palette_xterm_reference_matches_all_entries() {

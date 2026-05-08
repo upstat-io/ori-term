@@ -210,9 +210,9 @@ pub struct Term<S: EffectSink> {
     /// `CSI ? 1 ; 3 ; <Pv> S` (set) when `Pv > 1 && Pv <= MAX`. Reset to
     /// default on RIS (`ESC c`) by `term::handler::esc::esc_reset_state`.
     /// Snapshotted into `SixelParser::new` at DCS-hook time so the active
-    /// decoder honors the negotiated count via xterm-style modulo wrap on
+    /// decoder honors the negotiated count via the xterm modulo wrap on
     /// color register indices in `crate::image::sixel::SixelParser::apply_color`,
-    /// mirroring xterm `graphics_sixel.c:697-698`. In-flight XTSMGRAPHICS
+    /// matching xterm `graphics_sixel.c:697-698`. In-flight XTSMGRAPHICS
     /// mutations during an active DCS sequence do NOT retroactively change
     /// the snapshotted count.
     color_register_count: u16,
@@ -242,7 +242,7 @@ pub struct Term<S: EffectSink> {
     colors_state: TermColorsState,
     /// XTCHECKSUM (`CSI Ps # y`) flag bitmask consumed by DECRQCRA.
     ///
-    /// Bit layout mirrors xterm patch-336 (`csPOSITIVE=1`, `csATTRIBS=2`,
+    /// Bit layout matches xterm patch-336 (`csPOSITIVE=1`, `csATTRIBS=2`,
     /// `csNOTRIM=4`, `csDRAWN=8`, `csBYTE=16`). Default `0` means
     /// negate-on, attribs-included, trim, DEC-translate — which matches
     /// xterm's default DECRQCRA reply.

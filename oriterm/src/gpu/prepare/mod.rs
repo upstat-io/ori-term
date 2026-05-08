@@ -133,13 +133,71 @@ pub fn prepare_frame_shaped_into(
     origin: (f32, f32),
     cursor_opacity: f32,
 ) {
-    let can_incremental = !input.content.all_dirty && out.saved_tier.has_cached_rows();
+    // Publish the previous frame's terminal-tier into saved_tier BEFORE
+    // the dispatch decision. Without this bootstrap, the incremental path
+    // is unreachable — saved_tier would only populate INSIDE the
+    // incremental branch itself, so frame 0 leaves saved_tier empty and
+    // every subsequent frame falls through to full rebuild. First call:
+    // terminal-tier and saved_tier both empty, swap is a no-op.
+    // Subsequent calls: previous frame's terminal-tier moves into
+    // saved_tier, making it visible to the can_incremental check.
+    out.save_terminal_tier();
+    // Invariant: save_terminal_tier swaps the live terminal-tier writers
+    // out into saved_tier and clears the live writers — the live writers
+    // MUST be empty here for the dispatch branches below to populate
+    // them from a clean baseline.
+    debug_assert!(
+        out.backgrounds.is_empty()
+            && out.glyphs.is_empty()
+            && out.subpixel_glyphs.is_empty()
+            && out.color_glyphs.is_empty(),
+        "save_terminal_tier must leave live terminal-tier writers empty"
+    );
+
+    // Frame-level state guards on the dispatch predicate. The incremental
+    // branch's `replay_clean_row` reuses per-cell instances frozen at the
+    // previous frame's emit time — any frame-level state that affects
+    // per-cell pixel positioning, color, or layout MUST match between
+    // frames, OR the upstream caller must signal `all_dirty=true` to
+    // force a full rebuild. Each guard's reasoning:
+    //   - viewport: pixel-dimension change (resize) repositions everything.
+    //   - cell_size: scale or font-metric change leaves viewport unchanged
+    //     but reflows per-cell pixel positions.
+    //   - content_cols/content_rows: snapshot grid topology can race
+    //     ahead of the pixel viewport during async resize; saved_tier
+    //     row_ranges encode the prior topology and don't transfer.
+    //   - origin: scroll without all_dirty would render saved cells at
+    //     the prior origin Y.
+    //   - text_blink_opacity: blink alpha is baked into per-cell instances
+    //     at emit time; build_dirty_set does NOT mark blink-sensitive
+    //     rows dirty on opacity change.
+    // Note: `hovered_cell` is NOT a dispatch guard. Hover state affects
+    // only the cells under the previous and current hover positions; we
+    // dirty those rows in `build_dirty_set` (O(1)) instead of falling
+    // back to a full rebuild (O(N)) for every mouse move.
+    let search_fingerprint = input.search_fingerprint();
+    let can_incremental = !input.content.all_dirty
+        && out.saved_tier.has_cached_rows()
+        && out.viewport == input.viewport
+        && out.prev_cell_size == Some(input.cell_size)
+        && out.prev_content_cols == Some(input.content_cols)
+        && out.prev_content_rows == Some(input.content_rows)
+        && (out.prev_origin.0 - origin.0).abs() < f32::EPSILON
+        && (out.prev_origin.1 - origin.1).abs() < f32::EPSILON
+        && (out.prev_text_blink_opacity - input.text_blink_opacity).abs() < f32::EPSILON
+        && (out.prev_fg_dim - input.fg_dim).abs() < f32::EPSILON
+        && out.prev_subpixel_positioning == input.subpixel_positioning
+        && out.prev_search_fingerprint == search_fingerprint;
 
     if can_incremental {
-        // Incremental path: save old instances, clear buffers, merge.
-        // save_terminal_tier swaps old data to saved_tier and clears writers.
-        out.save_terminal_tier();
-        out.cursors.clear();
+        // Incremental path: saved_tier is already populated by the
+        // unconditional save_terminal_tier above. clear_ephemeral_tiers
+        // drops cursor, chrome, and overlay tiers — without it those
+        // buffers accumulate frame-after-frame on this path, leaving
+        // stale glyphs visible when chrome or overlay content shrinks
+        // (e.g., shorter tab title after OSC 0/2 updates during
+        // high-throughput PTY output).
+        out.clear_ephemeral_tiers();
         out.image_quads_below.clear();
         out.image_quads_above.clear();
         out.viewport = input.viewport;
@@ -147,7 +205,13 @@ pub fn prepare_frame_shaped_into(
         out.was_incremental = true;
         fill_frame_incremental(input, atlas, shaped, out, origin, cursor_opacity);
     } else {
-        // Full rebuild path.
+        // Full rebuild path. The redundant terminal-tier double-clear
+        // (after save_terminal_tier) is accepted: a clear_non_terminal()
+        // helper would create a second sync point that drifts when new
+        // fields are added to PreparedFrame. The double-clear is O(1) on
+        // empty buffers, has no observable cost, and keeps clear() /
+        // clear_ephemeral_tiers() as the SSOT for buffer-clearing field
+        // lists.
         out.was_incremental = false;
         out.clear();
         out.viewport = input.viewport;
@@ -155,20 +219,42 @@ pub fn prepare_frame_shaped_into(
         fill_frame_shaped(input, atlas, shaped, out, origin, cursor_opacity);
     }
 
-    // Update selection and blink snapshots for next frame's damage tracking.
+    // Update post-prepare snapshots for next frame's dispatch. Every
+    // dispatch-predicate field needs a matching tail update or the
+    // predicate's invariant doesn't hold across frames.
     let num_rows = input.rows();
     out.prev_selection_snapshot = input
         .selection
         .as_ref()
         .and_then(|s| s.damage_snapshot(num_rows));
     out.prev_text_blink_opacity = input.text_blink_opacity;
+    out.prev_cell_size = Some(input.cell_size);
+    out.prev_origin = origin;
+    out.prev_content_cols = Some(input.content_cols);
+    out.prev_content_rows = Some(input.content_rows);
+    // Use the resolved cursor (mark-mode override applied) so the next
+    // frame's build_dirty_set dirties the correct previous-cursor row
+    // when the cursor moves.
+    let resolved_cursor = resolve_cursor(&input.content.cursor, input.mark_cursor.as_ref());
+    out.prev_cursor_line = if resolved_cursor.visible {
+        Some(resolved_cursor.line)
+    } else {
+        None
+    };
+    out.prev_hovered_cell = input.hovered_cell;
+    out.prev_fg_dim = input.fg_dim;
+    out.prev_subpixel_positioning = input.subpixel_positioning;
+    out.prev_search_fingerprint = search_fingerprint;
 }
 
 /// Cursor-blink-only fast path: rebuild only cursor instances.
 ///
 /// All non-cursor content (backgrounds, glyphs, images, chrome, overlays)
-/// is already rendered into the content cache texture. This function only
-/// updates the cursor instance buffer for the blink overlay pass.
+/// is already rendered into the content cache texture. This function
+/// rebuilds the cursor instance buffer plus other cursor-tier overlays
+/// (URL hover underline, prompt markers) that the full prepare path
+/// emits to the cursor buffer — without re-emitting them here, those
+/// overlays would disappear on every cursor blink.
 pub fn update_cursor_only(
     input: &FrameInput,
     out: &mut PreparedFrame,
@@ -200,6 +286,14 @@ pub fn update_cursor_only(
             cursor_opacity,
         );
     }
+
+    // URL hover underline + prompt markers also live on the cursors
+    // buffer (per `emit::draw_url_hover_underline` /
+    // `emit::draw_prompt_markers`); the cursors.clear() above drops them,
+    // so re-emit them on every cursor-only refresh.
+    let (ox, oy) = origin;
+    draw_url_hover_underline(input, out, ox, oy);
+    draw_prompt_markers(input, out, ox, oy);
 }
 
 /// Shaped rendering: emit background, glyph, and cursor instances from shaped data.

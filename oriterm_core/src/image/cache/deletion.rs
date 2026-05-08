@@ -12,7 +12,7 @@ use crate::grid::StableRowIndex;
 impl ImageCache {
     /// Remove placements that intersect the cell at `(col, row)`.
     ///
-    /// Kitty `a=d,d=c/C/p/P` — "Delete all placements that intersect
+    /// Per kitty `a=d,d=c/C/p/P` — "Delete all placements that intersect
     /// with the current cursor position / a specific cell"
     /// (graphics-protocol.rst §Deleting images, lines 762 and 764).
     /// A multi-cell placement spanning `(cell_col..cell_col+cols,
@@ -28,7 +28,7 @@ impl ImageCache {
 
     /// Remove placements that intersect `(col, row)` AND carry z-index `z`.
     ///
-    /// Kitty `a=d,d=q` / `d=Q` — cell intersection plus exact z-index match
+    /// Per kitty `a=d,d=q` / `d=Q` — cell intersection plus exact z-index match
     /// (graphics-protocol.rst line 765).
     pub(crate) fn remove_placements_at_cell_with_z(
         &mut self,
@@ -41,7 +41,7 @@ impl ImageCache {
 
     /// Remove placements visible in the given stable row range (inclusive).
     ///
-    /// Kitty `a=d,d=a` / `d=A` — "delete all placements visible on screen".
+    /// Per kitty `a=d,d=a` / `d=A` — "delete all placements visible on screen".
     pub(crate) fn remove_visible_placements(
         &mut self,
         viewport_top: StableRowIndex,
@@ -52,7 +52,7 @@ impl ImageCache {
 
     /// Remove placements of images whose id is in the inclusive range `[lo, hi]`.
     ///
-    /// Kitty `a=d,d=r` / `d=R` — delete images by id range (kitty 0.33.0+).
+    /// Per kitty `a=d,d=r` / `d=R` — delete images by id range (kitty 0.33.0+).
     pub(crate) fn remove_placements_in_id_range(
         &mut self,
         lo: ImageId,

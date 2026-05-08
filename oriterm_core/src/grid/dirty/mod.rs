@@ -7,6 +7,8 @@
 
 use std::ops::Range;
 
+use log::trace;
+
 /// Per-line damage bounds tracking dirty state and affected column range.
 ///
 /// When undamaged: `dirty == false`, column bounds are meaningless.
@@ -99,6 +101,7 @@ impl DirtyTracker {
     /// scroll, line-level erase.
     pub fn mark(&mut self, line: usize) {
         if let Some(bounds) = self.lines.get_mut(line) {
+            trace!("mark line={line}");
             bounds.mark_full(self.cols);
         }
     }
@@ -109,6 +112,7 @@ impl DirtyTracker {
     /// and partial erases where only part of the line changed.
     pub fn mark_cols(&mut self, line: usize, left: usize, right: usize) {
         if let Some(bounds) = self.lines.get_mut(line) {
+            trace!("mark_cols line={line} left={left} right={right}");
             bounds.expand(left, right);
         }
     }
@@ -120,6 +124,7 @@ impl DirtyTracker {
     /// take the fast path. Out-of-bounds indices are clamped silently.
     pub fn mark_range(&mut self, range: Range<usize>) {
         let len = self.lines.len();
+        trace!("mark_range start={} end={}", range.start, range.end);
         if range.start == 0 && range.end >= len {
             self.mark_all();
         } else {
@@ -133,6 +138,7 @@ impl DirtyTracker {
 
     /// Mark everything dirty.
     pub fn mark_all(&mut self) {
+        trace!("mark_all");
         self.all_dirty = true;
     }
 
@@ -178,6 +184,7 @@ impl DirtyTracker {
             cols: self.cols,
             pos: 0,
             all,
+            yielded: 0,
         }
     }
 
@@ -188,7 +195,12 @@ impl DirtyTracker {
     /// existing per-line damage is preserved — avoiding a full GPU rebuild
     /// on sub-cell-width resize events.
     pub fn resize(&mut self, num_lines: usize, cols: usize) {
-        let changed = self.cols != cols || self.lines.len() != num_lines;
+        let old_lines = self.lines.len();
+        let old_cols = self.cols;
+        let changed = old_cols != cols || old_lines != num_lines;
+        trace!(
+            "resize old_lines={old_lines} new_lines={num_lines} old_cols={old_cols} new_cols={cols} changed={changed}"
+        );
         self.cols = cols;
         self.lines.resize(num_lines, LineDamageBounds::clean());
         if changed {
@@ -207,6 +219,7 @@ pub struct DirtyIter<'a> {
     cols: usize,
     pos: usize,
     all: bool,
+    yielded: usize,
 }
 
 impl Iterator for DirtyIter<'_> {
@@ -218,6 +231,7 @@ impl Iterator for DirtyIter<'_> {
             self.pos += 1;
             let bounds = &mut self.lines[idx];
             if self.all || bounds.dirty {
+                self.yielded += 1;
                 let result = if self.all && !bounds.dirty {
                     // all_dirty but this line wasn't individually marked:
                     // report full-line damage.
@@ -244,9 +258,17 @@ impl Iterator for DirtyIter<'_> {
 impl Drop for DirtyIter<'_> {
     fn drop(&mut self) {
         // Clear any remaining dirty entries that were not iterated.
+        // Count both individually-marked AND all_dirty implicit lines so
+        // the trace reports the operator's mental model of "lines this
+        // drain dropped".
+        let mut cleared = 0usize;
         for bounds in &mut self.lines[self.pos..] {
+            if self.all || bounds.dirty {
+                cleared += 1;
+            }
             bounds.reset();
         }
+        trace!("drain end yielded={} drop_cleared={cleared}", self.yielded);
     }
 }
 

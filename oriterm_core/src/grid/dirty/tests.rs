@@ -1,4 +1,17 @@
+use log::{Level, LevelFilter};
+use oriterm_test_support::log_capture::{CapturedRecord, with_capture};
+
 use super::{DirtyLine, DirtyTracker};
+
+const TARGET: &str = "oriterm_core::grid::dirty";
+
+fn matching(records: &[CapturedRecord], substr: &str) -> Vec<CapturedRecord> {
+    records
+        .iter()
+        .filter(|r| r.target == TARGET && r.level == Level::Trace && r.message.contains(substr))
+        .cloned()
+        .collect()
+}
 
 #[test]
 fn new_tracker_is_clean() {
@@ -310,4 +323,196 @@ fn all_dirty_yields_full_line_bounds_for_unmarked_lines() {
     assert_eq!(items[0].right, 79);
     assert_eq!(items[1].left, 0);
     assert_eq!(items[1].right, 79);
+}
+
+// Trace-emission tests
+
+#[test]
+fn mark_emits_trace_with_line() {
+    with_capture(LevelFilter::Trace, |sink| {
+        let mut tracker = DirtyTracker::new(10, 80);
+        tracker.mark(5);
+
+        let recs = matching(&sink.records(), "mark line=5");
+        assert_eq!(
+            recs.len(),
+            1,
+            "expected one trace; got {:?}",
+            sink.records()
+        );
+        assert!(recs[0].message.contains("mark line=5"));
+    });
+}
+
+#[test]
+fn mark_cols_emits_trace_with_line_and_range() {
+    with_capture(LevelFilter::Trace, |sink| {
+        let mut tracker = DirtyTracker::new(10, 80);
+        tracker.mark_cols(3, 10, 20);
+
+        let recs = matching(&sink.records(), "mark_cols");
+        assert_eq!(recs.len(), 1);
+        assert!(recs[0].message.contains("line=3"));
+        assert!(recs[0].message.contains("left=10"));
+        assert!(recs[0].message.contains("right=20"));
+    });
+}
+
+#[test]
+fn mark_range_emits_trace_with_range() {
+    with_capture(LevelFilter::Trace, |sink| {
+        let mut tracker = DirtyTracker::new(10, 80);
+        tracker.mark_range(2..7);
+
+        let recs = matching(&sink.records(), "mark_range");
+        assert_eq!(recs.len(), 1);
+        assert!(recs[0].message.contains("start=2"));
+        assert!(recs[0].message.contains("end=7"));
+    });
+}
+
+#[test]
+fn mark_all_emits_trace() {
+    with_capture(LevelFilter::Trace, |sink| {
+        let mut tracker = DirtyTracker::new(10, 80);
+        tracker.mark_all();
+
+        let recs = matching(&sink.records(), "mark_all");
+        assert_eq!(recs.len(), 1);
+    });
+}
+
+#[test]
+fn resize_with_changed_dims_emits_trace() {
+    with_capture(LevelFilter::Trace, |sink| {
+        let mut tracker = DirtyTracker::new(5, 80);
+        tracker.resize(8, 120);
+
+        let recs = matching(&sink.records(), "resize");
+        assert_eq!(recs.len(), 1, "got records: {:?}", sink.records());
+        let msg = &recs[0].message;
+        assert!(msg.contains("old_lines=5"), "msg={msg}");
+        assert!(msg.contains("new_lines=8"), "msg={msg}");
+        assert!(msg.contains("old_cols=80"), "msg={msg}");
+        assert!(msg.contains("new_cols=120"), "msg={msg}");
+        assert!(msg.contains("changed=true"), "msg={msg}");
+    });
+}
+
+#[test]
+fn resize_with_unchanged_dims_emits_trace_with_changed_false() {
+    with_capture(LevelFilter::Trace, |sink| {
+        let mut tracker = DirtyTracker::new(5, 80);
+        tracker.resize(5, 80);
+
+        let recs = matching(&sink.records(), "resize");
+        assert_eq!(recs.len(), 1);
+        assert!(recs[0].message.contains("changed=false"));
+    });
+}
+
+#[test]
+fn drain_drop_emits_summary_with_yielded_and_cleared_counts() {
+    with_capture(LevelFilter::Trace, |sink| {
+        let mut tracker = DirtyTracker::new(10, 80);
+        tracker.mark(2);
+        tracker.mark(5);
+        tracker.mark(7);
+        let _consumed: Vec<DirtyLine> = tracker.drain().collect();
+
+        let recs = matching(&sink.records(), "drain end");
+        assert_eq!(recs.len(), 1);
+        let msg = &recs[0].message;
+        assert!(msg.contains("yielded=3"), "msg={msg}");
+        assert!(msg.contains("drop_cleared=0"), "msg={msg}");
+    });
+}
+
+#[test]
+fn drain_drop_partial_iter_reports_cleared_remainder() {
+    with_capture(LevelFilter::Trace, |sink| {
+        let mut tracker = DirtyTracker::new(10, 80);
+        tracker.mark(1);
+        tracker.mark(5);
+        tracker.mark(9);
+        {
+            let mut iter = tracker.drain();
+            let _first = iter.next().unwrap();
+            // Drop iter here.
+        }
+
+        let recs = matching(&sink.records(), "drain end");
+        assert_eq!(recs.len(), 1);
+        let msg = &recs[0].message;
+        assert!(msg.contains("yielded=1"), "msg={msg}");
+        assert!(msg.contains("drop_cleared=2"), "msg={msg}");
+    });
+}
+
+#[test]
+fn drain_drop_with_mark_all_counts_remainder() {
+    // When all_dirty is set, the drop-cleared count must include lines
+    // that aren't individually marked but ARE logically dirty under the
+    // all_dirty contract.
+    with_capture(LevelFilter::Trace, |sink| {
+        let mut tracker = DirtyTracker::new(5, 80);
+        tracker.mark_all();
+        {
+            let _iter = tracker.drain();
+            // Drop without iterating any line.
+        }
+
+        let recs = matching(&sink.records(), "drain end");
+        assert_eq!(recs.len(), 1);
+        let msg = &recs[0].message;
+        assert!(msg.contains("yielded=0"), "msg={msg}");
+        assert!(msg.contains("drop_cleared=5"), "msg={msg}");
+    });
+}
+
+#[test]
+fn out_of_bounds_mark_emits_no_trace() {
+    with_capture(LevelFilter::Trace, |sink| {
+        let mut tracker = DirtyTracker::new(5, 80);
+        tracker.mark(100);
+
+        let recs = matching(&sink.records(), "mark line=100");
+        assert!(
+            recs.is_empty(),
+            "expected no trace for OOB mark; got {:?}",
+            sink.records()
+        );
+    });
+}
+
+#[test]
+fn out_of_bounds_mark_cols_emits_no_trace() {
+    with_capture(LevelFilter::Trace, |sink| {
+        let mut tracker = DirtyTracker::new(5, 80);
+        tracker.mark_cols(100, 0, 5);
+
+        let recs = matching(&sink.records(), "mark_cols line=100");
+        assert!(recs.is_empty());
+    });
+}
+
+#[test]
+fn traces_disabled_at_warn_level_emit_nothing() {
+    with_capture(LevelFilter::Warn, |sink| {
+        let mut tracker = DirtyTracker::new(10, 80);
+        tracker.mark(1);
+        tracker.mark_cols(2, 0, 5);
+        tracker.mark_range(3..6);
+        tracker.mark_all();
+        tracker.resize(12, 80);
+        let _consumed: Vec<DirtyLine> = tracker.drain().collect();
+
+        let recs = sink.records();
+        assert!(
+            recs.iter()
+                .all(|r| r.target != TARGET || r.level < Level::Trace),
+            "expected zero trace records at Warn level; got {:?}",
+            recs
+        );
+    });
 }

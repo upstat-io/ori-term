@@ -50,8 +50,8 @@ pub struct ImageCache {
     ///
     /// Distinct from `last_accessed` (LRU tracking, bumped on access).
     /// `store_order[id]` is set once at `store()` time and never updated —
-    /// kitty `d=n/N` resolves "newest image with number I=" by this field,
-    /// not by LRU recency (see `newest_by_image_number`).
+    /// `d=n/N` in the kitty graphics protocol resolves "newest image with
+    /// number I=" by this field, not by LRU recency (see `newest_by_image_number`).
     store_order: HashMap<ImageId, u64>,
     /// Next value to assign in `store_order` when storing an image.
     next_store_order: u64,

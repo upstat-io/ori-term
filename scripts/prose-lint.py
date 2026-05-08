@@ -13,7 +13,8 @@ Two pattern packs, dispatched by file extension:
   - ori_term source (.rs under term_repo) \u2014 internal-vocabulary leaks into
     the public OSS repo: bug IDs, methodology vocabulary, reviewer-tool
     names, internal-doc paths, and unattributed references to other
-    terminal emulators (tmux, alacritty, wezterm, ghostty, ratatui, etc.).
+    terminal emulators (tmux, alacritty, wezterm, ghostty, kitty, rio,
+    xterm, xterm.js, ratatui, etc.).
     Reference-implementation citations are allowed when paired with a
     verifiable file:line path. Rule: project CLAUDE.md \u00a7"Public Repo
     Never Leaks Private-Repo Identifiers" + \u00a7"Reference Repos".
@@ -73,21 +74,25 @@ SOURCE_KEYWORD_PATTERNS = [
 # Reference-implementation attribution patterns. ori_term is a Rust
 # terminal emulator using wgpu / winit / vte / portable-pty, and the
 # project explicitly compares itself against established terminal
-# emulators (tmux, alacritty, wezterm, ghostty, ptyxis, notcurses) and
-# Rust UI frameworks (ratatui, crossterm) plus Go TUI libs (bubbletea,
-# lipgloss, termenv) — see CLAUDE.md §Reference Repos. Plain mentions
-# (`tmux's grid stores extended cells`, citing a reference path verbatim)
-# are fine. What gets flagged is *attribution form* — telling the reader
-# the design was copied from another terminal emulator without a
-# verifiable file:line citation. Allowed by exemption when the
-# attribution carries a verifiable file:line cite (e.g.
-# "WezTerm `term/src/terminalstate/performer.rs:473-478`") via the
+# emulators (tmux, alacritty, wezterm, ghostty, kitty, rio, xterm,
+# xterm.js, ptyxis, notcurses) and Rust UI frameworks (ratatui,
+# crossterm) plus Go TUI libs (bubbletea, lipgloss, termenv) — see
+# CLAUDE.md §Reference Repos. Plain mentions (`tmux's grid stores
+# extended cells`, citing a reference path verbatim) are fine. What
+# gets flagged is *attribution form* — telling the reader the design
+# was copied from another terminal emulator without a verifiable
+# file:line citation. Allowed by exemption when the attribution
+# carries a verifiable file:line cite (e.g. "WezTerm
+# `term/src/terminalstate/performer.rs:473-478`") via the
 # `reference-lang-source-cite` pattern below, or via explicit
 # `// prose-lint: allow`.
+#
+# `xterm.js` is matched as a single token (the `.js` suffix
+# distinguishes it from bare `xterm`); both forms are caught.
 _REFERENCE_LANGS = (
-    r"(?:tmux|[Aa]lacritty|[Ww]ez[Tt]erm|[Gg]hostty|[Pp]tyxis|"
-    r"[Nn]otcurses|[Rr]atatui|[Cc]rossterm|[Bb]ubbletea|[Ll]ipgloss|"
-    r"[Tt]ermenv)"
+    r"(?:tmux|[Aa]lacritty|[Ww]ez[Tt]erm|[Gg]hostty|[Kk]itty|[Rr]io|"
+    r"[Xx]term\.js|[Xx]term|[Pp]tyxis|[Nn]otcurses|[Rr]atatui|"
+    r"[Cc]rossterm|[Bb]ubbletea|[Ll]ipgloss|[Tt]ermenv)"
 )
 SOURCE_KEYWORD_PATTERNS.extend([
     (
@@ -121,9 +126,10 @@ SOURCE_KEYWORD_PATTERNS.extend([
 # is the canonical attribution form per CLAUDE.md §Reference Repos. Such a
 # line is an explicit, verifiable citation — not an unattributed copy claim —
 # so reference-impl-* patterns on the same line are suppressed.
-# Common terminal-emulator source extensions: Rust, Go, C, Zig, C++.
+# Common terminal-emulator source extensions: Rust, Go, C, C++, Zig,
+# Python (kitty), JavaScript/TypeScript (xterm.js).
 REFERENCE_IMPL_CITE_RE = re.compile(
-    rf"\b{_REFERENCE_LANGS}\s+`[^`]*\.(?:rs|go|c|h|cc|cpp|zig)`"
+    rf"\b{_REFERENCE_LANGS}\s+`[^`]*\.(?:rs|go|c|h|cc|cpp|zig|py|js|ts)`"
 )
 
 # Suppressions (false-positive guards)

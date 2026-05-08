@@ -21,7 +21,7 @@ pub const NUM_COLORS: usize = 270;
 /// Single source of truth so both sites cannot drift.
 pub const FALLBACK_COLOR: Rgb = Rgb { r: 0, g: 0, b: 0 };
 
-/// xterm `ttyDefaultColors` ANSI palette (indices 0–15).
+/// ANSI palette (indices 0–15) per xterm `ttyDefaultColors`.
 ///
 /// Source: `xterm/charproc.c` — the historical xterm reference table that
 /// the comment shipped before mistakenly claimed for the Tango
