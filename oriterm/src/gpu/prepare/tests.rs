@@ -5968,7 +5968,7 @@ fn focus_cursor_selection_input(shape: CursorShape, window_focused: bool) -> Fra
 /// instead of the focus-effective shape, so an unfocused window with a
 /// configured Block cursor (rendered as a hollow outline) suppressed
 /// selection inversion under the cursor cell. Fix: fold focus override into
-/// `resolve_cursor_state` (`prepare/mod.rs:116-118`) so `cursor.shape` IS
+/// `resolve_cursor_state` so the resolved `cursor.shape` IS
 /// the effective shape, then the predicate naturally evaluates `Block`-only
 /// for solid (focused) Block cursors. Pin asserts the failing case: cursor
 /// cell on selection on unfocused window inverts.

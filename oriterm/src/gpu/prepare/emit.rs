@@ -8,7 +8,7 @@ use oriterm_core::{CursorShape, Rgb};
 use super::super::atlas::AtlasKind;
 use super::super::frame_input::FrameInput;
 use super::super::prepared_frame::PreparedFrame;
-use super::{AtlasLookup, effective_cursor_shape, resolve_cursor_state};
+use super::{AtlasLookup, resolve_cursor_state};
 use crate::font::{FaceIdx, FontRealm, RasterKey, SyntheticFlags, subpx_bin, subpx_offset};
 use crate::gpu::instance_writer::{CLIP_UNCLIPPED, ScreenRect};
 use oriterm_ui::text::ShapedGlyph;
@@ -188,7 +188,10 @@ pub(super) fn emit_cursor_for_frame(
     if !cursor.visible || cursor_opacity <= 0.0 {
         return;
     }
-    let shape = effective_cursor_shape(&cursor, input.window_focused);
+    // resolve_cursor_state baked the focus-effective shape; read directly per
+    // its SSOT contract. Re-querying effective_cursor_shape here would
+    // duplicate the policy at a consumption site.
+    let shape = cursor.shape;
     let cw = input.cell_size.width;
     let ch = input.cell_size.height;
     let (ox, oy) = origin;
