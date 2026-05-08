@@ -21,7 +21,7 @@ impl WindowRenderer {
     /// here. Missing fields would cause the cursor-blink-only fast
     /// path to skip prepare entirely, leaving stale per-cell state
     /// (highlights, dim alpha, etc.) on the cached terminal tier.
-    fn has_visual_change(&self, input: &FrameInput) -> bool {
+    pub(crate) fn has_visual_change(&self, input: &FrameInput) -> bool {
         let new_sel = input
             .selection
             .as_ref()
@@ -30,6 +30,9 @@ impl WindowRenderer {
             return true;
         }
         if (input.text_blink_opacity - self.prepared.prev_text_blink_opacity).abs() > 0.001 {
+            return true;
+        }
+        if (input.palette.opacity - self.prepared.prev_palette_opacity).abs() > 0.001 {
             return true;
         }
         if (input.fg_dim - self.prepared.prev_fg_dim).abs() > 0.001 {

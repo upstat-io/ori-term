@@ -185,6 +185,7 @@ pub fn prepare_frame_shaped_into(
         && (out.prev_origin.0 - origin.0).abs() < f32::EPSILON
         && (out.prev_origin.1 - origin.1).abs() < f32::EPSILON
         && (out.prev_text_blink_opacity - input.text_blink_opacity).abs() < f32::EPSILON
+        && (out.prev_palette_opacity - input.palette.opacity).abs() < f32::EPSILON
         && (out.prev_fg_dim - input.fg_dim).abs() < f32::EPSILON
         && out.prev_subpixel_positioning == input.subpixel_positioning
         && out.prev_search_fingerprint == search_fingerprint;
@@ -228,6 +229,7 @@ pub fn prepare_frame_shaped_into(
         .as_ref()
         .and_then(|s| s.damage_snapshot(num_rows));
     out.prev_text_blink_opacity = input.text_blink_opacity;
+    out.prev_palette_opacity = input.palette.opacity;
     out.prev_cell_size = Some(input.cell_size);
     out.prev_origin = origin;
     out.prev_content_cols = Some(input.content_cols);

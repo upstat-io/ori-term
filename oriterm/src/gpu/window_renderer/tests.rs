@@ -689,4 +689,36 @@ mod cache_invalidated_pins {
              (multi-pane always rebuilds, no incremental fast path)"
         );
     }
+
+    #[test]
+    fn opacity_change_invalidates_cache() {
+        let Some((_gpu, _pip, renderer)) = headless_env() else {
+            eprintln!("SKIP: GPU adapter unavailable");
+            return;
+        };
+
+        let mut input = crate::gpu::frame_input::FrameInput::test_grid(10, 10, "");
+        
+        // Align input with PreparedFrame defaults so ONLY palette.opacity triggers change
+        input.text_blink_opacity = 1.0;
+        input.fg_dim = 1.0;
+        input.subpixel_positioning = false;
+        input.selection = None;
+        input.hovered_cell = None;
+        
+        // Default prepared frame has prev_palette_opacity = 1.0.
+        input.palette.opacity = 1.0;
+        assert!(!renderer.has_visual_change(&input), "1.0 to 1.0 is no change");
+
+        // Delta > 0.001 should invalidate
+        input.palette.opacity = 0.5;
+        assert!(
+            renderer.has_visual_change(&input),
+            "opacity change from 1.0 to 0.5 must invalidate visual cache"
+        );
+
+        // Epsilon boundary (delta < 0.001) should NOT invalidate
+        input.palette.opacity = 0.9995;
+        assert!(!renderer.has_visual_change(&input), "epsilon change should not invalidate");
+    }
 }

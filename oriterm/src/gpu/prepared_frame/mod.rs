@@ -131,6 +131,9 @@ pub struct PreparedFrame {
     /// Previous frame's text blink opacity — detects blink timer changes
     /// that require a full instance rebuild (not just cursor-only update).
     pub(crate) prev_text_blink_opacity: f32,
+    /// Previous frame's window opacity — detects focus changes that require
+    /// a full instance rebuild (updates `clear_color` in the prepare phase).
+    pub(crate) prev_palette_opacity: f32,
     /// Previous frame's cell metrics — invalidates [`SavedTerminalTier`]
     /// when scale, font, or DPI changes leave the pixel viewport
     /// unchanged but reposition cells. `None` before the first prepare;
@@ -220,6 +223,7 @@ impl PreparedFrame {
             saved_tier: SavedTerminalTier::new(),
             prev_selection_snapshot: None,
             prev_text_blink_opacity: 1.0,
+            prev_palette_opacity: 1.0,
             prev_cell_size: None,
             prev_origin: (0.0, 0.0),
             prev_content_cols: None,
@@ -270,6 +274,7 @@ impl PreparedFrame {
             saved_tier: SavedTerminalTier::new(),
             prev_selection_snapshot: None,
             prev_text_blink_opacity: 1.0,
+            prev_palette_opacity: 1.0,
             prev_cell_size: None,
             prev_origin: (0.0, 0.0),
             prev_content_cols: None,
