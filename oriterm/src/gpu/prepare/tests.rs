@@ -4333,7 +4333,7 @@ fn shaped_multi_row(
 /// `all_dirty=true` dispatches full-rebuild even when `saved_tier` is
 /// populated).
 ///
-/// See: bug-tracker/plans/BUG-06-027/
+/// See: bug-tracker/plans/completed/BUG-06-027/
 #[test]
 fn incremental_all_dirty_matches_full_rebuild() {
     let size_q6 = 768;
@@ -4752,7 +4752,7 @@ fn incremental_all_dirty_recovery_resumes_incremental() {
 /// then asserts `was_incremental` AND non-empty buffers AND output
 /// equivalence.
 ///
-/// See: bug-tracker/plans/BUG-06-027/
+/// See: bug-tracker/plans/completed/BUG-06-027/
 #[test]
 fn incremental_replay_clean_rows_matches_fresh_rebuild_output_across_all_buffers() {
     let size_q6 = 768;
@@ -5653,7 +5653,7 @@ mod dispatch_fingerprint {
     }
 
     /// Regression: BUG-06-030 — all 6 CellMetrics fields hashed (not just 3).
-    /// See: bug-tracker/plans/BUG-06-030/section-03-tdd-matrix.md
+    /// See: bug-tracker/plans/completed/BUG-06-030/section-03-tdd-matrix.md
     #[test]
     fn fingerprint_changes_with_cell_size_underline_offset() {
         let (mut input, origin) = baseline();
@@ -5838,7 +5838,7 @@ mod dispatch_fingerprint {
 
     /// Regression: BUG-06-030 — bitwise-exact via `.to_bits()`; `+0.0` and
     /// `-0.0` produce different fingerprints (one spurious rebuild on flip).
-    /// See: bug-tracker/plans/BUG-06-030/
+    /// See: bug-tracker/plans/completed/BUG-06-030/
     #[test]
     fn fingerprint_distinguishes_positive_zero_from_negative_zero() {
         let (mut input, origin) = baseline();

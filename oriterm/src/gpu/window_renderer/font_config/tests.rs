@@ -13,10 +13,16 @@ const TEST_DPI: f32 = 96.0;
 const TEST_FONT_SIZE_PT: f32 = 12.0;
 const TEST_FONT_WEIGHT: u16 = 400;
 
-/// Headless environment with UI font sizes populated.
-fn headless_with_ui_fonts() -> Option<(GpuState, GpuPipelines, WindowRenderer)> {
+/// Headless GPU state shared by every test in this file.
+fn headless_gpu() -> Option<(GpuState, GpuPipelines)> {
     let gpu = GpuState::new_headless().ok()?;
     let pipelines = GpuPipelines::new(&gpu);
+    Some((gpu, pipelines))
+}
+
+/// Headless environment with UI font sizes populated.
+fn headless_with_ui_fonts() -> Option<(GpuState, GpuPipelines, WindowRenderer)> {
+    let (gpu, pipelines) = headless_gpu()?;
     let font_set = FontSet::embedded();
     let font_collection = FontCollection::new(
         font_set.clone(),
@@ -131,11 +137,10 @@ fn set_hinting_and_format_noop_when_unchanged() {
 /// mask the reinject path under a font_set-sourced fallback.
 #[test]
 fn replace_font_collection_reinjects_emoji_into_current_ui_registry() {
-    let Some(gpu) = GpuState::new_headless().ok() else {
+    let Some((gpu, pipelines)) = headless_gpu() else {
         eprintln!("skipped: no GPU adapter available");
         return;
     };
-    let pipelines = GpuPipelines::new(&gpu);
 
     // Terminal font: FontSet::embedded() — TEST_EMOJI_DATA is its
     // one fallback. Source of the emoji that reinject propagates.

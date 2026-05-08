@@ -244,7 +244,7 @@ fn extend_from_shifts_overlay_draw_ranges_correctly() {
 
 /// Regression: BUG-06-030 — 9 enumerated prev_* fields replaced with single
 /// content-aware fingerprint; this test prevents accidental re-introduction.
-/// See: bug-tracker/plans/BUG-06-030/
+/// See: bug-tracker/plans/completed/BUG-06-030/
 #[test]
 fn enumerated_prev_fields_removed() {
     let manifest = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR set by cargo");

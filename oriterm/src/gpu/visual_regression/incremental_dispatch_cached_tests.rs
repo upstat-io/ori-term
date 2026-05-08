@@ -19,7 +19,7 @@ use crate::gpu::visual_regression::{
 /// saved_tier), AND `render_frame_cached` must produce pixel-identical
 /// output relative to Frame N for the same input.
 ///
-/// See: bug-tracker/plans/BUG-06-027/
+/// See: bug-tracker/plans/completed/BUG-06-027/
 #[test]
 fn incremental_dispatch_cached_render_path_matches_fresh_rebuild() {
     let config = GoldenLaneConfig::SPEC_DEFAULT;

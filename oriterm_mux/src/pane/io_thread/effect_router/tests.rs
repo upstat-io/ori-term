@@ -1011,7 +1011,7 @@ fn xtsmgraphics_byte_parse_emits_pty_write_response() {
 /// Distinguishes the kinds-array test (which proves preservation given an
 /// Answerback effect) from the real-byte-parse path (which proves the
 /// dispatch chain produces the effect when ENQ byte arrives at the mux).
-/// See: bug-tracker/plans/BUG-08-006/section-03-tdd-matrix.md
+/// See: bug-tracker/plans/completed/BUG-08-006/section-03-tdd-matrix.md
 #[test]
 fn enq_byte_through_router_emits_pty_write_with_answerback_bytes() {
     let (mut t, mux_rx, _wake) = make_router_harness();

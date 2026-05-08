@@ -2032,7 +2032,7 @@ fn daemon_host_request_cleanup_on_pane_close() {
 /// not publicly accessible, blocking e2e multi-client priority routing tests.
 /// This test proves that a second client can subscribe to a pane spawned by
 /// another client and receive its snapshots independently.
-/// See: bug-tracker/plans/BUG-11-046/00-overview.md
+/// See: bug-tracker/plans/completed/BUG-11-046/00-overview.md
 #[test]
 fn daemon_multi_client_subscribe_and_priority() {
     let daemon = TestDaemon::start();

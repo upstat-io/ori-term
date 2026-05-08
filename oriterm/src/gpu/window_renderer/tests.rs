@@ -192,7 +192,7 @@ fn opacity_change_invalidates_cache() {
 /// pass to run, NOT the cursor-only fast path. Calls `WindowRenderer::prepare`
 /// directly and asserts on `cache_invalidated_this_frame()` so the integrated
 /// dispatch semantic is exercised end-to-end.
-/// See: bug-tracker/plans/BUG-06-030/
+/// See: bug-tracker/plans/completed/BUG-06-030/
 #[cfg(feature = "gpu-tests")]
 #[test]
 fn fast_path_skipped_when_selection_changes() {
@@ -722,23 +722,26 @@ fn fast_path_taken_when_mark_cursor_active_and_terminal_cursor_moves() {
 }
 
 /// Decode an instance's bg_color from the InstanceWriter byte buffer.
-/// Layout (matches `prepare/tests.rs::decode_instance`):
-/// bytes 0-7: pos (x, y as f32); 8-15: size; 16-31: uv; 32-47: fg_color;
-/// 48-63: bg_color; 64: kind. INSTANCE_SIZE is 96 bytes per the GPU spec.
+///
+/// Uses `instance_writer::OFF_*` constants as the layout SSOT — the 96-byte
+/// record shape is owned by `instance_writer/mod.rs`.
 #[cfg(feature = "gpu-tests")]
 fn decode_bg_at_pos(bytes: &[u8], target_x: f32, target_y: f32) -> Option<[f32; 4]> {
-    const INSTANCE_SIZE: usize = 96;
+    use crate::gpu::instance_writer::{
+        INSTANCE_SIZE, OFF_BG_A, OFF_BG_B, OFF_BG_G, OFF_BG_R, OFF_POS_X, OFF_POS_Y,
+    };
+    let read = |off: usize| f32::from_le_bytes(bytes[off..off + 4].try_into().unwrap());
     let count = bytes.len() / INSTANCE_SIZE;
     for i in 0..count {
-        let off = i * INSTANCE_SIZE;
-        let pos_x = f32::from_le_bytes(bytes[off..off + 4].try_into().unwrap());
-        let pos_y = f32::from_le_bytes(bytes[off + 4..off + 8].try_into().unwrap());
-        if (pos_x - target_x).abs() < 0.01 && (pos_y - target_y).abs() < 0.01 {
+        let base = i * INSTANCE_SIZE;
+        if (read(base + OFF_POS_X) - target_x).abs() < 0.01
+            && (read(base + OFF_POS_Y) - target_y).abs() < 0.01
+        {
             return Some([
-                f32::from_le_bytes(bytes[off + 48..off + 52].try_into().unwrap()),
-                f32::from_le_bytes(bytes[off + 52..off + 56].try_into().unwrap()),
-                f32::from_le_bytes(bytes[off + 56..off + 60].try_into().unwrap()),
-                f32::from_le_bytes(bytes[off + 60..off + 64].try_into().unwrap()),
+                read(base + OFF_BG_R),
+                read(base + OFF_BG_G),
+                read(base + OFF_BG_B),
+                read(base + OFF_BG_A),
             ]);
         }
     }

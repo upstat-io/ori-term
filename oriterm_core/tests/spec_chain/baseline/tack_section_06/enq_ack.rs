@@ -13,7 +13,7 @@
 //! Replaces the load-bearing regression guard
 //! `ecma48_c0_enq_catalog_row_still_missing` that pinned the catalog status
 //! until the answerback dispatch chain landed.
-//! See: bug-tracker/plans/BUG-08-006/00-overview.md
+//! See: bug-tracker/plans/completed/BUG-08-006/00-overview.md
 
 use oriterm_core::effect::{Effect, PtyWriteKind};
 use oriterm_test_support::spec_chain::{
@@ -43,7 +43,7 @@ fn snapshot_visible_chars(harness: &SpecHarness) -> Vec<char> {
 /// byte-exact answerback emission with `PtyWriteKind::Answerback` kind.
 /// Side-effect clamps assert ENQ does NOT emit Host effects or mutate
 /// renderable state.
-/// See: bug-tracker/plans/BUG-08-006/section-03-tdd-matrix.md
+/// See: bug-tracker/plans/completed/BUG-08-006/section-03-tdd-matrix.md
 #[test]
 fn ecma48_c0_enq_drives_to_pty_write_apex() {
     let scenario = SpecScenario {
