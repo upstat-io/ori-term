@@ -269,25 +269,19 @@ pub(crate) fn fill_frame_incremental(
 
     // Setup that must read frame fields before frame is moved into ctx.
     let num_rows = input.rows();
-    let prev_sel = frame.prev_selection_snapshot;
-    // Derive previous-cursor line from the visibility-canonicalized SSOT.
-    // `Some(...)` already implies visible per the storage rule in
-    // `prepare_frame_shaped_into` / `update_cursor_only`, so no extra
-    // `.filter(|c| c.visible)` is needed here.
-    let prev_cursor_line = frame.prev_resolved_cursor.as_ref().map(|c| c.line);
+    // Snapshot prev-frame row-state inputs into a Copy struct so the
+    // immutable borrow of `frame` ends before `&mut frame.scratch_dirty`.
+    let prev_state = selection_damage::PrevFrameState::from_frame(frame);
     // Resolve cursor BEFORE build_dirty_set so the dirty-set tracks the
     // actually-rendered cursor row (which may be the mark-mode cursor)
     // rather than the raw terminal cursor — otherwise the wrong row's
     // per-cell colors get the cursor-cell exclusion treatment.
     let resolved_cursor = super::resolve_cursor_state(input);
-    let prev_hovered_cell = frame.prev_hovered_cell;
     build_dirty_set(
         input,
         num_rows,
         &resolved_cursor,
-        prev_sel,
-        prev_cursor_line,
-        prev_hovered_cell,
+        prev_state,
         &mut frame.scratch_dirty,
     );
 

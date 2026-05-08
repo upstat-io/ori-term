@@ -24,6 +24,28 @@ fn snap(start: usize, end: usize) -> SelectionDamageSnapshot {
     }
 }
 
+/// Build a `PrevFrameState` from individual fields for terse test setup.
+fn prev_state_of(
+    selection_snapshot: Option<SelectionDamageSnapshot>,
+    prev_cursor_line: Option<usize>,
+    prev_hovered_cell: Option<(usize, usize)>,
+) -> super::selection_damage::PrevFrameState {
+    // The visibility-canonicalized storage rule means Some(line) at the
+    // call site implies a visible cursor; reconstruct a RenderableCursor
+    // with visible=true so build_dirty_set's cursor_line() yields the line.
+    let resolved_cursor = prev_cursor_line.map(|line| RenderableCursor {
+        line,
+        column: Column(0),
+        shape: CursorShape::Block,
+        visible: true,
+    });
+    super::selection_damage::PrevFrameState {
+        selection_snapshot,
+        resolved_cursor,
+        hovered_cell: prev_hovered_cell,
+    }
+}
+
 /// Helper: call `build_dirty_set` with a reusable scratch buffer and return it.
 /// Uses the raw `input.content.cursor` as the resolved cursor (no mark mode
 /// override applies in these tests).
@@ -34,7 +56,13 @@ fn dirty_set(
 ) -> Vec<bool> {
     let mut buf = Vec::new();
     let resolved = input.content.cursor;
-    build_dirty_set(input, num_rows, &resolved, prev_sel, None, None, &mut buf);
+    build_dirty_set(
+        input,
+        num_rows,
+        &resolved,
+        prev_state_of(prev_sel, None, None),
+        &mut buf,
+    );
     buf
 }
 
@@ -51,9 +79,7 @@ fn dirty_set_with_prev_cursor(
         input,
         num_rows,
         &resolved,
-        prev_sel,
-        prev_cursor_line,
-        None,
+        prev_state_of(prev_sel, prev_cursor_line, None),
         &mut buf,
     );
     buf
@@ -71,9 +97,7 @@ fn dirty_set_with_prev_hover(
         input,
         num_rows,
         &resolved,
-        None,
-        None,
-        prev_hovered_cell,
+        prev_state_of(None, None, prev_hovered_cell),
         &mut buf,
     );
     buf

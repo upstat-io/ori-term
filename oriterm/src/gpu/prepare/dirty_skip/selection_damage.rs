@@ -6,6 +6,36 @@ use log::trace;
 use oriterm_core::RenderableCursor;
 
 use crate::gpu::frame_input::{FrameInput, SelectionDamageSnapshot};
+use crate::gpu::prepared_frame::PreparedFrame;
+
+/// Snapshot of the previous frame's row-state inputs that drive the
+/// dirty-set computation. Sourced from `PreparedFrame::prev_*` fields;
+/// derived once at the call site and passed by value so `build_dirty_set`
+/// doesn't need to borrow the whole frame (which conflicts with `&mut
+/// frame.scratch_dirty`).
+#[derive(Debug, Clone, Copy)]
+pub struct PrevFrameState {
+    pub selection_snapshot: Option<SelectionDamageSnapshot>,
+    pub resolved_cursor: Option<RenderableCursor>,
+    pub hovered_cell: Option<(usize, usize)>,
+}
+
+impl PrevFrameState {
+    pub fn from_frame(frame: &PreparedFrame) -> Self {
+        Self {
+            selection_snapshot: frame.prev_selection_snapshot,
+            resolved_cursor: frame.prev_resolved_cursor,
+            hovered_cell: frame.prev_hovered_cell,
+        }
+    }
+
+    /// Previous-cursor line for dirty-set row computation. The
+    /// visibility-canonicalized storage rule guarantees `Some(...)`
+    /// already implies visible, so no extra filter needed.
+    fn cursor_line(&self) -> Option<usize> {
+        self.resolved_cursor.as_ref().map(|c| c.line)
+    }
+}
 
 /// Build a fast dirty-row lookup from `RenderableContent` damage info.
 ///
@@ -27,27 +57,20 @@ use crate::gpu::frame_input::{FrameInput, SelectionDamageSnapshot};
 /// cursor row is dirtied so its cells regenerate without inheriting the
 /// "with cursor" per-cell colors baked into `saved_tier`.
 ///
-/// `prev_hovered_cell` is the hovered cell from the previous frame. The
-/// explicit-OSC-8 hyperlink hover path emits a SOLID underline rect into
-/// the terminal-tier `backgrounds` buffer (see `prepare/decorations.rs`);
-/// when the hover target moves, the rows containing the previous and
-/// current hovered cells must regenerate so the solid underline migrates
-/// with the mouse. Row-granular dirtying is O(1) per hover change versus
-/// the O(N) cost of full-rebuild dispatch invalidation.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "every parameter is independent frame state read by build_dirty_set; \
-              wrapping into a struct would just shift the constructor's argument list"
-)]
+/// `prev_state` is a snapshot of the previous frame's row-state inputs
+/// (selection, resolved cursor, hovered cell). The hover-delta and
+/// cursor-move rules consume each component; `cursor_line()` derives the
+/// row component for the cursor-move dirty rule.
 pub fn build_dirty_set(
     input: &FrameInput,
     num_rows: usize,
     resolved_cursor: &RenderableCursor,
-    prev_selection: Option<SelectionDamageSnapshot>,
-    prev_cursor_line: Option<usize>,
-    prev_hovered_cell: Option<(usize, usize)>,
+    prev_state: PrevFrameState,
     dirty: &mut Vec<bool>,
 ) {
+    let prev_selection = prev_state.selection_snapshot;
+    let prev_cursor_line = prev_state.cursor_line();
+    let prev_hovered_cell = prev_state.hovered_cell;
     dirty.clear();
     if input.content.all_dirty {
         dirty.resize(num_rows, true);
