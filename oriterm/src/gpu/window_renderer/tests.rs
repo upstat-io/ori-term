@@ -912,3 +912,269 @@ fn cell_colors_correct_after_cursor_moves_within_search_match() {
          (search highlight suppressed by is_block_cursor_cell)"
     );
 }
+
+// --- BUG-06-037: full predicate-clause matrix coverage for cache_invalidated_this_frame ---
+//
+// Pins every dispatch-fingerprint field (`compute_dispatch_fingerprint` at
+// `gpu/prepare/mod.rs:66`) and every top-level clause of `can_reuse_content_cache`
+// (at `frame_prep.rs:104-108`). Future field additions to either site that lack a
+// matching test will leave a coverage hole this matrix is designed to catch.
+
+/// Helper: assert that mutating a single dispatch-fingerprint input across two
+/// `has_dispatch_change` calls invalidates the cache. Mirrors the shape of
+/// `opacity_change_invalidates_cache` but parameterized by a mutation closure.
+#[cfg(feature = "gpu-tests")]
+fn assert_dispatch_field_change_invalidates<F>(label: &str, mutate: F)
+where
+    F: FnOnce(&mut crate::gpu::frame_input::FrameInput, &mut (f32, f32)),
+{
+    let Some((_gpu, _pip, mut renderer)) = headless_env() else {
+        eprintln!("SKIP: GPU adapter unavailable");
+        return;
+    };
+    let mut input = crate::gpu::frame_input::FrameInput::test_grid(10, 10, "");
+    let mut origin = (0.0_f32, 0.0_f32);
+    let baseline = crate::gpu::prepare::compute_dispatch_fingerprint(&input, origin);
+    renderer.prepared.prev_dispatch_fingerprint = Some(baseline);
+    assert!(
+        !renderer.has_dispatch_change(&input, origin),
+        "{label}: identical input must NOT invalidate fingerprint (sanity check)"
+    );
+    mutate(&mut input, &mut origin);
+    assert!(
+        renderer.has_dispatch_change(&input, origin),
+        "{label}: mutation must invalidate dispatch fingerprint"
+    );
+}
+
+// --- Geometry (10) ---
+
+#[cfg(feature = "gpu-tests")]
+#[test]
+fn viewport_width_change_invalidates_cache() {
+    assert_dispatch_field_change_invalidates("viewport.width", |input, _| {
+        input.viewport = ViewportSize::new(input.viewport.width + 1, input.viewport.height);
+    });
+}
+
+#[cfg(feature = "gpu-tests")]
+#[test]
+fn viewport_height_change_invalidates_cache() {
+    assert_dispatch_field_change_invalidates("viewport.height", |input, _| {
+        input.viewport = ViewportSize::new(input.viewport.width, input.viewport.height + 1);
+    });
+}
+
+#[cfg(feature = "gpu-tests")]
+#[test]
+fn cell_size_width_change_invalidates_cache() {
+    assert_dispatch_field_change_invalidates("cell_size.width", |input, _| {
+        input.cell_size.width += 0.5;
+    });
+}
+
+#[cfg(feature = "gpu-tests")]
+#[test]
+fn cell_size_height_change_invalidates_cache() {
+    assert_dispatch_field_change_invalidates("cell_size.height", |input, _| {
+        input.cell_size.height += 0.5;
+    });
+}
+
+#[cfg(feature = "gpu-tests")]
+#[test]
+fn cell_size_baseline_change_invalidates_cache() {
+    assert_dispatch_field_change_invalidates("cell_size.baseline", |input, _| {
+        input.cell_size.baseline += 0.5;
+    });
+}
+
+#[cfg(feature = "gpu-tests")]
+#[test]
+fn cell_size_underline_offset_change_invalidates_cache() {
+    assert_dispatch_field_change_invalidates("cell_size.underline_offset", |input, _| {
+        input.cell_size.underline_offset += 0.25;
+    });
+}
+
+#[cfg(feature = "gpu-tests")]
+#[test]
+fn cell_size_stroke_size_change_invalidates_cache() {
+    assert_dispatch_field_change_invalidates("cell_size.stroke_size", |input, _| {
+        input.cell_size.stroke_size += 0.25;
+    });
+}
+
+#[cfg(feature = "gpu-tests")]
+#[test]
+fn cell_size_strikeout_offset_change_invalidates_cache() {
+    assert_dispatch_field_change_invalidates("cell_size.strikeout_offset", |input, _| {
+        input.cell_size.strikeout_offset += 0.25;
+    });
+}
+
+#[cfg(feature = "gpu-tests")]
+#[test]
+fn content_cols_change_invalidates_cache() {
+    assert_dispatch_field_change_invalidates("content_cols", |input, _| {
+        input.content_cols += 1;
+    });
+}
+
+#[cfg(feature = "gpu-tests")]
+#[test]
+fn content_rows_change_invalidates_cache() {
+    assert_dispatch_field_change_invalidates("content_rows", |input, _| {
+        input.content_rows += 1;
+    });
+}
+
+// --- Origin (2) ---
+
+#[cfg(feature = "gpu-tests")]
+#[test]
+fn origin_x_change_invalidates_cache() {
+    assert_dispatch_field_change_invalidates("origin.0", |_, origin| {
+        origin.0 += 1.0;
+    });
+}
+
+#[cfg(feature = "gpu-tests")]
+#[test]
+fn origin_y_change_invalidates_cache() {
+    assert_dispatch_field_change_invalidates("origin.1", |_, origin| {
+        origin.1 += 1.0;
+    });
+}
+
+// --- Per-cell alpha multipliers (2 — palette.opacity already covered by `opacity_change_invalidates_cache`) ---
+
+#[cfg(feature = "gpu-tests")]
+#[test]
+fn text_blink_opacity_change_invalidates_cache() {
+    assert_dispatch_field_change_invalidates("text_blink_opacity", |input, _| {
+        input.text_blink_opacity = 0.5;
+    });
+}
+
+#[cfg(feature = "gpu-tests")]
+#[test]
+fn fg_dim_change_invalidates_cache() {
+    assert_dispatch_field_change_invalidates("fg_dim", |input, _| {
+        input.fg_dim = 0.5;
+    });
+}
+
+// --- Atlas routing (1) ---
+
+#[cfg(feature = "gpu-tests")]
+#[test]
+fn subpixel_positioning_change_invalidates_cache() {
+    assert_dispatch_field_change_invalidates("subpixel_positioning", |input, _| {
+        input.subpixel_positioning = !input.subpixel_positioning;
+    });
+}
+
+// --- Search (1) — SKIPPED: FrameSearch construction requires PaneSnapshot ---
+//
+// `FrameSearch::from_snapshot` is the only public constructor; it needs a
+// `PaneSnapshot` which requires PtySession-level setup. Adding a `#[cfg(test)]
+// pub fn new_test()` constructor to `FrameSearch` would expand BUG-06-037's
+// scope to `frame_input/search.rs` and is filed separately.
+//
+// Coverage rationale: `compute_dispatch_fingerprint` hashes
+// `input.search_fingerprint()` which returns `Option<(usize, usize, u64, u64)>`.
+// The Option discriminant flip (None → Some) and any tuple-component change
+// would invalidate the fingerprint by Hash trait derivation; the bitwise
+// hash is exercised by `palette.opacity` and other f32/Option-discriminant
+// fields above. The risk of an untested search-axis regression is bounded.
+
+// --- Top-level predicate clauses (3) ---
+
+/// Pin: passing `content_changed=true` to `prepare()` MUST invalidate the cache.
+#[cfg(feature = "gpu-tests")]
+#[test]
+fn content_changed_true_invalidates_cache() {
+    let Some((gpu, pipelines, mut renderer)) = headless_env() else {
+        eprintln!("SKIP: GPU adapter unavailable");
+        return;
+    };
+    let input = crate::gpu::frame_input::FrameInput::test_grid(10, 10, "");
+    let origin = (0.0_f32, 0.0_f32);
+    renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, true);
+    // Frame 2: content_changed=true forces full prepare even with identical input.
+    renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, true);
+    assert!(
+        renderer.cache_invalidated_this_frame(),
+        "content_changed=true MUST invalidate cache (top-level predicate clause)"
+    );
+}
+
+/// Pin: a fresh renderer (`cached_valid == false` because rows == 0) MUST
+/// invalidate on first prepare.
+#[cfg(feature = "gpu-tests")]
+#[test]
+fn cached_invalid_invalidates_cache() {
+    let Some((gpu, pipelines, mut renderer)) = headless_env() else {
+        eprintln!("SKIP: GPU adapter unavailable");
+        return;
+    };
+    let input = crate::gpu::frame_input::FrameInput::test_grid(10, 10, "");
+    let origin = (0.0_f32, 0.0_f32);
+    // First prepare on a fresh renderer: shaping.frame.rows() == 0 → !cached_valid → invalidate.
+    renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, false);
+    assert!(
+        renderer.cache_invalidated_this_frame(),
+        "fresh renderer (rows == 0 → !cached_valid) MUST invalidate cache"
+    );
+}
+
+/// Pin: !has_terminal_data — a renderer that has never run the full prepare
+/// pass (only cursor-only fast path attempted) has empty terminal data and
+/// MUST invalidate.
+#[cfg(feature = "gpu-tests")]
+#[test]
+fn no_terminal_data_invalidates_cache() {
+    let Some((gpu, pipelines, mut renderer)) = headless_env() else {
+        eprintln!("SKIP: GPU adapter unavailable");
+        return;
+    };
+    let input = crate::gpu::frame_input::FrameInput::test_grid(10, 10, "");
+    let origin = (0.0_f32, 0.0_f32);
+    // Frame 1: full prepare establishes terminal data + shaping cache.
+    renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, true);
+    // Force prepared frame to drop terminal data, then call prepare again.
+    // The has_terminal_data() check should see false → invalidate.
+    renderer.prepared.clear();
+    renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, false);
+    assert!(
+        renderer.cache_invalidated_this_frame(),
+        "!has_terminal_data MUST invalidate cache (top-level predicate clause)"
+    );
+}
+
+// --- Negative pin (≥1) ---
+
+/// Negative pin: mutating a FrameInput field that is NOT in the dispatch
+/// fingerprint AND NOT in row_state inputs MUST NOT invalidate the cache.
+/// `prompt_marker_rows` is rendered as decoration but is not currently
+/// hashed into `compute_dispatch_fingerprint`, making it the canonical
+/// "ignored field" for this negative pin.
+#[cfg(feature = "gpu-tests")]
+#[test]
+fn prompt_marker_rows_change_does_not_invalidate_dispatch() {
+    let Some((_gpu, _pip, mut renderer)) = headless_env() else {
+        eprintln!("SKIP: GPU adapter unavailable");
+        return;
+    };
+    let mut input = crate::gpu::frame_input::FrameInput::test_grid(10, 10, "");
+    let origin = (0.0_f32, 0.0_f32);
+    let baseline = crate::gpu::prepare::compute_dispatch_fingerprint(&input, origin);
+    renderer.prepared.prev_dispatch_fingerprint = Some(baseline);
+    input.prompt_marker_rows = vec![0, 1, 2];
+    assert!(
+        !renderer.has_dispatch_change(&input, origin),
+        "prompt_marker_rows mutation must NOT invalidate dispatch fingerprint \
+         (field is not in compute_dispatch_fingerprint hash)"
+    );
+}

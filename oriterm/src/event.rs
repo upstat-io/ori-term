@@ -24,7 +24,7 @@ pub(crate) enum TermEvent {
     /// Create a new window (keybinding action deferred to event loop).
     CreateWindow,
     /// Move a tab to a new window (context menu action deferred to event loop).
-    MoveTabToNewWindow(crate::session::TabId),
+    MoveTabToNewWindow(crate::session::TabId, Option<(i32, i32)>),
     /// Open the settings window (deferred from overlay dispatch to event loop).
     OpenSettings,
     /// Open a confirmation dialog as a real OS window.

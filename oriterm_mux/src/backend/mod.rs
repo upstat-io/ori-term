@@ -391,6 +391,21 @@ pub trait MuxBackend {
     /// All pane IDs currently stored in the backend.
     fn pane_ids(&self) -> Vec<PaneId>;
 
+    /// Subscribe to a pane's notification stream.
+    ///
+    /// In daemon mode, sends a `Subscribe` PDU and caches the initial snapshot.
+    /// In embedded mode, does nothing (already "subscribed" in-process).
+    fn subscribe(&mut self, _pane_id: PaneId) -> io::Result<()> {
+        Ok(())
+    }
+
+    /// Unsubscribe from a pane's notification stream.
+    ///
+    /// In daemon mode, sends an `Unsubscribe` PDU.
+    fn unsubscribe(&mut self, _pane_id: PaneId) -> io::Result<()> {
+        Ok(())
+    }
+
     // Event channel
 
     /// Event sender for spawning new panes (embedded: mpsc; client: None).

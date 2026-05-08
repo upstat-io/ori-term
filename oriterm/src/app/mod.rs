@@ -298,6 +298,14 @@ pub(crate) struct App {
     // EWMA-smoothed FPS for the debug overlay display.
     debug_fps: f32,
 
+    /// Serialized tab state claimed from a source process via CLI.
+    ///
+    /// Consumed during `try_init` to populate the session registry without
+    /// spawning a fresh shell. Base64-encoded JSON.
+    claimed_tabs: Option<String>,
+    /// Initial window position requested via CLI (e.g. for tear-off).
+    initial_position: Option<(i32, i32)>,
+
     // Pending Windows console handoff payload (Section 03.9 Phase 3).
     //
     // Set by `App::new_handoff` when entered via the `-Embedding` COM

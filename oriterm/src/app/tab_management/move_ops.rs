@@ -4,6 +4,7 @@
 
 use crate::session::TabId;
 use crate::window_manager::types::{ManagedWindow, WindowKind};
+use base64::{Engine as _, engine::general_purpose};
 
 use crate::app::App;
 
@@ -12,9 +13,15 @@ impl App {
     ///
     /// The actual tab move happens in `user_event()` where `ActiveEventLoop`
     /// is available.
-    pub(in crate::app) fn move_tab_to_new_window_deferred(&self, tab_id: TabId) {
+    pub(in crate::app) fn move_tab_to_new_window_deferred(
+        &self,
+        tab_id: TabId,
+        position: Option<(i32, i32)>,
+    ) {
         self.event_proxy
-            .send(crate::event::TermEvent::MoveTabToNewWindow(tab_id));
+            .send(crate::event::TermEvent::MoveTabToNewWindow(
+                tab_id, position,
+            ));
     }
 
     /// Move a tab to a new window.
@@ -29,6 +36,7 @@ impl App {
         &mut self,
         tab_id: TabId,
         event_loop: &winit::event_loop::ActiveEventLoop,
+        position: Option<(i32, i32)>,
     ) {
         // Refuse if this is the last tab in the entire session.
         let is_last = self.session.tab_count() <= 1;
@@ -40,9 +48,10 @@ impl App {
         let is_daemon = self.mux.as_ref().is_some_and(|m| m.is_daemon_mode());
 
         if is_daemon {
-            self.move_tab_to_new_window_daemon(tab_id);
+            self.move_tab_to_new_window_daemon(tab_id, position);
         } else {
             self.move_tab_to_new_window_embedded(tab_id, event_loop);
+            // position is handled by position_torn_off_window in embedded mode
         }
     }
 
@@ -52,7 +61,30 @@ impl App {
     /// the tab's panes to render in the new process. The local session is
     /// updated directly — no mux session sync needed (mux is a flat pane
     /// server, it doesn't know about tabs or windows).
-    pub(in crate::app) fn move_tab_to_new_window_daemon(&mut self, tab_id: TabId) {
+    pub(in crate::app) fn move_tab_to_new_window_daemon(
+        &mut self,
+        tab_id: TabId,
+        position: Option<(i32, i32)>,
+    ) {
+        // 1. Get the tab state for serialization.
+        let tab = match self.session.get_tab(tab_id) {
+            Some(t) => t.clone(),
+            None => {
+                log::error!("move_tab_to_new_window_daemon: tab {tab_id} not found");
+                return;
+            }
+        };
+
+        // 2. Serialize and base64 encode for CLI transfer.
+        let tab_json = match serde_json::to_vec(&tab) {
+            Ok(v) => v,
+            Err(e) => {
+                log::error!("move_tab_to_new_window_daemon: failed to serialize tab: {e}");
+                return;
+            }
+        };
+        let tabs_base64 = general_purpose::STANDARD.encode(tab_json);
+
         // Allocate a new local window and move the tab there.
         let new_session_wid = self.session.alloc_window_id();
         self.session
@@ -68,6 +100,15 @@ impl App {
             win.add_tab(tab_id);
         }
 
+        // Unsubscribe from the moved panes in the source process.
+        // The new process will re-subscribe during init.
+        let pane_ids = tab.all_panes();
+        if let Some(mux) = self.mux.as_mut() {
+            for pid in pane_ids {
+                let _ = mux.unsubscribe(pid);
+            }
+        }
+
         // Spawn a new oriterm process to render the new window.
         let exe = match std::env::current_exe() {
             Ok(p) => p,
@@ -81,7 +122,14 @@ impl App {
         cmd.arg("--connect")
             .arg(&socket_path)
             .arg("--window")
-            .arg(new_session_wid.raw().to_string());
+            .arg(new_session_wid.raw().to_string())
+            .arg("--tabs-json")
+            .arg(tabs_base64);
+
+        if let Some((x, y)) = position {
+            cmd.arg("--position").arg(format!("{x},{y}"));
+        }
+
         match cmd.spawn() {
             Ok(child) => {
                 log::info!(

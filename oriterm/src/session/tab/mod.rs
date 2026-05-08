@@ -19,7 +19,7 @@ const MAX_UNDO_ENTRIES: usize = 32;
 ///
 /// Owns the split tree, floating layer, active pane tracking, zoom state,
 /// and undo/redo for layout mutations.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Tab {
     /// Unique tab identifier (GUI-allocated).
     id: TabId,

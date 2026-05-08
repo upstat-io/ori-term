@@ -370,8 +370,8 @@ impl ApplicationHandler<TermEvent> for App {
             TermEvent::CreateWindow => {
                 self.create_window(event_loop);
             }
-            TermEvent::MoveTabToNewWindow(tab_id) => {
-                self.move_tab_to_new_window(tab_id, event_loop);
+            TermEvent::MoveTabToNewWindow(tab_id, position) => {
+                self.move_tab_to_new_window(tab_id, event_loop, position);
             }
             TermEvent::OpenSettings => {
                 self.open_settings_dialog(event_loop);

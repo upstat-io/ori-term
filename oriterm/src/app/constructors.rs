@@ -32,13 +32,15 @@ impl App {
     /// existing mux window; otherwise creates a new one during init.
     #[expect(
         clippy::too_many_arguments,
-        reason = "daemon constructor: event proxy, config, socket, window ID, profiling, latency"
+        reason = "daemon constructor: event proxy, config, socket, window ID, tabs JSON, position, profiling, latency"
     )]
     pub(crate) fn new_daemon(
         event_proxy: EventLoopProxy<TermEvent>,
         config: Config,
         socket_path: &std::path::Path,
         window_id: Option<u64>,
+        tabs_json: Option<String>,
+        position: Option<String>,
         profiling: bool,
         latency_log: bool,
     ) -> Self {
@@ -65,6 +67,8 @@ impl App {
         if let Some(wid) = window_id {
             app.active_window = Some(crate::session::WindowId::from_raw(wid));
         }
+        app.claimed_tabs = tabs_json;
+        app.initial_position = position.and_then(parse_position);
 
         app
     }
@@ -193,10 +197,20 @@ impl App {
             perf: PerfStats::new(profiling, latency_log),
             debug_overlay_enabled: false,
             debug_fps: 0.0,
+            claimed_tabs: None,
+            initial_position: None,
             #[cfg(target_os = "windows")]
             handoff_pending: None,
         }
     }
+}
+
+/// Parse a "x,y" string into (i32, i32).
+fn parse_position(s: String) -> Option<(i32, i32)> {
+    let mut parts = s.split(',');
+    let x = parts.next()?.parse().ok()?;
+    let y = parts.next()?.parse().ok()?;
+    Some((x, y))
 }
 
 /// Build the mux-wakeup callback used by both [`App::new`] (embedded mode)

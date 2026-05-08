@@ -74,7 +74,16 @@ pub fn run() {
 
     let mut app = if let Some(ref socket) = args.connect {
         // Explicit --connect always uses daemon mode (regardless of config).
-        crate::app::App::new_daemon(proxy, config, socket, args.window, profiling, latency_log)
+        crate::app::App::new_daemon(
+            proxy,
+            config,
+            socket,
+            args.window,
+            args.tabs_json.clone(),
+            args.position.clone(),
+            profiling,
+            latency_log,
+        )
     } else if embedded {
         log::info!("embedded mode (config or --embedded flag)");
         crate::app::App::new(proxy, config, profiling, latency_log)
@@ -86,11 +95,13 @@ pub fn run() {
                 config,
                 &socket_path,
                 None,
+                None,
+                None,
                 profiling,
                 latency_log,
             ),
             Err(e) => {
-                log::warn!("daemon auto-start failed after retries, using embedded mode: {e}");
+                log::warn!("failed to ensure daemon: {e}, falling back to embedded mode");
                 crate::app::App::new(proxy, config, profiling, latency_log)
             }
         }

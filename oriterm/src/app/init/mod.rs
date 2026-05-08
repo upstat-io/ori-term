@@ -2,6 +2,7 @@
 
 use winit::event_loop::ActiveEventLoop;
 
+use base64::{Engine as _, engine::general_purpose};
 use oriterm_mux::domain::SpawnConfig;
 use oriterm_ui::window::WindowConfig;
 
@@ -44,6 +45,9 @@ impl App {
             opacity,
             decoration: decoration_to_mode(self.config.window.decorations),
             use_compositor_surface: dcomp_available && opacity < 1.0,
+            position: self
+                .initial_position
+                .map(|(x, y)| oriterm_ui::geometry::Point::new(x as f32, y as f32)),
             ..WindowConfig::default()
         };
 
@@ -203,10 +207,12 @@ impl App {
         let grid_widget = TerminalGridWidget::new(cell.width, cell.height, wl.cols, wl.rows);
         grid_widget.set_bounds(wl.grid_rect);
 
-        // 11. Create initial tab + pane (skip if daemon mode with a claimed window).
+        // 11. Create initial tab + pane (skip if daemon mode with a claimed window or tabs).
         let t_mux_start = std::time::Instant::now();
         let is_daemon = self.mux.as_ref().is_some_and(|m| m.is_daemon_mode());
-        let is_claimed = is_daemon && self.active_window.is_some();
+        let has_claimed_tabs = self.claimed_tabs.is_some();
+        let is_claimed = is_daemon && (self.active_window.is_some() || has_claimed_tabs);
+
         // Section 03.9 Phase 4 — Windows handoff path: take any pending
         // HandoffData from `App::new_handoff` and adopt the pre-existing
         // PTY handles instead of spawning a fresh shell.
@@ -224,7 +230,32 @@ impl App {
         };
         #[cfg(not(target_os = "windows"))]
         let used_handoff = false;
-        if !is_claimed && !used_handoff {
+
+        // If we have claimed tabs, decode and adopt them.
+        if let Some(json) = self.claimed_tabs.take() {
+            if let Ok(tab_json) = general_purpose::STANDARD.decode(json) {
+                if let Ok(tab) = serde_json::from_slice::<crate::session::Tab>(&tab_json) {
+                    let pane_ids = tab.all_panes();
+                    let mux = self.mux.as_mut().ok_or("mux backend missing")?;
+                    for pid in pane_ids {
+                        let _ = mux.subscribe(pid);
+                    }
+                    self.session.add_tab(tab.clone());
+                    if let Some(win) = self.session.get_window_mut(session_wid) {
+                        win.add_tab(tab.id());
+                    }
+                    log::info!(
+                        "claimed tab {} with {} panes",
+                        tab.id(),
+                        tab.all_panes().len()
+                    );
+                } else {
+                    log::error!("failed to deserialize claimed tab JSON");
+                }
+            } else {
+                log::error!("failed to decode claimed tabs base64");
+            }
+        } else if !is_claimed && !used_handoff {
             self.create_initial_tab(
                 session_wid,
                 wl.rows as u16,
