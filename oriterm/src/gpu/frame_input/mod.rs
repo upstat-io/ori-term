@@ -228,8 +228,10 @@ pub struct FrameInput {
     pub mark_cursor: Option<MarkCursorOverride>,
     /// Whether the containing window has OS-level focus.
     ///
-    /// When `false`, the cursor renders as a hollow block regardless of the
-    /// terminal's configured cursor shape. Set from `App::focused_window_id`.
+    /// When `false`, non-`Hidden` cursors render as a hollow block regardless
+    /// of the terminal's configured cursor shape; `Hidden` cursors stay hidden.
+    /// Set from `App::focused_window_id`. The focus override is applied by
+    /// `prepare::resolve_cursor_state` per `prepare/mod.rs:116-118`.
     pub window_focused: bool,
     /// Screen-wide reverse video (DECSCNM, mode 5).
     ///
