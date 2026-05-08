@@ -93,9 +93,10 @@ pub(super) fn compute_dispatch_fingerprint(input: &FrameInput, origin: (f32, f32
     u8::from(input.subpixel_positioning).hash(&mut hasher);
 
     // Search highlight state — search match colors baked at emit time.
-    if let Some(fp) = input.search_fingerprint() {
-        fp.hash(&mut hasher);
-    }
+    // Hash via the Option directly so the discriminant (None vs Some) is
+    // structurally distinguished from the inner tuple's bytes, even when the
+    // inner tuple happens to be all-zeros.
+    input.search_fingerprint().hash(&mut hasher);
 
     hasher.finish()
 }

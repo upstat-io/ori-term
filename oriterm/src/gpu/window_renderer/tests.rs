@@ -736,18 +736,16 @@ mod cache_invalidated_pins {
         );
     }
 
-    /// Regression: BUG-06-030 — selection change MUST gate the cursor-only
-    /// fast path. The dispatch fingerprint excludes `prev_selection_snapshot`
-    /// because selection damage is handled per-row by `build_dirty_set` inside
-    /// the incremental prepare pass — but the fast path BYPASSES prepare
-    /// entirely, so selection changes there would silently leave stale
-    /// selection decorations without `has_row_state_change`.
+    /// Regression: BUG-06-030 — selection change MUST cause the full prepare
+    /// pass to run, NOT the cursor-only fast path. Calls `WindowRenderer::prepare`
+    /// directly and asserts on `cache_invalidated_this_frame()` so the integrated
+    /// dispatch semantic is exercised end-to-end.
     /// See: bug-tracker/plans/BUG-06-030/
     #[test]
     fn fast_path_skipped_when_selection_changes() {
         use oriterm_core::{Selection, Side, StableRowIndex};
 
-        let Some((_gpu, _pip, mut renderer)) = headless_env() else {
+        let Some((gpu, pipelines, mut renderer)) = headless_env() else {
             eprintln!("SKIP: GPU adapter unavailable");
             return;
         };
@@ -757,12 +755,14 @@ mod cache_invalidated_pins {
         input.selection = None;
         input.hovered_cell = None;
 
-        // Seed both fingerprint and selection snapshot to baseline ("no selection").
-        let baseline_fp = crate::gpu::prepare::compute_dispatch_fingerprint(&input, origin);
-        renderer.prepared.prev_dispatch_fingerprint = Some(baseline_fp);
-        renderer.prepared.prev_selection_snapshot = None;
+        // Frame 1: baseline prepare with no selection. Establishes prev_*
+        // state on the renderer's PreparedFrame so the fast-path predicate
+        // has a meaningful prior to compare against.
+        renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, true);
 
-        // Add a selection — fingerprint stays the same, selection snapshot changes.
+        // Frame 2: same content, no content change — would normally take
+        // the cursor-only fast path. Add a selection: the row-state change
+        // MUST force the full prepare pass.
         let mut sel = Selection::new_char(StableRowIndex(0), 0, Side::Left);
         sel.end = oriterm_core::SelectionPoint {
             row: StableRowIndex(0),
@@ -770,19 +770,17 @@ mod cache_invalidated_pins {
             side: Side::Right,
         };
         input.selection = Some(crate::gpu::frame_input::FrameSelection::new(&sel, 0));
+        renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, false);
         assert!(
-            !renderer.has_dispatch_change(&input, origin),
-            "selection change must NOT alter the dispatch fingerprint"
-        );
-        assert!(
-            renderer.has_row_state_change(&input),
-            "selection change MUST trigger has_row_state_change to gate the fast path"
+            renderer.cache_invalidated_this_frame(),
+            "selection change MUST force full prepare; fast path with stale selection \
+             would replay stale decorations from saved_tier"
         );
     }
 
     #[test]
     fn fast_path_skipped_when_hovered_cell_changes() {
-        let Some((_gpu, _pip, mut renderer)) = headless_env() else {
+        let Some((gpu, pipelines, mut renderer)) = headless_env() else {
             eprintln!("SKIP: GPU adapter unavailable");
             return;
         };
@@ -792,24 +790,22 @@ mod cache_invalidated_pins {
         input.selection = None;
         input.hovered_cell = None;
 
-        let baseline_fp = crate::gpu::prepare::compute_dispatch_fingerprint(&input, origin);
-        renderer.prepared.prev_dispatch_fingerprint = Some(baseline_fp);
-        renderer.prepared.prev_hovered_cell = None;
+        renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, true);
 
         input.hovered_cell = Some((1, 2));
+        renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, false);
         assert!(
-            !renderer.has_dispatch_change(&input, origin),
-            "hovered_cell change must NOT alter the dispatch fingerprint"
-        );
-        assert!(
-            renderer.has_row_state_change(&input),
-            "hovered_cell change MUST trigger has_row_state_change to gate the fast path"
+            renderer.cache_invalidated_this_frame(),
+            "hovered_cell change MUST force full prepare; fast path with stale hover \
+             would replay stale hyperlink-underline decorations from saved_tier"
         );
     }
 
+    /// Counter-pin: identical state across two prepare calls keeps the
+    /// fast path alive (cache_invalidated_this_frame == false after frame 2).
     #[test]
     fn fast_path_taken_when_selection_unchanged() {
-        let Some((_gpu, _pip, mut renderer)) = headless_env() else {
+        let Some((gpu, pipelines, mut renderer)) = headless_env() else {
             eprintln!("SKIP: GPU adapter unavailable");
             return;
         };
@@ -819,13 +815,34 @@ mod cache_invalidated_pins {
         input.selection = None;
         input.hovered_cell = None;
 
-        let baseline_fp = crate::gpu::prepare::compute_dispatch_fingerprint(&input, origin);
-        renderer.prepared.prev_dispatch_fingerprint = Some(baseline_fp);
-        renderer.prepared.prev_selection_snapshot = None;
-        renderer.prepared.prev_hovered_cell = None;
+        renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, true);
+        // Frame 2: same input, content_changed=false — fast path eligible.
+        renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, false);
+        assert!(
+            !renderer.cache_invalidated_this_frame(),
+            "identical state across two frames must allow the cursor-only fast path"
+        );
+    }
 
-        // No state change — both helpers must report no change.
-        assert!(!renderer.has_dispatch_change(&input, origin));
-        assert!(!renderer.has_row_state_change(&input));
+    /// Counter-pin: identical hovered_cell state preserves fast-path eligibility.
+    #[test]
+    fn fast_path_taken_when_hovered_cell_unchanged() {
+        let Some((gpu, pipelines, mut renderer)) = headless_env() else {
+            eprintln!("SKIP: GPU adapter unavailable");
+            return;
+        };
+
+        let mut input = crate::gpu::frame_input::FrameInput::test_grid(10, 10, "");
+        let origin = (0.0_f32, 0.0_f32);
+        input.selection = None;
+        input.hovered_cell = Some((2, 3));
+
+        renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, true);
+        // Frame 2: same hovered_cell.
+        renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, false);
+        assert!(
+            !renderer.cache_invalidated_this_frame(),
+            "identical hovered_cell across two frames must allow the cursor-only fast path"
+        );
     }
 }

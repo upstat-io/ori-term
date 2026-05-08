@@ -4871,11 +4871,11 @@ fn incremental_dispatch_falls_back_on_viewport_change() {
 /// dispatches full-rebuild even when the pixel viewport stays the same.
 /// Pixel viewport tracks (width_px, height_px); content grid tracks
 /// (cols, rows). During async resize in daemon mode the snapshot grid
-/// can race ahead of the pixel viewport — the `prev_content_cols` /
-/// `prev_content_rows` guards must catch this without relying on the
-/// viewport guard. Three-frame sequence proves incremental is reachable
-/// in steady state and the fallback fires on grid topology change in
-/// isolation from viewport.
+/// can race ahead of the pixel viewport — the dispatch fingerprint's
+/// content_cols / content_rows hash inputs must catch this without
+/// relying on the viewport hash inputs. Three-frame sequence proves
+/// incremental is reachable in steady state and the fallback fires on
+/// grid topology change in isolation from viewport.
 #[test]
 fn incremental_dispatch_falls_back_on_content_grid_change() {
     let size_q6 = 768;
@@ -4897,8 +4897,8 @@ fn incremental_dispatch_falls_back_on_content_grid_change() {
     assert!(frame.was_incremental, "Frame 1 incremental reachable");
 
     // Bump content_cols WITHOUT changing the pixel viewport. The
-    // viewport guard does NOT catch this; only the prev_content_cols
-    // guard does.
+    // viewport hash inputs do NOT catch this; only the content_cols
+    // hash input does.
     let prev_viewport = input.viewport;
     input.content_cols = cols + 1;
     assert_eq!(input.viewport, prev_viewport, "viewport unchanged");
@@ -4910,8 +4910,9 @@ fn incremental_dispatch_falls_back_on_content_grid_change() {
 }
 
 /// Regression: BUG-06-027 — cell-size change (scale or font swap) forces
-/// full-rebuild. The dispatch predicate's `prev_cell_size` guard catches
-/// per-cell-layout changes that leave the pixel viewport unchanged.
+/// full-rebuild. The dispatch fingerprint hashes all 6 CellMetrics fields
+/// so per-cell-layout changes that leave the pixel viewport unchanged
+/// still invalidate the saved tier.
 #[test]
 fn incremental_dispatch_falls_back_on_cell_size_change() {
     let size_q6 = 768;
@@ -5197,8 +5198,8 @@ fn incremental_dispatch_falls_back_on_search_state_change() {
 
 /// Regression: BUG-06-027 — text blink opacity change forces full-rebuild.
 /// Per-cell instances bake `text_blink_opacity` at emit time; replaying
-/// clean rows would carry stale opacity. The dispatch predicate's
-/// `prev_text_blink_opacity` guard catches this.
+/// clean rows would carry stale opacity. The dispatch fingerprint's
+/// `text_blink_opacity` hash input catches this.
 #[test]
 fn incremental_dispatch_falls_back_on_text_blink_opacity_change() {
     let cols = 4;
@@ -5759,6 +5760,32 @@ mod dispatch_fingerprint {
         assert_ne!(compute_dispatch_fingerprint(&input, origin), baseline_fp);
     }
 
+    /// Search highlight state is hashed via `damage_fingerprint`. Add a search
+    /// match to the input and assert the dispatch fingerprint differs from
+    /// baseline (no search). Closes the §03 search-fingerprint coverage gap.
+    #[test]
+    fn fingerprint_changes_with_search_fingerprint() {
+        use crate::gpu::frame_input::FrameSearch;
+        use oriterm_core::{Column, SearchMatch, StableRowIndex};
+
+        let (mut input, origin) = baseline();
+        let baseline_fp = compute_dispatch_fingerprint(&input, origin);
+
+        let _ = Column(0); // unused — SearchMatch fields use bare usize
+        let matches = vec![SearchMatch {
+            start_row: StableRowIndex(0),
+            start_col: 0,
+            end_row: StableRowIndex(0),
+            end_col: 3,
+        }];
+        input.search = Some(FrameSearch::for_test(matches, 0, 0));
+        let with_search = compute_dispatch_fingerprint(&input, origin);
+        assert_ne!(
+            with_search, baseline_fp,
+            "search match presence must alter the dispatch fingerprint"
+        );
+    }
+
     /// Counter-pins: row-state fields are intentionally NOT in the fingerprint.
     /// These changes must flow through `build_dirty_set` (incremental path) or
     /// `WindowRenderer::has_row_state_change` (fast-path gate), never via full
@@ -5773,6 +5800,39 @@ mod dispatch_fingerprint {
             compute_dispatch_fingerprint(&input, origin),
             baseline_fp,
             "hovered_cell MUST NOT be in fingerprint — handled per-row by build_dirty_set"
+        );
+    }
+
+    #[test]
+    fn fingerprint_unchanged_when_cursor_position_changes() {
+        let (mut input, origin) = baseline();
+        let baseline_fp = compute_dispatch_fingerprint(&input, origin);
+        // RenderableCursor uses flat fields (line, column, shape, visible).
+        input.content.cursor.line = 1;
+        input.content.cursor.column = oriterm_core::Column(2);
+        assert_eq!(
+            compute_dispatch_fingerprint(&input, origin),
+            baseline_fp,
+            "cursor position MUST NOT be in fingerprint — handled per-row via prev_cursor_line dirtying"
+        );
+    }
+
+    #[test]
+    fn fingerprint_unchanged_when_selection_changes() {
+        use oriterm_core::{Selection, Side, StableRowIndex};
+        let (mut input, origin) = baseline();
+        let baseline_fp = compute_dispatch_fingerprint(&input, origin);
+        let mut sel = Selection::new_char(StableRowIndex(0), 0, Side::Left);
+        sel.end = oriterm_core::SelectionPoint {
+            row: StableRowIndex(0),
+            col: 3,
+            side: Side::Right,
+        };
+        input.selection = Some(crate::gpu::frame_input::FrameSelection::new(&sel, 0));
+        assert_eq!(
+            compute_dispatch_fingerprint(&input, origin),
+            baseline_fp,
+            "selection MUST NOT be in fingerprint — handled per-row via prev_selection_snapshot dirtying"
         );
     }
 
@@ -5826,48 +5886,6 @@ mod dispatch_fingerprint {
     }
 }
 
-// ── Regression pin against re-introducing enumerated prev_* fields ──
-//
-// The previous design had 9 prev_* fields on PreparedFrame used solely by the
-// dispatch predicate; the fingerprint refactor replaced them with a single
-// prev_dispatch_fingerprint field. This test asserts the 9 identifiers no
-// longer appear in the source — re-introducing any of them would silently
-// re-create the sync-point drift hazard.
-
-/// Regression: BUG-06-030 — 9 enumerated prev_* fields replaced with single
-/// content-aware fingerprint; this test prevents accidental re-introduction.
-/// See: bug-tracker/plans/BUG-06-030/
-#[test]
-fn enumerated_prev_fields_removed() {
-    let manifest = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR set by cargo");
-    let path = std::path::PathBuf::from(manifest)
-        .join("src")
-        .join("gpu")
-        .join("prepared_frame")
-        .join("mod.rs");
-    let source = std::fs::read_to_string(&path)
-        .unwrap_or_else(|e| panic!("failed to read {}: {}", path.display(), e));
-
-    // Field declarations look like `pub(crate) prev_<name>:` or `pub(crate) prev_<name> :`.
-    // Use the punctuated form to avoid matching inline doc-comment mentions.
-    for forbidden in &[
-        "prev_text_blink_opacity:",
-        "prev_palette_opacity:",
-        "prev_cell_size:",
-        "prev_origin:",
-        "prev_content_cols:",
-        "prev_content_rows:",
-        "prev_fg_dim:",
-        "prev_subpixel_positioning:",
-        "prev_search_fingerprint:",
-    ] {
-        assert!(
-            !source.contains(forbidden),
-            "regression: {} re-introduced as a field declaration in {}. \
-             The fingerprint refactor removed these in favor of prev_dispatch_fingerprint; \
-             re-adding any of them re-creates the parallel-sync-point drift hazard.",
-            forbidden,
-            path.display()
-        );
-    }
-}
+// Regression pin against re-introducing enumerated prev_* fields lives in
+// `gpu/prepared_frame/tests.rs::enumerated_prev_fields_removed` (the test
+// scans `prepared_frame/mod.rs`, so it is colocated with the file it pins).

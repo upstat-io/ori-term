@@ -233,3 +233,49 @@ fn extend_from_shifts_overlay_draw_ranges_correctly() {
     // so other's (0,1) becomes (2,3).
     assert_eq!(self_frame.overlay_draw_ranges[1].rects, (2, 3));
 }
+
+// ── Regression pin against re-introducing enumerated prev_* fields ──
+//
+// The previous design had 9 prev_* fields on PreparedFrame used solely by the
+// dispatch predicate; the fingerprint refactor replaced them with a single
+// prev_dispatch_fingerprint field. This test asserts the 9 identifiers no
+// longer appear in the source — re-introducing any of them would silently
+// re-create the sync-point drift hazard.
+
+/// Regression: BUG-06-030 — 9 enumerated prev_* fields replaced with single
+/// content-aware fingerprint; this test prevents accidental re-introduction.
+/// See: bug-tracker/plans/BUG-06-030/
+#[test]
+fn enumerated_prev_fields_removed() {
+    let manifest = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR set by cargo");
+    let path = std::path::PathBuf::from(manifest)
+        .join("src")
+        .join("gpu")
+        .join("prepared_frame")
+        .join("mod.rs");
+    let source = std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("failed to read {}: {}", path.display(), e));
+
+    // Field declarations look like `pub(crate) prev_<name>:` or `pub(crate) prev_<name> :`.
+    // Use the punctuated form to avoid matching inline doc-comment mentions.
+    for forbidden in &[
+        "prev_text_blink_opacity:",
+        "prev_palette_opacity:",
+        "prev_cell_size:",
+        "prev_origin:",
+        "prev_content_cols:",
+        "prev_content_rows:",
+        "prev_fg_dim:",
+        "prev_subpixel_positioning:",
+        "prev_search_fingerprint:",
+    ] {
+        assert!(
+            !source.contains(forbidden),
+            "regression: {} re-introduced as a field declaration in {}. \
+             The fingerprint refactor removed these in favor of prev_dispatch_fingerprint; \
+             re-adding any of them re-creates the parallel-sync-point drift hazard.",
+            forbidden,
+            path.display()
+        );
+    }
+}
