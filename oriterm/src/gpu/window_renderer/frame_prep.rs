@@ -32,10 +32,25 @@ impl WindowRenderer {
     /// fingerprint because they're handled by `build_dirty_set` inside
     /// the incremental prepare pass. But the cursor-only fast path
     /// BYPASSES prepare entirely — bypasses `build_dirty_set` entirely
-    /// — so selection/hover changes MUST gate the fast path independently
-    /// of the fingerprint, or stale decorations replay from the cached
-    /// terminal tier.
+    /// — so selection/hover/cursor changes MUST gate the fast path
+    /// independently of the fingerprint, or stale decorations replay
+    /// from the cached terminal tier.
+    ///
+    /// Cursor gating: the resolved cursor `(line, column, shape, visible)`
+    /// is compared via visibility-canonicalized `Option<RenderableCursor>`
+    /// `PartialEq`. Hidden-to-hidden cursor position changes canonicalize to
+    /// `None == None` (no-op), avoiding WASTE invalidation on invisible-
+    /// cursor frames.
     pub(crate) fn has_row_state_change(&self, input: &FrameInput) -> bool {
+        let resolved = prepare::resolve_cursor_state(input);
+        let cur = if resolved.visible {
+            Some(resolved)
+        } else {
+            None
+        };
+        if cur != self.prepared.prev_resolved_cursor {
+            return true;
+        }
         let new_sel = input
             .selection
             .as_ref()

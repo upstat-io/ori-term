@@ -18,7 +18,7 @@ mod shaped_frame;
 #[cfg(test)]
 mod unshaped;
 
-use oriterm_core::{CellFlags, CursorShape};
+use oriterm_core::{CellFlags, CursorShape, RenderableCursor};
 
 use super::atlas::AtlasEntry;
 
@@ -97,6 +97,24 @@ pub(super) fn compute_dispatch_fingerprint(input: &FrameInput, origin: (f32, f32
     input.search_fingerprint().hash(&mut hasher);
 
     hasher.finish()
+}
+
+/// Resolve the cursor row-state SSOT for the cursor-only fast-path predicate
+/// AND the per-frame `prev_resolved_cursor` snapshot.
+///
+/// Returns the merged terminal-cursor + mark-mode override exactly as the
+/// emit pipeline sees it. The returned cursor's `visible` flag carries
+/// "is the cursor displayed this frame?". Storage sites
+/// (`prev_resolved_cursor`) canonicalize invisible cursors to `None` per the
+/// visibility-canonicalized storage rule — this helper is the SSOT for the
+/// resolution itself; `Option` wrapping is the storage layer's concern.
+///
+/// Consumers: `prepare_frame_shaped_into` (storage), `update_cursor_only`
+/// (storage), `WindowRenderer::has_row_state_change` (fast-path predicate),
+/// `fill_frame_shaped` / `prepare_frame_into` (`EmitCtx` build),
+/// `dirty_skip::build_dirty_set` (current-frame compute).
+pub(super) fn resolve_cursor_state(input: &FrameInput) -> RenderableCursor {
+    resolve_cursor(&input.content.cursor, input.mark_cursor.as_ref())
 }
 
 /// Vertical glyph offset (in pixels) for SGR 73 (superscript) / SGR 74 (subscript).
@@ -251,12 +269,14 @@ pub fn prepare_frame_shaped_into(
         .selection
         .as_ref()
         .and_then(|s| s.damage_snapshot(num_rows));
-    // INVARIANT: `prev_cursor_line` tracks the RESOLVED cursor (mark-mode
-    // override applied) so the next frame's build_dirty_set dirties the
-    // correct row on cursor moves.
-    let resolved_cursor = resolve_cursor(&input.content.cursor, input.mark_cursor.as_ref());
-    out.prev_cursor_line = if resolved_cursor.visible {
-        Some(resolved_cursor.line)
+    // INVARIANT: `prev_resolved_cursor` is the SSOT for "previous rendered
+    // frame's resolved cursor state". Visibility-canonicalized: invisible
+    // cursors store as None so hidden-to-hidden position changes are a no-op
+    // for the fast-path predicate (None == None). build_dirty_set derives the
+    // line component from `Some(c).map(|c| c.line)`.
+    let resolved_cursor = resolve_cursor_state(input);
+    out.prev_resolved_cursor = if resolved_cursor.visible {
+        Some(resolved_cursor)
     } else {
         None
     };
@@ -279,7 +299,7 @@ pub fn update_cursor_only(
 ) {
     out.cursors.clear();
 
-    let cursor = resolve_cursor(&input.content.cursor, input.mark_cursor.as_ref());
+    let cursor = resolve_cursor_state(input);
     if cursor.visible && cursor_opacity > 0.0 {
         let shape = if input.window_focused {
             cursor.shape
@@ -308,6 +328,13 @@ pub fn update_cursor_only(
     let (ox, oy) = origin;
     draw_url_hover_underline(input, out, ox, oy);
     draw_prompt_markers(input, out, ox, oy);
+
+    // SSOT semantics: prev_resolved_cursor MUST reflect the most recent
+    // rendered frame, regardless of which prepare path produced it. Without
+    // this write, the field semantics drift to "last full-prepare frame" — a
+    // foot-gun for any future predicate consumer. Visibility-canonicalized:
+    // invisible cursors store as None.
+    out.prev_resolved_cursor = if cursor.visible { Some(cursor) } else { None };
 }
 
 /// Shaped rendering: emit background, glyph, and cursor instances from shaped data.
@@ -344,7 +371,7 @@ pub(crate) fn fill_frame_shaped(
         palette: &input.palette,
         sel: input.selection.as_ref(),
         search: input.search.as_ref(),
-        cursor: resolve_cursor(&input.content.cursor, input.mark_cursor.as_ref()),
+        cursor: resolve_cursor_state(input),
         cursor_opacity,
         hovered_cell: input.hovered_cell,
         cell_size: &input.cell_size,

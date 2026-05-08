@@ -10,7 +10,7 @@ use super::super::prepared_frame::PreparedFrame;
 use super::AtlasLookup;
 use super::emit::{build_cursor, draw_prompt_markers, draw_url_hover_underline};
 use super::emit_cell::EmitCtx;
-use super::resolve::resolve_cursor;
+use super::resolve_cursor_state;
 
 /// Convert a [`FrameInput`] into a GPU-ready [`PreparedFrame`] using per-cell
 /// character lookups (unshaped path).
@@ -76,7 +76,7 @@ fn fill_frame(
         palette: &input.palette,
         sel: input.selection.as_ref(),
         search: input.search.as_ref(),
-        cursor: resolve_cursor(&input.content.cursor, input.mark_cursor.as_ref()),
+        cursor: resolve_cursor_state(input),
         cursor_opacity,
         hovered_cell: input.hovered_cell,
         cell_size: &input.cell_size,

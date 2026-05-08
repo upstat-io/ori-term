@@ -128,11 +128,19 @@ pub struct PreparedFrame {
     /// consumed by `WindowRenderer::has_row_state_change` to gate the
     /// cursor-only fast path (which bypasses `build_dirty_set` entirely).
     pub(crate) prev_selection_snapshot: Option<SelectionDamageSnapshot>,
-    /// Previous frame's cursor row when visible. Drives `build_dirty_set`
-    /// to dirty BOTH the previous cursor row (so its cells regenerate
-    /// without the stale "with cursor" colors baked into `saved_tier`)
-    /// AND the current cursor row.
-    pub(crate) prev_cursor_line: Option<usize>,
+    /// Previous frame's resolved cursor (mark-mode override applied).
+    /// `Some(cursor)` only when the cursor was visible in the previous
+    /// frame; `None` for invisible cursors AND for the pre-first-frame
+    /// initial state. SSOT for "what was the resolved cursor `(line,
+    /// column, shape, visible)` after the most recent rendered frame?"
+    /// Consumed by:
+    /// - `WindowRenderer::has_row_state_change` (fast-path predicate;
+    ///   full-state `PartialEq` catches position, shape, and visibility
+    ///   changes that bare-line tracking missed).
+    /// - `dirty_skip::build_dirty_set` (line component only; derives
+    ///   `Option<usize>` for the legacy `selection_damage::dirty_set`
+    ///   line-only parameter, which dirties old + new cursor rows).
+    pub(crate) prev_resolved_cursor: Option<oriterm_core::RenderableCursor>,
     /// Previous frame's hovered cell `(viewport_line, column)`. Drives
     /// `build_dirty_set` to dirty BOTH the previous hover row (so its
     /// cells regenerate without the stale "solid hyperlink underline"
@@ -187,7 +195,7 @@ impl PreparedFrame {
             row_ranges: Vec::new(),
             saved_tier: SavedTerminalTier::new(),
             prev_selection_snapshot: None,
-            prev_cursor_line: None,
+            prev_resolved_cursor: None,
             prev_hovered_cell: None,
             prev_dispatch_fingerprint: None,
             was_incremental: false,
@@ -230,7 +238,7 @@ impl PreparedFrame {
             row_ranges: Vec::new(),
             saved_tier: SavedTerminalTier::new(),
             prev_selection_snapshot: None,
-            prev_cursor_line: None,
+            prev_resolved_cursor: None,
             prev_hovered_cell: None,
             prev_dispatch_fingerprint: None,
             was_incremental: false,

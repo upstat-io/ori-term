@@ -845,4 +845,407 @@ mod cache_invalidated_pins {
             "identical hovered_cell across two frames must allow the cursor-only fast path"
         );
     }
+
+    // --- Cursor position/shape/visibility row-state pins ---
+    /// Regression: BUG-06-040 — `WindowRenderer::has_row_state_change` did not
+    /// gate the cursor-only fast path on cursor position, shape, or visibility,
+    /// so cursor moves under a stationary content frame replayed stale per-cell
+    /// colors at the old + new cursor positions. The fix extends the predicate
+    /// with `prev_resolved_cursor: Option<RenderableCursor>` (visibility-
+    /// canonicalized: invisible cursors store as None).
+    /// See: bug-tracker/plans/completed/BUG-06-040/
+    use oriterm_core::{Column, CursorShape, RenderableCursor};
+
+    /// Helper: seed `input.content.cursor` with full position/shape/visible state.
+    fn set_cursor(
+        input: &mut crate::gpu::frame_input::FrameInput,
+        line: usize,
+        col: usize,
+        shape: CursorShape,
+        visible: bool,
+    ) {
+        input.content.cursor = RenderableCursor {
+            line,
+            column: Column(col),
+            shape,
+            visible,
+        };
+    }
+
+    /// Column-only move: cursor changes column on the same line without
+    /// content changing → MUST force full prepare to re-emit cell colors.
+    #[test]
+    fn fast_path_skipped_when_cursor_column_changes() {
+        let Some((gpu, pipelines, mut renderer)) = headless_env() else {
+            eprintln!("SKIP: GPU adapter unavailable");
+            return;
+        };
+        let mut input = crate::gpu::frame_input::FrameInput::test_grid(10, 10, "");
+        let origin = (0.0_f32, 0.0_f32);
+        input.selection = None;
+        input.hovered_cell = None;
+        set_cursor(&mut input, 0, 2, CursorShape::Block, true);
+
+        renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, true);
+        set_cursor(&mut input, 0, 5, CursorShape::Block, true);
+        renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, false);
+        assert!(
+            renderer.cache_invalidated_this_frame(),
+            "cursor column change MUST force full prepare; fast path with stale cursor \
+             would replay stale per-cell colors at the OLD cursor position"
+        );
+    }
+
+    /// Edge case: cursor changes line only.
+    #[test]
+    fn fast_path_skipped_when_cursor_line_changes() {
+        let Some((gpu, pipelines, mut renderer)) = headless_env() else {
+            eprintln!("SKIP: GPU adapter unavailable");
+            return;
+        };
+        let mut input = crate::gpu::frame_input::FrameInput::test_grid(10, 10, "");
+        let origin = (0.0_f32, 0.0_f32);
+        input.selection = None;
+        input.hovered_cell = None;
+        set_cursor(&mut input, 0, 3, CursorShape::Block, true);
+
+        renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, true);
+        set_cursor(&mut input, 2, 3, CursorShape::Block, true);
+        renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, false);
+        assert!(
+            renderer.cache_invalidated_this_frame(),
+            "cursor line change MUST force full prepare"
+        );
+    }
+
+    /// Edge case: cursor changes both line and column.
+    #[test]
+    fn fast_path_skipped_when_cursor_line_and_column_change() {
+        let Some((gpu, pipelines, mut renderer)) = headless_env() else {
+            eprintln!("SKIP: GPU adapter unavailable");
+            return;
+        };
+        let mut input = crate::gpu::frame_input::FrameInput::test_grid(10, 10, "");
+        let origin = (0.0_f32, 0.0_f32);
+        input.selection = None;
+        input.hovered_cell = None;
+        set_cursor(&mut input, 1, 4, CursorShape::Block, true);
+
+        renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, true);
+        set_cursor(&mut input, 3, 7, CursorShape::Block, true);
+        renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, false);
+        assert!(
+            renderer.cache_invalidated_this_frame(),
+            "cursor line+column change MUST force full prepare"
+        );
+    }
+
+    /// Edge case — same-position shape change (Block↔Underline):
+    /// `is_block_cursor_cell` gates on shape, so the cell at cursor position
+    /// resolves with different colors when shape changes.
+    #[test]
+    fn fast_path_skipped_when_cursor_shape_changes() {
+        let Some((gpu, pipelines, mut renderer)) = headless_env() else {
+            eprintln!("SKIP: GPU adapter unavailable");
+            return;
+        };
+        let mut input = crate::gpu::frame_input::FrameInput::test_grid(10, 10, "");
+        let origin = (0.0_f32, 0.0_f32);
+        input.selection = None;
+        input.hovered_cell = None;
+        set_cursor(&mut input, 2, 4, CursorShape::Block, true);
+
+        renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, true);
+        set_cursor(&mut input, 2, 4, CursorShape::Underline, true);
+        renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, false);
+        assert!(
+            renderer.cache_invalidated_this_frame(),
+            "cursor shape change at same position MUST force full prepare; \
+             is_block_cursor_cell gates on shape, so stale Block-shape colors leak \
+             when fast path replays without re-emission"
+        );
+    }
+
+    /// Visibility-edge: visible → invisible flip.
+    #[test]
+    fn fast_path_skipped_when_cursor_visibility_flips_to_hidden() {
+        let Some((gpu, pipelines, mut renderer)) = headless_env() else {
+            eprintln!("SKIP: GPU adapter unavailable");
+            return;
+        };
+        let mut input = crate::gpu::frame_input::FrameInput::test_grid(10, 10, "");
+        let origin = (0.0_f32, 0.0_f32);
+        input.selection = None;
+        input.hovered_cell = None;
+        set_cursor(&mut input, 1, 2, CursorShape::Block, true);
+
+        renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, true);
+        set_cursor(&mut input, 1, 2, CursorShape::Block, false);
+        renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, false);
+        assert!(
+            renderer.cache_invalidated_this_frame(),
+            "cursor visibility flip (visible→invisible) MUST force full prepare"
+        );
+    }
+
+    /// Visibility-edge: invisible → visible flip.
+    #[test]
+    fn fast_path_skipped_when_cursor_visibility_flips_to_visible() {
+        let Some((gpu, pipelines, mut renderer)) = headless_env() else {
+            eprintln!("SKIP: GPU adapter unavailable");
+            return;
+        };
+        let mut input = crate::gpu::frame_input::FrameInput::test_grid(10, 10, "");
+        let origin = (0.0_f32, 0.0_f32);
+        input.selection = None;
+        input.hovered_cell = None;
+        set_cursor(&mut input, 1, 2, CursorShape::Block, false);
+
+        renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, true);
+        set_cursor(&mut input, 1, 2, CursorShape::Block, true);
+        renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, false);
+        assert!(
+            renderer.cache_invalidated_this_frame(),
+            "cursor visibility flip (invisible→visible) MUST force full prepare"
+        );
+    }
+
+    /// Mark-cursor edge: None → Some (mark mode appears, terminal cursor
+    /// stationary). Resolved cursor position jumps from terminal-cursor (0,0)
+    /// to mark-cursor (2,5) → fast path must reject.
+    #[test]
+    fn fast_path_skipped_when_mark_cursor_appears() {
+        let Some((gpu, pipelines, mut renderer)) = headless_env() else {
+            eprintln!("SKIP: GPU adapter unavailable");
+            return;
+        };
+        let mut input = crate::gpu::frame_input::FrameInput::test_grid(10, 10, "");
+        let origin = (0.0_f32, 0.0_f32);
+        input.selection = None;
+        input.hovered_cell = None;
+        set_cursor(&mut input, 0, 0, CursorShape::Block, true);
+        input.mark_cursor = None;
+
+        renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, true);
+        input.mark_cursor = Some(crate::gpu::frame_input::MarkCursorOverride {
+            line: 2,
+            column: Column(5),
+            shape: CursorShape::Block,
+        });
+        renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, false);
+        assert!(
+            renderer.cache_invalidated_this_frame(),
+            "mark_cursor None→Some MUST force full prepare (resolved cursor jumps positions)"
+        );
+    }
+
+    /// Mark-cursor edge: Some → None (mark mode disappears).
+    #[test]
+    fn fast_path_skipped_when_mark_cursor_disappears() {
+        let Some((gpu, pipelines, mut renderer)) = headless_env() else {
+            eprintln!("SKIP: GPU adapter unavailable");
+            return;
+        };
+        let mut input = crate::gpu::frame_input::FrameInput::test_grid(10, 10, "");
+        let origin = (0.0_f32, 0.0_f32);
+        input.selection = None;
+        input.hovered_cell = None;
+        set_cursor(&mut input, 0, 0, CursorShape::Block, true);
+        input.mark_cursor = Some(crate::gpu::frame_input::MarkCursorOverride {
+            line: 2,
+            column: Column(5),
+            shape: CursorShape::Block,
+        });
+
+        renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, true);
+        input.mark_cursor = None;
+        renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, false);
+        assert!(
+            renderer.cache_invalidated_this_frame(),
+            "mark_cursor Some→None MUST force full prepare"
+        );
+    }
+
+    /// Mark-cursor moves under the mark override (terminal cursor stationary).
+    #[test]
+    fn fast_path_skipped_when_mark_cursor_override_moves() {
+        let Some((gpu, pipelines, mut renderer)) = headless_env() else {
+            eprintln!("SKIP: GPU adapter unavailable");
+            return;
+        };
+        let mut input = crate::gpu::frame_input::FrameInput::test_grid(10, 10, "");
+        let origin = (0.0_f32, 0.0_f32);
+        input.selection = None;
+        input.hovered_cell = None;
+        set_cursor(&mut input, 0, 0, CursorShape::Block, true);
+        input.mark_cursor = Some(crate::gpu::frame_input::MarkCursorOverride {
+            line: 2,
+            column: Column(5),
+            shape: CursorShape::Block,
+        });
+
+        renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, true);
+        input.mark_cursor = Some(crate::gpu::frame_input::MarkCursorOverride {
+            line: 2,
+            column: Column(8),
+            shape: CursorShape::Block,
+        });
+        renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, false);
+        assert!(
+            renderer.cache_invalidated_this_frame(),
+            "mark_cursor override move MUST force full prepare"
+        );
+    }
+
+    /// CJK wide-char interaction: cursor moves off a CJK base cell. The
+    /// `is_block_cursor_cell` predicate handles `is_wide` for the cursor cell +
+    /// spacer cell pair; cursor-move off a CJK base must dirty both columns.
+    #[test]
+    fn fast_path_skipped_when_cursor_moves_off_cjk_wide_cell() {
+        let Some((gpu, pipelines, mut renderer)) = headless_env() else {
+            eprintln!("SKIP: GPU adapter unavailable");
+            return;
+        };
+        let mut input = crate::gpu::frame_input::FrameInput::test_grid(10, 10, "");
+        let origin = (0.0_f32, 0.0_f32);
+        input.selection = None;
+        input.hovered_cell = None;
+        // Mark cell (1, 2) as a wide CJK base; (1, 3) as the spacer.
+        if let Some(cell) = input
+            .content
+            .cells
+            .iter_mut()
+            .find(|c| c.line == 1 && c.column == Column(2))
+        {
+            cell.ch = '中';
+            cell.flags.insert(oriterm_core::CellFlags::WIDE_CHAR);
+        }
+        if let Some(cell) = input
+            .content
+            .cells
+            .iter_mut()
+            .find(|c| c.line == 1 && c.column == Column(3))
+        {
+            cell.flags.insert(oriterm_core::CellFlags::WIDE_CHAR_SPACER);
+        }
+        set_cursor(&mut input, 1, 2, CursorShape::Block, true);
+
+        renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, true);
+        set_cursor(&mut input, 1, 4, CursorShape::Block, true);
+        renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, false);
+        assert!(
+            renderer.cache_invalidated_this_frame(),
+            "cursor move off CJK base cell MUST force full prepare; \
+             is_block_cursor_cell wide-char branch needs re-emission for the wide pair"
+        );
+    }
+
+    /// Counter-pin: identical cursor state across two frames keeps the fast path.
+    #[test]
+    fn fast_path_taken_when_cursor_unchanged() {
+        let Some((gpu, pipelines, mut renderer)) = headless_env() else {
+            eprintln!("SKIP: GPU adapter unavailable");
+            return;
+        };
+        let mut input = crate::gpu::frame_input::FrameInput::test_grid(10, 10, "");
+        let origin = (0.0_f32, 0.0_f32);
+        input.selection = None;
+        input.hovered_cell = None;
+        set_cursor(&mut input, 2, 4, CursorShape::Block, true);
+
+        renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, true);
+        renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, false);
+        assert!(
+            !renderer.cache_invalidated_this_frame(),
+            "identical cursor state across two frames MUST keep the cursor-only fast path"
+        );
+    }
+
+    /// Counter-pin: identical selection + cursor state keeps the fast path.
+    #[test]
+    fn fast_path_taken_when_selection_and_cursor_both_unchanged() {
+        use oriterm_core::{Selection, Side, StableRowIndex};
+
+        let Some((gpu, pipelines, mut renderer)) = headless_env() else {
+            eprintln!("SKIP: GPU adapter unavailable");
+            return;
+        };
+        let mut input = crate::gpu::frame_input::FrameInput::test_grid(10, 10, "");
+        let origin = (0.0_f32, 0.0_f32);
+        input.hovered_cell = None;
+        set_cursor(&mut input, 2, 4, CursorShape::Block, true);
+
+        let mut sel = Selection::new_char(StableRowIndex(2), 0, Side::Left);
+        sel.end = oriterm_core::SelectionPoint {
+            row: StableRowIndex(2),
+            col: 10,
+            side: Side::Right,
+        };
+        input.selection = Some(crate::gpu::frame_input::FrameSelection::new(&sel, 0));
+
+        renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, true);
+        renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, false);
+        assert!(
+            !renderer.cache_invalidated_this_frame(),
+            "identical selection+cursor across two frames MUST keep the cursor-only fast path"
+        );
+    }
+
+    /// Counter-pin: an invisible cursor "moving" must NOT invalidate the fast
+    /// path. Storage rule canonicalizes invisible cursors to None — so two
+    /// consecutive invisible-cursor frames at different positions are
+    /// None == None at the predicate.
+    #[test]
+    fn fast_path_taken_when_invisible_cursor_moves() {
+        let Some((gpu, pipelines, mut renderer)) = headless_env() else {
+            eprintln!("SKIP: GPU adapter unavailable");
+            return;
+        };
+        let mut input = crate::gpu::frame_input::FrameInput::test_grid(10, 10, "");
+        let origin = (0.0_f32, 0.0_f32);
+        input.selection = None;
+        input.hovered_cell = None;
+        set_cursor(&mut input, 1, 2, CursorShape::Block, false);
+
+        renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, true);
+        set_cursor(&mut input, 3, 8, CursorShape::Block, false);
+        renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, false);
+        assert!(
+            !renderer.cache_invalidated_this_frame(),
+            "invisible cursor 'move' MUST NOT invalidate the fast path; \
+             visibility-canonicalized storage rule (None for invisible) makes \
+             hidden-to-hidden comparisons no-op"
+        );
+    }
+
+    /// Counter-pin: mark_cursor active masks terminal cursor moves — resolved
+    /// cursor stays at the mark override, so terminal cursor changes under an
+    /// active mark don't invalidate.
+    #[test]
+    fn fast_path_taken_when_mark_cursor_active_and_terminal_cursor_moves() {
+        let Some((gpu, pipelines, mut renderer)) = headless_env() else {
+            eprintln!("SKIP: GPU adapter unavailable");
+            return;
+        };
+        let mut input = crate::gpu::frame_input::FrameInput::test_grid(10, 10, "");
+        let origin = (0.0_f32, 0.0_f32);
+        input.selection = None;
+        input.hovered_cell = None;
+        set_cursor(&mut input, 0, 0, CursorShape::Block, true);
+        input.mark_cursor = Some(crate::gpu::frame_input::MarkCursorOverride {
+            line: 2,
+            column: Column(5),
+            shape: CursorShape::Block,
+        });
+
+        renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, true);
+        // Move terminal cursor; mark override unchanged; resolved cursor stays at (2,5).
+        set_cursor(&mut input, 0, 4, CursorShape::Block, true);
+        renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, false);
+        assert!(
+            !renderer.cache_invalidated_this_frame(),
+            "mark_cursor masks terminal cursor; terminal cursor moves under an active \
+             mark override MUST NOT invalidate the fast path"
+        );
+    }
 }

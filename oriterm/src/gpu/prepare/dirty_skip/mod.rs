@@ -14,7 +14,6 @@ use oriterm_core::{CellFlags, CursorShape, RenderableCell};
 
 use super::emit::{build_cursor, draw_prompt_markers, draw_url_hover_underline};
 use super::emit_cell::EmitCtx;
-use super::resolve::resolve_cursor;
 use super::shaped_frame::ShapedFrame;
 use super::{AtlasLookup, FrameInput};
 use crate::gpu::prepared_frame::PreparedFrame;
@@ -273,12 +272,16 @@ pub(crate) fn fill_frame_incremental(
     // Setup that must read frame fields before frame is moved into ctx.
     let num_rows = input.rows();
     let prev_sel = frame.prev_selection_snapshot;
-    let prev_cursor_line = frame.prev_cursor_line;
+    // Derive previous-cursor line from the visibility-canonicalized SSOT.
+    // `Some(...)` already implies visible per the storage rule in
+    // `prepare_frame_shaped_into` / `update_cursor_only`, so no extra
+    // `.filter(|c| c.visible)` is needed here.
+    let prev_cursor_line = frame.prev_resolved_cursor.as_ref().map(|c| c.line);
     // Resolve cursor BEFORE build_dirty_set so the dirty-set tracks the
     // actually-rendered cursor row (which may be the mark-mode cursor)
     // rather than the raw terminal cursor — otherwise the wrong row's
     // per-cell colors get the cursor-cell exclusion treatment.
-    let resolved_cursor = resolve_cursor(&input.content.cursor, input.mark_cursor.as_ref());
+    let resolved_cursor = super::resolve_cursor_state(input);
     let prev_hovered_cell = frame.prev_hovered_cell;
     build_dirty_set(
         input,
