@@ -341,6 +341,79 @@ pub fn update_cursor_only(
     out.prev_resolved_cursor = resolve_cursor_state(input).into_visible();
 }
 
+/// Iterate cells with row-transition tracking, off-screen culling, and
+/// per-row range recording. Shared shape between `fill_frame_shaped` and
+/// (in spirit) the incremental path's `process_incremental_cells` —
+/// extracted from `fill_frame_shaped` to keep that function under the
+/// 50-line size cap.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "row-transition state machine exposes all needed pixel geometry + accumulators"
+)]
+fn emit_row_tracked_cells(
+    ctx: &mut EmitCtx<'_>,
+    cells: &[oriterm_core::RenderableCell],
+    cw: f32,
+    ch: f32,
+    ox: f32,
+    oy: f32,
+    viewport_h: f32,
+    current_row: &mut usize,
+    row_start: &mut BufferLengths,
+    row_off_screen: &mut bool,
+) {
+    for cell in cells {
+        if cell
+            .flags
+            .intersects(CellFlags::WIDE_CHAR_SPACER | CellFlags::LEADING_WIDE_CHAR_SPACER)
+        {
+            continue;
+        }
+
+        let col = cell.column.0;
+        let row = cell.line;
+
+        // Record row range on row transition.
+        if row != *current_row {
+            if *current_row == usize::MAX {
+                *row_start = BufferLengths::capture(ctx.frame);
+            } else {
+                let now = BufferLengths::capture(ctx.frame);
+                let ranges = now.range_since(row_start);
+                // Fill gaps if rows were skipped (shouldn't happen but defensive).
+                while ctx.frame.row_ranges.len() < *current_row {
+                    ctx.frame.row_ranges.push(RowInstanceRanges::default());
+                }
+                ctx.frame.row_ranges.push(ranges);
+                *row_start = now;
+            }
+            *current_row = row;
+
+            // Skip rows entirely outside the render target.
+            let row_y = snapped_row_y(oy, row, ch);
+            *row_off_screen = row_y + ch < 0.0 || row_y > viewport_h;
+        }
+
+        if *row_off_screen {
+            continue;
+        }
+
+        let x = ox + col as f32 * cw;
+        let y = snapped_row_y(oy, row, ch);
+        emit_cell::emit_cell(cell, x, y, ctx);
+    }
+
+    // Record the final row's range.
+    if *current_row != usize::MAX {
+        let now = BufferLengths::capture(ctx.frame);
+        let ranges = now.range_since(row_start);
+        while ctx.frame.row_ranges.len() < *current_row {
+            ctx.frame.row_ranges.push(RowInstanceRanges::default());
+        }
+        ctx.frame.row_ranges.push(ranges);
+    }
+}
+
 /// Shaped rendering: emit background, glyph, and cursor instances from shaped data.
 ///
 /// Backgrounds and cursors use the same per-cell logic as the unshaped path.
@@ -385,61 +458,18 @@ pub(crate) fn fill_frame_shaped(
         shaped: Some((shaped, shaped.hinted())),
     };
 
-    for cell in &input.content.cells {
-        if cell
-            .flags
-            .intersects(CellFlags::WIDE_CHAR_SPACER | CellFlags::LEADING_WIDE_CHAR_SPACER)
-        {
-            continue;
-        }
-
-        let col = cell.column.0;
-        let row = cell.line;
-
-        // Record row range on row transition.
-        if row != current_row {
-            if current_row == usize::MAX {
-                row_start = BufferLengths::capture(ctx.frame);
-            } else {
-                let now = BufferLengths::capture(ctx.frame);
-                let ranges = now.range_since(&row_start);
-                // Fill gaps if rows were skipped (shouldn't happen but defensive).
-                while ctx.frame.row_ranges.len() < current_row {
-                    ctx.frame.row_ranges.push(RowInstanceRanges::default());
-                }
-                ctx.frame.row_ranges.push(ranges);
-                row_start = now;
-            }
-            current_row = row;
-
-            // Skip rows entirely outside the render target.
-            // Round to match the integer-snapped Y used for rendering.
-            let row_y = snapped_row_y(oy, row, ch);
-            row_off_screen = row_y + ch < 0.0 || row_y > viewport_h;
-        }
-
-        if row_off_screen {
-            continue;
-        }
-
-        let x = ox + col as f32 * cw;
-        // Round Y to integer pixels to prevent bilinear interpolation from
-        // softening glyph edges on fractional-DPI displays (1.25x, 1.5x).
-        // UI text already does this (scene_convert/text.rs:51).
-        let y = snapped_row_y(oy, row, ch);
-
-        emit_cell::emit_cell(cell, x, y, &mut ctx);
-    }
-
-    // Record the final row's range.
-    if current_row != usize::MAX {
-        let now = BufferLengths::capture(ctx.frame);
-        let ranges = now.range_since(&row_start);
-        while ctx.frame.row_ranges.len() < current_row {
-            ctx.frame.row_ranges.push(RowInstanceRanges::default());
-        }
-        ctx.frame.row_ranges.push(ranges);
-    }
+    emit_row_tracked_cells(
+        &mut ctx,
+        &input.content.cells,
+        cw,
+        ch,
+        ox,
+        oy,
+        viewport_h,
+        &mut current_row,
+        &mut row_start,
+        &mut row_off_screen,
+    );
 
     draw_url_hover_underline(input, ctx.frame, ox, oy);
     draw_prompt_markers(input, ctx.frame, ox, oy);

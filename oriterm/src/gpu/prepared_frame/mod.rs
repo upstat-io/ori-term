@@ -370,8 +370,17 @@ impl PreparedFrame {
         self.ui_subpixel_glyphs
             .extend_from(&other.ui_subpixel_glyphs);
         self.ui_color_glyphs.extend_from(&other.ui_color_glyphs);
-        // Capture overlay base lengths BEFORE appending, so shifted ranges
-        // address the correct indices in the merged buffers.
+        self.extend_overlay_with_shifted_ranges(other);
+        self.image_quads_below
+            .extend_from_slice(&other.image_quads_below);
+        self.image_quads_above
+            .extend_from_slice(&other.image_quads_above);
+    }
+
+    /// Append `other`'s overlay buffers and shift each `OverlayDrawRange`
+    /// by the pre-append base lengths so the merged ranges still address
+    /// the correct indices.
+    fn extend_overlay_with_shifted_ranges(&mut self, other: &Self) {
         let bases = [
             self.overlay_rects.len() as u32,
             self.overlay_glyphs.len() as u32,
@@ -392,10 +401,6 @@ impl PreparedFrame {
             shifted.color = (range.color.0 + bases[3], range.color.1 + bases[3]);
             self.overlay_draw_ranges.push(shifted);
         }
-        self.image_quads_below
-            .extend_from_slice(&other.image_quads_below);
-        self.image_quads_above
-            .extend_from_slice(&other.image_quads_above);
     }
 
     /// Shrink all instance buffers and scratch Vecs if capacity vastly exceeds usage.
