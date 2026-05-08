@@ -217,35 +217,16 @@ impl PreparedFrame {
         background: Rgb,
         opacity: f64,
     ) -> Self {
+        // Compose on top of `new` so the 22-field init lives in ONE place
+        // (SSOT for default state). `with_capacity` only differs in pre-
+        // allocating the per-cell instance writers — express the delta as
+        // capacity hints, not field re-listing.
         let cells = cols * rows;
-        Self {
-            backgrounds: InstanceWriter::with_capacity(cells),
-            glyphs: InstanceWriter::with_capacity(cells),
-            subpixel_glyphs: InstanceWriter::new(),
-            color_glyphs: InstanceWriter::new(),
-            cursors: InstanceWriter::with_capacity(4),
-            ui_rects: UiRectWriter::new(),
-            ui_glyphs: InstanceWriter::new(),
-            ui_subpixel_glyphs: InstanceWriter::new(),
-            ui_color_glyphs: InstanceWriter::new(),
-            overlay_rects: UiRectWriter::new(),
-            overlay_glyphs: InstanceWriter::new(),
-            overlay_subpixel_glyphs: InstanceWriter::new(),
-            overlay_color_glyphs: InstanceWriter::new(),
-            overlay_draw_ranges: Vec::new(),
-            image_quads_below: Vec::new(),
-            image_quads_above: Vec::new(),
-            row_ranges: Vec::new(),
-            saved_tier: SavedTerminalTier::new(),
-            prev_selection_snapshot: None,
-            prev_resolved_cursor: None,
-            prev_hovered_cell: None,
-            prev_dispatch_fingerprint: None,
-            was_incremental: false,
-            scratch_dirty: Vec::new(),
-            viewport,
-            clear_color: rgb_to_clear(background, opacity),
-        }
+        let mut frame = Self::new(viewport, background, opacity);
+        frame.backgrounds = InstanceWriter::with_capacity(cells);
+        frame.glyphs = InstanceWriter::with_capacity(cells);
+        frame.cursors = InstanceWriter::with_capacity(4);
+        frame
     }
 
     /// Total instance count across all thirteen buffers.

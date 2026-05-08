@@ -438,7 +438,7 @@ mod font_config {
         );
     }
 
-    /// Regression: round-1 TPR finding TPR-04-004-.
+    /// Regression: emoji reinject ordering.
     ///
     /// Pins the source-side emoji-reinject ordering that mirrors the
     /// production config-reload call sequence

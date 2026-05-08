@@ -8,7 +8,7 @@ use oriterm_core::CellFlags;
 use super::super::frame_input::FrameInput;
 use super::super::prepared_frame::PreparedFrame;
 use super::AtlasLookup;
-use super::emit::{build_cursor, draw_prompt_markers, draw_url_hover_underline};
+use super::emit::{draw_prompt_markers, draw_url_hover_underline};
 use super::emit_cell::EmitCtx;
 use super::resolve_cursor_state;
 
@@ -97,7 +97,7 @@ fn fill_frame(
 
         let col = cell.column.0;
         let x = ox + col as f32 * cw;
-        let y = (oy + cell.line as f32 * ch).round();
+        let y = super::snapped_row_y(oy, cell.line, ch);
 
         super::emit_cell::emit_cell(cell, x, y, &mut ctx);
     }
@@ -105,27 +105,7 @@ fn fill_frame(
     draw_url_hover_underline(input, ctx.frame, ox, oy);
     draw_prompt_markers(input, ctx.frame, ox, oy);
 
-    // Cursor instances (gated by terminal visibility AND application blink state).
-    // Unfocused windows always render a steady hollow block cursor.
-    if ctx.cursor.visible && cursor_opacity > 0.0 {
-        let shape = if input.window_focused {
-            ctx.cursor.shape
-        } else {
-            oriterm_core::CursorShape::HollowBlock
-        };
-        build_cursor(
-            ctx.frame,
-            shape,
-            ctx.cursor.column.0,
-            ctx.cursor.line,
-            cw,
-            ch,
-            ox,
-            oy,
-            input.palette.cursor_color,
-            cursor_opacity,
-        );
-    }
+    super::emit::emit_cursor_for_frame(input, ctx.frame, origin, cursor_opacity);
 
     super::emit::emit_image_quads(input, ctx.frame, ox, oy);
 }

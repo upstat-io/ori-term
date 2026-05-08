@@ -30,7 +30,7 @@ use std::hash::{Hash, Hasher};
 
 use crate::font::{GlyphStyle, RasterKey};
 use dirty_skip::{BufferLengths, RowInstanceRanges, fill_frame_incremental};
-use emit::{build_cursor, draw_prompt_markers, draw_url_hover_underline};
+use emit::{draw_prompt_markers, draw_url_hover_underline, emit_cursor_for_frame};
 use emit_cell::EmitCtx;
 use resolve::resolve_cursor;
 
@@ -115,6 +115,37 @@ pub(super) fn compute_dispatch_fingerprint(input: &FrameInput, origin: (f32, f32
 /// `dirty_skip::build_dirty_set` (current-frame compute).
 pub(super) fn resolve_cursor_state(input: &FrameInput) -> RenderableCursor {
     resolve_cursor(&input.content.cursor, input.mark_cursor.as_ref())
+}
+
+/// Effective render shape for a resolved cursor under window-focus state.
+///
+/// SSOT for the focused → `cursor.shape` / unfocused → `HollowBlock` policy.
+/// Lives in `prepare/mod.rs` (not `oriterm_core`) per the crate-boundaries
+/// rule that focus is render-context, not terminal-emulation state.
+#[inline]
+pub(super) fn effective_cursor_shape(
+    cursor: &RenderableCursor,
+    window_focused: bool,
+) -> CursorShape {
+    if window_focused {
+        cursor.shape
+    } else {
+        CursorShape::HollowBlock
+    }
+}
+
+/// Snap a row's Y position to integer pixels.
+///
+/// SSOT for the integer-Y pixel-snap discipline: cell-top y is computed as
+/// `(origin_y + row * cell_height).round()` and snapped to integer to
+/// preserve sharp glyph edges on fractional-DPI displays. A fractional Y
+/// triggers bilinear-filtering blur on cells where `cell_height` is not
+/// integer-aligned (e.g. `13.0 * 0.25 = 3.25`).
+///
+/// Co-locates with [`super_sub_glyph_offset`] (which preserves this snap).
+#[inline]
+pub(super) fn snapped_row_y(origin_y: f32, row: usize, cell_height: f32) -> f32 {
+    (origin_y + row as f32 * cell_height).round()
 }
 
 /// Vertical glyph offset (in pixels) for SGR 73 (superscript) / SGR 74 (subscript).
@@ -294,29 +325,7 @@ pub fn update_cursor_only(
 ) {
     out.cursors.clear();
 
-    let cursor = resolve_cursor_state(input);
-    if cursor.visible && cursor_opacity > 0.0 {
-        let shape = if input.window_focused {
-            cursor.shape
-        } else {
-            CursorShape::HollowBlock
-        };
-        let cw = input.cell_size.width;
-        let ch = input.cell_size.height;
-        let (ox, oy) = origin;
-        build_cursor(
-            out,
-            shape,
-            cursor.column.0,
-            cursor.line,
-            cw,
-            ch,
-            ox,
-            oy,
-            input.palette.cursor_color,
-            cursor_opacity,
-        );
-    }
+    emit_cursor_for_frame(input, out, origin, cursor_opacity);
 
     // INVARIANT: re-emit URL hover underline + prompt markers — they live on
     // the cursors buffer that cursors.clear() above drops.
@@ -329,7 +338,7 @@ pub fn update_cursor_only(
     // this write, the field semantics drift to "last full-prepare frame" — a
     // foot-gun for any future predicate consumer. Visibility-canonicalized
     // via RenderableCursor::into_visible (invisible → None).
-    out.prev_resolved_cursor = cursor.into_visible();
+    out.prev_resolved_cursor = resolve_cursor_state(input).into_visible();
 }
 
 /// Shaped rendering: emit background, glyph, and cursor instances from shaped data.
@@ -405,7 +414,7 @@ pub(crate) fn fill_frame_shaped(
 
             // Skip rows entirely outside the render target.
             // Round to match the integer-snapped Y used for rendering.
-            let row_y = (oy + row as f32 * ch).round();
+            let row_y = snapped_row_y(oy, row, ch);
             row_off_screen = row_y + ch < 0.0 || row_y > viewport_h;
         }
 
@@ -417,7 +426,7 @@ pub(crate) fn fill_frame_shaped(
         // Round Y to integer pixels to prevent bilinear interpolation from
         // softening glyph edges on fractional-DPI displays (1.25x, 1.5x).
         // UI text already does this (scene_convert/text.rs:51).
-        let y = (oy + row as f32 * ch).round();
+        let y = snapped_row_y(oy, row, ch);
 
         emit_cell::emit_cell(cell, x, y, &mut ctx);
     }
@@ -435,27 +444,9 @@ pub(crate) fn fill_frame_shaped(
     draw_url_hover_underline(input, ctx.frame, ox, oy);
     draw_prompt_markers(input, ctx.frame, ox, oy);
 
-    // Cursor (gated by terminal visibility AND application blink state).
-    // Unfocused windows always render a steady hollow block cursor.
-    if ctx.cursor.visible && cursor_opacity > 0.0 {
-        let shape = if input.window_focused {
-            ctx.cursor.shape
-        } else {
-            CursorShape::HollowBlock
-        };
-        build_cursor(
-            ctx.frame,
-            shape,
-            ctx.cursor.column.0,
-            ctx.cursor.line,
-            cw,
-            ch,
-            ox,
-            oy,
-            input.palette.cursor_color,
-            cursor_opacity,
-        );
-    }
+    // Cursor: visibility/opacity gate + focus-effective-shape + build_cursor
+    // dispatch all owned by the canonical home in `prepare/emit.rs`.
+    emit_cursor_for_frame(input, ctx.frame, origin, cursor_opacity);
 
     emit::emit_image_quads(input, ctx.frame, ox, oy);
 }

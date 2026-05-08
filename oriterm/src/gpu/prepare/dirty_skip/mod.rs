@@ -10,9 +10,9 @@ mod selection_damage;
 use std::ops::Range;
 
 use log::trace;
-use oriterm_core::{CellFlags, CursorShape, RenderableCell};
+use oriterm_core::{CellFlags, RenderableCell};
 
-use super::emit::{build_cursor, draw_prompt_markers, draw_url_hover_underline};
+use super::emit::{draw_prompt_markers, draw_url_hover_underline};
 use super::emit_cell::EmitCtx;
 use super::shaped_frame::ShapedFrame;
 use super::{AtlasLookup, FrameInput};
@@ -210,7 +210,7 @@ fn process_incremental_cells(
             dirty_emitted_rows += 1;
             row_start = BufferLengths::capture(ctx.frame);
             row_is_clean = false;
-            let row_y = (oy + row as f32 * ch).round();
+            let row_y = super::snapped_row_y(oy, row, ch);
             row_off_screen = row_y + ch < 0.0 || row_y > viewport_h;
         }
 
@@ -229,7 +229,7 @@ fn process_incremental_cells(
         let col = cell.column.0;
         let x = ox + col as f32 * cw;
         // Round Y to integer pixels (see prepare/mod.rs for rationale).
-        let y = (oy + row as f32 * ch).round();
+        let y = super::snapped_row_y(oy, row, ch);
         super::emit_cell::emit_cell(cell, x, y, ctx);
         emitted_cells += 1;
     }
@@ -265,8 +265,6 @@ pub(crate) fn fill_frame_incremental(
     origin: (f32, f32),
     cursor_opacity: f32,
 ) {
-    let cw = input.cell_size.width;
-    let ch = input.cell_size.height;
     let (ox, oy) = origin;
 
     // Setup that must read frame fields before frame is moved into ctx.
@@ -323,25 +321,7 @@ pub(crate) fn fill_frame_incremental(
     draw_url_hover_underline(input, ctx.frame, ox, oy);
     draw_prompt_markers(input, ctx.frame, ox, oy);
 
-    if ctx.cursor.visible && cursor_opacity > 0.0 {
-        let shape = if input.window_focused {
-            ctx.cursor.shape
-        } else {
-            CursorShape::HollowBlock
-        };
-        build_cursor(
-            ctx.frame,
-            shape,
-            ctx.cursor.column.0,
-            ctx.cursor.line,
-            cw,
-            ch,
-            ox,
-            oy,
-            input.palette.cursor_color,
-            cursor_opacity,
-        );
-    }
+    super::emit::emit_cursor_for_frame(input, ctx.frame, origin, cursor_opacity);
 
     super::emit::emit_image_quads(input, ctx.frame, ox, oy);
 }
