@@ -4,7 +4,7 @@ use std::collections::HashSet;
 
 use oriterm_ui::icons::IconId;
 
-use super::super::WindowRenderer;
+use super::WindowRenderer;
 
 /// Every `IconId` variant appears exactly once in `ICON_SIZES`.
 ///

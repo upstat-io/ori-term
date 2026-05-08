@@ -70,13 +70,11 @@ use oriterm_core::Rgb;
 #[cfg(feature = "gpu-tests")]
 use crate::gpu::visual_regression::headless_env;
 
-#[cfg(feature = "gpu-tests")]
 /// Constructor pin: fresh `WindowRenderer::new` reports cache-NOT-invalidated.
 ///
 /// No frame has been prepared yet, so the flag must default to false.
 #[cfg(feature = "gpu-tests")]
 #[test]
-#[cfg(feature = "gpu-tests")]
 fn new_constructor_initializes_cache_invalidated_to_false() {
     let Some((_gpu, _pip, renderer)) = headless_env() else {
         eprintln!("SKIP: GPU adapter unavailable");
@@ -88,11 +86,9 @@ fn new_constructor_initializes_cache_invalidated_to_false() {
     );
 }
 
-#[cfg(feature = "gpu-tests")]
 /// Constructor pin: fresh `WindowRenderer::new_ui_only` reports cache-NOT-invalidated.
 #[cfg(feature = "gpu-tests")]
 #[test]
-#[cfg(feature = "gpu-tests")]
 fn new_ui_only_constructor_initializes_cache_invalidated_to_false() {
     let Some(gpu) = GpuState::new_headless().ok() else {
         eprintln!("SKIP: GPU adapter unavailable");
@@ -120,7 +116,6 @@ fn new_ui_only_constructor_initializes_cache_invalidated_to_false() {
     );
 }
 
-#[cfg(feature = "gpu-tests")]
 /// Multi-pane setter pin: `begin_multi_pane_frame` unconditionally sets
 /// the flag true. Multi-pane always rebuilds the aggregate prepared
 /// frame (no incremental fast path), so the SSOT must report invalidation.
@@ -132,7 +127,6 @@ fn new_ui_only_constructor_initializes_cache_invalidated_to_false() {
 /// `true` here matches the cleared-cache state, not closes a real bug.
 #[cfg(feature = "gpu-tests")]
 #[test]
-#[cfg(feature = "gpu-tests")]
 fn begin_multi_pane_frame_sets_cache_invalidated_true() {
     let Some((_gpu, _pip, mut renderer)) = headless_env() else {
         eprintln!("SKIP: GPU adapter unavailable");
@@ -149,7 +143,6 @@ fn begin_multi_pane_frame_sets_cache_invalidated_true() {
 
 #[cfg(feature = "gpu-tests")]
 #[test]
-#[cfg(feature = "gpu-tests")]
 fn opacity_change_invalidates_cache() {
     let Some((_gpu, _pip, mut renderer)) = headless_env() else {
         eprintln!("SKIP: GPU adapter unavailable");
@@ -195,7 +188,6 @@ fn opacity_change_invalidates_cache() {
     );
 }
 
-#[cfg(feature = "gpu-tests")]
 /// Regression: BUG-06-030 — selection change MUST cause the full prepare
 /// pass to run, NOT the cursor-only fast path. Calls `WindowRenderer::prepare`
 /// directly and asserts on `cache_invalidated_this_frame()` so the integrated
@@ -203,7 +195,6 @@ fn opacity_change_invalidates_cache() {
 /// See: bug-tracker/plans/BUG-06-030/
 #[cfg(feature = "gpu-tests")]
 #[test]
-#[cfg(feature = "gpu-tests")]
 fn fast_path_skipped_when_selection_changes() {
     use oriterm_core::{Selection, Side, StableRowIndex};
 
@@ -242,7 +233,6 @@ fn fast_path_skipped_when_selection_changes() {
 
 #[cfg(feature = "gpu-tests")]
 #[test]
-#[cfg(feature = "gpu-tests")]
 fn fast_path_skipped_when_hovered_cell_changes() {
     let Some((gpu, pipelines, mut renderer)) = headless_env() else {
         eprintln!("SKIP: GPU adapter unavailable");
@@ -265,12 +255,10 @@ fn fast_path_skipped_when_hovered_cell_changes() {
     );
 }
 
-#[cfg(feature = "gpu-tests")]
 /// Counter-pin: identical state across two prepare calls keeps the
 /// fast path alive (cache_invalidated_this_frame == false after frame 2).
 #[cfg(feature = "gpu-tests")]
 #[test]
-#[cfg(feature = "gpu-tests")]
 fn fast_path_taken_when_selection_unchanged() {
     let Some((gpu, pipelines, mut renderer)) = headless_env() else {
         eprintln!("SKIP: GPU adapter unavailable");
@@ -291,11 +279,9 @@ fn fast_path_taken_when_selection_unchanged() {
     );
 }
 
-#[cfg(feature = "gpu-tests")]
 /// Counter-pin: identical hovered_cell state preserves fast-path eligibility.
 #[cfg(feature = "gpu-tests")]
 #[test]
-#[cfg(feature = "gpu-tests")]
 fn fast_path_taken_when_hovered_cell_unchanged() {
     let Some((gpu, pipelines, mut renderer)) = headless_env() else {
         eprintln!("SKIP: GPU adapter unavailable");
@@ -327,7 +313,6 @@ fn fast_path_taken_when_hovered_cell_unchanged() {
 #[cfg(feature = "gpu-tests")]
 use oriterm_core::{Column, CursorShape, RenderableCursor};
 
-#[cfg(feature = "gpu-tests")]
 /// Helper: seed `input.content.cursor` with full position/shape/visible state.
 #[cfg(feature = "gpu-tests")]
 fn set_cursor(
@@ -345,12 +330,10 @@ fn set_cursor(
     };
 }
 
-#[cfg(feature = "gpu-tests")]
 /// Column-only move: cursor changes column on the same line without
 /// content changing → MUST force full prepare to re-emit cell colors.
 #[cfg(feature = "gpu-tests")]
 #[test]
-#[cfg(feature = "gpu-tests")]
 fn fast_path_skipped_when_cursor_column_changes() {
     let Some((gpu, pipelines, mut renderer)) = headless_env() else {
         eprintln!("SKIP: GPU adapter unavailable");
@@ -372,11 +355,9 @@ fn fast_path_skipped_when_cursor_column_changes() {
     );
 }
 
-#[cfg(feature = "gpu-tests")]
 /// Edge case: cursor changes line only.
 #[cfg(feature = "gpu-tests")]
 #[test]
-#[cfg(feature = "gpu-tests")]
 fn fast_path_skipped_when_cursor_line_changes() {
     let Some((gpu, pipelines, mut renderer)) = headless_env() else {
         eprintln!("SKIP: GPU adapter unavailable");
@@ -397,11 +378,9 @@ fn fast_path_skipped_when_cursor_line_changes() {
     );
 }
 
-#[cfg(feature = "gpu-tests")]
 /// Edge case: cursor changes both line and column.
 #[cfg(feature = "gpu-tests")]
 #[test]
-#[cfg(feature = "gpu-tests")]
 fn fast_path_skipped_when_cursor_line_and_column_change() {
     let Some((gpu, pipelines, mut renderer)) = headless_env() else {
         eprintln!("SKIP: GPU adapter unavailable");
@@ -422,13 +401,11 @@ fn fast_path_skipped_when_cursor_line_and_column_change() {
     );
 }
 
-#[cfg(feature = "gpu-tests")]
 /// Edge case — same-position shape change (Block↔Underline):
 /// `is_block_cursor_cell` gates on shape, so the cell at cursor position
 /// resolves with different colors when shape changes.
 #[cfg(feature = "gpu-tests")]
 #[test]
-#[cfg(feature = "gpu-tests")]
 fn fast_path_skipped_when_cursor_shape_changes() {
     let Some((gpu, pipelines, mut renderer)) = headless_env() else {
         eprintln!("SKIP: GPU adapter unavailable");
@@ -451,11 +428,9 @@ fn fast_path_skipped_when_cursor_shape_changes() {
     );
 }
 
-#[cfg(feature = "gpu-tests")]
 /// Visibility-edge: visible → invisible flip.
 #[cfg(feature = "gpu-tests")]
 #[test]
-#[cfg(feature = "gpu-tests")]
 fn fast_path_skipped_when_cursor_visibility_flips_to_hidden() {
     let Some((gpu, pipelines, mut renderer)) = headless_env() else {
         eprintln!("SKIP: GPU adapter unavailable");
@@ -476,11 +451,9 @@ fn fast_path_skipped_when_cursor_visibility_flips_to_hidden() {
     );
 }
 
-#[cfg(feature = "gpu-tests")]
 /// Visibility-edge: invisible → visible flip.
 #[cfg(feature = "gpu-tests")]
 #[test]
-#[cfg(feature = "gpu-tests")]
 fn fast_path_skipped_when_cursor_visibility_flips_to_visible() {
     let Some((gpu, pipelines, mut renderer)) = headless_env() else {
         eprintln!("SKIP: GPU adapter unavailable");
@@ -501,13 +474,11 @@ fn fast_path_skipped_when_cursor_visibility_flips_to_visible() {
     );
 }
 
-#[cfg(feature = "gpu-tests")]
 /// Mark-cursor edge: None → Some (mark mode appears, terminal cursor
 /// stationary). Resolved cursor position jumps from terminal-cursor (0,0)
 /// to mark-cursor (2,5) → fast path must reject.
 #[cfg(feature = "gpu-tests")]
 #[test]
-#[cfg(feature = "gpu-tests")]
 fn fast_path_skipped_when_mark_cursor_appears() {
     let Some((gpu, pipelines, mut renderer)) = headless_env() else {
         eprintln!("SKIP: GPU adapter unavailable");
@@ -533,11 +504,9 @@ fn fast_path_skipped_when_mark_cursor_appears() {
     );
 }
 
-#[cfg(feature = "gpu-tests")]
 /// Mark-cursor edge: Some → None (mark mode disappears).
 #[cfg(feature = "gpu-tests")]
 #[test]
-#[cfg(feature = "gpu-tests")]
 fn fast_path_skipped_when_mark_cursor_disappears() {
     let Some((gpu, pipelines, mut renderer)) = headless_env() else {
         eprintln!("SKIP: GPU adapter unavailable");
@@ -563,11 +532,9 @@ fn fast_path_skipped_when_mark_cursor_disappears() {
     );
 }
 
-#[cfg(feature = "gpu-tests")]
 /// Mark-cursor moves under the mark override (terminal cursor stationary).
 #[cfg(feature = "gpu-tests")]
 #[test]
-#[cfg(feature = "gpu-tests")]
 fn fast_path_skipped_when_mark_cursor_override_moves() {
     let Some((gpu, pipelines, mut renderer)) = headless_env() else {
         eprintln!("SKIP: GPU adapter unavailable");
@@ -597,13 +564,11 @@ fn fast_path_skipped_when_mark_cursor_override_moves() {
     );
 }
 
-#[cfg(feature = "gpu-tests")]
 /// CJK wide-char interaction: cursor moves off a CJK base cell. The
 /// `is_block_cursor_cell` predicate handles `is_wide` for the cursor cell +
 /// spacer cell pair; cursor-move off a CJK base must dirty both columns.
 #[cfg(feature = "gpu-tests")]
 #[test]
-#[cfg(feature = "gpu-tests")]
 fn fast_path_skipped_when_cursor_moves_off_cjk_wide_cell() {
     let Some((gpu, pipelines, mut renderer)) = headless_env() else {
         eprintln!("SKIP: GPU adapter unavailable");
@@ -643,11 +608,9 @@ fn fast_path_skipped_when_cursor_moves_off_cjk_wide_cell() {
     );
 }
 
-#[cfg(feature = "gpu-tests")]
 /// Counter-pin: identical cursor state across two frames keeps the fast path.
 #[cfg(feature = "gpu-tests")]
 #[test]
-#[cfg(feature = "gpu-tests")]
 fn fast_path_taken_when_cursor_unchanged() {
     let Some((gpu, pipelines, mut renderer)) = headless_env() else {
         eprintln!("SKIP: GPU adapter unavailable");
@@ -667,11 +630,9 @@ fn fast_path_taken_when_cursor_unchanged() {
     );
 }
 
-#[cfg(feature = "gpu-tests")]
 /// Counter-pin: identical selection + cursor state keeps the fast path.
 #[cfg(feature = "gpu-tests")]
 #[test]
-#[cfg(feature = "gpu-tests")]
 fn fast_path_taken_when_selection_and_cursor_both_unchanged() {
     use oriterm_core::{Selection, Side, StableRowIndex};
 
@@ -700,14 +661,12 @@ fn fast_path_taken_when_selection_and_cursor_both_unchanged() {
     );
 }
 
-#[cfg(feature = "gpu-tests")]
 /// Counter-pin: an invisible cursor "moving" must NOT invalidate the fast
 /// path. Storage rule canonicalizes invisible cursors to None — so two
 /// consecutive invisible-cursor frames at different positions are
 /// None == None at the predicate.
 #[cfg(feature = "gpu-tests")]
 #[test]
-#[cfg(feature = "gpu-tests")]
 fn fast_path_taken_when_invisible_cursor_moves() {
     let Some((gpu, pipelines, mut renderer)) = headless_env() else {
         eprintln!("SKIP: GPU adapter unavailable");
@@ -730,13 +689,11 @@ fn fast_path_taken_when_invisible_cursor_moves() {
     );
 }
 
-#[cfg(feature = "gpu-tests")]
 /// Counter-pin: mark_cursor active masks terminal cursor moves — resolved
 /// cursor stays at the mark override, so terminal cursor changes under an
 /// active mark don't invalidate.
 #[cfg(feature = "gpu-tests")]
 #[test]
-#[cfg(feature = "gpu-tests")]
 fn fast_path_taken_when_mark_cursor_active_and_terminal_cursor_moves() {
     let Some((gpu, pipelines, mut renderer)) = headless_env() else {
         eprintln!("SKIP: GPU adapter unavailable");
@@ -764,7 +721,6 @@ fn fast_path_taken_when_mark_cursor_active_and_terminal_cursor_moves() {
     );
 }
 
-#[cfg(feature = "gpu-tests")]
 /// Decode an instance's bg_color from the InstanceWriter byte buffer.
 /// Layout (matches `prepare/tests.rs::decode_instance`):
 /// bytes 0-7: pos (x, y as f32); 8-15: size; 16-31: uv; 32-47: fg_color;
@@ -789,7 +745,6 @@ fn decode_bg_at_pos(bytes: &[u8], target_x: f32, target_y: f32) -> Option<[f32; 
     None
 }
 
-#[cfg(feature = "gpu-tests")]
 /// sRGB-to-linear conversion matches the GPU pipeline's color packing
 /// (see `crate::gpu::srgb_to_linear`). Decoded instance bg_color values
 /// are in linear space; expected values must convert to match.
@@ -803,7 +758,6 @@ fn rgb_to_f32(r: u8, g: u8, b: u8) -> [f32; 4] {
     ]
 }
 
-#[cfg(feature = "gpu-tests")]
 /// Behavioral pin: cursor moves within an active selection. Asserts:
 /// (a) gate fires (cache invalidated), (b) full prepare re-emits the
 /// same cell count, AND (c) actual bg_color at the OLD cursor cell is
@@ -812,7 +766,6 @@ fn rgb_to_f32(r: u8, g: u8, b: u8) -> [f32; 4] {
 /// directly from emitted bytes.
 #[cfg(feature = "gpu-tests")]
 #[test]
-#[cfg(feature = "gpu-tests")]
 fn cell_colors_correct_after_cursor_moves_within_selection() {
     use oriterm_core::{Selection, Side, StableRowIndex};
 
@@ -881,14 +834,12 @@ fn cell_colors_correct_after_cursor_moves_within_selection() {
     );
 }
 
-#[cfg(feature = "gpu-tests")]
 /// Behavioral pin: cursor moves within an active search match. Asserts
 /// (a) gate fires, (b) full prepare re-emits, AND (c) actual bg_color
 /// at OLD cursor cell is SEARCH_MATCH_BG (yellow) while NEW cursor cell
 /// is block-cursor-suppressed.
 #[cfg(feature = "gpu-tests")]
 #[test]
-#[cfg(feature = "gpu-tests")]
 fn cell_colors_correct_after_cursor_moves_within_search_match() {
     use oriterm_core::{SearchMatch, StableRowIndex};
 
