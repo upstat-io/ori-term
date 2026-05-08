@@ -567,3 +567,126 @@ mod font_config {
             .len()
     }
 }
+
+// --- Chrome render SSOT consolidation pins ---
+//
+// Pin the `cache_invalidated_this_frame` SSOT contract:
+// - Constructor-init: both `WindowRenderer::new` and `new_ui_only` start
+//   with the flag false (no frame prepared yet).
+// - Multi-pane setter: `begin_multi_pane_frame` unconditionally sets the
+//   flag true (multi-pane always rebuilds the aggregate prepared frame).
+// - Chrome SSOT consumer: source-scan archaeology asserts `chrome.rs`
+//   reads from `renderer.cache_invalidated_this_frame()` and does NOT
+//   maintain a parallel `ChromeParams` predicate.
+
+/// Regression: chrome.rs must read from
+/// `WindowRenderer::cache_invalidated_this_frame()` and NOT carry a
+/// parallel `ChromeParams::{content_dirty, selection_changed, blink_changed}`
+/// predicate. Drift would re-introduce the SSOT violation; this test
+/// fails at compile time if `chrome.rs` regresses.
+///
+/// See: bug-tracker/plans/BUG-06-033/section-03-tdd-matrix.md §"Parallel-
+/// predicate regression pin (renderer-level surrogate + automated archaeology)"
+#[test]
+fn chrome_render_queries_renderer_ssot() {
+    let chrome_src = include_str!("../../app/redraw/chrome.rs");
+
+    // Positive: chrome reads from the SSOT query.
+    assert!(
+        chrome_src.contains("renderer.cache_invalidated_this_frame() || ctx.ui_stale"),
+        "chrome.rs must read needs_full_render from renderer.cache_invalidated_this_frame() \
+         (SSOT consolidation regression)"
+    );
+
+    // Negative: the old parallel-predicate fields must be gone from chrome.
+    let banned = [
+        "params.content_dirty",
+        "params.selection_changed",
+        "params.blink_changed",
+    ];
+    for forbidden in &banned {
+        assert!(
+            !chrome_src.contains(forbidden),
+            "chrome.rs must NOT reference `{forbidden}` (parallel predicate removed in SSOT consolidation)"
+        );
+    }
+}
+
+#[cfg(feature = "gpu-tests")]
+mod cache_invalidated_pins {
+    use crate::gpu::ViewportSize;
+    use crate::gpu::pipelines::GpuPipelines;
+    use crate::gpu::state::GpuState;
+    use crate::gpu::window_renderer::WindowRenderer;
+    use oriterm_core::Rgb;
+
+    use crate::gpu::visual_regression::headless_env;
+
+    /// Constructor pin: fresh `WindowRenderer::new` reports cache-NOT-invalidated.
+    ///
+    /// No frame has been prepared yet, so the flag must default to false.
+    #[test]
+    fn new_constructor_initializes_cache_invalidated_to_false() {
+        let Some((_gpu, _pip, renderer)) = headless_env() else {
+            eprintln!("SKIP: GPU adapter unavailable");
+            return;
+        };
+        assert!(
+            !renderer.cache_invalidated_this_frame(),
+            "WindowRenderer::new must initialize cache_invalidated_this_frame to false"
+        );
+    }
+
+    /// Constructor pin: fresh `WindowRenderer::new_ui_only` reports cache-NOT-invalidated.
+    #[test]
+    fn new_ui_only_constructor_initializes_cache_invalidated_to_false() {
+        let Some(gpu) = GpuState::new_headless().ok() else {
+            eprintln!("SKIP: GPU adapter unavailable");
+            return;
+        };
+        let pipelines = GpuPipelines::new(&gpu);
+        let font_set = crate::font::collection::FontSet::ui_embedded();
+        let Some(ui_sizes) = crate::font::ui_font_sizes::UiFontSizes::new(
+            font_set,
+            96.0,
+            crate::font::GlyphFormat::Alpha,
+            crate::font::HintingMode::None,
+            400,
+            550,
+            crate::font::ui_font_sizes::PRELOAD_SIZES,
+        )
+        .ok() else {
+            eprintln!("SKIP: UI font setup failed");
+            return;
+        };
+        let renderer = WindowRenderer::new_ui_only(&gpu, &pipelines, ui_sizes);
+        assert!(
+            !renderer.cache_invalidated_this_frame(),
+            "WindowRenderer::new_ui_only must initialize cache_invalidated_this_frame to false"
+        );
+    }
+
+    /// Multi-pane setter pin: `begin_multi_pane_frame` unconditionally sets
+    /// the flag true. Multi-pane always rebuilds the aggregate prepared
+    /// frame (no incremental fast path), so the SSOT must report invalidation.
+    ///
+    /// Note: this is a setter-correctness pin, not a regression pin —
+    /// `multi_pane/mod.rs:122-127` already triggers `any_content_changed`
+    /// via `is_focused`, so the chrome stale-blit case the parallel
+    /// predicate missed was unreachable in production. The unconditional
+    /// `true` here matches the cleared-cache state, not closes a real bug.
+    #[test]
+    fn begin_multi_pane_frame_sets_cache_invalidated_true() {
+        let Some((_gpu, _pip, mut renderer)) = headless_env() else {
+            eprintln!("SKIP: GPU adapter unavailable");
+            return;
+        };
+        let bg = Rgb { r: 0, g: 0, b: 0 };
+        renderer.begin_multi_pane_frame(ViewportSize::new(800, 600), bg, 1.0);
+        assert!(
+            renderer.cache_invalidated_this_frame(),
+            "begin_multi_pane_frame must set cache_invalidated_this_frame=true \
+             (multi-pane always rebuilds, no incremental fast path)"
+        );
+    }
+}

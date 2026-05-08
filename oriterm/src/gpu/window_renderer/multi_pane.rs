@@ -37,6 +37,10 @@ impl WindowRenderer {
         self.prepared.clear();
         self.prepared.viewport = viewport;
         self.prepared.set_clear_color(background, opacity);
+
+        // Multi-pane unconditionally rebuilds the aggregate prepared frame
+        // (no incremental fast path), so the content-cache tier is invalidated.
+        self.cache_invalidated_this_frame = true;
     }
 
     /// Shape, cache, and fill one pane into a separate `PreparedFrame`.

@@ -121,6 +121,13 @@ pub struct WindowRenderer {
     content_cache: Option<wgpu::Texture>,
     content_cache_view: Option<wgpu::TextureView>,
     content_cache_size: (u32, u32),
+
+    /// Whether `prepare()` (or `begin_multi_pane_frame()`) invalidated the
+    /// content-cache tier this frame. SSOT consumed by `render_chrome` to
+    /// decide whether `render_cached` rebuilds the offscreen cache or just
+    /// blits it. Reset to `false` on each `prepare()` call when the
+    /// fast path is taken.
+    cache_invalidated_this_frame: bool,
 }
 
 impl WindowRenderer {
@@ -208,6 +215,7 @@ impl WindowRenderer {
             content_cache: None,
             content_cache_view: None,
             content_cache_size: (0, 0),
+            cache_invalidated_this_frame: false,
         };
         // Canonical wiring: inject the terminal font's emoji fallback into
         // the UI registry so emoji codepoints resolve via the UI-size
@@ -221,6 +229,12 @@ impl WindowRenderer {
     /// Cell dimensions derived from the current font metrics.
     pub fn cell_metrics(&self) -> CellMetrics {
         self.font_collection.cell_metrics()
+    }
+
+    /// Whether `prepare()` (or `begin_multi_pane_frame()`) invalidated the
+    /// content-cache tier this frame. SSOT for the chrome render decision.
+    pub(crate) fn cache_invalidated_this_frame(&self) -> bool {
+        self.cache_invalidated_this_frame
     }
 
     /// Primary font family name.

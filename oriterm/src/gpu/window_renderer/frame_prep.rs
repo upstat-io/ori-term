@@ -115,12 +115,18 @@ impl WindowRenderer {
         let cached_valid = self.shaping.frame.rows() > 0 && self.shaping.frame.cols() == cols;
         let visual_changed = self.has_visual_change(input);
         let geometry_changed = self.has_geometry_change(input, origin);
-        if !content_changed
+
+        // SSOT for "did this frame invalidate the content-cache tier?".
+        // True when prepare must rebuild instances; false when the fast
+        // path can reuse the cached terminal tier (cursor-blink-only frames).
+        let can_reuse_content_cache = !content_changed
             && !visual_changed
             && !geometry_changed
             && cached_valid
-            && self.prepared.has_terminal_data()
-        {
+            && self.prepared.has_terminal_data();
+        self.cache_invalidated_this_frame = !can_reuse_content_cache;
+
+        if can_reuse_content_cache {
             self.atlas.begin_frame();
             self.subpixel_atlas.begin_frame();
             self.color_atlas.begin_frame();
