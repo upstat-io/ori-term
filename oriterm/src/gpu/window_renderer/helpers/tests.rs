@@ -2,9 +2,9 @@
 
 use oriterm_ui::text::ShapedGlyph;
 
-use super::super::super::prepare::ShapedFrame;
 use super::{grid_raster_keys, scene_raster_keys};
 use crate::font::build_col_glyph_map;
+use crate::gpu::prepare::ShapedFrame;
 
 // --- Raster key: subpixel positioning ---
 
