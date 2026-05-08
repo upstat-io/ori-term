@@ -2,11 +2,12 @@
 
 #![cfg(feature = "gpu-tests")]
 
+use super::WindowRenderer;
 use crate::font::collection::{FontCollection, FontSet};
 use crate::font::ui_font_sizes::{self, UiFontSizes};
 use crate::font::{GlyphFormat, HintingMode};
+use crate::gpu::GpuPipelines;
 use crate::gpu::state::GpuState;
-use crate::gpu::{GpuPipelines, WindowRenderer};
 
 const TEST_DPI: f32 = 96.0;
 const TEST_FONT_SIZE_PT: f32 = 12.0;

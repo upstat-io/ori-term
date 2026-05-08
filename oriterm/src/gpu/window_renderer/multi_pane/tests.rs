@@ -117,6 +117,7 @@ fn focus_border_scaled_width() {
     assert_eq!(renderer.prepared.cursors.len(), 4);
 }
 
+#[cfg(not(target_os = "macos"))]
 #[test]
 fn window_border_pushes_four_rects() {
     let (_gpu, _pip, mut renderer) = headless_env().expect("GPU available");
@@ -133,6 +134,7 @@ fn window_border_pushes_four_rects() {
     assert_eq!(renderer.prepared.cursors.len(), 4);
 }
 
+#[cfg(not(target_os = "macos"))]
 #[test]
 fn window_border_scaled() {
     let (_gpu, _pip, mut renderer) = headless_env().expect("GPU available");

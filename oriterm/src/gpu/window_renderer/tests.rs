@@ -57,13 +57,13 @@ fn chrome_render_queries_renderer_ssot() {
 }
 
 #[cfg(feature = "gpu-tests")]
+use super::WindowRenderer;
+#[cfg(feature = "gpu-tests")]
 use crate::gpu::ViewportSize;
 #[cfg(feature = "gpu-tests")]
 use crate::gpu::pipelines::GpuPipelines;
 #[cfg(feature = "gpu-tests")]
 use crate::gpu::state::GpuState;
-#[cfg(feature = "gpu-tests")]
-use crate::gpu::window_renderer::WindowRenderer;
 #[cfg(feature = "gpu-tests")]
 use oriterm_core::Rgb;
 
@@ -892,16 +892,16 @@ fn cell_colors_correct_after_cursor_moves_within_search_match() {
     // NEW cursor (2, 4) at (32.0, 32.0) — must show block-cursor-suppressed cell.bg.
     let bytes = renderer.prepared.backgrounds.as_bytes();
 
-    let old_bg = decode_bg_at_pos(bytes, 48.0, 32.0)
-        .expect("OLD cursor cell (2,6) MUST be in the buffer");
+    let old_bg =
+        decode_bg_at_pos(bytes, 48.0, 32.0).expect("OLD cursor cell (2,6) MUST be in the buffer");
     assert_eq!(
         old_bg, search_match_bg,
         "OLD cursor cell at (2,6) MUST emit SEARCH_MATCH_BG after cursor moves \
          off — stale block-cursor suppression would leak without the gate"
     );
 
-    let new_bg = decode_bg_at_pos(bytes, 32.0, 32.0)
-        .expect("NEW cursor cell (2,4) MUST be in the buffer");
+    let new_bg =
+        decode_bg_at_pos(bytes, 32.0, 32.0).expect("NEW cursor cell (2,4) MUST be in the buffer");
     assert_eq!(
         new_bg,
         rgb_to_f32(cell_bg.r, cell_bg.g, cell_bg.b),
