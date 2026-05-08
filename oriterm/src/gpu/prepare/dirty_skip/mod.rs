@@ -83,10 +83,10 @@ impl SavedTerminalTier {
 /// Snapshot of current buffer byte lengths, used to compute row ranges.
 #[derive(Debug, Clone, Copy)]
 pub struct BufferLengths {
-    pub(super) backgrounds: usize,
-    pub(super) glyphs: usize,
-    pub(super) subpixel_glyphs: usize,
-    pub(super) color_glyphs: usize,
+    backgrounds: usize,
+    glyphs: usize,
+    subpixel_glyphs: usize,
+    color_glyphs: usize,
 }
 
 impl BufferLengths {
@@ -134,26 +134,34 @@ fn push_dirty_row_range(frame: &mut PreparedFrame, current_row: usize, row_start
 /// disjoint field projections — see the borrow note in `fill_frame_incremental`.
 fn replay_clean_row(frame: &mut PreparedFrame, row: usize) {
     let row_start = BufferLengths::capture(frame);
-    if let Some(ranges) = frame.saved_tier.row_ranges(row).cloned() {
+    // Copy out byte-range starts/ends as scalars before the disjoint-field
+    // borrow split below — avoids per-clean-row `RowInstanceRanges.cloned()`
+    // (32-byte struct copy in the hot path) by capturing only the 8 usize
+    // values we actually need.
+    let saved_ranges = frame.saved_tier.row_ranges(row).map(|r| {
+        (
+            r.backgrounds.start,
+            r.backgrounds.end,
+            r.glyphs.start,
+            r.glyphs.end,
+            r.subpixel_glyphs.start,
+            r.subpixel_glyphs.end,
+            r.color_glyphs.start,
+            r.color_glyphs.end,
+        )
+    });
+    if let Some((bg_s, bg_e, g_s, g_e, sp_s, sp_e, c_s, c_e)) = saved_ranges {
         let saved = &frame.saved_tier;
-        frame.backgrounds.extend_from_byte_range(
-            &saved.backgrounds,
-            ranges.backgrounds.start,
-            ranges.backgrounds.end,
-        );
         frame
-            .glyphs
-            .extend_from_byte_range(&saved.glyphs, ranges.glyphs.start, ranges.glyphs.end);
-        frame.subpixel_glyphs.extend_from_byte_range(
-            &saved.subpixel_glyphs,
-            ranges.subpixel_glyphs.start,
-            ranges.subpixel_glyphs.end,
-        );
-        frame.color_glyphs.extend_from_byte_range(
-            &saved.color_glyphs,
-            ranges.color_glyphs.start,
-            ranges.color_glyphs.end,
-        );
+            .backgrounds
+            .extend_from_byte_range(&saved.backgrounds, bg_s, bg_e);
+        frame.glyphs.extend_from_byte_range(&saved.glyphs, g_s, g_e);
+        frame
+            .subpixel_glyphs
+            .extend_from_byte_range(&saved.subpixel_glyphs, sp_s, sp_e);
+        frame
+            .color_glyphs
+            .extend_from_byte_range(&saved.color_glyphs, c_s, c_e);
     }
     let now = BufferLengths::capture(frame);
     let ranges = now.range_since(&row_start);
