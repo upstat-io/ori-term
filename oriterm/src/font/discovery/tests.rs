@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use super::families::{FALLBACK_FONTS, PRIMARY_FAMILIES};
 use super::{
     EMBEDDED_FONT_DATA, FontOrigin, discover_fonts, embedded_family, enumerate_mono_families,
-    resolve_user_fallback,
+    prewarm_catalog, resolve_user_fallback,
 };
 
 /// Embedded font fixtures — only consumed by `_from_roots` enumeration tests
@@ -665,4 +665,53 @@ fn verify_result_consistency(result: &super::DiscoveryResult) {
             );
         }
     }
+}
+
+/// Regression: BUG-04-008 — `prewarm_catalog()` populates `FAMILY_CATALOG`
+/// so the first Settings dialog open finds a hot cache instead of stalling
+/// the UI thread on platform font enumeration.
+///
+/// `OnceLock::get_or_init` is process-global; since other tests in this
+/// binary may already have warmed the catalog, the assertion is structural:
+/// after `prewarm_catalog()` returns, `enumerate_mono_families()` returns
+/// pointer-equal slices on subsequent calls (the `OnceLock` is populated
+/// and stable).
+#[test]
+fn prewarm_catalog_populates_family_catalog() {
+    prewarm_catalog();
+    let a = enumerate_mono_families();
+    let b = enumerate_mono_families();
+    assert_eq!(
+        a.as_ptr(),
+        b.as_ptr(),
+        "catalog must be a stable &'static slice after prewarm",
+    );
+    assert_eq!(
+        a.len(),
+        b.len(),
+        "catalog length must be stable across calls",
+    );
+}
+
+/// Regression: BUG-04-008 — `prewarm_catalog()` is idempotent under
+/// repeated and concurrent calls. `OnceLock::get_or_init` allows exactly
+/// one initializer; concurrent callers block until the first completes,
+/// then read the stable result.
+#[test]
+fn prewarm_catalog_is_idempotent_under_concurrent_calls() {
+    let handles: Vec<_> = (0..4)
+        .map(|_| std::thread::spawn(prewarm_catalog))
+        .collect();
+    for h in handles {
+        h.join().expect("prewarm thread must not panic");
+    }
+    // After all four threads complete, the catalog must be populated and
+    // returning a stable slice (same pointer on subsequent calls).
+    let a = enumerate_mono_families();
+    let b = enumerate_mono_families();
+    assert_eq!(
+        a.as_ptr(),
+        b.as_ptr(),
+        "concurrent prewarm must leave catalog stable",
+    );
 }

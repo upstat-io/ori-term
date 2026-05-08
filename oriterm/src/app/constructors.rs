@@ -169,6 +169,7 @@ impl App {
             blink_wakeup_gen: Arc::new(AtomicU64::new(0)),
             next_blink_gen: 1,
             last_cursor_pos: (0, 0),
+            font_catalog_prewarm_started: false,
             mouse: MouseState::new(),
             pane_selections: HashMap::new(),
             mark_cursors: HashMap::new(),
