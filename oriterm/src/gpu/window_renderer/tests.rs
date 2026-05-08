@@ -692,33 +692,140 @@ mod cache_invalidated_pins {
 
     #[test]
     fn opacity_change_invalidates_cache() {
-        let Some((_gpu, _pip, renderer)) = headless_env() else {
+        let Some((_gpu, _pip, mut renderer)) = headless_env() else {
             eprintln!("SKIP: GPU adapter unavailable");
             return;
         };
 
         let mut input = crate::gpu::frame_input::FrameInput::test_grid(10, 10, "");
-        
-        // Align input with PreparedFrame defaults so ONLY palette.opacity triggers change
+        let origin = (0.0_f32, 0.0_f32);
+
+        // Align input so only palette.opacity is the variable.
         input.text_blink_opacity = 1.0;
         input.fg_dim = 1.0;
         input.subpixel_positioning = false;
         input.selection = None;
         input.hovered_cell = None;
-        
-        // Default prepared frame has prev_palette_opacity = 1.0.
-        input.palette.opacity = 1.0;
-        assert!(!renderer.has_visual_change(&input), "1.0 to 1.0 is no change");
 
-        // Delta > 0.001 should invalidate
-        input.palette.opacity = 0.5;
+        // Seed prev_dispatch_fingerprint by computing for the baseline input.
+        // Default PreparedFrame has prev_dispatch_fingerprint=None, so we
+        // must publish a fingerprint first (mimicking what prepare does).
+        input.palette.opacity = 1.0;
+        let baseline = crate::gpu::prepare::compute_dispatch_fingerprint(&input, origin);
+        renderer.prepared.prev_dispatch_fingerprint = Some(baseline);
+
+        // Same opacity: no change.
         assert!(
-            renderer.has_visual_change(&input),
-            "opacity change from 1.0 to 0.5 must invalidate visual cache"
+            !renderer.has_dispatch_change(&input, origin),
+            "opacity 1.0 to 1.0 must not invalidate fingerprint"
         );
 
-        // Epsilon boundary (delta < 0.001) should NOT invalidate
+        // Delta of 0.5 changes the fingerprint.
+        input.palette.opacity = 0.5;
+        assert!(
+            renderer.has_dispatch_change(&input, origin),
+            "opacity change from 1.0 to 0.5 must invalidate dispatch fingerprint"
+        );
+
+        // Bitwise-exact comparison replaces the prior `> 0.001` threshold.
+        // Sub-EPSILON deltas now invalidate (extra rebuilds, never stale reuse).
         input.palette.opacity = 0.9995;
-        assert!(!renderer.has_visual_change(&input), "epsilon change should not invalidate");
+        assert!(
+            renderer.has_dispatch_change(&input, origin),
+            "bitwise-exact comparison must invalidate on any non-zero delta"
+        );
+    }
+
+    /// Regression: BUG-06-030 — selection change MUST gate the cursor-only
+    /// fast path. The dispatch fingerprint excludes `prev_selection_snapshot`
+    /// because selection damage is handled per-row by `build_dirty_set` inside
+    /// the incremental prepare pass — but the fast path BYPASSES prepare
+    /// entirely, so selection changes there would silently leave stale
+    /// selection decorations without `has_row_state_change`.
+    /// See: bug-tracker/plans/BUG-06-030/
+    #[test]
+    fn fast_path_skipped_when_selection_changes() {
+        use oriterm_core::{Selection, Side, StableRowIndex};
+
+        let Some((_gpu, _pip, mut renderer)) = headless_env() else {
+            eprintln!("SKIP: GPU adapter unavailable");
+            return;
+        };
+
+        let mut input = crate::gpu::frame_input::FrameInput::test_grid(10, 10, "");
+        let origin = (0.0_f32, 0.0_f32);
+        input.selection = None;
+        input.hovered_cell = None;
+
+        // Seed both fingerprint and selection snapshot to baseline ("no selection").
+        let baseline_fp = crate::gpu::prepare::compute_dispatch_fingerprint(&input, origin);
+        renderer.prepared.prev_dispatch_fingerprint = Some(baseline_fp);
+        renderer.prepared.prev_selection_snapshot = None;
+
+        // Add a selection — fingerprint stays the same, selection snapshot changes.
+        let mut sel = Selection::new_char(StableRowIndex(0), 0, Side::Left);
+        sel.end = oriterm_core::SelectionPoint {
+            row: StableRowIndex(0),
+            col: 5,
+            side: Side::Right,
+        };
+        input.selection = Some(crate::gpu::frame_input::FrameSelection::new(&sel, 0));
+        assert!(
+            !renderer.has_dispatch_change(&input, origin),
+            "selection change must NOT alter the dispatch fingerprint"
+        );
+        assert!(
+            renderer.has_row_state_change(&input),
+            "selection change MUST trigger has_row_state_change to gate the fast path"
+        );
+    }
+
+    #[test]
+    fn fast_path_skipped_when_hovered_cell_changes() {
+        let Some((_gpu, _pip, mut renderer)) = headless_env() else {
+            eprintln!("SKIP: GPU adapter unavailable");
+            return;
+        };
+
+        let mut input = crate::gpu::frame_input::FrameInput::test_grid(10, 10, "");
+        let origin = (0.0_f32, 0.0_f32);
+        input.selection = None;
+        input.hovered_cell = None;
+
+        let baseline_fp = crate::gpu::prepare::compute_dispatch_fingerprint(&input, origin);
+        renderer.prepared.prev_dispatch_fingerprint = Some(baseline_fp);
+        renderer.prepared.prev_hovered_cell = None;
+
+        input.hovered_cell = Some((1, 2));
+        assert!(
+            !renderer.has_dispatch_change(&input, origin),
+            "hovered_cell change must NOT alter the dispatch fingerprint"
+        );
+        assert!(
+            renderer.has_row_state_change(&input),
+            "hovered_cell change MUST trigger has_row_state_change to gate the fast path"
+        );
+    }
+
+    #[test]
+    fn fast_path_taken_when_selection_unchanged() {
+        let Some((_gpu, _pip, mut renderer)) = headless_env() else {
+            eprintln!("SKIP: GPU adapter unavailable");
+            return;
+        };
+
+        let mut input = crate::gpu::frame_input::FrameInput::test_grid(10, 10, "");
+        let origin = (0.0_f32, 0.0_f32);
+        input.selection = None;
+        input.hovered_cell = None;
+
+        let baseline_fp = crate::gpu::prepare::compute_dispatch_fingerprint(&input, origin);
+        renderer.prepared.prev_dispatch_fingerprint = Some(baseline_fp);
+        renderer.prepared.prev_selection_snapshot = None;
+        renderer.prepared.prev_hovered_cell = None;
+
+        // No state change — both helpers must report no change.
+        assert!(!renderer.has_dispatch_change(&input, origin));
+        assert!(!renderer.has_row_state_change(&input));
     }
 }

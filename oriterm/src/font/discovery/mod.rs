@@ -20,8 +20,8 @@ mod walk;
 pub use catalog::enumerate_mono_families;
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 pub use catalog::enumerate_mono_families_from_roots;
-pub(crate) use catalog::prewarm_catalog;
 pub(in crate::font::discovery) use catalog::family_paths;
+pub(crate) use catalog::prewarm_catalog;
 
 #[cfg(target_os = "linux")]
 mod linux;

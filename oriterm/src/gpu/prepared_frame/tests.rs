@@ -26,7 +26,7 @@ fn new_frame_is_empty() {
     let frame = PreparedFrame::new(VP, BLACK, 1.0);
     assert!(frame.is_empty());
     assert_eq!(frame.total_instances(), 0);
-    assert_eq!(frame.prev_palette_opacity, 1.0);
+    assert_eq!(frame.prev_dispatch_fingerprint, None);
 }
 
 #[test]
@@ -34,7 +34,7 @@ fn with_capacity_starts_empty() {
     let frame = PreparedFrame::with_capacity(VP, 80, 24, BLACK, 1.0);
     assert!(frame.is_empty());
     assert_eq!(frame.total_instances(), 0);
-    assert_eq!(frame.prev_palette_opacity, 1.0);
+    assert_eq!(frame.prev_dispatch_fingerprint, None);
 }
 
 // --- Clear color ---

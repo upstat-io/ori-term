@@ -25,6 +25,9 @@ use super::atlas::AtlasEntry;
 use super::frame_input::FrameInput;
 use super::prepared_frame::PreparedFrame;
 
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
+
 use crate::font::{GlyphStyle, RasterKey};
 use dirty_skip::{BufferLengths, RowInstanceRanges, fill_frame_incremental};
 use emit::{build_cursor, draw_prompt_markers, draw_url_hover_underline};
@@ -34,6 +37,68 @@ use resolve::resolve_cursor;
 pub use shaped_frame::ShapedFrame;
 #[cfg(test)]
 pub(crate) use unshaped::{prepare_frame, prepare_frame_into};
+
+/// Content-aware fingerprint of every frame-level input that affects per-cell
+/// instance emission. SSOT for the incremental dispatch decision — one hash +
+/// one comparison + one tail write replace the prior parallel sync points.
+///
+/// Hashed inputs:
+/// - viewport (`width`, `height`) — full viewport-pixel dimensions.
+/// - full [`CellMetrics`] (`width`, `height`, `baseline`, `underline_offset`,
+///   `stroke_size`, `strikeout_offset`) — every metric affects cell or
+///   decoration emission. Hashing only the first 3 would silently replay
+///   stale decoration geometry on font/scale changes.
+/// - content grid dimensions (`content_cols`, `content_rows`).
+/// - origin (x, y) — saved-tier rows carry pixel positions baked at emit time.
+/// - per-cell alpha multipliers (`text_blink_opacity`, `palette.opacity`,
+///   `fg_dim`) — baked into per-cell instances.
+/// - `subpixel_positioning` — flips between subpixel/glyphs writers.
+/// - `search_fingerprint()` — already content-aware via
+///   [`crate::gpu::frame_input::FrameSearch::damage_fingerprint`].
+///
+/// NOT hashed (handled by per-row dirty tracking in `build_dirty_set` /
+/// `WindowRenderer::has_row_state_change`):
+/// - selection snapshot, cursor row, hovered cell.
+///
+/// `f32` fields are hashed via `.to_bits()` (bitwise-exact, not epsilon-
+/// tolerant). Tiny float deltas now force full rebuild instead of stale
+/// replay; the effect is extra rebuilds, not stale reuse.
+pub(super) fn compute_dispatch_fingerprint(input: &FrameInput, origin: (f32, f32)) -> u64 {
+    let mut hasher = DefaultHasher::new();
+
+    // Geometry — affects every cell's pixel position.
+    input.viewport.width.hash(&mut hasher);
+    input.viewport.height.hash(&mut hasher);
+
+    // ALL 6 CellMetrics fields — underline/stroke/strikeout offsets affect
+    // decoration emission and must invalidate on font/scale change.
+    input.cell_size.width.to_bits().hash(&mut hasher);
+    input.cell_size.height.to_bits().hash(&mut hasher);
+    input.cell_size.baseline.to_bits().hash(&mut hasher);
+    input.cell_size.underline_offset.to_bits().hash(&mut hasher);
+    input.cell_size.stroke_size.to_bits().hash(&mut hasher);
+    input.cell_size.strikeout_offset.to_bits().hash(&mut hasher);
+
+    input.content_cols.hash(&mut hasher);
+    input.content_rows.hash(&mut hasher);
+    origin.0.to_bits().hash(&mut hasher);
+    origin.1.to_bits().hash(&mut hasher);
+
+    // Per-cell alpha multipliers — baked into per-cell instances at emit time.
+    input.text_blink_opacity.to_bits().hash(&mut hasher);
+    input.palette.opacity.to_bits().hash(&mut hasher);
+    input.fg_dim.to_bits().hash(&mut hasher);
+
+    // Atlas routing — flips between subpixel/glyphs writers in emit.rs.
+    u8::from(input.subpixel_positioning).hash(&mut hasher);
+
+    // Search highlight state — search match colors baked at emit time.
+    if let Some(fp) = input.search_fingerprint() {
+        fp.hash(&mut hasher);
+    }
+
+    hasher.finish()
+}
 
 /// Vertical glyph offset (in pixels) for SGR 73 (superscript) / SGR 74 (subscript).
 ///
@@ -154,41 +219,27 @@ pub fn prepare_frame_shaped_into(
         "save_terminal_tier must leave live terminal-tier writers empty"
     );
 
-    // Frame-level state guards on the dispatch predicate. The incremental
-    // branch's `replay_clean_row` reuses per-cell instances frozen at the
-    // previous frame's emit time — any frame-level state that affects
-    // per-cell pixel positioning, color, or layout MUST match between
-    // frames, OR the upstream caller must signal `all_dirty=true` to
-    // force a full rebuild. Each guard's reasoning:
-    //   - viewport: pixel-dimension change (resize) repositions everything.
-    //   - cell_size: scale or font-metric change leaves viewport unchanged
-    //     but reflows per-cell pixel positions.
-    //   - content_cols/content_rows: snapshot grid topology can race
-    //     ahead of the pixel viewport during async resize; saved_tier
-    //     row_ranges encode the prior topology and don't transfer.
-    //   - origin: scroll without all_dirty would render saved cells at
-    //     the prior origin Y.
-    //   - text_blink_opacity: blink alpha is baked into per-cell instances
-    //     at emit time; build_dirty_set does NOT mark blink-sensitive
-    //     rows dirty on opacity change.
-    // Note: `hovered_cell` is NOT a dispatch guard. Hover state affects
-    // only the cells under the previous and current hover positions; we
-    // dirty those rows in `build_dirty_set` (O(1)) instead of falling
-    // back to a full rebuild (O(N)) for every mouse move.
-    let search_fingerprint = input.search_fingerprint();
+    // Single content-aware fingerprint replaces the prior 11-clause
+    // enumerated predicate. Every frame-level input that
+    // affects per-cell instance emission is hashed into one u64 via
+    // `compute_dispatch_fingerprint` — viewport, full CellMetrics,
+    // content dims, origin, blink/palette/dim opacities, subpixel
+    // positioning, search state. Adding a new invalidating input now
+    // requires updating exactly one location (the helper) instead of
+    // three parallel sync points (predicate + tail + struct field).
+    //
+    // Excluded from the fingerprint (handled by per-row `build_dirty_set`,
+    // not full rebuild):
+    //   - selection / cursor / hovered_cell — row-localized changes
+    //   - palette colors beyond opacity — color drift via grid `damage`
+    //
+    // The fingerprint is bitwise-exact (`.to_bits()` for f32 fields);
+    // small float deltas now force full rebuild rather than incremental
+    // replay. The effect is extra rebuilds, not stale reuse.
+    let fingerprint = compute_dispatch_fingerprint(input, origin);
     let can_incremental = !input.content.all_dirty
         && out.saved_tier.has_cached_rows()
-        && out.viewport == input.viewport
-        && out.prev_cell_size == Some(input.cell_size)
-        && out.prev_content_cols == Some(input.content_cols)
-        && out.prev_content_rows == Some(input.content_rows)
-        && (out.prev_origin.0 - origin.0).abs() < f32::EPSILON
-        && (out.prev_origin.1 - origin.1).abs() < f32::EPSILON
-        && (out.prev_text_blink_opacity - input.text_blink_opacity).abs() < f32::EPSILON
-        && (out.prev_palette_opacity - input.palette.opacity).abs() < f32::EPSILON
-        && (out.prev_fg_dim - input.fg_dim).abs() < f32::EPSILON
-        && out.prev_subpixel_positioning == input.subpixel_positioning
-        && out.prev_search_fingerprint == search_fingerprint;
+        && out.prev_dispatch_fingerprint == Some(fingerprint);
 
     if can_incremental {
         // Incremental path: saved_tier is already populated by the
@@ -220,20 +271,18 @@ pub fn prepare_frame_shaped_into(
         fill_frame_shaped(input, atlas, shaped, out, origin, cursor_opacity);
     }
 
-    // Update post-prepare snapshots for next frame's dispatch. Every
-    // dispatch-predicate field needs a matching tail update or the
-    // predicate's invariant doesn't hold across frames.
+    // Update post-prepare snapshots for next frame's dispatch.
+    // The dispatch fingerprint replaces the prior 9 enumerated tail updates;
+    // per-row dirty-tracking fields (selection, cursor, hovered) stay because
+    // they feed `build_dirty_set` inside the incremental pass AND
+    // `WindowRenderer::has_row_state_change` for the fast-path gate.
+    out.prev_dispatch_fingerprint = Some(fingerprint);
+
     let num_rows = input.rows();
     out.prev_selection_snapshot = input
         .selection
         .as_ref()
         .and_then(|s| s.damage_snapshot(num_rows));
-    out.prev_text_blink_opacity = input.text_blink_opacity;
-    out.prev_palette_opacity = input.palette.opacity;
-    out.prev_cell_size = Some(input.cell_size);
-    out.prev_origin = origin;
-    out.prev_content_cols = Some(input.content_cols);
-    out.prev_content_rows = Some(input.content_rows);
     // Use the resolved cursor (mark-mode override applied) so the next
     // frame's build_dirty_set dirties the correct previous-cursor row
     // when the cursor moves.
@@ -244,9 +293,6 @@ pub fn prepare_frame_shaped_into(
         None
     };
     out.prev_hovered_cell = input.hovered_cell;
-    out.prev_fg_dim = input.fg_dim;
-    out.prev_subpixel_positioning = input.subpixel_positioning;
-    out.prev_search_fingerprint = search_fingerprint;
 }
 
 /// Cursor-blink-only fast path: rebuild only cursor instances.

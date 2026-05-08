@@ -11,8 +11,6 @@
 use oriterm_core::Rgb;
 use oriterm_core::image::ImageId;
 
-use crate::font::CellMetrics;
-
 use super::frame_input::{SelectionDamageSnapshot, ViewportSize};
 use super::instance_writer::InstanceWriter;
 use super::prepare::dirty_skip::{RowInstanceRanges, SavedTerminalTier};
@@ -124,36 +122,12 @@ pub struct PreparedFrame {
     /// Selection snapshot from the previous frame for damage tracking.
     ///
     /// Captures viewport-relative line range, column extents, side, and mode.
-    /// Used by the incremental path to detect which rows changed selection
-    /// state — including intra-line column changes during drag. Persists
-    /// across `clear()` and `save_terminal_tier()`.
+    /// Used by the incremental path's `build_dirty_set` to detect which rows
+    /// changed selection state — including intra-line column changes during
+    /// drag. Persists across `clear()` and `save_terminal_tier()`. Also
+    /// consumed by `WindowRenderer::has_row_state_change` to gate the
+    /// cursor-only fast path (which bypasses `build_dirty_set` entirely).
     pub(crate) prev_selection_snapshot: Option<SelectionDamageSnapshot>,
-    /// Previous frame's text blink opacity — detects blink timer changes
-    /// that require a full instance rebuild (not just cursor-only update).
-    pub(crate) prev_text_blink_opacity: f32,
-    /// Previous frame's window opacity — detects focus changes that require
-    /// a full instance rebuild (updates `clear_color` in the prepare phase).
-    pub(crate) prev_palette_opacity: f32,
-    /// Previous frame's cell metrics — invalidates [`SavedTerminalTier`]
-    /// when scale, font, or DPI changes leave the pixel viewport
-    /// unchanged but reposition cells. `None` before the first prepare;
-    /// `saved_tier` is empty in that case so the dispatch predicate's
-    /// preceding `has_cached_rows()` clause already short-circuits — the
-    /// `Option` layer just removes the need for a sentinel
-    /// [`CellMetrics`] value.
-    pub(crate) prev_cell_size: Option<CellMetrics>,
-    /// Previous frame's origin (x, y in pixels). Saved-tier rows carry
-    /// pixel positions baked at emit time; an origin change must dispatch
-    /// full-rebuild so cells render at the new origin.
-    pub(crate) prev_origin: (f32, f32),
-    /// Previous frame's content grid columns. The `viewport` guard
-    /// catches pixel-size changes; this field catches content-grid
-    /// changes that can race ahead of the viewport during async resize
-    /// (snapshot vs. surface mismatch). Saved-tier `row_ranges` are sized
-    /// to the prior content grid; mismatch invalidates clean-row replay.
-    pub(crate) prev_content_cols: Option<usize>,
-    /// Previous frame's content grid rows. Companion to `prev_content_cols`.
-    pub(crate) prev_content_rows: Option<usize>,
     /// Previous frame's cursor row when visible. Drives `build_dirty_set`
     /// to dirty BOTH the previous cursor row (so its cells regenerate
     /// without the stale "with cursor" colors baked into `saved_tier`)
@@ -162,30 +136,21 @@ pub struct PreparedFrame {
     /// Previous frame's hovered cell `(viewport_line, column)`. Drives
     /// `build_dirty_set` to dirty BOTH the previous hover row (so its
     /// cells regenerate without the stale "solid hyperlink underline"
-    /// baked into `saved_tier` from `prepare/decorations.rs:82`) AND
-    /// the current hover row. Row-granular dirtying is O(1) per hover
-    /// change versus full-rebuild dispatch invalidation.
+    /// baked into `saved_tier`) AND the current hover row. Also consumed
+    /// by `WindowRenderer::has_row_state_change` to gate the cursor-only
+    /// fast path. Row-granular dirtying is O(1) per hover change versus
+    /// full-rebuild dispatch invalidation.
     pub(crate) prev_hovered_cell: Option<(usize, usize)>,
-    /// Previous frame's `fg_dim` alpha multiplier. Pane focus / dimming
-    /// is baked into per-cell glyph alpha at emit time (`emit_cell.rs`
-    /// reads `ctx.fg_dim`), so a `fg_dim` change without `all_dirty`
-    /// would replay stale alpha. The dispatch predicate guards this
-    /// like `prev_text_blink_opacity` — both feed cell-instance alpha.
-    pub(crate) prev_fg_dim: f32,
-    /// Previous frame's subpixel-positioning flag. The flag routes
-    /// `AtlasKind::Subpixel` glyphs to either `subpixel_glyphs` or
-    /// `glyphs` (see `emit.rs`); a toggle would leave saved cells in
-    /// the wrong buffer.
-    pub(crate) prev_subpixel_positioning: bool,
-    /// Previous frame's search-state fingerprint. `None` when no search
-    /// is active; `Some(FrameSearch::damage_fingerprint())` otherwise.
-    /// Search match highlights are baked into per-cell colors at emit
-    /// time (`emit_cell.rs::cell_match_type`), so any search-state
-    /// change must invalidate the cache. The fingerprint is content-
-    /// aware (hashes match positions) so two distinct match sets with
-    /// the same `(count, focused, base_stable)` but different positions
-    /// produce different fingerprints.
-    pub(crate) prev_search_fingerprint: Option<(usize, usize, u64, u64)>,
+    /// Content-aware fingerprint of every frame-level input that affects
+    /// per-cell instance emission (viewport, full `CellMetrics`, content
+    /// dims, origin, blink/palette/dim opacities, subpixel positioning,
+    /// search state). `None` before the first prepare; replaces the prior
+    /// 9 enumerated `prev_*` fields used solely by the dispatch predicate.
+    /// SSOT for "did frame-level state change?" — consumed by both the
+    /// incremental dispatch predicate in `prepare_frame_shaped_into` AND
+    /// the `WindowRenderer::has_dispatch_change` fast-path gate. Computed
+    /// via `compute_dispatch_fingerprint()` with `DefaultHasher`.
+    pub(crate) prev_dispatch_fingerprint: Option<u64>,
     /// Whether the last prepare pass used the incremental path.
     ///
     /// When true, `scratch_dirty` and `saved_tier.row_ranges` are valid and
@@ -222,17 +187,9 @@ impl PreparedFrame {
             row_ranges: Vec::new(),
             saved_tier: SavedTerminalTier::new(),
             prev_selection_snapshot: None,
-            prev_text_blink_opacity: 1.0,
-            prev_palette_opacity: 1.0,
-            prev_cell_size: None,
-            prev_origin: (0.0, 0.0),
-            prev_content_cols: None,
-            prev_content_rows: None,
             prev_cursor_line: None,
             prev_hovered_cell: None,
-            prev_fg_dim: 1.0,
-            prev_subpixel_positioning: false,
-            prev_search_fingerprint: None,
+            prev_dispatch_fingerprint: None,
             was_incremental: false,
             scratch_dirty: Vec::new(),
             viewport,
@@ -273,17 +230,9 @@ impl PreparedFrame {
             row_ranges: Vec::new(),
             saved_tier: SavedTerminalTier::new(),
             prev_selection_snapshot: None,
-            prev_text_blink_opacity: 1.0,
-            prev_palette_opacity: 1.0,
-            prev_cell_size: None,
-            prev_origin: (0.0, 0.0),
-            prev_content_cols: None,
-            prev_content_rows: None,
             prev_cursor_line: None,
             prev_hovered_cell: None,
-            prev_fg_dim: 1.0,
-            prev_subpixel_positioning: false,
-            prev_search_fingerprint: None,
+            prev_dispatch_fingerprint: None,
             was_incremental: false,
             scratch_dirty: Vec::new(),
             viewport,

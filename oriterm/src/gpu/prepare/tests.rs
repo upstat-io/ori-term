@@ -5575,3 +5575,299 @@ mod dirty_skip_traces {
         });
     }
 }
+
+// ── Dispatch-fingerprint tests ──
+//
+// `compute_dispatch_fingerprint` is the SSOT for "did frame-level state
+// change?" — replaces the prior 11-clause enumerated dispatch predicate.
+// Each test below varies ONE input field relative to a baseline and asserts
+// fingerprint equality/inequality. Counter-pin tests verify that fields
+// intentionally excluded (selection, cursor, hovered_cell) do NOT change
+// the fingerprint — those flow through per-row `build_dirty_set` instead.
+
+mod dispatch_fingerprint {
+    use super::super::compute_dispatch_fingerprint;
+    use crate::gpu::frame_input::FrameInput;
+
+    fn baseline() -> (FrameInput, (f32, f32)) {
+        let mut input = FrameInput::test_grid(10, 5, "Hello");
+        input.text_blink_opacity = 1.0;
+        input.fg_dim = 1.0;
+        input.palette.opacity = 1.0;
+        input.subpixel_positioning = false;
+        input.selection = None;
+        input.hovered_cell = None;
+        let origin = (0.0_f32, 0.0_f32);
+        (input, origin)
+    }
+
+    /// Stable fingerprint: same inputs → same output.
+    #[test]
+    fn fingerprint_stable_across_unchanged_frames() {
+        let (input, origin) = baseline();
+        let a = compute_dispatch_fingerprint(&input, origin);
+        let b = compute_dispatch_fingerprint(&input, origin);
+        assert_eq!(a, b, "identical inputs must produce identical fingerprints");
+    }
+
+    /// Geometry change → fingerprint changes.
+    #[test]
+    fn fingerprint_changes_with_viewport_width() {
+        let (mut input, origin) = baseline();
+        let baseline_fp = compute_dispatch_fingerprint(&input, origin);
+        input.viewport.width += 10;
+        assert_ne!(compute_dispatch_fingerprint(&input, origin), baseline_fp);
+    }
+
+    #[test]
+    fn fingerprint_changes_with_viewport_height() {
+        let (mut input, origin) = baseline();
+        let baseline_fp = compute_dispatch_fingerprint(&input, origin);
+        input.viewport.height += 10;
+        assert_ne!(compute_dispatch_fingerprint(&input, origin), baseline_fp);
+    }
+
+    #[test]
+    fn fingerprint_changes_with_cell_size_width() {
+        let (mut input, origin) = baseline();
+        let baseline_fp = compute_dispatch_fingerprint(&input, origin);
+        input.cell_size.width += 1.0;
+        assert_ne!(compute_dispatch_fingerprint(&input, origin), baseline_fp);
+    }
+
+    #[test]
+    fn fingerprint_changes_with_cell_size_height() {
+        let (mut input, origin) = baseline();
+        let baseline_fp = compute_dispatch_fingerprint(&input, origin);
+        input.cell_size.height += 1.0;
+        assert_ne!(compute_dispatch_fingerprint(&input, origin), baseline_fp);
+    }
+
+    #[test]
+    fn fingerprint_changes_with_cell_size_baseline() {
+        let (mut input, origin) = baseline();
+        let baseline_fp = compute_dispatch_fingerprint(&input, origin);
+        input.cell_size.baseline += 1.0;
+        assert_ne!(compute_dispatch_fingerprint(&input, origin), baseline_fp);
+    }
+
+    /// Regression: BUG-06-030 — all 6 CellMetrics fields hashed (not just 3).
+    /// See: bug-tracker/plans/BUG-06-030/section-03-tdd-matrix.md
+    #[test]
+    fn fingerprint_changes_with_cell_size_underline_offset() {
+        let (mut input, origin) = baseline();
+        let baseline_fp = compute_dispatch_fingerprint(&input, origin);
+        input.cell_size.underline_offset += 1.0;
+        assert_ne!(
+            compute_dispatch_fingerprint(&input, origin),
+            baseline_fp,
+            "underline_offset MUST be in fingerprint — affects decoration emission"
+        );
+    }
+
+    #[test]
+    fn fingerprint_changes_with_cell_size_stroke_size() {
+        let (mut input, origin) = baseline();
+        let baseline_fp = compute_dispatch_fingerprint(&input, origin);
+        input.cell_size.stroke_size += 1.0;
+        assert_ne!(
+            compute_dispatch_fingerprint(&input, origin),
+            baseline_fp,
+            "stroke_size MUST be in fingerprint — affects underline/strikeout geometry"
+        );
+    }
+
+    #[test]
+    fn fingerprint_changes_with_cell_size_strikeout_offset() {
+        let (mut input, origin) = baseline();
+        let baseline_fp = compute_dispatch_fingerprint(&input, origin);
+        input.cell_size.strikeout_offset += 1.0;
+        assert_ne!(
+            compute_dispatch_fingerprint(&input, origin),
+            baseline_fp,
+            "strikeout_offset MUST be in fingerprint — affects strikethrough position"
+        );
+    }
+
+    #[test]
+    fn fingerprint_changes_with_content_cols() {
+        let (mut input, origin) = baseline();
+        let baseline_fp = compute_dispatch_fingerprint(&input, origin);
+        input.content_cols += 1;
+        assert_ne!(compute_dispatch_fingerprint(&input, origin), baseline_fp);
+    }
+
+    #[test]
+    fn fingerprint_changes_with_content_rows() {
+        let (mut input, origin) = baseline();
+        let baseline_fp = compute_dispatch_fingerprint(&input, origin);
+        input.content_rows += 1;
+        assert_ne!(compute_dispatch_fingerprint(&input, origin), baseline_fp);
+    }
+
+    #[test]
+    fn fingerprint_changes_with_origin_x() {
+        let (input, origin) = baseline();
+        let baseline_fp = compute_dispatch_fingerprint(&input, origin);
+        let new_origin = (origin.0 + 5.0, origin.1);
+        assert_ne!(
+            compute_dispatch_fingerprint(&input, new_origin),
+            baseline_fp
+        );
+    }
+
+    #[test]
+    fn fingerprint_changes_with_origin_y() {
+        let (input, origin) = baseline();
+        let baseline_fp = compute_dispatch_fingerprint(&input, origin);
+        let new_origin = (origin.0, origin.1 + 5.0);
+        assert_ne!(
+            compute_dispatch_fingerprint(&input, new_origin),
+            baseline_fp
+        );
+    }
+
+    #[test]
+    fn fingerprint_changes_with_text_blink_opacity() {
+        let (mut input, origin) = baseline();
+        let baseline_fp = compute_dispatch_fingerprint(&input, origin);
+        input.text_blink_opacity = 0.5;
+        assert_ne!(compute_dispatch_fingerprint(&input, origin), baseline_fp);
+    }
+
+    #[test]
+    fn fingerprint_changes_with_palette_opacity() {
+        let (mut input, origin) = baseline();
+        let baseline_fp = compute_dispatch_fingerprint(&input, origin);
+        input.palette.opacity = 0.8;
+        assert_ne!(compute_dispatch_fingerprint(&input, origin), baseline_fp);
+    }
+
+    #[test]
+    fn fingerprint_changes_with_fg_dim() {
+        let (mut input, origin) = baseline();
+        let baseline_fp = compute_dispatch_fingerprint(&input, origin);
+        input.fg_dim = 0.6;
+        assert_ne!(compute_dispatch_fingerprint(&input, origin), baseline_fp);
+    }
+
+    #[test]
+    fn fingerprint_changes_with_subpixel_positioning() {
+        let (mut input, origin) = baseline();
+        let baseline_fp = compute_dispatch_fingerprint(&input, origin);
+        input.subpixel_positioning = true;
+        assert_ne!(compute_dispatch_fingerprint(&input, origin), baseline_fp);
+    }
+
+    /// Counter-pins: row-state fields are intentionally NOT in the fingerprint.
+    /// These changes must flow through `build_dirty_set` (incremental path) or
+    /// `WindowRenderer::has_row_state_change` (fast-path gate), never via full
+    /// rebuild dispatch.
+
+    #[test]
+    fn fingerprint_unchanged_when_hovered_cell_changes() {
+        let (mut input, origin) = baseline();
+        let baseline_fp = compute_dispatch_fingerprint(&input, origin);
+        input.hovered_cell = Some((0, 0));
+        assert_eq!(
+            compute_dispatch_fingerprint(&input, origin),
+            baseline_fp,
+            "hovered_cell MUST NOT be in fingerprint — handled per-row by build_dirty_set"
+        );
+    }
+
+    /// Regression: BUG-06-030 — bitwise-exact via `.to_bits()`; `+0.0` and
+    /// `-0.0` produce different fingerprints (one spurious rebuild on flip).
+    /// See: bug-tracker/plans/BUG-06-030/
+    #[test]
+    fn fingerprint_distinguishes_positive_zero_from_negative_zero() {
+        let (mut input, origin) = baseline();
+        input.text_blink_opacity = 0.0_f32;
+        let pos_zero = compute_dispatch_fingerprint(&input, origin);
+        input.text_blink_opacity = -0.0_f32;
+        let neg_zero = compute_dispatch_fingerprint(&input, origin);
+        assert_ne!(
+            pos_zero, neg_zero,
+            "bitwise-exact via .to_bits() distinguishes +0.0 from -0.0 \
+             (one spurious rebuild on flip, accepted per consensus)"
+        );
+    }
+
+    /// Bitwise pin: smallest representable f32 delta invalidates (replaces prior
+    /// `< f32::EPSILON` epsilon-tolerant comparison). Using `from_bits()` to
+    /// construct the next-representable value avoids the float-rounding gotcha
+    /// where `1.0 + EPSILON/2.0` rounds back to exactly `1.0` in f32.
+    #[test]
+    fn fingerprint_distinguishes_smallest_float_delta() {
+        let (mut input, origin) = baseline();
+        input.text_blink_opacity = 1.0_f32;
+        let baseline_fp = compute_dispatch_fingerprint(&input, origin);
+        input.text_blink_opacity = f32::from_bits(1.0_f32.to_bits() + 1);
+        let perturbed_fp = compute_dispatch_fingerprint(&input, origin);
+        assert_ne!(
+            baseline_fp, perturbed_fp,
+            "bitwise-exact comparison must invalidate on the smallest \
+             representable f32 delta (extra rebuilds, never stale reuse)"
+        );
+    }
+
+    /// Distinct origins with otherwise-identical inputs must produce distinct
+    /// fingerprints. Documents that the fingerprint is content-aware, not
+    /// just shape-aware.
+    #[test]
+    fn fingerprint_distinguishes_distinct_origins_same_shape() {
+        let (input, _origin) = baseline();
+        let a = compute_dispatch_fingerprint(&input, (10.0, 20.0));
+        let b = compute_dispatch_fingerprint(&input, (15.0, 20.0));
+        assert_ne!(
+            a, b,
+            "different origins with otherwise-identical inputs must produce different fingerprints"
+        );
+    }
+}
+
+// ── Regression pin against re-introducing enumerated prev_* fields ──
+//
+// The previous design had 9 prev_* fields on PreparedFrame used solely by the
+// dispatch predicate; the fingerprint refactor replaced them with a single
+// prev_dispatch_fingerprint field. This test asserts the 9 identifiers no
+// longer appear in the source — re-introducing any of them would silently
+// re-create the sync-point drift hazard.
+
+/// Regression: BUG-06-030 — 9 enumerated prev_* fields replaced with single
+/// content-aware fingerprint; this test prevents accidental re-introduction.
+/// See: bug-tracker/plans/BUG-06-030/
+#[test]
+fn enumerated_prev_fields_removed() {
+    let manifest = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR set by cargo");
+    let path = std::path::PathBuf::from(manifest)
+        .join("src")
+        .join("gpu")
+        .join("prepared_frame")
+        .join("mod.rs");
+    let source = std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("failed to read {}: {}", path.display(), e));
+
+    // Field declarations look like `pub(crate) prev_<name>:` or `pub(crate) prev_<name> :`.
+    // Use the punctuated form to avoid matching inline doc-comment mentions.
+    for forbidden in &[
+        "prev_text_blink_opacity:",
+        "prev_palette_opacity:",
+        "prev_cell_size:",
+        "prev_origin:",
+        "prev_content_cols:",
+        "prev_content_rows:",
+        "prev_fg_dim:",
+        "prev_subpixel_positioning:",
+        "prev_search_fingerprint:",
+    ] {
+        assert!(
+            !source.contains(forbidden),
+            "regression: {} re-introduced as a field declaration in {}. \
+             The fingerprint refactor removed these in favor of prev_dispatch_fingerprint; \
+             re-adding any of them re-creates the parallel-sync-point drift hazard.",
+            forbidden,
+            path.display()
+        );
+    }
+}
