@@ -102,32 +102,43 @@ pub(super) fn compute_dispatch_fingerprint(input: &FrameInput, origin: (f32, f32
 /// Resolve the cursor row-state SSOT for the cursor-only fast-path predicate
 /// AND the per-frame `prev_resolved_cursor` snapshot.
 ///
-/// Returns the merged terminal-cursor + mark-mode override exactly as the
-/// emit pipeline sees it. The returned cursor's `visible` flag carries
-/// "is the cursor displayed this frame?". Storage sites
-/// (`prev_resolved_cursor`) canonicalize invisible cursors to `None` per the
-/// visibility-canonicalized storage rule — this helper is the SSOT for the
-/// resolution itself; `Option` wrapping is the storage layer's concern.
+/// Returns the merged terminal-cursor + mark-mode override + window-focus
+/// override — exactly as the emit pipeline sees it. The returned cursor's
+/// `shape` is the **effective** render shape (focused or Hidden → configured
+/// shape; unfocused non-Hidden → `HollowBlock`), so all downstream consumers
+/// (per-cell color resolution, fast-path gating, row-dirty membership) read
+/// `cursor.shape` directly without re-querying `effective_cursor_shape`. The
+/// `visible` flag carries "is the cursor displayed this frame?". Storage
+/// sites (`prev_resolved_cursor`) canonicalize invisible cursors to `None`
+/// per the visibility-canonicalized storage rule — this helper is the SSOT
+/// for the resolution itself; `Option` wrapping is the storage layer's
+/// concern.
 ///
 /// Consumers: `prepare_frame_shaped_into` (storage), `update_cursor_only`
 /// (storage), `WindowRenderer::has_row_state_change` (fast-path predicate),
 /// `fill_frame_shaped` / `prepare_frame_into` (`EmitCtx` build),
 /// `dirty_skip::build_dirty_set` (current-frame compute).
 pub(super) fn resolve_cursor_state(input: &FrameInput) -> RenderableCursor {
-    resolve_cursor(&input.content.cursor, input.mark_cursor.as_ref())
+    let mut resolved = resolve_cursor(&input.content.cursor, input.mark_cursor.as_ref());
+    resolved.shape = effective_cursor_shape(&resolved, input.window_focused);
+    resolved
 }
 
 /// Effective render shape for a resolved cursor under window-focus state.
 ///
-/// SSOT for the focused → `cursor.shape` / unfocused → `HollowBlock` policy.
-/// Lives in `prepare/mod.rs` (not `oriterm_core`) per the crate-boundaries
-/// rule that focus is render-context, not terminal-emulation state.
+/// SSOT for the focused-or-`Hidden` → `cursor.shape` / unfocused-non-`Hidden` →
+/// `HollowBlock` policy. Lives in `prepare/mod.rs` (not `oriterm_core`) per
+/// the crate-boundaries rule that focus is render-context, not terminal-
+/// emulation state. The `Hidden` carve-out preserves the explicit "draw
+/// nothing" semantic — `emit.rs:275` matches `CursorShape::Hidden => {}` to
+/// suppress emission; converting `Hidden` → `HollowBlock` would cause an
+/// invisible cursor to render as a hollow box on focus loss.
 #[inline]
 pub(super) fn effective_cursor_shape(
     cursor: &RenderableCursor,
     window_focused: bool,
 ) -> CursorShape {
-    if window_focused {
+    if window_focused || cursor.shape == CursorShape::Hidden {
         cursor.shape
     } else {
         CursorShape::HollowBlock
