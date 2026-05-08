@@ -92,10 +92,8 @@ pub(super) fn compute_dispatch_fingerprint(input: &FrameInput, origin: (f32, f32
     // Atlas routing — flips between subpixel/glyphs writers in emit.rs.
     u8::from(input.subpixel_positioning).hash(&mut hasher);
 
-    // Search highlight state — search match colors baked at emit time.
-    // Hash via the Option directly so the discriminant (None vs Some) is
-    // structurally distinguished from the inner tuple's bytes, even when the
-    // inner tuple happens to be all-zeros.
+    // INVARIANT: hash the Option, not the unwrapped tuple — the discriminant
+    // distinguishes None from Some(all-zeros).
     input.search_fingerprint().hash(&mut hasher);
 
     hasher.finish()
@@ -199,19 +197,13 @@ pub fn prepare_frame_shaped_into(
     origin: (f32, f32),
     cursor_opacity: f32,
 ) {
-    // Publish the previous frame's terminal-tier into saved_tier BEFORE
-    // the dispatch decision. Without this bootstrap, the incremental path
-    // is unreachable — saved_tier would only populate INSIDE the
-    // incremental branch itself, so frame 0 leaves saved_tier empty and
-    // every subsequent frame falls through to full rebuild. First call:
-    // terminal-tier and saved_tier both empty, swap is a no-op.
-    // Subsequent calls: previous frame's terminal-tier moves into
-    // saved_tier, making it visible to the can_incremental check.
+    // INVARIANT: save_terminal_tier MUST run before the dispatch decision —
+    // without this pre-publish, saved_tier never populates and the
+    // incremental path is unreachable. Subsequent calls move the previous
+    // frame's terminal-tier into saved_tier for can_incremental.
     out.save_terminal_tier();
-    // Invariant: save_terminal_tier swaps the live terminal-tier writers
-    // out into saved_tier and clears the live writers — the live writers
-    // MUST be empty here for the dispatch branches below to populate
-    // them from a clean baseline.
+    // INVARIANT: save_terminal_tier leaves the live terminal-tier writers
+    // empty so the dispatch branches below populate from a clean baseline.
     debug_assert!(
         out.backgrounds.is_empty()
             && out.glyphs.is_empty()
@@ -220,36 +212,19 @@ pub fn prepare_frame_shaped_into(
         "save_terminal_tier must leave live terminal-tier writers empty"
     );
 
-    // Single content-aware fingerprint replaces the prior 11-clause
-    // enumerated predicate. Every frame-level input that
-    // affects per-cell instance emission is hashed into one u64 via
-    // `compute_dispatch_fingerprint` — viewport, full CellMetrics,
-    // content dims, origin, blink/palette/dim opacities, subpixel
-    // positioning, search state. Adding a new invalidating input now
-    // requires updating exactly one location (the helper) instead of
-    // three parallel sync points (predicate + tail + struct field).
-    //
-    // Excluded from the fingerprint (handled by per-row `build_dirty_set`,
-    // not full rebuild):
-    //   - selection / cursor / hovered_cell — row-localized changes
-    //   - palette colors beyond opacity — color drift via grid `damage`
-    //
-    // The fingerprint is bitwise-exact (`.to_bits()` for f32 fields);
-    // small float deltas now force full rebuild rather than incremental
-    // replay. The effect is extra rebuilds, not stale reuse.
+    // INVARIANT: row-state fields (selection, cursor, hovered_cell) are
+    // intentionally excluded from the fingerprint — they're handled per-row
+    // by build_dirty_set inside this incremental pass. Full rationale and
+    // hashed-input list live on `compute_dispatch_fingerprint`.
     let fingerprint = compute_dispatch_fingerprint(input, origin);
     let can_incremental = !input.content.all_dirty
         && out.saved_tier.has_cached_rows()
         && out.prev_dispatch_fingerprint == Some(fingerprint);
 
     if can_incremental {
-        // Incremental path: saved_tier is already populated by the
-        // unconditional save_terminal_tier above. clear_ephemeral_tiers
-        // drops cursor, chrome, and overlay tiers — without it those
-        // buffers accumulate frame-after-frame on this path, leaving
-        // stale glyphs visible when chrome or overlay content shrinks
-        // (e.g., shorter tab title after OSC 0/2 updates during
-        // high-throughput PTY output).
+        // INVARIANT: clear_ephemeral_tiers must run on the incremental path —
+        // without it, cursor/chrome/overlay tiers accumulate across frames
+        // and leave stale glyphs when chrome/overlay content shrinks.
         out.clear_ephemeral_tiers();
         out.image_quads_below.clear();
         out.image_quads_above.clear();
@@ -258,13 +233,9 @@ pub fn prepare_frame_shaped_into(
         out.was_incremental = true;
         fill_frame_incremental(input, atlas, shaped, out, origin, cursor_opacity);
     } else {
-        // Full rebuild path. The redundant terminal-tier double-clear
-        // (after save_terminal_tier) is accepted: a clear_non_terminal()
-        // helper would create a second sync point that drifts when new
-        // fields are added to PreparedFrame. The double-clear is O(1) on
-        // empty buffers, has no observable cost, and keeps clear() /
-        // clear_ephemeral_tiers() as the SSOT for buffer-clearing field
-        // lists.
+        // INVARIANT: terminal-tier double-clear (after save_terminal_tier)
+        // is accepted. A clear_non_terminal() helper would create a
+        // second sync point that drifts as new fields land on PreparedFrame.
         out.was_incremental = false;
         out.clear();
         out.viewport = input.viewport;
@@ -272,11 +243,7 @@ pub fn prepare_frame_shaped_into(
         fill_frame_shaped(input, atlas, shaped, out, origin, cursor_opacity);
     }
 
-    // Update post-prepare snapshots for next frame's dispatch.
-    // The dispatch fingerprint replaces the prior 9 enumerated tail updates;
-    // per-row dirty-tracking fields (selection, cursor, hovered) stay because
-    // they feed `build_dirty_set` inside the incremental pass AND
-    // `WindowRenderer::has_row_state_change` for the fast-path gate.
+    // Post-prepare snapshots for the next frame's dispatch + row-state gates.
     out.prev_dispatch_fingerprint = Some(fingerprint);
 
     let num_rows = input.rows();
@@ -284,9 +251,9 @@ pub fn prepare_frame_shaped_into(
         .selection
         .as_ref()
         .and_then(|s| s.damage_snapshot(num_rows));
-    // Use the resolved cursor (mark-mode override applied) so the next
-    // frame's build_dirty_set dirties the correct previous-cursor row
-    // when the cursor moves.
+    // INVARIANT: `prev_cursor_line` tracks the RESOLVED cursor (mark-mode
+    // override applied) so the next frame's build_dirty_set dirties the
+    // correct row on cursor moves.
     let resolved_cursor = resolve_cursor(&input.content.cursor, input.mark_cursor.as_ref());
     out.prev_cursor_line = if resolved_cursor.visible {
         Some(resolved_cursor.line)
@@ -336,10 +303,8 @@ pub fn update_cursor_only(
         );
     }
 
-    // URL hover underline + prompt markers also live on the cursors
-    // buffer (per `emit::draw_url_hover_underline` /
-    // `emit::draw_prompt_markers`); the cursors.clear() above drops them,
-    // so re-emit them on every cursor-only refresh.
+    // INVARIANT: re-emit URL hover underline + prompt markers — they live on
+    // the cursors buffer that cursors.clear() above drops.
     let (ox, oy) = origin;
     draw_url_hover_underline(input, out, ox, oy);
     draw_prompt_markers(input, out, ox, oy);

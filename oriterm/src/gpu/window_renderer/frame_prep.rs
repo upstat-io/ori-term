@@ -81,10 +81,8 @@ impl WindowRenderer {
         cursor_opacity: f32,
         content_changed: bool,
     ) {
-        // Cursor-blink-only fast path: when content hasn't changed and no
-        // visual state (selection, search, hover) differs from the last
-        // prepared frame, skip shaping, glyph caching, and the full instance
-        // rebuild. Just update cursor/URL/prompt overlays.
+        // INVARIANT: cursor-blink-only fast path runs only when content +
+        // dispatch fingerprint + row-state are all unchanged.
         let cols = input.columns();
         let cached_valid = self.shaping.frame.rows() > 0 && self.shaping.frame.cols() == cols;
         let dispatch_changed = self.has_dispatch_change(input, origin);
