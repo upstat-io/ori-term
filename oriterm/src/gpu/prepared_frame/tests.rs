@@ -279,3 +279,66 @@ fn enumerated_prev_fields_removed() {
         );
     }
 }
+
+/// Regression: BUG-06-040 — `prev_cursor_line: Option<usize>` field was
+/// renamed to `prev_resolved_cursor: Option<RenderableCursor>` (visibility-
+/// canonicalized SSOT). This test asserts the old field name no longer
+/// appears in field-access patterns under `oriterm/src/gpu/`. Excludes
+/// (a) string literals (assertion messages, doc comments) — these don't
+/// affect correctness — and (b) the `selection_damage::dirty_set`
+/// parameter named `prev_cursor_line: Option<usize>`, which is local to
+/// that function's signature and intentionally retained.
+/// See: bug-tracker/plans/completed/BUG-06-040/
+#[test]
+fn prev_cursor_line_field_access_removed() {
+    let manifest = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR set by cargo");
+    let gpu_root = std::path::PathBuf::from(manifest).join("src").join("gpu");
+
+    // Walk every .rs file under src/gpu/ and check field-access patterns.
+    let mut offending = Vec::new();
+    walk_rs_files(&gpu_root, &mut |path: &std::path::Path| {
+        let Ok(source) = std::fs::read_to_string(path) else {
+            return;
+        };
+        // Field-access patterns — must NOT match string literals or
+        // doc-comment prose. Each marker is the literal field-access
+        // syntax that a code consumer would emit.
+        for needle in &[
+            "frame.prev_cursor_line",
+            "out.prev_cursor_line",
+            "self.prepared.prev_cursor_line",
+            "pub(crate) prev_cursor_line:",
+        ] {
+            if source.contains(needle) {
+                offending.push(format!("{}: {needle}", path.display()));
+            }
+        }
+    });
+
+    assert!(
+        offending.is_empty(),
+        "regression: prev_cursor_line field-access patterns survived the rename to \
+         prev_resolved_cursor. Offending sites:\n  {}",
+        offending.join("\n  ")
+    );
+}
+
+fn walk_rs_files(dir: &std::path::Path, visitor: &mut dyn FnMut(&std::path::Path)) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            walk_rs_files(&path, visitor);
+        } else if path.extension().and_then(|s| s.to_str()) == Some("rs") {
+            // Skip test files — they may contain source-scan needles
+            // as string literals (this very test, for example) and the
+            // SSOT contract is about production code, not test fixtures.
+            if path.file_name().and_then(|s| s.to_str()) == Some("tests.rs") {
+                continue;
+            }
+            visitor(&path);
+        }
+    }
+}

@@ -42,12 +42,7 @@ impl WindowRenderer {
     /// `None == None` (no-op), avoiding WASTE invalidation on invisible-
     /// cursor frames.
     pub(crate) fn has_row_state_change(&self, input: &FrameInput) -> bool {
-        let resolved = prepare::resolve_cursor_state(input);
-        let cur = if resolved.visible {
-            Some(resolved)
-        } else {
-            None
-        };
+        let cur = prepare::resolve_cursor_state(input).into_visible();
         if cur != self.prepared.prev_resolved_cursor {
             return true;
         }

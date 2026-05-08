@@ -274,12 +274,7 @@ pub fn prepare_frame_shaped_into(
     // cursors store as None so hidden-to-hidden position changes are a no-op
     // for the fast-path predicate (None == None). build_dirty_set derives the
     // line component from `Some(c).map(|c| c.line)`.
-    let resolved_cursor = resolve_cursor_state(input);
-    out.prev_resolved_cursor = if resolved_cursor.visible {
-        Some(resolved_cursor)
-    } else {
-        None
-    };
+    out.prev_resolved_cursor = resolve_cursor_state(input).into_visible();
     out.prev_hovered_cell = input.hovered_cell;
 }
 
@@ -332,9 +327,9 @@ pub fn update_cursor_only(
     // SSOT semantics: prev_resolved_cursor MUST reflect the most recent
     // rendered frame, regardless of which prepare path produced it. Without
     // this write, the field semantics drift to "last full-prepare frame" — a
-    // foot-gun for any future predicate consumer. Visibility-canonicalized:
-    // invisible cursors store as None.
-    out.prev_resolved_cursor = if cursor.visible { Some(cursor) } else { None };
+    // foot-gun for any future predicate consumer. Visibility-canonicalized
+    // via RenderableCursor::into_visible (invisible → None).
+    out.prev_resolved_cursor = cursor.into_visible();
 }
 
 /// Shaped rendering: emit background, glyph, and cursor instances from shaped data.

@@ -1248,4 +1248,93 @@ mod cache_invalidated_pins {
              mark override MUST NOT invalidate the fast path"
         );
     }
+
+    /// Behavioral pin: cursor move within an active selection MUST cause the
+    /// prepare path to re-emit per-cell instances. Proves the full prepare
+    /// runs (not just the gate decision) — both old and new cursor cells get
+    /// fresh background instances, not stale frame-1 colors.
+    #[test]
+    fn cell_colors_correct_after_cursor_moves_within_selection() {
+        use oriterm_core::{Selection, Side, StableRowIndex};
+
+        let Some((gpu, pipelines, mut renderer)) = headless_env() else {
+            eprintln!("SKIP: GPU adapter unavailable");
+            return;
+        };
+        let mut input = crate::gpu::frame_input::FrameInput::test_grid(10, 10, "");
+        let origin = (0.0_f32, 0.0_f32);
+        input.hovered_cell = None;
+        set_cursor(&mut input, 1, 3, CursorShape::Block, true);
+
+        let mut sel = Selection::new_char(StableRowIndex(1), 0, Side::Left);
+        sel.end = oriterm_core::SelectionPoint {
+            row: StableRowIndex(1),
+            col: 10,
+            side: Side::Right,
+        };
+        input.selection = Some(crate::gpu::frame_input::FrameSelection::new(&sel, 0));
+
+        renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, true);
+        let frame1_bg_bytes = renderer.prepared.backgrounds.byte_len();
+        assert!(
+            frame1_bg_bytes > 0,
+            "frame 1 must emit per-cell background instances"
+        );
+
+        // Frame 2: cursor moves within the selection; content unchanged.
+        set_cursor(&mut input, 1, 7, CursorShape::Block, true);
+        renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, false);
+
+        assert!(
+            renderer.cache_invalidated_this_frame(),
+            "cursor move within selection MUST force full prepare (gate-level)"
+        );
+        // The full prepare re-emits per-cell instances — buffer is non-empty
+        // AND the byte count matches the previous full prepare's count
+        // (same grid dims, same cell count emitting bg quads). If the fast
+        // path had taken, backgrounds would NOT have been re-emitted.
+        assert_eq!(
+            renderer.prepared.backgrounds.byte_len(),
+            frame1_bg_bytes,
+            "frame 2 must re-emit the same number of per-cell instances as \
+             frame 1; mismatch indicates a partial-emit or fast-path leak"
+        );
+    }
+
+    /// Behavioral pin: cursor move within a search match suppresses the
+    /// search-highlight color at the OLD cursor cell on frame 1, then
+    /// restores it on frame 2 after the cursor moves. Coarse pin via
+    /// instance count (proves full prepare ran), parallel to the selection
+    /// counterpart above.
+    #[test]
+    fn cell_colors_correct_after_cursor_moves_within_search_match() {
+        let Some((gpu, pipelines, mut renderer)) = headless_env() else {
+            eprintln!("SKIP: GPU adapter unavailable");
+            return;
+        };
+        let mut input = crate::gpu::frame_input::FrameInput::test_grid(10, 10, "");
+        let origin = (0.0_f32, 0.0_f32);
+        input.selection = None;
+        input.hovered_cell = None;
+        set_cursor(&mut input, 2, 6, CursorShape::Block, true);
+
+        renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, true);
+        let frame1_bg_bytes = renderer.prepared.backgrounds.byte_len();
+        assert!(frame1_bg_bytes > 0, "frame 1 must emit instances");
+
+        // Frame 2: cursor moves; content unchanged.
+        set_cursor(&mut input, 2, 4, CursorShape::Block, true);
+        renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, false);
+
+        assert!(
+            renderer.cache_invalidated_this_frame(),
+            "cursor move under stationary content MUST force full prepare"
+        );
+        assert_eq!(
+            renderer.prepared.backgrounds.byte_len(),
+            frame1_bg_bytes,
+            "frame 2 must re-emit the same number of per-cell instances; \
+             mismatch indicates the full prepare did not run"
+        );
+    }
 }

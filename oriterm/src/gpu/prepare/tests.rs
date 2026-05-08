@@ -5038,7 +5038,7 @@ fn incremental_dispatch_invalidates_on_scrollback_shift() {
 /// per-cell colors. Pre-fix, `build_dirty_set` only marked the current
 /// cursor row dirty; the previous cursor row replayed stale "with cursor"
 /// colors from saved_tier. Post-fix, `build_dirty_set` accepts
-/// `prev_cursor_line` and dirties the previous row too.
+/// the resolved cursor's line and dirties the previous row too.
 #[test]
 fn incremental_dispatch_with_cursor_move_dirties_current_and_previous_cursor_rows() {
     let size_q6 = 768;
@@ -5813,7 +5813,7 @@ mod dispatch_fingerprint {
         assert_eq!(
             compute_dispatch_fingerprint(&input, origin),
             baseline_fp,
-            "cursor position MUST NOT be in fingerprint — handled per-row via prev_cursor_line dirtying"
+            "cursor position MUST NOT be in fingerprint — handled per-row via prev_resolved_cursor dirtying"
         );
     }
 
