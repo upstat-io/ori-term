@@ -452,3 +452,6 @@ pub(super) fn pre_cache_atlas(
         }
     }
 }
+
+#[cfg(test)]
+mod tests;
