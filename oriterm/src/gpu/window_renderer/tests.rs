@@ -141,53 +141,6 @@ fn begin_multi_pane_frame_sets_cache_invalidated_true() {
     );
 }
 
-#[cfg(feature = "gpu-tests")]
-#[test]
-fn opacity_change_invalidates_cache() {
-    let Some((_gpu, _pip, mut renderer)) = headless_env() else {
-        eprintln!("SKIP: GPU adapter unavailable");
-        return;
-    };
-
-    let mut input = crate::gpu::frame_input::FrameInput::test_grid(10, 10, "");
-    let origin = (0.0_f32, 0.0_f32);
-
-    // Align input so only palette.opacity is the variable.
-    input.text_blink_opacity = 1.0;
-    input.fg_dim = 1.0;
-    input.subpixel_positioning = false;
-    input.selection = None;
-    input.hovered_cell = None;
-
-    // Seed prev_dispatch_fingerprint by computing for the baseline input.
-    // Default PreparedFrame has prev_dispatch_fingerprint=None, so we
-    // must publish a fingerprint first (mimicking what prepare does).
-    input.palette.opacity = 1.0;
-    let baseline = crate::gpu::prepare::compute_dispatch_fingerprint(&input, origin);
-    renderer.prepared.prev_dispatch_fingerprint = Some(baseline);
-
-    // Same opacity: no change.
-    assert!(
-        !renderer.has_dispatch_change(&input, origin),
-        "opacity 1.0 to 1.0 must not invalidate fingerprint"
-    );
-
-    // Delta of 0.5 changes the fingerprint.
-    input.palette.opacity = 0.5;
-    assert!(
-        renderer.has_dispatch_change(&input, origin),
-        "opacity change from 1.0 to 0.5 must invalidate dispatch fingerprint"
-    );
-
-    // Bitwise-exact comparison replaces the prior `> 0.001` threshold.
-    // Sub-EPSILON deltas now invalidate (extra rebuilds, never stale reuse).
-    input.palette.opacity = 0.9995;
-    assert!(
-        renderer.has_dispatch_change(&input, origin),
-        "bitwise-exact comparison must invalidate on any non-zero delta"
-    );
-}
-
 /// Regression: BUG-06-030 — selection change MUST cause the full prepare
 /// pass to run, NOT the cursor-only fast path. Calls `WindowRenderer::prepare`
 /// directly and asserts on `cache_invalidated_this_frame()` so the integrated
@@ -1056,7 +1009,25 @@ fn origin_y_change_invalidates_cache() {
     });
 }
 
-// --- Per-cell alpha multipliers (2 — palette.opacity already covered by `opacity_change_invalidates_cache`) ---
+// --- Per-cell alpha multipliers (3) ---
+
+#[cfg(feature = "gpu-tests")]
+#[test]
+fn palette_opacity_change_invalidates_cache() {
+    assert_dispatch_field_change_invalidates("palette.opacity", |input, _| {
+        input.palette.opacity = 0.5;
+    });
+}
+
+/// Sub-EPSILON delta still invalidates: compute_dispatch_fingerprint hashes
+/// f32 via to_bits(), so any non-zero delta produces a fingerprint difference.
+#[cfg(feature = "gpu-tests")]
+#[test]
+fn palette_opacity_sub_epsilon_change_invalidates_cache() {
+    assert_dispatch_field_change_invalidates("palette.opacity sub-epsilon", |input, _| {
+        input.palette.opacity = 0.9995;
+    });
+}
 
 #[cfg(feature = "gpu-tests")]
 #[test]
