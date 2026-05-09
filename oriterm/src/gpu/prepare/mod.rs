@@ -50,8 +50,13 @@ pub(crate) use unshaped::{prepare_frame, prepare_frame_into};
 ///   stale decoration geometry on font/scale changes.
 /// - content grid dimensions (`content_cols`, `content_rows`).
 /// - origin (x, y) — saved-tier rows carry pixel positions baked at emit time.
-/// - per-cell alpha multipliers (`text_blink_opacity`, `palette.opacity`,
-///   `fg_dim`) — baked into per-cell instances.
+/// - per-cell alpha multipliers (`text_blink_opacity`, `fg_dim`) and full
+///   palette overlay state via
+///   [`crate::gpu::frame_input::FramePalette::damage_fingerprint`] —
+///   covers `background`, `foreground`, `cursor_color`, `selection_fg`,
+///   `selection_bg`, and `opacity`. Baked into per-cell instances at emit
+///   time (`resolve_cell_colors`, `emit_cell_bg`); `cursor_color` also
+///   reaches the ephemeral cursor tier (`emit::emit_cursor_for_frame`).
 /// - `subpixel_positioning` — flips between subpixel/glyphs writers.
 /// - `search_fingerprint()` — already content-aware via
 ///   [`crate::gpu::frame_input::FrameSearch::damage_fingerprint`].
@@ -86,7 +91,11 @@ pub(super) fn compute_dispatch_fingerprint(input: &FrameInput, origin: (f32, f32
 
     // Per-cell alpha multipliers — baked into per-cell instances at emit time.
     input.text_blink_opacity.to_bits().hash(&mut hasher);
-    input.palette.opacity.to_bits().hash(&mut hasher);
+    // Full palette overlay state via PaletteDamageKey — covers background,
+    // foreground, cursor_color, selection_fg, selection_bg, opacity.
+    // Hashing only opacity would let theme/reverse_video changes replay
+    // stale per-cell colors from saved_tier.
+    input.palette.damage_fingerprint().hash(&mut hasher);
     input.fg_dim.to_bits().hash(&mut hasher);
 
     // Atlas routing — flips between subpixel/glyphs writers in emit.rs.
