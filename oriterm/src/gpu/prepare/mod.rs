@@ -311,22 +311,20 @@ pub fn update_cursor_only(
 /// (in spirit) the incremental path's `process_incremental_cells` —
 /// extracted from `fill_frame_shaped` to keep that function under the
 /// 50-line size cap.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "row-transition state machine exposes all needed pixel geometry + accumulators"
-)]
 fn emit_row_tracked_cells(
     ctx: &mut EmitCtx<'_>,
     cells: &[oriterm_core::RenderableCell],
-    cw: f32,
-    ch: f32,
-    ox: f32,
-    oy: f32,
-    viewport_h: f32,
-    current_row: &mut usize,
-    row_start: &mut BufferLengths,
-    row_off_screen: &mut bool,
+    origin: (f32, f32),
 ) {
+    let cw = ctx.cell_size.width;
+    let ch = ctx.cell_size.height;
+    let viewport_h = ctx.frame.viewport.height as f32;
+    let (ox, oy) = origin;
+
+    let mut current_row = usize::MAX;
+    let mut row_start = BufferLengths::capture(ctx.frame);
+    let mut row_off_screen = false;
+
     for cell in cells {
         if cell
             .flags
@@ -339,27 +337,27 @@ fn emit_row_tracked_cells(
         let row = cell.line;
 
         // Record row range on row transition.
-        if row != *current_row {
-            if *current_row == usize::MAX {
-                *row_start = BufferLengths::capture(ctx.frame);
+        if row != current_row {
+            if current_row == usize::MAX {
+                row_start = BufferLengths::capture(ctx.frame);
             } else {
                 let now = BufferLengths::capture(ctx.frame);
-                let ranges = now.range_since(row_start);
+                let ranges = now.range_since(&row_start);
                 // Fill gaps if rows were skipped (shouldn't happen but defensive).
-                while ctx.frame.row_ranges.len() < *current_row {
+                while ctx.frame.row_ranges.len() < current_row {
                     ctx.frame.row_ranges.push(RowInstanceRanges::default());
                 }
                 ctx.frame.row_ranges.push(ranges);
-                *row_start = now;
+                row_start = now;
             }
-            *current_row = row;
+            current_row = row;
 
             // Skip rows entirely outside the render target.
             let row_y = snapped_row_y(oy, row, ch);
-            *row_off_screen = row_y + ch < 0.0 || row_y > viewport_h;
+            row_off_screen = row_y + ch < 0.0 || row_y > viewport_h;
         }
 
-        if *row_off_screen {
+        if row_off_screen {
             continue;
         }
 
@@ -369,10 +367,10 @@ fn emit_row_tracked_cells(
     }
 
     // Record the final row's range.
-    if *current_row != usize::MAX {
+    if current_row != usize::MAX {
         let now = BufferLengths::capture(ctx.frame);
-        let ranges = now.range_since(row_start);
-        while ctx.frame.row_ranges.len() < *current_row {
+        let ranges = now.range_since(&row_start);
+        while ctx.frame.row_ranges.len() < current_row {
             ctx.frame.row_ranges.push(RowInstanceRanges::default());
         }
         ctx.frame.row_ranges.push(ranges);
@@ -396,15 +394,7 @@ pub(crate) fn fill_frame_shaped(
     origin: (f32, f32),
     cursor_opacity: f32,
 ) {
-    let cw = input.cell_size.width;
-    let ch = input.cell_size.height;
     let (ox, oy) = origin;
-
-    // Row-range tracking: snapshot buffer lengths before frame is moved into ctx.
-    let viewport_h = frame.viewport.height as f32;
-    let mut current_row = usize::MAX;
-    let mut row_start = BufferLengths::capture(frame);
-    let mut row_off_screen = false;
 
     let mut ctx = EmitCtx {
         fg_dim: input.fg_dim,
@@ -428,14 +418,7 @@ pub(crate) fn fill_frame_shaped(
     emit_row_tracked_cells(
         &mut ctx,
         &input.content.cells,
-        cw,
-        ch,
-        ox,
-        oy,
-        viewport_h,
-        &mut current_row,
-        &mut row_start,
-        &mut row_off_screen,
+        (ox, oy),
     );
 
     draw_url_hover_underline(input, ctx.frame, ox, oy);
