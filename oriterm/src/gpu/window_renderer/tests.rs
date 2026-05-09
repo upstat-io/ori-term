@@ -64,7 +64,6 @@ use crate::gpu::ViewportSize;
 use crate::gpu::pipelines::GpuPipelines;
 #[cfg(feature = "gpu-tests")]
 use crate::gpu::state::GpuState;
-#[cfg(feature = "gpu-tests")]
 use oriterm_core::Rgb;
 
 #[cfg(feature = "gpu-tests")]
@@ -1148,7 +1147,7 @@ fn palette_cursor_color_change_invalidates_cache() {
 #[test]
 fn palette_selection_fg_none_to_some_invalidates_cache() {
     assert_dispatch_field_change_invalidates("palette.selection_fg none→some", |input, _| {
-        input.palette.selection_fg = Some(oriterm_core::Rgb {
+        input.palette.selection_fg = Some(Rgb {
             r: 100,
             g: 100,
             b: 100,
@@ -1163,12 +1162,12 @@ fn palette_selection_fg_some_to_none_invalidates_cache() {
     assert_dispatch_field_change_invalidates_with_setup(
         "palette.selection_fg some→none",
         |input| {
-            input.palette.selection_fg = Some(oriterm_core::Rgb {
+            input.palette.selection_fg = Some(Rgb {
                 r: 100,
                 g: 100,
                 b: 100,
             });
-            input.palette.selection_bg = Some(oriterm_core::Rgb {
+            input.palette.selection_bg = Some(Rgb {
                 r: 50,
                 g: 50,
                 b: 50,
@@ -1187,19 +1186,19 @@ fn palette_selection_fg_some_value_change_invalidates_cache() {
     assert_dispatch_field_change_invalidates_with_setup(
         "palette.selection_fg some-value-change",
         |input| {
-            input.palette.selection_fg = Some(oriterm_core::Rgb {
+            input.palette.selection_fg = Some(Rgb {
                 r: 100,
                 g: 100,
                 b: 100,
             });
-            input.palette.selection_bg = Some(oriterm_core::Rgb {
+            input.palette.selection_bg = Some(Rgb {
                 r: 50,
                 g: 50,
                 b: 50,
             });
         },
         |input, _| {
-            input.palette.selection_fg = Some(oriterm_core::Rgb {
+            input.palette.selection_fg = Some(Rgb {
                 r: 200,
                 g: 100,
                 b: 100,
@@ -1213,7 +1212,7 @@ fn palette_selection_fg_some_value_change_invalidates_cache() {
 #[test]
 fn palette_selection_bg_none_to_some_invalidates_cache() {
     assert_dispatch_field_change_invalidates("palette.selection_bg none→some", |input, _| {
-        input.palette.selection_bg = Some(oriterm_core::Rgb {
+        input.palette.selection_bg = Some(Rgb {
             r: 50,
             g: 50,
             b: 50,
@@ -1228,12 +1227,12 @@ fn palette_selection_bg_some_to_none_invalidates_cache() {
     assert_dispatch_field_change_invalidates_with_setup(
         "palette.selection_bg some→none",
         |input| {
-            input.palette.selection_fg = Some(oriterm_core::Rgb {
+            input.palette.selection_fg = Some(Rgb {
                 r: 100,
                 g: 100,
                 b: 100,
             });
-            input.palette.selection_bg = Some(oriterm_core::Rgb {
+            input.palette.selection_bg = Some(Rgb {
                 r: 50,
                 g: 50,
                 b: 50,
@@ -1252,19 +1251,19 @@ fn palette_selection_bg_some_value_change_invalidates_cache() {
     assert_dispatch_field_change_invalidates_with_setup(
         "palette.selection_bg some-value-change",
         |input| {
-            input.palette.selection_fg = Some(oriterm_core::Rgb {
+            input.palette.selection_fg = Some(Rgb {
                 r: 100,
                 g: 100,
                 b: 100,
             });
-            input.palette.selection_bg = Some(oriterm_core::Rgb {
+            input.palette.selection_bg = Some(Rgb {
                 r: 50,
                 g: 50,
                 b: 50,
             });
         },
         |input, _| {
-            input.palette.selection_bg = Some(oriterm_core::Rgb {
+            input.palette.selection_bg = Some(Rgb {
                 r: 50,
                 g: 200,
                 b: 50,
@@ -1313,7 +1312,7 @@ fn palette_opacity_alters_dispatch_fingerprint_directly() {
 #[test]
 fn palette_selection_fg_alters_dispatch_fingerprint_directly() {
     assert_palette_field_alters_dispatch_fingerprint("palette.selection_fg", |input| {
-        input.palette.selection_fg = Some(oriterm_core::Rgb {
+        input.palette.selection_fg = Some(Rgb {
             r: 100,
             g: 100,
             b: 100,
@@ -1325,7 +1324,7 @@ fn palette_selection_fg_alters_dispatch_fingerprint_directly() {
 #[test]
 fn palette_selection_bg_alters_dispatch_fingerprint_directly() {
     assert_palette_field_alters_dispatch_fingerprint("palette.selection_bg", |input| {
-        input.palette.selection_bg = Some(oriterm_core::Rgb {
+        input.palette.selection_bg = Some(Rgb {
             r: 50,
             g: 50,
             b: 50,
@@ -1340,12 +1339,12 @@ fn palette_selection_bg_alters_dispatch_fingerprint_directly() {
 fn palette_selection_fg_some_value_alters_dispatch_fingerprint_directly() {
     let mut input1 = crate::gpu::frame_input::FrameInput::test_grid(10, 10, "");
     let mut input2 = crate::gpu::frame_input::FrameInput::test_grid(10, 10, "");
-    input1.palette.selection_fg = Some(oriterm_core::Rgb {
+    input1.palette.selection_fg = Some(Rgb {
         r: 100,
         g: 100,
         b: 100,
     });
-    input2.palette.selection_fg = Some(oriterm_core::Rgb {
+    input2.palette.selection_fg = Some(Rgb {
         r: 200,
         g: 100,
         b: 100,
@@ -1364,12 +1363,12 @@ fn palette_selection_fg_some_value_alters_dispatch_fingerprint_directly() {
 fn palette_selection_bg_some_value_alters_dispatch_fingerprint_directly() {
     let mut input1 = crate::gpu::frame_input::FrameInput::test_grid(10, 10, "");
     let mut input2 = crate::gpu::frame_input::FrameInput::test_grid(10, 10, "");
-    input1.palette.selection_bg = Some(oriterm_core::Rgb {
+    input1.palette.selection_bg = Some(Rgb {
         r: 50,
         g: 50,
         b: 50,
     });
-    input2.palette.selection_bg = Some(oriterm_core::Rgb {
+    input2.palette.selection_bg = Some(Rgb {
         r: 50,
         g: 200,
         b: 50,

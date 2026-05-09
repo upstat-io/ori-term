@@ -50,13 +50,8 @@ pub(crate) use unshaped::{prepare_frame, prepare_frame_into};
 ///   stale decoration geometry on font/scale changes.
 /// - content grid dimensions (`content_cols`, `content_rows`).
 /// - origin (x, y) — saved-tier rows carry pixel positions baked at emit time.
-/// - per-cell alpha multipliers (`text_blink_opacity`, `fg_dim`) and full
-///   palette overlay state via
-///   [`crate::gpu::frame_input::FramePalette::damage_fingerprint`] —
-///   covers `background`, `foreground`, `cursor_color`, `selection_fg`,
-///   `selection_bg`, and `opacity`. Baked into per-cell instances at emit
-///   time (`resolve_cell_colors`, `emit_cell_bg`); `cursor_color` also
-///   reaches the ephemeral cursor tier (`emit::emit_cursor_for_frame`).
+/// - per-cell alpha multipliers + palette overlay state via
+///   [`crate::gpu::frame_input::FramePalette::damage_fingerprint`].
 /// - `subpixel_positioning` — flips between subpixel/glyphs writers.
 /// - `search_fingerprint()` — already content-aware via
 ///   [`crate::gpu::frame_input::FrameSearch::damage_fingerprint`].
