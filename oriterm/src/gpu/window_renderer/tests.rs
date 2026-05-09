@@ -983,6 +983,31 @@ fn content_cols_change_invalidates_cache() {
     });
 }
 
+/// Regression: BUG-06-037 — `content_cols` is masked in the integrated helper
+/// because `cached_valid` (frame_prep.rs:97) ALSO flips false when `cols`
+/// changes (`shaping.frame.cols() == cols`). The integrated helper above
+/// therefore cannot distinguish whether the cache invalidated via the
+/// `dispatch_changed` clause or the `cached_valid` clause; if `content_cols`
+/// were silently dropped from `compute_dispatch_fingerprint`, the integrated
+/// pin would still pass via the `cached_valid` path.
+///
+/// This direct-fingerprint pin closes the gap: it asserts that `content_cols`
+/// alone produces a different `compute_dispatch_fingerprint` value, isolating
+/// the `dispatch_changed` contribution from the `cached_valid` masking.
+#[test]
+fn content_cols_alters_dispatch_fingerprint_directly() {
+    let input1 = crate::gpu::frame_input::FrameInput::test_grid(10, 10, "");
+    let mut input2 = crate::gpu::frame_input::FrameInput::test_grid(10, 10, "");
+    input2.content_cols += 1;
+    let origin = (0.0_f32, 0.0_f32);
+    let fp1 = crate::gpu::prepare::compute_dispatch_fingerprint(&input1, origin);
+    let fp2 = crate::gpu::prepare::compute_dispatch_fingerprint(&input2, origin);
+    assert_ne!(
+        fp1, fp2,
+        "content_cols MUST contribute to compute_dispatch_fingerprint independently of cached_valid masking"
+    );
+}
+
 #[cfg(feature = "gpu-tests")]
 #[test]
 fn content_rows_change_invalidates_cache() {
@@ -1009,8 +1034,10 @@ fn origin_y_change_invalidates_cache() {
     });
 }
 
-// --- Per-cell alpha multipliers (3) ---
+// --- Per-cell alpha multipliers (4) ---
 
+/// Regression: BUG-06-037 — `palette.opacity` is in the dispatch fingerprint;
+/// mutation MUST invalidate the cache via the SSOT predicate.
 #[cfg(feature = "gpu-tests")]
 #[test]
 fn palette_opacity_change_invalidates_cache() {
@@ -1019,13 +1046,16 @@ fn palette_opacity_change_invalidates_cache() {
     });
 }
 
-/// Sub-EPSILON delta still invalidates: compute_dispatch_fingerprint hashes
-/// f32 via to_bits(), so any non-zero delta produces a fingerprint difference.
+/// Regression: BUG-06-037 — one-ULP delta still invalidates.
+/// `compute_dispatch_fingerprint` hashes `f32` via `to_bits()`, so even the
+/// smallest representable change (one bit in the mantissa) produces a
+/// fingerprint difference. `f32::from_bits` adjusts the underlying bits by
+/// 1, producing a value mathematically below `f32::EPSILON` away from 1.0.
 #[cfg(feature = "gpu-tests")]
 #[test]
-fn palette_opacity_sub_epsilon_change_invalidates_cache() {
-    assert_dispatch_field_change_invalidates("palette.opacity sub-epsilon", |input, _| {
-        input.palette.opacity = 0.9995;
+fn palette_opacity_one_ulp_change_invalidates_cache() {
+    assert_dispatch_field_change_invalidates("palette.opacity 1-ulp", |input, _| {
+        input.palette.opacity = f32::from_bits(1.0_f32.to_bits() - 1);
     });
 }
 
@@ -1057,6 +1087,11 @@ fn subpixel_positioning_change_invalidates_cache() {
 
 // --- Search (1) ---
 
+/// Regression: BUG-06-037 — flipping `search_fingerprint` `None → Some`
+/// MUST invalidate the cache via the SSOT predicate. The Option discriminant
+/// itself is hashed by `compute_dispatch_fingerprint` via Hash-derived
+/// enums; `FrameSearch::for_test` is the cfg(test) constructor that
+/// bypasses `PaneSnapshot`, used to isolate the discriminant flip.
 #[cfg(feature = "gpu-tests")]
 #[test]
 fn search_fingerprint_change_invalidates_cache() {
@@ -1073,7 +1108,7 @@ fn search_fingerprint_change_invalidates_cache() {
     });
 }
 
-// --- Top-level predicate clauses (3) ---
+// --- Top-level predicate clauses (4) ---
 
 /// Pin: passing `content_changed=true` to `prepare()` MUST invalidate the cache.
 #[cfg(feature = "gpu-tests")]
@@ -1150,6 +1185,41 @@ fn no_terminal_data_invalidates_cache() {
     assert!(
         renderer.cache_invalidated_this_frame(),
         "!has_terminal_data MUST invalidate cache (top-level predicate clause)"
+    );
+}
+
+/// Pin: row_state_changed=true (cursor / selection / hovered_cell mutated)
+/// MUST invalidate the cache via the integrated SSOT predicate. Mutates
+/// `hovered_cell` because it is the most isolated row_state input — no
+/// dispatch fingerprint impact, no other row_state side effects.
+///
+/// Regression: BUG-06-037 — pins the row_state_changed top-level clause of
+/// `can_reuse_content_cache` (frame_prep.rs:99,106).
+#[cfg(feature = "gpu-tests")]
+#[test]
+fn row_state_change_invalidates_cache() {
+    let Some((gpu, pipelines, mut renderer)) = headless_env() else {
+        eprintln!("SKIP: GPU adapter unavailable");
+        return;
+    };
+    let mut input = crate::gpu::frame_input::FrameInput::test_grid(10, 10, "");
+    let origin = (0.0_f32, 0.0_f32);
+
+    // Frame 1: full prepare populates baseline (shaping cache, prev_dispatch_fingerprint, prev_resolved_cursor, terminal data).
+    renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, true);
+    // Frame 2: identical input + content_changed=false → steady state, cache reusable.
+    renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, false);
+    assert!(
+        !renderer.cache_invalidated_this_frame(),
+        "baseline frame must reuse cache (sanity check)"
+    );
+
+    // Mutate hovered_cell — flips row_state_changed clause.
+    input.hovered_cell = Some((1, 1));
+    renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, false);
+    assert!(
+        renderer.cache_invalidated_this_frame(),
+        "row_state_changed (hovered_cell mutation) MUST invalidate cache via cache_invalidated_this_frame() SSOT"
     );
 }
 
