@@ -196,13 +196,9 @@ pub fn prepare_frame_shaped_into(
     origin: (f32, f32),
     cursor_opacity: f32,
 ) {
-    // INVARIANT: save_terminal_tier MUST run before the dispatch decision —
-    // without this pre-publish, saved_tier never populates and the
-    // incremental path is unreachable. Subsequent calls move the previous
-    // frame's terminal-tier into saved_tier for can_incremental.
+    // INVARIANT: save_terminal_tier MUST run first — without it the incremental
+    // path is unreachable and saved_tier never populates.
     out.save_terminal_tier();
-    // INVARIANT: save_terminal_tier leaves the live terminal-tier writers
-    // empty so the dispatch branches below populate from a clean baseline.
     debug_assert!(
         out.backgrounds.is_empty()
             && out.glyphs.is_empty()
@@ -211,19 +207,14 @@ pub fn prepare_frame_shaped_into(
         "save_terminal_tier must leave live terminal-tier writers empty"
     );
 
-    // INVARIANT: row-state fields (selection, cursor, hovered_cell) are
-    // intentionally excluded from the fingerprint — they're handled per-row
-    // by build_dirty_set inside this incremental pass. Full rationale and
-    // hashed-input list live on `compute_dispatch_fingerprint`.
+    // INVARIANT: row-state fields excluded from fingerprint — handled per-row
+    // by build_dirty_set. Full hashed-input list on `compute_dispatch_fingerprint`.
     let fingerprint = compute_dispatch_fingerprint(input, origin);
-    let can_incremental = !input.content.all_dirty
-        && out.saved_tier.has_cached_rows()
-        && out.prev_dispatch_fingerprint == Some(fingerprint);
+    let can_incremental = out.can_incremental(input.content.all_dirty, fingerprint);
 
     if can_incremental {
-        // INVARIANT: clear_ephemeral_tiers must run on the incremental path —
-        // without it, cursor/chrome/overlay tiers accumulate across frames
-        // and leave stale glyphs when chrome/overlay content shrinks.
+        // clear_ephemeral_tiers MUST run on incremental path — otherwise
+        // chrome/overlay tiers accumulate and leave stale glyphs.
         out.clear_ephemeral_tiers();
         out.image_quads_below.clear();
         out.image_quads_above.clear();
@@ -232,9 +223,9 @@ pub fn prepare_frame_shaped_into(
         out.was_incremental = true;
         fill_frame_incremental(input, atlas, shaped, out, origin, cursor_opacity);
     } else {
-        // INVARIANT: terminal-tier double-clear (after save_terminal_tier)
-        // is accepted. A clear_non_terminal() helper would create a
-        // second sync point that drifts as new fields land on PreparedFrame.
+        // Terminal-tier double-clear (save_terminal_tier + clear()) is
+        // intentional — a clear_non_terminal() helper would create a second
+        // sync point that drifts as PreparedFrame fields land.
         out.was_incremental = false;
         out.clear();
         out.viewport = input.viewport;
@@ -242,16 +233,7 @@ pub fn prepare_frame_shaped_into(
         fill_frame_shaped(input, atlas, shaped, out, origin, cursor_opacity);
     }
 
-    // Post-prepare snapshots for the next frame's dispatch + row-state gates.
-    out.prev_dispatch_fingerprint = Some(fingerprint);
-
-    let num_rows = input.rows();
-    out.prev_selection_snapshot = input
-        .selection
-        .as_ref()
-        .and_then(|s| s.damage_snapshot(num_rows));
-    write_cursor_state_snapshots(out, input, cursor_opacity);
-    out.prev_hovered_cell = input.hovered_cell;
+    finalize_frame_prepare(out, input, fingerprint, cursor_opacity);
 }
 
 /// SSOT for snapshotting "most recent rendered frame's cursor state" onto
@@ -304,6 +286,27 @@ pub fn update_cursor_only(
     draw_prompt_markers(input, out, ox, oy);
 
     write_cursor_state_snapshots(out, input, cursor_opacity);
+}
+
+/// Write post-prepare snapshots for the next frame's dispatch + row-state gates.
+///
+/// Extracted from [`prepare_frame_shaped_into`] to keep that function under the
+/// 50-line cap. Writes `prev_dispatch_fingerprint`, `prev_selection_snapshot`,
+/// cursor state snapshots, and `prev_hovered_cell`.
+fn finalize_frame_prepare(
+    out: &mut PreparedFrame,
+    input: &FrameInput,
+    fingerprint: u64,
+    cursor_opacity: f32,
+) {
+    out.prev_dispatch_fingerprint = Some(fingerprint);
+    let num_rows = input.rows();
+    out.prev_selection_snapshot = input
+        .selection
+        .as_ref()
+        .and_then(|s| s.damage_snapshot(num_rows));
+    write_cursor_state_snapshots(out, input, cursor_opacity);
+    out.prev_hovered_cell = input.hovered_cell;
 }
 
 /// Iterate cells with row-transition tracking, off-screen culling, and

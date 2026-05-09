@@ -1,11 +1,12 @@
-//! Pure predicates for the cursor-only fast-path gates.
+//! Pure predicates for dispatch and cursor fast-path gates.
 //!
 //! `compute_dispatch_fingerprint` and `evaluate_row_state_change` are pure
 //! free functions read by `WindowRenderer::has_dispatch_change` and
-//! `WindowRenderer::has_row_state_change` respectively. Co-locating them
-//! here keeps `prepare/mod.rs` under the 500-line file-size cap and makes
-//! both predicates non-GPU testable from `prepare/tests.rs` (no
-//! `WindowRenderer` instance needed).
+//! `WindowRenderer::has_row_state_change` respectively.
+//! `PreparedFrame::can_incremental` is the dispatch-eligibility predicate
+//! consumed by `prepare_frame_shaped_into`. Co-locating them here keeps
+//! `prepare/mod.rs` under the 500-line file-size cap and makes all three
+//! predicates non-GPU testable from `prepare/tests.rs`.
 
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
@@ -127,4 +128,22 @@ pub(crate) fn evaluate_row_state_change(
         return true;
     }
     false
+}
+
+impl PreparedFrame {
+    /// Predicate for the incremental-dispatch eligibility decision.
+    ///
+    /// Returns `true` when the previous frame's saved terminal-tier rows can be
+    /// reused for the current frame. All three conditions must hold: the frame
+    /// input does not force a full rebuild, the saved tier has cached rows, and
+    /// the dispatch fingerprint matches the previous frame's.
+    ///
+    /// Co-located with [`compute_dispatch_fingerprint`] because the predicate
+    /// and the fingerprint are a coupled pair — fingerprint is computed once,
+    /// then consumed by both this predicate AND the post-prepare snapshot write.
+    pub(super) fn can_incremental(&self, all_dirty: bool, fingerprint: u64) -> bool {
+        !all_dirty
+            && self.saved_tier.has_cached_rows()
+            && self.prev_dispatch_fingerprint == Some(fingerprint)
+    }
 }
