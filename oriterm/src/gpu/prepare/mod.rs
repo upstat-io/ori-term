@@ -38,10 +38,6 @@ pub use shaped_frame::ShapedFrame;
 #[cfg(test)]
 pub(crate) use unshaped::{prepare_frame, prepare_frame_into};
 
-// `compute_dispatch_fingerprint` lives in `gates.rs` to keep this file
-// under the 500-line cap. Re-exported above as
-// `pub(crate) use gates::compute_dispatch_fingerprint;`.
-
 /// Resolve the cursor row-state SSOT for the cursor-only fast-path predicate
 /// AND the per-frame `prev_resolved_cursor` snapshot.
 ///
@@ -254,21 +250,33 @@ pub fn prepare_frame_shaped_into(
         .selection
         .as_ref()
         .and_then(|s| s.damage_snapshot(num_rows));
-    // INVARIANT: `prev_resolved_cursor` is the SSOT for "previous rendered
-    // frame's resolved cursor state". Visibility-canonicalized: invisible
-    // cursors store as None so hidden-to-hidden position changes are a no-op
-    // for the fast-path predicate (None == None). build_dirty_set derives the
-    // line component from `Some(c).map(|c| c.line)`.
+    write_cursor_state_snapshots(out, input, cursor_opacity);
+    out.prev_hovered_cell = input.hovered_cell;
+}
+
+/// SSOT for snapshotting "most recent rendered frame's cursor state" onto
+/// `PreparedFrame`. Called from BOTH `prepare_frame_shaped_into` (full prepare)
+/// AND `update_cursor_only` (cursor-blink fast path) — without this canonical
+/// home, the resolve-and-write skeleton would duplicate at the two sites and
+/// drift silently when a future `prev_*` cursor field lands.
+///
+/// Writes:
+/// - `prev_resolved_cursor` — visibility-canonicalized resolved cursor;
+///   invisible cursors store as `None` so hidden-to-hidden position changes
+///   are a no-op for the fast-path predicate (None == None).
+/// - `prev_block_cursor_color_exclusion_active` — opacity-threshold predicate
+///   value for the cursor-only fast-path gate (`evaluate_row_state_change`
+///   in `gates.rs`).
+///
+/// Both writes share the same `cur_resolved` value so they can never observe
+/// different cursor states. `build_dirty_set` derives the line component from
+/// `Some(c).map(|c| c.line)`.
+fn write_cursor_state_snapshots(out: &mut PreparedFrame, input: &FrameInput, cursor_opacity: f32) {
     let cur_resolved = resolve_cursor_state(input);
     out.prev_resolved_cursor = cur_resolved.into_visible();
-    // INVARIANT: pair with prev_resolved_cursor write per SSOT semantics
-    // (most recent rendered frame, regardless of prepare path). Same-receiver
-    // pairing pinned by `prev_resolved_cursor_assignment_co_located_with_threshold_pin`
-    // in `prepare/tests.rs`.
     out.prev_block_cursor_color_exclusion_active = Some(
         resolve::block_cursor_color_exclusion_active(&cur_resolved, cursor_opacity),
     );
-    out.prev_hovered_cell = input.hovered_cell;
 }
 
 /// Cursor-blink-only fast path: rebuild only cursor instances.
@@ -295,17 +303,7 @@ pub fn update_cursor_only(
     draw_url_hover_underline(input, out, ox, oy);
     draw_prompt_markers(input, out, ox, oy);
 
-    // SSOT semantics: prev_resolved_cursor MUST reflect the most recent
-    // rendered frame, regardless of which prepare path produced it. Without
-    // this write, the field semantics drift to "last full-prepare frame" — a
-    // foot-gun for any future predicate consumer. Visibility-canonicalized
-    // via RenderableCursor::into_visible (invisible → None).
-    let cur_resolved = resolve_cursor_state(input);
-    out.prev_resolved_cursor = cur_resolved.into_visible();
-    // INVARIANT: pair with prev_resolved_cursor write per SSOT semantics.
-    out.prev_block_cursor_color_exclusion_active = Some(
-        resolve::block_cursor_color_exclusion_active(&cur_resolved, cursor_opacity),
-    );
+    write_cursor_state_snapshots(out, input, cursor_opacity);
 }
 
 /// Iterate cells with row-transition tracking, off-screen culling, and

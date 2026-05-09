@@ -6481,17 +6481,15 @@ fn prev_resolved_cursor_assignment_co_located_with_threshold_pin() {
     let mut prc_sites: Vec<(String, usize)> = Vec::new();
     for (i, line) in lines.iter().enumerate() {
         let trimmed = line.trim_start();
-        if let Some(rest) = trimmed.strip_suffix("") {
-            if let Some(idx) = rest.find(".prev_resolved_cursor") {
-                let receiver = rest[..idx].trim().to_string();
-                // Skip false matches: comments, doc strings, etc.
-                if !receiver.starts_with("//")
-                    && !receiver.starts_with("///")
-                    && !receiver.is_empty()
-                    && rest[idx..].contains("=")
-                {
-                    prc_sites.push((receiver, i));
-                }
+        if let Some(idx) = trimmed.find(".prev_resolved_cursor") {
+            let receiver = trimmed[..idx].trim().to_string();
+            // Skip false matches: comments, doc strings, etc.
+            if !receiver.starts_with("//")
+                && !receiver.starts_with("///")
+                && !receiver.is_empty()
+                && trimmed[idx..].contains('=')
+            {
+                prc_sites.push((receiver, i));
             }
         }
     }

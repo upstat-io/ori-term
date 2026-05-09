@@ -21,7 +21,7 @@ fn cursor(shape: CursorShape, visible: bool) -> RenderableCursor {
 /// Visible Block cursor with opacity above threshold suppresses per-cell
 /// inversion — the cursor sprite dominates visually.
 #[test]
-fn helper_returns_true_for_visible_block_above_threshold() {
+fn block_cursor_color_exclusion_active_returns_true_for_visible_block_above_threshold() {
     assert!(block_cursor_color_exclusion_active(
         &cursor(CursorShape::Block, true),
         0.6
@@ -32,7 +32,7 @@ fn helper_returns_true_for_visible_block_above_threshold() {
 /// inversion — the cursor is fading out and per-cell colors should
 /// revert to normal for readability.
 #[test]
-fn helper_returns_false_for_visible_block_below_threshold() {
+fn block_cursor_color_exclusion_active_returns_false_for_visible_block_below_threshold() {
     assert!(!block_cursor_color_exclusion_active(
         &cursor(CursorShape::Block, true),
         0.4
@@ -42,7 +42,7 @@ fn helper_returns_false_for_visible_block_below_threshold() {
 /// Invisible cursor cannot dominate the cell visually regardless of
 /// opacity, so the suppression is inactive.
 #[test]
-fn helper_returns_false_for_invisible_cursor_regardless_of_opacity() {
+fn block_cursor_color_exclusion_active_returns_false_for_invisible_cursor_regardless_of_opacity() {
     for opacity in [0.0_f32, 0.4, 0.6, 1.0] {
         assert!(
             !block_cursor_color_exclusion_active(&cursor(CursorShape::Block, false), opacity),
@@ -55,7 +55,7 @@ fn helper_returns_false_for_invisible_cursor_regardless_of_opacity() {
 /// cursors visually dominate the underlying cell. Beam / Underline /
 /// HollowBlock / Hidden all return false even at high opacity.
 #[test]
-fn helper_returns_false_for_non_block_shape_above_threshold() {
+fn block_cursor_color_exclusion_active_returns_false_for_non_block_shape_above_threshold() {
     for shape in [
         CursorShape::Bar,
         CursorShape::Underline,
@@ -74,7 +74,7 @@ fn helper_returns_false_for_non_block_shape_above_threshold() {
 /// logic; widening or narrowing it would silently change rendering
 /// behavior across the entire fast-path / full-prepare decision.
 #[test]
-fn helper_threshold_constant_value_pin() {
+fn block_cursor_opacity_threshold_constant_value_pin() {
     assert_eq!(BLOCK_CURSOR_OPACITY_THRESHOLD, 0.5_f32);
 }
 
@@ -82,7 +82,7 @@ fn helper_threshold_constant_value_pin() {
 /// strictly greater-than `>`), and crossing in either direction is
 /// detectable for the row-state gate.
 #[test]
-fn helper_returns_false_at_exact_threshold() {
+fn block_cursor_color_exclusion_active_returns_false_at_exact_threshold() {
     assert!(!block_cursor_color_exclusion_active(
         &cursor(CursorShape::Block, true),
         0.5
