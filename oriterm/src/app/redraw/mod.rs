@@ -260,18 +260,6 @@ impl App {
             // Selection lives on App, not Pane (copied before render block).
             frame.selection = pane_sel.map(|sel| FrameSelection::new(&sel, base));
 
-            // Detect selection changes: compare the current selection state
-            // with what was last rendered. When the selection changed (even
-            // without terminal output), the prepare phase must rebuild
-            // instance buffers and the render phase must re-render the
-            // content cache texture.
-            let num_rows = frame.rows();
-            let new_sel_snap = frame
-                .selection
-                .as_ref()
-                .and_then(|s| s.damage_snapshot(num_rows));
-            let selection_changed = new_sel_snap != renderer.prepared.prev_selection_snapshot;
-
             // Compute hovered cell for hyperlink underline rendering.
             let cell_metrics = renderer.cell_metrics();
             let hovered_cell = {
@@ -345,9 +333,12 @@ impl App {
             renderer.resolve_icons(gpu, scale);
             phases.prepare = prepare_start.elapsed();
 
-            // Blink delta: detect opacity changes that require full re-render.
-            let blink_changed = (text_blink_opacity - ctx.prev_text_blink_opacity).abs()
-                > draw_helpers::BLINK_OPACITY_EPSILON;
+            // Track text-blink opacity for multi-pane pane-cache invalidation
+            // (read by `redraw/multi_pane/mod.rs` `blink_opacity_changed`).
+            // The single-pane "blink-changed" predicate now flows through
+            // `WindowRenderer::has_dispatch_change` (the dispatch fingerprint
+            // hashes `text_blink_opacity`), which chrome queries via
+            // `cache_invalidated_this_frame()`.
             ctx.prev_text_blink_opacity = text_blink_opacity;
 
             // Chrome: tab bar, overlays, search bar, status bar, window border.
@@ -357,12 +348,7 @@ impl App {
                 &self.config,
                 &self.ui_theme,
                 gpu,
-                &chrome::ChromeParams {
-                    pane_count: 1,
-                    content_dirty: content_changed,
-                    selection_changed,
-                    blink_changed,
-                },
+                &chrome::ChromeParams { pane_count: 1 },
             );
             phases.widgets = widgets_start.elapsed();
 

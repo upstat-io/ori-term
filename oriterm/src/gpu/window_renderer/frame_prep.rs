@@ -11,17 +11,41 @@ use super::helpers::{CombinedAtlasLookup, ensure_glyphs_cached, grid_raster_keys
 use super::{EMPTY_KEYS_CAP, WindowRenderer};
 
 impl WindowRenderer {
-    /// Whether visual-only state (selection, blink, hover, search,
-    /// pane focus dim, subpixel positioning) changed since the last
-    /// frame. Visual changes need a full instance rebuild but NOT
-    /// re-shaping.
+    /// Whether any frame-level dispatch-fingerprint input changed since
+    /// the last frame. Single SSOT consumer of the dispatch fingerprint
+    /// — replaces the prior `has_geometry_change` plus the
+    /// fingerprint-covered subset of `has_visual_change`. Inputs hashed
+    /// via [`super::super::prepare::compute_dispatch_fingerprint`]:
+    /// viewport, full `CellMetrics`, content dims, origin, blink/palette
+    /// /dim opacities, subpixel positioning, search state.
     ///
-    /// Every dispatch-predicate field that affects per-cell instances
-    /// AND can change while the snapshot itself stays put is checked
-    /// here. Missing fields would cause the cursor-blink-only fast
-    /// path to skip prepare entirely, leaving stale per-cell state
-    /// (highlights, dim alpha, etc.) on the cached terminal tier.
-    fn has_visual_change(&self, input: &FrameInput) -> bool {
+    /// Bitwise-exact comparison via `.to_bits()` — replaces the prior
+    /// `> 0.001` and `< f32::EPSILON` thresholds with one rule. Effect
+    /// is extra rebuilds on tiny float deltas, never stale reuse.
+    pub(crate) fn has_dispatch_change(&self, input: &FrameInput, origin: (f32, f32)) -> bool {
+        let fingerprint = prepare::compute_dispatch_fingerprint(input, origin);
+        self.prepared.prev_dispatch_fingerprint != Some(fingerprint)
+    }
+
+    /// Whether per-row dirty-tracking inputs changed since the last
+    /// frame. These fields are intentionally NOT in the dispatch
+    /// fingerprint because they're handled by `build_dirty_set` inside
+    /// the incremental prepare pass. But the cursor-only fast path
+    /// BYPASSES prepare entirely — bypasses `build_dirty_set` entirely
+    /// — so selection/hover/cursor changes MUST gate the fast path
+    /// independently of the fingerprint, or stale decorations replay
+    /// from the cached terminal tier.
+    ///
+    /// Cursor gating: the resolved cursor `(line, column, shape, visible)`
+    /// is compared via visibility-canonicalized `Option<RenderableCursor>`
+    /// `PartialEq`. Hidden-to-hidden cursor position changes canonicalize to
+    /// `None == None` (no-op), avoiding WASTE invalidation on invisible-
+    /// cursor frames.
+    pub(crate) fn has_row_state_change(&self, input: &FrameInput) -> bool {
+        let cur = prepare::resolve_cursor_state(input).into_visible();
+        if cur != self.prepared.prev_resolved_cursor {
+            return true;
+        }
         let new_sel = input
             .selection
             .as_ref()
@@ -29,47 +53,7 @@ impl WindowRenderer {
         if new_sel != self.prepared.prev_selection_snapshot {
             return true;
         }
-        if (input.text_blink_opacity - self.prepared.prev_text_blink_opacity).abs() > 0.001 {
-            return true;
-        }
-        if (input.fg_dim - self.prepared.prev_fg_dim).abs() > 0.001 {
-            return true;
-        }
-        if input.subpixel_positioning != self.prepared.prev_subpixel_positioning {
-            return true;
-        }
         if input.hovered_cell != self.prepared.prev_hovered_cell {
-            return true;
-        }
-        if input.search_fingerprint() != self.prepared.prev_search_fingerprint {
-            return true;
-        }
-        false
-    }
-
-    /// Whether geometry/topology state changed since the last frame.
-    ///
-    /// The cursor-blink-only fast path bypasses the full dispatch
-    /// predicate; if any of `viewport`, `cell_size`, `content_cols`,
-    /// `content_rows`, or `origin` differs between frames, the saved
-    /// geometry is stale and the fast path would render at the wrong
-    /// positions.
-    fn has_geometry_change(&self, input: &FrameInput, origin: (f32, f32)) -> bool {
-        if self.prepared.viewport != input.viewport {
-            return true;
-        }
-        if self.prepared.prev_cell_size != Some(input.cell_size) {
-            return true;
-        }
-        if self.prepared.prev_content_cols != Some(input.content_cols) {
-            return true;
-        }
-        if self.prepared.prev_content_rows != Some(input.content_rows) {
-            return true;
-        }
-        if (self.prepared.prev_origin.0 - origin.0).abs() > f32::EPSILON
-            || (self.prepared.prev_origin.1 - origin.1).abs() > f32::EPSILON
-        {
             return true;
         }
         false
@@ -107,20 +91,24 @@ impl WindowRenderer {
         cursor_opacity: f32,
         content_changed: bool,
     ) {
-        // Cursor-blink-only fast path: when content hasn't changed and no
-        // visual state (selection, search, hover) differs from the last
-        // prepared frame, skip shaping, glyph caching, and the full instance
-        // rebuild. Just update cursor/URL/prompt overlays.
+        // INVARIANT: cursor-blink-only fast path runs only when content +
+        // dispatch fingerprint + row-state are all unchanged.
         let cols = input.columns();
         let cached_valid = self.shaping.frame.rows() > 0 && self.shaping.frame.cols() == cols;
-        let visual_changed = self.has_visual_change(input);
-        let geometry_changed = self.has_geometry_change(input, origin);
-        if !content_changed
-            && !visual_changed
-            && !geometry_changed
+        let dispatch_changed = self.has_dispatch_change(input, origin);
+        let row_state_changed = self.has_row_state_change(input);
+
+        // SSOT for "did this frame invalidate the content-cache tier?".
+        // True when prepare must rebuild instances; false when the fast
+        // path can reuse the cached terminal tier (cursor-blink-only frames).
+        let can_reuse_content_cache = !content_changed
+            && !dispatch_changed
+            && !row_state_changed
             && cached_valid
-            && self.prepared.has_terminal_data()
-        {
+            && self.prepared.has_terminal_data();
+        self.cache_invalidated_this_frame = !can_reuse_content_cache;
+
+        if can_reuse_content_cache {
             self.atlas.begin_frame();
             self.subpixel_atlas.begin_frame();
             self.color_atlas.begin_frame();

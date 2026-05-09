@@ -90,7 +90,6 @@ impl App {
 
             let mut focused_rect = None;
             let mut blinking_now = self.blinking_active;
-            let mut any_content_changed = false;
             let mut scratch_frame_pane = None;
 
             // Compute text blink opacity once (same for all panes) and detect
@@ -124,7 +123,6 @@ impl App {
                     || no_snapshot
                     || !is_cached
                     || blink_opacity_changed;
-                any_content_changed |= dirty;
 
                 if dirty {
                     let pane_viewport = ViewportSize::new(
@@ -371,9 +369,6 @@ impl App {
                 gpu,
                 &super::chrome::ChromeParams {
                     pane_count: layouts.len(),
-                    content_dirty: any_content_changed,
-                    selection_changed: false,
-                    blink_changed: false,
                 },
             );
 

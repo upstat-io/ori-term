@@ -10,11 +10,10 @@ mod selection_damage;
 use std::ops::Range;
 
 use log::trace;
-use oriterm_core::{CellFlags, CursorShape, RenderableCell};
+use oriterm_core::{CellFlags, RenderableCell};
 
-use super::emit::{build_cursor, draw_prompt_markers, draw_url_hover_underline};
+use super::emit::{draw_prompt_markers, draw_url_hover_underline};
 use super::emit_cell::EmitCtx;
-use super::resolve::resolve_cursor;
 use super::shaped_frame::ShapedFrame;
 use super::{AtlasLookup, FrameInput};
 use crate::gpu::prepared_frame::PreparedFrame;
@@ -84,10 +83,10 @@ impl SavedTerminalTier {
 /// Snapshot of current buffer byte lengths, used to compute row ranges.
 #[derive(Debug, Clone, Copy)]
 pub struct BufferLengths {
-    pub(super) backgrounds: usize,
-    pub(super) glyphs: usize,
-    pub(super) subpixel_glyphs: usize,
-    pub(super) color_glyphs: usize,
+    backgrounds: usize,
+    glyphs: usize,
+    subpixel_glyphs: usize,
+    color_glyphs: usize,
 }
 
 impl BufferLengths {
@@ -135,26 +134,34 @@ fn push_dirty_row_range(frame: &mut PreparedFrame, current_row: usize, row_start
 /// disjoint field projections — see the borrow note in `fill_frame_incremental`.
 fn replay_clean_row(frame: &mut PreparedFrame, row: usize) {
     let row_start = BufferLengths::capture(frame);
-    if let Some(ranges) = frame.saved_tier.row_ranges(row).cloned() {
+    // Copy out byte-range starts/ends as scalars before the disjoint-field
+    // borrow split below — avoids per-clean-row `RowInstanceRanges.cloned()`
+    // (32-byte struct copy in the hot path) by capturing only the 8 usize
+    // values we actually need.
+    let saved_ranges = frame.saved_tier.row_ranges(row).map(|r| {
+        (
+            r.backgrounds.start,
+            r.backgrounds.end,
+            r.glyphs.start,
+            r.glyphs.end,
+            r.subpixel_glyphs.start,
+            r.subpixel_glyphs.end,
+            r.color_glyphs.start,
+            r.color_glyphs.end,
+        )
+    });
+    if let Some((bg_s, bg_e, g_s, g_e, sp_s, sp_e, c_s, c_e)) = saved_ranges {
         let saved = &frame.saved_tier;
-        frame.backgrounds.extend_from_byte_range(
-            &saved.backgrounds,
-            ranges.backgrounds.start,
-            ranges.backgrounds.end,
-        );
         frame
-            .glyphs
-            .extend_from_byte_range(&saved.glyphs, ranges.glyphs.start, ranges.glyphs.end);
-        frame.subpixel_glyphs.extend_from_byte_range(
-            &saved.subpixel_glyphs,
-            ranges.subpixel_glyphs.start,
-            ranges.subpixel_glyphs.end,
-        );
-        frame.color_glyphs.extend_from_byte_range(
-            &saved.color_glyphs,
-            ranges.color_glyphs.start,
-            ranges.color_glyphs.end,
-        );
+            .backgrounds
+            .extend_from_byte_range(&saved.backgrounds, bg_s, bg_e);
+        frame.glyphs.extend_from_byte_range(&saved.glyphs, g_s, g_e);
+        frame
+            .subpixel_glyphs
+            .extend_from_byte_range(&saved.subpixel_glyphs, sp_s, sp_e);
+        frame
+            .color_glyphs
+            .extend_from_byte_range(&saved.color_glyphs, c_s, c_e);
     }
     let now = BufferLengths::capture(frame);
     let ranges = now.range_since(&row_start);
@@ -211,7 +218,7 @@ fn process_incremental_cells(
             dirty_emitted_rows += 1;
             row_start = BufferLengths::capture(ctx.frame);
             row_is_clean = false;
-            let row_y = (oy + row as f32 * ch).round();
+            let row_y = super::snapped_row_y(oy, row, ch);
             row_off_screen = row_y + ch < 0.0 || row_y > viewport_h;
         }
 
@@ -230,7 +237,7 @@ fn process_incremental_cells(
         let col = cell.column.0;
         let x = ox + col as f32 * cw;
         // Round Y to integer pixels (see prepare/mod.rs for rationale).
-        let y = (oy + row as f32 * ch).round();
+        let y = super::snapped_row_y(oy, row, ch);
         super::emit_cell::emit_cell(cell, x, y, ctx);
         emitted_cells += 1;
     }
@@ -266,27 +273,23 @@ pub(crate) fn fill_frame_incremental(
     origin: (f32, f32),
     cursor_opacity: f32,
 ) {
-    let cw = input.cell_size.width;
-    let ch = input.cell_size.height;
     let (ox, oy) = origin;
 
     // Setup that must read frame fields before frame is moved into ctx.
     let num_rows = input.rows();
-    let prev_sel = frame.prev_selection_snapshot;
-    let prev_cursor_line = frame.prev_cursor_line;
+    // Snapshot prev-frame row-state inputs into a Copy struct so the
+    // immutable borrow of `frame` ends before `&mut frame.scratch_dirty`.
+    let prev_state = selection_damage::PrevFrameState::from_frame(frame);
     // Resolve cursor BEFORE build_dirty_set so the dirty-set tracks the
     // actually-rendered cursor row (which may be the mark-mode cursor)
     // rather than the raw terminal cursor — otherwise the wrong row's
     // per-cell colors get the cursor-cell exclusion treatment.
-    let resolved_cursor = resolve_cursor(&input.content.cursor, input.mark_cursor.as_ref());
-    let prev_hovered_cell = frame.prev_hovered_cell;
+    let resolved_cursor = super::resolve_cursor_state(input);
     build_dirty_set(
         input,
         num_rows,
         &resolved_cursor,
-        prev_sel,
-        prev_cursor_line,
-        prev_hovered_cell,
+        prev_state,
         &mut frame.scratch_dirty,
     );
 
@@ -320,25 +323,7 @@ pub(crate) fn fill_frame_incremental(
     draw_url_hover_underline(input, ctx.frame, ox, oy);
     draw_prompt_markers(input, ctx.frame, ox, oy);
 
-    if ctx.cursor.visible && cursor_opacity > 0.0 {
-        let shape = if input.window_focused {
-            ctx.cursor.shape
-        } else {
-            CursorShape::HollowBlock
-        };
-        build_cursor(
-            ctx.frame,
-            shape,
-            ctx.cursor.column.0,
-            ctx.cursor.line,
-            cw,
-            ch,
-            ox,
-            oy,
-            input.palette.cursor_color,
-            cursor_opacity,
-        );
-    }
+    super::emit::emit_cursor_for_frame(input, ctx.frame, origin, cursor_opacity);
 
     super::emit::emit_image_quads(input, ctx.frame, ox, oy);
 }

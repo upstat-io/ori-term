@@ -254,3 +254,6 @@ impl WindowRenderer {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

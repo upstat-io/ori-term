@@ -1370,7 +1370,7 @@ fn xtsmgraphics_set_image_protocol_enabled_re_enables_replies() {
 
 /// Regression: BUG-08-006 — empty answerback (default) suppresses emission entirely.
 /// Per `WezTerm` `term/src/terminalstate/performer.rs:473-479`, only emit when non-empty.
-/// See: bug-tracker/plans/BUG-08-006/section-03-tdd-matrix.md
+/// See: bug-tracker/plans/completed/BUG-08-006/section-03-tdd-matrix.md
 #[test]
 fn enq_with_empty_answerback_emits_no_pty_write() {
     let mut t = term_with_effect_sink();

@@ -2032,7 +2032,7 @@ fn daemon_host_request_cleanup_on_pane_close() {
 /// not publicly accessible, blocking e2e multi-client priority routing tests.
 /// This test proves that a second client can subscribe to a pane spawned by
 /// another client and receive its snapshots independently.
-/// See: bug-tracker/plans/BUG-11-046/00-overview.md
+/// See: bug-tracker/plans/completed/BUG-11-046/00-overview.md
 #[test]
 fn daemon_multi_client_subscribe_and_priority() {
     let daemon = TestDaemon::start();
@@ -2048,11 +2048,11 @@ fn daemon_multi_client_subscribe_and_priority() {
         Duration::from_secs(30),
     );
 
-    // Client B subscribes to the same pane via the public subscribe_pane API.
+    // Client B subscribes to the same pane via the public subscribe API.
     let mut client_b = daemon.connect_client();
     client_b
-        .subscribe_pane(pane_id)
-        .expect("subscribe_pane must succeed for connected client");
+        .subscribe(pane_id)
+        .expect("subscribe must succeed for connected client");
 
     // Client B can now see the pane's content independently.
     let snap_b = client_b

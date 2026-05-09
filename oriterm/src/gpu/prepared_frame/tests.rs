@@ -26,6 +26,7 @@ fn new_frame_is_empty() {
     let frame = PreparedFrame::new(VP, BLACK, 1.0);
     assert!(frame.is_empty());
     assert_eq!(frame.total_instances(), 0);
+    assert_eq!(frame.prev_dispatch_fingerprint, None);
 }
 
 #[test]
@@ -33,6 +34,7 @@ fn with_capacity_starts_empty() {
     let frame = PreparedFrame::with_capacity(VP, 80, 24, BLACK, 1.0);
     assert!(frame.is_empty());
     assert_eq!(frame.total_instances(), 0);
+    assert_eq!(frame.prev_dispatch_fingerprint, None);
 }
 
 // --- Clear color ---
@@ -230,4 +232,126 @@ fn extend_from_shifts_overlay_draw_ranges_correctly() {
     // Shifted range: base was 2 (self had 2 rects before append),
     // so other's (0,1) becomes (2,3).
     assert_eq!(self_frame.overlay_draw_ranges[1].rects, (2, 3));
+}
+
+// ── Regression pin against re-introducing enumerated prev_* fields ──
+//
+// The previous design had 9 prev_* fields on PreparedFrame used solely by the
+// dispatch predicate; the fingerprint refactor replaced them with a single
+// prev_dispatch_fingerprint field. This test asserts the 9 identifiers no
+// longer appear in the source — re-introducing any of them would silently
+// re-create the sync-point drift hazard.
+
+/// Regression: BUG-06-030 — 9 enumerated prev_* fields replaced with single
+/// content-aware fingerprint; this test prevents accidental re-introduction.
+/// See: bug-tracker/plans/completed/BUG-06-030/
+#[test]
+fn enumerated_prev_fields_removed() {
+    let manifest = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR set by cargo");
+    let path = std::path::PathBuf::from(manifest)
+        .join("src")
+        .join("gpu")
+        .join("prepared_frame")
+        .join("mod.rs");
+    let source = std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("failed to read {}: {}", path.display(), e));
+
+    // Field declarations look like `pub(crate) prev_<name>:` or `pub(crate) prev_<name> :`.
+    // Use the punctuated form to avoid matching inline doc-comment mentions.
+    for forbidden in &[
+        "prev_text_blink_opacity:",
+        "prev_palette_opacity:",
+        "prev_cell_size:",
+        "prev_origin:",
+        "prev_content_cols:",
+        "prev_content_rows:",
+        "prev_fg_dim:",
+        "prev_subpixel_positioning:",
+        "prev_search_fingerprint:",
+    ] {
+        assert!(
+            !source.contains(forbidden),
+            "regression: {} re-introduced as a field declaration in {}. \
+             The fingerprint refactor removed these in favor of prev_dispatch_fingerprint; \
+             re-adding any of them re-creates the parallel-sync-point drift hazard.",
+            forbidden,
+            path.display()
+        );
+    }
+}
+
+/// Regression: BUG-06-040 — `prev_cursor_line: Option<usize>` field was
+/// renamed to `prev_resolved_cursor: Option<RenderableCursor>` (visibility-
+/// canonicalized SSOT). This test asserts the old field name no longer
+/// appears in field-access patterns under `oriterm/src/gpu/`. Excludes
+/// (a) string literals (assertion messages, doc comments) — these don't
+/// affect correctness — and (b) the `selection_damage::dirty_set`
+/// parameter named `prev_cursor_line: Option<usize>`, which is local to
+/// that function's signature and intentionally retained.
+/// See: bug-tracker/plans/completed/BUG-06-040/
+#[test]
+fn prev_cursor_line_field_access_removed() {
+    let manifest = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR set by cargo");
+    let gpu_root = std::path::PathBuf::from(manifest).join("src").join("gpu");
+
+    // Walk every .rs file under src/gpu/ and check field-access patterns.
+    let mut offending = Vec::new();
+    walk_rs_files(&gpu_root, &mut |path: &std::path::Path| {
+        let Ok(source) = std::fs::read_to_string(path) else {
+            return;
+        };
+        // Field-access patterns — must NOT match string literals or
+        // doc-comment prose. Each marker is the literal field-access
+        // syntax that a code consumer would emit.
+        for needle in &[
+            "frame.prev_cursor_line",
+            "out.prev_cursor_line",
+            "self.prepared.prev_cursor_line",
+            "pub(crate) prev_cursor_line:",
+            "prev_cursor_line: None",
+            "prev_cursor_line: Some",
+        ] {
+            if source.contains(needle) {
+                offending.push(format!("{}: {needle}", path.display()));
+            }
+        }
+    });
+
+    assert!(
+        offending.is_empty(),
+        "regression: prev_cursor_line field-access patterns survived the rename to \
+         prev_resolved_cursor. Offending sites:\n  {}",
+        offending.join("\n  ")
+    );
+}
+
+fn walk_rs_files(dir: &std::path::Path, visitor: &mut dyn FnMut(&std::path::Path)) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            walk_rs_files(&path, visitor);
+        } else if path.extension().and_then(|s| s.to_str()) == Some("rs") {
+            // Skip ONLY the file that physically contains this test's needle
+            // list (otherwise the scan would self-report). Other test files
+            // remain in scope so test helpers using the renamed field-access
+            // patterns still get caught.
+            let is_self = path
+                .file_name()
+                .and_then(|s| s.to_str())
+                .map(|n| n == "tests.rs")
+                .unwrap_or(false)
+                && path
+                    .parent()
+                    .and_then(|p| p.file_name())
+                    .and_then(|s| s.to_str())
+                    == Some("prepared_frame");
+            if is_self {
+                continue;
+            }
+            visitor(&path);
+        }
+    }
 }

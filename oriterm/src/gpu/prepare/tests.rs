@@ -4333,7 +4333,7 @@ fn shaped_multi_row(
 /// `all_dirty=true` dispatches full-rebuild even when `saved_tier` is
 /// populated).
 ///
-/// See: bug-tracker/plans/BUG-06-027/
+/// See: bug-tracker/plans/completed/BUG-06-027/
 #[test]
 fn incremental_all_dirty_matches_full_rebuild() {
     let size_q6 = 768;
@@ -4752,7 +4752,7 @@ fn incremental_all_dirty_recovery_resumes_incremental() {
 /// then asserts `was_incremental` AND non-empty buffers AND output
 /// equivalence.
 ///
-/// See: bug-tracker/plans/BUG-06-027/
+/// See: bug-tracker/plans/completed/BUG-06-027/
 #[test]
 fn incremental_replay_clean_rows_matches_fresh_rebuild_output_across_all_buffers() {
     let size_q6 = 768;
@@ -4871,11 +4871,11 @@ fn incremental_dispatch_falls_back_on_viewport_change() {
 /// dispatches full-rebuild even when the pixel viewport stays the same.
 /// Pixel viewport tracks (width_px, height_px); content grid tracks
 /// (cols, rows). During async resize in daemon mode the snapshot grid
-/// can race ahead of the pixel viewport — the `prev_content_cols` /
-/// `prev_content_rows` guards must catch this without relying on the
-/// viewport guard. Three-frame sequence proves incremental is reachable
-/// in steady state and the fallback fires on grid topology change in
-/// isolation from viewport.
+/// can race ahead of the pixel viewport — the dispatch fingerprint's
+/// content_cols / content_rows hash inputs must catch this without
+/// relying on the viewport hash inputs. Three-frame sequence proves
+/// incremental is reachable in steady state and the fallback fires on
+/// grid topology change in isolation from viewport.
 #[test]
 fn incremental_dispatch_falls_back_on_content_grid_change() {
     let size_q6 = 768;
@@ -4897,8 +4897,8 @@ fn incremental_dispatch_falls_back_on_content_grid_change() {
     assert!(frame.was_incremental, "Frame 1 incremental reachable");
 
     // Bump content_cols WITHOUT changing the pixel viewport. The
-    // viewport guard does NOT catch this; only the prev_content_cols
-    // guard does.
+    // viewport hash inputs do NOT catch this; only the content_cols
+    // hash input does.
     let prev_viewport = input.viewport;
     input.content_cols = cols + 1;
     assert_eq!(input.viewport, prev_viewport, "viewport unchanged");
@@ -4910,8 +4910,9 @@ fn incremental_dispatch_falls_back_on_content_grid_change() {
 }
 
 /// Regression: BUG-06-027 — cell-size change (scale or font swap) forces
-/// full-rebuild. The dispatch predicate's `prev_cell_size` guard catches
-/// per-cell-layout changes that leave the pixel viewport unchanged.
+/// full-rebuild. The dispatch fingerprint hashes all 6 CellMetrics fields
+/// so per-cell-layout changes that leave the pixel viewport unchanged
+/// still invalidate the saved tier.
 #[test]
 fn incremental_dispatch_falls_back_on_cell_size_change() {
     let size_q6 = 768;
@@ -5037,7 +5038,7 @@ fn incremental_dispatch_invalidates_on_scrollback_shift() {
 /// per-cell colors. Pre-fix, `build_dirty_set` only marked the current
 /// cursor row dirty; the previous cursor row replayed stale "with cursor"
 /// colors from saved_tier. Post-fix, `build_dirty_set` accepts
-/// `prev_cursor_line` and dirties the previous row too.
+/// the resolved cursor's line and dirties the previous row too.
 #[test]
 fn incremental_dispatch_with_cursor_move_dirties_current_and_previous_cursor_rows() {
     let size_q6 = 768;
@@ -5197,8 +5198,8 @@ fn incremental_dispatch_falls_back_on_search_state_change() {
 
 /// Regression: BUG-06-027 — text blink opacity change forces full-rebuild.
 /// Per-cell instances bake `text_blink_opacity` at emit time; replaying
-/// clean rows would carry stale opacity. The dispatch predicate's
-/// `prev_text_blink_opacity` guard catches this.
+/// clean rows would carry stale opacity. The dispatch fingerprint's
+/// `text_blink_opacity` hash input catches this.
 #[test]
 fn incremental_dispatch_falls_back_on_text_blink_opacity_change() {
     let cols = 4;
@@ -5574,4 +5575,718 @@ mod dirty_skip_traces {
             );
         });
     }
+}
+
+// ── Dispatch-fingerprint tests ──
+//
+// `compute_dispatch_fingerprint` is the SSOT for "did frame-level state
+// change?" — replaces the prior 11-clause enumerated dispatch predicate.
+// Each test below varies ONE input field relative to a baseline and asserts
+// fingerprint equality/inequality. Counter-pin tests verify that fields
+// intentionally excluded (selection, cursor, hovered_cell) do NOT change
+// the fingerprint — those flow through per-row `build_dirty_set` instead.
+
+mod dispatch_fingerprint {
+    use super::super::compute_dispatch_fingerprint;
+    use crate::gpu::frame_input::FrameInput;
+
+    fn baseline() -> (FrameInput, (f32, f32)) {
+        let mut input = FrameInput::test_grid(10, 5, "Hello");
+        input.text_blink_opacity = 1.0;
+        input.fg_dim = 1.0;
+        input.palette.opacity = 1.0;
+        input.subpixel_positioning = false;
+        input.selection = None;
+        input.hovered_cell = None;
+        let origin = (0.0_f32, 0.0_f32);
+        (input, origin)
+    }
+
+    /// Stable fingerprint: same inputs → same output.
+    #[test]
+    fn fingerprint_stable_across_unchanged_frames() {
+        let (input, origin) = baseline();
+        let a = compute_dispatch_fingerprint(&input, origin);
+        let b = compute_dispatch_fingerprint(&input, origin);
+        assert_eq!(a, b, "identical inputs must produce identical fingerprints");
+    }
+
+    /// Geometry change → fingerprint changes.
+    #[test]
+    fn fingerprint_changes_with_viewport_width() {
+        let (mut input, origin) = baseline();
+        let baseline_fp = compute_dispatch_fingerprint(&input, origin);
+        input.viewport.width += 10;
+        assert_ne!(compute_dispatch_fingerprint(&input, origin), baseline_fp);
+    }
+
+    #[test]
+    fn fingerprint_changes_with_viewport_height() {
+        let (mut input, origin) = baseline();
+        let baseline_fp = compute_dispatch_fingerprint(&input, origin);
+        input.viewport.height += 10;
+        assert_ne!(compute_dispatch_fingerprint(&input, origin), baseline_fp);
+    }
+
+    #[test]
+    fn fingerprint_changes_with_cell_size_width() {
+        let (mut input, origin) = baseline();
+        let baseline_fp = compute_dispatch_fingerprint(&input, origin);
+        input.cell_size.width += 1.0;
+        assert_ne!(compute_dispatch_fingerprint(&input, origin), baseline_fp);
+    }
+
+    #[test]
+    fn fingerprint_changes_with_cell_size_height() {
+        let (mut input, origin) = baseline();
+        let baseline_fp = compute_dispatch_fingerprint(&input, origin);
+        input.cell_size.height += 1.0;
+        assert_ne!(compute_dispatch_fingerprint(&input, origin), baseline_fp);
+    }
+
+    #[test]
+    fn fingerprint_changes_with_cell_size_baseline() {
+        let (mut input, origin) = baseline();
+        let baseline_fp = compute_dispatch_fingerprint(&input, origin);
+        input.cell_size.baseline += 1.0;
+        assert_ne!(compute_dispatch_fingerprint(&input, origin), baseline_fp);
+    }
+
+    /// Regression: BUG-06-030 — all 6 CellMetrics fields hashed (not just 3).
+    /// See: bug-tracker/plans/completed/BUG-06-030/section-03-tdd-matrix.md
+    #[test]
+    fn fingerprint_changes_with_cell_size_underline_offset() {
+        let (mut input, origin) = baseline();
+        let baseline_fp = compute_dispatch_fingerprint(&input, origin);
+        input.cell_size.underline_offset += 1.0;
+        assert_ne!(
+            compute_dispatch_fingerprint(&input, origin),
+            baseline_fp,
+            "underline_offset MUST be in fingerprint — affects decoration emission"
+        );
+    }
+
+    #[test]
+    fn fingerprint_changes_with_cell_size_stroke_size() {
+        let (mut input, origin) = baseline();
+        let baseline_fp = compute_dispatch_fingerprint(&input, origin);
+        input.cell_size.stroke_size += 1.0;
+        assert_ne!(
+            compute_dispatch_fingerprint(&input, origin),
+            baseline_fp,
+            "stroke_size MUST be in fingerprint — affects underline/strikeout geometry"
+        );
+    }
+
+    #[test]
+    fn fingerprint_changes_with_cell_size_strikeout_offset() {
+        let (mut input, origin) = baseline();
+        let baseline_fp = compute_dispatch_fingerprint(&input, origin);
+        input.cell_size.strikeout_offset += 1.0;
+        assert_ne!(
+            compute_dispatch_fingerprint(&input, origin),
+            baseline_fp,
+            "strikeout_offset MUST be in fingerprint — affects strikethrough position"
+        );
+    }
+
+    #[test]
+    fn fingerprint_changes_with_content_cols() {
+        let (mut input, origin) = baseline();
+        let baseline_fp = compute_dispatch_fingerprint(&input, origin);
+        input.content_cols += 1;
+        assert_ne!(compute_dispatch_fingerprint(&input, origin), baseline_fp);
+    }
+
+    #[test]
+    fn fingerprint_changes_with_content_rows() {
+        let (mut input, origin) = baseline();
+        let baseline_fp = compute_dispatch_fingerprint(&input, origin);
+        input.content_rows += 1;
+        assert_ne!(compute_dispatch_fingerprint(&input, origin), baseline_fp);
+    }
+
+    #[test]
+    fn fingerprint_changes_with_origin_x() {
+        let (input, origin) = baseline();
+        let baseline_fp = compute_dispatch_fingerprint(&input, origin);
+        let new_origin = (origin.0 + 5.0, origin.1);
+        assert_ne!(
+            compute_dispatch_fingerprint(&input, new_origin),
+            baseline_fp
+        );
+    }
+
+    #[test]
+    fn fingerprint_changes_with_origin_y() {
+        let (input, origin) = baseline();
+        let baseline_fp = compute_dispatch_fingerprint(&input, origin);
+        let new_origin = (origin.0, origin.1 + 5.0);
+        assert_ne!(
+            compute_dispatch_fingerprint(&input, new_origin),
+            baseline_fp
+        );
+    }
+
+    #[test]
+    fn fingerprint_changes_with_text_blink_opacity() {
+        let (mut input, origin) = baseline();
+        let baseline_fp = compute_dispatch_fingerprint(&input, origin);
+        input.text_blink_opacity = 0.5;
+        assert_ne!(compute_dispatch_fingerprint(&input, origin), baseline_fp);
+    }
+
+    #[test]
+    fn fingerprint_changes_with_palette_opacity() {
+        let (mut input, origin) = baseline();
+        let baseline_fp = compute_dispatch_fingerprint(&input, origin);
+        input.palette.opacity = 0.8;
+        assert_ne!(compute_dispatch_fingerprint(&input, origin), baseline_fp);
+    }
+
+    #[test]
+    fn fingerprint_changes_with_fg_dim() {
+        let (mut input, origin) = baseline();
+        let baseline_fp = compute_dispatch_fingerprint(&input, origin);
+        input.fg_dim = 0.6;
+        assert_ne!(compute_dispatch_fingerprint(&input, origin), baseline_fp);
+    }
+
+    #[test]
+    fn fingerprint_changes_with_subpixel_positioning() {
+        let (mut input, origin) = baseline();
+        let baseline_fp = compute_dispatch_fingerprint(&input, origin);
+        input.subpixel_positioning = true;
+        assert_ne!(compute_dispatch_fingerprint(&input, origin), baseline_fp);
+    }
+
+    /// Search highlight state is hashed via `damage_fingerprint`. Add a search
+    /// match to the input and assert the dispatch fingerprint differs from
+    /// baseline (no search). Closes the §03 search-fingerprint coverage gap.
+    #[test]
+    fn fingerprint_changes_with_search_fingerprint() {
+        use crate::gpu::frame_input::FrameSearch;
+        use oriterm_core::{Column, SearchMatch, StableRowIndex};
+
+        let (mut input, origin) = baseline();
+        let baseline_fp = compute_dispatch_fingerprint(&input, origin);
+
+        let _ = Column(0); // unused — SearchMatch fields use bare usize
+        let matches = vec![SearchMatch {
+            start_row: StableRowIndex(0),
+            start_col: 0,
+            end_row: StableRowIndex(0),
+            end_col: 3,
+        }];
+        input.search = Some(FrameSearch::for_test(matches, 0, 0));
+        let with_search = compute_dispatch_fingerprint(&input, origin);
+        assert_ne!(
+            with_search, baseline_fp,
+            "search match presence must alter the dispatch fingerprint"
+        );
+    }
+
+    /// Counter-pins: row-state fields are intentionally NOT in the fingerprint.
+    /// These changes must flow through `build_dirty_set` (incremental path) or
+    /// `WindowRenderer::has_row_state_change` (fast-path gate), never via full
+    /// rebuild dispatch.
+
+    #[test]
+    fn fingerprint_unchanged_when_hovered_cell_changes() {
+        let (mut input, origin) = baseline();
+        let baseline_fp = compute_dispatch_fingerprint(&input, origin);
+        input.hovered_cell = Some((0, 0));
+        assert_eq!(
+            compute_dispatch_fingerprint(&input, origin),
+            baseline_fp,
+            "hovered_cell MUST NOT be in fingerprint — handled per-row by build_dirty_set"
+        );
+    }
+
+    #[test]
+    fn fingerprint_unchanged_when_cursor_position_changes() {
+        let (mut input, origin) = baseline();
+        let baseline_fp = compute_dispatch_fingerprint(&input, origin);
+        // RenderableCursor uses flat fields (line, column, shape, visible).
+        input.content.cursor.line = 1;
+        input.content.cursor.column = oriterm_core::Column(2);
+        assert_eq!(
+            compute_dispatch_fingerprint(&input, origin),
+            baseline_fp,
+            "cursor position MUST NOT be in fingerprint — handled per-row via prev_resolved_cursor dirtying"
+        );
+    }
+
+    #[test]
+    fn fingerprint_unchanged_when_selection_changes() {
+        use oriterm_core::{Selection, Side, StableRowIndex};
+        let (mut input, origin) = baseline();
+        let baseline_fp = compute_dispatch_fingerprint(&input, origin);
+        let mut sel = Selection::new_char(StableRowIndex(0), 0, Side::Left);
+        sel.end = oriterm_core::SelectionPoint {
+            row: StableRowIndex(0),
+            col: 3,
+            side: Side::Right,
+        };
+        input.selection = Some(crate::gpu::frame_input::FrameSelection::new(&sel, 0));
+        assert_eq!(
+            compute_dispatch_fingerprint(&input, origin),
+            baseline_fp,
+            "selection MUST NOT be in fingerprint — handled per-row via prev_selection_snapshot dirtying"
+        );
+    }
+
+    /// Regression: BUG-06-030 — bitwise-exact via `.to_bits()`; `+0.0` and
+    /// `-0.0` produce different fingerprints (one spurious rebuild on flip).
+    /// See: bug-tracker/plans/completed/BUG-06-030/
+    #[test]
+    fn fingerprint_distinguishes_positive_zero_from_negative_zero() {
+        let (mut input, origin) = baseline();
+        input.text_blink_opacity = 0.0_f32;
+        let pos_zero = compute_dispatch_fingerprint(&input, origin);
+        input.text_blink_opacity = -0.0_f32;
+        let neg_zero = compute_dispatch_fingerprint(&input, origin);
+        assert_ne!(
+            pos_zero, neg_zero,
+            "bitwise-exact via .to_bits() distinguishes +0.0 from -0.0 \
+             (one spurious rebuild on flip, accepted per consensus)"
+        );
+    }
+
+    /// Bitwise pin: smallest representable f32 delta invalidates (replaces prior
+    /// `< f32::EPSILON` epsilon-tolerant comparison). Using `from_bits()` to
+    /// construct the next-representable value avoids the float-rounding gotcha
+    /// where `1.0 + EPSILON/2.0` rounds back to exactly `1.0` in f32.
+    #[test]
+    fn fingerprint_distinguishes_smallest_float_delta() {
+        let (mut input, origin) = baseline();
+        input.text_blink_opacity = 1.0_f32;
+        let baseline_fp = compute_dispatch_fingerprint(&input, origin);
+        input.text_blink_opacity = f32::from_bits(1.0_f32.to_bits() + 1);
+        let perturbed_fp = compute_dispatch_fingerprint(&input, origin);
+        assert_ne!(
+            baseline_fp, perturbed_fp,
+            "bitwise-exact comparison must invalidate on the smallest \
+             representable f32 delta (extra rebuilds, never stale reuse)"
+        );
+    }
+
+    /// Distinct origins with otherwise-identical inputs must produce distinct
+    /// fingerprints. Documents that the fingerprint is content-aware, not
+    /// just shape-aware.
+    #[test]
+    fn fingerprint_distinguishes_distinct_origins_same_shape() {
+        let (input, _origin) = baseline();
+        let a = compute_dispatch_fingerprint(&input, (10.0, 20.0));
+        let b = compute_dispatch_fingerprint(&input, (15.0, 20.0));
+        assert_ne!(
+            a, b,
+            "different origins with otherwise-identical inputs must produce different fingerprints"
+        );
+    }
+}
+
+// Regression pin against re-introducing enumerated prev_* fields lives in
+// `gpu/prepared_frame/tests.rs::enumerated_prev_fields_removed` (the test
+// scans `prepared_frame/mod.rs`, so it is colocated with the file it pins).
+
+// ── Focus-aware cursor color resolution ──
+
+/// Helper: build a 3-cell row "ABC" with non-palette bg so bg quads are
+/// emitted, the cursor at column 1, selection covering all three columns,
+/// and the requested cursor shape + window-focus state.
+///
+/// Returns the configured `FrameInput`. Caller chooses whether to run via
+/// `prepare_frame` (unshaped) or `prepare_frame_shaped` / `prepare_frame_shaped_into`
+/// (shaped/incremental production paths) to exercise both EmitCtx build sites.
+#[allow(clippy::needless_pass_by_value, reason = "test fixture builder")]
+fn focus_cursor_selection_input(shape: CursorShape, window_focused: bool) -> FrameInput {
+    use oriterm_core::RenderableCell;
+
+    let fg = Rgb {
+        r: 211,
+        g: 215,
+        b: 207,
+    };
+    let bg = Rgb {
+        r: 30,
+        g: 30,
+        b: 46,
+    };
+    let cells = vec![
+        RenderableCell {
+            line: 0,
+            column: Column(0),
+            ch: 'A',
+            fg,
+            bg,
+            flags: CellFlags::empty(),
+            underline_color: None,
+            has_hyperlink: false,
+            hyperlink_uri: None,
+            zerowidth: Vec::new(),
+        },
+        RenderableCell {
+            line: 0,
+            column: Column(1),
+            ch: 'B',
+            fg,
+            bg,
+            flags: CellFlags::empty(),
+            underline_color: None,
+            has_hyperlink: false,
+            hyperlink_uri: None,
+            zerowidth: Vec::new(),
+        },
+        RenderableCell {
+            line: 0,
+            column: Column(2),
+            ch: 'C',
+            fg,
+            bg,
+            flags: CellFlags::empty(),
+            underline_color: None,
+            has_hyperlink: false,
+            hyperlink_uri: None,
+            zerowidth: Vec::new(),
+        },
+    ];
+
+    let mut input = FrameInput::test_grid(3, 1, "");
+    input.content.cells = cells;
+    input.content.cursor.visible = true;
+    input.content.cursor.shape = shape;
+    input.content.cursor.line = 0;
+    input.content.cursor.column = Column(1);
+    input.window_focused = window_focused;
+    input.selection = Some(selection_range(0, 0, 2));
+    input
+}
+
+/// Regression: BUG-06-031 — `is_block_cursor_cell` predicate at
+/// `prepare/resolve.rs:81` previously checked the raw `cursor.shape == Block`
+/// instead of the focus-effective shape, so an unfocused window with a
+/// configured Block cursor (rendered as a hollow outline) suppressed
+/// selection inversion under the cursor cell. Fix: fold focus override into
+/// `resolve_cursor_state` so the resolved `cursor.shape` IS
+/// the effective shape, then the predicate naturally evaluates `Block`-only
+/// for solid (focused) Block cursors. Pin asserts the failing case: cursor
+/// cell on selection on unfocused window inverts.
+#[test]
+fn unfocused_block_cursor_cell_in_selection_inverts() {
+    let input = focus_cursor_selection_input(CursorShape::Block, false);
+    let atlas = atlas_with(&['A', 'B', 'C']);
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
+
+    let selected_bg = rgb_f32(input.content.cells[0].fg);
+    let bg1 = nth_instance(frame.backgrounds.as_bytes(), 1);
+    assert_eq!(
+        bg1.bg_color, selected_bg,
+        "cursor cell on unfocused window MUST be selection-inverted (cursor renders hollow)"
+    );
+}
+
+/// Regression: BUG-06-031 — focused configured `HollowBlock` cursor on a
+/// selected cell already inverts correctly today; pin guards against future
+/// regression where a fix to the unfocused-Block bug accidentally suppresses
+/// selection for the configured-HollowBlock case.
+#[test]
+fn focused_hollow_block_cursor_cell_in_selection_inverts() {
+    let input = focus_cursor_selection_input(CursorShape::HollowBlock, true);
+    let atlas = atlas_with(&['A', 'B', 'C']);
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
+
+    let selected_bg = rgb_f32(input.content.cells[0].fg);
+    let bg1 = nth_instance(frame.backgrounds.as_bytes(), 1);
+    assert_eq!(
+        bg1.bg_color, selected_bg,
+        "focused HollowBlock cursor cell on selection MUST be inverted (cursor is hollow)"
+    );
+}
+
+/// Regression: BUG-06-031 — unfocused `Bar` cursor (effective `HollowBlock`
+/// via focus override) on a selected cell must invert. Cross-shape coverage
+/// for the focus override path.
+#[test]
+fn unfocused_bar_cursor_cell_in_selection_inverts() {
+    let input = focus_cursor_selection_input(CursorShape::Bar, false);
+    let atlas = atlas_with(&['A', 'B', 'C']);
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
+
+    let selected_bg = rgb_f32(input.content.cells[0].fg);
+    let bg1 = nth_instance(frame.backgrounds.as_bytes(), 1);
+    assert_eq!(
+        bg1.bg_color, selected_bg,
+        "unfocused Bar cursor cell on selection MUST be inverted (focus override → HollowBlock)"
+    );
+}
+
+/// Regression: BUG-06-031 — unfocused `Underline` cursor (effective
+/// `HollowBlock`) on a selected cell must invert. Cross-shape coverage.
+#[test]
+fn unfocused_underline_cursor_cell_in_selection_inverts() {
+    let input = focus_cursor_selection_input(CursorShape::Underline, false);
+    let atlas = atlas_with(&['A', 'B', 'C']);
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
+
+    let selected_bg = rgb_f32(input.content.cells[0].fg);
+    let bg1 = nth_instance(frame.backgrounds.as_bytes(), 1);
+    assert_eq!(
+        bg1.bg_color, selected_bg,
+        "unfocused Underline cursor cell on selection MUST be inverted (focus override → HollowBlock)"
+    );
+}
+
+/// Regression: BUG-06-031 — unfocused Block cursor cell that is BOTH selected
+/// AND a search match: same `!is_block_cursor_cell` gate at `resolve.rs:108`
+/// applies to the search branch. Pin asserts search-match highlighting also
+/// works under the hollow cursor.
+#[test]
+fn unfocused_block_cursor_cell_in_search_match_highlights() {
+    let mut input = focus_cursor_selection_input(CursorShape::Block, false);
+    // Drop the selection so the search branch is exercised.
+    input.selection = None;
+    input.search = Some(search_with_match(0, 1, 1, 99)); // non-focused match
+
+    let atlas = atlas_with(&['A', 'B', 'C']);
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
+
+    // SEARCH_MATCH_BG = Rgb { r: 100, g: 100, b: 30 } per resolve.rs.
+    let search_bg = rgb_f32(Rgb {
+        r: 100,
+        g: 100,
+        b: 30,
+    });
+    let bg1 = nth_instance(frame.backgrounds.as_bytes(), 1);
+    assert_eq!(
+        bg1.bg_color, search_bg,
+        "search-match cell under unfocused Block cursor MUST highlight (cursor is hollow)"
+    );
+}
+
+/// Regression: BUG-06-031 — focused-search match (FocusedMatch branch at
+/// `resolve.rs:110`) under unfocused Block cursor must use SEARCH_FOCUSED_BG.
+/// Separate code path from the regular Match branch.
+#[test]
+fn unfocused_block_cursor_cell_in_focused_search_match_uses_focused_colors() {
+    let mut input = focus_cursor_selection_input(CursorShape::Block, false);
+    input.selection = None;
+    input.search = Some(search_with_match(0, 1, 1, 0)); // focused index = 0
+
+    let atlas = atlas_with(&['A', 'B', 'C']);
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
+
+    let focused_match_bg = rgb_f32(Rgb {
+        r: 200,
+        g: 170,
+        b: 40,
+    });
+    let bg1 = nth_instance(frame.backgrounds.as_bytes(), 1);
+    assert_eq!(
+        bg1.bg_color, focused_match_bg,
+        "focused search-match under unfocused Block cursor MUST use SEARCH_FOCUSED_BG"
+    );
+}
+
+/// Regression: BUG-06-031 + Hidden carve-out — `effective_cursor_shape`
+/// previously returned `HollowBlock` for ANY input shape on unfocused windows,
+/// which would convert an explicitly Hidden cursor to a visible HollowBlock
+/// outline. The §05 carve-out preserves Hidden so `emit_cursor_for_frame`'s
+/// `CursorShape::Hidden => {}` branch (`emit.rs:275`) emits zero instances.
+#[test]
+fn unfocused_hidden_cursor_emits_no_cursor_instances() {
+    let mut input = FrameInput::test_grid(3, 1, "ABC");
+    input.content.cursor.shape = CursorShape::Hidden;
+    input.content.cursor.visible = true;
+    input.content.cursor.line = 0;
+    input.content.cursor.column = Column(1);
+    input.window_focused = false;
+
+    let atlas = atlas_with(&['A', 'B', 'C']);
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
+
+    assert_eq!(
+        frame.cursors.len(),
+        0,
+        "Hidden cursor on unfocused window MUST emit zero cursor instances (carve-out preserves Hidden)"
+    );
+}
+
+/// Regression guard for the §05 Hidden carve-out: white-box assertion that
+/// `resolve_cursor_state` preserves `Hidden` shape on unfocused windows.
+/// This test PASSES pre-fix (unmodified `resolve_cursor_state` doesn't apply
+/// `effective_cursor_shape`) AND PASSES post-fix (carve-out preserves Hidden).
+/// Guards against a partial-implementation regression where Option C is added
+/// without the Hidden carve-out, which would convert Hidden → HollowBlock.
+#[test]
+fn resolve_cursor_state_unfocused_hidden_preserves_hidden() {
+    let mut input = FrameInput::test_grid(1, 1, "A");
+    input.content.cursor.shape = CursorShape::Hidden;
+    input.content.cursor.visible = true;
+    input.window_focused = false;
+
+    let resolved = super::resolve_cursor_state(&input);
+    assert_eq!(
+        resolved.shape,
+        CursorShape::Hidden,
+        "Hidden cursor on unfocused window MUST preserve Hidden shape (carve-out)"
+    );
+}
+
+/// Regression: BUG-06-031 — semantic pin. `resolve_cursor_state` must return
+/// `HollowBlock` for an unfocused window with configured `Block` cursor.
+/// ONLY passes with the Option C fix.
+#[test]
+fn resolve_cursor_state_unfocused_block_resolves_to_hollow_block() {
+    let mut input = FrameInput::test_grid(1, 1, "A");
+    input.content.cursor.shape = CursorShape::Block;
+    input.content.cursor.visible = true;
+    input.window_focused = false;
+
+    let resolved = super::resolve_cursor_state(&input);
+    assert_eq!(
+        resolved.shape,
+        CursorShape::HollowBlock,
+        "unfocused Block cursor MUST resolve to HollowBlock (Option C focus override)"
+    );
+}
+
+/// Regression: BUG-06-031 — focus-override identity. `resolve_cursor_state`
+/// on a focused window preserves the configured shape unchanged.
+#[test]
+fn resolve_cursor_state_focused_block_preserves_block() {
+    let mut input = FrameInput::test_grid(1, 1, "A");
+    input.content.cursor.shape = CursorShape::Block;
+    input.content.cursor.visible = true;
+    input.window_focused = true;
+
+    let resolved = super::resolve_cursor_state(&input);
+    assert_eq!(
+        resolved.shape,
+        CursorShape::Block,
+        "focused Block cursor MUST preserve Block shape (focus override is identity when focused)"
+    );
+}
+
+/// Regression: BUG-06-031 — fingerprint-preserves regression guard. Option C
+/// does NOT add `window_focused` to `compute_dispatch_fingerprint` (focus
+/// invalidation flows through the row-state path via `resolve_cursor_state`'s
+/// shape change). Guards against a future regression where someone re-adds
+/// focus to the fingerprint and reintroduces the O(N) full-rebuild penalty
+/// on focus transitions.
+#[test]
+fn focus_transition_preserves_dispatch_fingerprint() {
+    let mut input_focused = FrameInput::test_grid(10, 5, "");
+    input_focused.window_focused = true;
+    let mut input_unfocused = FrameInput::test_grid(10, 5, "");
+    input_unfocused.window_focused = false;
+
+    let fp_focused = super::compute_dispatch_fingerprint(&input_focused, (0.0, 0.0));
+    let fp_unfocused = super::compute_dispatch_fingerprint(&input_unfocused, (0.0, 0.0));
+
+    assert_eq!(
+        fp_focused, fp_unfocused,
+        "compute_dispatch_fingerprint MUST NOT depend on window_focused (incremental path stays alive on focus transition; row-state path handles invalidation via resolve_cursor_state's shape change)"
+    );
+}
+
+/// Regression: BUG-06-031 — `effective_cursor_shape` idempotency table.
+/// Verifies the 5-variant × 2-focus matrix: focused returns identity for
+/// all 5 shapes; unfocused returns HollowBlock for Block/Bar/Underline/HollowBlock
+/// and Hidden for Hidden (carve-out).
+#[test]
+fn effective_cursor_shape_idempotency_table() {
+    use oriterm_core::RenderableCursor;
+
+    let make_cursor = |shape: CursorShape| RenderableCursor {
+        line: 0,
+        column: Column(0),
+        shape,
+        visible: true,
+    };
+
+    // Focused: identity for all 5 shapes.
+    for shape in [
+        CursorShape::Block,
+        CursorShape::Bar,
+        CursorShape::Underline,
+        CursorShape::HollowBlock,
+        CursorShape::Hidden,
+    ] {
+        let result = super::effective_cursor_shape(&make_cursor(shape), true);
+        assert_eq!(result, shape, "focused → identity for {shape:?}");
+    }
+
+    // Unfocused: HollowBlock for non-Hidden; Hidden preserved.
+    let unfocused_cases = [
+        (CursorShape::Block, CursorShape::HollowBlock),
+        (CursorShape::Bar, CursorShape::HollowBlock),
+        (CursorShape::Underline, CursorShape::HollowBlock),
+        (CursorShape::HollowBlock, CursorShape::HollowBlock),
+        (CursorShape::Hidden, CursorShape::Hidden),
+    ];
+    for (input, expected) in unfocused_cases {
+        let result = super::effective_cursor_shape(&make_cursor(input), false);
+        assert_eq!(
+            result, expected,
+            "unfocused {input:?} → {expected:?} (Hidden preserved via carve-out; others → HollowBlock)"
+        );
+    }
+}
+
+/// Regression: BUG-06-031 — `prev_resolved_cursor` storage captures the
+/// effective cursor shape (post-Option-C). On focus transition with all
+/// other inputs identical, `has_row_state_change`-style comparison must
+/// detect the shape difference, so the cursor-only fast path is invalidated
+/// and the cursor row re-emits with the correct effective shape.
+#[test]
+fn focus_transition_changes_resolved_cursor_shape() {
+    let mut input_focused = FrameInput::test_grid(10, 5, "");
+    input_focused.content.cursor.shape = CursorShape::Block;
+    input_focused.content.cursor.visible = true;
+    input_focused.content.cursor.line = 0;
+    input_focused.content.cursor.column = Column(0);
+    input_focused.window_focused = true;
+
+    let mut input_unfocused = FrameInput::test_grid(10, 5, "");
+    input_unfocused.content.cursor.shape = CursorShape::Block;
+    input_unfocused.content.cursor.visible = true;
+    input_unfocused.content.cursor.line = 0;
+    input_unfocused.content.cursor.column = Column(0);
+    input_unfocused.window_focused = false;
+
+    let resolved_focused = super::resolve_cursor_state(&input_focused);
+    let resolved_unfocused = super::resolve_cursor_state(&input_unfocused);
+
+    assert_eq!(
+        resolved_focused.shape,
+        CursorShape::Block,
+        "focused window: Block stays Block"
+    );
+    assert_eq!(
+        resolved_unfocused.shape,
+        CursorShape::HollowBlock,
+        "unfocused window: Block → HollowBlock"
+    );
+    assert_ne!(
+        resolved_focused, resolved_unfocused,
+        "resolved cursor differs across focus transition — has_row_state_change correctly invalidates fast path"
+    );
+}
+
+/// Regression: BUG-06-031 — semantic pin. Unfocused Block cursor cell
+/// in selection has different per-cell colors than the palette default
+/// (i.e., selection inversion is NOT suppressed). ONLY passes with Option C.
+#[test]
+fn unfocused_block_cursor_does_not_suppress_selection() {
+    let input = focus_cursor_selection_input(CursorShape::Block, false);
+    let atlas = atlas_with(&['A', 'B', 'C']);
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
+
+    let bg1 = nth_instance(frame.backgrounds.as_bytes(), 1);
+    let normal_bg = rgb_f32(input.content.cells[1].bg);
+    assert_ne!(
+        bg1.bg_color, normal_bg,
+        "cursor cell on unfocused window MUST NOT use palette default bg (selection inversion applies)"
+    );
 }

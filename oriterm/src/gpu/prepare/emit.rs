@@ -8,7 +8,7 @@ use oriterm_core::{CursorShape, Rgb};
 use super::super::atlas::AtlasKind;
 use super::super::frame_input::FrameInput;
 use super::super::prepared_frame::PreparedFrame;
-use super::AtlasLookup;
+use super::{AtlasLookup, resolve_cursor_state};
 use crate::font::{FaceIdx, FontRealm, RasterKey, SyntheticFlags, subpx_bin, subpx_offset};
 use crate::gpu::instance_writer::{CLIP_UNCLIPPED, ScreenRect};
 use oriterm_ui::text::ShapedGlyph;
@@ -140,7 +140,7 @@ pub(super) fn draw_prompt_markers(input: &FrameInput, frame: &mut PreparedFrame,
     let ch = input.cell_size.height;
     for &row in &input.prompt_marker_rows {
         let x = ox;
-        let y = (oy + row as f32 * ch).round();
+        let y = super::snapped_row_y(oy, row, ch);
         let rect = ScreenRect {
             x,
             y,
@@ -159,6 +159,56 @@ pub(super) fn draw_prompt_markers(input: &FrameInput, frame: &mut PreparedFrame,
 /// - `Underline` — 2px-tall horizontal line at the bottom.
 /// - `HollowBlock` — 4 thin outline rectangles (top, bottom, left, right).
 /// - `Hidden` — no instances.
+///
+/// Most callers should use [`emit_cursor_for_frame`] instead. This is
+/// the lower-level shape-dispatch primitive; `emit_cursor_for_frame` owns
+/// the visibility / opacity / focus-effective-shape policy.
+#[doc(hidden)]
+mod _emit_cursor_helper_anchor {}
+
+/// Emit cursor instances for a frame, owning the visibility/opacity gate +
+/// focus-effective-shape policy + `build_cursor` dispatch.
+///
+/// Single canonical home for the prepare-pipeline's cursor emission step.
+/// Callers (`update_cursor_only` fast path, `fill_frame_shaped` full prepare,
+/// `fill_frame_incremental` incremental prepare) used to duplicate this
+/// 18-line block; extracted here so the visibility / opacity / focus-shape
+/// policy lives in one place.
+///
+/// Cursor is the resolved cursor (mark-mode override applied) — the helper
+/// itself calls `resolve_cursor_state(input)`. No-ops when the cursor is
+/// invisible or `cursor_opacity <= 0.0`.
+pub(super) fn emit_cursor_for_frame(
+    input: &FrameInput,
+    frame: &mut PreparedFrame,
+    origin: (f32, f32),
+    cursor_opacity: f32,
+) {
+    let cursor = resolve_cursor_state(input);
+    if !cursor.visible || cursor_opacity <= 0.0 {
+        return;
+    }
+    // resolve_cursor_state baked the focus-effective shape; read directly per
+    // its SSOT contract. Re-querying effective_cursor_shape here would
+    // duplicate the policy at a consumption site.
+    let shape = cursor.shape;
+    let cw = input.cell_size.width;
+    let ch = input.cell_size.height;
+    let (ox, oy) = origin;
+    build_cursor(
+        frame,
+        shape,
+        cursor.column.0,
+        cursor.line,
+        cw,
+        ch,
+        ox,
+        oy,
+        input.palette.cursor_color,
+        cursor_opacity,
+    );
+}
+
 #[expect(
     clippy::too_many_arguments,
     reason = "cursor geometry: frame, shape, grid position, cell size, origin offset, color, opacity"
@@ -176,7 +226,7 @@ pub(super) fn build_cursor(
     opacity: f32,
 ) {
     let x = ox + col as f32 * cw;
-    let y = (oy + row as f32 * ch).round();
+    let y = super::snapped_row_y(oy, row, ch);
     let t = 2.0_f32;
 
     match shape {
@@ -251,7 +301,7 @@ pub(super) fn draw_url_hover_underline(
 
     for &(line, start_col, end_col) in &input.hovered_url_segments {
         let x = ox + start_col as f32 * cw;
-        let y = (oy + line as f32 * ch).round() + underline_y_offset;
+        let y = super::snapped_row_y(oy, line, ch) + underline_y_offset;
         let w = (end_col - start_col + 1) as f32 * cw;
         frame
             .cursors

@@ -202,7 +202,7 @@ impl App {
                 }
             }
             context_menu::ContextAction::MoveToNewWindow(tab_id) => {
-                self.move_tab_to_new_window_deferred(tab_id);
+                self.move_tab_to_new_window_deferred(tab_id, None);
             }
             context_menu::ContextAction::Copy => {
                 self.copy_selection();

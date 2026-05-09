@@ -19,12 +19,6 @@ use crate::gpu::state::GpuState;
 pub(in crate::app::redraw) struct ChromeParams {
     /// Number of panes (1 for single-pane, `layouts.len()` for multi-pane).
     pub pane_count: usize,
-    /// Whether terminal content changed this frame (triggers full re-render).
-    pub content_dirty: bool,
-    /// Whether selection changed (single-pane only; `false` for multi-pane).
-    pub selection_changed: bool,
-    /// Whether blink opacity changed (single-pane only; `false` for multi-pane).
-    pub blink_changed: bool,
 }
 
 /// Render chrome (tab bar, overlays, search bar, status bar, window border)
@@ -163,10 +157,7 @@ pub(in crate::app::redraw) fn render_chrome(
         );
     }
 
-    // Full content render when terminal content changed, selection
-    // changed, blink opacity changed, or chrome/overlay visuals are stale.
-    let needs_full_render =
-        params.content_dirty || params.selection_changed || params.blink_changed || ctx.ui_stale;
+    let needs_full_render = renderer.cache_invalidated_this_frame() || ctx.ui_stale;
 
     // Overlay tiers render above the cached content every frame, so
     // only chrome animations keep the content cache stale.

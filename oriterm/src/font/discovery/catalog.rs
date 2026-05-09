@@ -50,6 +50,19 @@ pub fn enumerate_mono_families() -> &'static [FamilyEntry] {
     })
 }
 
+/// Force the monospace family catalog to populate.
+///
+/// One-shot helper for the post-first-render prewarm path: kicks the same
+/// `OnceLock::get_or_init` that any later [`enumerate_mono_families`] call
+/// would, so the first Settings dialog open finds a hot cache and does not
+/// stall the UI thread on platform font enumeration.
+///
+/// Idempotent — safe to call from any thread, before or after
+/// [`enumerate_mono_families`] has been called elsewhere.
+pub(crate) fn prewarm_catalog() {
+    let _ = enumerate_mono_families();
+}
+
 /// Resolve an enumerated family name to its `(paths, face_indices)` slot pair.
 ///
 /// Used by `try_user_family` on each platform as the bridge between an

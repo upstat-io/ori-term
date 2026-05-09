@@ -201,7 +201,7 @@ impl App {
         dead_code,
         reason = "5.16.13 state-machine integration test (gpu-tests gated, lands with 5.16.2's render gate) is the one true caller; helper exists in 5.16.1 so the API surface is reviewable up front"
     )]
-    pub(crate) fn trigger_test_device_loss(&mut self, reason: GpuLossReason, message: String) {
+    pub(crate) fn trigger_test_device_loss(&self, reason: GpuLossReason, message: String) {
         self.device_lost_signal.fetch_add(1, Ordering::Release);
         self.event_proxy
             .send(crate::event::TermEvent::GpuDeviceLost { reason, message });

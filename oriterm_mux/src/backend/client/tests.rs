@@ -1406,20 +1406,21 @@ fn remove_snapshot_drains_bell_panes() {
 
 // -- subscribe_pane / set_pane_priority public API tests --
 
-/// Regression: BUG-11-046 — subscribe_pane was `pub(crate)`, blocking e2e
+/// Regression: BUG-11-046 — subscribe was `pub(crate)`, blocking e2e
 /// multi-client priority routing tests. Must be `pub` and return `io::Result`.
-/// See: bug-tracker/plans/BUG-11-046/00-overview.md
+/// See: bug-tracker/plans/completed/BUG-11-046/00-overview.md
 #[test]
-fn subscribe_pane_unconnected_returns_err() {
+fn subscribe_unconnected_returns_err() {
+    use crate::backend::MuxBackend;
     let mut client = MuxClient::new();
-    let result = client.subscribe_pane(PaneId::from_raw(1));
+    let result = client.subscribe(PaneId::from_raw(1));
     assert!(result.is_err());
     assert_eq!(result.unwrap_err().kind(), std::io::ErrorKind::NotConnected);
 }
 
 /// Regression: BUG-11-046 — set_pane_priority didn't exist at all.
 /// Must be `pub`, return `io::Result`, and fail on disconnected transport.
-/// See: bug-tracker/plans/BUG-11-046/00-overview.md
+/// See: bug-tracker/plans/completed/BUG-11-046/00-overview.md
 #[test]
 fn set_pane_priority_unconnected_returns_err() {
     let mut client = MuxClient::new();

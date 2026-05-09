@@ -52,7 +52,10 @@ impl App {
         // transition straight to `Unavailable` per 5.16.10.
         // - `Timeout` → retryable, log and let the next frame retry.
         match render_result {
-            Ok(()) => log::trace!("render ok"),
+            Ok(()) => {
+                log::trace!("render ok");
+                self.maybe_spawn_font_catalog_prewarm();
+            }
             Err(SurfaceError::Outdated) => {
                 log::warn!("surface outdated, reconfiguring");
                 let Some(gpu) = self.gpu.as_ref() else { return };
@@ -109,5 +112,27 @@ impl App {
 
         // Keep the IME candidate window positioned at the terminal cursor.
         self.update_ime_cursor_area();
+    }
+
+    /// Spawn the one-shot post-first-render font-catalog prewarm thread.
+    ///
+    /// Decoupled from startup intentionally: spawning during init competes
+    /// with first-frame rendering for CPU/IO bandwidth. By the time this
+    /// fires, the user has already seen useful pixels, so the enumeration
+    /// cost has zero impact on perceived launch latency.
+    ///
+    /// Idempotent — the gating bool is flipped before spawn so a spawn
+    /// failure does not retry every frame.
+    fn maybe_spawn_font_catalog_prewarm(&mut self) {
+        if self.font_catalog_prewarm_started {
+            return;
+        }
+        self.font_catalog_prewarm_started = true;
+        if let Err(e) = std::thread::Builder::new()
+            .name("font-catalog-prewarm".into())
+            .spawn(crate::font::discovery::prewarm_catalog)
+        {
+            log::warn!("font-catalog-prewarm thread spawn failed: {e}");
+        }
     }
 }

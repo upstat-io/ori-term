@@ -138,20 +138,6 @@ impl MuxClient {
         }
     }
 
-    /// Subscribe to a pane and cache the initial snapshot from the daemon response.
-    pub fn subscribe_pane(&mut self, pane_id: PaneId) -> io::Result<()> {
-        match self.rpc(MuxPdu::Subscribe { pane_id })? {
-            MuxPdu::Subscribed { snapshot } => {
-                self.cache_snapshot(pane_id, snapshot);
-                log::debug!("subscribed to pane {pane_id}");
-                Ok(())
-            }
-            other => Err(io::Error::other(format!(
-                "subscribe_pane: unexpected response: {other:?}"
-            ))),
-        }
-    }
-
     /// Set this client's priority for a pane (0 = focused/highest, 255 = lowest).
     ///
     /// Sends a fire-and-forget `MuxPdu::SetPanePriority` to the daemon.
@@ -190,6 +176,21 @@ impl MuxClient {
             .is_some_and(ClientTransport::is_alive)
     }
 
+    /// Re-subscribe to all previously cached panes after a reconnection.
+    ///
+    /// The transport reader thread clears its subscription state on
+    /// disconnect. After `MuxClient` reconnects, it must re-establish
+    /// its interest in all panes it is currently rendering so the
+    /// daemon starts pushing snapshots again.
+    fn resubscribe_all(&mut self, pane_ids: &[PaneId]) {
+        use crate::backend::MuxBackend;
+        for pane_id in pane_ids {
+            if let Err(e) = self.subscribe(*pane_id) {
+                log::warn!("reconnect: re-subscribe to {pane_id} failed: {e}");
+            }
+        }
+    }
+
     /// Attempt to reconnect to the daemon.
     ///
     /// Drops the old transport (joining the reader thread), establishes a new
@@ -224,13 +225,9 @@ impl MuxClient {
         // Clear stale state.
         self.pending_refresh.clear();
 
-        // Re-subscribe to all cached panes. Collect keys first (borrow checker).
+        // Re-subscribe to all cached panes.
         let pane_ids: Vec<PaneId> = self.pane_snapshots.keys().copied().collect();
-        for pane_id in &pane_ids {
-            if let Err(e) = self.subscribe_pane(*pane_id) {
-                log::warn!("reconnect: re-subscribe to {pane_id} failed: {e}");
-            }
-        }
+        self.resubscribe_all(&pane_ids);
 
         // Mark all panes dirty so the render loop fetches fresh snapshots.
         self.dirty_panes.extend(pane_ids);

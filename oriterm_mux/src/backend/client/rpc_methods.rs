@@ -73,7 +73,7 @@ impl MuxBackend for MuxClient {
         match self.rpc(pdu)? {
             MuxPdu::SpawnPaneResponse { pane_id } => {
                 // Subscribe to the new pane and cache its initial snapshot.
-                if let Err(e) = self.subscribe_pane(pane_id) {
+                if let Err(e) = self.subscribe(pane_id) {
                     self.close_pane(pane_id);
                     return Err(e);
                 }
@@ -425,6 +425,32 @@ impl MuxBackend for MuxClient {
 
     fn is_daemon_mode(&self) -> bool {
         true
+    }
+
+    fn subscribe(&mut self, pane_id: PaneId) -> io::Result<()> {
+        match self.rpc(MuxPdu::Subscribe { pane_id })? {
+            MuxPdu::Subscribed { snapshot } => {
+                self.cache_snapshot(pane_id, snapshot);
+                log::debug!("subscribed to pane {pane_id}");
+                Ok(())
+            }
+            other => Err(io::Error::other(format!(
+                "subscribe: unexpected response: {other:?}"
+            ))),
+        }
+    }
+
+    fn unsubscribe(&mut self, pane_id: PaneId) -> io::Result<()> {
+        match self.rpc(MuxPdu::Unsubscribe { pane_id })? {
+            MuxPdu::Unsubscribed => {
+                self.remove_snapshot(pane_id);
+                log::debug!("unsubscribed from pane {pane_id}");
+                Ok(())
+            }
+            other => Err(io::Error::other(format!(
+                "unsubscribe: unexpected response: {other:?}"
+            ))),
+        }
     }
 
     fn fulfill_host_request(&mut self, _pane_id: PaneId, reply: HostReply) -> io::Result<()> {

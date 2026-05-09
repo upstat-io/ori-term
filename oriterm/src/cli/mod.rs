@@ -48,6 +48,20 @@ pub(crate) struct Cli {
     #[arg(long, requires = "connect")]
     pub window: Option<u64>,
 
+    /// Serialized tab state for the claimed window (base64 JSON).
+    ///
+    /// Used during cross-process tab migration to transfer the session
+    /// layout from the source process to the new window process.
+    #[arg(long, requires = "window")]
+    pub tabs_json: Option<String>,
+
+    /// Initial window position as "x,y" (used for tear-off).
+    ///
+    /// Passed to the new window process to ensure it appears at the
+    /// same coordinates as the tab drag/tear-off origin.
+    #[arg(long)]
+    pub position: Option<String>,
+
     /// Open a new window (default when daemon is running).
     #[arg(long)]
     pub new_window: bool,

@@ -214,7 +214,7 @@ fn esc_9_with_intermediate_does_not_route_to_decfi() {
 
 /// Regression: BUG-08-006 — ENQ (`0x05`) routes to `Handler::enquiry`.
 /// Negative pins clamp the byte-specific dispatch — other C0 handlers must not fire.
-/// See: bug-tracker/plans/BUG-08-006/section-03-tdd-matrix.md
+/// See: bug-tracker/plans/completed/BUG-08-006/section-03-tdd-matrix.md
 #[test]
 fn enq_byte_routes_to_handler_enquiry() {
     let h = feed(b"\x05");

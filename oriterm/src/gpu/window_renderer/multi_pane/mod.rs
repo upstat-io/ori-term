@@ -18,6 +18,12 @@ use crate::session::{DividerLayout, Rect};
 use super::helpers::{ensure_glyphs_cached, grid_raster_keys, shape_frame};
 use super::{CombinedAtlasLookup, WindowRenderer};
 
+const FLOATING_SHADOW_OFFSET_PX: f32 = 2.0;
+const FLOATING_SHADOW_EXPAND_PX: f32 = 4.0;
+const FLOATING_SHADOW_ALPHA: f32 = 0.3;
+const FLOATING_BORDER_WIDTH_PX: f32 = 1.0;
+const FLOATING_BORDER_RADIUS_PX: f32 = 2.0;
+
 impl WindowRenderer {
     /// Begin a multi-pane frame: reset atlases, clear instance buffers, set viewport.
     ///
@@ -37,6 +43,10 @@ impl WindowRenderer {
         self.prepared.clear();
         self.prepared.viewport = viewport;
         self.prepared.set_clear_color(background, opacity);
+
+        // Multi-pane unconditionally rebuilds the aggregate prepared frame
+        // (no incremental fast path), so the content-cache tier is invalidated.
+        self.cache_invalidated_this_frame = true;
     }
 
     /// Shape, cache, and fill one pane into a separate `PreparedFrame`.
@@ -144,19 +154,16 @@ impl WindowRenderer {
     /// drawn into the backgrounds layer. The border is a 1px accent-colored
     /// frame drawn into the UI rects layer with slight corner radius.
     pub(crate) fn append_floating_decoration(&mut self, rect: &Rect, accent: Rgb) {
-        let shadow_offset = 2.0_f32;
-        let shadow_expand = 4.0_f32;
-
         // Drop shadow (behind content, in backgrounds layer).
         self.prepared.backgrounds.push_rect(
             ScreenRect {
-                x: rect.x - shadow_expand + shadow_offset,
-                y: rect.y - shadow_expand + shadow_offset,
-                w: rect.width + 2.0 * shadow_expand,
-                h: rect.height + 2.0 * shadow_expand,
+                x: rect.x - FLOATING_SHADOW_EXPAND_PX + FLOATING_SHADOW_OFFSET_PX,
+                y: rect.y - FLOATING_SHADOW_EXPAND_PX + FLOATING_SHADOW_OFFSET_PX,
+                w: rect.width + 2.0 * FLOATING_SHADOW_EXPAND_PX,
+                h: rect.height + 2.0 * FLOATING_SHADOW_EXPAND_PX,
             },
             Rgb { r: 0, g: 0, b: 0 },
-            0.3,
+            FLOATING_SHADOW_ALPHA,
         );
 
         // Border (in UI rects layer, renders on top of content).
@@ -173,10 +180,10 @@ impl WindowRenderer {
                 w: rect.width,
                 h: rect.height,
             },
-            [0.0, 0.0, 0.0, 0.0], // transparent fill
-            [1.0; 4],             // uniform border width
-            [2.0; 4],             // uniform corner radius
-            [border_color; 4],    // same color all sides
+            [0.0, 0.0, 0.0, 0.0],           // transparent fill
+            [FLOATING_BORDER_WIDTH_PX; 4],  // uniform border width
+            [FLOATING_BORDER_RADIUS_PX; 4], // uniform corner radius
+            [border_color; 4],              // same color all sides
             CLIP_UNCLIPPED,
         );
     }
@@ -286,3 +293,6 @@ impl WindowRenderer {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

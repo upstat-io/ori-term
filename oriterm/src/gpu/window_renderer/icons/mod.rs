@@ -89,3 +89,6 @@ impl WindowRenderer {
         (IconId::StepperDown, 8),
     ];
 }
+
+#[cfg(test)]
+mod tests;

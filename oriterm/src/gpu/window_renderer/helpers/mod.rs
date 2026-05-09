@@ -263,12 +263,11 @@ pub(super) fn upload_buffer_partial(
 
 /// Record a single instanced draw call into the render pass.
 ///
-/// Sets the pipeline, bind groups, and vertex buffer, then issues an
-/// instanced `draw(0..4, 0..instance_count)`. No-ops when `instance_count`
-/// is zero or the buffer slot is empty.
+/// Shim over [`record_draw_range`]: equivalent to drawing the
+/// `0..instance_count` range. No-ops when `instance_count == 0`.
 #[expect(
     clippy::too_many_arguments,
-    reason = "GPU render pass recording: pipeline, bind groups, buffer, count"
+    reason = "GPU render pass recording: pipeline, bind groups, buffer, count — shim signature mirrors record_draw_range"
 )]
 pub(super) fn record_draw(
     pass: &mut RenderPass<'_>,
@@ -278,17 +277,15 @@ pub(super) fn record_draw(
     buffer: Option<&Buffer>,
     instance_count: u32,
 ) {
-    if instance_count == 0 {
-        return;
-    }
-    let Some(buf) = buffer else { return };
-    pass.set_pipeline(pipeline);
-    pass.set_bind_group(0, uniform_bg, &[]);
-    if let Some(atlas) = atlas_bg {
-        pass.set_bind_group(1, atlas, &[]);
-    }
-    pass.set_vertex_buffer(0, buf.slice(..));
-    pass.draw(0..4, 0..instance_count);
+    record_draw_range(
+        pass,
+        pipeline,
+        uniform_bg,
+        atlas_bg,
+        buffer,
+        0,
+        instance_count,
+    );
 }
 
 /// Record an instanced draw call for a sub-range `[start..end)`.
@@ -452,3 +449,6 @@ pub(super) fn pre_cache_atlas(
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

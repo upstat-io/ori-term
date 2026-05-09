@@ -367,3 +367,15 @@ fn split_after_zoom_produces_valid_tree() {
     assert!(tab.tree().contains(pid(10)));
     assert!(tab.tree().contains(pid(20)));
 }
+
+#[test]
+fn tab_serialization_roundtrip() {
+    use super::Tab;
+    use crate::session::TabId;
+    use oriterm_mux::PaneId;
+    let tab = Tab::new(TabId::from_raw(1), PaneId::from_raw(42));
+    let json = serde_json::to_string(&tab).expect("serialize");
+    let decoded: Tab = serde_json::from_str(&json).expect("deserialize");
+    assert_eq!(decoded.id(), tab.id());
+    assert_eq!(decoded.active_pane(), tab.active_pane());
+}

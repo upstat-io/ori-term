@@ -7,10 +7,12 @@
 //!   Used for UI-only dialogs and as a DX12 fallback when the surface format
 //!   differs from the sRGB render format (copy-to-swapchain is unreliable).
 //! - **Cached render** ([`render_cached`]): splits content from cursor.
-//!   On content-change frames, everything except the cursor is rendered to an
-//!   offscreen cache texture. On every frame (including cursor-blink-only),
-//!   the cache is copied to the surface and only the cursor is drawn on top.
-//!   This avoids the full GPU submission on idle blink frames.
+//!   When the prepare phase invalidates the content-cache tier
+//!   (`needs_full_render` true — content, selection, blink, hover, search,
+//!   geometry, or chrome stale), everything except the cursor is rendered
+//!   to an offscreen cache texture. When the cache is reusable, only the
+//!   cursor and overlays redraw on top of a cache blit. This avoids the
+//!   full GPU submission on idle blink frames.
 
 #[cfg(all(test, feature = "gpu-tests"))]
 use wgpu::TextureView;
@@ -39,7 +41,7 @@ impl WindowRenderer {
         pipelines: &GpuPipelines,
         target_width: u32,
         target_height: u32,
-        content_changed: bool,
+        needs_full_render: bool,
     ) -> crate::gpu::render_target::RenderTarget {
         let device = &gpu.device;
         let queue = &gpu.queue;
@@ -59,7 +61,7 @@ impl WindowRenderer {
             label: Some("frame_encoder"),
         });
 
-        if content_changed {
+        if needs_full_render {
             self.upload_instance_buffers(device, queue);
             self.upload_image_instances(device, queue);
 
@@ -207,7 +209,7 @@ impl WindowRenderer {
         gpu: &GpuState,
         pipelines: &GpuPipelines,
         surface: &wgpu::Surface<'_>,
-        content_changed: bool,
+        needs_full_render: bool,
     ) -> Result<(), SurfaceError> {
         let output = surface.get_current_texture().map_err(|e| match e {
             wgpu::SurfaceError::Outdated => SurfaceError::Outdated,
@@ -231,7 +233,7 @@ impl WindowRenderer {
         if self.is_ui_only() || !gpu.can_cache_blit() {
             self.render_single_pass(gpu, pipelines, &output);
         } else {
-            self.render_cached(gpu, pipelines, &output, content_changed);
+            self.render_cached(gpu, pipelines, &output, needs_full_render);
         }
 
         output.present();
@@ -290,7 +292,7 @@ impl WindowRenderer {
         gpu: &GpuState,
         pipelines: &GpuPipelines,
         output: &wgpu::SurfaceTexture,
-        content_changed: bool,
+        needs_full_render: bool,
     ) {
         let vp = self.prepared.viewport;
         let device = &gpu.device;
@@ -303,12 +305,12 @@ impl WindowRenderer {
             label: Some("frame_encoder"),
         });
 
-        if content_changed {
-            // Upload all instance data for the content render.
+        if needs_full_render {
+            // Full re-render needed: upload all instance data and render
+            // everything except cursor to the content cache texture.
             self.upload_instance_buffers(device, queue);
             self.upload_image_instances(device, queue);
 
-            // Render everything except cursor to the content cache texture.
             let cache_view = self
                 .content_cache_view
                 .as_ref()
@@ -332,7 +334,7 @@ impl WindowRenderer {
                 Self::record_cached_content_passes(pipelines, self, &mut pass);
             }
         } else {
-            // Cached content is still valid: only transient overlay/cursor
+            // Content cache is reusable: only transient overlay/cursor
             // tiers need fresh buffers this frame.
             self.upload_overlay_and_cursor_buffers(device, queue);
         }

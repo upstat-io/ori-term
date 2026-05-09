@@ -128,6 +128,12 @@ struct PendingFocusOut {
 ///
 /// Per-window state (widgets, caches, interaction) lives in [`WindowContext`]
 /// inside the `windows` map.
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "App carries 4 orthogonal one-shot/cached flags (mouse_cursor_hidden, \
+              blinking_active, font_catalog_prewarm_started, debug_overlay_enabled); \
+              they have unrelated lifecycles and no natural grouping into a state-machine enum"
+)]
 pub(crate) struct App {
     // GPU + rendering (lazy init on Resumed).
     gpu: Option<GpuState>,
@@ -216,6 +222,13 @@ pub(crate) struct App {
     // Compared per frame; reset blink when the cursor moves due to PTY output.
     last_cursor_pos: (usize, usize),
 
+    // Whether the post-first-render font-catalog prewarm thread has been
+    // spawned. One-shot — flipped on the first Ok render result so monospace
+    // family enumeration is amortized off the UI thread before the Settings
+    // dialog can demand it. Decoupled from startup intentionally: spawning
+    // during init competes with first-frame rendering for CPU/IO bandwidth.
+    font_catalog_prewarm_started: bool,
+
     // Mouse selection state (click detection, drag tracking).
     mouse: MouseState,
 
@@ -284,6 +297,14 @@ pub(crate) struct App {
     debug_overlay_enabled: bool,
     // EWMA-smoothed FPS for the debug overlay display.
     debug_fps: f32,
+
+    /// Serialized tab state claimed from a source process via CLI.
+    ///
+    /// Consumed during `try_init` to populate the session registry without
+    /// spawning a fresh shell. Base64-encoded JSON.
+    claimed_tabs: Option<String>,
+    /// Initial window position requested via CLI (e.g. for tear-off).
+    initial_position: Option<(i32, i32)>,
 
     // Pending Windows console handoff payload (Section 03.9 Phase 3).
     //

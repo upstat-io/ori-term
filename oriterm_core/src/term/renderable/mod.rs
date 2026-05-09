@@ -62,6 +62,20 @@ pub struct RenderableCursor {
     pub visible: bool,
 }
 
+impl RenderableCursor {
+    /// Visibility-canonicalize the cursor for storage / comparison.
+    ///
+    /// Returns `Some(self)` when `visible == true`, `None` otherwise.
+    /// The SSOT for "is this cursor relevant to per-cell color resolution
+    /// and fast-path gating?" — invisible cursors do not contribute to
+    /// `is_block_cursor_cell` and their position changes are no-ops for
+    /// row-state predicates (None == None).
+    #[must_use]
+    pub fn into_visible(self) -> Option<Self> {
+        if self.visible { Some(self) } else { None }
+    }
+}
+
 /// A damaged (changed) line region for incremental rendering.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DamageLine {

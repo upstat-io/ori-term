@@ -277,8 +277,8 @@ fn verify_blink_cycle_golden_frames() {
 /// Fast-path regression test: renders two frames through
 /// `WindowRenderer::prepare()` with `content_changed = false` on frame 2.
 /// Uses timer-derived opacities (visible plateau vs hidden plateau).
-/// The BLINK cell must dim — proving `has_visual_change()` detects the
-/// opacity delta and triggers a full instance rebuild.
+/// The BLINK cell must dim — proving `has_dispatch_change()` detects the
+/// opacity delta (via the dispatch fingerprint) and triggers a full instance rebuild.
 #[test]
 fn text_blink_fast_path_with_timer() {
     let Some((gpu, pipelines, mut renderer)) = headless_env() else {
@@ -313,7 +313,7 @@ fn text_blink_fast_path_with_timer() {
     assert!(
         br1 > br2 + 50,
         "BLINK cell must dim through fast path: visible={br1} hidden={br2}. \
-         If equal, has_visual_change() missed the opacity delta.",
+         If equal, the dispatch fingerprint missed the opacity delta.",
     );
 
     let n1 = cell_brightness(&px1, w, NORMAL_COL, cell.width, cell.height);

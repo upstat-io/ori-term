@@ -50,3 +50,6 @@ impl fmt::Display for SurfaceError {
 }
 
 impl std::error::Error for SurfaceError {}
+
+#[cfg(test)]
+mod tests;

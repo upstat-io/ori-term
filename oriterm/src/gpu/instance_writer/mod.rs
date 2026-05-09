@@ -41,24 +41,26 @@ impl ScreenRect {
 /// Bytes per instance record in the GPU buffer.
 pub const INSTANCE_SIZE: usize = 96;
 
-// Field offsets within the 96-byte record.
-const OFF_POS_X: usize = 0; //  f32  — pixel X
-const OFF_POS_Y: usize = 4; //  f32  — pixel Y
-const OFF_SIZE_W: usize = 8; //  f32  — width in pixels
-const OFF_SIZE_H: usize = 12; //  f32  — height in pixels
-const OFF_UV_X: usize = 16; //  f32  — atlas U left
-const OFF_UV_Y: usize = 20; //  f32  — atlas V top
-const OFF_UV_W: usize = 24; //  f32  — atlas U width
-const OFF_UV_H: usize = 28; //  f32  — atlas V height
-const OFF_FG_R: usize = 32; //  f32  — foreground R [0..1]
+// Field offsets within the 96-byte record. Test-decoder consumers
+// (`prepare/tests.rs::decode_instance`, `window_renderer/tests.rs::decode_bg_at_pos`)
+// import the `pub(crate)` ones — keeps the layout SSOT here.
+pub(crate) const OFF_POS_X: usize = 0; //  f32  — pixel X
+pub(crate) const OFF_POS_Y: usize = 4; //  f32  — pixel Y
+pub(crate) const OFF_SIZE_W: usize = 8; //  f32  — width in pixels
+pub(crate) const OFF_SIZE_H: usize = 12; //  f32  — height in pixels
+pub(crate) const OFF_UV_X: usize = 16; //  f32  — atlas U left
+pub(crate) const OFF_UV_Y: usize = 20; //  f32  — atlas V top
+pub(crate) const OFF_UV_W: usize = 24; //  f32  — atlas U width
+pub(crate) const OFF_UV_H: usize = 28; //  f32  — atlas V height
+pub(crate) const OFF_FG_R: usize = 32; //  f32  — foreground R [0..1]
 const OFF_FG_G: usize = 36; //  f32  — foreground G [0..1]
 const OFF_FG_B: usize = 40; //  f32  — foreground B [0..1]
 const OFF_FG_A: usize = 44; //  f32  — foreground A [0..1]
-const OFF_BG_R: usize = 48; //  f32  — background R [0..1]
-const OFF_BG_G: usize = 52; //  f32  — background G [0..1]
-const OFF_BG_B: usize = 56; //  f32  — background B [0..1]
-const OFF_BG_A: usize = 60; //  f32  — background A [0..1]
-const OFF_KIND: usize = 64; //  u32  — instance kind (rect/glyph/cursor)
+pub(crate) const OFF_BG_R: usize = 48; //  f32  — background R [0..1]
+pub(crate) const OFF_BG_G: usize = 52; //  f32  — background G [0..1]
+pub(crate) const OFF_BG_B: usize = 56; //  f32  — background B [0..1]
+pub(crate) const OFF_BG_A: usize = 60; //  f32  — background A [0..1]
+pub(crate) const OFF_KIND: usize = 64; //  u32  — instance kind (rect/glyph/cursor)
 const OFF_ATLAS_PAGE: usize = 68; //  u32  — atlas texture array layer index
 const OFF_CLIP_X: usize = 80; //  f32  — clip rect origin X
 const OFF_CLIP_Y: usize = 84; //  f32  — clip rect origin Y
