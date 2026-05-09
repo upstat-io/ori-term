@@ -10,6 +10,14 @@ use super::super::state::GpuState;
 use super::helpers::{CombinedAtlasLookup, ensure_glyphs_cached, grid_raster_keys, shape_frame};
 use super::{EMPTY_KEYS_CAP, WindowRenderer};
 
+/// Number of frames an image texture may go unused before eviction.
+///
+/// At a 60Hz refresh this is ~1s of idle retention; higher refresh rates
+/// evict proportionally faster, which is acceptable for a frame-cache
+/// retention policy (the goal is "evict if not actively used", not a
+/// fixed wall-clock budget).
+const IMAGE_TEXTURE_EVICT_FRAME_THRESHOLD: u64 = 60;
+
 impl WindowRenderer {
     /// Whether any frame-level dispatch-fingerprint input changed since
     /// the last frame. Single SSOT consumer of the dispatch fingerprint
@@ -208,8 +216,8 @@ impl WindowRenderer {
             );
         }
 
-        // Evict textures not used in the last 60 frames (~1 second at 60fps).
-        self.image_texture_cache.evict_unused(60);
+        self.image_texture_cache
+            .evict_unused(IMAGE_TEXTURE_EVICT_FRAME_THRESHOLD);
         self.image_texture_cache.evict_over_limit();
     }
 

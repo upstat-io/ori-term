@@ -11,6 +11,27 @@ use oriterm_mux::PaneSnapshot;
 
 use super::search_match::cell_in_search_match;
 
+/// Frame-to-frame damage fingerprint for search highlight state.
+///
+/// Used by the prepare phase's incremental dispatch to detect when the search
+/// match set has changed; per-cell colors bake the search match type at emit
+/// time, so any field change MUST invalidate clean-row replay from
+/// `saved_tier`. Derived `Hash` flows through `compute_dispatch_fingerprint`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct SearchDamageKey {
+    /// Total number of matches in the snapshot.
+    pub match_count: usize,
+    /// Index of the focused match.
+    pub focused: usize,
+    /// Stable row index of viewport line 0.
+    pub base_stable: u64,
+    /// Content-aware hash over every match's `(start_row, start_col,
+    /// end_row, end_col)` so two distinct match sets with identical
+    /// `(count, focused, base_stable)` but different positions produce
+    /// different keys.
+    pub positions_hash: u64,
+}
+
 /// Search state for one frame.
 ///
 /// Built from a [`PaneSnapshot`] when search is active. The Prepare phase
@@ -61,33 +82,6 @@ impl FrameSearch {
         })
     }
 
-    /// Refill this `FrameSearch` from a snapshot, reusing allocations.
-    ///
-    /// Returns `false` if search is not active (caller should set field to `None`).
-    #[allow(
-        dead_code,
-        reason = "infrastructure for allocation-reusing extract path"
-    )]
-    pub fn update_from_snapshot(&mut self, snapshot: &PaneSnapshot) -> bool {
-        if !snapshot.search_active {
-            return false;
-        }
-        self.matches.clear();
-        self.matches
-            .extend(snapshot.search_matches.iter().map(|m| SearchMatch {
-                start_row: StableRowIndex(m.start_row),
-                start_col: m.start_col as usize,
-                end_row: StableRowIndex(m.end_row),
-                end_col: m.end_col as usize,
-            }));
-        self.match_count = self.matches.len();
-        self.focused = snapshot.search_focused.map_or(0, |f| f as usize);
-        self.base_stable = snapshot.stable_row_base;
-        self.query.clear();
-        self.query.push_str(&snapshot.search_query);
-        true
-    }
-
     /// Classify a visible cell for search match highlighting.
     pub fn cell_match_type(&self, viewport_line: usize, col: usize) -> MatchType {
         if self.matches.is_empty() {
@@ -134,18 +128,9 @@ impl FrameSearch {
         &self.query
     }
 
-    /// Stable damage fingerprint — `(match_count, focused, base_stable,
-    /// positions_hash)`. Used by the prepare phase's incremental dispatch
-    /// to detect when search highlight state has changed between frames;
-    /// per-cell colors bake the search match type at emit time, so any
-    /// change to this tuple must invalidate clean-row replay from
-    /// `saved_tier`.
-    ///
-    /// `positions_hash` is a content-aware hash of every match's
-    /// `(start_row, start_col, end_row, end_col)` so two distinct match
-    /// sets with the same `(count, focused, base_stable)` but different
-    /// positions produce different fingerprints.
-    pub fn damage_fingerprint(&self) -> (usize, usize, u64, u64) {
+    /// Stable damage fingerprint for incremental dispatch — see
+    /// [`SearchDamageKey`] for field semantics.
+    pub fn damage_fingerprint(&self) -> SearchDamageKey {
         use std::hash::{Hash, Hasher};
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
         for m in &self.matches {
@@ -154,13 +139,12 @@ impl FrameSearch {
             m.end_row.0.hash(&mut hasher);
             m.end_col.hash(&mut hasher);
         }
-        let positions_hash = hasher.finish();
-        (
-            self.match_count,
-            self.focused,
-            self.base_stable,
-            positions_hash,
-        )
+        SearchDamageKey {
+            match_count: self.match_count,
+            focused: self.focused,
+            base_stable: self.base_stable,
+            positions_hash: hasher.finish(),
+        }
     }
 
     /// Build a test search snapshot from manually constructed matches.

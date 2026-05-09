@@ -8,7 +8,7 @@
 mod search;
 mod search_match;
 
-pub use search::FrameSearch;
+pub use search::{FrameSearch, SearchDamageKey};
 
 use oriterm_core::grid::StableRowIndex;
 use oriterm_core::index::Side;
@@ -299,7 +299,7 @@ impl FrameInput {
     /// and the renderer's cursor-blink-only fast-path gate
     /// (`has_dispatch_change`); collapsing the duplicated `as_ref().map(...)`
     /// chain into one helper closes the per-call-site DRIFT risk.
-    pub fn search_fingerprint(&self) -> Option<(usize, usize, u64, u64)> {
+    pub fn search_fingerprint(&self) -> Option<SearchDamageKey> {
         self.search.as_ref().map(FrameSearch::damage_fingerprint)
     }
 
