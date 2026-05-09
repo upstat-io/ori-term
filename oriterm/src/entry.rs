@@ -80,7 +80,7 @@ pub fn run() {
             socket,
             args.window,
             args.tabs_json.clone(),
-            args.position.clone(),
+            args.position.as_deref(),
             profiling,
             latency_log,
         )

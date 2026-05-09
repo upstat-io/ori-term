@@ -263,6 +263,9 @@ impl App {
                 cell_w_u16,
                 cell_h_u16,
             )?;
+        } else {
+            // Daemon mode with a claimed window or handoff already populated
+            // the session — nothing to do here.
         }
         let t_mux = t_mux_start.elapsed();
 

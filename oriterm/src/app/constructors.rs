@@ -40,7 +40,7 @@ impl App {
         socket_path: &std::path::Path,
         window_id: Option<u64>,
         tabs_json: Option<String>,
-        position: Option<String>,
+        position: Option<&str>,
         profiling: bool,
         latency_log: bool,
     ) -> Self {
@@ -206,7 +206,7 @@ impl App {
 }
 
 /// Parse a "x,y" string into (i32, i32).
-fn parse_position(s: String) -> Option<(i32, i32)> {
+fn parse_position(s: &str) -> Option<(i32, i32)> {
     let mut parts = s.split(',');
     let x = parts.next()?.parse().ok()?;
     let y = parts.next()?.parse().ok()?;

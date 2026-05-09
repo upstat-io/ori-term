@@ -182,15 +182,13 @@ impl MuxClient {
     /// disconnect. After `MuxClient` reconnects, it must re-establish
     /// its interest in all panes it is currently rendering so the
     /// daemon starts pushing snapshots again.
-    fn resubscribe_all(&mut self) -> io::Result<()> {
-        let pane_ids: Vec<PaneId> = self.pane_snapshots.keys().copied().collect();
+    fn resubscribe_all(&mut self, pane_ids: &[PaneId]) {
         use crate::backend::MuxBackend;
-        for pane_id in &pane_ids {
+        for pane_id in pane_ids {
             if let Err(e) = self.subscribe(*pane_id) {
                 log::warn!("reconnect: re-subscribe to {pane_id} failed: {e}");
             }
         }
-        Ok(())
     }
 
     /// Attempt to reconnect to the daemon.
@@ -229,7 +227,7 @@ impl MuxClient {
 
         // Re-subscribe to all cached panes.
         let pane_ids: Vec<PaneId> = self.pane_snapshots.keys().copied().collect();
-        self.resubscribe_all()?;
+        self.resubscribe_all(&pane_ids);
 
         // Mark all panes dirty so the render loop fetches fresh snapshots.
         self.dirty_panes.extend(pane_ids);

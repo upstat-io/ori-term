@@ -67,12 +67,9 @@ impl App {
         position: Option<(i32, i32)>,
     ) {
         // 1. Get the tab state for serialization.
-        let tab = match self.session.get_tab(tab_id) {
-            Some(t) => t.clone(),
-            None => {
-                log::error!("move_tab_to_new_window_daemon: tab {tab_id} not found");
-                return;
-            }
+        let Some(tab) = self.session.get_tab(tab_id).cloned() else {
+            log::error!("move_tab_to_new_window_daemon: tab {tab_id} not found");
+            return;
         };
 
         // 2. Serialize and base64 encode for CLI transfer.
