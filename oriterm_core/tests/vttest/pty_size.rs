@@ -179,21 +179,28 @@ fn windows_mode_con_command() -> CommandBuilder {
 
 #[cfg(windows)]
 fn parse_mode_con_output(raw: &str) -> (u16, u16) {
+    // Windows ConPTY interleaves DECSET/DECRST + cursor-visibility escapes
+    // (`\x1b[?25l`, `\x1b[?9001l`, `\x1b[?1004l`, `\x1b[m`, etc.) into the
+    // line containing the `Lines:` label. Substring-search the lowercased
+    // line for the label so the parser is robust to any ANSI prefix.
     let mut rows: Option<u16> = None;
     let mut cols: Option<u16> = None;
     for line in raw.lines() {
-        let trimmed = line.trim();
-        let lower = trimmed.to_ascii_lowercase();
-        let value_after = |label_len: usize| -> Option<u16> {
-            let rest = trimmed.get(label_len..)?.trim();
-            rest.split_whitespace().next()?.parse().ok()
+        let lower = line.to_ascii_lowercase();
+        let value_after = |label_end: usize| -> Option<u16> {
+            line.get(label_end..)?
+                .trim()
+                .split_whitespace()
+                .next()?
+                .parse()
+                .ok()
         };
-        if lower.starts_with("lines:") {
-            rows = value_after("lines:".len());
-        } else if lower.starts_with("columns:") {
-            cols = value_after("columns:".len());
-        } else if lower.starts_with("cols:") {
-            cols = value_after("cols:".len());
+        if let Some(idx) = lower.find("lines:") {
+            rows = value_after(idx + "lines:".len());
+        } else if let Some(idx) = lower.find("columns:") {
+            cols = value_after(idx + "columns:".len());
+        } else if let Some(idx) = lower.find("cols:") {
+            cols = value_after(idx + "cols:".len());
         }
     }
     (
@@ -217,4 +224,17 @@ fn parse_mode_con_output(raw: &str) -> (u16, u16) {
 fn pty_size_propagation_windows_mode_con_reports_correct_dimensions() {
     assert_pty_reports_size(33, 97, windows_mode_con_command(), parse_mode_con_output);
     assert_pty_reports_size(50, 40, windows_mode_con_command(), parse_mode_con_output);
+}
+
+/// Regression: nightly CI run 25588160727 captured `mode con` output where
+/// Windows ConPTY emitted `\x1b[?25l\x1b[?9001l\x1b[?1004l` immediately
+/// before the `Lines:` label on the same line, with no intervening newline.
+/// The previous parser used `trimmed.starts_with("lines:")` which missed
+/// the label whenever ANSI escapes prefixed it. Pin substring-search
+/// behavior so this exact captured shape parses to (50, 40).
+#[test]
+#[cfg(windows)]
+fn parse_mode_con_output_handles_ansi_prefixed_label_line() {
+    let raw = "\u{1b}[6n\u{1b}[?9001h\u{1b}[?1004h\u{1b}[m\u{1b}]0;C:\\Windows\\system32\\cmd.EXE\u{7}\u{1b}[?25h\r\nStatus for device CON:\r\n----------------------\r\n\u{1b}[?25l\u{1b}[?9001l\u{1b}[?1004l    Lines:          50\r\n    Columns:        40\r\n    Keyboard rate:  31\r\n    Keyboard delay: 1\r\n    Code page:      437\u{1b}[10;1H\u{1b}[?25h";
+    assert_eq!(parse_mode_con_output(raw), (50, 40));
 }
