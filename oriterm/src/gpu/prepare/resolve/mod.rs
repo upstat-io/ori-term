@@ -27,6 +27,42 @@ pub(super) const SEARCH_FOCUSED_BG: Rgb = Rgb {
 /// Focused match foreground: dark for contrast.
 pub(super) const SEARCH_FOCUSED_FG: Rgb = Rgb { r: 0, g: 0, b: 0 };
 
+/// Opacity threshold above which a Block cursor visually dominates the
+/// underlying cell, suppressing per-cell selection / search / inverse
+/// re-coloring on the cursor cell.
+///
+/// Naming this constant prevents the threshold duplicating between
+/// `resolve_cell_colors` and the row-state gate.
+const BLOCK_CURSOR_OPACITY_THRESHOLD: f32 = 0.5;
+
+/// SSOT predicate: does this frame's cursor state suppress per-cell
+/// selection / search / inverse inversion on the cursor cell?
+///
+/// Returns `true` when ALL hold:
+/// - cursor opacity is above [`BLOCK_CURSOR_OPACITY_THRESHOLD`]
+/// - cursor is visible
+/// - cursor shape is `CursorShape::Block`
+///
+/// Consumes the OUTPUT of `resolve_cursor_state` (mark-mode override +
+/// focus → `HollowBlock` translation already applied), NOT raw
+/// `input.content.cursor`. Caller MUST resolve before invoking.
+///
+/// Consumers:
+/// - [`resolve_cell_colors`] — combines this with per-cell `(line, column)`
+///   guards to compute `is_block_cursor_cell`.
+/// - `prepare::evaluate_row_state_change` (`prepare/gates.rs`) — compares
+///   the snapshot stored on `PreparedFrame` against the current frame's
+///   value to detect threshold crossings that must invalidate the
+///   cursor-only fast path.
+pub(super) fn block_cursor_color_exclusion_active(
+    cursor: &RenderableCursor,
+    cursor_opacity: f32,
+) -> bool {
+    cursor_opacity > BLOCK_CURSOR_OPACITY_THRESHOLD
+        && cursor.visible
+        && cursor.shape == CursorShape::Block
+}
+
 /// Resolve the effective cursor for rendering.
 ///
 /// When mark mode is active (`mark_cursor` is `Some`), the override replaces
@@ -78,9 +114,7 @@ pub(super) fn resolve_cell_colors(
     // Block cursor cell: at opacity > 0.5 the cursor dominates visually, so
     // skip selection/search inversion. At lower opacity the cursor is fading
     // out and text should revert to normal colors for readability.
-    let is_block_cursor_cell = cursor_opacity > 0.5
-        && cursor.visible
-        && cursor.shape == CursorShape::Block
+    let is_block_cursor_cell = block_cursor_color_exclusion_active(cursor, cursor_opacity)
         && cursor.line == row
         && cursor.column == Column(col);
 
@@ -117,3 +151,6 @@ pub(super) fn resolve_cell_colors(
 
     (cell.fg, cell.bg)
 }
+
+#[cfg(test)]
+mod tests;

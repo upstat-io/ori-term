@@ -6290,3 +6290,228 @@ fn unfocused_block_cursor_does_not_suppress_selection() {
         "cursor cell on unfocused window MUST NOT use palette default bg (selection inversion applies)"
     );
 }
+
+// ── evaluate_row_state_change matrix tests ─────────────────────────────────
+//
+/// Regression: BUG-06-039 — cursor blink crossing the 0.5 opacity threshold
+/// left stale per-cell colors on the cursor cell. The fix added a snapshot
+/// field `prev_block_cursor_color_exclusion_active` to PreparedFrame and a
+/// pure gate predicate `evaluate_row_state_change` (gates.rs) that detects
+/// threshold crossings and bypasses the cursor-only fast path on cross.
+/// See: bug-tracker/plans/completed/BUG-06-039/
+use super::evaluate_row_state_change;
+
+fn empty_prepared() -> PreparedFrame {
+    PreparedFrame::new(ViewportSize::new(80, 24), Rgb { r: 0, g: 0, b: 0 }, 1.0)
+}
+
+fn frame_with_block_cursor(visible: bool) -> FrameInput {
+    let mut input = FrameInput::test_grid(8, 4, "AAAAAAAA");
+    input.content.cursor.shape = CursorShape::Block;
+    input.content.cursor.visible = visible;
+    input
+}
+
+/// Threshold cross from above (Some(true)) to below (cursor_opacity 0.4)
+/// must invalidate the cursor-only fast path.
+#[test]
+fn block_cursor_threshold_cross_downward_invalidates_fast_path() {
+    let mut prepared = empty_prepared();
+    let input = frame_with_block_cursor(true);
+    // Seed the snapshot fields so they match all gates EXCEPT the threshold.
+    let resolved = super::resolve_cursor_state(&input);
+    prepared.prev_resolved_cursor = resolved.into_visible();
+    prepared.prev_selection_snapshot = None;
+    prepared.prev_hovered_cell = None;
+    prepared.prev_block_cursor_color_exclusion_active = Some(true);
+
+    assert!(
+        evaluate_row_state_change(&prepared, &input, 0.4),
+        "downward threshold cross (was Some(true), now opacity 0.4 → Some(false)) must invalidate fast path"
+    );
+}
+
+/// Threshold cross from below (Some(false)) to above (cursor_opacity 0.6)
+/// must invalidate the cursor-only fast path.
+#[test]
+fn block_cursor_threshold_cross_upward_invalidates_fast_path() {
+    let mut prepared = empty_prepared();
+    let input = frame_with_block_cursor(true);
+    let resolved = super::resolve_cursor_state(&input);
+    prepared.prev_resolved_cursor = resolved.into_visible();
+    prepared.prev_block_cursor_color_exclusion_active = Some(false);
+
+    assert!(
+        evaluate_row_state_change(&prepared, &input, 0.6),
+        "upward threshold cross (was Some(false), now opacity 0.6 → Some(true)) must invalidate fast path"
+    );
+}
+
+/// Stable above-threshold opacity (no cross) must NOT invalidate the
+/// cursor-only fast path — cursor smooth-opacity changes are handled by
+/// `update_cursor_only` re-emitting the cursor instance.
+#[test]
+fn block_cursor_threshold_stable_above_does_not_invalidate_fast_path() {
+    let mut prepared = empty_prepared();
+    let input = frame_with_block_cursor(true);
+    let resolved = super::resolve_cursor_state(&input);
+    prepared.prev_resolved_cursor = resolved.into_visible();
+    prepared.prev_block_cursor_color_exclusion_active = Some(true);
+
+    assert!(
+        !evaluate_row_state_change(&prepared, &input, 0.7),
+        "still above threshold (Some(true) == Some(true)) must keep fast path"
+    );
+}
+
+/// Stable below-threshold opacity (no cross) must NOT invalidate.
+#[test]
+fn block_cursor_threshold_stable_below_does_not_invalidate_fast_path() {
+    let mut prepared = empty_prepared();
+    let input = frame_with_block_cursor(true);
+    let resolved = super::resolve_cursor_state(&input);
+    prepared.prev_resolved_cursor = resolved.into_visible();
+    prepared.prev_block_cursor_color_exclusion_active = Some(false);
+
+    assert!(
+        !evaluate_row_state_change(&prepared, &input, 0.3),
+        "still below threshold (Some(false) == Some(false)) must keep fast path"
+    );
+}
+
+/// Non-Block cursor (Bar/Underline/HollowBlock) opacity changes do NOT
+/// trigger the threshold gate — `block_cursor_color_exclusion_active`
+/// returns false for any non-Block shape regardless of opacity, so
+/// Some(false) == Some(false) on every blink frame.
+#[test]
+fn non_block_cursor_opacity_change_does_not_invalidate_fast_path() {
+    for shape in [
+        CursorShape::Bar,
+        CursorShape::Underline,
+        CursorShape::HollowBlock,
+    ] {
+        let mut prepared = empty_prepared();
+        let mut input = FrameInput::test_grid(8, 4, "AAAAAAAA");
+        input.content.cursor.shape = shape;
+        input.content.cursor.visible = true;
+        let resolved = super::resolve_cursor_state(&input);
+        prepared.prev_resolved_cursor = resolved.into_visible();
+        prepared.prev_block_cursor_color_exclusion_active = Some(false);
+
+        assert!(
+            !evaluate_row_state_change(&prepared, &input, 0.7),
+            "shape {shape:?} opacity 0.7 must not bypass fast path (helper returns false for non-Block)"
+        );
+    }
+}
+
+/// First frame (prev_block_cursor_color_exclusion_active == None) must
+/// invalidate — None != Some(_) per Option<bool> equality. Matches the
+/// existing first-frame semantics of prev_resolved_cursor.
+#[test]
+fn first_frame_pre_initialization_invalidates_fast_path() {
+    let mut prepared = empty_prepared();
+    let input = frame_with_block_cursor(true);
+    let resolved = super::resolve_cursor_state(&input);
+    prepared.prev_resolved_cursor = resolved.into_visible();
+    // prev_block_cursor_color_exclusion_active stays None (default).
+
+    assert!(
+        evaluate_row_state_change(&prepared, &input, 0.7),
+        "first frame (None != Some(true)) must invalidate fast path"
+    );
+}
+
+/// Source-scan regression pin: `compute_dispatch_fingerprint` must NOT
+/// reference `cursor_opacity`. Prevents the perf-regression alternative
+/// where cursor_opacity is added to the fingerprint, forcing a full
+/// rebuild on every blink frame (~30 fps × full instance regen).
+#[test]
+fn compute_dispatch_fingerprint_body_does_not_reference_cursor_opacity() {
+    const GATES_SRC: &str = include_str!("gates.rs");
+    // Find the function body: from the opening `{` after the signature to
+    // the matching top-level `}`. Brace-balancing handles nested blocks
+    // (loops, ifs) so we scan the actual body only — not surrounding
+    // docstrings of sibling functions.
+    let fn_decl_start = GATES_SRC
+        .find("fn compute_dispatch_fingerprint")
+        .expect("compute_dispatch_fingerprint must exist in gates.rs");
+    let after_decl = &GATES_SRC[fn_decl_start..];
+    let body_start_rel = after_decl.find('{').expect("function body opening brace");
+    let body_bytes = after_decl.as_bytes();
+    let mut depth: i32 = 0;
+    let mut body_end_rel = body_start_rel;
+    for (i, &b) in body_bytes.iter().enumerate().skip(body_start_rel) {
+        match b {
+            b'{' => depth += 1,
+            b'}' => {
+                depth -= 1;
+                if depth == 0 {
+                    body_end_rel = i + 1;
+                    break;
+                }
+            }
+            _ => {}
+        }
+    }
+    let body = &after_decl[body_start_rel..body_end_rel];
+    assert!(
+        !body.contains("cursor_opacity"),
+        "compute_dispatch_fingerprint body MUST NOT reference cursor_opacity \
+         (perf invariant — opacity belongs in evaluate_row_state_change, \
+         not the dispatch fingerprint)"
+    );
+}
+
+/// Same-receiver pairing pin: every assignment to `prev_resolved_cursor`
+/// in `prepare/mod.rs` must be paired with an assignment to
+/// `prev_block_cursor_color_exclusion_active` on the SAME receiver path
+/// within the SAME function body. Catches silent SSOT desync where one
+/// field is updated without the other (cursor-opacity threshold-cross anchor).
+#[test]
+fn prev_resolved_cursor_assignment_co_located_with_threshold_pin() {
+    const MOD_SRC: &str = include_str!("mod.rs");
+    // Simple line-by-line scan: collect (receiver, line_num) for every
+    // assignment to prev_resolved_cursor, then assert each function body
+    // containing one also contains a paired assignment to
+    // prev_block_cursor_color_exclusion_active on the same receiver path.
+    let lines: Vec<&str> = MOD_SRC.lines().collect();
+
+    // Find all `<receiver>.prev_resolved_cursor =` lines.
+    let mut prc_sites: Vec<(String, usize)> = Vec::new();
+    for (i, line) in lines.iter().enumerate() {
+        let trimmed = line.trim_start();
+        if let Some(rest) = trimmed.strip_suffix("") {
+            if let Some(idx) = rest.find(".prev_resolved_cursor") {
+                let receiver = rest[..idx].trim().to_string();
+                // Skip false matches: comments, doc strings, etc.
+                if !receiver.starts_with("//")
+                    && !receiver.starts_with("///")
+                    && !receiver.is_empty()
+                    && rest[idx..].contains("=")
+                {
+                    prc_sites.push((receiver, i));
+                }
+            }
+        }
+    }
+
+    assert!(
+        !prc_sites.is_empty(),
+        "test must find at least 1 prev_resolved_cursor assignment in prepare/mod.rs"
+    );
+
+    // For each PRC assignment, verify a matching threshold assignment exists
+    // within ±20 lines on the same receiver path.
+    for (receiver, line_num) in &prc_sites {
+        let needle = format!("{receiver}.prev_block_cursor_color_exclusion_active");
+        let lo = line_num.saturating_sub(20);
+        let hi = (line_num + 20).min(lines.len());
+        let window: String = lines[lo..hi].join("\n");
+        assert!(
+            window.contains(&needle),
+            "SSOT pairing violation: {receiver}.prev_resolved_cursor assignment \
+             at line {line_num} not paired with {needle} within ±20 lines"
+        );
+    }
+}

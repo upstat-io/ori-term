@@ -49,22 +49,8 @@ impl WindowRenderer {
     /// `PartialEq`. Hidden-to-hidden cursor position changes canonicalize to
     /// `None == None` (no-op), avoiding WASTE invalidation on invisible-
     /// cursor frames.
-    pub(crate) fn has_row_state_change(&self, input: &FrameInput) -> bool {
-        let cur = prepare::resolve_cursor_state(input).into_visible();
-        if cur != self.prepared.prev_resolved_cursor {
-            return true;
-        }
-        let new_sel = input
-            .selection
-            .as_ref()
-            .and_then(|s| s.damage_snapshot(input.rows()));
-        if new_sel != self.prepared.prev_selection_snapshot {
-            return true;
-        }
-        if input.hovered_cell != self.prepared.prev_hovered_cell {
-            return true;
-        }
-        false
+    pub(crate) fn has_row_state_change(&self, input: &FrameInput, cursor_opacity: f32) -> bool {
+        prepare::evaluate_row_state_change(&self.prepared, input, cursor_opacity)
     }
 
     /// Run the Prepare phase: shape text and build GPU instance buffers.
@@ -104,7 +90,7 @@ impl WindowRenderer {
         let cols = input.columns();
         let cached_valid = self.shaping.frame.rows() > 0 && self.shaping.frame.cols() == cols;
         let dispatch_changed = self.has_dispatch_change(input, origin);
-        let row_state_changed = self.has_row_state_change(input);
+        let row_state_changed = self.has_row_state_change(input, cursor_opacity);
 
         // SSOT for "did this frame invalidate the content-cache tier?".
         // True when prepare must rebuild instances; false when the fast

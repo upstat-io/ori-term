@@ -13,10 +13,13 @@ mod decorations;
 pub(crate) mod dirty_skip;
 mod emit;
 mod emit_cell;
+mod gates;
 mod resolve;
 mod shaped_frame;
 #[cfg(test)]
 mod unshaped;
+
+pub(crate) use gates::{compute_dispatch_fingerprint, evaluate_row_state_change};
 
 use oriterm_core::{CellFlags, CursorShape, RenderableCursor};
 
@@ -24,9 +27,6 @@ use super::atlas::AtlasEntry;
 
 use super::frame_input::FrameInput;
 use super::prepared_frame::PreparedFrame;
-
-use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
 
 use crate::font::{GlyphStyle, RasterKey};
 use dirty_skip::{BufferLengths, RowInstanceRanges, fill_frame_incremental};
@@ -38,70 +38,9 @@ pub use shaped_frame::ShapedFrame;
 #[cfg(test)]
 pub(crate) use unshaped::{prepare_frame, prepare_frame_into};
 
-/// Content-aware fingerprint of every frame-level input that affects per-cell
-/// instance emission. SSOT for the incremental dispatch decision — one hash +
-/// one comparison + one tail write replace the prior parallel sync points.
-///
-/// Hashed inputs:
-/// - viewport (`width`, `height`) — full viewport-pixel dimensions.
-/// - full [`CellMetrics`] (`width`, `height`, `baseline`, `underline_offset`,
-///   `stroke_size`, `strikeout_offset`) — every metric affects cell or
-///   decoration emission. Hashing only the first 3 would silently replay
-///   stale decoration geometry on font/scale changes.
-/// - content grid dimensions (`content_cols`, `content_rows`).
-/// - origin (x, y) — saved-tier rows carry pixel positions baked at emit time.
-/// - per-cell alpha multipliers + palette overlay state via
-///   [`crate::gpu::frame_input::FramePalette::damage_fingerprint`].
-/// - `subpixel_positioning` — flips between subpixel/glyphs writers.
-/// - `search_fingerprint()` — already content-aware via
-///   [`crate::gpu::frame_input::FrameSearch::damage_fingerprint`].
-///
-/// NOT hashed (handled by per-row dirty tracking in `build_dirty_set` /
-/// `WindowRenderer::has_row_state_change`):
-/// - selection snapshot, cursor row, hovered cell.
-///
-/// `f32` fields are hashed via `.to_bits()` (bitwise-exact, not epsilon-
-/// tolerant). Tiny float deltas now force full rebuild instead of stale
-/// replay; the effect is extra rebuilds, not stale reuse.
-pub(super) fn compute_dispatch_fingerprint(input: &FrameInput, origin: (f32, f32)) -> u64 {
-    let mut hasher = DefaultHasher::new();
-
-    // Geometry — affects every cell's pixel position.
-    input.viewport.width.hash(&mut hasher);
-    input.viewport.height.hash(&mut hasher);
-
-    // ALL 6 CellMetrics fields — underline/stroke/strikeout offsets affect
-    // decoration emission and must invalidate on font/scale change.
-    input.cell_size.width.to_bits().hash(&mut hasher);
-    input.cell_size.height.to_bits().hash(&mut hasher);
-    input.cell_size.baseline.to_bits().hash(&mut hasher);
-    input.cell_size.underline_offset.to_bits().hash(&mut hasher);
-    input.cell_size.stroke_size.to_bits().hash(&mut hasher);
-    input.cell_size.strikeout_offset.to_bits().hash(&mut hasher);
-
-    input.content_cols.hash(&mut hasher);
-    input.content_rows.hash(&mut hasher);
-    origin.0.to_bits().hash(&mut hasher);
-    origin.1.to_bits().hash(&mut hasher);
-
-    // Per-cell alpha multipliers — baked into per-cell instances at emit time.
-    input.text_blink_opacity.to_bits().hash(&mut hasher);
-    // Full palette overlay state via PaletteDamageKey — covers background,
-    // foreground, cursor_color, selection_fg, selection_bg, opacity.
-    // Hashing only opacity would let theme/reverse_video changes replay
-    // stale per-cell colors from saved_tier.
-    input.palette.damage_fingerprint().hash(&mut hasher);
-    input.fg_dim.to_bits().hash(&mut hasher);
-
-    // Atlas routing — flips between subpixel/glyphs writers in emit.rs.
-    u8::from(input.subpixel_positioning).hash(&mut hasher);
-
-    // INVARIANT: hash the Option, not the unwrapped tuple — the discriminant
-    // distinguishes None from Some(all-zeros).
-    input.search_fingerprint().hash(&mut hasher);
-
-    hasher.finish()
-}
+// `compute_dispatch_fingerprint` lives in `gates.rs` to keep this file
+// under the 500-line cap. Re-exported above as
+// `pub(crate) use gates::compute_dispatch_fingerprint;`.
 
 /// Resolve the cursor row-state SSOT for the cursor-only fast-path predicate
 /// AND the per-frame `prev_resolved_cursor` snapshot.
@@ -320,7 +259,15 @@ pub fn prepare_frame_shaped_into(
     // cursors store as None so hidden-to-hidden position changes are a no-op
     // for the fast-path predicate (None == None). build_dirty_set derives the
     // line component from `Some(c).map(|c| c.line)`.
-    out.prev_resolved_cursor = resolve_cursor_state(input).into_visible();
+    let cur_resolved = resolve_cursor_state(input);
+    out.prev_resolved_cursor = cur_resolved.into_visible();
+    // INVARIANT: pair with prev_resolved_cursor write per SSOT semantics
+    // (most recent rendered frame, regardless of prepare path). Same-receiver
+    // pairing pinned by `prev_resolved_cursor_assignment_co_located_with_threshold_pin`
+    // in `prepare/tests.rs`.
+    out.prev_block_cursor_color_exclusion_active = Some(
+        resolve::block_cursor_color_exclusion_active(&cur_resolved, cursor_opacity),
+    );
     out.prev_hovered_cell = input.hovered_cell;
 }
 
@@ -353,7 +300,12 @@ pub fn update_cursor_only(
     // this write, the field semantics drift to "last full-prepare frame" — a
     // foot-gun for any future predicate consumer. Visibility-canonicalized
     // via RenderableCursor::into_visible (invisible → None).
-    out.prev_resolved_cursor = resolve_cursor_state(input).into_visible();
+    let cur_resolved = resolve_cursor_state(input);
+    out.prev_resolved_cursor = cur_resolved.into_visible();
+    // INVARIANT: pair with prev_resolved_cursor write per SSOT semantics.
+    out.prev_block_cursor_color_exclusion_active = Some(
+        resolve::block_cursor_color_exclusion_active(&cur_resolved, cursor_opacity),
+    );
 }
 
 /// Iterate cells with row-transition tracking, off-screen culling, and
