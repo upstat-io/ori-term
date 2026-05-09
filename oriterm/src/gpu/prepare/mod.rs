@@ -32,7 +32,7 @@ use crate::font::{GlyphStyle, RasterKey};
 use dirty_skip::{BufferLengths, RowInstanceRanges, fill_frame_incremental};
 use emit::{draw_prompt_markers, draw_url_hover_underline, emit_cursor_for_frame};
 use emit_cell::EmitCtx;
-use resolve::resolve_cursor;
+use resolve::{resolve_cursor, CellColorContext};
 
 pub use shaped_frame::ShapedFrame;
 #[cfg(test)]
@@ -410,11 +410,13 @@ pub(crate) fn fill_frame_shaped(
         fg_dim: input.fg_dim,
         text_blink_opacity: input.text_blink_opacity,
         subpixel_positioning: input.subpixel_positioning,
-        palette: &input.palette,
-        sel: input.selection.as_ref(),
-        search: input.search.as_ref(),
-        cursor: resolve_cursor_state(input),
-        cursor_opacity,
+        color_ctx: CellColorContext {
+            palette: &input.palette,
+            sel: input.selection.as_ref(),
+            search: input.search.as_ref(),
+            cursor: resolve_cursor_state(input),
+            cursor_opacity,
+        },
         hovered_cell: input.hovered_cell,
         cell_size: &input.cell_size,
         atlas,

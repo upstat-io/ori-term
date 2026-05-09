@@ -10,6 +10,22 @@ use oriterm_core::{CellFlags, Column, CursorShape, RenderableCell, RenderableCur
 
 use super::super::frame_input::{FramePalette, FrameSearch, FrameSelection, MarkCursorOverride};
 
+/// Frame-level context for per-cell color resolution.
+///
+/// Bundles the five frame-invariant inputs that [`resolve_cell_colors`] needs
+/// beyond the per-cell [`RenderableCell`]. Composed into
+/// [`super::emit_cell::EmitCtx`] so the five fields live in exactly one place,
+/// preventing scattered-knowledge drift when future overlays or color sources
+/// add fields.
+pub(crate) struct CellColorContext<'a> {
+    pub sel: Option<&'a FrameSelection>,
+    pub search: Option<&'a FrameSearch>,
+    /// Resolved terminal cursor (mark-mode override already applied by caller).
+    pub cursor: RenderableCursor,
+    pub cursor_opacity: f32,
+    pub palette: &'a FramePalette,
+}
+
 /// Match highlight background: yellow-tinted for visibility.
 pub(super) const SEARCH_MATCH_BG: Rgb = Rgb {
     r: 100,
@@ -95,17 +111,9 @@ pub(super) fn resolve_cursor(
 /// - **fg==bg reveal**: if inversion produces matching fg/bg (invisible text),
 ///   falls back to palette defaults — unless the cell has HIDDEN set (SGR 8
 ///   intentionally hides text, and selection should not reveal it).
-#[expect(
-    clippy::too_many_arguments,
-    reason = "cell, selection, search, cursor, blink, palette are all distinct concerns"
-)]
 pub(super) fn resolve_cell_colors(
     cell: &RenderableCell,
-    sel: Option<&FrameSelection>,
-    search: Option<&FrameSearch>,
-    cursor: &RenderableCursor,
-    cursor_opacity: f32,
-    palette: &FramePalette,
+    ctx: &CellColorContext<'_>,
 ) -> (Rgb, Rgb) {
     let col = cell.column.0;
     let row = cell.line;
@@ -114,33 +122,33 @@ pub(super) fn resolve_cell_colors(
     // Block cursor cell: at opacity > 0.5 the cursor dominates visually, so
     // skip selection/search inversion. At lower opacity the cursor is fading
     // out and text should revert to normal colors for readability.
-    let is_block_cursor_cell = block_cursor_color_exclusion_active(cursor, cursor_opacity)
-        && cursor.line == row
-        && cursor.column == Column(col);
+    let is_block_cursor_cell = block_cursor_color_exclusion_active(&ctx.cursor, ctx.cursor_opacity)
+        && ctx.cursor.line == row
+        && ctx.cursor.column == Column(col);
 
     // Selection takes priority over search highlighting.
     let selected = !is_block_cursor_cell
-        && sel.is_some_and(|s| s.contains(row, col) || (is_wide && s.contains(row, col + 1)));
+        && ctx.sel.is_some_and(|s| s.contains(row, col) || (is_wide && s.contains(row, col + 1)));
 
     if selected {
         // When explicit selection colors are configured, use them directly.
-        if let (Some(sfg), Some(sbg)) = (palette.selection_fg, palette.selection_bg) {
+        if let (Some(sfg), Some(sbg)) = (ctx.palette.selection_fg, ctx.palette.selection_bg) {
             return (sfg, sbg);
         }
         // Fallback: swap fg/bg with INVERSE and visibility guards.
         if cell.flags.contains(CellFlags::INVERSE) {
-            return (palette.background, palette.foreground);
+            return (ctx.palette.background, ctx.palette.foreground);
         }
         let (sel_fg, sel_bg) = (cell.bg, cell.fg);
         if sel_fg == sel_bg && !cell.flags.contains(CellFlags::HIDDEN) {
-            return (palette.background, palette.foreground);
+            return (ctx.palette.background, ctx.palette.foreground);
         }
         return (sel_fg, sel_bg);
     }
 
     // Search match highlighting (below selection in priority).
     if !is_block_cursor_cell {
-        if let Some(search) = search {
+        if let Some(search) = ctx.search {
             match search.cell_match_type(row, col) {
                 MatchType::FocusedMatch => return (SEARCH_FOCUSED_FG, SEARCH_FOCUSED_BG),
                 MatchType::Match => return (cell.fg, SEARCH_MATCH_BG),

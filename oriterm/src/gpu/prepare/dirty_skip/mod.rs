@@ -14,6 +14,7 @@ use oriterm_core::{CellFlags, RenderableCell};
 
 use super::emit::{draw_prompt_markers, draw_url_hover_underline};
 use super::emit_cell::EmitCtx;
+use super::resolve::CellColorContext;
 use super::shaped_frame::ShapedFrame;
 use super::{AtlasLookup, FrameInput};
 use crate::gpu::prepared_frame::PreparedFrame;
@@ -297,11 +298,13 @@ pub(crate) fn fill_frame_incremental(
         fg_dim: input.fg_dim,
         text_blink_opacity: input.text_blink_opacity,
         subpixel_positioning: input.subpixel_positioning,
-        palette: &input.palette,
-        sel: input.selection.as_ref(),
-        search: input.search.as_ref(),
-        cursor: resolved_cursor,
-        cursor_opacity,
+        color_ctx: CellColorContext {
+            palette: &input.palette,
+            sel: input.selection.as_ref(),
+            search: input.search.as_ref(),
+            cursor: resolved_cursor,
+            cursor_opacity,
+        },
         hovered_cell: input.hovered_cell,
         cell_size: &input.cell_size,
         atlas,

@@ -7,18 +7,17 @@
 //! `fill_frame`) consume this helper so any future per-cell change has one
 //! canonical site.
 
-use oriterm_core::{CellFlags, RenderableCell, RenderableCursor, Rgb};
+use oriterm_core::{CellFlags, RenderableCell, Rgb};
 
 use crate::font::{CellMetrics, GlyphStyle};
 use crate::gpu::builtin_glyphs;
 use crate::gpu::instance_writer::{CLIP_UNCLIPPED, ScreenRect};
 use crate::gpu::prepared_frame::PreparedFrame;
 
-use super::super::frame_input::{FramePalette, FrameSearch, FrameSelection};
 use super::AtlasLookup;
 use super::decorations::DecorationContext;
 use super::emit::GlyphEmitter;
-use super::resolve::resolve_cell_colors;
+use super::resolve::{resolve_cell_colors, CellColorContext};
 use super::shaped_frame::ShapedFrame;
 use super::super_sub_glyph_offset;
 
@@ -35,19 +34,13 @@ pub(super) struct EmitCtx<'a> {
     pub text_blink_opacity: f32,
     /// Whether fractional subpixel X positioning is enabled.
     pub subpixel_positioning: bool,
-    /// Semantic palette colors (background, cursor, selection overrides).
-    pub palette: &'a FramePalette,
-    /// Active selection state for highlight inversion.
-    pub sel: Option<&'a FrameSelection>,
-    /// Active search state for match highlighting.
-    pub search: Option<&'a FrameSearch>,
-    /// Resolved terminal cursor (mark-mode override applied by caller).
+    /// Frame-level color-resolution context consumed by [`resolve_cell_colors`].
     ///
-    /// `Copy` — copied by value so `emit_cell` needs no borrow on the caller's
-    /// cursor local, keeping the rest of `ctx` freely mutable.
-    pub cursor: RenderableCursor,
-    /// Opacity gate passed to [`resolve_cell_colors`] for block-cursor exclusion.
-    pub cursor_opacity: f32,
+    /// Bundles the five frame-invariant fields (selection, search, cursor,
+    /// opacity, palette) that were previously individual `EmitCtx` fields.
+    /// Single source of truth — new overlay/color sources add fields here
+    /// rather than on `EmitCtx` directly.
+    pub color_ctx: CellColorContext<'a>,
     /// Viewport cell under the mouse for hyperlink hover decoration.
     pub hovered_cell: Option<(usize, usize)>,
     /// Font cell metrics (width, height, baseline, underline offsets).
@@ -89,7 +82,7 @@ struct CellEmitState {
 /// The palette background is skipped so the window clear color (carrying theme
 /// opacity for glass/acrylic) shows through for default-bg cells.
 fn emit_cell_bg(state: &CellEmitState, ctx: &mut EmitCtx<'_>) {
-    if state.bg != ctx.palette.background {
+    if state.bg != ctx.color_ctx.palette.background {
         ctx.frame.backgrounds.push_rect(
             ScreenRect {
                 x: state.x,
@@ -218,14 +211,7 @@ fn emit_cell_glyphs(cell: &RenderableCell, state: &CellEmitState, ctx: &mut Emit
 pub(super) fn emit_cell(cell: &RenderableCell, x: f32, y: f32, ctx: &mut EmitCtx<'_>) {
     let col = cell.column.0;
     let row = cell.line;
-    let (fg, bg) = resolve_cell_colors(
-        cell,
-        ctx.sel,
-        ctx.search,
-        &ctx.cursor,
-        ctx.cursor_opacity,
-        ctx.palette,
-    );
+    let (fg, bg) = resolve_cell_colors(cell, &ctx.color_ctx);
     let bg_w = if cell.flags.contains(CellFlags::WIDE_CHAR) {
         2.0 * ctx.cell_size.width
     } else {

@@ -8,6 +8,7 @@ use crate::gpu::prepare::shaped_frame::ShapedFrame;
 use crate::gpu::prepared_frame::PreparedFrame;
 
 use super::super::AtlasLookup;
+use super::super::resolve::CellColorContext;
 use super::{EmitCtx, emit_cell};
 
 // ---------------------------------------------------------------------------
@@ -147,11 +148,13 @@ fn unshaped_ctx<'a>(
         fg_dim: input.fg_dim,
         text_blink_opacity: input.text_blink_opacity,
         subpixel_positioning: false,
-        palette: &input.palette,
-        sel: input.selection.as_ref(),
-        search: input.search.as_ref(),
-        cursor: idle_cursor(),
-        cursor_opacity: 1.0,
+        color_ctx: CellColorContext {
+            palette: &input.palette,
+            sel: input.selection.as_ref(),
+            search: input.search.as_ref(),
+            cursor: idle_cursor(),
+            cursor_opacity: 1.0,
+        },
         hovered_cell: input.hovered_cell,
         cell_size: &input.cell_size,
         atlas,
@@ -172,11 +175,13 @@ fn shaped_ctx<'a>(
         fg_dim: input.fg_dim,
         text_blink_opacity: input.text_blink_opacity,
         subpixel_positioning: false,
-        palette: &input.palette,
-        sel: input.selection.as_ref(),
-        search: input.search.as_ref(),
-        cursor: idle_cursor(),
-        cursor_opacity: 1.0,
+        color_ctx: CellColorContext {
+            palette: &input.palette,
+            sel: input.selection.as_ref(),
+            search: input.search.as_ref(),
+            cursor: idle_cursor(),
+            cursor_opacity: 1.0,
+        },
         hovered_cell: input.hovered_cell,
         cell_size: &input.cell_size,
         atlas,
