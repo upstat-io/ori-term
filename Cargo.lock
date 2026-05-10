@@ -336,9 +336,9 @@ checksum = "37b2a672a2cb129a2e41c10b1224bb368f9f37a2b16b612598138befd7b37eb5"
 
 [[package]]
 name = "cc"
-version = "1.2.61"
+version = "1.2.62"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d16d90359e986641506914ba71350897565610e87ce0ad9e6f28569db3dd5c6d"
+checksum = "a1dce859f0832a7d088c4f1119888ab94ef4b5d6795d1ce05afb7fe159d79f98"
 dependencies = [
  "find-msvc-tools",
  "jobserver",
@@ -1907,7 +1907,7 @@ dependencies = [
 
 [[package]]
 name = "oriterm"
-version = "0.2.0-alpha.20260508"
+version = "0.2.0-alpha.20260509"
 dependencies = [
  "anyhow",
  "arboard",
@@ -1958,7 +1958,7 @@ dependencies = [
 
 [[package]]
 name = "oriterm_core"
-version = "0.2.0-alpha.20260508"
+version = "0.2.0-alpha.20260509"
 dependencies = [
  "base64",
  "bitflags 2.11.1",
@@ -1981,7 +1981,7 @@ dependencies = [
 
 [[package]]
 name = "oriterm_ipc"
-version = "0.2.0-alpha.20260508"
+version = "0.2.0-alpha.20260509"
 dependencies = [
  "libc",
  "log",
@@ -1992,7 +1992,7 @@ dependencies = [
 
 [[package]]
 name = "oriterm_mux"
-version = "0.2.0-alpha.20260508"
+version = "0.2.0-alpha.20260509"
 dependencies = [
  "base64",
  "bincode",
@@ -2015,7 +2015,7 @@ dependencies = [
 
 [[package]]
 name = "oriterm_test_support"
-version = "0.2.0-alpha.20260508"
+version = "0.2.0-alpha.20260509"
 dependencies = [
  "base64",
  "clap",
@@ -2029,7 +2029,7 @@ dependencies = [
 
 [[package]]
 name = "oriterm_ui"
-version = "0.2.0-alpha.20260508"
+version = "0.2.0-alpha.20260509"
 dependencies = [
  "criterion",
  "image",
@@ -2292,9 +2292,9 @@ checksum = "a993555f31e5a609f617c12db6250dedcac1b0a85076912c436e6fc9b2c8e6a3"
 
 [[package]]
 name = "quick-xml"
-version = "0.39.3"
+version = "0.39.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "721da970c312655cde9b4ffe0547f20a8494866a4af5ff51f18b7c633d0c870b"
+checksum = "cdcc8dd4e2f670d309a5f0e83fe36dfdc05af317008fea29144da1a2ac858e5e"
 dependencies = [
  "memchr",
 ]
