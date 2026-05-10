@@ -32,7 +32,7 @@ use crate::font::{GlyphStyle, RasterKey};
 use dirty_skip::{BufferLengths, fill_frame_incremental};
 use emit::{draw_prompt_markers, draw_url_hover_underline, emit_cursor_for_frame};
 use emit_cell::EmitCtx;
-use resolve::{resolve_cursor, CellColorContext};
+use resolve::{CellColorContext, resolve_cursor};
 
 pub use shaped_frame::ShapedFrame;
 #[cfg(test)]
@@ -407,11 +407,7 @@ pub(crate) fn fill_frame_shaped(
         shaped: Some((shaped, shaped.hinted())),
     };
 
-    emit_row_tracked_cells(
-        &mut ctx,
-        &input.content.cells,
-        (ox, oy),
-    );
+    emit_row_tracked_cells(&mut ctx, &input.content.cells, (ox, oy));
 
     draw_url_hover_underline(input, ctx.frame, ox, oy);
     draw_prompt_markers(input, ctx.frame, ox, oy);

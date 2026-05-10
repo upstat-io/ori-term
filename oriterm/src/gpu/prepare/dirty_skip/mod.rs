@@ -124,7 +124,11 @@ struct RowLoopResult {
 /// Captures current buffer lengths, computes the range since `row_start`,
 /// and appends it. Fills gaps with default ranges when rows are skipped
 /// (can occur with multi-pane frames or non-zero starting rows).
-pub(super) fn push_row_range(frame: &mut PreparedFrame, current_row: usize, row_start: &BufferLengths) {
+pub(super) fn push_row_range(
+    frame: &mut PreparedFrame,
+    current_row: usize,
+    row_start: &BufferLengths,
+) {
     while frame.row_ranges.len() < current_row {
         frame.row_ranges.push(RowInstanceRanges::default());
     }

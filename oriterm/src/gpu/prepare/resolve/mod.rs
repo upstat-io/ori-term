@@ -111,10 +111,7 @@ pub(super) fn resolve_cursor(
 /// - **fg==bg reveal**: if inversion produces matching fg/bg (invisible text),
 ///   falls back to palette defaults — unless the cell has HIDDEN set (SGR 8
 ///   intentionally hides text, and selection should not reveal it).
-pub(super) fn resolve_cell_colors(
-    cell: &RenderableCell,
-    ctx: &CellColorContext<'_>,
-) -> (Rgb, Rgb) {
+pub(super) fn resolve_cell_colors(cell: &RenderableCell, ctx: &CellColorContext<'_>) -> (Rgb, Rgb) {
     let col = cell.column.0;
     let row = cell.line;
     let is_wide = cell.flags.contains(CellFlags::WIDE_CHAR);
@@ -128,7 +125,9 @@ pub(super) fn resolve_cell_colors(
 
     // Selection takes priority over search highlighting.
     let selected = !is_block_cursor_cell
-        && ctx.sel.is_some_and(|s| s.contains(row, col) || (is_wide && s.contains(row, col + 1)));
+        && ctx
+            .sel
+            .is_some_and(|s| s.contains(row, col) || (is_wide && s.contains(row, col + 1)));
 
     if selected {
         // When explicit selection colors are configured, use them directly.

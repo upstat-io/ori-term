@@ -51,8 +51,8 @@ use super::frame_input::FrameInput;
 use super::pipelines::GpuPipelines;
 use super::state::{AdapterPreference, GpuState};
 use super::window_renderer::WindowRenderer;
-use crate::font::{FontCollection, FontSet, GlyphFormat, HintingMode};
 use crate::font::ui_font_sizes::{PRELOAD_SIZES, UiFontSizes};
+use crate::font::{FontCollection, FontSet, GlyphFormat, HintingMode};
 
 /// Per-channel tolerance for pixel comparison. Accounts for anti-aliasing
 /// differences and minor rasterization variance across GPU drivers.

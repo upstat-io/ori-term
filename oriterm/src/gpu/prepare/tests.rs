@@ -4490,12 +4490,14 @@ fn populate_test_chrome_and_overlay_buffers(frame: &mut PreparedFrame) {
     frame.overlay_glyphs.push_rect(rect, bg, 1.0);
     frame.overlay_subpixel_glyphs.push_rect(rect, bg, 1.0);
     frame.overlay_color_glyphs.push_rect(rect, bg, 1.0);
-    frame.overlay_draw_ranges.push(super::super::prepared_frame::OverlayDrawRange {
-        rects: (0, 1),
-        mono: (0, 1),
-        subpixel: (0, 1),
-        color: (0, 1),
-    });
+    frame
+        .overlay_draw_ranges
+        .push(super::super::prepared_frame::OverlayDrawRange {
+            rects: (0, 1),
+            mono: (0, 1),
+            subpixel: (0, 1),
+            color: (0, 1),
+        });
 }
 
 /// Assert all 8 chrome + overlay writer tiers are empty after
@@ -4504,12 +4506,30 @@ fn populate_test_chrome_and_overlay_buffers(frame: &mut PreparedFrame) {
 fn assert_chrome_and_overlay_buffers_empty(frame: &PreparedFrame) {
     assert!(frame.ui_rects.is_empty(), "ui_rects must be empty");
     assert!(frame.ui_glyphs.is_empty(), "ui_glyphs must be empty");
-    assert!(frame.ui_subpixel_glyphs.is_empty(), "ui_subpixel_glyphs must be empty");
-    assert!(frame.ui_color_glyphs.is_empty(), "ui_color_glyphs must be empty");
-    assert!(frame.overlay_rects.is_empty(), "overlay_rects must be empty");
-    assert!(frame.overlay_glyphs.is_empty(), "overlay_glyphs must be empty");
-    assert!(frame.overlay_subpixel_glyphs.is_empty(), "overlay_subpixel_glyphs must be empty");
-    assert!(frame.overlay_color_glyphs.is_empty(), "overlay_color_glyphs must be empty");
+    assert!(
+        frame.ui_subpixel_glyphs.is_empty(),
+        "ui_subpixel_glyphs must be empty"
+    );
+    assert!(
+        frame.ui_color_glyphs.is_empty(),
+        "ui_color_glyphs must be empty"
+    );
+    assert!(
+        frame.overlay_rects.is_empty(),
+        "overlay_rects must be empty"
+    );
+    assert!(
+        frame.overlay_glyphs.is_empty(),
+        "overlay_glyphs must be empty"
+    );
+    assert!(
+        frame.overlay_subpixel_glyphs.is_empty(),
+        "overlay_subpixel_glyphs must be empty"
+    );
+    assert!(
+        frame.overlay_color_glyphs.is_empty(),
+        "overlay_color_glyphs must be empty"
+    );
     assert!(
         frame.overlay_draw_ranges.is_empty(),
         "overlay_draw_ranges must be empty"

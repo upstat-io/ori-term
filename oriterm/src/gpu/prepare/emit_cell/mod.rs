@@ -17,7 +17,7 @@ use crate::gpu::prepared_frame::PreparedFrame;
 use super::AtlasLookup;
 use super::decorations::DecorationContext;
 use super::emit::GlyphEmitter;
-use super::resolve::{resolve_cell_colors, CellColorContext};
+use super::resolve::{CellColorContext, resolve_cell_colors};
 use super::shaped_frame::ShapedFrame;
 use super::super_sub_glyph_offset;
 
