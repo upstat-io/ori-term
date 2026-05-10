@@ -52,6 +52,7 @@ use super::pipelines::GpuPipelines;
 use super::state::{AdapterPreference, GpuState};
 use super::window_renderer::WindowRenderer;
 use crate::font::{FontCollection, FontSet, GlyphFormat, HintingMode};
+use crate::font::ui_font_sizes::{PRELOAD_SIZES, UiFontSizes};
 
 /// Per-channel tolerance for pixel comparison. Accounts for anti-aliasing
 /// differences and minor rasterization variance across GPU drivers.
@@ -65,6 +66,83 @@ pub(super) const MAX_MISMATCH_PERCENT: f64 = 0.5;
 const TEST_FONT_WEIGHT: u16 = 400;
 const TEST_FONT_SIZE_PT: f32 = 12.0;
 const TEST_DPI: f32 = 96.0;
+
+/// Configuration for UI font construction within a headless rendering environment.
+pub(crate) struct UiFontConfig {
+    pub font_set: FontSet,
+    pub hinting: HintingMode,
+}
+
+/// Configuration for constructing a headless GPU rendering environment.
+///
+/// Covers the full parameter space: terminal fonts, optional UI fonts,
+/// and optional icon pre-resolution. Use [`headless_env_with`] to construct
+/// the `(GpuState, GpuPipelines, WindowRenderer)` triple from a config.
+pub(crate) struct HeadlessEnvConfig {
+    pub size_pt: f32,
+    pub dpi: f32,
+    pub format: GlyphFormat,
+    pub terminal_font_set: FontSet,
+    pub terminal_hinting: HintingMode,
+    pub ui: Option<UiFontConfig>,
+    pub resolve_icons_scale: Option<f32>,
+}
+
+impl Default for HeadlessEnvConfig {
+    fn default() -> Self {
+        Self {
+            size_pt: TEST_FONT_SIZE_PT,
+            dpi: TEST_DPI,
+            format: GlyphFormat::Alpha,
+            terminal_font_set: FontSet::embedded(),
+            terminal_hinting: HintingMode::Full,
+            ui: None,
+            resolve_icons_scale: None,
+        }
+    }
+}
+
+/// Construct a headless GPU rendering environment from a config.
+///
+/// This is the canonical entry point — it covers both terminal-font-only
+/// construction (when `ui` is `None`) and full UI-font + icon-resolution
+/// construction. Legacy entry points delegate through this function.
+pub(crate) fn headless_env_with(
+    config: &HeadlessEnvConfig,
+) -> Option<(GpuState, GpuPipelines, WindowRenderer)> {
+    let gpu = GpuState::new_headless().ok()?;
+    let pipelines = GpuPipelines::new(&gpu);
+    let font_collection = FontCollection::new(
+        config.terminal_font_set.clone(),
+        config.size_pt,
+        config.dpi,
+        config.format,
+        TEST_FONT_WEIGHT,
+        550,
+        config.terminal_hinting,
+    )
+    .ok()?;
+    let ui_font_sizes = match &config.ui {
+        Some(ui) => Some(
+            UiFontSizes::new(
+                ui.font_set.clone(),
+                config.dpi,
+                config.format,
+                ui.hinting,
+                TEST_FONT_WEIGHT,
+                550,
+                &PRELOAD_SIZES,
+            )
+            .ok()?,
+        ),
+        None => None,
+    };
+    let mut renderer = WindowRenderer::new(&gpu, &pipelines, font_collection, ui_font_sizes);
+    if let Some(scale) = config.resolve_icons_scale {
+        renderer.resolve_icons(&gpu, scale);
+    }
+    Some((gpu, pipelines, renderer))
+}
 
 /// Directory for reference PNG files, relative to the crate root.
 pub(super) fn reference_dir() -> PathBuf {
@@ -82,7 +160,7 @@ pub(super) fn reference_dir() -> PathBuf {
 /// the software rasterizer, hinting mode, and subpixel positioning for
 /// reproducible output.
 pub(crate) fn headless_env() -> Option<(GpuState, GpuPipelines, WindowRenderer)> {
-    headless_env_with_config(TEST_FONT_SIZE_PT, TEST_DPI)
+    headless_env_with(&HeadlessEnvConfig::default())
 }
 
 /// Headless rendering environment with configurable font size and DPI.
@@ -90,7 +168,11 @@ pub(super) fn headless_env_with_config(
     size_pt: f32,
     dpi: f32,
 ) -> Option<(GpuState, GpuPipelines, WindowRenderer)> {
-    headless_env_full(size_pt, dpi, GlyphFormat::Alpha)
+    headless_env_with(&HeadlessEnvConfig {
+        size_pt,
+        dpi,
+        ..Default::default()
+    })
 }
 
 /// Headless rendering environment with configurable font size, DPI, and glyph format.
@@ -99,7 +181,12 @@ pub(super) fn headless_env_full(
     dpi: f32,
     format: GlyphFormat,
 ) -> Option<(GpuState, GpuPipelines, WindowRenderer)> {
-    headless_env_with_hinting(size_pt, dpi, format, HintingMode::Full)
+    headless_env_with(&HeadlessEnvConfig {
+        size_pt,
+        dpi,
+        format,
+        ..Default::default()
+    })
 }
 
 /// Headless rendering environment with full control over font size, DPI,
@@ -110,20 +197,13 @@ pub(super) fn headless_env_with_hinting(
     format: GlyphFormat,
     hinting: HintingMode,
 ) -> Option<(GpuState, GpuPipelines, WindowRenderer)> {
-    let gpu = GpuState::new_headless().ok()?;
-    let pipelines = GpuPipelines::new(&gpu);
-    let font_collection = FontCollection::new(
-        FontSet::embedded(),
+    headless_env_with(&HeadlessEnvConfig {
         size_pt,
         dpi,
         format,
-        TEST_FONT_WEIGHT,
-        550,
-        hinting,
-    )
-    .ok()?;
-    let renderer = WindowRenderer::new(&gpu, &pipelines, font_collection, None);
-    Some((gpu, pipelines, renderer))
+        terminal_hinting: hinting,
+        ..Default::default()
+    })
 }
 
 /// Create a headless rendering environment pinned to a software rasterizer
