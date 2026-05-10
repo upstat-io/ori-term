@@ -15,43 +15,26 @@ use oriterm_ui::widgets::tab_bar::constants::TAB_BAR_HEIGHT;
 use oriterm_ui::widgets::tab_bar::{TabBarHit, TabBarWidget, TabEntry};
 
 use crate::font::shaper::CachedTextMeasurer;
-use crate::font::ui_font_sizes::{PRELOAD_SIZES, UiFontSizes};
-use crate::font::{FontCollection, FontSet, GlyphFormat, HintingMode, TextShapeCache};
+use crate::font::{FontSet, HintingMode, TextShapeCache};
 use crate::gpu::pipelines::GpuPipelines;
 use crate::gpu::state::GpuState;
 use crate::gpu::window_renderer::WindowRenderer;
 
-use super::compare_with_reference;
+use super::{HeadlessEnvConfig, UiFontConfig, compare_with_reference, headless_env_with};
 
 const WIDTH: u32 = 600;
 
 /// Headless environment with UI font (no emoji needed for brutal tests).
 fn headless_brutal_env() -> Option<(GpuState, GpuPipelines, WindowRenderer)> {
-    let gpu = GpuState::new_headless().ok()?;
-    let pipelines = GpuPipelines::new(&gpu);
-    let font_collection = FontCollection::new(
-        FontSet::embedded(),
-        14.0,
-        96.0,
-        GlyphFormat::Alpha,
-        400,
-        550,
-        HintingMode::Full,
-    )
-    .ok()?;
-    let ui_font_sizes = UiFontSizes::new(
-        FontSet::ui_embedded(),
-        96.0,
-        GlyphFormat::Alpha,
-        HintingMode::Full,
-        400,
-        550,
-        &PRELOAD_SIZES,
-    )
-    .ok()?;
-    let mut renderer = WindowRenderer::new(&gpu, &pipelines, font_collection, Some(ui_font_sizes));
-    renderer.resolve_icons(&gpu, 1.0);
-    Some((gpu, pipelines, renderer))
+    headless_env_with(&HeadlessEnvConfig {
+        size_pt: 14.0,
+        ui: Some(UiFontConfig {
+            font_set: FontSet::ui_embedded(),
+            hinting: HintingMode::Full,
+        }),
+        resolve_icons_scale: Some(1.0),
+        ..Default::default()
+    })
 }
 
 /// Paint a tab bar with given entries and hover state, render to pixels.

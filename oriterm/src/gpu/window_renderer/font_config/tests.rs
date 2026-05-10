@@ -8,6 +8,7 @@ use crate::font::ui_font_sizes::{self, UiFontSizes};
 use crate::font::{GlyphFormat, HintingMode};
 use crate::gpu::GpuPipelines;
 use crate::gpu::state::GpuState;
+use crate::gpu::visual_regression::{HeadlessEnvConfig, UiFontConfig, headless_env_with};
 
 const TEST_DPI: f32 = 96.0;
 const TEST_FONT_SIZE_PT: f32 = 12.0;
@@ -22,30 +23,13 @@ fn headless_gpu() -> Option<(GpuState, GpuPipelines)> {
 
 /// Headless environment with UI font sizes populated.
 fn headless_with_ui_fonts() -> Option<(GpuState, GpuPipelines, WindowRenderer)> {
-    let (gpu, pipelines) = headless_gpu()?;
-    let font_set = FontSet::embedded();
-    let font_collection = FontCollection::new(
-        font_set.clone(),
-        TEST_FONT_SIZE_PT,
-        TEST_DPI,
-        GlyphFormat::Alpha,
-        TEST_FONT_WEIGHT,
-        550,
-        HintingMode::Full,
-    )
-    .ok()?;
-    let ui_sizes = UiFontSizes::new(
-        font_set,
-        TEST_DPI,
-        GlyphFormat::Alpha,
-        HintingMode::None,
-        TEST_FONT_WEIGHT,
-        550,
-        ui_font_sizes::PRELOAD_SIZES,
-    )
-    .ok()?;
-    let renderer = WindowRenderer::new(&gpu, &pipelines, font_collection, Some(ui_sizes));
-    Some((gpu, pipelines, renderer))
+    headless_env_with(&HeadlessEnvConfig {
+        ui: Some(UiFontConfig {
+            font_set: FontSet::embedded(),
+            hinting: HintingMode::None,
+        }),
+        ..Default::default()
+    })
 }
 
 #[test]

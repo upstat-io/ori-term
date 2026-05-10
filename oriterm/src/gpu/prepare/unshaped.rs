@@ -10,6 +10,7 @@ use super::super::prepared_frame::PreparedFrame;
 use super::AtlasLookup;
 use super::emit::{draw_prompt_markers, draw_url_hover_underline};
 use super::emit_cell::EmitCtx;
+use super::resolve::CellColorContext;
 use super::resolve_cursor_state;
 
 /// Convert a [`FrameInput`] into a GPU-ready [`PreparedFrame`] using per-cell
@@ -73,11 +74,13 @@ fn fill_frame(
         fg_dim: input.fg_dim,
         text_blink_opacity: input.text_blink_opacity,
         subpixel_positioning: input.subpixel_positioning,
-        palette: &input.palette,
-        sel: input.selection.as_ref(),
-        search: input.search.as_ref(),
-        cursor: resolve_cursor_state(input),
-        cursor_opacity,
+        color_ctx: CellColorContext {
+            palette: &input.palette,
+            sel: input.selection.as_ref(),
+            search: input.search.as_ref(),
+            cursor: resolve_cursor_state(input),
+            cursor_opacity,
+        },
         hovered_cell: input.hovered_cell,
         cell_size: &input.cell_size,
         atlas,

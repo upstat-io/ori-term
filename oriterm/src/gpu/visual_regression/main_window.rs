@@ -16,72 +16,38 @@ use oriterm_ui::widgets::tab_bar::{TabBarWidget, TabEntry};
 
 use crate::app::compute_window_layout;
 use crate::font::shaper::CachedTextMeasurer;
-use crate::font::ui_font_sizes::{PRELOAD_SIZES, UiFontSizes};
-use crate::font::{FontCollection, FontSet, GlyphFormat, HintingMode, TextShapeCache};
+use crate::font::{FontSet, HintingMode, TextShapeCache};
 use crate::gpu::frame_input::{FrameInput, ViewportSize};
 use crate::gpu::pipelines::GpuPipelines;
 use crate::gpu::scene_convert::color_to_rgb;
 use crate::gpu::state::GpuState;
 use crate::gpu::window_renderer::WindowRenderer;
 
-use super::compare_with_reference;
+use super::{HeadlessEnvConfig, UiFontConfig, compare_with_reference, headless_env_with};
 
 /// Headless environment with both terminal and UI fonts for composed rendering.
 fn headless_composed_env() -> Option<(GpuState, GpuPipelines, WindowRenderer)> {
-    let gpu = GpuState::new_headless().ok()?;
-    let pipelines = GpuPipelines::new(&gpu);
-    let font_collection = FontCollection::new(
-        FontSet::embedded(),
-        12.0,
-        96.0,
-        GlyphFormat::Alpha,
-        400,
-        550,
-        HintingMode::Full,
-    )
-    .ok()?;
-    let ui_font_sizes = UiFontSizes::new(
-        FontSet::ui_embedded(),
-        96.0,
-        GlyphFormat::Alpha,
-        HintingMode::Full,
-        400,
-        550,
-        &PRELOAD_SIZES,
-    )
-    .ok()?;
-    let mut renderer = WindowRenderer::new(&gpu, &pipelines, font_collection, Some(ui_font_sizes));
-    renderer.resolve_icons(&gpu, 1.0);
-    Some((gpu, pipelines, renderer))
+    headless_env_with(&HeadlessEnvConfig {
+        ui: Some(UiFontConfig {
+            font_set: FontSet::ui_embedded(),
+            hinting: HintingMode::Full,
+        }),
+        resolve_icons_scale: Some(1.0),
+        ..Default::default()
+    })
 }
 
 /// Headless environment at 192 DPI for high-DPI composed rendering tests.
 fn headless_composed_env_192dpi() -> Option<(GpuState, GpuPipelines, WindowRenderer)> {
-    let gpu = GpuState::new_headless().ok()?;
-    let pipelines = GpuPipelines::new(&gpu);
-    let font_collection = FontCollection::new(
-        FontSet::embedded(),
-        12.0,
-        192.0,
-        GlyphFormat::Alpha,
-        400,
-        550,
-        HintingMode::Full,
-    )
-    .ok()?;
-    let ui_font_sizes = UiFontSizes::new(
-        FontSet::ui_embedded(),
-        192.0,
-        GlyphFormat::Alpha,
-        HintingMode::Full,
-        400,
-        550,
-        &PRELOAD_SIZES,
-    )
-    .ok()?;
-    let mut renderer = WindowRenderer::new(&gpu, &pipelines, font_collection, Some(ui_font_sizes));
-    renderer.resolve_icons(&gpu, 2.0);
-    Some((gpu, pipelines, renderer))
+    headless_env_with(&HeadlessEnvConfig {
+        dpi: 192.0,
+        ui: Some(UiFontConfig {
+            font_set: FontSet::ui_embedded(),
+            hinting: HintingMode::Full,
+        }),
+        resolve_icons_scale: Some(2.0),
+        ..Default::default()
+    })
 }
 
 /// Render a composed main window frame: tab bar + grid + status bar + border.

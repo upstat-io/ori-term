@@ -21,7 +21,7 @@ use crate::gpu::pipelines::GpuPipelines;
 use crate::gpu::state::GpuState;
 use crate::gpu::window_renderer::WindowRenderer;
 
-use super::compare_with_reference;
+use super::{HeadlessEnvConfig, UiFontConfig, compare_with_reference, headless_env_with};
 
 const WIDTH: u32 = 600;
 const HEIGHT: u32 = 60;
@@ -39,31 +39,16 @@ fn font_set_with_best_emoji() -> FontSet {
 
 /// Headless environment with best available emoji font.
 fn headless_tab_bar_env() -> Option<(GpuState, GpuPipelines, WindowRenderer)> {
-    let gpu = GpuState::new_headless().ok()?;
-    let pipelines = GpuPipelines::new(&gpu);
-    let font_collection = FontCollection::new(
-        font_set_with_best_emoji(),
-        14.0,
-        96.0,
-        GlyphFormat::Alpha,
-        400,
-        550,
-        HintingMode::Full,
-    )
-    .ok()?;
-    let ui_font_sizes = crate::font::ui_font_sizes::UiFontSizes::new(
-        FontSet::ui_embedded(),
-        96.0,
-        GlyphFormat::Alpha,
-        HintingMode::Full,
-        400,
-        550,
-        &crate::font::ui_font_sizes::PRELOAD_SIZES,
-    )
-    .ok()?;
-    let mut renderer = WindowRenderer::new(&gpu, &pipelines, font_collection, Some(ui_font_sizes));
-    renderer.resolve_icons(&gpu, 1.0);
-    Some((gpu, pipelines, renderer))
+    headless_env_with(&HeadlessEnvConfig {
+        size_pt: 14.0,
+        terminal_font_set: font_set_with_best_emoji(),
+        ui: Some(UiFontConfig {
+            font_set: FontSet::ui_embedded(),
+            hinting: HintingMode::Full,
+        }),
+        resolve_icons_scale: Some(1.0),
+        ..Default::default()
+    })
 }
 
 /// Paint a tab bar and render to pixels.

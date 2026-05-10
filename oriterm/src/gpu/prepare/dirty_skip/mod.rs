@@ -14,6 +14,7 @@ use oriterm_core::{CellFlags, RenderableCell};
 
 use super::emit::{draw_prompt_markers, draw_url_hover_underline};
 use super::emit_cell::EmitCtx;
+use super::resolve::CellColorContext;
 use super::shaped_frame::ShapedFrame;
 use super::{AtlasLookup, FrameInput};
 use crate::gpu::prepared_frame::PreparedFrame;
@@ -118,13 +119,21 @@ struct RowLoopResult {
     row_is_clean: bool,
 }
 
-/// Record a dirty row's instance range into `frame.row_ranges`.
-fn push_dirty_row_range(frame: &mut PreparedFrame, current_row: usize, row_start: &BufferLengths) {
-    let now = BufferLengths::capture(frame);
-    let ranges = now.range_since(row_start);
+/// Record a row's instance range into `frame.row_ranges`.
+///
+/// Captures current buffer lengths, computes the range since `row_start`,
+/// and appends it. Fills gaps with default ranges when rows are skipped
+/// (can occur with multi-pane frames or non-zero starting rows).
+pub(super) fn push_row_range(
+    frame: &mut PreparedFrame,
+    current_row: usize,
+    row_start: &BufferLengths,
+) {
     while frame.row_ranges.len() < current_row {
         frame.row_ranges.push(RowInstanceRanges::default());
     }
+    let now = BufferLengths::capture(frame);
+    let ranges = now.range_since(row_start);
     frame.row_ranges.push(ranges);
 }
 
@@ -163,12 +172,7 @@ fn replay_clean_row(frame: &mut PreparedFrame, row: usize) {
             .color_glyphs
             .extend_from_byte_range(&saved.color_glyphs, c_s, c_e);
     }
-    let now = BufferLengths::capture(frame);
-    let ranges = now.range_since(&row_start);
-    while frame.row_ranges.len() < row {
-        frame.row_ranges.push(RowInstanceRanges::default());
-    }
-    frame.row_ranges.push(ranges);
+    push_row_range(frame, row, &row_start);
 }
 
 /// Core cell-iteration loop for the incremental path.
@@ -202,7 +206,7 @@ fn process_incremental_cells(
 
         if row != current_row {
             if current_row != usize::MAX && !row_is_clean {
-                push_dirty_row_range(ctx.frame, current_row, &row_start);
+                push_row_range(ctx.frame, current_row, &row_start);
             }
             current_row = row;
             let is_dirty = ctx.frame.scratch_dirty.get(row).copied().unwrap_or(true);
@@ -297,11 +301,13 @@ pub(crate) fn fill_frame_incremental(
         fg_dim: input.fg_dim,
         text_blink_opacity: input.text_blink_opacity,
         subpixel_positioning: input.subpixel_positioning,
-        palette: &input.palette,
-        sel: input.selection.as_ref(),
-        search: input.search.as_ref(),
-        cursor: resolved_cursor,
-        cursor_opacity,
+        color_ctx: CellColorContext {
+            palette: &input.palette,
+            sel: input.selection.as_ref(),
+            search: input.search.as_ref(),
+            cursor: resolved_cursor,
+            cursor_opacity,
+        },
         hovered_cell: input.hovered_cell,
         cell_size: &input.cell_size,
         atlas,
@@ -317,7 +323,7 @@ pub(crate) fn fill_frame_incremental(
     } = process_incremental_cells(&mut ctx, &input.content.cells, ox, oy);
 
     if current_row != usize::MAX && !row_is_clean {
-        push_dirty_row_range(ctx.frame, current_row, &row_start);
+        push_row_range(ctx.frame, current_row, &row_start);
     }
 
     draw_url_hover_underline(input, ctx.frame, ox, oy);

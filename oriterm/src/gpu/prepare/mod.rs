@@ -13,10 +13,13 @@ mod decorations;
 pub(crate) mod dirty_skip;
 mod emit;
 mod emit_cell;
+mod gates;
 mod resolve;
 mod shaped_frame;
 #[cfg(test)]
 mod unshaped;
+
+pub(crate) use gates::{compute_dispatch_fingerprint, evaluate_row_state_change};
 
 use oriterm_core::{CellFlags, CursorShape, RenderableCursor};
 
@@ -25,79 +28,15 @@ use super::atlas::AtlasEntry;
 use super::frame_input::FrameInput;
 use super::prepared_frame::PreparedFrame;
 
-use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
-
 use crate::font::{GlyphStyle, RasterKey};
-use dirty_skip::{BufferLengths, RowInstanceRanges, fill_frame_incremental};
+use dirty_skip::{BufferLengths, fill_frame_incremental};
 use emit::{draw_prompt_markers, draw_url_hover_underline, emit_cursor_for_frame};
 use emit_cell::EmitCtx;
-use resolve::resolve_cursor;
+use resolve::{CellColorContext, resolve_cursor};
 
 pub use shaped_frame::ShapedFrame;
 #[cfg(test)]
 pub(crate) use unshaped::{prepare_frame, prepare_frame_into};
-
-/// Content-aware fingerprint of every frame-level input that affects per-cell
-/// instance emission. SSOT for the incremental dispatch decision — one hash +
-/// one comparison + one tail write replace the prior parallel sync points.
-///
-/// Hashed inputs:
-/// - viewport (`width`, `height`) — full viewport-pixel dimensions.
-/// - full [`CellMetrics`] (`width`, `height`, `baseline`, `underline_offset`,
-///   `stroke_size`, `strikeout_offset`) — every metric affects cell or
-///   decoration emission. Hashing only the first 3 would silently replay
-///   stale decoration geometry on font/scale changes.
-/// - content grid dimensions (`content_cols`, `content_rows`).
-/// - origin (x, y) — saved-tier rows carry pixel positions baked at emit time.
-/// - per-cell alpha multipliers (`text_blink_opacity`, `palette.opacity`,
-///   `fg_dim`) — baked into per-cell instances.
-/// - `subpixel_positioning` — flips between subpixel/glyphs writers.
-/// - `search_fingerprint()` — already content-aware via
-///   [`crate::gpu::frame_input::FrameSearch::damage_fingerprint`].
-///
-/// NOT hashed (handled by per-row dirty tracking in `build_dirty_set` /
-/// `WindowRenderer::has_row_state_change`):
-/// - selection snapshot, cursor row, hovered cell.
-///
-/// `f32` fields are hashed via `.to_bits()` (bitwise-exact, not epsilon-
-/// tolerant). Tiny float deltas now force full rebuild instead of stale
-/// replay; the effect is extra rebuilds, not stale reuse.
-pub(super) fn compute_dispatch_fingerprint(input: &FrameInput, origin: (f32, f32)) -> u64 {
-    let mut hasher = DefaultHasher::new();
-
-    // Geometry — affects every cell's pixel position.
-    input.viewport.width.hash(&mut hasher);
-    input.viewport.height.hash(&mut hasher);
-
-    // ALL 6 CellMetrics fields — underline/stroke/strikeout offsets affect
-    // decoration emission and must invalidate on font/scale change.
-    input.cell_size.width.to_bits().hash(&mut hasher);
-    input.cell_size.height.to_bits().hash(&mut hasher);
-    input.cell_size.baseline.to_bits().hash(&mut hasher);
-    input.cell_size.underline_offset.to_bits().hash(&mut hasher);
-    input.cell_size.stroke_size.to_bits().hash(&mut hasher);
-    input.cell_size.strikeout_offset.to_bits().hash(&mut hasher);
-
-    input.content_cols.hash(&mut hasher);
-    input.content_rows.hash(&mut hasher);
-    origin.0.to_bits().hash(&mut hasher);
-    origin.1.to_bits().hash(&mut hasher);
-
-    // Per-cell alpha multipliers — baked into per-cell instances at emit time.
-    input.text_blink_opacity.to_bits().hash(&mut hasher);
-    input.palette.opacity.to_bits().hash(&mut hasher);
-    input.fg_dim.to_bits().hash(&mut hasher);
-
-    // Atlas routing — flips between subpixel/glyphs writers in emit.rs.
-    u8::from(input.subpixel_positioning).hash(&mut hasher);
-
-    // INVARIANT: hash the Option, not the unwrapped tuple — the discriminant
-    // distinguishes None from Some(all-zeros).
-    input.search_fingerprint().hash(&mut hasher);
-
-    hasher.finish()
-}
 
 /// Resolve the cursor row-state SSOT for the cursor-only fast-path predicate
 /// AND the per-frame `prev_resolved_cursor` snapshot.
@@ -257,13 +196,9 @@ pub fn prepare_frame_shaped_into(
     origin: (f32, f32),
     cursor_opacity: f32,
 ) {
-    // INVARIANT: save_terminal_tier MUST run before the dispatch decision —
-    // without this pre-publish, saved_tier never populates and the
-    // incremental path is unreachable. Subsequent calls move the previous
-    // frame's terminal-tier into saved_tier for can_incremental.
+    // INVARIANT: save_terminal_tier MUST run first — without it the incremental
+    // path is unreachable and saved_tier never populates.
     out.save_terminal_tier();
-    // INVARIANT: save_terminal_tier leaves the live terminal-tier writers
-    // empty so the dispatch branches below populate from a clean baseline.
     debug_assert!(
         out.backgrounds.is_empty()
             && out.glyphs.is_empty()
@@ -272,19 +207,14 @@ pub fn prepare_frame_shaped_into(
         "save_terminal_tier must leave live terminal-tier writers empty"
     );
 
-    // INVARIANT: row-state fields (selection, cursor, hovered_cell) are
-    // intentionally excluded from the fingerprint — they're handled per-row
-    // by build_dirty_set inside this incremental pass. Full rationale and
-    // hashed-input list live on `compute_dispatch_fingerprint`.
+    // INVARIANT: row-state fields excluded from fingerprint — handled per-row
+    // by build_dirty_set. Full hashed-input list on `compute_dispatch_fingerprint`.
     let fingerprint = compute_dispatch_fingerprint(input, origin);
-    let can_incremental = !input.content.all_dirty
-        && out.saved_tier.has_cached_rows()
-        && out.prev_dispatch_fingerprint == Some(fingerprint);
+    let can_incremental = out.can_incremental(input.content.all_dirty, fingerprint);
 
     if can_incremental {
-        // INVARIANT: clear_ephemeral_tiers must run on the incremental path —
-        // without it, cursor/chrome/overlay tiers accumulate across frames
-        // and leave stale glyphs when chrome/overlay content shrinks.
+        // clear_ephemeral_tiers MUST run on incremental path — otherwise
+        // chrome/overlay tiers accumulate and leave stale glyphs.
         out.clear_ephemeral_tiers();
         out.image_quads_below.clear();
         out.image_quads_above.clear();
@@ -293,9 +223,9 @@ pub fn prepare_frame_shaped_into(
         out.was_incremental = true;
         fill_frame_incremental(input, atlas, shaped, out, origin, cursor_opacity);
     } else {
-        // INVARIANT: terminal-tier double-clear (after save_terminal_tier)
-        // is accepted. A clear_non_terminal() helper would create a
-        // second sync point that drifts as new fields land on PreparedFrame.
+        // Terminal-tier double-clear (save_terminal_tier + clear()) is
+        // intentional — a clear_non_terminal() helper would create a second
+        // sync point that drifts as PreparedFrame fields land.
         out.was_incremental = false;
         out.clear();
         out.viewport = input.viewport;
@@ -303,21 +233,32 @@ pub fn prepare_frame_shaped_into(
         fill_frame_shaped(input, atlas, shaped, out, origin, cursor_opacity);
     }
 
-    // Post-prepare snapshots for the next frame's dispatch + row-state gates.
-    out.prev_dispatch_fingerprint = Some(fingerprint);
+    finalize_frame_prepare(out, input, fingerprint, cursor_opacity);
+}
 
-    let num_rows = input.rows();
-    out.prev_selection_snapshot = input
-        .selection
-        .as_ref()
-        .and_then(|s| s.damage_snapshot(num_rows));
-    // INVARIANT: `prev_resolved_cursor` is the SSOT for "previous rendered
-    // frame's resolved cursor state". Visibility-canonicalized: invisible
-    // cursors store as None so hidden-to-hidden position changes are a no-op
-    // for the fast-path predicate (None == None). build_dirty_set derives the
-    // line component from `Some(c).map(|c| c.line)`.
-    out.prev_resolved_cursor = resolve_cursor_state(input).into_visible();
-    out.prev_hovered_cell = input.hovered_cell;
+/// SSOT for snapshotting "most recent rendered frame's cursor state" onto
+/// `PreparedFrame`. Called from BOTH `prepare_frame_shaped_into` (full prepare)
+/// AND `update_cursor_only` (cursor-blink fast path) — without this canonical
+/// home, the resolve-and-write skeleton would duplicate at the two sites and
+/// drift silently when a future `prev_*` cursor field lands.
+///
+/// Writes:
+/// - `prev_resolved_cursor` — visibility-canonicalized resolved cursor;
+///   invisible cursors store as `None` so hidden-to-hidden position changes
+///   are a no-op for the fast-path predicate (None == None).
+/// - `prev_block_cursor_color_exclusion_active` — opacity-threshold predicate
+///   value for the cursor-only fast-path gate (`evaluate_row_state_change`
+///   in `gates.rs`).
+///
+/// Both writes share the same `cur_resolved` value so they can never observe
+/// different cursor states. `build_dirty_set` derives the line component from
+/// `Some(c).map(|c| c.line)`.
+fn write_cursor_state_snapshots(out: &mut PreparedFrame, input: &FrameInput, cursor_opacity: f32) {
+    let cur_resolved = resolve_cursor_state(input);
+    out.prev_resolved_cursor = cur_resolved.into_visible();
+    out.prev_block_cursor_color_exclusion_active = Some(
+        resolve::block_cursor_color_exclusion_active(&cur_resolved, cursor_opacity),
+    );
 }
 
 /// Cursor-blink-only fast path: rebuild only cursor instances.
@@ -344,12 +285,28 @@ pub fn update_cursor_only(
     draw_url_hover_underline(input, out, ox, oy);
     draw_prompt_markers(input, out, ox, oy);
 
-    // SSOT semantics: prev_resolved_cursor MUST reflect the most recent
-    // rendered frame, regardless of which prepare path produced it. Without
-    // this write, the field semantics drift to "last full-prepare frame" — a
-    // foot-gun for any future predicate consumer. Visibility-canonicalized
-    // via RenderableCursor::into_visible (invisible → None).
-    out.prev_resolved_cursor = resolve_cursor_state(input).into_visible();
+    write_cursor_state_snapshots(out, input, cursor_opacity);
+}
+
+/// Write post-prepare snapshots for the next frame's dispatch + row-state gates.
+///
+/// Extracted from [`prepare_frame_shaped_into`] to keep that function under the
+/// 50-line cap. Writes `prev_dispatch_fingerprint`, `prev_selection_snapshot`,
+/// cursor state snapshots, and `prev_hovered_cell`.
+fn finalize_frame_prepare(
+    out: &mut PreparedFrame,
+    input: &FrameInput,
+    fingerprint: u64,
+    cursor_opacity: f32,
+) {
+    out.prev_dispatch_fingerprint = Some(fingerprint);
+    let num_rows = input.rows();
+    out.prev_selection_snapshot = input
+        .selection
+        .as_ref()
+        .and_then(|s| s.damage_snapshot(num_rows));
+    write_cursor_state_snapshots(out, input, cursor_opacity);
+    out.prev_hovered_cell = input.hovered_cell;
 }
 
 /// Iterate cells with row-transition tracking, off-screen culling, and
@@ -357,22 +314,20 @@ pub fn update_cursor_only(
 /// (in spirit) the incremental path's `process_incremental_cells` —
 /// extracted from `fill_frame_shaped` to keep that function under the
 /// 50-line size cap.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "row-transition state machine exposes all needed pixel geometry + accumulators"
-)]
 fn emit_row_tracked_cells(
     ctx: &mut EmitCtx<'_>,
     cells: &[oriterm_core::RenderableCell],
-    cw: f32,
-    ch: f32,
-    ox: f32,
-    oy: f32,
-    viewport_h: f32,
-    current_row: &mut usize,
-    row_start: &mut BufferLengths,
-    row_off_screen: &mut bool,
+    origin: (f32, f32),
 ) {
+    let cw = ctx.cell_size.width;
+    let ch = ctx.cell_size.height;
+    let viewport_h = ctx.frame.viewport.height as f32;
+    let (ox, oy) = origin;
+
+    let mut current_row = usize::MAX;
+    let mut row_start = BufferLengths::capture(ctx.frame);
+    let mut row_off_screen = false;
+
     for cell in cells {
         if cell
             .flags
@@ -385,27 +340,21 @@ fn emit_row_tracked_cells(
         let row = cell.line;
 
         // Record row range on row transition.
-        if row != *current_row {
-            if *current_row == usize::MAX {
-                *row_start = BufferLengths::capture(ctx.frame);
+        if row != current_row {
+            if current_row == usize::MAX {
+                // First row: just initialize row_start, no range to record yet.
             } else {
-                let now = BufferLengths::capture(ctx.frame);
-                let ranges = now.range_since(row_start);
-                // Fill gaps if rows were skipped (shouldn't happen but defensive).
-                while ctx.frame.row_ranges.len() < *current_row {
-                    ctx.frame.row_ranges.push(RowInstanceRanges::default());
-                }
-                ctx.frame.row_ranges.push(ranges);
-                *row_start = now;
+                dirty_skip::push_row_range(ctx.frame, current_row, &row_start);
             }
-            *current_row = row;
+            row_start = BufferLengths::capture(ctx.frame);
+            current_row = row;
 
             // Skip rows entirely outside the render target.
             let row_y = snapped_row_y(oy, row, ch);
-            *row_off_screen = row_y + ch < 0.0 || row_y > viewport_h;
+            row_off_screen = row_y + ch < 0.0 || row_y > viewport_h;
         }
 
-        if *row_off_screen {
+        if row_off_screen {
             continue;
         }
 
@@ -415,13 +364,8 @@ fn emit_row_tracked_cells(
     }
 
     // Record the final row's range.
-    if *current_row != usize::MAX {
-        let now = BufferLengths::capture(ctx.frame);
-        let ranges = now.range_since(row_start);
-        while ctx.frame.row_ranges.len() < *current_row {
-            ctx.frame.row_ranges.push(RowInstanceRanges::default());
-        }
-        ctx.frame.row_ranges.push(ranges);
+    if current_row != usize::MAX {
+        dirty_skip::push_row_range(ctx.frame, current_row, &row_start);
     }
 }
 
@@ -442,25 +386,19 @@ pub(crate) fn fill_frame_shaped(
     origin: (f32, f32),
     cursor_opacity: f32,
 ) {
-    let cw = input.cell_size.width;
-    let ch = input.cell_size.height;
     let (ox, oy) = origin;
-
-    // Row-range tracking: snapshot buffer lengths before frame is moved into ctx.
-    let viewport_h = frame.viewport.height as f32;
-    let mut current_row = usize::MAX;
-    let mut row_start = BufferLengths::capture(frame);
-    let mut row_off_screen = false;
 
     let mut ctx = EmitCtx {
         fg_dim: input.fg_dim,
         text_blink_opacity: input.text_blink_opacity,
         subpixel_positioning: input.subpixel_positioning,
-        palette: &input.palette,
-        sel: input.selection.as_ref(),
-        search: input.search.as_ref(),
-        cursor: resolve_cursor_state(input),
-        cursor_opacity,
+        color_ctx: CellColorContext {
+            palette: &input.palette,
+            sel: input.selection.as_ref(),
+            search: input.search.as_ref(),
+            cursor: resolve_cursor_state(input),
+            cursor_opacity,
+        },
         hovered_cell: input.hovered_cell,
         cell_size: &input.cell_size,
         atlas,
@@ -469,18 +407,7 @@ pub(crate) fn fill_frame_shaped(
         shaped: Some((shaped, shaped.hinted())),
     };
 
-    emit_row_tracked_cells(
-        &mut ctx,
-        &input.content.cells,
-        cw,
-        ch,
-        ox,
-        oy,
-        viewport_h,
-        &mut current_row,
-        &mut row_start,
-        &mut row_off_screen,
-    );
+    emit_row_tracked_cells(&mut ctx, &input.content.cells, (ox, oy));
 
     draw_url_hover_underline(input, ctx.frame, ox, oy);
     draw_prompt_markers(input, ctx.frame, ox, oy);

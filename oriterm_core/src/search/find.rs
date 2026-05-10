@@ -56,6 +56,20 @@ pub fn find_matches(
         }
     }
 
+    // Invariant relied upon by `FrameSearch::cell_match_type` (oriterm crate):
+    // matches are sorted by `(start_row, start_col)` and have unique starts,
+    // so a binary-search window of 2 (idx-1, idx, idx+1) is sufficient to
+    // classify any visible cell. Row-major iteration above + per-match
+    // advancement in `find_plain_matches`/`find_regex_matches` (≥1 char step)
+    // produces this shape; assert it explicitly so future refactors that
+    // emit duplicates or out-of-order matches break loudly under debug.
+    debug_assert!(
+        matches
+            .windows(2)
+            .all(|w| (w[0].start_row, w[0].start_col) < (w[1].start_row, w[1].start_col)),
+        "find_matches must produce strictly-increasing (start_row, start_col) keys"
+    );
+
     matches
 }
 

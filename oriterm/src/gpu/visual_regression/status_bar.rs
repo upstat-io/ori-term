@@ -14,72 +14,40 @@ use oriterm_ui::widgets::Widget;
 use oriterm_ui::widgets::status_bar::{STATUS_BAR_HEIGHT, StatusBarData, StatusBarWidget};
 
 use crate::font::shaper::CachedTextMeasurer;
-use crate::font::ui_font_sizes::{PRELOAD_SIZES, UiFontSizes};
-use crate::font::{FontCollection, FontSet, GlyphFormat, HintingMode, TextShapeCache};
+use crate::font::{FontSet, HintingMode, TextShapeCache};
 use crate::gpu::pipelines::GpuPipelines;
 use crate::gpu::state::GpuState;
 use crate::gpu::window_renderer::WindowRenderer;
 
-use super::compare_with_reference;
+use super::{HeadlessEnvConfig, UiFontConfig, compare_with_reference, headless_env_with};
 
 const WIDTH: u32 = 800;
 
 /// Headless environment with UI font for status bar rendering.
 fn headless_status_bar_env() -> Option<(GpuState, GpuPipelines, WindowRenderer)> {
-    let gpu = GpuState::new_headless().ok()?;
-    let pipelines = GpuPipelines::new(&gpu);
-    let font_collection = FontCollection::new(
-        FontSet::embedded(),
-        14.0,
-        96.0,
-        GlyphFormat::Alpha,
-        400,
-        550,
-        HintingMode::Full,
-    )
-    .ok()?;
-    let ui_font_sizes = UiFontSizes::new(
-        FontSet::ui_embedded(),
-        96.0,
-        GlyphFormat::Alpha,
-        HintingMode::Full,
-        400,
-        550,
-        &PRELOAD_SIZES,
-    )
-    .ok()?;
-    let mut renderer = WindowRenderer::new(&gpu, &pipelines, font_collection, Some(ui_font_sizes));
-    renderer.resolve_icons(&gpu, 1.0);
-    Some((gpu, pipelines, renderer))
+    headless_env_with(&HeadlessEnvConfig {
+        size_pt: 14.0,
+        ui: Some(UiFontConfig {
+            font_set: FontSet::ui_embedded(),
+            hinting: HintingMode::Full,
+        }),
+        resolve_icons_scale: Some(1.0),
+        ..Default::default()
+    })
 }
 
 /// Headless environment with UI font at 192 DPI.
 fn headless_status_bar_env_192dpi() -> Option<(GpuState, GpuPipelines, WindowRenderer)> {
-    let gpu = GpuState::new_headless().ok()?;
-    let pipelines = GpuPipelines::new(&gpu);
-    let font_collection = FontCollection::new(
-        FontSet::embedded(),
-        14.0,
-        192.0,
-        GlyphFormat::Alpha,
-        400,
-        550,
-        HintingMode::Full,
-    )
-    .ok()?;
-    let ui_font_sizes = UiFontSizes::new(
-        FontSet::ui_embedded(),
-        192.0,
-        GlyphFormat::Alpha,
-        HintingMode::Full,
-        400,
-        550,
-        &PRELOAD_SIZES,
-    )
-    .ok()?;
-    let mut renderer = WindowRenderer::new(&gpu, &pipelines, font_collection, Some(ui_font_sizes));
-    renderer.resolve_icons(&gpu, 2.0);
-    Some((gpu, pipelines, renderer))
+    headless_env_with(&HeadlessEnvConfig {
+        size_pt: 14.0,
+        dpi: 192.0,
+        ui: Some(UiFontConfig {
+            font_set: FontSet::ui_embedded(),
+            hinting: HintingMode::Full,
+        }),
+        resolve_icons_scale: Some(2.0),
+        ..Default::default()
+    })
 }
 
 /// Paint a status bar with given data at a specific scale, render to pixels.

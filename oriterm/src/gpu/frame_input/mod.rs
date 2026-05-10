@@ -8,7 +8,7 @@
 mod search;
 mod search_match;
 
-pub use search::FrameSearch;
+pub use search::{FrameSearch, SearchDamageKey};
 
 use oriterm_core::grid::StableRowIndex;
 use oriterm_core::index::Side;
@@ -162,9 +162,12 @@ impl ViewportSize {
 /// Semantic colors needed beyond per-cell resolved colors.
 ///
 /// Per-cell fg/bg are already resolved in `RenderableCell`. This captures
-/// only the three global colors the renderer needs: clear color, cursor
-/// fill, and text-under-cursor inversion color — plus the window opacity
-/// for transparent rendering and optional selection color overrides.
+/// the five semantic colors the renderer needs — clear color
+/// (`background`), default foreground (cursor text inversion),
+/// cursor fill (`cursor_color`), and optional selection
+/// foreground/background overrides — plus the window opacity for
+/// transparent rendering. See [`PaletteDamageKey`] for the
+/// frame-to-frame damage projection used by the dispatch fingerprint.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct FramePalette {
     /// Window clear color (terminal background).
@@ -179,6 +182,51 @@ pub struct FramePalette {
     pub selection_fg: Option<Rgb>,
     /// Explicit selection background (from scheme or config override).
     pub selection_bg: Option<Rgb>,
+}
+
+/// Frame-to-frame damage fingerprint for [`FramePalette`] overlay state.
+///
+/// Used by the prepare phase's incremental dispatch
+/// ([`crate::gpu::prepare::compute_dispatch_fingerprint`]) to detect when
+/// overlay colors have changed between frames; per-cell colors bake the
+/// resolved palette at emit time (`gpu::prepare::resolve_cell_colors`), so
+/// any field change MUST invalidate clean-row replay from `saved_tier`.
+/// `cursor_color` feeds the ephemeral cursor tier
+/// (`gpu::prepare::emit::emit_cursor_for_frame`); included for
+/// defense-in-depth + future-proofing.
+///
+/// `Option<u32>` for `selection_fg` / `selection_bg` uses Rust's native
+/// Option Hash discriminant — matches the established idiom for
+/// `search_fingerprint` (gpu/prepare/mod.rs INVARIANT).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct PaletteDamageKey {
+    /// Window clear color packed `(r<<16)|(g<<8)|b`.
+    pub background: u32,
+    /// Default foreground packed.
+    pub foreground: u32,
+    /// Cursor rectangle fill packed.
+    pub cursor_color: u32,
+    /// Explicit selection foreground override (None when not set).
+    pub selection_fg: Option<u32>,
+    /// Explicit selection background override.
+    pub selection_bg: Option<u32>,
+    /// Window opacity bits — bitwise-exact via `f32::to_bits()`.
+    pub opacity_bits: u32,
+}
+
+impl FramePalette {
+    /// Damage fingerprint for incremental dispatch. See [`PaletteDamageKey`].
+    pub fn damage_fingerprint(&self) -> PaletteDamageKey {
+        let pack = |c: Rgb| (u32::from(c.r) << 16) | (u32::from(c.g) << 8) | u32::from(c.b);
+        PaletteDamageKey {
+            background: pack(self.background),
+            foreground: pack(self.foreground),
+            cursor_color: pack(self.cursor_color),
+            selection_fg: self.selection_fg.map(pack),
+            selection_bg: self.selection_bg.map(pack),
+            opacity_bits: self.opacity.to_bits(),
+        }
+    }
 }
 
 /// Complete input for one render frame.
@@ -299,7 +347,7 @@ impl FrameInput {
     /// and the renderer's cursor-blink-only fast-path gate
     /// (`has_dispatch_change`); collapsing the duplicated `as_ref().map(...)`
     /// chain into one helper closes the per-call-site DRIFT risk.
-    pub fn search_fingerprint(&self) -> Option<(usize, usize, u64, u64)> {
+    pub fn search_fingerprint(&self) -> Option<SearchDamageKey> {
         self.search.as_ref().map(FrameSearch::damage_fingerprint)
     }
 

@@ -64,7 +64,6 @@ use crate::gpu::ViewportSize;
 use crate::gpu::pipelines::GpuPipelines;
 #[cfg(feature = "gpu-tests")]
 use crate::gpu::state::GpuState;
-#[cfg(feature = "gpu-tests")]
 use oriterm_core::Rgb;
 
 #[cfg(feature = "gpu-tests")]
@@ -873,6 +872,41 @@ fn cell_colors_correct_after_cursor_moves_within_search_match() {
 // (at `frame_prep.rs:104-108`). Future field additions to either site that lack a
 // matching test will leave a coverage hole this matrix is designed to catch.
 
+/// Helper with optional baseline-setup closure: runs `setup` against the
+/// `FrameInput` BEFORE Frame 1 baseline, then drives the baseline +
+/// steady-state + mutation sequence. Used by selection-color tests that
+/// need both `selection_fg` and `selection_bg` `Some` before the
+/// steady-state frame to exercise `resolve_cell_colors`'s explicit-
+/// override path.
+#[cfg(feature = "gpu-tests")]
+fn assert_dispatch_field_change_invalidates_with_setup<S, F>(label: &str, setup: S, mutate: F)
+where
+    S: FnOnce(&mut crate::gpu::frame_input::FrameInput),
+    F: FnOnce(&mut crate::gpu::frame_input::FrameInput, &mut (f32, f32)),
+{
+    let Some((gpu, pipelines, mut renderer)) = headless_env() else {
+        eprintln!("SKIP: GPU adapter unavailable");
+        return;
+    };
+    let mut input = crate::gpu::frame_input::FrameInput::test_grid(10, 10, "");
+    setup(&mut input);
+    let mut origin = (0.0_f32, 0.0_f32);
+
+    renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, true);
+    renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, false);
+    assert!(
+        !renderer.cache_invalidated_this_frame(),
+        "{label}: identical baseline (with setup) must NOT invalidate cache"
+    );
+
+    mutate(&mut input, &mut origin);
+    renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, false);
+    assert!(
+        renderer.cache_invalidated_this_frame(),
+        "{label}: mutation must invalidate cache via cache_invalidated_this_frame() SSOT"
+    );
+}
+
 /// Helper: drive a baseline + steady-state + mutation sequence through the
 /// integrated `prepare()` path and assert the SSOT predicate
 /// `WindowRenderer::cache_invalidated_this_frame()` fires when the mutation
@@ -883,29 +917,26 @@ fn assert_dispatch_field_change_invalidates<F>(label: &str, mutate: F)
 where
     F: FnOnce(&mut crate::gpu::frame_input::FrameInput, &mut (f32, f32)),
 {
-    let Some((gpu, pipelines, mut renderer)) = headless_env() else {
-        eprintln!("SKIP: GPU adapter unavailable");
-        return;
-    };
-    let mut input = crate::gpu::frame_input::FrameInput::test_grid(10, 10, "");
-    let mut origin = (0.0_f32, 0.0_f32);
+    assert_dispatch_field_change_invalidates_with_setup(label, |_| {}, mutate);
+}
 
-    // Frame 1: full prepare populates shaping cache, prev_dispatch_fingerprint, prev row state, terminal data.
-    renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, true);
-    // Frame 2: identical input + content_changed=false → steady state, cache reusable.
-    renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, false);
-    assert!(
-        !renderer.cache_invalidated_this_frame(),
-        "{label}: identical baseline must NOT invalidate cache (sanity check)"
-    );
-
-    // Mutate one field, prepare with content_changed=false → SSOT predicate must fire
-    // via the production path (dispatch_changed → !can_reuse_content_cache).
-    mutate(&mut input, &mut origin);
-    renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, false);
-    assert!(
-        renderer.cache_invalidated_this_frame(),
-        "{label}: mutation must invalidate cache via cache_invalidated_this_frame() SSOT"
+/// Helper for direct-fingerprint pins. Calls
+/// `compute_dispatch_fingerprint` directly with two `FrameInput`s; the
+/// `mutate` closure modifies one. Runs without the gpu-tests feature so
+/// the contract is pinned even on GPU-less runs.
+fn assert_palette_field_alters_dispatch_fingerprint<F>(label: &str, mutate: F)
+where
+    F: FnOnce(&mut crate::gpu::frame_input::FrameInput),
+{
+    let input1 = crate::gpu::frame_input::FrameInput::test_grid(10, 10, "");
+    let mut input2 = crate::gpu::frame_input::FrameInput::test_grid(10, 10, "");
+    mutate(&mut input2);
+    let origin = (0.0_f32, 0.0_f32);
+    let fp1 = crate::gpu::prepare::compute_dispatch_fingerprint(&input1, origin);
+    let fp2 = crate::gpu::prepare::compute_dispatch_fingerprint(&input2, origin);
+    assert_ne!(
+        fp1, fp2,
+        "{label}: palette field change MUST contribute to compute_dispatch_fingerprint"
     );
 }
 
@@ -983,6 +1014,31 @@ fn content_cols_change_invalidates_cache() {
     });
 }
 
+/// Regression: BUG-06-037 — `content_cols` is masked in the integrated helper
+/// because `cached_valid` (frame_prep.rs:97) ALSO flips false when `cols`
+/// changes (`shaping.frame.cols() == cols`). The integrated helper above
+/// therefore cannot distinguish whether the cache invalidated via the
+/// `dispatch_changed` clause or the `cached_valid` clause; if `content_cols`
+/// were silently dropped from `compute_dispatch_fingerprint`, the integrated
+/// pin would still pass via the `cached_valid` path.
+///
+/// This direct-fingerprint pin closes the gap: it asserts that `content_cols`
+/// alone produces a different `compute_dispatch_fingerprint` value, isolating
+/// the `dispatch_changed` contribution from the `cached_valid` masking.
+#[test]
+fn content_cols_alters_dispatch_fingerprint_directly() {
+    let input1 = crate::gpu::frame_input::FrameInput::test_grid(10, 10, "");
+    let mut input2 = crate::gpu::frame_input::FrameInput::test_grid(10, 10, "");
+    input2.content_cols += 1;
+    let origin = (0.0_f32, 0.0_f32);
+    let fp1 = crate::gpu::prepare::compute_dispatch_fingerprint(&input1, origin);
+    let fp2 = crate::gpu::prepare::compute_dispatch_fingerprint(&input2, origin);
+    assert_ne!(
+        fp1, fp2,
+        "content_cols MUST contribute to compute_dispatch_fingerprint independently of cached_valid masking"
+    );
+}
+
 #[cfg(feature = "gpu-tests")]
 #[test]
 fn content_rows_change_invalidates_cache() {
@@ -1009,8 +1065,10 @@ fn origin_y_change_invalidates_cache() {
     });
 }
 
-// --- Per-cell alpha multipliers (3) ---
+// --- Per-cell alpha multipliers (4) ---
 
+/// Regression: BUG-06-037 — `palette.opacity` is in the dispatch fingerprint;
+/// mutation MUST invalidate the cache via the SSOT predicate.
 #[cfg(feature = "gpu-tests")]
 #[test]
 fn palette_opacity_change_invalidates_cache() {
@@ -1019,13 +1077,16 @@ fn palette_opacity_change_invalidates_cache() {
     });
 }
 
-/// Sub-EPSILON delta still invalidates: compute_dispatch_fingerprint hashes
-/// f32 via to_bits(), so any non-zero delta produces a fingerprint difference.
+/// Regression: BUG-06-037 — one-ULP delta still invalidates.
+/// `compute_dispatch_fingerprint` hashes `f32` via `to_bits()`, so even the
+/// smallest representable change (one bit in the mantissa) produces a
+/// fingerprint difference. `f32::from_bits` adjusts the underlying bits by
+/// 1, producing a value mathematically below `f32::EPSILON` away from 1.0.
 #[cfg(feature = "gpu-tests")]
 #[test]
-fn palette_opacity_sub_epsilon_change_invalidates_cache() {
-    assert_dispatch_field_change_invalidates("palette.opacity sub-epsilon", |input, _| {
-        input.palette.opacity = 0.9995;
+fn palette_opacity_one_ulp_change_invalidates_cache() {
+    assert_dispatch_field_change_invalidates("palette.opacity 1-ulp", |input, _| {
+        input.palette.opacity = f32::from_bits(1.0_f32.to_bits() - 1);
     });
 }
 
@@ -1045,6 +1106,282 @@ fn fg_dim_change_invalidates_cache() {
     });
 }
 
+// --- Palette overlay colors (3) ---
+
+/// Regression: BUG-06-038 — palette.background MUST invalidate (selection-INVERSE
+/// fallback at resolve.rs:98 + emit_cell_bg skip at emit_cell/mod.rs:91).
+#[cfg(feature = "gpu-tests")]
+#[test]
+fn palette_background_change_invalidates_cache() {
+    assert_dispatch_field_change_invalidates("palette.background", |input, _| {
+        input.palette.background.r = input.palette.background.r.wrapping_add(1);
+    });
+}
+
+/// Regression: BUG-06-038 — palette.foreground MUST invalidate (selection-INVERSE
+/// fallback at resolve.rs:98 + selection fg=bg fallback at resolve.rs:102 +
+/// draw_url_hover_underline ephemeral consumer at emit.rs:300).
+#[cfg(feature = "gpu-tests")]
+#[test]
+fn palette_foreground_change_invalidates_cache() {
+    assert_dispatch_field_change_invalidates("palette.foreground", |input, _| {
+        input.palette.foreground.r = input.palette.foreground.r.wrapping_add(1);
+    });
+}
+
+/// Regression: BUG-06-038 — palette.cursor_color MUST invalidate. Cursor
+/// rect feeds the ephemeral cursor tier today (clear_ephemeral_tiers @
+/// prepare/mod.rs:288); inclusion is defense-in-depth + future-proofing.
+#[cfg(feature = "gpu-tests")]
+#[test]
+fn palette_cursor_color_change_invalidates_cache() {
+    assert_dispatch_field_change_invalidates("palette.cursor_color", |input, _| {
+        input.palette.cursor_color.r = input.palette.cursor_color.r.wrapping_add(1);
+    });
+}
+
+// --- Palette selection-color overrides (6) ---
+
+/// Regression: BUG-06-038 — selection_fg None → Some MUST invalidate.
+#[cfg(feature = "gpu-tests")]
+#[test]
+fn palette_selection_fg_none_to_some_invalidates_cache() {
+    assert_dispatch_field_change_invalidates("palette.selection_fg none→some", |input, _| {
+        input.palette.selection_fg = Some(Rgb {
+            r: 100,
+            g: 100,
+            b: 100,
+        });
+    });
+}
+
+/// Regression: BUG-06-038 — selection_fg Some → None MUST invalidate.
+#[cfg(feature = "gpu-tests")]
+#[test]
+fn palette_selection_fg_some_to_none_invalidates_cache() {
+    assert_dispatch_field_change_invalidates_with_setup(
+        "palette.selection_fg some→none",
+        |input| {
+            input.palette.selection_fg = Some(Rgb {
+                r: 100,
+                g: 100,
+                b: 100,
+            });
+            input.palette.selection_bg = Some(Rgb {
+                r: 50,
+                g: 50,
+                b: 50,
+            });
+        },
+        |input, _| {
+            input.palette.selection_fg = None;
+        },
+    );
+}
+
+/// Regression: BUG-06-038 — selection_fg Some(A) → Some(B) MUST invalidate.
+#[cfg(feature = "gpu-tests")]
+#[test]
+fn palette_selection_fg_some_value_change_invalidates_cache() {
+    assert_dispatch_field_change_invalidates_with_setup(
+        "palette.selection_fg some-value-change",
+        |input| {
+            input.palette.selection_fg = Some(Rgb {
+                r: 100,
+                g: 100,
+                b: 100,
+            });
+            input.palette.selection_bg = Some(Rgb {
+                r: 50,
+                g: 50,
+                b: 50,
+            });
+        },
+        |input, _| {
+            input.palette.selection_fg = Some(Rgb {
+                r: 200,
+                g: 100,
+                b: 100,
+            });
+        },
+    );
+}
+
+/// Regression: BUG-06-038 — selection_bg None → Some MUST invalidate.
+#[cfg(feature = "gpu-tests")]
+#[test]
+fn palette_selection_bg_none_to_some_invalidates_cache() {
+    assert_dispatch_field_change_invalidates("palette.selection_bg none→some", |input, _| {
+        input.palette.selection_bg = Some(Rgb {
+            r: 50,
+            g: 50,
+            b: 50,
+        });
+    });
+}
+
+/// Regression: BUG-06-038 — selection_bg Some → None MUST invalidate.
+#[cfg(feature = "gpu-tests")]
+#[test]
+fn palette_selection_bg_some_to_none_invalidates_cache() {
+    assert_dispatch_field_change_invalidates_with_setup(
+        "palette.selection_bg some→none",
+        |input| {
+            input.palette.selection_fg = Some(Rgb {
+                r: 100,
+                g: 100,
+                b: 100,
+            });
+            input.palette.selection_bg = Some(Rgb {
+                r: 50,
+                g: 50,
+                b: 50,
+            });
+        },
+        |input, _| {
+            input.palette.selection_bg = None;
+        },
+    );
+}
+
+/// Regression: BUG-06-038 — selection_bg Some(A) → Some(B) MUST invalidate.
+#[cfg(feature = "gpu-tests")]
+#[test]
+fn palette_selection_bg_some_value_change_invalidates_cache() {
+    assert_dispatch_field_change_invalidates_with_setup(
+        "palette.selection_bg some-value-change",
+        |input| {
+            input.palette.selection_fg = Some(Rgb {
+                r: 100,
+                g: 100,
+                b: 100,
+            });
+            input.palette.selection_bg = Some(Rgb {
+                r: 50,
+                g: 50,
+                b: 50,
+            });
+        },
+        |input, _| {
+            input.palette.selection_bg = Some(Rgb {
+                r: 50,
+                g: 200,
+                b: 50,
+            });
+        },
+    );
+}
+
+// --- Palette direct-fingerprint pins (8) ---
+
+/// Regression: BUG-06-038 — direct-fingerprint pin for palette.background.
+#[test]
+fn palette_background_alters_dispatch_fingerprint_directly() {
+    assert_palette_field_alters_dispatch_fingerprint("palette.background", |input| {
+        input.palette.background.r = input.palette.background.r.wrapping_add(1);
+    });
+}
+
+/// Regression: BUG-06-038 — direct-fingerprint pin for palette.foreground (.g channel).
+#[test]
+fn palette_foreground_alters_dispatch_fingerprint_directly() {
+    assert_palette_field_alters_dispatch_fingerprint("palette.foreground", |input| {
+        input.palette.foreground.g = input.palette.foreground.g.wrapping_add(1);
+    });
+}
+
+/// Regression: BUG-06-038 — direct-fingerprint pin for palette.cursor_color (.b channel).
+#[test]
+fn palette_cursor_color_alters_dispatch_fingerprint_directly() {
+    assert_palette_field_alters_dispatch_fingerprint("palette.cursor_color", |input| {
+        input.palette.cursor_color.b = input.palette.cursor_color.b.wrapping_add(1);
+    });
+}
+
+/// Regression: BUG-06-038 — direct-fingerprint pin for palette.opacity. Already
+/// passes pre-fix; verifies the migration to damage_fingerprint().hash() preserves
+/// opacity contribution.
+#[test]
+fn palette_opacity_alters_dispatch_fingerprint_directly() {
+    assert_palette_field_alters_dispatch_fingerprint("palette.opacity", |input| {
+        input.palette.opacity = 0.5;
+    });
+}
+
+/// Regression: BUG-06-038 — direct-fingerprint pin for selection_fg None → Some.
+#[test]
+fn palette_selection_fg_alters_dispatch_fingerprint_directly() {
+    assert_palette_field_alters_dispatch_fingerprint("palette.selection_fg", |input| {
+        input.palette.selection_fg = Some(Rgb {
+            r: 100,
+            g: 100,
+            b: 100,
+        });
+    });
+}
+
+/// Regression: BUG-06-038 — direct-fingerprint pin for selection_bg None → Some.
+#[test]
+fn palette_selection_bg_alters_dispatch_fingerprint_directly() {
+    assert_palette_field_alters_dispatch_fingerprint("palette.selection_bg", |input| {
+        input.palette.selection_bg = Some(Rgb {
+            r: 50,
+            g: 50,
+            b: 50,
+        });
+    });
+}
+
+/// Regression: BUG-06-038 — selection_fg Some(A) → Some(B) direct-fingerprint pin.
+/// Without gpu-tests, ensures the inner Rgb value (not just the Option discriminant)
+/// hashes through.
+#[test]
+fn palette_selection_fg_some_value_alters_dispatch_fingerprint_directly() {
+    let mut input1 = crate::gpu::frame_input::FrameInput::test_grid(10, 10, "");
+    let mut input2 = crate::gpu::frame_input::FrameInput::test_grid(10, 10, "");
+    input1.palette.selection_fg = Some(Rgb {
+        r: 100,
+        g: 100,
+        b: 100,
+    });
+    input2.palette.selection_fg = Some(Rgb {
+        r: 200,
+        g: 100,
+        b: 100,
+    });
+    let origin = (0.0_f32, 0.0_f32);
+    let fp1 = crate::gpu::prepare::compute_dispatch_fingerprint(&input1, origin);
+    let fp2 = crate::gpu::prepare::compute_dispatch_fingerprint(&input2, origin);
+    assert_ne!(
+        fp1, fp2,
+        "selection_fg Some(A) → Some(B) MUST flip dispatch fingerprint"
+    );
+}
+
+/// Regression: BUG-06-038 — selection_bg Some(A) → Some(B) direct-fingerprint pin.
+#[test]
+fn palette_selection_bg_some_value_alters_dispatch_fingerprint_directly() {
+    let mut input1 = crate::gpu::frame_input::FrameInput::test_grid(10, 10, "");
+    let mut input2 = crate::gpu::frame_input::FrameInput::test_grid(10, 10, "");
+    input1.palette.selection_bg = Some(Rgb {
+        r: 50,
+        g: 50,
+        b: 50,
+    });
+    input2.palette.selection_bg = Some(Rgb {
+        r: 50,
+        g: 200,
+        b: 50,
+    });
+    let origin = (0.0_f32, 0.0_f32);
+    let fp1 = crate::gpu::prepare::compute_dispatch_fingerprint(&input1, origin);
+    let fp2 = crate::gpu::prepare::compute_dispatch_fingerprint(&input2, origin);
+    assert_ne!(
+        fp1, fp2,
+        "selection_bg Some(A) → Some(B) MUST flip dispatch fingerprint"
+    );
+}
+
 // --- Atlas routing (1) ---
 
 #[cfg(feature = "gpu-tests")]
@@ -1057,6 +1394,11 @@ fn subpixel_positioning_change_invalidates_cache() {
 
 // --- Search (1) ---
 
+/// Regression: BUG-06-037 — flipping `search_fingerprint` `None → Some`
+/// MUST invalidate the cache via the SSOT predicate. The Option discriminant
+/// itself is hashed by `compute_dispatch_fingerprint` via Hash-derived
+/// enums; `FrameSearch::for_test` is the cfg(test) constructor that
+/// bypasses `PaneSnapshot`, used to isolate the discriminant flip.
 #[cfg(feature = "gpu-tests")]
 #[test]
 fn search_fingerprint_change_invalidates_cache() {
@@ -1073,7 +1415,7 @@ fn search_fingerprint_change_invalidates_cache() {
     });
 }
 
-// --- Top-level predicate clauses (3) ---
+// --- Top-level predicate clauses (4) ---
 
 /// Pin: passing `content_changed=true` to `prepare()` MUST invalidate the cache.
 #[cfg(feature = "gpu-tests")]
@@ -1150,6 +1492,41 @@ fn no_terminal_data_invalidates_cache() {
     assert!(
         renderer.cache_invalidated_this_frame(),
         "!has_terminal_data MUST invalidate cache (top-level predicate clause)"
+    );
+}
+
+/// Pin: row_state_changed=true (cursor / selection / hovered_cell mutated)
+/// MUST invalidate the cache via the integrated SSOT predicate. Mutates
+/// `hovered_cell` because it is the most isolated row_state input — no
+/// dispatch fingerprint impact, no other row_state side effects.
+///
+/// Regression: BUG-06-037 — pins the row_state_changed top-level clause of
+/// `can_reuse_content_cache` (frame_prep.rs:99,106).
+#[cfg(feature = "gpu-tests")]
+#[test]
+fn row_state_change_invalidates_cache() {
+    let Some((gpu, pipelines, mut renderer)) = headless_env() else {
+        eprintln!("SKIP: GPU adapter unavailable");
+        return;
+    };
+    let mut input = crate::gpu::frame_input::FrameInput::test_grid(10, 10, "");
+    let origin = (0.0_f32, 0.0_f32);
+
+    // Frame 1: full prepare populates baseline (shaping cache, prev_dispatch_fingerprint, prev_resolved_cursor, terminal data).
+    renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, true);
+    // Frame 2: identical input + content_changed=false → steady state, cache reusable.
+    renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, false);
+    assert!(
+        !renderer.cache_invalidated_this_frame(),
+        "baseline frame must reuse cache (sanity check)"
+    );
+
+    // Mutate hovered_cell — flips row_state_changed clause.
+    input.hovered_cell = Some((1, 1));
+    renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, false);
+    assert!(
+        renderer.cache_invalidated_this_frame(),
+        "row_state_changed (hovered_cell mutation) MUST invalidate cache via cache_invalidated_this_frame() SSOT"
     );
 }
 

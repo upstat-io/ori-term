@@ -141,6 +141,22 @@ pub struct PreparedFrame {
     ///   `Option<usize>` for the legacy `selection_damage::dirty_set`
     ///   line-only parameter, which dirties old + new cursor rows).
     pub(crate) prev_resolved_cursor: Option<oriterm_core::RenderableCursor>,
+    /// Previous frame's `block_cursor_color_exclusion_active` predicate
+    /// value. `Some(bool)` after the most recent rendered frame; `None`
+    /// for the pre-first-frame initial state. SSOT for "did the Block-
+    /// cursor color-exclusion predicate cross its threshold since the
+    /// last frame?"
+    ///
+    /// Consumed by `prepare::evaluate_row_state_change` (gates.rs) to
+    /// gate the cursor-only fast path on opacity threshold crossings.
+    /// Without this snapshot, blink frames that cross 0.5 leave stale
+    /// per-cell colors on the cursor cell because `update_cursor_only`
+    /// skips per-cell instance emission.
+    ///
+    /// Updated at BOTH `prepare_frame_shaped_into` (full prepare) and
+    /// `update_cursor_only` (fast path) — same SSOT semantics as
+    /// `prev_resolved_cursor`.
+    pub(crate) prev_block_cursor_color_exclusion_active: Option<bool>,
     /// Previous frame's hovered cell `(viewport_line, column)`. Drives
     /// `build_dirty_set` to dirty BOTH the previous hover row (so its
     /// cells regenerate without the stale "solid hyperlink underline"
@@ -196,6 +212,7 @@ impl PreparedFrame {
             saved_tier: SavedTerminalTier::new(),
             prev_selection_snapshot: None,
             prev_resolved_cursor: None,
+            prev_block_cursor_color_exclusion_active: None,
             prev_hovered_cell: None,
             prev_dispatch_fingerprint: None,
             was_incremental: false,
