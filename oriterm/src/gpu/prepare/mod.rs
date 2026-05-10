@@ -29,7 +29,7 @@ use super::frame_input::FrameInput;
 use super::prepared_frame::PreparedFrame;
 
 use crate::font::{GlyphStyle, RasterKey};
-use dirty_skip::{BufferLengths, RowInstanceRanges, fill_frame_incremental};
+use dirty_skip::{BufferLengths, fill_frame_incremental};
 use emit::{draw_prompt_markers, draw_url_hover_underline, emit_cursor_for_frame};
 use emit_cell::EmitCtx;
 use resolve::{resolve_cursor, CellColorContext};
@@ -342,17 +342,11 @@ fn emit_row_tracked_cells(
         // Record row range on row transition.
         if row != current_row {
             if current_row == usize::MAX {
-                row_start = BufferLengths::capture(ctx.frame);
+                // First row: just initialize row_start, no range to record yet.
             } else {
-                let now = BufferLengths::capture(ctx.frame);
-                let ranges = now.range_since(&row_start);
-                // Fill gaps if rows were skipped (shouldn't happen but defensive).
-                while ctx.frame.row_ranges.len() < current_row {
-                    ctx.frame.row_ranges.push(RowInstanceRanges::default());
-                }
-                ctx.frame.row_ranges.push(ranges);
-                row_start = now;
+                dirty_skip::push_row_range(ctx.frame, current_row, &row_start);
             }
+            row_start = BufferLengths::capture(ctx.frame);
             current_row = row;
 
             // Skip rows entirely outside the render target.
@@ -371,12 +365,7 @@ fn emit_row_tracked_cells(
 
     // Record the final row's range.
     if current_row != usize::MAX {
-        let now = BufferLengths::capture(ctx.frame);
-        let ranges = now.range_since(&row_start);
-        while ctx.frame.row_ranges.len() < current_row {
-            ctx.frame.row_ranges.push(RowInstanceRanges::default());
-        }
-        ctx.frame.row_ranges.push(ranges);
+        dirty_skip::push_row_range(ctx.frame, current_row, &row_start);
     }
 }
 
