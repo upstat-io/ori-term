@@ -311,10 +311,10 @@ fn all_dirty_yields_full_line_bounds_for_unmarked_lines() {
     let items: Vec<DirtyLine> = tracker.drain().collect();
     assert_eq!(items.len(), 5);
 
-    // Line 2 was individually marked with cols 10..20, but expanded to
-    // include 0..79 since mark_cols(2, 10, 20) + all_dirty should still
-    // yield the per-line bounds (which were 10..20), not necessarily full.
-    // Actually: all_dirty + individually marked → yields the individual bounds.
+    // Why: Line 2 was individually marked with cols 10..20. Expected
+    // semantics under `mark_cols(2, 10, 20)` + `all_dirty`: the per-line
+    // bounds (10..20) are preserved, not widened to the full 0..79 range.
+    // I.e. `all_dirty` + individually-marked yields the individual bounds.
     assert_eq!(items[2].left, 10);
     assert_eq!(items[2].right, 20);
 

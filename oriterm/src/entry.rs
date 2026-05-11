@@ -163,16 +163,14 @@ fn run_default_terminal_handoff() {
 
 /// Initialize a minimal file logger next to the executable.
 ///
-/// Writes to `oriterm.log` in the same directory as the binary.
-/// This avoids needing an external logging crate while still capturing
-/// errors from the GUI-subsystem binary (which has no console).
+/// See: `crate::log_filter::LogFilter` for `RUST_LOG` directive parsing.
 ///
-/// `RUST_LOG` accepts either a bare level (`trace`, `debug`, `info`, `warn`,
-/// `error`) or an `env_logger`-style directive list
-/// (`oriterm_core::grid::dirty=trace,oriterm::gpu::prepare::dirty_skip=trace`).
-/// Directives that name non-`oriterm*` targets are silently dropped to
-/// preserve the original wgpu/naga noise gate — operators cannot accidentally
-/// turn on driver-stack spam through `RUST_LOG`.
+/// Writes to `oriterm.log` in the same directory as the binary, avoiding an
+/// external logging crate while still capturing errors from the GUI-subsystem
+/// binary (which has no console). `RUST_LOG` accepts either a bare level
+/// (`trace`, `debug`, `info`, `warn`, `error`) or an `env_logger`-style
+/// directive list. Non-`oriterm*` targets are silently dropped at parse
+/// time to preserve the wgpu/naga noise gate.
 fn init_logger() {
     use std::io::Write;
     use std::sync::Mutex;

@@ -257,10 +257,10 @@ impl Iterator for DirtyIter<'_> {
 
 impl Drop for DirtyIter<'_> {
     fn drop(&mut self) {
-        // Clear any remaining dirty entries that were not iterated.
-        // Count both individually-marked AND all_dirty implicit lines so
-        // the trace reports the operator's mental model of "lines this
-        // drain dropped".
+        // Why: clear any remaining dirty entries that were not iterated.
+        // Both individually-marked AND `all_dirty` implicit lines are
+        // counted so the trace reports the operator's mental model of
+        // "lines this drain dropped".
         let mut cleared = 0usize;
         for bounds in &mut self.lines[self.pos..] {
             if self.all || bounds.dirty {

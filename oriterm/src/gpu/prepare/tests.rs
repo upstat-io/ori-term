@@ -1658,10 +1658,10 @@ fn wide_char_underline_spans_double_width() {
     assert_eq!(ul.size.1, 1.0);
 }
 
-// ── Overline / superscript / subscript tests () ──
-// Cell metrics in test_grid: 8x16 cell, baseline=12, stroke=1, strikeout_offset=4.
-// Overline y = cell_top y = 0; thickness = stroke_size = 1.
-// Super offset = -16 * 0.25 = -4; Sub offset = +4. Both already integer.
+// Why: Overline / superscript / subscript tests assume `test_grid` cell
+// metrics — 8x16 cell, baseline=12, stroke=1, strikeout_offset=4. Overline
+// y = cell_top y = 0, thickness = stroke_size = 1. Super offset = -16 *
+// 0.25 = -4, Sub offset = +4 (both already integer).
 
 /// Regression: property for SGR 53 (overline) GPU emission.
 #[test]
@@ -2810,10 +2810,10 @@ fn selection_block_mode_rectangular() {
 fn selection_wide_char_spacer_only_highlights_both() {
     use oriterm_core::RenderableCell;
 
-    // Wide char at col 0, spacer at col 1, narrow 'B' at col 2.
-    // Selection covers only col 1 (the spacer). The wide char should
-    // still be highlighted because you can't render half a wide char.
-    // Use non-palette bg so bg quads are emitted for assertion.
+    // Why: wide char at col 0, spacer at col 1, narrow 'B' at col 2;
+    // selection covers only col 1 (the spacer) but the wide char must
+    // still be highlighted because half a wide char cannot render.
+    // Non-palette bg so bg quads are emitted for assertion.
     let fg = Rgb {
         r: 211,
         g: 215,
@@ -3349,12 +3349,11 @@ fn non_hyperlink_cell_no_extra_decorations() {
     assert_eq!(decoration_bg_count(&frame), 0);
 }
 
-// ── Viewport / coordinate system alignment ──
-//
-// The shader maps pixel positions to NDC: ndc = pos / screen_size * 2 - 1.
-// screen_size comes from FrameInput.viewport. Cell positions come from
-// origin + col * cell_width. For cells to fill the viewport correctly,
-// viewport and cell positions must be in the same coordinate system.
+// Why: viewport / coordinate system alignment. The shader maps pixel
+// positions to NDC: ndc = pos / screen_size * 2 - 1. `screen_size` comes
+// from `FrameInput.viewport`; cell positions come from `origin + col *
+// cell_width`. For cells to fill the viewport correctly, viewport and
+// cell positions must share one coordinate system.
 
 #[test]
 fn cells_fill_viewport_when_viewport_matches_cell_units() {
@@ -5412,14 +5411,15 @@ fn non_blink_cell_ignores_text_blink_opacity() {
     );
 }
 
-// Dirty-skip trace-emission tests.
-//
-// These tests drive the production `prepare_frame_shaped_into()` path
-// (NOT a stub harness) and assert the trace contract via the thread-local
-// log capture in `crate::gpu::prepare::trace_capture`. Emission tests must
-// observe the real prepare path so the `process_incremental_cells` trace
-// is exercised through `frame.was_incremental`.
-
+/// Dirty-skip trace-emission tests.
+///
+/// See: `oriterm_test_support::log_capture` for the thread-local sink.
+///
+/// These tests drive the production `prepare_frame_shaped_into()` path
+/// (NOT a stub harness) and assert the trace contract via thread-local
+/// log capture. Emission tests must observe the real prepare path so the
+/// `process_incremental_cells` trace is exercised through
+/// `frame.was_incremental`.
 mod dirty_skip_traces {
     use log::{Level, LevelFilter};
     use oriterm_core::Column;
@@ -5457,11 +5457,11 @@ mod dirty_skip_traces {
             oriterm_core::Rgb { r: 0, g: 0, b: 0 },
             1.0,
         );
-        // Frame 1: full rebuild populates row_ranges. Production's
-        // pre-dispatch save_terminal_tier swaps the terminal tier into
-        // saved_tier on the next prepare call, so callers using this
-        // helper produce a frame whose Frame N+1 prepare will take the
-        // incremental path automatically.
+        // Why: Frame 1 full rebuild populates `row_ranges`. Production's
+        // pre-dispatch `save_terminal_tier` swaps the terminal tier into
+        // `saved_tier` on the next prepare call, so callers using this
+        // helper produce a frame whose Frame N+1 prepare automatically
+        // takes the incremental path.
         prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
         (frame, input)
     }
@@ -5504,11 +5504,11 @@ mod dirty_skip_traces {
 
     #[test]
     fn full_rebuild_via_all_dirty_does_not_emit_build_dirty_set_trace() {
-        // `prepare/mod.rs` gates `can_incremental = !all_dirty && saved_tier.has_cached_rows()`.
-        // When `all_dirty == true`, the full-rebuild path runs and `build_dirty_set`
-        // is not invoked. This pins that production behavior — operators
-        // observing ZERO build_dirty_set traces in a frame correctly conclude
-        // the prepare path took the full-rebuild branch.
+        // Why: `prepare/mod.rs` gates `can_incremental = !all_dirty &&
+        // saved_tier.has_cached_rows()`. When `all_dirty == true` the
+        // full-rebuild path runs and `build_dirty_set` is not invoked.
+        // This pin lets operators conclude that ZERO `build_dirty_set`
+        // traces in a frame means the prepare path took full-rebuild.
         with_capture(LevelFilter::Trace, |sink| {
             let cols = 4;
             let rows = 3;
@@ -5592,14 +5592,13 @@ mod dirty_skip_traces {
     }
 }
 
-// ── Dispatch-fingerprint tests ──
-//
-// `compute_dispatch_fingerprint` is the SSOT for "did frame-level state
-// change?" — replaces the prior 11-clause enumerated dispatch predicate.
-// Each test below varies ONE input field relative to a baseline and asserts
-// fingerprint equality/inequality. Counter-pin tests verify that fields
-// intentionally excluded (selection, cursor, hovered_cell) do NOT change
-// the fingerprint — those flow through per-row `build_dirty_set` instead.
+// Why: dispatch-fingerprint tests verify the SSOT for "did frame-level
+// state change?" — `compute_dispatch_fingerprint` replaces the prior
+// 11-clause enumerated predicate. Each test below varies ONE input field
+// relative to a baseline and asserts fingerprint equality/inequality.
+// Counter-pin tests verify that fields intentionally excluded (selection,
+// cursor, hovered_cell) do NOT change the fingerprint — those flow
+// through per-row `build_dirty_set` instead.
 
 mod dispatch_fingerprint {
     use super::super::compute_dispatch_fingerprint;
@@ -6444,10 +6443,10 @@ fn first_frame_pre_initialization_invalidates_fast_path() {
 #[test]
 fn compute_dispatch_fingerprint_body_does_not_reference_cursor_opacity() {
     const GATES_SRC: &str = include_str!("gates.rs");
-    // Find the function body: from the opening `{` after the signature to
-    // the matching top-level `}`. Brace-balancing handles nested blocks
-    // (loops, ifs) so we scan the actual body only — not surrounding
-    // docstrings of sibling functions.
+    // Why: scan from the opening `{` after the signature to the matching
+    // top-level `}`. Brace-balancing handles nested blocks (loops, ifs)
+    // so the scan covers the actual body only — not surrounding docstrings
+    // of sibling functions.
     let fn_decl_start = GATES_SRC
         .find("fn compute_dispatch_fingerprint")
         .expect("compute_dispatch_fingerprint must exist in gates.rs");
@@ -6486,10 +6485,10 @@ fn compute_dispatch_fingerprint_body_does_not_reference_cursor_opacity() {
 #[test]
 fn prev_resolved_cursor_assignment_co_located_with_threshold_pin() {
     const MOD_SRC: &str = include_str!("mod.rs");
-    // Simple line-by-line scan: collect (receiver, line_num) for every
-    // assignment to prev_resolved_cursor, then assert each function body
-    // containing one also contains a paired assignment to
-    // prev_block_cursor_color_exclusion_active on the same receiver path.
+    // Why: collect (receiver, line_num) for every assignment to
+    // `prev_resolved_cursor`, then assert each function body containing
+    // one also contains a paired assignment to
+    // `prev_block_cursor_color_exclusion_active` on the same receiver path.
     let lines: Vec<&str> = MOD_SRC.lines().collect();
 
     // Find all `<receiver>.prev_resolved_cursor =` lines.
