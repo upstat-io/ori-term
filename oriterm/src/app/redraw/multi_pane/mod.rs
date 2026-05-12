@@ -213,8 +213,14 @@ impl App {
                     } else {
                         None
                     };
+                    // Read CURSOR_BLINKING directly from snapshot — `blinking_now`
+                    // (the loop-local that mirrors focused-pane mode) is only
+                    // updated INSIDE the cache-miss block, so it's unreliable
+                    // for damage_key computation that gates cache-hit/miss.
+                    let snap_blinking = TermMode::from_bits_truncate(snap.modes)
+                        .contains(TermMode::CURSOR_BLINKING);
                     let pane_cursor_opacity_key = if layout.is_focused {
-                        if blinking_now && self.blinking_active {
+                        if snap_blinking && self.blinking_active {
                             super::draw_helpers::blink_opacity(
                                 self.cursor_blink.intensity(),
                                 self.config.terminal.cursor_blink_fade,
@@ -247,6 +253,17 @@ impl App {
                             0
                         },
                         window_focused: pane_focused,
+                        hovered_url_segments_hash: if layout.is_focused
+                            && !url_segments.is_empty()
+                        {
+                            use std::collections::hash_map::DefaultHasher;
+                            use std::hash::{Hash, Hasher};
+                            let mut h = DefaultHasher::new();
+                            url_segments.hash(&mut h);
+                            h.finish()
+                        } else {
+                            0
+                        },
                     };
                     compute_pane_damage_key(&dispatch_inputs, &row_state)
                 };
@@ -268,13 +285,16 @@ impl App {
                         layout.pixel_rect.height as u32,
                     );
 
-                    // Extract phase: refresh snapshot if needed.
+                    // Snapshot already refreshed at top of loop iteration when
+                    // needs_refresh was true. The pre-refresh covers the
+                    // damage_key computation; we DO NOT re-refresh here (the
+                    // old inner `is_pane_snapshot_dirty` check returned true
+                    // because refresh_pane_snapshot does not clear the dirty
+                    // bit — only `clear_pane_snapshot_dirty` does that, which
+                    // happens below at line 198). Double-refresh was a
+                    // TOCTOU/efficiency: avoid double-refresh of the snapshot.
                     let mux = self.mux.as_mut().expect("mux checked");
-                    let content_refreshed =
-                        mux.pane_snapshot(pane_id).is_none() || mux.is_pane_snapshot_dirty(pane_id);
-                    if content_refreshed {
-                        mux.refresh_pane_snapshot(pane_id);
-                    }
+                    let content_refreshed = dirty_content;
 
                     // Fast path (embedded): swap RenderableContent directly,
                     // bypassing WireCell round-trip. Only attempt when content

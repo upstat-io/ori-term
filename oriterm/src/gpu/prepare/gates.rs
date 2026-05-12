@@ -131,6 +131,13 @@ pub(crate) struct PaneRowState {
     /// for non-focused panes.
     pub preedit_revision: u64,
     pub window_focused: bool,
+    /// Hash of the focused pane's `hovered_url_segments` (URL underline
+    /// state). 0 for non-focused panes AND when no URL is hovered. Without
+    /// this signal, releasing Ctrl while hovering a URL leaves a stale
+    /// underline in the cached prepared frame — `hovered_url_segments` is a
+    /// prepare input (consumed by `draw_url_hover_underline`) that the rest
+    /// of the dispatch fingerprint does not cover.
+    pub hovered_url_segments_hash: u64,
 }
 
 /// Compose dispatch fingerprint with per-pane row-state into one cache key.

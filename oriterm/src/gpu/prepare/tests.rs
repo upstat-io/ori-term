@@ -6771,6 +6771,16 @@ mod pane_damage_key {
         });
     }
 
+    #[test]
+    fn row_state_hovered_url_segments_hash() {
+        // URL hover state must contribute to damage_key — otherwise
+        // releasing Ctrl while hovering a URL leaves stale underline in
+        // the cached prepared frame.
+        assert_changes("row_state.hovered_url_segments_hash", |_, r| {
+            r.hovered_url_segments_hash = 1;
+        });
+    }
+
     // ── Matrix completeness ──
 
     pub(super) const ALL_DAMAGE_KEY_FIELDS: &[&str] = &[
@@ -6795,13 +6805,14 @@ mod pane_damage_key {
         "row_state.block_cursor_color_exclusion_active",
         "row_state.preedit_revision",
         "row_state.window_focused",
+        "row_state.hovered_url_segments_hash",
     ];
 
     #[test]
     fn matrix_completeness() {
         // Self-verifying — every field in compute_pane_damage_key has a
         // matrix cell above. Updated together when adding a new input.
-        assert_eq!(ALL_DAMAGE_KEY_FIELDS.len(), 30,
-            "matrix MUST enumerate every damage_key input (22 dispatch + 8 row_state = 30)");
+        assert_eq!(ALL_DAMAGE_KEY_FIELDS.len(), 31,
+            "matrix MUST enumerate every damage_key input (22 dispatch + 9 row_state = 31)");
     }
 }
