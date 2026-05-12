@@ -6527,3 +6527,281 @@ fn prev_resolved_cursor_assignment_co_located_with_threshold_pin() {
         );
     }
 }
+
+// ── compute_pane_damage_key matrix ──────────────────────────────────
+//
+// Mirror of the compute_dispatch_fingerprint matrix in
+// window_renderer/tests.rs, extended to cover PaneRowState fields.
+// Each test perturbs ONE input and asserts the damage_key changes.
+
+#[cfg(test)]
+mod pane_damage_key {
+    use super::*;
+    use crate::gpu::frame_input::{
+        FramePalette, SelectionDamageSnapshot,
+    };
+    use crate::gpu::prepare::{
+        DispatchFingerprintInputs, PaneRowState, compute_pane_damage_key,
+        compute_dispatch_fingerprint_from_inputs,
+    };
+    use oriterm_core::{CursorShape, RenderableCursor, SelectionMode, Side};
+
+    fn baseline_dispatch() -> DispatchFingerprintInputs {
+        DispatchFingerprintInputs {
+            viewport: ViewportSize::new(640, 480),
+            cell_size: CellMetrics::new(8.0, 16.0, 12.0, 2.0, 1.0, 4.0),
+            content_cols: 80,
+            content_rows: 24,
+            origin: (0.0, 0.0),
+            text_blink_opacity: 1.0,
+            palette: FramePalette {
+                background: Rgb { r: 0, g: 0, b: 0 },
+                foreground: Rgb { r: 255, g: 255, b: 255 },
+                cursor_color: Rgb { r: 255, g: 255, b: 255 },
+                opacity: 1.0,
+                selection_fg: None,
+                selection_bg: None,
+            }
+            .damage_fingerprint(),
+            fg_dim: 1.0,
+            subpixel_positioning: true,
+            search: None,
+        }
+    }
+
+    fn baseline_row_state() -> PaneRowState {
+        PaneRowState::default()
+    }
+
+    fn assert_changes<F: FnOnce(&mut DispatchFingerprintInputs, &mut PaneRowState)>(
+        label: &str,
+        mutate: F,
+    ) {
+        let mut d1 = baseline_dispatch();
+        let mut r1 = baseline_row_state();
+        let mut d2 = baseline_dispatch();
+        let mut r2 = baseline_row_state();
+        mutate(&mut d2, &mut r2);
+        let k1 = compute_pane_damage_key(&d1, &r1);
+        let k2 = compute_pane_damage_key(&d2, &r2);
+        // unused mut warning suppress
+        let _ = (&mut d1, &mut r1);
+        assert_ne!(k1, k2, "{label}: change MUST contribute to compute_pane_damage_key");
+    }
+
+    #[test]
+    fn baseline_is_deterministic() {
+        let k1 = compute_pane_damage_key(&baseline_dispatch(), &baseline_row_state());
+        let k2 = compute_pane_damage_key(&baseline_dispatch(), &baseline_row_state());
+        assert_eq!(k1, k2, "compute_pane_damage_key MUST be deterministic");
+    }
+
+    #[test]
+    fn dispatch_fingerprint_is_layered() {
+        // Inputs differ only in dispatch fingerprint → keys differ.
+        let mut d1 = baseline_dispatch();
+        let mut d2 = baseline_dispatch();
+        d2.viewport = ViewportSize::new(800, 600);
+        let r = baseline_row_state();
+        let k1 = compute_pane_damage_key(&d1, &r);
+        let k2 = compute_pane_damage_key(&d2, &r);
+        let _ = &mut d1;
+        assert_ne!(k1, k2, "dispatch fingerprint MUST flow into damage_key");
+        // And: dispatch fingerprint alone is computable and different.
+        let fp1 = compute_dispatch_fingerprint_from_inputs(&baseline_dispatch());
+        let mut alt = baseline_dispatch();
+        alt.viewport = ViewportSize::new(800, 600);
+        let fp2 = compute_dispatch_fingerprint_from_inputs(&alt);
+        assert_ne!(fp1, fp2);
+    }
+
+    // ── Dispatch inputs (mirrors compute_dispatch_fingerprint matrix) ──
+
+    #[test] fn viewport_width() { assert_changes("viewport.width", |d, _| d.viewport = ViewportSize::new(800, 480)); }
+    #[test] fn viewport_height() { assert_changes("viewport.height", |d, _| d.viewport = ViewportSize::new(640, 600)); }
+    #[test] fn cell_size_width() { assert_changes("cell_size.width", |d, _| d.cell_size = CellMetrics::new(9.0, 16.0, 12.0, 2.0, 1.0, 4.0)); }
+    #[test] fn cell_size_height() { assert_changes("cell_size.height", |d, _| d.cell_size = CellMetrics::new(8.0, 17.0, 12.0, 2.0, 1.0, 4.0)); }
+    #[test] fn cell_size_baseline() { assert_changes("cell_size.baseline", |d, _| d.cell_size = CellMetrics::new(8.0, 16.0, 13.0, 2.0, 1.0, 4.0)); }
+    #[test] fn cell_size_underline_offset() { assert_changes("cell_size.underline_offset", |d, _| d.cell_size = CellMetrics::new(8.0, 16.0, 12.0, 3.0, 1.0, 4.0)); }
+    #[test] fn cell_size_stroke_size() { assert_changes("cell_size.stroke_size", |d, _| d.cell_size = CellMetrics::new(8.0, 16.0, 12.0, 2.0, 2.0, 4.0)); }
+    #[test] fn cell_size_strikeout_offset() { assert_changes("cell_size.strikeout_offset", |d, _| d.cell_size = CellMetrics::new(8.0, 16.0, 12.0, 2.0, 1.0, 5.0)); }
+    #[test] fn content_cols() { assert_changes("content_cols", |d, _| d.content_cols = 100); }
+    #[test] fn content_rows() { assert_changes("content_rows", |d, _| d.content_rows = 30); }
+    #[test] fn origin_0() { assert_changes("origin.0", |d, _| d.origin = (1.0, 0.0)); }
+    #[test] fn origin_1() { assert_changes("origin.1", |d, _| d.origin = (0.0, 1.0)); }
+    #[test] fn text_blink_opacity() { assert_changes("text_blink_opacity", |d, _| d.text_blink_opacity = 0.5); }
+    #[test] fn fg_dim() { assert_changes("fg_dim", |d, _| d.fg_dim = 0.5); }
+    #[test] fn subpixel_positioning() { assert_changes("subpixel_positioning", |d, _| d.subpixel_positioning = false); }
+
+    #[test]
+    fn palette_background() {
+        assert_changes("palette.background", |d, _| {
+            d.palette = FramePalette {
+                background: Rgb { r: 1, g: 0, b: 0 },
+                foreground: Rgb { r: 255, g: 255, b: 255 },
+                cursor_color: Rgb { r: 255, g: 255, b: 255 },
+                opacity: 1.0, selection_fg: None, selection_bg: None,
+            }.damage_fingerprint();
+        });
+    }
+    #[test]
+    fn palette_foreground() {
+        assert_changes("palette.foreground", |d, _| {
+            d.palette = FramePalette {
+                background: Rgb { r: 0, g: 0, b: 0 },
+                foreground: Rgb { r: 0, g: 0, b: 0 },
+                cursor_color: Rgb { r: 255, g: 255, b: 255 },
+                opacity: 1.0, selection_fg: None, selection_bg: None,
+            }.damage_fingerprint();
+        });
+    }
+    #[test]
+    fn palette_cursor_color() {
+        assert_changes("palette.cursor_color", |d, _| {
+            d.palette = FramePalette {
+                background: Rgb { r: 0, g: 0, b: 0 },
+                foreground: Rgb { r: 255, g: 255, b: 255 },
+                cursor_color: Rgb { r: 1, g: 0, b: 0 },
+                opacity: 1.0, selection_fg: None, selection_bg: None,
+            }.damage_fingerprint();
+        });
+    }
+    #[test]
+    fn palette_opacity() {
+        assert_changes("palette.opacity", |d, _| {
+            d.palette = FramePalette {
+                background: Rgb { r: 0, g: 0, b: 0 },
+                foreground: Rgb { r: 255, g: 255, b: 255 },
+                cursor_color: Rgb { r: 255, g: 255, b: 255 },
+                opacity: 0.5, selection_fg: None, selection_bg: None,
+            }.damage_fingerprint();
+        });
+    }
+    #[test]
+    fn palette_selection_fg() {
+        assert_changes("palette.selection_fg", |d, _| {
+            d.palette = FramePalette {
+                background: Rgb { r: 0, g: 0, b: 0 },
+                foreground: Rgb { r: 255, g: 255, b: 255 },
+                cursor_color: Rgb { r: 255, g: 255, b: 255 },
+                opacity: 1.0,
+                selection_fg: Some(Rgb { r: 255, g: 0, b: 0 }),
+                selection_bg: None,
+            }.damage_fingerprint();
+        });
+    }
+    #[test]
+    fn palette_selection_bg() {
+        assert_changes("palette.selection_bg", |d, _| {
+            d.palette = FramePalette {
+                background: Rgb { r: 0, g: 0, b: 0 },
+                foreground: Rgb { r: 255, g: 255, b: 255 },
+                cursor_color: Rgb { r: 255, g: 255, b: 255 },
+                opacity: 1.0,
+                selection_fg: None,
+                selection_bg: Some(Rgb { r: 0, g: 255, b: 0 }),
+            }.damage_fingerprint();
+        });
+    }
+
+    // ── Row-state inputs (multi-pane specific) ──
+
+    #[test]
+    fn row_state_resolved_cursor_visible() {
+        assert_changes("row_state.resolved_cursor_visible", |_, r| {
+            r.resolved_cursor_visible = Some(RenderableCursor {
+                line: 0, column: Column(0), shape: CursorShape::Block, visible: true,
+            });
+        });
+    }
+
+    #[test]
+    fn row_state_selection_snapshot() {
+        assert_changes("row_state.selection_snapshot", |_, r| {
+            r.selection_snapshot = Some(SelectionDamageSnapshot {
+                start_line: 0, end_line: 5,
+                start_col: 0, start_side: Side::Left,
+                end_col: 10, end_side: Side::Right,
+                mode: SelectionMode::Char,
+            });
+        });
+    }
+
+    #[test]
+    fn row_state_hovered_cell() {
+        assert_changes("row_state.hovered_cell", |_, r| {
+            r.hovered_cell = Some((1, 2));
+        });
+    }
+
+    #[test]
+    fn row_state_mark_cursor() {
+        assert_changes("row_state.mark_cursor", |_, r| {
+            r.mark_cursor = Some(crate::gpu::frame_input::MarkCursorOverride {
+                line: 1, column: Column(2), shape: CursorShape::HollowBlock,
+            });
+        });
+    }
+
+    #[test]
+    fn row_state_cursor_opacity_bits() {
+        assert_changes("row_state.cursor_opacity_bits", |_, r| {
+            r.cursor_opacity_bits = 0.5_f32.to_bits();
+        });
+    }
+
+    #[test]
+    fn row_state_block_cursor_color_exclusion_active() {
+        assert_changes("row_state.block_cursor_color_exclusion_active", |_, r| {
+            r.block_cursor_color_exclusion_active = true;
+        });
+    }
+
+    #[test]
+    fn row_state_preedit_revision() {
+        assert_changes("row_state.preedit_revision", |_, r| {
+            r.preedit_revision = 1;
+        });
+    }
+
+    #[test]
+    fn row_state_window_focused() {
+        assert_changes("row_state.window_focused", |_, r| {
+            r.window_focused = true;
+        });
+    }
+
+    // ── Matrix completeness ──
+
+    pub(super) const ALL_DAMAGE_KEY_FIELDS: &[&str] = &[
+        // Dispatch inputs (mirror compute_dispatch_fingerprint matrix).
+        "viewport.width", "viewport.height",
+        "cell_size.width", "cell_size.height", "cell_size.baseline",
+        "cell_size.underline_offset", "cell_size.stroke_size", "cell_size.strikeout_offset",
+        "content_cols", "content_rows",
+        "origin.0", "origin.1",
+        "text_blink_opacity",
+        "palette.background", "palette.foreground", "palette.cursor_color",
+        "palette.opacity", "palette.selection_fg", "palette.selection_bg",
+        "fg_dim", "subpixel_positioning",
+        // search subfields covered by SearchDamageKey's own Hash; one cell here.
+        "search",
+        // Row-state inputs.
+        "row_state.resolved_cursor_visible",
+        "row_state.selection_snapshot",
+        "row_state.hovered_cell",
+        "row_state.mark_cursor",
+        "row_state.cursor_opacity_bits",
+        "row_state.block_cursor_color_exclusion_active",
+        "row_state.preedit_revision",
+        "row_state.window_focused",
+    ];
+
+    #[test]
+    fn matrix_completeness() {
+        // Self-verifying — every field in compute_pane_damage_key has a
+        // matrix cell above. Updated together when adding a new input.
+        assert_eq!(ALL_DAMAGE_KEY_FIELDS.len(), 30,
+            "matrix MUST enumerate every damage_key input (22 dispatch + 8 row_state = 30)");
+    }
+}

@@ -9,10 +9,14 @@ mod helpers;
 mod pane_layouts;
 
 use crate::session::{DividerLayout, PaneLayout};
-use oriterm_core::{Column, CursorShape, TermMode};
+use oriterm_core::{Column, CursorShape, RenderableCursor, TermMode};
 
 use super::App;
 use super::mouse_selection::{self, GridCtx};
+use crate::gpu::frame_input::FramePalette;
+use crate::gpu::prepare::{
+    DispatchFingerprintInputs, PaneRowState, compute_pane_damage_key,
+};
 use crate::gpu::{
     FrameSearch, FrameSelection, MarkCursorOverride, ViewportSize, extract_frame_from_snapshot,
     extract_frame_from_snapshot_into, snapshot_palette,
@@ -103,13 +107,13 @@ impl App {
                 > super::draw_helpers::BLINK_OPACITY_EPSILON;
             ctx.prev_text_blink_opacity = text_blink_opacity;
 
+            let _ = blink_opacity_changed; // now covered via damage_key (text_blink_opacity field)
+
             for layout in layouts {
                 let pane_id = layout.pane_id;
 
-                // Dirty check: unified snapshot-based dirty tracking.
-                // Blink opacity changes invalidate all cached panes because
-                // the old alpha is baked into glyph instances.
-                let is_cached = ctx.pane_cache.is_cached(pane_id, layout);
+                // Snapshot freshness — must refresh BEFORE damage_key
+                // computation so the key derives from post-refresh state.
                 let snap_dirty = self
                     .mux
                     .as_ref()
@@ -118,13 +122,147 @@ impl App {
                     .mux
                     .as_ref()
                     .is_some_and(|m| m.pane_snapshot(pane_id).is_none());
-                let dirty = layout.is_focused
-                    || snap_dirty
-                    || no_snapshot
-                    || !is_cached
-                    || blink_opacity_changed;
+                let needs_refresh = snap_dirty || no_snapshot;
+                if needs_refresh {
+                    if let Some(mux) = self.mux.as_mut() {
+                        mux.refresh_pane_snapshot(pane_id);
+                    }
+                }
+                let dirty_content = needs_refresh;
 
-                if dirty {
+                // Compute prospective damage_key from snapshot + layout + state.
+                // Layered SSOT: compute_dispatch_fingerprint (frame inputs) +
+                // PaneRowState (row inputs single-pane handles via per-row dirty).
+                let damage_key = {
+                    let Some(snap) = self
+                        .mux
+                        .as_ref()
+                        .and_then(|m| m.pane_snapshot(pane_id))
+                    else {
+                        // No snapshot after refresh attempt — log + skip.
+                        log::warn!("multi-pane: no snapshot for pane {pane_id:?} after refresh");
+                        ctx.root.mark_dirty();
+                        continue;
+                    };
+                    let pane_focused = ctx.window.window().has_focus();
+                    let snap_palette = snapshot_palette(snap);
+                    let dim_inactive_cfg = self.config.pane.dim_inactive;
+                    let inactive_opacity_cfg = self.config.pane.effective_inactive_opacity();
+                    let pane_search = FrameSearch::from_snapshot(snap);
+                    let palette_for_pane = FramePalette {
+                        background: snap_palette.background,
+                        foreground: snap_palette.foreground,
+                        cursor_color: snap_palette.cursor_color,
+                        selection_fg: snap_palette.selection_fg,
+                        selection_bg: snap_palette.selection_bg,
+                        opacity: super::draw_helpers::resolve_palette_opacity(
+                            ctx.window.surface_has_alpha(),
+                            pane_focused,
+                            &self.config,
+                        ),
+                    };
+                    let pane_viewport = ViewportSize::new(
+                        layout.pixel_rect.width as u32,
+                        layout.pixel_rect.height as u32,
+                    );
+                    let dispatch_inputs = DispatchFingerprintInputs {
+                        viewport: pane_viewport,
+                        cell_size: cell,
+                        content_cols: snap.cols as usize,
+                        content_rows: snap.cells.len(),
+                        origin: (layout.pixel_rect.x, layout.pixel_rect.y),
+                        text_blink_opacity,
+                        palette: palette_for_pane.damage_fingerprint(),
+                        fg_dim: if layout.is_focused || !dim_inactive_cfg {
+                            1.0
+                        } else {
+                            inactive_opacity_cfg
+                        },
+                        subpixel_positioning: renderer.subpixel_positioning(),
+                        search: pane_search.as_ref().map(FrameSearch::damage_fingerprint),
+                    };
+                    // Row-state inputs (selection, hovered, mark, cursor opacity,
+                    // preedit, focus). Focused-pane only fields zeroed otherwise.
+                    let selection_damage = self
+                        .scratch_pane_sels
+                        .get(&pane_id)
+                        .map(|sel| FrameSelection::new(sel, snap.stable_row_base))
+                        .and_then(|fsel| fsel.damage_snapshot(snap.cells.len()));
+                    let mark_cursor_key = if layout.is_focused {
+                        self.scratch_pane_mcs.get(&pane_id).and_then(|mc| {
+                            let (line, col) =
+                                mc.to_viewport(snap.stable_row_base, snap.cells.len())?;
+                            Some(MarkCursorOverride {
+                                line,
+                                column: Column(col),
+                                shape: CursorShape::HollowBlock,
+                            })
+                        })
+                    } else {
+                        None
+                    };
+                    let hovered_cell_key = if layout.is_focused {
+                        let cell_metrics = renderer.cell_metrics();
+                        let grid_ctx = GridCtx {
+                            widget: &ctx.terminal_grid,
+                            cell: cell_metrics,
+                            word_delimiters: &self.config.behavior.word_delimiters,
+                        };
+                        mouse_selection::pixel_to_cell(self.mouse.cursor_pos(), &grid_ctx)
+                            .map(|(col, line)| (line, col))
+                    } else {
+                        None
+                    };
+                    let pane_cursor_opacity_key = if layout.is_focused {
+                        if blinking_now && self.blinking_active {
+                            super::draw_helpers::blink_opacity(
+                                self.cursor_blink.intensity(),
+                                self.config.terminal.cursor_blink_fade,
+                            )
+                        } else {
+                            1.0
+                        }
+                    } else {
+                        0.0
+                    };
+                    let row_state = PaneRowState {
+                        resolved_cursor_visible: if layout.is_focused && snap.cursor.visible {
+                            Some(RenderableCursor {
+                                line: snap.cursor.row as usize,
+                                column: Column(snap.cursor.col as usize),
+                                shape: CursorShape::from(snap.cursor.shape),
+                                visible: true,
+                            })
+                        } else {
+                            None
+                        },
+                        selection_snapshot: selection_damage,
+                        hovered_cell: hovered_cell_key,
+                        mark_cursor: mark_cursor_key,
+                        cursor_opacity_bits: pane_cursor_opacity_key.to_bits(),
+                        block_cursor_color_exclusion_active: false,
+                        preedit_revision: if layout.is_focused {
+                            self.ime.preedit_revision
+                        } else {
+                            0
+                        },
+                        window_focused: pane_focused,
+                    };
+                    compute_pane_damage_key(&dispatch_inputs, &row_state)
+                };
+
+                let cache_hit = !dirty_content
+                    && ctx.pane_cache.is_cached(pane_id, layout, damage_key);
+
+                if cache_hit {
+                    // Cache hit — merge cached instances without extraction.
+                    let cached = ctx
+                        .pane_cache
+                        .get_cached(pane_id)
+                        .expect("is_cached verified");
+                    renderer.prepared.extend_from(cached);
+                } else {
+                    // Cache miss — must extract + annotate + prepare into cache.
                     let pane_viewport = ViewportSize::new(
                         layout.pixel_rect.width as u32,
                         layout.pixel_rect.height as u32,
@@ -307,7 +445,7 @@ impl App {
 
                     let cached = ctx
                         .pane_cache
-                        .get_or_prepare(pane_id, layout, true, |target| {
+                        .get_or_prepare(pane_id, layout, true, damage_key, |target| {
                             renderer.prepare_pane_into(
                                 frame,
                                 gpu,
@@ -316,13 +454,6 @@ impl App {
                                 target,
                             );
                         });
-                    renderer.prepared.extend_from(cached);
-                } else {
-                    // Cache hit — merge cached instances without extraction.
-                    let cached = ctx
-                        .pane_cache
-                        .get_cached(pane_id)
-                        .expect("is_cached verified");
                     renderer.prepared.extend_from(cached);
                 }
 

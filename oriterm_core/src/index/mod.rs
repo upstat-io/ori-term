@@ -101,7 +101,7 @@ impl<L: Ord> PartialOrd for Point<L> {
 }
 
 /// Which half of a cell the cursor is on (for selection granularity).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Side {
     Left,
     Right,

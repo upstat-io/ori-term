@@ -50,7 +50,7 @@ pub struct RenderableCell {
 }
 
 /// Cursor state for rendering.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct RenderableCursor {
     /// Cursor line in the visible viewport (0 = top).
     pub line: usize,

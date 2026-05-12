@@ -1402,7 +1402,7 @@ fn subpixel_positioning_change_invalidates_cache() {
 #[cfg(feature = "gpu-tests")]
 #[test]
 fn search_fingerprint_change_invalidates_cache() {
-    assert_dispatch_field_change_invalidates("search_fingerprint", |input, _| {
+    assert_dispatch_field_change_invalidates("search.fingerprint", |input, _| {
         // None → Some flips the Option discriminant in input.search_fingerprint(),
         // which compute_dispatch_fingerprint hashes via Hash trait derivation.
         // FrameSearch::for_test is the cfg(test)-gated constructor that bypasses

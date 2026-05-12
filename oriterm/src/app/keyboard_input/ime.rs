@@ -14,6 +14,11 @@ pub(in crate::app) struct ImeState {
     pub preedit: String,
     /// Cursor byte offset within the preedit text (from winit).
     pub preedit_cursor: Option<usize>,
+    /// Monotonic revision counter — increments on every preedit mutation
+    /// (set, clear, commit, disable). Consumed by the multi-pane render
+    /// cache (`PaneRowState::preedit_revision`) so cache invalidates on
+    /// preedit changes even when the new text is the same length as old.
+    pub preedit_revision: u64,
 }
 
 /// Side effect to perform after an IME state transition.
@@ -34,6 +39,7 @@ impl ImeState {
             active: false,
             preedit: String::new(),
             preedit_cursor: None,
+            preedit_revision: 0,
         }
     }
 
@@ -51,20 +57,32 @@ impl ImeState {
                 ImeEffect::Redraw
             }
             winit::event::Ime::Preedit(text, cursor) => {
+                let changed = self.preedit != text;
                 self.preedit = text;
                 self.preedit_cursor = cursor.map(|(start, _)| start);
+                if changed {
+                    self.preedit_revision = self.preedit_revision.wrapping_add(1);
+                }
                 ImeEffect::UpdateCursorArea
             }
             winit::event::Ime::Commit(text) => {
+                let was_nonempty = !self.preedit.is_empty();
                 self.preedit.clear();
                 self.preedit_cursor = None;
                 self.active = false;
+                if was_nonempty {
+                    self.preedit_revision = self.preedit_revision.wrapping_add(1);
+                }
                 ImeEffect::Commit(text)
             }
             winit::event::Ime::Disabled => {
+                let was_nonempty = !self.preedit.is_empty();
                 self.active = false;
                 self.preedit.clear();
                 self.preedit_cursor = None;
+                if was_nonempty {
+                    self.preedit_revision = self.preedit_revision.wrapping_add(1);
+                }
                 ImeEffect::Redraw
             }
         }
