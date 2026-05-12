@@ -131,4 +131,3 @@ fn focused_pane_chrome_state_inactive_search_produces_none() {
         "inactive search MUST produce None — search bar overlay hidden"
     );
 }
-

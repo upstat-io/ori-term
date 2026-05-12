@@ -42,9 +42,7 @@ pub(in crate::app) struct RedrawPredicates {
 /// content-re-extract / GPU-prepare path. See [`RedrawPredicates`] for
 /// the load-bearing rationale on why these two predicates must remain
 /// separate — see the regression anchor at the type-level doc.
-pub(in crate::app) fn compute_redraw_predicates(
-    inputs: RedrawPredicateInputs,
-) -> RedrawPredicates {
+pub(in crate::app) fn compute_redraw_predicates(inputs: RedrawPredicateInputs) -> RedrawPredicates {
     let snapshot_changed = inputs.snap_is_none || inputs.snap_dirty || inputs.pane_changed;
     let preedit_revision_changed = inputs.preedit_revision != inputs.prev_preedit_revision;
     RedrawPredicates {

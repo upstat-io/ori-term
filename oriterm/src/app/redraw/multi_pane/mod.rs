@@ -549,7 +549,10 @@ impl App {
             renderer.finish_multi_pane_frame();
 
             // Chrome: tab bar, overlays, search bar, status bar, window border.
-            let needs_full_render = super::chrome::render_chrome(
+            let super::chrome::ChromeRenderResult {
+                needs_full_render,
+                tab_bar_animating,
+            } = super::chrome::render_chrome(
                 ctx,
                 &self.config,
                 &self.ui_theme,
@@ -570,6 +573,9 @@ impl App {
 
             let result =
                 renderer.render_to_surface(gpu, pipelines, ctx.window.surface(), needs_full_render);
+
+            super::draw_helpers::apply_post_render_ui_stale(ctx, &result, tab_bar_animating);
+
             (result, blinking_now)
         };
 

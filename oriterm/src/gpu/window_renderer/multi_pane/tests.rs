@@ -14,8 +14,8 @@ use crate::gpu::visual_regression::headless_env;
 use crate::session::compute::DividerLayout;
 use crate::session::rect::Rect;
 use crate::session::split_tree::SplitDirection;
-use oriterm_core::image::ImageId;
 use oriterm_core::Rgb;
+use oriterm_core::image::ImageId;
 use oriterm_mux::PaneId;
 
 /// Helper: construct a test `DividerLayout`.
@@ -195,7 +195,10 @@ fn multi_pane_prepare_uploads_image_textures() {
     renderer.finish_multi_pane_frame();
 
     assert!(
-        renderer.image_texture_cache_for_test().get_bind_group(image_id).is_some(),
+        renderer
+            .image_texture_cache_for_test()
+            .get_bind_group(image_id)
+            .is_some(),
         "multi-pane Phase D must upload image_data textures to GPU"
     );
 }
@@ -247,10 +250,20 @@ fn touch_cached_pane_images_refreshes_last_frame() {
     // Frame 1: prepare into a target — the image gets uploaded to GPU.
     renderer.begin_multi_pane_frame(ViewportSize::new(800, 600), bg, 1.0);
     let mut cached_target = PreparedFrame::new(ViewportSize::new(800, 600), bg, 1.0);
-    renderer.prepare_pane_into(&input, &gpu, &pipelines, (0.0, 0.0), 1.0, &mut cached_target);
+    renderer.prepare_pane_into(
+        &input,
+        &gpu,
+        &pipelines,
+        (0.0, 0.0),
+        1.0,
+        &mut cached_target,
+    );
     renderer.finish_multi_pane_frame();
     assert!(
-        renderer.image_texture_cache_for_test().get_bind_group(image_id).is_some(),
+        renderer
+            .image_texture_cache_for_test()
+            .get_bind_group(image_id)
+            .is_some(),
         "first frame must upload the image"
     );
 
@@ -281,7 +294,10 @@ fn touch_cached_pane_images_refreshes_last_frame() {
     }
 
     assert!(
-        renderer.image_texture_cache_for_test().get_bind_group(image_id).is_some(),
+        renderer
+            .image_texture_cache_for_test()
+            .get_bind_group(image_id)
+            .is_some(),
         "image must remain in cache across pane-cache hits"
     );
 }
@@ -339,7 +355,14 @@ fn touch_cached_pane_images_returns_true_when_all_present() {
     // Frame 1: upload via prepare_pane_into so the image lives in cache.
     renderer.begin_multi_pane_frame(ViewportSize::new(800, 600), bg, 1.0);
     let mut cached_target = PreparedFrame::new(ViewportSize::new(800, 600), bg, 1.0);
-    renderer.prepare_pane_into(&input, &gpu, &pipelines, (0.0, 0.0), 1.0, &mut cached_target);
+    renderer.prepare_pane_into(
+        &input,
+        &gpu,
+        &pipelines,
+        (0.0, 0.0),
+        1.0,
+        &mut cached_target,
+    );
     cached_target.image_quads_above.push(ImageQuad {
         image_id,
         x: 0.0,
@@ -377,7 +400,14 @@ fn touch_cached_pane_images_negative_pin_eviction_without_touch() {
     // Frame 1: upload the image.
     renderer.begin_multi_pane_frame(ViewportSize::new(800, 600), bg, 1.0);
     let mut cached_target = PreparedFrame::new(ViewportSize::new(800, 600), bg, 1.0);
-    renderer.prepare_pane_into(&input, &gpu, &pipelines, (0.0, 0.0), 1.0, &mut cached_target);
+    renderer.prepare_pane_into(
+        &input,
+        &gpu,
+        &pipelines,
+        (0.0, 0.0),
+        1.0,
+        &mut cached_target,
+    );
     renderer.finish_multi_pane_frame();
     cached_target.image_quads_above.push(ImageQuad {
         image_id,
@@ -400,7 +430,10 @@ fn touch_cached_pane_images_negative_pin_eviction_without_touch() {
     }
 
     assert!(
-        renderer.image_texture_cache_for_test().get_bind_group(image_id).is_none(),
+        renderer
+            .image_texture_cache_for_test()
+            .get_bind_group(image_id)
+            .is_none(),
         "without touch_cached_pane_images, eviction must fire after THRESHOLD frames"
     );
 }

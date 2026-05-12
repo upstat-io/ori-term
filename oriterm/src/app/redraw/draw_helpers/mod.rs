@@ -357,6 +357,41 @@ pub(super) const BLINK_SNAP_THRESHOLD: f32 = 0.5;
 /// cache re-render (avoids re-rendering for imperceptible sub-pixel changes).
 pub(super) const BLINK_OPACITY_EPSILON: f32 = 0.001;
 
+/// Compute the post-render `ctx.ui_stale` value via OR-fold semantics.
+///
+/// On a successful render (`render_err == false`), the stale bit was
+/// consumed by the frame that just flushed — reset to
+/// `tab_bar_animating` (the chrome-tier animation signal that lives
+/// independently of frame success).
+///
+/// On a failed render (`render_err == true` — any `SurfaceError`
+/// variant: `Outdated` / `Lost` / `OutOfMemory` / `Other` / `Timeout`),
+/// the stale bit was NOT consumed because no pixels reached the
+/// surface — preserved via OR-fold so the next frame issues a full
+/// render and publishes the chrome state the failed frame intended.
+#[inline]
+pub(super) fn post_render_ui_stale(
+    prev_stale: bool,
+    render_err: bool,
+    tab_bar_animating: bool,
+) -> bool {
+    (prev_stale && render_err) || tab_bar_animating
+}
+
+/// Apply the [`post_render_ui_stale`] OR-fold in place on `ctx.ui_stale`.
+///
+/// One-line wrapper that keeps the single-pane and multi-pane caller
+/// sites concise. Called AFTER `render_to_surface` returns and BEFORE
+/// the redraw closure exits.
+#[inline]
+pub(super) fn apply_post_render_ui_stale<T>(
+    ctx: &mut crate::app::window_context::WindowContext,
+    render_result: &Result<(), T>,
+    tab_bar_animating: bool,
+) {
+    ctx.ui_stale = post_render_ui_stale(ctx.ui_stale, render_result.is_err(), tab_bar_animating);
+}
+
 /// Compute final blink opacity from the raw animation intensity.
 ///
 /// When `use_fade` is true, returns the raw intensity for a smooth fade
@@ -385,3 +420,6 @@ pub(super) fn status_bar_data(pane_count: usize, cols: usize, rows: usize) -> St
         term_type: "xterm-256color".into(),
     }
 }
+
+#[cfg(test)]
+mod tests;

@@ -44,7 +44,29 @@ pub(in crate::app::redraw) struct ChromeParams<'a> {
 /// for chrome-relevant fields because in multi-pane mode it is a per-pane
 /// scratch buffer holding the last-iterated pane's state.
 ///
-/// Returns `true` if `render_to_surface` should do a full content render.
+/// Result of running the chrome render pipeline.
+///
+/// `needs_full_render` gates whether `render_to_surface` rebuilds the
+/// content-cache tier or blits it. `tab_bar_animating` is the chrome-tier
+/// animation signal — the caller uses it AFTER `finish_render` to OR-fold
+/// `ctx.ui_stale` so a benign surface error path preserves the prior
+/// stale bit instead of dropping it.
+pub(in crate::app::redraw) struct ChromeRenderResult {
+    /// Whether `render_to_surface` should do a full content render
+    /// (rebuild the cache tier, not just blit it).
+    pub(in crate::app::redraw) needs_full_render: bool,
+    /// Whether the tab bar is mid-animation this frame. Drives the
+    /// caller's post-`finish_render` `ctx.ui_stale` OR-fold.
+    pub(in crate::app::redraw) tab_bar_animating: bool,
+}
+
+/// Render the chrome (tab bar, overlays, search, status, border) layer
+/// and compute whether a full content render is needed.
+///
+/// Returns a [`ChromeRenderResult`] carrying both `needs_full_render`
+/// (consumed before `render_to_surface`) and `tab_bar_animating`
+/// (consumed AFTER `finish_render` to OR-fold `ctx.ui_stale` —
+/// preserving the prior-frame stale bit on benign surface errors).
 #[expect(
     clippy::too_many_lines,
     reason = "linear chrome pipeline: phase gate → tab bar → overlays → search → status → border"
@@ -55,7 +77,7 @@ pub(in crate::app::redraw) fn render_chrome(
     ui_theme: &UiTheme,
     gpu: &GpuState,
     params: &ChromeParams<'_>,
-) -> bool {
+) -> ChromeRenderResult {
     let renderer = ctx.renderer.as_mut().expect("renderer checked by caller");
     let (w, h) = ctx.window.size_px();
     let scale = ctx.window.scale_factor().factor() as f32;
@@ -171,9 +193,13 @@ pub(in crate::app::redraw) fn render_chrome(
 
     let needs_full_render = renderer.cache_invalidated_this_frame() || ctx.ui_stale;
 
+    // ctx.ui_stale is NOT assigned here. The caller applies the OR-fold
+    // AFTER `finish_render` returns so that benign surface errors
+    // (Outdated / Lost / Timeout / Other / OutOfMemory) preserve the
+    // prior-frame stale signal instead of silently dropping it.
     // Overlay tiers render above the cached content every frame, so
-    // only chrome animations keep the content cache stale.
-    ctx.ui_stale = tab_bar_animating;
+    // only chrome animations (`tab_bar_animating`) keep the content
+    // cache stale across frames; the caller folds that signal in.
 
     // Window border: 2px border-strong frame, skipped when maximized/fullscreen.
     // macOS: the compositor provides a native window shadow — no border needed.
@@ -184,5 +210,8 @@ pub(in crate::app::redraw) fn render_chrome(
         renderer.append_window_border(w, h, border_color, border_width);
     }
 
-    needs_full_render
+    ChromeRenderResult {
+        needs_full_render,
+        tab_bar_animating,
+    }
 }

@@ -362,7 +362,11 @@ fn touch_image_stamps_last_frame_for_occupied_entry() {
         cache.get_bind_group(id).is_some(),
         "touch_image must stamp last_frame so evict_unused does not drop the entry"
     );
-    assert_eq!(cache.frame_counter(), touched_at, "touch must not advance frame_counter");
+    assert_eq!(
+        cache.frame_counter(),
+        touched_at,
+        "touch must not advance frame_counter"
+    );
 }
 
 /// Regression: BUG-06-062 — touch_image for a Vacant entry is a no-op —
@@ -384,7 +388,11 @@ fn touch_image_is_noop_for_vacant_entry() {
     );
     assert_eq!(cache.texture_count(), 0, "touch must not insert");
     assert_eq!(cache.gpu_memory_used(), 0, "touch must not allocate");
-    assert_eq!(cache.frame_counter(), before, "touch must not advance counter");
+    assert_eq!(
+        cache.frame_counter(),
+        before,
+        "touch must not advance counter"
+    );
 }
 
 /// Regression: BUG-06-062 — touch_image returns true when the entry exists.
@@ -409,8 +417,5 @@ fn touch_image_returns_true_for_occupied_entry() {
         4,
     );
 
-    assert!(
-        cache.touch_image(id),
-        "touch on Occupied must return true"
-    );
+    assert!(cache.touch_image(id), "touch on Occupied must return true");
 }

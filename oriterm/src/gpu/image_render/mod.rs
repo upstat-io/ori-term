@@ -162,7 +162,10 @@ impl ImageTextureCache {
     /// [`ensure_uploaded`] / [`touch_image`] / [`evict_unused`] / [`evict_over_limit`]
     /// which thread the counter internally.
     #[cfg(any(test, feature = "gpu-tests"))]
-    #[allow(dead_code, reason = "consumed by gpu-tests-gated frame-counter delta tests")]
+    #[allow(
+        dead_code,
+        reason = "consumed by gpu-tests-gated frame-counter delta tests"
+    )]
     pub(crate) fn frame_counter(&self) -> u64 {
         self.frame_counter
     }

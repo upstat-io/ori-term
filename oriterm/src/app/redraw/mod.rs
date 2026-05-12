@@ -5,8 +5,8 @@ mod debug_overlay;
 mod draw_helpers;
 mod multi_pane;
 mod post_render;
-pub(in crate::app) mod preedit;
 mod predicates;
+pub(in crate::app) mod preedit;
 mod search_bar;
 
 use predicates::{RedrawPredicateInputs, compute_redraw_predicates};
@@ -361,18 +361,17 @@ impl App {
 
             // Chrome: tab bar, overlays, search bar, status bar, window border.
             let widgets_start = Instant::now();
-            // Take search out of ctx.frame temporarily so ChromeParams
-            // carries an owned local borrow (not a borrow from ctx) —
-            // render_chrome takes &mut WindowContext, which would conflict
-            // with a &FrameSearch borrowed from ctx.frame. Allocation-free
-            // per oriterm.md §Zero allocations in the hot render path.
-            // Search restored after the chrome call.
+            // Take search out of ctx.frame so ChromeParams carries an owned
+            // local borrow (avoids &mut self vs &FrameSearch borrow conflict).
             let chrome_search = ctx.frame.as_mut().and_then(|f| f.search.take());
             let (cols, rows) = ctx
                 .frame
                 .as_ref()
                 .map_or((0, 0), |f| (f.content_cols, f.content_rows));
-            let needs_full_render = chrome::render_chrome(
+            let chrome::ChromeRenderResult {
+                needs_full_render,
+                tab_bar_animating,
+            } = chrome::render_chrome(
                 ctx,
                 &self.config,
                 &self.ui_theme,
@@ -402,16 +401,16 @@ impl App {
             // when render_chrome returned via NLL).
             let renderer = ctx.renderer.as_mut().expect("renderer checked");
 
-            // Apply deferred DXGI ResizeBuffers just before acquiring the
-            // surface texture. This minimizes the gap between swap chain
-            // invalidation and frame presentation, preventing the DWM from
-            // stretching stale content during interactive resize.
+            // Apply deferred DXGI ResizeBuffers before surface acquisition
+            // (minimizes the DWM stale-content window during resize).
             ctx.window.apply_pending_surface_resize(gpu);
 
             let gpu_start = Instant::now();
             let result =
                 renderer.render_to_surface(gpu, pipelines, ctx.window.surface(), needs_full_render);
             phases.gpu_render = gpu_start.elapsed();
+
+            draw_helpers::apply_post_render_ui_stale(ctx, &result, tab_bar_animating);
             (result, blinking_now, cursor_pos)
         };
 

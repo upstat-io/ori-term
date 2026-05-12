@@ -269,7 +269,10 @@ impl WindowRenderer {
     /// upload/eviction state without exposing the cache to production
     /// callers.
     #[cfg(any(test, feature = "gpu-tests"))]
-    #[allow(dead_code, reason = "consumed by gpu-tests-gated tests in multi_pane/tests.rs")]
+    #[allow(
+        dead_code,
+        reason = "consumed by gpu-tests-gated tests in multi_pane/tests.rs"
+    )]
     pub(crate) fn image_texture_cache_for_test(&self) -> &ImageTextureCache {
         &self.image_texture_cache
     }

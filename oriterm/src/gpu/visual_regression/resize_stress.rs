@@ -713,7 +713,15 @@ fn cached_path_shrink_to_1x1_does_not_panic_and_writes_pixel() {
     };
     // dst smaller than vp on both axes — shrink path; copy clamps to 1x1.
     let (pixels, _w) = prepare_and_render_cached_with_clear(
-        &gpu, &pipelines, &mut renderer, 800, 600, 1, 1, bg, 1.0,
+        &gpu,
+        &pipelines,
+        &mut renderer,
+        800,
+        600,
+        1,
+        1,
+        bg,
+        1.0,
     );
     assert_eq!(pixels.len(), 4, "1x1 readback must be exactly 4 bytes");
     // The single pixel must be non-zero — proves the cache actually
