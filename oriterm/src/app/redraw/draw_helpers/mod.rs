@@ -103,12 +103,30 @@ pub(super) fn try_swap_or_extract_pane_content(
         frame.clear_transient_fields();
         PaneExtractOutcome::Swapped
     } else if reextract_gate {
+        // Build a closure that resolves cached image bytes through the
+        // MuxBackend trait surface. Daemon-mode `MuxClient` returns a cheap
+        // `Arc` clone from its `image_cache`; embedded backends return None
+        // (extract is never invoked when their `swap_renderable_content`
+        // succeeds, so the closure is effectively unreachable for them).
+        // See: bug-tracker/plans/BUG-06-072/ // prose-lint: allow
+        let image_lookup = |id| mux.pane_image_data(pane_id, id);
         match ctx_frame {
             Some(existing) => {
-                extract_frame_from_snapshot_into(snapshot, existing, viewport, cell);
+                extract_frame_from_snapshot_into(
+                    snapshot,
+                    existing,
+                    viewport,
+                    cell,
+                    &image_lookup,
+                );
             }
             slot @ None => {
-                *slot = Some(extract_frame_from_snapshot(snapshot, viewport, cell));
+                *slot = Some(extract_frame_from_snapshot(
+                    snapshot,
+                    viewport,
+                    cell,
+                    &image_lookup,
+                ));
             }
         }
         PaneExtractOutcome::Reextracted

@@ -103,7 +103,7 @@ fn test_cell_metrics() -> CellMetrics {
 #[test]
 fn renderable_cell_positions() {
     let snap = test_snapshot();
-    let content = snapshot_to_renderable(&snap);
+    let content = snapshot_to_renderable(&snap, &|_| None);
 
     assert_eq!(content.cells.len(), 4);
     assert_eq!(content.cells[0].line, 0);
@@ -122,7 +122,7 @@ fn renderable_cell_positions() {
 #[test]
 fn renderable_colors_pre_resolved() {
     let snap = test_snapshot();
-    let content = snapshot_to_renderable(&snap);
+    let content = snapshot_to_renderable(&snap, &|_| None);
 
     assert_eq!(
         content.cells[0].fg,
@@ -139,7 +139,7 @@ fn renderable_colors_pre_resolved() {
 #[test]
 fn renderable_flags_preserved() {
     let snap = test_snapshot();
-    let content = snapshot_to_renderable(&snap);
+    let content = snapshot_to_renderable(&snap, &|_| None);
 
     assert!(content.cells[1].flags.contains(CellFlags::BOLD));
     assert!(content.cells[3].flags.contains(CellFlags::UNDERLINE));
@@ -149,7 +149,7 @@ fn renderable_flags_preserved() {
 #[test]
 fn renderable_underline_color_and_hyperlink() {
     let snap = test_snapshot();
-    let content = snapshot_to_renderable(&snap);
+    let content = snapshot_to_renderable(&snap, &|_| None);
 
     assert_eq!(content.cells[0].underline_color, None);
     assert!(!content.cells[0].has_hyperlink);
@@ -168,7 +168,7 @@ fn renderable_underline_color_and_hyperlink() {
 #[test]
 fn renderable_zerowidth() {
     let snap = test_snapshot();
-    let content = snapshot_to_renderable(&snap);
+    let content = snapshot_to_renderable(&snap, &|_| None);
 
     assert!(content.cells[0].zerowidth.is_empty());
     assert_eq!(content.cells[3].zerowidth, vec!['\u{0301}']);
@@ -177,7 +177,7 @@ fn renderable_zerowidth() {
 #[test]
 fn renderable_cursor() {
     let snap = test_snapshot();
-    let content = snapshot_to_renderable(&snap);
+    let content = snapshot_to_renderable(&snap, &|_| None);
 
     assert_eq!(content.cursor.line, 0);
     assert_eq!(content.cursor.column, Column(1));
@@ -188,7 +188,7 @@ fn renderable_cursor() {
 #[test]
 fn renderable_mode_flags() {
     let snap = test_snapshot();
-    let content = snapshot_to_renderable(&snap);
+    let content = snapshot_to_renderable(&snap, &|_| None);
 
     assert!(content.mode.contains(TermMode::SHOW_CURSOR));
     assert!(content.all_dirty);
@@ -236,7 +236,7 @@ fn extract_frame_produces_valid_frame_input() {
     let viewport = ViewportSize::new(160, 320);
     let cell = test_cell_metrics();
 
-    let frame = extract_frame_from_snapshot(&snap, viewport, cell);
+    let frame = extract_frame_from_snapshot(&snap, viewport, cell, &|_| None);
 
     assert_eq!(frame.viewport, viewport);
     assert_eq!(frame.cell_size, cell);
@@ -278,7 +278,7 @@ fn cursor_shape_all_variants() {
     for (wire_shape, expected_shape) in variants {
         let mut snap = test_snapshot();
         snap.cursor.shape = wire_shape;
-        let content = snapshot_to_renderable(&snap);
+        let content = snapshot_to_renderable(&snap, &|_| None);
         assert_eq!(
             content.cursor.shape, expected_shape,
             "wire shape {wire_shape:?} should map to {expected_shape:?}"
@@ -292,7 +292,7 @@ fn cursor_hidden_invisible() {
     snap.cursor.visible = false;
     snap.cursor.shape = WireCursorShape::Hidden;
 
-    let content = snapshot_to_renderable(&snap);
+    let content = snapshot_to_renderable(&snap, &|_| None);
 
     assert!(!content.cursor.visible);
     assert_eq!(content.cursor.shape, CursorShape::Hidden);
@@ -331,7 +331,7 @@ fn empty_snapshot_no_cells() {
         images_dirty: false,
     };
 
-    let content = snapshot_to_renderable(&snap);
+    let content = snapshot_to_renderable(&snap, &|_| None);
     assert!(content.cells.is_empty());
     assert_eq!(content.cursor.line, 0);
     assert_eq!(content.cursor.column, Column(0));
@@ -370,7 +370,7 @@ fn empty_snapshot_frame_input() {
 
     let viewport = ViewportSize::new(160, 320);
     let cell = test_cell_metrics();
-    let frame = extract_frame_from_snapshot(&snap, viewport, cell);
+    let frame = extract_frame_from_snapshot(&snap, viewport, cell, &|_| None);
 
     assert!(frame.content.cells.is_empty());
     assert_eq!(frame.viewport, viewport);
@@ -383,7 +383,7 @@ fn display_offset_carried_through() {
     let mut snap = test_snapshot();
     snap.display_offset = 42;
 
-    let content = snapshot_to_renderable(&snap);
+    let content = snapshot_to_renderable(&snap, &|_| None);
     assert_eq!(content.display_offset, 42);
 }
 
@@ -392,7 +392,7 @@ fn display_offset_large_value() {
     let mut snap = test_snapshot();
     snap.display_offset = 100_000;
 
-    let content = snapshot_to_renderable(&snap);
+    let content = snapshot_to_renderable(&snap, &|_| None);
     assert_eq!(content.display_offset, 100_000);
 }
 
@@ -441,7 +441,7 @@ fn wide_char_flag_preserved() {
         images_dirty: false,
     };
 
-    let content = snapshot_to_renderable(&snap);
+    let content = snapshot_to_renderable(&snap, &|_| None);
     assert!(content.cells[0].flags.contains(CellFlags::WIDE_CHAR));
     assert_eq!(content.cells[0].ch, '漢');
 }
@@ -452,15 +452,15 @@ fn wide_char_flag_preserved() {
 fn renderable_into_matches_fresh() {
     let snap = test_snapshot();
 
-    let fresh = snapshot_to_renderable(&snap);
-    let mut reused = snapshot_to_renderable(&snap);
+    let fresh = snapshot_to_renderable(&snap, &|_| None);
+    let mut reused = snapshot_to_renderable(&snap, &|_| None);
     // Mutate to prove `_into` overwrites everything.
     reused.display_offset = 999;
     reused.stable_row_base = 42;
     reused.all_dirty = false;
     reused.mode = TermMode::empty();
 
-    snapshot_to_renderable_into(&snap, &mut reused);
+    snapshot_to_renderable_into(&snap, &mut reused, &|_| None);
 
     assert_eq!(fresh.cells.len(), reused.cells.len());
     for (a, b) in fresh.cells.iter().zip(reused.cells.iter()) {
@@ -491,15 +491,15 @@ fn extract_into_matches_fresh() {
     let viewport = ViewportSize::new(160, 320);
     let cell = test_cell_metrics();
 
-    let fresh = extract_frame_from_snapshot(&snap, viewport, cell);
+    let fresh = extract_frame_from_snapshot(&snap, viewport, cell, &|_| None);
 
     // Seed with a different snapshot to prove _into overwrites correctly.
-    let mut reused = extract_frame_from_snapshot(&snap, ViewportSize::new(1, 1), cell);
+    let mut reused = extract_frame_from_snapshot(&snap, ViewportSize::new(1, 1), cell, &|_| None);
     reused.fg_dim = 0.5;
     reused.hovered_url_segments.push((0, 0, 10));
     reused.prompt_marker_rows.push(99);
 
-    extract_frame_from_snapshot_into(&snap, &mut reused, viewport, cell);
+    extract_frame_from_snapshot_into(&snap, &mut reused, viewport, cell, &|_| None);
 
     assert_eq!(fresh.viewport, reused.viewport);
     assert_eq!(fresh.cell_size, reused.cell_size);
@@ -523,12 +523,12 @@ fn extract_into_preserves_capacity() {
     let cell = test_cell_metrics();
 
     // First extraction allocates.
-    let mut frame = extract_frame_from_snapshot(&snap, viewport, cell);
+    let mut frame = extract_frame_from_snapshot(&snap, viewport, cell, &|_| None);
     let cells_cap = frame.content.cells.capacity();
     assert!(cells_cap >= 4, "should have allocated for 4 cells");
 
     // Second extraction into the same frame reuses allocations.
-    extract_frame_from_snapshot_into(&snap, &mut frame, viewport, cell);
+    extract_frame_from_snapshot_into(&snap, &mut frame, viewport, cell, &|_| None);
     assert!(
         frame.content.cells.capacity() >= cells_cap,
         "capacity should not shrink"
@@ -596,7 +596,7 @@ fn large_snapshot_through_extract() {
 
     let viewport = ViewportSize::new(1600, 800);
     let cell = test_cell_metrics();
-    let frame = extract_frame_from_snapshot(&snap, viewport, cell);
+    let frame = extract_frame_from_snapshot(&snap, viewport, cell, &|_| None);
 
     assert_eq!(frame.content.cells.len(), rows * cols);
     assert_eq!(frame.content.cursor.line, 25);
@@ -629,7 +629,7 @@ fn snapshot_to_renderable_populates_mouse_cursor_icon() {
     snap.mouse_cursor_icon =
         oriterm_mux::protocol::snapshot::encode_cursor_icon(CursorIcon::Pointer);
 
-    let content = snapshot_to_renderable(&snap);
+    let content = snapshot_to_renderable(&snap, &|_| None);
 
     assert_eq!(content.mouse_cursor_icon, Some(CursorIcon::Pointer));
 }
@@ -647,7 +647,7 @@ fn snapshot_to_renderable_into_populates_mouse_cursor_icon() {
     snap.mouse_cursor_icon = oriterm_mux::protocol::snapshot::encode_cursor_icon(CursorIcon::Text);
 
     let mut out = RenderableContent::default();
-    snapshot_to_renderable_into(&snap, &mut out);
+    snapshot_to_renderable_into(&snap, &mut out, &|_| None);
 
     assert_eq!(out.mouse_cursor_icon, Some(CursorIcon::Text));
 }
@@ -659,7 +659,7 @@ fn snapshot_to_renderable_none_icon_stays_none() {
     let mut snap = test_snapshot();
     snap.mouse_cursor_icon = None;
 
-    let content = snapshot_to_renderable(&snap);
+    let content = snapshot_to_renderable(&snap, &|_| None);
 
     assert_eq!(content.mouse_cursor_icon, None);
 }
@@ -680,7 +680,7 @@ fn snapshot_to_renderable_into_clears_stale_icon() {
     // Refill from a snapshot with None — the icon MUST be cleared.
     let mut snap = test_snapshot();
     snap.mouse_cursor_icon = None;
-    snapshot_to_renderable_into(&snap, &mut out);
+    snapshot_to_renderable_into(&snap, &mut out, &|_| None);
 
     assert_eq!(out.mouse_cursor_icon, None);
 }
@@ -704,13 +704,13 @@ fn extract_frame_from_snapshot_into_clears_stale_icon() {
         height: 100,
     };
     let cell_metrics = test_cell_metrics();
-    let mut frame = extract_frame_from_snapshot(&snap1, viewport, cell_metrics);
+    let mut frame = extract_frame_from_snapshot(&snap1, viewport, cell_metrics, &|_| None);
     assert_eq!(frame.content.mouse_cursor_icon, Some(CursorIcon::Pointer));
 
     // Refill from a snapshot with None — icon MUST be cleared.
     let mut snap2 = test_snapshot();
     snap2.mouse_cursor_icon = None;
-    extract_frame_from_snapshot_into(&snap2, &mut frame, viewport, cell_metrics);
+    extract_frame_from_snapshot_into(&snap2, &mut frame, viewport, cell_metrics, &|_| None);
 
     assert_eq!(frame.content.mouse_cursor_icon, None);
     // Sanity: also verify cells were refreshed (not a stale seed).
