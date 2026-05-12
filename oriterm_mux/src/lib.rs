@@ -18,6 +18,7 @@ pub mod backend;
 pub mod discovery;
 pub mod domain;
 pub mod id;
+pub mod image_cache;
 pub mod in_process;
 pub mod mux_event;
 pub mod one_shot;

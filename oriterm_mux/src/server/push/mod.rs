@@ -178,7 +178,10 @@ pub fn push_or_defer_pane(ctx: &mut PushContext<'_>, now: Instant, pane_id: Pane
     let interval = effective_push_interval(pane_id, ctx.scratch, ctx.connections);
     if should_push(now, ctx.last_snapshot_push.get(&pane_id).copied(), interval) {
         if let Some(pane) = ctx.panes.get(&pane_id) {
-            let snap = ctx.snapshot_cache.build_clone(pane_id, pane);
+            let (snap, _evicted) = ctx.snapshot_cache.build_clone(pane_id, pane);
+            // TODO(BUG-06-072 Commit 3): propagate `_evicted` to every // prose-lint: allow
+            // ClientConnection.sent_images so server-driven invalidation
+            // forces re-send on the next snapshot referencing the ID.
             let deferred = ctx.pending_push.entry(pane_id).or_default();
             push_snapshot_to_subscribers(pane_id, &snap, ctx.scratch, ctx.connections, deferred);
             ctx.last_snapshot_push.insert(pane_id, now);
@@ -249,7 +252,8 @@ pub fn trailing_edge_flush(ctx: &mut PushContext<'_>, now: Instant) {
             ctx.pending_push.remove(&pane_id);
             continue;
         };
-        let snap = ctx.snapshot_cache.build_clone(pane_id, pane);
+        let (snap, _evicted) = ctx.snapshot_cache.build_clone(pane_id, pane);
+        // TODO(BUG-06-072 Commit 3): propagate `_evicted` to ClientConnection.sent_images. // prose-lint: allow
 
         let push_pdu = MuxPdu::NotifyPaneSnapshot {
             pane_id,

@@ -9,11 +9,14 @@
 //! already applied). This eliminates the need for clients to duplicate color
 //! resolution.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
-use oriterm_core::{CursorShape, RenderableContent, Rgb};
+use oriterm_core::{CursorShape, ImageId, RenderableContent, RenderableImageData, Rgb};
 
+use crate::image_cache::ImageCache;
 use crate::pane::Pane;
+use crate::protocol::snapshot::WirePlacement;
 use crate::protocol::{WireSearchMatch, encode_cursor_icon};
 use crate::{PaneId, PaneSnapshot, WireCell, WireCursor, WireCursorShape, WireRgb};
 
@@ -28,7 +31,23 @@ pub(crate) struct SnapshotCache {
     cache: HashMap<PaneId, PaneSnapshot>,
     /// Shared scratch buffer for IO-thread snapshot swap.
     render_buf: RenderableContent,
+    /// Bounded LRU store of image pixel data, keyed by `(PaneId, ImageId)`.
+    ///
+    /// Server-side SSOT for daemon-mode image bytes. The dispatch slow path
+    /// reads from this to build per-client `WireImageData` entries on demand
+    /// (so cached `PaneSnapshot` entries can stay image-data-free, and per-
+    /// subscriber filtering doesn't re-extract from `Term`).
+    ///
+    /// See: bug-tracker/plans/BUG-06-072/
+    image_data_store: ImageCache,
 }
+
+/// Pixel-data evictions surfaced by the most recent `build*` call.
+///
+/// Callers must propagate these to every client's `sent_images` so that a
+/// snapshot later referencing the evicted ID re-includes its `WireImageData`.
+/// See: bug-tracker/plans/BUG-06-072/section-05-implementation.md
+pub(crate) type EvictedImageKeys = Vec<(PaneId, ImageId)>;
 
 impl SnapshotCache {
     /// Create an empty cache.
@@ -36,25 +55,53 @@ impl SnapshotCache {
         Self {
             cache: HashMap::new(),
             render_buf: RenderableContent::default(),
+            image_data_store: ImageCache::new(),
         }
     }
 
     /// Build a snapshot for a pane, reusing cached allocations.
     ///
-    /// Reads the IO thread's latest snapshot via zero-lock swap.
-    pub fn build(&mut self, pane_id: PaneId, pane: &Pane) -> &PaneSnapshot {
-        let cached = self.cache.entry(pane_id).or_default();
-        if pane.swap_io_snapshot(&mut self.render_buf) {
+    /// Reads the IO thread's latest snapshot via zero-lock swap. Also folds
+    /// any new `RenderableImageData` from `render_buf` into the server-side
+    /// `image_data_store` (server-side SSOT for daemon-mode image bytes).
+    /// Returns the list of `(PaneId, ImageId)` keys evicted from
+    /// `image_data_store` during this insert sweep — callers MUST propagate
+    /// these to every client's `sent_images` to maintain the server-driven
+    /// invalidation contract.
+    pub fn build(&mut self, pane_id: PaneId, pane: &Pane) -> (&PaneSnapshot, EvictedImageKeys) {
+        let mut evicted = EvictedImageKeys::new();
+        let swapped = pane.swap_io_snapshot(&mut self.render_buf);
+        if swapped {
+            // Fold image data into image_data_store BEFORE filling the cached
+            // snapshot (so the latest pane snapshot still has its prior images
+            // for the reachability oracle during eviction decisions).
+            evicted = fold_image_data_store(
+                pane_id,
+                &self.cache,
+                &self.render_buf.image_data,
+                &mut self.image_data_store,
+            );
+            let cached = self.cache.entry(pane_id).or_default();
             fill_snapshot_from_renderable(pane, &self.render_buf, cached);
+        } else {
+            // No IO-thread snapshot to fold; ensure cache entry exists so
+            // downstream `build_and_take` can mem::take it.
+            self.cache.entry(pane_id).or_default();
         }
-        &self.cache[&pane_id]
+        (&self.cache[&pane_id], evicted)
     }
 
     /// Clone the cached snapshot for a pane (for sending over IPC).
     ///
-    /// Builds a fresh snapshot if none is cached.
-    pub fn build_clone(&mut self, pane_id: PaneId, pane: &Pane) -> PaneSnapshot {
-        self.build(pane_id, pane).clone()
+    /// Builds a fresh snapshot if none is cached. Returns the snapshot plus
+    /// any evicted `(PaneId, ImageId)` keys from the image-data store.
+    pub fn build_clone(
+        &mut self,
+        pane_id: PaneId,
+        pane: &Pane,
+    ) -> (PaneSnapshot, EvictedImageKeys) {
+        let (snap_ref, evicted) = self.build(pane_id, pane);
+        (snap_ref.clone(), evicted)
     }
 
     /// Build a snapshot and move it out of the cache.
@@ -62,16 +109,57 @@ impl SnapshotCache {
     /// Avoids the `clone()` in [`build_clone`] by taking ownership via
     /// `mem::take`. The cache entry is left empty (default) — the next
     /// `build` call will re-populate it (losing one frame of allocation
-    /// reuse, which is acceptable for the synchronous RPC path).
-    pub fn build_and_take(&mut self, pane_id: PaneId, pane: &Pane) -> PaneSnapshot {
-        self.build(pane_id, pane);
-        std::mem::take(self.cache.get_mut(&pane_id).expect("just built"))
+    /// reuse, which is acceptable for the synchronous RPC path). Returns
+    /// the snapshot plus any evicted `(PaneId, ImageId)` keys.
+    pub fn build_and_take(
+        &mut self,
+        pane_id: PaneId,
+        pane: &Pane,
+    ) -> (PaneSnapshot, EvictedImageKeys) {
+        let (_, evicted) = self.build(pane_id, pane);
+        let taken = std::mem::take(self.cache.get_mut(&pane_id).expect("just built"));
+        (taken, evicted)
     }
 
-    /// Remove a pane's cached snapshot.
+    /// Remove a pane's cached snapshot and image pixel data.
     pub fn remove(&mut self, pane_id: PaneId) {
         self.cache.remove(&pane_id);
+        self.image_data_store.drop_pane(pane_id);
     }
+}
+
+/// Fold pixel data from a freshly-swapped `render_buf` into the server-side
+/// image_data_store, using cross-pane reachability for eviction decisions.
+///
+/// Computed reachability set walks ALL panes' latest cached snapshots — an
+/// image bytes entry for pane B may be evicted by pane A's insert under
+/// memory pressure, so we cannot evict bytes still referenced by B.
+fn fold_image_data_store(
+    pane_id: PaneId,
+    cache: &HashMap<PaneId, PaneSnapshot>,
+    image_data: &[RenderableImageData],
+    store: &mut ImageCache,
+) -> EvictedImageKeys {
+    if image_data.is_empty() {
+        return Vec::new();
+    }
+    // Compute upfront reachability set: every `(PaneId, ImageId)` referenced
+    // by a placement in any pane's latest cached snapshot.
+    let reachable: HashSet<(PaneId, ImageId)> = cache
+        .iter()
+        .flat_map(|(p, snap)| {
+            snap.images
+                .iter()
+                .map(move |wp| (*p, ImageId::from_raw(wp.image_id)))
+        })
+        .collect();
+    let mut total_evicted = Vec::new();
+    for img in image_data {
+        let arc = Arc::new(img.clone());
+        let evicted = store.insert(pane_id, img.id, arc, |p, i| reachable.contains(&(p, i)));
+        total_evicted.extend(evicted);
+    }
+    total_evicted
 }
 
 /// Fill snapshot metadata and wire cells from a pre-built [`RenderableContent`].
@@ -86,6 +174,38 @@ pub(crate) fn fill_snapshot_from_renderable(
 ) {
     fill_wire_cells_from_renderable(render_buf, out);
     fill_metadata_from_renderable(pane, render_buf, out);
+    fill_images_from_renderable(render_buf, out);
+}
+
+/// Fill the `images` placement list + `images_dirty` flag from `render_buf`.
+///
+/// `image_data` deliberately stays empty in the CACHED `PaneSnapshot` — the
+/// dispatch layer projects per-client `image_data` at queue time, reading
+/// pixels from `SnapshotCache.image_data_store` (kept in sync separately
+/// by `fold_image_data_store`).
+/// See: bug-tracker/plans/BUG-06-072/section-05-implementation.md
+fn fill_images_from_renderable(render_buf: &RenderableContent, out: &mut PaneSnapshot) {
+    out.images.clear();
+    out.images.reserve(render_buf.images.len().saturating_sub(out.images.capacity()));
+    for placement in &render_buf.images {
+        out.images.push(WirePlacement {
+            image_id: placement.image_id.as_u32(),
+            viewport_x: placement.viewport_x,
+            viewport_y: placement.viewport_y,
+            display_width: placement.display_width,
+            display_height: placement.display_height,
+            source_x: placement.source_x,
+            source_y: placement.source_y,
+            source_w: placement.source_w,
+            source_h: placement.source_h,
+            z_index: placement.z_index,
+            opacity: placement.opacity,
+        });
+    }
+    out.images_dirty = render_buf.images_dirty;
+    // `image_data` stays empty in the cached snapshot — dispatch projects it
+    // per-client at queue time.
+    out.image_data.clear();
 }
 
 /// Convert [`RenderableContent`] cells to wire format without `&Term`.

@@ -331,7 +331,9 @@ pub fn dispatch_request(
             conn.subscribe(pane_id);
             match ctx.panes.get(&pane_id) {
                 Some(pane) => {
-                    let snap = ctx.snapshot_cache.build_and_take(pane_id, pane);
+                    let (snap, _evicted) = ctx.snapshot_cache.build_and_take(pane_id, pane);
+                    // TODO(BUG-06-072 Commit 3): propagate `_evicted` to all // prose-lint: allow
+                    // ClientConnection.sent_images.
                     Some(MuxPdu::Subscribed { snapshot: snap })
                 }
                 None => Some(MuxPdu::Error {
@@ -434,7 +436,9 @@ pub fn dispatch_request(
                         ),
                     })
                 } else {
-                    let snap = ctx.snapshot_cache.build_and_take(pane_id, pane);
+                    let (snap, _evicted) = ctx.snapshot_cache.build_and_take(pane_id, pane);
+                    // TODO(BUG-06-072 Commit 3): propagate `_evicted` to all // prose-lint: allow
+                    // ClientConnection.sent_images.
                     Some(MuxPdu::PaneSnapshotResp { snapshot: snap })
                 }
             }
