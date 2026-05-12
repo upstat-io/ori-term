@@ -397,7 +397,7 @@ fn cached_path_grow_both_axes_clears_uncovered_to_clear_color() {
 
 /// Regression: BUG-06-052 — horizontal-only grow; clear pass must fire.
 #[test]
-fn cached_path_grow_horizontal_only() {
+fn cached_path_grow_horizontal_only_clears_uncovered_strip() {
     let Some((gpu, pipelines, mut renderer)) = headless_env() else {
         eprintln!("skipped: no GPU adapter available");
         return;
@@ -427,7 +427,7 @@ fn cached_path_grow_horizontal_only() {
 
 /// Regression: BUG-06-052 — vertical-only grow; clear pass must fire.
 #[test]
-fn cached_path_grow_vertical_only() {
+fn cached_path_grow_vertical_only_clears_uncovered_strip() {
     let Some((gpu, pipelines, mut renderer)) = headless_env() else {
         eprintln!("skipped: no GPU adapter available");
         return;
@@ -701,7 +701,7 @@ fn cached_path_grow_with_cache_reuse_clears_uncovered_region() {
 /// surface — pins the helper's common-path correctness under the
 /// minimum non-zero destination size.
 #[test]
-fn cached_path_resize_to_1x1() {
+fn cached_path_shrink_to_1x1_does_not_panic_and_writes_pixel() {
     let Some((gpu, pipelines, mut renderer)) = headless_env() else {
         eprintln!("skipped: no GPU adapter available");
         return;
@@ -716,12 +716,18 @@ fn cached_path_resize_to_1x1() {
         &gpu, &pipelines, &mut renderer, 800, 600, 1, 1, bg, 1.0,
     );
     assert_eq!(pixels.len(), 4, "1x1 readback must be exactly 4 bytes");
+    // The single pixel must be non-zero — proves the cache actually
+    // wrote content through to the 1x1 destination, not a no-op render.
+    assert!(
+        pixels[0] != 0 || pixels[1] != 0 || pixels[2] != 0 || pixels[3] != 0,
+        "1x1 pixel must be non-zero, got {pixels:?}"
+    );
 }
 
 /// Regression: BUG-06-052 — rapid alternation: grow/shrink cycles, uncovered
 /// region matches current clear across the resize stream.
 #[test]
-fn cached_path_rapid_grow_shrink_alternation() {
+fn cached_path_rapid_grow_shrink_alternation_clears_each_grow_frame() {
     let Some((gpu, pipelines, mut renderer)) = headless_env() else {
         eprintln!("skipped: no GPU adapter available");
         return;
