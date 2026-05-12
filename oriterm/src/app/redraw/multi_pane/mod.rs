@@ -283,6 +283,13 @@ impl App {
                         .get_cached(pane_id)
                         .expect("is_cached verified");
                     renderer.prepared.extend_from(cached);
+                    // Refresh LRU on image textures referenced by the cached
+                    // pane. Without this, images visible in cached panes
+                    // age out of `image_texture_cache` after
+                    // IMAGE_TEXTURE_EVICT_FRAME_THRESHOLD frames and the
+                    // cached image quads silently skip at draw time when
+                    // `get_bind_group` returns None.
+                    renderer.touch_cached_pane_images(cached);
                 } else {
                     // Cache miss — must extract + annotate + prepare into cache.
                     let pane_viewport = ViewportSize::new(
@@ -477,6 +484,7 @@ impl App {
                             renderer.prepare_pane_into(
                                 frame,
                                 gpu,
+                                pipelines,
                                 origin,
                                 pane_cursor_opacity,
                                 target,
@@ -518,6 +526,13 @@ impl App {
                     );
                 }
             }
+
+            // Finalize image-texture-cache lifecycle for this visual frame.
+            // Pairs with `begin_multi_pane_frame()` called at the top.
+            // Runs evict_unused + evict_over_limit exactly once per frame.
+            // A naive per-pane finish would tighten the retention window
+            // to THRESHOLD / pane_count.
+            renderer.finish_multi_pane_frame();
 
             // Chrome: tab bar, overlays, search bar, status bar, window border.
             let needs_full_render = super::chrome::render_chrome(

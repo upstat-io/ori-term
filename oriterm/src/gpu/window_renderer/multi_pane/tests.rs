@@ -5,11 +5,16 @@
 
 #![cfg(feature = "gpu-tests")]
 
+use std::sync::Arc;
+
 use crate::gpu::ViewportSize;
+use crate::gpu::frame_input::FrameInput;
+use crate::gpu::prepared_frame::PreparedFrame;
 use crate::gpu::visual_regression::headless_env;
 use crate::session::compute::DividerLayout;
 use crate::session::rect::Rect;
 use crate::session::split_tree::SplitDirection;
+use oriterm_core::image::ImageId;
 use oriterm_core::Rgb;
 use oriterm_mux::PaneId;
 
@@ -149,4 +154,178 @@ fn window_border_scaled() {
     renderer.append_window_border(800, 600, color, 4.0); // 2x DPI
 
     assert_eq!(renderer.prepared.cursors.len(), 4);
+}
+
+// Helper: build a `FrameInput` carrying a single 2x2 RGBA image. The
+// upload path (`ensure_pane_images_uploaded`) iterates
+// `content.image_data` directly, so a matching `RenderablePlacement` is
+// not required for the upload-side tests below.
+fn input_with_image(image_id: ImageId) -> FrameInput {
+    // Solid red 2x2 RGBA image (16 bytes).
+    let pixels: Vec<u8> = vec![
+        255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255,
+    ];
+    let mut input = FrameInput::test_grid(8, 4, "image-test");
+    input
+        .content
+        .image_data
+        .push(oriterm_core::RenderableImageData {
+            id: image_id,
+            data: Arc::new(pixels),
+            width: 2,
+            height: 2,
+        });
+    input
+}
+
+/// Regression: BUG-06-062 — multi-pane prepare_pane_into was missing
+/// Phase D (upload_image_textures), so kitty / sixel images extracted
+/// from snapshots reached the frame but never reached the GPU.
+/// See: bug-tracker/plans/BUG-06-062/00-overview.md
+#[test]
+fn multi_pane_prepare_uploads_image_textures() {
+    let (gpu, pipelines, mut renderer) = headless_env().expect("GPU available");
+    let image_id = ImageId::from_raw(1);
+    let input = input_with_image(image_id);
+    let bg = Rgb { r: 0, g: 0, b: 0 };
+
+    renderer.begin_multi_pane_frame(ViewportSize::new(800, 600), bg, 1.0);
+    let mut target = PreparedFrame::new(ViewportSize::new(800, 600), bg, 1.0);
+    renderer.prepare_pane_into(&input, &gpu, &pipelines, (0.0, 0.0), 1.0, &mut target);
+    renderer.finish_multi_pane_frame();
+
+    assert!(
+        renderer.image_texture_cache_for_test().get_bind_group(image_id).is_some(),
+        "multi-pane Phase D must upload image_data textures to GPU"
+    );
+}
+
+/// Regression: BUG-06-062 — image_texture_cache frame_counter must advance
+/// exactly once per visual frame in multi-pane mode, regardless of pane
+/// count. Naive per-pane upload would advance N times, tightening the
+/// effective evict_unused retention window to THRESHOLD/pane_count.
+/// See: bug-tracker/plans/BUG-06-062/00-overview.md
+#[test]
+fn multi_pane_frame_counter_advances_once_per_frame_regardless_of_panes() {
+    let (gpu, pipelines, mut renderer) = headless_env().expect("GPU available");
+    let bg = Rgb { r: 0, g: 0, b: 0 };
+
+    let before = renderer.image_texture_cache_for_test().frame_counter();
+    renderer.begin_multi_pane_frame(ViewportSize::new(800, 600), bg, 1.0);
+    // Three panes — naive begin_frame-per-pane would advance counter to before+3.
+    for i in 0..3 {
+        let mut target = PreparedFrame::new(ViewportSize::new(800, 600), bg, 1.0);
+        let input = input_with_image(ImageId::from_raw(10 + i));
+        renderer.prepare_pane_into(&input, &gpu, &pipelines, (0.0, 0.0), 1.0, &mut target);
+    }
+    renderer.finish_multi_pane_frame();
+    let after = renderer.image_texture_cache_for_test().frame_counter();
+
+    assert_eq!(
+        after - before,
+        1,
+        "image_texture_cache.frame_counter must advance exactly once per visual frame, \
+         not N times where N = pane count"
+    );
+}
+
+/// Regression: BUG-06-062 pane-cache invariant — a pane served from
+/// PaneRenderCache skips prepare_pane_into. Without touch_cached_pane_images,
+/// the image texture last_frame never advances and evict_unused(THRESHOLD)
+/// drops it after THRESHOLD cached frames, leaving cached image quads with
+/// None bind groups.
+/// See: bug-tracker/plans/BUG-06-062/00-overview.md
+#[test]
+fn touch_cached_pane_images_refreshes_last_frame() {
+    use crate::gpu::prepared_frame::ImageQuad;
+
+    let (gpu, pipelines, mut renderer) = headless_env().expect("GPU available");
+    let image_id = ImageId::from_raw(1);
+    let input = input_with_image(image_id);
+    let bg = Rgb { r: 0, g: 0, b: 0 };
+
+    // Frame 1: prepare into a target — the image gets uploaded to GPU.
+    renderer.begin_multi_pane_frame(ViewportSize::new(800, 600), bg, 1.0);
+    let mut cached_target = PreparedFrame::new(ViewportSize::new(800, 600), bg, 1.0);
+    renderer.prepare_pane_into(&input, &gpu, &pipelines, (0.0, 0.0), 1.0, &mut cached_target);
+    renderer.finish_multi_pane_frame();
+    assert!(
+        renderer.image_texture_cache_for_test().get_bind_group(image_id).is_some(),
+        "first frame must upload the image"
+    );
+
+    // The fill_frame_shaped emitter requires a `RenderablePlacement` in
+    // `content.images` to emit image quads — but for THIS test we only
+    // care about the touch path. Inject an ImageQuad referencing the
+    // same image_id directly so `touch_cached_pane_images` has work to do.
+    cached_target.image_quads_above.push(ImageQuad {
+        image_id,
+        x: 0.0,
+        y: 0.0,
+        w: 2.0,
+        h: 2.0,
+        uv_x: 0.0,
+        uv_y: 0.0,
+        uv_w: 1.0,
+        uv_h: 1.0,
+        opacity: 1.0,
+    });
+
+    // Frames 2..N: simulate cache_hit — extend_from + touch_cached_pane_images,
+    // NEVER re-running prepare_pane_into. Without touch, `last_frame` stales.
+    // Run more than IMAGE_TEXTURE_EVICT_FRAME_THRESHOLD (60) frames.
+    for _ in 0..70 {
+        renderer.begin_multi_pane_frame(ViewportSize::new(800, 600), bg, 1.0);
+        renderer.touch_cached_pane_images(&cached_target);
+        renderer.finish_multi_pane_frame();
+    }
+
+    assert!(
+        renderer.image_texture_cache_for_test().get_bind_group(image_id).is_some(),
+        "image must remain in cache across pane-cache hits"
+    );
+}
+
+/// Regression: BUG-06-062 pane-cache eviction without touch — WITHOUT the
+/// touch call, the same scenario MUST result in the image being evicted.
+/// Proves the touch is load-bearing, not coincidental.
+/// See: bug-tracker/plans/BUG-06-062/00-overview.md
+#[test]
+fn touch_cached_pane_images_negative_pin_eviction_without_touch() {
+    use crate::gpu::prepared_frame::ImageQuad;
+
+    let (gpu, pipelines, mut renderer) = headless_env().expect("GPU available");
+    let image_id = ImageId::from_raw(2);
+    let input = input_with_image(image_id);
+    let bg = Rgb { r: 0, g: 0, b: 0 };
+
+    // Frame 1: upload the image.
+    renderer.begin_multi_pane_frame(ViewportSize::new(800, 600), bg, 1.0);
+    let mut cached_target = PreparedFrame::new(ViewportSize::new(800, 600), bg, 1.0);
+    renderer.prepare_pane_into(&input, &gpu, &pipelines, (0.0, 0.0), 1.0, &mut cached_target);
+    renderer.finish_multi_pane_frame();
+    cached_target.image_quads_above.push(ImageQuad {
+        image_id,
+        x: 0.0,
+        y: 0.0,
+        w: 2.0,
+        h: 2.0,
+        uv_x: 0.0,
+        uv_y: 0.0,
+        uv_w: 1.0,
+        uv_h: 1.0,
+        opacity: 1.0,
+    });
+
+    // 70 cache-hit frames WITHOUT touch — image must age out.
+    for _ in 0..70 {
+        renderer.begin_multi_pane_frame(ViewportSize::new(800, 600), bg, 1.0);
+        // NOTE: deliberately omit renderer.touch_cached_pane_images(&cached_target);
+        renderer.finish_multi_pane_frame();
+    }
+
+    assert!(
+        renderer.image_texture_cache_for_test().get_bind_group(image_id).is_none(),
+        "without touch_cached_pane_images, eviction must fire after THRESHOLD frames"
+    );
 }

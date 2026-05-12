@@ -7,15 +7,15 @@
 
 use oriterm_core::Rgb;
 
-use crate::gpu::builtin_glyphs;
 use crate::gpu::frame_input::{FrameInput, ViewportSize};
 use crate::gpu::instance_writer::{CLIP_UNCLIPPED, ScreenRect};
+use crate::gpu::pipelines::GpuPipelines;
 use crate::gpu::prepare;
 use crate::gpu::prepared_frame::PreparedFrame;
 use crate::gpu::state::GpuState;
 use crate::session::{DividerLayout, Rect};
 
-use super::helpers::{ensure_glyphs_cached, grid_raster_keys, shape_frame};
+use super::helpers::shape_frame;
 use super::{CombinedAtlasLookup, WindowRenderer};
 
 const FLOATING_SHADOW_OFFSET_PX: f32 = 2.0;
@@ -40,6 +40,14 @@ impl WindowRenderer {
         self.subpixel_atlas.begin_frame();
         self.color_atlas.begin_frame();
 
+        // Begin per-frame image-texture-cache lifecycle. Paired with
+        // `finish_multi_pane_frame()` after the per-pane loop. Without
+        // this, image_texture_cache.begin_frame() never runs in
+        // multi-pane mode and images uploaded by `prepare_pane_into`
+        // accumulate without LRU eviction (and the cursor-blink fast
+        // path is not used in multi-pane).
+        self.begin_image_frame();
+
         self.prepared.clear();
         self.prepared.viewport = viewport;
         self.prepared.set_clear_color(background, opacity);
@@ -47,6 +55,17 @@ impl WindowRenderer {
         // Multi-pane unconditionally rebuilds the aggregate prepared frame
         // (no incremental fast path), so the content-cache tier is invalidated.
         self.cache_invalidated_this_frame = true;
+    }
+
+    /// Finalize the per-frame image-texture-cache lifecycle for the multi-pane path.
+    ///
+    /// Called by the multi-pane redraw driver after all panes have been
+    /// prepared or merged from the per-pane cache, and before
+    /// `render_to_surface`. Pairs with `begin_multi_pane_frame()`. Runs
+    /// `evict_unused` + `evict_over_limit` exactly once per visual frame
+    /// so eviction thresholds match the single-pane path.
+    pub(crate) fn finish_multi_pane_frame(&mut self) {
+        self.finish_image_frame();
     }
 
     /// Shape, cache, and fill one pane into a separate `PreparedFrame`.
@@ -57,12 +76,13 @@ impl WindowRenderer {
     /// layout-computed pixel rect.
     #[expect(
         clippy::too_many_arguments,
-        reason = "pane prepare: input, GPU state, origin offset, cursor opacity, target frame"
+        reason = "pane prepare: input, GPU state, pipelines (image-texture layout for Phase D), origin, cursor opacity, target frame"
     )]
     pub(crate) fn prepare_pane_into(
         &mut self,
         input: &FrameInput,
         gpu: &GpuState,
+        pipelines: &GpuPipelines,
         origin: (f32, f32),
         cursor_opacity: f32,
         target: &mut PreparedFrame,
@@ -75,31 +95,8 @@ impl WindowRenderer {
         // Phase A: Shape all rows for this pane.
         shape_frame(input, &self.font_collection, &mut self.shaping);
 
-        // Phase B: Ensure shaped glyphs cached.
-        ensure_glyphs_cached(
-            grid_raster_keys(
-                &self.shaping.frame,
-                self.font_collection.hinting_mode().hint_flag(),
-                self.subpixel_positioning,
-            ),
-            &mut self.atlas,
-            &mut self.subpixel_atlas,
-            &mut self.color_atlas,
-            &mut self.empty_keys,
-            &mut self.font_collection,
-            &gpu.device,
-            &gpu.queue,
-        );
-
-        // Phase B2: Built-in geometric glyphs + decoration patterns.
-        builtin_glyphs::ensure_builtins_cached(
-            input,
-            self.shaping.frame.size_q6(),
-            &mut self.atlas,
-            &mut self.empty_keys,
-            &gpu.device,
-            &gpu.queue,
-        );
+        // Phase B + B2: shared SSOT — see frame_prep.rs::cache_glyphs_and_builtins.
+        self.cache_glyphs_and_builtins(input, gpu);
 
         // Phase C: Fill into the target prepared frame.
         let bridge = CombinedAtlasLookup {
@@ -115,6 +112,12 @@ impl WindowRenderer {
             origin,
             cursor_opacity,
         );
+
+        // Phase D: Ensure image textures for this pane uploaded. Per-frame
+        // begin_frame / evict are owned by begin_multi_pane_frame /
+        // finish_multi_pane_frame — this call only ensures uploads for the
+        // current pane and refreshes their LRU position.
+        self.ensure_pane_images_uploaded(input, gpu, pipelines);
     }
 
     /// Append divider rectangles to the backgrounds buffer.

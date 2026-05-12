@@ -322,3 +322,63 @@ fn remove_nonexistent_is_noop() {
     assert_eq!(cache.gpu_memory_used(), 0);
     assert_eq!(cache.texture_count(), 0);
 }
+
+/// Regression: BUG-06-062 — touch_image for an Occupied entry stamps
+/// last_frame = frame_counter, refreshing the LRU position. Without touch,
+/// images in panes served from PaneRenderCache age out and silently skip
+/// at draw time.
+/// See: bug-tracker/plans/BUG-06-062/00-overview.md
+#[test]
+fn touch_image_stamps_last_frame_for_occupied_entry() {
+    let Some((gpu, pipelines)) = headless_gpu() else {
+        return;
+    };
+    let mut cache = ImageTextureCache::new(&gpu.device);
+
+    cache.begin_frame();
+    let id = ImageId::from_raw(1);
+    let _bg = cache.ensure_uploaded(
+        &gpu.device,
+        &gpu.queue,
+        &pipelines.image_texture_layout,
+        id,
+        &fake_rgba(4, 4),
+        4,
+        4,
+    );
+
+    // Advance to a later frame; touch should stamp the new value.
+    for _ in 0..5 {
+        cache.begin_frame();
+    }
+    let touched_at = cache.frame_counter();
+    cache.touch_image(id);
+
+    // evict_unused with a threshold of 0 evicts every entry whose last_frame
+    // is strictly less than current frame_counter. After touch, last_frame ==
+    // touched_at == current frame_counter, so threshold=0 must NOT evict.
+    cache.evict_unused(0);
+    assert!(
+        cache.get_bind_group(id).is_some(),
+        "touch_image must stamp last_frame so evict_unused does not drop the entry"
+    );
+    assert_eq!(cache.frame_counter(), touched_at, "touch must not advance frame_counter");
+}
+
+/// Regression: BUG-06-062 — touch_image for a Vacant entry is a no-op —
+/// does not insert, does not advance any counter. Idempotent and safe to
+/// call with arbitrary IDs.
+/// See: bug-tracker/plans/BUG-06-062/00-overview.md
+#[test]
+fn touch_image_is_noop_for_vacant_entry() {
+    let Some((gpu, _)) = headless_gpu() else {
+        return;
+    };
+    let mut cache = ImageTextureCache::new(&gpu.device);
+    cache.begin_frame();
+    let before = cache.frame_counter();
+    cache.touch_image(ImageId::from_raw(9999));
+    assert_eq!(cache.texture_count(), 0, "touch must not insert");
+    assert_eq!(cache.gpu_memory_used(), 0, "touch must not allocate");
+    assert_eq!(cache.frame_counter(), before, "touch must not advance counter");
+}

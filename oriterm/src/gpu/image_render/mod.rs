@@ -156,6 +156,34 @@ impl ImageTextureCache {
         self.textures.get(&id).map(|t| &t.bind_group)
     }
 
+    /// Frame counter (per-frame eviction-clock SSOT).
+    ///
+    /// Test surface only — production sites use [`begin_frame`] /
+    /// [`ensure_uploaded`] / [`touch_image`] / [`evict_unused`] / [`evict_over_limit`]
+    /// which thread the counter internally.
+    #[cfg(any(test, feature = "gpu-tests"))]
+    #[allow(dead_code, reason = "consumed by gpu-tests-gated frame-counter delta tests")]
+    pub(crate) fn frame_counter(&self) -> u64 {
+        self.frame_counter
+    }
+
+    /// Touch an already-uploaded image to refresh its LRU position.
+    ///
+    /// No-op when `id` is not in cache. Idempotent — calling twice in the
+    /// same frame produces the same `last_frame` value.
+    ///
+    /// Used by the multi-pane render path when a pane is served from the
+    /// per-pane prepared-frame cache without re-running `prepare_pane_into`
+    /// (which would otherwise touch images via [`ensure_uploaded`]). Without
+    /// this, images in cached panes would age out and silently skip at draw
+    /// time when [`get_bind_group`] returns `None`.
+    pub(crate) fn touch_image(&mut self, id: ImageId) {
+        let frame = self.frame_counter;
+        if let Some(entry) = self.textures.get_mut(&id) {
+            entry.last_frame = frame;
+        }
+    }
+
     /// Evict textures not used in the last `threshold` frames.
     pub(crate) fn evict_unused(&mut self, threshold: u64) {
         let cutoff = self.frame_counter.saturating_sub(threshold);

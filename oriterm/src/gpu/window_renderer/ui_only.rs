@@ -139,6 +139,7 @@ impl WindowRenderer {
             content_cache_view: None,
             content_cache_size: (0, 0),
             cache_invalidated_this_frame: false,
+            image_frame_active: false,
         }
     }
 

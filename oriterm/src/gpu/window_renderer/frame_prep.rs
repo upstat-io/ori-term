@@ -122,32 +122,10 @@ impl WindowRenderer {
             shape_frame(input, &self.font_collection, &mut self.shaping);
         }
 
-        // Phase B: Ensure shaped glyphs cached (routes to mono, subpixel, or color atlas).
-        ensure_glyphs_cached(
-            grid_raster_keys(
-                &self.shaping.frame,
-                self.font_collection.hinting_mode().hint_flag(),
-                self.subpixel_positioning,
-            ),
-            &mut self.atlas,
-            &mut self.subpixel_atlas,
-            &mut self.color_atlas,
-            &mut self.empty_keys,
-            &mut self.font_collection,
-            &gpu.device,
-            &gpu.queue,
-        );
-
-        // Phase B2: Ensure built-in geometric glyphs + decoration patterns cached.
-        // Built-ins always go to the mono atlas (alpha-only bitmaps).
-        super::super::builtin_glyphs::ensure_builtins_cached(
-            input,
-            self.shaping.frame.size_q6(),
-            &mut self.atlas,
-            &mut self.empty_keys,
-            &gpu.device,
-            &gpu.queue,
-        );
+        // Phase B + B2: Ensure shaped glyphs + builtin glyphs cached. SSOT
+        // helper shared with `prepare_pane_into` so the Phase-B+B2 sequence
+        // never drifts between the two render paths.
+        self.cache_glyphs_and_builtins(input, gpu);
 
         // Phase C: Fill prepared frame via combined atlas lookup bridge.
         let bridge = CombinedAtlasLookup {
@@ -177,19 +155,80 @@ impl WindowRenderer {
         );
     }
 
-    /// Upload image textures for the current frame.
+    /// Run Phase B + B2 of the prepare pipeline.
     ///
-    /// Ensures all images referenced by the prepared frame have GPU textures.
-    /// Evicts textures that haven't been used recently.
-    fn upload_image_textures(
+    /// Caches shaped glyphs (routes to mono, subpixel, or color atlas) and
+    /// builtin geometric glyphs + decoration patterns. Builtins always go to
+    /// the mono atlas (alpha-only bitmaps).
+    ///
+    /// Single SSOT consumed by both single-pane [`prepare`] and multi-pane
+    /// `prepare_pane_into` so the Phase-B+B2 sequence never drifts between
+    /// the two render paths (`LEAK:algorithmic-duplication`).
+    ///
+    /// Pre-condition: [`shape_frame`] (Phase A) has populated
+    /// `self.shaping.frame` for the current frame.
+    pub(super) fn cache_glyphs_and_builtins(&mut self, input: &FrameInput, gpu: &GpuState) {
+        // Phase B: shaped glyphs.
+        ensure_glyphs_cached(
+            grid_raster_keys(
+                &self.shaping.frame,
+                self.font_collection.hinting_mode().hint_flag(),
+                self.subpixel_positioning,
+            ),
+            &mut self.atlas,
+            &mut self.subpixel_atlas,
+            &mut self.color_atlas,
+            &mut self.empty_keys,
+            &mut self.font_collection,
+            &gpu.device,
+            &gpu.queue,
+        );
+
+        // Phase B2: builtin geometric glyphs + decoration patterns.
+        super::super::builtin_glyphs::ensure_builtins_cached(
+            input,
+            self.shaping.frame.size_q6(),
+            &mut self.atlas,
+            &mut self.empty_keys,
+            &gpu.device,
+            &gpu.queue,
+        );
+    }
+
+    /// Begin the per-frame image-texture-cache lifecycle.
+    ///
+    /// Advances the LRU frame counter on [`ImageTextureCache`]. Must be
+    /// paired with a corresponding [`finish_image_frame`] call to bracket
+    /// the per-pane [`ensure_pane_images_uploaded`] uploads. Called ONCE
+    /// per visual frame regardless of pane count — the multi-pane path
+    /// invokes this in `begin_multi_pane_frame`, NOT per-pane.
+    pub(super) fn begin_image_frame(&mut self) {
+        debug_assert!(
+            !self.image_frame_active,
+            "begin_image_frame called while another image frame is active"
+        );
+        self.image_frame_active = true;
+        self.image_texture_cache.begin_frame();
+    }
+
+    /// Upload all image textures referenced by this pane / frame.
+    ///
+    /// Per-pane component of the image-texture-cache lifecycle: ensures
+    /// each image in `input.content.image_data` is uploaded (touches
+    /// existing entries' LRU position via [`ImageTextureCache::ensure_uploaded`]).
+    /// Does NOT advance the frame counter and does NOT evict — those
+    /// are bracket-only operations owned by [`begin_image_frame`] and
+    /// [`finish_image_frame`].
+    pub(super) fn ensure_pane_images_uploaded(
         &mut self,
         input: &FrameInput,
         gpu: &GpuState,
         pipelines: &GpuPipelines,
     ) {
-        self.image_texture_cache.begin_frame();
-
-        // Upload textures for all visible images.
+        debug_assert!(
+            self.image_frame_active,
+            "ensure_pane_images_uploaded called outside begin_image_frame/finish_image_frame bracket"
+        );
         for img_data in &input.content.image_data {
             self.image_texture_cache.ensure_uploaded(
                 &gpu.device,
@@ -201,10 +240,70 @@ impl WindowRenderer {
                 img_data.height,
             );
         }
+    }
 
+    /// Finish the per-frame image-texture-cache lifecycle: evict stale + over-limit.
+    ///
+    /// Runs the eviction passes that bound GPU memory. Called ONCE per
+    /// visual frame to keep `frame_counter`-based eviction deltas consistent
+    /// (a per-pane finish would tighten the effective retention window
+    /// to `THRESHOLD / pane_count`).
+    pub(super) fn finish_image_frame(&mut self) {
+        debug_assert!(
+            self.image_frame_active,
+            "finish_image_frame called outside begin_image_frame bracket"
+        );
         self.image_texture_cache
             .evict_unused(IMAGE_TEXTURE_EVICT_FRAME_THRESHOLD);
         self.image_texture_cache.evict_over_limit();
+        self.image_frame_active = false;
+    }
+
+    /// Refresh LRU `last_frame` for images visible in a cached pane.
+    ///
+    /// When the multi-pane redraw loop serves a pane from
+    /// `PaneRenderCache` (i.e. `prepare_pane_into` is skipped because the
+    /// pane is clean), the cached `PreparedFrame` already contains its
+    /// image-quad instances, but the underlying `GpuImageTexture` would
+    /// not have its `last_frame` advanced. Over `THRESHOLD` cached
+    /// frames, [`evict_unused`] would drop the texture, and the cached
+    /// quads would silently skip at draw time when
+    /// [`get_bind_group`](ImageTextureCache::get_bind_group) returns
+    /// `None`. Called per `cache_hit` immediately after
+    /// `prepared.extend_from(cached)`.
+    pub(crate) fn touch_cached_pane_images(
+        &mut self,
+        cached: &super::super::prepared_frame::PreparedFrame,
+    ) {
+        debug_assert!(
+            self.image_frame_active,
+            "touch_cached_pane_images called outside begin_image_frame bracket"
+        );
+        for quad in cached
+            .image_quads_below
+            .iter()
+            .chain(cached.image_quads_above.iter())
+        {
+            self.image_texture_cache.touch_image(quad.image_id);
+        }
+    }
+
+    /// Upload image textures for a single-pane frame.
+    ///
+    /// Thin wrapper composing the per-frame lifecycle for the single-pane
+    /// render path: `begin_image_frame` → `ensure_pane_images_uploaded` →
+    /// `finish_image_frame`. Multi-pane callers invoke the three helpers
+    /// directly across the `begin_multi_pane_frame` / per-pane loop /
+    /// `finish_multi_pane_frame` boundaries.
+    fn upload_image_textures(
+        &mut self,
+        input: &FrameInput,
+        gpu: &GpuState,
+        pipelines: &GpuPipelines,
+    ) {
+        self.begin_image_frame();
+        self.ensure_pane_images_uploaded(input, gpu, pipelines);
+        self.finish_image_frame();
     }
 
     /// Update the GPU memory limit for image textures.
