@@ -145,7 +145,7 @@ impl App {
 
         // Layout + draw phase: measurer borrows renderer immutably, then
         // drops before the mutable append_ui_scene_with_text call.
-        // We collect (opacity) per overlay, then append after the borrow ends.
+        // Opacity is collected per overlay and appended after the borrow ends.
         {
             let measurer = CachedTextMeasurer::new(renderer.ui_measurer(scale), text_cache, scale);
             overlays.layout_overlays(&measurer, theme);
