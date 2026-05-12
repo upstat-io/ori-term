@@ -12,13 +12,23 @@ use super::draw_helpers;
 use crate::app::App;
 use crate::app::window_context::WindowContext;
 use crate::config::{Config, TabBarPosition};
+use crate::gpu::FrameSearch;
 use crate::gpu::state::GpuState;
 
 /// Parameters that vary between the single-pane and multi-pane chrome
-/// rendering pipelines.
-pub(in crate::app::redraw) struct ChromeParams {
+/// rendering pipelines. Focused-pane chrome state (`content_cols`,
+/// `content_rows`, `search`) is passed explicitly to avoid reading the
+/// per-pane scratch buffer `ctx.frame`, which holds the last-iterated
+/// pane's state in multi-pane mode.
+pub(in crate::app::redraw) struct ChromeParams<'a> {
     /// Number of panes (1 for single-pane, `layouts.len()` for multi-pane).
     pub pane_count: usize,
+    /// Focused pane's column count, for status-bar text rendering.
+    pub content_cols: usize,
+    /// Focused pane's row count, for status-bar text rendering.
+    pub content_rows: usize,
+    /// Focused pane's search state, for search-bar overlay.
+    pub search: Option<&'a FrameSearch>,
 }
 
 /// Render chrome (tab bar, overlays, search bar, status bar, window border)
@@ -29,7 +39,10 @@ pub(in crate::app::redraw) struct ChromeParams {
 /// re-borrowed from `ctx.renderer` so the caller's prior borrow must have
 /// ended (NLL handles this automatically).
 ///
-/// Search state and grid dimensions are read from `ctx.frame`.
+/// Search state and grid dimensions come from `params` (the focused pane's
+/// data, provided explicitly by the caller). `ctx.frame` is NOT consulted
+/// for chrome-relevant fields because in multi-pane mode it is a per-pane
+/// scratch buffer holding the last-iterated pane's state.
 ///
 /// Returns `true` if `render_to_surface` should do a full content render.
 #[expect(
@@ -41,7 +54,7 @@ pub(in crate::app::redraw) fn render_chrome(
     config: &Config,
     ui_theme: &UiTheme,
     gpu: &GpuState,
-    params: &ChromeParams,
+    params: &ChromeParams<'_>,
 ) -> bool {
     let renderer = ctx.renderer.as_mut().expect("renderer checked by caller");
     let (w, h) = ctx.window.size_px();
@@ -111,7 +124,7 @@ pub(in crate::app::redraw) fn render_chrome(
     }
 
     // Draw search bar overlay when search is active.
-    if let Some(search) = ctx.frame.as_ref().and_then(|f| f.search.as_ref()) {
+    if let Some(search) = params.search {
         let chrome_h = if tab_bar_hidden {
             0.0
         } else {
@@ -132,12 +145,11 @@ pub(in crate::app::redraw) fn render_chrome(
 
     // Update and draw status bar at the bottom of the window.
     if config.window.show_status_bar && config.window.tab_bar_position != TabBarPosition::Bottom {
-        let (cols, rows) = ctx
-            .frame
-            .as_ref()
-            .map_or((0, 0), |f| (f.content_cols, f.content_rows));
-        ctx.status_bar
-            .set_data(draw_helpers::status_bar_data(params.pane_count, cols, rows));
+        ctx.status_bar.set_data(draw_helpers::status_bar_data(
+            params.pane_count,
+            params.content_cols,
+            params.content_rows,
+        ));
         let phys = ctx.status_bar_phys_rect;
         let sb_bounds = Rect::new(
             phys.x() / scale,

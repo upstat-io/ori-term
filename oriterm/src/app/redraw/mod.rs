@@ -361,13 +361,32 @@ impl App {
 
             // Chrome: tab bar, overlays, search bar, status bar, window border.
             let widgets_start = Instant::now();
+            // Take search out of ctx.frame temporarily so ChromeParams
+            // carries an owned local borrow (not a borrow from ctx) —
+            // render_chrome takes &mut WindowContext, which would conflict
+            // with a &FrameSearch borrowed from ctx.frame. Allocation-free
+            // per oriterm.md §Zero allocations in the hot render path.
+            // Search restored after the chrome call.
+            let chrome_search = ctx.frame.as_mut().and_then(|f| f.search.take());
+            let (cols, rows) = ctx
+                .frame
+                .as_ref()
+                .map_or((0, 0), |f| (f.content_cols, f.content_rows));
             let needs_full_render = chrome::render_chrome(
                 ctx,
                 &self.config,
                 &self.ui_theme,
                 gpu,
-                &chrome::ChromeParams { pane_count: 1 },
+                &chrome::ChromeParams {
+                    pane_count: 1,
+                    content_cols: cols,
+                    content_rows: rows,
+                    search: chrome_search.as_ref(),
+                },
             );
+            if let (Some(frame), Some(s)) = (ctx.frame.as_mut(), chrome_search) {
+                frame.search = Some(s);
+            }
             phases.widgets = widgets_start.elapsed();
 
             // Debug performance overlay (Ctrl+Shift+F12).

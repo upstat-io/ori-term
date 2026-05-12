@@ -484,16 +484,23 @@ impl App {
                 }
             }
 
-            // Restore focused pane's search for the search bar.
-            if let Some(focused) = layouts.iter().find(|l| l.is_focused) {
-                if let Some(frame) = ctx.frame.as_mut() {
-                    frame.search = self
-                        .mux
-                        .as_ref()
-                        .and_then(|m| m.pane_snapshot(focused.pane_id))
-                        .and_then(FrameSearch::from_snapshot);
-                }
-            }
+            // Extract focused-pane chrome state from the focused pane's
+            // snapshot (NOT ctx.frame, which holds the last-iterated pane's
+            // scratch state). This data flows to chrome::render_chrome via
+            // ChromeParams, replacing the prior implicit dependency on
+            // ctx.frame state that was correct only when the focused pane
+            // happened to be last in iteration order.
+            let (focused_cols, focused_rows, focused_search) = layouts
+                .iter()
+                .find(|l| l.is_focused)
+                .and_then(|l| self.mux.as_ref().and_then(|m| m.pane_snapshot(l.pane_id)))
+                .map_or((0, 0, None), |snap| {
+                    (
+                        snap.cols as usize,
+                        snap.cells.len(),
+                        FrameSearch::from_snapshot(snap),
+                    )
+                });
 
             // Dividers between split panes.
             let divider_color = self.config.pane.effective_divider_color();
@@ -526,6 +533,9 @@ impl App {
                 gpu,
                 &super::chrome::ChromeParams {
                     pane_count: layouts.len(),
+                    content_cols: focused_cols,
+                    content_rows: focused_rows,
+                    search: focused_search.as_ref(),
                 },
             );
 
