@@ -74,12 +74,16 @@ impl App {
             let (w, h) = ctx.window.size_px();
             let viewport = ViewportSize::new(w, h);
             let cell = renderer.cell_metrics();
-            let bg = ctx
-                .frame
-                .as_ref()
-                .map_or(oriterm_core::Rgb { r: 0, g: 0, b: 0 }, |f| {
-                    f.palette.background
-                });
+            // Clear color MUST derive from current focused-pane snapshot
+            // palette (NOT ctx.frame which holds the previous-iteration
+            // scratch state). On a focused-pane palette swap, the cell
+            // instances reflect the new palette but the clear color
+            // underneath would be one frame stale if we read from ctx.frame.
+            let focused_pane_id = layouts.iter().find(|l| l.is_focused).map(|l| l.pane_id);
+            let bg = focused_pane_id
+                .and_then(|pid| self.mux.as_ref().and_then(|m| m.pane_snapshot(pid)))
+                .map(snapshot_palette)
+                .map_or(oriterm_core::Rgb { r: 0, g: 0, b: 0 }, |p| p.background);
             let win_focused = ctx.window.window().has_focus();
             let opacity = f64::from(super::draw_helpers::resolve_palette_opacity(
                 ctx.window.surface_has_alpha(),
