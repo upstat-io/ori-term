@@ -310,7 +310,12 @@ fn cached_path_vertical_shrink_20px() {
 /// caller-controlled palette background + opacity, then read back pixels.
 ///
 /// Returns `(pixels, target_w)` for `pixel_rgba_at(...)` lookups.
-#[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "test matrix helper — each parameter is a deliberate axis the \
+    cached_path_* tests vary independently (viewport/target dimensions, palette \
+    background, opacity); collapsing into a struct would obscure the matrix shape"
+)]
 fn prepare_and_render_cached_with_clear(
     gpu: &crate::gpu::state::GpuState,
     pipelines: &crate::gpu::pipelines::GpuPipelines,
@@ -397,9 +402,9 @@ fn cached_path_grow_horizontal_only() {
         return;
     };
     let bg = oriterm_core::Rgb {
-        r: 255,
-        g: 0,
-        b: 255,
+        r: 128,
+        g: 64,
+        b: 200,
     };
     let (pixels, w) = prepare_and_render_cached_with_clear(
         &gpu,
@@ -414,8 +419,8 @@ fn cached_path_grow_horizontal_only() {
     );
     let outside = pixel_rgba_at(&pixels, 1100, 300, w);
     assert!(
-        rgba_approx_eq(outside, [255, 0, 255, 255], 2),
-        "uncovered pixel at (1100,300) should be magenta, got {outside:?}"
+        rgba_approx_eq(outside, [128, 64, 200, 255], 4),
+        "uncovered pixel at (1100,300) should be mid-tone purple (128,64,200,255), got {outside:?}"
     );
 }
 
@@ -427,9 +432,9 @@ fn cached_path_grow_vertical_only() {
         return;
     };
     let bg = oriterm_core::Rgb {
-        r: 255,
-        g: 0,
-        b: 255,
+        r: 128,
+        g: 64,
+        b: 200,
     };
     let (pixels, w) = prepare_and_render_cached_with_clear(
         &gpu,
@@ -444,8 +449,8 @@ fn cached_path_grow_vertical_only() {
     );
     let outside = pixel_rgba_at(&pixels, 400, 700, w);
     assert!(
-        rgba_approx_eq(outside, [255, 0, 255, 255], 2),
-        "uncovered pixel at (400,700) should be magenta, got {outside:?}"
+        rgba_approx_eq(outside, [128, 64, 200, 255], 4),
+        "uncovered pixel at (400,700) should be mid-tone purple (128,64,200,255), got {outside:?}"
     );
 }
 
@@ -457,9 +462,9 @@ fn cached_path_grow_h_shrink_v_clears_horizontal_grow_region() {
         return;
     };
     let bg = oriterm_core::Rgb {
-        r: 255,
-        g: 0,
-        b: 255,
+        r: 128,
+        g: 64,
+        b: 200,
     };
     let (pixels, w) = prepare_and_render_cached_with_clear(
         &gpu,
@@ -474,8 +479,8 @@ fn cached_path_grow_h_shrink_v_clears_horizontal_grow_region() {
     );
     let outside = pixel_rgba_at(&pixels, 1100, 200, w);
     assert!(
-        rgba_approx_eq(outside, [255, 0, 255, 255], 2),
-        "uncovered horizontal-grow pixel at (1100,200) should be magenta, got {outside:?}"
+        rgba_approx_eq(outside, [128, 64, 200, 255], 4),
+        "uncovered horizontal-grow pixel at (1100,200) should be mid-tone purple (128,64,200,255), got {outside:?}"
     );
 }
 
@@ -487,9 +492,9 @@ fn cached_path_shrink_h_grow_v_clears_vertical_grow_region() {
         return;
     };
     let bg = oriterm_core::Rgb {
-        r: 255,
-        g: 0,
-        b: 255,
+        r: 128,
+        g: 64,
+        b: 200,
     };
     let (pixels, w) = prepare_and_render_cached_with_clear(
         &gpu,
@@ -504,8 +509,8 @@ fn cached_path_shrink_h_grow_v_clears_vertical_grow_region() {
     );
     let outside = pixel_rgba_at(&pixels, 400, 700, w);
     assert!(
-        rgba_approx_eq(outside, [255, 0, 255, 255], 2),
-        "uncovered vertical-grow pixel at (400,700) should be magenta, got {outside:?}"
+        rgba_approx_eq(outside, [128, 64, 200, 255], 4),
+        "uncovered vertical-grow pixel at (400,700) should be mid-tone purple (128,64,200,255), got {outside:?}"
     );
 }
 
@@ -517,9 +522,9 @@ fn cached_path_dst_eq_vp_no_extra_clear() {
         return;
     };
     let bg = oriterm_core::Rgb {
-        r: 255,
-        g: 0,
-        b: 255,
+        r: 128,
+        g: 64,
+        b: 200,
     };
     let (pixels, _w) = prepare_and_render_cached_with_clear(
         &gpu,
@@ -543,6 +548,8 @@ fn cached_path_grow_clears_with_semi_transparent_clear() {
         eprintln!("skipped: no GPU adapter available");
         return;
     };
+    // Saturated magenta deliberately chosen for the opacity-channel pin —
+    // R/B channels saturate, G zeroes out, alpha pinned at 0.5.
     let bg = oriterm_core::Rgb {
         r: 255,
         g: 0,
@@ -562,7 +569,6 @@ fn cached_path_grow_clears_with_semi_transparent_clear() {
     let outside = pixel_rgba_at(&pixels, 1100, 700, w);
     // Premultiplied: linear-space r/b ≈ 0.5, sRGB-encoded back to ≈188 for
     // pure magenta at half opacity. Alpha ≈ 128.
-    // Tolerance widened for sRGB round-trip quantization.
     assert!(
         outside[3].abs_diff(128) <= 4,
         "uncovered pixel alpha should be ~128 (opacity=0.5), got {outside:?}"
@@ -659,9 +665,9 @@ fn cached_path_rapid_grow_shrink_alternation() {
         return;
     };
     let bg = oriterm_core::Rgb {
-        r: 255,
-        g: 0,
-        b: 255,
+        r: 128,
+        g: 64,
+        b: 200,
     };
 
     for i in 0..10 {
@@ -681,8 +687,8 @@ fn cached_path_rapid_grow_shrink_alternation() {
         if target_w > 800 && target_h > 600 {
             let outside = pixel_rgba_at(&pixels, 1100, 700, w);
             assert!(
-                rgba_approx_eq(outside, [255, 0, 255, 255], 2),
-                "iter {i}: uncovered pixel at (1100,700) should be magenta, got {outside:?}"
+                rgba_approx_eq(outside, [128, 64, 200, 255], 4),
+                "iter {i}: uncovered pixel at (1100,700) should be mid-tone purple (128,64,200,255), got {outside:?}"
             );
         }
     }
