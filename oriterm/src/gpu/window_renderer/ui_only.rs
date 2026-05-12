@@ -28,7 +28,7 @@ use crate::gpu::state::GpuState;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[allow(
     dead_code,
-    reason = "UiOnly variant used by Section 04 dialog window system"
+    reason = "UiOnly variant constructed by WindowRenderer::new_ui_only for dialog windows"
 )]
 pub enum RendererMode {
     /// Full terminal renderer with grid, cursor, images.
@@ -143,7 +143,7 @@ impl WindowRenderer {
     }
 
     /// Whether this renderer is in UI-only mode (dialog windows).
-    #[allow(dead_code, reason = "used by Section 04 dialog window system")]
+    #[allow(dead_code, reason = "predicate consumed by dialog-window render dispatch")]
     pub fn is_ui_only(&self) -> bool {
         self.mode == RendererMode::UiOnly
     }

@@ -168,7 +168,9 @@ pub(in crate::app::redraw) fn render_chrome(
     #[cfg(not(target_os = "macos"))]
     if !ctx.window.is_maximized() && !ctx.window.is_fullscreen() {
         let border_color = crate::gpu::scene_convert::color_to_rgb(ui_theme.border_strong);
-        renderer.append_window_border(w, h, border_color, (2.0 * scale).round());
+        let border_width =
+            (crate::gpu::window_renderer::WINDOW_BORDER_WIDTH_LOGICAL_PX * scale).round();
+        renderer.append_window_border(w, h, border_color, border_width);
     }
 
     needs_full_render

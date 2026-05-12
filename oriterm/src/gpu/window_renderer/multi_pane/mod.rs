@@ -192,8 +192,9 @@ impl WindowRenderer {
     ///
     /// Draws four thin rectangles (top, bottom, left, right) into the cursor
     /// layer so the border renders on top of cell backgrounds and glyphs.
-    /// `border_width` is in physical pixels (pass `(2.0 * scale).round()` for
-    /// 2 logical pixels at any DPI).
+    /// `border_width` is in physical pixels — callers compute it as
+    /// `(WINDOW_BORDER_WIDTH_LOGICAL_PX * scale).round()` so all border draws
+    /// derive from the same logical-pixel SSOT.
     pub(crate) fn append_focus_border(&mut self, rect: &Rect, color: Rgb, border_width: f32) {
         let border = border_width;
         let bx = rect.x;

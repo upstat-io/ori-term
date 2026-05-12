@@ -40,6 +40,14 @@ use helpers::{CombinedAtlasLookup, ShapingScratch, create_atlases};
 /// Maximum entries in `empty_keys` before clearing to prevent unbounded growth.
 const EMPTY_KEYS_CAP: usize = 10_000;
 
+/// Logical-pixel thickness of the window-strong / focus-pane border drawn over
+/// the surface. Multiply by the current DPI scale and round (per the existing
+/// `(WINDOW_BORDER_WIDTH_LOGICAL_PX * scale).round()` convention) to get the
+/// physical-pixel value passed to [`WindowRenderer::append_window_border`] and
+/// [`WindowRenderer::append_focus_border`]. Sole source of truth — chrome,
+/// multi-pane focus border, and visual-regression harness all derive here.
+pub(crate) const WINDOW_BORDER_WIDTH_LOGICAL_PX: f32 = 2.0;
+
 /// Per-window GPU renderer: owns fonts, atlases, and instance buffers.
 ///
 /// Created per-window at window creation time. Holds the bind groups,

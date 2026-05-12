@@ -353,14 +353,13 @@ impl App {
             phases.widgets = widgets_start.elapsed();
 
             // Debug performance overlay (Ctrl+Shift+F12).
-            draw_debug_overlay_if_enabled(
-                self.debug_overlay_enabled,
-                &mut self.debug_fps,
-                &self.last_render,
-                ctx,
-                gpu,
+            let mut overlay = DebugOverlayCtx {
+                enabled: self.debug_overlay_enabled,
+                debug_fps: &mut self.debug_fps,
+                last_render: &self.last_render,
                 scale,
-            );
+            };
+            draw_debug_overlay_if_enabled(&mut overlay, ctx, gpu);
 
             // Re-borrow renderer for GPU submission (prior borrow ended
             // when render_chrome returned via NLL).
@@ -385,43 +384,48 @@ impl App {
     }
 }
 
+/// Overlay-specific inputs for [`draw_debug_overlay_if_enabled`].
+///
+/// Groups the overlay's own config (toggle + EWMA accumulator + last-frame
+/// timestamp + DPI scale) into one parameter so the function signature stays
+/// compact. `&mut WindowContext` and `&GpuState` remain separate arguments —
+/// they are shared with the rest of the redraw pipeline and not
+/// overlay-specific.
+struct DebugOverlayCtx<'a> {
+    enabled: bool,
+    debug_fps: &'a mut f32,
+    last_render: &'a Instant,
+    scale: f32,
+}
+
 /// Draw the debug performance overlay if enabled (Ctrl+Shift+F12).
 ///
 /// Extracted from [`App::handle_redraw`] to reduce function length.
 /// Updates EWMA FPS and renders the overlay scene.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "Six independent inputs threaded into one paint pass: enabled flag, EWMA fps \
-              accumulator, last-render Instant, &mut WindowContext, &GpuState, scale factor. \
-              Coalescing into a DebugOverlayCtx adds construction noise without reducing \
-              argument cardinality."
-)]
 fn draw_debug_overlay_if_enabled(
-    enabled: bool,
-    debug_fps: &mut f32,
-    last_render: &Instant,
+    overlay: &mut DebugOverlayCtx<'_>,
     ctx: &mut WindowContext,
     gpu: &GpuState,
-    scale: f32,
 ) {
-    if !enabled {
+    if !overlay.enabled {
         return;
     }
+    let scale = overlay.scale;
     // Update EWMA FPS from last render interval.
-    let elapsed = last_render.elapsed().as_secs_f32();
+    let elapsed = overlay.last_render.elapsed().as_secs_f32();
     if elapsed > 0.0 {
         let instant_fps = 1.0 / elapsed;
         // EWMA with alpha=0.1 for smooth display.
-        *debug_fps = if *debug_fps < 1.0 {
+        *overlay.debug_fps = if *overlay.debug_fps < 1.0 {
             instant_fps
         } else {
-            0.1 * instant_fps + 0.9 * *debug_fps
+            0.1 * instant_fps + 0.9 * *overlay.debug_fps
         };
     }
 
     let renderer = ctx.renderer.as_mut().expect("renderer checked");
     let stats = debug_overlay::DebugStats {
-        fps: *debug_fps,
+        fps: *overlay.debug_fps,
         dirty_rows: renderer
             .prepared
             .scratch_dirty

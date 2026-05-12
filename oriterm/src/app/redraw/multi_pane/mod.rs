@@ -357,7 +357,12 @@ impl App {
             let scale = ctx.window.scale_factor().factor() as f32;
             if layouts.len() > 1 {
                 if let Some(rect) = &focused_rect {
-                    renderer.append_focus_border(rect, accent_color, (2.0 * scale).round());
+                    renderer.append_focus_border(
+                        rect,
+                        accent_color,
+                        (crate::gpu::window_renderer::WINDOW_BORDER_WIDTH_LOGICAL_PX * scale)
+                            .round(),
+                    );
                 }
             }
 
