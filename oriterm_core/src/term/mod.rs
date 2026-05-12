@@ -8,6 +8,7 @@
 mod alt_screen;
 pub mod charset;
 mod colors_state;
+mod dec_observable;
 mod handler;
 mod image_config;
 mod iterm2_state;
@@ -16,12 +17,12 @@ pub mod renderable;
 mod resize;
 mod shell_state;
 mod snapshot;
+mod visual_state;
 
 pub use charset::CharsetState;
+pub use dec_observable::AceMode;
 pub use mode::TermMode;
 pub use mode::encode_enter_base;
-// `AceMode` is declared below next to the `Term` struct so keep its
-// re-export close to the rest of `term/mod.rs`'s public surface.
 pub use renderable::{
     DamageLine, RenderableCell, RenderableContent, RenderableCursor, RenderableImageData,
     RenderablePlacement, TermDamage, maybe_shrink_vec,
@@ -35,7 +36,6 @@ use vte::ansi::cursor_icon::CursorIcon;
 
 use crate::color::Palette;
 use crate::effect::sink::EffectSink;
-use crate::effect::{Effect, PtyEffect, PtyWriteKind};
 use crate::grid::{CursorShape, Grid};
 use crate::image::ImageCache;
 use crate::image::sixel::SixelParser;
@@ -291,25 +291,6 @@ pub struct Term<S: EffectSink> {
     answerback: Vec<u8>,
 }
 
-/// DECSACE attribute-change extent mode.
-///
-/// Selects how DECCARA / DECRARA distribute their effect across the
-/// rectangle:
-///
-/// - `Stream` (Ps=0 or 1, default): wrap across row boundaries so only
-///   the first row's left column and the last row's right column clamp
-///   the stream; intermediate rows span the full width.
-/// - `Rectangle` (Ps=2): strict rectangular block — every row is clipped
-///   to `[left, right]`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum AceMode {
-    /// Stream mode (DECSACE Ps=0 or 1).
-    #[default]
-    Stream,
-    /// Rectangle mode (DECSACE Ps=2).
-    Rectangle,
-}
-
 impl<S: EffectSink> Term<S> {
     /// Create a new terminal with the given dimensions and scrollback capacity.
     pub fn new(lines: usize, cols: usize, scrollback: usize, theme: Theme, effect_sink: S) -> Self {
@@ -371,89 +352,9 @@ impl<S: EffectSink> Term<S> {
         }
     }
 
-    /// Set the answerback string emitted on `ENQ` (`0x05`).
-    ///
-    /// Empty (default) suppresses emission entirely per ECMA-48 §8.3.40
-    /// and the `WezTerm` reference behavior. Non-empty bytes are written
-    /// to the PTY verbatim on each `ENQ` byte received.
-    pub fn set_answerback(&mut self, bytes: Vec<u8>) {
-        self.answerback = bytes;
-    }
-
-    /// Mouse cursor icon requested by the shell (OSC 22).
-    ///
-    /// `None` if no OSC 22 sequence has been received. The renderer reads
-    /// this to update the OS pointer shape while hovering the terminal.
-    pub fn mouse_cursor_icon(&self) -> Option<CursorIcon> {
-        self.mouse_cursor_icon
-    }
-
-    /// Override the mouse cursor icon (raw interceptor / OSC 22 path).
-    pub fn set_mouse_cursor_icon(&mut self, icon: Option<CursorIcon>) {
-        self.mouse_cursor_icon = icon;
-    }
-
-    /// Last command line reported by VS Code OSC 633;E.
-    ///
-    /// `None` if no OSC 633;E sequence has been received yet.
-    pub fn last_command_line(&self) -> Option<&str> {
-        self.last_command_line.as_deref()
-    }
-
-    /// Record the raw command line text (OSC 633;E path, interceptor-only).
-    pub fn set_last_command_line(&mut self, line: Option<String>) {
-        self.last_command_line = line;
-    }
-
     /// Effect sink for boundary-crossing side effects.
     pub fn effect_sink(&self) -> &S {
         &self.effect_sink
-    }
-
-    /// Whether bold text promotes ANSI colors 0–7 to bright 8–15.
-    pub fn bold_is_bright(&self) -> bool {
-        self.bold_is_bright
-    }
-
-    /// Set the bold-as-bright behavior.
-    pub fn set_bold_is_bright(&mut self, enabled: bool) {
-        self.bold_is_bright = enabled;
-    }
-
-    /// DECSCA per-character protection flag (true = subsequent writes
-    /// carry `CellFlags::PROTECTED`).
-    pub fn char_protection(&self) -> bool {
-        self.char_protection
-    }
-
-    /// DECSCL-reported conformance level (e.g. 64 = VT420).
-    pub fn conformance_level(&self) -> u16 {
-        self.conformance_level
-    }
-
-    /// DECSCL C1 mode: `true` when 7-bit C1 control encoding was
-    /// selected (observable state; does not gate parser dispatch).
-    pub fn c1_7bit(&self) -> bool {
-        self.c1_7bit
-    }
-
-    /// DECSASD active status display target (0 = main, 1 = status).
-    pub fn active_status_display(&self) -> u16 {
-        self.active_status_display
-    }
-
-    /// DECSSDT status line type (0 = off, 1 = indicator, 2 = host).
-    pub fn status_line_type(&self) -> u16 {
-        self.status_line_type
-    }
-
-    /// DECSACE attribute-change extent mode (stream vs rectangle).
-    ///
-    /// Consumed by DECCARA / DECRARA when distributing SGR mutations
-    /// across the rectangle. Default `Stream` matches xterm's Ps=0/1
-    /// baseline; Ps=2 switches to strict `Rectangle` mode.
-    pub fn ace_mode(&self) -> AceMode {
-        self.ace_mode
     }
 
     /// Whether grid content was modified since the last check.
@@ -508,31 +409,6 @@ impl<S: EffectSink> Term<S> {
         self.mode
     }
 
-    /// Reference to the color palette.
-    pub fn palette(&self) -> &Palette {
-        &self.palette
-    }
-
-    /// Mutable reference to the color palette (for config overrides).
-    pub fn palette_mut(&mut self) -> &mut Palette {
-        &mut self.palette
-    }
-
-    /// Terminal's effective background color, accounting for DECSCNM
-    /// (reverse video, mode 5). When `REVERSE_VIDEO` is active, the
-    /// effective bg is the foreground slot — matching the snapshot-time
-    /// `Palette::swap_fg_bg` at `Term::renderable_content` so consumers
-    /// that need to snapshot the "background in effect at this moment"
-    /// (e.g. sixel P2=2 per DEC STD 070 §6.2.2) do not diverge from the
-    /// render path when DECSCNM is active.
-    pub fn effective_background(&self) -> vte::ansi::Rgb {
-        if self.mode.contains(TermMode::REVERSE_VIDEO) {
-            self.palette.foreground()
-        } else {
-            self.palette.background()
-        }
-    }
-
     /// Reference to the active screen's image cache.
     ///
     /// Mirrors [`Self::grid`]: returns `alt_image_cache` when
@@ -574,40 +450,6 @@ impl<S: EffectSink> Term<S> {
 
     // Image protocol configuration and animation methods are in `image_config.rs`.
 
-    /// Current color theme.
-    pub fn theme(&self) -> Theme {
-        self.theme
-    }
-
-    /// Switch the active color theme.
-    ///
-    /// Rebuilds the palette for the new theme and marks all lines dirty so
-    /// the renderer repaints with the new colors. No-op if the theme is
-    /// unchanged.
-    pub fn set_theme(&mut self, theme: Theme) {
-        if self.theme == theme {
-            return;
-        }
-        self.theme = theme;
-        self.palette = Palette::for_theme(theme);
-        self.grid_mut().dirty_mut().mark_all();
-
-        // Mode 2031: notify child process of color scheme change.
-        if self.mode.contains(TermMode::COLOR_SCHEME_UPDATE) {
-            let notification = match theme {
-                Theme::Dark => Some(b"\x1b[?997;1n".as_slice()),
-                Theme::Light => Some(b"\x1b[?997;2n".as_slice()),
-                Theme::Unknown => None,
-            };
-            if let Some(bytes) = notification {
-                self.effect_sink.push(Effect::Pty(PtyEffect::Write {
-                    bytes: bytes.to_vec(),
-                    kind: PtyWriteKind::Other,
-                }));
-            }
-        }
-    }
-
     /// Current window title (raw OSC 0/2 value).
     pub fn title(&self) -> &str {
         &self.title
@@ -626,16 +468,6 @@ impl<S: EffectSink> Term<S> {
     // Shell integration methods (prompt state, CWD, title resolution,
     // notifications, prompt navigation) are in `shell_state.rs`.
 
-    /// Current cursor shape.
-    pub fn cursor_shape(&self) -> CursorShape {
-        self.cursor_shape
-    }
-
-    /// Override the cursor shape (config-driven, not VTE-driven).
-    pub fn set_cursor_shape(&mut self, shape: CursorShape) {
-        self.cursor_shape = shape;
-    }
-
     /// Reference to the charset state.
     pub fn charset(&self) -> &CharsetState {
         &self.charset
@@ -647,18 +479,11 @@ impl<S: EffectSink> Term<S> {
         &self.title_stack
     }
 
-    // Keyboard-mode-stack accessors (pre-command snapshot + inactive
-    // stack) are in `shell_state.rs` alongside `snapshot_keyboard_mode_stack`
-    // / `restore_keyboard_mode_stack` — they are all part of the OSC 133 /
-    // OSC 633 shell-integration surface. See.
-
-    // Rendering snapshot methods (renderable_content, renderable_content_into,
-    // damage, reset_damage) are in `snapshot.rs`.
-
-    // Resize method (resize, image-cache lifecycle) is in `resize.rs`.
-
-    // Alt screen swap methods (swap_alt, swap_alt_no_cursor, swap_alt_clear)
-    // are in `alt_screen.rs`.
+    // Other `impl Term<S>` blocks live in sibling submodules: keyboard-mode
+    // stack + OSC 133/633 in `shell_state.rs`; renderable_content + damage in
+    // `snapshot.rs`; resize in `resize.rs`; alt-screen swap in `alt_screen.rs`;
+    // visual/presentation (theme/palette/cursor/icon) in `visual_state.rs`;
+    // DEC private observable state in `dec_observable.rs`.
 }
 
 // `cwd_short_path` lives in `shell_state.rs` alongside other shell
