@@ -490,17 +490,12 @@ impl App {
             // ChromeParams, replacing the prior implicit dependency on
             // ctx.frame state that was correct only when the focused pane
             // happened to be last in iteration order.
-            let (focused_cols, focused_rows, focused_search) = layouts
+            let focused_snapshot = layouts
                 .iter()
                 .find(|l| l.is_focused)
-                .and_then(|l| self.mux.as_ref().and_then(|m| m.pane_snapshot(l.pane_id)))
-                .map_or((0, 0, None), |snap| {
-                    (
-                        snap.cols as usize,
-                        snap.cells.len(),
-                        FrameSearch::from_snapshot(snap),
-                    )
-                });
+                .and_then(|l| self.mux.as_ref().and_then(|m| m.pane_snapshot(l.pane_id)));
+            let (focused_cols, focused_rows, focused_search) =
+                helpers::focused_pane_chrome_state(focused_snapshot);
 
             // Dividers between split panes.
             let divider_color = self.config.pane.effective_divider_color();
