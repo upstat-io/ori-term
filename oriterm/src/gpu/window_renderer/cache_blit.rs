@@ -40,6 +40,16 @@ impl WindowRenderer {
             .expect("content cache ensured before blit");
         let dst = output_texture.size();
 
+        // Zero-extent guard: minimized windows reconfigure the swapchain to
+        // 0×0; a 0-extent render pass or `copy_texture_to_texture` raises a
+        // wgpu validation panic. Skip the whole blit — there is no surface
+        // to paint anyway. Symmetric guard against `vp = (0,0)` (degenerate
+        // prepare-time viewport) is enforced below the clear pass via the
+        // `copy_w == 0 || copy_h == 0` check.
+        if dst.width == 0 || dst.height == 0 {
+            return;
+        }
+
         if dst.width > vp.width || dst.height > vp.height {
             let view = output_texture.create_view(&TextureViewDescriptor {
                 format: Some(render_format),
@@ -65,6 +75,15 @@ impl WindowRenderer {
 
         let copy_w = vp.width.min(dst.width);
         let copy_h = vp.height.min(dst.height);
+
+        // Skip the copy when either axis is zero — happens when
+        // `prepared.viewport` is (0,0) (degenerate prepare-time state, e.g.
+        // very early in window setup). The destination has already been
+        // cleared above when `dst > vp`; nothing remains to copy.
+        if copy_w == 0 || copy_h == 0 {
+            return;
+        }
+
         encoder.copy_texture_to_texture(
             cache_tex.as_image_copy(),
             output_texture.as_image_copy(),

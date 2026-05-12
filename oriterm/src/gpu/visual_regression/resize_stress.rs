@@ -634,11 +634,13 @@ fn cached_path_grow_uncovered_region_takes_current_clear_not_prior_frame() {
     );
 }
 
-/// Boundary: 1x1 destination — degenerate dimensions must not panic.
-///
-/// Triggers the helper's `dst > vp` gate (1x1 vs 800x600) which would
-/// open a clear pass on a 1x1 view; verifies the encoder accepts the
-/// degenerate-size clear without validation error.
+/// Boundary: 1x1 destination smaller than 800x600 viewport — the
+/// `dst > vp` gate stays FALSE on both axes (1 < 800, 1 < 600) so the
+/// pre-clear pass does NOT fire; the test exercises the SHRINK-clamp
+/// path where `copy_texture_to_texture` writes the minimum extent (1×1)
+/// without validation error. Distinct from the grow-clear regression
+/// surface — pins the helper's common-path correctness under the
+/// minimum non-zero destination size.
 #[test]
 fn cached_path_resize_to_1x1() {
     let Some((gpu, pipelines, mut renderer)) = headless_env() else {
