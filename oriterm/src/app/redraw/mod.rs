@@ -19,10 +19,7 @@ use super::perf_stats::FramePhases;
 use super::window_context::WindowContext;
 use crate::gpu::GpuState;
 use crate::gpu::recovery::gate_outcome;
-use crate::gpu::{
-    FrameSearch, FrameSelection, MarkCursorOverride, ViewportSize, extract_frame_from_snapshot,
-    extract_frame_from_snapshot_into, snapshot_palette,
-};
+use crate::gpu::{FrameSearch, FrameSelection, MarkCursorOverride, ViewportSize};
 use oriterm_core::{Column, CursorShape, TermMode};
 use oriterm_mux::PaneId;
 
@@ -189,48 +186,30 @@ impl App {
                 mux.refresh_pane_snapshot(pane_id);
             }
 
-            // Fast path (embedded): swap RenderableContent directly from
-            // the terminal, bypassing the WireCell round-trip. Only attempt
-            // when SNAPSHOT was refreshed — `swap_renderable_content` does a
-            // blind `std::mem::swap` on the cache and would surface a stale
-            // buffer carrying the prior frame's destructive preedit overlay
-            // if gated on the broader `content_changed`. See the helper's
-            // type-level doc for the regression anchor.
-            let swapped = snapshot_changed
-                && ctx
-                    .frame
-                    .as_mut()
-                    .is_some_and(|f| mux.swap_renderable_content(pane_id, &mut f.content));
-
-            let Some(snapshot) = mux.pane_snapshot(pane_id) else {
+            // Steps 3-6 of the pane-content refresh skeleton: swap fast
+            // path → snapshot lookup → post-swap state setup OR
+            // extract-or-replace → clear dirty bit. SSOT shared with the
+            // multi-pane redraw driver — see
+            // `draw_helpers::try_swap_or_extract_pane_content`. The
+            // swap gate is `snapshot_changed` so `swap_renderable_content`
+            // never surfaces a stale buffer with the prior frame's
+            // destructive preedit overlay (gating on the broader
+            // `content_changed` would regress that invariant).
+            let reextract_gate = content_changed || ctx.frame.is_none();
+            let outcome = draw_helpers::try_swap_or_extract_pane_content(
+                mux.as_mut(),
+                &mut ctx.frame,
+                pane_id,
+                viewport,
+                cell,
+                snapshot_changed,
+                reextract_gate,
+            );
+            if outcome.is_none() {
                 log::warn!("redraw: no snapshot for pane {pane_id:?}");
                 ctx.root.mark_dirty();
                 return phases;
-            };
-            if swapped {
-                let frame = ctx.frame.as_mut().expect("frame exists when swapped");
-                frame.viewport = viewport;
-                frame.cell_size = cell;
-                frame.content_cols = snapshot.cols as usize;
-                frame.content_rows = snapshot.cells.len();
-                frame.palette = snapshot_palette(snapshot);
-                frame.clear_transient_fields();
-            } else if content_changed || ctx.frame.is_none() {
-                // Only re-extract when content actually changed. On cursor-
-                // blink-only redraws the existing frame is still valid — skip
-                // the O(rows*cols) snapshot-to-renderable copy.
-                match &mut ctx.frame {
-                    Some(existing) => {
-                        extract_frame_from_snapshot_into(snapshot, existing, viewport, cell);
-                    }
-                    slot @ None => {
-                        *slot = Some(extract_frame_from_snapshot(snapshot, viewport, cell));
-                    }
-                }
-            } else {
-                // Cursor-blink-only: reuse existing frame as-is.
             }
-            mux.clear_pane_snapshot_dirty(pane_id);
             phases.extract = extract_start.elapsed();
 
             let frame = ctx.frame.as_mut().expect("frame just assigned");

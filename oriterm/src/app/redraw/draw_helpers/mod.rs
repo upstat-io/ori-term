@@ -6,6 +6,8 @@
 use std::collections::HashMap;
 use std::time::Instant;
 
+use oriterm_mux::backend::MuxBackend;
+use oriterm_mux::id::PaneId;
 use oriterm_ui::animation::FrameRequestFlags;
 use oriterm_ui::draw::{DamageTracker, Scene, build_scene};
 use oriterm_ui::geometry::Rect;
@@ -23,9 +25,100 @@ use oriterm_ui::window_root::WindowRoot;
 
 use crate::app::App;
 use crate::app::widget_pipeline;
-use crate::font::{CachedTextMeasurer, TextShapeCache};
+use crate::font::{CachedTextMeasurer, CellMetrics, TextShapeCache};
+use crate::gpu::frame_input::{FrameInput, ViewportSize};
 use crate::gpu::state::GpuState;
 use crate::gpu::window_renderer::WindowRenderer;
+use crate::gpu::{extract_frame_from_snapshot, extract_frame_from_snapshot_into, snapshot_palette};
+
+/// Outcome of [`try_swap_or_extract_pane_content`].
+///
+/// Callers use this to apply caller-specific extra state — single-pane
+/// defers `window_focused` resolution; multi-pane tracks
+/// `scratch_frame_pane` and sets `window_focused = true` on the swap path.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum PaneExtractOutcome {
+    /// Zero-copy fast path: `swap_renderable_content` succeeded.
+    Swapped,
+    /// Full extract path: `extract_frame_from_snapshot[_into]` ran.
+    Reextracted,
+    /// No-op: cursor-blink-only frame, existing `ctx.frame` reused as-is.
+    Reused,
+}
+
+/// Try the zero-copy swap fast path, fall through to extract, then clear
+/// the snapshot dirty bit. SSOT for the pane-content refresh skeleton
+/// shared by single-pane and multi-pane redraw paths.
+///
+/// Steps:
+///
+/// 3. If `swap_gate && ctx_frame.is_some()`, attempt
+///    `mux.swap_renderable_content`. The embedded backend swaps the
+///    cached `RenderableContent` directly with the caller's
+///    `FrameInput.content`, bypassing the `WireCell` round-trip.
+/// 4. On successful swap: set the basic post-swap state — `viewport`,
+///    `cell_size`, `content_cols`/`content_rows`, `palette`,
+///    `clear_transient_fields`. Caller-specific extras
+///    (`window_focused`, `scratch_frame_pane`) remain caller
+///    responsibilities.
+/// 5. Otherwise, if `reextract_gate`, run extract-or-replace via
+///    `extract_frame_from_snapshot_into` (existing frame) or
+///    `extract_frame_from_snapshot` (first frame).
+/// 6. Always call `mux.clear_pane_snapshot_dirty(pane_id)` before
+///    returning.
+///
+/// Returns `None` when `mux.pane_snapshot(pane_id)` is None — the
+/// caller decides whether to `return`, `continue`, or mark dirty (the
+/// snapshot-missing control flow differs between single-pane and
+/// multi-pane). Steps 1 (content-changed detection) and 2 (initial
+/// refresh decision) remain caller responsibilities because the
+/// predicate inputs differ materially across the two paths.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "pane-content refresh helper threads mux + frame + pane id + viewport + metrics + two gates — each is a distinct caller-side input"
+)]
+pub(super) fn try_swap_or_extract_pane_content(
+    mux: &mut dyn MuxBackend,
+    ctx_frame: &mut Option<FrameInput>,
+    pane_id: PaneId,
+    viewport: ViewportSize,
+    cell: CellMetrics,
+    swap_gate: bool,
+    reextract_gate: bool,
+) -> Option<PaneExtractOutcome> {
+    let swapped = swap_gate
+        && ctx_frame
+            .as_mut()
+            .is_some_and(|f| mux.swap_renderable_content(pane_id, &mut f.content));
+
+    let snapshot = mux.pane_snapshot(pane_id)?;
+
+    let outcome = if swapped {
+        let frame = ctx_frame.as_mut().expect("frame exists when swapped");
+        frame.viewport = viewport;
+        frame.cell_size = cell;
+        frame.content_cols = snapshot.cols as usize;
+        frame.content_rows = snapshot.cells.len();
+        frame.palette = snapshot_palette(snapshot);
+        frame.clear_transient_fields();
+        PaneExtractOutcome::Swapped
+    } else if reextract_gate {
+        match ctx_frame {
+            Some(existing) => {
+                extract_frame_from_snapshot_into(snapshot, existing, viewport, cell);
+            }
+            slot @ None => {
+                *slot = Some(extract_frame_from_snapshot(snapshot, viewport, cell));
+            }
+        }
+        PaneExtractOutcome::Reextracted
+    } else {
+        PaneExtractOutcome::Reused
+    };
+
+    mux.clear_pane_snapshot_dirty(pane_id);
+    Some(outcome)
+}
 
 impl App {
     /// Draw the tab bar (unified chrome bar).

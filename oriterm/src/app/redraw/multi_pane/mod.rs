@@ -15,10 +15,7 @@ use super::App;
 use super::mouse_selection::{self, GridCtx};
 use crate::gpu::frame_input::FramePalette;
 use crate::gpu::prepare::{DispatchFingerprintInputs, PaneRowState, compute_pane_damage_key};
-use crate::gpu::{
-    FrameSearch, FrameSelection, MarkCursorOverride, ViewportSize, extract_frame_from_snapshot,
-    extract_frame_from_snapshot_into, snapshot_palette,
-};
+use crate::gpu::{FrameSearch, FrameSelection, MarkCursorOverride, ViewportSize, snapshot_palette};
 
 impl App {
     /// Execute the multi-pane rendering pipeline.
@@ -322,64 +319,43 @@ impl App {
                     let mux = self.mux.as_mut().expect("mux checked");
                     let content_refreshed = dirty_content;
 
-                    // Fast path (embedded): swap RenderableContent directly,
-                    // bypassing WireCell round-trip. Only attempt when content
-                    // was refreshed — stale cache entries from prior iterations
-                    // would contaminate the frame otherwise.
-                    let swapped = content_refreshed
-                        && ctx
-                            .frame
-                            .as_mut()
-                            .is_some_and(|f| mux.swap_renderable_content(pane_id, &mut f.content));
-
-                    let Some(snapshot) = mux.pane_snapshot(pane_id) else {
+                    // Steps 3-6 of the pane-content refresh skeleton — SSOT
+                    // shared with the single-pane redraw driver. Caller-
+                    // specific concerns (scratch_frame_pane tracking,
+                    // window_focused) remain here. The reextract gate uses
+                    // `helpers::should_reextract_scratch_frame` to handle
+                    // the shared-scratch-buffer contamination case where
+                    // the buffer currently holds another pane's content.
+                    let reextract_gate = helpers::should_reextract_scratch_frame(
+                        content_refreshed,
+                        ctx.frame.is_none(),
+                        scratch_frame_pane == Some(pane_id),
+                    );
+                    let outcome = super::draw_helpers::try_swap_or_extract_pane_content(
+                        mux.as_mut(),
+                        &mut ctx.frame,
+                        pane_id,
+                        pane_viewport,
+                        cell,
+                        content_refreshed,
+                        reextract_gate,
+                    );
+                    let Some(outcome) = outcome else {
                         log::warn!("multi-pane: no snapshot for pane {pane_id:?}");
                         ctx.root.mark_dirty();
                         continue;
                     };
-                    if swapped {
-                        let frame = ctx.frame.as_mut().expect("frame exists when swapped");
-                        frame.viewport = pane_viewport;
-                        frame.cell_size = cell;
-                        frame.content_cols = snapshot.cols as usize;
-                        frame.content_rows = snapshot.cells.len();
-                        frame.palette = snapshot_palette(snapshot);
-                        frame.clear_transient_fields();
-                        frame.window_focused = true;
-                        scratch_frame_pane = Some(pane_id);
-                    } else if helpers::should_reextract_scratch_frame(
-                        content_refreshed,
-                        ctx.frame.is_none(),
-                        scratch_frame_pane == Some(pane_id),
-                    ) {
-                        // `ctx.frame` is a shared scratch buffer across all
-                        // panes in the loop. Even when a pane's snapshot isn't
-                        // dirty, the scratch buffer may currently hold another
-                        // pane's extracted content, so re-extract unless the
-                        // scratch frame is known to already belong to this
-                        // pane.
-                        match &mut ctx.frame {
-                            Some(existing) => {
-                                extract_frame_from_snapshot_into(
-                                    snapshot,
-                                    existing,
-                                    pane_viewport,
-                                    cell,
-                                );
-                            }
-                            slot @ None => {
-                                *slot = Some(extract_frame_from_snapshot(
-                                    snapshot,
-                                    pane_viewport,
-                                    cell,
-                                ));
-                            }
+                    match outcome {
+                        super::draw_helpers::PaneExtractOutcome::Swapped => {
+                            let frame = ctx.frame.as_mut().expect("frame populated by swap");
+                            frame.window_focused = true;
+                            scratch_frame_pane = Some(pane_id);
                         }
-                        scratch_frame_pane = Some(pane_id);
-                    } else {
-                        // Cursor-blink-only: reuse existing frame as-is.
+                        super::draw_helpers::PaneExtractOutcome::Reextracted => {
+                            scratch_frame_pane = Some(pane_id);
+                        }
+                        super::draw_helpers::PaneExtractOutcome::Reused => {}
                     }
-                    mux.clear_pane_snapshot_dirty(pane_id);
 
                     let frame = ctx.frame.as_mut().expect("frame just assigned");
 
