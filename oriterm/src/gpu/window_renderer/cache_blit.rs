@@ -19,6 +19,12 @@ impl WindowRenderer {
     /// Copy the offscreen content cache to `output_texture`, pre-clearing
     /// any region of the destination outside the prepared viewport.
     ///
+    /// `output_texture` accepts both the swapchain's `SurfaceTexture.texture`
+    /// (production `render_cached` path) and an offscreen `RenderTarget`'s
+    /// underlying texture (test `render_frame_cached` path) — the helper
+    /// uses only the `wgpu::Texture` public surface to keep both call sites
+    /// behind a single SSOT.
+    ///
     /// When the destination exceeds the prepared viewport on either axis
     /// (resize-grow path), open a no-draw render pass with
     /// `LoadOp::Clear(self.clear_color())` to initialize the full
