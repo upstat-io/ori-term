@@ -15,6 +15,8 @@ use std::path::PathBuf;
 use oriterm_core::{CursorShape, Palette, Rgb};
 
 use crate::MuxPdu;
+use crate::PaneId;
+use crate::PaneSnapshot;
 use crate::domain::SpawnConfig;
 use crate::id::HostRequestId;
 use crate::pane::io_thread::PaneIoCommand;
@@ -45,6 +47,7 @@ pub fn dispatch_request(
         _ => None,
     };
     let is_new_tab = matches!(&pdu, MuxPdu::RequestNewTab);
+    let mut evicted_image_keys: Vec<(PaneId, oriterm_core::ImageId)> = Vec::new();
 
     let response = match pdu {
         MuxPdu::Hello {
@@ -331,9 +334,22 @@ pub fn dispatch_request(
             conn.subscribe(pane_id);
             match ctx.panes.get(&pane_id) {
                 Some(pane) => {
-                    let (snap, _evicted) = ctx.snapshot_cache.build_and_take(pane_id, pane);
-                    // TODO(BUG-06-072 Commit 3): propagate `_evicted` to all // prose-lint: allow
-                    // ClientConnection.sent_images.
+                    let (snap, evicted) = ctx.snapshot_cache.build_and_take(pane_id, pane);
+                    evicted_image_keys.extend(evicted);
+                    let snap = project_snapshot_for_client(
+                        pane_id,
+                        snap,
+                        conn,
+                        ctx.snapshot_cache,
+                    );
+                    let referenced: Vec<oriterm_core::ImageId> = snap
+                        .images
+                        .iter()
+                        .map(|wp| oriterm_core::ImageId::from_raw(wp.image_id))
+                        .collect();
+                    for id in &referenced {
+                        conn.mark_image_sent(pane_id, *id);
+                    }
                     Some(MuxPdu::Subscribed { snapshot: snap })
                 }
                 None => Some(MuxPdu::Error {
@@ -436,9 +452,22 @@ pub fn dispatch_request(
                         ),
                     })
                 } else {
-                    let (snap, _evicted) = ctx.snapshot_cache.build_and_take(pane_id, pane);
-                    // TODO(BUG-06-072 Commit 3): propagate `_evicted` to all // prose-lint: allow
-                    // ClientConnection.sent_images.
+                    let (snap, evicted) = ctx.snapshot_cache.build_and_take(pane_id, pane);
+                    evicted_image_keys.extend(evicted);
+                    let snap = project_snapshot_for_client(
+                        pane_id,
+                        snap,
+                        conn,
+                        ctx.snapshot_cache,
+                    );
+                    let referenced: Vec<oriterm_core::ImageId> = snap
+                        .images
+                        .iter()
+                        .map(|wp| oriterm_core::ImageId::from_raw(wp.image_id))
+                        .collect();
+                    for id in &referenced {
+                        conn.mark_image_sent(pane_id, *id);
+                    }
                     Some(MuxPdu::PaneSnapshotResp { snapshot: snap })
                 }
             }
@@ -515,7 +544,47 @@ pub fn dispatch_request(
         } else {
             None
         },
+        evicted_image_keys,
     }
+}
+
+/// Project a freshly-built `PaneSnapshot` for a single client by computing
+/// which `ImageId`s the client still needs pixel data for (`!has_sent_image`)
+/// and filling those entries inline from the server's `image_data_store`.
+///
+/// On `images_dirty == true`, clears the client's `sent_images[pane_id]` first
+/// (server is about to resend every visible ID). Mutates `conn.sent_images`
+/// only for the WAS_DIRTY case via `clear_sent_images`; the caller marks IDs
+/// sent AFTER queuing succeeds (so a failed queue doesn't leave stale state).
+/// See: bug-tracker/plans/BUG-06-072/
+fn project_snapshot_for_client(
+    pane_id: PaneId,
+    mut snap: PaneSnapshot,
+    conn: &mut ClientConnection,
+    snapshot_cache: &mut super::snapshot::SnapshotCache,
+) -> PaneSnapshot {
+    if snap.images_dirty {
+        conn.clear_sent_images(pane_id);
+    }
+    let needed_ids: Vec<oriterm_core::ImageId> = snap
+        .images
+        .iter()
+        .map(|wp| oriterm_core::ImageId::from_raw(wp.image_id))
+        .filter(|id| !conn.has_sent_image(pane_id, *id))
+        .collect();
+    snap.image_data.clear();
+    snap.image_data.reserve(needed_ids.len());
+    for id in &needed_ids {
+        if let Some(arc) = snapshot_cache.image_data(pane_id, *id) {
+            snap.image_data.push(crate::protocol::snapshot::WireImageData {
+                id: id.as_u32(),
+                data: arc.data.to_vec(),
+                width: arc.width,
+                height: arc.height,
+            });
+        }
+    }
+    snap
 }
 
 /// Map a wire signal byte to the `Signal` enum.

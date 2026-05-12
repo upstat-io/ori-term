@@ -227,7 +227,7 @@ fn snapshot_to_renderable_into(
     out.mode = TermMode::from_bits_truncate(snapshot.modes);
     out.all_dirty = true;
     out.damage.clear();
-    // Populate images from wire + cache lookup (BUG-06-072 fix). // prose-lint: allow
+    // Populate images from wire + cache lookup.
     // Previously this path called `out.images.clear(); out.image_data.clear();
     // out.images_dirty = false;` which silently dropped daemon-mode image data.
     populate_images_from_wire(snapshot, out, image_lookup);

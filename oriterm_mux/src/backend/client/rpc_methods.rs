@@ -517,7 +517,6 @@ impl MuxBackend for MuxClient {
                 // into the bounded image_cache (preventing unbounded
                 // pane_snapshots growth) and the pending_refresh marker
                 // clears via the same code path.
-                // See: bug-tracker/plans/BUG-06-072/ // prose-lint: allow
                 let result = snapshot.clone();
                 self.cache_snapshot(pane_id, snapshot);
                 self.pending_refresh.remove(&pane_id);
@@ -543,7 +542,6 @@ impl MuxBackend for MuxClient {
         if let Some(snapshot) = pushed {
             // Route through cache_snapshot SSOT (drains image_data into the
             // bounded image_cache before storing the stripped snapshot).
-            // See: bug-tracker/plans/BUG-06-072/ // prose-lint: allow
             self.cache_snapshot(pane_id, snapshot);
             self.pending_refresh.remove(&pane_id);
             return self.pane_snapshots.get(&pane_id);

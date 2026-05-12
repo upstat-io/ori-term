@@ -108,7 +108,6 @@ pub(super) fn try_swap_or_extract_pane_content(
         // `Arc` clone from its `image_cache`; embedded backends return None
         // (extract is never invoked when their `swap_renderable_content`
         // succeeds, so the closure is effectively unreachable for them).
-        // See: bug-tracker/plans/BUG-06-072/ // prose-lint: allow
         let image_lookup = |id| mux.pane_image_data(pane_id, id);
         match ctx_frame {
             Some(existing) => {

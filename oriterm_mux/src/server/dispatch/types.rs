@@ -3,6 +3,8 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use oriterm_core::ImageId;
+
 use crate::id::HostRequestId;
 use crate::in_process::InProcessMux;
 use crate::pane::Pane;
@@ -25,6 +27,13 @@ pub(in crate::server) struct DispatchResult {
     pub sub_changed: bool,
     /// Pane that was unsubscribed (for `pending_push` cleanup).
     pub unsubscribed_pane: Option<PaneId>,
+    /// `(PaneId, ImageId)` keys evicted from `SnapshotCache.image_data_store`
+    /// during this dispatch (when a Subscribe / GetPaneSnapshot built a fresh
+    /// snapshot under memory pressure). Caller must `forget_sent_image` on
+    /// every OTHER connection so the next snapshot referencing the evicted
+    /// ID re-includes its pixel data.
+    /// See: bug-tracker/plans/BUG-06-072/
+    pub evicted_image_keys: Vec<(PaneId, ImageId)>,
 }
 
 /// Shared context for request dispatch.

@@ -7,6 +7,7 @@
 use std::collections::{HashMap, HashSet};
 
 use mio::Token;
+use oriterm_core::ImageId;
 
 use crate::MuxPdu;
 use crate::PaneId;
@@ -33,6 +34,18 @@ pub(crate) struct ClientConnection {
     pane_priorities: HashMap<PaneId, u8>,
     /// Protocol capabilities advertised by the client.
     capabilities: u32,
+    /// Per-pane set of `ImageId`s this client has already received pixel data
+    /// for. Used by `push_snapshot_to_subscribers` + `GetPaneSnapshot` to
+    /// project per-client `image_data` — when an `ImageId` is in this set AND
+    /// the snapshot's `images_dirty == false`, the projection omits the wire
+    /// `WireImageData` for that ID (client resolves via its `image_cache`).
+    ///
+    /// Server-driven invalidation: when `SnapshotCache.image_data_store`
+    /// evicts a `(PaneId, ImageId)` under memory pressure, that ID is removed
+    /// from EVERY connection's `sent_images[pane_id]` so the next snapshot
+    /// referencing the ID re-includes its pixel data.
+    /// See: bug-tracker/plans/BUG-06-072/
+    sent_images: HashMap<PaneId, HashSet<ImageId>>,
 }
 
 impl ClientConnection {
@@ -47,7 +60,47 @@ impl ClientConnection {
             subscribed_panes: HashSet::new(),
             pane_priorities: HashMap::new(),
             capabilities: 0,
+            sent_images: HashMap::new(),
         }
+    }
+
+    /// Whether this connection has already been sent the pixel data for
+    /// `(pane_id, image_id)`. Used by per-client snapshot projection to decide
+    /// whether the wire `WireImageData` for an `ImageId` can be omitted.
+    pub(super) fn has_sent_image(&self, pane_id: PaneId, image_id: ImageId) -> bool {
+        self.sent_images
+            .get(&pane_id)
+            .is_some_and(|s| s.contains(&image_id))
+    }
+
+    /// Mark `(pane_id, image_id)` as sent to this client. Called after a
+    /// successful `queue_frame` of a snapshot whose projection included the
+    /// pixel data for that ID.
+    pub(super) fn mark_image_sent(&mut self, pane_id: PaneId, image_id: ImageId) {
+        self.sent_images.entry(pane_id).or_default().insert(image_id);
+    }
+
+    /// Clear every `sent_images` entry for `pane_id`. Called when
+    /// `RenderableContent.images_dirty == true` — the server is about to resend
+    /// every visible ID, so the per-client tracking starts fresh.
+    pub(super) fn clear_sent_images(&mut self, pane_id: PaneId) {
+        if let Some(s) = self.sent_images.get_mut(&pane_id) {
+            s.clear();
+        }
+    }
+
+    /// Drop the `(pane_id, image_id)` entry from `sent_images`. Called when
+    /// the server evicts `(pane_id, image_id)` from its `image_data_store` —
+    /// the next snapshot referencing the ID must re-include its pixel data.
+    pub(super) fn forget_sent_image(&mut self, pane_id: PaneId, image_id: ImageId) {
+        if let Some(s) = self.sent_images.get_mut(&pane_id) {
+            s.remove(&image_id);
+        }
+    }
+
+    /// Drop every `sent_images` entry for `pane_id`. Called on pane close.
+    pub(super) fn drop_sent_images_for_pane(&mut self, pane_id: PaneId) {
+        self.sent_images.remove(&pane_id);
     }
 
     /// Connection identifier.

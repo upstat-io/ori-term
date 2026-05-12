@@ -91,6 +91,20 @@ impl SnapshotCache {
         (&self.cache[&pane_id], evicted)
     }
 
+    /// Look up `(pane_id, image_id)` in the server-side pixel-data store.
+    ///
+    /// Used by per-client snapshot projection (`push_snapshot_to_subscribers`,
+    /// `GetPaneSnapshot` RPC) to fetch the `Arc<RenderableImageData>` to attach
+    /// inline as `WireImageData` when a client needs it.
+    /// See: bug-tracker/plans/BUG-06-072/
+    pub fn image_data(
+        &mut self,
+        pane_id: PaneId,
+        image_id: ImageId,
+    ) -> Option<Arc<RenderableImageData>> {
+        self.image_data_store.get(pane_id, image_id)
+    }
+
     /// Clone the cached snapshot for a pane (for sending over IPC).
     ///
     /// Builds a fresh snapshot if none is cached. Returns the snapshot plus

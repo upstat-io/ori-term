@@ -297,7 +297,7 @@ fn cached_path_vertical_shrink_20px() {
     renderer.render_frame_cached(&gpu, &pipelines, 800, 580, true);
 }
 
-// -- Resize-grow uncovered-region clearing tests -- <!-- prose-lint: allow -->
+// -- Resize-grow uncovered-region clearing tests --
 //
 // When the render destination is LARGER than the prepared viewport
 // (the resize-grow case — winit `Resized` fires between `prepare()` and

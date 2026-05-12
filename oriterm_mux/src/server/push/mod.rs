@@ -8,9 +8,12 @@
 use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
 
+use oriterm_core::ImageId;
+
 use crate::id::ClientId;
 use crate::pane::Pane;
 use crate::protocol::messages::CAP_SNAPSHOT_PUSH;
+use crate::protocol::snapshot::WireImageData;
 use crate::{MuxPdu, PaneId, PaneSnapshot};
 
 use super::connection::ClientConnection;
@@ -93,31 +96,144 @@ pub(super) fn push_snapshot_to_subscribers(
     subscribers: &[ClientId],
     connections: &mut HashMap<ClientId, ClientConnection>,
     deferred: &mut HashSet<ClientId>,
+    snapshot_cache: &mut SnapshotCache,
 ) {
-    let push_pdu = MuxPdu::NotifyPaneSnapshot {
-        pane_id,
-        snapshot: snapshot.clone(),
-    };
     let bare_pdu = MuxPdu::NotifyPaneOutput { pane_id };
 
+    // Steady-state fast path: when `!images_dirty` AND every subscriber has
+    // every referenced ImageId in `sent_images[pane_id]`, build ONE shared
+    // NotifyPaneSnapshot PDU and queue it across all capable subscribers (the
+    // shared-PDU shape from the pre-image-cache codepath). Avoids per-subscriber clone in the
+    // common case.
+    let fast_path_eligible = !snapshot.images_dirty
+        && subscribers.iter().all(|cid| {
+            let Some(conn) = connections.get(cid) else {
+                return true; // disconnected — irrelevant
+            };
+            if !conn.has_capability(CAP_SNAPSHOT_PUSH) {
+                return true; // bare-PDU path doesn't carry image_data
+            }
+            snapshot
+                .images
+                .iter()
+                .all(|wp| conn.has_sent_image(pane_id, ImageId::from_raw(wp.image_id)))
+        });
+
+    if fast_path_eligible {
+        // Shared PDU — placements only, no image_data needed.
+        let push_pdu = MuxPdu::NotifyPaneSnapshot {
+            pane_id,
+            snapshot: snapshot.clone(),
+        };
+        for &cid in subscribers {
+            let Some(conn) = connections.get_mut(&cid) else {
+                continue;
+            };
+            if !conn.has_capability(CAP_SNAPSHOT_PUSH) {
+                if let Err(e) = conn.queue_frame(0, &bare_pdu) {
+                    log::warn!("push bare to {cid} failed: {e}");
+                }
+                continue;
+            }
+            if conn.pending_write_bytes() > WRITE_HIGH_WATER {
+                deferred.insert(cid);
+                continue;
+            }
+            if let Err(e) = conn.queue_frame(0, &push_pdu) {
+                log::warn!("push snapshot to {cid} failed: {e}");
+            }
+            // sent_images already contains every referenced ID — no update needed.
+        }
+        return;
+    }
+
+    // Per-client slow path: at least one subscriber needs new image_data OR
+    // `images_dirty == true`. Build per-client projection.
     for &cid in subscribers {
         let Some(conn) = connections.get_mut(&cid) else {
             continue;
         };
         if !conn.has_capability(CAP_SNAPSHOT_PUSH) {
-            // Legacy client — send bare notification (pre-existing path).
             if let Err(e) = conn.queue_frame(0, &bare_pdu) {
                 log::warn!("push bare to {cid} failed: {e}");
             }
             continue;
         }
         if conn.pending_write_bytes() > WRITE_HIGH_WATER {
-            // Backpressured — defer to trailing-edge flush.
             deferred.insert(cid);
             continue;
         }
-        if let Err(e) = conn.queue_frame(0, &push_pdu) {
-            log::warn!("push snapshot to {cid} failed: {e}");
+
+        // On images_dirty=true, clear this client's sent_images for the pane
+        // BEFORE computing needed_ids — we're about to resend every visible ID.
+        if snapshot.images_dirty {
+            conn.clear_sent_images(pane_id);
+        }
+        let needed_ids: Vec<ImageId> = snapshot
+            .images
+            .iter()
+            .map(|wp| ImageId::from_raw(wp.image_id))
+            .filter(|id| !conn.has_sent_image(pane_id, *id))
+            .collect();
+
+        // Build per-client snapshot — clone the base (cells + placements) and
+        // project image_data via the server's image_data_store.
+        let mut projected = snapshot.clone();
+        projected.image_data.clear();
+        projected.image_data.reserve(needed_ids.len());
+        for id in &needed_ids {
+            if let Some(arc) = snapshot_cache.image_data(pane_id, *id) {
+                projected.image_data.push(WireImageData {
+                    id: id.as_u32(),
+                    data: arc.data.to_vec(),
+                    width: arc.width,
+                    height: arc.height,
+                });
+            } else {
+                log::warn!(
+                    "push_snapshot_to_subscribers: image_data_store miss for ({pane_id}, {id:?}); placement may render blank on client {cid}"
+                );
+            }
+        }
+
+        let pdu = MuxPdu::NotifyPaneSnapshot {
+            pane_id,
+            snapshot: projected,
+        };
+        match conn.queue_frame(0, &pdu) {
+            Ok(()) => {
+                // Mark every referenced ID as sent — on a successful queue,
+                // the client will receive (or has already received) the
+                // pixel data for every placement in the projection.
+                for wp in &snapshot.images {
+                    conn.mark_image_sent(pane_id, ImageId::from_raw(wp.image_id));
+                }
+            }
+            Err(e) => {
+                log::warn!("push snapshot to {cid} failed: {e}");
+                // Don't mutate sent_images on failure — trailing-edge flush
+                // retries against the latest snapshot.
+            }
+        }
+    }
+}
+
+/// Propagate `(PaneId, ImageId)` evictions from `SnapshotCache.image_data_store`
+/// to every connection's `sent_images`. Called after each `build_clone` /
+/// `build_and_take` so the next snapshot referencing an evicted ID re-includes
+/// its pixel data (per-client filter will see `!has_sent_image` and project the
+/// `WireImageData`).
+/// See: bug-tracker/plans/BUG-06-072/
+pub(super) fn propagate_image_evictions(
+    evicted: &[(PaneId, ImageId)],
+    connections: &mut HashMap<ClientId, ClientConnection>,
+) {
+    if evicted.is_empty() {
+        return;
+    }
+    for conn in connections.values_mut() {
+        for (pane_id, image_id) in evicted {
+            conn.forget_sent_image(*pane_id, *image_id);
         }
     }
 }
@@ -178,12 +294,17 @@ pub fn push_or_defer_pane(ctx: &mut PushContext<'_>, now: Instant, pane_id: Pane
     let interval = effective_push_interval(pane_id, ctx.scratch, ctx.connections);
     if should_push(now, ctx.last_snapshot_push.get(&pane_id).copied(), interval) {
         if let Some(pane) = ctx.panes.get(&pane_id) {
-            let (snap, _evicted) = ctx.snapshot_cache.build_clone(pane_id, pane);
-            // TODO(BUG-06-072 Commit 3): propagate `_evicted` to every // prose-lint: allow
-            // ClientConnection.sent_images so server-driven invalidation
-            // forces re-send on the next snapshot referencing the ID.
+            let (snap, evicted) = ctx.snapshot_cache.build_clone(pane_id, pane);
+            propagate_image_evictions(&evicted, ctx.connections);
             let deferred = ctx.pending_push.entry(pane_id).or_default();
-            push_snapshot_to_subscribers(pane_id, &snap, ctx.scratch, ctx.connections, deferred);
+            push_snapshot_to_subscribers(
+                pane_id,
+                &snap,
+                ctx.scratch,
+                ctx.connections,
+                deferred,
+                ctx.snapshot_cache,
+            );
             ctx.last_snapshot_push.insert(pane_id, now);
         }
     } else {
@@ -252,27 +373,68 @@ pub fn trailing_edge_flush(ctx: &mut PushContext<'_>, now: Instant) {
             ctx.pending_push.remove(&pane_id);
             continue;
         };
-        let (snap, _evicted) = ctx.snapshot_cache.build_clone(pane_id, pane);
-        // TODO(BUG-06-072 Commit 3): propagate `_evicted` to ClientConnection.sent_images. // prose-lint: allow
+        let (snap, evicted) = ctx.snapshot_cache.build_clone(pane_id, pane);
+        propagate_image_evictions(&evicted, ctx.connections);
 
-        let push_pdu = MuxPdu::NotifyPaneSnapshot {
-            pane_id,
-            snapshot: snap,
-        };
-
-        // Push to sendable clients, keep deferred for the rest.
-        // Reuse scratch buffer for tracking served clients.
+        // Trailing-edge flush uses the same per-client projection logic as
+        // push_snapshot_to_subscribers — collect served clients via the
+        // scratch buffer, then drop them from `deferred`.
         ctx.scratch.clear();
-        for &cid in deferred.iter() {
+        let served_clients: Vec<ClientId> = deferred.iter().copied().collect();
+        for cid in served_clients {
+            let Some(conn) = ctx.connections.get(&cid) else {
+                ctx.scratch.push(cid);
+                continue;
+            };
+            if conn.pending_write_bytes() > WRITE_HIGH_WATER {
+                continue;
+            }
+            // Build per-client projection inline (same shape as
+            // push_snapshot_to_subscribers slow path).
+            if let Some(conn) = ctx.connections.get_mut(&cid) {
+                if snap.images_dirty {
+                    conn.clear_sent_images(pane_id);
+                }
+            }
+            let needed_ids: Vec<ImageId> = {
+                let conn = ctx.connections.get(&cid).expect("checked above");
+                snap.images
+                    .iter()
+                    .map(|wp| ImageId::from_raw(wp.image_id))
+                    .filter(|id| !conn.has_sent_image(pane_id, *id))
+                    .collect()
+            };
+            let mut projected = snap.clone();
+            projected.image_data.clear();
+            projected.image_data.reserve(needed_ids.len());
+            for id in &needed_ids {
+                if let Some(arc) = ctx.snapshot_cache.image_data(pane_id, *id) {
+                    projected.image_data.push(WireImageData {
+                        id: id.as_u32(),
+                        data: arc.data.to_vec(),
+                        width: arc.width,
+                        height: arc.height,
+                    });
+                }
+            }
+            let pdu = MuxPdu::NotifyPaneSnapshot {
+                pane_id,
+                snapshot: projected,
+            };
             let Some(conn) = ctx.connections.get_mut(&cid) else {
                 ctx.scratch.push(cid);
                 continue;
             };
-            if conn.pending_write_bytes() <= WRITE_HIGH_WATER {
-                if let Err(e) = conn.queue_frame(0, &push_pdu) {
+            match conn.queue_frame(0, &pdu) {
+                Ok(()) => {
+                    for wp in &snap.images {
+                        conn.mark_image_sent(pane_id, ImageId::from_raw(wp.image_id));
+                    }
+                    ctx.scratch.push(cid);
+                }
+                Err(e) => {
                     log::warn!("trailing push to {cid} failed: {e}");
                 }
-                ctx.scratch.push(cid);
             }
         }
         for &cid in ctx.scratch.iter() {

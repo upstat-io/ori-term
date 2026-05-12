@@ -173,6 +173,15 @@ impl MuxServer {
         };
         let result = dispatch::dispatch_request(&mut ctx, conn, decoded.pdu);
 
+        // Propagate `image_data_store` evictions surfaced by the dispatch (a
+        // Subscribe / GetPaneSnapshot built a fresh snapshot that displaced
+        // pixel data under memory pressure). Every OTHER connection's
+        // `sent_images` must drop the evicted IDs so the next snapshot
+        // referencing them re-includes the bytes inline.
+        if !result.evicted_image_keys.is_empty() {
+            push::propagate_image_evictions(&result.evicted_image_keys, &mut self.connections);
+        }
+
         // Purge stale subscriptions for closed panes.
         if !self.scratch_panes.is_empty() {
             self.purge_closed_pane_subscriptions();
