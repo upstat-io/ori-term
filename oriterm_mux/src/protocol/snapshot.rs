@@ -158,7 +158,7 @@ pub struct WireSearchMatch {
 ///
 /// f32 fields preclude `Eq`; this drops `PaneSnapshot`'s `Eq` derive transitively (and `MuxPdu`'s),
 /// so wire-protocol types now derive `PartialEq` only. `assert_eq!` callers continue to work
-/// (assert_eq requires `PartialEq + Debug`, not `Eq`).
+/// (`assert_eq!` requires `PartialEq + Debug`, not `Eq`).
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct WirePlacement {
     /// Raw `ImageId` inner value (per `oriterm_core::ImageId(pub(crate) u32)`).
@@ -191,7 +191,7 @@ pub struct WirePlacement {
 /// fill path clones `Arc<Vec<u8>>::to_vec()` on the slow path (when image data must flow
 /// over the wire — first-observation OR `images_dirty=true`); fast path (steady-state
 /// shared-PDU) carries empty `image_data` and skips the clone.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WireImageData {
     /// Raw `ImageId` inner value.
     pub id: u32,

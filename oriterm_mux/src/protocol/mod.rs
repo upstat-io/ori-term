@@ -51,7 +51,7 @@ pub const HEADER_LEN: usize = 14;
 ///
 /// Sized to comfortably accommodate the core image cache's per-image limit
 /// (`DEFAULT_MAX_SINGLE_IMAGE = 64 MiB` at `oriterm_core/src/image/cache/mod.rs:20`)
-/// plus cell payload headroom. Raised from 16 MiB at PROTOCOL_VERSION v3
+/// plus cell payload headroom. Raised from 16 MiB at `PROTOCOL_VERSION` v3
 /// because daemon-mode image rendering requires shipping pixel data over the wire.
 /// Compression at `protocol/encode.rs:27-54` applies automatically when payload exceeds
 /// `COMPRESSION_THRESHOLD` and zstd shrinks it.

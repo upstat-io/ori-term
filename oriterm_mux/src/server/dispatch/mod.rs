@@ -554,7 +554,7 @@ pub fn dispatch_request(
 ///
 /// On `images_dirty == true`, clears the client's `sent_images[pane_id]` first
 /// (server is about to resend every visible ID). Mutates `conn.sent_images`
-/// only for the WAS_DIRTY case via `clear_sent_images`; the caller marks IDs
+/// only for the dirty case via `clear_sent_images`; the caller marks IDs
 /// sent AFTER queuing succeeds (so a failed queue doesn't leave stale state).
 /// See: bug-tracker/plans/BUG-06-072/
 fn project_snapshot_for_client(

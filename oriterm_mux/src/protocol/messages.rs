@@ -20,7 +20,7 @@ pub const CAP_SNAPSHOT_PUSH: u32 = 1;
 /// enum discriminant, so the `msg_type` in the frame header is redundant
 /// for deserialization but useful for pre-routing and debugging.
 ///
-/// `Eq` derive dropped at PROTOCOL_VERSION v3 because `Subscribed` /
+/// `Eq` derive dropped at `PROTOCOL_VERSION` v3 because `Subscribed` /
 /// `PaneSnapshotResp` / `NotifyPaneSnapshot` carry `PaneSnapshot`, which contains
 /// `WirePlacement` (f32 fields, `PartialEq` only). `assert_eq!` works under
 /// `PartialEq + Debug` — Eq drop has no observable caller impact.

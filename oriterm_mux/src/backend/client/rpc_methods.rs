@@ -498,7 +498,7 @@ impl MuxBackend for MuxClient {
         pane_id: PaneId,
         image_id: oriterm_core::ImageId,
     ) -> Option<std::sync::Arc<oriterm_core::RenderableImageData>> {
-        MuxClient::pane_image_data(self, pane_id, image_id)
+        Self::pane_image_data(self, pane_id, image_id)
     }
 
     fn is_pane_snapshot_dirty(&self, pane_id: PaneId) -> bool {

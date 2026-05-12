@@ -28,7 +28,7 @@ pub(in crate::server) struct DispatchResult {
     /// Pane that was unsubscribed (for `pending_push` cleanup).
     pub unsubscribed_pane: Option<PaneId>,
     /// `(PaneId, ImageId)` keys evicted from `SnapshotCache.image_data_store`
-    /// during this dispatch (when a Subscribe / GetPaneSnapshot built a fresh
+    /// during this dispatch (when a `Subscribe` / `GetPaneSnapshot` built a fresh
     /// snapshot under memory pressure). Caller must `forget_sent_image` on
     /// every OTHER connection so the next snapshot referencing the evicted
     /// ID re-includes its pixel data.

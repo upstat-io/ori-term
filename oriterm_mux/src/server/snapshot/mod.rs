@@ -143,7 +143,7 @@ impl SnapshotCache {
 }
 
 /// Fold pixel data from a freshly-swapped `render_buf` into the server-side
-/// image_data_store, using cross-pane reachability for eviction decisions.
+/// `image_data_store`, using cross-pane reachability for eviction decisions.
 ///
 /// Computed reachability set walks ALL panes' latest cached snapshots — an
 /// image bytes entry for pane B may be evicted by pane A's insert under

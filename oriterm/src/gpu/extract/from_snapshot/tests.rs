@@ -716,3 +716,152 @@ fn extract_frame_from_snapshot_into_clears_stale_icon() {
     // Sanity: also verify cells were refreshed (not a stale seed).
     let _: &RenderableContent = &frame.content;
 }
+
+/// Helper: build a `WirePlacement` with sensible defaults for tests.
+fn wire_placement(image_id: u32) -> oriterm_mux::protocol::snapshot::WirePlacement {
+    oriterm_mux::protocol::snapshot::WirePlacement {
+        image_id,
+        viewport_x: 0.0,
+        viewport_y: 0.0,
+        display_width: 16.0,
+        display_height: 16.0,
+        source_x: 0.0,
+        source_y: 0.0,
+        source_w: 1.0,
+        source_h: 1.0,
+        z_index: 0,
+        opacity: 1.0,
+    }
+}
+
+/// Helper: build a `WireImageData` carrying a tiny RGBA buffer.
+fn wire_image_data(id: u32, bytes: &[u8]) -> oriterm_mux::protocol::snapshot::WireImageData {
+    oriterm_mux::protocol::snapshot::WireImageData {
+        id,
+        data: bytes.to_vec(),
+        width: 1,
+        height: bytes.len() as u32 / 4,
+    }
+}
+
+/// A daemon snapshot carrying a placement + inline pixel data round-trips
+/// through `extract_frame_from_snapshot` with a non-empty
+/// `FrameInput.content.images` AND `image_data`. ONLY passes when the extract
+/// path actually forwards the wire image fields (the proximate cause of the
+/// bug was unconditional `.clear()` on these vectors).
+/// See: bug-tracker/plans/BUG-06-072/
+#[test]
+fn daemon_pane_snapshot_roundtrips_inline_image_data() {
+    use oriterm_core::ImageId;
+
+    let pixels = vec![0xFF, 0x00, 0x00, 0xFF, 0x00, 0xFF, 0x00, 0xFF];
+    let mut snap = test_snapshot();
+    snap.images.push(wire_placement(7));
+    snap.image_data.push(wire_image_data(7, &pixels));
+    snap.images_dirty = true;
+
+    let viewport = ViewportSize::new(100, 100);
+    let cell = test_cell_metrics();
+    let frame = extract_frame_from_snapshot(&snap, viewport, cell, &|_| None);
+
+    assert_eq!(frame.content.images.len(), 1);
+    assert_eq!(frame.content.images[0].image_id, ImageId::from_raw(7));
+    assert_eq!(frame.content.image_data.len(), 1);
+    assert_eq!(frame.content.image_data[0].id, ImageId::from_raw(7));
+    assert_eq!(frame.content.image_data[0].data.as_slice(), pixels.as_slice());
+    assert!(frame.content.images_dirty);
+    // images_dirty=true must force a full repaint via all_dirty=true
+    // (mirrors `oriterm_core/src/term/snapshot/mod.rs` semantics — image cache
+    // changes don't tag per-line grid damage).
+    assert!(frame.content.all_dirty);
+}
+
+/// A daemon snapshot whose source carries N placements MUST NOT arrive at the
+/// client with empty `FrameInput.content.images`. Rejects the pre-fix behavior
+/// where `extract_frame_from_snapshot_into` unconditionally called
+/// `out.images.clear()` and dropped all daemon-mode image rendering.
+/// See: bug-tracker/plans/BUG-06-072/
+#[test]
+fn daemon_pane_snapshot_does_not_drop_images_when_source_has_them() {
+    let pixels = vec![0u8; 16];
+    let mut snap = test_snapshot();
+    snap.images.push(wire_placement(11));
+    snap.images.push(wire_placement(12));
+    snap.image_data.push(wire_image_data(11, &pixels));
+    snap.image_data.push(wire_image_data(12, &pixels));
+
+    let viewport = ViewportSize::new(100, 100);
+    let cell = test_cell_metrics();
+    let frame = extract_frame_from_snapshot(&snap, viewport, cell, &|_| None);
+
+    assert_eq!(
+        frame.content.images.len(),
+        snap.images.len(),
+        "extract path must forward every placement, not silently drop them"
+    );
+    assert_eq!(
+        frame.content.image_data.len(),
+        snap.image_data.len(),
+        "extract path must forward every inline image_data entry"
+    );
+}
+
+/// Stale-clear pin: when refilling a `FrameInput` with a snapshot whose
+/// `images` list is empty, ANY images from a prior frame MUST be cleared.
+/// Companion to `extract_frame_from_snapshot_into_clears_stale_icon`.
+#[test]
+fn extract_frame_from_snapshot_into_clears_stale_images() {
+    let pixels = vec![0xABu8; 4];
+    // First snapshot carries a placement.
+    let mut snap1 = test_snapshot();
+    snap1.images.push(wire_placement(3));
+    snap1.image_data.push(wire_image_data(3, &pixels));
+    let viewport = ViewportSize::new(100, 100);
+    let cell = test_cell_metrics();
+    let mut frame = extract_frame_from_snapshot(&snap1, viewport, cell, &|_| None);
+    assert_eq!(frame.content.images.len(), 1);
+    assert_eq!(frame.content.image_data.len(), 1);
+
+    // Second snapshot has NO placements — refill MUST clear both vectors.
+    let snap2 = test_snapshot();
+    extract_frame_from_snapshot_into(&snap2, &mut frame, viewport, cell, &|_| None);
+    assert!(frame.content.images.is_empty());
+    assert!(frame.content.image_data.is_empty());
+    assert!(!frame.content.images_dirty);
+}
+
+/// Cache-hit pin: a placement whose `image_id` is NOT in the wire snapshot's
+/// inline `image_data` (steady-state — server omitted because client cache
+/// already has it) is resolved by the `image_lookup` closure. The resolved
+/// pixel data ends up in `FrameInput.content.image_data`.
+#[test]
+fn daemon_pane_snapshot_resolves_placement_via_image_lookup() {
+    use std::sync::Arc;
+
+    use oriterm_core::{ImageId, RenderableImageData};
+
+    let cached_pixels: Arc<Vec<u8>> = Arc::new(vec![0x12, 0x34, 0x56, 0x78]);
+    let cached_id = ImageId::from_raw(42);
+    let cached = Arc::new(RenderableImageData {
+        id: cached_id,
+        data: cached_pixels.clone(),
+        width: 1,
+        height: 1,
+    });
+
+    // Snapshot has a placement but NO inline image_data — must resolve via lookup.
+    let mut snap = test_snapshot();
+    snap.images.push(wire_placement(cached_id.as_u32()));
+
+    let lookup = |id: ImageId| -> Option<Arc<RenderableImageData>> {
+        (id == cached_id).then(|| cached.clone())
+    };
+    let viewport = ViewportSize::new(100, 100);
+    let cell = test_cell_metrics();
+    let frame = extract_frame_from_snapshot(&snap, viewport, cell, &lookup);
+
+    assert_eq!(frame.content.images.len(), 1);
+    assert_eq!(frame.content.image_data.len(), 1);
+    assert_eq!(frame.content.image_data[0].id, cached_id);
+    assert!(Arc::ptr_eq(&frame.content.image_data[0].data, &cached_pixels));
+}

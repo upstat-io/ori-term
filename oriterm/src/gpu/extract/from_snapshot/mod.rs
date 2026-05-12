@@ -149,21 +149,18 @@ fn populate_images_from_wire(
     // Now project placements; resolve cache hits for any IDs not inline.
     for wp in &snapshot.images {
         let id = ImageId::from_raw(wp.image_id);
-        if !have_inline.contains(&id) {
-            match image_lookup(id) {
-                Some(arc) => content.image_data.push((*arc).clone()),
-                None => {
-                    log::warn!(
-                        "daemon snapshot: cache-miss for referenced placement {id:?}; skipping"
-                    );
-                    debug_assert!(
-                        false,
-                        "image cache miss for referenced placement {id:?}"
-                    );
-                    continue;
-                }
-            }
-            have_inline.insert(id);
+        if have_inline.insert(id) {
+            // First observation of this id in this snapshot — must resolve from
+            // cache; inline path already produced the data and inserted into
+            // have_inline above, so this branch fires only for steady-state.
+            let Some(arc) = image_lookup(id) else {
+                log::warn!(
+                    "daemon snapshot: cache-miss for referenced placement {id:?}; skipping"
+                );
+                debug_assert!(false, "image cache miss for referenced placement {id:?}");
+                continue;
+            };
+            content.image_data.push((*arc).clone());
         }
         content.images.push(wire_placement_to_renderable(wp));
     }
