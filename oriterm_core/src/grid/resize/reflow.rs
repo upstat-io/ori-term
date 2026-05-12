@@ -1,10 +1,10 @@
 //! Cell-by-cell text reflow for column-width changes.
 //!
-//! Extracted from `resize/mod.rs` (BUG-08-018) — `resize/mod.rs` was
-//! 569 lines, over the 500-line hard limit. The two private fns
-//! `reflow_cells` + `reflow_row_cells` (~195 lines together) split
-//! cleanly into this sibling submodule; `mod.rs`'s call sites remain
-//! unchanged.
+//! Private helpers `reflow_cells` and `reflow_row_cells`, called from
+//! `Grid::resize` in the sibling `mod.rs` when the column count changes.
+//! `reflow_cells` walks every old cell in row-major order; `reflow_row_cells`
+//! handles a single source row, emitting wrapped continuation rows as the
+//! new column width demands.
 
 use crate::cell::{Cell, CellFlags};
 use crate::index::Column;

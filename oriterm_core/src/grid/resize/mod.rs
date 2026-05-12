@@ -5,8 +5,8 @@
 //! column changes. Row resize manages scrollback interaction (shrink
 //! pushes rows to scrollback, grow pulls them back). Column reflow rewrites
 //! cell-by-cell to wrap/unwrap soft-wrapped lines (matches Ghostty
-//! `src/terminal/Screen.zig` reflow) — `reflow_cells` and
-//! `reflow_row_cells` live in the sibling `reflow` submodule (BUG-08-018).
+//! `src/terminal/Screen.zig` reflow); `reflow_cells` and `reflow_row_cells`
+//! live in the sibling `reflow` submodule.
 
 mod reflow;
 
