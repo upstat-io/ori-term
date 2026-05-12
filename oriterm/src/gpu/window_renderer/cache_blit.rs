@@ -3,8 +3,6 @@
 //! prepared viewport so the region outside the cache extent is initialized
 //! to `clear_color()` rather than undefined GPU memory.
 //!
-//! See: bug-tracker/plans/completed/BUG-06-052/ — resize-grow uncovered-region pin.
-//!
 //! Shared by `render_cached` (production swapchain path) and
 //! `render_frame_cached` (test path). The signature uses only public wgpu
 //! types so the helper has no `#[cfg(test)]` gating — the gate belongs to

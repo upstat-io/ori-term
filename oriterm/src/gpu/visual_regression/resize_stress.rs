@@ -358,7 +358,8 @@ fn rgba_approx_eq(a: [u8; 4], b: [u8; 4], epsilon: u8) -> bool {
         .all(|(x, y)| x.abs_diff(*y) <= epsilon)
 }
 
-/// Grow on both axes; pixels outside the prepared viewport equal `clear_color()`.
+/// Regression: BUG-06-052 — semantic pin on both axes; pixels outside the
+/// prepared viewport equal `clear_color()`.
 ///
 /// Uses a MID-TONE color (Rgb(128, 64, 200)) rather than saturated extremes —
 /// saturated colors mask sRGB round-trip bugs because 0 and 255 map identically
@@ -394,7 +395,7 @@ fn cached_path_grow_both_axes_clears_uncovered_to_clear_color() {
     );
 }
 
-/// Horizontal-only grow.
+/// Regression: BUG-06-052 — horizontal-only grow; clear pass must fire.
 #[test]
 fn cached_path_grow_horizontal_only() {
     let Some((gpu, pipelines, mut renderer)) = headless_env() else {
@@ -424,7 +425,7 @@ fn cached_path_grow_horizontal_only() {
     );
 }
 
-/// Vertical-only grow.
+/// Regression: BUG-06-052 — vertical-only grow; clear pass must fire.
 #[test]
 fn cached_path_grow_vertical_only() {
     let Some((gpu, pipelines, mut renderer)) = headless_env() else {
@@ -454,7 +455,8 @@ fn cached_path_grow_vertical_only() {
     );
 }
 
-/// Mixed-axis: width grows, height shrinks. `||` gate must fire when EITHER grows.
+/// Regression: BUG-06-052 — mixed-axis: width grows, height shrinks. `||`
+/// gate must fire when EITHER grows.
 #[test]
 fn cached_path_grow_h_shrink_v_clears_horizontal_grow_region() {
     let Some((gpu, pipelines, mut renderer)) = headless_env() else {
@@ -484,7 +486,8 @@ fn cached_path_grow_h_shrink_v_clears_horizontal_grow_region() {
     );
 }
 
-/// Mixed-axis: width shrinks, height grows.
+/// Regression: BUG-06-052 — mixed-axis: width shrinks, height grows;
+/// inverse-axis coverage for the `||` gate.
 #[test]
 fn cached_path_shrink_h_grow_v_clears_vertical_grow_region() {
     let Some((gpu, pipelines, mut renderer)) = headless_env() else {
@@ -514,7 +517,10 @@ fn cached_path_shrink_h_grow_v_clears_vertical_grow_region() {
     );
 }
 
-/// Common-path regression guard: dst == vp must continue to work.
+/// Regression: BUG-06-052 — common-path guard: `dst == vp` must continue
+/// to work post-fix. Pins both readback length AND non-zero rendered
+/// output (rejects a hypothetical no-op render that would also satisfy
+/// length but produce all-zero pixels).
 #[test]
 fn cached_path_dst_eq_vp_no_extra_clear() {
     let Some((gpu, pipelines, mut renderer)) = headless_env() else {
@@ -538,10 +544,15 @@ fn cached_path_dst_eq_vp_no_extra_clear() {
         1.0,
     );
     assert_eq!(pixels.len(), (800 * 600 * 4) as usize);
+    assert!(
+        pixels.iter().any(|&b| b != 0),
+        "rendered pixels must not be all zero — no-op render would satisfy length only"
+    );
 }
 
-/// Opacity dimension: opacity < 1.0 with non-zero background. Verifies the
-/// premultiplied-alpha clear value reaches the uncovered region.
+/// Regression: BUG-06-052 — opacity dimension: opacity < 1.0 with non-zero
+/// background. Verifies the premultiplied-alpha clear value reaches the
+/// uncovered region.
 #[test]
 fn cached_path_grow_clears_with_semi_transparent_clear() {
     let Some((gpu, pipelines, mut renderer)) = headless_env() else {
@@ -583,15 +594,18 @@ fn cached_path_grow_clears_with_semi_transparent_clear() {
     );
 }
 
-/// Two-frame sequence with DIFFERENT clear colors — deterministic check.
-/// Frame 1 (green) at dst == vp, frame 2 (red) at dst > vp. The uncovered
-/// region after frame 2 MUST be red (current frame's clear), NEVER green
-/// (prior cache content surfacing through the new edge) and NEVER black
-/// (wgpu zero-init or undefined GPU memory). `render_frame_cached` creates
-/// a fresh `RenderTarget` per call, so the prior-frame leak surface is the
-/// CACHE (not the destination texture), but the bug shape is identical.
+/// Regression: BUG-06-052 — deterministic pin against wgpu zero-init
+/// masking. Two-frame sequence with DIFFERENT clear colors; the uncovered
+/// region after the second (grown) frame MUST be the CURRENT clear color,
+/// NEVER black ([0,0,0,0]) and NEVER the prior frame's clear color
+/// (defends against any cache-reuse path that could surface prior cache
+/// content into the grown region). `render_frame_cached` builds a fresh
+/// `RenderTarget` per call, so the destination texture itself cannot
+/// retain prior-frame contents — but the CACHE texture is reused across
+/// the two renderer.prepare() invocations on this single renderer
+/// instance.
 #[test]
-fn cached_path_grow_uncovered_region_takes_current_clear_not_prior_frame() {
+fn cached_path_grow_uncovered_region_takes_current_clear_not_zero_init() {
     let Some((gpu, pipelines, mut renderer)) = headless_env() else {
         eprintln!("skipped: no GPU adapter available");
         return;
@@ -629,14 +643,59 @@ fn cached_path_grow_uncovered_region_takes_current_clear_not_prior_frame() {
     assert!(
         outside[0] > 200 && outside[1] < 32 && outside[2] < 32,
         "uncovered pixel at (1100,700) must be RED (current clear), \
-         got {outside:?} — green ({:?}) or zero would indicate stale memory",
+         got {outside:?} — green ({:?}) or zero would indicate the \
+         uncovered region inherited stale state instead of current clear",
         [0, 255, 0, 255]
     );
 }
 
-/// Boundary: 1x1 destination smaller than 800x600 viewport — the
-/// `dst > vp` gate stays FALSE on both axes (1 < 800, 1 < 600) so the
-/// pre-clear pass does NOT fire; the test exercises the SHRINK-clamp
+/// Regression: BUG-06-052 — exercise the `needs_full_render=false` branch.
+/// First frame renders full at `dst == vp` (populates content cache); second
+/// frame requests `needs_full_render=false` at `dst > vp` so the cache is
+/// REUSED and only the overlay/cursor buffers refresh. The clear pass +
+/// partial copy must still fire correctly in the cache-reuse path —
+/// pins the gate-correctness across the `if needs_full_render` branch.
+#[test]
+fn cached_path_grow_with_cache_reuse_clears_uncovered_region() {
+    let Some((gpu, pipelines, mut renderer)) = headless_env() else {
+        eprintln!("skipped: no GPU adapter available");
+        return;
+    };
+    let bg = oriterm_core::Rgb {
+        r: 128,
+        g: 64,
+        b: 200,
+    };
+    // Frame 1: full render at dst == vp populates the cache.
+    let cell = renderer.cell_metrics();
+    let wl = compute_window_layout(800, 600, &cell, 1.0, true, 0.0, 0.0, 0.0);
+    let mut input = FrameInput::test_grid(wl.cols, wl.rows, "frame1");
+    input.viewport = ViewportSize::new(800, 600);
+    input.cell_size = cell;
+    input.content.cursor.visible = false;
+    input.palette.background = bg;
+    input.palette.opacity = 1.0;
+    let origin = (wl.grid_rect.x(), wl.grid_rect.y());
+    renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, true);
+    let _ = renderer.render_frame_cached(&gpu, &pipelines, 800, 600, true);
+
+    // Frame 2: cache-reuse path at dst > vp. The partial-copy + clear
+    // must still apply correctly.
+    let target = renderer.render_frame_cached(&gpu, &pipelines, 1200, 800, false);
+    let pixels = gpu
+        .read_render_target(&target)
+        .expect("readback should succeed");
+    let outside = pixel_rgba_at(&pixels, 1100, 700, 1200);
+    assert!(
+        rgba_approx_eq(outside, [128, 64, 200, 255], 4),
+        "uncovered pixel at (1100,700) under cache-reuse path should be \
+         mid-tone purple, got {outside:?}"
+    );
+}
+
+/// Regression: BUG-06-052 — boundary: 1x1 destination smaller than 800x600
+/// viewport — the `dst > vp` gate stays FALSE on both axes (1 < 800, 1 < 600)
+/// so the pre-clear pass does NOT fire; the test exercises the SHRINK-clamp
 /// path where `copy_texture_to_texture` writes the minimum extent (1×1)
 /// without validation error. Distinct from the grow-clear regression
 /// surface — pins the helper's common-path correctness under the
@@ -659,7 +718,8 @@ fn cached_path_resize_to_1x1() {
     assert_eq!(pixels.len(), 4, "1x1 readback must be exactly 4 bytes");
 }
 
-/// Rapid alternation: grow/shrink cycles, uncovered region matches current clear.
+/// Regression: BUG-06-052 — rapid alternation: grow/shrink cycles, uncovered
+/// region matches current clear across the resize stream.
 #[test]
 fn cached_path_rapid_grow_shrink_alternation() {
     let Some((gpu, pipelines, mut renderer)) = headless_env() else {
