@@ -3,24 +3,24 @@ use oriterm_mux::PaneSnapshot;
 use super::helpers::{focused_pane_chrome_state, should_reextract_scratch_frame};
 
 /// Pin: when the scratch frame currently holds another pane's data,
-/// `should_reextract_scratch_frame` must return true to force a fresh
+/// `should_reextract_scratch_frame` returns true to force a fresh
 /// extraction. Content not refreshed, frame present, pane mismatch.
 #[test]
-fn should_reextract_when_scratch_belongs_to_another_pane() {
+fn reextracts_when_scratch_belongs_to_another_pane() {
     assert!(should_reextract_scratch_frame(false, false, false));
 }
 
 /// Pin: re-extraction is skipped ONLY when content unchanged AND scratch
 /// already holds this pane's data — the cursor-blink-only fast path.
 #[test]
-fn should_reextract_skipped_when_scratch_matches_clean_pane() {
+fn skips_reextract_when_scratch_matches_clean_pane() {
     assert!(!should_reextract_scratch_frame(false, false, true));
 }
 
 /// Pin: content-refresh OR missing-frame both force re-extraction even
 /// when scratch matches the current pane, because the data is stale.
 #[test]
-fn should_reextract_when_content_changed_or_frame_missing() {
+fn reextracts_when_content_changed_or_frame_missing() {
     assert!(should_reextract_scratch_frame(true, false, true));
     assert!(should_reextract_scratch_frame(false, true, true));
 }
