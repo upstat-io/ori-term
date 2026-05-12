@@ -497,7 +497,6 @@ fn pending_response_not_cancelled_if_fulfilled_before_drop() {
 /// Regression: BUG-11-049 — `PollResult` variants must stay exhaustive in
 /// `response_poll::poll_pending_responses`. An added variant without a
 /// consumer-match arm would silently fall through the catch-all.
-/// See: bug-tracker/plans/completed/BUG-11-049/00-overview.md
 #[test]
 fn poll_result_variants_all_constructible() {
     let bell = Effect::Host(HostEffect::Bell);

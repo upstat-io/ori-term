@@ -39,28 +39,15 @@ impl PrevFrameState {
 
 /// Build a fast dirty-row lookup from `RenderableContent` damage info.
 ///
-/// Returns a `Vec<bool>` indexed by viewport line, where `true` means
-/// the row needs regeneration. When `all_dirty` is set, all rows are dirty.
+/// See: `PrevFrameState` for the prev-frame snapshot fields consumed.
 ///
-/// `prev_selection` is the selection snapshot from the previous frame.
-/// When the selection changes between frames, the affected rows are marked
-/// dirty so their instances are regenerated with correct selection colors.
+/// Returns a `Vec<bool>` indexed by viewport line — `true` = regenerate.
+/// When `all_dirty` is set, every row is dirty.
 ///
 /// `resolved_cursor` is the cursor that will actually render this frame
 /// (raw `content.cursor` overlaid with `mark_cursor` when mark mode is
-/// active). Drives the "current cursor row is always dirty" rule below
-/// — using the raw `content.cursor.line` would dirty the wrong row when
-/// mark mode relocates the visible cursor.
-///
-/// `prev_cursor_line` is the resolved cursor row from the previous frame
-/// (when visible). When the cursor moves between frames, the previous
-/// cursor row is dirtied so its cells regenerate without inheriting the
-/// "with cursor" per-cell colors baked into `saved_tier`.
-///
-/// `prev_state` is a snapshot of the previous frame's row-state inputs
-/// (selection, resolved cursor, hovered cell). The hover-delta and
-/// cursor-move rules consume each component; `cursor_line()` derives the
-/// row component for the cursor-move dirty rule.
+/// active). Using `resolved_cursor.line` instead of raw `content.cursor.line`
+/// avoids dirtying the wrong row when mark mode relocates the visible cursor.
 pub fn build_dirty_set(
     input: &FrameInput,
     num_rows: usize,
@@ -92,10 +79,10 @@ pub fn build_dirty_set(
         dirty[resolved_cursor.line] = true;
     }
 
-    // Cursor-move dirties the previous cursor row too — the cursor cell
-    // can carry inverted FG/BG colors that bake per-cell at emit time.
-    // Without this, clean-row replay leaves stale "with cursor" colors
-    // on the row the cursor just left.
+    // Why: cursor-move must dirty the previous cursor row too — the cursor
+    // cell can carry inverted FG/BG colors that bake per-cell at emit time,
+    // so clean-row replay would leave stale "with cursor" colors on the row
+    // the cursor just left.
     let mut previous_cursor_dirtied = false;
     if let Some(prev_line) = prev_cursor_line
         && prev_line < num_rows
@@ -107,11 +94,11 @@ pub fn build_dirty_set(
         }
     }
 
-    // Hover delta: when the hovered cell moves, dirty the rows containing
-    // the previous and current hover positions. The hyperlink hover path
-    // bakes a solid underline into the terminal-tier `backgrounds` buffer
-    // for the hovered cell, so a hover delta requires those rows to
-    // regenerate.
+    // Why: when the hovered cell moves, the rows containing the previous
+    // and current hover positions must be dirtied. The hyperlink hover
+    // path bakes a solid underline into the terminal-tier `backgrounds`
+    // buffer for the hovered cell, so a hover delta requires those rows
+    // to regenerate.
     let mut hover_rows_dirtied = 0u32;
     if prev_hovered_cell != input.hovered_cell {
         if let Some((prev_row, _)) = prev_hovered_cell
@@ -163,14 +150,13 @@ pub fn build_dirty_set(
 
 /// Mark rows dirty that changed selection state between frames.
 ///
+/// See: `SelectionDamageSnapshot` for the per-frame snapshot shape.
+///
 /// Compares full selection snapshots (line range, column extents, mode) to
-/// detect any visual change. A row needs instance regeneration if:
-/// - It was selected before but not now (or vice versa).
-/// - It is a boundary line (first/last of either selection) and column
-///   extents, side, or mode changed — these determine which cells within
-///   the row are highlighted.
-/// - For block selections or mode changes, every overlapping row may need
-///   dirtying since the column range applies uniformly to all rows.
+/// detect visual change. A row needs regeneration if its selection
+/// membership flips, it is a boundary line whose column extents/side/mode
+/// changed, or it lies inside a block selection / mode change where the
+/// column range applies uniformly to all rows.
 pub(crate) fn mark_selection_damage(
     dirty: &mut [bool],
     old: Option<SelectionDamageSnapshot>,

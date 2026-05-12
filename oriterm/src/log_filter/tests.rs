@@ -88,12 +88,12 @@ fn enabled_falls_through_to_default_only_for_oriterm_targets() {
     assert!(!f.enabled("naga", Level::Info));
 }
 
+/// Non-oriterm directives must not accidentally enable wgpu/naga spam AND
+/// must not raise the global `max_level` (which would defeat the `trace!`
+/// macro short-circuit for oriterm per-cell calls). They are dropped at
+/// PARSE time, not at `enabled()` time.
 #[test]
 fn enabled_directive_for_non_oriterm_target_is_silently_dropped() {
-    // Directives that name non-oriterm targets cannot accidentally enable
-    // wgpu/naga spam AND cannot raise the global max_level (which would
-    // defeat the trace! macro short-circuit for oriterm per-cell calls).
-    // Non-oriterm directives are dropped at PARSE time, not at enabled() time.
     let f = LogFilter::parse("wgpu=trace,naga=trace");
     assert!(!f.enabled("wgpu_hal::vulkan", Level::Trace));
     assert!(!f.enabled("naga", Level::Trace));

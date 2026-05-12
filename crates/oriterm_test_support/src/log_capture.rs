@@ -1,5 +1,7 @@
 //! Process-wide log-capture helper for trace tests.
 //!
+//! # Design
+//!
 //! `log::set_logger` is global + one-shot, but `cargo test` runs tests in
 //! parallel within a binary AND non-capturing tests in the same module
 //! also fire traces (e.g. `mark`, `drain`, `process_incremental_cells`).
@@ -7,10 +9,12 @@
 //! routes records only when the firing thread has an installed sink —
 //! concurrent tests on other threads see their traces silently dropped.
 //!
-//! Canonical home for trace-emission tests across the workspace: previously
-//! duplicated in `oriterm_core/src/grid/dirty/trace_capture.rs` and
-//! `oriterm/src/gpu/prepare/trace_capture.rs` (impl-hygiene F-01 LEAK:
-//! algorithmic-duplication, surfaced 2026-05-07).
+//! # Notes
+//!
+//! Canonical home for trace-emission tests across the workspace. Earlier
+//! duplicates in `oriterm_core/src/grid/dirty/trace_capture.rs` and
+//! `oriterm/src/gpu/prepare/trace_capture.rs` were consolidated here per
+//! impl-hygiene F-01 LEAK:algorithmic-duplication.
 
 use std::cell::RefCell;
 use std::sync::{Arc, Mutex, OnceLock};
@@ -102,12 +106,14 @@ fn install_logger_once() {
 /// Run `body` with a fresh `MemorySink` installed at `level` for the calling
 /// thread only.
 ///
+/// See: `MemorySink` for the captured-record buffer + thread-local install.
+///
 /// Concurrent tests on other threads see their traces silently dropped (no
-/// thread-local sink installed). Records fired on this thread go into the
+/// thread-local sink installed); records fired on this thread go into the
 /// fresh `MemorySink` for the duration of `body`. Per-thread isolation
-/// avoids the race where tests that don't use `with_capture` (e.g. the
-/// existing `mark_single_line` test in `dirty/tests.rs`) emit traces that
-/// contaminate the captured sink of a concurrent `with_capture` body.
+/// avoids the race where tests that don't use `with_capture` (e.g.
+/// `mark_single_line` in `dirty/tests.rs`) emit traces that contaminate the
+/// captured sink of a concurrent `with_capture` body.
 pub fn with_capture(level: LevelFilter, body: impl FnOnce(&MemorySink)) {
     install_logger_once();
     let sink = MemorySink::new();
