@@ -72,16 +72,23 @@ impl App {
             let (w, h) = ctx.window.size_px();
             let viewport = ViewportSize::new(w, h);
             let cell = renderer.cell_metrics();
-            // Clear color MUST derive from current focused-pane snapshot
-            // palette (NOT ctx.frame which holds the previous-iteration
-            // scratch state). On a focused-pane palette swap, the cell
-            // instances reflect the new palette but the clear color
-            // underneath would be one frame stale if we read from ctx.frame.
-            let focused_pane_id = layouts.iter().find(|l| l.is_focused).map(|l| l.pane_id);
-            let bg = focused_pane_id
-                .and_then(|pid| self.mux.as_ref().and_then(|m| m.pane_snapshot(pid)))
-                .map(snapshot_palette)
-                .map_or(oriterm_core::Rgb { r: 0, g: 0, b: 0 }, |p| p.background);
+            // Focused-pane snapshot is the SSOT for chrome-relevant
+            // values: clear color, status-bar cols/rows, search-bar
+            // state. Look it up ONCE here (rather than re-querying per
+            // consumer downstream) and project owned values into outer
+            // locals so the &PaneSnapshot borrow on self.mux ends before
+            // the per-pane mut-self loop body runs.
+            let (bg, focused_cols, focused_rows, focused_search) = {
+                let focused_snap = layouts
+                    .iter()
+                    .find(|l| l.is_focused)
+                    .and_then(|l| self.mux.as_ref().and_then(|m| m.pane_snapshot(l.pane_id)));
+                let bg = focused_snap
+                    .map(snapshot_palette)
+                    .map_or(oriterm_core::Rgb { r: 0, g: 0, b: 0 }, |p| p.background);
+                let (cols, rows, search) = helpers::focused_pane_chrome_state(focused_snap);
+                (bg, cols, rows, search)
+            };
             let win_focused = ctx.window.window().has_focus();
             let opacity = f64::from(super::draw_helpers::resolve_palette_opacity(
                 ctx.window.surface_has_alpha(),
@@ -484,18 +491,10 @@ impl App {
                 }
             }
 
-            // Extract focused-pane chrome state from the focused pane's
-            // snapshot (NOT ctx.frame, which holds the last-iterated pane's
-            // scratch state). This data flows to chrome::render_chrome via
-            // ChromeParams, replacing the prior implicit dependency on
-            // ctx.frame state that was correct only when the focused pane
-            // happened to be last in iteration order.
-            let focused_snapshot = layouts
-                .iter()
-                .find(|l| l.is_focused)
-                .and_then(|l| self.mux.as_ref().and_then(|m| m.pane_snapshot(l.pane_id)));
-            let (focused_cols, focused_rows, focused_search) =
-                helpers::focused_pane_chrome_state(focused_snapshot);
+            // Focused-pane chrome state was computed once at the top of
+            // this function (focused_cols, focused_rows, focused_search)
+            // alongside the bg clear color, sharing a single snapshot
+            // lookup. ChromeParams consumes those owned locals here.
 
             // Dividers between split panes.
             let divider_color = self.config.pane.effective_divider_color();
