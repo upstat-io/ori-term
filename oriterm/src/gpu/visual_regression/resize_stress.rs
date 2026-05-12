@@ -354,6 +354,11 @@ fn rgba_approx_eq(a: [u8; 4], b: [u8; 4], epsilon: u8) -> bool {
 }
 
 /// Grow on both axes; pixels outside the prepared viewport equal `clear_color()`.
+///
+/// Uses a MID-TONE color (Rgb(128, 64, 200)) rather than saturated extremes —
+/// saturated colors mask sRGB round-trip bugs because 0 and 255 map identically
+/// in sRGB and linear space. Mid-tones exercise the sRGB→linear→sRGB round
+/// trip in the clear-pass + readback pipeline.
 #[test]
 fn cached_path_grow_both_axes_clears_uncovered_to_clear_color() {
     let Some((gpu, pipelines, mut renderer)) = headless_env() else {
@@ -361,9 +366,9 @@ fn cached_path_grow_both_axes_clears_uncovered_to_clear_color() {
         return;
     };
     let bg = oriterm_core::Rgb {
-        r: 255,
-        g: 0,
-        b: 255,
+        r: 128,
+        g: 64,
+        b: 200,
     };
     let (pixels, w) = prepare_and_render_cached_with_clear(
         &gpu,
@@ -378,8 +383,9 @@ fn cached_path_grow_both_axes_clears_uncovered_to_clear_color() {
     );
     let outside = pixel_rgba_at(&pixels, 1100, 700, w);
     assert!(
-        rgba_approx_eq(outside, [255, 0, 255, 255], 2),
-        "uncovered pixel at (1100,700) should be magenta clear color, got {outside:?}"
+        rgba_approx_eq(outside, [128, 64, 200, 255], 4),
+        "uncovered pixel at (1100,700) should be mid-tone purple (128,64,200,255) \
+         after sRGB round-trip, got {outside:?}"
     );
 }
 
@@ -574,7 +580,10 @@ fn cached_path_grow_clears_with_semi_transparent_clear() {
 /// Two-frame sequence with DIFFERENT clear colors — deterministic check.
 /// Frame 1 (green) at dst == vp, frame 2 (red) at dst > vp. The uncovered
 /// region after frame 2 MUST be red (current frame's clear), NEVER green
-/// (prior frame's content) and NEVER black (wgpu zero-init mask).
+/// (prior cache content surfacing through the new edge) and NEVER black
+/// (wgpu zero-init or undefined GPU memory). `render_frame_cached` creates
+/// a fresh `RenderTarget` per call, so the prior-frame leak surface is the
+/// CACHE (not the destination texture), but the bug shape is identical.
 #[test]
 fn cached_path_grow_uncovered_region_takes_current_clear_not_prior_frame() {
     let Some((gpu, pipelines, mut renderer)) = headless_env() else {
@@ -617,6 +626,29 @@ fn cached_path_grow_uncovered_region_takes_current_clear_not_prior_frame() {
          got {outside:?} — green ({:?}) or zero would indicate stale memory",
         [0, 255, 0, 255]
     );
+}
+
+/// Boundary: 1x1 destination — degenerate dimensions must not panic.
+///
+/// Triggers the helper's `dst > vp` gate (1x1 vs 800x600) which would
+/// open a clear pass on a 1x1 view; verifies the encoder accepts the
+/// degenerate-size clear without validation error.
+#[test]
+fn cached_path_resize_to_1x1() {
+    let Some((gpu, pipelines, mut renderer)) = headless_env() else {
+        eprintln!("skipped: no GPU adapter available");
+        return;
+    };
+    let bg = oriterm_core::Rgb {
+        r: 128,
+        g: 64,
+        b: 200,
+    };
+    // dst smaller than vp on both axes — shrink path; copy clamps to 1x1.
+    let (pixels, _w) = prepare_and_render_cached_with_clear(
+        &gpu, &pipelines, &mut renderer, 800, 600, 1, 1, bg, 1.0,
+    );
+    assert_eq!(pixels.len(), 4, "1x1 readback must be exactly 4 bytes");
 }
 
 /// Rapid alternation: grow/shrink cycles, uncovered region matches current clear.
