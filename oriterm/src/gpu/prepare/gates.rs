@@ -20,8 +20,8 @@ use std::hash::{Hash, Hasher};
 use oriterm_core::RenderableCursor;
 
 use super::super::frame_input::{
-    FrameInput, MarkCursorOverride, PaletteDamageKey, SearchDamageKey,
-    SelectionDamageSnapshot, ViewportSize,
+    FrameInput, MarkCursorOverride, PaletteDamageKey, SearchDamageKey, SelectionDamageSnapshot,
+    ViewportSize,
 };
 use super::super::prepared_frame::PreparedFrame;
 use super::resolve_cursor_state;
@@ -86,9 +86,17 @@ pub(crate) fn compute_dispatch_fingerprint_from_inputs(inputs: &DispatchFingerpr
     inputs.cell_size.width.to_bits().hash(&mut hasher);
     inputs.cell_size.height.to_bits().hash(&mut hasher);
     inputs.cell_size.baseline.to_bits().hash(&mut hasher);
-    inputs.cell_size.underline_offset.to_bits().hash(&mut hasher);
+    inputs
+        .cell_size
+        .underline_offset
+        .to_bits()
+        .hash(&mut hasher);
     inputs.cell_size.stroke_size.to_bits().hash(&mut hasher);
-    inputs.cell_size.strikeout_offset.to_bits().hash(&mut hasher);
+    inputs
+        .cell_size
+        .strikeout_offset
+        .to_bits()
+        .hash(&mut hasher);
 
     inputs.content_cols.hash(&mut hasher);
     inputs.content_rows.hash(&mut hasher);

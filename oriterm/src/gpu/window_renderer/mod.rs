@@ -4,6 +4,7 @@
 //! Each window gets its own renderer so DPI scaling, atlas caches, and
 //! shaping state are fully isolated — no cross-window contamination.
 
+mod cache_blit;
 mod error;
 mod font_config;
 mod frame_prep;

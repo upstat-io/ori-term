@@ -14,9 +14,7 @@ use oriterm_core::{Column, CursorShape, RenderableCursor, TermMode};
 use super::App;
 use super::mouse_selection::{self, GridCtx};
 use crate::gpu::frame_input::FramePalette;
-use crate::gpu::prepare::{
-    DispatchFingerprintInputs, PaneRowState, compute_pane_damage_key,
-};
+use crate::gpu::prepare::{DispatchFingerprintInputs, PaneRowState, compute_pane_damage_key};
 use crate::gpu::{
     FrameSearch, FrameSelection, MarkCursorOverride, ViewportSize, extract_frame_from_snapshot,
     extract_frame_from_snapshot_into, snapshot_palette,
@@ -138,10 +136,7 @@ impl App {
                 // Layered SSOT: compute_dispatch_fingerprint (frame inputs) +
                 // PaneRowState (row inputs single-pane handles via per-row dirty).
                 let damage_key = {
-                    let Some(snap) = self
-                        .mux
-                        .as_ref()
-                        .and_then(|m| m.pane_snapshot(pane_id))
+                    let Some(snap) = self.mux.as_ref().and_then(|m| m.pane_snapshot(pane_id))
                     else {
                         // No snapshot after refresh attempt — log + skip.
                         log::warn!("multi-pane: no snapshot for pane {pane_id:?} after refresh");
@@ -257,8 +252,7 @@ impl App {
                             0
                         },
                         window_focused: pane_focused,
-                        hovered_url_segments_hash: if layout.is_focused
-                            && !url_segments.is_empty()
+                        hovered_url_segments_hash: if layout.is_focused && !url_segments.is_empty()
                         {
                             use std::collections::hash_map::DefaultHasher;
                             use std::hash::{Hash, Hasher};
@@ -272,8 +266,8 @@ impl App {
                     compute_pane_damage_key(&dispatch_inputs, &row_state)
                 };
 
-                let cache_hit = !dirty_content
-                    && ctx.pane_cache.is_cached(pane_id, layout, damage_key);
+                let cache_hit =
+                    !dirty_content && ctx.pane_cache.is_cached(pane_id, layout, damage_key);
 
                 if cache_hit {
                     // Cache hit — merge cached instances without extraction.
@@ -467,9 +461,12 @@ impl App {
                         0.0
                     };
 
-                    let cached = ctx
-                        .pane_cache
-                        .get_or_prepare(pane_id, layout, true, damage_key, |target| {
+                    let cached = ctx.pane_cache.get_or_prepare(
+                        pane_id,
+                        layout,
+                        true,
+                        damage_key,
+                        |target| {
                             renderer.prepare_pane_into(
                                 frame,
                                 gpu,
@@ -477,7 +474,8 @@ impl App {
                                 pane_cursor_opacity,
                                 target,
                             );
-                        });
+                        },
+                    );
                     renderer.prepared.extend_from(cached);
                 }
 

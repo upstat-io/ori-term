@@ -399,7 +399,10 @@ fn cache_miss_when_dirty_true_even_if_damage_key_matches() {
         called = true;
         push_marker(f, 2.0);
     });
-    assert!(called, "dirty=true forces re-prepare even with matching damage_key");
+    assert!(
+        called,
+        "dirty=true forces re-prepare even with matching damage_key"
+    );
 }
 
 #[test]
@@ -416,7 +419,10 @@ fn cache_miss_when_layout_differs_even_if_damage_key_matches() {
         called = true;
         push_marker(f, 2.0);
     });
-    assert!(called, "layout change forces re-prepare even with matching damage_key");
+    assert!(
+        called,
+        "layout change forces re-prepare even with matching damage_key"
+    );
 }
 
 #[test]
@@ -480,5 +486,8 @@ fn invalidate_all_forces_reprepare_even_with_matching_damage_key() {
         called = true;
         push_marker(f, 2.0);
     });
-    assert!(called, "invalidate_all must force re-prepare regardless of damage_key");
+    assert!(
+        called,
+        "invalidate_all must force re-prepare regardless of damage_key"
+    );
 }

@@ -1868,7 +1868,11 @@ fn preedit_revision_increments_on_preedit_change() {
     ime.handle_event(Ime::Preedit("abc".into(), None));
     let r1 = ime.preedit_revision;
     ime.handle_event(Ime::Preedit("ab".into(), None));
-    assert_eq!(ime.preedit_revision, r1 + 1, "preedit shrink bumps revision");
+    assert_eq!(
+        ime.preedit_revision,
+        r1 + 1,
+        "preedit shrink bumps revision"
+    );
 }
 
 #[test]
@@ -1878,7 +1882,10 @@ fn preedit_revision_stable_on_same_text() {
     ime.handle_event(Ime::Preedit("abc".into(), None));
     let r1 = ime.preedit_revision;
     ime.handle_event(Ime::Preedit("abc".into(), None));
-    assert_eq!(ime.preedit_revision, r1, "identical preedit text does NOT bump revision");
+    assert_eq!(
+        ime.preedit_revision, r1,
+        "identical preedit text does NOT bump revision"
+    );
 }
 
 #[test]
@@ -1888,7 +1895,11 @@ fn preedit_revision_increments_on_commit_of_nonempty_preedit() {
     ime.handle_event(Ime::Preedit("abc".into(), None));
     let r1 = ime.preedit_revision;
     ime.handle_event(Ime::Commit("xyz".into()));
-    assert_eq!(ime.preedit_revision, r1 + 1, "commit-from-nonempty bumps revision");
+    assert_eq!(
+        ime.preedit_revision,
+        r1 + 1,
+        "commit-from-nonempty bumps revision"
+    );
 }
 
 #[test]
@@ -1898,7 +1909,10 @@ fn preedit_revision_stable_on_commit_when_preedit_empty() {
     let r0 = ime.preedit_revision;
     // Commit without preceding preedit (e.g. some IME paths).
     ime.handle_event(Ime::Commit("x".into()));
-    assert_eq!(ime.preedit_revision, r0, "commit with empty preedit does NOT bump revision");
+    assert_eq!(
+        ime.preedit_revision, r0,
+        "commit with empty preedit does NOT bump revision"
+    );
 }
 
 #[test]
@@ -1908,7 +1922,11 @@ fn preedit_revision_increments_on_disable_of_nonempty_preedit() {
     ime.handle_event(Ime::Preedit("abc".into(), None));
     let r1 = ime.preedit_revision;
     ime.handle_event(Ime::Disabled);
-    assert_eq!(ime.preedit_revision, r1 + 1, "disable-from-nonempty bumps revision");
+    assert_eq!(
+        ime.preedit_revision,
+        r1 + 1,
+        "disable-from-nonempty bumps revision"
+    );
 }
 
 #[test]
@@ -1916,5 +1934,8 @@ fn preedit_revision_stable_on_enable_event() {
     let mut ime = ImeState::new();
     let r0 = ime.preedit_revision;
     ime.handle_event(Ime::Enabled);
-    assert_eq!(ime.preedit_revision, r0, "Enable does NOT mutate preedit → revision stable");
+    assert_eq!(
+        ime.preedit_revision, r0,
+        "Enable does NOT mutate preedit → revision stable"
+    );
 }

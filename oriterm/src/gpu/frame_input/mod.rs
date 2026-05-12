@@ -95,14 +95,31 @@ impl FrameSelection {
     pub fn damage_snapshot(&self, num_rows: usize) -> Option<SelectionDamageSnapshot> {
         let (start_line, end_line) = self.viewport_line_range(num_rows)?;
         let start_clamped = self.bounds.start.row.0 < self.base_stable;
-        let end_clamped = (self.bounds.end.row.0.saturating_sub(self.base_stable)) as usize >= num_rows;
+        let end_clamped =
+            (self.bounds.end.row.0.saturating_sub(self.base_stable)) as usize >= num_rows;
         Some(SelectionDamageSnapshot {
             start_line,
             end_line,
-            start_col: if start_clamped { 0 } else { self.bounds.start.col },
-            start_side: if start_clamped { Side::Left } else { self.bounds.start.side },
-            end_col: if end_clamped { usize::MAX } else { self.bounds.end.col },
-            end_side: if end_clamped { Side::Right } else { self.bounds.end.side },
+            start_col: if start_clamped {
+                0
+            } else {
+                self.bounds.start.col
+            },
+            start_side: if start_clamped {
+                Side::Left
+            } else {
+                self.bounds.start.side
+            },
+            end_col: if end_clamped {
+                usize::MAX
+            } else {
+                self.bounds.end.col
+            },
+            end_side: if end_clamped {
+                Side::Right
+            } else {
+                self.bounds.end.side
+            },
             mode: self.bounds.mode,
         })
     }

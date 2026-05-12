@@ -109,12 +109,7 @@ impl PaneRenderCache {
     /// layout and `damage_key`. The full cache-hit predicate also requires
     /// `!dirty`; this method is used by callers that want to short-circuit
     /// extract work when the cache will definitely hit.
-    pub(crate) fn is_cached(
-        &self,
-        pane_id: PaneId,
-        layout: &PaneLayout,
-        damage_key: u64,
-    ) -> bool {
+    pub(crate) fn is_cached(&self, pane_id: PaneId, layout: &PaneLayout, damage_key: u64) -> bool {
         self.entries
             .get(&pane_id)
             .is_some_and(|e| e.layout == *layout && e.damage_key == damage_key)

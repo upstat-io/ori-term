@@ -297,6 +297,365 @@ fn cached_path_vertical_shrink_20px() {
     renderer.render_frame_cached(&gpu, &pipelines, 800, 580, true);
 }
 
+// -- Resize-grow uncovered-region clearing tests -- <!-- prose-lint: allow -->
+//
+// When the render destination is LARGER than the prepared viewport
+// (the resize-grow case — winit `Resized` fires between `prepare()` and
+// `render_to_surface()`), the partial cache copy fills only the
+// `vp × vp` upper-left sub-rect. The overlay-pass `LoadOp::Load`
+// then exposes uninitialized memory along the new edge. Fix: pre-clear
+// the destination to `clear_color()` when `dst > vp` on either axis.
+
+/// Shared helper: prepare + render through `render_frame_cached` with a
+/// caller-controlled palette background + opacity, then read back pixels.
+///
+/// Returns `(pixels, target_w)` for `pixel_rgba_at(...)` lookups.
+#[allow(clippy::too_many_arguments)]
+fn prepare_and_render_cached_with_clear(
+    gpu: &crate::gpu::state::GpuState,
+    pipelines: &crate::gpu::pipelines::GpuPipelines,
+    renderer: &mut crate::gpu::window_renderer::WindowRenderer,
+    prep_w: u32,
+    prep_h: u32,
+    target_w: u32,
+    target_h: u32,
+    palette_bg: oriterm_core::Rgb,
+    opacity: f32,
+) -> (Vec<u8>, u32) {
+    let cell = renderer.cell_metrics();
+    let wl = compute_window_layout(prep_w, prep_h, &cell, 1.0, true, 0.0, 0.0, 0.0);
+    let mut input = FrameInput::test_grid(wl.cols, wl.rows, "test");
+    input.viewport = ViewportSize::new(prep_w, prep_h);
+    input.cell_size = cell;
+    input.content.cursor.visible = false;
+    input.palette.background = palette_bg;
+    input.palette.opacity = opacity;
+
+    let origin = (wl.grid_rect.x(), wl.grid_rect.y());
+    renderer.prepare(&input, gpu, pipelines, origin, 1.0, true);
+    let target = renderer.render_frame_cached(gpu, pipelines, target_w, target_h, true);
+    let pixels = gpu
+        .read_render_target(&target)
+        .expect("pixel readback should succeed");
+    (pixels, target_w)
+}
+
+/// Fetch the RGBA byte tuple at `(x, y)` in a tightly-packed pixel buffer.
+fn pixel_rgba_at(pixels: &[u8], x: u32, y: u32, target_w: u32) -> [u8; 4] {
+    let i = ((y * target_w + x) * 4) as usize;
+    [pixels[i], pixels[i + 1], pixels[i + 2], pixels[i + 3]]
+}
+
+/// Approximate-equal channel comparison absorbing 8-bit quantization.
+fn rgba_approx_eq(a: [u8; 4], b: [u8; 4], epsilon: u8) -> bool {
+    a.iter()
+        .zip(b.iter())
+        .all(|(x, y)| x.abs_diff(*y) <= epsilon)
+}
+
+/// Grow on both axes; pixels outside the prepared viewport equal `clear_color()`.
+#[test]
+fn cached_path_grow_both_axes_clears_uncovered_to_clear_color() {
+    let Some((gpu, pipelines, mut renderer)) = headless_env() else {
+        eprintln!("skipped: no GPU adapter available");
+        return;
+    };
+    let bg = oriterm_core::Rgb {
+        r: 255,
+        g: 0,
+        b: 255,
+    };
+    let (pixels, w) = prepare_and_render_cached_with_clear(
+        &gpu,
+        &pipelines,
+        &mut renderer,
+        800,
+        600,
+        1200,
+        800,
+        bg,
+        1.0,
+    );
+    let outside = pixel_rgba_at(&pixels, 1100, 700, w);
+    assert!(
+        rgba_approx_eq(outside, [255, 0, 255, 255], 2),
+        "uncovered pixel at (1100,700) should be magenta clear color, got {outside:?}"
+    );
+}
+
+/// Horizontal-only grow.
+#[test]
+fn cached_path_grow_horizontal_only() {
+    let Some((gpu, pipelines, mut renderer)) = headless_env() else {
+        eprintln!("skipped: no GPU adapter available");
+        return;
+    };
+    let bg = oriterm_core::Rgb {
+        r: 255,
+        g: 0,
+        b: 255,
+    };
+    let (pixels, w) = prepare_and_render_cached_with_clear(
+        &gpu,
+        &pipelines,
+        &mut renderer,
+        800,
+        600,
+        1200,
+        600,
+        bg,
+        1.0,
+    );
+    let outside = pixel_rgba_at(&pixels, 1100, 300, w);
+    assert!(
+        rgba_approx_eq(outside, [255, 0, 255, 255], 2),
+        "uncovered pixel at (1100,300) should be magenta, got {outside:?}"
+    );
+}
+
+/// Vertical-only grow.
+#[test]
+fn cached_path_grow_vertical_only() {
+    let Some((gpu, pipelines, mut renderer)) = headless_env() else {
+        eprintln!("skipped: no GPU adapter available");
+        return;
+    };
+    let bg = oriterm_core::Rgb {
+        r: 255,
+        g: 0,
+        b: 255,
+    };
+    let (pixels, w) = prepare_and_render_cached_with_clear(
+        &gpu,
+        &pipelines,
+        &mut renderer,
+        800,
+        600,
+        800,
+        800,
+        bg,
+        1.0,
+    );
+    let outside = pixel_rgba_at(&pixels, 400, 700, w);
+    assert!(
+        rgba_approx_eq(outside, [255, 0, 255, 255], 2),
+        "uncovered pixel at (400,700) should be magenta, got {outside:?}"
+    );
+}
+
+/// Mixed-axis: width grows, height shrinks. `||` gate must fire when EITHER grows.
+#[test]
+fn cached_path_grow_h_shrink_v_clears_horizontal_grow_region() {
+    let Some((gpu, pipelines, mut renderer)) = headless_env() else {
+        eprintln!("skipped: no GPU adapter available");
+        return;
+    };
+    let bg = oriterm_core::Rgb {
+        r: 255,
+        g: 0,
+        b: 255,
+    };
+    let (pixels, w) = prepare_and_render_cached_with_clear(
+        &gpu,
+        &pipelines,
+        &mut renderer,
+        800,
+        600,
+        1200,
+        400,
+        bg,
+        1.0,
+    );
+    let outside = pixel_rgba_at(&pixels, 1100, 200, w);
+    assert!(
+        rgba_approx_eq(outside, [255, 0, 255, 255], 2),
+        "uncovered horizontal-grow pixel at (1100,200) should be magenta, got {outside:?}"
+    );
+}
+
+/// Mixed-axis: width shrinks, height grows.
+#[test]
+fn cached_path_shrink_h_grow_v_clears_vertical_grow_region() {
+    let Some((gpu, pipelines, mut renderer)) = headless_env() else {
+        eprintln!("skipped: no GPU adapter available");
+        return;
+    };
+    let bg = oriterm_core::Rgb {
+        r: 255,
+        g: 0,
+        b: 255,
+    };
+    let (pixels, w) = prepare_and_render_cached_with_clear(
+        &gpu,
+        &pipelines,
+        &mut renderer,
+        800,
+        600,
+        600,
+        800,
+        bg,
+        1.0,
+    );
+    let outside = pixel_rgba_at(&pixels, 400, 700, w);
+    assert!(
+        rgba_approx_eq(outside, [255, 0, 255, 255], 2),
+        "uncovered vertical-grow pixel at (400,700) should be magenta, got {outside:?}"
+    );
+}
+
+/// Common-path regression guard: dst == vp must continue to work.
+#[test]
+fn cached_path_dst_eq_vp_no_extra_clear() {
+    let Some((gpu, pipelines, mut renderer)) = headless_env() else {
+        eprintln!("skipped: no GPU adapter available");
+        return;
+    };
+    let bg = oriterm_core::Rgb {
+        r: 255,
+        g: 0,
+        b: 255,
+    };
+    let (pixels, _w) = prepare_and_render_cached_with_clear(
+        &gpu,
+        &pipelines,
+        &mut renderer,
+        800,
+        600,
+        800,
+        600,
+        bg,
+        1.0,
+    );
+    assert_eq!(pixels.len(), (800 * 600 * 4) as usize);
+}
+
+/// Opacity dimension: opacity < 1.0 with non-zero background. Verifies the
+/// premultiplied-alpha clear value reaches the uncovered region.
+#[test]
+fn cached_path_grow_clears_with_semi_transparent_clear() {
+    let Some((gpu, pipelines, mut renderer)) = headless_env() else {
+        eprintln!("skipped: no GPU adapter available");
+        return;
+    };
+    let bg = oriterm_core::Rgb {
+        r: 255,
+        g: 0,
+        b: 255,
+    };
+    let (pixels, w) = prepare_and_render_cached_with_clear(
+        &gpu,
+        &pipelines,
+        &mut renderer,
+        800,
+        600,
+        1200,
+        800,
+        bg,
+        0.5,
+    );
+    let outside = pixel_rgba_at(&pixels, 1100, 700, w);
+    // Premultiplied: linear-space r/b ≈ 0.5, sRGB-encoded back to ≈188 for
+    // pure magenta at half opacity. Alpha ≈ 128.
+    // Tolerance widened for sRGB round-trip quantization.
+    assert!(
+        outside[3].abs_diff(128) <= 4,
+        "uncovered pixel alpha should be ~128 (opacity=0.5), got {outside:?}"
+    );
+    assert!(
+        outside[0] > 100 && outside[2] > 100,
+        "uncovered pixel R/B should be roughly half-magenta, got {outside:?}"
+    );
+    assert!(
+        outside[1] < 16,
+        "uncovered pixel G should be ~0, got {outside:?}"
+    );
+}
+
+/// Two-frame sequence with DIFFERENT clear colors — deterministic check.
+/// Frame 1 (green) at dst == vp, frame 2 (red) at dst > vp. The uncovered
+/// region after frame 2 MUST be red (current frame's clear), NEVER green
+/// (prior frame's content) and NEVER black (wgpu zero-init mask).
+#[test]
+fn cached_path_grow_uncovered_region_takes_current_clear_not_prior_frame() {
+    let Some((gpu, pipelines, mut renderer)) = headless_env() else {
+        eprintln!("skipped: no GPU adapter available");
+        return;
+    };
+    let green = oriterm_core::Rgb { r: 0, g: 255, b: 0 };
+    let red = oriterm_core::Rgb { r: 255, g: 0, b: 0 };
+
+    // Frame 1: small render with green clear color.
+    let _ = prepare_and_render_cached_with_clear(
+        &gpu,
+        &pipelines,
+        &mut renderer,
+        800,
+        600,
+        800,
+        600,
+        green,
+        1.0,
+    );
+
+    // Frame 2: larger render with red clear color. The uncovered region
+    // must be red — NOT green (prior frame), NOT zero (lazy zero-init).
+    let (pixels, w) = prepare_and_render_cached_with_clear(
+        &gpu,
+        &pipelines,
+        &mut renderer,
+        800,
+        600,
+        1200,
+        800,
+        red,
+        1.0,
+    );
+    let outside = pixel_rgba_at(&pixels, 1100, 700, w);
+    assert!(
+        outside[0] > 200 && outside[1] < 32 && outside[2] < 32,
+        "uncovered pixel at (1100,700) must be RED (current clear), \
+         got {outside:?} — green ({:?}) or zero would indicate stale memory",
+        [0, 255, 0, 255]
+    );
+}
+
+/// Rapid alternation: grow/shrink cycles, uncovered region matches current clear.
+#[test]
+fn cached_path_rapid_grow_shrink_alternation() {
+    let Some((gpu, pipelines, mut renderer)) = headless_env() else {
+        eprintln!("skipped: no GPU adapter available");
+        return;
+    };
+    let bg = oriterm_core::Rgb {
+        r: 255,
+        g: 0,
+        b: 255,
+    };
+
+    for i in 0..10 {
+        let target_w = if i % 2 == 0 { 1200 } else { 600 };
+        let target_h = if i % 2 == 0 { 800 } else { 400 };
+        let (pixels, w) = prepare_and_render_cached_with_clear(
+            &gpu,
+            &pipelines,
+            &mut renderer,
+            800,
+            600,
+            target_w,
+            target_h,
+            bg,
+            1.0,
+        );
+        if target_w > 800 && target_h > 600 {
+            let outside = pixel_rgba_at(&pixels, 1100, 700, w);
+            assert!(
+                rgba_approx_eq(outside, [255, 0, 255, 255], 2),
+                "iter {i}: uncovered pixel at (1100,700) should be magenta, got {outside:?}"
+            );
+        }
+    }
+}
+
 /// Rapid vertical resize through the cached path.
 #[test]
 fn cached_path_rapid_vertical_resize() {

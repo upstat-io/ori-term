@@ -143,7 +143,10 @@ impl WindowRenderer {
     }
 
     /// Whether this renderer is in UI-only mode (dialog windows).
-    #[allow(dead_code, reason = "predicate consumed by dialog-window render dispatch")]
+    #[allow(
+        dead_code,
+        reason = "predicate consumed by dialog-window render dispatch"
+    )]
     pub fn is_ui_only(&self) -> bool {
         self.mode == RendererMode::UiOnly
     }
