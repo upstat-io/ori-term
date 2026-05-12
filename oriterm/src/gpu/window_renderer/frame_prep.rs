@@ -261,31 +261,44 @@ impl WindowRenderer {
 
     /// Refresh LRU `last_frame` for images visible in a cached pane.
     ///
+    /// Returns `true` iff every image quad referenced by `cached` was
+    /// found in `image_texture_cache` and successfully touched. Returns
+    /// `false` when one or more referenced images have been evicted
+    /// between the original `prepare_pane_into` call (which uploaded them)
+    /// and now (typically by `evict_over_limit` firing for another pane's
+    /// uploads in the same frame). The caller MUST treat `false` as a
+    /// cache invalidation — the cached `PreparedFrame`'s `ImageQuad`s
+    /// would silently skip at draw time (via the
+    /// [`get_bind_group`](ImageTextureCache::get_bind_group) `None` arm
+    /// in `render_helpers.rs::draw_image_quads`) — and re-route through
+    /// `prepare_pane_into` to re-upload the evicted textures.
+    ///
     /// When the multi-pane redraw loop serves a pane from
     /// `PaneRenderCache` (i.e. `prepare_pane_into` is skipped because the
     /// pane is clean), the cached `PreparedFrame` already contains its
     /// image-quad instances, but the underlying `GpuImageTexture` would
     /// not have its `last_frame` advanced. Over `THRESHOLD` cached
-    /// frames, [`evict_unused`] would drop the texture, and the cached
-    /// quads would silently skip at draw time when
-    /// [`get_bind_group`](ImageTextureCache::get_bind_group) returns
-    /// `None`. Called per `cache_hit` immediately after
-    /// `prepared.extend_from(cached)`.
+    /// frames, [`evict_unused`] would drop the texture. Called per
+    /// `cache_hit` immediately before `prepared.extend_from(cached)`.
     pub(crate) fn touch_cached_pane_images(
         &mut self,
         cached: &super::super::prepared_frame::PreparedFrame,
-    ) {
+    ) -> bool {
         debug_assert!(
             self.image_frame_active,
             "touch_cached_pane_images called outside begin_image_frame bracket"
         );
+        let mut all_present = true;
         for quad in cached
             .image_quads_below
             .iter()
             .chain(cached.image_quads_above.iter())
         {
-            self.image_texture_cache.touch_image(quad.image_id);
+            if !self.image_texture_cache.touch_image(quad.image_id) {
+                all_present = false;
+            }
         }
+        all_present
     }
 
     /// Upload image textures for a single-pane frame.

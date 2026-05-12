@@ -169,18 +169,25 @@ impl ImageTextureCache {
 
     /// Touch an already-uploaded image to refresh its LRU position.
     ///
-    /// No-op when `id` is not in cache. Idempotent — calling twice in the
-    /// same frame produces the same `last_frame` value.
+    /// Returns `true` if the image was present and its `last_frame` was
+    /// stamped, `false` if the image was not in cache (already evicted).
+    /// Idempotent — calling twice in the same frame produces the same
+    /// `last_frame` value.
     ///
     /// Used by the multi-pane render path when a pane is served from the
     /// per-pane prepared-frame cache without re-running `prepare_pane_into`
-    /// (which would otherwise touch images via [`ensure_uploaded`]). Without
-    /// this, images in cached panes would age out and silently skip at draw
-    /// time when [`get_bind_group`] returns `None`.
-    pub(crate) fn touch_image(&mut self, id: ImageId) {
+    /// (which would otherwise touch images via [`ensure_uploaded`]). The
+    /// `false` return signals the caller that the cached `ImageQuad`s no
+    /// longer have valid bind groups (the image was evicted between the
+    /// cache write and now) — the caller must invalidate the pane cache
+    /// and re-prepare the pane.
+    pub(crate) fn touch_image(&mut self, id: ImageId) -> bool {
         let frame = self.frame_counter;
         if let Some(entry) = self.textures.get_mut(&id) {
             entry.last_frame = frame;
+            true
+        } else {
+            false
         }
     }
 

@@ -273,24 +273,38 @@ impl App {
                     compute_pane_damage_key(&dispatch_inputs, &row_state)
                 };
 
-                let cache_hit =
+                let mut cache_hit =
                     !dirty_content && ctx.pane_cache.is_cached(pane_id, layout, damage_key);
 
                 if cache_hit {
-                    // Cache hit — merge cached instances without extraction.
+                    // Cache hit candidate — must verify that every image
+                    // texture referenced by the cached pane is still
+                    // resident in `image_texture_cache`. `evict_over_limit`
+                    // in `finish_image_frame` can drop textures across
+                    // frames when total GPU memory exceeds the limit; if
+                    // any of THIS pane's images were evicted, the cached
+                    // `ImageQuad`s would silently skip at draw time
+                    // (`render_helpers.rs::draw_image_quads` continues
+                    // past `get_bind_group(quad.image_id) == None` quads).
+                    //
+                    // `touch_cached_pane_images` returns `false` when one
+                    // or more referenced images are missing — in that
+                    // case invalidate the pane cache and fall through to
+                    // the cache-miss branch to re-upload via
+                    // `prepare_pane_into`.
                     let cached = ctx
                         .pane_cache
                         .get_cached(pane_id)
                         .expect("is_cached verified");
-                    renderer.prepared.extend_from(cached);
-                    // Refresh LRU on image textures referenced by the cached
-                    // pane. Without this, images visible in cached panes
-                    // age out of `image_texture_cache` after
-                    // IMAGE_TEXTURE_EVICT_FRAME_THRESHOLD frames and the
-                    // cached image quads silently skip at draw time when
-                    // `get_bind_group` returns None.
-                    renderer.touch_cached_pane_images(cached);
-                } else {
+                    if renderer.touch_cached_pane_images(cached) {
+                        renderer.prepared.extend_from(cached);
+                    } else {
+                        ctx.pane_cache.invalidate(pane_id);
+                        cache_hit = false;
+                    }
+                }
+
+                if !cache_hit {
                     // Cache miss — must extract + annotate + prepare into cache.
                     let pane_viewport = ViewportSize::new(
                         layout.pixel_rect.width as u32,

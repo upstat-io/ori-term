@@ -286,6 +286,81 @@ fn touch_cached_pane_images_refreshes_last_frame() {
     );
 }
 
+/// Regression: BUG-06-062 — touch_cached_pane_images returns false when
+/// a referenced image has been evicted between cache write and now.
+/// Caller must invalidate the pane cache and fall through to re-prepare.
+/// See: bug-tracker/plans/BUG-06-062/00-overview.md (Code TPR F1)
+#[test]
+fn touch_cached_pane_images_returns_false_when_image_evicted() {
+    use crate::gpu::prepared_frame::ImageQuad;
+
+    let (_gpu, _pip, mut renderer) = headless_env().expect("GPU available");
+    let bg = Rgb { r: 0, g: 0, b: 0 };
+    // Construct a cached PreparedFrame with an ImageQuad whose image_id
+    // is NOT in `image_texture_cache` (simulating eviction between the
+    // cache write and the cache_hit touch call).
+    let mut cached_target = PreparedFrame::new(ViewportSize::new(800, 600), bg, 1.0);
+    cached_target.image_quads_above.push(ImageQuad {
+        image_id: ImageId::from_raw(999),
+        x: 0.0,
+        y: 0.0,
+        w: 2.0,
+        h: 2.0,
+        uv_x: 0.0,
+        uv_y: 0.0,
+        uv_w: 1.0,
+        uv_h: 1.0,
+        opacity: 1.0,
+    });
+
+    renderer.begin_multi_pane_frame(ViewportSize::new(800, 600), bg, 1.0);
+    let all_present = renderer.touch_cached_pane_images(&cached_target);
+    renderer.finish_multi_pane_frame();
+
+    assert!(
+        !all_present,
+        "touch_cached_pane_images must return false when any referenced image is missing — \
+         caller relies on this to invalidate the pane cache and fall through to cache-miss"
+    );
+}
+
+/// Regression: BUG-06-062 — touch_cached_pane_images returns true when
+/// every referenced image is present in the cache.
+/// See: bug-tracker/plans/BUG-06-062/00-overview.md
+#[test]
+fn touch_cached_pane_images_returns_true_when_all_present() {
+    use crate::gpu::prepared_frame::ImageQuad;
+
+    let (gpu, pipelines, mut renderer) = headless_env().expect("GPU available");
+    let image_id = ImageId::from_raw(7);
+    let input = input_with_image(image_id);
+    let bg = Rgb { r: 0, g: 0, b: 0 };
+
+    // Frame 1: upload via prepare_pane_into so the image lives in cache.
+    renderer.begin_multi_pane_frame(ViewportSize::new(800, 600), bg, 1.0);
+    let mut cached_target = PreparedFrame::new(ViewportSize::new(800, 600), bg, 1.0);
+    renderer.prepare_pane_into(&input, &gpu, &pipelines, (0.0, 0.0), 1.0, &mut cached_target);
+    cached_target.image_quads_above.push(ImageQuad {
+        image_id,
+        x: 0.0,
+        y: 0.0,
+        w: 2.0,
+        h: 2.0,
+        uv_x: 0.0,
+        uv_y: 0.0,
+        uv_w: 1.0,
+        uv_h: 1.0,
+        opacity: 1.0,
+    });
+    let all_present = renderer.touch_cached_pane_images(&cached_target);
+    renderer.finish_multi_pane_frame();
+
+    assert!(
+        all_present,
+        "touch_cached_pane_images must return true when every referenced image is in cache"
+    );
+}
+
 /// Regression: BUG-06-062 pane-cache eviction without touch — WITHOUT the
 /// touch call, the same scenario MUST result in the image being evicted.
 /// Proves the touch is load-bearing, not coincidental.
