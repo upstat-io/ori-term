@@ -47,8 +47,16 @@ pub use snapshot::{
 /// Frame header size in bytes.
 pub const HEADER_LEN: usize = 14;
 
-/// Maximum payload size (16 MiB).
-pub const MAX_PAYLOAD: u32 = 16 * 1024 * 1024;
+/// Maximum payload size (80 MiB).
+///
+/// Sized to comfortably accommodate the core image cache's per-image limit
+/// (`DEFAULT_MAX_SINGLE_IMAGE = 64 MiB` at `oriterm_core/src/image/cache/mod.rs:20`)
+/// plus cell payload headroom. Raised from 16 MiB at PROTOCOL_VERSION v3
+/// because daemon-mode image rendering requires shipping pixel data over the wire.
+/// Compression at `protocol/encode.rs:27-54` applies automatically when payload exceeds
+/// `COMPRESSION_THRESHOLD` and zstd shrinks it.
+/// See: bug-tracker/plans/BUG-06-072/
+pub const MAX_PAYLOAD: u32 = 80 * 1024 * 1024;
 
 /// Magic bytes identifying an oriterm IPC frame (`0x4F54` = "OT").
 pub const FRAME_MAGIC: u16 = 0x4F54;
@@ -57,11 +65,18 @@ pub const FRAME_MAGIC: u16 = 0x4F54;
 ///
 /// v2 — bumped when `PaneSnapshot::has_bell` and `MuxPdu::ClearBell`
 /// were stripped from the wire (bell state moved to client-local
-/// `bell_panes`). v1 → v2 is a hard break in bincode-encoded
-/// `PaneSnapshot` layout and `MsgType` enum codepoints; a v1 peer
-/// connecting to a v2 peer will silently misdecode every snapshot
-/// frame. The Hello handshake rejects any non-equal version pair so
-/// the mismatch surfaces as a connection error instead.
+/// `bell_panes`).
+///
+/// v3 — bumped when `PaneSnapshot` gained `images`/`image_data`/`images_dirty` fields.
+/// `Eq` derive dropped from `PaneSnapshot` and `MuxPdu` because `WirePlacement` carries
+/// f32 fields (f32 implements `PartialEq` only). `MAX_PAYLOAD` raised from 16 MiB to
+/// 80 MiB to ship kitty/sixel/iTerm2 pixel data over the wire.
+/// See: bug-tracker/plans/BUG-06-072/
+///
+/// vN → vN+1 is a hard break in bincode-encoded `PaneSnapshot` / `MuxPdu` layout; a
+/// mismatched peer would silently misdecode every snapshot frame. The Hello handshake
+/// rejects any non-equal version pair so the mismatch surfaces as a connection error
+/// instead.
 ///
 /// SSOT: this constant is the single literal source for the wire
 /// version; [`CURRENT_PROTOCOL_VERSION`] is a re-export, NOT an
@@ -69,7 +84,7 @@ pub const FRAME_MAGIC: u16 = 0x4F54;
 /// other would otherwise produce a frame-header version that
 /// disagrees with the Hello payload — caught at compile-time now
 /// because the alias propagates the bump automatically.
-pub const PROTOCOL_VERSION: u8 = 2;
+pub const PROTOCOL_VERSION: u8 = 3;
 
 /// Flag: payload is zstd-compressed.
 pub const FLAG_COMPRESSED: u8 = 0x01;

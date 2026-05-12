@@ -548,6 +548,9 @@ fn sample_snapshot() -> PaneSnapshot {
         search_total_matches: 0,
         has_unseen_output: false,
         mouse_cursor_icon: None,
+        images: Vec::new(),
+        image_data: Vec::new(),
+        images_dirty: false,
     }
 }
 
@@ -637,6 +640,9 @@ fn snapshot_with_cjk_emoji_combining() {
         search_total_matches: 0,
         has_unseen_output: false,
         mouse_cursor_icon: None,
+        images: Vec::new(),
+        image_data: Vec::new(),
+        images_dirty: false,
     };
 
     roundtrip(32, MuxPdu::PaneSnapshotResp { snapshot });
@@ -1134,6 +1140,9 @@ fn roundtrip_large_pane_snapshot() {
         search_total_matches: 0,
         has_unseen_output: false,
         mouse_cursor_icon: None,
+        images: Vec::new(),
+        image_data: Vec::new(),
+        images_dirty: false,
     };
 
     let frame = roundtrip(

@@ -90,6 +90,9 @@ fn test_snapshot() -> PaneSnapshot {
         search_total_matches: 0,
         has_unseen_output: false,
         mouse_cursor_icon: None,
+        images: Vec::new(),
+        image_data: Vec::new(),
+        images_dirty: false,
     }
 }
 
@@ -323,6 +326,9 @@ fn empty_snapshot_no_cells() {
         search_total_matches: 0,
         has_unseen_output: false,
         mouse_cursor_icon: None,
+        images: Vec::new(),
+        image_data: Vec::new(),
+        images_dirty: false,
     };
 
     let content = snapshot_to_renderable(&snap);
@@ -357,6 +363,9 @@ fn empty_snapshot_frame_input() {
         search_total_matches: 0,
         has_unseen_output: false,
         mouse_cursor_icon: None,
+        images: Vec::new(),
+        image_data: Vec::new(),
+        images_dirty: false,
     };
 
     let viewport = ViewportSize::new(160, 320);
@@ -427,6 +436,9 @@ fn wide_char_flag_preserved() {
         search_total_matches: 0,
         has_unseen_output: false,
         mouse_cursor_icon: None,
+        images: Vec::new(),
+        image_data: Vec::new(),
+        images_dirty: false,
     };
 
     let content = snapshot_to_renderable(&snap);
@@ -577,6 +589,9 @@ fn large_snapshot_through_extract() {
         search_total_matches: 0,
         has_unseen_output: false,
         mouse_cursor_icon: None,
+        images: Vec::new(),
+        image_data: Vec::new(),
+        images_dirty: false,
     };
 
     let viewport = ViewportSize::new(1600, 800);
