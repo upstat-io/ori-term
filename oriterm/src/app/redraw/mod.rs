@@ -6,7 +6,10 @@ mod draw_helpers;
 mod multi_pane;
 mod post_render;
 pub(in crate::app) mod preedit;
+mod predicates;
 mod search_bar;
+
+use predicates::{RedrawPredicateInputs, compute_redraw_predicates};
 
 use std::time::Instant;
 
@@ -173,16 +176,27 @@ impl App {
             ctx.last_rendered_pane = Some(pane_id);
             let snap_is_none = mux.pane_snapshot(pane_id).is_none();
             let snap_dirty = mux.is_pane_snapshot_dirty(pane_id);
-            let content_changed = snap_is_none || snap_dirty || pane_changed;
-            if content_changed {
+            let preds = compute_redraw_predicates(RedrawPredicateInputs {
+                snap_is_none,
+                snap_dirty,
+                pane_changed,
+                preedit_revision: self.ime.preedit_revision,
+                prev_preedit_revision: ctx.prev_preedit_revision,
+            });
+            let snapshot_changed = preds.snapshot_changed;
+            let content_changed = preds.content_changed;
+            if snapshot_changed {
                 mux.refresh_pane_snapshot(pane_id);
             }
 
             // Fast path (embedded): swap RenderableContent directly from
             // the terminal, bypassing the WireCell round-trip. Only attempt
-            // when content was refreshed — stale cache entries from prior
-            // tab switches would contaminate the frame otherwise.
-            let swapped = content_changed
+            // when SNAPSHOT was refreshed — `swap_renderable_content` does a
+            // blind `std::mem::swap` on the cache and would surface a stale
+            // buffer carrying the prior frame's destructive preedit overlay
+            // if gated on the broader `content_changed`. See the helper's
+            // type-level doc for the regression anchor.
+            let swapped = snapshot_changed
                 && ctx
                     .frame
                     .as_mut()
@@ -340,6 +354,10 @@ impl App {
             // hashes `text_blink_opacity`), which chrome queries via
             // `cache_invalidated_this_frame()`.
             ctx.prev_text_blink_opacity = text_blink_opacity;
+            // Sync prev_preedit_revision so the next frame's
+            // `compute_redraw_predicates` only flags `content_changed` on
+            // an ACTUAL revision delta.
+            ctx.prev_preedit_revision = self.ime.preedit_revision;
 
             // Chrome: tab bar, overlays, search bar, status bar, window border.
             let widgets_start = Instant::now();
