@@ -360,8 +360,7 @@ impl App {
                     renderer.append_focus_border(
                         rect,
                         accent_color,
-                        (crate::gpu::window_renderer::WINDOW_BORDER_WIDTH_LOGICAL_PX * scale)
-                            .round(),
+                        crate::gpu::window_renderer::physical_border_width(scale),
                     );
                 }
             }

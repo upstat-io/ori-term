@@ -41,12 +41,20 @@ use helpers::{CombinedAtlasLookup, ShapingScratch, create_atlases};
 const EMPTY_KEYS_CAP: usize = 10_000;
 
 /// Logical-pixel thickness of the window-strong / focus-pane border drawn over
-/// the surface. Multiply by the current DPI scale and round (per the existing
-/// `(WINDOW_BORDER_WIDTH_LOGICAL_PX * scale).round()` convention) to get the
-/// physical-pixel value passed to [`WindowRenderer::append_window_border`] and
-/// [`WindowRenderer::append_focus_border`]. Sole source of truth — chrome,
-/// multi-pane focus border, and visual-regression harness all derive here.
+/// the surface. Callers go through [`physical_border_width`] for the rounded
+/// physical-pixel value rather than recomputing `(CONST * scale).round()` at
+/// each site.
 pub(crate) const WINDOW_BORDER_WIDTH_LOGICAL_PX: f32 = 2.0;
+
+/// Convert the logical-pixel border thickness to a physical-pixel width
+/// rounded to the nearest integer at the supplied DPI scale. Sole source of
+/// truth for the value passed to [`WindowRenderer::append_window_border`]
+/// and [`WindowRenderer::append_focus_border`] — chrome, multi-pane focus
+/// border, and visual-regression harness all call this helper.
+#[inline]
+pub(crate) fn physical_border_width(scale: f32) -> f32 {
+    (WINDOW_BORDER_WIDTH_LOGICAL_PX * scale).round()
+}
 
 /// Per-window GPU renderer: owns fonts, atlases, and instance buffers.
 ///
