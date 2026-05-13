@@ -22,8 +22,10 @@ use crate::pane::io_thread::PaneIoCommand;
 use crate::pane::{MarkCursor, Pane};
 use crate::pty::AdoptedPtyHandle;
 use crate::registry::PaneEntry;
-use crate::server::snapshot::fill_snapshot_from_renderable;
 use crate::{DomainId, PaneId, PaneSnapshot};
+
+mod io_roundtrip;
+mod snapshot;
 
 /// In-process mux backend for single-process mode.
 ///
@@ -81,19 +83,7 @@ impl MuxBackend for EmbeddedMux {
     }
 
     fn poll_events(&mut self) {
-        self.wakeup_pending.store(false, Ordering::Release);
-        self.mux.poll_events(&mut self.panes);
-
-        // Mark panes dirty when the IO thread has produced a new snapshot.
-        // Also emit PaneOutput notifications so the app can schedule redraws,
-        // invalidate selections, and track unseen output on background tabs.
-        for (&pane_id, pane) in &self.panes {
-            if pane.has_io_snapshot() {
-                self.snapshot_dirty.insert(pane_id);
-                self.mux
-                    .push_notification(MuxNotification::PaneOutput(pane_id));
-            }
-        }
+        self.poll_events_impl();
     }
 
     fn drain_notifications(&mut self, out: &mut Vec<MuxNotification>) {
@@ -129,11 +119,7 @@ impl MuxBackend for EmbeddedMux {
     }
 
     fn close_pane(&mut self, pane_id: PaneId) -> ClosePaneResult {
-        // Phase 1: unregister from the pane registry and push a PaneClosed
-        // notification. The pane itself remains in `self.panes` so the PTY
-        // process continues running until `cleanup_closed_pane` is called
-        // (Phase 2), which drops the Pane on a background thread to avoid
-        // blocking the event loop with PTY kill + child reap.
+        // Phase 1 (unregister + PaneClosed notify); Phase 2 is `cleanup_closed_pane` which drops Pane on a background thread (avoids blocking the event loop on PTY kill + child reap).
         self.mux.close_pane(pane_id)
     }
 
@@ -158,11 +144,7 @@ impl MuxBackend for EmbeddedMux {
 
     fn resize_pane_grid(&mut self, pane_id: PaneId, rows: u16, cols: u16) {
         if let Some(pane) = self.panes.get(&pane_id) {
-            // IO thread does reflow + PTY resize (SIGWINCH) asynchronously.
-            // Do NOT mark snapshot_dirty here — the renderer should keep
-            // drawing the previous cached snapshot until the IO thread
-            // publishes the resized one. This prevents exposing
-            // intermediate reflow frames during drag resize.
+            // IO thread reflows + PTY-resizes (SIGWINCH) asynchronously; do NOT mark snapshot_dirty here — renderer keeps the cached snapshot until IO publishes the resized one (prevents exposing intermediate reflow frames during drag resize).
             pane.send_resize(rows, cols);
         }
     }
@@ -195,10 +177,7 @@ impl MuxBackend for EmbeddedMux {
     fn set_answerback(&mut self, pane_id: PaneId, bytes: Vec<u8>) {
         if let Some(pane) = self.panes.get(&pane_id) {
             pane.send_io_command(PaneIoCommand::SetAnswerback(bytes));
-            // Intentionally NO snapshot_dirty insert: answerback affects
-            // only ENQ response, no visible state. Matches set_image_config
-            // (line 202-205 of this file) — the existing non-visual
-            // precedent.
+            // Intentionally NO snapshot_dirty: answerback affects only ENQ response, no visible state (matches set_image_config — existing non-visual precedent).
         }
     }
 
@@ -270,14 +249,7 @@ impl MuxBackend for EmbeddedMux {
     }
 
     fn extract_text(&mut self, pane_id: PaneId, sel: &Selection) -> Option<String> {
-        use std::time::Duration;
-        let pane = self.panes.get(&pane_id)?;
-        let (tx, rx) = crossbeam_channel::bounded(1);
-        pane.send_io_command(PaneIoCommand::ExtractText {
-            selection: *sel,
-            reply: tx,
-        });
-        rx.recv_timeout(Duration::from_millis(100)).ok().flatten()
+        self.extract_text_impl(pane_id, sel)
     }
 
     fn extract_html(
@@ -287,16 +259,7 @@ impl MuxBackend for EmbeddedMux {
         font_family: &str,
         font_size: f32,
     ) -> Option<(String, String)> {
-        use std::time::Duration;
-        let pane = self.panes.get(&pane_id)?;
-        let (tx, rx) = crossbeam_channel::bounded(1);
-        pane.send_io_command(PaneIoCommand::ExtractHtml {
-            selection: *sel,
-            font_family: font_family.to_string(),
-            font_size,
-            reply: tx,
-        });
-        rx.recv_timeout(Duration::from_millis(100)).ok().flatten()
+        self.extract_html_impl(pane_id, sel, font_family, font_size)
     }
 
     fn scroll_display(&mut self, pane_id: PaneId, delta: isize) {
@@ -376,45 +339,19 @@ impl MuxBackend for EmbeddedMux {
     }
 
     fn cleanup_closed_pane(&mut self, pane_id: PaneId) {
-        // bell_panes is populated by App-level focus-gate decisions
-        // (set_bell from MuxNotification::PaneBell), which can run for
-        // any pane id — independent of whether `self.panes` still holds
-        // the Pane object. Drain it unconditionally to match
-        // MuxClient::cleanup_closed_pane and prevent the leak that
-        // surfaces during teardown races.
-        self.bell_panes.remove(&pane_id);
-        if let Some(pane) = self.panes.remove(&pane_id) {
-            self.snapshot_cache.remove(&pane_id);
-            self.snapshot_dirty.remove(&pane_id);
-            self.renderable_cache.remove(&pane_id);
-            // Drop on a background thread to avoid blocking the event loop.
-            // Pane destruction involves PTY kill, reader thread join, and child reap.
-            std::thread::spawn(move || drop(pane));
-        }
+        self.cleanup_closed_pane_impl(pane_id);
     }
 
     fn select_command_output(&self, pane_id: PaneId) -> Option<Selection> {
-        use std::time::Duration;
-        let pane = self.panes.get(&pane_id)?;
-        let (tx, rx) = crossbeam_channel::bounded(1);
-        pane.send_io_command(PaneIoCommand::SelectCommandOutput { reply: tx });
-        rx.recv_timeout(Duration::from_millis(100)).ok().flatten()
+        self.select_command_output_impl(pane_id)
     }
 
     fn select_command_input(&self, pane_id: PaneId) -> Option<Selection> {
-        use std::time::Duration;
-        let pane = self.panes.get(&pane_id)?;
-        let (tx, rx) = crossbeam_channel::bounded(1);
-        pane.send_io_command(PaneIoCommand::SelectCommandInput { reply: tx });
-        rx.recv_timeout(Duration::from_millis(100)).ok().flatten()
+        self.select_command_input_impl(pane_id)
     }
 
     fn enter_mark_mode(&mut self, pane_id: PaneId) -> Option<MarkCursor> {
-        use std::time::Duration;
-        let pane = self.panes.get(&pane_id)?;
-        let (tx, rx) = crossbeam_channel::bounded(1);
-        pane.send_io_command(PaneIoCommand::EnterMarkMode { reply: tx });
-        rx.recv_timeout(Duration::from_millis(100)).ok()
+        self.enter_mark_mode_impl(pane_id)
     }
 
     fn pane_ids(&self) -> Vec<PaneId> {
@@ -452,44 +389,11 @@ impl MuxBackend for EmbeddedMux {
     }
 
     fn refresh_pane_snapshot(&mut self, pane_id: PaneId) -> Option<&PaneSnapshot> {
-        let pane = self.panes.get(&pane_id)?;
-        let snapshot = self.snapshot_cache.entry(pane_id).or_default();
-        let render_buf = self.renderable_cache.entry(pane_id).or_default();
-
-        // Swap the IO thread's latest snapshot into our render buffer.
-        // The IO thread is the sole producer — no lock-based fallback needed.
-        if pane.swap_io_snapshot(render_buf) {
-            fill_snapshot_from_renderable(pane, render_buf, snapshot);
-        }
-
-        self.snapshot_dirty.remove(&pane_id);
-        self.snapshot_cache.get(&pane_id)
+        self.refresh_pane_snapshot_impl(pane_id)
     }
 
     fn sync_pane_snapshot(&mut self, pane_id: PaneId) -> Option<PaneSnapshot> {
-        use std::time::Duration;
-
-        // Step 1: send the IO thread barrier and wait for it to drain
-        // any earlier commands and publish a fresh snapshot. The 500ms
-        // ceiling is generous — under normal load this completes in
-        // sub-millisecond time. If the IO thread is hung or never
-        // produces a snapshot before the timeout, return None so the
-        // caller knows the result would have been stale rather than
-        // silently degrading to a possibly-out-of-date snapshot. The
-        // contract documented on `MuxBackend::sync_pane_snapshot` is
-        // "guaranteed-fresh or None".
-        let pane = self.panes.get(&pane_id)?;
-        let (tx, rx) = crossbeam_channel::bounded(1);
-        pane.send_io_command(PaneIoCommand::SnapshotNow { reply: tx });
-        if rx.recv_timeout(Duration::from_millis(500)).is_err() {
-            log::warn!("sync_pane_snapshot({pane_id}) timed out waiting for IO thread barrier");
-            return None;
-        }
-
-        // Step 2: refresh and clone — refresh_pane_snapshot mutably
-        // borrows self, so we can't return its &PaneSnapshot directly.
-        let snapshot = self.refresh_pane_snapshot(pane_id)?.clone();
-        Some(snapshot)
+        self.sync_pane_snapshot_impl(pane_id)
     }
 
     fn clear_pane_snapshot_dirty(&mut self, pane_id: PaneId) {
