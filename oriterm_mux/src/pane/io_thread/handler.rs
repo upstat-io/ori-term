@@ -118,6 +118,14 @@ impl<S: EffectSink + 'static> PaneIoThread<S> {
                 self.grid_dirty.store(true, Ordering::Release);
             }
             PaneIoCommand::SetImageConfig(config) => {
+                log::info!(
+                    "pane {}: set_image_config(enabled={}, memory_limit={}, max_single={}, animation_enabled={})",
+                    self.pane_id,
+                    config.enabled,
+                    config.memory_limit,
+                    config.max_single,
+                    config.animation_enabled
+                );
                 self.terminal.set_image_protocol_enabled(config.enabled);
                 self.terminal
                     .set_image_limits(config.memory_limit, config.max_single);
@@ -125,6 +133,10 @@ impl<S: EffectSink + 'static> PaneIoThread<S> {
                     .set_image_animation_enabled(config.animation_enabled);
             }
             PaneIoCommand::SetCellDimensions { width, height } => {
+                log::info!(
+                    "pane {}: set_cell_dimensions(width={width}, height={height}) - notcurses canpixel requires both non-zero",
+                    self.pane_id
+                );
                 self.terminal.set_cell_dimensions(width, height);
                 self.grid_dirty.store(true, Ordering::Release);
             }

@@ -46,7 +46,8 @@ pub use pty_responder::PtyResponder;
 // the M1 TPR cleanup to keep `session/mod.rs` under
 // the 500-line file hygiene limit.
 pub use tools::{
-    infocmp_available, tack_available, tic_available, tool_available, vttest_available,
+    infocmp_available, notcurses_info_available, tack_available, tic_available, tool_available,
+    vttest_available,
 };
 pub use version_gate::{
     TACK_PINNED_MAJOR, TACK_PINNED_MINOR, check_tack_version_with_emit, parse_tack_version,

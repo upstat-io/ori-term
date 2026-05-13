@@ -17,6 +17,12 @@ impl<S: EffectSink> Term<S> {
     ///
     /// The first byte identifies the protocol: `G` = Kitty graphics.
     pub(in crate::term::handler) fn handle_apc_dispatch(&mut self, payload: &[u8]) {
+        log::info!(
+            "apc_dispatch: {} bytes, first={:?}, head={:?}",
+            payload.len(),
+            payload.first().map(|b| *b as char),
+            String::from_utf8_lossy(&payload[..payload.len().min(32)])
+        );
         if payload.is_empty() {
             return;
         }

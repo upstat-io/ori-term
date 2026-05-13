@@ -35,6 +35,9 @@ winapi = { version = "0.3", features = [
     "fileapi",
     "namedpipeapi",
     "synchapi",
+    "ioapiset",
+    "minwinbase",
+    "errhandlingapi",
 ]}
 winreg = "0.10"
 

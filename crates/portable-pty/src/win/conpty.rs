@@ -1,8 +1,9 @@
 use crate::cmdbuilder::CommandBuilder;
+use crate::win::overlapped_pipe::{OverlappedHandle, OverlappedPipe, PipeAccess};
 use crate::win::psuedocon::PsuedoCon;
 use crate::{Child, MasterPty, PtyPair, PtySize, PtySystem, SlavePty};
 use anyhow::Error;
-use filedescriptor::{FileDescriptor, Pipe};
+use std::os::windows::io::AsRawHandle;
 use std::sync::{Arc, Mutex};
 use winapi::um::wincon::COORD;
 
@@ -11,23 +12,41 @@ pub struct ConPtySystem {}
 
 impl PtySystem for ConPtySystem {
     fn openpty(&self, size: PtySize) -> anyhow::Result<PtyPair> {
-        let stdin = Pipe::new()?;
-        let stdout = Pipe::new()?;
+        // Overlapped duplex named pipe with the client handle shared
+        // between `hInput` and `hOutput` of CreatePseudoConsole — matches
+        // Microsoft Terminal's ConptyConnection.cpp:406-407.
+        //
+        // Destructure so we own `server` and `client` independently
+        // (cannot drop the client field while the struct is still
+        // partially borrowed).
+        let OverlappedPipe { server, client } =
+            OverlappedPipe::new(PipeAccess::Duplex, 128 * 1024)?;
 
+        // Pass the SAME client handle to both hInput and hOutput slots
+        // (ConptyConnection.cpp:406-407 calls
+        // ConptyCreatePseudoConsole with `pipe.client.get(), pipe.client.get()`).
+        let client_handle = client.as_raw_handle();
         let con = PsuedoCon::new(
             COORD {
                 X: size.cols as i16,
                 Y: size.rows as i16,
             },
-            stdin.read,
-            stdout.write,
+            client_handle,
+            client_handle,
         )?;
+        // ConPTY duplicates internally; release the parent end so the
+        // read side sees EOF when the child exits.
+        drop(client);
+
+        // The single server handle is duplex. Clone it for the reader;
+        // the original is held for the (lazily-taken) writer.
+        let readable = server.try_clone()?;
 
         let master = ConPtyMasterPty {
             inner: Arc::new(Mutex::new(Inner {
                 con,
-                readable: stdout.read,
-                writable: Some(stdin.write),
+                readable,
+                writable: Some(server),
                 size,
             })),
         };
@@ -45,8 +64,8 @@ impl PtySystem for ConPtySystem {
 
 struct Inner {
     con: PsuedoCon,
-    readable: FileDescriptor,
-    writable: Option<FileDescriptor>,
+    readable: OverlappedHandle,
+    writable: Option<OverlappedHandle>,
     size: PtySize,
 }
 
@@ -93,7 +112,9 @@ impl MasterPty for ConPtyMasterPty {
     }
 
     fn try_clone_reader(&self) -> anyhow::Result<Box<dyn std::io::Read + Send>> {
-        Ok(Box::new(self.inner.lock().unwrap().readable.try_clone()?))
+        Ok(Box::new(
+            self.inner.lock().unwrap().readable.try_clone()?,
+        ))
     }
 
     fn take_writer(&self) -> anyhow::Result<Box<dyn std::io::Write + Send>> {

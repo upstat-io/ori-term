@@ -107,13 +107,12 @@ impl ImageCache {
     }
 
     /// Number of stored images.
-    #[cfg(test)]
-    pub(crate) fn image_count(&self) -> usize {
+    pub fn image_count(&self) -> usize {
         self.images.len()
     }
 
     /// Number of active placements.
-    pub(crate) fn placement_count(&self) -> usize {
+    pub fn placement_count(&self) -> usize {
         self.placements.len()
     }
 

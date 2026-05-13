@@ -105,5 +105,24 @@ pub fn infocmp_available() -> bool {
     tool_available("infocmp", "-V")
 }
 
+/// Check if `notcurses-info` (notcurses capability dumper) is installed.
+///
+/// notcurses-info has no `-V`/`--version` flag (its only switch is `-v`
+/// for verbose probe-trace output, which makes the program RUN), so
+/// `tool_available` is not usable here. Probe is a bare spawn with
+/// stdin/stdout/stderr redirected to /dev/null: the binary detects
+/// non-tty stdout and exits 0 cleanly, which proves it exists and is
+/// executable without producing a wall of output or driving the probe
+/// into a multi-second run.
+#[must_use]
+pub fn notcurses_info_available() -> bool {
+    std::process::Command::new("notcurses-info")
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .is_ok_and(|status| status.success())
+}
+
 #[cfg(test)]
 mod tests;

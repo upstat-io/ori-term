@@ -44,11 +44,18 @@ fn dispatch_notification(
     wakeup: &dyn Fn(),
 ) {
     match pdu {
-        MuxPdu::NotifyPaneSnapshot { pane_id, snapshot } => {
-            pushed_snapshots
+        MuxPdu::NotifyPaneSnapshot {
+            pane_id,
+            mut snapshot,
+        } => {
+            let mut map = pushed_snapshots
                 .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .insert(pane_id, snapshot);
+                .unwrap_or_else(PoisonError::into_inner);
+            if let Some(prior) = map.get(&pane_id) {
+                merge_image_data_forward(prior, &mut snapshot);
+            }
+            map.insert(pane_id, snapshot);
+            drop(map);
             let _ = notif_tx.send(MuxNotification::PaneOutput(pane_id));
             (wakeup)();
         }
@@ -128,6 +135,38 @@ fn dispatch_notification(
                 let _ = notif_tx.send(notif);
                 (wakeup)();
             }
+        }
+    }
+}
+
+/// Merge `image_data` from a prior un-drained pushed snapshot forward into
+/// a new push so a later push (whose daemon-side projection filtered
+/// `image_data` via `sent_images`) does NOT drop the pixel bytes from an
+/// earlier push that the client has not yet drained via
+/// `refresh_pane_snapshot` / `cache_snapshot`.
+///
+/// Without this merge, the daemon's one-shot `image_data` send
+/// (post-first-push the daemon's `conn.sent_images` filter skips
+/// repeats) loses to push-overwrite races: push #1 has `image_data`
+/// inline, push #2 has placement only, push #2's insert replaces push
+/// #1 in the map before the client ever refreshed. The next refresh
+/// sees a snapshot with the placement but NO `image_data`, and any
+/// kitty/sixel placement renders blank because `client.image_cache`
+/// never receives the bytes.
+///
+/// Merge contract: prior `image_data` entries whose `id` is NOT already
+/// in the new push's `image_data` are appended to the new push. Fresh
+/// `image_data` (daemon-side `images_dirty=true` triggers `clear_pane` +
+/// re-include) wins by being in the new push, overriding stale prior
+/// entries with the same id via the `new_ids` skip check.
+fn merge_image_data_forward(prior: &PaneSnapshot, new: &mut PaneSnapshot) {
+    if prior.image_data.is_empty() {
+        return;
+    }
+    let new_ids: std::collections::HashSet<u32> = new.image_data.iter().map(|d| d.id).collect();
+    for wid in &prior.image_data {
+        if !new_ids.contains(&wid.id) {
+            new.image_data.push(wid.clone());
         }
     }
 }
