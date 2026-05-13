@@ -173,11 +173,7 @@ impl ImageCache {
             if self.memory_used <= self.memory_cap {
                 break;
             }
-            let victim = self
-                .lru
-                .iter()
-                .copied()
-                .find(|(p, i)| !reachable(*p, *i));
+            let victim = self.lru.iter().copied().find(|(p, i)| !reachable(*p, *i));
             let Some(key) = victim else {
                 // Every entry is still-referenced; soft cap exceeded.
                 break;

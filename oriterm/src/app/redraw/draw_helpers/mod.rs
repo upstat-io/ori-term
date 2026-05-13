@@ -111,13 +111,7 @@ pub(super) fn try_swap_or_extract_pane_content(
         let image_lookup = |id| mux.pane_image_data(pane_id, id);
         match ctx_frame {
             Some(existing) => {
-                extract_frame_from_snapshot_into(
-                    snapshot,
-                    existing,
-                    viewport,
-                    cell,
-                    &image_lookup,
-                );
+                extract_frame_from_snapshot_into(snapshot, existing, viewport, cell, &image_lookup);
             }
             slot @ None => {
                 *slot = Some(extract_frame_from_snapshot(

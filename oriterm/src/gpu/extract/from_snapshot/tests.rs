@@ -768,7 +768,10 @@ fn daemon_pane_snapshot_roundtrips_inline_image_data() {
     assert_eq!(frame.content.images[0].image_id, ImageId::from_raw(7));
     assert_eq!(frame.content.image_data.len(), 1);
     assert_eq!(frame.content.image_data[0].id, ImageId::from_raw(7));
-    assert_eq!(frame.content.image_data[0].data.as_slice(), pixels.as_slice());
+    assert_eq!(
+        frame.content.image_data[0].data.as_slice(),
+        pixels.as_slice()
+    );
     assert!(frame.content.images_dirty);
     // images_dirty=true must force a full repaint via all_dirty=true
     // (mirrors `oriterm_core/src/term/snapshot/mod.rs` semantics — image cache
@@ -863,5 +866,8 @@ fn daemon_pane_snapshot_resolves_placement_via_image_lookup() {
     assert_eq!(frame.content.images.len(), 1);
     assert_eq!(frame.content.image_data.len(), 1);
     assert_eq!(frame.content.image_data[0].id, cached_id);
-    assert!(Arc::ptr_eq(&frame.content.image_data[0].data, &cached_pixels));
+    assert!(Arc::ptr_eq(
+        &frame.content.image_data[0].data,
+        &cached_pixels
+    ));
 }

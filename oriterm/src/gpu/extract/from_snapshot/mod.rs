@@ -13,8 +13,8 @@ use oriterm_core::{
     CellFlags, Column, CursorShape, ImageId, RenderableCell, RenderableContent, RenderableCursor,
     RenderableImageData, RenderablePlacement, Rgb, TermMode,
 };
-use oriterm_mux::{PaneSnapshot, WireCursorShape, WireRgb};
 use oriterm_mux::protocol::snapshot::WirePlacement;
+use oriterm_mux::{PaneSnapshot, WireCursorShape, WireRgb};
 
 use crate::font::CellMetrics;
 use crate::gpu::frame_input::{FrameInput, FramePalette, ViewportSize};
@@ -160,9 +160,7 @@ fn populate_images_from_wire(
             // cache; inline path already produced the data and inserted into
             // have_inline above, so this branch fires only for steady-state.
             let Some(arc) = image_lookup(id) else {
-                log::warn!(
-                    "daemon snapshot: cache-miss for referenced placement {id:?}; skipping"
-                );
+                log::warn!("daemon snapshot: cache-miss for referenced placement {id:?}; skipping");
                 debug_assert!(false, "image cache miss for referenced placement {id:?}");
                 continue;
             };

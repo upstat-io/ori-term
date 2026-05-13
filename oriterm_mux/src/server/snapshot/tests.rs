@@ -266,7 +266,9 @@ fn fold_image_data_store_keeps_new_ids_under_pressure() {
     );
     // No eviction should have fired against the new image.
     assert!(
-        !evicted.iter().any(|(p, i)| *p == pane_a && *i == ImageId::from_raw(7)),
+        !evicted
+            .iter()
+            .any(|(p, i)| *p == pane_a && *i == ImageId::from_raw(7)),
         "newly-inserted image must not appear in evicted set"
     );
 }
@@ -291,15 +293,40 @@ fn image_cache_cross_pane_reachability_protects_other_panes() {
     // Insert pane A id=1 (unreferenced), pane B id=2 (referenced), pane A id=3.
     // The cap is exceeded after the third insert; eviction MUST skip pane B's
     // referenced id=2 and evict pane A's id=1 first.
-    let _ = store.insert(pane_a, ImageId::from_raw(1), Arc::new(mk_image_data(1, 80)), reach_fn);
-    let _ = store.insert(pane_b, ImageId::from_raw(2), Arc::new(mk_image_data(2, 80)), reach_fn);
-    let evicted = store.insert(pane_a, ImageId::from_raw(3), Arc::new(mk_image_data(3, 80)), reach_fn);
+    let _ = store.insert(
+        pane_a,
+        ImageId::from_raw(1),
+        Arc::new(mk_image_data(1, 80)),
+        reach_fn,
+    );
+    let _ = store.insert(
+        pane_b,
+        ImageId::from_raw(2),
+        Arc::new(mk_image_data(2, 80)),
+        reach_fn,
+    );
+    let evicted = store.insert(
+        pane_a,
+        ImageId::from_raw(3),
+        Arc::new(mk_image_data(3, 80)),
+        reach_fn,
+    );
 
     // pane B's referenced bytes survive; pane A's old entry got evicted.
-    assert!(store.get(pane_b, ImageId::from_raw(2)).is_some(), "still-referenced pane-B entry must survive");
-    assert!(evicted.iter().any(|(p, _)| *p == pane_a), "eviction must target pane A");
-    assert!(!evicted.iter().any(|(p, i)| *p == pane_b && *i == ImageId::from_raw(2)),
-        "referenced pane-B entry must NEVER be evicted");
+    assert!(
+        store.get(pane_b, ImageId::from_raw(2)).is_some(),
+        "still-referenced pane-B entry must survive"
+    );
+    assert!(
+        evicted.iter().any(|(p, _)| *p == pane_a),
+        "eviction must target pane A"
+    );
+    assert!(
+        !evicted
+            .iter()
+            .any(|(p, i)| *p == pane_b && *i == ImageId::from_raw(2)),
+        "referenced pane-B entry must NEVER be evicted"
+    );
 }
 
 /// Pin: when a snapshot has N placements referencing the SAME `ImageId`,

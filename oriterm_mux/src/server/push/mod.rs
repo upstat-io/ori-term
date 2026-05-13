@@ -202,8 +202,7 @@ pub(super) fn push_snapshot_to_subscribers(
             deferred.insert(cid);
             continue;
         }
-        if let Err(e) = project_and_queue_per_client(pane_id, snapshot, cid, conn, snapshot_cache)
-        {
+        if let Err(e) = project_and_queue_per_client(pane_id, snapshot, cid, conn, snapshot_cache) {
             log::warn!("push snapshot to {cid} failed: {e}");
             // Don't mutate sent_images on failure — trailing-edge flush
             // retries against the latest snapshot.

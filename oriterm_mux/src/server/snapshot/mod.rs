@@ -213,7 +213,12 @@ pub(crate) fn fill_snapshot_from_renderable(
 /// See: bug-tracker/plans/BUG-06-072/section-05-implementation.md
 fn fill_images_from_renderable(render_buf: &RenderableContent, out: &mut PaneSnapshot) {
     out.images.clear();
-    out.images.reserve(render_buf.images.len().saturating_sub(out.images.capacity()));
+    out.images.reserve(
+        render_buf
+            .images
+            .len()
+            .saturating_sub(out.images.capacity()),
+    );
     for placement in &render_buf.images {
         out.images.push(WirePlacement {
             image_id: placement.image_id.as_u32(),

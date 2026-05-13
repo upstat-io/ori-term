@@ -77,7 +77,10 @@ impl ClientConnection {
     /// successful `queue_frame` of a snapshot whose projection included the
     /// pixel data for that ID.
     pub(super) fn mark_image_sent(&mut self, pane_id: PaneId, image_id: ImageId) {
-        self.sent_images.entry(pane_id).or_default().insert(image_id);
+        self.sent_images
+            .entry(pane_id)
+            .or_default()
+            .insert(image_id);
     }
 
     /// Clear every `sent_images` entry for `pane_id`. Called when
