@@ -158,8 +158,18 @@ fn fold_image_data_store(
         return Vec::new();
     }
     // Compute upfront reachability set: every `(PaneId, ImageId)` referenced
-    // by a placement in any pane's latest cached snapshot.
-    let reachable: HashSet<(PaneId, ImageId)> = cache
+    // by a placement in any pane's latest cached snapshot — PLUS every ID
+    // about to be inserted from THIS render_buf for THIS pane.
+    //
+    // The new IDs must be marked reachable because the cached snapshot's
+    // placements (`cache[pane_id].images`) are NOT yet updated to reference
+    // them — `fill_snapshot_from_renderable` runs AFTER this fold. Without
+    // them in the reachable set, an LRU eviction triggered by cap pressure
+    // would pick the just-inserted entry (the only one not appearing in any
+    // cached snapshot yet) as the victim, immediately dropping pixel data
+    // that the about-to-be-cached snapshot will reference. Daemon clients
+    // then receive `images: [N]` with `image_data: []` and render blank.
+    let mut reachable: HashSet<(PaneId, ImageId)> = cache
         .iter()
         .flat_map(|(p, snap)| {
             snap.images
@@ -167,6 +177,9 @@ fn fold_image_data_store(
                 .map(move |wp| (*p, ImageId::from_raw(wp.image_id)))
         })
         .collect();
+    for img in image_data {
+        reachable.insert((pane_id, img.id));
+    }
     let mut total_evicted = Vec::new();
     for img in image_data {
         let arc = Arc::new(img.clone());

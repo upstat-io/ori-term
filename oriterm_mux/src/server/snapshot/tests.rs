@@ -5,6 +5,7 @@
 //! [`super::fill_pane_metadata`] and is covered by pane/backend tests;
 //! here we verify the `RenderableContent`-derived half only.
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use oriterm_core::{
@@ -215,6 +216,58 @@ fn snapshot_cache_image_data_miss_returns_none() {
         cache
             .image_data(PaneId::from_raw(1), ImageId::from_raw(123))
             .is_none()
+    );
+}
+
+/// Regression pin: the reachability set passed to `ImageCache::insert` from
+/// `fold_image_data_store` MUST include the IDs being inserted from THIS
+/// render_buf — the cached snapshot's `images` placements have NOT yet been
+/// updated to reference them (`fill_snapshot_from_renderable` runs after the
+/// fold). Without this protection, an LRU eviction triggered by cap pressure
+/// picks the just-inserted entry as the victim — daemon clients then receive
+/// the placement with no pixel data and render blank.
+/// See: bug-tracker/plans/BUG-06-072/
+#[test]
+fn fold_image_data_store_keeps_new_ids_under_pressure() {
+    use super::fold_image_data_store;
+    let mut store = ImageCache::with_memory_cap(100);
+    let pane_a = PaneId::from_raw(1);
+    let pane_b = PaneId::from_raw(2);
+
+    // Pre-seed: pane B has an 80-byte image referenced in its cached snapshot
+    // (still-reachable). Force-insert directly into the store so the fold below
+    // sees it as a pre-existing entry.
+    let _ = store.insert(
+        pane_b,
+        ImageId::from_raw(99),
+        Arc::new(mk_image_data(99, 80)),
+        |_, _| true, // always-reachable for the seed
+    );
+    let mut cache: HashMap<PaneId, PaneSnapshot> = HashMap::new();
+    cache.insert(pane_b, cached_pane_snapshot_with_placements(&[99]));
+    cache.insert(pane_a, cached_pane_snapshot_with_placements(&[]));
+
+    // Pane A's new render_buf carries a fresh 80-byte image. Combined with
+    // pane B's still-reachable 80 bytes, total is 160 — past the 100-byte cap,
+    // forcing eviction. The reachability oracle MUST protect the new pane-A
+    // image even though it doesn't yet appear in cache[pane_a].images.
+    let render_image_data = vec![mk_image_data(7, 80)];
+    let evicted = fold_image_data_store(pane_a, &cache, &render_image_data, &mut store);
+
+    // The newly-inserted pane-A id=7 entry must survive.
+    assert!(
+        store.get(pane_a, ImageId::from_raw(7)).is_some(),
+        "just-inserted image must NOT be evicted before fill_snapshot_from_renderable runs"
+    );
+    // Pane B's still-referenced id=99 must also survive (cross-pane reachability).
+    assert!(
+        store.get(pane_b, ImageId::from_raw(99)).is_some(),
+        "still-referenced pane-B image must NOT be evicted by pane-A insert"
+    );
+    // No eviction should have fired against the new image.
+    assert!(
+        !evicted.iter().any(|(p, i)| *p == pane_a && *i == ImageId::from_raw(7)),
+        "newly-inserted image must not appear in evicted set"
     );
 }
 
