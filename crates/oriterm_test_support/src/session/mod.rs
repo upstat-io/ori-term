@@ -107,6 +107,15 @@ pub struct PtySession {
     proc: vte::ansi::Processor,
     cols: u16,
     rows: u16,
+    /// Raw bytes the child has written to the PTY since spawn. Appended
+    /// by `feed_and_flush` before VTE processing; exposed via
+    /// `captured_input()` so capture-replay golden-image tests can
+    /// serialize the byte stream to a `.cap` fixture.
+    pub(crate) captured_input: Vec<u8>,
+    /// Reply bytes ori_term has written back to the PTY in response to
+    /// the captured input. Appended by `feed_and_flush` in emission
+    /// order; exposed via `captured_replies()`.
+    pub(crate) captured_replies: Vec<u8>,
     child: Box<dyn Child + Send + Sync>,
     /// Held to keep the underlying `PTY` master (Windows ``ConPTY`` `HPCON`
     /// or Unix master fd) alive for the entire child process lifetime.
@@ -236,6 +245,8 @@ impl PtySession {
             proc,
             cols,
             rows,
+            captured_input: Vec::new(),
+            captured_replies: Vec::new(),
             child,
             // Hold the master alive for the child's full lifetime.
             // Dropping `pair.master` at function exit would call
