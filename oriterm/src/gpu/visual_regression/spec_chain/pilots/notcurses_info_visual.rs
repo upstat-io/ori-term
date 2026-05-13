@@ -29,7 +29,7 @@
 //! 142×54 grid.
 
 use oriterm_test_support::spec_chain::{
-    ApexLayer, GoldenExpectation, RungName, ScenarioExpectations, SpecScenario,
+    ApexLayer, GoldenExpectation, RungName, ScenarioExpectations, SpecScenario, pty_writes,
 };
 
 use super::super::visual_harness::VisualSpecHarness;
@@ -48,6 +48,20 @@ fn captured_notcurses_info_bytes() -> Option<&'static [u8]> {
     let path = captures.join("notcurses-info-full.cap");
     let bytes = std::fs::read(&path).ok()?;
     Some(Box::leak(bytes.into_boxed_slice()))
+}
+
+/// Load the captured `notcurses-info` reply baseline — every byte
+/// ori_term emitted back to `notcurses-info` during the original
+/// PtySession capture, in emission order.
+///
+/// `None` distinguishes wrapper absent / file unreadable from a
+/// genuine empty reply set (which the harness never produces for
+/// `notcurses-info` — it always replies to DA1/DA2/DA3/XTVERSION
+/// etc.). Three-state return mirrors `captured_notcurses_info_bytes`.
+fn captured_notcurses_info_replies() -> Option<Vec<u8>> {
+    let captures = oriterm_test_support::paths::captures_dir()?;
+    let path = captures.join("notcurses-info-full.replies.cap");
+    std::fs::read(&path).ok()
 }
 
 /// Pilot: replay captured `notcurses-info` bytes through every visual rung;
@@ -106,4 +120,67 @@ fn notcurses_info_visual_drives_every_rung_green() {
         RungName::GoldenImage,
         "last rung should be GoldenImage"
     );
+
+    // Reply-pinning layer: collect every PtyEffect::Write ori_term emitted
+    // while parsing the captured input, concat in emission order, and
+    // strict-compare against the captured reply baseline. Any cure that
+    // changes ori_term's reply emission for this byte stream (adds a
+    // capability we currently don't advertise, fixes a malformed reply
+    // shape, removes a stray response) makes this comparison fail and
+    // signals the cure took effect.
+    //
+    // What's pinned: PtyEffect::Write bytes only — DA1/DA2/DA3, XTVERSION,
+    // CSI 14t / 18t, kitty graphics replies, XTSMGRAPHICS. Excluded:
+    // HostRequest::ColorQuery + HostRequest::ClipboardLoad (those are
+    // formatted at push-time by PtySession's PtyResponder, written back
+    // to the live PTY but NOT captured into notcurses-info-full.replies.cap
+    // — keeping the baseline pure-synchronous-DA/DSR/protocol-replies).
+    let Some(reply_baseline) = captured_notcurses_info_replies() else {
+        eprintln!(
+            "SKIP-PARTIAL: notcurses-info-full.replies.cap not present; \
+             visual rungs verified, reply-pinning skipped"
+        );
+        return;
+    };
+
+    let mut emitted: Vec<u8> = Vec::new();
+    for (b, _kind) in pty_writes(harness.core()) {
+        emitted.extend_from_slice(b);
+    }
+
+    if emitted != reply_baseline {
+        let baseline_preview = format_byte_preview(&reply_baseline);
+        let emitted_preview = format_byte_preview(&emitted);
+        panic!(
+            "ori_term's reply emission for the captured notcurses-info byte stream \
+             diverged from the committed baseline.\n\
+             \n\
+             baseline ({} bytes): {baseline_preview}\n\
+             emitted  ({} bytes): {emitted_preview}\n\
+             \n\
+             If this divergence is the result of a deliberate cure for the \
+             notcurses-info wordmark bug, regenerate the baseline:\n\
+             \n\
+                 ORITERM_CAPTURE_NOTCURSES_INFO=1 cargo test -p oriterm_core \
+                 --test notcurses_info_full_capture\n\
+             \n\
+             then ORITERM_UPDATE_GOLDEN=1 cargo test -p oriterm --features \
+             oriterm/gpu-tests --lib notcurses_info_visual\n\
+             \n\
+             Operator visual verification on the Windows binary is still required \
+             for closure per feedback_visual_bugs_need_operator_verification.md.",
+            reply_baseline.len(),
+            emitted.len(),
+        );
+    }
+}
+
+/// Render a byte sequence as escape-debug-quoted text capped to the first
+/// 120 bytes — keeps panic messages readable when assertions fail on
+/// kilobyte-scale replies.
+fn format_byte_preview(b: &[u8]) -> String {
+    const CAP: usize = 120;
+    let slice = if b.len() > CAP { &b[..CAP] } else { b };
+    let tail = if b.len() > CAP { "...(truncated)" } else { "" };
+    format!("\"{}\"{tail}", String::from_utf8_lossy(slice).escape_debug())
 }
