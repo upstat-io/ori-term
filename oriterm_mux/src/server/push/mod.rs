@@ -145,6 +145,11 @@ pub(super) fn project_per_client_pure(
     conn: &ClientConnection,
     snapshot_cache: &mut SnapshotCache,
 ) -> (PaneSnapshot, PendingImageMutations) {
+    // Dedupe IDs via HashSet — if a snapshot has N placements referencing the
+    // same `ImageId` (same image shown in multiple positions), we only need
+    // to ship its pixel data ONCE on the wire and mark it sent once.
+    // Without dedup, `image_data` would clone the bytes N times per frame.
+    let mut needed_seen: HashSet<ImageId> = HashSet::new();
     let needed_ids: Vec<ImageId> = snapshot
         .images
         .iter()
@@ -154,6 +159,7 @@ pub(super) fn project_per_client_pure(
         // the post-queue mark_sent list. Don't filter by has_sent_image when
         // dirty — we're rebuilding the client's cache from scratch.
         .filter(|id| snapshot.images_dirty || !conn.has_sent_image(pane_id, *id))
+        .filter(|id| needed_seen.insert(*id))
         .collect();
     let mut projected = snapshot.clone();
     projected.image_data.clear();
@@ -173,10 +179,16 @@ pub(super) fn project_per_client_pure(
             );
         }
     }
+    // Dedupe mark_sent the same way — N references to the same image only
+    // need one `mark_image_sent` (insert into HashSet is idempotent, but
+    // dedupe-at-source avoids the redundant calls entirely).
+    let mut mark_seen: HashSet<ImageId> = HashSet::new();
     let mark_sent: Vec<(PaneId, ImageId)> = snapshot
         .images
         .iter()
-        .map(|wp| (pane_id, ImageId::from_raw(wp.image_id)))
+        .map(|wp| ImageId::from_raw(wp.image_id))
+        .filter(|id| mark_seen.insert(*id))
+        .map(|id| (pane_id, id))
         .collect();
     let mutations = PendingImageMutations {
         clear_pane: if snapshot.images_dirty {
