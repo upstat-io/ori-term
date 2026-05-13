@@ -36,6 +36,10 @@ pub mod snapshot;
 pub use codec::{DecodeError, DecodedFrame, ProtocolCodec};
 pub use host_request::{HostReplyPayload, WireClipboardSelection, WireNotificationSource};
 pub use messages::MuxPdu;
+pub(crate) use pdu_traits::theme_to_wire;
+
+/// Client supports receiving `NotifyPaneSnapshot` pushed snapshots.
+pub const CAP_SNAPSHOT_PUSH: u32 = 1;
 // Re-export for server/tests.rs (test-only consumer outside protocol module).
 #[cfg(test)]
 pub(crate) use msg_type::MsgType;

@@ -69,7 +69,7 @@ pub(super) fn run_handshake(stream: &mut ClientStream, path: &Path) -> io::Resul
         stream,
         cap_seq,
         &MuxPdu::SetCapabilities {
-            flags: crate::protocol::messages::CAP_SNAPSHOT_PUSH,
+            flags: crate::protocol::CAP_SNAPSHOT_PUSH,
         },
     )?;
 

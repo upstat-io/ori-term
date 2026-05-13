@@ -11,19 +11,14 @@ use crate::id::{ClientId, PaneId};
 use super::host_request::{HostReplyPayload, WireClipboardSelection, WireNotificationSource};
 use super::snapshot::{PaneSnapshot, WireSelection};
 
-/// Client supports receiving `NotifyPaneSnapshot` pushed snapshots.
-pub const CAP_SNAPSHOT_PUSH: u32 = 1;
-
 /// All protocol messages — requests, responses, and notifications.
 ///
 /// Each variant carries its own data. The bincode encoding includes the
 /// enum discriminant, so the `msg_type` in the frame header is redundant
 /// for deserialization but useful for pre-routing and debugging.
 ///
-/// `Eq` derive dropped at `PROTOCOL_VERSION` v3 because `Subscribed` /
-/// `PaneSnapshotResp` / `NotifyPaneSnapshot` carry `PaneSnapshot`, which contains
-/// `WirePlacement` (f32 fields, `PartialEq` only). `assert_eq!` works under
-/// `PartialEq + Debug` — Eq drop has no observable caller impact.
+/// `Eq` derive dropped at `PROTOCOL_VERSION` v3 because `PaneSnapshot` carries
+/// `WirePlacement` (f32, `PartialEq` only).
 /// See: bug-tracker/plans/BUG-06-072/
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum MuxPdu {
@@ -147,10 +142,7 @@ pub enum MuxPdu {
         enabled: bool,
     },
 
-    /// Update cell pixel dimensions for a pane so `FixedPixels` image
-    /// placements recompute their cell coverage after font or DPI
-    /// changes. Fire-and-forget. Separate from `SetImageConfig`
-    /// because cell metrics are runtime font state, not TOML config.
+    /// Update cell pixel dimensions for a pane so `FixedPixels` image placements recompute cell coverage after font/DPI changes. Fire-and-forget. Separate from `SetImageConfig` (cell metrics are runtime font state, not TOML config).
     SetCellDimensions {
         /// Target pane.
         pane_id: PaneId,
@@ -160,15 +152,13 @@ pub enum MuxPdu {
         height: u16,
     },
 
-    /// Mark all grid lines dirty in a pane (forces full re-render).
-    /// Fire-and-forget.
+    /// Mark all grid lines dirty in a pane (forces full re-render). Fire-and-forget.
     MarkAllDirty {
         /// Target pane.
         pane_id: PaneId,
     },
 
-    /// Open search for a pane (initializes empty search state).
-    /// Fire-and-forget.
+    /// Open search for a pane (initializes empty search state). Fire-and-forget.
     OpenSearch {
         /// Target pane.
         pane_id: PaneId,
@@ -180,8 +170,7 @@ pub enum MuxPdu {
         pane_id: PaneId,
     },
 
-    /// Update the search query. Recomputes matches against the full grid.
-    /// Fire-and-forget.
+    /// Update the search query. Recomputes matches against the full grid. Fire-and-forget.
     SearchSetQuery {
         /// Target pane.
         pane_id: PaneId,
@@ -237,18 +226,10 @@ pub enum MuxPdu {
         theme: Option<String>,
     },
 
-    /// Request that other clients create a new tab.
-    ///
-    /// The daemon broadcasts [`NotifyNewTab`](Self::NotifyNewTab) to all
-    /// other connected clients and replies with [`NewTabAck`](Self::NewTabAck).
+    /// Request that other clients create a new tab. Daemon broadcasts [`NotifyNewTab`](Self::NotifyNewTab) to all other clients and replies with [`NewTabAck`](Self::NewTabAck).
     RequestNewTab,
 
-    /// Set the push priority for a pane (affects push interval).
-    ///
-    /// Fire-and-forget: no response expected. Priority values:
-    /// - `0` = focused (4ms push)
-    /// - `1` = visible unfocused (16ms push)
-    /// - `2` = hidden (100ms push)
+    /// Set the push priority for a pane (affects push interval). Fire-and-forget. Priority: `0` = focused (4ms push), `1` = visible unfocused (16ms), `2` = hidden (100ms).
     SetPanePriority {
         /// Pane to set priority for.
         pane_id: PaneId,
@@ -378,11 +359,7 @@ pub enum MuxPdu {
         pane_id: PaneId,
     },
 
-    /// Window-manager urgency hint requested by a pane (mode 1042 / DECSET ?1042h).
-    ///
-    /// The receiving client routes this to its app-layer
-    /// `request_user_attention(Some(UserAttentionType::Critical))` call on
-    /// the OWNING window when the pane is not focused.
+    /// Window-manager urgency hint requested by a pane (mode 1042 / DECSET ?1042h); receiving client calls `request_user_attention(Some(UserAttentionType::Critical))` on the owning window when the pane is unfocused.
     NotifyPaneUrgencyHint {
         /// Pane requesting attention.
         pane_id: PaneId,
@@ -406,12 +383,7 @@ pub enum MuxPdu {
         text: String,
     },
 
-    /// Legacy OSC 52 clipboard load notification from before.
-    ///
-    /// Superseded by [`MuxPdu::NotifyHostClipboardLoad`], which carries the
-    /// daemon-allocated `request_id` for reply correlation. Retained for
-    /// wire-format append-only compatibility — new servers do not emit
-    /// this variant; new clients drop it with a warning.
+    /// Legacy OSC 52 clipboard load notification; superseded by [`MuxPdu::NotifyHostClipboardLoad`] (carries `request_id` for reply correlation). Retained for wire-format append-only compatibility — new servers do not emit; new clients drop with a warning.
     NotifyClipboardLoad {
         /// Originating pane.
         pane_id: PaneId,
@@ -517,7 +489,3 @@ pub enum MuxPdu {
     },
     // Wire-compat: append-only — new variants must go at the end.
 }
-
-// `msg_type()`, `is_fire_and_forget()`, `is_notification()`, and
-// `theme_to_wire()` live in sibling `pdu_traits.rs` (split for 500-line limit).
-pub(crate) use super::pdu_traits::theme_to_wire;

@@ -17,7 +17,7 @@ use crate::mux_event::{MuxEvent, MuxNotification};
 use crate::registry::PaneEntry;
 
 use crate::backend::HostReply;
-use crate::protocol::messages::theme_to_wire;
+use crate::protocol::theme_to_wire;
 use crate::protocol::{HostReplyPayload, MuxPdu, WireSelection};
 use crate::{DomainId, PaneId};
 
