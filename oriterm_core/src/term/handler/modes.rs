@@ -4,7 +4,8 @@
 //! 500-line limit. Each method maps `NamedPrivateMode` variants to
 //! `TermMode` flag changes and side effects (events, screen swaps).
 
-use vte::ansi::{NamedPrivateMode, PrivateMode};
+use log::debug;
+use vte::ansi::{Mode, NamedMode, NamedPrivateMode, PrivateMode};
 
 use crate::effect::sink::EffectSink;
 use crate::effect::{Effect, UiEffect};
@@ -275,6 +276,44 @@ impl<S: EffectSink> Term<S> {
                         self.apply_decrst(named);
                     }
                 }
+            }
+        }
+    }
+
+    pub(super) fn set_named_mode_dispatch(&mut self, mode: Mode) {
+        match mode {
+            Mode::Named(NamedMode::Insert) => self.mode.insert(TermMode::INSERT),
+            Mode::Named(NamedMode::LineFeedNewLine) => {
+                self.mode.insert(TermMode::LINE_FEED_NEW_LINE);
+            }
+            Mode::Unknown(n) => debug!("Ignoring unknown mode {n} in SM"),
+        }
+    }
+
+    pub(super) fn unset_named_mode_dispatch(&mut self, mode: Mode) {
+        match mode {
+            Mode::Named(NamedMode::Insert) => self.mode.remove(TermMode::INSERT),
+            Mode::Named(NamedMode::LineFeedNewLine) => {
+                self.mode.remove(TermMode::LINE_FEED_NEW_LINE);
+            }
+            Mode::Unknown(n) => debug!("Ignoring unknown mode {n} in RM"),
+        }
+    }
+
+    pub(super) fn set_private_mode_dispatch(&mut self, mode: PrivateMode) {
+        match mode {
+            PrivateMode::Named(m) => self.apply_decset(m),
+            PrivateMode::Unknown(n) => {
+                debug!("Ignoring unknown private mode {n} in DECSET");
+            }
+        }
+    }
+
+    pub(super) fn unset_private_mode_dispatch(&mut self, mode: PrivateMode) {
+        match mode {
+            PrivateMode::Named(m) => self.apply_decrst(m),
+            PrivateMode::Unknown(n) => {
+                debug!("Ignoring unknown private mode {n} in DECRST");
             }
         }
     }

@@ -4,20 +4,17 @@
 //! characters, and printable input. Each method delegates to the
 //! appropriate grid/cursor/mode operation.
 
-use log::debug;
 use vte::ansi::{
     Attr, CharsetIndex, ClearMode, CursorStyle, Handler, Hyperlink as VteHyperlink, KeyboardModes,
-    KeyboardModesApplyBehavior, LineClearMode, Mode, ModifyOtherKeys, NamedMode, PrivateMode, Rgb,
+    KeyboardModesApplyBehavior, LineClearMode, Mode, ModifyOtherKeys, PrivateMode, Rgb,
     StandardCharset, TabulationClearMode,
 };
 
 use crate::effect::sink::EffectSink;
-use crate::effect::{Effect, HostEffect};
-use crate::grid::editing::{DisplayEraseMode, LineEraseMode};
-use crate::grid::navigation::TabClearMode;
 
 use super::{Term, TermMode};
 
+mod control;
 mod dcs;
 mod esc;
 mod helpers;
@@ -62,16 +59,7 @@ impl<S: EffectSink> Handler for Term<S> {
 
     #[inline]
     fn linefeed(&mut self) {
-        self.selection_dirty = true;
-        let lnm = self.mode.contains(TermMode::LINE_FEED_NEW_LINE);
-        let prev = self.grid().total_evicted();
-        let grid = self.grid_mut();
-        if lnm {
-            grid.next_line();
-        } else {
-            grid.linefeed();
-        }
-        self.prune_images_if_evicted(prev);
+        self.linefeed_impl();
     }
 
     #[inline]
@@ -81,13 +69,7 @@ impl<S: EffectSink> Handler for Term<S> {
 
     #[inline]
     fn bell(&mut self) {
-        self.effect_sink.push(Effect::Host(HostEffect::Bell));
-        // Mode 1042 (DECSET ?1042h) — when set, BEL also requests
-        // window-manager attention via the host adapter (taskbar flash on
-        // Windows, dock bounce on macOS, urgency hint on X11/Wayland).
-        if self.mode().contains(TermMode::URGENCY_HINTS) {
-            self.effect_sink.push(Effect::Host(HostEffect::UrgencyHint));
-        }
+        self.bell_impl();
     }
 
     fn substitute(&mut self) {
@@ -148,26 +130,11 @@ impl<S: EffectSink> Handler for Term<S> {
     }
 
     fn clear_screen(&mut self, mode: ClearMode) {
-        self.selection_dirty = true;
-        let erase = match mode {
-            ClearMode::Below => DisplayEraseMode::Below,
-            ClearMode::Above => DisplayEraseMode::Above,
-            ClearMode::All => DisplayEraseMode::All,
-            ClearMode::Saved => DisplayEraseMode::Scrollback,
-        };
-        self.grid_mut().erase_display(erase);
-        self.clear_images_after_ed(&mode);
+        self.clear_screen_impl(&mode);
     }
 
     fn clear_line(&mut self, mode: LineClearMode) {
-        self.selection_dirty = true;
-        let erase = match mode {
-            LineClearMode::Right => LineEraseMode::Right,
-            LineClearMode::Left => LineEraseMode::Left,
-            LineClearMode::All => LineEraseMode::All,
-        };
-        self.grid_mut().erase_line(erase);
-        self.clear_images_after_el(&mode);
+        self.clear_line_impl(&mode);
     }
 
     fn erase_chars(&mut self, count: usize) {
@@ -197,10 +164,7 @@ impl<S: EffectSink> Handler for Term<S> {
     }
 
     fn scroll_up(&mut self, count: usize) {
-        self.selection_dirty = true;
-        let prev = self.grid().total_evicted();
-        self.grid_mut().scroll_up(count);
-        self.prune_images_if_evicted(prev);
+        self.scroll_up_impl(count);
     }
 
     fn scroll_down(&mut self, count: usize) {
@@ -224,10 +188,7 @@ impl<S: EffectSink> Handler for Term<S> {
     }
 
     fn newline(&mut self) {
-        self.selection_dirty = true;
-        let prev = self.grid().total_evicted();
-        self.grid_mut().next_line();
-        self.prune_images_if_evicted(prev);
+        self.newline_impl();
     }
 
     fn move_forward_tabs(&mut self, count: u16) {
@@ -246,11 +207,7 @@ impl<S: EffectSink> Handler for Term<S> {
     }
 
     fn clear_tabs(&mut self, mode: TabulationClearMode) {
-        let clear = match mode {
-            TabulationClearMode::Current => TabClearMode::Current,
-            TabulationClearMode::All => TabClearMode::All,
-        };
-        self.grid_mut().clear_tab_stop(clear);
+        self.clear_tabs_impl(&mode);
     }
 
     fn set_scrolling_region(&mut self, top: usize, bottom: Option<usize>) {
@@ -276,37 +233,19 @@ impl<S: EffectSink> Handler for Term<S> {
     }
 
     fn set_mode(&mut self, mode: Mode) {
-        match mode {
-            Mode::Named(NamedMode::Insert) => self.mode.insert(TermMode::INSERT),
-            Mode::Named(NamedMode::LineFeedNewLine) => {
-                self.mode.insert(TermMode::LINE_FEED_NEW_LINE);
-            }
-            Mode::Unknown(n) => debug!("Ignoring unknown mode {n} in SM"),
-        }
+        self.set_named_mode_dispatch(mode);
     }
 
     fn unset_mode(&mut self, mode: Mode) {
-        match mode {
-            Mode::Named(NamedMode::Insert) => self.mode.remove(TermMode::INSERT),
-            Mode::Named(NamedMode::LineFeedNewLine) => {
-                self.mode.remove(TermMode::LINE_FEED_NEW_LINE);
-            }
-            Mode::Unknown(n) => debug!("Ignoring unknown mode {n} in RM"),
-        }
+        self.unset_named_mode_dispatch(mode);
     }
 
     fn set_private_mode(&mut self, mode: PrivateMode) {
-        match mode {
-            PrivateMode::Named(m) => self.apply_decset(m),
-            PrivateMode::Unknown(n) => debug!("Ignoring unknown private mode {n} in DECSET"),
-        }
+        self.set_private_mode_dispatch(mode);
     }
 
     fn unset_private_mode(&mut self, mode: PrivateMode) {
-        match mode {
-            PrivateMode::Named(m) => self.apply_decrst(m),
-            PrivateMode::Unknown(n) => debug!("Ignoring unknown private mode {n} in DECRST"),
-        }
+        self.unset_private_mode_dispatch(mode);
     }
 
     fn report_mode(&mut self, mode: Mode) {
@@ -362,8 +301,7 @@ impl<S: EffectSink> Handler for Term<S> {
 
     #[inline]
     fn terminal_attribute(&mut self, attr: Attr) {
-        let template = &mut self.grid_mut().cursor_mut().template;
-        sgr::apply(template, &attr);
+        self.terminal_attribute_impl(&attr);
     }
 
     fn set_title(&mut self, title: Option<String>) {
