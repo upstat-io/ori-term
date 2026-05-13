@@ -45,9 +45,31 @@ fn load_conpty() -> ConPtyFuncs {
         "this system does not support conpty.  Windows 10 October 2018 or newer is required",
     );
 
-    // We prefer to use a sideloaded conpty.dll and openconsole.exe host deployed
-    // alongside the application.  We check for this after checking for kernel
-    // support so that we don't try to proceed and do something crazy.
+    // We prefer to use a sideloaded conpty.dll and openconsole.exe deployed
+    // alongside the application. Microsoft Terminal sideloads its own
+    // OpenConsole.exe to get enhanced VT passthrough on the input pipe —
+    // kernel32 conpty otherwise translates ESC bytes from host→child writes
+    // into VK_ESCAPE INPUT_RECORDs that downstream consumers (wsl.exe, WSL
+    // distros) drop on the floor, resulting in stripped-prefix text fragments
+    // appearing as bash prompt input AFTER the child has exited.
+    //
+    // Look for `conpty.dll` in three locations, in order:
+    //
+    //  1. The directory containing the current executable (`std::env::current_exe`).
+    //     This is where a release installer or the user dropping the
+    //     Microsoft.Windows.Console.ConPTY NuGet payload would place the DLL.
+    //  2. The current working directory (`Path::new("conpty.dll")` — matches
+    //     wezterm's existing behavior for back-compat).
+    //  3. Fall back to kernel32's built-in ConPTY (the no-sideload path —
+    //     known-buggy for VT input passthrough on the wsl→linux chain).
+    if let Some(exe_dir) = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|d| d.join("conpty.dll")))
+    {
+        if let Ok(sideloaded) = ConPtyFuncs::open(&exe_dir) {
+            return sideloaded;
+        }
+    }
     if let Ok(sideloaded) = ConPtyFuncs::open(Path::new("conpty.dll")) {
         sideloaded
     } else {
