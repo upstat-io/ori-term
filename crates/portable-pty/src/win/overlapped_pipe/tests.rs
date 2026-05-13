@@ -125,11 +125,9 @@ fn overlapped_pipe_neither_handle_inheritable() {
 
 /// T4b — Cross-signal isolation: each OverlappedHandle owns distinct
 /// read_event and write_event objects. Signaling one MUST NOT signal the
-/// other.
-///
-/// Negative pin: if try_clone or new() shared the events across read +
-/// write OVERLAPPED structs, this test would observe WAIT_OBJECT_0 on
-/// the wrong event after SetEvent on the first.
+/// other. If try_clone or new() shared the events across read + write
+/// OVERLAPPED structs, this test would observe WAIT_OBJECT_0 on the
+/// wrong event after SetEvent on the first.
 #[test]
 fn overlapped_pipe_distinct_event_isolation() {
     let pipe = OverlappedPipe::new(PipeAccess::Duplex, 128 * 1024).unwrap();
