@@ -8,6 +8,7 @@ mod types;
 
 pub(in crate::server) use helpers::parse_theme;
 pub(in crate::server) use helpers::remove_client_subscriptions;
+use helpers::{dispatch_extract_html, dispatch_extract_text, dispatch_hello};
 pub(super) use types::{DispatchContext, DispatchResult};
 
 use std::path::PathBuf;
@@ -54,41 +55,7 @@ pub fn dispatch_request(
             pid,
             protocol_version,
             features,
-        } => {
-            // Accept ONLY equal version. The wire format (bincode-
-            // encoded `PaneSnapshot`, `MuxPdu` enum codepoints) is not
-            // forward- OR backward-compatible across major versions —
-            // a v1 client connecting to a v2 daemon would silently
-            // misdecode every snapshot just as a v2 client would
-            // misdecode v1. The asymmetric `>` check used previously
-            // accepted older clients into a newer daemon and produced
-            // corrupt rendering; the equality check catches both sides.
-            if protocol_version == crate::protocol::CURRENT_PROTOCOL_VERSION {
-                let server_features = crate::protocol::FEAT_ZSTD;
-                let negotiated = features & server_features;
-                log::info!(
-                    "client {} handshake (pid={pid}, v={protocol_version}, features=0x{negotiated:X})",
-                    conn.id(),
-                );
-                Some(MuxPdu::HelloAck {
-                    client_id: conn.id(),
-                    protocol_version: crate::protocol::CURRENT_PROTOCOL_VERSION,
-                    features: negotiated,
-                })
-            } else {
-                log::warn!(
-                    "client {} version mismatch: client={protocol_version}, server={}",
-                    conn.id(),
-                    crate::protocol::CURRENT_PROTOCOL_VERSION,
-                );
-                Some(MuxPdu::Error {
-                    message: format!(
-                        "version mismatch: server speaks v{}, client wants v{protocol_version}",
-                        crate::protocol::CURRENT_PROTOCOL_VERSION,
-                    ),
-                })
-            }
-        }
+        } => Some(dispatch_hello(conn.id(), pid, protocol_version, features)),
 
         MuxPdu::SpawnPane { shell, cwd, theme } => {
             let config = SpawnConfig {
@@ -465,21 +432,7 @@ pub fn dispatch_request(
         },
 
         MuxPdu::ExtractText { pane_id, selection } => {
-            use std::time::Duration;
-            let sel = selection.to_selection();
-            let text = if let Some(pane) = ctx.panes.get(&pane_id) {
-                let (tx, rx) = crossbeam_channel::bounded(1);
-                pane.send_io_command(PaneIoCommand::ExtractText {
-                    selection: sel,
-                    reply: tx,
-                });
-                rx.recv_timeout(Duration::from_millis(100))
-                    .ok()
-                    .flatten()
-                    .unwrap_or_default()
-            } else {
-                String::new()
-            };
+            let text = dispatch_extract_text(ctx.panes.get(&pane_id), selection.to_selection());
             Some(MuxPdu::ExtractTextResp { text })
         }
 
@@ -489,24 +442,12 @@ pub fn dispatch_request(
             font_family,
             font_size_x100,
         } => {
-            use std::time::Duration;
-            let sel = selection.to_selection();
-            let font_size = f32::from(font_size_x100) / 100.0;
-            let (html, text) = if let Some(pane) = ctx.panes.get(&pane_id) {
-                let (tx, rx) = crossbeam_channel::bounded(1);
-                pane.send_io_command(PaneIoCommand::ExtractHtml {
-                    selection: sel,
-                    font_family,
-                    font_size,
-                    reply: tx,
-                });
-                rx.recv_timeout(Duration::from_millis(100))
-                    .ok()
-                    .flatten()
-                    .unwrap_or_else(|| (String::new(), String::new()))
-            } else {
-                (String::new(), String::new())
-            };
+            let (html, text) = dispatch_extract_html(
+                ctx.panes.get(&pane_id),
+                selection.to_selection(),
+                font_family,
+                f32::from(font_size_x100) / 100.0,
+            );
             Some(MuxPdu::ExtractHtmlResp { html, text })
         }
 
