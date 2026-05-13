@@ -8,6 +8,8 @@
 use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
 
+use oriterm_core::ImageId;
+
 use crate::id::ClientId;
 use crate::pane::Pane;
 use crate::protocol::messages::CAP_SNAPSHOT_PUSH;
@@ -15,6 +17,9 @@ use crate::{MuxPdu, PaneId, PaneSnapshot};
 
 use super::connection::ClientConnection;
 use super::snapshot::SnapshotCache;
+
+mod projection;
+pub(in crate::server) use projection::{PendingImageMutations, project_per_client_pure};
 
 /// Minimum interval between snapshot pushes for focused panes (priority 0).
 ///
@@ -81,9 +86,45 @@ pub(super) fn should_push(now: Instant, last_push: Option<Instant>, interval: Du
     last_push.is_none_or(|t| now.duration_since(t) >= interval)
 }
 
+/// Shared state needed by per-client snapshot dispatch — bundled together so
+/// dispatch helpers can take a single broker instead of two separate `&mut`
+/// references, keeping caller signatures under the clippy 5-arg limit.
+pub(super) struct PushBroker<'a> {
+    pub connections: &'a mut HashMap<ClientId, ClientConnection>,
+    pub snapshot_cache: &'a mut SnapshotCache,
+}
+
+/// Project a per-client `PaneSnapshot` and queue it onto `conn`. On queue
+/// success (and ONLY on success) applies the deferred `sent_images`
+/// mutations.
+///
+/// Returns `Err` if the underlying `queue_frame` failed (transport error);
+/// `sent_images` is NOT mutated on the error path so the trailing-edge
+/// flush retries against the latest snapshot.
+/// See: bug-tracker/plans/BUG-06-072/
+fn project_and_queue_per_client(
+    pane_id: PaneId,
+    snapshot: &PaneSnapshot,
+    cid: ClientId,
+    conn: &mut ClientConnection,
+    snapshot_cache: &mut SnapshotCache,
+) -> std::io::Result<()> {
+    let (projected, mutations) =
+        project_per_client_pure(pane_id, snapshot, Some(cid), conn, snapshot_cache);
+    let pdu = MuxPdu::NotifyPaneSnapshot {
+        pane_id,
+        snapshot: projected,
+    };
+    let result = conn.queue_frame(0, &pdu);
+    if result.is_ok() {
+        mutations.apply_to(conn);
+    }
+    result
+}
+
 /// Push a snapshot to all capable subscribers for a pane, respecting
-/// backpressure. Returns the set of client IDs that were deferred
-/// (above high-water).
+/// backpressure. Subscribers above the write high-water mark are added to
+/// `deferred` for trailing-edge retry.
 ///
 /// Clients without `CAP_SNAPSHOT_PUSH` receive a bare `NotifyPaneOutput`
 /// instead and are never added to the deferred set.
@@ -91,33 +132,100 @@ pub(super) fn push_snapshot_to_subscribers(
     pane_id: PaneId,
     snapshot: &PaneSnapshot,
     subscribers: &[ClientId],
-    connections: &mut HashMap<ClientId, ClientConnection>,
     deferred: &mut HashSet<ClientId>,
+    broker: &mut PushBroker<'_>,
 ) {
-    let push_pdu = MuxPdu::NotifyPaneSnapshot {
-        pane_id,
-        snapshot: snapshot.clone(),
-    };
+    let connections: &mut HashMap<ClientId, ClientConnection> = &mut *broker.connections;
+    let snapshot_cache: &mut SnapshotCache = &mut *broker.snapshot_cache;
     let bare_pdu = MuxPdu::NotifyPaneOutput { pane_id };
 
+    // Steady-state fast path: when `!images_dirty` AND every subscriber has
+    // every referenced ImageId in `sent_images[pane_id]`, build ONE shared
+    // NotifyPaneSnapshot PDU and queue it across all capable subscribers (the
+    // shared-PDU shape from the pre-image-cache codepath). Avoids per-subscriber clone in the
+    // common case.
+    let fast_path_eligible = !snapshot.images_dirty
+        && subscribers.iter().all(|cid| {
+            let Some(conn) = connections.get(cid) else {
+                return true; // disconnected — irrelevant
+            };
+            if !conn.has_capability(CAP_SNAPSHOT_PUSH) {
+                return true; // bare-PDU path doesn't carry image_data
+            }
+            snapshot
+                .images
+                .iter()
+                .all(|wp| conn.has_sent_image(pane_id, ImageId::from_raw(wp.image_id)))
+        });
+
+    if fast_path_eligible {
+        // Shared PDU — placements only, no image_data needed.
+        let push_pdu = MuxPdu::NotifyPaneSnapshot {
+            pane_id,
+            snapshot: snapshot.clone(),
+        };
+        for &cid in subscribers {
+            let Some(conn) = connections.get_mut(&cid) else {
+                continue;
+            };
+            if !conn.has_capability(CAP_SNAPSHOT_PUSH) {
+                if let Err(e) = conn.queue_frame(0, &bare_pdu) {
+                    log::warn!("push bare to {cid} failed: {e}");
+                }
+                continue;
+            }
+            if conn.pending_write_bytes() > WRITE_HIGH_WATER {
+                deferred.insert(cid);
+                continue;
+            }
+            if let Err(e) = conn.queue_frame(0, &push_pdu) {
+                log::warn!("push snapshot to {cid} failed: {e}");
+            }
+            // sent_images already contains every referenced ID — no update needed.
+        }
+        return;
+    }
+
+    // Per-client slow path: at least one subscriber needs new image_data OR
+    // `images_dirty == true`. Build per-client projection.
     for &cid in subscribers {
         let Some(conn) = connections.get_mut(&cid) else {
             continue;
         };
         if !conn.has_capability(CAP_SNAPSHOT_PUSH) {
-            // Legacy client — send bare notification (pre-existing path).
             if let Err(e) = conn.queue_frame(0, &bare_pdu) {
                 log::warn!("push bare to {cid} failed: {e}");
             }
             continue;
         }
         if conn.pending_write_bytes() > WRITE_HIGH_WATER {
-            // Backpressured — defer to trailing-edge flush.
             deferred.insert(cid);
             continue;
         }
-        if let Err(e) = conn.queue_frame(0, &push_pdu) {
+        if let Err(e) = project_and_queue_per_client(pane_id, snapshot, cid, conn, snapshot_cache) {
             log::warn!("push snapshot to {cid} failed: {e}");
+            // Don't mutate sent_images on failure — trailing-edge flush
+            // retries against the latest snapshot.
+        }
+    }
+}
+
+/// Propagate `(PaneId, ImageId)` evictions from `SnapshotCache.image_data_store`
+/// to every connection's `sent_images`. Called after each `build_clone` /
+/// `build_and_take` so the next snapshot referencing an evicted ID re-includes
+/// its pixel data (per-client filter will see `!has_sent_image` and project the
+/// `WireImageData`).
+/// See: bug-tracker/plans/BUG-06-072/
+pub(super) fn propagate_image_evictions(
+    evicted: &[(PaneId, ImageId)],
+    connections: &mut HashMap<ClientId, ClientConnection>,
+) {
+    if evicted.is_empty() {
+        return;
+    }
+    for conn in connections.values_mut() {
+        for (pane_id, image_id) in evicted {
+            conn.forget_sent_image(*pane_id, *image_id);
         }
     }
 }
@@ -178,9 +286,14 @@ pub fn push_or_defer_pane(ctx: &mut PushContext<'_>, now: Instant, pane_id: Pane
     let interval = effective_push_interval(pane_id, ctx.scratch, ctx.connections);
     if should_push(now, ctx.last_snapshot_push.get(&pane_id).copied(), interval) {
         if let Some(pane) = ctx.panes.get(&pane_id) {
-            let snap = ctx.snapshot_cache.build_clone(pane_id, pane);
+            let (snap, evicted) = ctx.snapshot_cache.build_clone(pane_id, pane);
+            propagate_image_evictions(&evicted, ctx.connections);
             let deferred = ctx.pending_push.entry(pane_id).or_default();
-            push_snapshot_to_subscribers(pane_id, &snap, ctx.scratch, ctx.connections, deferred);
+            let mut broker = PushBroker {
+                connections: ctx.connections,
+                snapshot_cache: ctx.snapshot_cache,
+            };
+            push_snapshot_to_subscribers(pane_id, &snap, ctx.scratch, deferred, &mut broker);
             ctx.last_snapshot_push.insert(pane_id, now);
         }
     } else {
@@ -249,26 +362,25 @@ pub fn trailing_edge_flush(ctx: &mut PushContext<'_>, now: Instant) {
             ctx.pending_push.remove(&pane_id);
             continue;
         };
-        let snap = ctx.snapshot_cache.build_clone(pane_id, pane);
+        let (snap, evicted) = ctx.snapshot_cache.build_clone(pane_id, pane);
+        propagate_image_evictions(&evicted, ctx.connections);
 
-        let push_pdu = MuxPdu::NotifyPaneSnapshot {
-            pane_id,
-            snapshot: snap,
-        };
-
-        // Push to sendable clients, keep deferred for the rest.
-        // Reuse scratch buffer for tracking served clients.
+        // Trailing-edge flush uses the same per-client projection logic as
+        // push_snapshot_to_subscribers — collect served clients via the
+        // scratch buffer, then drop them from `deferred`.
         ctx.scratch.clear();
-        for &cid in deferred.iter() {
+        let served_clients: Vec<ClientId> = deferred.iter().copied().collect();
+        for cid in served_clients {
             let Some(conn) = ctx.connections.get_mut(&cid) else {
                 ctx.scratch.push(cid);
                 continue;
             };
-            if conn.pending_write_bytes() <= WRITE_HIGH_WATER {
-                if let Err(e) = conn.queue_frame(0, &push_pdu) {
-                    log::warn!("trailing push to {cid} failed: {e}");
-                }
-                ctx.scratch.push(cid);
+            if conn.pending_write_bytes() > WRITE_HIGH_WATER {
+                continue;
+            }
+            match project_and_queue_per_client(pane_id, &snap, cid, conn, ctx.snapshot_cache) {
+                Ok(()) => ctx.scratch.push(cid),
+                Err(e) => log::warn!("trailing push to {cid} failed: {e}"),
             }
         }
         for &cid in ctx.scratch.iter() {

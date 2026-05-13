@@ -15,6 +15,7 @@ use std::path::PathBuf;
 use oriterm_core::{CursorShape, Palette, Rgb};
 
 use crate::MuxPdu;
+use crate::PaneId;
 use crate::domain::SpawnConfig;
 use crate::id::HostRequestId;
 use crate::pane::io_thread::PaneIoCommand;
@@ -45,6 +46,8 @@ pub fn dispatch_request(
         _ => None,
     };
     let is_new_tab = matches!(&pdu, MuxPdu::RequestNewTab);
+    let mut evicted_image_keys: Vec<(PaneId, oriterm_core::ImageId)> = Vec::new();
+    let mut pending_image_mutations: Option<super::push::PendingImageMutations> = None;
 
     let response = match pdu {
         MuxPdu::Hello {
@@ -331,7 +334,16 @@ pub fn dispatch_request(
             conn.subscribe(pane_id);
             match ctx.panes.get(&pane_id) {
                 Some(pane) => {
-                    let snap = ctx.snapshot_cache.build_and_take(pane_id, pane);
+                    let (snap, evicted) = ctx.snapshot_cache.build_and_take(pane_id, pane);
+                    evicted_image_keys.extend(evicted);
+                    let (snap, mutations) = super::push::project_per_client_pure(
+                        pane_id,
+                        &snap,
+                        None,
+                        conn,
+                        ctx.snapshot_cache,
+                    );
+                    pending_image_mutations = Some(mutations);
                     Some(MuxPdu::Subscribed { snapshot: snap })
                 }
                 None => Some(MuxPdu::Error {
@@ -434,7 +446,16 @@ pub fn dispatch_request(
                         ),
                     })
                 } else {
-                    let snap = ctx.snapshot_cache.build_and_take(pane_id, pane);
+                    let (snap, evicted) = ctx.snapshot_cache.build_and_take(pane_id, pane);
+                    evicted_image_keys.extend(evicted);
+                    let (snap, mutations) = super::push::project_per_client_pure(
+                        pane_id,
+                        &snap,
+                        None,
+                        conn,
+                        ctx.snapshot_cache,
+                    );
+                    pending_image_mutations = Some(mutations);
                     Some(MuxPdu::PaneSnapshotResp { snapshot: snap })
                 }
             }
@@ -511,6 +532,8 @@ pub fn dispatch_request(
         } else {
             None
         },
+        evicted_image_keys,
+        pending_image_mutations,
     }
 }
 

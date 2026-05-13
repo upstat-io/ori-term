@@ -151,13 +151,71 @@ pub struct WireSearchMatch {
     pub end_col: u16,
 }
 
+/// Image placement on the wire — viewport position + UV + ordering for a referenced `ImageId`.
+///
+/// Mirrors [`oriterm_core::RenderablePlacement`] but with `image_id: u32` (the raw
+/// `ImageId` inner value) so the wire schema decouples from the Rust newtype.
+///
+/// f32 fields preclude `Eq`; this drops `PaneSnapshot`'s `Eq` derive transitively (and `MuxPdu`'s),
+/// so wire-protocol types now derive `PartialEq` only. `assert_eq!` callers continue to work
+/// (`assert_eq!` requires `PartialEq + Debug`, not `Eq`).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct WirePlacement {
+    /// Raw `ImageId` inner value (per `oriterm_core::ImageId(pub(crate) u32)`).
+    pub image_id: u32,
+    /// Viewport X position in pixels (top-left corner).
+    pub viewport_x: f32,
+    /// Viewport Y position in pixels (top-left corner).
+    pub viewport_y: f32,
+    /// Display width in pixels.
+    pub display_width: f32,
+    /// Display height in pixels.
+    pub display_height: f32,
+    /// UV source rect origin X (0.0–1.0).
+    pub source_x: f32,
+    /// UV source rect origin Y (0.0–1.0).
+    pub source_y: f32,
+    /// UV source rect width (0.0–1.0).
+    pub source_w: f32,
+    /// UV source rect height (0.0–1.0).
+    pub source_h: f32,
+    /// Layer ordering: negative = below text, positive = above text.
+    pub z_index: i32,
+    /// Opacity for fade transitions (default 1.0).
+    pub opacity: f32,
+}
+
+/// Decoded image pixel data on the wire — RGBA bytes + dimensions for one `ImageId`.
+///
+/// Owned `Vec<u8>` for the pixel buffer (necessary for bincode `Deserialize`). Server-side
+/// fill path clones `Arc<Vec<u8>>::to_vec()` on the slow path (when image data must flow
+/// over the wire — first-observation OR `images_dirty=true`); fast path (steady-state
+/// shared-PDU) carries empty `image_data` and skips the clone.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WireImageData {
+    /// Raw `ImageId` inner value.
+    pub id: u32,
+    /// Decoded RGBA pixel bytes.
+    pub data: Vec<u8>,
+    /// Width in pixels.
+    pub width: u32,
+    /// Height in pixels.
+    pub height: u32,
+}
+
 /// Full snapshot of a pane's visible state.
 ///
 /// Transferred when a client subscribes to a pane or explicitly requests
 /// a snapshot. Contains everything needed to render the pane from scratch.
 ///
 /// `Default` produces an empty snapshot suitable as an initial cache entry.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+///
+/// `Eq` is no longer derived because `WirePlacement` contains f32 fields. `PartialEq`
+/// continues to work for `==` and `assert_eq!`. Callers do not require `Eq` semantics
+/// on `PaneSnapshot` (verified — no `HashSet<PaneSnapshot>` or `HashMap<PaneSnapshot, _>`
+/// use exists in the workspace).
+/// See: bug-tracker/plans/BUG-06-072/
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct PaneSnapshot {
     /// Visible grid contents (rows × cols).
     pub cells: Vec<Vec<WireCell>>,
@@ -165,6 +223,26 @@ pub struct PaneSnapshot {
     pub cursor: WireCursor,
     /// Color palette as 270 RGB triplets.
     pub palette: Vec<[u8; 3]>,
+    /// Image placements visible in this snapshot.
+    ///
+    /// Small structs (~52 bytes each); always populated when source has placements.
+    /// The pixel data for each placement lives in `image_data` (when transmitted inline)
+    /// OR in the client's per-pane image cache (resolved at extract time).
+    pub images: Vec<WirePlacement>,
+    /// Decoded pixel data for newly-needed `ImageId`s.
+    ///
+    /// Populated by the server-side dispatch layer ONLY when (a) `images_dirty == true`
+    /// for this snapshot, OR (b) one or more `images[*].image_id` is new-to-this-client
+    /// (first-observation handshake per `ClientConnection.sent_images` tracking).
+    /// Steady-state frames (no new images, no dirty flag) carry an empty `image_data`.
+    pub image_data: Vec<WireImageData>,
+    /// Whether the image cache changed since the last snapshot for this pane.
+    ///
+    /// When `true`, the client clears its cached image data and treats the wire snapshot's
+    /// `image_data` as authoritative. Mirrors `oriterm_core::RenderableContent.images_dirty`.
+    /// When `true`, the client also sets `out.all_dirty = true` to force a full repaint
+    /// (image cache changes don't tag per-line grid damage).
+    pub images_dirty: bool,
     /// Pane title (resolved via `effective_title()`).
     pub title: String,
     /// Icon name (from OSC 0/1), if set.

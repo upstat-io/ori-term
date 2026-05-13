@@ -91,23 +91,12 @@ impl WindowRenderer {
             self.upload_overlay_and_cursor_buffers(device, queue);
         }
 
-        // Copy cached content to the output target. Clamp the copy
-        // extent to the destination size — same fix as production
-        // render_cached, preventing overrun when the target is smaller
-        // than the prepared viewport.
+        // Copy cached content to the output target via the shared
+        // cache-blit helper. The helper pre-clears the destination
+        // when it exceeds the prepared viewport (resize-grow path)
+        // and copies the clamped sub-rect afterwards.
         let output = gpu.create_copy_dst_target(target_width, target_height);
-        let cache_tex = self.content_cache.as_ref().expect("cache ensured");
-        let copy_w = vp.width.min(target_width);
-        let copy_h = vp.height.min(target_height);
-        encoder.copy_texture_to_texture(
-            cache_tex.as_image_copy(),
-            output.texture().as_image_copy(),
-            Extent3d {
-                width: copy_w,
-                height: copy_h,
-                depth_or_array_layers: 1,
-            },
-        );
+        self.copy_cache_to_output(&mut encoder, output.texture(), gpu.render_format());
 
         // Draw overlays and cursor on top.
         {
@@ -339,23 +328,13 @@ impl WindowRenderer {
             self.upload_overlay_and_cursor_buffers(device, queue);
         }
 
-        // Copy cached content to surface texture. Clamp the copy extent
-        // to the destination size — the surface may have been reconfigured
-        // to a smaller size between prepare() and render_to_surface()
-        // during interactive window resize.
-        let cache_tex = self.content_cache.as_ref().expect("cache ensured");
-        let dst_size = output.texture.size();
-        let copy_w = vp.width.min(dst_size.width);
-        let copy_h = vp.height.min(dst_size.height);
-        encoder.copy_texture_to_texture(
-            cache_tex.as_image_copy(),
-            output.texture.as_image_copy(),
-            Extent3d {
-                width: copy_w,
-                height: copy_h,
-                depth_or_array_layers: 1,
-            },
-        );
+        // Copy cached content to surface texture via the shared helper.
+        // The helper clamps the copy extent when the surface was
+        // reconfigured smaller than the prepared viewport (resize-shrink)
+        // AND pre-clears when it was reconfigured larger (resize-grow)
+        // so the region outside the copy is initialized to
+        // `clear_color()` rather than undefined memory.
+        self.copy_cache_to_output(&mut encoder, &output.texture, gpu.render_format());
 
         // Draw overlays and cursor on top of the copied content.
         let surface_view = output.texture.create_view(&TextureViewDescriptor {

@@ -80,7 +80,7 @@ impl PartialOrd for SelectionPoint {
 }
 
 /// Selection mode: character, word, line, or block (rectangular).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SelectionMode {
     /// Character-by-character (single click + drag).
     Char,

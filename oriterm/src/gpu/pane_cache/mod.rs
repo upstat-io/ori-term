@@ -18,6 +18,12 @@ struct CachedPaneFrame {
     prepared: PreparedFrame,
     /// Layout at time of preparation (for invalidation on resize/move).
     layout: PaneLayout,
+    /// Damage key from the last prepare pass — composite of
+    /// `compute_dispatch_fingerprint` + per-pane row-state.
+    /// SSOT for "did any prepare-relevant input change since this entry
+    /// was built?" Set by [`PaneRenderCache::get_or_prepare`] on miss;
+    /// compared on every call.
+    damage_key: u64,
 }
 
 /// Per-pane render cache.
@@ -39,17 +45,30 @@ impl PaneRenderCache {
 
     /// Get a cached frame or prepare a new one.
     ///
-    /// Returns the cached `PreparedFrame` if `dirty` is false and the
-    /// `layout` matches the cached entry. Otherwise calls `prepare_fn` to
-    /// produce a new frame, stores it, and returns a reference.
+    /// Returns the cached `PreparedFrame` when all three hold:
+    /// - `dirty` is false (snapshot content unchanged),
+    /// - `layout` matches the cached entry,
+    /// - `damage_key` matches the cached entry's stored key.
     ///
-    /// `prepare_fn` receives a mutable reference to the cached `PreparedFrame`
-    /// (already cleared) so it can fill instances in-place without allocating.
+    /// `damage_key` is the multi-pane SSOT for "did any prepare-relevant
+    /// input change?" — composed via `compute_pane_damage_key`. The `dirty`
+    /// gate handles grid-cell content changes (which are NOT in
+    /// `compute_dispatch_fingerprint` per its docs); the `damage_key` handles
+    /// every other input including the previously hand-rolled
+    /// `is_focused || blink_opacity_changed` triggers.
+    ///
+    /// On miss, calls `prepare_fn` (which receives a cleared `PreparedFrame`
+    /// for in-place fill) and stores the new `(layout, damage_key)` pair.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "per-pane cache key requires layout + dirty gate + damage_key + prepare closure — each is a distinct concern; struct grouping would obscure the call sites in multi_pane/mod.rs"
+    )]
     pub(crate) fn get_or_prepare(
         &mut self,
         pane_id: PaneId,
         layout: &PaneLayout,
         dirty: bool,
+        damage_key: u64,
         prepare_fn: impl FnOnce(&mut PreparedFrame),
     ) -> &PreparedFrame {
         let entry = self.entries.entry(pane_id);
@@ -57,7 +76,7 @@ impl PaneRenderCache {
         match entry {
             std::collections::hash_map::Entry::Occupied(mut occ) => {
                 let cached = occ.get_mut();
-                if !dirty && cached.layout == *layout {
+                if !dirty && cached.layout == *layout && cached.damage_key == damage_key {
                     // Cache hit — reuse existing instances.
                     return &occ.into_mut().prepared;
                 }
@@ -65,6 +84,7 @@ impl PaneRenderCache {
                 cached.prepared.clear();
                 prepare_fn(&mut cached.prepared);
                 cached.layout = *layout;
+                cached.damage_key = damage_key;
                 &occ.into_mut().prepared
             }
             std::collections::hash_map::Entry::Vacant(vac) => {
@@ -78,17 +98,21 @@ impl PaneRenderCache {
                 let cached = vac.insert(CachedPaneFrame {
                     prepared,
                     layout: *layout,
+                    damage_key,
                 });
                 &cached.prepared
             }
         }
     }
 
-    /// Check whether a valid cache entry exists for this pane at the given layout.
-    pub(crate) fn is_cached(&self, pane_id: PaneId, layout: &PaneLayout) -> bool {
+    /// Check whether a valid cache entry exists for this pane at the given
+    /// layout and `damage_key`. The full cache-hit predicate also requires
+    /// `!dirty`; this method is used by callers that want to short-circuit
+    /// extract work when the cache will definitely hit.
+    pub(crate) fn is_cached(&self, pane_id: PaneId, layout: &PaneLayout, damage_key: u64) -> bool {
         self.entries
             .get(&pane_id)
-            .is_some_and(|e| e.layout == *layout)
+            .is_some_and(|e| e.layout == *layout && e.damage_key == damage_key)
     }
 
     /// Read-only access to a cached pane frame.

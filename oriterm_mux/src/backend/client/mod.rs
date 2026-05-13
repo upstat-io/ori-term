@@ -12,11 +12,14 @@ mod transport;
 use std::collections::{HashMap, HashSet};
 use std::io;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
+
+use oriterm_core::{ImageId, RenderableImageData};
 
 use crate::PaneId;
 use crate::PaneSnapshot;
+use crate::image_cache::ImageCache;
 use crate::mux_event::MuxNotification;
 use crate::protocol::MuxPdu;
 
@@ -64,6 +67,23 @@ pub struct MuxClient {
     /// by `clear_bell` (focus-clear path) and `cleanup_closed_pane`. Bells
     /// are transient client UI state, not server-replicated.
     bell_panes: HashSet<PaneId>,
+
+    /// Per-`(PaneId, ImageId)` decoded image pixel data resolved from wire
+    /// snapshots. Bounded LRU with reachability-bounded eviction (entries
+    /// referenced by the latest `pane_snapshots[pane_id].images` are never
+    /// evicted under memory pressure — soft cap, correctness wins).
+    ///
+    /// Populated in `cache_snapshot` by draining `snapshot.image_data` BEFORE
+    /// storing the stripped snapshot. Consulted by `extract_frame_from_snapshot`
+    /// when a `WirePlacement` arrives without its `WireImageData` (steady-state
+    /// path: server filtered out the bytes because they were already sent).
+    ///
+    /// `Mutex` provides interior mutability so `MuxBackend::pane_image_data`
+    /// can return `Option<Arc<RenderableImageData>>` with `&self` API surface.
+    /// Lock scope is short — one map lookup + Arc clone per access.
+    ///
+    /// See: bug-tracker/plans/BUG-06-072/
+    image_cache: Arc<Mutex<ImageCache>>,
 }
 
 impl MuxClient {
@@ -86,6 +106,7 @@ impl MuxClient {
             dirty_panes: HashSet::new(),
             pending_refresh: HashSet::new(),
             bell_panes: HashSet::new(),
+            image_cache: Arc::new(Mutex::new(ImageCache::new())),
         })
     }
 
@@ -103,6 +124,7 @@ impl MuxClient {
             dirty_panes: HashSet::new(),
             pending_refresh: HashSet::new(),
             bell_panes: HashSet::new(),
+            image_cache: Arc::new(Mutex::new(ImageCache::new())),
         }
     }
 
@@ -115,8 +137,63 @@ impl MuxClient {
     }
 
     /// Cache a snapshot for a pane (used when subscribe responses arrive).
-    pub(crate) fn cache_snapshot(&mut self, pane_id: PaneId, snapshot: PaneSnapshot) {
+    ///
+    /// SSOT for all client snapshot ingest paths — drains `snapshot.image_data`
+    /// into `self.image_cache` (per-pane keyed bounded LRU) BEFORE storing the
+    /// stripped snapshot in `pane_snapshots`. Without the drain, the unbounded
+    /// `pane_snapshots` map would retain megabytes of pixel data per pane.
+    /// See: bug-tracker/plans/BUG-06-072/
+    pub(crate) fn cache_snapshot(&mut self, pane_id: PaneId, mut snapshot: PaneSnapshot) {
+        if !snapshot.image_data.is_empty() {
+            // Compute the reachability set BEFORE locking the cache: this
+            // pane's new placements + every other cached pane's placements.
+            // The oracle is a pure closure — no nested locks, no borrow
+            // conflicts.
+            let mut reachable: HashSet<(PaneId, ImageId)> = self
+                .pane_snapshots
+                .iter()
+                .filter(|(p, _)| **p != pane_id)
+                .flat_map(|(p, snap)| {
+                    snap.images
+                        .iter()
+                        .map(move |wp| (*p, ImageId::from_raw(wp.image_id)))
+                })
+                .collect();
+            for wp in &snapshot.images {
+                reachable.insert((pane_id, ImageId::from_raw(wp.image_id)));
+            }
+            let mut cache = self
+                .image_cache
+                .lock()
+                .expect("client image_cache mutex poisoned");
+            for wid in snapshot.image_data.drain(..) {
+                let id = ImageId::from_raw(wid.id);
+                let arc = Arc::new(RenderableImageData {
+                    id,
+                    data: Arc::new(wid.data),
+                    width: wid.width,
+                    height: wid.height,
+                });
+                cache.insert(pane_id, id, arc, |p, i| reachable.contains(&(p, i)));
+            }
+        }
         self.pane_snapshots.insert(pane_id, snapshot);
+    }
+
+    /// Look up image pixel data for `(pane_id, image_id)` in the client cache.
+    ///
+    /// Returns an owned `Arc` (cheap refcount clone) so callers don't have to
+    /// hold the cache lock. Used by `MuxBackend::pane_image_data` and the
+    /// extract path's borrowed-closure lookup.
+    pub(crate) fn pane_image_data(
+        &self,
+        pane_id: PaneId,
+        image_id: ImageId,
+    ) -> Option<Arc<RenderableImageData>> {
+        self.image_cache
+            .lock()
+            .expect("client image_cache mutex poisoned")
+            .get(pane_id, image_id)
     }
 
     /// Remove all per-pane caches for `pane_id` (used when a pane is closed).
@@ -133,6 +210,10 @@ impl MuxClient {
         self.dirty_panes.remove(&pane_id);
         self.pending_refresh.remove(&pane_id);
         self.bell_panes.remove(&pane_id);
+        self.image_cache
+            .lock()
+            .expect("client image_cache mutex poisoned")
+            .drop_pane(pane_id);
         if let Some(transport) = &self.transport {
             transport.invalidate_pushed_snapshot(pane_id);
         }

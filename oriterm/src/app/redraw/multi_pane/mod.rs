@@ -9,14 +9,13 @@ mod helpers;
 mod pane_layouts;
 
 use crate::session::{DividerLayout, PaneLayout};
-use oriterm_core::{Column, CursorShape, TermMode};
+use oriterm_core::{Column, CursorShape, RenderableCursor, TermMode};
 
 use super::App;
 use super::mouse_selection::{self, GridCtx};
-use crate::gpu::{
-    FrameSearch, FrameSelection, MarkCursorOverride, ViewportSize, extract_frame_from_snapshot,
-    extract_frame_from_snapshot_into, snapshot_palette,
-};
+use crate::gpu::frame_input::FramePalette;
+use crate::gpu::prepare::{DispatchFingerprintInputs, PaneRowState, compute_pane_damage_key};
+use crate::gpu::{FrameSearch, FrameSelection, MarkCursorOverride, ViewportSize, snapshot_palette};
 
 impl App {
     /// Execute the multi-pane rendering pipeline.
@@ -70,12 +69,23 @@ impl App {
             let (w, h) = ctx.window.size_px();
             let viewport = ViewportSize::new(w, h);
             let cell = renderer.cell_metrics();
-            let bg = ctx
-                .frame
-                .as_ref()
-                .map_or(oriterm_core::Rgb { r: 0, g: 0, b: 0 }, |f| {
-                    f.palette.background
-                });
+            // Focused-pane snapshot is the SSOT for chrome-relevant
+            // values: clear color, status-bar cols/rows, search-bar
+            // state. Look it up ONCE here (rather than re-querying per
+            // consumer downstream) and project owned values into outer
+            // locals so the &PaneSnapshot borrow on self.mux ends before
+            // the per-pane mut-self loop body runs.
+            let (bg, focused_cols, focused_rows, focused_search) = {
+                let focused_snap = layouts
+                    .iter()
+                    .find(|l| l.is_focused)
+                    .and_then(|l| self.mux.as_ref().and_then(|m| m.pane_snapshot(l.pane_id)));
+                let bg = focused_snap
+                    .map(snapshot_palette)
+                    .map_or(oriterm_core::Rgb { r: 0, g: 0, b: 0 }, |p| p.background);
+                let (cols, rows, search) = helpers::focused_pane_chrome_state(focused_snap);
+                (bg, cols, rows, search)
+            };
             let win_focused = ctx.window.window().has_focus();
             let opacity = f64::from(super::draw_helpers::resolve_palette_opacity(
                 ctx.window.surface_has_alpha(),
@@ -103,13 +113,13 @@ impl App {
                 > super::draw_helpers::BLINK_OPACITY_EPSILON;
             ctx.prev_text_blink_opacity = text_blink_opacity;
 
+            let _ = blink_opacity_changed; // now covered via damage_key (text_blink_opacity field)
+
             for layout in layouts {
                 let pane_id = layout.pane_id;
 
-                // Dirty check: unified snapshot-based dirty tracking.
-                // Blink opacity changes invalidate all cached panes because
-                // the old alpha is baked into glyph instances.
-                let is_cached = ctx.pane_cache.is_cached(pane_id, layout);
+                // Snapshot freshness — must refresh BEFORE damage_key
+                // computation so the key derives from post-refresh state.
                 let snap_dirty = self
                     .mux
                     .as_ref()
@@ -118,84 +128,234 @@ impl App {
                     .mux
                     .as_ref()
                     .is_some_and(|m| m.pane_snapshot(pane_id).is_none());
-                let dirty = layout.is_focused
-                    || snap_dirty
-                    || no_snapshot
-                    || !is_cached
-                    || blink_opacity_changed;
+                let needs_refresh = snap_dirty || no_snapshot;
+                if needs_refresh {
+                    if let Some(mux) = self.mux.as_mut() {
+                        mux.refresh_pane_snapshot(pane_id);
+                    }
+                }
+                let dirty_content = needs_refresh;
 
-                if dirty {
+                // Compute prospective damage_key from snapshot + layout + state.
+                // Layered SSOT: compute_dispatch_fingerprint (frame inputs) +
+                // PaneRowState (row inputs single-pane handles via per-row dirty).
+                let damage_key = {
+                    let Some(snap) = self.mux.as_ref().and_then(|m| m.pane_snapshot(pane_id))
+                    else {
+                        // No snapshot after refresh attempt — log + skip.
+                        log::warn!("multi-pane: no snapshot for pane {pane_id:?} after refresh");
+                        ctx.root.mark_dirty();
+                        continue;
+                    };
+                    let pane_focused = ctx.window.window().has_focus();
+                    let snap_palette = snapshot_palette(snap);
+                    let dim_inactive_cfg = self.config.pane.dim_inactive;
+                    let inactive_opacity_cfg = self.config.pane.effective_inactive_opacity();
+                    let pane_search = FrameSearch::from_snapshot(snap);
+                    let palette_for_pane = FramePalette {
+                        background: snap_palette.background,
+                        foreground: snap_palette.foreground,
+                        cursor_color: snap_palette.cursor_color,
+                        selection_fg: snap_palette.selection_fg,
+                        selection_bg: snap_palette.selection_bg,
+                        opacity: super::draw_helpers::resolve_palette_opacity(
+                            ctx.window.surface_has_alpha(),
+                            pane_focused,
+                            &self.config,
+                        ),
+                    };
+                    let pane_viewport = ViewportSize::new(
+                        layout.pixel_rect.width as u32,
+                        layout.pixel_rect.height as u32,
+                    );
+                    let dispatch_inputs = DispatchFingerprintInputs {
+                        viewport: pane_viewport,
+                        cell_size: cell,
+                        content_cols: snap.cols as usize,
+                        content_rows: snap.cells.len(),
+                        origin: (layout.pixel_rect.x, layout.pixel_rect.y),
+                        text_blink_opacity,
+                        palette: palette_for_pane.damage_fingerprint(),
+                        fg_dim: if layout.is_focused || !dim_inactive_cfg {
+                            1.0
+                        } else {
+                            inactive_opacity_cfg
+                        },
+                        subpixel_positioning: renderer.subpixel_positioning(),
+                        search: pane_search.as_ref().map(FrameSearch::damage_fingerprint),
+                    };
+                    // Row-state inputs (selection, hovered, mark, cursor opacity,
+                    // preedit, focus). Focused-pane only fields zeroed otherwise.
+                    let selection_damage = self
+                        .scratch_pane_sels
+                        .get(&pane_id)
+                        .map(|sel| FrameSelection::new(sel, snap.stable_row_base))
+                        .and_then(|fsel| fsel.damage_snapshot(snap.cells.len()));
+                    let mark_cursor_key = if layout.is_focused {
+                        self.scratch_pane_mcs.get(&pane_id).and_then(|mc| {
+                            let (line, col) =
+                                mc.to_viewport(snap.stable_row_base, snap.cells.len())?;
+                            Some(MarkCursorOverride {
+                                line,
+                                column: Column(col),
+                                shape: CursorShape::HollowBlock,
+                            })
+                        })
+                    } else {
+                        None
+                    };
+                    let hovered_cell_key = if layout.is_focused {
+                        let cell_metrics = renderer.cell_metrics();
+                        let grid_ctx = GridCtx {
+                            widget: &ctx.terminal_grid,
+                            cell: cell_metrics,
+                            word_delimiters: &self.config.behavior.word_delimiters,
+                        };
+                        mouse_selection::pixel_to_cell(self.mouse.cursor_pos(), &grid_ctx)
+                            .map(|(col, line)| (line, col))
+                    } else {
+                        None
+                    };
+                    // Read CURSOR_BLINKING directly from snapshot — `blinking_now`
+                    // (the loop-local that mirrors focused-pane mode) is only
+                    // updated INSIDE the cache-miss block, so it's unreliable
+                    // for damage_key computation that gates cache-hit/miss.
+                    let snap_blinking = TermMode::from_bits_truncate(snap.modes)
+                        .contains(TermMode::CURSOR_BLINKING);
+                    let pane_cursor_opacity_key = if layout.is_focused {
+                        if snap_blinking && self.blinking_active {
+                            super::draw_helpers::blink_opacity(
+                                self.cursor_blink.intensity(),
+                                self.config.terminal.cursor_blink_fade,
+                            )
+                        } else {
+                            1.0
+                        }
+                    } else {
+                        0.0
+                    };
+                    let row_state = PaneRowState {
+                        resolved_cursor_visible: if layout.is_focused && snap.cursor.visible {
+                            Some(RenderableCursor {
+                                line: snap.cursor.row as usize,
+                                column: Column(snap.cursor.col as usize),
+                                shape: CursorShape::from(snap.cursor.shape),
+                                visible: true,
+                            })
+                        } else {
+                            None
+                        },
+                        selection_snapshot: selection_damage,
+                        hovered_cell: hovered_cell_key,
+                        mark_cursor: mark_cursor_key,
+                        cursor_opacity_bits: pane_cursor_opacity_key.to_bits(),
+                        block_cursor_color_exclusion_active: false,
+                        preedit_revision: if layout.is_focused {
+                            self.ime.preedit_revision
+                        } else {
+                            0
+                        },
+                        window_focused: pane_focused,
+                        hovered_url_segments_hash: if layout.is_focused && !url_segments.is_empty()
+                        {
+                            use std::collections::hash_map::DefaultHasher;
+                            use std::hash::{Hash, Hasher};
+                            let mut h = DefaultHasher::new();
+                            url_segments.hash(&mut h);
+                            h.finish()
+                        } else {
+                            0
+                        },
+                    };
+                    compute_pane_damage_key(&dispatch_inputs, &row_state)
+                };
+
+                let mut cache_hit =
+                    !dirty_content && ctx.pane_cache.is_cached(pane_id, layout, damage_key);
+
+                if cache_hit {
+                    // Cache hit candidate — must verify that every image
+                    // texture referenced by the cached pane is still
+                    // resident in `image_texture_cache`. `evict_over_limit`
+                    // in `finish_image_frame` can drop textures across
+                    // frames when total GPU memory exceeds the limit; if
+                    // any of THIS pane's images were evicted, the cached
+                    // `ImageQuad`s would silently skip at draw time
+                    // (`render_helpers.rs::draw_image_quads` continues
+                    // past `get_bind_group(quad.image_id) == None` quads).
+                    //
+                    // `touch_cached_pane_images` returns `false` when one
+                    // or more referenced images are missing — in that
+                    // case invalidate the pane cache and fall through to
+                    // the cache-miss branch to re-upload via
+                    // `prepare_pane_into`.
+                    let cached = ctx
+                        .pane_cache
+                        .get_cached(pane_id)
+                        .expect("is_cached verified");
+                    if renderer.touch_cached_pane_images(cached) {
+                        renderer.prepared.extend_from(cached);
+                    } else {
+                        ctx.pane_cache.invalidate(pane_id);
+                        cache_hit = false;
+                    }
+                }
+
+                if !cache_hit {
+                    // Cache miss — must extract + annotate + prepare into cache.
                     let pane_viewport = ViewportSize::new(
                         layout.pixel_rect.width as u32,
                         layout.pixel_rect.height as u32,
                     );
 
-                    // Extract phase: refresh snapshot if needed.
+                    // Snapshot already refreshed at top of loop iteration when
+                    // needs_refresh was true. The pre-refresh covers the
+                    // damage_key computation; we DO NOT re-refresh here (the
+                    // old inner `is_pane_snapshot_dirty` check returned true
+                    // because refresh_pane_snapshot does not clear the dirty
+                    // bit — only `clear_pane_snapshot_dirty` does that, which
+                    // happens below at line 198). Double-refresh was a
+                    // TOCTOU/efficiency: avoid double-refresh of the snapshot.
                     let mux = self.mux.as_mut().expect("mux checked");
-                    let content_refreshed =
-                        mux.pane_snapshot(pane_id).is_none() || mux.is_pane_snapshot_dirty(pane_id);
-                    if content_refreshed {
-                        mux.refresh_pane_snapshot(pane_id);
-                    }
+                    let content_refreshed = dirty_content;
 
-                    // Fast path (embedded): swap RenderableContent directly,
-                    // bypassing WireCell round-trip. Only attempt when content
-                    // was refreshed — stale cache entries from prior iterations
-                    // would contaminate the frame otherwise.
-                    let swapped = content_refreshed
-                        && ctx
-                            .frame
-                            .as_mut()
-                            .is_some_and(|f| mux.swap_renderable_content(pane_id, &mut f.content));
-
-                    let Some(snapshot) = mux.pane_snapshot(pane_id) else {
+                    // Steps 3-6 of the pane-content refresh skeleton — SSOT
+                    // shared with the single-pane redraw driver. Caller-
+                    // specific concerns (scratch_frame_pane tracking,
+                    // window_focused) remain here. The reextract gate uses
+                    // `helpers::should_reextract_scratch_frame` to handle
+                    // the shared-scratch-buffer contamination case where
+                    // the buffer currently holds another pane's content.
+                    let reextract_gate = helpers::should_reextract_scratch_frame(
+                        content_refreshed,
+                        ctx.frame.is_none(),
+                        scratch_frame_pane == Some(pane_id),
+                    );
+                    let outcome = super::draw_helpers::try_swap_or_extract_pane_content(
+                        mux.as_mut(),
+                        &mut ctx.frame,
+                        pane_id,
+                        pane_viewport,
+                        cell,
+                        content_refreshed,
+                        reextract_gate,
+                    );
+                    let Some(outcome) = outcome else {
                         log::warn!("multi-pane: no snapshot for pane {pane_id:?}");
                         ctx.root.mark_dirty();
                         continue;
                     };
-                    if swapped {
-                        let frame = ctx.frame.as_mut().expect("frame exists when swapped");
-                        frame.viewport = pane_viewport;
-                        frame.cell_size = cell;
-                        frame.content_cols = snapshot.cols as usize;
-                        frame.content_rows = snapshot.cells.len();
-                        frame.palette = snapshot_palette(snapshot);
-                        frame.clear_transient_fields();
-                        frame.window_focused = true;
-                        scratch_frame_pane = Some(pane_id);
-                    } else if helpers::should_reextract_scratch_frame(
-                        content_refreshed,
-                        ctx.frame.is_none(),
-                        scratch_frame_pane == Some(pane_id),
-                    ) {
-                        // `ctx.frame` is a shared scratch buffer across all
-                        // panes in the loop. Even when a pane's snapshot isn't
-                        // dirty, the scratch buffer may currently hold another
-                        // pane's extracted content, so re-extract unless the
-                        // scratch frame is known to already belong to this
-                        // pane.
-                        match &mut ctx.frame {
-                            Some(existing) => {
-                                extract_frame_from_snapshot_into(
-                                    snapshot,
-                                    existing,
-                                    pane_viewport,
-                                    cell,
-                                );
-                            }
-                            slot @ None => {
-                                *slot = Some(extract_frame_from_snapshot(
-                                    snapshot,
-                                    pane_viewport,
-                                    cell,
-                                ));
-                            }
+                    match outcome {
+                        super::draw_helpers::PaneExtractOutcome::Swapped => {
+                            let frame = ctx.frame.as_mut().expect("frame populated by swap");
+                            frame.window_focused = true;
+                            scratch_frame_pane = Some(pane_id);
                         }
-                        scratch_frame_pane = Some(pane_id);
-                    } else {
-                        // Cursor-blink-only: reuse existing frame as-is.
+                        super::draw_helpers::PaneExtractOutcome::Reextracted => {
+                            scratch_frame_pane = Some(pane_id);
+                        }
+                        super::draw_helpers::PaneExtractOutcome::Reused => {}
                     }
-                    mux.clear_pane_snapshot_dirty(pane_id);
 
                     let frame = ctx.frame.as_mut().expect("frame just assigned");
 
@@ -305,24 +465,22 @@ impl App {
                         0.0
                     };
 
-                    let cached = ctx
-                        .pane_cache
-                        .get_or_prepare(pane_id, layout, true, |target| {
+                    let cached = ctx.pane_cache.get_or_prepare(
+                        pane_id,
+                        layout,
+                        true,
+                        damage_key,
+                        |target| {
                             renderer.prepare_pane_into(
                                 frame,
                                 gpu,
+                                pipelines,
                                 origin,
                                 pane_cursor_opacity,
                                 target,
                             );
-                        });
-                    renderer.prepared.extend_from(cached);
-                } else {
-                    // Cache hit — merge cached instances without extraction.
-                    let cached = ctx
-                        .pane_cache
-                        .get_cached(pane_id)
-                        .expect("is_cached verified");
+                        },
+                    );
                     renderer.prepared.extend_from(cached);
                 }
 
@@ -331,16 +489,10 @@ impl App {
                 }
             }
 
-            // Restore focused pane's search for the search bar.
-            if let Some(focused) = layouts.iter().find(|l| l.is_focused) {
-                if let Some(frame) = ctx.frame.as_mut() {
-                    frame.search = self
-                        .mux
-                        .as_ref()
-                        .and_then(|m| m.pane_snapshot(focused.pane_id))
-                        .and_then(FrameSearch::from_snapshot);
-                }
-            }
+            // Focused-pane chrome state was computed once at the top of
+            // this function (focused_cols, focused_rows, focused_search)
+            // alongside the bg clear color, sharing a single snapshot
+            // lookup. ChromeParams consumes those owned locals here.
 
             // Dividers between split panes.
             let divider_color = self.config.pane.effective_divider_color();
@@ -357,18 +509,35 @@ impl App {
             let scale = ctx.window.scale_factor().factor() as f32;
             if layouts.len() > 1 {
                 if let Some(rect) = &focused_rect {
-                    renderer.append_focus_border(rect, accent_color, (2.0 * scale).round());
+                    renderer.append_focus_border(
+                        rect,
+                        accent_color,
+                        crate::gpu::window_renderer::physical_border_width(scale),
+                    );
                 }
             }
 
+            // Finalize image-texture-cache lifecycle for this visual frame.
+            // Pairs with `begin_multi_pane_frame()` called at the top.
+            // Runs evict_unused + evict_over_limit exactly once per frame.
+            // A naive per-pane finish would tighten the retention window
+            // to THRESHOLD / pane_count.
+            renderer.finish_multi_pane_frame();
+
             // Chrome: tab bar, overlays, search bar, status bar, window border.
-            let needs_full_render = super::chrome::render_chrome(
+            let super::chrome::ChromeRenderResult {
+                needs_full_render,
+                tab_bar_animating,
+            } = super::chrome::render_chrome(
                 ctx,
                 &self.config,
                 &self.ui_theme,
                 gpu,
                 &super::chrome::ChromeParams {
                     pane_count: layouts.len(),
+                    content_cols: focused_cols,
+                    content_rows: focused_rows,
+                    search: focused_search.as_ref(),
                 },
             );
 
@@ -380,6 +549,9 @@ impl App {
 
             let result =
                 renderer.render_to_surface(gpu, pipelines, ctx.window.surface(), needs_full_render);
+
+            super::draw_helpers::apply_post_render_ui_stale(ctx, &result, tab_bar_animating);
+
             (result, blinking_now)
         };
 

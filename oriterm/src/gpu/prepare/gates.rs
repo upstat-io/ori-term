@@ -7,13 +7,25 @@
 //! consumed by `prepare_frame_shaped_into`. Co-locating them here keeps
 //! `prepare/mod.rs` under the 500-line file-size cap and makes all three
 //! predicates non-GPU testable from `prepare/tests.rs`.
+//!
+//! `compute_pane_damage_key` is the SSOT for multi-pane per-pane cache
+//! invalidation. It layers `compute_dispatch_fingerprint_from_inputs`
+//! (frame-level dispatch state) with `PaneRowState` (row-level inputs that
+//! single-pane handles via per-row dirty but multi-pane must hash because
+//! the cache reuses the entire `PreparedFrame` on hit).
 
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
-use super::super::frame_input::FrameInput;
+use oriterm_core::RenderableCursor;
+
+use super::super::frame_input::{
+    FrameInput, MarkCursorOverride, PaletteDamageKey, SearchDamageKey, SelectionDamageSnapshot,
+    ViewportSize,
+};
 use super::super::prepared_frame::PreparedFrame;
 use super::resolve_cursor_state;
+use crate::font::CellMetrics;
 
 /// Content-aware fingerprint of every frame-level input that affects per-cell
 /// instance emission. SSOT for the incremental dispatch decision — one hash +
@@ -41,42 +53,113 @@ use super::resolve_cursor_state;
 /// tolerant). Tiny float deltas now force full rebuild instead of stale
 /// replay; the effect is extra rebuilds, not stale reuse.
 pub(crate) fn compute_dispatch_fingerprint(input: &FrameInput, origin: (f32, f32)) -> u64 {
+    compute_dispatch_fingerprint_from_inputs(&input.dispatch_fingerprint_inputs(origin))
+}
+
+/// Inputs hashed by the dispatch fingerprint — frame-level values that
+/// affect per-cell instance emission. SSOT for the dispatch-eligibility
+/// decision; consumers either project from `FrameInput` (single-pane via
+/// `FrameInput::dispatch_fingerprint_inputs`) or populate directly from
+/// snapshot + layout + local vars (multi-pane, BEFORE the extract block).
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct DispatchFingerprintInputs {
+    pub viewport: ViewportSize,
+    pub cell_size: CellMetrics,
+    pub content_cols: usize,
+    pub content_rows: usize,
+    pub origin: (f32, f32),
+    pub text_blink_opacity: f32,
+    pub palette: PaletteDamageKey,
+    pub fg_dim: f32,
+    pub subpixel_positioning: bool,
+    pub search: Option<SearchDamageKey>,
+}
+
+/// SSOT hasher — consumed by both single-pane (via `compute_dispatch_fingerprint`)
+/// and multi-pane (via `compute_pane_damage_key`).
+pub(crate) fn compute_dispatch_fingerprint_from_inputs(inputs: &DispatchFingerprintInputs) -> u64 {
     let mut hasher = DefaultHasher::new();
 
-    // Geometry — affects every cell's pixel position.
-    input.viewport.width.hash(&mut hasher);
-    input.viewport.height.hash(&mut hasher);
+    inputs.viewport.width.hash(&mut hasher);
+    inputs.viewport.height.hash(&mut hasher);
 
-    // ALL 6 CellMetrics fields — underline/stroke/strikeout offsets affect
-    // decoration emission and must invalidate on font/scale change.
-    input.cell_size.width.to_bits().hash(&mut hasher);
-    input.cell_size.height.to_bits().hash(&mut hasher);
-    input.cell_size.baseline.to_bits().hash(&mut hasher);
-    input.cell_size.underline_offset.to_bits().hash(&mut hasher);
-    input.cell_size.stroke_size.to_bits().hash(&mut hasher);
-    input.cell_size.strikeout_offset.to_bits().hash(&mut hasher);
+    inputs.cell_size.width.to_bits().hash(&mut hasher);
+    inputs.cell_size.height.to_bits().hash(&mut hasher);
+    inputs.cell_size.baseline.to_bits().hash(&mut hasher);
+    inputs
+        .cell_size
+        .underline_offset
+        .to_bits()
+        .hash(&mut hasher);
+    inputs.cell_size.stroke_size.to_bits().hash(&mut hasher);
+    inputs
+        .cell_size
+        .strikeout_offset
+        .to_bits()
+        .hash(&mut hasher);
 
-    input.content_cols.hash(&mut hasher);
-    input.content_rows.hash(&mut hasher);
-    origin.0.to_bits().hash(&mut hasher);
-    origin.1.to_bits().hash(&mut hasher);
+    inputs.content_cols.hash(&mut hasher);
+    inputs.content_rows.hash(&mut hasher);
+    inputs.origin.0.to_bits().hash(&mut hasher);
+    inputs.origin.1.to_bits().hash(&mut hasher);
 
-    // Per-cell alpha multipliers — baked into per-cell instances at emit time.
-    input.text_blink_opacity.to_bits().hash(&mut hasher);
-    // Full palette overlay state via PaletteDamageKey — covers background,
-    // foreground, cursor_color, selection_fg, selection_bg, opacity.
-    // Hashing only opacity would let theme/reverse_video changes replay
-    // stale per-cell colors from saved_tier.
-    input.palette.damage_fingerprint().hash(&mut hasher);
-    input.fg_dim.to_bits().hash(&mut hasher);
+    inputs.text_blink_opacity.to_bits().hash(&mut hasher);
+    inputs.palette.hash(&mut hasher);
+    inputs.fg_dim.to_bits().hash(&mut hasher);
 
-    // Atlas routing — flips between subpixel/glyphs writers in emit.rs.
-    u8::from(input.subpixel_positioning).hash(&mut hasher);
+    u8::from(inputs.subpixel_positioning).hash(&mut hasher);
+    inputs.search.hash(&mut hasher);
 
-    // INVARIANT: hash the Option, not the unwrapped tuple — the discriminant
-    // distinguishes None from Some(all-zeros).
-    input.search_fingerprint().hash(&mut hasher);
+    hasher.finish()
+}
 
+/// Per-pane row-state inputs that the multi-pane cache must hash into its
+/// `damage_key`. Single-pane handles these via per-row dirty tracking inside
+/// `build_dirty_set`; multi-pane has no per-row path so the cache key MUST
+/// hash everything that prepare reads beyond the dispatch fingerprint.
+///
+/// Mirrors the inputs consumed by `evaluate_row_state_change` plus per-pane
+/// focus + IME preedit state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub(crate) struct PaneRowState {
+    /// Visibility-canonicalized resolved cursor — `None` when hidden.
+    /// Hidden cursors compare equal regardless of underlying position
+    /// (matches `evaluate_row_state_change` semantics via
+    /// `RenderableCursor::into_visible`).
+    pub resolved_cursor_visible: Option<RenderableCursor>,
+    pub selection_snapshot: Option<SelectionDamageSnapshot>,
+    pub hovered_cell: Option<(usize, usize)>,
+    pub mark_cursor: Option<MarkCursorOverride>,
+    /// `f32::to_bits()` of `cursor_opacity` — bitwise-exact like the
+    /// fingerprint's f32 fields.
+    pub cursor_opacity_bits: u32,
+    pub block_cursor_color_exclusion_active: bool,
+    /// Monotonic counter from `app::ime::ImeState::preedit_revision`. 0
+    /// before first preedit; increments on every preedit mutation. Always 0
+    /// for non-focused panes.
+    pub preedit_revision: u64,
+    pub window_focused: bool,
+    /// Hash of the focused pane's `hovered_url_segments` (URL underline
+    /// state). 0 for non-focused panes AND when no URL is hovered. Without
+    /// this signal, releasing Ctrl while hovering a URL leaves a stale
+    /// underline in the cached prepared frame — `hovered_url_segments` is a
+    /// prepare input (consumed by `draw_url_hover_underline`) that the rest
+    /// of the dispatch fingerprint does not cover.
+    pub hovered_url_segments_hash: u64,
+}
+
+/// Compose dispatch fingerprint with per-pane row-state into one cache key.
+///
+/// Layers `compute_dispatch_fingerprint_from_inputs` (dispatch-eligibility
+/// SSOT) with `PaneRowState`. Used by the multi-pane render path's per-pane
+/// cache; single-pane uses the dispatch fingerprint alone + per-row dirty.
+pub(crate) fn compute_pane_damage_key(
+    dispatch: &DispatchFingerprintInputs,
+    row_state: &PaneRowState,
+) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    compute_dispatch_fingerprint_from_inputs(dispatch).hash(&mut hasher);
+    row_state.hash(&mut hasher);
     hasher.finish()
 }
 

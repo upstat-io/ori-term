@@ -4,6 +4,7 @@
 //! Each window gets its own renderer so DPI scaling, atlas caches, and
 //! shaping state are fully isolated — no cross-window contamination.
 
+mod cache_blit;
 mod error;
 mod font_config;
 mod frame_prep;
@@ -39,6 +40,22 @@ use helpers::{CombinedAtlasLookup, ShapingScratch, create_atlases};
 
 /// Maximum entries in `empty_keys` before clearing to prevent unbounded growth.
 const EMPTY_KEYS_CAP: usize = 10_000;
+
+/// Logical-pixel thickness of the window-strong / focus-pane border drawn over
+/// the surface. Callers go through [`physical_border_width`] for the rounded
+/// physical-pixel value rather than recomputing `(CONST * scale).round()` at
+/// each site.
+pub(crate) const WINDOW_BORDER_WIDTH_LOGICAL_PX: f32 = 2.0;
+
+/// Convert the logical-pixel border thickness to a physical-pixel width
+/// rounded to the nearest integer at the supplied DPI scale. Sole source of
+/// truth for the value passed to [`WindowRenderer::append_window_border`]
+/// and [`WindowRenderer::append_focus_border`] — chrome, multi-pane focus
+/// border, and visual-regression harness all call this helper.
+#[inline]
+pub(crate) fn physical_border_width(scale: f32) -> f32 {
+    (WINDOW_BORDER_WIDTH_LOGICAL_PX * scale).round()
+}
 
 /// Per-window GPU renderer: owns fonts, atlases, and instance buffers.
 ///
@@ -128,6 +145,14 @@ pub struct WindowRenderer {
     /// blits it. Reset to `false` on each `prepare()` call when the
     /// fast path is taken.
     cache_invalidated_this_frame: bool,
+
+    /// Debug-build lifecycle flag for the per-frame image-texture-cache
+    /// lifecycle. `true` between `begin_image_frame()` and
+    /// `finish_image_frame()`; consumed by `debug_assert!` paths in
+    /// `ensure_pane_images_uploaded` and `touch_cached_pane_images` to
+    /// catch out-of-bracket calls. Production behavior unaffected
+    /// (the flag is only read by `debug_assert!` paths).
+    image_frame_active: bool,
 }
 
 impl WindowRenderer {
@@ -216,6 +241,7 @@ impl WindowRenderer {
             content_cache_view: None,
             content_cache_size: (0, 0),
             cache_invalidated_this_frame: false,
+            image_frame_active: false,
         };
         // Canonical wiring: inject the terminal font's emoji fallback into
         // the UI registry so emoji codepoints resolve via the UI-size
@@ -235,6 +261,20 @@ impl WindowRenderer {
     /// content-cache tier this frame. SSOT for the chrome render decision.
     pub(crate) fn cache_invalidated_this_frame(&self) -> bool {
         self.cache_invalidated_this_frame
+    }
+
+    /// Test-only accessor for the image texture cache.
+    ///
+    /// Used by multi-pane and image-render regression tests to assert
+    /// upload/eviction state without exposing the cache to production
+    /// callers.
+    #[cfg(any(test, feature = "gpu-tests"))]
+    #[allow(
+        dead_code,
+        reason = "consumed by gpu-tests-gated tests in multi_pane/tests.rs"
+    )]
+    pub(crate) fn image_texture_cache_for_test(&self) -> &ImageTextureCache {
+        &self.image_texture_cache
     }
 
     /// Primary font family name.

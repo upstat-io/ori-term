@@ -101,6 +101,13 @@ pub(crate) struct WindowContext {
     /// Previous frame's text blink opacity — detects blink changes that
     /// require a full content cache re-render (not just cursor overlay).
     pub(super) prev_text_blink_opacity: f32,
+    /// Regression: BUG-06-053 — previous frame's IME `preedit_revision`;
+    /// change detected by the single-pane `content_changed` predicate to
+    /// force re-extract from snapshot when IME composition shrinks/clears.
+    /// Multi-pane uses `compute_dispatch_fingerprint.preedit_revision`;
+    /// single-pane tracks per-window prev here next to
+    /// `prev_text_blink_opacity`.
+    pub(super) prev_preedit_revision: u64,
     /// Last `(cell_w, cell_h)` broadcast to panes via
     /// `App::broadcast_cell_metrics_to_window`. `None` before the first
     /// broadcast. Used by `sync_grid_layout` / `handle_dpi_change` to
@@ -155,6 +162,7 @@ impl WindowContext {
             damage: DamageSet::default(),
             ui_stale: true,
             prev_text_blink_opacity: 1.0,
+            prev_preedit_revision: 0,
             last_broadcast_cell_dims: None,
         }
     }

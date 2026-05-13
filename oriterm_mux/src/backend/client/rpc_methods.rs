@@ -493,6 +493,14 @@ impl MuxBackend for MuxClient {
         self.pane_snapshots.get(&pane_id)
     }
 
+    fn pane_image_data(
+        &self,
+        pane_id: PaneId,
+        image_id: oriterm_core::ImageId,
+    ) -> Option<std::sync::Arc<oriterm_core::RenderableImageData>> {
+        Self::pane_image_data(self, pane_id, image_id)
+    }
+
     fn is_pane_snapshot_dirty(&self, pane_id: PaneId) -> bool {
         self.dirty_panes.contains(&pane_id)
     }
@@ -505,12 +513,14 @@ impl MuxBackend for MuxClient {
         let pdu = MuxPdu::GetPaneSnapshot { pane_id };
         match self.rpc(pdu) {
             Ok(MuxPdu::PaneSnapshotResp { snapshot }) => {
-                // Cache the fresh snapshot so subsequent pane_snapshot()
-                // calls see it. Also drop any pending refresh marker —
-                // we just got a fresher value than any in-flight push.
-                self.pane_snapshots.insert(pane_id, snapshot.clone());
+                // Route through `cache_snapshot` SSOT so `image_data` drains
+                // into the bounded image_cache (preventing unbounded
+                // pane_snapshots growth) and the pending_refresh marker
+                // clears via the same code path.
+                let result = snapshot.clone();
+                self.cache_snapshot(pane_id, snapshot);
                 self.pending_refresh.remove(&pane_id);
-                Some(snapshot)
+                Some(result)
             }
             Ok(other) => {
                 log::error!("sync_pane_snapshot: unexpected response: {other:?}");
@@ -530,7 +540,9 @@ impl MuxBackend for MuxClient {
             .as_ref()
             .and_then(|t| t.take_pushed_snapshot(pane_id));
         if let Some(snapshot) = pushed {
-            self.pane_snapshots.insert(pane_id, snapshot);
+            // Route through cache_snapshot SSOT (drains image_data into the
+            // bounded image_cache before storing the stripped snapshot).
+            self.cache_snapshot(pane_id, snapshot);
             self.pending_refresh.remove(&pane_id);
             return self.pane_snapshots.get(&pane_id);
         }

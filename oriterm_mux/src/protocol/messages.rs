@@ -19,7 +19,13 @@ pub const CAP_SNAPSHOT_PUSH: u32 = 1;
 /// Each variant carries its own data. The bincode encoding includes the
 /// enum discriminant, so the `msg_type` in the frame header is redundant
 /// for deserialization but useful for pre-routing and debugging.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+///
+/// `Eq` derive dropped at `PROTOCOL_VERSION` v3 because `Subscribed` /
+/// `PaneSnapshotResp` / `NotifyPaneSnapshot` carry `PaneSnapshot`, which contains
+/// `WirePlacement` (f32 fields, `PartialEq` only). `assert_eq!` works under
+/// `PartialEq + Debug` — Eq drop has no observable caller impact.
+/// See: bug-tracker/plans/BUG-06-072/
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum MuxPdu {
     // -- Requests (client → daemon) --
     /// Client handshake. Sent immediately after connecting.

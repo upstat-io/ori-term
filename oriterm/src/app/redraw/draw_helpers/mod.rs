@@ -6,6 +6,8 @@
 use std::collections::HashMap;
 use std::time::Instant;
 
+use oriterm_mux::backend::MuxBackend;
+use oriterm_mux::id::PaneId;
 use oriterm_ui::animation::FrameRequestFlags;
 use oriterm_ui::draw::{DamageTracker, Scene, build_scene};
 use oriterm_ui::geometry::Rect;
@@ -23,9 +25,111 @@ use oriterm_ui::window_root::WindowRoot;
 
 use crate::app::App;
 use crate::app::widget_pipeline;
-use crate::font::{CachedTextMeasurer, TextShapeCache};
+use crate::font::{CachedTextMeasurer, CellMetrics, TextShapeCache};
+use crate::gpu::frame_input::{FrameInput, ViewportSize};
 use crate::gpu::state::GpuState;
 use crate::gpu::window_renderer::WindowRenderer;
+use crate::gpu::{extract_frame_from_snapshot, extract_frame_from_snapshot_into, snapshot_palette};
+
+/// Outcome of [`try_swap_or_extract_pane_content`].
+///
+/// Callers use this to apply caller-specific extra state — single-pane
+/// defers `window_focused` resolution; multi-pane tracks
+/// `scratch_frame_pane` and sets `window_focused = true` on the swap path.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum PaneExtractOutcome {
+    /// Zero-copy fast path: `swap_renderable_content` succeeded.
+    Swapped,
+    /// Full extract path: `extract_frame_from_snapshot[_into]` ran.
+    Reextracted,
+    /// No-op: cursor-blink-only frame, existing `ctx.frame` reused as-is.
+    Reused,
+}
+
+/// Try the zero-copy swap fast path, fall through to extract, then clear
+/// the snapshot dirty bit. SSOT for the pane-content refresh skeleton
+/// shared by single-pane and multi-pane redraw paths.
+///
+/// Steps:
+///
+/// 3. If `swap_gate && ctx_frame.is_some()`, attempt
+///    `mux.swap_renderable_content`. The embedded backend swaps the
+///    cached `RenderableContent` directly with the caller's
+///    `FrameInput.content`, bypassing the `WireCell` round-trip.
+/// 4. On successful swap: set the basic post-swap state — `viewport`,
+///    `cell_size`, `content_cols`/`content_rows`, `palette`,
+///    `clear_transient_fields`. Caller-specific extras
+///    (`window_focused`, `scratch_frame_pane`) remain caller
+///    responsibilities.
+/// 5. Otherwise, if `reextract_gate`, run extract-or-replace via
+///    `extract_frame_from_snapshot_into` (existing frame) or
+///    `extract_frame_from_snapshot` (first frame).
+/// 6. Always call `mux.clear_pane_snapshot_dirty(pane_id)` before
+///    returning.
+///
+/// Returns `None` when `mux.pane_snapshot(pane_id)` is None — the
+/// caller decides whether to `return`, `continue`, or mark dirty (the
+/// snapshot-missing control flow differs between single-pane and
+/// multi-pane). Steps 1 (content-changed detection) and 2 (initial
+/// refresh decision) remain caller responsibilities because the
+/// predicate inputs differ materially across the two paths.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "pane-content refresh helper threads mux + frame + pane id + viewport + metrics + two gates — each is a distinct caller-side input"
+)]
+pub(super) fn try_swap_or_extract_pane_content(
+    mux: &mut dyn MuxBackend,
+    ctx_frame: &mut Option<FrameInput>,
+    pane_id: PaneId,
+    viewport: ViewportSize,
+    cell: CellMetrics,
+    swap_gate: bool,
+    reextract_gate: bool,
+) -> Option<PaneExtractOutcome> {
+    let swapped = swap_gate
+        && ctx_frame
+            .as_mut()
+            .is_some_and(|f| mux.swap_renderable_content(pane_id, &mut f.content));
+
+    let snapshot = mux.pane_snapshot(pane_id)?;
+
+    let outcome = if swapped {
+        let frame = ctx_frame.as_mut().expect("frame exists when swapped");
+        frame.viewport = viewport;
+        frame.cell_size = cell;
+        frame.content_cols = snapshot.cols as usize;
+        frame.content_rows = snapshot.cells.len();
+        frame.palette = snapshot_palette(snapshot);
+        frame.clear_transient_fields();
+        PaneExtractOutcome::Swapped
+    } else if reextract_gate {
+        // Build a closure that resolves cached image bytes through the
+        // MuxBackend trait surface. Daemon-mode `MuxClient` returns a cheap
+        // `Arc` clone from its `image_cache`; embedded backends return None
+        // (extract is never invoked when their `swap_renderable_content`
+        // succeeds, so the closure is effectively unreachable for them).
+        let image_lookup = |id| mux.pane_image_data(pane_id, id);
+        match ctx_frame {
+            Some(existing) => {
+                extract_frame_from_snapshot_into(snapshot, existing, viewport, cell, &image_lookup);
+            }
+            slot @ None => {
+                *slot = Some(extract_frame_from_snapshot(
+                    snapshot,
+                    viewport,
+                    cell,
+                    &image_lookup,
+                ));
+            }
+        }
+        PaneExtractOutcome::Reextracted
+    } else {
+        PaneExtractOutcome::Reused
+    };
+
+    mux.clear_pane_snapshot_dirty(pane_id);
+    Some(outcome)
+}
 
 impl App {
     /// Draw the tab bar (unified chrome bar).
@@ -145,7 +249,7 @@ impl App {
 
         // Layout + draw phase: measurer borrows renderer immutably, then
         // drops before the mutable append_ui_scene_with_text call.
-        // We collect (opacity) per overlay, then append after the borrow ends.
+        // Opacity is collected per overlay and appended after the borrow ends.
         {
             let measurer = CachedTextMeasurer::new(renderer.ui_measurer(scale), text_cache, scale);
             overlays.layout_overlays(&measurer, theme);
@@ -357,6 +461,41 @@ pub(super) const BLINK_SNAP_THRESHOLD: f32 = 0.5;
 /// cache re-render (avoids re-rendering for imperceptible sub-pixel changes).
 pub(super) const BLINK_OPACITY_EPSILON: f32 = 0.001;
 
+/// Compute the post-render `ctx.ui_stale` value via OR-fold semantics.
+///
+/// On a successful render (`render_err == false`), the stale bit was
+/// consumed by the frame that just flushed — reset to
+/// `tab_bar_animating` (the chrome-tier animation signal that lives
+/// independently of frame success).
+///
+/// On a failed render (`render_err == true` — any `SurfaceError`
+/// variant: `Outdated` / `Lost` / `OutOfMemory` / `Other` / `Timeout`),
+/// the stale bit was NOT consumed because no pixels reached the
+/// surface — preserved via OR-fold so the next frame issues a full
+/// render and publishes the chrome state the failed frame intended.
+#[inline]
+pub(super) fn post_render_ui_stale(
+    prev_stale: bool,
+    render_err: bool,
+    tab_bar_animating: bool,
+) -> bool {
+    (prev_stale && render_err) || tab_bar_animating
+}
+
+/// Apply the [`post_render_ui_stale`] OR-fold in place on `ctx.ui_stale`.
+///
+/// One-line wrapper that keeps the single-pane and multi-pane caller
+/// sites concise. Called AFTER `render_to_surface` returns and BEFORE
+/// the redraw closure exits.
+#[inline]
+pub(super) fn apply_post_render_ui_stale<T>(
+    ctx: &mut crate::app::window_context::WindowContext,
+    render_result: &Result<(), T>,
+    tab_bar_animating: bool,
+) {
+    ctx.ui_stale = post_render_ui_stale(ctx.ui_stale, render_result.is_err(), tab_bar_animating);
+}
+
 /// Compute final blink opacity from the raw animation intensity.
 ///
 /// When `use_fade` is true, returns the raw intensity for a smooth fade
@@ -385,3 +524,6 @@ pub(super) fn status_bar_data(pane_count: usize, cols: usize, rows: usize) -> St
         term_type: "xterm-256color".into(),
     }
 }
+
+#[cfg(test)]
+mod tests;

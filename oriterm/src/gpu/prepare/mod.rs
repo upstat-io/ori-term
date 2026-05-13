@@ -19,7 +19,12 @@ mod shaped_frame;
 #[cfg(test)]
 mod unshaped;
 
-pub(crate) use gates::{compute_dispatch_fingerprint, evaluate_row_state_change};
+#[cfg(test)]
+pub(crate) use gates::compute_dispatch_fingerprint_from_inputs;
+pub(crate) use gates::{
+    DispatchFingerprintInputs, PaneRowState, compute_dispatch_fingerprint, compute_pane_damage_key,
+    evaluate_row_state_change,
+};
 
 use oriterm_core::{CellFlags, CursorShape, RenderableCursor};
 

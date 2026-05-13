@@ -548,6 +548,9 @@ fn sample_snapshot() -> PaneSnapshot {
         search_total_matches: 0,
         has_unseen_output: false,
         mouse_cursor_icon: None,
+        images: Vec::new(),
+        image_data: Vec::new(),
+        images_dirty: false,
     }
 }
 
@@ -637,6 +640,9 @@ fn snapshot_with_cjk_emoji_combining() {
         search_total_matches: 0,
         has_unseen_output: false,
         mouse_cursor_icon: None,
+        images: Vec::new(),
+        image_data: Vec::new(),
+        images_dirty: false,
     };
 
     roundtrip(32, MuxPdu::PaneSnapshotResp { snapshot });
@@ -1134,6 +1140,9 @@ fn roundtrip_large_pane_snapshot() {
         search_total_matches: 0,
         has_unseen_output: false,
         mouse_cursor_icon: None,
+        images: Vec::new(),
+        image_data: Vec::new(),
+        images_dirty: false,
     };
 
     let frame = roundtrip(
@@ -1644,4 +1653,88 @@ fn set_answerback_bincode_discriminant_appended_after_write_stalled_status() {
          subsequent variant",
         prior_disc + 1
     );
+}
+
+/// `PROTOCOL_VERSION` is at v3 — guards against a silent revert of the
+/// wire-schema extension that ships daemon-mode image data.
+/// See: bug-tracker/plans/BUG-06-072/
+#[test]
+fn protocol_version_pinned_at_v3_for_image_schema() {
+    assert_eq!(
+        PROTOCOL_VERSION, 3,
+        "PaneSnapshot image fields require PROTOCOL_VERSION >= 3; reverting it \
+         silently misdecodes every image-carrying frame on peer pairs that disagree"
+    );
+}
+
+/// `MAX_PAYLOAD` is sized to ship daemon-mode image data (≥ 64 MiB for a
+/// single image plus cell payload headroom). A silent drop back to the
+/// pre-v3 16 MiB ceiling would reject any frame carrying a moderately-sized
+/// kitty/sixel image with an `io::Error` instead of transmitting it.
+/// See: bug-tracker/plans/BUG-06-072/
+#[test]
+fn max_payload_supports_64mib_single_image() {
+    const SINGLE_IMAGE_LIMIT: u32 = 64 * 1024 * 1024;
+    assert!(
+        MAX_PAYLOAD >= SINGLE_IMAGE_LIMIT,
+        "MAX_PAYLOAD ({MAX_PAYLOAD}) must accommodate the 64 MiB per-image limit \
+         from oriterm_core::image::cache::DEFAULT_MAX_SINGLE_IMAGE plus cell payload"
+    );
+}
+
+/// A `PaneSnapshot` carrying `images` + `image_data` + `images_dirty`
+/// roundtrips through `ProtocolCodec::encode_frame` / `decode_frame` byte-for-byte.
+/// ONLY passes with the v3 wire schema in place.
+/// See: bug-tracker/plans/BUG-06-072/
+#[test]
+fn roundtrip_pane_snapshot_with_image_payload() {
+    use super::snapshot::{WireImageData, WirePlacement};
+    let mut snap = sample_snapshot();
+    snap.images = vec![WirePlacement {
+        image_id: 0xDEAD_BEEF,
+        viewport_x: 1.0,
+        viewport_y: 2.0,
+        display_width: 32.0,
+        display_height: 16.0,
+        source_x: 0.0,
+        source_y: 0.0,
+        source_w: 1.0,
+        source_h: 1.0,
+        z_index: 0,
+        opacity: 1.0,
+    }];
+    let pixels = vec![0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, 0x00, 0x11];
+    snap.image_data = vec![WireImageData {
+        id: 0xDEAD_BEEF,
+        data: pixels.clone(),
+        width: 1,
+        height: 2,
+    }];
+    snap.images_dirty = true;
+    let decoded = roundtrip(99, MuxPdu::PaneSnapshotResp { snapshot: snap });
+    let MuxPdu::PaneSnapshotResp { snapshot } = decoded.pdu else {
+        panic!("unexpected PDU variant after decode")
+    };
+    assert_eq!(snapshot.images.len(), 1);
+    assert_eq!(snapshot.images[0].image_id, 0xDEAD_BEEF);
+    assert_eq!(snapshot.image_data.len(), 1);
+    assert_eq!(snapshot.image_data[0].data, pixels);
+    assert!(snapshot.images_dirty);
+}
+
+/// Encoded `PaneSnapshot` with EMPTY image vectors stays empty on the decode
+/// side — guards against a future fill regression that fabricates a default
+/// placement on an empty source.
+/// See: bug-tracker/plans/BUG-06-072/
+#[test]
+fn roundtrip_pane_snapshot_with_no_images_stays_empty() {
+    let snap = sample_snapshot();
+    assert!(snap.images.is_empty());
+    let decoded = roundtrip(100, MuxPdu::PaneSnapshotResp { snapshot: snap });
+    let MuxPdu::PaneSnapshotResp { snapshot } = decoded.pdu else {
+        panic!("unexpected PDU variant after decode")
+    };
+    assert!(snapshot.images.is_empty());
+    assert!(snapshot.image_data.is_empty());
+    assert!(!snapshot.images_dirty);
 }

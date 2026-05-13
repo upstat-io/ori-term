@@ -90,6 +90,9 @@ fn test_snapshot() -> PaneSnapshot {
         search_total_matches: 0,
         has_unseen_output: false,
         mouse_cursor_icon: None,
+        images: Vec::new(),
+        image_data: Vec::new(),
+        images_dirty: false,
     }
 }
 
@@ -100,7 +103,7 @@ fn test_cell_metrics() -> CellMetrics {
 #[test]
 fn renderable_cell_positions() {
     let snap = test_snapshot();
-    let content = snapshot_to_renderable(&snap);
+    let content = snapshot_to_renderable(&snap, &|_| None);
 
     assert_eq!(content.cells.len(), 4);
     assert_eq!(content.cells[0].line, 0);
@@ -119,7 +122,7 @@ fn renderable_cell_positions() {
 #[test]
 fn renderable_colors_pre_resolved() {
     let snap = test_snapshot();
-    let content = snapshot_to_renderable(&snap);
+    let content = snapshot_to_renderable(&snap, &|_| None);
 
     assert_eq!(
         content.cells[0].fg,
@@ -136,7 +139,7 @@ fn renderable_colors_pre_resolved() {
 #[test]
 fn renderable_flags_preserved() {
     let snap = test_snapshot();
-    let content = snapshot_to_renderable(&snap);
+    let content = snapshot_to_renderable(&snap, &|_| None);
 
     assert!(content.cells[1].flags.contains(CellFlags::BOLD));
     assert!(content.cells[3].flags.contains(CellFlags::UNDERLINE));
@@ -146,7 +149,7 @@ fn renderable_flags_preserved() {
 #[test]
 fn renderable_underline_color_and_hyperlink() {
     let snap = test_snapshot();
-    let content = snapshot_to_renderable(&snap);
+    let content = snapshot_to_renderable(&snap, &|_| None);
 
     assert_eq!(content.cells[0].underline_color, None);
     assert!(!content.cells[0].has_hyperlink);
@@ -165,7 +168,7 @@ fn renderable_underline_color_and_hyperlink() {
 #[test]
 fn renderable_zerowidth() {
     let snap = test_snapshot();
-    let content = snapshot_to_renderable(&snap);
+    let content = snapshot_to_renderable(&snap, &|_| None);
 
     assert!(content.cells[0].zerowidth.is_empty());
     assert_eq!(content.cells[3].zerowidth, vec!['\u{0301}']);
@@ -174,7 +177,7 @@ fn renderable_zerowidth() {
 #[test]
 fn renderable_cursor() {
     let snap = test_snapshot();
-    let content = snapshot_to_renderable(&snap);
+    let content = snapshot_to_renderable(&snap, &|_| None);
 
     assert_eq!(content.cursor.line, 0);
     assert_eq!(content.cursor.column, Column(1));
@@ -185,7 +188,7 @@ fn renderable_cursor() {
 #[test]
 fn renderable_mode_flags() {
     let snap = test_snapshot();
-    let content = snapshot_to_renderable(&snap);
+    let content = snapshot_to_renderable(&snap, &|_| None);
 
     assert!(content.mode.contains(TermMode::SHOW_CURSOR));
     assert!(content.all_dirty);
@@ -233,7 +236,7 @@ fn extract_frame_produces_valid_frame_input() {
     let viewport = ViewportSize::new(160, 320);
     let cell = test_cell_metrics();
 
-    let frame = extract_frame_from_snapshot(&snap, viewport, cell);
+    let frame = extract_frame_from_snapshot(&snap, viewport, cell, &|_| None);
 
     assert_eq!(frame.viewport, viewport);
     assert_eq!(frame.cell_size, cell);
@@ -275,7 +278,7 @@ fn cursor_shape_all_variants() {
     for (wire_shape, expected_shape) in variants {
         let mut snap = test_snapshot();
         snap.cursor.shape = wire_shape;
-        let content = snapshot_to_renderable(&snap);
+        let content = snapshot_to_renderable(&snap, &|_| None);
         assert_eq!(
             content.cursor.shape, expected_shape,
             "wire shape {wire_shape:?} should map to {expected_shape:?}"
@@ -289,7 +292,7 @@ fn cursor_hidden_invisible() {
     snap.cursor.visible = false;
     snap.cursor.shape = WireCursorShape::Hidden;
 
-    let content = snapshot_to_renderable(&snap);
+    let content = snapshot_to_renderable(&snap, &|_| None);
 
     assert!(!content.cursor.visible);
     assert_eq!(content.cursor.shape, CursorShape::Hidden);
@@ -323,9 +326,12 @@ fn empty_snapshot_no_cells() {
         search_total_matches: 0,
         has_unseen_output: false,
         mouse_cursor_icon: None,
+        images: Vec::new(),
+        image_data: Vec::new(),
+        images_dirty: false,
     };
 
-    let content = snapshot_to_renderable(&snap);
+    let content = snapshot_to_renderable(&snap, &|_| None);
     assert!(content.cells.is_empty());
     assert_eq!(content.cursor.line, 0);
     assert_eq!(content.cursor.column, Column(0));
@@ -357,11 +363,14 @@ fn empty_snapshot_frame_input() {
         search_total_matches: 0,
         has_unseen_output: false,
         mouse_cursor_icon: None,
+        images: Vec::new(),
+        image_data: Vec::new(),
+        images_dirty: false,
     };
 
     let viewport = ViewportSize::new(160, 320);
     let cell = test_cell_metrics();
-    let frame = extract_frame_from_snapshot(&snap, viewport, cell);
+    let frame = extract_frame_from_snapshot(&snap, viewport, cell, &|_| None);
 
     assert!(frame.content.cells.is_empty());
     assert_eq!(frame.viewport, viewport);
@@ -374,7 +383,7 @@ fn display_offset_carried_through() {
     let mut snap = test_snapshot();
     snap.display_offset = 42;
 
-    let content = snapshot_to_renderable(&snap);
+    let content = snapshot_to_renderable(&snap, &|_| None);
     assert_eq!(content.display_offset, 42);
 }
 
@@ -383,7 +392,7 @@ fn display_offset_large_value() {
     let mut snap = test_snapshot();
     snap.display_offset = 100_000;
 
-    let content = snapshot_to_renderable(&snap);
+    let content = snapshot_to_renderable(&snap, &|_| None);
     assert_eq!(content.display_offset, 100_000);
 }
 
@@ -427,9 +436,12 @@ fn wide_char_flag_preserved() {
         search_total_matches: 0,
         has_unseen_output: false,
         mouse_cursor_icon: None,
+        images: Vec::new(),
+        image_data: Vec::new(),
+        images_dirty: false,
     };
 
-    let content = snapshot_to_renderable(&snap);
+    let content = snapshot_to_renderable(&snap, &|_| None);
     assert!(content.cells[0].flags.contains(CellFlags::WIDE_CHAR));
     assert_eq!(content.cells[0].ch, '漢');
 }
@@ -440,15 +452,15 @@ fn wide_char_flag_preserved() {
 fn renderable_into_matches_fresh() {
     let snap = test_snapshot();
 
-    let fresh = snapshot_to_renderable(&snap);
-    let mut reused = snapshot_to_renderable(&snap);
+    let fresh = snapshot_to_renderable(&snap, &|_| None);
+    let mut reused = snapshot_to_renderable(&snap, &|_| None);
     // Mutate to prove `_into` overwrites everything.
     reused.display_offset = 999;
     reused.stable_row_base = 42;
     reused.all_dirty = false;
     reused.mode = TermMode::empty();
 
-    snapshot_to_renderable_into(&snap, &mut reused);
+    snapshot_to_renderable_into(&snap, &mut reused, &|_| None);
 
     assert_eq!(fresh.cells.len(), reused.cells.len());
     for (a, b) in fresh.cells.iter().zip(reused.cells.iter()) {
@@ -479,15 +491,15 @@ fn extract_into_matches_fresh() {
     let viewport = ViewportSize::new(160, 320);
     let cell = test_cell_metrics();
 
-    let fresh = extract_frame_from_snapshot(&snap, viewport, cell);
+    let fresh = extract_frame_from_snapshot(&snap, viewport, cell, &|_| None);
 
     // Seed with a different snapshot to prove _into overwrites correctly.
-    let mut reused = extract_frame_from_snapshot(&snap, ViewportSize::new(1, 1), cell);
+    let mut reused = extract_frame_from_snapshot(&snap, ViewportSize::new(1, 1), cell, &|_| None);
     reused.fg_dim = 0.5;
     reused.hovered_url_segments.push((0, 0, 10));
     reused.prompt_marker_rows.push(99);
 
-    extract_frame_from_snapshot_into(&snap, &mut reused, viewport, cell);
+    extract_frame_from_snapshot_into(&snap, &mut reused, viewport, cell, &|_| None);
 
     assert_eq!(fresh.viewport, reused.viewport);
     assert_eq!(fresh.cell_size, reused.cell_size);
@@ -511,12 +523,12 @@ fn extract_into_preserves_capacity() {
     let cell = test_cell_metrics();
 
     // First extraction allocates.
-    let mut frame = extract_frame_from_snapshot(&snap, viewport, cell);
+    let mut frame = extract_frame_from_snapshot(&snap, viewport, cell, &|_| None);
     let cells_cap = frame.content.cells.capacity();
     assert!(cells_cap >= 4, "should have allocated for 4 cells");
 
     // Second extraction into the same frame reuses allocations.
-    extract_frame_from_snapshot_into(&snap, &mut frame, viewport, cell);
+    extract_frame_from_snapshot_into(&snap, &mut frame, viewport, cell, &|_| None);
     assert!(
         frame.content.cells.capacity() >= cells_cap,
         "capacity should not shrink"
@@ -577,11 +589,14 @@ fn large_snapshot_through_extract() {
         search_total_matches: 0,
         has_unseen_output: false,
         mouse_cursor_icon: None,
+        images: Vec::new(),
+        image_data: Vec::new(),
+        images_dirty: false,
     };
 
     let viewport = ViewportSize::new(1600, 800);
     let cell = test_cell_metrics();
-    let frame = extract_frame_from_snapshot(&snap, viewport, cell);
+    let frame = extract_frame_from_snapshot(&snap, viewport, cell, &|_| None);
 
     assert_eq!(frame.content.cells.len(), rows * cols);
     assert_eq!(frame.content.cursor.line, 25);
@@ -614,7 +629,7 @@ fn snapshot_to_renderable_populates_mouse_cursor_icon() {
     snap.mouse_cursor_icon =
         oriterm_mux::protocol::snapshot::encode_cursor_icon(CursorIcon::Pointer);
 
-    let content = snapshot_to_renderable(&snap);
+    let content = snapshot_to_renderable(&snap, &|_| None);
 
     assert_eq!(content.mouse_cursor_icon, Some(CursorIcon::Pointer));
 }
@@ -632,7 +647,7 @@ fn snapshot_to_renderable_into_populates_mouse_cursor_icon() {
     snap.mouse_cursor_icon = oriterm_mux::protocol::snapshot::encode_cursor_icon(CursorIcon::Text);
 
     let mut out = RenderableContent::default();
-    snapshot_to_renderable_into(&snap, &mut out);
+    snapshot_to_renderable_into(&snap, &mut out, &|_| None);
 
     assert_eq!(out.mouse_cursor_icon, Some(CursorIcon::Text));
 }
@@ -644,7 +659,7 @@ fn snapshot_to_renderable_none_icon_stays_none() {
     let mut snap = test_snapshot();
     snap.mouse_cursor_icon = None;
 
-    let content = snapshot_to_renderable(&snap);
+    let content = snapshot_to_renderable(&snap, &|_| None);
 
     assert_eq!(content.mouse_cursor_icon, None);
 }
@@ -665,7 +680,7 @@ fn snapshot_to_renderable_into_clears_stale_icon() {
     // Refill from a snapshot with None — the icon MUST be cleared.
     let mut snap = test_snapshot();
     snap.mouse_cursor_icon = None;
-    snapshot_to_renderable_into(&snap, &mut out);
+    snapshot_to_renderable_into(&snap, &mut out, &|_| None);
 
     assert_eq!(out.mouse_cursor_icon, None);
 }
@@ -689,15 +704,170 @@ fn extract_frame_from_snapshot_into_clears_stale_icon() {
         height: 100,
     };
     let cell_metrics = test_cell_metrics();
-    let mut frame = extract_frame_from_snapshot(&snap1, viewport, cell_metrics);
+    let mut frame = extract_frame_from_snapshot(&snap1, viewport, cell_metrics, &|_| None);
     assert_eq!(frame.content.mouse_cursor_icon, Some(CursorIcon::Pointer));
 
     // Refill from a snapshot with None — icon MUST be cleared.
     let mut snap2 = test_snapshot();
     snap2.mouse_cursor_icon = None;
-    extract_frame_from_snapshot_into(&snap2, &mut frame, viewport, cell_metrics);
+    extract_frame_from_snapshot_into(&snap2, &mut frame, viewport, cell_metrics, &|_| None);
 
     assert_eq!(frame.content.mouse_cursor_icon, None);
     // Sanity: also verify cells were refreshed (not a stale seed).
     let _: &RenderableContent = &frame.content;
+}
+
+/// Helper: build a `WirePlacement` with sensible defaults for tests.
+fn wire_placement(image_id: u32) -> oriterm_mux::protocol::snapshot::WirePlacement {
+    oriterm_mux::protocol::snapshot::WirePlacement {
+        image_id,
+        viewport_x: 0.0,
+        viewport_y: 0.0,
+        display_width: 16.0,
+        display_height: 16.0,
+        source_x: 0.0,
+        source_y: 0.0,
+        source_w: 1.0,
+        source_h: 1.0,
+        z_index: 0,
+        opacity: 1.0,
+    }
+}
+
+/// Helper: build a `WireImageData` carrying a tiny RGBA buffer.
+fn wire_image_data(id: u32, bytes: &[u8]) -> oriterm_mux::protocol::snapshot::WireImageData {
+    oriterm_mux::protocol::snapshot::WireImageData {
+        id,
+        data: bytes.to_vec(),
+        width: 1,
+        height: bytes.len() as u32 / 4,
+    }
+}
+
+/// A daemon snapshot carrying a placement + inline pixel data round-trips
+/// through `extract_frame_from_snapshot` with a non-empty
+/// `FrameInput.content.images` AND `image_data`. ONLY passes when the extract
+/// path actually forwards the wire image fields (the proximate cause of the
+/// bug was unconditional `.clear()` on these vectors).
+/// See: bug-tracker/plans/BUG-06-072/
+#[test]
+fn daemon_pane_snapshot_roundtrips_inline_image_data() {
+    use oriterm_core::ImageId;
+
+    let pixels = vec![0xFF, 0x00, 0x00, 0xFF, 0x00, 0xFF, 0x00, 0xFF];
+    let mut snap = test_snapshot();
+    snap.images.push(wire_placement(7));
+    snap.image_data.push(wire_image_data(7, &pixels));
+    snap.images_dirty = true;
+
+    let viewport = ViewportSize::new(100, 100);
+    let cell = test_cell_metrics();
+    let frame = extract_frame_from_snapshot(&snap, viewport, cell, &|_| None);
+
+    assert_eq!(frame.content.images.len(), 1);
+    assert_eq!(frame.content.images[0].image_id, ImageId::from_raw(7));
+    assert_eq!(frame.content.image_data.len(), 1);
+    assert_eq!(frame.content.image_data[0].id, ImageId::from_raw(7));
+    assert_eq!(
+        frame.content.image_data[0].data.as_slice(),
+        pixels.as_slice()
+    );
+    assert!(frame.content.images_dirty);
+    // images_dirty=true must force a full repaint via all_dirty=true
+    // (mirrors `oriterm_core/src/term/snapshot/mod.rs` semantics — image cache
+    // changes don't tag per-line grid damage).
+    assert!(frame.content.all_dirty);
+}
+
+/// A daemon snapshot whose source carries N placements MUST NOT arrive at the
+/// client with empty `FrameInput.content.images`. Rejects the pre-fix behavior
+/// where `extract_frame_from_snapshot_into` unconditionally called
+/// `out.images.clear()` and dropped all daemon-mode image rendering.
+/// See: bug-tracker/plans/BUG-06-072/
+#[test]
+fn daemon_pane_snapshot_does_not_drop_images_when_source_has_them() {
+    let pixels = vec![0u8; 16];
+    let mut snap = test_snapshot();
+    snap.images.push(wire_placement(11));
+    snap.images.push(wire_placement(12));
+    snap.image_data.push(wire_image_data(11, &pixels));
+    snap.image_data.push(wire_image_data(12, &pixels));
+
+    let viewport = ViewportSize::new(100, 100);
+    let cell = test_cell_metrics();
+    let frame = extract_frame_from_snapshot(&snap, viewport, cell, &|_| None);
+
+    assert_eq!(
+        frame.content.images.len(),
+        snap.images.len(),
+        "extract path must forward every placement, not silently drop them"
+    );
+    assert_eq!(
+        frame.content.image_data.len(),
+        snap.image_data.len(),
+        "extract path must forward every inline image_data entry"
+    );
+}
+
+/// Stale-clear pin: when refilling a `FrameInput` with a snapshot whose
+/// `images` list is empty, ANY images from a prior frame MUST be cleared.
+/// Companion to `extract_frame_from_snapshot_into_clears_stale_icon`.
+#[test]
+fn extract_frame_from_snapshot_into_clears_stale_images() {
+    let pixels = vec![0xABu8; 4];
+    // First snapshot carries a placement.
+    let mut snap1 = test_snapshot();
+    snap1.images.push(wire_placement(3));
+    snap1.image_data.push(wire_image_data(3, &pixels));
+    let viewport = ViewportSize::new(100, 100);
+    let cell = test_cell_metrics();
+    let mut frame = extract_frame_from_snapshot(&snap1, viewport, cell, &|_| None);
+    assert_eq!(frame.content.images.len(), 1);
+    assert_eq!(frame.content.image_data.len(), 1);
+
+    // Second snapshot has NO placements — refill MUST clear both vectors.
+    let snap2 = test_snapshot();
+    extract_frame_from_snapshot_into(&snap2, &mut frame, viewport, cell, &|_| None);
+    assert!(frame.content.images.is_empty());
+    assert!(frame.content.image_data.is_empty());
+    assert!(!frame.content.images_dirty);
+}
+
+/// Cache-hit pin: a placement whose `image_id` is NOT in the wire snapshot's
+/// inline `image_data` (steady-state — server omitted because client cache
+/// already has it) is resolved by the `image_lookup` closure. The resolved
+/// pixel data ends up in `FrameInput.content.image_data`.
+#[test]
+fn daemon_pane_snapshot_resolves_placement_via_image_lookup() {
+    use std::sync::Arc;
+
+    use oriterm_core::{ImageId, RenderableImageData};
+
+    let cached_pixels: Arc<Vec<u8>> = Arc::new(vec![0x12, 0x34, 0x56, 0x78]);
+    let cached_id = ImageId::from_raw(42);
+    let cached = Arc::new(RenderableImageData {
+        id: cached_id,
+        data: cached_pixels.clone(),
+        width: 1,
+        height: 1,
+    });
+
+    // Snapshot has a placement but NO inline image_data — must resolve via lookup.
+    let mut snap = test_snapshot();
+    snap.images.push(wire_placement(cached_id.as_u32()));
+
+    let lookup = |id: ImageId| -> Option<Arc<RenderableImageData>> {
+        (id == cached_id).then(|| cached.clone())
+    };
+    let viewport = ViewportSize::new(100, 100);
+    let cell = test_cell_metrics();
+    let frame = extract_frame_from_snapshot(&snap, viewport, cell, &lookup);
+
+    assert_eq!(frame.content.images.len(), 1);
+    assert_eq!(frame.content.image_data.len(), 1);
+    assert_eq!(frame.content.image_data[0].id, cached_id);
+    assert!(Arc::ptr_eq(
+        &frame.content.image_data[0].data,
+        &cached_pixels
+    ));
 }

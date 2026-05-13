@@ -5,8 +5,11 @@ mod debug_overlay;
 mod draw_helpers;
 mod multi_pane;
 mod post_render;
+mod predicates;
 pub(in crate::app) mod preedit;
 mod search_bar;
+
+use predicates::{RedrawPredicateInputs, compute_redraw_predicates};
 
 use std::time::Instant;
 
@@ -16,10 +19,7 @@ use super::perf_stats::FramePhases;
 use super::window_context::WindowContext;
 use crate::gpu::GpuState;
 use crate::gpu::recovery::gate_outcome;
-use crate::gpu::{
-    FrameSearch, FrameSelection, MarkCursorOverride, ViewportSize, extract_frame_from_snapshot,
-    extract_frame_from_snapshot_into, snapshot_palette,
-};
+use crate::gpu::{FrameSearch, FrameSelection, MarkCursorOverride, ViewportSize};
 use oriterm_core::{Column, CursorShape, TermMode};
 use oriterm_mux::PaneId;
 
@@ -173,50 +173,43 @@ impl App {
             ctx.last_rendered_pane = Some(pane_id);
             let snap_is_none = mux.pane_snapshot(pane_id).is_none();
             let snap_dirty = mux.is_pane_snapshot_dirty(pane_id);
-            let content_changed = snap_is_none || snap_dirty || pane_changed;
-            if content_changed {
+            let preds = compute_redraw_predicates(RedrawPredicateInputs {
+                snap_is_none,
+                snap_dirty,
+                pane_changed,
+                preedit_revision: self.ime.preedit_revision,
+                prev_preedit_revision: ctx.prev_preedit_revision,
+            });
+            let snapshot_changed = preds.snapshot_changed;
+            let content_changed = preds.content_changed;
+            if snapshot_changed {
                 mux.refresh_pane_snapshot(pane_id);
             }
 
-            // Fast path (embedded): swap RenderableContent directly from
-            // the terminal, bypassing the WireCell round-trip. Only attempt
-            // when content was refreshed — stale cache entries from prior
-            // tab switches would contaminate the frame otherwise.
-            let swapped = content_changed
-                && ctx
-                    .frame
-                    .as_mut()
-                    .is_some_and(|f| mux.swap_renderable_content(pane_id, &mut f.content));
-
-            let Some(snapshot) = mux.pane_snapshot(pane_id) else {
+            // Steps 3-6 of the pane-content refresh skeleton: swap fast
+            // path → snapshot lookup → post-swap state setup OR
+            // extract-or-replace → clear dirty bit. SSOT shared with the
+            // multi-pane redraw driver — see
+            // `draw_helpers::try_swap_or_extract_pane_content`. The
+            // swap gate is `snapshot_changed` so `swap_renderable_content`
+            // never surfaces a stale buffer with the prior frame's
+            // destructive preedit overlay (gating on the broader
+            // `content_changed` would regress that invariant).
+            let reextract_gate = content_changed || ctx.frame.is_none();
+            let outcome = draw_helpers::try_swap_or_extract_pane_content(
+                mux.as_mut(),
+                &mut ctx.frame,
+                pane_id,
+                viewport,
+                cell,
+                snapshot_changed,
+                reextract_gate,
+            );
+            if outcome.is_none() {
                 log::warn!("redraw: no snapshot for pane {pane_id:?}");
                 ctx.root.mark_dirty();
                 return phases;
-            };
-            if swapped {
-                let frame = ctx.frame.as_mut().expect("frame exists when swapped");
-                frame.viewport = viewport;
-                frame.cell_size = cell;
-                frame.content_cols = snapshot.cols as usize;
-                frame.content_rows = snapshot.cells.len();
-                frame.palette = snapshot_palette(snapshot);
-                frame.clear_transient_fields();
-            } else if content_changed || ctx.frame.is_none() {
-                // Only re-extract when content actually changed. On cursor-
-                // blink-only redraws the existing frame is still valid — skip
-                // the O(rows*cols) snapshot-to-renderable copy.
-                match &mut ctx.frame {
-                    Some(existing) => {
-                        extract_frame_from_snapshot_into(snapshot, existing, viewport, cell);
-                    }
-                    slot @ None => {
-                        *slot = Some(extract_frame_from_snapshot(snapshot, viewport, cell));
-                    }
-                }
-            } else {
-                // Cursor-blink-only: reuse existing frame as-is.
             }
-            mux.clear_pane_snapshot_dirty(pane_id);
             phases.extract = extract_start.elapsed();
 
             let frame = ctx.frame.as_mut().expect("frame just assigned");
@@ -340,42 +333,63 @@ impl App {
             // hashes `text_blink_opacity`), which chrome queries via
             // `cache_invalidated_this_frame()`.
             ctx.prev_text_blink_opacity = text_blink_opacity;
+            // Sync prev_preedit_revision so the next frame's
+            // `compute_redraw_predicates` only flags `content_changed` on
+            // an ACTUAL revision delta.
+            ctx.prev_preedit_revision = self.ime.preedit_revision;
 
             // Chrome: tab bar, overlays, search bar, status bar, window border.
             let widgets_start = Instant::now();
-            let needs_full_render = chrome::render_chrome(
+            // Take search out of ctx.frame so ChromeParams carries an owned
+            // local borrow (avoids &mut self vs &FrameSearch borrow conflict).
+            let chrome_search = ctx.frame.as_mut().and_then(|f| f.search.take());
+            let (cols, rows) = ctx
+                .frame
+                .as_ref()
+                .map_or((0, 0), |f| (f.content_cols, f.content_rows));
+            let chrome::ChromeRenderResult {
+                needs_full_render,
+                tab_bar_animating,
+            } = chrome::render_chrome(
                 ctx,
                 &self.config,
                 &self.ui_theme,
                 gpu,
-                &chrome::ChromeParams { pane_count: 1 },
+                &chrome::ChromeParams {
+                    pane_count: 1,
+                    content_cols: cols,
+                    content_rows: rows,
+                    search: chrome_search.as_ref(),
+                },
             );
+            if let (Some(frame), Some(s)) = (ctx.frame.as_mut(), chrome_search) {
+                frame.search = Some(s);
+            }
             phases.widgets = widgets_start.elapsed();
 
             // Debug performance overlay (Ctrl+Shift+F12).
-            draw_debug_overlay_if_enabled(
-                self.debug_overlay_enabled,
-                &mut self.debug_fps,
-                &self.last_render,
-                ctx,
-                gpu,
+            let mut overlay = DebugOverlayCtx {
+                enabled: self.debug_overlay_enabled,
+                debug_fps: &mut self.debug_fps,
+                last_render: &self.last_render,
                 scale,
-            );
+            };
+            draw_debug_overlay_if_enabled(&mut overlay, ctx, gpu);
 
             // Re-borrow renderer for GPU submission (prior borrow ended
             // when render_chrome returned via NLL).
             let renderer = ctx.renderer.as_mut().expect("renderer checked");
 
-            // Apply deferred DXGI ResizeBuffers just before acquiring the
-            // surface texture. This minimizes the gap between swap chain
-            // invalidation and frame presentation, preventing the DWM from
-            // stretching stale content during interactive resize.
+            // Apply deferred DXGI ResizeBuffers before surface acquisition
+            // (minimizes the DWM stale-content window during resize).
             ctx.window.apply_pending_surface_resize(gpu);
 
             let gpu_start = Instant::now();
             let result =
                 renderer.render_to_surface(gpu, pipelines, ctx.window.surface(), needs_full_render);
             phases.gpu_render = gpu_start.elapsed();
+
+            draw_helpers::apply_post_render_ui_stale(ctx, &result, tab_bar_animating);
             (result, blinking_now, cursor_pos)
         };
 
@@ -385,43 +399,48 @@ impl App {
     }
 }
 
+/// Overlay-specific inputs for [`draw_debug_overlay_if_enabled`].
+///
+/// Groups the overlay's own config (toggle + EWMA accumulator + last-frame
+/// timestamp + DPI scale) into one parameter so the function signature stays
+/// compact. `&mut WindowContext` and `&GpuState` remain separate arguments —
+/// they are shared with the rest of the redraw pipeline and not
+/// overlay-specific.
+struct DebugOverlayCtx<'a> {
+    enabled: bool,
+    debug_fps: &'a mut f32,
+    last_render: &'a Instant,
+    scale: f32,
+}
+
 /// Draw the debug performance overlay if enabled (Ctrl+Shift+F12).
 ///
 /// Extracted from [`App::handle_redraw`] to reduce function length.
 /// Updates EWMA FPS and renders the overlay scene.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "Six independent inputs threaded into one paint pass: enabled flag, EWMA fps \
-              accumulator, last-render Instant, &mut WindowContext, &GpuState, scale factor. \
-              Coalescing into a DebugOverlayCtx adds construction noise without reducing \
-              argument cardinality."
-)]
 fn draw_debug_overlay_if_enabled(
-    enabled: bool,
-    debug_fps: &mut f32,
-    last_render: &Instant,
+    overlay: &mut DebugOverlayCtx<'_>,
     ctx: &mut WindowContext,
     gpu: &GpuState,
-    scale: f32,
 ) {
-    if !enabled {
+    if !overlay.enabled {
         return;
     }
+    let scale = overlay.scale;
     // Update EWMA FPS from last render interval.
-    let elapsed = last_render.elapsed().as_secs_f32();
+    let elapsed = overlay.last_render.elapsed().as_secs_f32();
     if elapsed > 0.0 {
         let instant_fps = 1.0 / elapsed;
         // EWMA with alpha=0.1 for smooth display.
-        *debug_fps = if *debug_fps < 1.0 {
+        *overlay.debug_fps = if *overlay.debug_fps < 1.0 {
             instant_fps
         } else {
-            0.1 * instant_fps + 0.9 * *debug_fps
+            0.1 * instant_fps + 0.9 * *overlay.debug_fps
         };
     }
 
     let renderer = ctx.renderer.as_mut().expect("renderer checked");
     let stats = debug_overlay::DebugStats {
-        fps: *debug_fps,
+        fps: *overlay.debug_fps,
         dirty_rows: renderer
             .prepared
             .scratch_dirty

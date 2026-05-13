@@ -1837,3 +1837,105 @@ fn dispatch_mark_mode_propagates_none_selection() {
         "absent selection must propagate as None"
     );
 }
+
+// ── preedit_revision tracking ────────────────────────────────────
+
+/// Regression: BUG-06-054 / BUG-06-053 — multi-pane render cache needs
+/// per-preedit-mutation invalidation. Single-pane cache uses `dirty`
+/// + per-row dirty tracking; multi-pane needs a monotonic revision
+/// counter on `ImeState` so the focused-pane damage_key changes when
+/// preedit is set / cleared / shrunk / committed.
+
+#[test]
+fn preedit_revision_starts_at_zero() {
+    let ime = ImeState::new();
+    assert_eq!(ime.preedit_revision, 0, "fresh ImeState has revision 0");
+}
+
+#[test]
+fn preedit_revision_increments_on_preedit_set() {
+    let mut ime = ImeState::new();
+    ime.handle_event(Ime::Enabled);
+    let r0 = ime.preedit_revision;
+    ime.handle_event(Ime::Preedit("abc".into(), Some((1, 2))));
+    assert_eq!(ime.preedit_revision, r0 + 1, "preedit set bumps revision");
+}
+
+#[test]
+fn preedit_revision_increments_on_preedit_change() {
+    let mut ime = ImeState::new();
+    ime.handle_event(Ime::Enabled);
+    ime.handle_event(Ime::Preedit("abc".into(), None));
+    let r1 = ime.preedit_revision;
+    ime.handle_event(Ime::Preedit("ab".into(), None));
+    assert_eq!(
+        ime.preedit_revision,
+        r1 + 1,
+        "preedit shrink bumps revision"
+    );
+}
+
+#[test]
+fn preedit_revision_stable_on_same_text() {
+    let mut ime = ImeState::new();
+    ime.handle_event(Ime::Enabled);
+    ime.handle_event(Ime::Preedit("abc".into(), None));
+    let r1 = ime.preedit_revision;
+    ime.handle_event(Ime::Preedit("abc".into(), None));
+    assert_eq!(
+        ime.preedit_revision, r1,
+        "identical preedit text does NOT bump revision"
+    );
+}
+
+#[test]
+fn preedit_revision_increments_on_commit_of_nonempty_preedit() {
+    let mut ime = ImeState::new();
+    ime.handle_event(Ime::Enabled);
+    ime.handle_event(Ime::Preedit("abc".into(), None));
+    let r1 = ime.preedit_revision;
+    ime.handle_event(Ime::Commit("xyz".into()));
+    assert_eq!(
+        ime.preedit_revision,
+        r1 + 1,
+        "commit-from-nonempty bumps revision"
+    );
+}
+
+#[test]
+fn preedit_revision_stable_on_commit_when_preedit_empty() {
+    let mut ime = ImeState::new();
+    ime.handle_event(Ime::Enabled);
+    let r0 = ime.preedit_revision;
+    // Commit without preceding preedit (e.g. some IME paths).
+    ime.handle_event(Ime::Commit("x".into()));
+    assert_eq!(
+        ime.preedit_revision, r0,
+        "commit with empty preedit does NOT bump revision"
+    );
+}
+
+#[test]
+fn preedit_revision_increments_on_disable_of_nonempty_preedit() {
+    let mut ime = ImeState::new();
+    ime.handle_event(Ime::Enabled);
+    ime.handle_event(Ime::Preedit("abc".into(), None));
+    let r1 = ime.preedit_revision;
+    ime.handle_event(Ime::Disabled);
+    assert_eq!(
+        ime.preedit_revision,
+        r1 + 1,
+        "disable-from-nonempty bumps revision"
+    );
+}
+
+#[test]
+fn preedit_revision_stable_on_enable_event() {
+    let mut ime = ImeState::new();
+    let r0 = ime.preedit_revision;
+    ime.handle_event(Ime::Enabled);
+    assert_eq!(
+        ime.preedit_revision, r0,
+        "Enable does NOT mutate preedit → revision stable"
+    );
+}

@@ -11,7 +11,7 @@ use crate::index::Column;
 /// DECSCUSR sets cursor shape globally (not per-screen), so this is stored
 /// on `Term`, not on `Cursor`. Kept in this module because it's a cursor
 /// concept re-exported through `grid::CursorShape`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum CursorShape {
     #[default]
     Block,

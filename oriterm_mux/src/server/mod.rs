@@ -486,6 +486,10 @@ impl MuxServer {
         self.subscriptions.remove(&pane_id);
         for conn in self.connections.values_mut() {
             conn.unsubscribe(pane_id);
+            // Drop every `sent_images[pane_id]` entry — the pane is closed,
+            // its ImageIds will never be referenced again, and a recycled
+            // PaneId would otherwise inherit stale tracking.
+            conn.drop_sent_images_for_pane(pane_id);
         }
         // : drop any pending host-replies for the closed pane
         // (consumer apps inside the pane no longer exist; the IO thread

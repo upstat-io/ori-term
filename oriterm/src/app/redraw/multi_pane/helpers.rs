@@ -1,5 +1,8 @@
 //! Multi-pane scratch buffer helpers.
 
+use oriterm_mux::PaneSnapshot;
+
+use crate::gpu::FrameSearch;
 use crate::session::PaneLayout;
 
 use super::super::App;
@@ -14,6 +17,25 @@ pub(super) fn should_reextract_scratch_frame(
     scratch_matches_pane: bool,
 ) -> bool {
     content_refreshed || frame_missing || !scratch_matches_pane
+}
+
+/// Compute focused-pane chrome state for `ChromeParams`.
+///
+/// Returns `(content_cols, content_rows, search)` extracted from the
+/// FOCUSED pane's snapshot — never from the per-pane scratch buffer
+/// `ctx.frame`, which holds the last-iterated pane's state in multi-pane
+/// mode. When the focused pane has no snapshot (mux unavailable, pane
+/// closed), returns `(0, 0, None)`.
+pub(super) fn focused_pane_chrome_state(
+    focused_snapshot: Option<&PaneSnapshot>,
+) -> (usize, usize, Option<FrameSearch>) {
+    focused_snapshot.map_or((0, 0, None), |snap| {
+        (
+            snap.cols as usize,
+            snap.cells.len(),
+            FrameSearch::from_snapshot(snap),
+        )
+    })
 }
 
 impl App {

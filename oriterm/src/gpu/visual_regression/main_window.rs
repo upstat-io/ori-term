@@ -168,7 +168,8 @@ fn render_main_window(
     // Paint window border.
     if show_border {
         let border_color = color_to_rgb(theme.border_strong);
-        renderer.append_window_border(width, height, border_color, (2.0 * scale).round());
+        let border_width = crate::gpu::window_renderer::physical_border_width(scale);
+        renderer.append_window_border(width, height, border_color, border_width);
     }
 
     // Render and readback.

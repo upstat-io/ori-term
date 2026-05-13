@@ -86,15 +86,40 @@ impl FrameSelection {
     ///
     /// Captures line range, column extents, and mode so the incremental
     /// path detects intra-line selection changes (e.g. same-row drag).
+    ///
+    /// Canonicalizes column/side fields when the selection extends above or
+    /// below the viewport — off-viewport geometry changes (e.g. dragging a
+    /// selection further up into scrollback when its visible start is
+    /// already at column 0) MUST NOT mutate the snapshot, or the multi-pane
+    /// cache over-invalidates.
     pub fn damage_snapshot(&self, num_rows: usize) -> Option<SelectionDamageSnapshot> {
         let (start_line, end_line) = self.viewport_line_range(num_rows)?;
+        let start_clamped = self.bounds.start.row.0 < self.base_stable;
+        let end_clamped =
+            (self.bounds.end.row.0.saturating_sub(self.base_stable)) as usize >= num_rows;
         Some(SelectionDamageSnapshot {
             start_line,
             end_line,
-            start_col: self.bounds.start.col,
-            start_side: self.bounds.start.side,
-            end_col: self.bounds.end.col,
-            end_side: self.bounds.end.side,
+            start_col: if start_clamped {
+                0
+            } else {
+                self.bounds.start.col
+            },
+            start_side: if start_clamped {
+                Side::Left
+            } else {
+                self.bounds.start.side
+            },
+            end_col: if end_clamped {
+                usize::MAX
+            } else {
+                self.bounds.end.col
+            },
+            end_side: if end_clamped {
+                Side::Right
+            } else {
+                self.bounds.end.side
+            },
             mode: self.bounds.mode,
         })
     }
@@ -104,7 +129,7 @@ impl FrameSelection {
 ///
 /// Compared between frames to determine which rows need regeneration
 /// when the selection changes (including intra-line column changes).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct SelectionDamageSnapshot {
     /// First viewport line (inclusive).
     pub start_line: usize,
@@ -128,7 +153,7 @@ pub struct SelectionDamageSnapshot {
 /// Prepare phase renders a hollow block at the mark position instead of
 /// the terminal's real cursor. The extract snapshot (`content.cursor`)
 /// is never mutated — this override is a separate rendering concern.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct MarkCursorOverride {
     /// Viewport line (0 = top of visible area).
     pub line: usize,
@@ -349,6 +374,29 @@ impl FrameInput {
     /// chain into one helper closes the per-call-site DRIFT risk.
     pub fn search_fingerprint(&self) -> Option<SearchDamageKey> {
         self.search.as_ref().map(FrameSearch::damage_fingerprint)
+    }
+
+    /// Project the dispatch-fingerprint-relevant fields into a
+    /// `DispatchFingerprintInputs` struct. Single-pane callers use this to
+    /// reach the SSOT hasher with their existing `&FrameInput`; multi-pane
+    /// builds the same struct directly from snapshot + layout + local vars
+    /// to avoid a dummy `FrameInput` allocation.
+    pub(crate) fn dispatch_fingerprint_inputs(
+        &self,
+        origin: (f32, f32),
+    ) -> crate::gpu::prepare::DispatchFingerprintInputs {
+        crate::gpu::prepare::DispatchFingerprintInputs {
+            viewport: self.viewport,
+            cell_size: self.cell_size,
+            content_cols: self.content_cols,
+            content_rows: self.content_rows,
+            origin,
+            text_blink_opacity: self.text_blink_opacity,
+            palette: self.palette.damage_fingerprint(),
+            fg_dim: self.fg_dim,
+            subpixel_positioning: self.subpixel_positioning,
+            search: self.search_fingerprint(),
+        }
     }
 
     /// Number of grid rows in the content.

@@ -453,6 +453,23 @@ pub trait MuxBackend {
     /// has been built/fetched yet.
     fn pane_snapshot(&self, pane_id: PaneId) -> Option<&PaneSnapshot>;
 
+    /// Look up decoded image pixel data for `(pane_id, image_id)`.
+    ///
+    /// Daemon-mode clients return their cached `Arc<RenderableImageData>` (cheap
+    /// refcount clone). Embedded backends bypass the extract path entirely via
+    /// `swap_renderable_content` so the default `None` is correct. Used by the
+    /// extract path closure when a `WirePlacement` arrives without its
+    /// `WireImageData` (the server filtered out the bytes because the client
+    /// already has them).
+    /// See: bug-tracker/plans/BUG-06-072/
+    fn pane_image_data(
+        &self,
+        _pane_id: PaneId,
+        _image_id: oriterm_core::ImageId,
+    ) -> Option<std::sync::Arc<oriterm_core::RenderableImageData>> {
+        None
+    }
+
     /// Whether the cached snapshot for `pane_id` is stale.
     fn is_pane_snapshot_dirty(&self, pane_id: PaneId) -> bool;
 

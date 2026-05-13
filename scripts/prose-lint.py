@@ -55,7 +55,8 @@ SOURCE_KEYWORD_PATTERNS = [
     (r"\bTDD\s+matrix\b", "methodology-tdd-matrix", re.IGNORECASE),
     # Reviewer-tool names \u2014 case-sensitive lowercase only (the literal CLI
     # invocation form). Capitalized "Codex" or "Gemini" in product-name
-    # context can land via prose-lint: allow if a legit reference appears.
+    # context is uppercase + survives the regex. Bypass markers are banned
+    # outright \u2014 see BYPASS_MARKER_PATTERNS.
     (r"\b(?:codex|gemini|opencode)\b", "reviewer-name", 0),
     # Reviewer-emphasis \u2014 uppercase-only "AGREEMENT" appears exclusively in
     # review-trail comments ("codex+opencode AGREEMENT"); regular prose uses
@@ -81,11 +82,11 @@ SOURCE_KEYWORD_PATTERNS = [
 # extended cells`, citing a reference path verbatim) are fine. What
 # gets flagged is *attribution form* — telling the reader the design
 # was copied from another terminal emulator without a verifiable
-# file:line citation. Allowed by exemption when the attribution
+# file:line citation. Allowed by structural exemption when the attribution
 # carries a verifiable file:line cite (e.g. "WezTerm
-# `term/src/terminalstate/performer.rs:473-478`") via the
-# `reference-lang-source-cite` pattern below, or via explicit
-# `// prose-lint: allow`.
+# `term/src/terminalstate/performer.rs:473-478`") matched by the
+# `reference-lang-source-cite` pattern below. The bypass-marker route
+# was removed by CLAUDE.md §NEVER SILENCE LINTERS.
 #
 # `xterm.js` is matched as a single token (the `.js` suffix
 # distinguishes it from bare `xterm`); both forms are caught.
@@ -142,9 +143,6 @@ STATE_LABEL_RE = re.compile(
     re.IGNORECASE,
 )
 
-# Directive markers \u2014 .md uses HTML comments, source uses // line comments.
-LINT_OFF_RE = re.compile(r"<!--\s*prose-lint:\s*off\s*-->")
-LINT_ON_RE = re.compile(r"<!--\s*prose-lint:\s*on\s*-->")
 # Regression doc-comment exemption: `///` doc comments leading with
 # "Regression: BUG-XX-NNN" or "See: bug-tracker/plans/BUG-XX-NNN/..." are
 # the canonical pin format per .claude/rules/tests.md §Regression
@@ -154,11 +152,21 @@ REGRESSION_DOC_COMMENT_RE = re.compile(
     re.IGNORECASE,
 )
 
-LINT_ALLOW_LINE_RE = re.compile(r"<!--\s*prose-lint:\s*allow\s*-->")
+# Banned-escape-marker patterns. The linter's job is to surface authored-
+# prose defects; silencing the report at the marker level was misused
+# historically to bypass real violations (see CLAUDE.md §NEVER SILENCE
+# LINTERS). The capability is removed: every match below is reported as its
+# own meta-violation so the operator must STRIP the marker (and fix the
+# underlying defect) rather than bypass the gate.
+BYPASS_MARKER_PATTERNS = [
+    (re.compile(r"<!--\s*prose-lint:\s*off\s*-->"), "bypass-marker:md-off"),
+    (re.compile(r"<!--\s*prose-lint:\s*on\s*-->"), "bypass-marker:md-on"),
+    (re.compile(r"<!--\s*prose-lint:\s*allow\s*-->"), "bypass-marker:md-allow"),
+    (re.compile(r"//\s*prose-lint:\s*off\b"), "bypass-marker:src-off"),
+    (re.compile(r"//\s*prose-lint:\s*on\b"), "bypass-marker:src-on"),
+    (re.compile(r"//\s*prose-lint:\s*allow\b"), "bypass-marker:src-allow"),
+]
 
-SOURCE_LINT_OFF_RE = re.compile(r"//\s*prose-lint:\s*off\b")
-SOURCE_LINT_ON_RE = re.compile(r"//\s*prose-lint:\s*on\b")
-SOURCE_ALLOW_LINE_RE = re.compile(r"//\s*prose-lint:\s*allow\b")
 
 # Design-log section headers where prose is allowed (see Exceptions table)
 EXEMPT_HEADER_RE = re.compile(r"^##\s+\u00a7[46]\b")
@@ -195,6 +203,11 @@ def is_exempt_path(path: Path) -> bool:
     # Rule-definition file itself (self-reference)
     if path.name == "SKILL.md" and "improve-tooling" in s:
         return True
+    # Project CLAUDE.md — the rule-definition file that enumerates banned
+    # phrases inline as examples of what NOT to do. The file would otherwise
+    # fire its own rules on itself.
+    if path.name == "CLAUDE.md":
+        return True
     # CHANGELOG / HISTORY / README — documentation, not prescriptive Claude artifacts.
     # README.md files describe a crate's purpose and need explanatory prose.
     if path.name in ("CHANGELOG.md", "HISTORY.md", "README.md"):
@@ -219,18 +232,12 @@ def is_exempt_path(path: Path) -> bool:
 def compute_exempt_lines(lines, path, kind):
     """Return the set of 1-indexed line numbers that the keyword scan must skip.
 
-    kind: 'md' or 'source'. Selects which off/on directive form is honored
-    and whether design-log section exemption + fenced-code-block tracking
-    apply (.md only).
+    Lint-off / lint-on / lint-allow directives are NO LONGER honored — see
+    BYPASS_MARKER_PATTERNS. Only structural exemptions remain: fenced code
+    blocks in .md and design-log §4 / §6 sections.
     """
-    if kind == "md":
-        off_re, on_re = LINT_OFF_RE, LINT_ON_RE
-    else:
-        off_re, on_re = SOURCE_LINT_OFF_RE, SOURCE_LINT_ON_RE
-
     exempt = set()
     in_fence = False
-    lint_off = False
     in_design_exempt = False
     design = is_design_log(path) if kind == "md" else False
     for idx, line in enumerate(lines, 1):
@@ -242,14 +249,10 @@ def compute_exempt_lines(lines, path, kind):
         if in_fence:
             exempt.add(idx)
             continue
-        if off_re.search(line):
-            lint_off = True
         if design and line.startswith("## "):
             in_design_exempt = bool(EXEMPT_HEADER_RE.match(line))
-        if lint_off or in_design_exempt:
+        if in_design_exempt:
             exempt.add(idx)
-        if on_re.search(line):
-            lint_off = False
     return exempt
 
 
@@ -330,21 +333,38 @@ def find_long_paragraphs(lines, exempt, max_sentences):
 # Keyword scan
 # ---------------------------------------------------------------------------
 
-def keyword_scan(lines, exempt, patterns, allow_re, apply_md_suppressors):
+def keyword_scan(lines, exempt, patterns, apply_md_suppressors):
     """Scan lines for forbidden keywords/regexes.
 
     patterns: list of (regex, label, flags) tuples.
-    allow_re: per-line allow-comment marker (md vs source form).
     apply_md_suppressors: when True, applies STATE_LABEL_RE (suppress
         **CONFIRMED|REGRESSED|FIXED ... previously ...** lines) and
         COMPOUND_ADJ_RE masking ("previously-failing" etc) — both are
         prose-pack false-positive guards, irrelevant for source scans.
+
+    Bypass markers (`// prose-lint: allow` / `off` / `on`, and the
+    HTML-comment forms) are NOT honored — each match is reported as its own
+    finding so the operator strips the marker and fixes the underlying defect.
     """
     findings = []
     for idx, line in enumerate(lines, 1):
+        # Bypass-marker meta-detection runs BEFORE structural exemptions —
+        # we still want to surface markers inside fenced code blocks if any
+        # production code somehow grew them.
+        for bypass_re, bypass_label in BYPASS_MARKER_PATTERNS:
+            m = bypass_re.search(line)
+            if m:
+                findings.append({
+                    "line": idx,
+                    "type": bypass_label,
+                    "message": (
+                        "banned escape marker — strip and fix the underlying defect "
+                        "(see CLAUDE.md §NEVER SILENCE LINTERS)"
+                    ),
+                    "match": m.group(0),
+                    "snippet": line.rstrip()[:200],
+                })
         if idx in exempt:
-            continue
-        if allow_re.search(line):
             continue
         if apply_md_suppressors and STATE_LABEL_RE.search(line):
             continue
@@ -404,11 +424,9 @@ def scan_file(path: Path, max_sentences: int):
     if suffix == MD_EXT:
         kind = "md"
         patterns = KEYWORD_PATTERNS
-        allow_re = LINT_ALLOW_LINE_RE
     elif suffix in SOURCE_EXTS:
         kind = "source"
         patterns = SOURCE_KEYWORD_PATTERNS
-        allow_re = SOURCE_ALLOW_LINE_RE
     else:
         return []
 
@@ -417,7 +435,6 @@ def scan_file(path: Path, max_sentences: int):
     items = keyword_scan(
         lines, exempt,
         patterns=patterns,
-        allow_re=allow_re,
         apply_md_suppressors=(kind == "md"),
     )
     if kind == "md":
@@ -484,7 +501,7 @@ def format_human(findings, scanned):
             out.append("  bug-id violations exempt these line prefixes:")
             out.append("    /// Regression: BUG-XX-NNN ...        (canonical regression-anchor doc comment)")
             out.append("    /// See: bug-tracker/plans/...        (canonical plan-pointer doc comment)")
-            out.append("    // <!-- prose-lint: allow -->         (per-line escape hatch)")
+            out.append("    Bypass markers (// prose-lint: allow / off / on) are BANNED — see CLAUDE.md §NEVER SILENCE LINTERS.")
         if has_internal_doc:
             out.append("  internal-doc-* matches reference wrapper-private rule files (e.g., impl-hygiene.md).")
             out.append("    Public source MUST NOT cite wrapper docs — refactor the comment to describe")
@@ -529,12 +546,15 @@ Exempts:
   - Design-log sections: ## \u00a74 Lessons and ## \u00a76 Improvement Log (.md only).
   - Rule-definition self-reference: .claude/skills/improve-tooling/SKILL.md.
   - CHANGELOG.md / HISTORY.md.
-  - .md regions between <!-- prose-lint: off --> ... <!-- prose-lint: on -->.
-  - Source regions between // prose-lint: off ... // prose-lint: on.
-  - Lines with <!-- prose-lint: allow --> (.md) or // prose-lint: allow (source).
   - State-label definitions (**CONFIRMED|REGRESSED|FIXED** ... previously ...) \u2014 .md only.
   - Hyphenated compound adjectives (previously-failing/valid/...) \u2014 .md only.
   - target/, .git/, node_modules/, build/, dist/, __pycache__/, .venv/.
+
+Bypass markers BANNED \u2014 see CLAUDE.md \u00a7NEVER SILENCE LINTERS:
+  `// prose-lint: allow / off / on` and the `<!-- prose-lint: ... -->` forms
+  are NOT honored. Every occurrence is reported as its own meta-violation
+  (`bypass-marker:*`). Operators MUST strip the marker AND fix the underlying
+  defect, not silence the gate.
 
 Exit codes: 0 clean, 1 violations found, 2 usage error.
 """,
