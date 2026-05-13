@@ -247,8 +247,18 @@ impl MuxServer {
             };
             if let Err(e) = conn.queue_frame(seq, &resp_pdu) {
                 log::warn!("write error to client {client_id}: {e}");
+                // Drop any pending `sent_images` mutations — a failed queue
+                // means the client never received the snapshot, so marking
+                // the IDs as sent would create a stale-state desync where
+                // the next snapshot wouldn't resend pixel data the client
+                // never got.
                 self.disconnect_client(client_id);
                 return;
+            }
+            // Queue succeeded — apply the dispatch-side deferred `sent_images`
+            // mutations from Subscribe / GetPaneSnapshot success-only contract.
+            if let Some(mutations) = &result.pending_image_mutations {
+                mutations.apply_to(conn);
             }
             self.update_write_interest(client_id);
             if is_shutdown {

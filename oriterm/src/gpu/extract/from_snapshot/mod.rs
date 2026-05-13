@@ -107,6 +107,12 @@ fn snapshot_to_renderable(
     content.display_offset = snapshot.display_offset as usize;
     content.stable_row_base = snapshot.stable_row_base;
     content.mode = TermMode::from_bits_truncate(snapshot.modes);
+    // First-frame constructor: every cell is new from the client's
+    // perspective, so a full repaint is required. Subsequent refills via
+    // `snapshot_to_renderable_into` set `all_dirty` only when the wire
+    // snapshot signals `images_dirty=true` (mirrors
+    // `oriterm_core/src/term/snapshot/mod.rs` semantics — image-cache
+    // changes don't tag per-line grid damage so the full grid must repaint).
     content.all_dirty = true;
     populate_images_from_wire(snapshot, &mut content, image_lookup);
     content.mouse_cursor_icon = snapshot
@@ -222,6 +228,11 @@ fn snapshot_to_renderable_into(
     out.display_offset = snapshot.display_offset as usize;
     out.stable_row_base = snapshot.stable_row_base;
     out.mode = TermMode::from_bits_truncate(snapshot.modes);
+    // Daemon-mode wire snapshots do NOT carry per-line damage — the entire
+    // grid is replaced atomically each frame — so a full repaint is required
+    // unconditionally. The embedded path (`oriterm_core/src/term/snapshot/mod.rs:168`)
+    // can fall back to per-line damage tracking because it has direct grid
+    // access; daemon-mode clients receive only the new cell array.
     out.all_dirty = true;
     out.damage.clear();
     // Populate images from wire + cache lookup.

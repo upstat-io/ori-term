@@ -92,30 +92,68 @@ pub(super) struct PushBroker<'a> {
     pub snapshot_cache: &'a mut SnapshotCache,
 }
 
-/// Project a per-client `PaneSnapshot` and queue it onto `conn`. On success the
-/// referenced image IDs are marked as sent so future snapshots can omit them.
+/// Deferred `sent_images` mutations to apply ONLY after a queue succeeds.
 ///
-/// Called by BOTH `push_snapshot_to_subscribers`' slow path and
-/// `trailing_edge_flush`'s slow path — the per-client projection logic is the
-/// same on both sides; extracting it here avoids `LEAK:algorithmic-duplication`.
-/// Returns `Err` if the underlying `queue_frame` failed (transport error); the
-/// caller decides whether to drop the client or retry.
+/// `project_per_client_pure` produces this side-table; callers apply via
+/// `apply_to(conn)` AFTER `conn.queue_frame(...)` returns `Ok(())`. Failed
+/// queues drop the mutations and the trailing-edge flush retries against
+/// the latest snapshot.
 /// See: bug-tracker/plans/BUG-06-072/
-fn project_and_queue_per_client(
+pub(super) struct PendingImageMutations {
+    /// When `Some(pane_id)`, clear that pane's `sent_images` before applying
+    /// `mark_sent` (set when `images_dirty == true` — server is resending
+    /// every visible ID).
+    pub clear_pane: Option<PaneId>,
+    /// `(PaneId, ImageId)` pairs to mark as sent (one per referenced placement
+    /// in the projected snapshot). Empty when no placements were projected.
+    pub mark_sent: Vec<(PaneId, ImageId)>,
+}
+
+impl PendingImageMutations {
+    /// Apply the deferred mutations onto a connection. Caller invokes this
+    /// AFTER the corresponding `queue_frame` succeeds; a failed queue MUST
+    /// NOT apply the mutations.
+    pub(super) fn apply_to(&self, conn: &mut ClientConnection) {
+        if let Some(pane_id) = self.clear_pane {
+            conn.clear_sent_images(pane_id);
+        }
+        for (pane_id, image_id) in &self.mark_sent {
+            conn.mark_image_sent(*pane_id, *image_id);
+        }
+    }
+}
+
+/// Pure (no-mutation) per-client snapshot projection.
+///
+/// Reads `conn` to compute `needed_ids` (placements whose pixel data the
+/// client hasn't received yet) but does NOT mutate `conn.sent_images` — the
+/// caller applies the returned `PendingImageMutations` AFTER successfully
+/// queuing the projected snapshot. This pre-queue-mutation deferral is the
+/// success-only contract: a failed queue MUST NOT leave stale
+/// `sent_images` state that the trailing-edge flush would otherwise skip.
+///
+/// Single SSOT for the per-client projection skeleton across both call
+/// sites — `project_and_queue_per_client` (push side — applies mutations
+/// inline on queue success) AND the dispatch RPC handlers (Subscribe /
+/// `GetPaneSnapshot` — return mutations via `DispatchResult` for the caller
+/// to apply after `conn.queue_frame` on the response succeeds).
+/// See: bug-tracker/plans/BUG-06-072/
+pub(super) fn project_per_client_pure(
     pane_id: PaneId,
     snapshot: &PaneSnapshot,
-    cid: ClientId,
-    conn: &mut ClientConnection,
+    cid: Option<ClientId>,
+    conn: &ClientConnection,
     snapshot_cache: &mut SnapshotCache,
-) -> std::io::Result<()> {
-    if snapshot.images_dirty {
-        conn.clear_sent_images(pane_id);
-    }
+) -> (PaneSnapshot, PendingImageMutations) {
     let needed_ids: Vec<ImageId> = snapshot
         .images
         .iter()
         .map(|wp| ImageId::from_raw(wp.image_id))
-        .filter(|id| !conn.has_sent_image(pane_id, *id))
+        // When images_dirty=true, the post-queue mutations clear sent_images
+        // FIRST, so every visible ID needs to be in the wire payload AND in
+        // the post-queue mark_sent list. Don't filter by has_sent_image when
+        // dirty — we're rebuilding the client's cache from scratch.
+        .filter(|id| snapshot.images_dirty || !conn.has_sent_image(pane_id, *id))
         .collect();
     let mut projected = snapshot.clone();
     projected.image_data.clear();
@@ -129,20 +167,52 @@ fn project_and_queue_per_client(
                 height: arc.height,
             });
         } else {
+            let cid_repr = cid.map_or_else(|| "rpc".to_string(), |c| c.to_string());
             log::warn!(
-                "per-client projection: image_data_store miss for ({pane_id}, {id:?}); placement may render blank on client {cid}"
+                "per-client projection: image_data_store miss for ({pane_id}, {id:?}); placement may render blank on client {cid_repr}"
             );
         }
     }
+    let mark_sent: Vec<(PaneId, ImageId)> = snapshot
+        .images
+        .iter()
+        .map(|wp| (pane_id, ImageId::from_raw(wp.image_id)))
+        .collect();
+    let mutations = PendingImageMutations {
+        clear_pane: if snapshot.images_dirty {
+            Some(pane_id)
+        } else {
+            None
+        },
+        mark_sent,
+    };
+    (projected, mutations)
+}
+
+/// Project a per-client `PaneSnapshot` and queue it onto `conn`. On queue
+/// success (and ONLY on success) applies the deferred `sent_images`
+/// mutations.
+///
+/// Returns `Err` if the underlying `queue_frame` failed (transport error);
+/// `sent_images` is NOT mutated on the error path so the trailing-edge
+/// flush retries against the latest snapshot.
+/// See: bug-tracker/plans/BUG-06-072/
+fn project_and_queue_per_client(
+    pane_id: PaneId,
+    snapshot: &PaneSnapshot,
+    cid: ClientId,
+    conn: &mut ClientConnection,
+    snapshot_cache: &mut SnapshotCache,
+) -> std::io::Result<()> {
+    let (projected, mutations) =
+        project_per_client_pure(pane_id, snapshot, Some(cid), conn, snapshot_cache);
     let pdu = MuxPdu::NotifyPaneSnapshot {
         pane_id,
         snapshot: projected,
     };
     let result = conn.queue_frame(0, &pdu);
     if result.is_ok() {
-        for wp in &snapshot.images {
-            conn.mark_image_sent(pane_id, ImageId::from_raw(wp.image_id));
-        }
+        mutations.apply_to(conn);
     }
     result
 }

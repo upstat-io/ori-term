@@ -34,6 +34,15 @@ pub(in crate::server) struct DispatchResult {
     /// ID re-includes its pixel data.
     /// See: bug-tracker/plans/BUG-06-072/
     pub evicted_image_keys: Vec<(PaneId, ImageId)>,
+    /// Deferred `sent_images` mutations for the requesting client, computed
+    /// by `project_per_client_pure` without mutating `conn`. The caller
+    /// (`clients.rs` after `queue_frame` on `response` succeeds) applies
+    /// these via `PendingImageMutations::apply_to`. A failed response queue
+    /// MUST NOT apply these — drop them. A stranded mutation after a failed
+    /// queue would leave stale tracking that prevents the trailing-edge
+    /// resend.
+    /// See: bug-tracker/plans/BUG-06-072/
+    pub pending_image_mutations: Option<super::super::push::PendingImageMutations>,
 }
 
 /// Shared context for request dispatch.
