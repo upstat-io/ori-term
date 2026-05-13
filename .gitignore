@@ -1,4 +1,9 @@
 /target
+# Vendored crates excluded from the workspace (BUG-06-073 R1 cure) act as
+# standalone Cargo workspace roots when invoked directly via `cargo test
+# --manifest-path crates/<name>/Cargo.toml`, producing their own target/
+# dirs that must not land in git.
+crates/*/target
 /reference_repos
 *:Zone.Identifier
 .verify-results/
