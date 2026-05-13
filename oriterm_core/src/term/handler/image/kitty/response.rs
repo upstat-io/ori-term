@@ -93,7 +93,6 @@ impl<S: EffectSink> Term<S> {
             let _ = write!(qualifiers, ",r={frame}");
         }
         let response = format!("\x1b_G{head}{qualifiers};{msg}\x1b\\");
-        log::info!("kitty_respond: '{}' (msg={msg:?})", response.escape_debug());
         self.effect_sink.push(Effect::Pty(PtyEffect::Write {
             bytes: response.into_bytes(),
             kind: PtyWriteKind::ImageProtocolReply,

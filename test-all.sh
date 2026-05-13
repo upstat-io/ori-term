@@ -43,6 +43,23 @@ echo ""
 echo "=== cargo test --workspace --features oriterm/gpu-tests ==="
 cargo test --workspace --features oriterm/gpu-tests
 
+# Vendored portable-pty is in [patch.crates-io] (not [workspace] members)
+# because workspace.lints (unsafe_code = "deny") cannot apply to vendored
+# code. Its sibling tests under crates/portable-pty/src/win/overlapped_pipe/
+# therefore never run via `cargo test --workspace`. Run them directly so
+# the BUG-06-073 cure tests are exercised on every test-all invocation.
+# Host-target run validates Linux-side compilation; Windows-target
+# `cargo test --no-run` builds the Windows-only test binary so the cure
+# tests get compile-checked under cross-compile.
+echo ""
+echo "=== cargo test --manifest-path crates/portable-pty/Cargo.toml (host) ==="
+cargo test --manifest-path crates/portable-pty/Cargo.toml
+
+echo ""
+echo "=== cargo test --manifest-path crates/portable-pty/Cargo.toml --target x86_64-pc-windows-gnu --no-run ==="
+cargo test --manifest-path crates/portable-pty/Cargo.toml \
+    --target x86_64-pc-windows-gnu --no-run
+
 # Section 01.3 catalog coverage gate — fails on schema drift, Phase 2
 # Finding J anti-LEAK, and line-number-primary Implementation citations.
 #

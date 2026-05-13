@@ -896,7 +896,7 @@ fn daemon_pane_snapshot_resolves_placement_via_image_lookup() {
 #[cfg(unix)]
 #[test]
 fn notcurses_info_real_bytes_roundtrip_to_client_extract() {
-    use oriterm_core::{RenderableContent, Term, Theme, effect::sink::VoidEffectSink};
+    use oriterm_core::RenderableContent;
     use oriterm_mux::protocol::snapshot::{WireImageData, WirePlacement};
     use oriterm_test_support::{PtySession, notcurses_info_available, tool_available};
     use portable_pty::CommandBuilder;
@@ -936,7 +936,6 @@ fn notcurses_info_real_bytes_roundtrip_to_client_extract() {
     // for placements + `oriterm_mux::server::push::project_per_client_pure`
     // for image_data on a fresh client (no `sent_images` filter — every
     // referenced ID is inline).
-    let _silence_unused_term = Term::new(1, 1, 0, Theme::default(), VoidEffectSink);
     let mut snap = test_snapshot();
     snap.images.clear();
     snap.image_data.clear();

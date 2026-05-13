@@ -10,9 +10,12 @@ use std::os::windows::io::AsRawHandle;
 
 use winapi::shared::minwindef::DWORD;
 use winapi::um::handleapi::GetHandleInformation;
-use winapi::um::winbase::HANDLE_FLAG_INHERIT;
+use winapi::um::synchapi::{ResetEvent, SetEvent, WaitForSingleObject};
+use winapi::um::winbase::{HANDLE_FLAG_INHERIT, WAIT_OBJECT_0};
 
 use super::{OverlappedPipe, PipeAccess};
+
+const WAIT_TIMEOUT: DWORD = 0x102;
 
 /// T3 — OverlappedPipe::new(Duplex, 128 KiB) constructs cleanly with
 /// both server and client handles valid (non-null).
@@ -124,43 +127,68 @@ fn overlapped_pipe_neither_handle_inheritable() {
 }
 
 /// T4b — Cross-signal isolation: each OverlappedHandle owns distinct
-/// read_event and write_event objects. Signaling one MUST NOT signal the
-/// other. If try_clone or new() shared the events across read + write
-/// OVERLAPPED structs, this test would observe WAIT_OBJECT_0 on the
-/// wrong event after SetEvent on the first.
+/// read_event and write_event kernel objects. SetEvent on one MUST
+/// leave the other unsignaled (and vice versa); if try_clone or new()
+/// shared the events across read + write OVERLAPPED structs, the
+/// WaitForSingleObject(other, 0) calls below would return WAIT_OBJECT_0
+/// instead of WAIT_TIMEOUT.
 #[test]
 fn overlapped_pipe_distinct_event_isolation() {
     let pipe = OverlappedPipe::new(PipeAccess::Duplex, 128 * 1024).unwrap();
     let server = pipe.server;
+    let read_h = server.read_event_raw();
+    let write_h = server.write_event_raw();
 
-    // Access the events via Read/Write trait impls indirectly. We can't
-    // directly poke at private fields, so the assertion shape is:
-    // perform two concurrent I/O operations with distinct events; verify
-    // they complete independently. Demonstrated by T4's bidirectional
-    // round-trip already — both directions complete using their own
-    // OVERLAPPED + hEvent.
-    //
-    // The structural pin lives in the production code:
-    // `new()` allocates a FRESH event for read and write.
-    // `try_clone()` allocates FRESH events for the clone.
-    // If either rule regresses, T4 / try_clone tests deadlock or race.
+    // The two event handles MUST be distinct kernel objects.
+    assert_ne!(
+        read_h, write_h,
+        "read_event and write_event must be distinct kernel handles"
+    );
 
-    // For an explicit assertion on event distinctness, exercise the
-    // bidirectional I/O once — pre-cure split-sync-pipe transport would
-    // not have separate events, would not survive concurrent ops, and
-    // this test would observe an I/O error rather than success.
-    let mut server = server;
-    let mut client = pipe.client;
-    server.write(b"a").unwrap();
-    let mut buf = [0u8; 4];
-    let n = client.read(&mut buf).unwrap();
-    assert_eq!(n, 1);
-    // Drain the reverse direction too — if read_event and write_event
-    // shared a kernel object, the second write below could see stale
-    // signaled state from the prior read.
-    client.write(b"b").unwrap();
-    let n = server.read(&mut buf).unwrap();
-    assert_eq!(n, 1);
+    // Start with both events reset.
+    unsafe { ResetEvent(read_h as _) };
+    unsafe { ResetEvent(write_h as _) };
+
+    // Signaling read_event MUST NOT signal write_event.
+    unsafe { SetEvent(read_h as _) };
+    assert_eq!(
+        unsafe { WaitForSingleObject(read_h as _, 0) },
+        WAIT_OBJECT_0,
+        "read_event must be signaled after SetEvent(read_event)"
+    );
+    assert_eq!(
+        unsafe { WaitForSingleObject(write_h as _, 0) },
+        WAIT_TIMEOUT,
+        "write_event must NOT be signaled when only read_event was set"
+    );
+
+    // Reset and reverse: signaling write_event MUST NOT signal read_event.
+    unsafe { ResetEvent(read_h as _) };
+    unsafe { SetEvent(write_h as _) };
+    assert_eq!(
+        unsafe { WaitForSingleObject(write_h as _, 0) },
+        WAIT_OBJECT_0,
+        "write_event must be signaled after SetEvent(write_event)"
+    );
+    assert_eq!(
+        unsafe { WaitForSingleObject(read_h as _, 0) },
+        WAIT_TIMEOUT,
+        "read_event must NOT be signaled when only write_event was set"
+    );
+
+    // Also pin the try_clone case: cloned handle gets FRESH events
+    // (NOT DuplicateHandle'd from the original — that would alias).
+    let clone = server.try_clone().expect("try_clone succeeds");
+    let clone_read_h = clone.read_event_raw();
+    let clone_write_h = clone.write_event_raw();
+    assert_ne!(
+        clone_read_h, read_h,
+        "cloned read_event must be a fresh kernel handle, not aliased"
+    );
+    assert_ne!(
+        clone_write_h, write_h,
+        "cloned write_event must be a fresh kernel handle, not aliased"
+    );
 }
 
 /// T4b companion — concurrent read + write across threads using cloned

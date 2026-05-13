@@ -29,7 +29,7 @@ use std::ptr;
 use filedescriptor::OwnedHandle;
 use winapi::shared::minwindef::{BOOL, DWORD, FALSE, TRUE, ULONG};
 use winapi::shared::ntdef::{HANDLE, LARGE_INTEGER, NTSTATUS, NT_SUCCESS, OBJ_CASE_INSENSITIVE, PVOID, USHORT};
-use winapi::um::ioapiset::GetOverlappedResult;
+use winapi::um::ioapiset::{CancelIoEx, GetOverlappedResult};
 use winapi::um::minwinbase::OVERLAPPED;
 use winapi::um::synchapi::{CreateEventW, WaitForSingleObject};
 use winapi::um::winbase::INFINITE;
@@ -300,6 +300,16 @@ impl OverlappedHandle {
         })
     }
 
+    #[cfg(test)]
+    pub(crate) fn read_event_raw(&self) -> RawHandle {
+        self.read_event.as_raw_handle()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn write_event_raw(&self) -> RawHandle {
+        self.write_event.as_raw_handle()
+    }
+
     /// Clones the FILE handle via DuplicateHandle(DUPLICATE_SAME_ACCESS)
     /// and allocates FRESH manual-reset events for the clone.
     ///
@@ -371,6 +381,16 @@ impl ClientHandle {
             read_event: create_manual_reset_event()?,
             write_event: create_manual_reset_event()?,
         })
+    }
+
+    #[cfg(test)]
+    pub(crate) fn read_event_raw(&self) -> RawHandle {
+        self.read_event.as_raw_handle()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn write_event_raw(&self) -> RawHandle {
+        self.write_event.as_raw_handle()
     }
 }
 
@@ -460,6 +480,11 @@ fn finish_overlapped(
     // the OVERLAPPED structure is fully written by the kernel.
     let wait_status = unsafe { WaitForSingleObject(overlapped.hEvent, INFINITE) };
     if wait_status != 0 {
+        // The wait failed (invalid event handle, etc.) but the kernel may
+        // still hold a pointer to this stack-allocated OVERLAPPED. Cancel
+        // the pending I/O before unwinding so the kernel cannot dereference
+        // the OVERLAPPED after the stack frame goes away.
+        unsafe { CancelIoEx(handle as HANDLE, overlapped) };
         return Err(IoError::new(
             ErrorKind::Other,
             format!("WaitForSingleObject on overlapped event failed: status={wait_status}"),

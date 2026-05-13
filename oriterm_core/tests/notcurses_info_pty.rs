@@ -9,11 +9,11 @@
 //!
 //! See: bug-tracker/plans/BUG-06-073/
 //!
-//! Phase 1 evidence: if `image_count()` and `placement_count()` both
-//! reach at least one after a real `notcurses-info` run, the Linux
-//! end-to-end path between our handler and real notcurses-info works.
-//! Skipped on Windows (cross-compile target) — `notcurses-info` is a
-//! Linux binary.
+//! Phase 1 evidence: if `renderable_content_into` yields a non-empty
+//! `images` placement list and non-empty `image_data` payloads after a
+//! real `notcurses-info` run, the Linux end-to-end path between our
+//! handler and real notcurses-info works. Skipped on Windows
+//! (cross-compile target) — `notcurses-info` is a Linux binary.
 
 #![cfg(unix)]
 
@@ -63,21 +63,23 @@ fn notcurses_info_real_pty_emits_pixel_protocol() {
         "notcurses-info exited unsuccessfully: {status:?}"
     );
 
-    let image_count = session.term().image_cache().image_count();
-    let placement_count = session.term().image_cache().placement_count();
+    let mut content = RenderableContent::default();
+    session.term().renderable_content_into(&mut content);
     let grid = session.grid_text();
     eprintln!(
-        "notcurses_info_pty: image_count={image_count} placement_count={placement_count} \
-         exit={status:?}"
+        "notcurses_info_pty: images.len={} image_data.len={} exit={status:?}",
+        content.images.len(),
+        content.image_data.len()
     );
 
     assert!(
-        image_count >= 1 && placement_count >= 1,
+        !content.images.is_empty() && !content.image_data.is_empty(),
         "notcurses-info real PTY run did not emit pixel-protocol bytes \
-         (image_count={image_count}, placement_count={placement_count}). \
-         Phase 1 evidence: either our reply path is missing a probe, \
-         OR notcurses skipped display_logo due to a missing/zero \
-         cellpx capability. Grid:\n{grid}"
+         (images.len={}, image_data.len={}). Phase 1 evidence: either \
+         our reply path is missing a probe, OR notcurses skipped \
+         display_logo due to a missing/zero cellpx capability. Grid:\n{grid}",
+        content.images.len(),
+        content.image_data.len()
     );
 }
 
@@ -149,9 +151,7 @@ fn notcurses_info_renderable_content_carries_image_data() {
 
     assert!(
         !content.images.is_empty(),
-        "snapshot extraction lost the placement: images.len()=0 \
-         despite image_cache having {} placements",
-        session.term().image_cache().placement_count(),
+        "snapshot extraction lost the placement: images.len()=0"
     );
     assert!(
         !content.image_data.is_empty(),

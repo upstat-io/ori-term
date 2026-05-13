@@ -148,14 +148,6 @@ impl<S: EffectSink> Term<S> {
         let height = grid.lines() as u32 * u32::from(self.cell_pixel_height);
         let width = grid.cols() as u32 * u32::from(self.cell_pixel_width);
         let response = format!("\x1b[4;{height};{width}t");
-        log::info!(
-            "csi14t reply: rows={} cols={} cell_w={} cell_h={} -> '{}'",
-            grid.lines(),
-            grid.cols(),
-            self.cell_pixel_width,
-            self.cell_pixel_height,
-            response.escape_debug()
-        );
         self.effect_sink.push(Effect::Pty(PtyEffect::Write {
             bytes: response.into_bytes(),
             kind: PtyWriteKind::Other,
