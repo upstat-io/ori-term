@@ -94,18 +94,26 @@ impl<S: EffectSink> Term<S> {
 
     /// OSC 4/10/11/12 query: respond with the current color value.
     ///
-    /// Emits a `HostRequest::ColorQuery` with the prefix, index, and
-    /// terminator as plain data. The consumer fulfills the token with the
-    /// color value; the reply formatter reconstructs the escape sequence.
+    /// Resolves the color synchronously from `self.palette` and emits the
+    /// reply as `Effect::Pty(PtyEffect::Write)` directly. This bypasses
+    /// the `HostRequest::ColorQuery` coordinator roundtrip — Term has
+    /// the full palette via `Palette::for_theme(self.theme)` plus any
+    /// runtime OSC 4/104 mutations, so no GUI-thread lookup is needed.
+    ///
+    /// The synchronous emission is load-bearing for Windows ConPTY: the
+    /// async coordinator path delays OSC replies past the child's
+    /// initial-handshake polling window, causing notcurses-info to miss
+    /// our color replies and fall back to ASCII rendering. Emitting
+    /// inline in the same VTE-processing pass as the query keeps replies
+    /// in lockstep with CSI/DCS replies (which already emit synchronously).
     pub(super) fn osc_dynamic_color_sequence(&self, prefix: &str, index: usize, terminator: &str) {
         debug!("Color query for index {index} (prefix={prefix})");
-        self.effect_sink
-            .push(Effect::HostRequest(HostRequest::ColorQuery {
-                prefix: prefix.to_owned(),
-                index,
-                terminator: terminator.to_owned(),
-                reply: ResponseToken::new(),
-            }));
+        let color = self.palette.color(index);
+        let bytes = crate::effect::format_color_reply(color, prefix, terminator);
+        self.effect_sink.push(Effect::Pty(PtyEffect::Write {
+            bytes,
+            kind: PtyWriteKind::Other,
+        }));
     }
 
     /// OSC 52: store clipboard content (base64 encoded).
