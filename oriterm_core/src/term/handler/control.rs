@@ -13,6 +13,7 @@ use crate::grid::navigation::TabClearMode;
 use crate::term::{Term, TermMode};
 
 impl<S: EffectSink> Term<S> {
+    /// Emit a `Bell` host effect, plus `UrgencyHint` when DECSET 1042 is set.
     #[inline]
     pub(super) fn bell_impl(&self) {
         self.effect_sink.push(Effect::Host(HostEffect::Bell));
@@ -24,6 +25,13 @@ impl<S: EffectSink> Term<S> {
         }
     }
 
+    /// Line feed — newline-mode aware, with image pruning across the scrollback boundary.
+    ///
+    /// Snapshots `total_evicted()` BEFORE mutating the grid so the
+    /// post-mutation count reflects any rows that crossed into the
+    /// scrollback. `prune_images_if_evicted` MUST run AFTER the grid
+    /// mutation to release graphics-protocol images anchored to those
+    /// rows; reordering this pair leaks image memory.
     #[inline]
     pub(super) fn linefeed_impl(&mut self) {
         self.selection_dirty = true;
@@ -38,6 +46,10 @@ impl<S: EffectSink> Term<S> {
         self.prune_images_if_evicted(prev);
     }
 
+    /// Newline (`next_line`) with image pruning.
+    ///
+    /// Same `total_evicted` → mutate → `prune_images_if_evicted` ordering
+    /// as `linefeed_impl`; see that method for rationale.
     pub(super) fn newline_impl(&mut self) {
         self.selection_dirty = true;
         let prev = self.grid().total_evicted();
@@ -45,6 +57,10 @@ impl<S: EffectSink> Term<S> {
         self.prune_images_if_evicted(prev);
     }
 
+    /// Scroll up `count` lines with image pruning across the scrollback boundary.
+    ///
+    /// Same `total_evicted` → mutate → `prune_images_if_evicted` ordering
+    /// as `linefeed_impl`; see that method for rationale.
     pub(super) fn scroll_up_impl(&mut self, count: usize) {
         self.selection_dirty = true;
         let prev = self.grid().total_evicted();
@@ -52,6 +68,7 @@ impl<S: EffectSink> Term<S> {
         self.prune_images_if_evicted(prev);
     }
 
+    /// `ED` — erase display per `ClearMode`, with companion image cleanup.
     pub(super) fn clear_screen_impl(&mut self, mode: &ClearMode) {
         self.selection_dirty = true;
         let erase = match mode {
@@ -64,6 +81,7 @@ impl<S: EffectSink> Term<S> {
         self.clear_images_after_ed(mode);
     }
 
+    /// `EL` — erase line per `LineClearMode`, with companion image cleanup.
     pub(super) fn clear_line_impl(&mut self, mode: &LineClearMode) {
         self.selection_dirty = true;
         let erase = match mode {
@@ -75,6 +93,7 @@ impl<S: EffectSink> Term<S> {
         self.clear_images_after_el(mode);
     }
 
+    /// `TBC` — clear tab stops (current column or all columns).
     pub(super) fn clear_tabs_impl(&mut self, mode: &TabulationClearMode) {
         let clear = match mode {
             TabulationClearMode::Current => TabClearMode::Current,

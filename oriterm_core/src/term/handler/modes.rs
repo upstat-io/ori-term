@@ -280,6 +280,7 @@ impl<S: EffectSink> Term<S> {
         }
     }
 
+    /// `SM` — apply ANSI named-mode set (DEC private modes route through `apply_decset`).
     pub(super) fn set_named_mode_dispatch(&mut self, mode: Mode) {
         match mode {
             Mode::Named(NamedMode::Insert) => self.mode.insert(TermMode::INSERT),
@@ -290,6 +291,7 @@ impl<S: EffectSink> Term<S> {
         }
     }
 
+    /// `RM` — clear ANSI named-mode flag (companion to `set_named_mode_dispatch`).
     pub(super) fn unset_named_mode_dispatch(&mut self, mode: Mode) {
         match mode {
             Mode::Named(NamedMode::Insert) => self.mode.remove(TermMode::INSERT),
@@ -300,6 +302,7 @@ impl<S: EffectSink> Term<S> {
         }
     }
 
+    /// `DECSET` — route to `apply_decset` for known private modes; log unknowns.
     pub(super) fn set_private_mode_dispatch(&mut self, mode: PrivateMode) {
         match mode {
             PrivateMode::Named(m) => self.apply_decset(m),
@@ -309,6 +312,7 @@ impl<S: EffectSink> Term<S> {
         }
     }
 
+    /// `DECRST` — route to `apply_decrst` for known private modes; log unknowns.
     pub(super) fn unset_private_mode_dispatch(&mut self, mode: PrivateMode) {
         match mode {
             PrivateMode::Named(m) => self.apply_decrst(m),
