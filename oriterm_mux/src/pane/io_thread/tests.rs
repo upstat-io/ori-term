@@ -1,4 +1,29 @@
-//! Tests for PaneIoThread and PaneIoHandle.
+//! Integration tests for `PaneIoThread::run` and `PaneIoHandle`.
+//!
+//! Per-module tests live in their sibling files:
+//! `commands/tests.rs`, `effect_router/tests.rs`, `snapshot/tests.rs`,
+//! `response_poll/tests.rs`. This file holds cross-module integration
+//! tests that exercise the `PaneIoThread::run` event loop end-to-end.
+//!
+//! # Section index
+//!
+//! | Line  | Section                                                  |
+//! |-------|----------------------------------------------------------|
+//! |  212+ | Lifecycle tests (spawn, shutdown, drop)                  |
+//! |  419+ | Section 02: VTE parsing through IO thread                |
+//! |  581+ | Section 03: snapshot production                          |
+//! |  735+ | Section 05: resize handling                              |
+//! | 1002+ | Section 06: command dispatch (scroll/theme/cursor/etc.)  |
+//! | 1280+ | Section 06: search, mark mode, selection                 |
+//! | 1489+ | Snapshot publication races between parse chunks          |
+//! | 1519+ | Section 08.4: threading stress                           |
+//! | 1765+ | Section 08: resize quality                               |
+//! | 1834+ | Section 03.5d: reply-return path                         |
+//! | 1987+ | Section 06.5: sync timeout + edge cases                  |
+//! | 2383+ | Section 09.2: Mode 2026 parser → mode_cache bridge       |
+//! | 2938+ | Bounded byte channel + symmetric IO-thread shrink        |
+//! | 3248+ | §03 matrix: bounded cmd_tx + atomic-coalescing resize    |
+//! | 3829+ | §03 cross-feature interaction tests (Round 1 §06 F1)     |
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
