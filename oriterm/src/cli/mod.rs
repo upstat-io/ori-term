@@ -11,9 +11,10 @@ use std::process;
 use clap::{CommandFactory, Parser, Subcommand};
 use clap_complete::Shell;
 
-use crate::config::{self, Config};
+use crate::config::Config;
 use crate::font::discovery;
-use crate::keybindings::{self, Action, BindingKey, KeyBinding};
+use crate::keybindings;
+
 
 /// GPU-accelerated terminal emulator.
 #[derive(Parser)]
@@ -328,59 +329,6 @@ fn validate_config_inner() -> Result<(), Vec<String>> {
     }
 }
 
-/// Validate hex color strings in the config.
-fn validate_colors(config: &Config, errors: &mut Vec<String>) {
-    let fields: &[(&str, &Option<String>)] = &[
-        ("colors.foreground", &config.colors.foreground),
-        ("colors.background", &config.colors.background),
-        ("colors.cursor", &config.colors.cursor),
-        (
-            "colors.selection_foreground",
-            &config.colors.selection_foreground,
-        ),
-        (
-            "colors.selection_background",
-            &config.colors.selection_background,
-        ),
-    ];
-
-    for (name, value) in fields {
-        if let Some(hex) = value {
-            if config::parse_hex_color(hex).is_none() {
-                errors.push(format!("{name}: invalid hex color {hex:?}"));
-            }
-        }
-    }
-
-    for (key, hex) in &config.colors.ansi {
-        if config::parse_hex_color(hex).is_none() {
-            errors.push(format!("colors.ansi.{key}: invalid hex color {hex:?}"));
-        }
-    }
-    for (key, hex) in &config.colors.bright {
-        if config::parse_hex_color(hex).is_none() {
-            errors.push(format!("colors.bright.{key}: invalid hex color {hex:?}"));
-        }
-    }
-
-    if let Some(hex) = &config.bell.color {
-        if config::parse_hex_color(hex).is_none() {
-            errors.push(format!("bell.color: invalid hex color {hex:?}"));
-        }
-    }
-}
-
-/// Validate keybinding entries.
-fn validate_keybindings(config: &Config, errors: &mut Vec<String>) {
-    for (i, kb) in config.keybind.iter().enumerate() {
-        if keybindings::parse_key(&kb.key).is_none() {
-            errors.push(format!("keybind[{i}]: unknown key {:?}", kb.key));
-        }
-        if keybindings::parse_action(&kb.action).is_none() {
-            errors.push(format!("keybind[{i}]: unknown action {:?}", kb.action));
-        }
-    }
-}
 
 /// `show-config` — dump the resolved config as TOML.
 fn run_show_config() -> ! {
@@ -504,46 +452,10 @@ fn generate_completions(shell: Shell) -> Vec<u8> {
     buf
 }
 
-/// Format a single keybinding as `Mods+Key -> Action`.
-fn format_binding(b: &KeyBinding) -> String {
-    let mut parts = Vec::new();
-
-    if b.mods.contains(crate::key_encoding::Modifiers::CONTROL) {
-        parts.push("Ctrl");
-    }
-    if b.mods.contains(crate::key_encoding::Modifiers::SHIFT) {
-        parts.push("Shift");
-    }
-    if b.mods.contains(crate::key_encoding::Modifiers::ALT) {
-        parts.push("Alt");
-    }
-    if b.mods.contains(crate::key_encoding::Modifiers::SUPER) {
-        parts.push("Super");
-    }
-
-    let key_name = format_binding_key(&b.key);
-    parts.push(&key_name);
-    let combo = parts.join("+");
-
-    let action = format_action(&b.action);
-    format!("{combo} -> {action}")
-}
-
-/// Format a `BindingKey` as a human-readable string.
-fn format_binding_key(key: &BindingKey) -> String {
-    match key {
-        BindingKey::Named(n) => format!("{n:?}"),
-        BindingKey::Character(s) => s.to_uppercase(),
-    }
-}
-
-/// Format an `Action` as a human-readable string.
-fn format_action(action: &Action) -> String {
-    match action {
-        Action::SendText(t) => format!("SendText:{t:?}"),
-        other => other.as_str().to_owned(),
-    }
-}
+mod format;
+mod validate;
+use format::format_binding;
+use validate::{validate_colors, validate_keybindings};
 
 #[cfg(test)]
 mod tests;

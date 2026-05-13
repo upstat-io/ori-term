@@ -3,9 +3,8 @@
 use clap::Parser;
 use clap_complete::Shell;
 
-use super::{
-    Cli, SubCommand, format_action, format_binding, format_binding_key, generate_completions,
-};
+use super::format::{format_action, format_binding, format_binding_key};
+use super::{Cli, SubCommand, generate_completions};
 use crate::config::{self, Config};
 use crate::key_encoding::Modifiers;
 use crate::keybindings::{Action, BindingKey, KeyBinding};
@@ -16,8 +15,8 @@ fn validate_config_default_is_valid() {
     // "file not found". Validate the struct directly instead.
     let config = Config::default();
     let mut errors = Vec::new();
-    super::validate_colors(&config, &mut errors);
-    super::validate_keybindings(&config, &mut errors);
+    super::validate::validate_colors(&config, &mut errors);
+    super::validate::validate_keybindings(&config, &mut errors);
     assert!(
         errors.is_empty(),
         "default config should be valid: {errors:?}"
@@ -30,7 +29,7 @@ fn validate_colors_rejects_bad_hex() {
     config.colors.foreground = Some("not-a-color".to_owned());
 
     let mut errors = Vec::new();
-    super::validate_colors(&config, &mut errors);
+    super::validate::validate_colors(&config, &mut errors);
     assert_eq!(errors.len(), 1);
     assert!(errors[0].contains("invalid hex color"), "{}", errors[0]);
 }
@@ -42,7 +41,7 @@ fn validate_colors_accepts_valid_hex() {
     config.colors.background = Some("#000000".to_owned());
 
     let mut errors = Vec::new();
-    super::validate_colors(&config, &mut errors);
+    super::validate::validate_colors(&config, &mut errors);
     assert!(errors.is_empty(), "valid hex should pass: {errors:?}");
 }
 
@@ -56,7 +55,7 @@ fn validate_keybindings_rejects_bad_key() {
     });
 
     let mut errors = Vec::new();
-    super::validate_keybindings(&config, &mut errors);
+    super::validate::validate_keybindings(&config, &mut errors);
     assert_eq!(errors.len(), 1);
     assert!(errors[0].contains("unknown key"), "{}", errors[0]);
 }
@@ -71,7 +70,7 @@ fn validate_keybindings_rejects_bad_action() {
     });
 
     let mut errors = Vec::new();
-    super::validate_keybindings(&config, &mut errors);
+    super::validate::validate_keybindings(&config, &mut errors);
     assert_eq!(errors.len(), 1);
     assert!(errors[0].contains("unknown action"), "{}", errors[0]);
 }
@@ -175,8 +174,8 @@ fn validate_accumulates_color_and_keybinding_errors() {
     });
 
     let mut errors = Vec::new();
-    super::validate_colors(&config, &mut errors);
-    super::validate_keybindings(&config, &mut errors);
+    super::validate::validate_colors(&config, &mut errors);
+    super::validate::validate_keybindings(&config, &mut errors);
     // Two color errors + one key error + one action error = 4.
     assert_eq!(errors.len(), 4, "should accumulate all errors: {errors:?}");
 }
@@ -189,7 +188,7 @@ fn validate_colors_rejects_bad_ansi_map_entry() {
     config.colors.ansi.insert("0".to_owned(), "xyz".to_owned());
 
     let mut errors = Vec::new();
-    super::validate_colors(&config, &mut errors);
+    super::validate::validate_colors(&config, &mut errors);
     assert_eq!(errors.len(), 1);
     assert!(errors[0].contains("colors.ansi.0"), "{}", errors[0]);
 }
@@ -203,7 +202,7 @@ fn validate_colors_rejects_bad_bright_map_entry() {
         .insert("3".to_owned(), "not-hex".to_owned());
 
     let mut errors = Vec::new();
-    super::validate_colors(&config, &mut errors);
+    super::validate::validate_colors(&config, &mut errors);
     assert_eq!(errors.len(), 1);
     assert!(errors[0].contains("colors.bright.3"), "{}", errors[0]);
 }
@@ -216,7 +215,7 @@ fn validate_colors_rejects_bad_bell_color() {
     config.bell.color = Some("nope".to_owned());
 
     let mut errors = Vec::new();
-    super::validate_colors(&config, &mut errors);
+    super::validate::validate_colors(&config, &mut errors);
     assert_eq!(errors.len(), 1);
     assert!(errors[0].contains("bell.color"), "{}", errors[0]);
 }
@@ -227,7 +226,7 @@ fn validate_colors_accepts_valid_bell_color() {
     config.bell.color = Some("#aabbcc".to_owned());
 
     let mut errors = Vec::new();
-    super::validate_colors(&config, &mut errors);
+    super::validate::validate_colors(&config, &mut errors);
     assert!(
         errors.is_empty(),
         "valid bell color should pass: {errors:?}"
@@ -353,7 +352,7 @@ fn validate_colors_reports_all_bad_fields() {
     config.colors.selection_background = Some("bad".to_owned());
 
     let mut errors = Vec::new();
-    super::validate_colors(&config, &mut errors);
+    super::validate::validate_colors(&config, &mut errors);
     assert_eq!(errors.len(), 5, "should report all 5 fields: {errors:?}");
 
     // Verify each field name appears in exactly one error.
@@ -382,7 +381,7 @@ fn validate_keybindings_reports_bad_key_and_bad_action() {
     });
 
     let mut errors = Vec::new();
-    super::validate_keybindings(&config, &mut errors);
+    super::validate::validate_keybindings(&config, &mut errors);
     assert_eq!(
         errors.len(),
         2,
