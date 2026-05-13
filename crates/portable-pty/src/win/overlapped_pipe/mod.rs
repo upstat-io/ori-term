@@ -382,16 +382,6 @@ impl ClientHandle {
             write_event: create_manual_reset_event()?,
         })
     }
-
-    #[cfg(test)]
-    pub(crate) fn read_event_raw(&self) -> RawHandle {
-        self.read_event.as_raw_handle()
-    }
-
-    #[cfg(test)]
-    pub(crate) fn write_event_raw(&self) -> RawHandle {
-        self.write_event.as_raw_handle()
-    }
 }
 
 impl AsRawHandle for ClientHandle {
@@ -482,9 +472,14 @@ fn finish_overlapped(
     if wait_status != 0 {
         // The wait failed (invalid event handle, etc.) but the kernel may
         // still hold a pointer to this stack-allocated OVERLAPPED. Cancel
-        // the pending I/O before unwinding so the kernel cannot dereference
-        // the OVERLAPPED after the stack frame goes away.
+        // the pending I/O AND drain the cancellation via GetOverlappedResult
+        // before unwinding, otherwise the kernel can dereference the stack
+        // OVERLAPPED + buffer after the frame goes away (use-after-free).
         unsafe { CancelIoEx(handle as HANDLE, overlapped) };
+        let mut drained: DWORD = 0;
+        unsafe {
+            GetOverlappedResult(handle as HANDLE, overlapped, &mut drained, TRUE);
+        }
         return Err(IoError::new(
             ErrorKind::Other,
             format!("WaitForSingleObject on overlapped event failed: status={wait_status}"),

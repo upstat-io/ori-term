@@ -178,16 +178,43 @@ fn overlapped_pipe_distinct_event_isolation() {
 
     // Also pin the try_clone case: cloned handle gets FRESH events
     // (NOT DuplicateHandle'd from the original — that would alias).
+    // HANDLE value inequality is NOT sufficient — DuplicateHandle returns
+    // a different HANDLE value pointing to the SAME kernel object. The
+    // only reliable check is signal-isolation: SetEvent on original.read
+    // must leave clone.read unsignaled.
+    unsafe { ResetEvent(read_h as _) };
+    unsafe { ResetEvent(write_h as _) };
     let clone = server.try_clone().expect("try_clone succeeds");
     let clone_read_h = clone.read_event_raw();
     let clone_write_h = clone.write_event_raw();
-    assert_ne!(
-        clone_read_h, read_h,
-        "cloned read_event must be a fresh kernel handle, not aliased"
+    unsafe { ResetEvent(clone_read_h as _) };
+    unsafe { ResetEvent(clone_write_h as _) };
+
+    // Signaling original.read must leave clone.read unsignaled.
+    unsafe { SetEvent(read_h as _) };
+    assert_eq!(
+        unsafe { WaitForSingleObject(clone_read_h as _, 0) },
+        WAIT_TIMEOUT,
+        "clone.read_event must NOT receive the signal sent to original.read_event \
+         (would fire if try_clone used DuplicateHandle on the existing event)"
     );
-    assert_ne!(
-        clone_write_h, write_h,
-        "cloned write_event must be a fresh kernel handle, not aliased"
+
+    // And the reverse: signaling clone.read must leave original.read unsignaled.
+    unsafe { ResetEvent(read_h as _) };
+    unsafe { SetEvent(clone_read_h as _) };
+    assert_eq!(
+        unsafe { WaitForSingleObject(read_h as _, 0) },
+        WAIT_TIMEOUT,
+        "original.read_event must NOT receive the signal sent to clone.read_event"
+    );
+
+    // Same isolation pin for the write_event pair.
+    unsafe { ResetEvent(clone_read_h as _) };
+    unsafe { SetEvent(write_h as _) };
+    assert_eq!(
+        unsafe { WaitForSingleObject(clone_write_h as _, 0) },
+        WAIT_TIMEOUT,
+        "clone.write_event must NOT receive the signal sent to original.write_event"
     );
 }
 

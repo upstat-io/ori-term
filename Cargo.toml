@@ -7,6 +7,11 @@ members = [
     "oriterm_mux",
     "crates/oriterm_test_support",
 ]
+exclude = [
+    "crates/portable-pty",
+    "crates/vte",
+    "crates/wgpu-hal",
+]
 resolver = "2"
 
 [workspace.package]
