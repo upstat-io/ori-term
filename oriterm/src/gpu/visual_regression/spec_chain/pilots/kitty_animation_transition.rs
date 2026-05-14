@@ -291,6 +291,131 @@ fn assert_rungs_pass(results: &[oriterm_test_support::spec_chain::RungResult], c
     }
 }
 
+/// Diagnostic probe: feed the kitty_minimal byte sequence and print
+/// what's in the snapshot, FrameInput, and rendered pixels. Used to
+/// narrow the §13.6 prerequisite "Cure kitty quad → texture pipeline
+/// gap" by isolating which stage drops the image data.
+#[test]
+#[ignore = "diagnostic probe — run manually via `cargo test -- --ignored probe_kitty_pipeline_stages`"]
+fn probe_kitty_pipeline_stages() {
+    let Some(mut harness) = VisualSpecHarness::new() else {
+        eprintln!("SKIP: software rasterizer unavailable");
+        return;
+    };
+
+    harness
+        .core_mut()
+        .feed(b"\x1b_Gf=32,s=1,v=1,a=T,i=1,q=2;/wAA/w==\x1b\\");
+
+    let term = harness.core().term();
+    let content = term.renderable_content();
+
+    eprintln!("[probe] content.images: {} entries", content.images.len());
+    for img in &content.images {
+        eprintln!(
+            "[probe]   placement: id={:?} pos=({},{}) size=({}x{}) uv=({},{},{},{}) z={}",
+            img.image_id,
+            img.viewport_x,
+            img.viewport_y,
+            img.display_width,
+            img.display_height,
+            img.source_x,
+            img.source_y,
+            img.source_w,
+            img.source_h,
+            img.z_index,
+        );
+    }
+    eprintln!(
+        "[probe] content.image_data: {} entries",
+        content.image_data.len(),
+    );
+    for d in &content.image_data {
+        eprintln!(
+            "[probe]   data: id={:?} {}x{} bytes={} first4={:?}",
+            d.id,
+            d.width,
+            d.height,
+            d.data.len(),
+            &d.data[..4.min(d.data.len())],
+        );
+    }
+    eprintln!(
+        "[probe] content.cells: {} cells, cols={} lines={}",
+        content.cells.len(),
+        content.cols,
+        content.lines,
+    );
+
+    // Drop the immutable borrow on term/content before mutating harness.
+    drop(content);
+
+    // Drive the visual pipeline through FrameInput + GpuInstance rungs to
+    // verify the image quad reaches the prepared frame.
+    let expectations = ScenarioExpectations {
+        frame_input: Some(FrameInputExpectation::default_grid()),
+        gpu_instance: Some(GpuInstanceExpectation::at_least(0, 0).with_images(1)),
+        ..ScenarioExpectations::default()
+    };
+    let results = harness.render_visual_rungs("KG-PROBE", &expectations);
+    for r in &results {
+        eprintln!(
+            "[probe] rung {:?}: passed={} failure={:?}",
+            r.rung_name, r.passed, r.failure,
+        );
+    }
+
+    let (below, above) = harness.prepared_image_quad_counts();
+    eprintln!("[probe] prepared.image_quads: below={below} above={above}");
+
+    // Probe 3: dump rendered pixels — look for the red image bytes.
+    if let Some((pixels, w, h)) = harness.last_rendered_pixels() {
+        eprintln!("[probe] rendered: {w}x{h}, {} bytes", pixels.len());
+        // Scan the top-left 16x32 px region (where the 8x16 image quad sits).
+        let mut distinct = std::collections::HashSet::new();
+        for y in 0..32.min(h as usize) {
+            for x in 0..16.min(w as usize) {
+                let off = (y * w as usize + x) * 4;
+                if off + 4 <= pixels.len() {
+                    let rgba = (pixels[off], pixels[off + 1], pixels[off + 2], pixels[off + 3]);
+                    distinct.insert(rgba);
+                }
+            }
+        }
+        let mut sorted: Vec<_> = distinct.into_iter().collect();
+        sorted.sort();
+        eprintln!(
+            "[probe] top-left 16x32 px region distinct pixels: {} {:?}",
+            sorted.len(),
+            sorted,
+        );
+        // FULL scan: any red pixel anywhere in the rendered output?
+        let mut red_count = 0;
+        let mut first_red_pos = None;
+        for y in 0..h as usize {
+            for x in 0..w as usize {
+                let off = (y * w as usize + x) * 4;
+                if off + 4 <= pixels.len() {
+                    let r = pixels[off];
+                    let g = pixels[off + 1];
+                    let b = pixels[off + 2];
+                    if r > 100 && g < 50 && b < 50 {
+                        red_count += 1;
+                        if first_red_pos.is_none() {
+                            first_red_pos = Some((x, y, r, g, b, pixels[off + 3]));
+                        }
+                    }
+                }
+            }
+        }
+        eprintln!(
+            "[probe] full-scan red-ish (r>100, g<50, b<50): {red_count} pixels, first={first_red_pos:?}",
+        );
+    } else {
+        eprintln!("[probe] last_rendered_pixels: None");
+    }
+}
+
 /// Assert the visual-rung chain ran to completion. `render_visual_rungs`
 /// always drives all 4 rungs (FrameInput, GpuInstance, TextureRender,
 /// GoldenImage); rungs with no expectations set return a no-op pass.

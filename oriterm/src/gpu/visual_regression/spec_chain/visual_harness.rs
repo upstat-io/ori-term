@@ -326,6 +326,27 @@ impl VisualSpecHarness {
         }
     }
 
+    /// Borrow the pixel buffer captured by the most recent visual-rungs
+    /// drive (rungs 5-8 via `render_visual_rungs` or `run_visual_scenario`).
+    /// Returns `(pixels, width, height)` when a render produced data;
+    /// `None` before the first render. Test surface only — diagnostic
+    /// probes use this to inspect actual rendered bytes without touching
+    /// the golden-image observer's reference-PNG round-trip.
+    pub fn last_rendered_pixels(&self) -> Option<(&[u8], u32, u32)> {
+        self.last_rendered
+            .as_ref()
+            .map(|r| (r.pixels.as_slice(), r.width, r.height))
+    }
+
+    /// Diagnostic accessor for the current `PreparedFrame` image-quad
+    /// counts. Returns `(below_count, above_count)`. Test surface only.
+    pub fn prepared_image_quad_counts(&self) -> (usize, usize) {
+        (
+            self.renderer.prepared.image_quads_below.len(),
+            self.renderer.prepared.image_quads_above.len(),
+        )
+    }
+
     /// Borrow the inner `SpecHarness`.
     pub fn core(&self) -> &SpecHarness {
         &self.core
