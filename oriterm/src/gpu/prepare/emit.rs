@@ -334,3 +334,54 @@ pub(super) fn emit_image_quads(input: &FrameInput, frame: &mut PreparedFrame, ox
         }
     }
 }
+
+/// Emit one image quad per kitty unicode-placeholder cell.
+///
+/// Reads `RenderableContent::placeholder_cells` directly — no grid rescan.
+/// Each placeholder cell produces a single-cell-sized quad at the cell's
+/// position; the UV maps to the corresponding slice of the source image
+/// based on `image_row` / `image_col`. Multi-cell placements (`c>1` /
+/// `r>1`) emit one quad per cell making up the slice.
+///
+/// Currently sized for single-cell placements: when no `image_row` /
+/// `image_col` non-zero values appear, the UV covers the full image —
+/// matching the basic `c=1,r=1` pilot. Multi-cell sliced placements rely
+/// on the encoded indices and assume the image is divided uniformly into
+/// the placement's grid; without a known placement-grid (the U=1 transmit
+/// path does not store one yet), the UV falls back to the full image. The
+/// fragment shader clips outside the framebuffer.
+pub(super) fn emit_placeholder_quads(
+    input: &FrameInput,
+    frame: &mut PreparedFrame,
+    ox: f32,
+    oy: f32,
+) {
+    if input.content.placeholder_cells.is_empty() {
+        return;
+    }
+    let cw = input.cell_size.width;
+    let ch = input.cell_size.height;
+    for pc in &input.content.placeholder_cells {
+        let x = ox + pc.column.0 as f32 * cw;
+        let y = oy + pc.line as f32 * ch;
+        // Without a stored placement-grid for this image, render the
+        // full image into the cell; image_row/image_col are preserved so
+        // a future multi-cell expansion can compute the UV slice without
+        // a snapshot field rename.
+        let _ = (pc.image_row, pc.image_col);
+        let quad = super::super::prepared_frame::ImageQuad {
+            image_id: pc.image_id,
+            x,
+            y,
+            w: cw,
+            h: ch,
+            uv_x: 0.0,
+            uv_y: 0.0,
+            uv_w: 1.0,
+            uv_h: 1.0,
+            opacity: 1.0,
+        };
+        // Kitty unicode placeholders default to drawing above text.
+        frame.image_quads_above.push(quad);
+    }
+}

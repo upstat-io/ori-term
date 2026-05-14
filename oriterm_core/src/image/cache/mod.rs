@@ -5,7 +5,7 @@ mod deletion;
 mod eviction;
 mod lifecycle;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -63,6 +63,15 @@ pub struct ImageCache {
     pub(super) frame_starts: HashMap<ImageId, Instant>,
     /// Whether animation is enabled (from config).
     pub(super) animation_enabled: bool,
+    /// Image IDs anchored by kitty unicode-placeholder (`U=1`) protocol.
+    ///
+    /// `U=1` transmit/place suppresses real `ImagePlacement` creation —
+    /// instead, the client writes `U+10EEEE` cells into the grid which
+    /// resolve to the image at render time. Without an explicit anchor,
+    /// LRU eviction would priority-drop these images on any cache pressure
+    /// (no placement => unplaced rank). The anchor set extends reachability
+    /// to cover placeholder-only images.
+    pub(super) placeholder_anchors: HashSet<ImageId>,
 }
 
 impl ImageCache {
@@ -83,6 +92,35 @@ impl ImageCache {
             animation_frames: HashMap::new(),
             frame_starts: HashMap::new(),
             animation_enabled: true,
+            placeholder_anchors: HashSet::new(),
+        }
+    }
+
+    /// Record that an image is anchored by the kitty unicode-placeholder
+    /// protocol. Anchored images survive LRU eviction even without an
+    /// active placement.
+    pub(crate) fn add_placeholder_anchor(&mut self, id: ImageId) {
+        if self.placeholder_anchors.insert(id) {
+            self.dirty = true;
+        }
+    }
+
+    /// Image IDs anchored by the unicode-placeholder protocol.
+    pub fn placeholder_anchors(&self) -> &HashSet<ImageId> {
+        &self.placeholder_anchors
+    }
+
+    /// Restrict the anchor set to the supplied survivor IDs.
+    ///
+    /// Called by the `Term` layer after grid mutations that may erase
+    /// placeholder cells. The caller computes the surviving anchor set by
+    /// walking the grid for `U+10EEEE` cells; this method retains only
+    /// those entries.
+    pub(crate) fn reconcile_placeholder_anchors(&mut self, survivors: &HashSet<ImageId>) {
+        let before = self.placeholder_anchors.len();
+        self.placeholder_anchors.retain(|id| survivors.contains(id));
+        if self.placeholder_anchors.len() != before {
+            self.dirty = true;
         }
     }
 
@@ -107,13 +145,12 @@ impl ImageCache {
     }
 
     /// Number of stored images.
-    #[cfg(test)]
-    pub(crate) fn image_count(&self) -> usize {
+    pub fn image_count(&self) -> usize {
         self.images.len()
     }
 
     /// Number of active placements.
-    pub(crate) fn placement_count(&self) -> usize {
+    pub fn placement_count(&self) -> usize {
         self.placements.len()
     }
 
@@ -123,13 +160,13 @@ impl ImageCache {
     }
 
     /// Update the memory limit. Triggers eviction if currently over.
-    pub(crate) fn set_memory_limit(&mut self, limit: usize) {
+    pub fn set_memory_limit(&mut self, limit: usize) {
         self.memory_limit = limit;
         self.evict_lru();
     }
 
     /// Update the max single image size.
-    pub(crate) fn set_max_single_image(&mut self, limit: usize) {
+    pub fn set_max_single_image(&mut self, limit: usize) {
         self.max_single_image_bytes = limit;
     }
 
@@ -151,9 +188,9 @@ impl ImageCache {
         }
 
         // Evict until we have room (or can't evict more).
-        let placed = self.placed_id_set();
+        let reachable = self.placed_or_anchored_id_set();
         while self.memory_used + size > self.memory_limit && !self.images.is_empty() {
-            if !self.evict_one(&placed) {
+            if !self.evict_one(&reachable) {
                 return Err(ImageError::MemoryLimitExceeded);
             }
         }
@@ -214,6 +251,7 @@ impl ImageCache {
             self.animations.remove(&id);
             self.frame_starts.remove(&id);
             self.store_order.remove(&id);
+            self.placeholder_anchors.remove(&id);
             self.dirty = true;
         }
     }
@@ -278,15 +316,18 @@ impl ImageCache {
         self.remove_placements_where(|p| p.cell_col == col && p.cell_row == row)
     }
 
-    /// Prune specific images that have become orphaned (zero placements).
+    /// Prune specific images that have become orphaned (zero placements
+    /// AND no placeholder anchor).
     ///
-    /// Only checks the given IDs — does NOT sweep the entire cache. This
-    /// preserves Kitty deferred-placement images that were intentionally
-    /// stored without placements (`a=t`, `a=T,U=1`).
+    /// Only checks the given IDs — does NOT sweep the entire cache.
+    /// Anchored images are skipped because the kitty `U=1` protocol stores
+    /// the image without a real placement; the placeholder cells in the
+    /// grid are what keep it reachable.
     pub(crate) fn prune_if_orphaned(&mut self, ids: &[ImageId]) {
         for &id in ids {
             let has_placement = self.placements.iter().any(|p| p.image_id == id);
-            if !has_placement {
+            let anchored = self.placeholder_anchors.contains(&id);
+            if !has_placement && !anchored {
                 self.remove_image(id);
             }
         }
@@ -353,6 +394,7 @@ impl ImageCache {
         self.animation_frames.clear();
         self.frame_starts.clear();
         self.store_order.clear();
+        self.placeholder_anchors.clear();
         self.memory_used = 0;
     }
 
@@ -370,7 +412,7 @@ impl ImageCache {
     }
 
     /// Get image data by ID without updating access counter.
-    pub(crate) fn get_no_touch(&self, id: ImageId) -> Option<&ImageData> {
+    pub fn get_no_touch(&self, id: ImageId) -> Option<&ImageData> {
         self.images.get(&id)
     }
 
@@ -405,6 +447,7 @@ impl std::fmt::Debug for ImageCache {
             .field("animation_frames", &self.animation_frames.len())
             .field("frame_starts", &self.frame_starts.len())
             .field("animation_enabled", &self.animation_enabled)
+            .field("placeholder_anchors", &self.placeholder_anchors.len())
             .finish()
     }
 }

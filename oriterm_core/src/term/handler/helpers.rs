@@ -212,6 +212,9 @@ impl<S: EffectSink> Term<S> {
                 self.image_cache_mut().prune_scrollback(threshold);
             }
         }
+        // Erase paths may evict the U+10EEEE cells anchoring images;
+        // recompute the surviving anchor set from the post-erase grid.
+        self.reconcile_placeholder_anchors_from_grid();
     }
 
     /// After EL (erase in line): remove image placements on the erased
@@ -229,6 +232,7 @@ impl<S: EffectSink> Term<S> {
         let row = self.grid_line_stable(cl);
         self.image_cache_mut()
             .remove_placements_in_region(row, row, left, right);
+        self.reconcile_placeholder_anchors_from_grid();
     }
 
     /// After ECH (erase characters): remove image placements in the erased
@@ -244,6 +248,7 @@ impl<S: EffectSink> Term<S> {
             let row = self.grid_line_stable(cl);
             self.image_cache_mut()
                 .remove_placements_in_region(row, row, Some(cc), Some(end - 1));
+            self.reconcile_placeholder_anchors_from_grid();
         }
     }
 
@@ -254,7 +259,70 @@ impl<S: EffectSink> Term<S> {
         if new_evicted > prev_evicted {
             self.image_cache_mut()
                 .prune_scrollback(StableRowIndex(new_evicted as u64));
+            self.reconcile_placeholder_anchors_from_grid();
         }
+    }
+
+    /// Recompute the set of placeholder-anchored image IDs by walking the
+    /// active grid + scrollback for `U+10EEEE` cells, then forward the
+    /// survivor set to `ImageCache::reconcile_placeholder_anchors`.
+    ///
+    /// Term owns the grid; this keeps `ImageCache` ignorant of cell/Grid
+    /// types per the §13.4 layer-boundary contract.
+    pub(in crate::term) fn reconcile_placeholder_anchors_from_grid(&mut self) {
+        if self.image_cache().placeholder_anchors().is_empty() {
+            return;
+        }
+        let survivors = self.collect_placeholder_image_ids();
+        self.image_cache_mut().reconcile_placeholder_anchors(&survivors);
+    }
+
+    /// Collect every `image_id` referenced by a `U+10EEEE` placeholder
+    /// cell currently in the grid (visible rows + scrollback).
+    fn collect_placeholder_image_ids(&self) -> std::collections::HashSet<crate::image::ImageId> {
+        use crate::image::KITTY_PLACEHOLDER;
+        use crate::term::handler::image::kitty::placeholder::IncompletePlacement;
+
+        let mut survivors: std::collections::HashSet<crate::image::ImageId> =
+            std::collections::HashSet::new();
+        let grid = self.grid();
+        let lines = grid.lines();
+        let cols = grid.cols();
+
+        let visit_row = |row: &crate::grid::Row,
+                         survivors: &mut std::collections::HashSet<crate::image::ImageId>| {
+            let mut prev = None;
+            for col_idx in 0..cols {
+                let cell = &row[Column(col_idx)];
+                if cell.ch == KITTY_PLACEHOLDER {
+                    let (ul, zw) = match cell.extra.as_ref() {
+                        Some(e) => (e.underline_color, e.zerowidth.clone()),
+                        None => (None, Vec::new()),
+                    };
+                    let inc = IncompletePlacement::decode(&zw, cell.fg, ul);
+                    let resolved = inc.resolve_with_continuation(prev.as_ref());
+                    if resolved.image_id != 0 {
+                        survivors.insert(crate::image::ImageId::from_raw(resolved.image_id));
+                    }
+                    prev = Some(resolved);
+                } else {
+                    prev = None;
+                }
+            }
+        };
+
+        // Visible grid rows.
+        for line in 0..lines {
+            let row = &grid[Line(line as i32)];
+            visit_row(row, &mut survivors);
+        }
+        // Scrollback rows.
+        for sb_idx in 0..grid.scrollback().len() {
+            if let Some(row) = grid.scrollback().get(sb_idx) {
+                visit_row(row, &mut survivors);
+            }
+        }
+        survivors
     }
 
     /// Printable character input: charset translation, width handling, wrapping.

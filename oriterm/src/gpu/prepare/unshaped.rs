@@ -111,4 +111,5 @@ fn fill_frame(
     super::emit::emit_cursor_for_frame(input, ctx.frame, origin, cursor_opacity);
 
     super::emit::emit_image_quads(input, ctx.frame, ox, oy);
+    super::emit::emit_placeholder_quads(input, ctx.frame, ox, oy);
 }

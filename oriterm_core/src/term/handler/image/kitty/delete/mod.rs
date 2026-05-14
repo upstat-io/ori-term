@@ -105,8 +105,12 @@ impl<S: EffectSink> Term<S> {
         } else {
             cache.remove_placements_for_image(image_id);
         }
+        // Uppercase `d=I` is targeted by image ID — remove the image and
+        // its anchor unconditionally, bypassing the orphan check. The
+        // orphan-check path is for region/visibility-targeted variants
+        // (`d=p/c/q/x/y/z/a/A`) where anchored U=1 images must survive.
         if is_uppercase(spec) {
-            cache.prune_if_orphaned(&[image_id]);
+            cache.remove_image(image_id);
         }
     }
 
@@ -148,8 +152,13 @@ impl<S: EffectSink> Term<S> {
         let lo = ImageId::from_raw(cmd.source_x);
         let hi = ImageId::from_raw(cmd.source_y);
         let ids = self.image_cache_mut().remove_placements_in_id_range(lo, hi);
+        // ID-targeted: uppercase removes image data unconditionally
+        // (anchored U=1 images do NOT survive a targeted `d=R`).
         if is_uppercase(spec) {
-            self.image_cache_mut().prune_if_orphaned(&ids);
+            let cache = self.image_cache_mut();
+            for id in ids {
+                cache.remove_image(id);
+            }
         }
     }
 
@@ -175,8 +184,10 @@ impl<S: EffectSink> Term<S> {
         } else {
             cache.remove_placements_for_image(image_id);
         }
+        // Image-number is an ID-targeted alias — uppercase removes image
+        // data unconditionally so anchored U=1 images do NOT survive.
         if is_uppercase(spec) {
-            cache.prune_if_orphaned(&[image_id]);
+            cache.remove_image(image_id);
         }
     }
 

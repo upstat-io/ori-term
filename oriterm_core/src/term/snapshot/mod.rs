@@ -8,14 +8,16 @@ use std::collections::HashSet;
 use crate::color::palette::Palette;
 use crate::effect::sink::EffectSink;
 use crate::grid::CursorShape;
-use crate::image::ImageId;
+use crate::image::{ImageId, KITTY_PLACEHOLDER};
 use crate::index::Column;
+
+use super::handler::image::kitty::placeholder::{IncompletePlacement, ResolvedPlaceholder};
 
 use super::Term;
 use super::mode::TermMode;
 use super::renderable::{
     self, RenderableCell, RenderableContent, RenderableCursor, RenderableImageData,
-    RenderablePlacement, TermDamage,
+    RenderablePlaceholderCell, RenderablePlacement, TermDamage,
 };
 
 impl<S: EffectSink> Term<S> {
@@ -48,6 +50,7 @@ impl<S: EffectSink> Term<S> {
             images: Vec::new(),
             image_data: Vec::new(),
             images_dirty: false,
+            placeholder_cells: Vec::new(),
             cols: 0,
             lines: 0,
             scrollback_len: 0,
@@ -79,6 +82,7 @@ impl<S: EffectSink> Term<S> {
     pub fn renderable_content_into(&self, out: &mut RenderableContent) {
         out.cells.clear();
         out.damage.clear();
+        out.placeholder_cells.clear();
 
         let grid = self.grid();
         let raw_offset = grid.display_offset();
@@ -119,38 +123,7 @@ impl<S: EffectSink> Term<S> {
                 &grid[crate::index::Line(grid_line as i32)]
             };
 
-            for col_idx in 0..cols {
-                let col = Column(col_idx);
-                let cell = &row[col];
-
-                let fg = renderable::resolve_fg(cell.fg, cell.flags, palette, self.bold_is_bright);
-                let bg = renderable::resolve_bg(cell.bg, palette);
-                let (fg, bg) = renderable::apply_inverse(fg, bg, cell.flags);
-
-                let (underline_color, has_hyperlink, hyperlink_uri, zerowidth) =
-                    match cell.extra.as_ref() {
-                        Some(e) => (
-                            e.underline_color.map(|c| palette.resolve(c)),
-                            e.hyperlink.is_some(),
-                            e.hyperlink.as_ref().map(|h| h.uri.clone()),
-                            e.zerowidth.clone(),
-                        ),
-                        None => (None, false, None, Vec::new()),
-                    };
-
-                out.cells.push(RenderableCell {
-                    line: vis_line,
-                    column: col,
-                    ch: cell.ch,
-                    fg,
-                    bg,
-                    flags: cell.flags,
-                    underline_color,
-                    has_hyperlink,
-                    hyperlink_uri,
-                    zerowidth,
-                });
-            }
+            self.fill_row_cells(out, row, vis_line, cols, palette);
         }
 
         // Cursor is visible when SHOW_CURSOR is set and we're at the live view.
@@ -177,6 +150,85 @@ impl<S: EffectSink> Term<S> {
 
         Self::fill_palette_snapshot(palette, out);
         self.fill_image_snapshot(out);
+        self.fill_placeholder_image_data(out);
+    }
+
+    /// Append the snapshot cells (and any kitty placeholder-cell entries)
+    /// for one grid row. Continuation state for unicode placeholders is
+    /// scoped to a single row, so callers re-seed `prev_placeholder` per
+    /// invocation (this method owns that local state).
+    #[expect(clippy::too_many_arguments, reason = "per-row cell-fill parameters")]
+    fn fill_row_cells(
+        &self,
+        out: &mut RenderableContent,
+        row: &crate::grid::Row,
+        vis_line: usize,
+        cols: usize,
+        palette: &Palette,
+    ) {
+        let mut prev_placeholder: Option<ResolvedPlaceholder> = None;
+
+        for col_idx in 0..cols {
+            let col = Column(col_idx);
+            let cell = &row[col];
+
+            let fg = renderable::resolve_fg(cell.fg, cell.flags, palette, self.bold_is_bright);
+            let bg = renderable::resolve_bg(cell.bg, palette);
+            let (fg, bg) = renderable::apply_inverse(fg, bg, cell.flags);
+
+            let (underline_color_raw, has_hyperlink, hyperlink_uri, zerowidth) =
+                match cell.extra.as_ref() {
+                    Some(e) => (
+                        e.underline_color,
+                        e.hyperlink.is_some(),
+                        e.hyperlink.as_ref().map(|h| h.uri.clone()),
+                        e.zerowidth.clone(),
+                    ),
+                    None => (None, false, None, Vec::new()),
+                };
+
+            let underline_color = underline_color_raw.map(|c| palette.resolve(c));
+
+            if cell.ch == KITTY_PLACEHOLDER {
+                let incomplete =
+                    IncompletePlacement::decode(&zerowidth, cell.fg, underline_color_raw);
+                let resolved = incomplete.resolve_with_continuation(prev_placeholder.as_ref());
+                // Only emit when the resolved image_id is non-zero AND the
+                // image is still cached. A bare U+10EEEE with no fg + no
+                // diacritic must render as a glyph, not as an image quad.
+                if resolved.image_id != 0
+                    && self
+                        .image_cache()
+                        .get_no_touch(ImageId::from_raw(resolved.image_id))
+                        .is_some()
+                {
+                    out.placeholder_cells.push(RenderablePlaceholderCell {
+                        line: vis_line,
+                        column: col,
+                        image_id: ImageId::from_raw(resolved.image_id),
+                        image_row: resolved.image_row,
+                        image_col: resolved.image_col,
+                        placement_id: resolved.placement_id,
+                    });
+                }
+                prev_placeholder = Some(resolved);
+            } else {
+                prev_placeholder = None;
+            }
+
+            out.cells.push(RenderableCell {
+                line: vis_line,
+                column: col,
+                ch: cell.ch,
+                fg,
+                bg,
+                flags: cell.flags,
+                underline_color,
+                has_hyperlink,
+                hyperlink_uri,
+                zerowidth,
+            });
+        }
     }
 
     /// Write 270 pre-resolved RGB entries from the palette into the snapshot.
@@ -334,6 +386,27 @@ impl<S: EffectSink> Term<S> {
                     width: img.width,
                     height: img.height,
                 });
+            }
+        }
+    }
+
+    /// Append image data for any placeholder-cell `image_id` not already
+    /// covered by [`extract_images`]. Called after the cell walk so the
+    /// GPU can sample the texture for kitty unicode-placeholder cells.
+    fn fill_placeholder_image_data(&self, out: &mut RenderableContent) {
+        let cache = self.image_cache();
+        for pc in &out.placeholder_cells {
+            if out.seen_image_ids.contains(&pc.image_id) {
+                continue;
+            }
+            if let Some(img) = cache.get_no_touch(pc.image_id) {
+                out.image_data.push(RenderableImageData {
+                    id: pc.image_id,
+                    data: img.data.clone(),
+                    width: img.width,
+                    height: img.height,
+                });
+                out.seen_image_ids.insert(pc.image_id);
             }
         }
     }

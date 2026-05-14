@@ -18,7 +18,7 @@ mod control;
 mod dcs;
 mod esc;
 mod helpers;
-mod image;
+pub(in crate::term) mod image;
 mod modes;
 mod osc;
 mod presentation;

@@ -81,6 +81,11 @@ impl<S: EffectSink> Term<S> {
         // Note: both grids are already fully marked dirty by
         // `Grid::finalize_resize` → `dirty.resize()` → `mark_all()`.
         self.selection_dirty = true;
+
+        // Resize may have evicted scrollback rows or dropped columns that
+        // carried `U+10EEEE` cells; re-derive the surviving placeholder
+        // anchor set from the post-resize grid.
+        self.reconcile_placeholder_anchors_from_grid();
     }
 }
 

@@ -422,6 +422,7 @@ pub(crate) fn fill_frame_shaped(
     emit_cursor_for_frame(input, ctx.frame, origin, cursor_opacity);
 
     emit::emit_image_quads(input, ctx.frame, ox, oy);
+    emit::emit_placeholder_quads(input, ctx.frame, ox, oy);
 }
 
 #[cfg(test)]

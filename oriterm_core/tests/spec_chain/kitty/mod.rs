@@ -12,4 +12,6 @@ pub mod actions;
 pub mod animation;
 pub mod chunked;
 pub mod formats;
+pub mod placeholder_anchors;
 pub mod transmissions;
+pub mod virtual_placements;
