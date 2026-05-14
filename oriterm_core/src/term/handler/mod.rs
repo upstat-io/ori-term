@@ -25,6 +25,7 @@ mod presentation;
 mod rect_ops;
 mod sgr;
 mod status;
+mod xtgettcap;
 
 /// Generate a one-line `Handler` trait method that delegates to an
 /// inherent helper on `Term<S>`. Used by the OSC 3/5/6/… block, the
@@ -266,6 +267,9 @@ impl<S: EffectSink> Handler for Term<S> {
     }
     fn xtversion(&mut self) {
         self.status_xtversion();
+    }
+    fn xtgettcap(&mut self, payload: &[u8], aborted: bool) {
+        self.status_xtgettcap(payload, aborted);
     }
     fn device_status(&mut self, arg: usize) {
         self.status_device_status(arg);

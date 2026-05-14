@@ -79,6 +79,13 @@ fn dispatch_hook<H: Handler, T: Timeout>(
             state.decrsps_buf.clear();
             state.dcs_state = DcsState::Decrsps { ps };
         },
+        'q' if intermediates == [b'+'] => {
+            // DCS + q ... ST = XTGETTCAP (xterm terminfo capability query).
+            // Pt is hex-encoded capability name(s) separated by `;`,
+            // accumulated via `put` and consumed at `unhook`.
+            state.xtgettcap_buf.clear();
+            state.dcs_state = DcsState::Xtgettcap;
+        },
         _ => {
             debug!(
                 "[unhandled hook] params={:?}, ints: {:?}, ignore: {:?}, action: {:?}",
@@ -111,6 +118,14 @@ fn dispatch_put<H: Handler, T: Timeout>(
                 state.decrsps_buf.push(byte);
             }
         },
+        DcsState::Xtgettcap => {
+            // Collect the hex-encoded capability name list. Cap matches
+            // MAX_APC_LEN to bound memory; XTGETTCAP payloads are
+            // typically small (≤200 bytes for the longest realistic queries).
+            if state.xtgettcap_buf.len() < MAX_APC_LEN {
+                state.xtgettcap_buf.push(byte);
+            }
+        },
         DcsState::None => debug!("[unhandled put] byte={:?}", byte),
     }
 }
@@ -134,6 +149,13 @@ fn dispatch_unhook<H: Handler, T: Timeout>(state: &mut ProcessorState<T>, handle
             // path is functionally equivalent. When a real restore
             // lands, it must check `aborted` before applying.
             handler.decrsps(ps, &payload);
+        },
+        DcsState::Xtgettcap => {
+            // Pass the slice directly (no drain-collect allocation) and
+            // clear the buf for the next DCS. `aborted` is forwarded so
+            // the handler can drop the reply on DCS abort.
+            handler.xtgettcap(&state.xtgettcap_buf, aborted);
+            state.xtgettcap_buf.clear();
         },
         DcsState::None => debug!("[unhandled unhook]"),
     }

@@ -1,7 +1,8 @@
 ---
 source: oriterm_core/tests/teseq/harness/assertions.rs
+assertion_line: 29
 expression: event_text
 ---
-ColorRequest(1)
-ColorRequest(256)
-ColorRequest(257)
+PtyWrite("\u{1b}]4;1;rgb:cdcd/0000/0000\u{1b}\\")
+PtyWrite("\u{1b}]10;rgb:cccc/cccc/cccc\u{1b}\\")
+PtyWrite("\u{1b}]11;rgb:0000/0000/0000\u{1b}\\")

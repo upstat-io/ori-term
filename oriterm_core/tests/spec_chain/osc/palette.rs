@@ -22,7 +22,7 @@
 
 use oriterm_core::Theme;
 use oriterm_core::color::palette::Palette;
-use oriterm_core::effect::{Effect, HostRequest};
+use oriterm_core::effect::{Effect, PtyEffect};
 use oriterm_test_support::spec_chain::SpecHarness;
 use vte::ansi::{Color, Rgb};
 
@@ -32,23 +32,58 @@ fn theme_default_palette() -> Palette {
     Palette::for_theme(Theme::default())
 }
 
-/// Assert exactly one `HostRequest::ColorQuery` is on the transcript and
-/// return its `(prefix, index)`. Panics otherwise.
-fn expect_single_color_query(harness: &SpecHarness) -> (String, usize) {
+/// Assert exactly one OSC color reply (`Effect::Pty(PtyEffect::Write { .. })`
+/// with bytes starting `\x1b]N;` for the given OSC number) is on the
+/// transcript and return its `(osc_number, index_or_none)`. Panics
+/// otherwise. Palette index for OSC 4 is parsed from the reply bytes
+/// (`\x1b]4;<idx>;rgb:...`); OSC 10/11/12 return `None` for index.
+fn expect_single_color_reply(harness: &SpecHarness) -> (String, usize) {
     let mut found = None;
     for eff in &harness.outcome().effects_emitted {
-        if let Effect::HostRequest(HostRequest::ColorQuery { prefix, index, .. }) = eff {
-            assert!(
-                found.is_none(),
-                "more than one ColorQuery emitted; got {:?}",
-                harness.outcome().effects_emitted
-            );
-            found = Some((prefix.clone(), *index));
+        if let Effect::Pty(PtyEffect::Write { bytes, .. }) = eff {
+            // OSC reply bytes start with `\x1b]<N>;...` — parse the N
+            // and (for OSC 4) the index. We treat the prefix (e.g.
+            // `4;5`) the same way the legacy `ColorQuery` payload did.
+            if let Some(stripped) = bytes.strip_prefix(b"\x1b]") {
+                let after_st = stripped
+                    .iter()
+                    .position(|&b| b == b';')
+                    .map(|p| (&stripped[..p], &stripped[p + 1..]))
+                    .unwrap_or((stripped, &[][..]));
+                let osc_num_bytes = after_st.0;
+                let tail = after_st.1;
+                let osc_num = std::str::from_utf8(osc_num_bytes).unwrap_or("");
+                // Skip non-color-reply OSC writes (titles, working-dir, etc.).
+                if !matches!(osc_num, "4" | "10" | "11" | "12") {
+                    continue;
+                }
+                assert!(
+                    found.is_none(),
+                    "more than one OSC color reply emitted; got {:?}",
+                    harness.outcome().effects_emitted
+                );
+                let (prefix, index) = if osc_num == "4" {
+                    // OSC 4 reply: `\x1b]4;<idx>;rgb:...`
+                    let idx_end = tail.iter().position(|&b| b == b';').unwrap_or(tail.len());
+                    let idx_str = std::str::from_utf8(&tail[..idx_end]).unwrap_or("0");
+                    let idx: usize = idx_str.parse().unwrap_or(0);
+                    (format!("{osc_num};{idx}"), idx)
+                } else {
+                    let idx = match osc_num {
+                        "10" => 256,
+                        "11" => 257,
+                        "12" => 258,
+                        _ => 0,
+                    };
+                    (osc_num.to_string(), idx)
+                };
+                found = Some((prefix, index));
+            }
         }
     }
     found.unwrap_or_else(|| {
         panic!(
-            "expected one ColorQuery; got {:?}",
+            "expected one OSC color reply; got {:?}",
             harness.outcome().effects_emitted
         )
     })
@@ -82,7 +117,7 @@ fn osc4_query_palette_index() {
     let mut harness = SpecHarness::new();
     harness.feed(b"\x1b]4;5;?\x1b\\");
 
-    let (prefix, index) = expect_single_color_query(&harness);
+    let (prefix, index) = expect_single_color_reply(&harness);
     assert_eq!(prefix, "4;5");
     assert_eq!(index, 5);
 }

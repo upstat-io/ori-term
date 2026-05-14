@@ -101,13 +101,19 @@ fn osc4_sets_indexed_color() {
 }
 
 #[test]
-fn osc4_query_sends_color_request_event() {
+fn osc4_query_sends_color_reply_pty_write() {
     let (mut t, listener) = term_with_recorder();
     // ESC]4;1;?\x07 — query color index 1.
     feed(&mut t, b"\x1b]4;1;?\x07");
 
     let events = listener.events();
-    assert!(events.iter().any(|e| e.contains("ColorRequest(1)")));
+    // Sync OSC color reply: handler emits PtyWrite directly from the
+    // palette (notcurses' handshake polling window closes before async
+    // coordinator replies land).
+    assert!(
+        events.iter().any(|e| e.starts_with("PtyWrite(\x1b]4;1;rgb:")),
+        "expected sync PtyWrite reply for OSC 4 index 1, got: {events:?}",
+    );
 }
 
 #[test]
@@ -474,38 +480,41 @@ fn osc_reset_color_marks_grid_dirty() {
 }
 
 #[test]
-fn osc10_query_sends_foreground_color_request() {
+fn osc10_query_sends_foreground_color_reply_pty_write() {
     let (mut t, listener) = term_with_recorder();
     feed(&mut t, b"\x1b]10;?\x07");
 
     let events = listener.events();
+    // Sync OSC color reply emitted directly from the palette.
     assert!(
-        events.iter().any(|e| e.contains("ColorRequest(256)")),
-        "OSC 10 query should request foreground (index 256), got: {events:?}",
+        events.iter().any(|e| e.starts_with("PtyWrite(\x1b]10;rgb:")),
+        "OSC 10 query should emit sync PtyWrite reply, got: {events:?}",
     );
 }
 
 #[test]
-fn osc11_query_sends_background_color_request() {
+fn osc11_query_sends_background_color_reply_pty_write() {
     let (mut t, listener) = term_with_recorder();
     feed(&mut t, b"\x1b]11;?\x07");
 
     let events = listener.events();
+    // Sync OSC color reply emitted directly from the palette.
     assert!(
-        events.iter().any(|e| e.contains("ColorRequest(257)")),
-        "OSC 11 query should request background (index 257), got: {events:?}",
+        events.iter().any(|e| e.starts_with("PtyWrite(\x1b]11;rgb:")),
+        "OSC 11 query should emit sync PtyWrite reply, got: {events:?}",
     );
 }
 
 #[test]
-fn osc12_query_sends_cursor_color_request() {
+fn osc12_query_sends_cursor_color_reply_pty_write() {
     let (mut t, listener) = term_with_recorder();
     feed(&mut t, b"\x1b]12;?\x07");
 
     let events = listener.events();
+    // Sync OSC color reply emitted directly from the palette.
     assert!(
-        events.iter().any(|e| e.contains("ColorRequest(258)")),
-        "OSC 12 query should request cursor color (index 258), got: {events:?}",
+        events.iter().any(|e| e.starts_with("PtyWrite(\x1b]12;rgb:")),
+        "OSC 12 query should emit sync PtyWrite reply, got: {events:?}",
     );
 }
 
@@ -972,16 +981,15 @@ fn osc4_set_then_query_roundtrip() {
         }
     );
 
-    // Query: the event should reference index 5.
+    // Query: the sync reply contains the set RGB value (16-bit hex per channel).
     let (mut t2, listener) = term_with_recorder();
-    // Set same color on t2.
     feed(&mut t2, b"\x1b]4;5;rgb:ab/cd/ef\x07");
-    // Now query it.
     feed(&mut t2, b"\x1b]4;5;?\x07");
     let events = listener.events();
+    // 8-bit `ab/cd/ef` becomes 16-bit `abab/cdcd/efef` in the reply.
     assert!(
-        events.iter().any(|e| e.contains("ColorRequest(5)")),
-        "expected ColorRequest(5), got: {events:?}",
+        events.iter().any(|e| e.contains("PtyWrite(\x1b]4;5;rgb:abab/cdcd/efef\x07)")),
+        "expected sync OSC 4 reply with set color, got: {events:?}",
     );
 }
 
@@ -1001,9 +1009,10 @@ fn osc10_set_then_query_roundtrip() {
 
     feed(&mut t, b"\x1b]10;?\x07");
     let events = listener.events();
+    // 8-bit `de/ad/ff` becomes 16-bit `dede/adad/ffff` in the reply.
     assert!(
-        events.iter().any(|e| e.contains("ColorRequest(256)")),
-        "expected foreground query event, got: {events:?}",
+        events.iter().any(|e| e.contains("PtyWrite(\x1b]10;rgb:dede/adad/ffff\x07)")),
+        "expected sync OSC 10 reply with set foreground, got: {events:?}",
     );
 }
 
@@ -1023,9 +1032,10 @@ fn osc11_set_then_query_roundtrip() {
 
     feed(&mut t, b"\x1b]11;?\x07");
     let events = listener.events();
+    // 8-bit `12/34/56` becomes 16-bit `1212/3434/5656` in the reply.
     assert!(
-        events.iter().any(|e| e.contains("ColorRequest(257)")),
-        "expected background query event, got: {events:?}",
+        events.iter().any(|e| e.contains("PtyWrite(\x1b]11;rgb:1212/3434/5656\x07)")),
+        "expected sync OSC 11 reply with set background, got: {events:?}",
     );
 }
 
@@ -1045,9 +1055,10 @@ fn osc12_set_then_query_roundtrip() {
 
     feed(&mut t, b"\x1b]12;?\x07");
     let events = listener.events();
+    // 8-bit `fe/dc/ba` becomes 16-bit `fefe/dcdc/baba` in the reply.
     assert!(
-        events.iter().any(|e| e.contains("ColorRequest(258)")),
-        "expected cursor color query event, got: {events:?}",
+        events.iter().any(|e| e.contains("PtyWrite(\x1b]12;rgb:fefe/dcdc/baba\x07)")),
+        "expected sync OSC 12 reply with set cursor color, got: {events:?}",
     );
 }
 
