@@ -138,7 +138,12 @@ impl<S: EffectSink> Term<S> {
 
         self.image_cache_mut().place(placement);
 
-        log::info!(
+        // High-frequency on animated sixel workloads (notcurses-demo
+        // emits one place per scene frame). Kept at debug so default
+        // INFO doesn't pay sync-write cost on the IO thread per frame.
+        // Enable via RUST_LOG=oriterm_core::term::handler::image::sixel=debug.
+        log::debug!(
+            target: "oriterm_core::term::handler::image::sixel",
             "sixel: placed id={} at col={} row={} ({}x{} px, {}x{} cells)",
             id.0,
             col,
