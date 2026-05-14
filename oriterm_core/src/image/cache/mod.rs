@@ -168,7 +168,13 @@ impl ImageCache {
         // (including animation state and frame memory) before inserting
         // the new data. Uses `remove_image()` which handles all cleanup.
         if self.images.contains_key(&id) {
-            log::info!("image store: replacing existing id={}", id.0);
+            // High-frequency on animated kitty graphics (notcurses
+            // re-transmits same image_id per frame). Kept at debug so
+            // default INFO doesn't pay sync-write cost on the IO thread.
+            log::debug!(
+                target: "oriterm_core::image::cache::store",
+                "image store: replacing existing id={}", id.0
+            );
             self.remove_image(id);
         }
 

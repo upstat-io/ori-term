@@ -70,7 +70,11 @@ impl<S: EffectSink> Term<S> {
         }
 
         let after_pls = self.image_cache().placement_count();
-        log::info!(
+        // High-frequency on animated graphics (notcurses re-transmits +
+        // deletes placements per frame). Kept at debug so default INFO
+        // doesn't pay sync-write cost on the IO thread per frame.
+        log::debug!(
+            target: "oriterm_core::term::handler::image::kitty::delete",
             "kitty delete: d={} — placements {}->{}",
             spec as char,
             before_pls,
