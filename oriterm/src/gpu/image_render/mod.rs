@@ -108,6 +108,12 @@ impl ImageTextureCache {
                     view_formats: &[],
                 });
 
+                // Measure GPU upload duration on main thread. wgpu
+                // staging-buffer exhaustion under back-to-back large
+                // RGBA uploads (graphics-heavy workloads) would
+                // manifest as sustained >= 16ms durations here,
+                // extending frame budget and delaying event-loop poll.
+                let upload_start = std::time::Instant::now();
                 queue.write_texture(
                     texture.as_image_copy(),
                     data,
@@ -118,6 +124,14 @@ impl ImageTextureCache {
                     },
                     size,
                 );
+                let upload_ms = upload_start.elapsed().as_millis();
+                if upload_ms >= 16 {
+                    log::info!(
+                        target: "oriterm::gpu::image_render::upload_latency",
+                        "queue.write_texture {width}x{height} ({} bytes) took {upload_ms}ms (staging buffer pressure)",
+                        data.len()
+                    );
+                }
 
                 let view = texture.create_view(&TextureViewDescriptor::default());
 

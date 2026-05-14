@@ -98,7 +98,33 @@ impl<S: EffectSink> Term<S> {
     }
 
     /// Decode pixel data from format code to RGBA.
+    ///
+    /// Wraps `kitty_decode_pixels_inner` with a duration measurement.
+    /// f=32 (raw RGBA) is a size-check + ownership transfer (fast);
+    /// f=24 (RGB→RGBA) is a memory expansion (mid); f=100 (PNG) is
+    /// decompression (slow under large transmits). Sustained >= 5ms
+    /// per call points to inline-decode IO-thread saturation under
+    /// graphics-heavy workloads.
     pub(super) fn kitty_decode_pixels(
+        payload: Vec<u8>,
+        format: u32,
+        width: u32,
+        height: u32,
+    ) -> Result<(Vec<u8>, u32, u32), String> {
+        let decode_start = std::time::Instant::now();
+        let payload_len = payload.len();
+        let result = Self::kitty_decode_pixels_inner(payload, format, width, height);
+        let elapsed_us = decode_start.elapsed().as_micros();
+        if elapsed_us >= 5_000 {
+            log::info!(
+                target: "oriterm_core::term::handler::image::kitty::decode_pixels",
+                "format={format} payload_bytes={payload_len} width={width} height={height} duration_us={elapsed_us}"
+            );
+        }
+        result
+    }
+
+    fn kitty_decode_pixels_inner(
         payload: Vec<u8>,
         format: u32,
         width: u32,

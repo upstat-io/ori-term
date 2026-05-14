@@ -144,10 +144,21 @@ impl PtyReader {
                 }
             };
 
-            // Forward the raw bytes to the IO thread.
+            // Forward the raw bytes to the IO thread. Measure send-block
+            // duration — when `byte_tx` is full (CAP 8), `send` blocks
+            // waiting for the IO thread to drain. Sustained block durations
+            // >= 10ms indicate backpressure from a saturated consumer.
+            let send_start = std::time::Instant::now();
             if self.byte_tx.send(buf[..n].to_vec()).is_err() {
                 // IO thread channel disconnected — shut down.
                 break;
+            }
+            let send_blocked_ms = send_start.elapsed().as_millis();
+            if send_blocked_ms >= 10 {
+                log::warn!(
+                    target: "oriterm_mux::pty::reader::send_block",
+                    "byte_tx.send blocked {send_blocked_ms}ms (IO thread backpressure; consumer slower than producer)"
+                );
             }
 
             // ConPTY only: pause between reads so conhost can process input.
