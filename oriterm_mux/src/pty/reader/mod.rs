@@ -192,22 +192,21 @@ impl PtyReader {
             // after each read gives conhost scheduling time to handle
             // Ctrl+C between output bursts.
             //
-            // Conditional: skip the sleep when this read returned a near-full
-            // buffer (≥ READ_BUFFER_SIZE/2 = 64 KB). Near-full means more
-            // bytes are queued behind us in the pipe — sleeping here just
-            // delays drainage and (under 57-FPS pixel-graphics floods like
-            // notcurses-demo xray) caps our throughput at
-            // READ_BUFFER_SIZE/1ms = 128 MB/s, well below the
-            // 200-340 MB/s base64-encoded RGBA video stream needs. When
-            // bytes flow this fast, conhost is plainly scheduled and
-            // producing output; sleeping serves no purpose. Sleep only
-            // after partial reads, which signal the pipe drained and
-            // conhost may now have idle headroom for our input writes.
+            // Conditional: skip the sleep when this read returned any
+            // substantial batch (> 4 KB). ConPTY's slave→master shuttle
+            // delivers in chunks well below the 128 KB read buffer; a
+            // 64 KB threshold misclassified 25 MB/s graphics streams as
+            // "partial" and the sleep still fired per read, capping
+            // throughput. 4 KB is small enough that any real burst skips
+            // the sleep, yet large enough that key-echo (typically 1-32
+            // bytes) and idle wakeups still hit it — preserving the
+            // conhost-scheduling slot that makes Ctrl+C responsive during
+            // text floods.
             //
             // Unix PTYs don't need this — the kernel scheduler provides
             // natural interleaving between the child process and our reader.
             #[cfg(windows)]
-            if n < READ_BUFFER_SIZE / 2 {
+            if n < 4096 {
                 thread::sleep(std::time::Duration::from_millis(1));
             }
         }
