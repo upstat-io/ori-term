@@ -125,6 +125,12 @@ impl PtyReader {
     /// it returns regardless of which exit path was taken.
     fn read_loop(&mut self) {
         let mut buf = vec![0u8; READ_BUFFER_SIZE];
+        // Throughput tracking: log bytes/sec read from PTY every 1 sec when
+        // sustained over 256 KB/sec. Localizes whether ConPTY/WSL upstream
+        // is the bottleneck (low MB/s observed) or our IO thread/parser is
+        // (high MB/s observed but still drops downstream).
+        let mut throughput_window_start = std::time::Instant::now();
+        let mut throughput_bytes: usize = 0;
 
         loop {
             if self.shutdown.load(Ordering::Acquire) {
@@ -143,6 +149,23 @@ impl PtyReader {
                     break;
                 }
             };
+
+            throughput_bytes += n;
+            let window_elapsed = throughput_window_start.elapsed();
+            if window_elapsed >= std::time::Duration::from_secs(1) {
+                let kb_per_sec =
+                    (throughput_bytes as f64 / 1024.0) / window_elapsed.as_secs_f64();
+                if throughput_bytes >= 256 * 1024 {
+                    log::info!(
+                        target: "oriterm_mux::pty::reader::throughput",
+                        "pty read throughput {kb_per_sec:.0} KB/s ({} bytes in {:.2?})",
+                        throughput_bytes,
+                        window_elapsed,
+                    );
+                }
+                throughput_window_start = std::time::Instant::now();
+                throughput_bytes = 0;
+            }
 
             // Forward the raw bytes to the IO thread. Measure send-block
             // duration — when `byte_tx` is full (CAP 8), `send` blocks

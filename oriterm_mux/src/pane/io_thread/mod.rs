@@ -279,10 +279,14 @@ impl<S: EffectSink> PaneIoThread<S> {
             self.maybe_produce_snapshot();
         }
         let drain_ms = drain_start.elapsed().as_millis();
-        if messages_drained > 0 && drain_ms >= 50 {
+        // 10ms threshold captures sub-saturation drain costs (formerly 50ms
+        // which only surfaced extreme saturation). Drain cycles of 10-50ms
+        // localize where the IO thread spends its byte-drain budget under
+        // graphics floods even when no single cycle hits hard backpressure.
+        if messages_drained > 0 && drain_ms >= 10 {
             log::info!(
                 target: "oriterm_mux::pane::io_thread::iteration",
-                "drain cycle messages={messages_drained} bytes={bytes_drained} duration_ms={drain_ms} (IO thread saturated)"
+                "drain cycle messages={messages_drained} bytes={bytes_drained} duration_ms={drain_ms}"
             );
         }
     }
