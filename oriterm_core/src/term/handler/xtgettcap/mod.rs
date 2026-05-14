@@ -34,7 +34,7 @@ const UNKNOWN_REPLY_CAPACITY_HINT: usize = 48;
 /// uppercase; both must decode. Returns `None` on odd length or non-hex
 /// characters.
 pub(super) fn hex_decode(input: &[u8]) -> Option<Vec<u8>> {
-    if input.len() % 2 != 0 {
+    if !input.len().is_multiple_of(2) {
         return None;
     }
     let mut out = Vec::with_capacity(input.len() / 2);
@@ -104,8 +104,7 @@ fn query_os_name_value() -> &'static [u8] {
 fn lookup_tcap(name: &[u8]) -> Option<&'static [u8]> {
     match name {
         b"TN" => Some(b"oriterm"),
-        b"Co" => Some(b"256"),
-        b"colors" => Some(b"256"),
+        b"Co" | b"colors" => Some(b"256"),
         b"RGB" => Some(b"8/8/8"),
         b"hpa" => Some(b"\x1b[%i%p1%dG"),
         b"indn" => Some(b"\x1b[%p1%dS"),
@@ -162,7 +161,7 @@ impl<S: EffectSink> Term<S> {
     ///
     /// Hex names in the reply are canonicalized to UPPERCASE per xterm
     /// `charproc.c:9466 ("%02X")` regardless of the input case.
-    pub(super) fn status_xtgettcap(&mut self, payload: &[u8], aborted: bool) {
+    pub(super) fn status_xtgettcap(&self, payload: &[u8], aborted: bool) {
         if aborted {
             return;
         }
