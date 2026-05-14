@@ -80,9 +80,14 @@ pub(in crate::server) fn dispatch_extract_text(
     pane: Option<&Pane>,
     selection: Selection,
 ) -> String {
-    let Some(pane) = pane else { return String::new(); };
+    let Some(pane) = pane else {
+        return String::new();
+    };
     let (tx, rx) = crossbeam_channel::bounded(1);
-    pane.send_io_command(PaneIoCommand::ExtractText { selection, reply: tx });
+    pane.send_io_command(PaneIoCommand::ExtractText {
+        selection,
+        reply: tx,
+    });
     rx.recv_timeout(Duration::from_millis(100))
         .ok()
         .flatten()
@@ -99,7 +104,9 @@ pub(in crate::server) fn dispatch_extract_html(
     font_family: String,
     font_size: f32,
 ) -> (String, String) {
-    let Some(pane) = pane else { return (String::new(), String::new()); };
+    let Some(pane) = pane else {
+        return (String::new(), String::new());
+    };
     let (tx, rx) = crossbeam_channel::bounded(1);
     pane.send_io_command(PaneIoCommand::ExtractHtml {
         selection,

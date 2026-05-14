@@ -15,7 +15,6 @@ use crate::config::Config;
 use crate::font::discovery;
 use crate::keybindings;
 
-
 /// GPU-accelerated terminal emulator.
 #[derive(Parser)]
 #[expect(
@@ -328,7 +327,6 @@ fn validate_config_inner() -> Result<(), Vec<String>> {
         Err(errors)
     }
 }
-
 
 /// `show-config` — dump the resolved config as TOML.
 fn run_show_config() -> ! {

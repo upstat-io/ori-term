@@ -14,10 +14,10 @@ use std::time::Duration;
 use crossbeam_channel::Sender;
 use oriterm_core::Selection;
 
+use crate::PaneId;
 use crate::backend::embedded::EmbeddedMux;
 use crate::pane::io_thread::PaneIoCommand;
 use crate::pane::{MarkCursor, Pane};
-use crate::PaneId;
 
 /// IO-thread reply timeout for synchronous query commands (ms).
 const IO_REPLY_TIMEOUT: Duration = Duration::from_millis(100);
@@ -38,11 +38,7 @@ impl EmbeddedMux {
     /// Synchronously extract the plain-text content of `sel` from the pane's
     /// IO-thread grid. Returns `None` if the pane is missing or the IO
     /// thread doesn't reply within `IO_REPLY_TIMEOUT`.
-    pub(super) fn extract_text_impl(
-        &self,
-        pane_id: PaneId,
-        sel: &Selection,
-    ) -> Option<String> {
+    pub(super) fn extract_text_impl(&self, pane_id: PaneId, sel: &Selection) -> Option<String> {
         let pane = self.panes.get(&pane_id)?;
         pane_io_roundtrip(pane, |reply| PaneIoCommand::ExtractText {
             selection: *sel,

@@ -100,7 +100,7 @@ impl<S: EffectSink> Term<S> {
     /// the full palette via `Palette::for_theme(self.theme)` plus any
     /// runtime OSC 4/104 mutations, so no GUI-thread lookup is needed.
     ///
-    /// The synchronous emission is load-bearing for Windows ConPTY: the
+    /// The synchronous emission is load-bearing for Windows `ConPTY`: the
     /// async coordinator path delays OSC replies past the child's
     /// initial-handshake polling window, causing notcurses-info to miss
     /// our color replies and fall back to ASCII rendering. Emitting

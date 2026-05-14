@@ -182,5 +182,8 @@ fn format_byte_preview(b: &[u8]) -> String {
     const CAP: usize = 120;
     let slice = if b.len() > CAP { &b[..CAP] } else { b };
     let tail = if b.len() > CAP { "...(truncated)" } else { "" };
-    format!("\"{}\"{tail}", String::from_utf8_lossy(slice).escape_debug())
+    format!(
+        "\"{}\"{tail}",
+        String::from_utf8_lossy(slice).escape_debug()
+    )
 }

@@ -117,12 +117,12 @@ impl PtySession {
         &self.captured_input
     }
 
-    /// Borrow every reply byte ori_term has written back to the PTY
+    /// Borrow every reply byte `ori_term` has written back to the PTY
     /// in response to the captured input.
     ///
     /// Mirrors the `effect_sink().take_responses()` path that
     /// `feed_and_flush` calls before each PTY write, so the byte
-    /// order matches the order ori_term emitted bytes during the
+    /// order matches the order `ori_term` emitted bytes during the
     /// session.
     pub fn reply_bytes(&self) -> &[u8] {
         &self.captured_replies

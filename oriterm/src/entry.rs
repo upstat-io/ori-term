@@ -208,7 +208,7 @@ fn init_logger() {
 
     if let Ok(file) = std::fs::File::create(&path) {
         let rust_log = std::env::var("RUST_LOG").ok();
-        let filter = crate::log_filter::LogFilter::parse(rust_log.as_deref().unwrap_or(""));
+        let filter = crate::log_filter::LogFilter::parse(rust_log.as_deref().unwrap_or("info"));
         let max_level = filter.max_level();
         let logger = Box::new(FileLogger {
             file: Mutex::new(file),

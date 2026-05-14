@@ -112,7 +112,7 @@ pub struct PtySession {
     /// `captured_input()` so capture-replay golden-image tests can
     /// serialize the byte stream to a `.cap` fixture.
     pub(crate) captured_input: Vec<u8>,
-    /// Reply bytes ori_term has written back to the PTY in response to
+    /// Reply bytes `ori_term` has written back to the PTY in response to
     /// the captured input. Appended by `feed_and_flush` in emission
     /// order; exposed via `captured_replies()`.
     pub(crate) captured_replies: Vec<u8>,

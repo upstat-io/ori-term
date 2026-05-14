@@ -5,8 +5,6 @@ mod tab_creation;
 
 pub(in crate::app) use boot::{decoration_to_mode, metrics_from_style};
 
-
-
 use winit::event_loop::ActiveEventLoop;
 
 use base64::{Engine as _, engine::general_purpose};
@@ -336,5 +334,4 @@ impl App {
         self.active_window = Some(session_wid);
         Ok(())
     }
-
 }

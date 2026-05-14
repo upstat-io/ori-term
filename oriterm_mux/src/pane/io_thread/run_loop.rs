@@ -121,10 +121,7 @@ impl<S: EffectSink> PaneIoThread<S> {
     /// Returns `true` when the run loop should exit (Shutdown command or
     /// channel disconnect); `false` otherwise. Apply-resize-first preserves
     /// post-resize state across idle-wake → `SnapshotNow` ordering races.
-    fn handle_cmd_arm(
-        &mut self,
-        msg: Result<PaneIoCommand, crossbeam_channel::RecvError>,
-    ) -> bool {
+    fn handle_cmd_arm(&mut self, msg: Result<PaneIoCommand, crossbeam_channel::RecvError>) -> bool {
         match msg {
             Ok(cmd) => {
                 self.apply_pending_resize();
@@ -142,10 +139,7 @@ impl<S: EffectSink> PaneIoThread<S> {
 
     /// `byte_rx` arm: chunk-drain bytes through VTE, or hand off to EOF
     /// handler when the writer dropped. Returns `true` to exit the loop.
-    fn handle_byte_arm(
-        &mut self,
-        msg: Result<Vec<u8>, crossbeam_channel::RecvError>,
-    ) -> bool {
+    fn handle_byte_arm(&mut self, msg: Result<Vec<u8>, crossbeam_channel::RecvError>) -> bool {
         if let Ok(bytes) = msg {
             self.handle_bytes_chunked(&bytes);
             false
