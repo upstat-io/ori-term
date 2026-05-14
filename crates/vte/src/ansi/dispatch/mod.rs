@@ -136,19 +136,20 @@ fn dispatch_unhook<H: Handler, T: Timeout>(state: &mut ProcessorState<T>, handle
     match state.dcs_state {
         DcsState::Sixel => handler.sixel_end(aborted),
         DcsState::Decrqss => {
-            let query: Vec<u8> = state.decrqss_buf.drain(..).collect();
             // DECRQSS status strings are query/response — an aborted
             // query still returns the current status; no payload to
-            // discard on abort.
-            handler.decrqss(&query);
+            // discard on abort. Pass slice + clear (no allocation).
+            handler.decrqss(&state.decrqss_buf);
+            state.decrqss_buf.clear();
         },
         DcsState::Decrsps { ps } => {
-            let payload: Vec<u8> = state.decrsps_buf.drain(..).collect();
             // DECRSPS aborted mid-payload would restore a truncated
             // state; today the handler stubs log + ignore, so abort
             // path is functionally equivalent. When a real restore
             // lands, it must check `aborted` before applying.
-            handler.decrsps(ps, &payload);
+            // Pass slice + clear (no allocation).
+            handler.decrsps(ps, &state.decrsps_buf);
+            state.decrsps_buf.clear();
         },
         DcsState::Xtgettcap => {
             // Pass the slice directly (no drain-collect allocation) and

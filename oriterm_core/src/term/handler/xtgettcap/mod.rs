@@ -31,9 +31,9 @@ const UNKNOWN_REPLY_CAPACITY_HINT: usize = 48;
 /// Decode hex-encoded ASCII (e.g., `b"544E"` or `b"544e"` → `b"TN"`).
 ///
 /// Case-insensitive on input — notcurses sends lowercase, xterm canon is
-/// uppercase; both must decode (Ghostty issue 7229 closed-cure pattern).
-/// Returns `None` on odd length or non-hex characters.
-fn hex_decode(input: &[u8]) -> Option<Vec<u8>> {
+/// uppercase; both must decode. Returns `None` on odd length or non-hex
+/// characters.
+pub(super) fn hex_decode(input: &[u8]) -> Option<Vec<u8>> {
     if input.len() % 2 != 0 {
         return None;
     }
@@ -46,12 +46,10 @@ fn hex_decode(input: &[u8]) -> Option<Vec<u8>> {
     Some(out)
 }
 
-/// Hex-encode ASCII bytes UPPERCASE per xterm canon.
-///
-/// Verified against xterm `charproc.c:9466` (`"%02X"`), Ghostty
-/// `bytesToHex(.upper)`, WezTerm `hex::encode_upper`. Example:
-/// `b"oriterm"` → `b"6F72697465726D"`.
-fn hex_encode(input: &[u8]) -> Vec<u8> {
+/// Hex-encode ASCII bytes UPPERCASE per xterm canon (xterm
+/// `charproc.c:9466` uses `"%02X"`). Example: `b"oriterm"` →
+/// `b"6F72697465726D"`.
+pub(super) fn hex_encode(input: &[u8]) -> Vec<u8> {
     let mut out = Vec::with_capacity(input.len() * 2);
     for &byte in input {
         out.push(hex_digit(byte >> 4));

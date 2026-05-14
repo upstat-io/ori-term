@@ -120,36 +120,8 @@ fn xtgettcap_single_setulc_returns_sgr_58_colon_template() {
     // "Setulc" = 53 65 74 75 6C 63 → uppercase hex 536574756C63
     let events = xtgettcap_replies(b"536574756C63");
     let s = concat(&events);
-    // "\x1b[58:2::%p1%d:%p2%d:%p3%dm" = 1B 5B 35 38 3A 32 3A 3A 25
-    //   70 31 25 64 3A 25 70 32 25 64 3A 25 70 33 25 64 6D
-    //   → "1B5B33383A323A3A2570312564..." — let me compute precisely.
-    //   1B 5B → "1B5B"
-    //   '5' 38 → "3538"
-    //   '8' 38 → wait, '5'=0x35, '8'=0x38 → "3538"
-    //   ':' 3A → "3A"
-    //   '2' 32 → "32"
-    //   ':' 3A → "3A"
-    //   ':' 3A → "3A"
-    //   '%' 25 → "25"
-    //   'p' 70 → "70"
-    //   '1' 31 → "31"
-    //   '%' 25 → "25"
-    //   'd' 64 → "64"
-    //   ':' 3A → "3A"
-    //   '%' 25 → "25"
-    //   'p' 70 → "70"
-    //   '2' 32 → "32"
-    //   '%' 25 → "25"
-    //   'd' 64 → "64"
-    //   ':' 3A → "3A"
-    //   '%' 25 → "25"
-    //   'p' 70 → "70"
-    //   '3' 33 → "33"
-    //   '%' 25 → "25"
-    //   'd' 64 → "64"
-    //   'm' 6D → "6D"
-    let expected = "\x1bP1+r536574756C63=1B5B35383A323A3A25703125643A25703225643A2570332564 6D\x1b\\"
-        .replace(' ', "");
+    let value_hex = hex_encode_upper(b"\x1b[58:2::%p1%d:%p2%d:%p3%dm");
+    let expected = format!("\x1bP1+r536574756C63={value_hex}\x1b\\");
     assert!(
         s.contains(&expected),
         "expected canonical Setulc reply ({:?}), got: {:?}",
@@ -294,6 +266,7 @@ fn xtgettcap_notcurses_full_query_all_known() {
 }
 
 /// Regression: BUG-06-074 §03 — mixed known+unknown caps split into 2 replies.
+/// Pins ordering: known reply emitted FIRST, unknown reply SECOND.
 #[test]
 fn xtgettcap_multi_cap_mixed_known_unknown() {
     // TN (known); 99 (unknown); RGB (known); AB (unknown)
@@ -479,15 +452,10 @@ fn xtgettcap_notcurses_query_emits_canonical_grouped_reply() {
 // Local helpers
 // ---------------------------------------------------------------------------
 
-// Local test helper for hex-encoding into a String — kept private to
-// avoid coupling the production `hex_encode` (Vec<u8>) to test-only
-// String construction. The algorithm matches xterm canonical uppercase.
+/// Hex-encode using the production `hex_encode`, then convert to
+/// String for test-assertion convenience. Eliminates the duplicate-
+/// algorithm risk (production regression would no longer be caught
+/// by tests that re-implement the encoder).
 fn hex_encode_upper(input: &[u8]) -> String {
-    const HEX: &[u8; 16] = b"0123456789ABCDEF";
-    let mut out = String::with_capacity(input.len() * 2);
-    for &b in input {
-        out.push(HEX[(b >> 4) as usize] as char);
-        out.push(HEX[(b & 0x0F) as usize] as char);
-    }
-    out
+    String::from_utf8(super::hex_encode(input)).expect("hex_encode produces ASCII")
 }
