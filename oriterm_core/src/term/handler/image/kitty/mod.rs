@@ -91,7 +91,13 @@ impl<S: EffectSink> Term<S> {
             return;
         }
 
-        log::info!(
+        // Per-command trace: high-frequency under chunked kitty transmits
+        // (notcurses-demo emits thousands per graphics scene). Kept at
+        // debug level so default INFO logging doesn't pay sync-write
+        // cost per chunk on the IO thread. Enable via
+        // RUST_LOG=oriterm_core::term::handler::image::kitty=debug.
+        log::debug!(
+            target: "oriterm_core::term::handler::image::kitty",
             "kitty: action={:?} id={:?} pid={:?} payload={}B",
             cmd.action,
             cmd.image_id,
