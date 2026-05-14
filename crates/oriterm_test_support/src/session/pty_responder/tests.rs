@@ -8,11 +8,11 @@
 use oriterm_core::effect::sink::EffectSink;
 use oriterm_core::effect::{
     ClipboardSelection, Effect, HostEffect, HostRequest, PtyEffect, PtyWriteKind, ResponseToken,
-    format_clipboard_reply,
+    format_clipboard_reply, format_color_reply,
 };
 use oriterm_core::event::ClipboardType;
 use oriterm_core::{Term, Theme};
-use vte::ansi::Processor;
+use vte::ansi::{NamedColor, Processor};
 
 use super::PtyResponder;
 
@@ -29,43 +29,60 @@ fn feed(term: &mut Term<PtyResponder>, bytes: &[u8]) {
     processor.advance(term, bytes);
 }
 
+/// OSC 10 query: Term emits `Effect::Pty(PtyEffect::Write)` synchronously
+/// with the canonical `rgb:RRRR/GGGG/BBBB` reply formatted from Term's
+/// own palette. The reply lands in PtyResponder's `responses` queue
+/// (the same queue used for DA/DSR replies). The async coordinator path
+/// is no longer used for OSC 10/11/12 — Term has the full palette via
+/// `Palette::for_theme(self.theme)` plus any runtime OSC 4/104
+/// mutations, so no GUI-thread lookup is needed (the sync emission is
+/// load-bearing for Windows ConPTY child handshake polling windows).
+///
+/// See: bug-tracker/plans/completed/BUG-06-073/
 #[test]
 fn pty_responder_captures_color_request() {
-    // OSC 10 ? ST → Term emits `Effect::HostRequest(HostRequest::ColorQuery)`;
-    // the responder formats the canonical reply for the pinned test color
-    // (`0xabcdef` → `rgb:abab/cdcd/efef`) using the same ESC]…ST terminator
-    // the query carried.
     let (mut term, responder) = term_with_responder();
+    let expected_color = term.palette().color(NamedColor::Foreground as usize);
+    let expected_reply =
+        String::from_utf8(format_color_reply(expected_color, "10", "\x1b\\")).unwrap();
+
     feed(&mut term, b"\x1b]10;?\x1b\\");
 
-    let osc = responder.take_osc_responses();
+    let responses = responder.take_responses();
     assert_eq!(
-        osc,
-        vec!["\x1b]10;rgb:abab/cdcd/efef\x1b\\".to_string()],
-        "OSC 10 query must round-trip the pinned test color"
+        responses,
+        vec![expected_reply],
+        "OSC 10 query must emit the palette-sourced reply through the PtyWrite queue"
     );
     assert!(
-        responder.take_responses().is_empty(),
-        "ColorQuery must NOT populate the PtyWrite queue"
+        responder.take_osc_responses().is_empty(),
+        "Sync OSC 10/11/12 path must NOT populate the osc_responses queue \
+         (that queue now only handles OSC 52 ClipboardLoad)"
     );
     assert!(
         responder.take_clipboard_stores().is_empty(),
-        "ColorQuery must NOT populate the clipboard-store queue"
+        "OSC 10 query must NOT populate the clipboard-store queue"
     );
 }
 
+/// Terminator parity: the synchronous formatter captures the query's
+/// terminator, so a BEL-terminated OSC 10 query must produce a
+/// BEL-terminated response.
+///
+/// See: bug-tracker/plans/completed/BUG-06-073/
 #[test]
 fn pty_responder_captures_color_request_bel_terminated() {
-    // Terminator parity: the formatter captures the query's terminator,
-    // so a BEL-terminated OSC 10 query must produce a BEL-terminated
-    // response.
     let (mut term, responder) = term_with_responder();
+    let expected_color = term.palette().color(NamedColor::Foreground as usize);
+    let expected_reply =
+        String::from_utf8(format_color_reply(expected_color, "10", "\x07")).unwrap();
+
     feed(&mut term, b"\x1b]10;?\x07");
 
-    let osc = responder.take_osc_responses();
+    let responses = responder.take_responses();
     assert_eq!(
-        osc,
-        vec!["\x1b]10;rgb:abab/cdcd/efef\x07".to_string()],
+        responses,
+        vec![expected_reply],
         "BEL-terminated OSC 10 query must produce a BEL-terminated response"
     );
 }

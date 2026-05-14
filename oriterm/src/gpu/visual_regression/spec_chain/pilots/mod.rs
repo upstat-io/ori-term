@@ -4,6 +4,7 @@
 //! (1-8) and asserts all pass. Non-visual pilots (DA1) live under
 //! `oriterm_core/tests/spec_chain/pilots/` — they don't need GPU access.
 
+pub mod kitty_animation_transition;
 pub mod kitty_minimal;
 pub mod notcurses_info_visual;
 pub mod sixel_12_4_matrix;

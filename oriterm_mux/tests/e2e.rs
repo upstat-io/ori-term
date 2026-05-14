@@ -1928,8 +1928,21 @@ fn daemon_osc_52_clipboard_read_round_trip() {
     client.close_pane(pane_id);
 }
 
-/// : OSC 10 (default foreground) color query round-trips and the
-/// daemon emits the `XParseColor` `rgb:RRRR/GGGG/BBBB` reply.
+/// OSC 10 (default foreground) color query round-trips through the
+/// daemon and the synchronous palette path emits the `XParseColor`
+/// `rgb:RRRR/GGGG/BBBB` reply directly from the IO thread's `PtyWrite`
+/// effect. The daemon no longer forwards OSC 10/11/12 through the
+/// async host-request path; the reply is written back to the same PTY
+/// directly so it arrives in time for child handshake-polling windows.
+/// This test verifies the reply byte stream reaches the client through
+/// the snapshot path (the `cat` process echoes the reply bytes back;
+/// the client sees them via snapshot updates).
+///
+/// OSC 52 still uses the async host-request path because clipboard
+/// state lives in the client, not the terminal palette; see
+/// `daemon_osc_52_clipboard_round_trip` for that coverage.
+///
+/// See: bug-tracker/plans/completed/BUG-06-073/
 #[test]
 fn daemon_osc_10_color_query_round_trip() {
     let daemon = TestDaemon::start();
@@ -1938,38 +1951,13 @@ fn daemon_osc_10_color_query_round_trip() {
 
     client.send_input(pane_id, b"printf '\\033]10;?\\033\\\\' && cat\n");
 
-    let notif = wait_for_notification(
-        &mut client,
-        |n| matches!(n, MuxNotification::HostColorQuery { .. }),
-        Duration::from_secs(30),
-    )
-    .expect("daemon must forward OSC 10 as HostColorQuery");
-
-    let token = match notif {
-        MuxNotification::HostColorQuery { reply, .. } => reply,
-        _ => unreachable!(),
-    };
-    client
-        .fulfill_host_request(
-            pane_id,
-            oriterm_mux::HostReply::ColorQuery {
-                token,
-                color: oriterm_core::color::Rgb {
-                    r: 0xab,
-                    g: 0xcd,
-                    b: 0xef,
-                },
-            },
-        )
-        .expect("fulfill_host_request must succeed");
-
-    // Reply uses doubled-nibble: 0xab → "abab", 0xcd → "cdcd", 0xef → "efef".
-    wait_for_text_in_snapshot(
-        &mut client,
-        pane_id,
-        "abab/cdcd/efef",
-        Duration::from_secs(30),
-    );
+    // Wait for the synchronous OSC 10 reply pattern in the snapshot.
+    // The reply format is `rgb:RRRR/GGGG/BBBB` per XParseColor; the
+    // assertion uses the bare `rgb:` prefix because the exact palette
+    // values depend on the daemon's default palette config (which is
+    // not test-injectable). `cat` echoes the bytes back through the
+    // PTY so the client sees them in the snapshot.
+    wait_for_text_in_snapshot(&mut client, pane_id, "rgb:", Duration::from_secs(30));
 
     client.send_input(pane_id, &[0x03]);
     client.close_pane(pane_id);
