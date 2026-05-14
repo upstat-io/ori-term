@@ -190,8 +190,7 @@ fn xtgettcap_single_query_os_name_returns_host_os_hex() {
         _ => "Unknown",
     };
     let expected_hex = hex_encode_upper(expected_os.as_bytes());
-    let expected_prefix =
-        format!("\x1bP1+r71756572792D6F732D6E616D65={}\x1b\\", expected_hex);
+    let expected_prefix = format!("\x1bP1+r71756572792D6F732D6E616D65={}\x1b\\", expected_hex);
     assert!(
         s.contains(&expected_prefix),
         "expected query-os-name={} reply ({:?}), got: {:?}",
@@ -258,11 +257,19 @@ fn xtgettcap_notcurses_full_query_all_known() {
     let events = xtgettcap_replies(b"544e;524742;687061");
     let s = concat(&events);
     assert!(
-        s.contains("\x1bP1+r544E=6F72697465726D;524742=382F382F38;687061=1B5B2569257031256447\x1b\\"),
+        s.contains(
+            "\x1bP1+r544E=6F72697465726D;524742=382F382F38;687061=1B5B2569257031256447\x1b\\"
+        ),
         "expected canonical TN;RGB;hpa grouped reply with UPPERCASE hex names, got: {:?}",
         s
     );
-    assert_eq!(events.len(), 1, "expected exactly one PtyWrite reply, got {}: {:?}", events.len(), events);
+    assert_eq!(
+        events.len(),
+        1,
+        "expected exactly one PtyWrite reply, got {}: {:?}",
+        events.len(),
+        events
+    );
 }
 
 /// Regression: BUG-06-074 §03 — mixed known+unknown caps split into 2 replies.
@@ -316,7 +323,11 @@ fn xtgettcap_multi_cap_mixed_known_unknown() {
 #[test]
 fn xtgettcap_empty_payload() {
     let events = xtgettcap_replies(b"");
-    assert!(events.is_empty(), "expected zero replies, got: {:?}", events);
+    assert!(
+        events.is_empty(),
+        "expected zero replies, got: {:?}",
+        events
+    );
 }
 
 /// Regression: BUG-06-074 §03 — empty chunk in multi-cap query is skipped.
@@ -336,7 +347,11 @@ fn xtgettcap_empty_chunk_in_multi() {
 fn xtgettcap_malformed_hex_odd_length() {
     // "544" is 3 hex chars — odd length, can't decode
     let events = xtgettcap_replies(b"544");
-    assert!(events.is_empty(), "expected zero replies, got: {:?}", events);
+    assert!(
+        events.is_empty(),
+        "expected zero replies, got: {:?}",
+        events
+    );
 }
 
 /// Regression: BUG-06-074 §03 — malformed non-hex char → cap skipped.
@@ -344,7 +359,11 @@ fn xtgettcap_malformed_hex_odd_length() {
 fn xtgettcap_malformed_hex_non_hex_char() {
     // "GG" contains 'G' which is not a hex digit
     let events = xtgettcap_replies(b"GG");
-    assert!(events.is_empty(), "expected zero replies, got: {:?}", events);
+    assert!(
+        events.is_empty(),
+        "expected zero replies, got: {:?}",
+        events
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -390,9 +409,9 @@ fn xtgettcap_aborted_via_esc_recovers_to_next_csi() {
         .filter(|e| e.starts_with("PtyWrite("))
         .collect();
     assert!(
-        pty_writes.iter().all(|e| {
-            !e.contains("\x1bP1+r") && !e.contains("\x1bP0+r")
-        }),
+        pty_writes
+            .iter()
+            .all(|e| { !e.contains("\x1bP1+r") && !e.contains("\x1bP0+r") }),
         "DCS abort must suppress XTGETTCAP reply; got: {:?}",
         pty_writes
     );

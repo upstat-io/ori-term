@@ -153,8 +153,7 @@ impl PtyReader {
             throughput_bytes += n;
             let window_elapsed = throughput_window_start.elapsed();
             if window_elapsed >= std::time::Duration::from_secs(1) {
-                let kb_per_sec =
-                    (throughput_bytes as f64 / 1024.0) / window_elapsed.as_secs_f64();
+                let kb_per_sec = (throughput_bytes as f64 / 1024.0) / window_elapsed.as_secs_f64();
                 if throughput_bytes >= 256 * 1024 {
                     log::info!(
                         target: "oriterm_mux::pty::reader::throughput",

@@ -312,7 +312,10 @@ fn decode_base64(data: &[u8]) -> Result<Vec<u8>, KittyError> {
     // Fast path: no whitespace → decode directly without an intermediate
     // copy. Common case for binary-payload senders.
     if !data.iter().any(u8::is_ascii_whitespace) {
-        return KITTY_BASE64.decode(data).ok().ok_or(KittyError::InvalidBase64);
+        return KITTY_BASE64
+            .decode(data)
+            .ok()
+            .ok_or(KittyError::InvalidBase64);
     }
 
     let mut clean: Vec<u8> = Vec::with_capacity(data.len());
@@ -320,5 +323,8 @@ fn decode_base64(data: &[u8]) -> Result<Vec<u8>, KittyError> {
     if clean.is_empty() {
         return Ok(Vec::new());
     }
-    KITTY_BASE64.decode(&clean).ok().ok_or(KittyError::InvalidBase64)
+    KITTY_BASE64
+        .decode(&clean)
+        .ok()
+        .ok_or(KittyError::InvalidBase64)
 }

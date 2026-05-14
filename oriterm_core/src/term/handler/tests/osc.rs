@@ -109,7 +109,9 @@ fn osc4_query_sends_color_reply_pty_write() {
     let events = listener.events();
     // Sync OSC color reply with EXACT default-palette red value.
     assert!(
-        events.iter().any(|e| e == "PtyWrite(\x1b]4;1;rgb:cdcd/0000/0000\x07)"),
+        events
+            .iter()
+            .any(|e| e == "PtyWrite(\x1b]4;1;rgb:cdcd/0000/0000\x07)"),
         "expected exact sync PtyWrite reply for OSC 4 index 1 (default red), got: {events:?}",
     );
 }
@@ -485,7 +487,9 @@ fn osc10_query_sends_foreground_color_reply_pty_write() {
     let events = listener.events();
     // EXACT default foreground (theme default = cccc/cccc/cccc).
     assert!(
-        events.iter().any(|e| e == "PtyWrite(\x1b]10;rgb:cccc/cccc/cccc\x07)"),
+        events
+            .iter()
+            .any(|e| e == "PtyWrite(\x1b]10;rgb:cccc/cccc/cccc\x07)"),
         "expected exact OSC 10 reply with default foreground, got: {events:?}",
     );
 }
@@ -498,7 +502,9 @@ fn osc11_query_sends_background_color_reply_pty_write() {
     let events = listener.events();
     // EXACT default background (theme default = 0000/0000/0000).
     assert!(
-        events.iter().any(|e| e == "PtyWrite(\x1b]11;rgb:0000/0000/0000\x07)"),
+        events
+            .iter()
+            .any(|e| e == "PtyWrite(\x1b]11;rgb:0000/0000/0000\x07)"),
         "expected exact OSC 11 reply with default background, got: {events:?}",
     );
 }
@@ -511,7 +517,9 @@ fn osc12_query_sends_cursor_color_reply_pty_write() {
     let events = listener.events();
     // EXACT default cursor color (theme default = ffff/ffff/ffff).
     assert!(
-        events.iter().any(|e| e == "PtyWrite(\x1b]12;rgb:ffff/ffff/ffff\x07)"),
+        events
+            .iter()
+            .any(|e| e == "PtyWrite(\x1b]12;rgb:ffff/ffff/ffff\x07)"),
         "expected exact OSC 12 reply with default cursor color, got: {events:?}",
     );
 }
@@ -986,7 +994,9 @@ fn osc4_set_then_query_roundtrip() {
     let events = listener.events();
     // 8-bit `ab/cd/ef` becomes 16-bit `abab/cdcd/efef` in the reply.
     assert!(
-        events.iter().any(|e| e.contains("PtyWrite(\x1b]4;5;rgb:abab/cdcd/efef\x07)")),
+        events
+            .iter()
+            .any(|e| e.contains("PtyWrite(\x1b]4;5;rgb:abab/cdcd/efef\x07)")),
         "expected sync OSC 4 reply with set color, got: {events:?}",
     );
 }
@@ -1009,7 +1019,9 @@ fn osc10_set_then_query_roundtrip() {
     let events = listener.events();
     // 8-bit `de/ad/ff` becomes 16-bit `dede/adad/ffff` in the reply.
     assert!(
-        events.iter().any(|e| e.contains("PtyWrite(\x1b]10;rgb:dede/adad/ffff\x07)")),
+        events
+            .iter()
+            .any(|e| e.contains("PtyWrite(\x1b]10;rgb:dede/adad/ffff\x07)")),
         "expected sync OSC 10 reply with set foreground, got: {events:?}",
     );
 }
@@ -1032,7 +1044,9 @@ fn osc11_set_then_query_roundtrip() {
     let events = listener.events();
     // 8-bit `12/34/56` becomes 16-bit `1212/3434/5656` in the reply.
     assert!(
-        events.iter().any(|e| e.contains("PtyWrite(\x1b]11;rgb:1212/3434/5656\x07)")),
+        events
+            .iter()
+            .any(|e| e.contains("PtyWrite(\x1b]11;rgb:1212/3434/5656\x07)")),
         "expected sync OSC 11 reply with set background, got: {events:?}",
     );
 }
@@ -1055,7 +1069,9 @@ fn osc12_set_then_query_roundtrip() {
     let events = listener.events();
     // 8-bit `fe/dc/ba` becomes 16-bit `fefe/dcdc/baba` in the reply.
     assert!(
-        events.iter().any(|e| e.contains("PtyWrite(\x1b]12;rgb:fefe/dcdc/baba\x07)")),
+        events
+            .iter()
+            .any(|e| e.contains("PtyWrite(\x1b]12;rgb:fefe/dcdc/baba\x07)")),
         "expected sync OSC 12 reply with set cursor color, got: {events:?}",
     );
 }

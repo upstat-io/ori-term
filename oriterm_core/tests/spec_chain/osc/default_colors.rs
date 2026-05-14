@@ -35,7 +35,10 @@ fn expect_single_color_reply(harness: &SpecHarness) -> (String, usize) {
     for eff in &harness.outcome().effects_emitted {
         if let Effect::Pty(PtyEffect::Write { bytes, .. }) = eff {
             if let Some(stripped) = bytes.strip_prefix(b"\x1b]") {
-                let osc_end = stripped.iter().position(|&b| b == b';').unwrap_or(stripped.len());
+                let osc_end = stripped
+                    .iter()
+                    .position(|&b| b == b';')
+                    .unwrap_or(stripped.len());
                 let osc_num = std::str::from_utf8(&stripped[..osc_end]).unwrap_or("");
                 let slot = match osc_num {
                     "10" => 256,

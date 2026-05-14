@@ -71,11 +71,7 @@ fn hex_nibble(c: u8) -> Option<u8> {
 #[inline]
 fn hex_digit(n: u8) -> u8 {
     debug_assert!(n < 16);
-    if n < 10 {
-        b'0' + n
-    } else {
-        b'A' + (n - 10)
-    }
+    if n < 10 { b'0' + n } else { b'A' + (n - 10) }
 }
 
 /// Resolve host OS name for fish's `query-os-name` cap.
