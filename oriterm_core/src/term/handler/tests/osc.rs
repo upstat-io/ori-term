@@ -103,16 +103,14 @@ fn osc4_sets_indexed_color() {
 #[test]
 fn osc4_query_sends_color_reply_pty_write() {
     let (mut t, listener) = term_with_recorder();
-    // ESC]4;1;?\x07 — query color index 1.
+    // ESC]4;1;?\x07 — query color index 1 (default red).
     feed(&mut t, b"\x1b]4;1;?\x07");
 
     let events = listener.events();
-    // Sync OSC color reply: handler emits PtyWrite directly from the
-    // palette (notcurses' handshake polling window closes before async
-    // coordinator replies land).
+    // Sync OSC color reply with EXACT default-palette red value.
     assert!(
-        events.iter().any(|e| e.starts_with("PtyWrite(\x1b]4;1;rgb:")),
-        "expected sync PtyWrite reply for OSC 4 index 1, got: {events:?}",
+        events.iter().any(|e| e == "PtyWrite(\x1b]4;1;rgb:cdcd/0000/0000\x07)"),
+        "expected exact sync PtyWrite reply for OSC 4 index 1 (default red), got: {events:?}",
     );
 }
 
@@ -485,10 +483,10 @@ fn osc10_query_sends_foreground_color_reply_pty_write() {
     feed(&mut t, b"\x1b]10;?\x07");
 
     let events = listener.events();
-    // Sync OSC color reply emitted directly from the palette.
+    // EXACT default foreground (theme default = cccc/cccc/cccc).
     assert!(
-        events.iter().any(|e| e.starts_with("PtyWrite(\x1b]10;rgb:")),
-        "OSC 10 query should emit sync PtyWrite reply, got: {events:?}",
+        events.iter().any(|e| e == "PtyWrite(\x1b]10;rgb:cccc/cccc/cccc\x07)"),
+        "expected exact OSC 10 reply with default foreground, got: {events:?}",
     );
 }
 
@@ -498,10 +496,10 @@ fn osc11_query_sends_background_color_reply_pty_write() {
     feed(&mut t, b"\x1b]11;?\x07");
 
     let events = listener.events();
-    // Sync OSC color reply emitted directly from the palette.
+    // EXACT default background (theme default = 0000/0000/0000).
     assert!(
-        events.iter().any(|e| e.starts_with("PtyWrite(\x1b]11;rgb:")),
-        "OSC 11 query should emit sync PtyWrite reply, got: {events:?}",
+        events.iter().any(|e| e == "PtyWrite(\x1b]11;rgb:0000/0000/0000\x07)"),
+        "expected exact OSC 11 reply with default background, got: {events:?}",
     );
 }
 
@@ -511,10 +509,10 @@ fn osc12_query_sends_cursor_color_reply_pty_write() {
     feed(&mut t, b"\x1b]12;?\x07");
 
     let events = listener.events();
-    // Sync OSC color reply emitted directly from the palette.
+    // EXACT default cursor color (theme default = ffff/ffff/ffff).
     assert!(
-        events.iter().any(|e| e.starts_with("PtyWrite(\x1b]12;rgb:")),
-        "OSC 12 query should emit sync PtyWrite reply, got: {events:?}",
+        events.iter().any(|e| e == "PtyWrite(\x1b]12;rgb:ffff/ffff/ffff\x07)"),
+        "expected exact OSC 12 reply with default cursor color, got: {events:?}",
     );
 }
 

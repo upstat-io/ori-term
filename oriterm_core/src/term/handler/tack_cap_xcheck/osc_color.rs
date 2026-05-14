@@ -74,16 +74,17 @@ fn tack_cap_xcheck_osc_12_query_emits_sync_pty_write_reply() {
     let mut effects = Vec::new();
     term.effect_sink().drain_into(&mut effects);
 
+    // EXACT default cursor color reply (theme default = ffff/ffff/ffff).
     let found = effects.iter().any(|e| {
         matches!(
             e,
             Effect::Pty(PtyEffect::Write { bytes, .. })
-                if bytes.starts_with(b"\x1b]12;rgb:")
+                if bytes.as_slice() == b"\x1b]12;rgb:ffff/ffff/ffff\x07"
         )
     });
     assert!(
         found,
-        "OSC 12 query must emit sync PtyEffect::Write with \\x1b]12;rgb: prefix; \
-         got {effects:?}",
+        "OSC 12 query must emit exact sync PtyEffect::Write reply with \
+         default cursor color (ffff/ffff/ffff); got {effects:?}",
     );
 }

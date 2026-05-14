@@ -251,15 +251,8 @@ fn xtgettcap_single_ms_returns_osc_52_hex() {
     let events = xtgettcap_replies(b"4D73");
     let s = concat(&events);
     // "\x1b]52;%p1%s;%p2%s\x1b\\" = 1B 5D 35 32 3B 25 70 31 25 73 3B
-    //   25 70 32 25 73 1B 5C
-    //   → "1B5D35323B2570312573 3B2570322573 1B5C" (concatenated)
-    let expected = "\x1bP1+r4D73=1B5D35323B25703125733B257032257331B5C\x1b\\"
-        .replace(" ", "");
-    // Actually the hex above had a typo — recompute precisely:
-    //   1B 5D 35 32 3B 25 70 31 25 73 3B 25 70 32 25 73 1B 5C
-    //   → 1B5D35323B25703125733B25703225731B5C
+    //   25 70 32 25 73 1B 5C → "1B5D35323B25703125733B25703225731B5C"
     let canonical = "\x1bP1+r4D73=1B5D35323B25703125733B25703225731B5C\x1b\\";
-    let _ = expected; // silence unused if both forms differ
     assert!(
         s.contains(canonical),
         "expected canonical Ms reply ({:?}), got: {:?}",
@@ -412,17 +405,34 @@ fn xtgettcap_aborted_via_can_emits_no_reply() {
 /// normally. Pins parser-state cleanup across the abort/recover boundary.
 #[test]
 fn xtgettcap_aborted_via_esc_recovers_to_next_csi() {
-    let (mut term, _listener) = term_with_recorder();
+    let (mut term, listener) = term_with_recorder();
+    // Move cursor away from home first so CSI [ H actually moves it.
+    feed(&mut term, b"\x1b[5;7H");
     // DCS + q with payload, then ESC aborts and starts a fresh CSI [ H.
     feed(&mut term, b"\x1bP+q544E\x1b[H");
-    // No XTGETTCAP reply should appear; cursor should be home (0,0).
-    // We don't assert the absence here directly because the recorder
-    // captures all PtyWrite — there are no PtyWrite events expected
-    // for a successful CUP either. Instead just verify the parser
-    // didn't crash and the term is in a sane state.
-    // (The xtgettcap_aborted_via_can_emits_no_reply test pins the
-    // no-reply invariant; this test pins recovery to next sequence.)
-    // No assertion needed — compilation + run-without-panic is the pin.
+    // (a) No XTGETTCAP reply was emitted (DCS+q aborted mid-payload).
+    let events = listener.events();
+    let pty_writes: Vec<_> = events
+        .iter()
+        .filter(|e| e.starts_with("PtyWrite("))
+        .collect();
+    assert!(
+        pty_writes.iter().all(|e| {
+            !e.contains("\x1bP1+r") && !e.contains("\x1bP0+r")
+        }),
+        "DCS abort must suppress XTGETTCAP reply; got: {:?}",
+        pty_writes
+    );
+    // (b) Following CSI [ H was processed normally — cursor returned home.
+    let cursor = term.grid().cursor();
+    assert_eq!(
+        (cursor.line(), cursor.col().0),
+        (0, 0),
+        "ESC abort must recover so CSI [ H dispatches and homes cursor; \
+         cursor is at line={}, col={}",
+        cursor.line(),
+        cursor.col().0,
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -469,6 +479,9 @@ fn xtgettcap_notcurses_query_emits_canonical_grouped_reply() {
 // Local helpers
 // ---------------------------------------------------------------------------
 
+// Local test helper for hex-encoding into a String — kept private to
+// avoid coupling the production `hex_encode` (Vec<u8>) to test-only
+// String construction. The algorithm matches xterm canonical uppercase.
 fn hex_encode_upper(input: &[u8]) -> String {
     const HEX: &[u8; 16] = b"0123456789ABCDEF";
     let mut out = String::with_capacity(input.len() * 2);
