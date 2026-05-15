@@ -123,12 +123,13 @@ fn kitty_transmission_file_path_traversal_rejected() {
 // every exit path via RAII guard, and non-regular paths are rejected
 // before any read is attempted.
 
-/// : `t=f` with file > max_bytes returns ENOMEM via the
-/// metadata preflight, BEFORE the bounded read fills file_data. The
-/// post-read check is unreachable in this scenario (preflight rejects
-/// first). t=f does NOT remove the source file even on rejection.
+/// `t=f` with file > max_bytes returns EBIG via the metadata preflight,
+/// BEFORE the bounded read fills file_data. The post-read check is
+/// unreachable in this scenario (preflight rejects first). t=f does NOT
+/// remove the source file even on rejection. §13.5 remap from ENOMEM →
+/// EBIG per kitty spec.
 #[test]
-fn kitty_store_from_file_oversized_t_eq_f_returns_enomem_via_preflight() {
+fn kitty_store_from_file_oversized_t_eq_f_returns_ebig_via_preflight() {
     let dir = tmp_dir("oversized_t_f");
     let path = dir.path().join("oversized.raw");
     // 128 bytes, well over the 64-byte max_bytes we'll set.
@@ -149,8 +150,8 @@ fn kitty_store_from_file_oversized_t_eq_f_returns_enomem_via_preflight() {
     let replies = reply_bytes(&h);
     let s = String::from_utf8_lossy(&replies);
     assert!(
-        s.contains("ENOMEM"),
-        "oversized t=f MUST emit ENOMEM reply — got {s:?}",
+        s.contains("EBIG"),
+        "oversized t=f MUST emit EBIG reply (kitty spec for oversize) — got {s:?}",
     );
     assert!(
         path.exists(),
@@ -158,11 +159,11 @@ fn kitty_store_from_file_oversized_t_eq_f_returns_enomem_via_preflight() {
     );
 }
 
-/// : `t=t` with file > max_bytes returns ENOMEM AND the
-/// source file IS removed via the RAII guard's Drop. Pins both the
-/// rejection and the cleanup-on-rejection invariant.
+/// `t=t` with file > max_bytes returns EBIG AND the source file IS
+/// removed via the RAII guard's Drop. Pins both the rejection and the
+/// cleanup-on-rejection invariant. §13.5 remap from ENOMEM → EBIG.
 #[test]
-fn kitty_store_from_file_oversized_t_eq_t_returns_enomem_and_removes_source() {
+fn kitty_store_from_file_oversized_t_eq_t_returns_ebig_and_removes_source() {
     let dir = tmp_dir("oversized_t_t");
     let path = dir.path().join("oversized.raw");
     std::fs::write(&path, vec![0u8; 128]).expect("write fixture");
@@ -179,8 +180,8 @@ fn kitty_store_from_file_oversized_t_eq_t_returns_enomem_and_removes_source() {
     let replies = reply_bytes(&h);
     let s = String::from_utf8_lossy(&replies);
     assert!(
-        s.contains("ENOMEM"),
-        "oversized t=t MUST emit ENOMEM reply — got {s:?}",
+        s.contains("EBIG"),
+        "oversized t=t MUST emit EBIG reply (kitty spec for oversize) — got {s:?}",
     );
     assert!(
         !path.exists(),
@@ -216,13 +217,13 @@ fn kitty_store_from_file_exactly_max_bytes_succeeds() {
 
 /// boundary clamp: file size == max_bytes + 1 rejects via
 /// metadata preflight. Pins the boundary-from-above per the same 3-of-3
-/// agreement.
+/// agreement. §13.5 remap from ENOMEM → EBIG.
 #[test]
 fn kitty_store_from_file_max_bytes_plus_one_rejects_via_preflight() {
     let dir = tmp_dir("max_plus_one");
     let path = dir.path().join("plus_one.raw");
     // 65 bytes, max_bytes = 64. Preflight `meta.len() > max_bytes`
-    // fires (65 > 64) and returns ENOMEM before the bounded read.
+    // fires (65 > 64) and returns EBIG before the bounded read.
     let mut data = rgba_4x4_red(); // 64 bytes
     data.push(0u8); // 65th byte
     std::fs::write(&path, &data).expect("write fixture");
@@ -238,8 +239,8 @@ fn kitty_store_from_file_max_bytes_plus_one_rejects_via_preflight() {
     let replies = reply_bytes(&h);
     let s = String::from_utf8_lossy(&replies);
     assert!(
-        s.contains("ENOMEM"),
-        "max_bytes + 1 MUST emit ENOMEM via preflight — got {s:?}",
+        s.contains("EBIG"),
+        "max_bytes + 1 MUST emit EBIG via preflight (kitty spec for oversize) — got {s:?}",
     );
 }
 

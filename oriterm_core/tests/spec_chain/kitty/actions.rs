@@ -260,25 +260,32 @@ fn kitty_action_query_emits_ok_reply_without_state_change() {
 
 // Semantic + negative pins.
 
-/// Catalog row: `KG-ACTION-FALLBACK-TRANSMITANDPLACE` (property for a=c fallback).
+/// Catalog row: `KG-ACTION-FALLBACK-TRANSMITANDPLACE` (property for truly-unknown a= fallback).
 ///
-/// `a=c` (unknown action value) MUST fall through parser `parse.rs:199`
-/// to `KittyAction::TransmitAndPlace`, so a placement is created AND an
-/// OK reply is emitted. A regression that flips the fallback arm to `Err`
+/// Genuinely-unknown `a=<value>` (e.g., `a=Z` — not in the kitty spec) MUST
+/// fall through the parser's apply_key_value generic fallback to
+/// `KittyAction::TransmitAndPlace`, so a placement is created AND an OK
+/// reply is emitted. A regression that flips the fallback arm to `Err`
 /// or routes unknowns to `Transmit` (no placement) fails this pin.
+///
+/// Post-§13.5: the fallback no longer covers `a=c` (now explicit-reject
+/// via `KittyAction::Compose`) or `a=T` (now explicit-route via
+/// `KittyAction::TransmitAndPlace`). Use `a=Z` as the genuine-unknown
+/// representative so the test does not silently re-cover the spec-defined
+/// arms that have been promoted to explicit handlers.
 #[test]
 fn kitty_action_fallback_transmit_and_place_on_unknown_a_value() {
     let mut h = SpecHarness::new();
-    h.feed(&kitty_apc(b"a=c,i=30,f=32,s=4,v=4", &b64(&rgba_4x4_red())));
+    h.feed(&kitty_apc(b"a=Z,i=30,f=32,s=4,v=4", &b64(&rgba_4x4_red())));
 
     assert_eq!(
         placement_count(&h),
         1,
-        "unknown a=c MUST fall back to TransmitAndPlace (creates placement)",
+        "unknown a=Z MUST fall back to TransmitAndPlace (creates placement)",
     );
     assert!(
         reply_contains(&h, &ok_reply_for(30)),
-        "unknown a=c fallback still emits OK reply — got {:?}",
+        "unknown a=Z fallback still emits OK reply — got {:?}",
         String::from_utf8_lossy(&reply_bytes(&h)),
     );
 }

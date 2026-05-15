@@ -527,23 +527,49 @@ fn handler_animate_set_current_frame() {
 
 /// Catalog row: KG-ACTION-FALLBACK-TRANSMITANDPLACE
 ///
-/// Unknown `a=<value>` silently falls back to `TransmitAndPlace` per
+/// Truly-unknown `a=<value>` silently falls back to `TransmitAndPlace` per
 /// `parse.rs::apply_key_value`. Pinned as `verified-with-deviation` in
-/// `plans/spec-conformance/catalog/kitty-graphics.md` — kitty's separate
-/// `a=c` (Compose Frame) action has NO matching `KittyAction` variant in
-/// ori_term, so `a=c` and any other unknown value dispatch as
-/// TransmitAndPlace. A test that pins this fallback is the regression
-/// guard against a future parser rewrite that returns Err on unknown `a=`.
+/// `plans/spec-conformance/catalog/kitty-graphics.md`. Post-§13.5 the
+/// fallback is scoped to genuine unknowns only — `a=c` (Compose) and
+/// `a=T` (TransmitAndPlace) are now explicit arms so they are
+/// distinguishable from unknown values; the fallback test uses `a=Z`
+/// (not in the spec) as its representative unknown.
 #[test]
 fn parse_unknown_action_value_falls_back_to_transmit_and_place() {
-    // a=c is kitty's compose-frame action; ori_term has no variant for it,
-    // so the parser falls back to TransmitAndPlace.
-    let cmd = parse_kitty_command(b"a=c,i=1").unwrap();
+    // a=Z is not in the kitty spec; ori_term parser falls back to
+    // TransmitAndPlace for genuine unknowns.
+    let cmd = parse_kitty_command(b"a=Z,i=1").unwrap();
     assert_eq!(cmd.action, KittyAction::TransmitAndPlace);
 
     // Any other unknown value also falls back.
-    let cmd = parse_kitty_command(b"a=Z").unwrap();
+    let cmd = parse_kitty_command(b"a=x").unwrap();
     assert_eq!(cmd.action, KittyAction::TransmitAndPlace);
+}
+
+/// Companion to `parse_unknown_action_value_falls_back_to_transmit_and_place`:
+/// `a=c` is now an EXPLICIT arm routed to `KittyAction::Compose` (which
+/// the dispatcher then rejects with EINVAL via `kitty_compose_reject`).
+/// The spec-defined `a=T` is also an explicit arm. Pinning both prevents
+/// drift back to the pre-§13.5 silent-fallback shape.
+#[test]
+fn parse_spec_defined_action_values_route_to_explicit_variants() {
+    let cmd = parse_kitty_command(b"a=c,i=1").unwrap();
+    assert_eq!(
+        cmd.action,
+        KittyAction::Compose,
+        "a=c MUST route to KittyAction::Compose (explicit reject path); \
+         a silent fallback to TransmitAndPlace would mask the absent \
+         compose handler"
+    );
+
+    let cmd = parse_kitty_command(b"a=T,i=2").unwrap();
+    assert_eq!(
+        cmd.action,
+        KittyAction::TransmitAndPlace,
+        "a=T MUST route to KittyAction::TransmitAndPlace via the explicit \
+         match arm; routing through the generic unknown-action fallback makes \
+         the spec-defined arm indistinguishable from genuine unknowns"
+    );
 }
 
 /// Catalog row: KG-TRANSMIT-SHARED-MEM-REJECTED
@@ -574,42 +600,26 @@ fn handler_shared_memory_transmission_rejected_with_einval() {
     assert_eq!(term.image_cache().placement_count(), 0);
 }
 
-/// Catalog row: KG-COMPRESSION-OZ-IGNORED
+/// Parser-only pin: `o=z` populates `cmd.compression = Some(b'z')`.
 ///
-/// `o=z` is parsed into `cmd.compression = Some(b'z')` but the transmit
-/// path never consults the field — payloads are stored verbatim without
-/// zlib decompression. Pinned as `verified-with-deviation` — clients
-/// sending compressed payloads see garbled pixels or decode failures.
+/// The store-side reject behavior is owned by the spec_chain test
+/// `kitty_transmission_compression_oz_rejected_with_einval_reply` in
+/// `oriterm_core/tests/spec_chain/kitty/replies.rs`.
 #[test]
-fn parse_compression_oz_populates_field_but_store_does_not_decompress() {
-    // Parser side: o=z populates the compression field.
+fn parse_compression_oz_populates_compression_field() {
     let cmd = parse_kitty_command(b"a=t,i=1,f=32,s=1,v=1,o=z;AAAAAA==").unwrap();
     assert_eq!(
         cmd.compression,
         Some(b'z'),
-        "o=z parses into compression = Some('z')"
+        "o=z MUST parse into compression = Some('z') so the store-entry guard \
+         can fail-closed with EINVAL"
     );
-
-    // Handler side: feeding a raw uncompressed 4-byte RGBA payload with
-    // o=z still succeeds — proving the store path ignores compression and
-    // treats the payload as uncompressed.
-    let (mut term, listener) = term_with_recorder();
-    let apc = kitty_apc("a=t,i=1,f=32,s=1,v=1,o=z,q=2;AAAAAA==");
-    feed(&mut term, &apc);
-    assert_eq!(
-        term.image_cache().image_count(),
-        1,
-        "store succeeds despite o=z — compression field is ignored"
-    );
-    // No error reply should have been emitted (q=2 suppresses everything anyway).
-    let _ = listener;
 }
 
 /// `v=` present with value 0 sets `loop_count = Some(0)` — distinguishing the
-/// kitty-spec "infinite loops" case from "key absent". Pin for
-/// TPR-13.0.5-R1-F3-: `source_height: u32` alone cannot tell these
-/// apart, so `loop_count: Option<u32>` must be populated independently.
-/// Catalog row: `KG-ANIMATE-LOOP-COUNT`.
+/// kitty-spec "infinite loops" case from "key absent". `source_height: u32`
+/// alone cannot tell these apart, so `loop_count: Option<u32>` must be
+/// populated independently. Catalog row: `KG-ANIMATE-LOOP-COUNT`.
 #[test]
 fn parse_kitty_command_v_zero_sets_loop_count_to_some_zero() {
     let cmd = parse_kitty_command(b"a=a,i=7,v=0").unwrap();

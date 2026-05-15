@@ -108,6 +108,11 @@ pub enum KittyAction {
     Animate,
     /// Query support (no side effects).
     Query,
+    /// Frame composition (`a=c`) — recognized but not implemented; `ori_term`
+    /// emits an `EINVAL: action `c` not implemented` reply via
+    /// `kitty_compose_reject` rather than silently falling back to
+    /// `TransmitAndPlace`.
+    Compose,
 }
 
 /// How image data is delivered.
@@ -132,6 +137,10 @@ pub enum KittyError {
     InvalidBase64,
     /// Unsupported format value.
     UnsupportedFormat(u32),
+    /// Compression flag set (`o=z`) but decompression not implemented;
+    /// `ori_term` fails closed at `kitty_store_image` entry with EINVAL
+    /// rather than silently reading the compressed bytes as raw pixel data.
+    CompressionNotSupported,
 }
 
 impl std::fmt::Display for KittyError {
@@ -140,6 +149,7 @@ impl std::fmt::Display for KittyError {
             Self::InvalidControlData(s) => write!(f, "invalid control data: {s}"),
             Self::InvalidBase64 => write!(f, "invalid base64 payload"),
             Self::UnsupportedFormat(n) => write!(f, "unsupported format: {n}"),
+            Self::CompressionNotSupported => write!(f, "compression not supported"),
         }
     }
 }
@@ -240,16 +250,7 @@ fn parse_control_data(data: &[u8], cmd: &mut KittyCommand) {
 fn apply_key_value(key: u8, value: &[u8], cmd: &mut KittyCommand) {
     match key {
         b'a' => {
-            cmd.action = match value.first() {
-                Some(b't') => KittyAction::Transmit,
-                Some(b'p') => KittyAction::Place,
-                Some(b'd') => KittyAction::Delete,
-                Some(b'f') => KittyAction::Frame,
-                Some(b'a') => KittyAction::Animate,
-                Some(b'q') => KittyAction::Query,
-                // 'T' and unknown values default to TransmitAndPlace.
-                _ => KittyAction::TransmitAndPlace,
-            };
+            cmd.action = decode_action(value.first().copied());
         }
         b'i' => cmd.image_id = parse_u32(value),
         b'I' => cmd.image_number = parse_u32(value),
@@ -284,6 +285,41 @@ fn apply_key_value(key: u8, value: &[u8], cmd: &mut KittyCommand) {
         b'd' => cmd.delete_specifier = value.first().copied(),
         _ => {
             debug!("kitty graphics: unknown key {:?}", key as char);
+        }
+    }
+}
+
+/// Decode the `a=` parameter byte into a `KittyAction`.
+///
+/// Every spec-defined arm has an explicit match arm so `a=T`
+/// (`TransmitAndPlace`) and `a=c` (`Compose`, reject-routed) are
+/// distinguishable from genuine unknowns at the parser layer — the
+/// fallback branch emits a `debug!` trace tagged "unknown a= value" so
+/// truly-unknown inputs (both absent-value `None` and unrecognized bytes)
+/// are observable in logs while spec-defined arms stay silent. The
+/// fallback policy itself is pinned by
+/// `KG-ACTION-FALLBACK-TRANSMITANDPLACE`.
+fn decode_action(value: Option<u8>) -> KittyAction {
+    match value {
+        Some(b't') => KittyAction::Transmit,
+        Some(b'T') => KittyAction::TransmitAndPlace,
+        Some(b'p') => KittyAction::Place,
+        Some(b'd') => KittyAction::Delete,
+        Some(b'f') => KittyAction::Frame,
+        Some(b'a') => KittyAction::Animate,
+        Some(b'q') => KittyAction::Query,
+        Some(b'c') => KittyAction::Compose,
+        other => {
+            match other {
+                Some(byte) => debug!(
+                    "kitty graphics: unknown a= value {:?}; falling back to TransmitAndPlace",
+                    byte as char
+                ),
+                None => debug!(
+                    "kitty graphics: empty a= value; falling back to TransmitAndPlace"
+                ),
+            }
+            KittyAction::TransmitAndPlace
         }
     }
 }

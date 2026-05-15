@@ -54,10 +54,10 @@ fn open_regular_file(path: &std::path::Path) -> Result<(std::fs::File, std::fs::
     opts.custom_flags(libc::O_NONBLOCK);
     let file = opts
         .open(path)
-        .map_err(|e| format!("EIO: failed to open file: {e}"))?;
+        .map_err(|e| format!("EBADF: failed to open file: {e}"))?;
     let meta = file
         .metadata()
-        .map_err(|e| format!("EIO: failed to stat file: {e}"))?;
+        .map_err(|e| format!("EBADF: failed to stat file: {e}"))?;
     if !meta.file_type().is_file() {
         return Err("EINVAL: path is not a regular file".to_string());
     }
@@ -67,6 +67,19 @@ fn open_regular_file(path: &std::path::Path) -> Result<(std::fs::File, std::fs::
 impl<S: EffectSink> Term<S> {
     /// Decode and store image data in the cache.
     pub(super) fn kitty_store_image(&mut self, p: KittyStoreParams) -> Result<(), String> {
+        // §13.5 / Option A — fail-closed on `o=z` compression. The parser
+        // populates `cmd.compression = Some(b'z')` but ori_term does not
+        // implement zlib decompression, so the bytes downstream are NOT
+        // the pixel data the sender intended. Returning EINVAL at store
+        // entry replaces the pre-§13.5 silent-corruption shape (parser
+        // populates field, store reads raw bytes as RGBA/RGB/PNG and
+        // produces garbled output). Mirrors the `KittyError::CompressionNotSupported`
+        // variant added to the parser-side error type for callers that
+        // route through the typed error chain.
+        if p.compression == Some(b'z') {
+            return Err("EINVAL: compression not supported".to_string());
+        }
+
         let (pixel_data, source) = match p.transmission {
             KittyTransmission::Direct => (p.payload, ImageSource::Direct),
             KittyTransmission::File | KittyTransmission::TempFile => {
@@ -206,7 +219,7 @@ impl<S: EffectSink> Term<S> {
         // can grow between this check and read). saturating_add guards
         // against the pathological max_bytes == usize::MAX config.
         if meta.len() > max_bytes as u64 {
-            return Err("ENOMEM: file exceeds max image size".to_string());
+            return Err("EBIG: file exceeds max image size".to_string());
         }
 
         let mut file_data = Vec::with_capacity(meta.len() as usize);
@@ -215,7 +228,7 @@ impl<S: EffectSink> Term<S> {
             .map_err(|e| format!("EIO: failed to read file: {e}"))?;
 
         if file_data.len() > max_bytes {
-            return Err("ENOMEM: file exceeds max image size".to_string());
+            return Err("EBIG: file exceeds max image size".to_string());
         }
 
         let source = ImageSource::File(path.to_path_buf());
