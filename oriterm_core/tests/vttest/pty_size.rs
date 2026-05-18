@@ -61,29 +61,50 @@ fn assert_pty_reports_size(
     // through the slave's output stream and prepend literal escape
     // bytes to `stty size`'s `33 97\n`, breaking the parse with
     // `ParseIntError`. POSIX `openpty` does not have ConPTY's DSR gate.
+    // Take the writer up-front (before spawning the child) and, on
+    // Windows ConPTY, pre-write a CPR response into the stdin pipe.
+    //
+    // The writer is held alive past child.wait + master drop on BOTH
+    // platforms. On POSIX, dropping the writer before child.wait
+    // sends EOF data into the kernel that interleaves with the
+    // slave's output stream — on macOS this corrupts `stty size`'s
+    // `33 97\n` with junk bytes, producing `ParseIntError` (same root
+    // cause as the macOS race documented in
+    // `crates/portable-pty/examples/whoami.rs`).
+    let writer = pair.master.take_writer().expect("take stdin writer");
     #[cfg(windows)]
-    let _writer_kept_alive = {
-        let mut writer = pair.master.take_writer().expect("take stdin writer");
+    let writer = {
+        // `crates/portable-pty/src/win/psuedocon.rs` sets
+        // `PSUEDOCONSOLE_INHERIT_CURSOR`. ConPTY emits `\x1b[6n`
+        // (cursor position request) at startup AND blocks every
+        // subsequent byte of master output until a CPR response lands
+        // on the writer. Pre-stage the CPR response into the pipe
+        // before spawn_command so ConPTY can answer its own DSR-wait
+        // on first read, before any teardown race window opens.
+        //
+        // Race that the prior (post-spawn) CPR write hit under CI
+        // scheduler load:
+        //
+        //   1. spawn_command — cmd.exe starts, runs `mode con`, exits.
+        //   2. ConPTY queues mode con's output bytes pending CPR.
+        //   3. Slave-side closes (cmd exited). ConPTY begins teardown,
+        //      discards queued bytes, emits only the shutdown handshake.
+        //   4. The main thread finally writes CPR — too late; ConPTY is
+        //      already tearing down.
+        //
+        // POSIX intentionally skips the write: slave TTYs echo input by
+        // default, so writing `\x1b[1;1R` to the master would echo back
+        // through the slave's output stream and prepend literal escape
+        // bytes to `stty size`'s `33 97\n`, breaking the parse with
+        // `ParseIntError`. POSIX `openpty` does not have ConPTY's DSR
+        // gate.
+        let mut writer = writer;
         writer
             .write_all(b"\x1b[1;1R")
             .expect("pre-write CPR response to stdin");
         writer.flush().expect("flush CPR response");
-        // Return the writer so it lives until the end of this function,
-        // past spawn + child.wait + master drop. ConPTY may queue more
-        // DSR-style queries; keeping the pipe open lets it accept any
-        // future writes (and avoids early-stdin-EOF tearing down cmd).
         writer
     };
-    #[cfg(unix)]
-    {
-        // Take and immediately drop the writer to ensure it is closed
-        // before the child exits (matches the portable_pty whoami.rs
-        // example contract: "When the writer is dropped, EOF will be
-        // sent to the program that was spawned"). For our probes the
-        // child never reads stdin, so dropping early is safe and avoids
-        // any echo-back complication.
-        drop(pair.master.take_writer().expect("take stdin writer"));
-    }
 
     let mut reader = pair.master.try_clone_reader().expect("reader");
     let mut child = pair.slave.spawn_command(cmd).expect("spawn command");
@@ -103,6 +124,7 @@ fn assert_pty_reports_size(
     });
 
     child.wait().expect("child wait failed");
+    drop(writer);
     drop(pair.master);
 
     let raw = rx.recv().expect("reader channel closed without sending");
