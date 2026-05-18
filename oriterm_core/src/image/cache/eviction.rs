@@ -5,10 +5,13 @@ use super::{ImageCache, ImageId};
 impl ImageCache {
     /// Evict least-recently-used images until under memory limit.
     ///
-    /// Prefers reachability-poor images first (no placement AND no
-    /// placeholder anchor), then falls back to placed/anchored images by
-    /// LRU order. Builds the reachability set once to avoid O(n*m) per-
-    /// eviction scans.
+    /// Selects from the unplaced + unanchored subset only (Option A per
+    /// `plans/spec-conformance/decisions/01-lru-eviction-scope-placed-vs-unplaced.md`):
+    /// placed images and U=1 placeholder anchors are immune from eviction.
+    /// When every image is placed or anchored, `evict_one` returns `false`
+    /// and the calling store path surfaces `MemoryLimitExceeded` to the
+    /// reply emitter. Builds the reachability set once to avoid O(n*m)
+    /// per-eviction scans.
     pub(super) fn evict_lru(&mut self) {
         let reachable = self.placed_or_anchored_id_set();
 
