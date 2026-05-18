@@ -315,9 +315,7 @@ fn decode_action(value: Option<u8>) -> KittyAction {
                     "kitty graphics: unknown a= value {:?}; falling back to TransmitAndPlace",
                     byte as char
                 ),
-                None => debug!(
-                    "kitty graphics: empty a= value; falling back to TransmitAndPlace"
-                ),
+                None => debug!("kitty graphics: empty a= value; falling back to TransmitAndPlace"),
             }
             KittyAction::TransmitAndPlace
         }

@@ -696,7 +696,8 @@ fn kitty_chunked_malformed_base64_emits_exactly_one_einval_reply_per_failed_uplo
         .count();
 
     assert_eq!(
-        count, 1,
+        count,
+        1,
         "chunked malformed-base64 MUST emit exactly ONE EINVAL reply per \
          failed upload — got {count}. transcript: {:?}",
         String::from_utf8_lossy(&reply_bytes(&h)),

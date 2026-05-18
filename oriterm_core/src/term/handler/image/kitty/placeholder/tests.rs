@@ -2,7 +2,9 @@
 
 use vte::ansi::{Color, Rgb};
 
-use super::{DIACRITICS, IncompletePlacement, ResolvedPlaceholder, color_to_id, diacritic_to_index};
+use super::{
+    DIACRITICS, IncompletePlacement, ResolvedPlaceholder, color_to_id, diacritic_to_index,
+};
 
 #[test]
 fn diacritic_table_is_sorted() {
@@ -85,14 +87,7 @@ fn color_to_id_spec_returns_24bit_rgb() {
         })),
         0x0000_00FF
     );
-    assert_eq!(
-        color_to_id(Color::Spec(Rgb {
-            r: 0,
-            g: 0,
-            b: 0
-        })),
-        0
-    );
+    assert_eq!(color_to_id(Color::Spec(Rgb { r: 0, g: 0, b: 0 })), 0);
 }
 
 #[test]
@@ -187,11 +182,7 @@ fn resolve_explicit_row_col_overrides_continuation() {
         image_id_low: 1,
         image_id_high: None,
     };
-    let p = IncompletePlacement::decode(
-        &['\u{030D}', '\u{030E}'],
-        Color::Indexed(1),
-        None,
-    );
+    let p = IncompletePlacement::decode(&['\u{030D}', '\u{030E}'], Color::Indexed(1), None);
     let r = p.resolve_with_continuation(Some(&prev));
     assert_eq!(r.image_row, 1);
     assert_eq!(r.image_col, 2);

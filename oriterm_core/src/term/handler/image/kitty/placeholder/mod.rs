@@ -414,8 +414,7 @@ impl IncompletePlacement {
         prev: Option<&ResolvedPlaceholder>,
     ) -> ResolvedPlaceholder {
         let inherit = prev.filter(|r| {
-            r.image_id_low == self.image_id_low
-                && r.placement_id == self.placement_id.unwrap_or(0)
+            r.image_id_low == self.image_id_low && r.placement_id == self.placement_id.unwrap_or(0)
         });
 
         let row = self.row.or_else(|| inherit.map(|r| r.image_row));
@@ -432,7 +431,9 @@ impl IncompletePlacement {
             0
         };
 
-        let image_id_high = self.image_id_high.or_else(|| inherit.and_then(|r| r.image_id_high));
+        let image_id_high = self
+            .image_id_high
+            .or_else(|| inherit.and_then(|r| r.image_id_high));
 
         let image_id = self.image_id_low | (u32::from(image_id_high.unwrap_or(0)) << 24);
 

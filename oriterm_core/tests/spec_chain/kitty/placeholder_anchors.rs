@@ -29,7 +29,12 @@ fn write_placeholder_cell(h: &mut SpecHarness, image_id_low: u32, row: char, col
 fn placeholder_anchor_added_on_u1_transmit() {
     let mut h = SpecHarness::new();
     transmit_u1(&mut h, 1);
-    assert!(h.term().image_cache().placeholder_anchors().contains(&ImageId::from_raw(1)));
+    assert!(
+        h.term()
+            .image_cache()
+            .placeholder_anchors()
+            .contains(&ImageId::from_raw(1))
+    );
 }
 
 #[test]
@@ -37,21 +42,34 @@ fn placeholder_anchor_added_on_u1_place() {
     let mut h = SpecHarness::new();
     h.feed(&kitty_apc(b"a=t,i=2,f=32,s=4,v=4", &b64(&rgba_4x4_red())));
     h.feed(&kitty_apc(b"a=p,U=1,i=2,c=1,r=1", ""));
-    assert!(h.term().image_cache().placeholder_anchors().contains(&ImageId::from_raw(2)));
+    assert!(
+        h.term()
+            .image_cache()
+            .placeholder_anchors()
+            .contains(&ImageId::from_raw(2))
+    );
 }
 
 #[test]
 fn remove_image_clears_placeholder_anchor_entry() {
     let mut h = SpecHarness::new();
     transmit_u1(&mut h, 3);
-    assert!(h.term().image_cache().placeholder_anchors().contains(&ImageId::from_raw(3)));
+    assert!(
+        h.term()
+            .image_cache()
+            .placeholder_anchors()
+            .contains(&ImageId::from_raw(3))
+    );
 
     // d=I,i=3 — uppercase variant removes image data + placements
     // + anchors.
     h.feed(&kitty_apc(b"a=d,d=I,i=3", ""));
 
     assert!(
-        !h.term().image_cache().placeholder_anchors().contains(&ImageId::from_raw(3)),
+        !h.term()
+            .image_cache()
+            .placeholder_anchors()
+            .contains(&ImageId::from_raw(3)),
         "d=I MUST clear placeholder anchor — got {:?}",
         h.term().image_cache().placeholder_anchors(),
     );
@@ -62,7 +80,12 @@ fn kitty_delete_i_clears_placeholder_anchor() {
     let mut h = SpecHarness::new();
     transmit_u1(&mut h, 4);
     h.feed(&kitty_apc(b"a=d,d=I,i=4", ""));
-    assert!(!h.term().image_cache().placeholder_anchors().contains(&ImageId::from_raw(4)));
+    assert!(
+        !h.term()
+            .image_cache()
+            .placeholder_anchors()
+            .contains(&ImageId::from_raw(4))
+    );
 }
 
 #[test]
@@ -75,7 +98,10 @@ fn kitty_delete_a_clears_placeholder_anchors_when_no_placeholder_cells_remain() 
     // because the grid has no U+10EEEE cells yet to remove.
     h.feed(&kitty_apc(b"a=d,d=a", ""));
     assert!(
-        h.term().image_cache().placeholder_anchors().contains(&ImageId::from_raw(5)),
+        h.term()
+            .image_cache()
+            .placeholder_anchors()
+            .contains(&ImageId::from_raw(5)),
         "d=a MUST NOT clear the anchor for a U=1 transmit with no placeholder cells in the grid",
     );
 }
@@ -93,7 +119,10 @@ fn prune_scrollback_retains_anchor_when_placeholder_cells_remain_in_viewport() {
     }
 
     assert!(
-        h.term().image_cache().placeholder_anchors().contains(&ImageId::from_raw(6)),
+        h.term()
+            .image_cache()
+            .placeholder_anchors()
+            .contains(&ImageId::from_raw(6)),
         "anchor must survive while placeholder cells still occupy the grid",
     );
 }
@@ -103,7 +132,12 @@ fn prune_scrollback_clears_orphaned_placeholder_anchors_for_images_with_no_survi
     let mut h = SpecHarness::new();
     transmit_u1(&mut h, 8);
     write_placeholder_cell(&mut h, 8, '\u{0305}', '\u{0305}');
-    assert!(h.term().image_cache().placeholder_anchors().contains(&ImageId::from_raw(8)));
+    assert!(
+        h.term()
+            .image_cache()
+            .placeholder_anchors()
+            .contains(&ImageId::from_raw(8))
+    );
 
     // Push the placeholder cell out of grid + scrollback by feeding more
     // newlines than the scrollback ring can hold. With no surviving
@@ -115,7 +149,10 @@ fn prune_scrollback_clears_orphaned_placeholder_anchors_for_images_with_no_survi
     }
 
     assert!(
-        !h.term().image_cache().placeholder_anchors().contains(&ImageId::from_raw(8)),
+        !h.term()
+            .image_cache()
+            .placeholder_anchors()
+            .contains(&ImageId::from_raw(8)),
         "after scrollback eviction with no surviving placeholder cells the anchor must drop",
     );
 }
@@ -127,7 +164,12 @@ fn ed_full_screen_clears_orphaned_placeholder_anchors() {
     let mut h = SpecHarness::new();
     transmit_u1(&mut h, 9);
     write_placeholder_cell(&mut h, 9, '\u{0305}', '\u{0305}');
-    assert!(h.term().image_cache().placeholder_anchors().contains(&ImageId::from_raw(9)));
+    assert!(
+        h.term()
+            .image_cache()
+            .placeholder_anchors()
+            .contains(&ImageId::from_raw(9))
+    );
 
     // ED 2 (full-screen erase) drops the U+10EEEE cell. But: U=1 transmit
     // is special — `add_placeholder_anchor` recorded the image as
@@ -139,7 +181,10 @@ fn ed_full_screen_clears_orphaned_placeholder_anchors() {
     // With no placeholder cells surviving, the survivor reconciler
     // empties the anchor set.
     assert!(
-        !h.term().image_cache().placeholder_anchors().contains(&ImageId::from_raw(9)),
+        !h.term()
+            .image_cache()
+            .placeholder_anchors()
+            .contains(&ImageId::from_raw(9)),
         "after ED 2 the survivor set is empty — anchor must drop",
     );
 }

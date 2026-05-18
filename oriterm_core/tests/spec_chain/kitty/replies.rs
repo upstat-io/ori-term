@@ -217,10 +217,7 @@ fn kitty_response_enoent_on_place_with_unknown_image_id() {
 #[test]
 fn kitty_response_enoent_on_frame_with_unknown_image_id() {
     let mut h = SpecHarness::new();
-    h.feed(&kitty_apc(
-        b"a=f,i=131,f=32,s=4,v=4",
-        &b64(&rgba_4x4_red()),
-    ));
+    h.feed(&kitty_apc(b"a=f,i=131,f=32,s=4,v=4", &b64(&rgba_4x4_red())));
 
     let replies = reply_bytes(&h);
     let s = String::from_utf8_lossy(&replies);
@@ -245,10 +242,7 @@ fn kitty_response_ebadf_does_not_fire_on_partial_read_failure() {
     let mut h = SpecHarness::new();
     // Feed a successful direct transmit; EBADF MUST NOT appear in the
     // transcript because no file open ran on this path.
-    h.feed(&kitty_apc(
-        b"a=T,i=140,f=32,s=4,v=4",
-        &b64(&rgba_4x4_red()),
-    ));
+    h.feed(&kitty_apc(b"a=T,i=140,f=32,s=4,v=4", &b64(&rgba_4x4_red())));
 
     let replies = reply_bytes(&h);
     let s = String::from_utf8_lossy(&replies);
@@ -288,10 +282,7 @@ fn kitty_response_eio_still_emitted_on_partial_read_failure_after_successful_ope
     // working scenario; the absence of EIO on the success path is the
     // boundary clamp.
     let mut h = SpecHarness::new();
-    h.feed(&kitty_apc(
-        b"a=T,i=141,f=32,s=4,v=4",
-        &b64(&rgba_4x4_red()),
-    ));
+    h.feed(&kitty_apc(b"a=T,i=141,f=32,s=4,v=4", &b64(&rgba_4x4_red())));
 
     let replies = reply_bytes(&h);
     let s = String::from_utf8_lossy(&replies);
@@ -351,10 +342,7 @@ fn kitty_transmission_compression_oz_rejected_with_einval_reply() {
 #[test]
 fn kitty_transmission_compression_unspecified_still_processes_payload() {
     let mut h = SpecHarness::new();
-    h.feed(&kitty_apc(
-        b"a=T,i=151,f=32,s=4,v=4",
-        &b64(&rgba_4x4_red()),
-    ));
+    h.feed(&kitty_apc(b"a=T,i=151,f=32,s=4,v=4", &b64(&rgba_4x4_red())));
 
     assert_eq!(
         placement_count(&h),
@@ -381,10 +369,7 @@ fn kitty_transmission_compression_unspecified_still_processes_payload() {
 #[test]
 fn kitty_action_compose_rejected_with_einval_reply() {
     let mut h = SpecHarness::new();
-    h.feed(&kitty_apc(
-        b"a=c,i=30,r=2,c=1",
-        &b64(&rgba_4x4_red()),
-    ));
+    h.feed(&kitty_apc(b"a=c,i=30,r=2,c=1", &b64(&rgba_4x4_red())));
 
     assert_eq!(
         placement_count(&h),
@@ -412,10 +397,7 @@ fn kitty_action_compose_rejected_with_einval_reply() {
 #[test]
 fn kitty_action_unknown_a_value_still_falls_back_to_transmit_and_place() {
     let mut h = SpecHarness::new();
-    h.feed(&kitty_apc(
-        b"a=x,i=31,f=32,s=4,v=4",
-        &b64(&rgba_4x4_red()),
-    ));
+    h.feed(&kitty_apc(b"a=x,i=31,f=32,s=4,v=4", &b64(&rgba_4x4_red())));
 
     assert_eq!(
         placement_count(&h),
@@ -441,10 +423,7 @@ fn kitty_action_unknown_a_value_still_falls_back_to_transmit_and_place() {
 #[test]
 fn reply_flows_via_effect_pty_write_not_host_request() {
     let mut h = SpecHarness::new();
-    h.feed(&kitty_apc(
-        b"a=t,i=160,f=32,s=4,v=4",
-        &b64(&rgba_4x4_red()),
-    ));
+    h.feed(&kitty_apc(b"a=t,i=160,f=32,s=4,v=4", &b64(&rgba_4x4_red())));
 
     let outcome = h.outcome();
     let mut saw_pty_image_reply = false;
@@ -497,10 +476,7 @@ fn reply_flows_via_effect_pty_write_not_host_request() {
 #[test]
 fn kitty_response_bytes_format_matches_kitty_protocol_framing() {
     let mut h = SpecHarness::new();
-    h.feed(&kitty_apc(
-        b"a=t,i=170,f=32,s=4,v=4",
-        &b64(&rgba_4x4_red()),
-    ));
+    h.feed(&kitty_apc(b"a=t,i=170,f=32,s=4,v=4", &b64(&rgba_4x4_red())));
 
     let expected = b"\x1b_Gi=170;OK\x1b\\";
     assert_eq!(
@@ -523,9 +499,7 @@ fn kitty_response_bytes_format_matches_kitty_protocol_framing() {
 /// regression.
 #[test]
 fn response_code_matrix_completeness() {
-    const REPLY_CODES: &[&str] = &[
-        "OK", "EBADF", "EBIG", "EINVAL", "ENOENT", "ENOMEM", "EIO",
-    ];
+    const REPLY_CODES: &[&str] = &["OK", "EBADF", "EBIG", "EINVAL", "ENOENT", "ENOMEM", "EIO"];
     const QUIET_LEVELS: &[u8] = &[0, 1, 2];
 
     let mut visited = 0usize;

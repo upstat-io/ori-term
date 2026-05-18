@@ -377,7 +377,12 @@ fn probe_kitty_pipeline_stages() {
             for x in 0..16.min(w as usize) {
                 let off = (y * w as usize + x) * 4;
                 if off + 4 <= pixels.len() {
-                    let rgba = (pixels[off], pixels[off + 1], pixels[off + 2], pixels[off + 3]);
+                    let rgba = (
+                        pixels[off],
+                        pixels[off + 1],
+                        pixels[off + 2],
+                        pixels[off + 3],
+                    );
                     distinct.insert(rgba);
                 }
             }

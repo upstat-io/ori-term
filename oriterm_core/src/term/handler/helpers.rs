@@ -274,7 +274,8 @@ impl<S: EffectSink> Term<S> {
             return;
         }
         let survivors = self.collect_placeholder_image_ids();
-        self.image_cache_mut().reconcile_placeholder_anchors(&survivors);
+        self.image_cache_mut()
+            .reconcile_placeholder_anchors(&survivors);
     }
 
     /// Collect every `image_id` referenced by a `U+10EEEE` placeholder
@@ -289,27 +290,28 @@ impl<S: EffectSink> Term<S> {
         let lines = grid.lines();
         let cols = grid.cols();
 
-        let visit_row = |row: &crate::grid::Row,
-                         survivors: &mut std::collections::HashSet<crate::image::ImageId>| {
-            let mut prev = None;
-            for col_idx in 0..cols {
-                let cell = &row[Column(col_idx)];
-                if cell.ch == KITTY_PLACEHOLDER {
-                    let (ul, zw) = match cell.extra.as_ref() {
-                        Some(e) => (e.underline_color, e.zerowidth.clone()),
-                        None => (None, Vec::new()),
-                    };
-                    let inc = IncompletePlacement::decode(&zw, cell.fg, ul);
-                    let resolved = inc.resolve_with_continuation(prev.as_ref());
-                    if resolved.image_id != 0 {
-                        survivors.insert(crate::image::ImageId::from_raw(resolved.image_id));
+        let visit_row =
+            |row: &crate::grid::Row,
+             survivors: &mut std::collections::HashSet<crate::image::ImageId>| {
+                let mut prev = None;
+                for col_idx in 0..cols {
+                    let cell = &row[Column(col_idx)];
+                    if cell.ch == KITTY_PLACEHOLDER {
+                        let (ul, zw) = match cell.extra.as_ref() {
+                            Some(e) => (e.underline_color, e.zerowidth.clone()),
+                            None => (None, Vec::new()),
+                        };
+                        let inc = IncompletePlacement::decode(&zw, cell.fg, ul);
+                        let resolved = inc.resolve_with_continuation(prev.as_ref());
+                        if resolved.image_id != 0 {
+                            survivors.insert(crate::image::ImageId::from_raw(resolved.image_id));
+                        }
+                        prev = Some(resolved);
+                    } else {
+                        prev = None;
                     }
-                    prev = Some(resolved);
-                } else {
-                    prev = None;
                 }
-            }
-        };
+            };
 
         // Visible grid rows.
         for line in 0..lines {
