@@ -64,8 +64,10 @@ impl Drop for TempFileFixture {
 }
 
 #[test]
-fn kitty_store_from_file_oversized_t_eq_f_returns_enomem_with_bounded_read() {
-    // File size > max_bytes, t=f (File, never removed), ENOMEM reply
+fn kitty_store_from_file_oversized_t_eq_f_returns_ebig_with_bounded_read() {
+    // File size > max_bytes, t=f (File, never removed), EBIG reply per kitty
+    // graphics-protocol.rst (oversize → EBIG; ENOMEM reserved for allocator
+    // failure). §13.5 remap.
     let mut term = Term::new(24, 80, 1000, Theme::default(), VoidEffectSink);
     const MAX_BYTES: usize = 64;
     term.set_image_limits(usize::MAX, MAX_BYTES);
@@ -82,14 +84,15 @@ fn kitty_store_from_file_oversized_t_eq_f_returns_enomem_with_bounded_read() {
         width: 0,
         height: 0,
         transmission: KittyTransmission::File,
+        compression: None,
     };
 
     let result = term.kitty_store_image(p);
     assert!(result.is_err(), "oversized file should return error");
     let err = result.unwrap_err();
     assert!(
-        err.contains("ENOMEM"),
-        "error should be ENOMEM, got: {}",
+        err.contains("EBIG"),
+        "error should be EBIG (kitty spec for oversize), got: {}",
         err
     );
 
@@ -124,6 +127,7 @@ fn kitty_store_from_file_within_size_succeeds_t_eq_t_removes_source() {
         width: 4,
         height: 4,
         transmission: KittyTransmission::TempFile, // t=t
+        compression: None,
     };
 
     let result = term.kitty_store_image(p);
@@ -141,8 +145,9 @@ fn kitty_store_from_file_within_size_succeeds_t_eq_t_removes_source() {
 }
 
 #[test]
-fn kitty_store_from_file_oversized_t_eq_t_returns_enomem_and_removes_source() {
-    // File > max_bytes, t=t (TempFile), ENOMEM reply + source file IS removed
+fn kitty_store_from_file_oversized_t_eq_t_returns_ebig_and_removes_source() {
+    // File > max_bytes, t=t (TempFile), EBIG reply + source file IS removed.
+    // §13.5 remap from ENOMEM → EBIG per kitty spec.
     let mut term = Term::new(24, 80, 1000, Theme::default(), VoidEffectSink);
     const MAX_BYTES: usize = 64;
     term.set_image_limits(usize::MAX, MAX_BYTES);
@@ -160,27 +165,29 @@ fn kitty_store_from_file_oversized_t_eq_t_returns_enomem_and_removes_source() {
         width: 0,
         height: 0,
         transmission: KittyTransmission::TempFile, // t=t
+        compression: None,
     };
 
     let result = term.kitty_store_image(p);
     assert!(result.is_err(), "oversized file should return error");
     let err = result.unwrap_err();
     assert!(
-        err.contains("ENOMEM"),
-        "error should be ENOMEM, got: {}",
+        err.contains("EBIG"),
+        "error should be EBIG (kitty spec for oversize), got: {}",
         err
     );
 
     // Verify the file WAS removed by the RAII guard (t=t cleanup on error)
     assert!(
         !fixture_path.exists(),
-        "t=t should remove the file even on ENOMEM rejection"
+        "t=t should remove the file even on EBIG rejection"
     );
 }
 
 #[test]
-fn kitty_store_from_file_metadata_unavailable_returns_eio() {
-    // Broken symlink or unreadable path: EIO reply with clean error
+fn kitty_store_from_file_metadata_unavailable_returns_ebadf() {
+    // Broken symlink or unreadable path: EBADF reply per kitty spec
+    // (descriptor-open failure). §13.5 remap from EIO → EBADF.
     let mut term = Term::new(24, 80, 1000, Theme::default(), VoidEffectSink);
 
     let p = KittyStoreParams {
@@ -193,14 +200,15 @@ fn kitty_store_from_file_metadata_unavailable_returns_eio() {
         width: 0,
         height: 0,
         transmission: KittyTransmission::File,
+        compression: None,
     };
 
     let result = term.kitty_store_image(p);
     assert!(result.is_err());
     let err = result.unwrap_err();
     assert!(
-        err.contains("EIO") || err.contains("EINVAL"),
-        "error should be EIO or EINVAL (path not found), got: {}",
+        err.contains("EBADF") || err.contains("EINVAL"),
+        "error should be EBADF or EINVAL (path not found), got: {}",
         err
     );
 }
@@ -228,6 +236,7 @@ fn kitty_store_from_file_directory_path_returns_einval() {
         width: 0,
         height: 0,
         transmission: KittyTransmission::File,
+        compression: None,
     };
 
     let result = term.kitty_store_image(p);
@@ -245,14 +254,15 @@ fn kitty_store_from_file_directory_path_returns_einval() {
 
 #[test]
 #[cfg(windows)]
-fn kitty_store_from_file_directory_path_returns_eio() {
-    // Windows: File::open on a directory fails with EIO (ACCESS_DENIED)
+fn kitty_store_from_file_directory_path_returns_ebadf() {
+    // Windows: File::open on a directory fails with EBADF (ACCESS_DENIED).
+    // §13.5 remap from EIO → EBADF per kitty spec (open failure).
     use std::fs;
 
     let mut term = Term::new(24, 80, 1000, Theme::default(), VoidEffectSink);
 
     let dir = std::env::temp_dir();
-    let test_dir_name = format!("kitty_test_dir_eio_{}", std::process::id());
+    let test_dir_name = format!("kitty_test_dir_ebadf_{}", std::process::id());
     let test_dir = dir.join(&test_dir_name);
 
     // Create a temporary directory
@@ -266,14 +276,15 @@ fn kitty_store_from_file_directory_path_returns_eio() {
         width: 0,
         height: 0,
         transmission: KittyTransmission::File,
+        compression: None,
     };
 
     let result = term.kitty_store_image(p);
     assert!(result.is_err());
     let err = result.unwrap_err();
     assert!(
-        err.contains("EIO") && err.contains("failed to open"),
-        "error should be EIO from File::open, got: {}",
+        err.contains("EBADF") && err.contains("failed to open"),
+        "error should be EBADF from File::open, got: {}",
         err
     );
 
@@ -296,6 +307,7 @@ fn kitty_store_from_file_empty_file_einval() {
         width: 4,
         height: 4,
         transmission: KittyTransmission::File,
+        compression: None,
     };
 
     let result = term.kitty_store_image(p);
@@ -334,6 +346,7 @@ fn kitty_store_from_file_exactly_max_bytes_succeeds() {
         width: 4,
         height: 4,
         transmission: KittyTransmission::File,
+        compression: None,
     };
 
     let result = term.kitty_store_image(p);
@@ -346,8 +359,10 @@ fn kitty_store_from_file_exactly_max_bytes_succeeds() {
 
 #[test]
 fn kitty_store_from_file_max_bytes_plus_one_rejects() {
-    // File max_bytes+1: metadata preflight check rejects with ENOMEM
-    // (fast-path — exits before bounded read)
+    // File max_bytes+1: metadata preflight check rejects with EBIG
+    // (fast-path — exits before bounded read). §13.5 remap from
+    // ENOMEM → EBIG per kitty spec (oversize → EBIG; ENOMEM reserved for
+    // allocator failure).
     let mut term = Term::new(24, 80, 1000, Theme::default(), VoidEffectSink);
     const MAX_BYTES: usize = 64;
     term.set_image_limits(usize::MAX, MAX_BYTES);
@@ -364,14 +379,15 @@ fn kitty_store_from_file_max_bytes_plus_one_rejects() {
         width: 0,
         height: 0,
         transmission: KittyTransmission::File,
+        compression: None,
     };
 
     let result = term.kitty_store_image(p);
     assert!(result.is_err());
     let err = result.unwrap_err();
     assert!(
-        err.contains("ENOMEM"),
-        "error should be ENOMEM from preflight, got: {}",
+        err.contains("EBIG"),
+        "error should be EBIG from preflight (kitty spec for oversize), got: {}",
         err
     );
 }
@@ -396,6 +412,7 @@ fn kitty_store_from_file_max_bytes_usize_max_does_not_panic() {
         width: 4,
         height: 4,
         transmission: KittyTransmission::File,
+        compression: None,
     };
 
     let result = term.kitty_store_image(p);
@@ -419,6 +436,7 @@ fn kitty_store_from_file_path_traversal_rejected() {
         width: 0,
         height: 0,
         transmission: KittyTransmission::File,
+        compression: None,
     };
 
     let result = term.kitty_store_image(p);

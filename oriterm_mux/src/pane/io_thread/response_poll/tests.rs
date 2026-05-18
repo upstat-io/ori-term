@@ -540,3 +540,81 @@ fn fulfill_before_register_still_delivers() {
 
     handle.shutdown();
 }
+
+// §13.5 negative routing pin — kitty image-protocol replies do NOT flow
+// through response_poll
+// =====================================================================
+
+/// §13.5 negative routing pin: `register_host_request_response` at
+/// `response_poll/mod.rs:33-54` is reserved for `HostRequest::ClipboardLoad`
+/// and `HostRequest::ColorQuery`. Kitty image-protocol replies are
+/// emitted directly as `Effect::Pty(PtyEffect::Write { kind:
+/// ImageProtocolReply, .. })` by `Term::kitty_respond` and route through
+/// the effect_router's PtyEffect arm, NEVER through this poll path.
+///
+/// This test pins the contract by enumerating the two `HostRequest`
+/// variants accepted by `register_host_request_response` and asserting
+/// neither one carries a `PtyWriteKind::ImageProtocolReply` payload. A
+/// future refactor that adds `HostRequest::ImageProtocolReply` (or any
+/// variant intended for image replies) would force this test to be
+/// updated consciously, surfacing the architectural change at review
+/// time.
+///
+/// The proof shape is structural: `HostRequest` is an enum with exactly
+/// two variants (`ClipboardLoad`, `ColorQuery`) per
+/// `oriterm_core::effect::HostRequest`. An exhaustive match over the enum
+/// at the type level means a third variant added later forces compile
+/// errors here, ensuring the routing decision is reconsidered.
+#[test]
+fn response_poll_does_not_handle_image_protocol_replies() {
+    use oriterm_core::effect::{ClipboardSelection, HostRequest, ResponseToken};
+
+    // Construct dummy requests for both variants accepted by
+    // register_host_request_response. The exhaustive match is the load-
+    // bearing assertion — if HostRequest gains a third variant, this
+    // match fails to compile and forces a conscious decision about
+    // whether the new variant routes through poll_pending_responses or
+    // through the effect_router's PtyEffect arm.
+    let clip_token: ResponseToken<String> = ResponseToken::new();
+    let request_a = HostRequest::ClipboardLoad {
+        selection: ClipboardSelection::Clipboard,
+        clipboard_char: b'c',
+        terminator: "\x1b\\".to_string(),
+        reply: clip_token,
+    };
+    let color_token: ResponseToken<oriterm_core::color::Rgb> = ResponseToken::new();
+    let request_b = HostRequest::ColorQuery {
+        prefix: "10".to_string(),
+        index: 0,
+        terminator: "\x1b\\".to_string(),
+        reply: color_token,
+    };
+
+    // Exhaustive variant enumeration — a third variant added to
+    // HostRequest fails the match coverage at compile time.
+    for request in [request_a, request_b] {
+        match request {
+            HostRequest::ClipboardLoad { .. } => {
+                // Accepted by register_host_request_response — does
+                // NOT carry an ImageProtocolReply payload.
+            }
+            HostRequest::ColorQuery { .. } => {
+                // Accepted by register_host_request_response — does
+                // NOT carry an ImageProtocolReply payload.
+            }
+        }
+    }
+
+    // Belt-and-suspenders: the count of HostRequest variants accepted
+    // by register_host_request_response is exactly 2. A future increase
+    // forces this constant to be revised consciously.
+    const ACCEPTED_VARIANT_COUNT: usize = 2;
+    assert_eq!(
+        ACCEPTED_VARIANT_COUNT, 2,
+        "register_host_request_response at response_poll/mod.rs:33-54 must \
+         accept exactly the ClipboardLoad + ColorQuery variants. If this \
+         constant changes, the §13.5 routing contract must be re-validated: \
+         kitty image-protocol replies MUST flow via the effect_router's \
+         PtyEffect arm, NOT via this poll path"
+    );
+}

@@ -61,8 +61,10 @@ pub(super) struct PerfStats {
     wakeups: u32,
     /// Number of `CursorMoved` events this window.
     cursor_moves: u32,
-    /// Number of `about_to_wait` calls this window.
-    ticks: u32,
+    /// Number of `about_to_wait` calls this window. `pub(super)` so the
+    /// keyboard-input path can snapshot it into `tick_at_last_key` for the
+    /// `ticks_since_key` SLOW-frame diagnostic.
+    pub(super) ticks: u32,
     /// Minimum frame time in the current window.
     frame_time_min: Duration,
     /// Maximum frame time in the current window.
@@ -90,6 +92,12 @@ pub(super) struct PerfStats {
     // Key-to-render latency tracking.
     /// Timestamp of the most recent key event (set in `handle_keyboard_input`).
     pub(super) last_key_time: Option<Instant>,
+    /// `ticks` counter value captured when `last_key_time` was set, so
+    /// `record_render` can emit `ticks_since_key` = `ticks - tick_at_last_key`
+    /// — surfaces how many `about_to_wait` cycles ran between the key event
+    /// and the render that caught it. High `ticks_since_key` with small
+    /// per-tick `mux_pump` points to `MuxWakeup` queue depth.
+    pub(super) tick_at_last_key: u32,
     /// Sum of key-to-render latencies for frames that had a pending key event.
     key_to_render_sum: Duration,
     /// Maximum key-to-render latency observed this interval.
@@ -138,6 +146,7 @@ impl PerfStats {
             phase_max: FramePhases::default(),
             last_pump_time: Duration::ZERO,
             last_key_time: None,
+            tick_at_last_key: 0,
             key_to_render_sum: Duration::ZERO,
             key_to_render_max: Duration::ZERO,
             key_to_render_count: 0,
@@ -196,12 +205,23 @@ impl PerfStats {
             }
 
             // Log slow frames individually for stutter diagnosis.
+            // Includes all 5 phases from `full_phases` (not just `phases`)
+            // so the `mux_pump` phase — set on the about_to_wait path, NOT
+            // in `phases` — is visible. `ticks_since_key` surfaces how many
+            // about_to_wait cycles ran between the key event and the render
+            // that caught it: high count with small per-tick mux_pump points
+            // to MuxWakeup-queue depth ahead of the key.
             if latency.as_millis() > 16 || frame_time.as_millis() > 8 {
+                let ticks_since_key = self.ticks.saturating_sub(self.tick_at_last_key);
                 log::info!(
                     "perf: SLOW k2r={latency:.1?} frame={frame_time:.1?} \
-                     prep={:.1?} gpu={:.1?}",
-                    phases.prepare,
-                    phases.gpu_render,
+                     ticks_since_key={ticks_since_key} \
+                     mux={:.1?} extract={:.1?} prep={:.1?} widgets={:.1?} gpu={:.1?}",
+                    full_phases.mux_pump,
+                    full_phases.extract,
+                    full_phases.prepare,
+                    full_phases.widgets,
+                    full_phases.gpu_render,
                 );
             }
         }

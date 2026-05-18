@@ -12,7 +12,9 @@
 
 use oriterm_core::{Rgb, TermMode};
 
-use oriterm_test_support::spec_chain::{RungName, RungResult, SpecHarness, SpecScenario};
+use oriterm_test_support::spec_chain::{
+    RungName, RungResult, ScenarioExpectations, SpecHarness, SpecScenario,
+};
 
 use crate::gpu::frame_input::{FrameInput, FramePalette, ViewportSize};
 use crate::gpu::pipelines::GpuPipelines;
@@ -115,81 +117,15 @@ impl VisualSpecHarness {
 
         for &rung in scenario.applicable_rungs() {
             let result = match rung {
-                RungName::FrameInput => {
-                    let input = self.build_frame_input();
-                    let r = match &scenario.expectations.frame_input {
-                        Some(e) => observers::observe_frame_input(&input, e),
-                        None => RungResult::pass(rung),
-                    };
-                    frame_input = Some(input);
-                    r
-                }
-                RungName::GpuInstance => {
-                    let input = frame_input.as_ref().expect(
-                        "GpuInstance rung requires FrameInput rung to have run first \
-                         (rung chain ordering guarantees this)",
-                    );
-                    self.renderer
-                        .prepare(input, &self.gpu, &self.pipelines, (0.0, 0.0), 1.0, true);
-                    match &scenario.expectations.gpu_instance {
-                        Some(e) => observers::observe_gpu_instance(&self.renderer.prepared, e),
-                        None => RungResult::pass(rung),
-                    }
-                }
-                RungName::TextureRender => {
-                    let _input = frame_input
-                        .as_ref()
-                        .expect("TextureRender rung requires FrameInput rung to have run first");
-                    // Render via the production cached path.
-                    let vp = self.renderer.prepared.viewport;
-                    let output = self.renderer.render_frame_cached(
-                        &self.gpu,
-                        &self.pipelines,
-                        vp.width,
-                        vp.height,
-                        true,
-                    );
-                    let pixels = self
-                        .gpu
-                        .read_render_target(&output)
-                        .expect("pixel readback should succeed");
-                    // Stash pixels for the GoldenImage rung, then borrow.
-                    self.last_rendered = Some(RenderedPixelData {
-                        pixels,
-                        width: vp.width,
-                        height: vp.height,
-                    });
-                    let data = self.last_rendered.as_ref().unwrap();
-                    let rendered = observers::RenderedPixels {
-                        pixels: &data.pixels,
-                        width: data.width,
-                        height: data.height,
-                    };
-                    match &scenario.expectations.texture {
-                        Some(e) => observers::observe_texture_render(&rendered, e),
-                        None => RungResult::pass(rung),
-                    }
-                }
-                RungName::GoldenImage => {
-                    let data = self
-                        .last_rendered
-                        .as_ref()
-                        .expect("GoldenImage rung requires TextureRender rung to have run first");
-                    let rendered = observers::RenderedPixels {
-                        pixels: &data.pixels,
-                        width: data.width,
-                        height: data.height,
-                    };
-                    match &scenario.expectations.golden {
-                        Some(e) => observers::observe_golden_image(
-                            &rendered,
-                            scenario.catalog_row_id,
-                            e,
-                            self.config(),
-                        ),
-                        None => RungResult::pass(rung),
-                    }
-                }
+                RungName::FrameInput
+                | RungName::GpuInstance
+                | RungName::TextureRender
+                | RungName::GoldenImage => self.drive_visual_rung(
+                    rung,
+                    &scenario.expectations,
+                    scenario.catalog_row_id,
+                    &mut frame_input,
+                ),
                 // Rungs 1-4: delegate to core observers.
                 _ => self.core.observe_rung(rung, &scenario.expectations),
             };
@@ -202,6 +138,135 @@ impl VisualSpecHarness {
         }
 
         results
+    }
+
+    /// Drive the visual rungs (FrameInput → GpuInstance → TextureRender →
+    /// GoldenImage) from the current `Term` state, returning per-rung results
+    /// with fail-fast semantics.
+    ///
+    /// Bytes must have been fed already — either via a prior `run_visual_scenario`
+    /// call or directly through `core_mut().feed()`. This method does NOT feed
+    /// any bytes; it observes the current state and renders it.
+    ///
+    /// Used for multi-render scenarios where the same `Term` is observed at
+    /// distinct states between renders — e.g., kitty animation frame transitions
+    /// observed after `core_mut().term_mut().advance_animations(now)` advances
+    /// the cache between renders. The first render captures the initial frame;
+    /// a clock advance + re-render captures the post-transition frame.
+    pub fn render_visual_rungs(
+        &mut self,
+        catalog_row_id: &str,
+        expectations: &ScenarioExpectations,
+    ) -> Vec<RungResult> {
+        self.last_rendered = None;
+        let mut results = Vec::new();
+        let mut frame_input: Option<FrameInput> = None;
+
+        for rung in [
+            RungName::FrameInput,
+            RungName::GpuInstance,
+            RungName::TextureRender,
+            RungName::GoldenImage,
+        ] {
+            let result =
+                self.drive_visual_rung(rung, expectations, catalog_row_id, &mut frame_input);
+            let failed = !result.passed;
+            results.push(result);
+            if failed {
+                break;
+            }
+        }
+
+        results
+    }
+
+    /// Drive a single visual rung from current state. Canonical home for
+    /// per-rung GPU-side observation logic; both `run_visual_scenario` (full
+    /// scenario, rungs 1-8) and `render_visual_rungs` (multi-render rungs 5-8)
+    /// dispatch here, keeping the SSOT at the per-rung observer call.
+    fn drive_visual_rung(
+        &mut self,
+        rung: RungName,
+        expectations: &ScenarioExpectations,
+        catalog_row_id: &str,
+        frame_input: &mut Option<FrameInput>,
+    ) -> RungResult {
+        match rung {
+            RungName::FrameInput => {
+                let input = self.build_frame_input();
+                let r = match &expectations.frame_input {
+                    Some(e) => observers::observe_frame_input(&input, e),
+                    None => RungResult::pass(rung),
+                };
+                *frame_input = Some(input);
+                r
+            }
+            RungName::GpuInstance => {
+                let input = frame_input.as_ref().expect(
+                    "GpuInstance rung requires FrameInput rung to have run first \
+                     (rung chain ordering guarantees this)",
+                );
+                self.renderer
+                    .prepare(input, &self.gpu, &self.pipelines, (0.0, 0.0), 1.0, true);
+                match &expectations.gpu_instance {
+                    Some(e) => observers::observe_gpu_instance(&self.renderer.prepared, e),
+                    None => RungResult::pass(rung),
+                }
+            }
+            RungName::TextureRender => {
+                let _input = frame_input
+                    .as_ref()
+                    .expect("TextureRender rung requires FrameInput rung to have run first");
+                let vp = self.renderer.prepared.viewport;
+                let output = self.renderer.render_frame_cached(
+                    &self.gpu,
+                    &self.pipelines,
+                    vp.width,
+                    vp.height,
+                    true,
+                );
+                let pixels = self
+                    .gpu
+                    .read_render_target(&output)
+                    .expect("pixel readback should succeed");
+                self.last_rendered = Some(RenderedPixelData {
+                    pixels,
+                    width: vp.width,
+                    height: vp.height,
+                });
+                let data = self.last_rendered.as_ref().unwrap();
+                let rendered = observers::RenderedPixels {
+                    pixels: &data.pixels,
+                    width: data.width,
+                    height: data.height,
+                };
+                match &expectations.texture {
+                    Some(e) => observers::observe_texture_render(&rendered, e),
+                    None => RungResult::pass(rung),
+                }
+            }
+            RungName::GoldenImage => {
+                let data = self
+                    .last_rendered
+                    .as_ref()
+                    .expect("GoldenImage rung requires TextureRender rung to have run first");
+                let rendered = observers::RenderedPixels {
+                    pixels: &data.pixels,
+                    width: data.width,
+                    height: data.height,
+                };
+                match &expectations.golden {
+                    Some(e) => {
+                        observers::observe_golden_image(&rendered, catalog_row_id, e, self.config())
+                    }
+                    None => RungResult::pass(rung),
+                }
+            }
+            _ => panic!(
+                "drive_visual_rung called on non-visual rung {rung:?} — caller bug; \
+                 only FrameInput/GpuInstance/TextureRender/GoldenImage are dispatched here"
+            ),
+        }
     }
 
     /// Build a `FrameInput` from the current terminal state.
@@ -259,6 +324,27 @@ impl VisualSpecHarness {
             subpixel_positioning: self.config.subpixel_positioning,
             prompt_marker_rows: Vec::new(),
         }
+    }
+
+    /// Borrow the pixel buffer captured by the most recent visual-rungs
+    /// drive (rungs 5-8 via `render_visual_rungs` or `run_visual_scenario`).
+    /// Returns `(pixels, width, height)` when a render produced data;
+    /// `None` before the first render. Test surface only — diagnostic
+    /// probes use this to inspect actual rendered bytes without touching
+    /// the golden-image observer's reference-PNG round-trip.
+    pub fn last_rendered_pixels(&self) -> Option<(&[u8], u32, u32)> {
+        self.last_rendered
+            .as_ref()
+            .map(|r| (r.pixels.as_slice(), r.width, r.height))
+    }
+
+    /// Diagnostic accessor for the current `PreparedFrame` image-quad
+    /// counts. Returns `(below_count, above_count)`. Test surface only.
+    pub fn prepared_image_quad_counts(&self) -> (usize, usize) {
+        (
+            self.renderer.prepared.image_quads_below.len(),
+            self.renderer.prepared.image_quads_above.len(),
+        )
     }
 
     /// Borrow the inner `SpecHarness`.

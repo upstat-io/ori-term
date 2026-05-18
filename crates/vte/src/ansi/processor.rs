@@ -27,6 +27,12 @@ pub(super) enum DcsState {
  /// Carries the `Ps` selector (1 = DECCIR cursor-info, 2 = DECTABSR
  /// tab-stops) alongside the payload accumulated via `put`.
     Decrsps { ps: u16 },
+ /// XTGETTCAP: Terminfo Capability Query (DCS `+q` Pt ST).
+ ///
+ /// Pt is hex-encoded capability name(s) separated by `;`. The
+ /// payload is accumulated via `put` and consumed at `unhook` to
+ /// emit the reply per xterm ctlseqs.
+    Xtgettcap,
 }
 
 /// Internal state for VTE processor.
@@ -57,6 +63,10 @@ pub(super) struct ProcessorState<T: Timeout> {
 
  /// Buffer for DECRSPS payload bytes (state-restore Pt body).
     pub(super) decrsps_buf: Vec<u8>,
+
+ /// Buffer for XTGETTCAP payload bytes (hex-encoded capability
+ /// name list, separated by `;`).
+    pub(super) xtgettcap_buf: Vec<u8>,
 }
 
 /// State for synchronized terminal updates.

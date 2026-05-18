@@ -259,7 +259,16 @@ impl<S: EffectSink> PaneIoThread<S> {
     /// are produced between messages so the main thread sees progress
     /// even during sustained flood output.
     fn process_pending_bytes(&mut self) {
+        // Measure total wall time for one drain cycle. Sustained
+        // durations >= 50ms indicate the IO thread is saturated —
+        // bytes arrive faster than they can be parsed + stored.
+        // Logs the messages-drained count + total bytes.
+        let drain_start = std::time::Instant::now();
+        let mut messages_drained: usize = 0;
+        let mut bytes_drained: usize = 0;
         while let Ok(bytes) = self.byte_rx.try_recv() {
+            messages_drained += 1;
+            bytes_drained += bytes.len();
             self.handle_bytes_chunked(&bytes);
             if self.shutdown.load(Ordering::Acquire) {
                 return;
@@ -268,6 +277,17 @@ impl<S: EffectSink> PaneIoThread<S> {
             // Without this, flood output fills the queue faster than parsing
             // drains it, and `maybe_produce_snapshot()` never runs.
             self.maybe_produce_snapshot();
+        }
+        let drain_ms = drain_start.elapsed().as_millis();
+        // 10ms threshold captures sub-saturation drain costs (formerly 50ms
+        // which only surfaced extreme saturation). Drain cycles of 10-50ms
+        // localize where the IO thread spends its byte-drain budget under
+        // graphics floods even when no single cycle hits hard backpressure.
+        if messages_drained > 0 && drain_ms >= 10 {
+            log::info!(
+                target: "oriterm_mux::pane::io_thread::iteration",
+                "drain cycle messages={messages_drained} bytes={bytes_drained} duration_ms={drain_ms}"
+            );
         }
     }
 

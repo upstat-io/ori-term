@@ -18,6 +18,7 @@ mod animate;
 mod delete;
 mod frame;
 mod place;
+pub(crate) mod placeholder;
 mod query;
 mod response;
 mod store;
@@ -34,6 +35,11 @@ pub(super) struct KittyStoreParams {
     pub(super) width: u32,
     pub(super) height: u32,
     pub(super) transmission: KittyTransmission,
+    /// Compression flag from `o=` (`Some(b'z')` for zlib). §13.5 guard at
+    /// `kitty_store_image` entry rejects `Some(b'z')` with EINVAL —
+    /// preserves the parsed value so the guard can fire without re-reading
+    /// the source command.
+    pub(super) compression: Option<u8>,
 }
 
 impl KittyStoreParams {
@@ -51,6 +57,7 @@ impl KittyStoreParams {
             width: cmd.source_width,
             height: cmd.source_height,
             transmission: cmd.transmission,
+            compression: cmd.compression,
         }
     }
 }
@@ -75,23 +82,18 @@ impl<S: EffectSink> Term<S> {
             // retain the silent-drop behavior pending §13.5's reply-point
             // inventory.
             if matches!(e, KittyError::InvalidBase64) {
-                // Emit an EINVAL reply so the client can recover.
-                // `KittyReplyContext::from_cmd` carries whatever `i=`
-                // and/or `I=` the sender included before the base64
-                // decode failed; when neither is present, `kitty_respond`
-                // falls back to the `i=0` sentinel — ori_term deviation
-                // from kitty's suppress-on-un-correlatable behavior,
-                // pinned `verified-with-deviation` in the §13.2 catalog
-                // row `KG-TRANSMIT-CHUNKED-MALFORMED-BASE64`.
-                self.kitty_respond(
-                    &KittyReplyContext::from_cmd(&cmd),
-                    "EINVAL: base64 decode failed",
-                );
+                self.handle_invalid_base64_chunk(&cmd);
             }
             return;
         }
 
-        log::info!(
+        // Per-command trace: high-frequency under chunked kitty transmits
+        // (notcurses-demo emits thousands per graphics scene). Kept at
+        // debug level so default INFO logging doesn't pay sync-write
+        // cost per chunk on the IO thread. Enable via
+        // RUST_LOG=oriterm_core::term::handler::image::kitty=debug.
+        log::debug!(
+            target: "oriterm_core::term::handler::image::kitty",
             "kitty: action={:?} id={:?} pid={:?} payload={}B",
             cmd.action,
             cmd.image_id,
@@ -107,6 +109,71 @@ impl<S: EffectSink> Term<S> {
             KittyAction::Delete => self.kitty_delete(&cmd),
             KittyAction::Frame => self.kitty_frame(cmd),
             KittyAction::Animate => self.kitty_animate(&cmd),
+            KittyAction::Compose => self.kitty_compose_reject(&cmd),
+        }
+    }
+
+    /// Reject `a=c` Compose action with an `EINVAL: action `c` not implemented`
+    /// reply. The reject helper makes the missing handler observable to
+    /// clients via a spec-compliant EINVAL reply while keeping the catalog
+    /// row `KG-ACTION-COMPOSE` honest about the absent implementation.
+    pub(super) fn kitty_compose_reject(&self, cmd: &KittyCommand) {
+        let ctx = KittyReplyContext::from_cmd(cmd);
+        self.kitty_respond(&ctx, "EINVAL: action `c` not implemented");
+    }
+
+    /// Handle a malformed-base64 chunk: emit EINVAL once per failed upload
+    /// and update the per-upload failure latch so subsequent malformed
+    /// chunks of the same upload are suppressed. §13.5 EINVAL-flood
+    /// coalesce: pre-fix, each malformed chunk fired its own EINVAL,
+    /// amplifying the reply transcript proportionally to chunk count.
+    /// `LoadingImage::failed_upload` is the canonical latch — keyed by
+    /// `image_id` when the sender provides one, or by the auto-assigned id
+    /// when `LoadingImage` was created on the first (valid) chunk.
+    fn handle_invalid_base64_chunk(&mut self, cmd: &KittyCommand) {
+        let already_failed = self
+            .loading_image
+            .as_ref()
+            .is_some_and(|li| li.failed_upload);
+        if already_failed {
+            // Terminator chunk (`m=0`) of an already-failed upload: drop
+            // the loading_image so a future upload with the same image_id
+            // starts fresh. Non-terminator chunks remain dropped silently.
+            if !cmd.more_data {
+                self.loading_image = None;
+            }
+            return;
+        }
+
+        // Emit an EINVAL reply so the client can recover.
+        // `KittyReplyContext::from_cmd` carries whatever `i=` and/or `I=`
+        // the sender included before the base64 decode failed; when neither
+        // is present, `kitty_respond` falls back to the `i=0` sentinel.
+        self.kitty_respond(
+            &KittyReplyContext::from_cmd(cmd),
+            "EINVAL: base64 decode failed",
+        );
+
+        // Mark the in-flight upload (if any) as failed so subsequent
+        // malformed chunks of the same upload do not re-emit. If the first
+        // chunk itself was malformed and no `LoadingImage` exists yet,
+        // synthesize one carrying the failure latch keyed on the sender-
+        // provided image_id, so chunks 2+ of the same failed upload are
+        // also coalesced. Synthesize only when the sender supplied an `i=`
+        // AND `m=1` (continuation marker), so a single-shot non-chunked
+        // malformed transmit doesn't leave dangling state.
+        if let Some(loading) = self.loading_image.as_mut() {
+            loading.failed_upload = true;
+            return;
+        }
+        if let Some(id) = cmd.image_id
+            && cmd.more_data
+        {
+            self.loading_image = Some(LoadingImage {
+                image_id: id,
+                start_cmd: KittyCommand::default(),
+                failed_upload: true,
+            });
         }
     }
 
@@ -162,6 +229,7 @@ impl<S: EffectSink> Term<S> {
             self.loading_image = Some(LoadingImage {
                 image_id,
                 start_cmd: cmd,
+                failed_upload: false,
             });
         }
     }

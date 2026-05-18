@@ -22,27 +22,42 @@
 //! Catalog rows: OSC-10-SET, OSC-10-QUERY, OSC-11-SET, OSC-11-QUERY,
 //! OSC-12-SET, OSC-12-QUERY. Apex: state-snapshot / effect-pty-write.
 
-use oriterm_core::effect::{Effect, HostRequest};
+use oriterm_core::effect::{Effect, PtyEffect};
 use oriterm_test_support::spec_chain::SpecHarness;
 use vte::ansi::{NamedColor, Rgb};
 
-/// Assert exactly one `HostRequest::ColorQuery` is on the transcript and
-/// return its `(prefix, index)`. Panics otherwise.
-fn expect_single_color_query(harness: &SpecHarness) -> (String, usize) {
+/// Assert exactly one OSC 10/11/12 color reply (sync `PtyEffect::Write`)
+/// is on the transcript and return its `(prefix, slot_index)`. OSC 10
+/// → slot 256 (foreground), OSC 11 → 257 (background), OSC 12 → 258
+/// (cursor). Panics otherwise.
+fn expect_single_color_reply(harness: &SpecHarness) -> (String, usize) {
     let mut found = None;
     for eff in &harness.outcome().effects_emitted {
-        if let Effect::HostRequest(HostRequest::ColorQuery { prefix, index, .. }) = eff {
-            assert!(
-                found.is_none(),
-                "more than one ColorQuery emitted; got {:?}",
-                harness.outcome().effects_emitted
-            );
-            found = Some((prefix.clone(), *index));
+        if let Effect::Pty(PtyEffect::Write { bytes, .. }) = eff {
+            if let Some(stripped) = bytes.strip_prefix(b"\x1b]") {
+                let osc_end = stripped
+                    .iter()
+                    .position(|&b| b == b';')
+                    .unwrap_or(stripped.len());
+                let osc_num = std::str::from_utf8(&stripped[..osc_end]).unwrap_or("");
+                let slot = match osc_num {
+                    "10" => 256,
+                    "11" => 257,
+                    "12" => 258,
+                    _ => continue,
+                };
+                assert!(
+                    found.is_none(),
+                    "more than one OSC color reply emitted; got {:?}",
+                    harness.outcome().effects_emitted
+                );
+                found = Some((osc_num.to_string(), slot));
+            }
         }
     }
     found.unwrap_or_else(|| {
         panic!(
-            "expected one ColorQuery; got {:?}",
+            "expected one OSC color reply; got {:?}",
             harness.outcome().effects_emitted
         )
     })
@@ -109,7 +124,7 @@ fn osc10_query_replies_rgb() {
     let mut harness = SpecHarness::new();
     harness.feed(b"\x1b]10;?\x1b\\");
 
-    let (prefix, index) = expect_single_color_query(&harness);
+    let (prefix, index) = expect_single_color_reply(&harness);
     assert_eq!(prefix, "10");
     assert_eq!(index, NamedColor::Foreground as usize);
 }

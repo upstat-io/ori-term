@@ -54,10 +54,10 @@ fn open_regular_file(path: &std::path::Path) -> Result<(std::fs::File, std::fs::
     opts.custom_flags(libc::O_NONBLOCK);
     let file = opts
         .open(path)
-        .map_err(|e| format!("EIO: failed to open file: {e}"))?;
+        .map_err(|e| format!("EBADF: failed to open file: {e}"))?;
     let meta = file
         .metadata()
-        .map_err(|e| format!("EIO: failed to stat file: {e}"))?;
+        .map_err(|e| format!("EBADF: failed to stat file: {e}"))?;
     if !meta.file_type().is_file() {
         return Err("EINVAL: path is not a regular file".to_string());
     }
@@ -67,6 +67,19 @@ fn open_regular_file(path: &std::path::Path) -> Result<(std::fs::File, std::fs::
 impl<S: EffectSink> Term<S> {
     /// Decode and store image data in the cache.
     pub(super) fn kitty_store_image(&mut self, p: KittyStoreParams) -> Result<(), String> {
+        // §13.5 / Option A — fail-closed on `o=z` compression. The parser
+        // populates `cmd.compression = Some(b'z')` but ori_term does not
+        // implement zlib decompression, so the bytes downstream are NOT
+        // the pixel data the sender intended. Returning EINVAL at store
+        // entry replaces the pre-§13.5 silent-corruption shape (parser
+        // populates field, store reads raw bytes as RGBA/RGB/PNG and
+        // produces garbled output). Mirrors the `KittyError::CompressionNotSupported`
+        // variant added to the parser-side error type for callers that
+        // route through the typed error chain.
+        if p.compression == Some(b'z') {
+            return Err("EINVAL: compression not supported".to_string());
+        }
+
         let (pixel_data, source) = match p.transmission {
             KittyTransmission::Direct => (p.payload, ImageSource::Direct),
             KittyTransmission::File | KittyTransmission::TempFile => {
@@ -98,7 +111,33 @@ impl<S: EffectSink> Term<S> {
     }
 
     /// Decode pixel data from format code to RGBA.
+    ///
+    /// Wraps `kitty_decode_pixels_inner` with a duration measurement.
+    /// f=32 (raw RGBA) is a size-check + ownership transfer (fast);
+    /// f=24 (RGB→RGBA) is a memory expansion (mid); f=100 (PNG) is
+    /// decompression (slow under large transmits). Sustained >= 5ms
+    /// per call points to inline-decode IO-thread saturation under
+    /// graphics-heavy workloads.
     pub(super) fn kitty_decode_pixels(
+        payload: Vec<u8>,
+        format: u32,
+        width: u32,
+        height: u32,
+    ) -> Result<(Vec<u8>, u32, u32), String> {
+        let decode_start = std::time::Instant::now();
+        let payload_len = payload.len();
+        let result = Self::kitty_decode_pixels_inner(payload, format, width, height);
+        let elapsed_us = decode_start.elapsed().as_micros();
+        if elapsed_us >= 5_000 {
+            log::info!(
+                target: "oriterm_core::term::handler::image::kitty::decode_pixels",
+                "format={format} payload_bytes={payload_len} width={width} height={height} duration_us={elapsed_us}"
+            );
+        }
+        result
+    }
+
+    fn kitty_decode_pixels_inner(
         payload: Vec<u8>,
         format: u32,
         width: u32,
@@ -180,7 +219,7 @@ impl<S: EffectSink> Term<S> {
         // can grow between this check and read). saturating_add guards
         // against the pathological max_bytes == usize::MAX config.
         if meta.len() > max_bytes as u64 {
-            return Err("ENOMEM: file exceeds max image size".to_string());
+            return Err("EBIG: file exceeds max image size".to_string());
         }
 
         let mut file_data = Vec::with_capacity(meta.len() as usize);
@@ -189,7 +228,7 @@ impl<S: EffectSink> Term<S> {
             .map_err(|e| format!("EIO: failed to read file: {e}"))?;
 
         if file_data.len() > max_bytes {
-            return Err("ENOMEM: file exceeds max image size".to_string());
+            return Err("EBIG: file exceeds max image size".to_string());
         }
 
         let source = ImageSource::File(path.to_path_buf());

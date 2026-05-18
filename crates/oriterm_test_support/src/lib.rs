@@ -27,8 +27,8 @@ pub mod vttest_walker;
 pub use spec_chain::TempDirGuard;
 
 pub use session::{
-    PtyResponder, PtySession, infocmp_available, tack_available, tic_available, tool_available,
-    vttest_available,
+    PtyResponder, PtySession, infocmp_available, notcurses_info_available, tack_available,
+    tic_available, tool_available, vttest_available,
 };
 pub use tack_framework::{
     LiveSession, MenuStep, PhaseSpec, ScenarioOutcome, ScenarioRunner, ScenarioSpec, ScreenFacts,

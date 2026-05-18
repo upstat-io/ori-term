@@ -33,24 +33,36 @@ fn assert_pty_reports_size(
         })
         .expect("open PTY");
 
-    // Unified teardown across POSIX + Windows. Both probes (`stty size`
-    // and `cmd /d /c mode con`) print and exit without ever reading
-    // stdin, so we don't need stdin-EOF to wake the child — we can wait
-    // for it to exit naturally, THEN drop the writer + master. This:
+    // Take the writer up-front (before spawning the child) and hold
+    // it alive past child.wait + master drop on BOTH platforms.
     //
-    // * Removes the documented macOS race in `crates/portable-pty/
-    // examples/whoami.rs` ("data we send to the kernel to trigger
-    // EOF is interleaved with the data read by the reader") — no
-    // EOF data is sent to the kernel until after the child is gone.
-    // * Fixes the Windows ConPTY path where dropping the writer
-    // mid-startup caused `cmd /c` to quit before executing the
-    // inner command, leaking only the cmd.exe init handshake
-    // (DSR query, focus toggle, title set) to the reader.
+    // POSIX: dropping the writer before child.wait sends EOF data
+    // into the kernel that interleaves with the slave's output
+    // stream — on macOS this corrupts `stty size`'s `33 97\n` with
+    // junk bytes and produces `ParseIntError` (same root cause as
+    // the macOS race documented in
+    // `crates/portable-pty/examples/whoami.rs`).
     //
-    // The whoami.rs pattern (drop writer before child.wait) is correct
-    // for the general case where the child may block on stdin EOF;
-    // here the workload is a deterministic short-lived probe, so the
-    // simpler "wait then drop" wins on every supported platform.
+    // Windows ConPTY: `crates/portable-pty/src/win/psuedocon.rs`
+    // sets `PSUEDOCONSOLE_INHERIT_CURSOR`, so ConPTY emits `\x1b[6n`
+    // (cursor position request) at startup AND blocks subsequent
+    // master output until a CPR response lands on the writer. We
+    // pre-stage the CPR response into the pipe BEFORE spawn_command
+    // so ConPTY can satisfy its DSR-wait on first read, before any
+    // teardown race window opens. (POSIX must not write to the
+    // master — slave TTYs echo input, so the CPR bytes would echo
+    // back into stty's output and break the parse.)
+    let writer = pair.master.take_writer().expect("take stdin writer");
+    #[cfg(windows)]
+    let writer = {
+        let mut writer = writer;
+        writer
+            .write_all(b"\x1b[1;1R")
+            .expect("pre-write CPR response to stdin");
+        writer.flush().expect("flush CPR response");
+        writer
+    };
+
     let mut reader = pair.master.try_clone_reader().expect("reader");
     let mut child = pair.slave.spawn_command(cmd).expect("spawn command");
     drop(pair.slave);
@@ -68,59 +80,8 @@ fn assert_pty_reports_size(
         let _ = tx.send(String::from_utf8_lossy(&output).into_owned());
     });
 
-    // Take the stdin writer so its handle lives in this scope. Windows
-    // ConPTY needs a CPR response written here BEFORE child.wait;
-    // POSIX must NOT write to the writer because the slave TTY would
-    // echo the bytes back into stty's output stream and corrupt the
-    // parse.
-    let writer = pair.master.take_writer().expect("take stdin writer");
-
-    // Windows ConPTY: answer ConPTY's DSR cursor-position query.
-    //
-    // `crates/portable-pty/src/win/psuedocon.rs:87` sets
-    // `PSUEDOCONSOLE_INHERIT_CURSOR` on `CreatePseudoConsole`. ConPTY
-    // emits `\x1b[6n` (cursor-position request) at startup AND blocks
-    // every subsequent byte of master output until the response lands
-    // on the writer. Without a responder the child's actual output
-    // never reaches the reader — only the unconditional init handshake
-    // (focus reporting toggle, screen clear, title set) does. The
-    // failure mode depends entirely on writer-drop timing:
-    //
-    // * writer dropped early → ConPTY abandons the DSR wait via stdin
-    // EOF, but kills `cmd /c` mid-startup so `mode con` never runs;
-    // parser sees only the init handshake and panics on missing
-    // `Lines:`.
-    // * writer held until after `child.wait` → ConPTY blocks forever
-    // waiting for DSR; child never produces output; child.wait
-    // blocks; the CI job hits its 10-minute kill.
-    //
-    // Writing any well-formed CPR response (`\x1b[r;cR`, 1-indexed) is
-    // sufficient — ConPTY only needs the protocol question answered.
-    //
-    // POSIX intentionally skips this write: TTYs echo input characters
-    // by default, so writing `\x1b[1;1R` to the master would echo back
-    // through the slave's output stream and prepend literal escape
-    // bytes to `stty size`'s `33 97\n`, breaking the parse with
-    // `ParseIntError`. POSIX `openpty` does not have ConPTY's DSR
-    // gate; nothing waits on a CPR response.
-    //
-    // Source: third-party-review consensus 2026-04-27 ( + )
-    // verified the DSR origin against `psuedocon.rs:87`.
-    #[cfg(windows)]
-    {
-        let mut writer = writer;
-        writer
-            .write_all(b"\x1b[1;1R")
-            .expect("write CPR response to stdin");
-        writer.flush().expect("flush CPR response");
-        child.wait().expect("child wait failed");
-        drop(writer);
-    }
-    #[cfg(unix)]
-    {
-        child.wait().expect("child wait failed");
-        drop(writer);
-    }
+    child.wait().expect("child wait failed");
+    drop(writer);
     drop(pair.master);
 
     let raw = rx.recv().expect("reader channel closed without sending");
@@ -209,7 +170,6 @@ fn parse_mode_con_output(raw: &str) -> (u16, u16) {
     )
 }
 
-/// Regression: Windows PTY size propagation test removed.
 /// Pins `portable_pty::native_pty_system()` ConPTY path: `openpty` with
 /// `PtySize { rows, cols }` delivers the requested size via
 /// `CreatePseudoConsole`. Uses `cmd /d /c mode con` to bypass AutoRun.
@@ -219,6 +179,12 @@ fn parse_mode_con_output(raw: &str) -> (u16, u16) {
 /// labels `Lines:` / `Columns:` / `Cols:` emitted by `mode con`. On a
 /// non-en-US host the test surfaces as `mode con output missing Lines:` —
 /// a clear diagnostic, not silent skipping.
+///
+/// Runner pin: this test runs on `windows-2022` (not `windows-latest`).
+/// The `windows-latest` image (currently `windows-2025`) regressed
+/// conhost's console-buffer→VT translation on ConPTY-attached children
+/// ~2026-05-13 — `mode con` output (and any other console-API writer
+/// like PowerShell `$Host.UI.RawUI`) stopped reaching the master pipe.
 #[test]
 #[cfg(windows)]
 fn pty_size_propagation_windows_mode_con_reports_correct_dimensions() {

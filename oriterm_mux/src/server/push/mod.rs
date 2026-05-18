@@ -12,7 +12,7 @@ use oriterm_core::ImageId;
 
 use crate::id::ClientId;
 use crate::pane::Pane;
-use crate::protocol::messages::CAP_SNAPSHOT_PUSH;
+use crate::protocol::CAP_SNAPSHOT_PUSH;
 use crate::{MuxPdu, PaneId, PaneSnapshot};
 
 use super::connection::ClientConnection;

@@ -7,11 +7,10 @@
 //!
 //! Note: `ori_term` routes OSC 12 set/reset through the palette's
 //! cursor color slot. The set form changes the palette directly;
-//! the query form (OSC 12 ?) fires
-//! `Effect::HostRequest(HostRequest::ColorQuery { .. })` for the
-//! upstream consumer to fulfill via the response token.
+//! the query form (OSC 12 ?) emits a synchronous
+//! `Effect::Pty(PtyEffect::Write)` reply directly from the palette.
 
-use crate::effect::{Effect, EffectSink, HostRequest};
+use crate::effect::{Effect, EffectSink, PtyEffect};
 
 use super::super::test_helpers::{feed, term_with_effect_sink};
 use super::{assert_cap_declared, assert_cap_value_matches};
@@ -65,22 +64,27 @@ fn tack_cap_xcheck_cr_resets_cursor_color_via_osc_112() {
 }
 
 #[test]
-fn tack_cap_xcheck_osc_12_query_fires_color_query_effect() {
+fn tack_cap_xcheck_osc_12_query_emits_sync_pty_write_reply() {
     let mut term = term_with_effect_sink();
-    // OSC 12 ; ? BEL — query cursor color. The handler must fire
-    // Effect::HostRequest(HostRequest::ColorQuery { .. }) with
-    // the prefix and index for the cursor color slot.
+    // OSC 12 ; ? BEL — query cursor color. The handler emits a
+    // synchronous Effect::Pty(PtyEffect::Write) reply directly from
+    // the palette.
     feed(&mut term, b"\x1b]12;?\x07");
 
     let mut effects = Vec::new();
     term.effect_sink().drain_into(&mut effects);
 
-    let found = effects
-        .iter()
-        .any(|e| matches!(e, Effect::HostRequest(HostRequest::ColorQuery { .. })));
+    // EXACT default cursor color reply (theme default = ffff/ffff/ffff).
+    let found = effects.iter().any(|e| {
+        matches!(
+            e,
+            Effect::Pty(PtyEffect::Write { bytes, .. })
+                if bytes.as_slice() == b"\x1b]12;rgb:ffff/ffff/ffff\x07"
+        )
+    });
     assert!(
         found,
-        "OSC 12 query must fire Effect::HostRequest(HostRequest::ColorQuery {{ .. }}); \
-         got {effects:?}",
+        "OSC 12 query must emit exact sync PtyEffect::Write reply with \
+         default cursor color (ffff/ffff/ffff); got {effects:?}",
     );
 }

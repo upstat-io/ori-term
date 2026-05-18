@@ -24,7 +24,12 @@ impl<S: EffectSink> Term<S> {
         }
 
         // U=1: placement deferred to unicode placeholder chars in cells.
-        if !cmd.unicode_placeholder {
+        // Record the anchor so LRU eviction does not drop the image while
+        // the program writes its `U+10EEEE` cells.
+        if cmd.unicode_placeholder {
+            self.image_cache_mut()
+                .add_placeholder_anchor(ImageId::from_raw(image_id));
+        } else {
             self.kitty_create_placement(image_id, cmd);
         }
         self.kitty_respond(&ctx, "OK");

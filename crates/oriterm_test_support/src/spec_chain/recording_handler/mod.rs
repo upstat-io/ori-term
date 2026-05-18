@@ -55,6 +55,11 @@ pub enum DispatchArgs {
     /// abort-plumbing tests can verify the dispatch-rung argument, not
     /// just the end-to-end `ImageCache` state.
     SixelEnd { aborted: bool },
+    /// `Handler::xtgettcap(payload, aborted)` — captures the
+    /// hex-encoded capability name list and the abort bit so
+    /// parser-dispatch tests can verify both the payload bytes (case,
+    /// content) and the abort plumbing.
+    Xtgettcap { payload: Vec<u8>, aborted: bool },
     /// `Handler::apc_dispatch` routed to the Kitty graphics protocol
     /// (payload's first byte is `G`).
     ///
@@ -181,6 +186,17 @@ impl<S: EffectSink> Handler for RecordingHandler<S> {
     fn device_status(&mut self, n: usize) {
         self.record("device_status", DispatchArgs::DeviceStatus { n });
         Handler::device_status(&mut self.term, n);
+    }
+
+    fn xtgettcap(&mut self, payload: &[u8], aborted: bool) {
+        self.record(
+            "xtgettcap",
+            DispatchArgs::Xtgettcap {
+                payload: payload.to_vec(),
+                aborted,
+            },
+        );
+        Handler::xtgettcap(&mut self.term, payload, aborted);
     }
 
     // All other handler methods — record as Other and delegate.

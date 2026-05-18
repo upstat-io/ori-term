@@ -2,13 +2,13 @@ use super::WinChild;
 use crate::cmdbuilder::CommandBuilder;
 use crate::win::procthreadattr::ProcThreadAttributeList;
 use anyhow::{bail, ensure, Error};
-use filedescriptor::{FileDescriptor, OwnedHandle};
+use filedescriptor::OwnedHandle;
 use lazy_static::lazy_static;
 use shared_library::shared_library;
 use std::ffi::OsString;
 use std::io::Error as IoError;
 use std::os::windows::ffi::OsStringExt;
-use std::os::windows::io::{AsRawHandle, FromRawHandle};
+use std::os::windows::io::{FromRawHandle, RawHandle};
 use std::path::Path;
 use std::sync::Mutex;
 use std::{mem, ptr};
@@ -25,10 +25,6 @@ use winapi::um::winnt::HANDLE;
 pub type HPCON = HANDLE;
 
 pub const PSUEDOCONSOLE_INHERIT_CURSOR: DWORD = 0x1;
-pub const PSEUDOCONSOLE_RESIZE_QUIRK: DWORD = 0x2;
-pub const PSEUDOCONSOLE_WIN32_INPUT_MODE: DWORD = 0x4;
-#[allow(dead_code)]
-pub const PSEUDOCONSOLE_PASSTHROUGH_MODE: DWORD = 0x8;
 
 shared_library!(ConPtyFuncs,
     pub fn CreatePseudoConsole(
@@ -49,9 +45,31 @@ fn load_conpty() -> ConPtyFuncs {
         "this system does not support conpty.  Windows 10 October 2018 or newer is required",
     );
 
-    // We prefer to use a sideloaded conpty.dll and openconsole.exe host deployed
-    // alongside the application.  We check for this after checking for kernel
-    // support so that we don't try to proceed and do something crazy.
+    // We prefer to use a sideloaded conpty.dll and openconsole.exe deployed
+    // alongside the application. Microsoft Terminal sideloads its own
+    // OpenConsole.exe to get enhanced VT passthrough on the input pipe —
+    // kernel32 conpty otherwise translates ESC bytes from host→child writes
+    // into VK_ESCAPE INPUT_RECORDs that downstream consumers (wsl.exe, WSL
+    // distros) drop on the floor, resulting in stripped-prefix text fragments
+    // appearing as bash prompt input AFTER the child has exited.
+    //
+    // Look for `conpty.dll` in three locations, in order:
+    //
+    //  1. The directory containing the current executable (`std::env::current_exe`).
+    //     This is where a release installer or the user dropping the
+    //     Microsoft.Windows.Console.ConPTY NuGet payload would place the DLL.
+    //  2. The current working directory (`Path::new("conpty.dll")` — matches
+    //     wezterm's existing behavior for back-compat).
+    //  3. Fall back to kernel32's built-in ConPTY (the no-sideload path —
+    //     known-buggy for VT input passthrough on the wsl→linux chain).
+    if let Some(exe_dir) = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|d| d.join("conpty.dll")))
+    {
+        if let Ok(sideloaded) = ConPtyFuncs::open(&exe_dir) {
+            return sideloaded;
+        }
+    }
     if let Ok(sideloaded) = ConPtyFuncs::open(Path::new("conpty.dll")) {
         sideloaded
     } else {
@@ -77,16 +95,31 @@ impl Drop for PsuedoCon {
 }
 
 impl PsuedoCon {
-    pub fn new(size: COORD, input: FileDescriptor, output: FileDescriptor) -> Result<Self, Error> {
+    /// Creates a new pseudo-console attached to the given input/output
+    /// handles. Caller controls the transport: a duplex pipe may pass
+    /// the SAME raw handle for both `input` and `output` (matches WT
+    /// `ConptyConnection.cpp:406-407`'s `pipe.client.get(), pipe.client.get()`);
+    /// a split pipe arrangement passes two distinct handles.
+    ///
+    /// Takes raw handles (NOT `FileDescriptor`/`OwnedHandle`) so the
+    /// caller owns the lifetime: ConPTY duplicates these handles into
+    /// the host process internally via `CreatePseudoConsole`, so the
+    /// parent-side handles are consumed-but-not-owned by `PsuedoCon`.
+    pub fn new(size: COORD, input: RawHandle, output: RawHandle) -> Result<Self, Error> {
         let mut con: HPCON = INVALID_HANDLE_VALUE;
+        // Pass PSEUDOCONSOLE_INHERIT_CURSOR only — match Microsoft Terminal's
+        // ConPTY flag set (terminal/src/cascadia/TerminalConnection/ConptyConnection.cpp:262
+        // starts with `_flags = 0` and only conditionally adds INHERIT_CURSOR
+        // + GLYPH_WIDTH_*). PSEUDOCONSOLE_RESIZE_QUIRK (0x2) and
+        // PSEUDOCONSOLE_WIN32_INPUT_MODE (0x4) are absent from Microsoft
+        // Terminal's public ConPTY headers (terminal/src/winconpty/winconpty.h
+        // declares only INHERIT_CURSOR + GLYPH_WIDTH_*).
         let result = unsafe {
             (CONPTY.CreatePseudoConsole)(
                 size,
-                input.as_raw_handle() as _,
-                output.as_raw_handle() as _,
-                PSUEDOCONSOLE_INHERIT_CURSOR
-                    | PSEUDOCONSOLE_RESIZE_QUIRK
-                    | PSEUDOCONSOLE_WIN32_INPUT_MODE,
+                input as _,
+                output as _,
+                PSUEDOCONSOLE_INHERIT_CURSOR,
                 &mut con,
             )
         };

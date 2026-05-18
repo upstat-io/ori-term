@@ -1928,8 +1928,21 @@ fn daemon_osc_52_clipboard_read_round_trip() {
     client.close_pane(pane_id);
 }
 
-/// : OSC 10 (default foreground) color query round-trips and the
-/// daemon emits the `XParseColor` `rgb:RRRR/GGGG/BBBB` reply.
+/// OSC 10 (default foreground) color query round-trips through the
+/// daemon and the synchronous palette path emits the `XParseColor`
+/// `rgb:RRRR/GGGG/BBBB` reply directly from the IO thread's `PtyWrite`
+/// effect. The daemon no longer forwards OSC 10/11/12 through the
+/// async host-request path; the reply is written back to the same PTY
+/// directly so it arrives in time for child handshake-polling windows.
+/// This test verifies the reply byte stream reaches the client through
+/// the snapshot path (the `cat` process echoes the reply bytes back;
+/// the client sees them via snapshot updates).
+///
+/// OSC 52 still uses the async host-request path because clipboard
+/// state lives in the client, not the terminal palette; see
+/// `daemon_osc_52_clipboard_round_trip` for that coverage.
+///
+/// See: bug-tracker/plans/completed/BUG-06-073/
 #[test]
 fn daemon_osc_10_color_query_round_trip() {
     let daemon = TestDaemon::start();
@@ -1938,38 +1951,13 @@ fn daemon_osc_10_color_query_round_trip() {
 
     client.send_input(pane_id, b"printf '\\033]10;?\\033\\\\' && cat\n");
 
-    let notif = wait_for_notification(
-        &mut client,
-        |n| matches!(n, MuxNotification::HostColorQuery { .. }),
-        Duration::from_secs(30),
-    )
-    .expect("daemon must forward OSC 10 as HostColorQuery");
-
-    let token = match notif {
-        MuxNotification::HostColorQuery { reply, .. } => reply,
-        _ => unreachable!(),
-    };
-    client
-        .fulfill_host_request(
-            pane_id,
-            oriterm_mux::HostReply::ColorQuery {
-                token,
-                color: oriterm_core::color::Rgb {
-                    r: 0xab,
-                    g: 0xcd,
-                    b: 0xef,
-                },
-            },
-        )
-        .expect("fulfill_host_request must succeed");
-
-    // Reply uses doubled-nibble: 0xab → "abab", 0xcd → "cdcd", 0xef → "efef".
-    wait_for_text_in_snapshot(
-        &mut client,
-        pane_id,
-        "abab/cdcd/efef",
-        Duration::from_secs(30),
-    );
+    // Wait for the synchronous OSC 10 reply pattern in the snapshot.
+    // The reply format is `rgb:RRRR/GGGG/BBBB` per XParseColor; the
+    // assertion uses the bare `rgb:` prefix because the exact palette
+    // values depend on the daemon's default palette config (which is
+    // not test-injectable). `cat` echoes the bytes back through the
+    // PTY so the client sees them in the snapshot.
+    wait_for_text_in_snapshot(&mut client, pane_id, "rgb:", Duration::from_secs(30));
 
     client.send_input(pane_id, &[0x03]);
     client.close_pane(pane_id);
@@ -2290,6 +2278,409 @@ fn signal_child_after_is_write_stalled_kills_writer_via_daemon() {
         saw_fg_gone,
         "signal_child after detected stall must kill sleep and let bash print FG_GONE"
     );
+
+    client.close_pane(pane_id);
+}
+
+/// Returns true iff `notcurses-info` is installed and runnable.
+fn notcurses_info_available() -> bool {
+    std::process::Command::new("notcurses-info")
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .is_ok_and(|s| s.success())
+}
+
+/// Replication test for the user-observable `notcurses-info` wordmark
+/// gap, with GUI-equivalent post-spawn config applied. Reproduces the
+/// failure deterministically on Linux so the cure surface is visible
+/// in test output BEFORE any code change.
+///
+/// **What this mirrors from the user's setup**:
+/// - daemon + MuxClient over Unix socket (`TestDaemon`)
+/// - real notcurses-info Linux binary as the WSL-side child
+/// - GUI's post-spawn config (`set_image_config` + `set_cell_dimensions`)
+///   applied AFTER spawn — matching `oriterm/src/app/post_spawn.rs`
+/// - 105 cols × 37 rows grid (matches user's window log line 20)
+/// - cell dims realistic for Cascadia Mono 12pt @ 96 DPI (8 × 16)
+///
+/// **What this asserts (every user-visible symptom)**:
+/// - Daemon log emits a `kitty:` action line per
+///   `oriterm_core/src/term/handler/image/kitty/mod.rs:94` — meaning
+///   notcurses-info actually emitted image-protocol bytes.
+/// - Term image_cache has ≥1 placement after notcurses-info runs.
+/// - Final pane snapshot reaches the client with a placement + the
+///   client cache holds non-empty pixel data for it (so the wordmark
+///   would render at the GPU).
+///
+/// If ANY assertion fails, the user-visible symptom has a deterministic
+/// reproducer. The test is the cure target; the fix lands when every
+/// assertion passes.
+///
+/// See: bug-tracker/plans/BUG-06-073/
+#[test]
+fn notcurses_info_user_repro_e2e_full_stack() {
+    if !notcurses_info_available() {
+        eprintln!("SKIP: notcurses-info not installed");
+        return;
+    }
+
+    let daemon = TestDaemon::start();
+    let mut client = daemon.connect_client();
+
+    // The GUI applies post-spawn config after spawn_pane returns. For
+    // the daemon-side Term to behave like production, we have to do
+    // the same. spawn_test_pane_ready() spawns the pane but does NOT
+    // run apply_post_spawn_setup (that lives in oriterm/src/app/).
+    // Apply it inline here.
+    let pane_id = spawn_test_pane(&mut client);
+
+    use oriterm_mux::backend::{ImageConfig, MuxBackend};
+    // User-equivalent image config: enabled, ample CPU cache (typical
+    // production defaults), animation enabled. Matches Config::default
+    // in oriterm/src/config/terminal.rs for the `image_config()` field.
+    client.set_image_config(
+        pane_id,
+        ImageConfig {
+            enabled: true,
+            memory_limit: 256 * 1024 * 1024,
+            max_single: 64 * 1024 * 1024,
+            animation_enabled: true,
+        },
+    );
+    // User log line 20: "1280x960 px, 105 cols × 37 rows" with
+    // Cascadia Mono 12pt. cell_w = 1280 / 105 ≈ 12 px; cell_h =
+    // (960 - 36 chrome) / 37 ≈ 25 px. Apply matching dims so the
+    // CSI 14t reply our handler emits matches the user's grid.
+    client.set_cell_dimensions(pane_id, 12, 25);
+    // Resize the daemon-side grid to match the user's setup so the
+    // CSI 14t reply uses cols=105 × rows=37, matching what notcurses
+    // sees on the user's machine.
+    client.resize_pane_grid(pane_id, 37, 105);
+
+    // Now wait for shell readiness — the post-spawn config above
+    // applies BEFORE the user types `notcurses-info`.
+    wait_for_shell_ready(&mut client, pane_id);
+
+    client.poll_events();
+    let mut notifs = Vec::new();
+    client.drain_notifications(&mut notifs);
+
+    // Drive notcurses-info + sentinel echo. The sentinel stays in the
+    // grid AFTER notcurses-info's output scrolls past, so wait_for_text
+    // has a stable anchor.
+    client.send_input(pane_id, b"notcurses-info; echo USER_REPRO_DONE\n");
+    let _ = wait_for_text_in_snapshot(
+        &mut client,
+        pane_id,
+        "USER_REPRO_DONE",
+        Duration::from_secs(60),
+    );
+
+    // Drain pushed_snapshots → client image_cache for 5s so any
+    // late pushes (post-notcurses-info exit) settle.
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while Instant::now() < deadline {
+        client.poll_events();
+        notifs.clear();
+        client.drain_notifications(&mut notifs);
+        let _ = client.refresh_pane_snapshot(pane_id);
+        if notifs.is_empty() {
+            thread::sleep(Duration::from_millis(50));
+        }
+    }
+
+    // Pull a final guaranteed-fresh snapshot.
+    let snap = client
+        .sync_pane_snapshot(pane_id)
+        .expect("sync_pane_snapshot must return a snapshot after notcurses-info ran");
+
+    eprintln!(
+        "user-repro snapshot: images.len={} image_data.len={} cols={} rows={}",
+        snap.images.len(),
+        snap.image_data.len(),
+        snap.cols,
+        snap.cells.len(),
+    );
+
+    assert!(
+        !snap.images.is_empty(),
+        "USER REPRO: no placement reached the client — notcurses-info \
+         did not transmit any image-protocol bytes OR the bytes were \
+         dropped before our handler stored them. This is the user's \
+         visible-symptom #1 (wordmark BLANK)."
+    );
+
+    // Every placement's image_id must resolve to pixel data (inline
+    // or via the client's image_cache from earlier pushes).
+    for wp in &snap.images {
+        let id = oriterm_core::ImageId::from_raw(wp.image_id);
+        let inline = snap.image_data.iter().find(|d| d.id == wp.image_id);
+        let cached = client.pane_image_data(pane_id, id);
+        assert!(
+            inline.is_some() || cached.is_some(),
+            "USER REPRO: placement {} reached client but no pixel \
+             data is available (inline nor cached). Wordmark would \
+             render blank.",
+            wp.image_id
+        );
+    }
+
+    client.close_pane(pane_id);
+}
+
+/// Hypothesis-pin: if the GUI calls `set_cell_dimensions(pane_id, 0, 0)`
+/// (or never calls it at all but the daemon-side Term starts with
+/// non-default values), the CSI 14t reply our handler emits has zero
+/// pixel dims → notcurses' `notcurses_check_pixel_support()` early-
+/// returns `NCPIXEL_NONE` → `display_logo()` is skipped → wordmark
+/// blank AND zero `kitty:`/`sixel:` log lines (matches the user's
+/// observed daemon log shape).
+///
+/// This test deliberately sets cell dims to (0, 0) BEFORE spawn-ready
+/// and asserts the resulting daemon log lacks any `kitty:` handler
+/// entries — proving the bug shape when cell dims are zero. The cure
+/// surface for the user's actual bug is then: the GUI is calling
+/// `set_cell_dimensions` with zero / wrong values (or never calling it
+/// AND a different code path zeroes the Term's defaults).
+///
+/// See: bug-tracker/plans/BUG-06-073/
+#[test]
+fn notcurses_info_zero_cell_dims_disables_canpixel() {
+    if !notcurses_info_available() {
+        eprintln!("SKIP: notcurses-info not installed");
+        return;
+    }
+
+    let daemon = TestDaemon::start();
+    let mut client = daemon.connect_client();
+    let pane_id = spawn_test_pane(&mut client);
+
+    use oriterm_mux::backend::{ImageConfig, MuxBackend};
+    client.set_image_config(
+        pane_id,
+        ImageConfig {
+            enabled: true,
+            memory_limit: 256 * 1024 * 1024,
+            max_single: 64 * 1024 * 1024,
+            animation_enabled: true,
+        },
+    );
+    // Deliberate zero cell dims — the hypothesized cure surface.
+    client.set_cell_dimensions(pane_id, 0, 0);
+    client.resize_pane_grid(pane_id, 37, 105);
+    wait_for_shell_ready(&mut client, pane_id);
+
+    client.poll_events();
+    let mut notifs = Vec::new();
+    client.drain_notifications(&mut notifs);
+
+    client.send_input(pane_id, b"notcurses-info; echo ZERO_CELL_DONE\n");
+    let _ = wait_for_text_in_snapshot(
+        &mut client,
+        pane_id,
+        "ZERO_CELL_DONE",
+        Duration::from_secs(60),
+    );
+
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while Instant::now() < deadline {
+        client.poll_events();
+        notifs.clear();
+        client.drain_notifications(&mut notifs);
+        let _ = client.refresh_pane_snapshot(pane_id);
+        if notifs.is_empty() {
+            thread::sleep(Duration::from_millis(50));
+        }
+    }
+
+    let snap = client
+        .sync_pane_snapshot(pane_id)
+        .expect("sync_pane_snapshot must return a snapshot");
+
+    eprintln!(
+        "zero-cell-dims snapshot: images.len={} image_data.len={}",
+        snap.images.len(),
+        snap.image_data.len(),
+    );
+
+    // The HYPOTHESIS: with zero cell dims, notcurses-info's canpixel
+    // returns NCPIXEL_NONE → display_logo() is skipped → NO kitty
+    // graphics bytes → snap.images is empty.
+    //
+    // If this assertion PASSES (images.is_empty()), the hypothesis is
+    // confirmed: zero cell dims cause the wordmark blank.
+    //
+    // If this assertion FAILS (images.len > 0), then notcurses
+    // emitted bytes regardless of zero cell dims, and the user's
+    // symptom has a different root cause.
+    assert!(
+        snap.images.is_empty(),
+        "HYPOTHESIS REJECTED: zero cell_dimensions did NOT prevent \
+         notcurses-info from emitting image bytes. snap.images={:?}. \
+         The user's symptom must have a different root cause than \
+         zero cell dims.",
+        snap.images.iter().map(|p| p.image_id).collect::<Vec<_>>()
+    );
+
+    client.close_pane(pane_id);
+}
+
+/// End-to-end: real daemon + MuxClient + shell + notcurses-info → assert
+/// image data flows through the full daemon→client pipeline.
+///
+/// **The closest Linux analog to the user's repro for the
+/// notcurses-info wordmark gap.** Spawns the actual `MuxServer` in a
+/// background thread, connects a `MuxClient` over a Unix domain
+/// socket, opens a pane running the user's shell, types
+/// `notcurses-info\n`, and waits for the program's text output to
+/// land in the pushed snapshot stream. Then queries the client's
+/// image cache directly (server-pushed `WireImageData` was drained
+/// there at `cache_snapshot` time) to assert image bytes survived the
+/// IPC round-trip.
+///
+/// Asserts: ≥1 placement referenced by the latest snapshot AND the
+/// client's image cache holds non-empty pixel data for that placement
+/// (width / height / data.len all > 0 and consistent).
+///
+/// See: bug-tracker/plans/BUG-06-073/
+#[test]
+fn notcurses_info_daemon_e2e_image_data_reaches_client() {
+    if !notcurses_info_available() {
+        eprintln!("SKIP: notcurses-info not installed");
+        return;
+    }
+
+    let daemon = TestDaemon::start();
+    let mut client = daemon.connect_client();
+    let pane_id = spawn_test_pane_ready(&mut client);
+
+    // Wait for any post-init dirty / draining to settle before sending
+    // the command — keeps the wait_for_text loop from racing on a fence
+    // snapshot.
+    client.poll_events();
+    let mut notifs = Vec::new();
+    client.drain_notifications(&mut notifs);
+
+    // Drive notcurses-info inside the shell, then print a sentinel so
+    // the wait_for_text loop has something STABLE in the grid even after
+    // notcurses-info's longer-than-viewport output scrolls past. The
+    // sentinel lands on the new shell prompt line and stays visible.
+    client.send_input(pane_id, b"notcurses-info; echo NCI_E2E_DONE\n");
+    let _banner_snap = wait_for_text_in_snapshot(
+        &mut client,
+        pane_id,
+        "NCI_E2E_DONE",
+        Duration::from_secs(60),
+    );
+
+    // Drain pending push events so cache_snapshot runs to completion
+    // and any post-banner snapshots that carry the image_data
+    // (transmitted AFTER the text banner per notcurses-info source)
+    // are folded into client.image_cache. refresh_pane_snapshot is
+    // the SSOT drain — without it, accumulated image_data sits in
+    // pushed_snapshots forever (the reader's NotifyPaneSnapshot arm
+    // only WRITES the map, the drain happens at refresh time).
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        client.poll_events();
+        notifs.clear();
+        client.drain_notifications(&mut notifs);
+        // Drain pushed_snapshots → image_cache every iteration.
+        let _ = client.refresh_pane_snapshot(pane_id);
+        let pushed_anything = !notifs.is_empty();
+        if !pushed_anything {
+            thread::sleep(Duration::from_millis(50));
+        }
+        if Instant::now() >= deadline {
+            break;
+        }
+    }
+
+    // Fetch the LATEST snapshot via sync_pane_snapshot — this returns a
+    // clone BEFORE cache_snapshot strips image_data, so the snapshot
+    // here carries inline image_data exactly as the wire would carry
+    // it for a fresh client.
+    let snap = client
+        .sync_pane_snapshot(pane_id)
+        .expect("sync_pane_snapshot must return a snapshot after notcurses-info ran");
+
+    eprintln!(
+        "e2e snapshot: images.len={} image_data.len={} images_dirty={}",
+        snap.images.len(),
+        snap.image_data.len(),
+        snap.images_dirty,
+    );
+    for (i, wp) in snap.images.iter().enumerate() {
+        eprintln!(
+            "  placement[{i}]: id={} viewport=({},{}) display={}x{} z={}",
+            wp.image_id,
+            wp.viewport_x,
+            wp.viewport_y,
+            wp.display_width,
+            wp.display_height,
+            wp.z_index
+        );
+    }
+    for (i, wid) in snap.image_data.iter().enumerate() {
+        eprintln!(
+            "  image_data[{i}]: id={} {}x{} px, data.len={}B",
+            wid.id,
+            wid.width,
+            wid.height,
+            wid.data.len()
+        );
+    }
+
+    assert!(
+        !snap.images.is_empty(),
+        "daemon→client e2e: no placement reached the client after notcurses-info — \
+         the kitty graphics bytes did not flow through one of: handler, snapshot, \
+         project_per_client_pure, wire codec, or client cache_snapshot path"
+    );
+
+    // Note: snap.image_data MAY be empty here because the daemon's
+    // project_per_client_pure filters out pixel data for image IDs the
+    // client has already received (sent_images marker). The earlier push
+    // delivered the image_data and it now lives in client.image_cache.
+    // Every placement's image_id must resolve to a non-empty entry —
+    // either inline in this snapshot OR via client.pane_image_data().
+    use oriterm_mux::backend::MuxBackend;
+    for wp in &snap.images {
+        let id = oriterm_core::ImageId::from_raw(wp.image_id);
+        // Try inline first.
+        if let Some(wid) = snap.image_data.iter().find(|d| d.id == wp.image_id) {
+            assert!(
+                wid.width > 0 && wid.height > 0 && !wid.data.is_empty(),
+                "inline image_data for placement {} has zero/empty bytes \
+                 ({}x{}, data.len={})",
+                wp.image_id,
+                wid.width,
+                wid.height,
+                wid.data.len()
+            );
+            continue;
+        }
+        // Fall through to client's image_cache (where pushed image_data
+        // gets folded on prior snapshots).
+        let arc = client.pane_image_data(pane_id, id).unwrap_or_else(|| {
+            panic!(
+                "placement {} has no inline image_data AND no entry in the \
+                 client's image_cache — the wordmark would render BLANK at the GPU",
+                wp.image_id
+            )
+        });
+        assert!(
+            arc.width > 0 && arc.height > 0 && !arc.data.is_empty(),
+            "client.image_cache entry for placement {} has zero/empty bytes \
+             ({}x{}, data.len={})",
+            wp.image_id,
+            arc.width,
+            arc.height,
+            arc.data.len()
+        );
+    }
 
     client.close_pane(pane_id);
 }

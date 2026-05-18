@@ -17,8 +17,8 @@ use crate::mux_event::{MuxEvent, MuxNotification};
 use crate::registry::PaneEntry;
 
 use crate::backend::HostReply;
-use crate::protocol::messages::theme_to_wire;
-use crate::protocol::{HostReplyPayload, MuxPdu, WireSelection};
+use crate::protocol::theme_to_wire;
+use crate::protocol::{MuxPdu, WireSelection};
 use crate::{DomainId, PaneId};
 
 use super::MuxClient;
@@ -32,21 +32,7 @@ impl MuxBackend for MuxClient {
     }
 
     fn poll_events(&mut self) {
-        if let Some(transport) = &self.transport {
-            transport.clear_wakeup_pending();
-            transport.poll_notifications(&mut self.notifications);
-        }
-
-        // Scan buffered notifications ONLY to mark panes dirty for rendering.
-        // Bell-indicator state lives in `self.bell_panes` and is mutated by
-        // the App's MuxNotification::PaneBell arm (via `set_bell`) AFTER its
-        // focus-gate decision — `poll_events` does NOT make focus decisions
-        // and must NOT mutate bell state. App owns focus-decided bell state.
-        for notif in &self.notifications {
-            if let MuxNotification::PaneOutput(pane_id) = notif {
-                self.dirty_panes.insert(*pane_id);
-            }
-        }
+        self.poll_events_impl();
     }
 
     fn drain_notifications(&mut self, out: &mut Vec<MuxNotification>) {
@@ -64,43 +50,11 @@ impl MuxBackend for MuxClient {
     }
 
     fn spawn_pane(&mut self, config: &SpawnConfig, theme: Theme) -> io::Result<PaneId> {
-        let pdu = MuxPdu::SpawnPane {
-            shell: config.shell.clone(),
-            cwd: config.cwd.as_ref().map(|p| p.display().to_string()),
-            theme: theme_to_wire(theme).map(str::to_owned),
-        };
-
-        match self.rpc(pdu)? {
-            MuxPdu::SpawnPaneResponse { pane_id } => {
-                // Subscribe to the new pane and cache its initial snapshot.
-                if let Err(e) = self.subscribe(pane_id) {
-                    self.close_pane(pane_id);
-                    return Err(e);
-                }
-                log::info!("daemon spawned pane {pane_id}");
-                Ok(pane_id)
-            }
-            other => Err(io::Error::other(format!(
-                "spawn_pane: unexpected response: {other:?}"
-            ))),
-        }
+        self.spawn_pane_impl(config, theme)
     }
 
     fn close_pane(&mut self, pane_id: PaneId) -> ClosePaneResult {
-        match self.rpc(MuxPdu::ClosePane { pane_id }) {
-            Ok(MuxPdu::PaneClosedAck) => {
-                self.remove_snapshot(pane_id);
-                ClosePaneResult::PaneRemoved
-            }
-            Ok(other) => {
-                log::error!("close_pane: unexpected response: {other:?}");
-                ClosePaneResult::NotFound
-            }
-            Err(e) => {
-                log::error!("close_pane: RPC failed: {e}");
-                ClosePaneResult::NotFound
-            }
-        }
+        self.close_pane_impl(pane_id)
     }
 
     fn resize_pane_grid(&mut self, pane_id: PaneId, rows: u16, cols: u16) {
@@ -453,38 +407,8 @@ impl MuxBackend for MuxClient {
         }
     }
 
-    fn fulfill_host_request(&mut self, _pane_id: PaneId, reply: HostReply) -> io::Result<()> {
-        // : package the reply into a `MuxPdu::ReplyHostRequest` and
-        // fire it back to the daemon. The pending entry — created by the
-        // reader thread when it received the originating notification — is
-        // looked up by the token's `slot_id` to recover the daemon-allocated
-        // `request_id` that must be echoed back.
-        let transport = self.transport.as_mut().ok_or_else(|| {
-            io::Error::new(io::ErrorKind::NotConnected, "not connected to daemon")
-        })?;
-        let (slot_id, payload) = match reply {
-            HostReply::ClipboardLoad { token, text } => {
-                (token.slot_id(), HostReplyPayload::ClipboardLoad { text })
-            }
-            HostReply::ColorQuery { token, color } => (
-                token.slot_id(),
-                HostReplyPayload::ColorQuery {
-                    rgb: [color.r, color.g, color.b],
-                },
-            ),
-        };
-        let Some(pending) = transport.take_pending_reply(slot_id) else {
-            log::warn!(
-                "fulfill_host_request: no pending reply for slot_id {slot_id:?} \
-                 (token already replied or never registered)"
-            );
-            return Ok(());
-        };
-        let request_id = pending.request_id();
-        transport.try_fire_and_forget(MuxPdu::ReplyHostRequest {
-            request_id,
-            payload,
-        })
+    fn fulfill_host_request(&mut self, pane_id: PaneId, reply: HostReply) -> io::Result<()> {
+        self.fulfill_host_request_impl(pane_id, reply)
     }
 
     // -- Snapshot access --

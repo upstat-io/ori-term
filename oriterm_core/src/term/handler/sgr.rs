@@ -6,6 +6,17 @@
 use vte::ansi::{Attr, Color, NamedColor};
 
 use crate::cell::{Cell, CellFlags};
+use crate::effect::sink::EffectSink;
+use crate::term::Term;
+
+impl<S: EffectSink> Term<S> {
+    /// `SGR` — apply a graphic-rendition attribute to the cursor's template cell.
+    #[inline]
+    pub(super) fn terminal_attribute_impl(&mut self, attr: &Attr) {
+        let template = &mut self.grid_mut().cursor_mut().template;
+        apply(template, attr);
+    }
+}
 
 /// Apply an SGR attribute to the cursor template cell.
 ///

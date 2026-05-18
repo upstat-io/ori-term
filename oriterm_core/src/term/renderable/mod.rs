@@ -134,6 +134,27 @@ pub struct RenderableImageData {
     pub height: u32,
 }
 
+/// A grid cell carrying a resolved kitty unicode-placeholder reference.
+///
+/// Produced by [`Term::renderable_content_into`](crate::term::Term::renderable_content_into) when it walks the visible cells
+/// looking for `U+10EEEE` glyphs and decodes their diacritic encoding.
+/// The GPU emit path consumes this list directly — no second grid scan.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RenderablePlaceholderCell {
+    /// Visible viewport line (0 = top).
+    pub line: usize,
+    /// Grid column.
+    pub column: Column,
+    /// Image identifier the cell resolves to.
+    pub image_id: ImageId,
+    /// Image-row index (which slice of the image this cell renders).
+    pub image_row: u32,
+    /// Image-column index (which slice of the image this cell renders).
+    pub image_col: u32,
+    /// Placement identifier (0 when the cell does not carry one).
+    pub placement_id: u32,
+}
+
 /// Complete renderer snapshot extracted from `Term`.
 ///
 /// Contains everything the GPU renderer needs for one frame. Extracted
@@ -172,6 +193,13 @@ pub struct RenderableContent {
     /// Set from `ImageCache::take_dirty()`. The GPU layer uses this to
     /// know when to re-upload textures.
     pub images_dirty: bool,
+    /// Cells carrying a kitty unicode-placeholder (`U=1`) reference.
+    ///
+    /// Populated during the existing single-pass cell walk in
+    /// `renderable_content_into` — `U+10EEEE` cells with valid encoding +
+    /// a still-cached image get one entry each. The GPU emit path reads
+    /// this directly and never walks `cells` for placeholders.
+    pub placeholder_cells: Vec<RenderablePlaceholderCell>,
     /// Grid column count at snapshot time.
     ///
     /// Makes the snapshot self-contained — consumers can determine grid
@@ -226,6 +254,7 @@ impl Default for RenderableContent {
             images: Vec::new(),
             image_data: Vec::new(),
             images_dirty: false,
+            placeholder_cells: Vec::new(),
             cols: 0,
             lines: 0,
             scrollback_len: 0,
@@ -252,6 +281,7 @@ impl RenderableContent {
         self.damage.clear();
         self.images.clear();
         self.image_data.clear();
+        self.placeholder_cells.clear();
         self.display_offset = 0;
         self.stable_row_base = 0;
         self.mode = TermMode::empty();
@@ -284,6 +314,7 @@ impl RenderableContent {
         maybe_shrink_vec(&mut self.damage);
         maybe_shrink_vec(&mut self.images);
         maybe_shrink_vec(&mut self.image_data);
+        maybe_shrink_vec(&mut self.placeholder_cells);
         maybe_shrink_vec(&mut self.search_matches);
     }
 }

@@ -871,3 +871,223 @@ fn daemon_pane_snapshot_resolves_placement_via_image_lookup() {
         &cached_pixels
     ));
 }
+
+/// End-to-end pin: real `notcurses-info` bytes produced by `Term` flow
+/// through the daemon→client wire shape into `extract_frame_from_snapshot`
+/// with non-empty `FrameInput.content.images` AND `image_data`.
+///
+/// **Why this is the next-layer-down test for the wordmark gap.** The
+/// sibling integration tests
+/// (`oriterm_core/tests/notcurses_info_pty.rs` and
+/// `oriterm_mux/src/server/snapshot/tests.rs::notcurses_info_image_data_survives_daemon_fold`)
+/// confirm the daemon-side path retains image bytes through
+/// `renderable_content_into` + `fold_image_data_store`. This test
+/// extends the same real-notcurses-bytes trace through the *client-side*
+/// extract path that consumes `PaneSnapshot.image_data` (the wire
+/// encoding the daemon ships per-client).
+///
+/// If this test fails on Linux, the client-side `populate_images_from_wire`
+/// drops real notcurses image data even though it accepts synthetic data
+/// — a regression the existing `wire_image_data`-based tests cannot
+/// catch. If it passes, the cure surface is downstream of the client
+/// extract (GPU pipeline, texture upload, or render).
+///
+/// See: bug-tracker/plans/BUG-06-073/
+#[cfg(unix)]
+#[test]
+fn notcurses_info_real_bytes_roundtrip_to_client_extract() {
+    use oriterm_core::RenderableContent;
+    use oriterm_mux::protocol::snapshot::{WireImageData, WirePlacement};
+    use oriterm_test_support::{PtySession, notcurses_info_available, tool_available};
+    use portable_pty::CommandBuilder;
+
+    if !notcurses_info_available() {
+        eprintln!("SKIP: notcurses-info not installed");
+        return;
+    }
+    if !tool_available("infocmp", "-V") {
+        eprintln!("SKIP: ncurses tooling (infocmp) not available");
+        return;
+    }
+
+    // Run real notcurses-info under PtySession and let our handler
+    // build up image_cache state.
+    let mut cmd = CommandBuilder::new("notcurses-info");
+    cmd.env("TERM", "xterm-256color");
+    let mut session = PtySession::spawn(cmd, 80, 24);
+    let status = session.wait_for_child_exit(5_000);
+    assert!(status.success(), "notcurses-info exited: {status:?}");
+
+    // Extract the IO-thread snapshot (what the daemon's
+    // `pane.swap_io_snapshot` would deliver to the main thread).
+    let mut render_buf = RenderableContent::default();
+    session.term().renderable_content_into(&mut render_buf);
+    assert!(
+        !render_buf.images.is_empty(),
+        "real notcurses-info should produce >=1 placement"
+    );
+    assert!(
+        !render_buf.image_data.is_empty(),
+        "real notcurses-info should produce >=1 image_data entry"
+    );
+
+    // Build the WIRE PaneSnapshot the daemon would ship to the client.
+    // Mirrors `oriterm_mux::server::snapshot::fill_snapshot_from_renderable`
+    // for placements + `oriterm_mux::server::push::project_per_client_pure`
+    // for image_data on a fresh client (no `sent_images` filter — every
+    // referenced ID is inline).
+    let mut snap = test_snapshot();
+    snap.images.clear();
+    snap.image_data.clear();
+    snap.images_dirty = render_buf.images_dirty;
+    snap.cols = u16::try_from(render_buf.cols).expect("80-col grid fits in u16");
+    for p in &render_buf.images {
+        snap.images.push(WirePlacement {
+            image_id: p.image_id.as_u32(),
+            viewport_x: p.viewport_x,
+            viewport_y: p.viewport_y,
+            display_width: p.display_width,
+            display_height: p.display_height,
+            source_x: p.source_x,
+            source_y: p.source_y,
+            source_w: p.source_w,
+            source_h: p.source_h,
+            z_index: p.z_index,
+            opacity: p.opacity,
+        });
+    }
+    for img in &render_buf.image_data {
+        snap.image_data.push(WireImageData {
+            id: img.id.as_u32(),
+            data: (*img.data).clone(),
+            width: img.width,
+            height: img.height,
+        });
+    }
+
+    // Wire-encode + wire-decode the daemon snapshot before client extract.
+    // This forces the real notcurses bytes through the same MuxPdu codec
+    // the daemon uses for IPC: any encoding bug, frame-size mismatch, or
+    // serialization corruption that's content-dependent (not just
+    // synthetic-data covered by `roundtrip_pane_snapshot_with_image_payload`)
+    // would surface here as a decode failure or image-data mutation.
+    use oriterm_mux::{MuxPdu, ProtocolCodec};
+    let mut buf: Vec<u8> = Vec::new();
+    ProtocolCodec::encode_frame(
+        &mut buf,
+        7,
+        &MuxPdu::NotifyPaneSnapshot {
+            pane_id: oriterm_mux::PaneId::from_raw(1),
+            snapshot: snap,
+        },
+    )
+    .expect("MuxPdu::NotifyPaneSnapshot encodes for real notcurses bytes");
+    let mut reader: &[u8] = &buf;
+    let decoded = ProtocolCodec::new()
+        .decode_frame(&mut reader)
+        .expect("MuxPdu::NotifyPaneSnapshot decodes for real notcurses bytes");
+    let MuxPdu::NotifyPaneSnapshot {
+        snapshot: decoded_snap,
+        ..
+    } = decoded.pdu
+    else {
+        panic!("decoded PDU is not NotifyPaneSnapshot");
+    };
+    assert_eq!(
+        decoded_snap.images.len(),
+        render_buf.images.len(),
+        "wire encode/decode dropped placements (real notcurses bytes)"
+    );
+    assert_eq!(
+        decoded_snap.image_data.len(),
+        render_buf.image_data.len(),
+        "wire encode/decode dropped image_data entries (real notcurses bytes)"
+    );
+    for (orig, decoded) in render_buf
+        .image_data
+        .iter()
+        .zip(decoded_snap.image_data.iter())
+    {
+        assert_eq!(orig.width, decoded.width, "wire codec mutated width");
+        assert_eq!(orig.height, decoded.height, "wire codec mutated height");
+        assert_eq!(
+            (*orig.data).as_slice(),
+            decoded.data.as_slice(),
+            "wire codec mutated pixel bytes for real notcurses image"
+        );
+    }
+
+    // Run the CLIENT extract — same code path the GUI uses to convert
+    // the daemon's wire snapshot into a FrameInput it feeds to the GPU.
+    let viewport = ViewportSize::new(640, 384);
+    let cell = test_cell_metrics();
+    let frame = extract_frame_from_snapshot(&decoded_snap, viewport, cell, &|_| None);
+
+    eprintln!(
+        "client extract: images.len={} image_data.len={} images_dirty={}",
+        frame.content.images.len(),
+        frame.content.image_data.len(),
+        frame.content.images_dirty,
+    );
+    for img in &frame.content.image_data {
+        eprintln!(
+            "  client image_data: id={:?} {}x{} px, data.len={}B",
+            img.id,
+            img.width,
+            img.height,
+            img.data.len()
+        );
+    }
+
+    assert_eq!(
+        frame.content.images.len(),
+        render_buf.images.len(),
+        "client extract dropped placements: render_buf had {}, frame has {}",
+        render_buf.images.len(),
+        frame.content.images.len(),
+    );
+    assert_eq!(
+        frame.content.image_data.len(),
+        render_buf.image_data.len(),
+        "client extract dropped image_data entries: render_buf had {}, frame has {}",
+        render_buf.image_data.len(),
+        frame.content.image_data.len(),
+    );
+
+    let referenced_ids: std::collections::HashSet<_> =
+        frame.content.images.iter().map(|p| p.image_id).collect();
+    let provided_ids: std::collections::HashSet<_> =
+        frame.content.image_data.iter().map(|d| d.id).collect();
+    let missing: Vec<_> = referenced_ids.difference(&provided_ids).collect();
+    assert!(
+        missing.is_empty(),
+        "client extract: placement(s) reference IDs with no image_data - \
+         those placements would render BLANK at the GPU: \
+         referenced={referenced_ids:?} provided={provided_ids:?} missing={missing:?}"
+    );
+
+    for (i, img) in frame.content.image_data.iter().enumerate() {
+        assert!(
+            img.width > 0 && img.height > 0,
+            "client image_data[{i}] has zero dims {}x{}",
+            img.width,
+            img.height
+        );
+        assert!(
+            !img.data.is_empty(),
+            "client image_data[{i}] has empty pixel buffer (dims {}x{}) - \
+             wire decoding dropped the bytes",
+            img.width,
+            img.height
+        );
+        let expected_min_bytes = img.width as usize * img.height as usize;
+        assert!(
+            img.data.len() >= expected_min_bytes,
+            "client image_data[{i}] has {}B but {}x{} needs >= {}B",
+            img.data.len(),
+            img.width,
+            img.height,
+            expected_min_bytes
+        );
+    }
+}

@@ -8,6 +8,7 @@
 //! via §13.2 Option A). Strengthens `KG-RESPONSE-EINVAL` by pinning the
 //! base64-decode arm that was uncited by §13.1.
 
+use oriterm_core::effect::{Effect, PtyEffect, PtyWriteKind};
 use oriterm_test_support::spec_chain::SpecHarness;
 
 use super::fixtures::{
@@ -637,5 +638,68 @@ fn kitty_chunked_category_matrix_completeness() {
          size-limit, malformed-base64, chunked-q-inheritance, \
          chunked-U-inheritance) — each MUST fire its canonical \
          invariant. Drop any category's tests and this count falls short.",
+    );
+}
+
+// §13.5 EINVAL-flood coalescing — per-upload state machine
+// =============================================================================
+
+/// Catalog row: `KG-TRANSMIT-CHUNKED-MALFORMED-BASE64` (EINVAL flood pin).
+///
+/// When a chunked upload sequence (`m=1...m=0`) contains a malformed chunk,
+/// the EINVAL reply MUST fire ONCE per failed upload — not once per chunk.
+/// Pre-§13.5 the malformed-base64 reply path at `handle_kitty_graphics` fires
+/// the reply on parse-error before any state-machine checks, so a flood of
+/// malformed chunks for the same upload would produce one EINVAL per chunk
+/// (per-chunk amplification). The fix tracks per-upload failure state on
+/// `LoadingImage` so subsequent malformed chunks of an already-failed upload
+/// are dropped silently.
+///
+/// This test feeds 5 chunked transmits where chunk 2 is malformed and
+/// asserts `count_replies_exact(&h, EINVAL) == 1` (per-upload coalesce),
+/// not 4 (per-chunk amplification).
+#[test]
+fn kitty_chunked_malformed_base64_emits_exactly_one_einval_reply_per_failed_upload() {
+    let mut h = SpecHarness::new();
+
+    // Chunk 1: valid base64 first-chunk control keys (i=200).
+    let encoded = b64(&rgba_4x4_red());
+    let (first, _rest) = encoded.split_at(40);
+    h.feed(&kitty_apc(b"a=T,i=200,f=32,s=4,v=4,m=1", first));
+
+    // Chunk 2: MALFORMED base64 mid-upload. EINVAL fires for this chunk.
+    h.feed(&kitty_apc(b"a=T,i=200,m=1", "not@valid@base64"));
+
+    // Chunks 3-5: malformed base64 continuations. Pre-§13.5 each chunk
+    // emits its own EINVAL because parse-error reply fires before
+    // upload-state coalesce.
+    h.feed(&kitty_apc(b"a=T,i=200,m=1", "@@@@"));
+    h.feed(&kitty_apc(b"a=T,i=200,m=1", "###"));
+    h.feed(&kitty_apc(b"a=T,i=200,m=0", "!!!"));
+
+    let einval = b"EINVAL: base64 decode failed";
+    let count = h
+        .outcome()
+        .effects_emitted
+        .iter()
+        .filter(|e| {
+            if let Effect::Pty(PtyEffect::Write {
+                bytes,
+                kind: PtyWriteKind::ImageProtocolReply,
+            }) = e
+            {
+                bytes.windows(einval.len()).any(|w| w == einval)
+            } else {
+                false
+            }
+        })
+        .count();
+
+    assert_eq!(
+        count,
+        1,
+        "chunked malformed-base64 MUST emit exactly ONE EINVAL reply per \
+         failed upload — got {count}. transcript: {:?}",
+        String::from_utf8_lossy(&reply_bytes(&h)),
     );
 }

@@ -90,16 +90,23 @@ fn osc_color_query() {
     let Some(outcome) = run_scenario("osc_color_query") else {
         return;
     };
-    let requests: Vec<_> = outcome
+    // Per the sync OSC color reply cure, color queries emit
+    // PtyWrite events with the reply bytes directly (no ColorRequest
+    // coordinator roundtrip). Verify the OSC numbers are present in
+    // the reply bytes in the queried order.
+    let osc_reply_numbers: Vec<&str> = outcome
         .events
         .iter()
         .filter_map(|e| match e {
-            RecordedEvent::ColorRequest(idx) => Some(*idx),
+            RecordedEvent::PtyWrite(s) => s
+                .strip_prefix("\x1b]")
+                .and_then(|tail| tail.split(';').next()),
             _ => None,
         })
         .collect();
-    // OSC 4;1;? → palette index 1 (red)
-    // OSC 10;? → NamedColor::Foreground = 256
-    // OSC 11;? → NamedColor::Background = 257
-    assert_eq!(requests, &[1, 256, 257], "expected color query indices");
+    assert_eq!(
+        osc_reply_numbers,
+        &["4", "10", "11"],
+        "expected OSC color reply numbers in query order"
+    );
 }

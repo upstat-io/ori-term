@@ -94,15 +94,38 @@ impl PtySession {
     /// `PtyWrite` and OSC responses back to the PTY. Shared core of
     /// [`Self::drain`] and [`Self::drain_blocking`].
     fn feed_and_flush(&mut self, data: &[u8]) -> usize {
+        self.captured_input.extend_from_slice(data);
         self.proc.advance(&mut self.term, data);
         for resp in self.term.effect_sink().take_responses() {
             // Best-effort: writer errors close the test session naturally
             // via Drop, so swallowing here is correct for test setup.
             let _ = self.writer.write_all(resp.as_bytes());
+            self.captured_replies.extend_from_slice(resp.as_bytes());
         }
         self.write_osc_responses_back();
         let _ = self.writer.flush();
         data.len()
+    }
+
+    /// Borrow every byte the child has written to the PTY since spawn.
+    ///
+    /// Captures the raw byte stream as observed by `feed_and_flush`,
+    /// before VTE processing. Useful for serializing real-process
+    /// captures into `.cap` fixtures replayable through `SpecHarness`
+    /// without spawning the child again.
+    pub fn input_bytes(&self) -> &[u8] {
+        &self.captured_input
+    }
+
+    /// Borrow every reply byte `ori_term` has written back to the PTY
+    /// in response to the captured input.
+    ///
+    /// Mirrors the `effect_sink().take_responses()` path that
+    /// `feed_and_flush` calls before each PTY write, so the byte
+    /// order matches the order `ori_term` emitted bytes during the
+    /// session.
+    pub fn reply_bytes(&self) -> &[u8] {
+        &self.captured_replies
     }
 
     /// Drain every OSC response (color + clipboard load) captured by the

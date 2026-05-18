@@ -49,6 +49,7 @@ impl App {
         // Record timestamp for key-to-render latency tracking (profiling mode).
         if event.state == ElementState::Pressed {
             self.perf.last_key_time = Some(std::time::Instant::now());
+            self.perf.tick_at_last_key = self.perf.ticks;
         }
 
         // Cancel active tab drag on Escape press.

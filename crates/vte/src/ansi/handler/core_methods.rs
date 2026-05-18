@@ -279,6 +279,17 @@ macro_rules! handler_core_methods {
  /// xterm ctlseqs (`CSI ? Pi ; Ps ; Pv [;Pv2] S`).
         fn graphics_attribute(&mut self, _pi: u16, _pa: u16, _pv: u16) {}
 
+ /// XTGETTCAP (`DCS + q Pt ST`) — terminfo capability query.
+ ///
+ /// `payload` is the hex-encoded capability name(s), separated
+ /// by `;`. `aborted` is true when the DCS was interrupted via
+ /// CAN/SUB/ESC mid-payload (handler should drop the reply on
+ /// abort). Reply is emitted by the handler implementation per
+ /// xterm ctlseqs:
+ /// - Known caps: `DCS 1 + r <hex>=<hex>;...;<hex>=<hex> ST`
+ /// - Unknown caps: `DCS 0 + r <hex>;...;<hex> ST`
+        fn xtgettcap(&mut self, _payload: &[u8], _aborted: bool) {}
+
  /// Set hyperlink.
         fn set_hyperlink(&mut self, _: Option<Hyperlink>) {}
 

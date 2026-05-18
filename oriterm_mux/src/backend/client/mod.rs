@@ -6,6 +6,7 @@
 //! the daemon.
 
 mod notification;
+mod rpc_helpers;
 mod rpc_methods;
 mod transport;
 

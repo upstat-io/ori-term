@@ -383,3 +383,117 @@ fn cached_pane_snapshot_helper_carries_only_placements() {
     assert!(snap.image_data.is_empty());
     assert!(!snap.images_dirty);
 }
+
+/// End-to-end pin: real `notcurses-info` bytes flow through
+/// `Term::renderable_content_into`
+/// AND `fold_image_data_store` AND `fill_images_from_renderable`, and the
+/// resulting `SnapshotCache` carries the real pixel data retrievable via
+/// `cache.image_data(pane_id, image_id)`.
+///
+/// **What this test covers that the others don't.** The unit tests above
+/// use `mk_image_data(id, 80)` — 80 bytes of `0xAB` filler, NOT real
+/// image bytes. The Linux `PtySession` test in `oriterm_core/tests/notcurses_info_pty.rs`
+/// proves the handler stores image bytes but does NOT exercise the
+/// daemon-side fold or projection. This test bridges the gap: real
+/// `notcurses-info` produces real bytes via `Term`'s extract path, the
+/// daemon's fold step copies them into `image_data_store`, and a lookup
+/// MUST return those bytes (not None, not zero-length, not wrong-id).
+///
+/// If this test fails, the daemon-side projection drops real image data
+/// even though it accepts synthetic data — a regression the existing
+/// `mk_image_data`-based tests cannot catch. If it passes, the wordmark
+/// cure surface is downstream of the daemon's snapshot projection
+/// (wire codec, IPC transport, client decode, or GPU render).
+///
+/// See: bug-tracker/plans/BUG-06-073/
+#[cfg(unix)]
+#[test]
+fn notcurses_info_image_data_survives_daemon_fold() {
+    use oriterm_test_support::{PtySession, notcurses_info_available, tool_available};
+    use portable_pty::CommandBuilder;
+
+    use super::fold_image_data_store;
+
+    if !notcurses_info_available() {
+        eprintln!("SKIP: notcurses-info not installed");
+        return;
+    }
+    if !tool_available("infocmp", "-V") {
+        eprintln!("SKIP: ncurses tooling (infocmp) not available");
+        return;
+    }
+
+    let mut cmd = CommandBuilder::new("notcurses-info");
+    cmd.env("TERM", "xterm-256color");
+    let mut session = PtySession::spawn(cmd, 80, 24);
+    let status = session.wait_for_child_exit(5_000);
+    assert!(
+        status.success(),
+        "notcurses-info exited unsuccessfully: {status:?}"
+    );
+
+    let mut render_buf = RenderableContent::default();
+    session.term().renderable_content_into(&mut render_buf);
+    assert!(
+        !render_buf.images.is_empty(),
+        "Term snapshot extraction lost the placement"
+    );
+    assert!(
+        !render_buf.image_data.is_empty(),
+        "Term snapshot extraction has placements but no image_data"
+    );
+
+    let pane_id = PaneId::from_raw(1);
+    let mut store = ImageCache::with_memory_cap(usize::MAX);
+    let cache: HashMap<PaneId, PaneSnapshot> = HashMap::new();
+    let evicted = fold_image_data_store(pane_id, &cache, &render_buf.image_data, &mut store);
+    assert!(
+        evicted.is_empty(),
+        "uncapped store should not evict; got {} eviction(s)",
+        evicted.len()
+    );
+
+    let mut cached = PaneSnapshot::default();
+    fill_images_from_renderable(&render_buf, &mut cached);
+    assert_eq!(
+        cached.images.len(),
+        render_buf.images.len(),
+        "every placement from render_buf must land in the cached snapshot"
+    );
+    assert!(
+        cached.image_data.is_empty(),
+        "cached snapshot must NOT carry inline image_data — dispatch projects per-client"
+    );
+
+    for wp in &cached.images {
+        let id = ImageId::from_raw(wp.image_id);
+        let arc = store.get(pane_id, id).unwrap_or_else(|| {
+            panic!(
+                "image_data_store lookup miss for ({pane_id}, {id:?}) after fold — \
+                 placement would render blank on the client"
+            )
+        });
+        assert!(
+            arc.width > 0 && arc.height > 0,
+            "image_data_store entry for {id:?} has zero dims {}x{}",
+            arc.width,
+            arc.height
+        );
+        assert!(
+            !arc.data.is_empty(),
+            "image_data_store entry for {id:?} has empty pixel buffer (dims {}x{})",
+            arc.width,
+            arc.height
+        );
+        eprintln!(
+            "wire-projection pin: id={id:?} {}x{} px, data.len={}B (placement {}x{} @ ({},{}))",
+            arc.width,
+            arc.height,
+            arc.data.len(),
+            wp.display_width,
+            wp.display_height,
+            wp.viewport_x,
+            wp.viewport_y,
+        );
+    }
+}

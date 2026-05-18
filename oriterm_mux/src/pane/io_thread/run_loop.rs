@@ -91,41 +91,13 @@ impl<S: EffectSink> PaneIoThread<S> {
             // `select!` `default(timeout)` arm). Regression:.
             self.maybe_shrink_buffers();
 
-            // 4c. Final shutdown check — closes the gap between the
-            // last load at line 57 (after `process_pending_bytes`)
-            // and the blocking `select!` below. Without this, a
-            // `shutdown_flag.store(true)` by a non-handle path that
-            // doesn't enqueue on `cmd_tx` or `io_wake_tx` (e.g. the
-            // pty writer thread at `pty/mod.rs::spawn_pty_writer`'s
-            // exit path) leaves the IO thread blocked in `select!`
-            // until `byte_rx` hangs up — timing not guaranteed.
-            // Step 6C ALSO has the writer thread `try_send` an
-            // `io_wake` so the in-`select!` window closes; this
-            // pre-`select!` check covers any setter that bypasses
-            // the wake (defense in depth). Regression
-            // §04 review round 1 Opencode F1 + Round 4 Codex F2.
+            // 4c. Final pre-`select!` shutdown check — defense in depth covering any setter that bypasses the writer-thread `io_wake` path; otherwise the IO thread could block in `select!` until `byte_rx` hangs up.
             if self.shutdown.load(Ordering::Acquire) {
                 self.maybe_produce_snapshot();
                 return;
             }
 
-            // 5. Block until the next event.
-            //
-            // Mode 2026 (synchronized output): when a sync window is active,
-            // the VTE processor's StdSyncHandler carries a deadline; we must
-            // wake before that deadline to call `handle_sync_timeout`, which
-            // clears `TermMode::SYNC_UPDATE` and publishes the accumulated
-            // snapshot — otherwise an app that crashes mid-sync would leave
-            // the gate set and snapshots would never publish again.
-            //
-            // Animation: when at least one pane has an active animation,
-            // `animation_deadline` carries the next-frame instant so the
-            // `default(timeout)` arm wakes us at the right moment to re-run
-            // the tick on the next loop iteration.
-            //
-            // The two deadlines are unified via `min`. When neither is set,
-            // the `IDLE_WAKE_CEILING` sentinel keeps the loop structurally
-            // simple — any real event wakes earlier.
+            // 5. Block until the next event. Sync (Mode 2026) + animation deadlines unify via `min`; `IDLE_WAKE_CEILING` keeps the loop simple when neither is active.
             let sync_deadline = self.processor.sync_timeout().sync_timeout();
             let now = Instant::now();
             let timeout = match (sync_deadline, animation_deadline) {
@@ -136,77 +108,79 @@ impl<S: EffectSink> PaneIoThread<S> {
             };
 
             crossbeam_channel::select! {
-                                      recv(self.cmd_rx) -> msg => {
-                                          match msg {
-                                              Ok(cmd) => {
-            // Apply pending_resize UNCONDITIONALLY before
-            // handling ANY command (Shutdown included) so
-            // the idle-wake path always yields post-resize
-            // state. Without this, a concurrent
-            // `send_resize` + `send_command(SnapshotNow)`
-            // pair can yield a pre-resize SnapshotNow
-            // reply if `select!` non-deterministically
-            // picks `cmd_rx` first. Pinned by §04 Plan
-            // review round 2 Codex F1 + Round 3 Gemini F1
-            // + Round 5 Codex F3 / Opencode F1.
-                                                  self.apply_pending_resize();
-                                                  if matches!(&cmd, PaneIoCommand::Shutdown) {
-                                                      self.shutdown.store(true, Ordering::Release);
-                                                      self.maybe_produce_snapshot();
-                                                      return;
-                                                  }
-                                                  self.handle_command(cmd);
-                                              }
-                                              Err(_) => return,
-                                          }
-                                      },
-                                      recv(self.byte_rx) -> msg => {
-                                          if let Ok(bytes) = msg {
-                                              self.handle_bytes_chunked(&bytes);
-                                          } else {
-                                              self.handle_pty_eof();
-                                              return;
-                                          }
-                                      },
-                                      recv(self.child_exit_rx) -> status => {
-                                          if let Ok(status) = status {
-                                              self.pending_child_exit = Some(status);
-                                          } else {
-            // Watcher-thread sender dropped without sending a
-            // status. Replace the receiver with `never()` so
-            // `select!` does not pick this arm again on every
-            // iteration — `recv` on a disconnected channel
-            // returns `Err` immediately, which would burn a CPU
-            // core in a tight loop until shutdown. The EOF path
-            // in `handle_pty_eof` still emits
-            // `HostEffect::ChildExit { code: 0 }` when `byte_rx`
-            // subsequently closes.
-                                              self.child_exit_rx = crossbeam_channel::never();
-                                          }
-                                      }
-                                      recv(self.io_wake_rx) -> msg => {
-                                          if msg.is_err() {
-            // All wake senders dropped. Same spin hazard as
-            // the `child_exit_rx` arm above.
-                                              self.io_wake_rx = crossbeam_channel::never();
-                                          }
-            // Otherwise: woken by response fulfillment, a
-            // pending-resize store, the writer-thread shutdown
-            // path, or the send_command Shutdown special-case —
-            // next loop iteration drains commands, applies any
-            // pending resize, and polls pending responses.
-                                      }
-                                      default(timeout) => {
-            // Either the sync deadline fired (close the Mode 2026
-            // window — clear SYNC_UPDATE, emit Abort, publish),
-            // an animation deadline fired (next iteration's
-            // tick_animations advances the frame), or the idle
-            // sentinel expired (harmless — loop around).
-                                          if sync_deadline.is_some_and(|d| d <= Instant::now()) {
-                                              self.handle_sync_timeout();
-                                          }
-                                      },
-                                  }
+                recv(self.cmd_rx) -> msg => if self.handle_cmd_arm(msg) { return; },
+                recv(self.byte_rx) -> msg => if self.handle_byte_arm(msg) { return; },
+                recv(self.child_exit_rx) -> status => self.handle_child_exit_arm(status),
+                recv(self.io_wake_rx) -> msg => self.handle_io_wake_arm(msg),
+                default(timeout) => self.handle_timeout_arm(sync_deadline),
+            }
+        }
+    }
+
+    /// `cmd_rx` arm: apply any pending resize first, then dispatch or shutdown.
+    /// Returns `true` when the run loop should exit (Shutdown command or
+    /// channel disconnect); `false` otherwise. Apply-resize-first preserves
+    /// post-resize state across idle-wake → `SnapshotNow` ordering races.
+    fn handle_cmd_arm(&mut self, msg: Result<PaneIoCommand, crossbeam_channel::RecvError>) -> bool {
+        match msg {
+            Ok(cmd) => {
+                self.apply_pending_resize();
+                if matches!(&cmd, PaneIoCommand::Shutdown) {
+                    self.shutdown.store(true, Ordering::Release);
+                    self.maybe_produce_snapshot();
+                    return true;
+                }
+                self.handle_command(cmd);
+                false
+            }
+            Err(_) => true,
+        }
+    }
+
+    /// `byte_rx` arm: chunk-drain bytes through VTE, or hand off to EOF
+    /// handler when the writer dropped. Returns `true` to exit the loop.
+    fn handle_byte_arm(&mut self, msg: Result<Vec<u8>, crossbeam_channel::RecvError>) -> bool {
+        if let Ok(bytes) = msg {
+            self.handle_bytes_chunked(&bytes);
+            false
+        } else {
+            self.handle_pty_eof();
+            true
+        }
+    }
+
+    /// `child_exit_rx` arm: record the exit status for later coalescing with
+    /// the EOF path. On watcher-sender drop, switch to `never()` so the
+    /// `select!` does not spin on a closed receiver.
+    fn handle_child_exit_arm(
+        &mut self,
+        status: Result<crate::pty::spawn::ExitStatus, crossbeam_channel::RecvError>,
+    ) {
+        if let Ok(status) = status {
+            self.pending_child_exit = Some(status);
+        } else {
+            self.child_exit_rx = crossbeam_channel::never();
+        }
+    }
+
+    /// `io_wake_rx` arm: handle wake events from response fulfillment, pending
+    /// resize, or writer-thread shutdown. On all-senders-dropped, switch to
+    /// `never()` to prevent the same spin hazard as `child_exit_rx`.
+    fn handle_io_wake_arm(&mut self, msg: Result<(), crossbeam_channel::RecvError>) {
+        if msg.is_err() {
+            self.io_wake_rx = crossbeam_channel::never();
+        }
+        // Otherwise: woken by response fulfillment, a pending-resize store,
+        // writer shutdown, or send_command Shutdown — next iteration handles.
+    }
+
+    /// `default(timeout)` arm: either the sync deadline fired (close Mode 2026
+    /// window — clear `SYNC_UPDATE`, emit Abort, publish), an animation
+    /// deadline fired (next iteration's `tick_animations` advances the frame),
+    /// or the idle sentinel expired (loop around harmlessly).
+    fn handle_timeout_arm(&mut self, sync_deadline: Option<Instant>) {
+        if sync_deadline.is_some_and(|d| d <= Instant::now()) {
+            self.handle_sync_timeout();
         }
     }
 

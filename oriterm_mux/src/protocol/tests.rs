@@ -1066,7 +1066,7 @@ fn wire_bytes_stable_for_hello() {
 
 #[test]
 fn theme_to_wire_dark() {
-    use super::messages::theme_to_wire;
+    use super::theme_to_wire;
     use oriterm_core::Theme;
 
     assert_eq!(theme_to_wire(Theme::Dark), Some("dark"));
@@ -1074,7 +1074,7 @@ fn theme_to_wire_dark() {
 
 #[test]
 fn theme_to_wire_light() {
-    use super::messages::theme_to_wire;
+    use super::theme_to_wire;
     use oriterm_core::Theme;
 
     assert_eq!(theme_to_wire(Theme::Light), Some("light"));
@@ -1082,7 +1082,7 @@ fn theme_to_wire_light() {
 
 #[test]
 fn theme_to_wire_unknown() {
-    use super::messages::theme_to_wire;
+    use super::theme_to_wire;
     use oriterm_core::Theme;
 
     assert_eq!(theme_to_wire(Theme::Unknown), None);
@@ -1229,7 +1229,7 @@ fn roundtrip_set_cell_dimensions_zero_metrics_rejected_by_term_but_survive_wire(
 
 #[test]
 fn roundtrip_set_capabilities() {
-    use super::messages::CAP_SNAPSHOT_PUSH;
+    use super::CAP_SNAPSHOT_PUSH;
     let pdu = MuxPdu::SetCapabilities {
         flags: CAP_SNAPSHOT_PUSH,
     };

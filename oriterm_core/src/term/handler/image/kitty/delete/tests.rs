@@ -1074,6 +1074,7 @@ fn delete_aborts_in_flight_chunked_upload() {
     t.loading_image = Some(LoadingImage {
         image_id: 42,
         start_cmd,
+        failed_upload: false,
     });
     assert!(t.loading_image.is_some());
 

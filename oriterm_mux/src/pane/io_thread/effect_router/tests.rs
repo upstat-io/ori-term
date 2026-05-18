@@ -1029,3 +1029,77 @@ fn enq_byte_through_router_emits_pty_write_with_answerback_bytes() {
         other => panic!("expected PtyWrite, got {other:?}"),
     }
 }
+
+// §13.5 routing pin — kitty image-protocol reply at the mux boundary
+// =====================================================================
+
+/// §13.5 Routing pin (mux-boundary half): an `Effect::Pty(PtyEffect::Write
+/// { kind: ImageProtocolReply, .. })` pushed onto the terminal's effect
+/// sink MUST flow out as a `MuxEvent::PtyWrite { pane_id, data }` with the
+/// bytes byte-exact. Companion to the Term-side half in
+/// `oriterm_core/tests/spec_chain/kitty/replies.rs::reply_flows_via_effect_pty_write_not_host_request`.
+#[test]
+fn pty_write_kind_image_protocol_reply_lands_as_byte_stream_in_mux_event_pty_write() {
+    let (mut t, mux_rx, _wake) = make_router_harness();
+    // Exact kitty OK reply framing per kitty graphics-protocol.rst.
+    let reply_bytes = b"\x1b_Gi=1;OK\x1b\\".to_vec();
+    t.terminal.effect_sink().push(Effect::Pty(PtyEffect::Write {
+        bytes: reply_bytes.clone(),
+        kind: PtyWriteKind::ImageProtocolReply,
+    }));
+    t.drain_effects_into_mux_events();
+
+    let event = mux_rx
+        .recv_timeout(Duration::from_millis(100))
+        .expect("expected MuxEvent::PtyWrite for kitty image-protocol reply");
+    match event {
+        MuxEvent::PtyWrite { data, pane_id } => {
+            assert_eq!(
+                pane_id,
+                PaneId::from_raw(7),
+                "kitty reply must carry the originating pane_id"
+            );
+            assert_eq!(
+                data, reply_bytes,
+                "kitty image-protocol reply bytes MUST flow byte-exact through \
+                 the mux boundary — the kind discriminator is dropped per §13.5 \
+                 but the bytes survive"
+            );
+        }
+        other => panic!("expected PtyWrite, got {other:?}"),
+    }
+}
+
+/// §13.5 NOTE pin: `MuxEvent::PtyWrite` does NOT carry the `PtyWriteKind`
+/// discriminator. The kind is dropped at the crate boundary per the
+/// intentional discard at `effect_router/mod.rs:88-93`. This test pins the
+/// field set of `MuxEvent::PtyWrite` via an exhaustive-match clamp — if a
+/// future refactor adds a `kind` field back to the variant, this test
+/// stops compiling and forces a conscious design decision + plan update.
+#[test]
+fn pty_write_kind_discriminator_dropped_at_mux_boundary() {
+    let (mut t, mux_rx, _wake) = make_router_harness();
+    t.terminal.effect_sink().push(Effect::Pty(PtyEffect::Write {
+        bytes: b"x".to_vec(),
+        kind: PtyWriteKind::ImageProtocolReply,
+    }));
+    t.drain_effects_into_mux_events();
+    let event = mux_rx
+        .recv_timeout(Duration::from_millis(100))
+        .expect("expected MuxEvent::PtyWrite");
+
+    // Exhaustive-match clamp on `MuxEvent::PtyWrite`'s field set. Drop
+    // the `_` rest pattern so a new field (e.g., `kind`) added to the
+    // variant fails the match destructure at compile time.
+    match event {
+        MuxEvent::PtyWrite { pane_id, data } => {
+            assert_eq!(pane_id, PaneId::from_raw(7));
+            assert_eq!(
+                data, b"x",
+                "MuxEvent::PtyWrite carries bytes only; if a future refactor \
+                 adds a kind field back, update this test consciously"
+            );
+        }
+        other => panic!("expected PtyWrite, got {other:?}"),
+    }
+}

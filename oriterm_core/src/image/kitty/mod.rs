@@ -31,6 +31,12 @@ pub struct LoadingImage {
     pub image_id: u32,
     /// Full first-chunk command; `payload` is the running accumulator.
     pub start_cmd: KittyCommand,
+    /// Per-upload failure latch (§13.5 EINVAL-flood fix): once a malformed
+    /// base64 chunk fires the first EINVAL reply, subsequent chunks of
+    /// the same upload are dropped silently so the reply transcript
+    /// contains exactly one EINVAL per failed upload instead of one
+    /// per failed chunk.
+    pub failed_upload: bool,
 }
 
 #[cfg(test)]

@@ -25,7 +25,7 @@
 
 use oriterm_core::Theme;
 use oriterm_core::color::palette::Palette;
-use oriterm_core::effect::{Effect, HostRequest};
+use oriterm_core::effect::{Effect, PtyEffect};
 use oriterm_test_support::spec_chain::SpecHarness;
 use vte::ansi::{Color, NamedColor, Rgb};
 
@@ -36,24 +36,37 @@ fn theme_default_palette() -> Palette {
     Palette::for_theme(Theme::default())
 }
 
-/// Assert exactly one `HostRequest::ColorQuery` is present on the
-/// transcript and return its (prefix, index). Panics if zero or more
-/// than one ColorQuery was emitted.
-fn expect_single_color_query(harness: &SpecHarness) -> (String, usize) {
+/// Assert exactly one OSC 10/11/12 color reply (sync `PtyEffect::Write`)
+/// is on the transcript and return its `(prefix, slot)`. Panics
+/// otherwise.
+fn expect_single_color_reply(harness: &SpecHarness) -> (String, usize) {
     let mut found = None;
     for eff in &harness.outcome().effects_emitted {
-        if let Effect::HostRequest(HostRequest::ColorQuery { prefix, index, .. }) = eff {
-            assert!(
-                found.is_none(),
-                "more than one ColorQuery emitted; got {:?}",
-                harness.outcome().effects_emitted
-            );
-            found = Some((prefix.clone(), *index));
+        if let Effect::Pty(PtyEffect::Write { bytes, .. }) = eff {
+            if let Some(stripped) = bytes.strip_prefix(b"\x1b]") {
+                let osc_end = stripped
+                    .iter()
+                    .position(|&b| b == b';')
+                    .unwrap_or(stripped.len());
+                let osc_num = std::str::from_utf8(&stripped[..osc_end]).unwrap_or("");
+                let slot = match osc_num {
+                    "10" => 256,
+                    "11" => 257,
+                    "12" => 258,
+                    _ => continue,
+                };
+                assert!(
+                    found.is_none(),
+                    "more than one OSC color reply emitted; got {:?}",
+                    harness.outcome().effects_emitted
+                );
+                found = Some((osc_num.to_string(), slot));
+            }
         }
     }
     found.unwrap_or_else(|| {
         panic!(
-            "expected one ColorQuery; got {:?}",
+            "expected one OSC color reply; got {:?}",
             harness.outcome().effects_emitted
         )
     })
@@ -312,14 +325,14 @@ fn osc_reset_round_trip_with_query() {
                 .outcome()
                 .effects_emitted
                 .iter()
-                .all(|e| !matches!(e, Effect::HostRequest(HostRequest::ColorQuery { .. }))),
+                .all(|e| !matches!(e, Effect::Pty(PtyEffect::Write { bytes, .. }) if bytes.starts_with(b"\x1b]10") || bytes.starts_with(b"\x1b]11") || bytes.starts_with(b"\x1b]12"))),
             "reset alone must not emit a ColorQuery: {:?}",
             harness.outcome().effects_emitted
         );
 
         harness.feed(query_bytes);
 
-        let (prefix, index) = expect_single_color_query(&harness);
+        let (prefix, index) = expect_single_color_reply(&harness);
         assert_eq!(prefix, expected_prefix);
         assert_eq!(index, expected_index);
         count += 1;
