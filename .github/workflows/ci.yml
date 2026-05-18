@@ -177,7 +177,17 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: windows-latest
+          # Pinned to windows-2022 (not windows-latest) because the
+          # current windows-latest image (windows-2025) regressed
+          # conhost's console-buffer→VT translation on ConPTY-attached
+          # children ~2026-05-13: child program output never reaches
+          # the master pipe, only conhost's init+shutdown handshake.
+          # Visible via `pty_size_propagation_windows_pwsh_...`
+          # capturing `\x1b[6n...\x1b[?9001l\x1b[?1004l` with no
+          # program output between the title-set and shutdown
+          # sequences. windows-2022 still routes child stdout
+          # correctly through ConPTY.
+          - os: windows-2022
             name: Windows
           - os: macos-latest
             name: macOS
