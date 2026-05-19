@@ -4,6 +4,7 @@ use crate::effect::sink::EffectSink;
 use crate::grid::StableRowIndex;
 use crate::image::kitty::KittyCommand;
 use crate::image::{ImageId, ImagePlacement, PlacementSizing};
+use crate::index::Column;
 use crate::term::Term;
 
 use super::KittyReplyContext;
@@ -95,6 +96,26 @@ impl<S: EffectSink> Term<S> {
             for _ in 0..rows.saturating_sub(1) {
                 grid.linefeed();
             }
+            // Per kitty graphics protocol: after `a=p` / `a=T`, the cursor
+            // moves PAST the placed image — by `cols` columns and
+            // `rows - 1` linefeeds — to mimic text-write behavior.
+            // Without the horizontal advance, the cursor stays on the
+            // placement's origin cell, and the cursor block in the
+            // overlay pass overdraws the image (the §13.6.1-discovered
+            // symptom: cache view has image pixels but final readback
+            // shows cursor color).
+            //
+            // Clamp to `grid.cols()` (NOT `cols() - 1`) so the cursor
+            // can enter the wrap-pending state used by
+            // `handler/helpers.rs:339-370` (`cursor_was_past_edge` /
+            // `set_col(Column(cols))` for the LINE_WRAP wrap-target
+            // case). Text written after an image that fills to the
+            // right edge then wraps to the next line correctly,
+            // instead of overwriting the rightmost image column.
+            let max_col = grid.cols();
+            let current_col = grid.cursor().col().0;
+            let new_col = current_col.saturating_add(cols).min(max_col);
+            grid.cursor_mut().set_col(Column(new_col));
         }
     }
 }

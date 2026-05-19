@@ -340,3 +340,103 @@ fn removed_placement_not_in_renderable_content() {
         "removed placement must not be present in RenderableContent::images"
     );
 }
+
+// ── Snapshot-read recency contract ──────────────────────────────────
+//
+// Render-time reads (the SOLE production read path via `get_no_touch`)
+// MUST NOT bump recency. Snapshot construction is a pure-read path per
+// `term/snapshot/mod.rs:27-34` — mutating recency from inside snapshot
+// construction would violate the no-side-logic invariant for snapshot
+// logic` AND defeat eviction's signal (everything looks "recently
+// accessed" because every visible image is touched on every frame).
+
+/// Positive pin: `ImageCache::get_no_touch` does NOT bump `last_accessed`.
+/// Read the image 100 times via `get_no_touch` and assert the stored
+/// `last_accessed` is identical to the value stamped at `store()` time.
+#[test]
+fn get_no_touch_does_not_bump_last_accessed() {
+    let mut cache = ImageCache::new();
+    let id = ImageId(1);
+    let stored = cache
+        .store(make_image(id.0, 4))
+        .expect("store should succeed within memory limits");
+
+    let baseline = cache
+        .get_no_touch(stored)
+        .expect("image must exist immediately after store")
+        .last_accessed;
+    assert!(
+        baseline > 0,
+        "store should stamp last_accessed > 0 (first store bumps access_counter); got {baseline}"
+    );
+
+    for _ in 0..100 {
+        let observed = cache
+            .get_no_touch(stored)
+            .expect("image must still exist")
+            .last_accessed;
+        assert_eq!(
+            observed, baseline,
+            "get_no_touch MUST NOT bump last_accessed; saw {observed} after read, baseline was {baseline}"
+        );
+    }
+}
+
+/// Companion pin: 100 sequential `renderable_content_into` calls do NOT
+/// mutate `ImageCache` recency state. Routes through the production
+/// snapshot path (the SSOT for `Term::renderable_content` per
+/// `snapshot/mod.rs:35-82`). Catches the regression where someone
+/// introduces a `&mut ImageCache` borrow in snapshot construction
+/// (which would silently bump recency on every frame).
+#[test]
+fn snapshot_construction_does_not_mutate_image_cache_recency() {
+    let mut term = Term::new(24, 80, 100, Theme::default(), VoidEffectSink);
+    term.set_cell_dimensions(8, 16);
+
+    let id = term.image_cache_mut().next_image_id();
+    let data = ImageData {
+        id,
+        width: 2,
+        height: 2,
+        data: Arc::new(vec![255; 16]),
+        format: ImageFormat::Rgba,
+        source: ImageSource::Direct,
+        last_accessed: 0,
+        image_number: None,
+    };
+    term.image_cache_mut().store(data).unwrap();
+    term.image_cache_mut().place(make_placement(id.0, 0, 0, 2, 2));
+
+    let baseline_last_accessed = term
+        .image_cache()
+        .get_no_touch(id)
+        .expect("image must exist after store + place")
+        .last_accessed;
+
+    // Drive 100 snapshot constructions through the production path.
+    // Snapshot construction must be a pure read of `ImageCache`; mutating
+    // the cache from inside snapshot extraction would violate the
+    // snapshot-purity invariant documented at `term/snapshot/mod.rs:27-34`.
+    let mut out = RenderableContent::default();
+    for _ in 0..100 {
+        term.renderable_content_into(&mut out);
+        assert_eq!(
+            out.images.len(),
+            1,
+            "placement should still be visible in every snapshot"
+        );
+    }
+
+    let post_snapshots = term
+        .image_cache()
+        .get_no_touch(id)
+        .expect("image must still exist after 100 snapshots")
+        .last_accessed;
+    assert_eq!(
+        post_snapshots, baseline_last_accessed,
+        "100 snapshot constructions MUST NOT bump the image's last_accessed; \
+         saw {post_snapshots}, baseline was {baseline_last_accessed} — a mutation here \
+         means snapshot construction acquired a &mut ImageCache borrow and broke \
+         the pure-read invariant documented at term/snapshot/mod.rs:27-34"
+    );
+}

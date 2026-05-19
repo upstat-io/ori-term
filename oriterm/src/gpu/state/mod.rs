@@ -305,6 +305,32 @@ impl GpuState {
         self.device.set_device_lost_callback(callback);
     }
 
+    /// Borrow the underlying `wgpu::Device`. Test surface only — production
+    /// code threads device handles through dedicated APIs (pipelines,
+    /// bind groups, render-target creation). Used by §13.6.1 diagnostic
+    /// probes that need direct device access for staging-buffer readback.
+    #[cfg(any(test, feature = "gpu-tests"))]
+    #[allow(
+        dead_code,
+        reason = "consumed by §13.6.1 probe pilots authored after foundational \
+                  instrumentation lands"
+    )]
+    pub fn device_for_test(&self) -> &wgpu::Device {
+        &self.device
+    }
+
+    /// Borrow the underlying `wgpu::Queue`. Test surface only — same
+    /// rationale as `device_for_test`.
+    #[cfg(any(test, feature = "gpu-tests"))]
+    #[allow(
+        dead_code,
+        reason = "consumed by §13.6.1 probe pilots authored after foundational \
+                  instrumentation lands"
+    )]
+    pub fn queue_for_test(&self) -> &wgpu::Queue {
+        &self.queue
+    }
+
     pub fn save_pipeline_cache_async(&self) {
         let (Some(cache), Some(path)) = (&self.pipeline_cache, &self.pipeline_cache_path) else {
             return;

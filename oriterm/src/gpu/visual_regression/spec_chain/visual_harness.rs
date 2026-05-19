@@ -361,4 +361,56 @@ impl VisualSpecHarness {
     pub fn config(&self) -> &GoldenLaneConfig {
         &self.config
     }
+
+    /// Borrow the inner `GpuState`. Test surface only — diagnostic probes
+    /// (§13.6.1 item 3 texture readback) reach `device_for_test` /
+    /// `queue_for_test` through this accessor.
+    #[allow(
+        dead_code,
+        reason = "consumed by §13.6.1 probe pilots authored after foundational \
+                  instrumentation lands"
+    )]
+    pub fn gpu(&self) -> &GpuState {
+        &self.gpu
+    }
+
+    /// Borrow the inner `WindowRenderer`. Test surface only — diagnostic
+    /// probes reach the per-window `ImageTextureCache` via
+    /// `renderer().image_texture_cache_for_test()`.
+    #[allow(
+        dead_code,
+        reason = "consumed by §13.6.1 probe pilots authored after foundational \
+                  instrumentation lands"
+    )]
+    pub fn renderer(&self) -> &WindowRenderer {
+        &self.renderer
+    }
+
+    /// Mutably borrow the inner `WindowRenderer`. Test surface only —
+    /// §13.6.1 item 5 isolation probe drives
+    /// `copy_cache_to_output_for_test` which takes `&mut self`.
+    #[allow(
+        dead_code,
+        reason = "consumed by §13.6.1 item 5 probe pilot authored after \
+                  foundational instrumentation lands"
+    )]
+    pub fn renderer_mut(&mut self) -> &mut WindowRenderer {
+        &mut self.renderer
+    }
+
+    /// Split borrow: mutable `WindowRenderer` + immutable `GpuState`.
+    /// Test surface only — §13.6.1 item 5 isolation probe needs to call
+    /// `renderer_mut().copy_cache_to_output_for_test(&gpu, …)`, but the
+    /// borrow checker cannot prove `harness.renderer_mut()` and
+    /// `harness.gpu()` don't alias when called separately. The split
+    /// accessor takes one `&mut self` and produces both refs in a single
+    /// call, satisfying the checker safely.
+    #[allow(
+        dead_code,
+        reason = "consumed by §13.6.1 item 5 probe pilot"
+    )]
+    pub fn split_renderer_and_gpu_for_test(&mut self) -> (&mut WindowRenderer, &GpuState) {
+        (&mut self.renderer, &self.gpu)
+    }
 }
+// trigger rebuild

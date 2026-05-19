@@ -385,6 +385,21 @@ impl WindowRenderer {
             extra_formats.as_slice()
         };
 
+        // §13.6.1 item 5: probe pilots overwrite the cache texture with
+        // known pixels via `queue.write_texture` to isolate Stage B
+        // (cache→output blit) from Stage A (image pipeline → cache view).
+        // Production never writes to the cache texture from the host;
+        // the extra usage flag is a one-bit hardware-state authorization
+        // and carries no driver-side memory or perf impact. The flag is
+        // only added under the gpu-tests-gated probe surface so default
+        // builds remain unaffected.
+        #[cfg(all(test, feature = "gpu-tests"))]
+        let cache_usage = wgpu::TextureUsages::RENDER_ATTACHMENT
+            | wgpu::TextureUsages::COPY_SRC
+            | wgpu::TextureUsages::COPY_DST;
+        #[cfg(not(all(test, feature = "gpu-tests")))]
+        let cache_usage = wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC;
+
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("content_cache"),
             size: Extent3d {
@@ -396,7 +411,7 @@ impl WindowRenderer {
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format: surface_format,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+            usage: cache_usage,
             view_formats,
         });
         let view = texture.create_view(&TextureViewDescriptor {

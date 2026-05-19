@@ -11,6 +11,8 @@ use super::pipeline::{
     create_fg_pipeline, create_image_pipeline, create_image_texture_bind_group_layout,
     create_subpixel_fg_pipeline, create_ui_rect_pipeline, create_uniform_bind_group_layout,
 };
+#[cfg(feature = "gpu-debug-image-blend-off")]
+use super::pipeline::create_image_pipeline_no_blend;
 use super::state::GpuState;
 
 /// Stateless shared GPU resources: render pipelines and bind group layouts.
@@ -26,6 +28,16 @@ pub struct GpuPipelines {
     pub(crate) color_fg_pipeline: RenderPipeline,
     pub(crate) ui_rect_pipeline: RenderPipeline,
     pub(crate) image_pipeline: RenderPipeline,
+    /// §13.6.1 item 10 diagnostic pipeline (blend disabled). Tests inspect
+    /// via the feature-gated accessor; never wired into the production
+    /// render pass.
+    #[cfg(feature = "gpu-debug-image-blend-off")]
+    #[allow(
+        dead_code,
+        reason = "consumed only via image_pipeline_no_blend_for_test by §13.6.1 \
+                  item 10 probe pilots authored after foundational instrumentation"
+    )]
+    pub(crate) image_pipeline_no_blend: RenderPipeline,
     /// Layout for the per-window uniform bind group (`screen_size`).
     pub(crate) uniform_layout: BindGroupLayout,
     /// Layout for the per-window atlas bind groups (texture + sampler).
@@ -54,9 +66,27 @@ impl GpuPipelines {
             color_fg_pipeline: create_color_fg_pipeline(gpu, &uniform_layout, &atlas_layout),
             ui_rect_pipeline: create_ui_rect_pipeline(gpu, &uniform_layout),
             image_pipeline: create_image_pipeline(gpu, &uniform_layout, &image_texture_layout),
+            #[cfg(feature = "gpu-debug-image-blend-off")]
+            image_pipeline_no_blend: create_image_pipeline_no_blend(
+                gpu,
+                &uniform_layout,
+                &image_texture_layout,
+            ),
             uniform_layout,
             atlas_layout,
             image_texture_layout,
         }
+    }
+
+    /// §13.6.1 item 10 diagnostic accessor for the no-blend image pipeline.
+    /// Test surface only — production callers always use `image_pipeline`.
+    #[cfg(feature = "gpu-debug-image-blend-off")]
+    #[allow(
+        dead_code,
+        reason = "consumed by §13.6.1 item 10 probe pilots authored after \
+                  foundational instrumentation lands"
+    )]
+    pub fn image_pipeline_no_blend_for_test(&self) -> &RenderPipeline {
+        &self.image_pipeline_no_blend
     }
 }
