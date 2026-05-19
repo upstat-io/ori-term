@@ -189,6 +189,10 @@ impl<S: EffectSink> Term<S> {
         }
         self.selection_dirty = true;
         self.grid_mut().insert_columns(count, at_col);
+        // Inserted columns shift cells right; placeholder cells pushed
+        // past the right edge are lost — reconcile so the anchor set
+        // matches surviving cells.
+        self.reconcile_placeholder_anchors_from_grid();
     }
 
     /// DECDC (CSI Ps ' ~) — Delete Column.
@@ -211,6 +215,9 @@ impl<S: EffectSink> Term<S> {
         }
         self.selection_dirty = true;
         self.grid_mut().delete_columns(count, at_col);
+        // Deleted columns drop their cells outright; any placeholder
+        // cells in the deleted span are gone — reconcile.
+        self.reconcile_placeholder_anchors_from_grid();
     }
 
     /// DECBI (ESC 6) — Back Index.
@@ -236,6 +243,7 @@ impl<S: EffectSink> Term<S> {
             // guards).
             self.selection_dirty = true;
             self.grid_mut().insert_columns(1, left_bound);
+            self.reconcile_placeholder_anchors_from_grid();
         } else {
             self.grid_mut().move_backward(1);
         }
@@ -264,6 +272,7 @@ impl<S: EffectSink> Term<S> {
             // right margin with blanks.
             self.selection_dirty = true;
             self.grid_mut().delete_columns(1, left_bound);
+            self.reconcile_placeholder_anchors_from_grid();
         } else {
             self.grid_mut().move_forward(1);
         }

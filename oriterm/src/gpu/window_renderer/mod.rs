@@ -277,6 +277,124 @@ impl WindowRenderer {
         &self.image_texture_cache
     }
 
+    /// Test-only diagnostic (§13.6.1 item 4): read back the raw RGBA bytes
+    /// of the offscreen `content_cache_view` texture after the most recent
+    /// `render_frame_cached()` call.
+    ///
+    /// Returns `None` if the cache texture has not been allocated yet —
+    /// either no `render_frame_cached()` call has run, or the most recent
+    /// render took the non-cached path.
+    ///
+    /// The cache texture is created with `RENDER_ATTACHMENT | COPY_SRC`
+    /// usage (see `ensure_content_cache`); no usage-flag extension needed.
+    /// Allocates a host-visible staging buffer, encodes a
+    /// `copy_texture_to_buffer`, submits + waits, and strips padding rows
+    /// (mirrors `ImageTextureCache::read_texture_for_test` and
+    /// `GpuState::read_render_target`).
+    ///
+    /// Returns `(pixels_rgba, width, height)` with row padding stripped.
+    /// Used by §13.6.1 item 4 to bisect whether image draws actually
+    /// land in the cache view (Stage A) vs reach the swapchain.
+    #[cfg(any(test, feature = "gpu-tests"))]
+    #[allow(
+        dead_code,
+        reason = "consumed by §13.6.1 item 4 probe pilots authored after \
+                  foundational instrumentation lands"
+    )]
+    pub(crate) fn read_content_cache_view_for_test(
+        &self,
+        device: &Device,
+        queue: &wgpu::Queue,
+    ) -> Option<(Vec<u8>, u32, u32)> {
+        let texture = self.content_cache.as_ref()?;
+        let width = texture.width();
+        let height = texture.height();
+        let bytes_per_pixel: u32 = 4;
+        let unpadded_row = width * bytes_per_pixel;
+        let align = wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
+        let padded_row = unpadded_row.div_ceil(align) * align;
+        let buffer_size = u64::from(padded_row) * u64::from(height);
+
+        let staging = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("content_cache_view_readback"),
+            size: buffer_size,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("content_cache_view_readback_encoder"),
+        });
+        encoder.copy_texture_to_buffer(
+            wgpu::TexelCopyTextureInfo {
+                texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            wgpu::TexelCopyBufferInfo {
+                buffer: &staging,
+                layout: wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(padded_row),
+                    rows_per_image: Some(height),
+                },
+            },
+            wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+        );
+        queue.submit(std::iter::once(encoder.finish()));
+
+        let slice = staging.slice(..);
+        let (tx, rx) = std::sync::mpsc::channel();
+        slice.map_async(wgpu::MapMode::Read, move |result| {
+            let _ = tx.send(result);
+        });
+        device
+            .poll(wgpu::PollType::wait_indefinitely())
+            .expect("read_content_cache_view_for_test: GPU poll failed");
+        rx.recv()
+            .expect("read_content_cache_view_for_test: readback channel disconnected")
+            .expect("read_content_cache_view_for_test: buffer map failed");
+
+        let data = slice.get_mapped_range();
+        let unpadded_row_usize = unpadded_row as usize;
+        let padded_row_usize = padded_row as usize;
+        let mut out = Vec::with_capacity(unpadded_row_usize * height as usize);
+        if padded_row == unpadded_row {
+            out.extend_from_slice(&data[..unpadded_row_usize * height as usize]);
+        } else {
+            for row in 0..height as usize {
+                let start = row * padded_row_usize;
+                let end = start + unpadded_row_usize;
+                out.extend_from_slice(&data[start..end]);
+            }
+        }
+        drop(data);
+        staging.unmap();
+        Some((out, width, height))
+    }
+
+    /// Test-only diagnostic (§13.6.1 item 5): borrow the offscreen content
+    /// cache texture so a probe can pre-load pixels via
+    /// `queue.write_texture` before invoking the copy-only path.
+    ///
+    /// Returns `None` if the cache texture has not been allocated yet.
+    /// Used in tandem with `copy_cache_to_output_for_test` to isolate
+    /// Stage B (cache → swapchain blit) from the rest of the render chain.
+    #[cfg(any(test, feature = "gpu-tests"))]
+    #[allow(
+        dead_code,
+        reason = "consumed by §13.6.1 item 5 probe pilots authored after \
+                  foundational instrumentation lands"
+    )]
+    pub(crate) fn content_cache_texture_for_test(&self) -> Option<&wgpu::Texture> {
+        self.content_cache.as_ref()
+    }
+
     /// Primary font family name.
     pub fn family_name(&self) -> &str {
         self.font_collection.family_name()
@@ -322,23 +440,24 @@ impl WindowRenderer {
         &self.color_atlas
     }
 
-    /// UI font sizes registry (GPU-test accessor).
-    #[cfg(feature = "gpu-tests")]
-    #[allow(dead_code, reason = "used by gpu-tests feature gate")]
+    /// UI font sizes registry (test-only accessor; gated to test+gpu-tests
+    /// scope so production builds never compile this accessor and the
+    /// `dead_code` lint cannot fire under any release configuration).
+    #[cfg(all(test, feature = "gpu-tests"))]
     pub(crate) fn ui_font_sizes(&self) -> Option<&UiFontSizes> {
         self.ui_font_sizes.as_ref()
     }
 
-    /// Terminal font collection (GPU-test accessor).
-    #[cfg(feature = "gpu-tests")]
-    #[allow(dead_code, reason = "used by gpu-tests feature gate")]
+    /// Terminal font collection (test-only accessor; same gating
+    /// rationale as `ui_font_sizes`).
+    #[cfg(all(test, feature = "gpu-tests"))]
     pub(crate) fn font_collection(&self) -> &FontCollection {
         &self.font_collection
     }
 
-    /// Number of cached entries in the primary (grayscale) atlas.
-    #[cfg(feature = "gpu-tests")]
-    #[allow(dead_code, reason = "used by gpu-tests feature gate")]
+    /// Cached-entry count in the primary (grayscale) atlas (test-only
+    /// accessor; same gating rationale as `ui_font_sizes`).
+    #[cfg(all(test, feature = "gpu-tests"))]
     pub(crate) fn atlas_entry_count(&self) -> usize {
         self.atlas.len()
     }

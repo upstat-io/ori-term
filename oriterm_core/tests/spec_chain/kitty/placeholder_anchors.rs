@@ -191,8 +191,9 @@ fn ed_full_screen_clears_orphaned_placeholder_anchors() {
 
 #[test]
 fn image_cache_lifecycle_does_not_walk_grid_cells() {
-    // Architectural pin: ImageCache must NOT import Grid / Row / Cell.
-    // Reviewers flag any such import as LEAK:layer-bleeding.
+    // Architectural pin: ImageCache must NOT import Grid / Row / Cell —
+    // any such import scatters grid knowledge into the cache layer.
+    // Reviewers flag the import as a layer-boundary violation.
     let cache_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/image/cache");
     let mut offenders: Vec<String> = Vec::new();
     for entry in std::fs::read_dir(&cache_dir).expect("read image/cache/") {
@@ -215,5 +216,342 @@ fn image_cache_lifecycle_does_not_walk_grid_cells() {
     assert!(
         offenders.is_empty(),
         "ImageCache must not import Grid / Row / Cell — offenders: {offenders:?}",
+    );
+}
+
+// ---------------------------------------------------------------------------
+// §13.4 missing-reconcile-site pins.
+//
+// Every grid-mutation path that can overwrite or displace a `U+10EEEE`
+// placeholder cell MUST call `reconcile_placeholder_anchors_from_grid()` so
+// `ImageCache.placeholder_anchors` does not drift past the cells that
+// anchor each entry. Sites covered below: ASCII fast-path print, non-ASCII
+// print, DECDC / DECIC column ops, DECERA / DECFRA rectangle ops, and the
+// inactive-alt-screen path on resize.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn printable_overwrite_of_placeholder_cell_reconciles_anchor() {
+    // ASCII fast-path: `put_char_ascii` short-circuits before
+    // `prune_images_if_evicted`, so an overwrite of a U+10EEEE cell must
+    // explicitly reconcile or the anchor leaks.
+    let mut h = SpecHarness::new();
+    transmit_u1(&mut h, 100);
+    write_placeholder_cell(&mut h, 100, '\u{0305}', '\u{0305}');
+    assert!(
+        h.term()
+            .image_cache()
+            .placeholder_anchors()
+            .contains(&ImageId::from_raw(100)),
+        "precondition: anchor recorded after U=1 transmit + placeholder cell write",
+    );
+
+    // CUP back to (1, 1) and overwrite with plain ASCII 'X'.
+    h.feed(b"\x1b[1;1HX");
+
+    assert!(
+        !h.term()
+            .image_cache()
+            .placeholder_anchors()
+            .contains(&ImageId::from_raw(100)),
+        "ASCII overwrite of the only placeholder cell must reconcile the anchor away",
+    );
+}
+
+#[test]
+fn non_ascii_overwrite_of_placeholder_cell_reconciles_anchor() {
+    // Non-ASCII print path uses `prune_images_if_evicted` which only
+    // reconciles when scrollback grew. An in-viewport overwrite never grows
+    // scrollback — the reconcile must fire unconditionally on this path.
+    let mut h = SpecHarness::new();
+    transmit_u1(&mut h, 101);
+    write_placeholder_cell(&mut h, 101, '\u{0305}', '\u{0305}');
+    assert!(
+        h.term()
+            .image_cache()
+            .placeholder_anchors()
+            .contains(&ImageId::from_raw(101))
+    );
+
+    // CUP to (1, 1), overwrite with 'ü' (U+00FC — Latin-1 supplement,
+    // 2 bytes UTF-8). Width=1, hits the non-ASCII branch.
+    h.feed(b"\x1b[1;1H\xc3\xbc");
+
+    assert!(
+        !h.term()
+            .image_cache()
+            .placeholder_anchors()
+            .contains(&ImageId::from_raw(101)),
+        "non-ASCII overwrite of the only placeholder cell must reconcile the anchor away",
+    );
+}
+
+#[test]
+fn column_delete_with_placeholder_cells_reconciles_anchor() {
+    // DECDC (`CSI Ps ' ~`) deletes columns at the cursor; cells in the
+    // deleted span are lost. If those cells were placeholders, the anchor
+    // must be reconciled.
+    let mut h = SpecHarness::new();
+    transmit_u1(&mut h, 102);
+    // Place the placeholder at column 6 (CUP 1;6 is 1-based → col 5).
+    h.feed(b"\x1b[1;6H");
+    write_placeholder_cell(&mut h, 102, '\u{0305}', '\u{0305}');
+    assert!(
+        h.term()
+            .image_cache()
+            .placeholder_anchors()
+            .contains(&ImageId::from_raw(102))
+    );
+
+    // CUP to (1, 1), DECDC count=10 deletes cols 0..10 — placeholder at
+    // col 5 is in that range.
+    h.feed(b"\x1b[1;1H\x1b[10\'~");
+
+    assert!(
+        !h.term()
+            .image_cache()
+            .placeholder_anchors()
+            .contains(&ImageId::from_raw(102)),
+        "DECDC deleting the only placeholder cell must reconcile the anchor away",
+    );
+}
+
+#[test]
+fn column_insert_with_placeholder_cells_reconciles_anchor() {
+    // DECIC (`CSI Ps ' }`) inserts blank columns at the cursor; existing
+    // cells shift right and cells past the right edge are dropped.
+    let mut h = SpecHarness::new();
+    let cols = h.term().grid().cols();
+    transmit_u1(&mut h, 103);
+    // Place placeholder at the last column. CUP is 1-based.
+    h.feed(format!("\x1b[1;{cols}H").as_bytes());
+    write_placeholder_cell(&mut h, 103, '\u{0305}', '\u{0305}');
+    assert!(
+        h.term()
+            .image_cache()
+            .placeholder_anchors()
+            .contains(&ImageId::from_raw(103))
+    );
+
+    // CUP to col 1; DECIC count=cols pushes ALL existing content off the
+    // right edge.
+    h.feed(format!("\x1b[1;1H\x1b[{cols}\'}}").as_bytes());
+
+    assert!(
+        !h.term()
+            .image_cache()
+            .placeholder_anchors()
+            .contains(&ImageId::from_raw(103)),
+        "DECIC pushing the only placeholder cell off the right edge must reconcile the anchor away",
+    );
+}
+
+#[test]
+fn rectangular_erase_with_placeholder_cells_reconciles_anchor() {
+    // DECERA (`CSI Pt;Pl;Pb;Pr $ z`) erases a rectangle of cells.
+    let mut h = SpecHarness::new();
+    transmit_u1(&mut h, 104);
+    write_placeholder_cell(&mut h, 104, '\u{0305}', '\u{0305}');
+    assert!(
+        h.term()
+            .image_cache()
+            .placeholder_anchors()
+            .contains(&ImageId::from_raw(104))
+    );
+
+    // DECERA over rows 1..5, cols 1..10 — covers (0, 0) where the
+    // placeholder lives.
+    h.feed(b"\x1b[1;1;5;10$z");
+
+    assert!(
+        !h.term()
+            .image_cache()
+            .placeholder_anchors()
+            .contains(&ImageId::from_raw(104)),
+        "DECERA over the only placeholder cell must reconcile the anchor away",
+    );
+}
+
+#[test]
+fn rectangular_fill_replacing_placeholder_cells_reconciles_anchor() {
+    // DECFRA (`CSI Pc;Pt;Pl;Pb;Pr $ x`) fills a rectangle with `Pc`.
+    let mut h = SpecHarness::new();
+    transmit_u1(&mut h, 105);
+    write_placeholder_cell(&mut h, 105, '\u{0305}', '\u{0305}');
+    assert!(
+        h.term()
+            .image_cache()
+            .placeholder_anchors()
+            .contains(&ImageId::from_raw(105))
+    );
+
+    // DECFRA with Pc=0x58 ('X') over rows 1..5, cols 1..10.
+    h.feed(b"\x1b[88;1;1;5;10$x");
+
+    assert!(
+        !h.term()
+            .image_cache()
+            .placeholder_anchors()
+            .contains(&ImageId::from_raw(105)),
+        "DECFRA overwriting the only placeholder cell must reconcile the anchor away",
+    );
+}
+
+#[test]
+fn inactive_alt_screen_u1_anchors_reconciled_on_resize() {
+    // While alt-screen is active, transmit U=1 + write a placeholder cell
+    // near the right edge so a narrower resize drops it. Switch back to
+    // primary so alt is inactive, resize, then return to alt. The alt
+    // image cache MUST be reconciled even when alt is inactive — otherwise
+    // the anchor leaks across the resize.
+    let mut h = SpecHarness::new();
+    let cols = h.term().grid().cols();
+
+    // Enter alt screen (DECSET 1049).
+    h.feed(b"\x1b[?1049h");
+
+    // Transmit + write placeholder cell on the LAST column of the alt
+    // grid. A narrower resize without reflow drops that cell.
+    transmit_u1(&mut h, 106);
+    h.feed(format!("\x1b[1;{cols}H").as_bytes());
+    write_placeholder_cell(&mut h, 106, '\u{0305}', '\u{0305}');
+    assert!(
+        h.term()
+            .image_cache()
+            .placeholder_anchors()
+            .contains(&ImageId::from_raw(106)),
+        "precondition: anchor recorded on alt cache while alt is active",
+    );
+
+    // Return to primary (DECRST 1049). The alt cache + alt grid stay
+    // around but become inactive.
+    h.feed(b"\x1b[?1049l");
+
+    // Resize narrower while ALT IS INACTIVE. Primary reconcile fires on
+    // the active path; the alt cache must also be reconciled against the
+    // inactive alt grid.
+    let lines = h.term().grid().lines();
+    h.term_mut().resize(lines, cols / 2, false);
+
+    // Switch back to alt to inspect the alt cache.
+    h.feed(b"\x1b[?1049h");
+
+    assert!(
+        !h.term()
+            .image_cache()
+            .placeholder_anchors()
+            .contains(&ImageId::from_raw(106)),
+        "inactive-alt anchor whose cell was dropped by resize must be reconciled — current code only reconciles the active screen, the alt cache leaks anchors past resize",
+    );
+}
+
+#[test]
+fn line_erase_csi_k_with_placeholder_cell_reconciles_anchor() {
+    // CSI K (EL, default Pn=0) erases from cursor to end of line. When
+    // the erased span covers a `U+10EEEE` cell, the anchor must be
+    // reconciled. This is the per-line EL counterpart to the per-screen
+    // ED test above.
+    let mut h = SpecHarness::new();
+    transmit_u1(&mut h, 111);
+    write_placeholder_cell(&mut h, 111, '\u{0305}', '\u{0305}');
+    assert!(
+        h.term()
+            .image_cache()
+            .placeholder_anchors()
+            .contains(&ImageId::from_raw(111))
+    );
+
+    // CUP back to (1,1) then EL (default = erase cursor to end of line).
+    h.feed(b"\x1b[1;1H\x1b[K");
+
+    assert!(
+        !h.term()
+            .image_cache()
+            .placeholder_anchors()
+            .contains(&ImageId::from_raw(111)),
+        "CSI K (EL) erasing the only placeholder cell must reconcile the anchor away",
+    );
+}
+
+#[test]
+fn inactive_primary_screen_u1_anchors_reconciled_on_resize() {
+    // Symmetric to `inactive_alt_screen_u1_anchors_reconciled_on_resize`:
+    // when alt-screen is active and resize fires, the INACTIVE PRIMARY
+    // grid + cache also resize. The primary cache anchors must be
+    // reconciled even though `self.grid()` returns the alt grid while alt
+    // is active. Without the symmetric reconcile primary anchors leak
+    // past resize whenever alt is the active screen.
+    let mut h = SpecHarness::new();
+    let cols = h.term().grid().cols();
+
+    // Set up the placeholder on PRIMARY (initial active screen).
+    transmit_u1(&mut h, 110);
+    h.feed(format!("\x1b[1;{cols}H").as_bytes());
+    write_placeholder_cell(&mut h, 110, '\u{0305}', '\u{0305}');
+    assert!(
+        h.term()
+            .image_cache()
+            .placeholder_anchors()
+            .contains(&ImageId::from_raw(110)),
+        "precondition: primary anchor recorded",
+    );
+
+    // Switch to alt — primary is now inactive.
+    h.feed(b"\x1b[?1049h");
+
+    // Resize narrower while ALT IS ACTIVE. Use reflow=false so the
+    // placeholder at the right edge of primary is truncated (the case
+    // we want to verify reconcile catches); reflow=true would migrate
+    // the cell instead of dropping it, masking the bug.
+    let lines = h.term().grid().lines();
+    h.term_mut().resize(lines, cols / 2, false);
+
+    // Return to primary to inspect the primary cache.
+    h.feed(b"\x1b[?1049l");
+
+    assert!(
+        !h.term()
+            .image_cache()
+            .placeholder_anchors()
+            .contains(&ImageId::from_raw(110)),
+        "inactive-primary anchor whose cell was dropped by resize must be reconciled — symmetric to the alt-inactive case",
+    );
+}
+
+#[test]
+fn inactive_alt_screen_u1_anchors_retained_when_cells_survive_resize() {
+    // Counterpart to the inactive-alt reconcile clear test: when the
+    // placeholder cell SURVIVES the resize (sits in a column that the
+    // narrower width still covers), the inactive-alt reconcile must keep
+    // the anchor. Without this pin a too-aggressive reconcile (e.g.
+    // clearing all anchors) would silently still satisfy the clear-side
+    // assertion above.
+    let mut h = SpecHarness::new();
+    let cols = h.term().grid().cols();
+
+    h.feed(b"\x1b[?1049h");
+    transmit_u1(&mut h, 107);
+    // Placeholder at column 1 (CUP 1;1 = col 0) — survives any narrower
+    // resize down to 1 column.
+    h.feed(b"\x1b[1;1H");
+    write_placeholder_cell(&mut h, 107, '\u{0305}', '\u{0305}');
+    assert!(
+        h.term()
+            .image_cache()
+            .placeholder_anchors()
+            .contains(&ImageId::from_raw(107))
+    );
+
+    h.feed(b"\x1b[?1049l");
+    let lines = h.term().grid().lines();
+    h.term_mut().resize(lines, cols / 2, false);
+    h.feed(b"\x1b[?1049h");
+
+    assert!(
+        h.term()
+            .image_cache()
+            .placeholder_anchors()
+            .contains(&ImageId::from_raw(107)),
+        "inactive-alt anchor whose cell SURVIVES the resize must be retained",
     );
 }

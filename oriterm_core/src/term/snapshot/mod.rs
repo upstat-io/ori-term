@@ -189,6 +189,13 @@ impl<S: EffectSink> Term<S> {
 
             let underline_color = underline_color_raw.map(|c| palette.resolve(c));
 
+            // Double-exposure clamp: when we emit a placeholder image
+            // quad for this cell, we MUST NOT also leave U+10EEEE in
+            // the cells snapshot — that would render the fallback glyph
+            // on top of the image. Substitute a space instead so bg /
+            // flags / selection coverage stays intact and only the
+            // glyph render is suppressed.
+            let mut suppress_glyph = false;
             if cell.ch == KITTY_PLACEHOLDER {
                 let incomplete =
                     IncompletePlacement::decode(&zerowidth, cell.fg, underline_color_raw);
@@ -210,6 +217,7 @@ impl<S: EffectSink> Term<S> {
                         image_col: resolved.image_col,
                         placement_id: resolved.placement_id,
                     });
+                    suppress_glyph = true;
                 }
                 prev_placeholder = Some(resolved);
             } else {
@@ -219,7 +227,7 @@ impl<S: EffectSink> Term<S> {
             out.cells.push(RenderableCell {
                 line: vis_line,
                 column: col,
-                ch: cell.ch,
+                ch: if suppress_glyph { ' ' } else { cell.ch },
                 fg,
                 bg,
                 flags: cell.flags,

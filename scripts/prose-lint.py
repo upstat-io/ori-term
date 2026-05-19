@@ -152,6 +152,15 @@ REGRESSION_DOC_COMMENT_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Test-disposition attribute exemption: `#[ignore = "BUG-XX-NNN: ..."]`,
+# `#[skip = "BUG-XX-NNN ..."]`, `#[fail = "..."]`, `#[compile_fail = "..."]`
+# attributes REQUIRE a `BUG-XX-NNN` reference per CLAUDE.md §Test
+# Disposition Discipline. The bug-id rule must not fire on bug IDs that
+# fall at-or-after the attribute prefix on the same line.
+DISPOSITION_PREFIX_RE = re.compile(
+    r"(?:#\[ignore(?:\s*[(=])|#(?:skip|fail|compile_fail)\s*\()"
+)
+
 # Banned-escape-marker patterns. The linter's job is to surface authored-
 # prose defects; silencing the report at the marker level was misused
 # historically to bypass real violations (see CLAUDE.md §NEVER SILENCE
@@ -390,6 +399,12 @@ def keyword_scan(lines, exempt, patterns, apply_md_suppressors):
         # the attribution.
         cite_line = REFERENCE_IMPL_CITE_RE.search(line) is not None
         masked = COMPOUND_ADJ_RE.sub("<compound>", line) if apply_md_suppressors else line
+        # Test-disposition attribute: BUG-XX-NNN matches at-or-after a
+        # `#[ignore = "..."]` / `#[skip(...)]` / `#[fail(...)]` /
+        # `#[compile_fail(...)]` prefix are required by CLAUDE.md §Test
+        # Disposition Discipline and MUST be exempt from the bug-id rule.
+        disp_m = DISPOSITION_PREFIX_RE.search(line)
+        disp_start = disp_m.end() if disp_m else None
         for regex, label, flags in patterns:
             if regression_doc_line and label in regression_exempt_labels:
                 continue
@@ -397,6 +412,12 @@ def keyword_scan(lines, exempt, patterns, apply_md_suppressors):
                 continue
             m = re.search(regex, masked, flags)
             if m:
+                if (
+                    label == "bug-id"
+                    and disp_start is not None
+                    and m.start() >= disp_start
+                ):
+                    continue
                 findings.append({
                     "line": idx,
                     "type": "keyword",

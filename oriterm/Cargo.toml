@@ -39,6 +39,8 @@ serde_json = "1.0.149"
 [features]
 default = []
 gpu-tests = []
+gpu-debug-image-shader = []
+gpu-debug-image-blend-off = []
 profile = []
 
 [target.'cfg(not(windows))'.dependencies]

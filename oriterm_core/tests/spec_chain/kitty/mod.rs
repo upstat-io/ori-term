@@ -11,6 +11,7 @@ mod fixtures;
 pub mod actions;
 pub mod animation;
 pub mod chunked;
+pub mod cross_stack_regression_gate;
 pub mod formats;
 pub mod placeholder_anchors;
 pub mod replies;

@@ -98,4 +98,38 @@ impl WindowRenderer {
             },
         );
     }
+
+    /// Test-only diagnostic (§13.6.1 item 5): run ONLY the
+    /// `copy_cache_to_output` blit (Stage B). No image-draws, no render
+    /// passes, no overlay pass.
+    ///
+    /// Pre-requirement: `ensure_content_cache` must have run once (drive
+    /// a normal `render_frame_cached` first) so `self.content_cache` is
+    /// allocated. Returns `None` if the cache has not been allocated.
+    ///
+    /// Creates a fresh `COPY_DST` render target of `(target_width,
+    /// target_height)`, encodes a single command buffer containing only
+    /// the `copy_cache_to_output` call, submits, and returns the target.
+    /// The caller drives `queue.write_texture` against the cache texture
+    /// BEFORE invoking this method to pre-load a known pixel region; the
+    /// returned target is read back via `gpu.read_render_target` to prove
+    /// the copy preserves the pre-loaded pixels.
+    #[cfg(all(test, feature = "gpu-tests"))]
+    pub(crate) fn copy_cache_to_output_for_test(
+        &mut self,
+        gpu: &super::super::state::GpuState,
+        target_width: u32,
+        target_height: u32,
+    ) -> Option<crate::gpu::render_target::RenderTarget> {
+        self.content_cache.as_ref()?;
+        let device = gpu.device_for_test();
+        let queue = gpu.queue_for_test();
+        let output = gpu.create_copy_dst_target(target_width, target_height);
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("copy_cache_to_output_for_test_encoder"),
+        });
+        self.copy_cache_to_output(&mut encoder, output.texture(), gpu.render_format());
+        queue.submit(std::iter::once(encoder.finish()));
+        Some(output)
+    }
 }

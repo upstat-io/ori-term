@@ -273,58 +273,44 @@ impl<S: EffectSink> Term<S> {
         if self.image_cache().placeholder_anchors().is_empty() {
             return;
         }
-        let survivors = self.collect_placeholder_image_ids();
+        let survivors = collect_placeholder_image_ids_in_grid(self.grid());
         self.image_cache_mut()
             .reconcile_placeholder_anchors(&survivors);
     }
 
-    /// Collect every `image_id` referenced by a `U+10EEEE` placeholder
-    /// cell currently in the grid (visible rows + scrollback).
-    fn collect_placeholder_image_ids(&self) -> std::collections::HashSet<crate::image::ImageId> {
-        use crate::image::KITTY_PLACEHOLDER;
-        use crate::term::handler::image::kitty::placeholder::IncompletePlacement;
-
-        let mut survivors: std::collections::HashSet<crate::image::ImageId> =
-            std::collections::HashSet::new();
-        let grid = self.grid();
-        let lines = grid.lines();
-        let cols = grid.cols();
-
-        let visit_row =
-            |row: &crate::grid::Row,
-             survivors: &mut std::collections::HashSet<crate::image::ImageId>| {
-                let mut prev = None;
-                for col_idx in 0..cols {
-                    let cell = &row[Column(col_idx)];
-                    if cell.ch == KITTY_PLACEHOLDER {
-                        let (ul, zw) = match cell.extra.as_ref() {
-                            Some(e) => (e.underline_color, e.zerowidth.clone()),
-                            None => (None, Vec::new()),
-                        };
-                        let inc = IncompletePlacement::decode(&zw, cell.fg, ul);
-                        let resolved = inc.resolve_with_continuation(prev.as_ref());
-                        if resolved.image_id != 0 {
-                            survivors.insert(crate::image::ImageId::from_raw(resolved.image_id));
-                        }
-                        prev = Some(resolved);
-                    } else {
-                        prev = None;
-                    }
-                }
-            };
-
-        // Visible grid rows.
-        for line in 0..lines {
-            let row = &grid[Line(line as i32)];
-            visit_row(row, &mut survivors);
+    /// Reconcile BOTH the primary pair (`self.grid` + `self.image_cache`)
+    /// and the alt pair (`self.alt_grid` + `self.alt_image_cache`)
+    /// against their respective grids — regardless of which screen is
+    /// currently active.
+    ///
+    /// Used by resize, where both grids are reshaped. The
+    /// `reconcile_placeholder_anchors_from_grid` per-mutation method
+    /// covers only the active pair (correct for ED/EL/per-char-input);
+    /// resize crosses BOTH grids and needs this symmetric reconcile so
+    /// the inactive pair's anchors do not leak past the resize.
+    ///
+    /// Field access (`self.grid` / `self.image_cache`) is direct so
+    /// "active vs inactive" routing of `self.grid()` / `self.image_cache()`
+    /// cannot mis-target the primary pair when alt is active.
+    pub(in crate::term) fn reconcile_both_placeholder_anchors(&mut self) {
+        // Primary pair.
+        if !self.image_cache.placeholder_anchors().is_empty() {
+            let survivors = collect_placeholder_image_ids_in_grid(&self.grid);
+            self.image_cache.reconcile_placeholder_anchors(&survivors);
         }
-        // Scrollback rows.
-        for sb_idx in 0..grid.scrollback().len() {
-            if let Some(row) = grid.scrollback().get(sb_idx) {
-                visit_row(row, &mut survivors);
+        // Alt pair, when both exist.
+        if let Some(alt_grid) = self.alt_grid.as_ref() {
+            let alt_has_anchors = self
+                .alt_image_cache
+                .as_ref()
+                .is_some_and(|c| !c.placeholder_anchors().is_empty());
+            if alt_has_anchors {
+                let survivors = collect_placeholder_image_ids_in_grid(alt_grid);
+                if let Some(cache) = self.alt_image_cache.as_mut() {
+                    cache.reconcile_placeholder_anchors(&survivors);
+                }
             }
         }
-        survivors
     }
 
     /// Printable character input: charset translation, width handling, wrapping.
@@ -339,12 +325,31 @@ impl<S: EffectSink> Term<S> {
             }
         }
 
+        // Cheap pre-check: only the cell(s) at the cursor are about to be
+        // overwritten. Reading the cell at cursor before the write tells us
+        // whether reconcile is needed — avoids the full grid walk that
+        // `reconcile_placeholder_anchors_from_grid` does on every char when
+        // U=1 anchors exist. Insert mode shifts cells right and may push a
+        // placeholder off the right edge, so insert mode triggers reconcile
+        // unconditionally (rare path). `cursor_was_past_edge` catches the
+        // LINE_WRAP wrap-target case: when cursor sits past the right edge
+        // (col >= cols) a write will wrap to the next line and overwrite a
+        // cell at col 0 that the cursor-cell pre-check cannot see.
+        let cursor_cell_was_placeholder = self.cursor_cell_is_placeholder();
+        let cursor_was_past_edge = {
+            let grid = self.grid();
+            grid.cursor().col().0 >= grid.cols()
+        };
+
         if c as u32 <= 0x7E
             && c as u32 >= 0x20
             && !self.mode.contains(TermMode::INSERT)
             && self.charset.is_ascii()
             && self.grid_mut().put_char_ascii(c)
         {
+            if cursor_cell_was_placeholder || cursor_was_past_edge {
+                self.reconcile_placeholder_anchors_from_grid();
+            }
             return;
         }
 
@@ -369,11 +374,112 @@ impl<S: EffectSink> Term<S> {
 
         let prev = self.grid().total_evicted();
         let insert = self.mode.contains(TermMode::INSERT);
+        // Width-2 chars also overwrite cursor+1; sample it before writing.
+        let cursor_plus1_was_placeholder = if width == 2 {
+            self.cell_at_offset_is_placeholder(1)
+        } else {
+            false
+        };
         let grid = self.grid_mut();
         if insert {
             grid.insert_blank(width);
         }
         grid.put_char(c);
         self.prune_images_if_evicted(prev);
+        // Reconcile when the write actually overwrote a placeholder cell
+        // (cursor or cursor+1 for width-2), when insert mode may have
+        // shifted a placeholder off the right edge, OR when the cursor
+        // sat past the right edge so the write wrapped to a new line
+        // whose target cell the pre-check could not sample.
+        if cursor_cell_was_placeholder
+            || cursor_plus1_was_placeholder
+            || insert
+            || cursor_was_past_edge
+        {
+            self.reconcile_placeholder_anchors_from_grid();
+        }
     }
+
+    /// True when the cell currently under the cursor holds a `U+10EEEE`
+    /// placeholder glyph. Cheap O(1) probe used by `input_char` to gate
+    /// the per-mutation reconcile call without walking the whole grid.
+    fn cursor_cell_is_placeholder(&self) -> bool {
+        let grid = self.grid();
+        let line = Line(grid.cursor().line() as i32);
+        let col = grid.cursor().col();
+        if col.0 >= grid.cols() {
+            return false;
+        }
+        grid[line][col].ch == crate::image::KITTY_PLACEHOLDER
+    }
+
+    /// True when the cell at `cursor.col + offset` holds a placeholder
+    /// glyph. Used for width-2 chars that overwrite the cell to the
+    /// right of the cursor as well.
+    fn cell_at_offset_is_placeholder(&self, offset: usize) -> bool {
+        let grid = self.grid();
+        let line = Line(grid.cursor().line() as i32);
+        let col = grid.cursor().col().0 + offset;
+        if col >= grid.cols() {
+            return false;
+        }
+        grid[line][Column(col)].ch == crate::image::KITTY_PLACEHOLDER
+    }
+}
+
+/// Walk a grid (visible rows + scrollback) and collect every `image_id`
+/// referenced by a surviving `U+10EEEE` placeholder cell.
+///
+/// Free function so both the active-pair reconcile
+/// (`reconcile_placeholder_anchors_from_grid`) and the symmetric
+/// both-pairs reconcile (`reconcile_both_placeholder_anchors`) can drive
+/// the walk against different grids without duplicating the cell scan.
+fn collect_placeholder_image_ids_in_grid(
+    grid: &crate::grid::Grid,
+) -> std::collections::HashSet<crate::image::ImageId> {
+    use crate::image::KITTY_PLACEHOLDER;
+    use crate::term::handler::image::kitty::placeholder::IncompletePlacement;
+
+    const EMPTY_ZW: &[char] = &[];
+
+    let mut survivors: std::collections::HashSet<crate::image::ImageId> =
+        std::collections::HashSet::new();
+    let lines = grid.lines();
+    let cols = grid.cols();
+
+    let visit_row =
+        |row: &crate::grid::Row,
+         survivors: &mut std::collections::HashSet<crate::image::ImageId>| {
+            let mut prev = None;
+            for col_idx in 0..cols {
+                let cell = &row[Column(col_idx)];
+                if cell.ch == KITTY_PLACEHOLDER {
+                    let (ul, zw): (_, &[char]) = match cell.extra.as_ref() {
+                        Some(e) => (e.underline_color, e.zerowidth.as_slice()),
+                        None => (None, EMPTY_ZW),
+                    };
+                    let inc = IncompletePlacement::decode(zw, cell.fg, ul);
+                    let resolved = inc.resolve_with_continuation(prev.as_ref());
+                    if resolved.image_id != 0 {
+                        survivors.insert(crate::image::ImageId::from_raw(resolved.image_id));
+                    }
+                    prev = Some(resolved);
+                } else {
+                    prev = None;
+                }
+            }
+        };
+
+    // Visible grid rows.
+    for line in 0..lines {
+        let row = &grid[Line(line as i32)];
+        visit_row(row, &mut survivors);
+    }
+    // Scrollback rows.
+    for sb_idx in 0..grid.scrollback().len() {
+        if let Some(row) = grid.scrollback().get(sb_idx) {
+            visit_row(row, &mut survivors);
+        }
+    }
+    survivors
 }

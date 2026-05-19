@@ -14,7 +14,7 @@ use crate::term::Term;
 use crate::theme::Theme;
 
 use super::super::test_helpers::feed;
-use super::CS_ATTRIBS;
+use super::checksum::CS_ATTRIBS;
 
 fn term_24x80() -> Term<VoidEffectSink> {
     Term::new(24, 80, 0, Theme::default(), VoidEffectSink)

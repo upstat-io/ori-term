@@ -19,7 +19,16 @@ const DEFAULT_GPU_MEMORY_LIMIT: usize = 512 * 1024 * 1024;
 
 /// An uploaded image texture on the GPU.
 pub(crate) struct GpuImageTexture {
-    _texture: Texture,
+    /// Underlying GPU texture. Production: retained to keep the bind-group's
+    /// view valid for the texture's lifetime (wgpu requires the texture to
+    /// outlive its views). Test-only: `read_texture_for_test` reads back
+    /// pixels from it per §13.6.1 item 3.
+    #[allow(
+        dead_code,
+        reason = "RAII anchor for bind-group view; also read by test-only \
+                  read_texture_for_test under cfg(any(test, feature = gpu-tests))"
+    )]
+    texture: Texture,
     _view: TextureView,
     bind_group: BindGroup,
     size_bytes: usize,
@@ -97,6 +106,11 @@ impl ImageTextureCache {
                     depth_or_array_layers: 1,
                 };
 
+                // `COPY_SRC` permits diagnostic readback per §13.6.1 item 3
+                // — the cost is a one-bit hardware-state flag, no driver-side
+                // memory or perf impact. Texture already lives in VRAM under
+                // `TEXTURE_BINDING | COPY_DST`; flagging `COPY_SRC` only
+                // authorizes the `copy_texture_to_buffer` direction.
                 let texture = device.create_texture(&TextureDescriptor {
                     label: Some("image_texture"),
                     size,
@@ -104,7 +118,9 @@ impl ImageTextureCache {
                     sample_count: 1,
                     dimension: TextureDimension::D2,
                     format: TextureFormat::Rgba8UnormSrgb,
-                    usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
+                    usage: TextureUsages::TEXTURE_BINDING
+                        | TextureUsages::COPY_DST
+                        | TextureUsages::COPY_SRC,
                     view_formats: &[],
                 });
 
@@ -154,7 +170,7 @@ impl ImageTextureCache {
                 self.gpu_memory_used += size_bytes;
 
                 let entry = e.insert(GpuImageTexture {
-                    _texture: texture,
+                    texture,
                     _view: view,
                     bind_group,
                     size_bytes,
@@ -268,6 +284,110 @@ impl ImageTextureCache {
     #[cfg(test)]
     pub(crate) fn texture_count(&self) -> usize {
         self.textures.len()
+    }
+
+    /// Test-only diagnostic: read back the raw RGBA bytes of an uploaded
+    /// image texture. Returns `None` if no upload exists for `id`.
+    ///
+    /// Allocates a host-visible staging buffer, encodes a
+    /// `copy_texture_to_buffer` from the cached texture, submits + waits
+    /// for completion, maps the buffer and returns the bytes (RGBA order,
+    /// padding stripped — `len() == width * height * 4`).
+    ///
+    /// Honors wgpu's `COPY_BYTES_PER_ROW_ALIGNMENT = 256` row-padding rule
+    /// internally; returned bytes have NO padding rows.
+    ///
+    /// Caller passes the `device + queue` from the active `GpuState` —
+    /// probes typically reach them via `harness.gpu().device_for_test()` /
+    /// `harness.gpu().queue_for_test()`. Used by §13.6.1 item 3
+    /// (texture-readback probe) to confirm uploaded pixels match the
+    /// transmit payload prior to render — isolating bugs above vs below
+    /// the upload boundary.
+    #[cfg(any(test, feature = "gpu-tests"))]
+    #[allow(
+        dead_code,
+        reason = "consumed by §13.6.1 item 3 probe pilots authored after \
+                  the foundational instrumentation lands; gated on \
+                  cfg(any(test, feature = gpu-tests))"
+    )]
+    pub(crate) fn read_texture_for_test(
+        &self,
+        id: ImageId,
+        device: &Device,
+        queue: &Queue,
+    ) -> Option<Vec<u8>> {
+        let entry = self.textures.get(&id)?;
+        let texture = &entry.texture;
+        let width = texture.width();
+        let height = texture.height();
+        let bytes_per_pixel: u32 = 4;
+        let unpadded_row = width * bytes_per_pixel;
+        let align = wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
+        let padded_row = unpadded_row.div_ceil(align) * align;
+        let buffer_size = u64::from(padded_row) * u64::from(height);
+
+        let staging = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("image_texture_readback"),
+            size: buffer_size,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("image_texture_readback_encoder"),
+        });
+        encoder.copy_texture_to_buffer(
+            wgpu::TexelCopyTextureInfo {
+                texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            wgpu::TexelCopyBufferInfo {
+                buffer: &staging,
+                layout: wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(padded_row),
+                    rows_per_image: Some(height),
+                },
+            },
+            Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+        );
+
+        queue.submit(std::iter::once(encoder.finish()));
+
+        let slice = staging.slice(..);
+        let (tx, rx) = std::sync::mpsc::channel();
+        slice.map_async(wgpu::MapMode::Read, move |result| {
+            let _ = tx.send(result);
+        });
+        device
+            .poll(wgpu::PollType::wait_indefinitely())
+            .expect("read_texture_for_test: GPU poll failed");
+        rx.recv()
+            .expect("read_texture_for_test: readback channel disconnected")
+            .expect("read_texture_for_test: buffer map failed");
+
+        let data = slice.get_mapped_range();
+        let unpadded_row_usize = unpadded_row as usize;
+        let padded_row_usize = padded_row as usize;
+        let mut out = Vec::with_capacity(unpadded_row_usize * height as usize);
+        if padded_row == unpadded_row {
+            out.extend_from_slice(&data[..unpadded_row_usize * height as usize]);
+        } else {
+            for row in 0..height as usize {
+                let start = row * padded_row_usize;
+                let end = start + unpadded_row_usize;
+                out.extend_from_slice(&data[start..end]);
+            }
+        }
+        drop(data);
+        staging.unmap();
+        Some(out)
     }
 }
 

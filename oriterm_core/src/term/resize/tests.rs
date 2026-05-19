@@ -486,3 +486,77 @@ fn term_resize_without_reflow_skips_remap() {
         "reflow=false must leave cell_row unchanged"
     );
 }
+
+/// Regression guard: resize reconciles BOTH the primary AND the
+/// inactive-alt-screen image cache's placeholder anchors against
+/// their respective grids. The fix is `reconcile_both_placeholder_anchors`
+/// at `term/handler/helpers.rs:295` invoked from `term/resize/mod.rs:91`.
+/// Without this symmetric reconcile, the inactive cache's anchors
+/// referencing images whose backing cells were dropped by resize
+/// would survive as orphans, and the next alt-screen entry would
+/// render zombie placeholders.
+///
+/// This test:
+///   1. Allocates the alt cache via `swap_alt`.
+///   2. Inserts a placeholder anchor in the alt cache (no `U+10EEEE`
+///      cells written — anchor is orphan-by-construction).
+///   3. Swaps back to primary (alt cache becomes inactive but retains
+///      the orphan anchor).
+///   4. Triggers `resize`.
+///   5. Asserts the orphan anchor was reconciled away.
+///
+/// See: plans/spec-conformance/section-13-kitty-graphics.md §13.6.1 item 8
+#[test]
+fn resize_from_primary_reconciles_inactive_alt_screen_placeholder_anchors() {
+    let mut term = Term::new(24, 80, 100, Theme::default(), VoidEffectSink);
+    term.set_cell_dimensions(8, 16);
+
+    // Enter alt screen — allocates `alt_grid` + `alt_image_cache`.
+    term.swap_alt();
+
+    // Insert an orphan placeholder anchor in the alt cache. We never
+    // write a `U+10EEEE` cell, so the anchor has no surviving cell to
+    // reference.
+    let anchor_id = ImageId(99);
+    term.image_cache_mut().add_placeholder_anchor(anchor_id);
+    assert!(
+        term.image_cache()
+            .placeholder_anchors()
+            .contains(&anchor_id),
+        "anchor inserted into the active (alt) cache should be visible there"
+    );
+
+    // Swap back to primary. The alt cache field stays allocated and
+    // still carries the orphan anchor — we are NOT testing the active
+    // path here, we are testing the INACTIVE-cache reconcile.
+    term.swap_alt();
+    assert!(
+        term.alt_image_cache
+            .as_ref()
+            .expect("alt cache field remains allocated after toggle back")
+            .placeholder_anchors()
+            .contains(&anchor_id),
+        "orphan anchor must still be present in the inactive alt cache before resize"
+    );
+
+    // Trigger resize on the primary screen with a real dimension change
+    // (24×80 → 24×100 so we don't hit `resize`'s same-size early-exit at
+    // `term/resize/mod.rs:28`). The fix is that `Term::resize` invokes
+    // `reconcile_both_placeholder_anchors` which walks BOTH grids and
+    // reconciles BOTH caches; without this, the alt cache's orphan
+    // anchor survives.
+    term.resize(24, 100, true);
+
+    // Pin: the orphan was reconciled away by the symmetric reconcile.
+    assert!(
+        term.alt_image_cache
+            .as_ref()
+            .expect("alt cache field still allocated post-resize")
+            .placeholder_anchors()
+            .is_empty(),
+        "inactive alt cache's orphan placeholder anchor must be reconciled \
+         away by resize — if this fails, `Term::resize` regressed to \
+         calling `reconcile_placeholder_anchors_from_grid` (active grid \
+         only) instead of `reconcile_both_placeholder_anchors`"
+    );
+}
