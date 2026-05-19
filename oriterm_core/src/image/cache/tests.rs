@@ -531,3 +531,89 @@ fn place_with_no_underlying_image_does_not_panic() {
         "orphan place() must not synthesize an ImageData entry for image_id=99"
     );
 }
+
+// ── §13.6.1 placeholder anchor grid (multi-cell U=1 UV slicing) ─────
+
+/// Regression: spec-conformance §13.6.1 — `set_placeholder_anchor_grid`
+/// records `(cols, rows)` on the anchor, readable via
+/// `placeholder_anchor_grid_for`. Distinct from
+/// `add_placeholder_anchor` which only marks the eviction immunity flag.
+#[test]
+fn placeholder_anchor_grid_round_trip() {
+    let mut cache = ImageCache::new();
+    cache.add_placeholder_anchor(ImageId(5));
+    assert_eq!(
+        cache.placeholder_anchor_grid_for(ImageId(5)),
+        None,
+        "anchor without explicit grid must report None — caller defaults to (1, 1)"
+    );
+
+    cache.set_placeholder_anchor_grid(ImageId(5), 4, 2);
+    assert_eq!(
+        cache.placeholder_anchor_grid_for(ImageId(5)),
+        Some((4, 2)),
+        "grid round-trip"
+    );
+
+    // Repeated set with same value is idempotent — no panic, value unchanged.
+    cache.set_placeholder_anchor_grid(ImageId(5), 4, 2);
+    assert_eq!(cache.placeholder_anchor_grid_for(ImageId(5)), Some((4, 2)));
+
+    // Re-set with different dims overwrites.
+    cache.set_placeholder_anchor_grid(ImageId(5), 7, 1);
+    assert_eq!(cache.placeholder_anchor_grid_for(ImageId(5)), Some((7, 1)));
+}
+
+/// Regression: spec-conformance §13.6.1 — `set_placeholder_anchor_grid`
+/// with zero cols or rows is a no-op. The cache rejects invalid grids at
+/// the entry point so emit can safely divide by cols/rows without
+/// per-call guards.
+#[test]
+fn placeholder_anchor_grid_rejects_zero_dims() {
+    let mut cache = ImageCache::new();
+    cache.add_placeholder_anchor(ImageId(7));
+
+    cache.set_placeholder_anchor_grid(ImageId(7), 0, 4);
+    cache.set_placeholder_anchor_grid(ImageId(7), 4, 0);
+    cache.set_placeholder_anchor_grid(ImageId(7), 0, 0);
+    assert_eq!(
+        cache.placeholder_anchor_grid_for(ImageId(7)),
+        None,
+        "zero dims must be rejected at the cache boundary"
+    );
+
+    // A valid set after rejections still records.
+    cache.set_placeholder_anchor_grid(ImageId(7), 3, 2);
+    assert_eq!(cache.placeholder_anchor_grid_for(ImageId(7)), Some((3, 2)));
+}
+
+/// Regression: spec-conformance §13.6.1 — `reconcile_placeholder_anchors`
+/// drops grid entries for any image_id no longer in the survivor set,
+/// keeping the anchor set and grid map synchronized. Without this,
+/// stale grid entries accumulate after grid edits erase placeholder
+/// cells.
+#[test]
+fn reconcile_placeholder_anchors_drops_grid_for_evicted_ids() {
+    let mut cache = ImageCache::new();
+    cache.add_placeholder_anchor(ImageId(1));
+    cache.set_placeholder_anchor_grid(ImageId(1), 3, 3);
+    cache.add_placeholder_anchor(ImageId(2));
+    cache.set_placeholder_anchor_grid(ImageId(2), 5, 1);
+
+    let mut survivors = std::collections::HashSet::new();
+    survivors.insert(ImageId(2));
+    cache.reconcile_placeholder_anchors(&survivors);
+
+    assert!(
+        !cache.placeholder_anchors().contains(&ImageId(1)),
+        "anchor for evicted image_id=1 must drop"
+    );
+    assert_eq!(
+        cache.placeholder_anchor_grid_for(ImageId(1)),
+        None,
+        "grid for evicted image_id=1 must drop alongside the anchor — \
+         stale grid entries are a LEAK:scattered-knowledge regression"
+    );
+    assert!(cache.placeholder_anchors().contains(&ImageId(2)));
+    assert_eq!(cache.placeholder_anchor_grid_for(ImageId(2)), Some((5, 1)));
+}

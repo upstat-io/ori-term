@@ -200,3 +200,4 @@ fn rss_series_plateaus() {
             .collect::<Vec<_>>(),
     );
 }
+

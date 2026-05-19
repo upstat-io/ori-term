@@ -340,15 +340,10 @@ pub(super) fn emit_image_quads(input: &FrameInput, frame: &mut PreparedFrame, ox
 /// Reads `RenderableContent::placeholder_cells` directly — no grid rescan.
 /// Each placeholder cell produces a single-cell-sized quad at the cell's
 /// position; the UV maps to the corresponding slice of the source image
-/// based on `image_row` / `image_col`. Multi-cell placements (`c>1` /
-/// `r>1`) emit one quad per cell making up the slice.
-///
-/// Currently sized for single-cell placements: when no `image_row` /
-/// `image_col` non-zero values appear, the UV covers the full image —
-/// matching the basic `c=1,r=1` pilot. Multi-cell sliced placements rely
-/// on the encoded indices and assume the image is divided uniformly into
-/// the placement's grid; without a known placement-grid (the U=1 transmit
-/// path does not store one yet), the UV falls back to the full image. The
+/// based on `image_row` / `image_col` within the recorded
+/// `(placement_cols × placement_rows)` grid. Multi-cell placements
+/// (`c>1` / `r>1`) emit one quad per cell making up the slice; single-
+/// cell placements default to `(1, 1)` and render the full image. The
 /// fragment shader clips outside the framebuffer.
 pub(super) fn emit_placeholder_quads(
     input: &FrameInput,
@@ -364,21 +359,25 @@ pub(super) fn emit_placeholder_quads(
     for pc in &input.content.placeholder_cells {
         let x = ox + pc.column.0 as f32 * cw;
         let y = oy + pc.line as f32 * ch;
-        // Without a stored placement-grid for this image, render the
-        // full image into the cell; image_row/image_col are preserved so
-        // a future multi-cell expansion can compute the UV slice without
-        // a snapshot field rename.
-        let _ = (pc.image_row, pc.image_col);
+        // (cols, rows) ≥ 1 invariant: snapshot defaults to (1, 1) for any
+        // anchor without a recorded grid; `set_placeholder_anchor_grid`
+        // rejects zero values. Division by `cols`/`rows` is therefore safe.
+        let cols = pc.placement_cols.max(1) as f32;
+        let rows = pc.placement_rows.max(1) as f32;
+        let uv_w = 1.0 / cols;
+        let uv_h = 1.0 / rows;
+        let uv_x = pc.image_col as f32 * uv_w;
+        let uv_y = pc.image_row as f32 * uv_h;
         let quad = super::super::prepared_frame::ImageQuad {
             image_id: pc.image_id,
             x,
             y,
             w: cw,
             h: ch,
-            uv_x: 0.0,
-            uv_y: 0.0,
-            uv_w: 1.0,
-            uv_h: 1.0,
+            uv_x,
+            uv_y,
+            uv_w,
+            uv_h,
             opacity: 1.0,
         };
         // Kitty unicode placeholders default to drawing above text.

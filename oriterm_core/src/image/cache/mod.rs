@@ -72,6 +72,15 @@ pub struct ImageCache {
     /// (no placement => unplaced rank). The anchor set extends reachability
     /// to cover placeholder-only images.
     pub(super) placeholder_anchors: HashSet<ImageId>,
+    /// Per-image display grid `(cols, rows)` for U=1 placements.
+    ///
+    /// When a U=1 transmit/place carries `c=N,r=M`, the image is intended
+    /// to span an N×M cell grid; each placeholder cell carries its
+    /// `(image_row, image_col)` index within that grid. The GPU emit path
+    /// reads this map to compute the per-cell UV slice
+    /// `(image_col/cols, image_row/rows, 1/cols, 1/rows)`. Absent entries
+    /// default to `(1, 1)` (single cell renders the full image).
+    pub(super) placeholder_anchor_grid: HashMap<ImageId, (u32, u32)>,
 }
 
 impl ImageCache {
@@ -93,6 +102,7 @@ impl ImageCache {
             frame_starts: HashMap::new(),
             animation_enabled: true,
             placeholder_anchors: HashSet::new(),
+            placeholder_anchor_grid: HashMap::new(),
         }
     }
 
@@ -105,9 +115,31 @@ impl ImageCache {
         }
     }
 
+    /// Record the display grid `(cols, rows)` for a U=1 anchor.
+    ///
+    /// Called from the kitty handler whenever a U=1 transmit/place carries
+    /// `c=N,r=M`. A `(1, 1)` grid is the implicit default (single-cell
+    /// placement); the caller skips this method in that case.
+    pub(crate) fn set_placeholder_anchor_grid(&mut self, id: ImageId, cols: u32, rows: u32) {
+        if cols == 0 || rows == 0 {
+            return;
+        }
+        if self.placeholder_anchor_grid.insert(id, (cols, rows)) != Some((cols, rows)) {
+            self.dirty = true;
+        }
+    }
+
     /// Image IDs anchored by the unicode-placeholder protocol.
     pub fn placeholder_anchors(&self) -> &HashSet<ImageId> {
         &self.placeholder_anchors
+    }
+
+    /// Display grid `(cols, rows)` for a U=1 anchor, if any.
+    ///
+    /// `None` means "no recorded grid" — caller renders the placeholder
+    /// cell as a full single-cell image (the §13.4 baseline behavior).
+    pub fn placeholder_anchor_grid_for(&self, id: ImageId) -> Option<(u32, u32)> {
+        self.placeholder_anchor_grid.get(&id).copied()
     }
 
     /// Restrict the anchor set to the supplied survivor IDs.
@@ -119,6 +151,10 @@ impl ImageCache {
     pub(crate) fn reconcile_placeholder_anchors(&mut self, survivors: &HashSet<ImageId>) {
         let before = self.placeholder_anchors.len();
         self.placeholder_anchors.retain(|id| survivors.contains(id));
+        // The anchor grid mirrors the anchor set — drop entries for any
+        // image_id no longer anchored.
+        self.placeholder_anchor_grid
+            .retain(|id, _| survivors.contains(id));
         if self.placeholder_anchors.len() != before {
             self.dirty = true;
         }
@@ -496,6 +532,7 @@ impl std::fmt::Debug for ImageCache {
             .field("frame_starts", &self.frame_starts.len())
             .field("animation_enabled", &self.animation_enabled)
             .field("placeholder_anchors", &self.placeholder_anchors.len())
+            .field("placeholder_anchor_grid", &self.placeholder_anchor_grid.len())
             .finish()
     }
 }

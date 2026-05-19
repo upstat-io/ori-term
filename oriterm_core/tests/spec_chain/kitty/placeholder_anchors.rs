@@ -555,3 +555,150 @@ fn inactive_alt_screen_u1_anchors_retained_when_cells_survive_resize() {
         "inactive-alt anchor whose cell SURVIVES the resize must be retained",
     );
 }
+
+// ── §13.6.1 multi-cell U=1 placeholder display grid ────────────────
+
+/// Regression: spec-conformance §13.6.1 — `a=T,U=1,c=11,r=1` records the
+/// (cols, rows) display grid on the cache anchor so the GPU emit path
+/// can slice per-cell UVs. Single-cell `c=1,r=1` is the implicit default
+/// and may either record (1,1) or no entry — both render the full image.
+#[test]
+fn u1_transmit_and_place_with_explicit_grid_records_anchor_grid() {
+    let mut h = SpecHarness::new();
+    // a=T,U=1,c=11,r=1 — transmit + place + multi-cell display grid.
+    h.feed(&kitty_apc(
+        b"a=T,U=1,i=1,c=11,r=1,f=32,s=4,v=4",
+        &b64(&rgba_4x4_red()),
+    ));
+
+    assert_eq!(
+        h.term()
+            .image_cache()
+            .placeholder_anchor_grid_for(ImageId::from_raw(1)),
+        Some((11, 1)),
+        "a=T,U=1 with explicit c=11,r=1 must populate the anchor grid \
+         so emit_placeholder_quads can compute per-cell UV slices"
+    );
+}
+
+/// Regression: spec-conformance §13.6.1 — separate `a=t,U=1` then
+/// `a=p,U=1,c=2,r=3` records the grid via the `a=p` path (control-key
+/// inheritance through the kitty placement-create path).
+#[test]
+fn u1_separate_transmit_then_place_with_grid_records_anchor_grid() {
+    let mut h = SpecHarness::new();
+    h.feed(&kitty_apc(b"a=t,U=1,i=2,f=32,s=4,v=4", &b64(&rgba_4x4_red())));
+    h.feed(&kitty_apc(b"a=p,U=1,i=2,c=2,r=3", ""));
+
+    assert_eq!(
+        h.term()
+            .image_cache()
+            .placeholder_anchor_grid_for(ImageId::from_raw(2)),
+        Some((2, 3)),
+        "a=p,U=1 with c=2,r=3 must populate the anchor grid"
+    );
+}
+
+/// Regression: spec-conformance §13.6.1 — `c=1,r=1` is the SINGLE-CELL
+/// case (kitty_placeholder_basic uses it). The grid IS recorded as
+/// `(1, 1)` so emit defaults its UV to the full image cell. Negative
+/// pin against a future "skip recording when c=r=1" optimization that
+/// would diverge from the multi-cell path.
+#[test]
+fn u1_single_cell_grid_records_one_by_one() {
+    let mut h = SpecHarness::new();
+    h.feed(&kitty_apc(
+        b"a=T,U=1,i=3,c=1,r=1,f=32,s=4,v=4",
+        &b64(&rgba_4x4_red()),
+    ));
+
+    assert_eq!(
+        h.term()
+            .image_cache()
+            .placeholder_anchor_grid_for(ImageId::from_raw(3)),
+        Some((1, 1)),
+        "c=1,r=1 must record the explicit single-cell grid — emit divides \
+         by cols/rows in either path, so the (1,1) entry is correct and \
+         silent skipping would create a divergence between explicit-grid \
+         and default-grid behavior"
+    );
+}
+
+/// Regression: spec-conformance §13.6.1 — `a=T,U=1` WITHOUT `c=`/`r=`
+/// records the anchor but NO grid entry. Emit falls back to (1, 1)
+/// (full image) via the `placement_cols/placement_rows` default.
+#[test]
+fn u1_transmit_without_explicit_grid_records_no_anchor_grid() {
+    let mut h = SpecHarness::new();
+    h.feed(&kitty_apc(b"a=T,U=1,i=4,f=32,s=4,v=4", &b64(&rgba_4x4_red())));
+
+    assert!(
+        h.term()
+            .image_cache()
+            .placeholder_anchors()
+            .contains(&ImageId::from_raw(4)),
+        "anchor must be added even without explicit grid"
+    );
+    assert_eq!(
+        h.term()
+            .image_cache()
+            .placeholder_anchor_grid_for(ImageId::from_raw(4)),
+        None,
+        "no c=/r= → no recorded grid; snapshot defaults each placeholder \
+         cell to (1, 1) so emit renders the full image"
+    );
+}
+
+/// Regression: spec-conformance §13.6.1 — placeholder cells in the
+/// renderable snapshot carry the (cols, rows) display grid. The GPU
+/// emit path reads these fields per-cell — without them every cell
+/// would render the full image (the pre-§13.6.1 single-cell baseline).
+#[test]
+fn snapshot_placeholder_cells_carry_display_grid() {
+    let mut h = SpecHarness::new();
+    h.feed(&kitty_apc(
+        b"a=T,U=1,i=1,c=2,r=2,f=32,s=4,v=4",
+        &b64(&rgba_4x4_red()),
+    ));
+    // Park cursor at row 1, col 1 (0-indexed (0, 0)), then write a
+    // single placeholder cell with row_diacritic=0 col_diacritic=0 +
+    // fg=palette(1) carrying image_id_low=1.
+    h.feed(b"\x1b[1;1H");
+    write_placeholder_cell(&mut h, 1, '\u{0305}', '\u{0305}');
+
+    let content = h.term().renderable_content();
+    assert!(
+        !content.placeholder_cells.is_empty(),
+        "placeholder cell must appear in snapshot"
+    );
+    let pc = &content.placeholder_cells[0];
+    assert_eq!(pc.image_id, ImageId::from_raw(1));
+    assert_eq!(
+        (pc.placement_cols, pc.placement_rows),
+        (2, 2),
+        "snapshot must propagate the (c=2, r=2) display grid to the \
+         placeholder cell so emit can slice UVs per cell"
+    );
+}
+
+/// Regression: spec-conformance §13.6.1 — placeholder cells for images
+/// with NO recorded grid (no c=/r= at transmit/place) carry the
+/// (1, 1) default in the snapshot, matching the pre-§13.6.1 single-cell
+/// behavior and keeping `kitty_placeholder_basic` golden stable.
+#[test]
+fn snapshot_placeholder_cells_default_grid_to_one_by_one_when_unrecorded() {
+    let mut h = SpecHarness::new();
+    h.feed(&kitty_apc(b"a=T,U=1,i=1,f=32,s=4,v=4", &b64(&rgba_4x4_red())));
+    h.feed(b"\x1b[1;1H");
+    write_placeholder_cell(&mut h, 1, '\u{0305}', '\u{0305}');
+
+    let content = h.term().renderable_content();
+    assert!(!content.placeholder_cells.is_empty());
+    let pc = &content.placeholder_cells[0];
+    assert_eq!(
+        (pc.placement_cols, pc.placement_rows),
+        (1, 1),
+        "cells without a recorded display grid default to (1, 1) so emit \
+         renders the full image — kitty_placeholder_basic pilot pin"
+    );
+}
