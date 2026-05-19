@@ -251,33 +251,57 @@ fn placeholder_category_matrix_completeness() {
     // that could match this file's own probe table) and asserts each
     // category has at least one declared probe test.
     let category_probes: &[(&str, &[&str])] = &[
-        ("encoding", &[
-            "placeholder_decode_with_fg_color_and_diacritics",
-            "placeholder_decode_continuation_row_only",
-            "placeholder_cell_without_image_renders_as_glyph_not_quad",
-        ]),
-        ("snapshot", &[
-            "renderable_content_surfaces_placeholder_cells_alongside_image_placements",
-            "placeholder_anchored_cell_does_not_also_emit_text_glyph_quad",
-        ]),
+        (
+            "encoding",
+            &[
+                "placeholder_decode_with_fg_color_and_diacritics",
+                "placeholder_decode_continuation_row_only",
+                "placeholder_cell_without_image_renders_as_glyph_not_quad",
+            ],
+        ),
+        (
+            "snapshot",
+            &[
+                "renderable_content_surfaces_placeholder_cells_alongside_image_placements",
+                "placeholder_anchored_cell_does_not_also_emit_text_glyph_quad",
+            ],
+        ),
         // `emit` exercises the GPU emit path's snapshot side — proving
         // placeholder cells reach the image-quad pipeline (and do NOT
         // double-emit a text-glyph quad).
-        ("emit", &["placeholder_anchored_cell_does_not_also_emit_text_glyph_quad"]),
-        ("reflow", &["placeholder_cells_resolve_to_stored_image_after_reflow"]),
-        ("scroll", &[
-            "prune_scrollback_retains_anchor_when_placeholder_cells_remain_in_viewport",
-            "prune_scrollback_clears_orphaned_placeholder_anchors_for_images_with_no_surviving_cells",
-        ]),
-        ("ed", &["ed_full_screen_clears_orphaned_placeholder_anchors"]),
+        (
+            "emit",
+            &["placeholder_anchored_cell_does_not_also_emit_text_glyph_quad"],
+        ),
+        (
+            "reflow",
+            &["placeholder_cells_resolve_to_stored_image_after_reflow"],
+        ),
+        (
+            "scroll",
+            &[
+                "prune_scrollback_retains_anchor_when_placeholder_cells_remain_in_viewport",
+                "prune_scrollback_clears_orphaned_placeholder_anchors_for_images_with_no_surviving_cells",
+            ],
+        ),
+        (
+            "ed",
+            &["ed_full_screen_clears_orphaned_placeholder_anchors"],
+        ),
         // `el` = CSI K (Erase in Line); the DECERA rect-erase test
         // covers a different sequence ($z), so we need a CSI K probe.
-        ("el", &["line_erase_csi_k_with_placeholder_cell_reconciles_anchor"]),
-        ("alt-screen", &[
-            "inactive_alt_screen_u1_anchors_reconciled_on_resize",
-            "inactive_alt_screen_u1_anchors_retained_when_cells_survive_resize",
-            "inactive_primary_screen_u1_anchors_reconciled_on_resize",
-        ]),
+        (
+            "el",
+            &["line_erase_csi_k_with_placeholder_cell_reconciles_anchor"],
+        ),
+        (
+            "alt-screen",
+            &[
+                "inactive_alt_screen_u1_anchors_reconciled_on_resize",
+                "inactive_alt_screen_u1_anchors_retained_when_cells_survive_resize",
+                "inactive_primary_screen_u1_anchors_reconciled_on_resize",
+            ],
+        ),
     ];
 
     let test_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/spec_chain/kitty");

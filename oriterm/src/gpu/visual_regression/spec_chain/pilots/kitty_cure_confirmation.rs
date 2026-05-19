@@ -127,7 +127,14 @@ fn kitty_image_renders_visible_red_pixel_at_cell_zero_zero() {
             if is_red_ish(&pixels, off) {
                 red_in_cell += 1;
             } else if sample_colors.len() < 4 && off + 4 <= pixels.len() {
-                sample_colors.push((x, y, pixels[off], pixels[off + 1], pixels[off + 2], pixels[off + 3]));
+                sample_colors.push((
+                    x,
+                    y,
+                    pixels[off],
+                    pixels[off + 1],
+                    pixels[off + 2],
+                    pixels[off + 3],
+                ));
             }
         }
     }

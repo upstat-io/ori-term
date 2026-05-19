@@ -520,7 +520,9 @@ fn resize_from_primary_reconciles_inactive_alt_screen_placeholder_anchors() {
     let anchor_id = ImageId(99);
     term.image_cache_mut().add_placeholder_anchor(anchor_id);
     assert!(
-        term.image_cache().placeholder_anchors().contains(&anchor_id),
+        term.image_cache()
+            .placeholder_anchors()
+            .contains(&anchor_id),
         "anchor inserted into the active (alt) cache should be visible there"
     );
 

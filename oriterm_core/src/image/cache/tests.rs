@@ -405,7 +405,8 @@ fn snapshot_construction_does_not_mutate_image_cache_recency() {
         image_number: None,
     };
     term.image_cache_mut().store(data).unwrap();
-    term.image_cache_mut().place(make_placement(id.0, 0, 0, 2, 2));
+    term.image_cache_mut()
+        .place(make_placement(id.0, 0, 0, 2, 2));
 
     let baseline_last_accessed = term
         .image_cache()

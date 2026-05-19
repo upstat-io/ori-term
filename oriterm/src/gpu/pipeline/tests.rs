@@ -354,19 +354,19 @@ fn instrumentation_bisection_matrix_completeness() {
     const PROBES: &[&str] = &[
         // Pipeline state probes (3) — isolate failing layer inside the
         // pipeline itself.
-        "texture_readback",            // §13.6.1 item 3 — ImageTextureCache::read_texture_for_test
-        "shader_debug_color",          // §13.6.1 item 9 — gpu-debug-image-shader feature
-        "blend_state_bypass",          // §13.6.1 item 10 — gpu-debug-image-blend-off + create_image_pipeline_no_blend
+        "texture_readback", // §13.6.1 item 3 — ImageTextureCache::read_texture_for_test
+        "shader_debug_color", // §13.6.1 item 9 — gpu-debug-image-shader feature
+        "blend_state_bypass", // §13.6.1 item 10 — gpu-debug-image-blend-off + create_image_pipeline_no_blend
         // Direct construction probe (1) — isolate orchestration from pipeline.
-        "minimal_quad_draw",           // §13.6.1 item 11 — pilots/minimal_image_quad.rs
+        "minimal_quad_draw", // §13.6.1 item 11 — pilots/minimal_image_quad.rs
         // Cross-protocol comparison probe (1).
         "cross_protocol_sister_sixel", // §13.6.1 item 12 — probe_sixel_pipeline_stages
         // Frozen-baseline state-drift probe (1).
-        "pipeline_state_dump",         // §13.6.1 item 13 — image_pipeline_state_matches_frozen_baseline
+        "pipeline_state_dump", // §13.6.1 item 13 — image_pipeline_state_matches_frozen_baseline
         // Orchestration probes (3) — bisect render_frame_cached stages.
-        "content_cache_view",          // §13.6.1 item 4 — probe_content_cache_view_contains_red_pixels
-        "copy_cache_to_output",        // §13.6.1 item 5 — copy_cache_to_output_preserves_kitty_red_pixels
-        "overlay_pass_load_op",        // §13.6.1 item 6 — overlay_pass_uses_load_op_not_clear_op
+        "content_cache_view", // §13.6.1 item 4 — probe_content_cache_view_contains_red_pixels
+        "copy_cache_to_output", // §13.6.1 item 5 — copy_cache_to_output_preserves_kitty_red_pixels
+        "overlay_pass_load_op", // §13.6.1 item 6 — overlay_pass_uses_load_op_not_clear_op
         // Apex regression guard (1) — the cure-confirmation gate.
         "cure_confirmation_cell_pinned", // §13.6.1 item 14 — kitty_image_renders_visible_red_pixel_at_cell_zero_zero
     ];

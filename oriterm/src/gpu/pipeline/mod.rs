@@ -43,13 +43,13 @@ const COLOR_FG_SHADER_SRC: &str = include_str!("../shaders/color_fg.wgsl");
 mod image;
 pub(crate) mod ui_rect;
 
+#[cfg(feature = "gpu-debug-image-blend-off")]
+pub use image::create_image_pipeline_no_blend;
 pub use image::{
     IMAGE_INSTANCE_STRIDE, create_image_pipeline, create_image_texture_bind_group_layout,
 };
 #[cfg(test)]
 pub use image::{ImagePipelineStateDump, dump_image_pipeline_state};
-#[cfg(feature = "gpu-debug-image-blend-off")]
-pub use image::create_image_pipeline_no_blend;
 pub use ui_rect::create_ui_rect_pipeline;
 
 /// Instance buffer stride in bytes.

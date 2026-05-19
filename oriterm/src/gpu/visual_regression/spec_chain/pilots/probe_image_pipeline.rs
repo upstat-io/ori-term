@@ -97,7 +97,10 @@ mod gpu_probes {
             );
             return;
         };
-        eprintln!("[probe-cache-view] cache view {w}x{h}, {} bytes", pixels.len());
+        eprintln!(
+            "[probe-cache-view] cache view {w}x{h}, {} bytes",
+            pixels.len()
+        );
 
         let mut red_count = 0usize;
         let mut first_red: Option<(usize, usize, u8, u8, u8, u8)> = None;
@@ -289,8 +292,7 @@ mod gpu_probes {
 
         // Same byte stream as the sixel_minimal pilot — a 10x12 light
         // gray rectangle, well above the visual floor.
-        const SIXEL_BYTES: &[u8] =
-            b"\x1bPq#0;2;100;100;100#0!10~-#0!10~\x1b\\";
+        const SIXEL_BYTES: &[u8] = b"\x1bPq#0;2;100;100;100#0!10~-#0!10~\x1b\\";
         harness.core_mut().feed(SIXEL_BYTES);
 
         let term = harness.core().term();

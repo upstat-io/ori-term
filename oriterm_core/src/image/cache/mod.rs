@@ -229,6 +229,35 @@ impl ImageCache {
         self.dirty = true;
     }
 
+    /// Mutate the `z_index` of an existing placement in place.
+    ///
+    /// Used by §13.6 cross-protocol GPU pilots (e.g.
+    /// `kitty_sixel_mixed_z_order`) to inject a non-zero z onto a sixel
+    /// placement: the sixel DCS protocol has no `z=` field so the
+    /// production handler always lands at `z_index: 0`. The pilot drives
+    /// real protocol bytes through the production handler — preserving
+    /// §13.6.1's architectural pin that cross-stack tests must NOT
+    /// synthesize cache entries — then calls this mutator to simulate
+    /// the cross-protocol layering scenario the catalog row
+    /// `KG-CROSS-STACK-SIXEL-MIXED-Z-ORDER` pins.
+    ///
+    /// Returns `true` if a matching placement was found and updated.
+    pub fn set_placement_z_index_for_test(
+        &mut self,
+        image_id: ImageId,
+        placement_id: Option<u32>,
+        z: i32,
+    ) -> bool {
+        for p in &mut self.placements {
+            if p.image_id == image_id && p.placement_id == placement_id {
+                p.z_index = z;
+                self.dirty = true;
+                return true;
+            }
+        }
+        false
+    }
+
     /// Remove an image and all its placements.
     pub(crate) fn remove_image(&mut self, id: ImageId) {
         if let Some(img) = self.images.remove(&id) {

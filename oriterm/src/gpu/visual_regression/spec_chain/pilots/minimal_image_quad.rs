@@ -27,8 +27,7 @@
 #![cfg(all(test, feature = "gpu-tests"))]
 
 use crate::gpu::pipeline::{
-    create_image_pipeline, create_image_texture_bind_group_layout,
-    create_uniform_bind_group_layout,
+    create_image_pipeline, create_image_texture_bind_group_layout, create_uniform_bind_group_layout,
 };
 use crate::gpu::state::GpuState;
 
@@ -65,8 +64,7 @@ fn minimal_image_quad_reproducer_produces_red_pixel() {
     let pipeline = create_image_pipeline(&gpu, &uniform_layout, &image_layout);
 
     // --- 2. Uniform buffer: vec2<f32> screen_size + vec2<f32> _pad = 16 bytes.
-    let uniform_bytes =
-        f32_slice_to_bytes([TARGET_DIM as f32, TARGET_DIM as f32, 0.0, 0.0]);
+    let uniform_bytes = f32_slice_to_bytes([TARGET_DIM as f32, TARGET_DIM as f32, 0.0, 0.0]);
     let uniform_buf = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("minimal_quad_uniform"),
         size: uniform_bytes.len() as u64,

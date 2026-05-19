@@ -6,13 +6,13 @@
 
 use wgpu::{BindGroupLayout, RenderPipeline};
 
+#[cfg(feature = "gpu-debug-image-blend-off")]
+use super::pipeline::create_image_pipeline_no_blend;
 use super::pipeline::{
     create_atlas_bind_group_layout, create_bg_pipeline, create_color_fg_pipeline,
     create_fg_pipeline, create_image_pipeline, create_image_texture_bind_group_layout,
     create_subpixel_fg_pipeline, create_ui_rect_pipeline, create_uniform_bind_group_layout,
 };
-#[cfg(feature = "gpu-debug-image-blend-off")]
-use super::pipeline::create_image_pipeline_no_blend;
 use super::state::GpuState;
 
 /// Stateless shared GPU resources: render pipelines and bind group layouts.

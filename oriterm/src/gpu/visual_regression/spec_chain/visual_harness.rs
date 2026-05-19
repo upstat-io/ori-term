@@ -405,10 +405,7 @@ impl VisualSpecHarness {
     /// `harness.gpu()` don't alias when called separately. The split
     /// accessor takes one `&mut self` and produces both refs in a single
     /// call, satisfying the checker safely.
-    #[allow(
-        dead_code,
-        reason = "consumed by §13.6.1 item 5 probe pilot"
-    )]
+    #[allow(dead_code, reason = "consumed by §13.6.1 item 5 probe pilot")]
     pub fn split_renderer_and_gpu_for_test(&mut self) -> (&mut WindowRenderer, &GpuState) {
         (&mut self.renderer, &self.gpu)
     }
