@@ -83,9 +83,12 @@ impl<S: EffectSink> Term<S> {
         self.selection_dirty = true;
 
         // Resize may have evicted scrollback rows or dropped columns that
-        // carried `U+10EEEE` cells; re-derive the surviving placeholder
-        // anchor set from the post-resize grid.
-        self.reconcile_placeholder_anchors_from_grid();
+        // carried `U+10EEEE` cells on EITHER screen; re-derive both the
+        // primary and alt anchor sets from their respective post-resize
+        // grids. `reconcile_both_*` accesses the `self.grid` /
+        // `self.image_cache` fields directly so the symmetric reconcile
+        // covers the inactive pair regardless of which screen is active.
+        self.reconcile_both_placeholder_anchors();
     }
 }
 

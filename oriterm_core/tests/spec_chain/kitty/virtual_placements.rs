@@ -210,21 +210,115 @@ fn placeholder_cells_resolve_to_stored_image_after_reflow() {
 }
 
 #[test]
+fn placeholder_anchored_cell_does_not_also_emit_text_glyph_quad() {
+    // Double-exposure clamp: a cell carrying a valid U+10EEEE + diacritic
+    // anchor pattern must produce ONLY the image quad. The corresponding
+    // `RenderableCell` entry MUST NOT carry `U+10EEEE` as its glyph — if
+    // it did, the GPU would draw the placeholder codepoint as a fallback
+    // glyph ON TOP of the image quad at the same (line, column) position.
+    //
+    // Snapshot-side suppression substitutes a space so the cell still
+    // exists for bg / flags / selection coverage; only the glyph render
+    // is suppressed.
+    let mut h = SpecHarness::new();
+    transmit_u1(&mut h, 200);
+    write_placeholder_cell(&mut h, 200, '\u{0305}', '\u{0305}');
+
+    let snap = h.term().renderable_content();
+    assert_eq!(
+        snap.placeholder_cells.len(),
+        1,
+        "precondition: one placeholder cell pushed",
+    );
+    let pc = &snap.placeholder_cells[0];
+
+    let cell_at_pos = snap
+        .cells
+        .iter()
+        .find(|c| c.line == pc.line && c.column == pc.column)
+        .expect("a RenderableCell exists at the placeholder position");
+    assert_ne!(
+        cell_at_pos.ch, '\u{10EEEE}',
+        "placeholder-anchored cell must NOT keep U+10EEEE in the cells snapshot — that would emit a text-glyph quad on top of the image quad. Got cells entry: {cell_at_pos:?}",
+    );
+}
+
+#[test]
 fn placeholder_category_matrix_completeness() {
-    // 8 categories per §13.4: encoding, snapshot, emit, reflow, scroll,
-    // ED, EL, alt-screen. Each is exercised by at least one test in this
-    // file or the placeholder_anchors.rs sibling. Mechanical coverage
-    // assertion left as `assert!(true)` until a discovery-based coverage
-    // check is wired in.
-    let categories: [&str; 8] = [
-        "encoding",
-        "snapshot",
-        "emit",
-        "reflow",
-        "scroll",
-        "ed",
-        "el",
-        "alt-screen",
+    // §13.4 mandates 8 coverage categories: encoding, snapshot, emit,
+    // reflow, scroll, ED, EL, alt-screen. This pin extracts `#[test] fn`
+    // declarations from sibling test files (NOT raw string occurrences
+    // that could match this file's own probe table) and asserts each
+    // category has at least one declared probe test.
+    let category_probes: &[(&str, &[&str])] = &[
+        ("encoding", &[
+            "placeholder_decode_with_fg_color_and_diacritics",
+            "placeholder_decode_continuation_row_only",
+            "placeholder_cell_without_image_renders_as_glyph_not_quad",
+        ]),
+        ("snapshot", &[
+            "renderable_content_surfaces_placeholder_cells_alongside_image_placements",
+            "placeholder_anchored_cell_does_not_also_emit_text_glyph_quad",
+        ]),
+        // `emit` exercises the GPU emit path's snapshot side — proving
+        // placeholder cells reach the image-quad pipeline (and do NOT
+        // double-emit a text-glyph quad).
+        ("emit", &["placeholder_anchored_cell_does_not_also_emit_text_glyph_quad"]),
+        ("reflow", &["placeholder_cells_resolve_to_stored_image_after_reflow"]),
+        ("scroll", &[
+            "prune_scrollback_retains_anchor_when_placeholder_cells_remain_in_viewport",
+            "prune_scrollback_clears_orphaned_placeholder_anchors_for_images_with_no_surviving_cells",
+        ]),
+        ("ed", &["ed_full_screen_clears_orphaned_placeholder_anchors"]),
+        // `el` = CSI K (Erase in Line); the DECERA rect-erase test
+        // covers a different sequence ($z), so we need a CSI K probe.
+        ("el", &["line_erase_csi_k_with_placeholder_cell_reconciles_anchor"]),
+        ("alt-screen", &[
+            "inactive_alt_screen_u1_anchors_reconciled_on_resize",
+            "inactive_alt_screen_u1_anchors_retained_when_cells_survive_resize",
+            "inactive_primary_screen_u1_anchors_reconciled_on_resize",
+        ]),
     ];
-    assert_eq!(categories.len(), 8);
+
+    let test_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/spec_chain/kitty");
+    let mut declared_fn_names: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for entry in std::fs::read_dir(&test_dir).expect("kitty test dir") {
+        let entry = entry.expect("entry");
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("rs") {
+            continue;
+        }
+        let src = std::fs::read_to_string(&path).expect("read");
+        // Two-line state: previous line was `#[test]` → current line's
+        // `fn NAME(` is a test declaration. String-literal mentions of
+        // names elsewhere (e.g. inside this file's `category_probes`
+        // table) are ignored because they are not preceded by `#[test]`.
+        let mut prev_was_test_attr = false;
+        for line in src.lines() {
+            let trimmed = line.trim_start();
+            if prev_was_test_attr {
+                if let Some(rest) = trimmed.strip_prefix("fn ") {
+                    if let Some(end) = rest.find('(') {
+                        declared_fn_names.insert(rest[..end].trim().to_string());
+                    }
+                }
+                prev_was_test_attr = false;
+            }
+            if trimmed == "#[test]" {
+                prev_was_test_attr = true;
+            }
+        }
+    }
+
+    let mut missing: Vec<&str> = Vec::new();
+    for (category, probes) in category_probes {
+        if !probes.iter().any(|name| declared_fn_names.contains(*name)) {
+            missing.push(category);
+        }
+    }
+    assert!(
+        missing.is_empty(),
+        "matrix completeness — categories with no `#[test] fn` probe declaration: {missing:?}. Discovered {} test functions across sibling files.",
+        declared_fn_names.len(),
+    );
 }
