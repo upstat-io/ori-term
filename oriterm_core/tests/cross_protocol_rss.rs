@@ -105,7 +105,7 @@ fn rgba_4x4_red() -> Vec<u8> {
 /// Important: the cycle is NOT strictly net-zero — `d=p` (lowercase)
 /// removes only the sixel PLACEMENT, leaving the sixel image data in the
 /// cache unplaced. Each cycle therefore accumulates one unplaced sixel
-/// image. The 2 MB cache cap + the now-unplaced (eviction-eligible)
+/// image. The 64 KB cache cap + the now-unplaced (eviction-eligible)
 /// status of those sixels means the LRU eviction layer drops the oldest
 /// unplaced sixel once total memory exceeds the cap — that's the
 /// steady-state plateau the trend test pins. The kitty side IS strictly
@@ -196,7 +196,8 @@ fn rss_bounded_under_rapid_sixel_kitty_alternation() {
          hold steady-state RSS bounded). \
          Samples (bytes): {:?}, in MB: {:?}, baseline cap: {:.1} MB, max: {:.1} MB. \
          Each cycle creates one sixel + one kitty (places kitty, deletes sixel), \
-         capped at 2 MB image-cache budget. Growth beyond 10% above the post-\
+         capped at 64 KB image-cache budget; eviction layer drives the steady-\
+         state plateau as unplaced sixel debt drops the oldest entries. Growth beyond 10% above the post-\
          warmup baseline implies a leak outside the image bytes themselves \
          (placement vectors, parser scratch, snapshot/scrollback retention, \
          orphaned anchors). Reverse the §13.6.1 recency-update SSOT or the \
