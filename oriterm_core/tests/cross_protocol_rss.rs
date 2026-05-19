@@ -152,14 +152,17 @@ fn rss_bounded_under_rapid_sixel_kitty_alternation() {
     let mut term = Term::<VoidEffectSink>::new(24, 80, 1000, Theme::default(), VoidEffectSink);
     let mut parser: vte::ansi::Processor = vte::ansi::Processor::new();
 
-    // Cap cache memory so eviction is exercised — without a cap the test
-    // can mistake unbounded cache growth for "RSS grew because that's what
-    // images cost". With the cap, RSS growth implies a real leak somewhere
-    // outside the image bytes themselves (placement vectors, parser
-    // scratch, snapshot buffers, orphaned anchors).
-    term.image_cache_mut().set_memory_limit(2 * MB);
+    // Cap cache memory TIGHT enough that eviction actually fires under
+    // the cycle's accumulated unplaced-sixel debt. With `dcs_n_cols_wide(8)`
+    // producing 192 bytes per sixel image + ImageData metadata, a 64 KB
+    // cap forces LRU eviction within INNER iterations (~300 sixels fit
+    // before the cap → eviction kicks in around iteration 300+). The
+    // INNER count below is chosen so each outer iteration drives well
+    // past the cap, exercising the eviction layer rather than just the
+    // unbounded-growth detection.
+    term.image_cache_mut().set_memory_limit(64 * 1024);
 
-    const INNER: u32 = 40;
+    const INNER: u32 = 500;
     const OUTER: usize = 5;
 
     // Warmup: one outer iteration to settle allocator heap layout, sixel
@@ -188,7 +191,9 @@ fn rss_bounded_under_rapid_sixel_kitty_alternation() {
 
     assert!(
         max_later <= cap,
-        "RSS exceeded 10% tolerance under rapid sixel↔kitty alternation. \
+        "RSS exceeded 10% tolerance under rapid sixel↔kitty alternation \
+         (cycle drives past the 64 KB cache cap; eviction layer must \
+         hold steady-state RSS bounded). \
          Samples (bytes): {:?}, in MB: {:?}, baseline cap: {:.1} MB, max: {:.1} MB. \
          Each cycle creates one sixel + one kitty (places kitty, deletes sixel), \
          capped at 2 MB image-cache budget. Growth beyond 10% above the post-\

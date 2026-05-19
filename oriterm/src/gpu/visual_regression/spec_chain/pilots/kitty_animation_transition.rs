@@ -296,7 +296,7 @@ fn assert_rungs_pass(results: &[oriterm_test_support::spec_chain::RungResult], c
 /// narrow the §13.6 prerequisite "Cure kitty quad → texture pipeline
 /// gap" by isolating which stage drops the image data.
 #[test]
-#[ignore = "diagnostic probe — run manually via `cargo test -- --ignored probe_kitty_pipeline_stages`"]
+#[ignore = "BUG-06-082: diagnostic probe (not a regression test) — run manually via `cargo test -- --ignored probe_kitty_pipeline_stages`"]
 fn probe_kitty_pipeline_stages() {
     let Some(mut harness) = VisualSpecHarness::new() else {
         eprintln!("SKIP: software rasterizer unavailable");

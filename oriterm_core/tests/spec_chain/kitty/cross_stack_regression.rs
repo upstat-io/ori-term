@@ -158,6 +158,101 @@ fn cross_protocol_lru_eviction_drops_oldest_accessed_regardless_of_protocol() {
     );
 }
 
+/// Regression: spec-conformance §13.6.1 line 586 cross-feature positive
+/// pin (round-1 TPR codex: prior `cross_protocol_lru_eviction_drops_oldest_
+/// accessed_regardless_of_protocol` test used kitty-only images, leaving
+/// the cross-protocol claim un-pinned at the test surface).
+///
+/// Setup: sixel-A (auto-assigned ImageId at `AUTO_ID_START`) → kitty-B
+/// (`i=42`) → sixel-C (`AUTO_ID_START+1`). All three transmitted via
+/// REAL protocol bytes; sixel placements deleted via kitty `d=p` so the
+/// sixel image data persists unplaced (eviction-eligible). Touch
+/// kitty-B via `a=p` (the canonical recency-update SSOT). Force
+/// eviction with a tight memory cap. Sixel-A — oldest by `last_accessed`
+/// — must be evicted regardless of protocol; kitty-B (touched, placed)
+/// must survive; sixel-C (younger unplaced) must survive.
+///
+/// Proves the global-LRU invariant holds when sixel + kitty images
+/// compete in the unplaced pool. A protocol-specific eviction carve-out
+/// (e.g., "sixel always evicted first regardless of recency") would
+/// fail this pin even though
+/// `cross_protocol_lru_eviction_drops_oldest_accessed_regardless_of_protocol`
+/// (kitty-only) above passes.
+#[test]
+fn cross_protocol_lru_mixed_sixel_kitty_drops_oldest_by_last_accessed() {
+    use oriterm_test_support::spec_chain::sixel_fixtures::dcs_n_cols_wide;
+
+    let mut h = SpecHarness::new();
+
+    // 1. Sixel-A at row 1 — sixel handler stores + places at cursor.
+    //    Auto-assigned ImageId = AUTO_ID_START (private const, value
+    //    2_147_483_647 per oriterm_core/src/image/cache/mod.rs:24).
+    const AUTO_ID_START: u32 = 2_147_483_647;
+    let sixel_a = ImageId::from_raw(AUTO_ID_START);
+    h.feed(b"\x1b[1;1H");
+    h.feed(&dcs_n_cols_wide(8));
+    // Delete sixel-A's placement (image stays unplaced + evictable).
+    h.feed(&kitty_apc(b"a=d,d=p,x=1,y=1", ""));
+
+    // 2. Kitty-B with explicit `i=42` — stored unplaced.
+    transmit_kitty_unplaced(&mut h, 42);
+    let kitty_b = ImageId::from_raw(42);
+
+    // 3. Sixel-C at row 5 — same pattern as sixel-A. Auto-id +1.
+    let sixel_c = ImageId::from_raw(AUTO_ID_START + 1);
+    h.feed(b"\x1b[6;1H");
+    h.feed(&dcs_n_cols_wide(8));
+    h.feed(&kitty_apc(b"a=d,d=p,x=1,y=6", ""));
+
+    assert_eq!(
+        h.term().image_cache().image_count(),
+        3,
+        "expected 3 images stored: sixel-A + kitty-B + sixel-C"
+    );
+    assert_eq!(
+        h.term().image_cache().placement_count(),
+        0,
+        "all 3 placements deleted; images are unplaced and eviction-eligible"
+    );
+
+    // Baseline recency order: sixel-A < kitty-B < sixel-C.
+    let pre_a = h.term().image_cache().get_no_touch(sixel_a).unwrap().last_accessed;
+    let pre_b = h.term().image_cache().get_no_touch(kitty_b).unwrap().last_accessed;
+    let pre_c = h.term().image_cache().get_no_touch(sixel_c).unwrap().last_accessed;
+    assert!(
+        pre_a < pre_b && pre_b < pre_c,
+        "store-order baseline: sixel-A < kitty-B < sixel-C, saw a={pre_a} b={pre_b} c={pre_c}"
+    );
+
+    // Touch kitty-B via `a=p` — routes through ImageCache::place.
+    place_existing_kitty(&mut h, 42);
+
+    // Force eviction: cap memory at roughly 2 images' worth so exactly
+    // ONE of the unplaced images must drop. With kitty-B now placed
+    // (eviction-immune per Option A), eviction targets the unplaced
+    // pool: sixel-A (oldest) is evicted; sixel-C (younger) survives.
+    // `dcs_n_cols_wide(8)` produces an 8×6 RGBA image = 192 bytes;
+    // kitty `s=4,v=4,f=32` = 64 bytes. Total 3 images ≈ 448 bytes; cap
+    // at 280 forces one sixel eviction (256 bytes ≈ kitty + 1 sixel).
+    h.term_mut().image_cache_mut().set_memory_limit(280);
+
+    assert!(
+        h.term().image_cache().get_no_touch(sixel_a).is_none(),
+        "sixel-A (oldest unplaced, regardless of protocol) MUST be evicted. \
+         Regression: cache uses protocol-specific eviction order instead of \
+         global last_accessed."
+    );
+    assert!(
+        h.term().image_cache().get_no_touch(kitty_b).is_some(),
+        "kitty-B (placed via a=p) MUST be eviction-immune regardless of recency"
+    );
+    assert!(
+        h.term().image_cache().get_no_touch(sixel_c).is_some(),
+        "sixel-C (younger unplaced) MUST survive — only one eviction needed \
+         to bring memory under the cap"
+    );
+}
+
 /// Regression: spec-conformance §13.6.1 — cross-protocol immunity.
 /// Sixel + kitty images both placed via REAL protocol bytes; impossibly
 /// low memory limit cannot evict either because both are placed. Proves
