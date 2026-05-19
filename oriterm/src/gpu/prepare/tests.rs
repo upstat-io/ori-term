@@ -7224,6 +7224,66 @@ mod placeholder_uv_slicing {
         }
     }
 
+    /// Regression: spec-conformance §13.6.1 round-0 TPR (gemini singleton,
+    /// adjudicator-verified actionable, severity downgraded high→low —
+    /// defense-in-depth). A malformed client may emit a placeholder cell
+    /// whose `(image_row, image_col)` exceeds the recorded
+    /// `(placement_rows, placement_cols)` grid. Without the clamp,
+    /// `uv_x = image_col * uv_w` produces UV ≥ 1.0 — currently absorbed by
+    /// the wgpu sampler's `ClampToEdge` mode in the image_render bind-
+    /// group, but the emit-layer clamp pins edge-pixel rendering at the
+    /// math step rather than depending on sampler config.
+    #[test]
+    fn placeholder_out_of_range_image_col_clamps_to_grid_edge() {
+        let input = input_with_placeholders(vec![
+            // image_col=5 in a 2-col grid → clamps to col=1 (last column).
+            placeholder_cell(0, 0, 1, 0, 5, 2, 2),
+        ]);
+        let atlas = empty_atlas();
+
+        let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
+
+        assert_eq!(frame.image_quads_above.len(), 1);
+        let q = &frame.image_quads_above[0];
+        let approx = |a: f32, b: f32| (a - b).abs() < 1e-5;
+        // Clamped col=1: uv_x = 1 * 0.5 = 0.5 (NOT 5 * 0.5 = 2.5).
+        assert!(
+            approx(q.uv_x, 0.5),
+            "out-of-range image_col=5 must clamp to last col → uv_x=0.5, got {}",
+            q.uv_x
+        );
+        assert!(approx(q.uv_w, 0.5));
+        assert!(
+            q.uv_x + q.uv_w <= 1.0 + 1e-5,
+            "uv_x + uv_w must stay ≤ 1.0 even on out-of-range input"
+        );
+    }
+
+    /// Regression: spec-conformance §13.6.1 round-0 TPR — same shape as
+    /// the column clamp, applied to the row dimension. image_row=7 in a
+    /// 3-row grid clamps to row=2 (last row).
+    #[test]
+    fn placeholder_out_of_range_image_row_clamps_to_grid_edge() {
+        let input = input_with_placeholders(vec![placeholder_cell(0, 0, 1, 7, 0, 1, 3)]);
+        let atlas = empty_atlas();
+
+        let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
+
+        assert_eq!(frame.image_quads_above.len(), 1);
+        let q = &frame.image_quads_above[0];
+        let approx = |a: f32, b: f32| (a - b).abs() < 1e-5;
+        // Clamped row=2: uv_y = 2 * (1/3) ≈ 0.6667.
+        assert!(
+            approx(q.uv_y, 2.0 / 3.0),
+            "out-of-range image_row=7 must clamp to last row → uv_y≈0.6667, got {}",
+            q.uv_y
+        );
+        assert!(
+            q.uv_y + q.uv_h <= 1.0 + 1e-5,
+            "uv_y + uv_h must stay ≤ 1.0 even on out-of-range input"
+        );
+    }
+
     /// Regression: spec-conformance §13.6.1 — defensive zero-cols/rows
     /// guard. The cache rejects zero at `set_placeholder_anchor_grid`,
     /// the snapshot defaults to `(1, 1)`, and emit applies `.max(1)`

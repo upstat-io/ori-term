@@ -587,6 +587,96 @@ fn placeholder_anchor_grid_rejects_zero_dims() {
     assert_eq!(cache.placeholder_anchor_grid_for(ImageId(7)), Some((3, 2)));
 }
 
+/// Regression: spec-conformance §13.6.1 round-0 TPR cluster
+/// (codex+gemini+opencode HIGH agreement) — `remove_image` MUST drop the
+/// `placeholder_anchor_grid` entry alongside the `placeholder_anchors`
+/// removal. Direct image-removal paths (`d=I`, `d=F`, LRU eviction,
+/// orphan pruning, store-triggered replacement) all flow through
+/// `remove_image` and would otherwise leak grid entries. Without this
+/// fix, the grid `HashMap` grows unboundedly across image create+delete
+/// cycles, and a reused `ImageId` could read a stale `(cols, rows)` and
+/// render broken UV slices.
+#[test]
+fn remove_image_clears_placeholder_anchor_grid_entry() {
+    let mut cache = ImageCache::new();
+    cache.store(make_image(1, 256)).unwrap();
+    cache.add_placeholder_anchor(ImageId(1));
+    cache.set_placeholder_anchor_grid(ImageId(1), 4, 2);
+    assert_eq!(cache.placeholder_anchor_grid_for(ImageId(1)), Some((4, 2)));
+
+    cache.remove_image(ImageId(1));
+
+    assert!(
+        cache.get_no_touch(ImageId(1)).is_none(),
+        "image data must be gone"
+    );
+    assert!(
+        !cache.placeholder_anchors().contains(&ImageId(1)),
+        "anchor must be dropped"
+    );
+    assert_eq!(
+        cache.placeholder_anchor_grid_for(ImageId(1)),
+        None,
+        "grid entry MUST be dropped alongside the anchor — stale grid \
+         entries are a LEAK regression that the TPR round-0 cluster \
+         (codex+gemini+opencode) caught"
+    );
+}
+
+/// Regression: spec-conformance §13.6.1 round-0 TPR cluster —
+/// `ImageCache::clear()` MUST clear `placeholder_anchor_grid` alongside
+/// `placeholder_anchors`. Cache-reset paths (`\x1b_Gd=A` deletes all
+/// images; primary/alt screen reset) would otherwise leave stale grid
+/// entries behind.
+#[test]
+fn clear_image_cache_clears_placeholder_anchor_grid() {
+    let mut cache = ImageCache::new();
+    cache.store(make_image(1, 256)).unwrap();
+    cache.store(make_image(2, 256)).unwrap();
+    cache.add_placeholder_anchor(ImageId(1));
+    cache.set_placeholder_anchor_grid(ImageId(1), 3, 3);
+    cache.add_placeholder_anchor(ImageId(2));
+    cache.set_placeholder_anchor_grid(ImageId(2), 5, 1);
+
+    cache.clear();
+
+    assert_eq!(cache.image_count(), 0);
+    assert!(cache.placeholder_anchors().is_empty());
+    assert_eq!(
+        cache.placeholder_anchor_grid_for(ImageId(1)),
+        None,
+        "clear() MUST drop grid entries"
+    );
+    assert_eq!(cache.placeholder_anchor_grid_for(ImageId(2)), None);
+}
+
+/// Regression: spec-conformance §13.6.1 round-0 TPR cluster — store-
+/// triggered replacement (storing an image with an ImageId that already
+/// exists) routes through `remove_image` then `store`. The grid entry
+/// for the old image MUST drop; the new image starts with no recorded
+/// grid until `set_placeholder_anchor_grid` is called for it. Without
+/// this guarantee, a reused ImageId would inherit the prior store's
+/// grid dimensions and slice UVs incorrectly.
+#[test]
+fn store_triggered_replacement_drops_old_placeholder_anchor_grid() {
+    let mut cache = ImageCache::new();
+    cache.store(make_image(1, 256)).unwrap();
+    cache.add_placeholder_anchor(ImageId(1));
+    cache.set_placeholder_anchor_grid(ImageId(1), 4, 4);
+
+    // Re-store image with same ID — eviction path runs remove_image first.
+    cache.store(make_image(1, 256)).unwrap();
+
+    assert!(cache.get_no_touch(ImageId(1)).is_some(), "new image stored");
+    assert_eq!(
+        cache.placeholder_anchor_grid_for(ImageId(1)),
+        None,
+        "replacement-via-remove_image MUST drop the prior grid entry — \
+         reused ImageId starts with no recorded grid until the new \
+         transmit registers one"
+    );
+}
+
 /// Regression: spec-conformance §13.6.1 — `reconcile_placeholder_anchors`
 /// drops grid entries for any image_id no longer in the survivor set,
 /// keeping the anchor set and grid map synchronized. Without this,

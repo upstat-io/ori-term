@@ -336,6 +336,13 @@ impl ImageCache {
             self.frame_starts.remove(&id);
             self.store_order.remove(&id);
             self.placeholder_anchors.remove(&id);
+            // Drop the placement-grid entry alongside the anchor so direct
+            // image-removal paths (`d=I`, `d=F`, LRU eviction, U=1 anchor-
+            // orphaned cleanup, store-triggered replacement) keep the two
+            // maps in sync. Without this the grid map grows unboundedly
+            // across image create+delete cycles, and a reused ImageId
+            // could read a stale (cols, rows) leading to broken UV slices.
+            self.placeholder_anchor_grid.remove(&id);
             self.dirty = true;
         }
     }
@@ -479,6 +486,10 @@ impl ImageCache {
         self.frame_starts.clear();
         self.store_order.clear();
         self.placeholder_anchors.clear();
+        // Drop placement-grid entries alongside anchors — keeps the two
+        // maps in sync at cache reset (e.g., `\x1b_Gd=A` deletes all
+        // images; switching primary/alt screens with full reset).
+        self.placeholder_anchor_grid.clear();
         self.memory_used = 0;
     }
 

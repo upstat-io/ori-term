@@ -99,15 +99,25 @@ fn rgba_4x4_red() -> Vec<u8> {
     v
 }
 
-/// Drive one net-zero alternation cycle: sixel transmit → sixel-placement
-/// delete → kitty transmit+place → kitty delete-by-id. Both protocols flow
-/// through the store + place + delete path; the cache empties at cycle
-/// end so a healthy implementation reaches steady-state RSS.
+/// Drive one cache-cycling alternation: sixel transmit → sixel-placement
+/// delete (kitty `d=p`) → kitty transmit+place → kitty delete-by-id.
 ///
-/// Placed-image eviction-immunity (Option A in
-/// `decisions/01-lru-eviction-scope-placed-vs-unplaced.md`) means the
-/// 2 MB cache cap cannot rescue a net-positive cycle; the cycle MUST
-/// fully tear down everything it created.
+/// Important: the cycle is NOT strictly net-zero — `d=p` (lowercase)
+/// removes only the sixel PLACEMENT, leaving the sixel image data in the
+/// cache unplaced. Each cycle therefore accumulates one unplaced sixel
+/// image. The 2 MB cache cap + the now-unplaced (eviction-eligible)
+/// status of those sixels means the LRU eviction layer drops the oldest
+/// unplaced sixel once total memory exceeds the cap — that's the
+/// steady-state plateau the trend test pins. The kitty side IS strictly
+/// net-zero (`a=T` creates, `d=I` fully destroys image + placement).
+///
+/// Per `decisions/01-lru-eviction-scope-placed-vs-unplaced.md` Option A:
+/// placed/anchored images are eviction-immune; only the unplaced pool
+/// participates. Each completed cycle's leftover sixel is unplaced and
+/// therefore evictable, so the cache can plateau under churn without
+/// leaking RSS. A monotonically-growing trend would indicate a real
+/// leak OUTSIDE the unplaced sixel debt (orphaned anchors, retained
+/// snapshot scratch, accumulating placements, PTY reply queue).
 fn alternation_cycle(term: &mut Term<VoidEffectSink>, parser: &mut vte::ansi::Processor, id: u32) {
     parser.advance(term, b"\x1b[1;1H");
     parser.advance(term, &dcs_n_cols_wide(8));

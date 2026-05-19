@@ -362,12 +362,22 @@ pub(super) fn emit_placeholder_quads(
         // (cols, rows) ≥ 1 invariant: snapshot defaults to (1, 1) for any
         // anchor without a recorded grid; `set_placeholder_anchor_grid`
         // rejects zero values. Division by `cols`/`rows` is therefore safe.
-        let cols = pc.placement_cols.max(1) as f32;
-        let rows = pc.placement_rows.max(1) as f32;
-        let uv_w = 1.0 / cols;
-        let uv_h = 1.0 / rows;
-        let uv_x = pc.image_col as f32 * uv_w;
-        let uv_y = pc.image_row as f32 * uv_h;
+        let cols = pc.placement_cols.max(1);
+        let rows = pc.placement_rows.max(1);
+        // Clamp the diacritic-encoded `(image_row, image_col)` into the
+        // recorded grid before computing UV. Well-formed clients encode
+        // `image_col < cols` / `image_row < rows`; a malformed client can
+        // emit out-of-range diacritics, in which case un-clamped math
+        // produces UV ≥ 1.0 and relies on the wgpu sampler's ClampToEdge
+        // mode (image_render bind-group) to avoid wrap-mode artifacts.
+        // The clamp is defense-in-depth — render edge-pixel under
+        // out-of-range input rather than depending on sampler config.
+        let col = pc.image_col.min(cols - 1);
+        let row = pc.image_row.min(rows - 1);
+        let uv_w = 1.0 / cols as f32;
+        let uv_h = 1.0 / rows as f32;
+        let uv_x = col as f32 * uv_w;
+        let uv_y = row as f32 * uv_h;
         let quad = super::super::prepared_frame::ImageQuad {
             image_id: pc.image_id,
             x,
