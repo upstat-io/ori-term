@@ -219,7 +219,6 @@ fn image_cache_lifecycle_does_not_walk_grid_cells() {
     );
 }
 
-// ---------------------------------------------------------------------------
 // §13.4 missing-reconcile-site pins.
 //
 // Every grid-mutation path that can overwrite or displace a `U+10EEEE`
@@ -228,7 +227,6 @@ fn image_cache_lifecycle_does_not_walk_grid_cells() {
 // anchor each entry. Sites covered below: ASCII fast-path print, non-ASCII
 // print, DECDC / DECIC column ops, DECERA / DECFRA rectangle ops, and the
 // inactive-alt-screen path on resize.
-// ---------------------------------------------------------------------------
 
 #[test]
 fn printable_overwrite_of_placeholder_cell_reconciles_anchor() {
