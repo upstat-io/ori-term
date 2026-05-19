@@ -4255,6 +4255,127 @@ fn mixed_z_images_split_correctly() {
     assert_eq!(frame.image_quads_above.len(), 2, "z>=0 images");
 }
 
+fn placement_with_id(id: u32, z: i32, x: f32, y: f32) -> oriterm_core::RenderablePlacement {
+    oriterm_core::RenderablePlacement {
+        image_id: oriterm_core::image::ImageId::from_raw(id),
+        viewport_x: x,
+        viewport_y: y,
+        display_width: 32.0,
+        display_height: 32.0,
+        source_x: 0.0,
+        source_y: 0.0,
+        source_w: 1.0,
+        source_h: 1.0,
+        z_index: z,
+        opacity: 1.0,
+    }
+}
+
+/// Regression: spec-conformance §13.6.1 — `emit_image_quads` z-split routes
+/// images by `z_index` alone, independent of which protocol produced them.
+/// A sixel-origin placement at `z=-1` lands in `image_quads_below`; a
+/// kitty-origin placement at `z=1` lands in `image_quads_above`. The
+/// visual pilot `kitty_sixel_mixed_with_text` exercises the same invariant
+/// at the GPU apex; this unit test pins it at the prepare boundary so a
+/// regression localizes to the right stage.
+#[test]
+fn mixed_protocol_z_split_routes_by_z_index_not_image_id() {
+    const SIXEL_ID: u32 = 100;
+    const KITTY_ID: u32 = 200;
+
+    let mut input = FrameInput::test_grid(4, 2, "");
+    input.content.cursor.visible = false;
+    input.content.images = vec![
+        placement_with_id(SIXEL_ID, -1, 0.0, 0.0),
+        placement_with_id(KITTY_ID, 1, 32.0, 0.0),
+    ];
+    let atlas = empty_atlas();
+
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
+
+    assert_eq!(frame.image_quads_below.len(), 1, "sixel z=-1 → below");
+    assert_eq!(frame.image_quads_above.len(), 1, "kitty z=1 → above");
+    assert_eq!(
+        frame.image_quads_below[0].image_id,
+        oriterm_core::image::ImageId::from_raw(SIXEL_ID),
+        "below bucket carries the sixel ImageId"
+    );
+    assert_eq!(
+        frame.image_quads_above[0].image_id,
+        oriterm_core::image::ImageId::from_raw(KITTY_ID),
+        "above bucket carries the kitty ImageId"
+    );
+}
+
+/// Regression: spec-conformance §13.6.1 — guard against the inverse
+/// failure mode of [`mixed_protocol_z_split_routes_by_z_index_not_image_id`].
+/// Swap the z-indices and verify the bucket assignment swaps too. If a
+/// future change accidentally hard-codes a particular `ImageId` (or a
+/// protocol carve-out) to one bucket, this test fails because the kitty
+/// ID now appears in `below` and the sixel ID in `above`.
+#[test]
+fn mixed_protocol_z_split_inverts_when_z_indices_swap() {
+    const SIXEL_ID: u32 = 100;
+    const KITTY_ID: u32 = 200;
+
+    let mut input = FrameInput::test_grid(4, 2, "");
+    input.content.cursor.visible = false;
+    // Inverted: sixel z=1, kitty z=-1.
+    input.content.images = vec![
+        placement_with_id(SIXEL_ID, 1, 0.0, 0.0),
+        placement_with_id(KITTY_ID, -1, 32.0, 0.0),
+    ];
+    let atlas = empty_atlas();
+
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
+
+    assert_eq!(frame.image_quads_below.len(), 1);
+    assert_eq!(frame.image_quads_above.len(), 1);
+    assert_eq!(
+        frame.image_quads_below[0].image_id,
+        oriterm_core::image::ImageId::from_raw(KITTY_ID),
+        "kitty z=-1 → below (z drives bucket, not protocol)"
+    );
+    assert_eq!(
+        frame.image_quads_above[0].image_id,
+        oriterm_core::image::ImageId::from_raw(SIXEL_ID),
+        "sixel z=1 → above (z drives bucket, not protocol)"
+    );
+}
+
+/// Regression: spec-conformance §13.6.1 — text glyphs sit between
+/// `image_quads_below` and `image_quads_above`. The split fires the same
+/// way regardless of whether the grid carries text — text content must
+/// not perturb the image-routing decision. (Renderer order is below →
+/// text → above; this test pins the producer side; the visual pilot
+/// `kitty_sixel_mixed_with_text` pins the composite.)
+#[test]
+fn mixed_protocol_z_split_unaffected_by_text_content() {
+    const SIXEL_ID: u32 = 100;
+    const KITTY_ID: u32 = 200;
+
+    let mut input = FrameInput::test_grid(4, 2, "T");
+    input.content.cursor.visible = false;
+    input.content.images = vec![
+        placement_with_id(SIXEL_ID, -1, 0.0, 0.0),
+        placement_with_id(KITTY_ID, 1, 32.0, 0.0),
+    ];
+    let atlas = empty_atlas();
+
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
+
+    assert_eq!(frame.image_quads_below.len(), 1);
+    assert_eq!(frame.image_quads_above.len(), 1);
+    assert_eq!(
+        frame.image_quads_below[0].image_id,
+        oriterm_core::image::ImageId::from_raw(SIXEL_ID),
+    );
+    assert_eq!(
+        frame.image_quads_above[0].image_id,
+        oriterm_core::image::ImageId::from_raw(KITTY_ID),
+    );
+}
+
 #[test]
 fn image_origin_offset_applied() {
     let mut input = FrameInput::test_grid(4, 2, "");

@@ -441,3 +441,93 @@ fn snapshot_construction_does_not_mutate_image_cache_recency() {
          the pure-read invariant documented at term/snapshot/mod.rs:27-34"
     );
 }
+
+// ── LRU recency on placement create (§13.6.1) ──────────────────────
+
+/// Regression: spec-conformance §13.6.1 — `ImageCache::place` bumps the
+/// underlying image's `last_accessed` stamp so re-placement of an
+/// existing image refreshes its eviction priority among the unplaced
+/// pool. The bump lives in `ImageCache::place` itself so kitty, sixel,
+/// and iterm2 all flow through one canonical recency-update path —
+/// scattering the bump across per-protocol handlers would silently
+/// regress eviction to FIFO-on-store-order for any new protocol whose
+/// handler omits the bump.
+#[test]
+fn access_on_placement_create_bumps_last_accessed() {
+    let mut cache = ImageCache::new();
+    cache.store(make_image(1, 256)).unwrap();
+    cache.store(make_image(2, 256)).unwrap();
+
+    let pre_id1 = cache.get_no_touch(ImageId(1)).unwrap().last_accessed;
+    let pre_id2 = cache.get_no_touch(ImageId(2)).unwrap().last_accessed;
+    assert!(
+        pre_id1 < pre_id2,
+        "post-store baseline: id1 stored first, must have lower last_accessed; \
+         saw id1={pre_id1}, id2={pre_id2}"
+    );
+
+    // Place id1 — must bump id1's recency past id2.
+    cache.place(make_placement(1, 0, 0, 1, 1));
+
+    let post_id1 = cache.get_no_touch(ImageId(1)).unwrap().last_accessed;
+    let post_id2 = cache.get_no_touch(ImageId(2)).unwrap().last_accessed;
+    assert!(
+        post_id1 > post_id2,
+        "ImageCache::place(id1) must bump id1.last_accessed past id2 \
+         (canonical recency-update SSOT for all protocols); saw id1={post_id1}, \
+         id2={post_id2}. Regression: per-protocol handlers may be bumping \
+         outside `place()`, or `place()` lost its recency-bump."
+    );
+    assert_eq!(
+        post_id2, pre_id2,
+        "place(id1) MUST NOT perturb id2's last_accessed; saw post={post_id2}, \
+         pre={pre_id2}. Regression: place() now mutates more than the targeted image."
+    );
+}
+
+/// Regression: spec-conformance §13.6.1 — repeated `place()` of the same
+/// image keeps bumping its recency. Without this, a stale image whose
+/// only refresh is "place again" would never escape eviction.
+#[test]
+fn access_on_repeated_placement_keeps_bumping_last_accessed() {
+    let mut cache = ImageCache::new();
+    cache.store(make_image(1, 256)).unwrap();
+
+    let after_store = cache.get_no_touch(ImageId(1)).unwrap().last_accessed;
+    cache.place(make_placement(1, 0, 0, 1, 1));
+    let after_first_place = cache.get_no_touch(ImageId(1)).unwrap().last_accessed;
+    cache.place(make_placement(1, 5, 0, 1, 1));
+    let after_second_place = cache.get_no_touch(ImageId(1)).unwrap().last_accessed;
+
+    assert!(after_first_place > after_store, "first place must bump");
+    assert!(
+        after_second_place > after_first_place,
+        "second place must bump again (monotonic LRU); \
+         saw first={after_first_place}, second={after_second_place}"
+    );
+}
+
+/// Regression: spec-conformance §13.6.1 — `place()` of a placement whose
+/// `image_id` has no corresponding `ImageData` is a no-op for recency
+/// (the placement is added — orphan-placement pruning handles cleanup —
+/// but no image data exists to stamp). Pin guards against a panic on
+/// orphan placements as well as against silent off-by-one indexing.
+#[test]
+fn place_with_no_underlying_image_does_not_panic() {
+    let mut cache = ImageCache::new();
+    cache.store(make_image(1, 256)).unwrap();
+    let pre_id1 = cache.get_no_touch(ImageId(1)).unwrap().last_accessed;
+
+    // Place a placement whose image_id has never been stored.
+    cache.place(make_placement(99, 0, 0, 1, 1));
+
+    let post_id1 = cache.get_no_touch(ImageId(1)).unwrap().last_accessed;
+    assert_eq!(
+        post_id1, pre_id1,
+        "orphan place() must not perturb other images' last_accessed"
+    );
+    assert!(
+        cache.get_no_touch(ImageId(99)).is_none(),
+        "orphan place() must not synthesize an ImageData entry for image_id=99"
+    );
+}

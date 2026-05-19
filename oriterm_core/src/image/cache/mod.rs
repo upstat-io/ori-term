@@ -224,8 +224,27 @@ impl ImageCache {
     }
 
     /// Add a placement for an existing image.
+    ///
+    /// Bumps the underlying image's `last_accessed` recency stamp so that
+    /// re-placement of an existing image refreshes its eviction priority
+    /// among the unplaced pool. This is the canonical recency-update path
+    /// for all image-protocol create-placement flows: kitty
+    /// (`kitty_create_placement`), sixel (`sixel_create_placement`), and
+    /// iterm2 (`iterm2_create_placement`) all funnel through here, so
+    /// `eviction::evict_one`'s `min_by_key(last_accessed)` rank stays
+    /// LRU-on-place across every protocol — never falling back to the
+    /// pre-§13.6.1 FIFO-on-store-order behavior for any one protocol.
+    ///
+    /// Per `plans/spec-conformance/section-13-kitty-graphics.md §13.6.1`
+    /// — per-protocol bumps would scatter the LRU contract across N
+    /// consumer sites; an `ImageCache`-owned API is the SSOT.
     pub(crate) fn place(&mut self, placement: ImagePlacement) {
+        let image_id = placement.image_id;
         self.placements.push(placement);
+        self.access_counter += 1;
+        if let Some(img) = self.images.get_mut(&image_id) {
+            img.last_accessed = self.access_counter;
+        }
         self.dirty = true;
     }
 

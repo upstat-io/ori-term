@@ -8,6 +8,7 @@ pub mod kitty_animation_transition;
 pub mod kitty_cure_confirmation;
 pub mod kitty_minimal;
 pub mod kitty_placeholder_basic;
+pub mod kitty_sixel_mixed_with_text;
 pub mod kitty_sixel_mixed_z_order;
 #[cfg(all(test, feature = "gpu-tests"))]
 pub mod minimal_image_quad;
