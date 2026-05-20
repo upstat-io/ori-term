@@ -36,11 +36,12 @@ impl<S: EffectSink> Term<S> {
         // cells. See §13.6.1 multi-cell UV slicing.
         if unicode_placeholder {
             let id = ImageId::from_raw(image_id);
-            self.image_cache_mut().add_placeholder_anchor(id);
-            if let (Some(cols), Some(rows)) = (merged.display_cols, merged.display_rows) {
-                self.image_cache_mut()
-                    .set_placeholder_anchor_grid(id, cols, rows);
-            }
+            let grid = match (merged.display_cols, merged.display_rows) {
+                (Some(cols), Some(rows)) => Some((cols, rows)),
+                _ => None,
+            };
+            self.image_cache_mut()
+                .anchor_placeholder_with_grid(id, grid);
         }
         self.kitty_respond(&ctx, "OK");
     }
@@ -71,11 +72,12 @@ impl<S: EffectSink> Term<S> {
         // the GPU emit path can slice UVs per cell.
         if merged.unicode_placeholder {
             let id = ImageId::from_raw(image_id);
-            self.image_cache_mut().add_placeholder_anchor(id);
-            if let (Some(cols), Some(rows)) = (merged.display_cols, merged.display_rows) {
-                self.image_cache_mut()
-                    .set_placeholder_anchor_grid(id, cols, rows);
-            }
+            let grid = match (merged.display_cols, merged.display_rows) {
+                (Some(cols), Some(rows)) => Some((cols, rows)),
+                _ => None,
+            };
+            self.image_cache_mut()
+                .anchor_placeholder_with_grid(id, grid);
         } else {
             self.kitty_create_placement(image_id, &merged);
         }

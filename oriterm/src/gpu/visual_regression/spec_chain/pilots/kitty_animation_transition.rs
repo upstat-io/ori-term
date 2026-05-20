@@ -108,6 +108,59 @@ fn kitty_animation_frame_transition_observed_at_render_apex() {
         return;
     };
 
+    // Build expectations for the FrameInput + GpuInstance rungs. The
+    // GoldenImage rung is intentionally omitted — see the file-level
+    // §Pixel-level golden deferred section. The TextureRender rung is
+    // also omitted because its sole asserted invariant
+    // (`min_non_zero_pixels: Some(1)`) is satisfied by the deterministic
+    // palette background regardless of whether the kitty placement
+    // renders, providing no useful signal here.
+    let expectations = ScenarioExpectations {
+        frame_input: Some(FrameInputExpectation::default_grid()),
+        gpu_instance: Some(GpuInstanceExpectation::at_least(1, 0).with_images(1)),
+        ..ScenarioExpectations::default()
+    };
+
+    drive_frame_0_to_pixels(&mut harness, &expectations);
+    drive_frame_transition_to_frame_1(&mut harness);
+    assert_visible_color_change_at_apex(&mut harness, &expectations);
+}
+
+/// Phase 1 helper: feed the 2-frame kitty animation byte stream, assert
+/// the cache observes the initial frame-0 state, render twice without
+/// advancing the clock, and clamp the must-not-advance invariant
+/// (current_frame stays at 0 across renders without an explicit
+/// `advance_animations` call).
+///
+/// Pins:
+///   - a=T + a=f + a=a,s=3 promotes the static image to a 2-frame
+///     animation with `current_frame = 0, total_frames = 2, paused = false`.
+///   - Initial render observes FrameInput + emits ≥1 GPU image quad.
+///   - Re-render without cache mutation leaves `current_frame = 0` and
+///     produces the same FrameInput + GpuInstance shape — the cache is
+///     the SSOT for current_frame; rendering does not advance it.
+fn drive_frame_0_to_pixels(harness: &mut VisualSpecHarness, expectations: &ScenarioExpectations) {
+    feed_animation_byte_stream(harness);
+    assert_initial_animation_cache_state(harness);
+    assert_renders_dont_advance_cache(harness, expectations);
+}
+
+/// Feed the a=T + a=f + a=a,s=3 byte sequence that promotes the static
+/// image to a 2-frame animation with a 100ms gap on both frames.
+///
+/// Byte stream:
+///   - a=T transmits + places frame 0 (red) at cursor.
+///   - a=f,z=100 appends frame 1 (blue) and sets a 100ms gap on BOTH
+///     frames (the promotion-from-static path applies the same gap to
+///     frame 0 and frame 1 per cache/animation.rs:222).
+///   - a=a,s=3 sets run-mode and anchors `frame_starts[id]` to the feed
+///     instant — required so a single `advance_animations` call past
+///     the deadline produces the transition (without s=3, the first
+///     advance_animations call would only initialize `frame_starts` and
+///     produce no transition).
+///   - q=2 suppresses replies — this pilot pins the render path, not
+///     the reply path (KG-RESPONSE-* rows pin that separately).
+fn feed_animation_byte_stream(harness: &mut VisualSpecHarness) {
     let encoder = base64::engine::general_purpose::STANDARD;
 
     // Frame 0: solid red 4x4 RGBA (64 bytes). The base image transmitted
@@ -122,18 +175,6 @@ fn kitty_animation_frame_transition_observed_at_render_apex() {
     let blue_payload: Vec<u8> = [0x00u8, 0x00, 0xFF, 0xFF].repeat(16);
     let blue_b64 = encoder.encode(&blue_payload);
 
-    // Build the byte stream:
-    //   - a=T transmits + places frame 0 (red) at cursor.
-    //   - a=f,z=100 appends frame 1 (blue) and sets a 100ms gap on BOTH
-    //     frames (the promotion-from-static path applies the same gap to
-    //     frame 0 and frame 1 per cache/animation.rs:222).
-    //   - a=a,s=3 sets run-mode and anchors `frame_starts[id]` to the feed
-    //     instant — required so a single `advance_animations` call past
-    //     the deadline produces the transition (without s=3, the first
-    //     advance_animations call would only initialize `frame_starts` and
-    //     produce no transition).
-    //   - q=2 suppresses replies — this pilot pins the render path, not
-    //     the reply path (KG-RESPONSE-* rows pin that separately).
     let transmit = format!("\x1b_Ga=T,i={IMAGE_ID},f=32,s=4,v=4,q=2;{red_b64}\x1b\\");
     let frame =
         format!("\x1b_Ga=f,i={IMAGE_ID},f=32,s=4,v=4,z={FRAME_GAP_MS},q=2;{blue_b64}\x1b\\");
@@ -142,88 +183,95 @@ fn kitty_animation_frame_transition_observed_at_render_apex() {
     harness.core_mut().feed(transmit.as_bytes());
     harness.core_mut().feed(frame.as_bytes());
     harness.core_mut().feed(animate.as_bytes());
+}
 
-    // Diagnostic invariant 1: cache observes the 2-frame animation in the
-    // initial state. Catches the case where the byte stream silently fails
-    // to construct the animation (parser fallback, placement rejection,
-    // image_id resolution miss) — without this assertion, an empty render
-    // would still pass the texture floor guard and produce identical
-    // goldens regardless of the cache state.
-    {
-        let state = harness
-            .core()
-            .term()
-            .image_cache()
-            .animation_state(ImageId::from_raw(IMAGE_ID))
-            .expect(
-                "kitty animation state for IMAGE_ID must exist after a=T + a=f + a=a,s=3 — \
-                 indicates the byte stream did not promote the static image to animated",
-            );
-        assert_eq!(
-            state.total_frames, 2,
-            "promotion from static via a=f must produce 2 frames (base + appended)"
+/// Diagnostic invariant 1: cache observes the 2-frame animation in the
+/// initial state.
+///
+/// Catches the case where the byte stream silently fails to construct
+/// the animation (parser fallback, placement rejection, image_id
+/// resolution miss) — without this assertion, an empty render would
+/// still pass the texture floor guard and produce identical goldens
+/// regardless of the cache state.
+fn assert_initial_animation_cache_state(harness: &VisualSpecHarness) {
+    let state = harness
+        .core()
+        .term()
+        .image_cache()
+        .animation_state(ImageId::from_raw(IMAGE_ID))
+        .expect(
+            "kitty animation state for IMAGE_ID must exist after a=T + a=f + a=a,s=3 — \
+             indicates the byte stream did not promote the static image to animated",
         );
-        assert_eq!(
-            state.current_frame, 0,
-            "initial current_frame must be 0 (base, red)"
-        );
-        assert!(
-            !state.paused,
-            "a=a,s=3 must set paused = false so advance_animations advances on deadline"
-        );
-    }
+    assert_eq!(
+        state.total_frames, 2,
+        "promotion from static via a=f must produce 2 frames (base + appended)"
+    );
+    assert_eq!(
+        state.current_frame, 0,
+        "initial current_frame must be 0 (base, red)"
+    );
+    assert!(
+        !state.paused,
+        "a=a,s=3 must set paused = false so advance_animations advances on deadline"
+    );
+}
 
-    // Build expectations for the FrameInput + GpuInstance rungs. The
-    // GoldenImage rung is intentionally omitted — see the file-level
-    // §Pixel-level golden deferred section. The TextureRender rung is
-    // also omitted because its sole asserted invariant
-    // (`min_non_zero_pixels: Some(1)`) is satisfied by the deterministic
-    // palette background regardless of whether the kitty placement
-    // renders, providing no useful signal here.
-    let expectations = ScenarioExpectations {
-        frame_input: Some(FrameInputExpectation::default_grid()),
-        gpu_instance: Some(GpuInstanceExpectation::at_least(1, 0).with_images(1)),
-        ..ScenarioExpectations::default()
-    };
-
+/// Must-not-advance assertion: render twice with no `advance_animations`
+/// call between renders, then clamp `current_frame = 0`.
+///
+/// The cache is the SSOT for current_frame; without an explicit
+/// `advance_animations` call, current_frame stays at 0. The FrameInput +
+/// GpuInstance shape must be identical between renders. The cache-level
+/// test at `oriterm_core/tests/spec_chain/kitty/animation.rs:427` covers
+/// the pure-cache version of this pin; this clamps the additional
+/// invariant that "rendering does not advance the cache".
+fn assert_renders_dont_advance_cache(
+    harness: &mut VisualSpecHarness,
+    expectations: &ScenarioExpectations,
+) {
     // Render 1: initial state, current_frame = 0 (red). The cache has not
     // observed any timer tick yet; current_frame is whatever
     // `add_animation_frame` initialized (0 = the base from a=T).
-    let results = harness.render_visual_rungs(CATALOG_ROW, &expectations);
+    let results = harness.render_visual_rungs(CATALOG_ROW, expectations);
     assert_rungs_pass(&results, "initial frame-0 render");
     assert_rung_chain_complete(&results);
 
     // Render 2: re-render without any cache mutation between renders.
-    // This is the must-not-advance assertion — the cache is the SSOT for current_frame;
-    // without an explicit `advance_animations` call, current_frame stays
-    // at 0. The FrameInput + GpuInstance shape must be identical to
-    // render 1.
-    let results_unchanged = harness.render_visual_rungs(CATALOG_ROW, &expectations);
+    let results_unchanged = harness.render_visual_rungs(CATALOG_ROW, expectations);
     assert_rungs_pass(
         &results_unchanged,
         "must-not-advance assertion (no advance_animations between renders) — \
          FrameInput + GpuInstance shape should be IDENTICAL to render 1",
     );
-    // Cache invariant after the must-not-advance assertion: current_frame must NOT
-    // have advanced. The cache-level test at
-    // `oriterm_core/tests/spec_chain/kitty/animation.rs:427` covers the
-    // pure-cache version of this pin; this assertion clamps the
-    // additional invariant that "rendering does not advance the cache".
-    {
-        let state = harness
-            .core()
-            .term()
-            .image_cache()
-            .animation_state(ImageId::from_raw(IMAGE_ID))
-            .expect("animation state must still exist after re-render");
-        assert_eq!(
-            state.current_frame, 0,
-            "must-not-advance assertion: re-rendering must NOT advance current_frame; \
-             got {} after two renders with no advance_animations call",
-            state.current_frame
-        );
-    }
 
+    let state = harness
+        .core()
+        .term()
+        .image_cache()
+        .animation_state(ImageId::from_raw(IMAGE_ID))
+        .expect("animation state must still exist after re-render");
+    assert_eq!(
+        state.current_frame, 0,
+        "must-not-advance assertion: re-rendering must NOT advance current_frame; \
+         got {} after two renders with no advance_animations call",
+        state.current_frame
+    );
+}
+
+/// Phase 2 helper: drive the canonical clock-injection seam
+/// `Term::advance_animations(now)` with a synthesized far-future
+/// `Instant`, then clamp the cache transition (`current_frame` 0 → 1).
+///
+/// Pins:
+///   - `advance_animations(t + 10s)` past the 100ms gap deadline returns
+///     `Some(next_deadline)` — animation is still running (loop_count =
+///     infinite), so a NEXT-frame deadline is scheduled.
+///   - `current_frame` flips from 0 to 1 after the advance — catches the
+///     case where the call returns a deadline but does NOT advance the
+///     cache (e.g., frame_starts never anchored, or elapsed < frame_dur
+///     due to a clock-arithmetic bug).
+fn drive_frame_transition_to_frame_1(harness: &mut VisualSpecHarness) {
     // Advance the cache clock past the 100ms frame-gap deadline. Using
     // `Instant::now() + 10s` provides a comfortable margin above the
     // 100ms deadline + any time consumed by render 1 + render 2 since
@@ -246,29 +294,44 @@ fn kitty_animation_frame_transition_observed_at_render_apex() {
     // reason: the downstream FrameInput + GpuInstance rungs would see
     // the same placement state as before the advance, but the test
     // would attribute the pass to a successful transition.
-    {
-        let state = harness
-            .core()
-            .term()
-            .image_cache()
-            .animation_state(ImageId::from_raw(IMAGE_ID))
-            .expect("animation state must still exist after advance_animations");
-        assert_eq!(
-            state.current_frame, 1,
-            "advance_animations(t + 10s) past the 100ms gap deadline must advance \
-             current_frame from 0 to 1; got {} — indicates either frame_starts was \
-             never anchored or the deadline arithmetic is broken",
-            state.current_frame
-        );
-    }
+    let state = harness
+        .core()
+        .term()
+        .image_cache()
+        .animation_state(ImageId::from_raw(IMAGE_ID))
+        .expect("animation state must still exist after advance_animations");
+    assert_eq!(
+        state.current_frame, 1,
+        "advance_animations(t + 10s) past the 100ms gap deadline must advance \
+         current_frame from 0 to 1; got {} — indicates either frame_starts was \
+         never anchored or the deadline arithmetic is broken",
+        state.current_frame
+    );
+}
 
+/// Phase 3 helper: render at the post-transition apex (current_frame = 1)
+/// and assert the FrameInput + GpuInstance rungs continue to observe the
+/// placement.
+///
+/// The helper is named for the §13.3 positive-pin intent — the visible
+/// color change from red (frame 0) to blue (frame 1) at the rendered
+/// texture apex. Pixel-exact comparison is deferred per the file-level
+/// §Pixel-level golden deferred section, so this helper currently pins
+/// the GpuInstance apex only (image quad emission survives the cache
+/// transition). The naming is preserved as the load-bearing anchor for
+/// when §13.6 cures the kitty quad → texture pipeline and the
+/// pixel-level pin lands.
+fn assert_visible_color_change_at_apex(
+    harness: &mut VisualSpecHarness,
+    expectations: &ScenarioExpectations,
+) {
     // Render 3: post-transition state, current_frame = 1 (blue). The
     // snapshot extraction must pick up the new placement state; the GPU
     // pipeline must continue to emit an image quad (proves the
     // placement was not silently dropped when current_frame advanced).
     // Pixel-level pin (different rendered texture for frame 1) is
     // deferred per the file-level §Pixel-level golden deferred section.
-    let results_after_transition = harness.render_visual_rungs(CATALOG_ROW, &expectations);
+    let results_after_transition = harness.render_visual_rungs(CATALOG_ROW, expectations);
     assert_rungs_pass(
         &results_after_transition,
         "frame-1 render after advance_animations past deadline — \

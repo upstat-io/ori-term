@@ -178,11 +178,7 @@ fn response_poll_token_requires_fulfillment() {
 
     // With NO fulfill, no PtyWrite must arrive. Poll the channel and
     // fail fast on any PtyWrite during the window.
-    assert_no_pty_write_within(
-        &mux_rx,
-        Duration::from_millis(150),
-        "without fulfillment",
-    );
+    assert_no_pty_write_within(&mux_rx, Duration::from_millis(150), "without fulfillment");
 
     handle.shutdown();
 }
@@ -335,11 +331,7 @@ fn cancellation_detects_after_staging_drain() {
     // cycle (driven by the wake delivered at registration). No PtyWrite
     // must ever arrive — the request was cancelled. Poll the channel
     // and fail fast on any PtyWrite during the window.
-    assert_no_pty_write_within(
-        &mux_rx,
-        Duration::from_millis(150),
-        "for cancelled request",
-    );
+    assert_no_pty_write_within(&mux_rx, Duration::from_millis(150), "for cancelled request");
 
     handle.shutdown();
 }

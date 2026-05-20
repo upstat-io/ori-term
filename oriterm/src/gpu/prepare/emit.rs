@@ -151,21 +151,6 @@ pub(super) fn draw_prompt_markers(input: &FrameInput, frame: &mut PreparedFrame,
     }
 }
 
-/// Emit cursor instances into the prepared frame.
-///
-/// The cursor shape determines the geometry:
-/// - `Block` — full cell rectangle.
-/// - `Bar` — 2px-wide vertical line at the left edge.
-/// - `Underline` — 2px-tall horizontal line at the bottom.
-/// - `HollowBlock` — 4 thin outline rectangles (top, bottom, left, right).
-/// - `Hidden` — no instances.
-///
-/// Most callers should use [`emit_cursor_for_frame`] instead. This is
-/// the lower-level shape-dispatch primitive; `emit_cursor_for_frame` owns
-/// the visibility / opacity / focus-effective-shape policy.
-#[doc(hidden)]
-mod _emit_cursor_helper_anchor {}
-
 /// Emit cursor instances for a frame, owning the visibility/opacity gate +
 /// focus-effective-shape policy + `build_cursor` dispatch.
 ///
@@ -209,6 +194,18 @@ pub(super) fn emit_cursor_for_frame(
     );
 }
 
+/// Emit cursor instances into the prepared frame.
+///
+/// The cursor shape determines the geometry:
+/// - `Block` — full cell rectangle.
+/// - `Bar` — 2px-wide vertical line at the left edge.
+/// - `Underline` — 2px-tall horizontal line at the bottom.
+/// - `HollowBlock` — 4 thin outline rectangles (top, bottom, left, right).
+/// - `Hidden` — no instances.
+///
+/// Most callers should use [`emit_cursor_for_frame`] instead. This is
+/// the lower-level shape-dispatch primitive; `emit_cursor_for_frame` owns
+/// the visibility / opacity / focus-effective-shape policy.
 #[expect(
     clippy::too_many_arguments,
     reason = "cursor geometry: frame, shape, grid position, cell size, origin offset, color, opacity"

@@ -17,6 +17,7 @@ use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as B64;
 use oriterm_core::effect::VoidEffectSink;
 use oriterm_core::{Term, Theme};
+use oriterm_test_support::spec_chain::kitty_fixtures::{kitty_apc, rgba_4x4_red};
 use oriterm_test_support::spec_chain::sixel_fixtures::dcs_n_cols_wide;
 
 const MB: usize = 1_048_576;
@@ -74,29 +75,6 @@ fn platform_rss() -> Option<usize> {
             None
         }
     }
-}
-
-/// Encode a kitty graphics APC: `\x1b_G<control>;<payload>\x1b\\`.
-/// Empty payload omits the `;` separator.
-fn kitty_apc(control: &[u8], payload_b64: &str) -> Vec<u8> {
-    let mut out = Vec::with_capacity(4 + control.len() + 1 + payload_b64.len() + 2);
-    out.extend_from_slice(b"\x1b_G");
-    out.extend_from_slice(control);
-    if !payload_b64.is_empty() {
-        out.push(b';');
-        out.extend_from_slice(payload_b64.as_bytes());
-    }
-    out.extend_from_slice(b"\x1b\\");
-    out
-}
-
-/// 4×4 opaque-red raw RGBA — 64 bytes (matches `s=4,v=4,f=32`).
-fn rgba_4x4_red() -> Vec<u8> {
-    let mut v = Vec::with_capacity(64);
-    for _ in 0..16 {
-        v.extend_from_slice(&[255, 0, 0, 255]);
-    }
-    v
 }
 
 /// Drive one cache-cycling alternation: sixel transmit → sixel-placement

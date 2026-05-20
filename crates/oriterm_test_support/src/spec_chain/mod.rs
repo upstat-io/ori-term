@@ -10,6 +10,7 @@
 mod api;
 pub mod coverage;
 pub mod effect_filters;
+pub mod kitty_fixtures;
 pub mod observers;
 mod recording_handler;
 mod scenario;

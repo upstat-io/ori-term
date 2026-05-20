@@ -1,45 +1,18 @@
-//! Shared fixtures + helpers for kitty §13 `spec_chain` tests.
+//! Per-binary kitty `spec_chain` helpers.
 //!
-//! SSOT for the APC framing, base64 encoding, fixed-payload constructors,
-//! temp-dir helper, and effect-sink observation primitives consumed by the
-//! per-action / per-format / per-transmission sibling files. Helpers are
-//! `pub(super)` — scoped to `tests/spec_chain/kitty/` only.
-
-use base64::Engine as _;
-use base64::engine::general_purpose::STANDARD;
+//! APC framing, base64 encoding, and the `rgba_4x4_red` constructor live in
+//! `oriterm_test_support::spec_chain::kitty_fixtures` as the cross-binary
+//! SSOT; this module re-exports those and owns the `rgb_4x4_red`, `png_1x1_red`,
+//! temp-dir, and effect-sink observation primitives that are scoped to the
+//! kitty test binary.
 
 use oriterm_core::effect::PtyWriteKind;
 pub(super) use oriterm_test_support::spec_chain::TempDirGuard;
+pub(super) use oriterm_test_support::spec_chain::kitty_fixtures::{b64, kitty_apc, rgba_4x4_red};
 pub(super) use oriterm_test_support::spec_chain::sixel_fixtures::placement_count;
 use oriterm_test_support::spec_chain::{
     SpecHarness, count_exact_pty_writes, pty_write_concat, pty_write_contains,
 };
-
-/// Build the full `\x1b_G<control>;<payload_b64>\x1b\\` APC command.
-pub(super) fn kitty_apc(control: &[u8], payload_b64: &str) -> Vec<u8> {
-    let mut out = Vec::with_capacity(3 + control.len() + 1 + payload_b64.len() + 2);
-    out.extend_from_slice(b"\x1b_G");
-    out.extend_from_slice(control);
-    if !payload_b64.is_empty() {
-        out.push(b';');
-        out.extend_from_slice(payload_b64.as_bytes());
-    }
-    out.extend_from_slice(b"\x1b\\");
-    out
-}
-
-pub(super) fn b64(data: &[u8]) -> String {
-    STANDARD.encode(data)
-}
-
-/// 4×4 opaque-red raw RGBA payload — 64 bytes (matches `s=4,v=4,f=32`).
-pub(super) fn rgba_4x4_red() -> Vec<u8> {
-    let mut v = Vec::with_capacity(64);
-    for _ in 0..16 {
-        v.extend_from_slice(&[255, 0, 0, 255]);
-    }
-    v
-}
 
 /// 4×4 opaque-red raw RGB payload — 48 bytes (matches `s=4,v=4,f=24`).
 pub(super) fn rgb_4x4_red() -> Vec<u8> {

@@ -535,9 +535,9 @@ fn inactive_primary_screen_u1_anchors_reconciled_on_resize() {
     h.feed(b"\x1b[?1049h");
 
     // Resize narrower while ALT IS ACTIVE. Use reflow=false so the
-    // placeholder at the right edge of primary is truncated (the case
-    // we want to verify reconcile catches); reflow=true would migrate
-    // the cell instead of dropping it, masking the bug.
+    // placeholder at the right edge of primary is truncated — the
+    // reconcile path under test must drop the anchor; reflow=true
+    // would migrate the cell instead of dropping it, masking the bug.
     let lines = h.term().grid().lines();
     h.term_mut().resize(lines, cols / 2, false);
 

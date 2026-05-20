@@ -35,6 +35,18 @@ use super::fixtures::{b64, kitty_apc, rgba_4x4_red};
 
 const KITTY_IMAGE_BYTES: usize = 64;
 
+/// Auto-assigned sixel `image_id` base (§12 sixel handler at
+/// `oriterm_core/src/image/cache/mod.rs:24`).
+const SIXEL_AUTO_ID: u32 = 2_147_483_647;
+
+/// Row-diacritics for the kitty U=1 placeholder protocol: indexed
+/// `[row=0, row=1]`. See `~/projects/reference_repos/console_repos/kitty/docs/graphics-protocol.rst`.
+const ROW_D: [char; 2] = ['\u{0305}', '\u{030D}'];
+
+/// Col-diacritics for the kitty U=1 placeholder protocol: indexed
+/// `[col=0, col=1, col=2, col=3]`.
+const COL_D: [char; 4] = ['\u{0305}', '\u{030D}', '\u{030E}', '\u{030F}'];
+
 fn transmit_kitty_unplaced(h: &mut SpecHarness, id: u32) {
     let control = format!("a=t,i={id},f=32,s=4,v=4");
     h.feed(&kitty_apc(control.as_bytes(), &b64(&rgba_4x4_red())));
@@ -242,13 +254,9 @@ fn cross_protocol_lru_mixed_sixel_kitty_drops_oldest_by_last_accessed() {
     // Touch kitty-B via `a=p` — routes through ImageCache::place.
     place_existing_kitty(&mut h, 42);
 
-    // Force eviction: cap memory at roughly 2 images' worth so exactly
-    // ONE of the unplaced images must drop. With kitty-B now placed
-    // (eviction-immune per Option A), eviction targets the unplaced
-    // pool: sixel-A (oldest) is evicted; sixel-C (younger) survives.
-    // `dcs_n_cols_wide(8)` produces an 8×6 RGBA image = 192 bytes;
-    // and kitty s=4,v=4,f=32 = 64 bytes. Total 3 images ≈ 448 bytes; cap
-    // at 280 forces one sixel eviction (256 bytes ≈ kitty + 1 sixel).
+    // Force eviction: cap at 280 bytes (≈ kitty 64 + 1 sixel 192) so
+    // ONE unplaced sixel must drop. sixel-A is the LRU victim; kitty-B
+    // is eviction-immune (placed); sixel-C is younger unplaced.
     h.term_mut().image_cache_mut().set_memory_limit(280);
 
     assert!(
@@ -340,10 +348,9 @@ fn fully_placed_cache_over_budget_raises_memory_limit_exceeded() {
         .image_cache_mut()
         .set_memory_limit(KITTY_IMAGE_BYTES * 2);
 
-    // Third kitty `a=T` would push memory past the cap. Eviction can't
-    // free a placed image, so the store path MUST reject with
-    // `ImageError::MemoryLimitExceeded`. The handler converts that to
-    // an `ENOMEM:` APC error reply (see kitty/store.rs:108).
+    // Third `a=T` exceeds cap with no evictable image → store rejects
+    // with `ImageError::MemoryLimitExceeded` → `ENOMEM:` APC error
+    // reply (kitty/store.rs:108).
     h.feed(b"\x1b[3;1H");
     h.feed(&kitty_apc(b"a=T,i=3,f=32,s=4,v=4", &b64(&rgba_4x4_red())));
 
@@ -403,10 +410,7 @@ fn kitty_and_sixel_create_placement_paths_route_through_image_cache_place() {
     ] {
         let contents = std::fs::read_to_string(&path)
             .unwrap_or_else(|err| panic!("failed to read {} for grep gate: {err}", path.display()));
-        // Each protocol handler MUST contain at least one call into
-        // `image_cache_mut().place(`. If a handler constructs an
-        // `ImagePlacement` and pushes it via a different path, this
-        // assertion fires.
+        // Each protocol handler MUST call `.image_cache_mut().place(`.
         assert!(
             contents.contains(".image_cache_mut().place("),
             "{name} placement-create path at {} MUST call \
@@ -576,13 +580,9 @@ fn cross_stack_regression_category_matrix_completeness() {
         // 5. Placeholder + cache-coordinate coexistence (U=1 anchor +
         //    sixel placement on the same screen).
         "placeholder-sixel-coexist",
-        // 6. Resize-lifecycle integration (§13 ↔ §07): a single
-        //    `Term::resize` invocation drives both `prune_scrollback`
-        //    (§07-owned) and `reconcile_both_placeholder_anchors`
-        //    (§13.4-owned) without cross-pollination across the four
-        //    cells of the {placement, anchor} × {evicted, surviving}
-        //    matrix. Owner pin:
-        //    `resize_with_mixed_sixel_placement_and_kitty_u1_placeholders_preserves_both`.
+        // 6. Resize-lifecycle integration (§13 ↔ §07): single resize
+        //    drives prune_scrollback + reconcile_both_placeholder_anchors.
+        //    Owner pin: resize_with_mixed_sixel_placement_*.
         "resize-lifecycle-cross-section",
     ];
     assert_eq!(
@@ -692,10 +692,7 @@ fn mixed_protocol_eviction_does_not_cross_pollinate_image_data() {
     // 3. Delete kitty by image_id — `a=d,d=I,i=42` removes ONLY kitty.
     h.feed(&kitty_apc(b"a=d,d=I,i=42", ""));
 
-    // 4. Sixel image bytes MUST survive — the kitty delete-by-id path is
-    //    per-image_id, NOT per-protocol. A protocol-specific carve-out
-    //    (e.g., "delete-by-id for kitty also evicts sixel by store-order")
-    //    would fail this pin.
+    // 4. Sixel survives — delete-by-id is per-image_id, not per-protocol.
     assert!(
         h.term()
             .image_cache()
@@ -734,64 +731,12 @@ fn write_placeholder_cell(h: &mut SpecHarness, image_id_low: u32, row: char, col
     h.feed(&bytes);
 }
 
-/// Regression: spec-conformance §13.6 — cross-section §13 ↔ §07
-/// integration pin. A single `Term::resize` invocation drives BOTH
-/// `ImageCache::prune_scrollback` (§07-owned scrollback lifecycle
-/// handler) AND `Term::reconcile_both_placeholder_anchors` (§13.4-owned
-/// anchor reconcile) in the same operation; they MUST NOT cross-
-/// pollinate. The 2×2 matrix MUST be pinned in one test:
-///
-/// |                                  | placement evicted | placement surviving |
-/// |---|---|---|
-/// | **anchor surviving (cells kept)** | sixel A × kitty B (§07 prune evicts A; §13.4 reconcile keeps B) | sixel D × kitty B (both survive — control cell) |
-/// | **anchor dropped (cells gone)**   | sixel A × kitty C (§07 prune evicts A; §13.4 reconcile drops C) | sixel D × kitty C (D survives prune; reconcile drops C) |
-///
-/// Without all four cells, the test is a "ghost test": the anchor-
-/// survival assertion alone can pass even if
-/// `reconcile_both_placeholder_anchors` is a no-op (no code path adds
-/// spurious anchors mid-resize), so the test must FORCE reconcile to
-/// do meaningful work via an orphan anchor that only the resize-end
-/// reconcile can clean up.
-///
-/// Exercises two production seams in the same call (primary-cache
-/// coverage; the alt-cache branch of `reconcile_both_placeholder_anchors`
-/// is pinned by the companion test
-/// `resize_reconciles_alt_cache_placeholder_anchors_symmetrically`):
-/// 1. `Term::resize` at `term_repo/oriterm_core/src/term/resize/mod.rs:91`
-///    (the symmetric reconcile entry-point invoked after `prune_scrollback`).
-/// 2. `Term::reconcile_both_placeholder_anchors` at
-///    `term_repo/oriterm_core/src/term/handler/helpers.rs:295` (primary
-///    pair walked here; alt pair walked by the companion test).
-///
-/// Uses a 16-column grid + `reflow=false` resize so the column truncation
-/// step (`grid/resize/mod.rs:resize_no_reflow` → `Row::resize` →
-/// `Vec::resize_with` truncate) drops kitty C's placeholder cells at
-/// cols 10-11 without firing the per-linefeed `prune_images_if_evicted`
-/// reconcile fast path. The orphan anchor that results from the column
-/// truncation can ONLY be cleaned up by the resize-end
-/// `reconcile_both_placeholder_anchors` — making reconcile observably
-/// necessary.
-#[test]
-fn resize_with_mixed_sixel_placement_and_kitty_u1_placeholders_preserves_both() {
-    use oriterm_test_support::spec_chain::sixel_fixtures::dcs_n_cols_wide;
+// ── §13 ↔ §07 setup helpers ────────────────────────────────────────
 
-    // Auto-assigned sixel image_id (§12 sixel handler at
-    // `oriterm_core/src/image/cache/mod.rs:24`).
-    const SIXEL_AUTO_ID: u32 = 2_147_483_647;
-    let sixel_a = ImageId::from_raw(SIXEL_AUTO_ID);
-    let sixel_d = ImageId::from_raw(SIXEL_AUTO_ID + 1);
-    let kitty_b = ImageId::from_raw(42);
-    let kitty_c = ImageId::from_raw(99);
-
-    // 8 lines × 16 cols, sb cap 4. The 16-column width holds kitty C's
-    // placeholder cells at cols 10-11 above the post-resize 4-column
-    // truncation boundary so col-shrink (with `reflow=false`) drops
-    // them, creating an orphan anchor that reconcile must clean up.
-    let mut h = SpecHarness::with_size_and_scrollback(8, 16, 4);
-
-    // 1. Sixel A at grid row 0 — placement.cell_row = 0. After 11 LFs +
-    //    resize-driven scrollback eviction, this row falls below the
-    //    post-resize floor and prune_scrollback drops the placement.
+/// CUP(1,1) → sixel A via `dcs_n_cols_wide(4)`. Sixel handler stores
+/// the image and places it at the cursor; resulting `placement.cell_row = 0`.
+/// Post-condition: exactly ONE placement registered.
+fn setup_sixel_a_at_row_0(h: &mut SpecHarness) {
     h.feed(b"\x1b[1;1H"); // CUP(1,1) → cursor (0, 0).
     h.feed(&dcs_n_cols_wide(4));
     assert_eq!(
@@ -799,13 +744,14 @@ fn resize_with_mixed_sixel_placement_and_kitty_u1_placeholders_preserves_both() 
         1,
         "sixel handler must create exactly one placement at cursor"
     );
+}
 
-    // 2. Drive 11 linefeeds to fill scrollback to cap WITHOUT evicting.
-    //    Starting from cursor at (0, 0), 7 LFs move cursor to (7, 0);
-    //    LFs 8-11 scroll, pushing 4 rows to scrollback. sb cap 4 → no
-    //    rows evict. evicted=0, sb=4. The 11 LFs run BEFORE any U=1
-    //    anchors are placed, so the per-LF reconcile cannot drop an
-    //    anchor that does not yet exist.
+/// Drive 11 linefeeds to fill scrollback to cap without evicting any
+/// row. From cursor (0, 0): LF 1-7 move cursor (0,0)→(7,0); LFs 8-11
+/// push 4 rows to scrollback (cap 4) → `total_evicted = 0`. The 11 LFs
+/// run BEFORE any U=1 anchor exists, so per-LF reconcile cannot drop
+/// an anchor that does not yet exist.
+fn fill_scrollback_to_cap_without_eviction(h: &mut SpecHarness) {
     let lfs = vec![b'\n'; 11];
     h.feed(&lfs);
     assert_eq!(
@@ -821,11 +767,15 @@ fn resize_with_mixed_sixel_placement_and_kitty_u1_placeholders_preserves_both() 
         "sixel A's placement (cell_row=0) MUST survive the LF phase — \
          per-LF prune fires only when evicted grows, and evicted=0."
     );
+}
 
-    // 3. Sixel D at grid row 4 col 0 — placement.cell_row = 8 (above
-    //    the post-resize eviction floor 4). cell_col=0 (survives col
-    //    truncation 16→4). Pins the "sixel placement survives prune"
-    //    cell of the matrix.
+/// CUP(5,1) → sixel D via `dcs_n_cols_wide(4)`. Cursor at (4, 0); after
+/// the preceding 11 LFs have pushed 4 rows to scrollback, the sixel
+/// placement registers at absolute `cell_row = 8` (above the post-resize
+/// eviction floor 4) at `cell_col = 0` (survives col-truncation 16→4).
+/// Pins the "sixel placement survives prune" cell of the matrix.
+/// Post-condition: two placements registered (sixel A + sixel D).
+fn setup_sixel_d_at_row_4(h: &mut SpecHarness) {
     h.feed(b"\x1b[5;1H"); // CUP(5,1) → cursor (4, 0).
     h.feed(&dcs_n_cols_wide(4));
     assert_eq!(
@@ -833,42 +783,76 @@ fn resize_with_mixed_sixel_placement_and_kitty_u1_placeholders_preserves_both() 
         2,
         "sixel D's placement must register alongside sixel A"
     );
+}
 
-    // 4. Kitty B `a=T,U=1,c=4,r=2,i=42` — anchor + display grid (4, 2).
-    //    Place at grid line 5, write cells at grid rows 5-6 cols 0-3
-    //    (low col, so they survive col-shrink). Pins the "anchor + cells
-    //    survive resize" cell.
+/// Transmit `a=T,U=1,c=4,r=2` (kitty graphics protocol) + write
+/// `image_id` placeholder cells at grid rows 5-6 cols 0-3 (LOW col —
+/// survives col-shrink 16→4 with `reflow=false`). Used by both the
+/// primary-cache test (`image_id = 42`, kitty B) and the alt-cache
+/// companion test (`image_id = 142`, kitty `B_alt`). Anchor +
+/// display-grid `(4, 2)` recorded on the active cache; cells survive
+/// both row-shrink and col-shrink, so reconcile keeps the anchor.
+fn write_kitty_u1_low_col_block(h: &mut SpecHarness, image_id: u32) {
     h.feed(b"\x1b[6;1H"); // CUP(6,1) → cursor (5, 0).
-    h.feed(&kitty_apc(
-        b"a=T,U=1,i=42,c=4,r=2,f=32,s=4,v=4",
-        &b64(&rgba_4x4_red()),
-    ));
-    const ROW_D: [char; 2] = ['\u{0305}', '\u{030D}'];
-    const COL_D: [char; 4] = ['\u{0305}', '\u{030D}', '\u{030E}', '\u{030F}'];
+    let control = format!("a=T,U=1,i={image_id},c=4,r=2,f=32,s=4,v=4");
+    h.feed(&kitty_apc(control.as_bytes(), &b64(&rgba_4x4_red())));
     h.feed(b"\x1b[6;1H"); // grid line 5 col 0
-    for col in 0..4 {
-        write_placeholder_cell(&mut h, 42, ROW_D[0], COL_D[col]);
+    for &col_d in &COL_D {
+        write_placeholder_cell(h, image_id, ROW_D[0], col_d);
     }
     h.feed(b"\x1b[7;1H"); // grid line 6 col 0
-    for col in 0..4 {
-        write_placeholder_cell(&mut h, 42, ROW_D[1], COL_D[col]);
+    for &col_d in &COL_D {
+        write_placeholder_cell(h, image_id, ROW_D[1], col_d);
     }
+}
 
-    // 5. Kitty C `a=T,U=1,c=2,r=1,i=99` — anchor + display grid (2, 1).
-    //    Cells at grid row 7 cols 10-11 (HIGH col). After col-shrink
-    //    16→4, these cells are truncated; reconcile sees no `U+10EEEE`
-    //    cells for image 99 and MUST drop the anchor. Pins the
-    //    "anchor dropped by reconcile" cell of the matrix.
+/// Transmit `a=T,U=1,c=2,r=1` (kitty graphics protocol) + write
+/// `image_id` placeholder cells at grid row 7 cols 10-11 (HIGH col —
+/// truncated by col-shrink 16→4 with `reflow=false`). Used by both the
+/// primary-cache test (`image_id = 99`, kitty C) and the alt-cache
+/// companion test (`image_id = 199`, kitty `C_alt`). Anchor +
+/// display-grid `(2, 1)` recorded on the active cache; cells are
+/// truncated by col-shrink, so reconcile MUST drop the orphaned anchor.
+fn write_kitty_u1_high_col_block(h: &mut SpecHarness, image_id: u32) {
     h.feed(b"\x1b[8;11H"); // CUP(8,11) → cursor (7, 10).
-    h.feed(&kitty_apc(
-        b"a=T,U=1,i=99,c=2,r=1,f=32,s=4,v=4",
-        &b64(&rgba_4x4_red()),
-    ));
+    let control = format!("a=T,U=1,i={image_id},c=2,r=1,f=32,s=4,v=4");
+    h.feed(&kitty_apc(control.as_bytes(), &b64(&rgba_4x4_red())));
     h.feed(b"\x1b[8;11H");
-    write_placeholder_cell(&mut h, 99, ROW_D[0], COL_D[0]);
-    write_placeholder_cell(&mut h, 99, ROW_D[0], COL_D[1]);
+    write_placeholder_cell(h, image_id, ROW_D[0], COL_D[0]);
+    write_placeholder_cell(h, image_id, ROW_D[0], COL_D[1]);
+}
 
-    // Pre-resize state pins.
+/// DECSET 1049 — enter alt screen (`Term::swap_alt`,
+/// `term/alt_screen/mod.rs:25-39`). Alt grid + `alt_image_cache`
+/// lazily allocated, both inherit primary dimensions; alt cursor
+/// restored to (0, 0) on first entry (`navigation/mod.rs:255-256`).
+fn enter_alt_screen(h: &mut SpecHarness) {
+    h.feed(b"\x1b[?1049h");
+}
+
+/// DECRST 1049 — exit alt screen back to primary. Saves alt cursor and
+/// restores primary cursor; alt cache state is preserved (mode 1049
+/// does NOT clear alt content — only mode 1047 clears).
+fn exit_alt_screen(h: &mut SpecHarness) {
+    h.feed(b"\x1b[?1049l");
+}
+
+/// Park primary cursor at the bottom row BEFORE `Term::resize`. The
+/// `shrink_rows` `count_trailing_blank_rows` heuristic at
+/// `grid/resize/mod.rs:218-233` trims blank rows below the cursor
+/// instead of pushing top rows to scrollback. Without this CUP, the
+/// resize would trim trailing blank rows and `total_evicted` would
+/// stay at 0 — the resize-driven prune path would be a no-op.
+fn park_cursor_at_bottom_row(h: &mut SpecHarness) {
+    h.feed(b"\x1b[8;1H");
+}
+
+/// Pre-resize state pins for the §13 ↔ §07 integration tests after the
+/// 5 setup helpers (sixel A + 11 LFs + sixel D + kitty B low-col +
+/// kitty C high-col) have run. Asserts: 4 images stored, 2 placements
+/// (sixel A + sixel D — kitty B/C use U=1 anchors, not placements),
+/// both kitty anchors registered with their `(c, r)` display grids.
+fn assert_pre_resize_state(h: &SpecHarness, kitty_b: ImageId, kitty_c: ImageId) {
     assert_eq!(
         h.term().image_cache().image_count(),
         4,
@@ -890,35 +874,30 @@ fn resize_with_mixed_sixel_placement_and_kitty_u1_placeholders_preserves_both() 
         h.term().image_cache().placeholder_anchor_grid_for(kitty_c),
         Some((2, 1))
     );
+}
 
-    // Park cursor at bottom row BEFORE the resize. `shrink_rows`'s
-    // `count_trailing_blank_rows` heuristic (`grid/resize/mod.rs:218-233`)
-    // trims blank rows below the cursor instead of pushing top rows to
-    // scrollback. Without this CUP, the resize would trim trailing
-    // blank rows and total_evicted would stay at 0 — the resize-driven
-    // prune path would be a no-op.
-    h.feed(b"\x1b[8;1H");
-    let pre_evicted = h.term().grid().total_evicted();
-    assert_eq!(pre_evicted, 0, "baseline: evicted=0 before resize");
+/// Post-resize matrix pins for the §13 ↔ §07 integration tests, after
+/// `Term::resize(4, 4, false)`. Walks all four cells of the
+/// `{placement, anchor} × {evicted, surviving}` matrix on the active
+/// (primary) cache. Verifies sixel A dropped; sixel D survives;
+/// kitty B anchor and display grid survive; kitty C anchor and display
+/// grid dropped; kitty B image data survives via the anchor.
+#[derive(Clone, Copy)]
+struct IntegrationIds {
+    sixel_a: ImageId,
+    sixel_d: ImageId,
+    kitty_b: ImageId,
+    kitty_c: ImageId,
+}
 
-    // 6. Resize 8×16 → 4×4 reflow=false. Sequence (see test docstring
-    //    "Production flow during resize" for full step-by-step trace).
-    h.term_mut().resize(4, 4, false);
-    let post_evicted = h.term().grid().total_evicted();
-
-    // Pin: the resize drove additional evictions.
-    assert!(
-        post_evicted > pre_evicted,
-        "resize MUST drive new evictions for prune_scrollback to fire — \
-         saw pre={pre_evicted}, post={post_evicted}. Regression: \
-         scrollback math drifted; prune_scrollback's `new_primary > \
-         prev_primary` guard short-circuits."
-    );
-
-    // ── Sixel placement matrix (prune_scrollback observable) ──
-
-    // (a₁) Sixel A's placement DROPPED — its row=0 fell below the
-    //      post-resize eviction floor (4).
+fn assert_post_resize_primary_matrix(h: &SpecHarness, post_evicted: usize, ids: IntegrationIds) {
+    let IntegrationIds {
+        sixel_a,
+        sixel_d,
+        kitty_b,
+        kitty_c,
+    } = ids;
+    // Sixel placement matrix (prune_scrollback observable).
     assert!(
         h.term().image_cache().get_no_touch(sixel_a).is_none(),
         "sixel A (cell_row=0) MUST be evicted by §07's prune_scrollback \
@@ -927,7 +906,6 @@ fn resize_with_mixed_sixel_placement_and_kitty_u1_placeholders_preserves_both() 
          prune lifecycle handler failed to drop a placement whose row \
          fell below the eviction floor."
     );
-    // (a₂) Sixel D's placement SURVIVES — its row=8 is above the floor.
     assert!(
         h.term().image_cache().get_no_touch(sixel_d).is_some(),
         "sixel D (cell_row=8) MUST survive prune_scrollback \
@@ -942,12 +920,8 @@ fn resize_with_mixed_sixel_placement_and_kitty_u1_placeholders_preserves_both() 
          prune/on_resize dropped/kept the wrong placement."
     );
 
-    // ── Kitty anchor matrix (reconcile_both_placeholder_anchors observable) ──
-
+    // Kitty anchor matrix (reconcile_both_placeholder_anchors observable).
     let anchors_post = h.term().image_cache().placeholder_anchors().clone();
-
-    // (b₁) Kitty B's anchor SURVIVES — cells at rows 1-2 cols 0-3 survived
-    //      both row-shrink and col-shrink. `reconcile_both` finds them.
     assert!(
         anchors_post.contains(&kitty_b),
         "kitty B's anchor (image_id=42) MUST survive — its placeholder \
@@ -957,8 +931,6 @@ fn resize_with_mixed_sixel_placement_and_kitty_u1_placeholders_preserves_both() 
          prune_scrollback cross-pollinated by clearing the anchor set. \
          Surviving anchors: {anchors_post:?}."
     );
-    // (b₂) Kitty C's anchor DROPPED. Only the resize-end reconcile can drop
-    //      this anchor; per-LF reconcile never fires during resize.
     assert!(
         !anchors_post.contains(&kitty_c),
         "kitty C's anchor (image_id=99) MUST be dropped — its placeholder \
@@ -976,16 +948,7 @@ fn resize_with_mixed_sixel_placement_and_kitty_u1_placeholders_preserves_both() 
          cross-pollinated by removing/adding entries it does not own."
     );
 
-    // ── Anchor grid map (§13.4-owned state, prune must not touch) ──
-
-    // (c) Display grid `(4, 2)` for kitty B survives, and kitty C's grid
-    //     entry is dropped. `prune_scrollback` does NOT touch
-    //     `placeholder_anchor_grid` directly — only `remove_image` removes
-    //     entries for orphaned non-anchored images.
-    //     `reconcile_placeholder_anchors` (`image/cache/mod.rs:152-160`)
-    //     retains `placeholder_anchor_grid` alongside `placeholder_anchors`
-    //     via a paired `.retain(|id, _| survivors.contains(id))` —
-    //     surviving anchors keep their grid; dropped anchors lose theirs.
+    // Anchor grid map (§13.4-owned state, prune must not touch).
     assert_eq!(
         h.term().image_cache().placeholder_anchor_grid_for(kitty_b),
         Some((4, 2)),
@@ -1002,7 +965,7 @@ fn resize_with_mixed_sixel_placement_and_kitty_u1_placeholders_preserves_both() 
          Regression: grid map drifted from anchor set (paired-retain broken)."
     );
 
-    // (d) Kitty B's image data survives via anchor.
+    // Kitty B's image data survives via anchor.
     assert!(
         h.term().image_cache().get_no_touch(kitty_b).is_some(),
         "kitty B's image data MUST survive — anchored via \
@@ -1012,23 +975,221 @@ fn resize_with_mixed_sixel_placement_and_kitty_u1_placeholders_preserves_both() 
     );
 }
 
-/// Regression: spec-conformance §13.6 — companion pin to the primary-cache
-/// integration test. `Term::reconcile_both_placeholder_anchors` at
-/// `helpers.rs:295-313` walks BOTH the primary AND the alt cache; the
-/// primary-only test would pass even if the alt branch silently skipped.
-/// This pin sets up a U=1 anchor on BOTH primary and alt screens, runs the
-/// same `Term::resize(_, _, reflow=false)`, and asserts the alt cache's
-/// orphan-anchor reconcile fires symmetrically. Walks the
-/// `if let Some(alt_grid) = self.alt_grid.as_ref()` branch at
+/// Regression: spec-conformance §13.6 — cross-section §13 ↔ §07
+/// integration pin. A single `Term::resize` invocation drives BOTH
+/// `ImageCache::prune_scrollback` (§07-owned scrollback lifecycle
+/// handler) AND `Term::reconcile_both_placeholder_anchors` (§13.4-owned
+/// anchor reconcile) in the same operation; they MUST NOT
+/// cross-pollinate. The {placement, anchor} × {evicted, surviving} 2×2
+/// matrix MUST be pinned in one test:
+///
+/// |                                  | placement evicted | placement surviving |
+/// |---|---|---|
+/// | **anchor surviving (cells kept)** | sixel A × kitty B (§07 prune evicts A; §13.4 reconcile keeps B) | sixel D × kitty B (both survive — control cell) |
+/// | **anchor dropped (cells gone)**   | sixel A × kitty C (§07 prune evicts A; §13.4 reconcile drops C) | sixel D × kitty C (D survives prune; reconcile drops C) |
+///
+/// Without all four cells, the test is a "ghost test": the
+/// anchor-survival assertion alone can pass even if
+/// `reconcile_both_placeholder_anchors` is a no-op (no code path adds
+/// spurious anchors mid-resize), so the test FORCES reconcile to do
+/// meaningful work via an orphan anchor (kitty C) that only the
+/// resize-end reconcile can clean up.
+///
+/// # Setup
+///
+/// 8 lines × 16 cols grid, scrollback cap 4. The 16-column width holds
+/// kitty C's placeholder cells at cols 10-11 above the post-resize
+/// 4-column truncation boundary so col-shrink (with `reflow=false`)
+/// drops them, creating an orphan anchor that reconcile must clean up.
+///
+/// Setup sequence (each helper asserts its own post-conditions):
+///
+/// 1. `setup_sixel_a_at_row_0` — sixel A at grid row 0, `placement.cell_row = 0`.
+///    After 11 LFs + resize-driven scrollback eviction, this row falls
+///    below the post-resize floor and `prune_scrollback` drops the
+///    placement (pins "placement evicted" cell of the matrix).
+/// 2. `fill_scrollback_to_cap_without_eviction` — 11 LFs to push 4 rows
+///    to scrollback at cap with no eviction (baseline for the resize
+///    delta).
+/// 3. `setup_sixel_d_at_row_4` — sixel D at grid row 4, absolute
+///    `cell_row = 8` (above the post-resize eviction floor 4) at
+///    `cell_col = 0` (survives col-truncation 16→4). Pins the "placement
+///    surviving" cell.
+/// 4. `write_kitty_u1_low_col_block(_, 42)` — kitty B U=1 anchor +
+///    display grid `(4, 2)`. Cells at grid rows 5-6 cols 0-3 (low col).
+///    Pins the "anchor surviving (cells kept)" cell.
+/// 5. `write_kitty_u1_high_col_block(_, 99)` — kitty C U=1 anchor +
+///    display grid `(2, 1)`. Cells at grid row 7 cols 10-11 (HIGH col).
+///    After col-shrink 16→4, these cells are truncated; reconcile sees
+///    no `U+10EEEE` cells for image 99 and MUST drop the anchor. Pins
+///    the "anchor dropped" cell.
+///
+/// # Action
+///
+/// After parking the cursor at the bottom row (so the resize takes the
+/// "push top to scrollback" branch rather than trimming trailing blank
+/// rows), invoke `Term::resize(4, 4, reflow=false)`. The 16→4 column
+/// truncation step (`grid/resize/mod.rs:resize_no_reflow` → `Row::resize`
+/// → `Vec::resize_with` truncate) drops kitty C's placeholder cells at
+/// cols 10-11 without firing the per-linefeed `prune_images_if_evicted`
+/// reconcile fast path. The orphan anchor that results from the column
+/// truncation can ONLY be cleaned up by the resize-end
+/// `reconcile_both_placeholder_anchors` — making reconcile observably
+/// necessary.
+///
+/// # Production flow during resize
+///
+/// 1. `Term::resize` at `term_repo/oriterm_core/src/term/resize/mod.rs:91`
+///    — the symmetric reconcile entry-point invoked after
+///    `prune_scrollback`.
+/// 2. `Term::reconcile_both_placeholder_anchors` at
+///    `term_repo/oriterm_core/src/term/handler/helpers.rs:295` — primary
+///    pair walked here (the alt pair is walked by the companion test
+///    `resize_reconciles_alt_cache_placeholder_anchors_symmetrically`).
+///
+/// # Assertions
+///
+/// - Resize drove additional evictions (`total_evicted` grew).
+/// - Sixel placement matrix (`prune_scrollback` observable): sixel A
+///   placement dropped (`cell_row=0` fell below floor); sixel D
+///   placement survives (`cell_row=8` above floor); exactly one
+///   placement survives.
+/// - Kitty anchor matrix (`reconcile_both` observable): kitty B anchor
+///   survives (cells at rows 1-2 cols 0-3 survived both shrinks); kitty
+///   C anchor dropped (cells at row 7 cols 10-11 truncated by col-shrink);
+///   exactly one anchor survives.
+/// - Anchor grid map (§13.4-owned state, prune must not touch): kitty B
+///   display grid `(4, 2)` survives; kitty C display grid entry dropped
+///   via `reconcile_placeholder_anchors`'s paired-retain
+///   (`image/cache/mod.rs:152-160`).
+/// - Kitty B's image data survives via anchor (`prune_if_orphaned` skips
+///   anchored images).
+///
+/// # Cross-pollination invariants
+///
+/// `prune_scrollback` does NOT touch `placeholder_anchor_grid` directly —
+/// only `remove_image` removes entries for orphaned non-anchored images.
+/// `reconcile_placeholder_anchors` retains `placeholder_anchor_grid`
+/// alongside `placeholder_anchors` via a paired
+/// `.retain(|id, _| survivors.contains(id))` — surviving anchors keep
+/// their grid; dropped anchors lose theirs.
+#[test]
+fn resize_with_mixed_sixel_placement_and_kitty_u1_placeholders_preserves_both() {
+    let ids = IntegrationIds {
+        sixel_a: ImageId::from_raw(SIXEL_AUTO_ID),
+        sixel_d: ImageId::from_raw(SIXEL_AUTO_ID + 1),
+        kitty_b: ImageId::from_raw(42),
+        kitty_c: ImageId::from_raw(99),
+    };
+
+    let mut h = SpecHarness::with_size_and_scrollback(8, 16, 4);
+
+    // 1. Sixel A at row 0 (will fall below post-resize eviction floor).
+    setup_sixel_a_at_row_0(&mut h);
+    // 2. 11 LFs fill scrollback to cap without evicting.
+    fill_scrollback_to_cap_without_eviction(&mut h);
+    // 3. Sixel D at row 4 (absolute row 8 — survives prune).
+    setup_sixel_d_at_row_4(&mut h);
+    // 4. Kitty B U=1 anchor + low-col cells (survive col-shrink).
+    write_kitty_u1_low_col_block(&mut h, 42);
+    // 5. Kitty C U=1 anchor + high-col cells (truncated by col-shrink).
+    write_kitty_u1_high_col_block(&mut h, 99);
+
+    assert_pre_resize_state(&h, ids.kitty_b, ids.kitty_c);
+
+    park_cursor_at_bottom_row(&mut h);
+    let pre_evicted = h.term().grid().total_evicted();
+    assert_eq!(pre_evicted, 0, "baseline: evicted=0 before resize");
+
+    // 6. Resize 8×16 → 4×4 reflow=false.
+    h.term_mut().resize(4, 4, false);
+    let post_evicted = h.term().grid().total_evicted();
+
+    assert!(
+        post_evicted > pre_evicted,
+        "resize MUST drive new evictions for prune_scrollback to fire — \
+         saw pre={pre_evicted}, post={post_evicted}. Regression: \
+         scrollback math drifted; prune_scrollback's `new_primary > \
+         prev_primary` guard short-circuits."
+    );
+
+    assert_post_resize_primary_matrix(&h, post_evicted, ids);
+}
+
+/// Regression: spec-conformance §13.6 — companion pin to the
+/// primary-cache integration test. `Term::reconcile_both_placeholder_anchors`
+/// at `helpers.rs:295-313` walks BOTH the primary AND the alt cache;
+/// the primary-only test would pass even if the alt branch silently
+/// skipped. This pin sets up a U=1 anchor on BOTH primary and alt
+/// screens, runs the same `Term::resize(_, _, reflow=false)`, and
+/// asserts the alt cache's orphan-anchor reconcile fires symmetrically.
+/// Walks the `if let Some(alt_grid) = self.alt_grid.as_ref()` branch at
 /// `helpers.rs:302-313`.
 ///
 /// Invariant: `reconcile_both_placeholder_anchors` fires once per
 /// resize and covers BOTH active + inactive primary/alt caches.
+///
+/// # Setup
+///
+/// 8 lines × 16 cols grid, scrollback cap 4 (mirrors the primary
+/// integration test). Primary cache populated with the same shape as
+/// the sister test (sixel A row 0 + 11 LFs + kitty B low-col +
+/// kitty C high-col); alt cache populated symmetrically with kitty
+/// `B_alt` (`i=142`) low-col + kitty `C_alt` (`i=199`) high-col.
+///
+/// Setup sequence:
+///
+/// 1. Primary `setup_sixel_a_at_row_0` + 11 LFs (via raw feed, no
+///    eviction-baseline assertion — the alt test does not assert on
+///    primary mid-state, only end-state).
+/// 2. Primary `write_kitty_u1_low_col_block(_, 42)` — kitty B anchor +
+///    cells survive both shrinks.
+/// 3. Primary `write_kitty_u1_high_col_block(_, 99)` — kitty C anchor +
+///    cells truncated by col-shrink.
+/// 4. `enter_alt_screen` (DECSET 1049) — lazily allocates alt grid +
+///    `alt_image_cache`, both inheriting primary dimensions; alt cursor
+///    restored to (0, 0) on first entry.
+/// 5. Alt `write_kitty_u1_low_col_block(_, 142)` — kitty `B_alt` anchor
+///    + cells survive both shrinks (on alt cache).
+/// 6. Alt `write_kitty_u1_high_col_block(_, 199)` — kitty `C_alt` anchor
+///    + cells truncated by alt col-shrink.
+/// 7. `exit_alt_screen` (DECRST 1049) — swap back to primary so resize
+///    fires from primary's active perspective. Alt cache state is
+///    preserved (mode 1049 does NOT clear alt content; only mode 1047
+///    clears).
+///
+/// # Action
+///
+/// Park primary cursor at bottom row, then `Term::resize(4, 4, false)`.
+/// The resize handler (`term/resize/mod.rs:23-92`) runs on BOTH grids:
+/// primary (active) AND alt (inactive). Alt always uses `reflow=false`
+/// per `term/resize/mod.rs:70`. `reconcile_both_placeholder_anchors`
+/// (`helpers.rs:295-313`) at the end walks BOTH caches.
+///
+/// # Assertions
+///
+/// - Primary cache assertions mirror the sister test: sixel A evicted;
+///   kitty B anchor survives; kitty C anchor dropped.
+/// - Alt cache assertions (after re-entering alt screen): kitty `B_alt`
+///   anchor survives (cells at rows 5-6 cols 0-3 in old 8×16 alt grid
+///   become rows 1-2 cols 0-3 in new 4×4 alt grid — survive both
+///   row+col shrinks); kitty `C_alt` anchor dropped (cells at row 7 cols
+///   10-11 truncated by alt col-shrink — orphan anchor cleaned up by
+///   the alt branch of `reconcile_both_placeholder_anchors`); exactly
+///   one alt anchor survives.
+/// - Display-grid map symmetry on alt cache: kitty `B_alt` grid `(4, 2)`
+///   survives; kitty `C_alt` grid entry dropped via paired-retain in
+///   reconcile (`image/cache/mod.rs:156-157`).
+///
+/// # Cross-pollination invariants
+///
+/// `reconcile_both_placeholder_anchors` fires ONCE per resize and
+/// covers BOTH primary + alt caches symmetrically. A regression where
+/// the alt branch is dead code OR `collect_placeholder_image_ids_in_grid`
+/// is not called on the alt grid would leave kitty `C_alt`'s anchor
+/// orphaned in the alt cache while primary cleanup succeeded.
 #[test]
 fn resize_reconciles_alt_cache_placeholder_anchors_symmetrically() {
-    use oriterm_test_support::spec_chain::sixel_fixtures::dcs_n_cols_wide;
-
-    const SIXEL_AUTO_ID: u32 = 2_147_483_647;
     let sixel_a = ImageId::from_raw(SIXEL_AUTO_ID);
     let kitty_b = ImageId::from_raw(42);
     let kitty_c = ImageId::from_raw(99);
@@ -1037,66 +1198,17 @@ fn resize_reconciles_alt_cache_placeholder_anchors_symmetrically() {
 
     let mut h = SpecHarness::with_size_and_scrollback(8, 16, 4);
 
-    // Primary setup (same shape as the sister test).
+    // Primary setup (mirrors the sister test, minus mid-state pins).
     h.feed(b"\x1b[1;1H");
     h.feed(&dcs_n_cols_wide(4));
     h.feed(&[b'\n'; 11]);
+    write_kitty_u1_low_col_block(&mut h, 42);
+    write_kitty_u1_high_col_block(&mut h, 99);
 
-    h.feed(b"\x1b[6;1H");
-    h.feed(&kitty_apc(
-        b"a=T,U=1,i=42,c=4,r=2,f=32,s=4,v=4",
-        &b64(&rgba_4x4_red()),
-    ));
-    const ROW_D: [char; 2] = ['\u{0305}', '\u{030D}'];
-    const COL_D: [char; 4] = ['\u{0305}', '\u{030D}', '\u{030E}', '\u{030F}'];
-    h.feed(b"\x1b[6;1H");
-    for col in 0..4 {
-        write_placeholder_cell(&mut h, 42, ROW_D[0], COL_D[col]);
-    }
-    h.feed(b"\x1b[7;1H");
-    for col in 0..4 {
-        write_placeholder_cell(&mut h, 42, ROW_D[1], COL_D[col]);
-    }
-    h.feed(b"\x1b[8;11H");
-    h.feed(&kitty_apc(
-        b"a=T,U=1,i=99,c=2,r=1,f=32,s=4,v=4",
-        &b64(&rgba_4x4_red()),
-    ));
-    h.feed(b"\x1b[8;11H");
-    write_placeholder_cell(&mut h, 99, ROW_D[0], COL_D[0]);
-    write_placeholder_cell(&mut h, 99, ROW_D[0], COL_D[1]);
-
-    // Enter alt screen via `\x1b[?1049h` (DECSET 1049 →
-    // `Term::swap_alt`, `term/alt_screen/mod.rs:25-39`). Alt grid +
-    // alt_image_cache lazily allocated, both inherit primary
-    // dimensions (8×16, sb cap 0 for alt). Alt cursor restored to
-    // (0, 0) on first entry (`navigation/mod.rs:255-256` — no prior
-    // save → origin).
-    h.feed(b"\x1b[?1049h");
-
-    // Alt cache setup: kitty B_alt at low row+col (cells survive both
-    // shrinks) + kitty C_alt at high col (cells truncated by col-shrink).
-    h.feed(b"\x1b[6;1H");
-    h.feed(&kitty_apc(
-        b"a=T,U=1,i=142,c=4,r=2,f=32,s=4,v=4",
-        &b64(&rgba_4x4_red()),
-    ));
-    h.feed(b"\x1b[6;1H");
-    for col in 0..4 {
-        write_placeholder_cell(&mut h, 142, ROW_D[0], COL_D[col]);
-    }
-    h.feed(b"\x1b[7;1H");
-    for col in 0..4 {
-        write_placeholder_cell(&mut h, 142, ROW_D[1], COL_D[col]);
-    }
-    h.feed(b"\x1b[8;11H");
-    h.feed(&kitty_apc(
-        b"a=T,U=1,i=199,c=2,r=1,f=32,s=4,v=4",
-        &b64(&rgba_4x4_red()),
-    ));
-    h.feed(b"\x1b[8;11H");
-    write_placeholder_cell(&mut h, 199, ROW_D[0], COL_D[0]);
-    write_placeholder_cell(&mut h, 199, ROW_D[0], COL_D[1]);
+    // Alt cache setup: enter alt, populate, exit.
+    enter_alt_screen(&mut h);
+    write_kitty_u1_low_col_block(&mut h, 142);
+    write_kitty_u1_high_col_block(&mut h, 199);
 
     // Pin alt-cache preconditions via active-routing image_cache().
     let alt_anchors_pre = h.term().image_cache().placeholder_anchors().clone();
@@ -1106,34 +1218,21 @@ fn resize_reconciles_alt_cache_placeholder_anchors_symmetrically() {
     );
     assert_eq!(alt_anchors_pre.len(), 2);
 
-    // Swap back to primary so resize fires from primary's active
-    // perspective. `swap_alt` saves alt cursor (currently at the end
-    // of placeholder writes) and restores primary cursor (at end of
-    // primary writes).
-    h.feed(b"\x1b[?1049l");
+    exit_alt_screen(&mut h);
+    park_cursor_at_bottom_row(&mut h);
 
-    // Park primary cursor at bottom row to force the
-    // `count_trailing_blank_rows` heuristic into the "push top to sb"
-    // branch.
-    h.feed(b"\x1b[8;1H");
-
-    // Resize 8×16 → 4×4 reflow=false. The resize handler
-    // (`term/resize/mod.rs:23-92`) runs on BOTH grids: primary
-    // (active) AND alt (inactive). `reconcile_both_placeholder_anchors`
-    // (`helpers.rs:295-313`) at the end walks BOTH caches.
+    // Resize 8×16 → 4×4 reflow=false — fires on BOTH primary and alt grids.
     h.term_mut().resize(4, 4, false);
 
-    // ── Primary cache assertions (mirror the sister test) ──
+    // Primary cache assertions (mirror the sister test — alt test's
+    // setup omits sixel D, so we pin only sixel A + kitty B/C here).
     assert!(h.term().image_cache().get_no_touch(sixel_a).is_none());
     let primary_anchors = h.term().image_cache().placeholder_anchors().clone();
     assert!(primary_anchors.contains(&kitty_b));
     assert!(!primary_anchors.contains(&kitty_c));
 
-    // ── Alt cache assertions ──
-    // Re-enter alt via `\x1b[?1049h` (mode-1049 swap does NOT clear
-    // alt content per `swap_alt` semantics — only mode 1047 clears).
-    // Alt cache state is preserved across the round trip.
-    h.feed(b"\x1b[?1049h");
+    // Re-enter alt screen to query alt-cache via active-routing.
+    enter_alt_screen(&mut h);
 
     let alt_anchors_post = h.term().image_cache().placeholder_anchors().clone();
     assert!(
@@ -1160,7 +1259,7 @@ fn resize_reconciles_alt_cache_placeholder_anchors_symmetrically() {
     assert_eq!(
         alt_anchors_post.len(),
         1,
-        "exactly one alt anchor must survive (kitty B_alt). Regression: \
+        "exactly one alt anchor must survive (kitty `B_alt`). Regression: \
          alt reconcile added a spurious anchor or dropped the wrong one."
     );
 

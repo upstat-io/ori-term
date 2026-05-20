@@ -32,11 +32,12 @@ impl<S: EffectSink> Term<S> {
         // UV slicing).
         if cmd.unicode_placeholder {
             let id = ImageId::from_raw(image_id);
-            self.image_cache_mut().add_placeholder_anchor(id);
-            if let (Some(cols), Some(rows)) = (cmd.display_cols, cmd.display_rows) {
-                self.image_cache_mut()
-                    .set_placeholder_anchor_grid(id, cols, rows);
-            }
+            let grid = match (cmd.display_cols, cmd.display_rows) {
+                (Some(cols), Some(rows)) => Some((cols, rows)),
+                _ => None,
+            };
+            self.image_cache_mut()
+                .anchor_placeholder_with_grid(id, grid);
         } else {
             self.kitty_create_placement(image_id, cmd);
         }

@@ -6223,10 +6223,8 @@ fn unfocused_block_cursor_cell_in_focused_search_match_uses_focused_colors() {
     );
 }
 
-/// Regression: BUG-06-031 + Hidden carve-out — `effective_cursor_shape`
-/// previously returned `HollowBlock` for ANY input shape on unfocused windows,
-/// which would convert an explicitly Hidden cursor to a visible HollowBlock
-/// outline. The §05 carve-out preserves Hidden so `emit_cursor_for_frame`'s
+/// Regression: BUG-06-031. Per §05 carve-out: an explicitly Hidden cursor
+/// stays Hidden on unfocused windows; `emit_cursor_for_frame`'s
 /// `CursorShape::Hidden => {}` branch (`emit.rs:275`) emits zero instances.
 #[test]
 fn unfocused_hidden_cursor_emits_no_cursor_instances() {
@@ -7036,8 +7034,9 @@ mod pane_damage_key {
         });
     }
 
-    // ── Matrix completeness ──
-
+    /// Every damage-key field consumed by `compute_dispatch_fingerprint`.
+    /// Iterating this constant + asserting the field count proves no new
+    /// field landed without a matching matrix-test cell.
     pub(super) const ALL_DAMAGE_KEY_FIELDS: &[&str] = &[
         // Dispatch inputs (mirror compute_dispatch_fingerprint matrix).
         "viewport.width",
