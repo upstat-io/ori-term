@@ -22,7 +22,8 @@ impl<S: EffectSink> Term<S> {
         let unicode_placeholder = merged.unicode_placeholder;
         let params = KittyStoreParams::from_merged(image_id, &mut merged);
 
-        if let Err(msg) = self.kitty_store_image(params) {
+        if let Err(err) = self.kitty_store_image(params) {
+            let msg = err.to_string();
             warn!("kitty transmit failed: {msg}");
             self.kitty_respond(&ctx, &msg);
             return;
@@ -55,7 +56,8 @@ impl<S: EffectSink> Term<S> {
         let ctx = KittyReplyContext::from_cmd(&merged).with_image_id(image_id);
         let params = KittyStoreParams::from_merged(image_id, &mut merged);
 
-        if let Err(msg) = self.kitty_store_image(params) {
+        if let Err(err) = self.kitty_store_image(params) {
+            let msg = err.to_string();
             warn!("kitty transmit+place failed: {msg}");
             self.kitty_respond(&ctx, &msg);
             return;

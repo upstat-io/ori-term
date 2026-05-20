@@ -7,11 +7,38 @@ use std::sync::Arc;
 use std::os::unix::fs::OpenOptionsExt;
 
 use crate::effect::sink::EffectSink;
-use crate::image::kitty::KittyTransmission;
+use crate::image::kitty::{KittyError, KittyTransmission};
 use crate::image::{ImageData, ImageId, ImageSource, decode_to_rgba, rgb_to_rgba};
 use crate::term::Term;
 
 use super::KittyStoreParams;
+
+/// Error from `kitty_store_image` / `kitty_store_from_file`. `Protocol`
+/// wraps a parser-layer `KittyError` and renders as `EINVAL: <variant text>`
+/// via Display delegation. `Reply` carries store-specific stringly-typed
+/// reply text (EBADF, EBIG, EIO, ENOMEM, EINVAL-shaped strings produced
+/// inside the store layer).
+#[derive(Debug)]
+pub(super) enum KittyStoreError {
+    /// Typed parser-layer protocol error; store layer prepends the EINVAL
+    /// reply prefix via Display.
+    Protocol(KittyError),
+    /// Store-specific stringly-typed reply text.
+    Reply(String),
+}
+
+impl std::fmt::Display for KittyStoreError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            // Delegate variant text to KittyError's Display and prepend the
+            // kitty-protocol reply prefix at the store boundary.
+            // `CompressionNotSupported` renders byte-stream-pinned reply
+            // `EINVAL: compression not supported` per `KG-COMPRESSION-OZ-REJECTED`.
+            Self::Protocol(e) => write!(f, "EINVAL: {e}"),
+            Self::Reply(s) => f.write_str(s),
+        }
+    }
+}
 
 /// RAII guard that removes a file on Drop when armed. Used by
 /// `kitty_store_from_file` to enforce the kitty `t=t` (`TempFile`)
@@ -66,18 +93,14 @@ fn open_regular_file(path: &std::path::Path) -> Result<(std::fs::File, std::fs::
 
 impl<S: EffectSink> Term<S> {
     /// Decode and store image data in the cache.
-    pub(super) fn kitty_store_image(&mut self, p: KittyStoreParams) -> Result<(), String> {
-        // §13.5 / Option A — fail-closed on `o=z` compression. The parser
-        // populates `cmd.compression = Some(b'z')` but ori_term does not
-        // implement zlib decompression, so the bytes downstream are NOT
-        // the pixel data the sender intended. Returning EINVAL at store
-        // entry replaces the pre-§13.5 silent-corruption shape (parser
-        // populates field, store reads raw bytes as RGBA/RGB/PNG and
-        // produces garbled output). Mirrors the `KittyError::CompressionNotSupported`
-        // variant added to the parser-side error type for callers that
-        // route through the typed error chain.
+    pub(super) fn kitty_store_image(
+        &mut self,
+        p: KittyStoreParams,
+    ) -> Result<(), KittyStoreError> {
+        // Fail-closed reject for `o=z`: ori_term does not implement zlib
+        // decompression. Catalog row `KG-COMPRESSION-OZ-REJECTED`.
         if p.compression == Some(b'z') {
-            return Err("EINVAL: compression not supported".to_string());
+            return Err(KittyStoreError::Protocol(KittyError::CompressionNotSupported));
         }
 
         let (pixel_data, source) = match p.transmission {
@@ -86,11 +109,14 @@ impl<S: EffectSink> Term<S> {
                 return self.kitty_store_from_file(&p);
             }
             KittyTransmission::SharedMemory => {
-                return Err("EINVAL: shared memory transmission not yet supported".to_string());
+                return Err(KittyStoreError::Reply(
+                    "EINVAL: shared memory transmission not yet supported".to_string(),
+                ));
             }
         };
 
-        let (rgba_data, w, h) = Self::kitty_decode_pixels(pixel_data, p.format, p.width, p.height)?;
+        let (rgba_data, w, h) = Self::kitty_decode_pixels(pixel_data, p.format, p.width, p.height)
+            .map_err(KittyStoreError::Reply)?;
 
         let img = ImageData {
             id: ImageId(p.image_id),
@@ -105,7 +131,7 @@ impl<S: EffectSink> Term<S> {
 
         self.image_cache_mut()
             .store(img)
-            .map_err(|e| format!("ENOMEM: {e}"))?;
+            .map_err(|e| KittyStoreError::Reply(format!("ENOMEM: {e}")))?;
 
         Ok(())
     }
@@ -189,9 +215,13 @@ impl<S: EffectSink> Term<S> {
     }
 
     /// Store image from a file path (t=f or t=t transmission).
-    pub(super) fn kitty_store_from_file(&mut self, p: &KittyStoreParams) -> Result<(), String> {
-        let path_str = std::str::from_utf8(&p.payload)
-            .map_err(|_e| "EINVAL: file path is not valid UTF-8".to_string())?;
+    pub(super) fn kitty_store_from_file(
+        &mut self,
+        p: &KittyStoreParams,
+    ) -> Result<(), KittyStoreError> {
+        let path_str = std::str::from_utf8(&p.payload).map_err(|_e| {
+            KittyStoreError::Reply("EINVAL: file path is not valid UTF-8".to_string())
+        })?;
 
         let path = std::path::Path::new(path_str);
 
@@ -199,7 +229,9 @@ impl<S: EffectSink> Term<S> {
         // which `contains("..")` would get wrong on paths like `foo/..bar`).
         for component in path.components() {
             if matches!(component, std::path::Component::ParentDir) {
-                return Err("EINVAL: path traversal not allowed".to_string());
+                return Err(KittyStoreError::Reply(
+                    "EINVAL: path traversal not allowed".to_string(),
+                ));
             }
         }
 
@@ -212,31 +244,37 @@ impl<S: EffectSink> Term<S> {
         // `?` on `std::fs::read` had.
         let _guard = TempFileGuard::new(path, p.transmission);
 
-        let (file, meta) = open_regular_file(path)?;
+        let (file, meta) = open_regular_file(path).map_err(KittyStoreError::Reply)?;
 
         // Fast-path size preflight on the verified regular-file descriptor.
         // The bounded read below remains as TOCTOU defense-in-depth (file
         // can grow between this check and read). saturating_add guards
         // against the pathological max_bytes == usize::MAX config.
         if meta.len() > max_bytes as u64 {
-            return Err("EBIG: file exceeds max image size".to_string());
+            return Err(KittyStoreError::Reply(
+                "EBIG: file exceeds max image size".to_string(),
+            ));
         }
 
         let mut file_data = Vec::with_capacity(meta.len() as usize);
         file.take((max_bytes as u64).saturating_add(1))
             .read_to_end(&mut file_data)
-            .map_err(|e| format!("EIO: failed to read file: {e}"))?;
+            .map_err(|e| KittyStoreError::Reply(format!("EIO: failed to read file: {e}")))?;
 
         if file_data.len() > max_bytes {
-            return Err("EBIG: file exceeds max image size".to_string());
+            return Err(KittyStoreError::Reply(
+                "EBIG: file exceeds max image size".to_string(),
+            ));
         }
 
         let source = ImageSource::File(path.to_path_buf());
 
         let (rgba_data, w, h) = if p.format == 24 || p.format == 32 {
-            Self::kitty_decode_pixels(file_data, p.format, p.width, p.height)?
+            Self::kitty_decode_pixels(file_data, p.format, p.width, p.height)
+                .map_err(KittyStoreError::Reply)?
         } else {
-            decode_to_rgba(&file_data).map_err(|e| format!("EINVAL: image decode failed: {e}"))?
+            decode_to_rgba(&file_data)
+                .map_err(|e| KittyStoreError::Reply(format!("EINVAL: image decode failed: {e}")))?
         };
 
         let img = ImageData {
@@ -252,7 +290,7 @@ impl<S: EffectSink> Term<S> {
 
         self.image_cache_mut()
             .store(img)
-            .map_err(|e| format!("ENOMEM: {e}"))?;
+            .map_err(|e| KittyStoreError::Reply(format!("ENOMEM: {e}")))?;
 
         Ok(())
     }
