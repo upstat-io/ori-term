@@ -543,7 +543,10 @@ impl std::fmt::Debug for ImageCache {
             .field("frame_starts", &self.frame_starts.len())
             .field("animation_enabled", &self.animation_enabled)
             .field("placeholder_anchors", &self.placeholder_anchors.len())
-            .field("placeholder_anchor_grid", &self.placeholder_anchor_grid.len())
+            .field(
+                "placeholder_anchor_grid",
+                &self.placeholder_anchor_grid.len(),
+            )
             .finish()
     }
 }

@@ -622,7 +622,10 @@ fn u1_transmit_and_place_with_explicit_grid_records_anchor_grid() {
 #[test]
 fn u1_separate_transmit_then_place_with_grid_records_anchor_grid() {
     let mut h = SpecHarness::new();
-    h.feed(&kitty_apc(b"a=t,U=1,i=2,f=32,s=4,v=4", &b64(&rgba_4x4_red())));
+    h.feed(&kitty_apc(
+        b"a=t,U=1,i=2,f=32,s=4,v=4",
+        &b64(&rgba_4x4_red()),
+    ));
     h.feed(&kitty_apc(b"a=p,U=1,i=2,c=2,r=3", ""));
 
     assert_eq!(
@@ -665,7 +668,10 @@ fn u1_single_cell_grid_records_one_by_one() {
 #[test]
 fn u1_transmit_without_explicit_grid_records_no_anchor_grid() {
     let mut h = SpecHarness::new();
-    h.feed(&kitty_apc(b"a=T,U=1,i=4,f=32,s=4,v=4", &b64(&rgba_4x4_red())));
+    h.feed(&kitty_apc(
+        b"a=T,U=1,i=4,f=32,s=4,v=4",
+        &b64(&rgba_4x4_red()),
+    ));
 
     assert!(
         h.term()
@@ -723,7 +729,10 @@ fn snapshot_placeholder_cells_carry_display_grid() {
 #[test]
 fn snapshot_placeholder_cells_default_grid_to_one_by_one_when_unrecorded() {
     let mut h = SpecHarness::new();
-    h.feed(&kitty_apc(b"a=T,U=1,i=1,f=32,s=4,v=4", &b64(&rgba_4x4_red())));
+    h.feed(&kitty_apc(
+        b"a=T,U=1,i=1,f=32,s=4,v=4",
+        &b64(&rgba_4x4_red()),
+    ));
     h.feed(b"\x1b[1;1H");
     write_placeholder_cell(&mut h, 1, '\u{0305}', '\u{0305}');
 
@@ -759,7 +768,10 @@ fn u1_multi_cell_without_explicit_grid_renders_slices_from_default_one_by_one() 
     // a=T transmit-and-place with U=1 but NO c=/r= — exercises the
     // missing-client-geometry path. Image dimensions s=/v= are PIXEL
     // size, not display grid.
-    h.feed(&kitty_apc(b"a=T,U=1,i=10,f=32,s=4,v=4", &b64(&rgba_4x4_red())));
+    h.feed(&kitty_apc(
+        b"a=T,U=1,i=10,f=32,s=4,v=4",
+        &b64(&rgba_4x4_red()),
+    ));
 
     // Place cursor at home, then write a 2×2 pattern of placeholder
     // cells. Each carries 2 diacritics for (row, col):

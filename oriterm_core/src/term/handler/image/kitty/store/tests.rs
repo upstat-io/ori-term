@@ -481,7 +481,10 @@ fn kitty_compression_oz_constructs_typed_variant_with_pinned_reply_bytes() {
         .expect_err("o=z guard MUST reject");
 
     assert!(
-        matches!(err, KittyStoreError::Protocol(KittyError::CompressionNotSupported)),
+        matches!(
+            err,
+            KittyStoreError::Protocol(KittyError::CompressionNotSupported)
+        ),
         "o=z guard MUST construct KittyStoreError::Protocol(KittyError::CompressionNotSupported); got: {err:?}",
     );
 

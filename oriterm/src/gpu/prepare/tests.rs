@@ -7135,7 +7135,11 @@ mod placeholder_uv_slicing {
 
         let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
 
-        assert_eq!(frame.image_quads_above.len(), 1, "one placeholder cell → one quad");
+        assert_eq!(
+            frame.image_quads_above.len(),
+            1,
+            "one placeholder cell → one quad"
+        );
         let q = &frame.image_quads_above[0];
         assert_eq!(q.image_id, ImageId::from_raw(1));
         assert_eq!(q.uv_x, 0.0, "c=1 → uv_x must be 0");
@@ -7162,7 +7166,11 @@ mod placeholder_uv_slicing {
 
         let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
 
-        assert_eq!(frame.image_quads_above.len(), 4, "four placeholder cells → four quads");
+        assert_eq!(
+            frame.image_quads_above.len(),
+            4,
+            "four placeholder cells → four quads"
+        );
 
         let approx = |a: f32, b: f32| (a - b).abs() < 1e-5;
 

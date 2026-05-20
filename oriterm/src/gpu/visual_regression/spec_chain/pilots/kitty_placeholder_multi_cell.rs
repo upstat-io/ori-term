@@ -122,7 +122,14 @@ fn kitty_placeholder_multi_cell_drives_every_rung_green() {
 /// rendered texture. Averages a small inner box of pixels to avoid
 /// picking up bilinear-sampling artifacts at cell edges. Returns
 /// `(r, g, b)` as `u8` averages.
-fn sample_cell_color(pixels: &[u8], width: u32, cell_w: f32, cell_h: f32, col: u32, row: u32) -> (u8, u8, u8) {
+fn sample_cell_color(
+    pixels: &[u8],
+    width: u32,
+    cell_w: f32,
+    cell_h: f32,
+    col: u32,
+    row: u32,
+) -> (u8, u8, u8) {
     // Inner sample box: 25%-75% of the cell, both axes. Stays well
     // inside the cell so bilinear sampling against the placeholder
     // quad's UV slice is exercised at full strength.
@@ -144,11 +151,7 @@ fn sample_cell_color(pixels: &[u8], width: u32, cell_w: f32, cell_h: f32, col: u
         }
     }
     let n = n.max(1);
-    (
-        (r_sum / n) as u8,
-        (g_sum / n) as u8,
-        (b_sum / n) as u8,
-    )
+    ((r_sum / n) as u8, (g_sum / n) as u8, (b_sum / n) as u8)
 }
 
 /// Programmatic corner pin (a) of the §13.4 BOTH-gates contract.

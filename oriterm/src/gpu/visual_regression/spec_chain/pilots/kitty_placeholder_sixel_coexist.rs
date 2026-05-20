@@ -89,7 +89,11 @@ fn kitty_placeholder_and_sixel_coexist_at_gpu_apex() {
     // 4. Sanity: cache holds the kitty image (anchored, not placed) AND
     //    the sixel image+placement. The kitty image is reachable via the
     //    placeholder anchor — its `placement_count()` contribution is 0.
-    let placements = harness.core_mut().term_mut().image_cache().placement_count();
+    let placements = harness
+        .core_mut()
+        .term_mut()
+        .image_cache()
+        .placement_count();
     assert_eq!(
         placements, 1,
         "expected exactly 1 placement (sixel only); kitty U=1 uses anchors not placements. \

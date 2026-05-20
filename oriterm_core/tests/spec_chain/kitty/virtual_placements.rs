@@ -360,21 +360,42 @@ const PLACEHOLDER_MUTATION_SITES: &[(&str, &str)] = &[
     // VPA-bounded positions plus VT220-style insert/delete column
     // operators that fall through `insert_columns(1, ...)` /
     // `delete_columns(1, ...)`.
-    ("src/term/handler/presentation/mod.rs", "insert_columns(count, at_col)"),
-    ("src/term/handler/presentation/mod.rs", "delete_columns(count, at_col)"),
-    ("src/term/handler/presentation/mod.rs", "insert_columns(1, left_bound)"),
-    ("src/term/handler/presentation/mod.rs", "delete_columns(1, left_bound)"),
+    (
+        "src/term/handler/presentation/mod.rs",
+        "insert_columns(count, at_col)",
+    ),
+    (
+        "src/term/handler/presentation/mod.rs",
+        "delete_columns(count, at_col)",
+    ),
+    (
+        "src/term/handler/presentation/mod.rs",
+        "insert_columns(1, left_bound)",
+    ),
+    (
+        "src/term/handler/presentation/mod.rs",
+        "delete_columns(1, left_bound)",
+    ),
     // rect_ops/mod.rs — DECCRA copy, DECFRA fill, DECERA erase,
     // DECSERA selective erase. DECCRA was added 2026-05-20 after the
     // inventory test surfaced the missing reconcile.
     ("src/term/handler/rect_ops/mod.rs", ".copy_rect(src.top"),
     ("src/term/handler/rect_ops/mod.rs", "grid.fill_rect("),
     ("src/term/handler/rect_ops/mod.rs", ".erase_rect_all("),
-    ("src/term/handler/rect_ops/mod.rs", ".erase_rect_unprotected("),
+    (
+        "src/term/handler/rect_ops/mod.rs",
+        ".erase_rect_unprotected(",
+    ),
     // resize/mod.rs — primary + alt grid resize, reconciled symmetrically
     // via the wrapper `reconcile_both_placeholder_anchors` at function end.
-    ("src/term/resize/mod.rs", "self.grid.resize(new_lines, new_cols, reflow)"),
-    ("src/term/resize/mod.rs", "alt.resize(new_lines, new_cols, false)"),
+    (
+        "src/term/resize/mod.rs",
+        "self.grid.resize(new_lines, new_cols, reflow)",
+    ),
+    (
+        "src/term/resize/mod.rs",
+        "alt.resize(new_lines, new_cols, false)",
+    ),
 ];
 
 /// Strip a single naive Rust string literal pass — replaces `"..."`
@@ -458,8 +479,8 @@ fn brace_depth_at(lines: &[&str]) -> usize {
 /// COULD touch placeholder-bearing cells. Returns `(line_number,
 /// trimmed_line)` for each match. Used by both inventory tests.
 fn scan_mutation_lines(path: &std::path::Path) -> Vec<(usize, String)> {
-    let src = std::fs::read_to_string(path)
-        .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+    let src =
+        std::fs::read_to_string(path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
     // Surface patterns: grid-mutation API calls that overwrite or
     // replace cells. `push_zerowidth` is excluded — it APPENDS a
     // combining mark to an existing cell rather than overwriting.
@@ -527,7 +548,10 @@ fn placeholder_anchor_mutation_sites_registered_via_inventory_grep() {
         let path = crate_root.join(file);
         let src = std::fs::read_to_string(&path)
             .unwrap_or_else(|e| panic!("read inventory file {file}: {e}"));
-        if !src.lines().any(|l| !l.trim().starts_with("//") && l.contains(needle)) {
+        if !src
+            .lines()
+            .any(|l| !l.trim().starts_with("//") && l.contains(needle))
+        {
             unresolved_inventory.push(format!("{file}: needle {needle:?} not found"));
         }
     }
@@ -543,9 +567,9 @@ fn placeholder_anchor_mutation_sites_registered_via_inventory_grep() {
     for file in &files {
         let path = crate_root.join(file);
         for (lineno, line) in scan_mutation_lines(&path) {
-            let covered = PLACEHOLDER_MUTATION_SITES.iter().any(|(invfile, needle)| {
-                invfile == file && line.contains(needle)
-            });
+            let covered = PLACEHOLDER_MUTATION_SITES
+                .iter()
+                .any(|(invfile, needle)| invfile == file && line.contains(needle));
             if !covered {
                 uncovered_mutations.push(format!("{file}:{lineno} — {line}"));
             }
@@ -587,8 +611,7 @@ fn every_mutation_path_in_helpers_resize_presentation_rect_ops_calls_reconcile_p
     let mut violations: Vec<String> = Vec::new();
     for (file, needle) in PLACEHOLDER_MUTATION_SITES {
         let path = crate_root.join(file);
-        let src = std::fs::read_to_string(&path)
-            .unwrap_or_else(|e| panic!("read {file}: {e}"));
+        let src = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {file}: {e}"));
         let lines: Vec<&str> = src.lines().collect();
 
         // Find every occurrence of the mutation needle, then scan

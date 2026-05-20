@@ -93,14 +93,13 @@ fn open_regular_file(path: &std::path::Path) -> Result<(std::fs::File, std::fs::
 
 impl<S: EffectSink> Term<S> {
     /// Decode and store image data in the cache.
-    pub(super) fn kitty_store_image(
-        &mut self,
-        p: KittyStoreParams,
-    ) -> Result<(), KittyStoreError> {
+    pub(super) fn kitty_store_image(&mut self, p: KittyStoreParams) -> Result<(), KittyStoreError> {
         // Fail-closed reject for `o=z`: ori_term does not implement zlib
         // decompression. Catalog row `KG-COMPRESSION-OZ-REJECTED`.
         if p.compression == Some(b'z') {
-            return Err(KittyStoreError::Protocol(KittyError::CompressionNotSupported));
+            return Err(KittyStoreError::Protocol(
+                KittyError::CompressionNotSupported,
+            ));
         }
 
         let (pixel_data, source) = match p.transmission {
