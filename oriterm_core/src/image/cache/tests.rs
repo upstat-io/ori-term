@@ -587,8 +587,7 @@ fn placeholder_anchor_grid_rejects_zero_dims() {
     assert_eq!(cache.placeholder_anchor_grid_for(ImageId(7)), Some((3, 2)));
 }
 
-/// Regression: spec-conformance §13.6.1 round-0 TPR cluster
-/// (codex+gemini+opencode HIGH agreement) — `remove_image` MUST drop the
+/// Regression: spec-conformance §13.6.1 — `remove_image` MUST drop the
 /// `placeholder_anchor_grid` entry alongside the `placeholder_anchors`
 /// removal. Direct image-removal paths (`d=I`, `d=F`, LRU eviction,
 /// orphan pruning, store-triggered replacement) all flow through
@@ -618,8 +617,7 @@ fn remove_image_clears_placeholder_anchor_grid_entry() {
         cache.placeholder_anchor_grid_for(ImageId(1)),
         None,
         "grid entry MUST be dropped alongside the anchor — stale grid \
-         entries are a LEAK regression that the TPR round-0 cluster \
-         (codex+gemini+opencode) caught"
+         entries are a LEAK regression"
     );
 }
 

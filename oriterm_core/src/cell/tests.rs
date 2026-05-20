@@ -297,6 +297,44 @@ fn push_zerowidth_multiple_marks() {
     assert_eq!(zw[1], '\u{0327}');
 }
 
+/// `CellExtra.zerowidth` is `Vec<char>` — UNBOUNDED storage. Pin the
+/// invariant by feeding 64 combining marks and asserting all 64 round-trip
+/// without panic or silent truncation. The kitty unicode-placeholder
+/// (`U=1`) protocol writes up to 3 diacritics per cell (row, column, MSB);
+/// a future cap below the kitty minimum would corrupt the decoded lookup
+/// tuple. Companion spec-coverage pin:
+/// `kitty_placeholder_max_diacritic_count_round_trips_through_grid` at
+/// `oriterm_core/tests/spec_chain/kitty/placeholder_anchors.rs`.
+#[test]
+fn cell_extra_zerowidth_storage_remains_unbounded() {
+    let mut cell = Cell::default();
+    cell.ch = 'a';
+    // 64 distinct combining marks from the General Combining range
+    // (U+0300..U+036F — 112 codepoints, all single-`char`).
+    let marks: Vec<char> = (0..64u32)
+        .map(|i| char::from_u32(0x0300 + i).expect("combining range fits in BMP"))
+        .collect();
+    for &m in &marks {
+        cell.push_zerowidth(m);
+    }
+    let stored = &cell
+        .extra
+        .as_ref()
+        .expect("extra allocated on first push")
+        .zerowidth;
+    assert_eq!(
+        stored.len(),
+        64,
+        "Vec<char> MUST store all 64 combining marks without truncation"
+    );
+    assert_eq!(
+        stored.as_slice(),
+        marks.as_slice(),
+        "stored marks MUST preserve push order — silent truncation or \
+         reordering breaks kitty U=1 placeholder decode"
+    );
+}
+
 #[test]
 fn clone_shares_arc_refcount() {
     let mut cell = Cell::default();

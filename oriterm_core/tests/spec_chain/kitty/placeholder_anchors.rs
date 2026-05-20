@@ -371,6 +371,43 @@ fn rectangular_erase_with_placeholder_cells_reconciles_anchor() {
 }
 
 #[test]
+fn rectangular_copy_replacing_placeholder_cells_reconciles_anchor() {
+    // DECCRA (`CSI Pts;Pls;Pbs;Prs;Pps;Ptd;Pld;Ppd $ v`) copies a
+    // source rectangle to a destination rectangle. Destination cells —
+    // including any U+10EEEE placeholder cells — are overwritten with
+    // the source content. The anchor for an image whose only surviving
+    // placeholder cell is overwritten by the copy MUST be reconciled
+    // away. Regression: deccra_impl previously skipped reconcile, so
+    // the destination overwrite silently orphaned the anchor.
+    //
+    // Layout: place the U=1 placeholder at (0, 0). Copy a non-
+    // placeholder source rect (rows 5..6, cols 5..7) onto destination
+    // top-left = (0, 0). Source is blank (default cells), so the
+    // placeholder at (0, 0) gets overwritten with blanks.
+    let mut h = SpecHarness::new();
+    transmit_u1(&mut h, 106);
+    write_placeholder_cell(&mut h, 106, '\u{0305}', '\u{0305}');
+    assert!(
+        h.term()
+            .image_cache()
+            .placeholder_anchors()
+            .contains(&ImageId::from_raw(106))
+    );
+
+    // DECCRA src=(5,5)-(6,7) src_page=1 dst=(1,1) dst_page=1 —
+    // CSI Pts;Pls;Pbs;Prs;Pps;Ptd;Pld;Ppd $ v
+    h.feed(b"\x1b[5;5;6;7;1;1;1;1$v");
+
+    assert!(
+        !h.term()
+            .image_cache()
+            .placeholder_anchors()
+            .contains(&ImageId::from_raw(106)),
+        "DECCRA overwriting the only placeholder cell must reconcile the anchor away — copy_rect without reconcile is the BUG-08-cluster pattern",
+    );
+}
+
+#[test]
 fn rectangular_fill_replacing_placeholder_cells_reconciles_anchor() {
     // DECFRA (`CSI Pc;Pt;Pl;Pb;Pr $ x`) fills a rectangle with `Pc`.
     let mut h = SpecHarness::new();
@@ -699,4 +736,137 @@ fn snapshot_placeholder_cells_default_grid_to_one_by_one_when_unrecorded() {
         "cells without a recorded display grid default to (1, 1) so emit \
          renders the full image — kitty_placeholder_basic pilot pin"
     );
+}
+
+/// Regression: spec-conformance §13.4 — when a U=1 client transmits
+/// `a=T,U=1,i=<id>` WITHOUT explicit `c=`/`r=` keys (no client-supplied
+/// display grid), the snapshot's `(placement_cols, placement_rows)` MUST
+/// stay at the documented `(1, 1)` default for EVERY placeholder cell,
+/// NOT silently infer a multi-cell grid from the diacritic pattern.
+///
+/// Spec contract (per `~/projects/reference_repos/console_repos/kitty/
+/// docs/graphics-protocol.rst:577-586`): clients MUST create a virtual
+/// placement with `c=<columns>,r=<rows>` when they want multi-cell
+/// slicing. Absence is a single-cell placement that renders the full
+/// image at each placeholder cell — NOT a silent semantic shift.
+///
+/// Without this clamp, a future heuristic that scans diacritic encodings
+/// to infer the implied grid would silently re-render every cell as a
+/// slice of an inferred N×M grid, breaking the documented default.
+#[test]
+fn u1_multi_cell_without_explicit_grid_renders_slices_from_default_one_by_one() {
+    let mut h = SpecHarness::new();
+    // a=T transmit-and-place with U=1 but NO c=/r= — exercises the
+    // missing-client-geometry path. Image dimensions s=/v= are PIXEL
+    // size, not display grid.
+    h.feed(&kitty_apc(b"a=T,U=1,i=10,f=32,s=4,v=4", &b64(&rgba_4x4_red())));
+
+    // Place cursor at home, then write a 2×2 pattern of placeholder
+    // cells. Each carries 2 diacritics for (row, col):
+    //   (0,0) (0,1)
+    //   (1,0) (1,1)
+    // Diacritic mapping: U+0305 → 0, U+030D → 1.
+    h.feed(b"\x1b[1;1H");
+    write_placeholder_cell(&mut h, 10, '\u{0305}', '\u{0305}');
+    write_placeholder_cell(&mut h, 10, '\u{0305}', '\u{030D}');
+    h.feed(b"\x1b[2;1H");
+    write_placeholder_cell(&mut h, 10, '\u{030D}', '\u{0305}');
+    write_placeholder_cell(&mut h, 10, '\u{030D}', '\u{030D}');
+
+    let snap = h.term().renderable_content();
+    assert_eq!(
+        snap.placeholder_cells.len(),
+        4,
+        "all 4 placeholder cells expected — got {:?}",
+        snap.placeholder_cells,
+    );
+    for pc in &snap.placeholder_cells {
+        assert_eq!(
+            (pc.placement_cols, pc.placement_rows),
+            (1, 1),
+            "placeholder cell {:?} MUST carry (1, 1) default — silent \
+             grid inference would shift slice math semantically",
+            pc,
+        );
+    }
+    // Companion clamp: each cell's decoded (image_row, image_col) MUST
+    // still reflect its written diacritic, even though slicing falls
+    // back to the full image at GPU emit. The values flow through the
+    // snapshot unchanged; emit applies the (1, 1) grid → full-image UV.
+    let by_cell: std::collections::HashMap<(usize, usize), (u32, u32)> = snap
+        .placeholder_cells
+        .iter()
+        .map(|pc| ((pc.line, pc.column.0), (pc.image_row, pc.image_col)))
+        .collect();
+    assert_eq!(by_cell.get(&(0, 0)).copied(), Some((0, 0)));
+    assert_eq!(by_cell.get(&(0, 1)).copied(), Some((0, 1)));
+    assert_eq!(by_cell.get(&(1, 0)).copied(), Some((1, 0)));
+    assert_eq!(by_cell.get(&(1, 1)).copied(), Some((1, 1)));
+}
+
+/// Regression: spec-conformance §13.4 close-out gate — round-trip the
+/// maximum kitty `U=1` diacritic count (3: row + col + image_id MSB)
+/// through the grid-cell ingest path and assert the decoded
+/// `(image_id, image_row, image_col)` triple matches the encoded values
+/// exactly. Companion architectural pin:
+/// `cell_extra_zerowidth_storage_remains_unbounded` at
+/// `oriterm_core/src/cell/tests.rs`.
+///
+/// Kitty graphics-protocol §Unicode placeholders writes up to 3
+/// diacritics per placeholder cell: 1st = image row, 2nd = image column,
+/// 3rd = high byte of `image_id` (when the 24-bit fg color cannot hold
+/// the full ID). Silent truncation in the cell layer would corrupt the
+/// decoded lookup tuple.
+///
+/// Diacritic codepoints come from `term/handler/image/kitty/placeholder/
+/// mod.rs::DIACRITICS` — position in the table equals the row/col/MSB
+/// value the diacritic encodes. The kitty docs reference
+/// (https://sw.kovidgoyal.net/kitty/graphics-protocol/#unicode-placeholders)
+/// names U+0305 → 0, U+030D → 1, U+030E → 2.
+#[test]
+fn kitty_placeholder_max_diacritic_count_round_trips_through_grid() {
+    // 24-bit fg color → low 24 bits of image_id; 3rd diacritic → high byte.
+    let id_low: u32 = 42;
+    let id_high: u8 = 1;
+    let expected_id = (u32::from(id_high) << 24) | id_low;
+
+    let mut h = SpecHarness::new();
+    // Transmit U=1 image under the FULL composite id so the decoded
+    // placeholder lookup succeeds against the cache; the placeholder
+    // anchor records `ImageId::from_raw(expected_id)`.
+    let control = format!("a=t,U=1,i={expected_id},f=32,s=4,v=4");
+    h.feed(&kitty_apc(control.as_bytes(), &b64(&rgba_4x4_red())));
+
+    // Write one placeholder cell carrying 3 diacritics:
+    //   row diacritic U+030D → row=1
+    //   col diacritic U+030E → col=2
+    //   MSB diacritic U+030D → high byte=1
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(format!("\x1b[38;5;{id_low}m").as_bytes());
+    let mut buf = [0u8; 4];
+    bytes.extend_from_slice('\u{10EEEE}'.encode_utf8(&mut buf).as_bytes());
+    bytes.extend_from_slice('\u{030D}'.encode_utf8(&mut buf).as_bytes()); // row=1
+    bytes.extend_from_slice('\u{030E}'.encode_utf8(&mut buf).as_bytes()); // col=2
+    bytes.extend_from_slice('\u{030D}'.encode_utf8(&mut buf).as_bytes()); // high=1
+    bytes.extend_from_slice(b"\x1b[39m");
+    h.feed(&bytes);
+
+    let snap = h.term().renderable_content();
+    assert_eq!(
+        snap.placeholder_cells.len(),
+        1,
+        "exactly one placeholder cell expected from a single 3-diacritic \
+         write — got {:?}",
+        snap.placeholder_cells,
+    );
+    let pc = snap.placeholder_cells[0];
+    assert_eq!(
+        pc.image_id,
+        ImageId::from_raw(expected_id),
+        "image_id MUST be reconstructed from fg color (low 24 bits) plus \
+         3rd diacritic (high byte) — silent truncation of the 3rd \
+         diacritic would collapse this back to {id_low}"
+    );
+    assert_eq!(pc.image_row, 1, "row diacritic U+030D MUST decode to 1");
+    assert_eq!(pc.image_col, 2, "col diacritic U+030E MUST decode to 2");
 }

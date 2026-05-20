@@ -346,3 +346,310 @@ fn placeholder_category_matrix_completeness() {
         declared_fn_names.len(),
     );
 }
+
+/// Inventory of grid-mutation call sites in the four owning files that
+/// CAN affect placeholder-bearing cells. Each entry is
+/// `(file_relative_to_crate, mutation_api_substring)`. Adding a new
+/// mutation site to one of these files without updating this list is
+/// caught by `placeholder_anchor_mutation_sites_registered_via_inventory_grep`.
+const PLACEHOLDER_MUTATION_SITES: &[(&str, &str)] = &[
+    // helpers.rs — `input_char` ASCII fast path + non-ASCII branch.
+    ("src/term/handler/helpers.rs", "put_char_ascii(c)"),
+    ("src/term/handler/helpers.rs", "grid.put_char(c)"),
+    // presentation/mod.rs — DECIC / DECDC insert/delete columns at
+    // VPA-bounded positions plus VT220-style insert/delete column
+    // operators that fall through `insert_columns(1, ...)` /
+    // `delete_columns(1, ...)`.
+    ("src/term/handler/presentation/mod.rs", "insert_columns(count, at_col)"),
+    ("src/term/handler/presentation/mod.rs", "delete_columns(count, at_col)"),
+    ("src/term/handler/presentation/mod.rs", "insert_columns(1, left_bound)"),
+    ("src/term/handler/presentation/mod.rs", "delete_columns(1, left_bound)"),
+    // rect_ops/mod.rs — DECCRA copy, DECFRA fill, DECERA erase,
+    // DECSERA selective erase. DECCRA was added 2026-05-20 after the
+    // inventory test surfaced the missing reconcile.
+    ("src/term/handler/rect_ops/mod.rs", ".copy_rect(src.top"),
+    ("src/term/handler/rect_ops/mod.rs", "grid.fill_rect("),
+    ("src/term/handler/rect_ops/mod.rs", ".erase_rect_all("),
+    ("src/term/handler/rect_ops/mod.rs", ".erase_rect_unprotected("),
+    // resize/mod.rs — primary + alt grid resize, reconciled symmetrically
+    // via the wrapper `reconcile_both_placeholder_anchors` at function end.
+    ("src/term/resize/mod.rs", "self.grid.resize(new_lines, new_cols, reflow)"),
+    ("src/term/resize/mod.rs", "alt.resize(new_lines, new_cols, false)"),
+];
+
+/// Strip a single naive Rust string literal pass — replaces `"..."`
+/// regions with spaces so brace/quote counters skip them. Sufficient
+/// for the rect_ops / helpers / presentation / resize sources, which
+/// don't use raw strings (`r#"..."#`) or escaped-quote-bearing
+/// string literals on the same line as significant braces.
+fn strip_strings(line: &str) -> String {
+    let mut out = String::with_capacity(line.len());
+    let mut in_str = false;
+    let mut prev = ' ';
+    for c in line.chars() {
+        if !in_str && c == '"' {
+            in_str = true;
+            out.push(' ');
+        } else if in_str && c == '"' && prev != '\\' {
+            in_str = false;
+            out.push(' ');
+        } else if in_str {
+            out.push(' ');
+        } else {
+            out.push(c);
+        }
+        prev = c;
+    }
+    out
+}
+
+/// Walk back through `lines` to find the most recent function
+/// declaration line. Returns the index of that line. Panics if no
+/// `fn ` declaration is found above — callers MUST ensure the
+/// mutation site is inside a function.
+fn find_enclosing_fn_decl(lines: &[&str]) -> usize {
+    for (i, line) in lines.iter().enumerate().rev() {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with("fn ")
+            || trimmed.starts_with("pub fn ")
+            || trimmed.starts_with("pub(crate) fn ")
+            || trimmed.starts_with("pub(super) fn ")
+            || trimmed.starts_with("pub(in ")
+        {
+            return i;
+        }
+    }
+    panic!(
+        "no enclosing fn declaration found above mutation line at end of slice ({} lines)",
+        lines.len()
+    );
+}
+
+fn count_open_braces(line: &str) -> usize {
+    strip_strings(line).chars().filter(|&c| c == '{').count()
+}
+
+fn count_close_braces(line: &str) -> usize {
+    strip_strings(line).chars().filter(|&c| c == '}').count()
+}
+
+/// Cumulative brace depth at the end of `lines` (i.e., after the LAST
+/// line is fully consumed). Comment lines are skipped to avoid
+/// confusing comment-only braces with code-bearing ones.
+fn brace_depth_at(lines: &[&str]) -> usize {
+    let mut depth: isize = 0;
+    for line in lines {
+        if line.trim().starts_with("//") {
+            continue;
+        }
+        let stripped = strip_strings(line);
+        for c in stripped.chars() {
+            match c {
+                '{' => depth += 1,
+                '}' => depth -= 1,
+                _ => {}
+            }
+        }
+    }
+    depth.max(0) as usize
+}
+
+/// Helper: scan a source file for grid-mutation API calls that
+/// COULD touch placeholder-bearing cells. Returns `(line_number,
+/// trimmed_line)` for each match. Used by both inventory tests.
+fn scan_mutation_lines(path: &std::path::Path) -> Vec<(usize, String)> {
+    let src = std::fs::read_to_string(path)
+        .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+    // Surface patterns: grid-mutation API calls that overwrite or
+    // replace cells. `push_zerowidth` is excluded — it APPENDS a
+    // combining mark to an existing cell rather than overwriting.
+    // `cursor_mut`, `set_col`, `move_*` adjust cursor state without
+    // touching cells, so they are excluded too.
+    // Patterns must be PREFIXED by a non-identifier character so
+    // `put_char(` does not match the substring inside `input_char(`,
+    // `cursor_mut().put_char(...)` does match but `fn input_char` does
+    // not.
+    const PATTERNS: &[&str] = &[
+        ".put_char_ascii(",
+        ".put_char(",
+        ".insert_columns(",
+        ".delete_columns(",
+        ".copy_rect(",
+        ".fill_rect(",
+        ".erase_rect_all(",
+        ".erase_rect_unprotected(",
+        ".resize(",
+    ];
+    let mut hits: Vec<(usize, String)> = Vec::new();
+    for (idx, line) in src.lines().enumerate() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("//") {
+            continue;
+        }
+        // Skip pure method-definition lines (`fn foo(` / `pub fn foo(`)
+        // — the test cares about call sites, not declarations.
+        if trimmed.starts_with("fn ")
+            || trimmed.starts_with("pub fn ")
+            || trimmed.starts_with("pub(crate) fn ")
+            || trimmed.starts_with("pub(super) fn ")
+            || trimmed.starts_with("pub(in ")
+        {
+            continue;
+        }
+        for pat in PATTERNS {
+            if line.contains(pat) {
+                hits.push((idx + 1, line.to_string()));
+                break;
+            }
+        }
+    }
+    hits
+}
+
+/// Each `(file, api)` pair in `PLACEHOLDER_MUTATION_SITES` MUST resolve
+/// to at least one mutation-line in the corresponding source file.
+/// Conversely: every mutation-line found in the four owning files MUST
+/// be covered by at least one inventory entry. Adding a new mutation
+/// site without registering it here is the silent-drift regression
+/// this test is designed to catch.
+#[test]
+fn placeholder_anchor_mutation_sites_registered_via_inventory_grep() {
+    let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let mut files: std::collections::BTreeSet<&str> = std::collections::BTreeSet::new();
+    for (file, _) in PLACEHOLDER_MUTATION_SITES {
+        files.insert(*file);
+    }
+
+    // Coverage direction 1: every inventory entry resolves to a real
+    // mutation line.
+    let mut unresolved_inventory: Vec<String> = Vec::new();
+    for (file, needle) in PLACEHOLDER_MUTATION_SITES {
+        let path = crate_root.join(file);
+        let src = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("read inventory file {file}: {e}"));
+        if !src.lines().any(|l| !l.trim().starts_with("//") && l.contains(needle)) {
+            unresolved_inventory.push(format!("{file}: needle {needle:?} not found"));
+        }
+    }
+    assert!(
+        unresolved_inventory.is_empty(),
+        "inventory entries with no matching mutation line: {unresolved_inventory:?}"
+    );
+
+    // Coverage direction 2: every mutation line in the owning files is
+    // covered by at least one inventory entry. A new mutation site must
+    // be ADDED to PLACEHOLDER_MUTATION_SITES or this test fails.
+    let mut uncovered_mutations: Vec<String> = Vec::new();
+    for file in &files {
+        let path = crate_root.join(file);
+        for (lineno, line) in scan_mutation_lines(&path) {
+            let covered = PLACEHOLDER_MUTATION_SITES.iter().any(|(invfile, needle)| {
+                invfile == file && line.contains(needle)
+            });
+            if !covered {
+                uncovered_mutations.push(format!("{file}:{lineno} — {line}"));
+            }
+        }
+    }
+    assert!(
+        uncovered_mutations.is_empty(),
+        "mutation-site drift — these lines are NOT covered by PLACEHOLDER_MUTATION_SITES (add to the inventory if they can touch placeholder-bearing cells, or refine the scan PATTERNS in `scan_mutation_lines` if they cannot):\n{}",
+        uncovered_mutations.join("\n"),
+    );
+}
+
+/// Every mutation site in `PLACEHOLDER_MUTATION_SITES` MUST be followed
+/// (within the same function body) by a call to
+/// `reconcile_placeholder_anchors_from_grid()` OR
+/// `reconcile_both_placeholder_anchors()`. Silent regressions that
+/// drop reconcile from a mutation path are the canonical defect the
+/// §13.4 cluster prevents — this pin lifts the manual-audit burden
+/// into a mechanical check.
+///
+/// **Heuristic scope (PRESENCE-only, not REACHABILITY):** the scan
+/// only verifies the reconcile-call TEXT appears in the enclosing
+/// function body — it does NOT prove the reconcile is on the same
+/// branch as the mutation. A future regression that gates reconcile
+/// behind an unrelated `if`/`match` arm would still satisfy this pin.
+/// The companion runtime pins
+/// (`printable_overwrite_of_placeholder_cell_reconciles_anchor`,
+/// `rectangular_copy_replacing_placeholder_cells_reconciles_anchor`,
+/// etc. at `placeholder_anchors.rs`) drive the actual mutation under
+/// each gate variant and assert the anchor cleared — that's the
+/// reachability layer. This static scan is the FILE-LAYOUT defense
+/// (catches "new mutation site added without ANY reconcile call");
+/// the runtime pins are the BEHAVIOR defense. Both layers required.
+#[test]
+fn every_mutation_path_in_helpers_resize_presentation_rect_ops_calls_reconcile_placeholder_anchors()
+{
+    let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+
+    let mut violations: Vec<String> = Vec::new();
+    for (file, needle) in PLACEHOLDER_MUTATION_SITES {
+        let path = crate_root.join(file);
+        let src = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("read {file}: {e}"));
+        let lines: Vec<&str> = src.lines().collect();
+
+        // Find every occurrence of the mutation needle, then scan
+        // forward up to the next `}` at the top indent for either
+        // reconcile API. A reconcile within the same function body
+        // satisfies the pin. The scan stops at function boundary.
+        for (idx, line) in lines.iter().enumerate() {
+            if line.trim().starts_with("//") {
+                continue;
+            }
+            if !line.contains(needle) {
+                continue;
+            }
+            // Function-boundary heuristic: walk BACK from the mutation
+            // line to find the enclosing function's declaration line,
+            // capture depth THERE (= the depth INSIDE the enclosing
+            // function's body, NOT the depth at the mutation site
+            // which may be nested in an `if let` / `match` arm), then
+            // scan forward and exit when depth drops below that
+            // function-body depth. Robust to last-function-in-file
+            // case because the depth-drop happens at the function's
+            // closing `}` regardless of trailing module items, AND to
+            // mutations nested in inner blocks because we don't
+            // confuse inner-scope close with function-scope close.
+            let fn_decl_idx = find_enclosing_fn_decl(&lines[..=idx]);
+            // The fn-decl line ends with its body's opening `{` (true
+            // for all owning files), so brace_depth_at INCLUDES that
+            // brace — function-body depth equals depth-at-end-of-decl.
+            let body_depth = brace_depth_at(&lines[..=fn_decl_idx]);
+            let mut depth = brace_depth_at(&lines[..=idx]);
+            let mut found = false;
+            for follow in &lines[idx + 1..] {
+                let follow_trim = follow.trim();
+                if follow_trim.starts_with("//") {
+                    continue;
+                }
+                if follow_trim.contains("reconcile_placeholder_anchors_from_grid")
+                    || follow_trim.contains("reconcile_both_placeholder_anchors")
+                {
+                    found = true;
+                    break;
+                }
+                depth += count_open_braces(follow);
+                depth = depth.saturating_sub(count_close_braces(follow));
+                if depth < body_depth {
+                    // Walked out of the enclosing function body.
+                    break;
+                }
+            }
+            if !found {
+                violations.push(format!(
+                    "{file}:{} — {} → no reconcile_placeholder_anchors_from_grid/reconcile_both_placeholder_anchors before enclosing function body closes",
+                    idx + 1,
+                    line.trim(),
+                ));
+            }
+        }
+    }
+    assert!(
+        violations.is_empty(),
+        "mutation-site → reconcile drift:\n{}",
+        violations.join("\n"),
+    );
+}

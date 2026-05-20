@@ -1,7 +1,7 @@
 //! §13.6.1 — cross-stack regression tests.
 //!
 //! Catalog row: `KG-CROSS-STACK-SIXEL-MIXED-EVICTION`
-//! Catalog row: `KG-CROSS-STACK-SIXEL-MIXED-Z-ORDER` (semantic pin layer)
+//! Catalog row: `KG-CROSS-STACK-SIXEL-MIXED-Z-ORDER` (behavior-pin layer)
 //! Anchor: spec-conformance §13.6.1 — cross-protocol eviction + recency
 //!
 //! Cross-protocol eviction + recency-bump pins driven by REAL protocol
@@ -159,9 +159,9 @@ fn cross_protocol_lru_eviction_drops_oldest_accessed_regardless_of_protocol() {
 }
 
 /// Regression: spec-conformance §13.6.1 line 586 cross-feature positive
-/// pin (round-1 TPR codex: prior `cross_protocol_lru_eviction_drops_oldest_
-/// accessed_regardless_of_protocol` test used kitty-only images, leaving
-/// the cross-protocol claim un-pinned at the test surface).
+/// pin — prior `cross_protocol_lru_eviction_drops_oldest_accessed_
+/// regardless_of_protocol` test used kitty-only images, leaving the
+/// cross-protocol claim un-pinned at the test surface.
 ///
 /// Setup: sixel-A (auto-assigned ImageId at `AUTO_ID_START`) → kitty-B
 /// (`i=42`) → sixel-C (`AUTO_ID_START+1`). All three transmitted via
@@ -232,7 +232,7 @@ fn cross_protocol_lru_mixed_sixel_kitty_drops_oldest_by_last_accessed() {
     // (eviction-immune per Option A), eviction targets the unplaced
     // pool: sixel-A (oldest) is evicted; sixel-C (younger) survives.
     // `dcs_n_cols_wide(8)` produces an 8×6 RGBA image = 192 bytes;
-    // kitty `s=4,v=4,f=32` = 64 bytes. Total 3 images ≈ 448 bytes; cap
+    // and kitty s=4,v=4,f=32 = 64 bytes. Total 3 images ≈ 448 bytes; cap
     // at 280 forces one sixel eviction (256 bytes ≈ kitty + 1 sixel).
     h.term_mut().image_cache_mut().set_memory_limit(280);
 

@@ -7224,9 +7224,8 @@ mod placeholder_uv_slicing {
         }
     }
 
-    /// Regression: spec-conformance §13.6.1 round-0 TPR (gemini singleton,
-    /// adjudicator-verified actionable, severity downgraded high→low —
-    /// defense-in-depth). A malformed client may emit a placeholder cell
+    /// Regression: spec-conformance §13.6.1 — defense-in-depth clamp
+    /// for malformed clients. A malformed client may emit a placeholder cell
     /// whose `(image_row, image_col)` exceeds the recorded
     /// `(placement_rows, placement_cols)` grid. Without the clamp,
     /// `uv_x = image_col * uv_w` produces UV ≥ 1.0 — currently absorbed by

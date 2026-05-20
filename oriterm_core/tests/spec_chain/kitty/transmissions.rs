@@ -189,9 +189,7 @@ fn kitty_store_from_file_oversized_t_eq_t_returns_ebig_and_removes_source() {
     );
 }
 
-/// boundary clamp: file size == max_bytes succeeds.
-/// Per Round 2 Codex F6 + Gemini F3 + Opencode F2 (3-of-3 agreement)
-/// boundary-from-below pin.
+/// boundary clamp: file size == max_bytes succeeds — boundary-from-below pin.
 #[test]
 fn kitty_store_from_file_exactly_max_bytes_succeeds() {
     let dir = tmp_dir("exactly_max");
@@ -244,9 +242,8 @@ fn kitty_store_from_file_max_bytes_plus_one_rejects_via_preflight() {
     );
 }
 
-/// : `max_bytes = usize::MAX` does NOT panic on overflow.
+/// `max_bytes = usize::MAX` does NOT panic on overflow.
 /// Pins the saturating_add invariant against debug-mode overflow.
-/// Per Round 1 Codex F5 + Gemini F2 + Opencode F2 (3-of-3 agreement).
 #[test]
 fn kitty_store_from_file_max_bytes_usize_max_does_not_panic() {
     let dir = tmp_dir("usize_max");
@@ -271,7 +268,7 @@ fn kitty_store_from_file_max_bytes_usize_max_does_not_panic() {
 }
 
 /// (Unix only): path is a directory → EINVAL via fstat
-/// non-regular-file rejection. Per Round 2 Codex F1 + Opencode F1.
+/// non-regular-file rejection.
 #[cfg(unix)]
 #[test]
 fn kitty_store_from_file_directory_path_returns_einval() {
@@ -289,8 +286,8 @@ fn kitty_store_from_file_directory_path_returns_einval() {
     let replies = reply_bytes(&h);
     let s = String::from_utf8_lossy(&replies);
     // On Unix, File::open succeeds for a directory and fstat reveals the
-    // dir file_type — we reject with the exact EINVAL message. Pin the
-    // exact string per Round 0 Code TPR Codex F2 (negative-test rigor).
+    // dir file_type — reject with the exact EINVAL message. Pin the
+    // exact string for negative-test rigor.
     assert!(
         s.contains("EINVAL: path is not a regular file"),
         "Unix directory path MUST emit `EINVAL: path is not a regular file` — got {s:?}",
@@ -339,17 +336,17 @@ fn kitty_store_from_file_fifo_path_returns_einval_no_block() {
     let s = String::from_utf8_lossy(&replies);
     // O_NONBLOCK on Unix: open() succeeds immediately, then fstat reveals
     // FIFO file_type and we reject with the exact EINVAL message. Pin the
-    // exact string per Round 0 Code TPR Codex F2 (negative-test rigor).
+    // exact string for negative-test rigor.
     assert!(
         s.contains("EINVAL: path is not a regular file"),
         "FIFO path MUST emit `EINVAL: path is not a regular file` — got {s:?}",
     );
 }
 
-/// : t=t with FIFO path. Pins the RAII-cleanup-on-EINVAL
-/// invariant — `remove_file` CAN remove FIFOs on Unix, so the guard's
-/// Drop should successfully unlink the FIFO when t=t requested deletion.
-/// Per Round 0 Code TPR Codex F3 (missing non-regular t=t cleanup matrix).
+/// `t=t` with FIFO path. Pins the RAII-cleanup-on-EINVAL invariant —
+/// `remove_file` CAN remove FIFOs on Unix, so the guard's Drop should
+/// successfully unlink the FIFO when `t=t` requested deletion. Closes
+/// the non-regular-file `t=t` cleanup matrix gap.
 #[cfg(unix)]
 #[test]
 fn kitty_store_from_file_fifo_t_eq_t_returns_einval_and_removes_source() {
@@ -455,6 +452,119 @@ fn kitty_decode_pixels_extreme_dimensions_rgb_returns_einval_no_panic() {
     assert!(
         s.contains("EINVAL") && s.contains("overflow"),
         "extreme RGB dims MUST emit `EINVAL: ... overflow usize` — got {s:?}",
+    );
+}
+
+// Cross-platform native pins for kitty t=f / t=t transmissions.
+// Every `#[cfg(target_os = ...)]` branch has counterpart test coverage on
+// all three targets. The pins below close the Unix-only EBADF / UTF-8 /
+// tempfile-cleanup coverage gap so platform-conditional paths in
+// `kitty/store.rs` are exercised on Linux, Windows, and macOS via CI.
+
+/// `t=f` and `t=t` decode the path from base64-encoded BYTES. When the
+/// decoded bytes are not valid UTF-8, ori_term rejects the request
+/// with EINVAL via `std::str::from_utf8` at `store.rs:193-194` — the
+/// rejection MUST fire on every platform regardless of whether the
+/// underlying filesystem could have interpreted the bytes.
+///
+/// Regression: spec-conformance §13.4 blind-spot #5 (cross-platform
+/// t=f/t=t pins absent on macOS + Windows).
+#[test]
+fn kitty_file_transmission_rejects_non_utf8_path_on_all_platforms() {
+    // 0xFF / 0xFE are not valid UTF-8 lead bytes — `from_utf8` rejects.
+    let invalid_utf8 = [0xFFu8, 0xFEu8, b'/', b'x'];
+
+    let mut h = SpecHarness::new();
+    h.feed(&kitty_apc(
+        b"a=t,i=240,t=f,f=32,s=4,v=4",
+        &b64(&invalid_utf8),
+    ));
+
+    let replies = reply_bytes(&h);
+    let s = String::from_utf8_lossy(&replies);
+    assert!(
+        s.contains("EINVAL"),
+        "t=f with non-UTF-8 path bytes MUST emit EINVAL on all platforms — got {s:?}",
+    );
+    assert_eq!(
+        placement_count(&h),
+        0,
+        "non-UTF-8 path MUST NOT create a placement",
+    );
+}
+
+/// `t=t` removes the source file via the RAII guard at
+/// `store.rs:100-106` on every platform. Linux uses POSIX `unlink`,
+/// macOS uses BSD `unlink`, Windows uses `DeleteFileW` after the
+/// `CloseHandle` from `File::drop` releases the share-lock. The
+/// invariant is platform-agnostic at the Rust stdlib level
+/// (`std::fs::remove_file`) — this pin documents that the cleanup
+/// MUST hold across the full target matrix.
+///
+/// Regression: spec-conformance §13.4 blind-spot #5 (cross-platform
+/// t=t cleanup pins absent on macOS + Windows).
+#[test]
+fn kitty_tempfile_transmission_silently_removes_payload_after_read_on_all_platforms() {
+    let dir = tmp_dir("xplat_tempfile_remove");
+    let path = dir.path().join("payload.raw");
+    std::fs::write(&path, rgba_4x4_red()).expect("write fixture");
+    assert!(path.exists(), "precondition: fixture file exists");
+
+    let mut h = SpecHarness::new();
+    h.feed(&kitty_apc(
+        b"a=T,i=241,t=t,f=32,s=4,v=4",
+        &b64(path.to_str().expect("utf-8 path").as_bytes()),
+    ));
+
+    assert_eq!(placement_count(&h), 1);
+    assert!(reply_contains(&h, &ok_reply_for(241)));
+    assert!(
+        !path.exists(),
+        "t=t MUST silently remove the source file on every platform — \
+         Linux unlink / macOS unlink / Windows DeleteFileW via \
+         std::fs::remove_file. Path still present: {}",
+        path.display(),
+    );
+}
+
+/// Pin EBADF propagation when `File::open` (with `O_NONBLOCK` on Unix
+/// per `store.rs:53-54`) fails. The Unix-only `O_NONBLOCK` flag is
+/// the load-bearing protection that prevents `open` from blocking on
+/// a FIFO; ensuring open-failure modes still emit EBADF (rather than
+/// panicking, blocking, or being silently swallowed) is the
+/// O_NONBLOCK-specific invariant the §13.4 blind-spot #5 scan
+/// identified. cfg-gated to `unix` because the not-unix code path
+/// uses `std::fs::OpenOptions` WITHOUT `O_NONBLOCK` and therefore
+/// has different failure-mode semantics.
+///
+/// Regression: spec-conformance §13.4 blind-spot #5
+/// (O_NONBLOCK-active EBADF propagation pin absent).
+#[cfg(unix)]
+#[test]
+fn kitty_file_open_propagates_o_nonblock_failure_as_ebadf_on_unix() {
+    // A path that doesn't exist on disk → open() returns ENOENT →
+    // `store.rs:57` maps to EBADF reply. Exercises the
+    // O_NONBLOCK-active open branch.
+    let dir = tmp_dir("o_nonblock_ebadf");
+    let missing = dir.path().join("does-not-exist.raw");
+    assert!(!missing.exists(), "precondition: missing path absent");
+
+    let mut h = SpecHarness::new();
+    h.feed(&kitty_apc(
+        b"a=t,i=242,t=f,f=32,s=4,v=4",
+        &b64(missing.to_str().expect("utf-8 path").as_bytes()),
+    ));
+
+    let replies = reply_bytes(&h);
+    let s = String::from_utf8_lossy(&replies);
+    assert!(
+        s.contains("EBADF"),
+        "t=f with missing path under O_NONBLOCK MUST emit EBADF on unix — got {s:?}",
+    );
+    assert_eq!(
+        placement_count(&h),
+        0,
+        "missing-path open failure MUST NOT create a placement",
     );
 }
 
