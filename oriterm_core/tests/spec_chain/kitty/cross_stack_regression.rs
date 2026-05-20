@@ -594,8 +594,8 @@ fn cross_stack_regression_category_matrix_completeness() {
     );
 }
 
-/// Regression: spec-conformance §13.6.1 semantic pin. Z-ordering is
-/// driven by `z_index`, NOT by transmit/place sequence order. Two
+/// Regression: z-ordering must be driven by `z_index`, NOT by
+/// transmit/place sequence order. Two
 /// equivalent compositions (sixel-then-kitty vs kitty-then-sixel) at
 /// the same z-configuration must produce equivalent cache state — same
 /// placement count, same image count, same placement z-indices. The
@@ -636,8 +636,8 @@ fn sixel_and_kitty_z_order_independent_of_transmit_order() {
     );
 }
 
-/// Regression: spec-conformance §13.6.1 negative pin. Cache eviction
-/// MUST be per-`image_id`. Removing a kitty image's bytes MUST NOT free
+/// Regression: cache eviction must reject cross-protocol bleed.
+/// Eviction is per-`image_id`; removing a kitty image's bytes MUST NOT free
 /// a sixel image's bytes (or vice versa) — protocol-specific cleanup
 /// carve-outs would create cross-pollination bugs where a kitty
 /// `a=d,d=I,i=N` accidentally evicts a sixel image with overlapping
@@ -746,12 +746,12 @@ fn write_placeholder_cell(h: &mut SpecHarness, image_id_low: u32, row: char, col
 /// | **anchor surviving (cells kept)** | sixel A × kitty B (§07 prune evicts A; §13.4 reconcile keeps B) | sixel D × kitty B (both survive — control cell) |
 /// | **anchor dropped (cells gone)**   | sixel A × kitty C (§07 prune evicts A; §13.4 reconcile drops C) | sixel D × kitty C (D survives prune; reconcile drops C) |
 ///
-/// Without all four cells, the test is a "ghost test" (codex TPR
-/// round-0 F1, 2026-05-20): the anchor-survival assertion alone can
-/// pass even if `reconcile_both_placeholder_anchors` is a no-op (no
-/// code path adds spurious anchors mid-resize), so the test must
-/// FORCE reconcile to do meaningful work via an orphan anchor that
-/// only the resize-end reconcile can clean up.
+/// Without all four cells, the test is a "ghost test": the anchor-
+/// survival assertion alone can pass even if
+/// `reconcile_both_placeholder_anchors` is a no-op (no code path adds
+/// spurious anchors mid-resize), so the test must FORCE reconcile to
+/// do meaningful work via an orphan anchor that only the resize-end
+/// reconcile can clean up.
 ///
 /// Exercises two production seams in the same call (primary-cache
 /// coverage; the alt-cache branch of `reconcile_both_placeholder_anchors`
@@ -1022,9 +1022,8 @@ fn resize_with_mixed_sixel_placement_and_kitty_u1_placeholders_preserves_both() 
 /// `if let Some(alt_grid) = self.alt_grid.as_ref()` branch at
 /// `helpers.rs:302-313`.
 ///
-/// Plan body: `plans/spec-conformance/section-13-kitty-graphics.md §13.6.1`
-/// — "reconcile_both_placeholder_anchors fires once per resize and covers
-/// BOTH active + inactive primary/alt caches."
+/// Invariant: `reconcile_both_placeholder_anchors` fires once per
+/// resize and covers BOTH active + inactive primary/alt caches.
 #[test]
 fn resize_reconciles_alt_cache_placeholder_anchors_symmetrically() {
     use oriterm_test_support::spec_chain::sixel_fixtures::dcs_n_cols_wide;
