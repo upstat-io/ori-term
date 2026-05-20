@@ -107,7 +107,7 @@ fn kitty_delete_a_clears_placeholder_anchors_when_no_placeholder_cells_remain() 
 }
 
 #[test]
-fn prune_scrollback_retains_anchor_when_placeholder_cells_remain_in_viewport() {
+pub(super) fn prune_scrollback_retains_anchor_when_placeholder_cells_remain_in_viewport() {
     let mut h = SpecHarness::new();
     transmit_u1(&mut h, 6);
     write_placeholder_cell(&mut h, 6, '\u{0305}', '\u{0305}');
@@ -158,7 +158,7 @@ fn prune_scrollback_clears_orphaned_placeholder_anchors_for_images_with_no_survi
 }
 
 #[test]
-fn ed_full_screen_clears_orphaned_placeholder_anchors() {
+pub(super) fn ed_full_screen_clears_orphaned_placeholder_anchors() {
     // When a placeholder cell did anchor the image but is then erased,
     // the survivor set MUST evict the anchor.
     let mut h = SpecHarness::new();
@@ -433,7 +433,7 @@ fn rectangular_fill_replacing_placeholder_cells_reconciles_anchor() {
 }
 
 #[test]
-fn inactive_alt_screen_u1_anchors_reconciled_on_resize() {
+pub(super) fn inactive_alt_screen_u1_anchors_reconciled_on_resize() {
     // While alt-screen is active, transmit U=1 + write a placeholder cell
     // near the right edge so a narrower resize drops it. Switch back to
     // primary so alt is inactive, resize, then return to alt. The alt
@@ -481,7 +481,7 @@ fn inactive_alt_screen_u1_anchors_reconciled_on_resize() {
 }
 
 #[test]
-fn line_erase_csi_k_with_placeholder_cell_reconciles_anchor() {
+pub(super) fn line_erase_csi_k_with_placeholder_cell_reconciles_anchor() {
     // CSI K (EL, default Pn=0) erases from cursor to end of line. When
     // the erased span covers a `U+10EEEE` cell, the anchor must be
     // reconciled. This is the per-line EL counterpart to the per-screen
