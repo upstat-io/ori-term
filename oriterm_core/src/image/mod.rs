@@ -257,8 +257,11 @@ impl AnimationState {
 
     /// Advance to the next frame. Returns `true` if the frame changed.
     ///
-    /// Handles loop counting and stops at the final frame when loops
-    /// are exhausted.
+    /// Handles loop counting + stops at the final frame when loops are
+    /// exhausted OR when `wait_mode` (Kitty `s=2` `ANIMATION_LOADING`) is set
+    /// and we would wrap. Per kitty `graphics.c:1793-1796`, `ANIMATION_LOADING`
+    /// halts at the last frame on wrap, waiting for a new `a=f` frame to
+    /// extend the animation; `ANIMATION_RUNNING` (`s=3`) wraps normally.
     pub fn advance(&mut self) -> bool {
         if self.paused || self.total_frames <= 1 {
             return false;
@@ -266,7 +269,14 @@ impl AnimationState {
 
         let next = self.current_frame + 1;
         if next >= self.total_frames {
-            // Looped back to start.
+            // Wrap branch — loop counting + wait-mode halt.
+            if self.wait_mode {
+                // s=2 ANIMATION_LOADING: halt at the last frame; do not
+                // wrap. A subsequent `a=f` will extend `total_frames` and
+                // `add_animation_frame` clears wait_mode on resume per
+                // existing logic.
+                return false;
+            }
             if let Some(max_loops) = self.loop_count {
                 self.loops_completed += 1;
                 if self.loops_completed >= max_loops {

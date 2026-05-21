@@ -779,6 +779,42 @@ fn advance_consuming_gapless_bounded_when_all_frames_gapless() {
     assert!(state.current_frame < state.total_frames);
 }
 
+/// `s=2` ANIMATION_LOADING (`wait_mode`) HALTS at the last frame on wrap.
+/// Per kitty `graphics.c:1793-1796`. Subsequent `a=f` extends the
+/// animation; `add_animation_frame` clears `wait_mode` to resume playback.
+/// Regression: BUG-08-051.
+#[test]
+fn animation_state_wait_mode_halts_at_last_frame_on_wrap() {
+    let durations = vec![Duration::from_millis(100); 2];
+    let mut state = AnimationState::new(durations, None);
+    state.wait_mode = true;
+
+    // 0 → 1 normal advance.
+    assert!(state.advance());
+    assert_eq!(state.current_frame, 1);
+
+    // 1 → would wrap to 0; wait_mode MUST halt instead.
+    assert!(!state.advance(), "wait_mode MUST halt at last frame");
+    assert_eq!(
+        state.current_frame, 1,
+        "wait_mode MUST preserve current_frame at the last frame on wrap"
+    );
+}
+
+/// `s=3` ANIMATION_RUNNING (no `wait_mode`) wraps normally — control test
+/// proving the halt is gated on `wait_mode` only.
+/// Regression: BUG-08-051.
+#[test]
+fn animation_state_no_wait_mode_wraps_on_loop_end() {
+    let durations = vec![Duration::from_millis(100); 2];
+    let mut state = AnimationState::new(durations, None);
+    // wait_mode left at default `false` — s=3 semantics.
+
+    assert!(state.advance()); // 0 → 1
+    assert!(state.advance()); // 1 → wrap → 0
+    assert_eq!(state.current_frame, 0);
+}
+
 /// `advance_consuming_gapless` returns false for paused / single-frame
 /// (delegates to `advance` for the early-exit guard).
 /// Regression: BUG-08-050.
