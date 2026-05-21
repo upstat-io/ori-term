@@ -15,6 +15,8 @@ use crate::image::kitty::{
 use crate::term::Term;
 
 mod animate;
+mod compose;
+mod compose_keys;
 mod delete;
 mod frame;
 mod frame_keys;
@@ -110,17 +112,8 @@ impl<S: EffectSink> Term<S> {
             KittyAction::Delete => self.kitty_delete(&cmd),
             KittyAction::Frame => self.kitty_frame(cmd),
             KittyAction::Animate => self.kitty_animate(&cmd),
-            KittyAction::Compose => self.kitty_compose_reject(&cmd),
+            KittyAction::Compose => self.kitty_compose(cmd),
         }
-    }
-
-    /// Reject `a=c` Compose action with an `EINVAL: action `c` not implemented`
-    /// reply. The reject helper makes the missing handler observable to
-    /// clients via a spec-compliant EINVAL reply while keeping the catalog
-    /// row `KG-ACTION-COMPOSE` honest about the absent implementation.
-    pub(super) fn kitty_compose_reject(&self, cmd: &KittyCommand) {
-        let ctx = KittyReplyContext::from_cmd(cmd);
-        self.kitty_respond(&ctx, "EINVAL: action `c` not implemented");
     }
 
     /// Handle a malformed-base64 chunk: emit EINVAL once per failed upload

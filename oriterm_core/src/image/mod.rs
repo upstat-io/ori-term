@@ -6,6 +6,7 @@
 //! and LRU eviction.
 
 mod cache;
+mod compose;
 mod decode;
 mod frame_load;
 pub mod iterm2;
@@ -16,6 +17,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 pub use cache::ImageCache;
+pub use compose::ComposeRequest;
 pub use decode::{
     GifFrames, ImageFormat, decode_gif_frames, decode_to_rgba, detect_format, rgb_to_rgba,
 };
@@ -207,6 +209,10 @@ pub enum ImageError {
         /// Requested image id (`i=` from the kitty command).
         id: u32,
     },
+    /// Same-frame compose with overlapping source and destination
+    /// rectangles. Per kitty graphics.c:1849, this is an EINVAL with a
+    /// specific message — emitted by `compose_frame` only.
+    OverlappingFrames,
 }
 
 impl std::fmt::Display for ImageError {
@@ -236,6 +242,10 @@ impl std::fmt::Display for ImageError {
                 }
             }
             Self::MissingImage { id } => write!(f, "image with id {id} not found"),
+            Self::OverlappingFrames => write!(
+                f,
+                "source and destination rectangles overlap and the src and destination frames are the same"
+            ),
         }
     }
 }

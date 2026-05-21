@@ -71,6 +71,16 @@ pub struct KittyCommand {
     pub display_cols: Option<u32>,
     /// Display height in cells (`r=`).
     pub display_rows: Option<u32>,
+    /// `w=` rectangle width in pixels.
+    ///
+    /// For `a=c` Compose: source-rect width (0/absent = full image width
+    /// per kitty graphics.c:1830-1831). For `a=p` Place: display-pixel
+    /// width — **parsed but not yet consumed by the Place handler**;
+    /// follow-up bug tracks Place's pixel-display-size feature gap.
+    pub width_px: Option<u32>,
+    /// `h=` rectangle height in pixels. See [`Self::width_px`] for the
+    /// Compose vs Place scope boundary.
+    pub height_px: Option<u32>,
     /// Cell X offset in pixels (`X=`).
     pub cell_x_offset: u32,
     /// Cell Y offset in pixels (`Y=`).
@@ -108,10 +118,9 @@ pub enum KittyAction {
     Animate,
     /// Query support (no side effects).
     Query,
-    /// Frame composition (`a=c`) — recognized but not implemented; `ori_term`
-    /// emits an `EINVAL: action `c` not implemented` reply via
-    /// `kitty_compose_reject` rather than silently falling back to
-    /// `TransmitAndPlace`.
+    /// Frame composition (`a=c`) — composes a sub-rect of one frame onto
+    /// another per kitty `graphics.c:1819 handle_compose_command`.
+    /// Handled by `Term::kitty_compose`.
     Compose,
 }
 
@@ -173,6 +182,8 @@ impl Default for KittyCommand {
             source_y: 0,
             display_cols: None,
             display_rows: None,
+            width_px: None,
+            height_px: None,
             cell_x_offset: 0,
             cell_y_offset: 0,
             z_index: 0,
@@ -275,6 +286,8 @@ fn apply_key_value(key: u8, value: &[u8], cmd: &mut KittyCommand) {
         b'y' => cmd.source_y = parse_u32(value).unwrap_or(0),
         b'c' => cmd.display_cols = parse_u32(value),
         b'r' => cmd.display_rows = parse_u32(value),
+        b'w' => cmd.width_px = parse_u32(value),
+        b'h' => cmd.height_px = parse_u32(value),
         b'X' => cmd.cell_x_offset = parse_u32(value).unwrap_or(0),
         b'Y' => cmd.cell_y_offset = parse_u32(value).unwrap_or(0),
         b'z' => cmd.z_index = parse_i32(value),

@@ -262,6 +262,11 @@ impl ImageCache {
     /// Edit-arm body for `put_frame`: replace `frame_num`'s bytes with
     /// `composed`, optionally update its gap, handle the static-image
     /// root-edit auto-promote per kitty parity.
+    ///
+    /// Thin caller wrapping [`Self::replace_frame_bytes`] — `put_frame_edit`
+    /// owns the `Vec<u8>` → `Arc<Vec<u8>>` conversion; the shared helper
+    /// owns the static-root / promoted-non-displayed / promoted-displayed
+    /// dispatch. Compose reuses the same dispatch via the shared helper.
     fn put_frame_edit(
         &mut self,
         id: ImageId,
@@ -269,19 +274,46 @@ impl ImageCache {
         composed: Vec<u8>,
         gap_update: Option<Duration>,
     ) -> Result<u32, ImageError> {
+        self.replace_frame_bytes(id, frame_num, Arc::new(composed), gap_update)
+    }
+
+    /// Replace `frame_num`'s pixel bytes, handling static-root /
+    /// promoted-non-displayed / promoted-displayed dispatch.
+    ///
+    /// Shared between [`Self::put_frame`] edit arm (`a=f,r=N`) and
+    /// [`Self::compose_frame`] (`a=c`). Callers with `Vec<u8>` go through
+    /// [`Self::put_frame_edit`] which `Arc::new`s for them; callers
+    /// holding `Arc<Vec<u8>>` directly call here.
+    ///
+    /// Optional `gap_update` for callers that also accept `z=` gap (the
+    /// `a=f` edit arm); compose callers pass `None`. Returns the 1-based
+    /// `frame_num` on success.
+    ///
+    /// Static-image root edit (`frame_num == 1 && !promoted`) AND
+    /// `gap_update.is_some()` auto-promotes the image via
+    /// [`Self::ensure_animation_state_for_root_gap`] so the root gap
+    /// survives. Compose never triggers this path because its
+    /// `gap_update` is always `None`; preserved for `put_frame_edit`
+    /// parity.
+    pub(crate) fn replace_frame_bytes(
+        &mut self,
+        id: ImageId,
+        frame_num: u32,
+        composed: Arc<Vec<u8>>,
+        gap_update: Option<Duration>,
+    ) -> Result<u32, ImageError> {
         let promoted = self.animations.contains_key(&id);
-        let composed_arc = Arc::new(composed);
 
         if frame_num == 1 && !promoted {
             // Static-image root edit.
             if let Some(img) = self.images.get_mut(&id) {
-                img.data = composed_arc.clone();
+                img.data = composed.clone();
             }
             if gap_update.is_some() {
                 // Auto-promote to record root gap; ensures gap survives.
                 self.ensure_animation_state_for_root_gap(id, gap_update)?;
                 if let Some(frames) = self.animation_frames.get_mut(&id) {
-                    frames[0] = composed_arc;
+                    frames[0] = composed;
                 }
             }
             self.dirty = true;
@@ -297,7 +329,7 @@ impl ImageCache {
                     total: frames.len() as u32,
                 });
             }
-            frames[idx] = composed_arc.clone();
+            frames[idx] = composed.clone();
             let state = self
                 .animations
                 .get(&id)
@@ -312,7 +344,7 @@ impl ImageCache {
 
         if displayed {
             if let Some(img) = self.images.get_mut(&id) {
-                img.data = composed_arc;
+                img.data = composed;
             }
         }
 

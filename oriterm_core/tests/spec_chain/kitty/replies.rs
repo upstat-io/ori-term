@@ -357,35 +357,41 @@ fn kitty_transmission_compression_unspecified_still_processes_payload() {
 }
 
 // ===========================================================================
-// Compose (a=c) reject — §13.5 explicit-reject helper
+// Compose (a=c) — error-reply boundary clamp
 // ===========================================================================
 
-/// Catalog row: `KG-ACTION-COMPOSE` (explicit reject).
+/// Catalog row: `KG-ACTION-COMPOSE` (boundary clamp — full matrix lives
+/// in `tests/spec_chain/kitty/compose.rs`).
 ///
-/// `a=c` (kitty Compose action) is recognized but not implemented; the
-/// `kitty_compose_reject` helper emits `EINVAL: action `c` not implemented`
-/// rather than silently routing through the unknown-action fallback to
-/// `TransmitAndPlace`.
+/// `a=c` against an image that does not exist MUST emit ENOENT (not
+/// EINVAL, not OK). Inverse of the now-deleted reject-helper test that
+/// pinned the legacy `kitty_compose_reject` path. The full Compose
+/// matrix (error responses, composition modes, fallback regression)
+/// lives in the dedicated `compose.rs` test file.
 #[test]
-fn kitty_action_compose_rejected_with_einval_reply() {
+fn kitty_action_compose_missing_image_emits_enoent_not_legacy_reject() {
     let mut h = SpecHarness::new();
-    h.feed(&kitty_apc(b"a=c,i=30,r=2,c=1", &b64(&rgba_4x4_red())));
+    h.feed(&kitty_apc(b"a=c,i=30,r=1,c=2,w=4,h=4,C=1", ""));
 
     assert_eq!(
         placement_count(&h),
         0,
-        "a=c MUST NOT create a placement — the compose handler is not implemented",
+        "a=c against missing image MUST NOT create a placement",
     );
     assert_eq!(
         h.term().image_cache().image_count(),
         0,
-        "a=c MUST NOT store an image — the compose handler is not implemented",
+        "a=c against missing image MUST NOT store an image",
     );
     let replies = reply_bytes(&h);
     let s = String::from_utf8_lossy(&replies);
     assert!(
-        s.contains("EINVAL: action `c` not implemented"),
-        "a=c MUST emit EINVAL: action `c` not implemented reply — got {s:?}",
+        !s.contains("action `c` not implemented"),
+        "a=c MUST NOT emit the legacy `action c not implemented` reject — got {s:?}",
+    );
+    assert!(
+        s.contains("ENOENT"),
+        "a=c against missing image MUST emit ENOENT — got {s:?}",
     );
 }
 

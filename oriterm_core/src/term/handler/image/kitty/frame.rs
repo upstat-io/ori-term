@@ -156,5 +156,8 @@ fn emit_error_reply<S: EffectSink>(
         ImageError::InvalidFormat | ImageError::DecodeFailed(_) => {
             term.kitty_respond(&ctx, &format!("EINVAL: {err}"));
         }
+        ImageError::OverlappingFrames => {
+            unreachable!("OverlappingFrames is compose-specific; frame.rs cannot emit it")
+        }
     }
 }

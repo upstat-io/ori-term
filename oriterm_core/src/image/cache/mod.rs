@@ -1,6 +1,7 @@
 //! Image cache with LRU eviction and configurable memory limits.
 
 mod animation;
+mod compose;
 mod deletion;
 mod eviction;
 mod frame_loading;
