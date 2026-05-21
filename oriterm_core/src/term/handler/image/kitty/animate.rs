@@ -10,11 +10,13 @@ use super::KittyReplyContext;
 impl<S: EffectSink> Term<S> {
     /// Handle `a=a` — control animation playback.
     ///
-    /// Key reinterpretation for `a=a`:
+    /// Key reinterpretation for `a=a` per kitty graphics-protocol.rst §Animation
+    /// control + graphics.c:1729-1743:
     /// - `source_width` (`s=`) → action (1=stop, 2=run wait, 3=run)
-    /// - `display_rows` (`r=`) → set current frame
-    /// - `z_index` (`z=`) → set gap for current frame (ms)
-    /// - `display_cols` (`c=`) → set displayed frame
+    /// - `display_rows` (`r=`) → gap-target frame selector (paired with `z=`)
+    /// - `z_index` (`z=`) → gap value in ms; consumed only via `r=`; negative
+    ///   clamps to ZERO (gapless); 0 means no gap change
+    /// - `display_cols` (`c=`) → current-frame seek (1-based)
     /// - `source_height` (`v=`) → loop count (0=infinite)
     pub(super) fn kitty_animate(&mut self, cmd: &KittyCommand) {
         // : missing `i=` MUST emit ENOENT, mirroring `kitty_place`
@@ -52,28 +54,29 @@ impl<S: EffectSink> Term<S> {
             self.image_cache_mut().set_animation_loops(id, loops);
         }
 
-        // `r=` → set current frame (1-based in Kitty protocol).
+        // `r=` + `z=` → set gap of frame r (gap-target selector). Per kitty
+        // graphics.c:1729-1735, z= is consumed only via r=; standalone z= is
+        // a no-op. z=0 means "no gap change" (kitty's `if (g->gap)` guard at
+        // 1734); negative z= clamps to ZERO (gapless edit, per change_gap at
+        // graphics.c:1348-1350).
         if let Some(frame) = cmd.display_rows {
-            if frame > 0 {
+            if frame > 0 && cmd.z_index != 0 {
+                let gap = if cmd.z_index < 0 {
+                    std::time::Duration::ZERO
+                } else {
+                    std::time::Duration::from_millis(cmd.z_index as u64)
+                };
                 self.image_cache_mut()
-                    .set_current_frame(id, (frame - 1) as usize);
+                    .set_frame_gap(id, (frame - 1) as usize, gap);
             }
         }
 
-        // `c=` → set displayed frame (1-based).
+        // `c=` → seek to frame c (current-frame selector). Per kitty
+        // graphics.c:1737-1743, c=N updates current_frame_index when in range.
         if let Some(frame) = cmd.display_cols {
             if frame > 0 {
                 self.image_cache_mut()
                     .set_current_frame(id, (frame - 1) as usize);
-            }
-        }
-
-        // `z=` → set gap for current frame.
-        if cmd.z_index > 0 {
-            let gap = std::time::Duration::from_millis(cmd.z_index as u64);
-            if let Some(state) = self.image_cache().animation_state(id) {
-                let frame_idx = state.current_frame;
-                self.image_cache_mut().set_frame_gap(id, frame_idx, gap);
             }
         }
 

@@ -312,7 +312,7 @@ impl ImageCache {
         }
     }
 
-    /// Jump to a specific frame (Kitty `r=` or `c=` in `a=a`).
+    /// Jump to a specific frame (Kitty `c=` in `a=a` — seek operation).
     pub(crate) fn set_current_frame(&mut self, id: ImageId, frame_idx: usize) {
         let should_apply = self.animations.get_mut(&id).is_some_and(|state| {
             if frame_idx < state.total_frames {

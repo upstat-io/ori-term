@@ -277,12 +277,15 @@ fn kitty_animate_v_absent_leaves_prior_loop_count_unchanged() {
     );
 }
 
-/// `a=a,r=N` jumps to frame N (1-based) and the OK reply echoes `,r=N` for
-/// the newly-set current frame. Property for the animate reply's
-/// post-mutation current-frame echo.
+/// `a=a,c=N` seeks to frame N (1-based) and the OK reply echoes `,r=N` for
+/// the newly-set current frame. `c=` is the current-frame selector per kitty
+/// graphics-protocol.rst:923-927 + graphics.c:1737-1743.
 /// Catalog row: `KG-ANIMATE-SET-CURRENT-FRAME`. Closes TPR-13.2-R3-F1 (a=a arm).
+/// Regression: BUG-08-045 — pre-fix dispatch routed both `r=` and `c=` to
+/// set_current_frame, inverting the kitty semantic. Now `c=` is the seek,
+/// `r=` is the gap-target selector (covered by sibling tests below).
 #[test]
-fn kitty_animate_r_two_sets_current_frame_and_reply_echoes_r_two() {
+fn kitty_animate_c_two_sets_current_frame_and_reply_echoes_r_two() {
     let base = b64(&rgba_4x4_red());
     let frame = b64(&rgba_4x4_red());
 
@@ -291,7 +294,7 @@ fn kitty_animate_r_two_sets_current_frame_and_reply_echoes_r_two() {
     h.feed(&kitty_apc(b"a=f,i=63,f=32,s=4,v=4", &frame));
     // Now 2 frames (indices 0 and 1, 1-based 1 and 2).
 
-    h.feed(&kitty_apc(b"a=a,i=63,r=2", ""));
+    h.feed(&kitty_apc(b"a=a,i=63,c=2", ""));
 
     let state = h
         .term()
@@ -300,12 +303,12 @@ fn kitty_animate_r_two_sets_current_frame_and_reply_echoes_r_two() {
         .expect("i=63 animated");
     assert_eq!(
         state.current_frame, 1,
-        "a=a,r=2 MUST set current_frame to 0-based index 1"
+        "a=a,c=2 MUST seek current_frame to 0-based index 1"
     );
 
     assert!(
         reply_contains(&h, &ok_reply_with_frame(63, 2)),
-        "a=a,r=2 reply MUST echo ,r=2 (1-based current frame after mutation) \
+        "a=a,c=2 reply MUST echo ,r=2 (1-based current frame after mutation) \
          — transcript: {:?}",
         String::from_utf8_lossy(&reply_bytes(&h)),
     );
@@ -364,11 +367,14 @@ fn kitty_animate_s_two_sets_wait_mode_and_s_three_clears_it() {
     );
 }
 
-/// `a=a,z=Nms` sets the frame gap for the current frame. Pins the per-frame
-/// gap update path.
-/// Catalog row: `KG-ANIMATE-SET-FRAME-GAP`.
+/// `a=a,z=Nms` WITHOUT `r=` is a no-op per kitty graphics.c:1729-1735 — the
+/// gap update is guarded by `if (g->frame_number)` (i.e. `r=` MUST be set).
+/// Standalone `z=` had no kitty parity in the pre-fix dispatch.
+/// Catalog row: `KG-ANIMATE-SET-FRAME-GAP` (negative-pin guard).
+/// Regression: BUG-08-045 — proves the standalone-`z=` branch was correctly
+/// deleted in the dispatch split.
 #[test]
-fn kitty_animate_z_sets_current_frame_gap_duration() {
+fn kitty_animate_z_alone_without_r_is_no_op() {
     let base = b64(&rgba_4x4_red());
     let frame = b64(&rgba_4x4_red());
 
@@ -376,7 +382,16 @@ fn kitty_animate_z_sets_current_frame_gap_duration() {
     h.feed(&kitty_apc(b"a=t,i=64,f=32,s=4,v=4", &base));
     h.feed(&kitty_apc(b"a=f,i=64,f=32,s=4,v=4", &frame));
 
-    // Current frame is 0; set gap to 250ms.
+    let baseline_durations = h
+        .term()
+        .image_cache()
+        .animation_state(ImageId::from_raw(64))
+        .expect("i=64 animated")
+        .frame_durations
+        .clone();
+
+    // Standalone z= without r=: kitty's handle_animation_control_command
+    // (graphics.c:1729-1735) does nothing because `g->frame_number` is 0.
     h.feed(&kitty_apc(b"a=a,i=64,z=250", ""));
 
     let state = h
@@ -385,9 +400,268 @@ fn kitty_animate_z_sets_current_frame_gap_duration() {
         .animation_state(ImageId::from_raw(64))
         .expect("i=64 animated");
     assert_eq!(
-        state.frame_durations[state.current_frame],
-        Duration::from_millis(250),
-        "a=a,z=250 MUST set the current frame's gap to 250ms"
+        state.frame_durations, baseline_durations,
+        "a=a,z=250 WITHOUT r= MUST leave frame_durations unchanged — \
+         standalone z= has no kitty parity (z= consumed only via r=)"
+    );
+    assert_eq!(
+        state.current_frame, 0,
+        "a=a,z=250 WITHOUT r= MUST NOT seek (no `c=` present)"
+    );
+}
+
+/// `a=a,r=N,z=Z` sets the gap of frame N (1-based) to Z ms. This is the
+/// gap-target arm of kitty's `handle_animation_control_command`
+/// (graphics.c:1729-1735) — `r=` selects which frame's gap, `z=` provides
+/// the value, neither alone has effect.
+/// Catalog row: `KG-ANIMATE-SET-FRAME-GAP` (positive — gap-target arm).
+/// Regression: BUG-08-045 — pre-fix code routed `r=` to `set_current_frame`
+/// instead of `set_frame_gap`, so this case silently seek-without-gap'd.
+#[test]
+fn kitty_animate_r_two_z_positive_sets_frame_two_gap_without_seeking() {
+    let base = b64(&rgba_4x4_red());
+    let frame = b64(&rgba_4x4_red());
+
+    let mut h = SpecHarness::new();
+    h.feed(&kitty_apc(b"a=t,i=70,f=32,s=4,v=4", &base));
+    h.feed(&kitty_apc(b"a=f,i=70,f=32,s=4,v=4", &frame));
+
+    h.feed(&kitty_apc(b"a=a,i=70,r=2,z=77", ""));
+
+    let state = h
+        .term()
+        .image_cache()
+        .animation_state(ImageId::from_raw(70))
+        .expect("i=70 animated");
+    assert_eq!(
+        state.frame_durations[1],
+        Duration::from_millis(77),
+        "a=a,r=2,z=77 MUST set frame_durations[1] to 77ms (gap-target arm)"
+    );
+    assert_eq!(
+        state.current_frame, 0,
+        "a=a,r=2,z=77 MUST NOT seek — r= is the gap-target selector, not the \
+         current-frame seek (that is `c=`)"
+    );
+}
+
+/// `a=a,r=N,z=-1` sets frame N's gap to ZERO (gapless edit). Kitty's
+/// `change_gap` (graphics.c:1348-1350) clamps negative z= to zero.
+/// Catalog row: `KG-ANIMATE-SET-FRAME-GAP` (gapless variant).
+/// Regression: BUG-08-045 — negative-z= clamping path.
+#[test]
+fn kitty_animate_r_two_z_negative_sets_frame_two_gapless() {
+    let base = b64(&rgba_4x4_red());
+    let frame = b64(&rgba_4x4_red());
+
+    let mut h = SpecHarness::new();
+    h.feed(&kitty_apc(b"a=t,i=71,f=32,s=4,v=4", &base));
+    h.feed(&kitty_apc(b"a=f,i=71,f=32,s=4,v=4,z=99", &frame));
+    // Pre-seed frame 2 gap to 99ms via a=f's z= so the clamp-to-zero test is
+    // a real overwrite, not a no-op.
+
+    h.feed(&kitty_apc(b"a=a,i=71,r=2,z=-1", ""));
+
+    let state = h
+        .term()
+        .image_cache()
+        .animation_state(ImageId::from_raw(71))
+        .expect("i=71 animated");
+    assert_eq!(
+        state.frame_durations[1],
+        Duration::ZERO,
+        "a=a,r=2,z=-1 MUST clamp to Duration::ZERO (gapless edit)"
+    );
+}
+
+/// `a=a,r=N,z=0` is a no-op per kitty's `if (g->gap)` guard
+/// (graphics.c:1734) — z=0 means "no gap change."
+/// Catalog row: `KG-ANIMATE-SET-FRAME-GAP` (z=0 no-op variant).
+/// Regression: BUG-08-045 — z=0 guard preservation.
+#[test]
+fn kitty_animate_r_two_z_zero_is_no_op() {
+    let base = b64(&rgba_4x4_red());
+    let frame = b64(&rgba_4x4_red());
+
+    let mut h = SpecHarness::new();
+    h.feed(&kitty_apc(b"a=t,i=72,f=32,s=4,v=4", &base));
+    h.feed(&kitty_apc(b"a=f,i=72,f=32,s=4,v=4,z=60", &frame));
+    // Frame 2's gap is now 60ms from the a=f,z=60.
+
+    h.feed(&kitty_apc(b"a=a,i=72,r=2,z=0", ""));
+
+    let state = h
+        .term()
+        .image_cache()
+        .animation_state(ImageId::from_raw(72))
+        .expect("i=72 animated");
+    assert_eq!(
+        state.frame_durations[1],
+        Duration::from_millis(60),
+        "a=a,r=2,z=0 MUST leave frame_durations[1] unchanged — z=0 is kitty's \
+         `if (g->gap)` no-op (graphics.c:1734)"
+    );
+}
+
+/// `a=a,r=99,z=Z` on an animation with fewer frames is a silent no-op —
+/// `set_frame_gap`'s bounds-check (animation.rs:309 `if frame_idx <
+/// state.frame_durations.len()`) drops the update.
+/// Catalog row: `KG-ANIMATE-SET-FRAME-GAP` (out-of-range no-op).
+/// Regression: BUG-08-045 — bounds-check inheritance from set_frame_gap.
+#[test]
+fn kitty_animate_r_out_of_range_is_no_op() {
+    let base = b64(&rgba_4x4_red());
+    let frame = b64(&rgba_4x4_red());
+
+    let mut h = SpecHarness::new();
+    h.feed(&kitty_apc(b"a=t,i=73,f=32,s=4,v=4", &base));
+    h.feed(&kitty_apc(b"a=f,i=73,f=32,s=4,v=4", &frame));
+
+    let baseline_durations = h
+        .term()
+        .image_cache()
+        .animation_state(ImageId::from_raw(73))
+        .expect("i=73 animated")
+        .frame_durations
+        .clone();
+
+    h.feed(&kitty_apc(b"a=a,i=73,r=99,z=77", ""));
+
+    let state = h
+        .term()
+        .image_cache()
+        .animation_state(ImageId::from_raw(73))
+        .expect("i=73 animated");
+    assert_eq!(
+        state.frame_durations, baseline_durations,
+        "a=a,r=99,z=77 on 2-frame animation MUST be a no-op via the \
+         set_frame_gap bounds-check"
+    );
+    assert_eq!(
+        state.current_frame, 0,
+        "a=a,r=99,z=77 MUST NOT seek (r= is gap-target, not a seek)"
+    );
+}
+
+/// `a=a,r=N,z=Z` on a STATIC (unpromoted) image is a silent no-op —
+/// `set_frame_gap`'s `if let Some(state)` guard returns early when the
+/// animation state does not exist. Auto-promotion on `r=` is owned by a
+/// separate fix (the `ensure_animation_state_for_root_gap` helper).
+/// Catalog row: `KG-ANIMATE-SET-FRAME-GAP` (static-image boundary).
+/// Regression: BUG-08-045 — explicit boundary marker between the dispatch
+/// split and the auto-promote helper that layers on top of it.
+/// See: bug-tracker/plans/BUG-08-041/section-05-implementation.md Step 3.5
+#[test]
+fn kitty_animate_r_two_z_positive_on_static_image_is_silent_no_op() {
+    let base = b64(&rgba_4x4_red());
+
+    let mut h = SpecHarness::new();
+    h.feed(&kitty_apc(b"a=t,i=74,f=32,s=4,v=4", &base));
+    // No a=f — i=74 stays static (no AnimationState).
+
+    h.feed(&kitty_apc(b"a=a,i=74,r=2,z=77", ""));
+
+    assert!(
+        h.term()
+            .image_cache()
+            .animation_state(ImageId::from_raw(74))
+            .is_none(),
+        "a=a,r=2,z=77 on static image MUST NOT auto-promote — that path is \
+         owned by the separate auto-promote helper (see test doc comment)"
+    );
+}
+
+/// `a=a,c=0` is a no-op — kitty `c=` is 1-based, so c=0 means "key not set"
+/// effectively (per the `if frame > 0` guard in the seek arm).
+/// Catalog row: `KG-ANIMATE-SET-CURRENT-FRAME` (zero guard).
+#[test]
+fn kitty_animate_c_zero_is_no_op() {
+    let base = b64(&rgba_4x4_red());
+    let frame = b64(&rgba_4x4_red());
+
+    let mut h = SpecHarness::new();
+    h.feed(&kitty_apc(b"a=t,i=75,f=32,s=4,v=4", &base));
+    h.feed(&kitty_apc(b"a=f,i=75,f=32,s=4,v=4", &frame));
+
+    h.feed(&kitty_apc(b"a=a,i=75,c=0", ""));
+
+    let state = h
+        .term()
+        .image_cache()
+        .animation_state(ImageId::from_raw(75))
+        .expect("i=75 animated");
+    assert_eq!(
+        state.current_frame, 0,
+        "a=a,c=0 MUST NOT seek — c= is 1-based, c=0 is treated as unspecified"
+    );
+}
+
+/// `a=a,c=99` on a 2-frame animation is a no-op — `set_current_frame`'s
+/// bounds-check (animation.rs:317 `if frame_idx < state.total_frames`)
+/// drops the seek.
+/// Catalog row: `KG-ANIMATE-SET-CURRENT-FRAME` (out-of-range no-op).
+#[test]
+fn kitty_animate_c_out_of_range_is_no_op() {
+    let base = b64(&rgba_4x4_red());
+    let frame = b64(&rgba_4x4_red());
+
+    let mut h = SpecHarness::new();
+    h.feed(&kitty_apc(b"a=t,i=76,f=32,s=4,v=4", &base));
+    h.feed(&kitty_apc(b"a=f,i=76,f=32,s=4,v=4", &frame));
+
+    h.feed(&kitty_apc(b"a=a,i=76,c=99", ""));
+
+    let state = h
+        .term()
+        .image_cache()
+        .animation_state(ImageId::from_raw(76))
+        .expect("i=76 animated");
+    assert_eq!(
+        state.current_frame, 0,
+        "a=a,c=99 on 2-frame animation MUST be a no-op via the \
+         set_current_frame bounds-check"
+    );
+}
+
+/// `a=a,r=N,c=M,z=Z` applies the gap-target and seek arms INDEPENDENTLY.
+/// Per kitty graphics.c:1729-1743, the two are sequential `if` branches —
+/// `r=` updates frame N's gap, `c=` then seeks to frame M.
+/// Catalog row: `KG-ANIMATE-SET-CURRENT-FRAME` + `KG-ANIMATE-SET-FRAME-GAP`
+/// (independent-arms interaction).
+/// Regression: BUG-08-045 — pre-fix code collapsed both keys into the same
+/// dispatch, so `r=` AND `c=` together produced incoherent state.
+#[test]
+fn kitty_animate_r_and_c_apply_independently() {
+    let base = b64(&rgba_4x4_red());
+    let frame = b64(&rgba_4x4_red());
+
+    let mut h = SpecHarness::new();
+    h.feed(&kitty_apc(b"a=t,i=77,f=32,s=4,v=4", &base));
+    h.feed(&kitty_apc(b"a=f,i=77,f=32,s=4,v=4", &frame));
+    h.feed(&kitty_apc(b"a=f,i=77,f=32,s=4,v=4", &frame));
+    // 3-frame animation now (root + 2 extras).
+
+    h.feed(&kitty_apc(b"a=a,i=77,r=2,c=3,z=77", ""));
+
+    let state = h
+        .term()
+        .image_cache()
+        .animation_state(ImageId::from_raw(77))
+        .expect("i=77 animated");
+    assert_eq!(
+        state.frame_durations[1],
+        Duration::from_millis(77),
+        "r=2 arm MUST set frame_durations[1] to 77ms (independent of c=)"
+    );
+    assert_eq!(
+        state.current_frame, 2,
+        "c=3 arm MUST seek to 0-based index 2 (independent of r=)"
+    );
+    assert!(
+        reply_contains(&h, &ok_reply_with_frame(77, 3)),
+        "reply MUST echo ,r=3 — post-mutation current_frame after c=3 seek \
+         — transcript: {:?}",
+        String::from_utf8_lossy(&reply_bytes(&h)),
     );
 }
 
