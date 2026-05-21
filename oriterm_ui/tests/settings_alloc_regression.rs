@@ -10,6 +10,7 @@
 //! the harness.
 
 use std::alloc::{GlobalAlloc, Layout, System};
+use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Instant;
 
@@ -52,6 +53,26 @@ unsafe impl GlobalAlloc for CountingAlloc {
 #[allow(unsafe_code)]
 #[global_allocator]
 static GLOBAL: CountingAlloc = CountingAlloc;
+
+// Process-wide serialization lock. The counting allocator is global; without
+// this lock, parallel `#[test]` bodies in this binary cross-pollute each
+// other's measurement windows (sibling test's layout/paint allocations get
+// counted into the test under measurement). Canonical pattern lives in
+// `oriterm_core/tests/alloc_regression.rs`.
+static MEASURE_LOCK: Mutex<()> = Mutex::new(());
+
+#[must_use]
+struct AllocTestGuard {
+    _lock: std::sync::MutexGuard<'static, ()>,
+}
+
+impl AllocTestGuard {
+    fn new() -> Self {
+        Self {
+            _lock: MEASURE_LOCK.lock().unwrap_or_else(|e| e.into_inner()),
+        }
+    }
+}
 
 fn measure_allocs(f: impl FnOnce()) -> u64 {
     ALLOC_COUNT.store(0, Ordering::SeqCst);
@@ -163,6 +184,7 @@ fn layout_and_paint(panel: &SettingsPanel, scene: &mut Scene) {
 /// After warmup, repainting a settings panel must perform near-zero allocations.
 #[test]
 fn settings_panel_repaint_zero_alloc() {
+    let _guard = AllocTestGuard::new();
     let panel = build_test_panel();
     let mut scene = Scene::new();
 
@@ -183,6 +205,7 @@ fn settings_panel_repaint_zero_alloc() {
 /// Toggling dirty state and repainting must not cause allocation churn.
 #[test]
 fn settings_panel_repaint_with_dirty_toggle_zero_alloc() {
+    let _guard = AllocTestGuard::new();
     let mut panel = build_test_panel();
     let mut scene = Scene::new();
 
