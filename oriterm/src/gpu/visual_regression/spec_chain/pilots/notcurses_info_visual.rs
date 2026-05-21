@@ -183,3 +183,76 @@ fn format_byte_preview(b: &[u8]) -> String {
  String::from_utf8_lossy(slice).escape_debug()
  )
 }
+
+/// Cross-terminal reference image (WezTerm-rendered `notcurses-info`).
+/// Lives at `oriterm/tests/references/notcurses_info_wezterm_reference.png`.
+/// Operator-supplied snapshot of how `notcurses-info` SHOULD look on a
+/// well-known terminal that already passes the full notcurses capability
+/// detection chain. NOT a pixel-equal target — different terminal renders
+/// with different font, cell size, color palette, kitty-graphics blit
+/// resolution. Used as the visual benchmark for operator-side
+/// side-by-side review when ori_term's golden diverges.
+///
+/// Cross-terminal pixel equality is structurally impossible (different
+/// font / cell size / palette / kitty-blit resolution) — this test
+/// confirms the reference exists, has non-degenerate dimensions, and
+/// can be loaded alongside ori_term's own golden for operator-visual
+/// side-by-side comparison per
+/// `feedback_visual_bugs_need_operator_verification.md`.
+#[test]
+fn notcurses_info_wezterm_reference_image_is_loadable() {
+ use super::super::super::reference_dir;
+ let ref_dir = reference_dir();
+ let wezterm_ref_path = ref_dir.join("notcurses_info_wezterm_reference.png");
+ let ori_golden_path = ref_dir.join("notcurses_info_visual.png");
+
+ assert!(
+ wezterm_ref_path.exists(),
+ "WezTerm reference image missing: {} — drop the operator screenshot \
+ at this path to enable cross-terminal visual benchmarking",
+ wezterm_ref_path.display(),
+ );
+
+ let wezterm_ref = image::open(&wezterm_ref_path)
+ .unwrap_or_else(|e| panic!("failed to decode {}: {e}", wezterm_ref_path.display()))
+ .into_rgba8();
+ assert!(
+ wezterm_ref.width() > 0 && wezterm_ref.height() > 0,
+ "WezTerm reference image has degenerate dimensions: {}x{}",
+ wezterm_ref.width(),
+ wezterm_ref.height(),
+ );
+
+ // Ori_term's own golden — sibling pilot writes this on first
+ // `ORITERM_UPDATE_GOLDEN=1` run. Both must coexist for the
+ // operator-visual side-by-side review to be meaningful.
+ if ori_golden_path.exists() {
+ let ori_golden = image::open(&ori_golden_path)
+ .unwrap_or_else(|e| panic!("failed to decode {}: {e}", ori_golden_path.display()))
+ .into_rgba8();
+ eprintln!(
+ "notcurses-info visual benchmark loaded:\n \
+ ori_term golden: {} ({}x{})\n \
+ WezTerm reference: {} ({}x{})\n \
+ Operator-visual review compares these side-by-side; cross-terminal \
+ pixel equality is structurally impossible (different font, cell size, \
+ color palette, kitty-blit resolution).",
+ ori_golden_path.display(),
+ ori_golden.width(),
+ ori_golden.height(),
+ wezterm_ref_path.display(),
+ wezterm_ref.width(),
+ wezterm_ref.height(),
+ );
+ } else {
+ eprintln!(
+ "ori_term golden absent ({}); WezTerm reference loaded ({}x{}). \
+ Run `notcurses_info_visual_drives_every_rung_green` with \
+ `ORITERM_UPDATE_GOLDEN=1` first to generate ori_term's own golden, \
+ then operator-visual review can compare the two.",
+ ori_golden_path.display(),
+ wezterm_ref.width(),
+ wezterm_ref.height(),
+ );
+ }
+}

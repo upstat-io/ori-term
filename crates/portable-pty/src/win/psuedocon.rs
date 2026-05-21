@@ -67,12 +67,21 @@ fn load_conpty() -> ConPtyFuncs {
         .and_then(|p| p.parent().map(|d| d.join("conpty.dll")))
     {
         if let Ok(sideloaded) = ConPtyFuncs::open(&exe_dir) {
+            log::info!("ConPTY: using sideloaded conpty.dll at {}", exe_dir.display());
             return sideloaded;
         }
     }
     if let Ok(sideloaded) = ConPtyFuncs::open(Path::new("conpty.dll")) {
+        log::info!("ConPTY: using sideloaded conpty.dll at ./conpty.dll");
         sideloaded
     } else {
+        log::warn!(
+            "ConPTY: no sideloaded conpty.dll found next to executable or in CWD — \
+             falling back to kernel32 built-in ConPTY. The built-in strips ESC \
+             bytes from host->child input writes and drops kitty/sixel pixel-graphics \
+             OK acks during the program's no-read window. To re-stage sideloaded \
+             binaries: run `tools/conpty/stage-from-source.sh` and then `./build-all.sh`."
+        );
         kernel
     }
 }
