@@ -779,6 +779,72 @@ fn advance_consuming_gapless_bounded_when_all_frames_gapless() {
     assert!(state.current_frame < state.total_frames);
 }
 
+/// `set_current_frame(id, N)` where `N` equals the existing `current_frame`
+/// is a no-op — does NOT mutate state, does NOT call apply_frame, does NOT
+/// reset frame_starts. Per kitty `graphics.c:1737-1743` explicit equality
+/// guard `frame_idx != current_frame_index`.
+/// Regression: BUG-08-053.
+#[test]
+fn set_current_frame_idempotent_seek_does_not_reset_frame_starts() {
+    let mut cache = ImageCache::new();
+    let frames = vec![make_frame(10, 64), make_frame(20, 64), make_frame(30, 64)];
+    let durations = vec![Duration::from_millis(50); 3];
+    let img = make_image(1, 64);
+    cache.store_animated(img, frames, durations, None).unwrap();
+    cache.place(make_placement(1, 0, 0));
+
+    // Drive one advance to seed frame_starts.
+    let t0 = Instant::now();
+    let _ = cache.advance_animations(t0, StableRowIndex(0), StableRowIndex(10));
+    let before = *cache.frame_starts.get(&ImageId(1)).expect("seeded");
+
+    // Idempotent seek: set current_frame to its existing value.
+    let current = cache.animations.get(&ImageId(1)).unwrap().current_frame;
+    cache.set_current_frame(ImageId(1), current);
+
+    let after = *cache.frame_starts.get(&ImageId(1)).expect("still seeded");
+    assert_eq!(
+        before, after,
+        "Idempotent set_current_frame MUST NOT reset frame_starts — kitty \
+         graphics.c:1737-1743 equality guard"
+    );
+}
+
+/// `set_current_frame(id, N)` where `N != current_frame` DOES update the
+/// state and reset `frame_starts`. Control test proving the equality guard
+/// gates ONLY the no-op path.
+/// Regression: BUG-08-053.
+#[test]
+fn set_current_frame_real_seek_resets_frame_starts() {
+    let mut cache = ImageCache::new();
+    let frames = vec![make_frame(10, 64), make_frame(20, 64), make_frame(30, 64)];
+    let durations = vec![Duration::from_millis(50); 3];
+    let img = make_image(1, 64);
+    cache.store_animated(img, frames, durations, None).unwrap();
+    cache.place(make_placement(1, 0, 0));
+
+    let t0 = Instant::now();
+    let _ = cache.advance_animations(t0, StableRowIndex(0), StableRowIndex(10));
+    let before = *cache.frame_starts.get(&ImageId(1)).expect("seeded");
+
+    // Real seek: jump to a DIFFERENT frame.
+    let current = cache.animations.get(&ImageId(1)).unwrap().current_frame;
+    let target = (current + 1) % cache.animations.get(&ImageId(1)).unwrap().total_frames;
+    std::thread::sleep(Duration::from_millis(1)); // Ensure now != before.
+    cache.set_current_frame(ImageId(1), target);
+
+    let after = *cache.frame_starts.get(&ImageId(1)).expect("still seeded");
+    assert_ne!(
+        before, after,
+        "Non-idempotent set_current_frame MUST reset frame_starts to now"
+    );
+    assert_eq!(
+        cache.animations.get(&ImageId(1)).unwrap().current_frame,
+        target,
+        "current_frame MUST update to target"
+    );
+}
+
 /// `set_animation_action(id, 1)` (kitty `s=1` stop) resets `loops_completed`
 /// to 0 per kitty `graphics.c:1764` (unconditional `current_loop = 0` for
 /// ALL s= actions). Without this reset, a pause + resume cycle on a

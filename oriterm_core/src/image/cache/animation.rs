@@ -330,9 +330,15 @@ impl ImageCache {
     }
 
     /// Jump to a specific frame (Kitty `c=` in `a=a` — seek operation).
+    ///
+    /// Per kitty `graphics.c:1737-1743`:
+    /// `if (frame_idx != img->current_frame_index && frame_idx <= img->extra_framecnt) { ... }`
+    /// — idempotent seek (`c=current`) is a no-op; this guard prevents
+    /// `frame_starts` timer reset stutter when clients periodically re-emit
+    /// `c=N` for the already-current frame.
     pub(crate) fn set_current_frame(&mut self, id: ImageId, frame_idx: usize) {
         let should_apply = self.animations.get_mut(&id).is_some_and(|state| {
-            if frame_idx < state.total_frames {
+            if frame_idx < state.total_frames && state.current_frame != frame_idx {
                 state.current_frame = frame_idx;
                 true
             } else {
