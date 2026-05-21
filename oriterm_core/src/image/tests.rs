@@ -779,6 +779,40 @@ fn advance_consuming_gapless_bounded_when_all_frames_gapless() {
     assert!(state.current_frame < state.total_frames);
 }
 
+/// `set_animation_action(id, 1)` (kitty `s=1` stop) resets `loops_completed`
+/// to 0 per kitty `graphics.c:1764` (unconditional `current_loop = 0` for
+/// ALL s= actions). Without this reset, a pause + resume cycle on a
+/// bounded-loop animation silently shortens the effective loop count.
+/// Regression: BUG-08-052.
+#[test]
+fn set_animation_action_stop_resets_loops_completed() {
+    let mut cache = ImageCache::new();
+    let frames = vec![make_frame(10, 64), make_frame(20, 64)];
+    let durations = vec![Duration::from_millis(100); 2];
+    let img = make_image(1, 64);
+
+    cache
+        .store_animated(img, frames, durations, Some(5))
+        .unwrap();
+    cache.place(make_placement(1, 0, 0));
+
+    // Seed loops_completed via direct field access (pub(super) within image/).
+    cache
+        .animations
+        .get_mut(&ImageId(1))
+        .unwrap()
+        .loops_completed = 3;
+
+    cache.set_animation_action(ImageId(1), 1);
+
+    let state = cache.animations.get(&ImageId(1)).unwrap();
+    assert_eq!(
+        state.loops_completed, 0,
+        "s=1 (stop) MUST reset loops_completed per kitty graphics.c:1764"
+    );
+    assert!(state.paused, "s=1 MUST set paused = true");
+}
+
 /// `s=2` ANIMATION_LOADING (`wait_mode`) HALTS at the last frame on wrap.
 /// Per kitty `graphics.c:1793-1796`. Subsequent `a=f` extends the
 /// animation; `add_animation_frame` clears `wait_mode` to resume playback.

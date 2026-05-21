@@ -270,13 +270,21 @@ impl ImageCache {
     pub(crate) fn set_animation_action(&mut self, id: ImageId, action: u32) {
         if let Some(state) = self.animations.get_mut(&id) {
             match action {
-                1 => state.paused = true,
-                // : s=2 is run-wait — animation runs through its
-                // loop count then halts at the last frame waiting for new
-                // frames (via a=f) to extend it. s=3 is run — same loop
-                // playthrough but stops permanently when loops exhaust.
-                // The distinguishing behavior is in `add_animation_frame`,
-                // which auto-resumes only when wait_mode is set.
+                // Per kitty `graphics.c:1764` `current_loop = 0` runs
+                // unconditionally for ALL s= actions, including s=1 stop.
+                // Resetting loops_completed on s=1 means a subsequent s=3
+                // resume on a bounded-loop animation replays the full loop
+                // count rather than continuing from where it stopped.
+                1 => {
+                    state.paused = true;
+                    state.loops_completed = 0;
+                }
+                // s=2 is run-wait — animation runs through its loop count
+                // then halts at the last frame waiting for new frames (via
+                // a=f) to extend it. s=3 is run — same loop playthrough but
+                // stops permanently when loops exhaust. The distinguishing
+                // behavior is in `add_animation_frame`, which auto-resumes
+                // only when wait_mode is set.
                 2 => {
                     state.paused = false;
                     state.loops_completed = 0;
