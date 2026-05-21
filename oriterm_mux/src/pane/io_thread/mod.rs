@@ -289,6 +289,24 @@ impl<S: EffectSink> PaneIoThread<S> {
     /// for shell integration, then the high-level processor, then deferred
     /// prompt marking and marker pruning.
     fn handle_bytes(&mut self, bytes: &[u8]) {
+        // Raw PTY tap — when ORITERM_PERF_TAP is set, append every
+        // byte received from the PTY to the path it specifies.
+        // Captures the exact stream notcurses (or any subprocess)
+        // wrote so the perf harness can parse notcurses' end-of-demo
+        // table out of the rendered ANSI bytes. NO buffering — the
+        // tap is meant for offline diagnostic use, not perf-critical
+        // workloads.
+        if let Ok(tap_path) = std::env::var("ORITERM_PERF_TAP") {
+            use std::io::Write;
+            if let Ok(mut f) = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&tap_path)
+            {
+                let _ = f.write_all(bytes);
+            }
+        }
+
         let evicted_before = self.terminal.grid().total_evicted();
         let chunk_start = std::time::Instant::now();
 
