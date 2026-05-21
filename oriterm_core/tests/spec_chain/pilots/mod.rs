@@ -5,5 +5,6 @@
 //! the catalog row format.
 
 mod da1_query;
+mod notcurses_info_exact;
 mod notcurses_info_handshake;
 mod notcurses_startup;
