@@ -224,6 +224,22 @@ impl PerfStats {
                     full_phases.gpu_render,
                 );
             }
+        } else if frame_time.as_millis() > 8 {
+            // No key event but frame is slow — emit the same per-phase
+            // breakdown for animation/PTY-driven slowness (e.g.
+            // notcurses-demo xray scene). Without this branch,
+            // operator-visible lag from background animation produces
+            // no diagnostic output because the SLOW-frame log was
+            // gated on `last_key_time`.
+            log::info!(
+                "perf: SLOW frame={frame_time:.1?} \
+                 mux={:.1?} extract={:.1?} prep={:.1?} widgets={:.1?} gpu={:.1?}",
+                full_phases.mux_pump,
+                full_phases.extract,
+                full_phases.prepare,
+                full_phases.widgets,
+                full_phases.gpu_render,
+            );
         }
     }
 

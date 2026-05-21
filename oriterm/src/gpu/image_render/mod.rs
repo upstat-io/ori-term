@@ -67,6 +67,17 @@ pub(crate) struct ImageTextureCache {
     gpu_memory_limit: usize,
     frame_counter: u64,
     sampler: wgpu::Sampler,
+    /// Diagnostic — total uploads (new + re-upload). Test-only readback
+    /// via [`Self::upload_count_for_test`]. Used to measure the actual
+    /// GPU upload bandwidth pressure on xray-style workloads.
+    upload_count: u64,
+    /// Diagnostic — cumulative bytes uploaded. Test-only readback via
+    /// [`Self::upload_bytes_for_test`].
+    upload_bytes: u64,
+    /// Diagnostic — cumulative nanoseconds spent inside
+    /// `queue.write_texture` calls. Test-only readback via
+    /// [`Self::upload_nanos_for_test`].
+    upload_nanos: u64,
 }
 
 impl ImageTextureCache {
@@ -87,7 +98,40 @@ impl ImageTextureCache {
             gpu_memory_limit: DEFAULT_GPU_MEMORY_LIMIT,
             frame_counter: 0,
             sampler,
+            upload_count: 0,
+            upload_bytes: 0,
+            upload_nanos: 0,
         }
+    }
+
+    /// Diagnostic — total uploads since construction (new + re-upload).
+    #[cfg(any(test, feature = "gpu-tests"))]
+    #[allow(
+        dead_code,
+        reason = "consumed by xray_replay_gpu_upload_diagnostic + future GPU upload bandwidth pilots"
+    )]
+    pub(crate) fn upload_count_for_test(&self) -> u64 {
+        self.upload_count
+    }
+
+    /// Diagnostic — cumulative bytes uploaded since construction.
+    #[cfg(any(test, feature = "gpu-tests"))]
+    #[allow(
+        dead_code,
+        reason = "consumed by xray_replay_gpu_upload_diagnostic + future GPU upload bandwidth pilots"
+    )]
+    pub(crate) fn upload_bytes_for_test(&self) -> u64 {
+        self.upload_bytes
+    }
+
+    /// Diagnostic — cumulative `queue.write_texture` nanoseconds.
+    #[cfg(any(test, feature = "gpu-tests"))]
+    #[allow(
+        dead_code,
+        reason = "consumed by xray_replay_gpu_upload_diagnostic + future GPU upload bandwidth pilots"
+    )]
+    pub(crate) fn upload_nanos_for_test(&self) -> u64 {
+        self.upload_nanos
     }
 
     /// Advance the frame counter. Call once per frame before `ensure_uploaded`.
@@ -136,6 +180,7 @@ impl ImageTextureCache {
                     // recreate the texture; otherwise write_texture in
                     // place.
                     if entry.width == width && entry.height == height {
+                        let t = std::time::Instant::now();
                         perform_texture_upload(
                             queue,
                             &entry.texture,
@@ -145,6 +190,9 @@ impl ImageTextureCache {
                             frame,
                             true,
                         );
+                        self.upload_count += 1;
+                        self.upload_bytes += data.len() as u64;
+                        self.upload_nanos += t.elapsed().as_nanos() as u64;
                     } else {
                         // Dimensions changed — full recreate. Account
                         // for the new memory footprint.
@@ -170,6 +218,7 @@ impl ImageTextureCache {
                 &entry.bind_group
             }
             Entry::Vacant(e) => {
+                let t = std::time::Instant::now();
                 let new_entry = create_texture_entry(
                     device,
                     queue,
@@ -181,6 +230,9 @@ impl ImageTextureCache {
                     frame,
                     pixel_generation,
                 );
+                self.upload_count += 1;
+                self.upload_bytes += data.len() as u64;
+                self.upload_nanos += t.elapsed().as_nanos() as u64;
                 self.gpu_memory_used += new_entry.size_bytes;
                 let entry = e.insert(new_entry);
                 &entry.bind_group

@@ -290,15 +290,20 @@ impl<S: EffectSink> PaneIoThread<S> {
     /// prompt marking and marker pruning.
     fn handle_bytes(&mut self, bytes: &[u8]) {
         let evicted_before = self.terminal.grid().total_evicted();
+        let chunk_start = std::time::Instant::now();
 
         // 1. Raw interceptor for shell integration (OSC 7, 133, etc.).
+        let raw_start = std::time::Instant::now();
         {
             let mut interceptor = RawInterceptor::new(&mut self.terminal);
             self.raw_parser.advance(&mut interceptor, bytes);
         }
+        let raw_dur = raw_start.elapsed();
 
         // 2. High-level VTE processor.
+        let vte_start = std::time::Instant::now();
         self.processor.advance(&mut self.terminal, bytes);
+        let vte_dur = vte_start.elapsed();
 
         // 3b. Set grid_dirty after parsing — the VTE handler does not fire
         // Event::Wakeup itself. The old reader thread did this explicitly
@@ -310,13 +315,42 @@ impl<S: EffectSink> PaneIoThread<S> {
         }
 
         // 3. Post-parse housekeeping (shared with handle_sync_timeout).
+        let hk_start = std::time::Instant::now();
         self.post_parse_housekeeping(evicted_before);
+        let hk_dur = hk_start.elapsed();
 
         // 4. Drain queued effects into MuxEvents. Placed INSIDE per-chunk
         // boundary (not only at the top of handle_bytes_chunked) so a
         // 1 MB forwarded read doesn't accumulate 16 chunks worth of
         // effects before they reach the main thread.
+        let drain_start = std::time::Instant::now();
         self.drain_effects_into_mux_events();
+        let drain_dur = drain_start.elapsed();
+
+        // Per-chunk SLOW log — surfaces which sub-phase dominates when
+        // chunk processing exceeds 8 ms (a single 60 FPS budget).
+        // Throttled by an internal counter to one log per 32 slow
+        // chunks so flood output doesn't drown the operator log.
+        let total = chunk_start.elapsed();
+        if total.as_millis() >= 8 {
+            use std::sync::atomic::{AtomicU64, Ordering};
+            static SLOW_COUNTER: AtomicU64 = AtomicU64::new(0);
+            let n = SLOW_COUNTER.fetch_add(1, Ordering::Relaxed);
+            if n % 32 == 0 {
+                log::info!(
+                    target: "oriterm_mux::pane::io_thread::chunk",
+                    "SLOW chunk #{} bytes={} total={:.2?} raw={:.2?} vte={:.2?} \
+                     housekeeping={:.2?} drain={:.2?}",
+                    n,
+                    bytes.len(),
+                    total,
+                    raw_dur,
+                    vte_dur,
+                    hk_dur,
+                    drain_dur,
+                );
+            }
+        }
     }
 
     /// Handle Mode 2026 sync timeout — exit the sync window and publish.

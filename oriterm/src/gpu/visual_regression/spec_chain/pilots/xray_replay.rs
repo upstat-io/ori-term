@@ -489,3 +489,429 @@ fn xray_replay_5mb_feed_rss_plateaus_under_50_mb_delta() {
         RSS_PLATEAU_MAX_DELTA_BYTES / (1024 * 1024),
     );
 }
+
+/// Diagnostic — measure actual GPU upload bandwidth pressure on the
+/// xray feed by driving the FULL render path (compose-on-demand →
+/// `ensure_uploaded` → `queue.write_texture`) after EVERY 64 KB chunk,
+/// cumulating upload counts + bytes + nanos. Output drives the §05
+/// re-investigation: was Δ-storage cure addressing the right
+/// bottleneck? Run via:
+///
+/// ```text
+/// cargo test -p oriterm --features gpu-tests --lib \
+///   xray_replay_gpu_upload_diagnostic -- --ignored --nocapture
+/// ```
+///
+/// Reports per-1 MB-of-input upload count, total bytes, total nanos
+/// inside `queue.write_texture`, and average upload time. Identifies
+/// whether the GPU upload path is the dominant per-chunk cost or
+/// whether it's bounded.
+#[test]
+#[ignore = "BUG-06-086 diagnostic — drives GPU upload per chunk; long; explicit --ignored"]
+fn xray_replay_gpu_upload_diagnostic() {
+    use oriterm_test_support::spec_chain::ScenarioExpectations;
+
+    let Some((cap_path, _)) = resolve_cap_paths() else {
+        eprintln!("SKIP: wrapper_root unavailable");
+        return;
+    };
+    if !cap_path.exists() {
+        eprintln!("SKIP: xray cap not present at {}", cap_path.display());
+        return;
+    }
+    let Some(mut harness) = VisualSpecHarness::with_size(HARNESS_ROWS, HARNESS_COLS) else {
+        eprintln!("SKIP: software rasterizer unavailable");
+        return;
+    };
+
+    let raw = fs::read(&cap_path).expect("read cap");
+    let slice_end = RSS_PLATEAU_FEED_BYTES.min(raw.len());
+    let bytes = &raw[..slice_end];
+
+    let chunk_size = FEED_CHUNK;
+    let chunk_count = bytes.len().div_ceil(chunk_size);
+    eprintln!(
+        "gpu-upload-diag: feeding {:.2} MB of cap in {} chunks of {} KB each",
+        bytes.len() as f64 / 1e6,
+        chunk_count,
+        chunk_size / 1024,
+    );
+
+    // Per-MB sampling — capture upload counters every 1 MB feed boundary.
+    let mut consumed = 0usize;
+    let mut next_mb_mark: usize = 1_000_000;
+    let mut samples: Vec<(usize, u64, u64, u64)> = Vec::new(); // (bytes_in, upload_count, upload_bytes, upload_nanos)
+
+    // Drive a render at the end of every chunk so ensure_uploaded fires
+    // on any newly transmitted / advanced images.
+    let row_id = "GPU-UPLOAD-DIAG";
+    let expectations = ScenarioExpectations::default();
+
+    let probe_start = Instant::now();
+    for chunk in bytes.chunks(chunk_size) {
+        harness.core_mut().feed(chunk);
+        consumed += chunk.len();
+        // Render to flush any new image uploads through the full pipeline.
+        // We don't care about the results — we care that ensure_uploaded
+        // fires for every visible image this frame.
+        let _ = harness.render_visual_rungs(row_id, &expectations);
+
+        if consumed >= next_mb_mark {
+            let cache = harness.renderer().image_texture_cache_for_test();
+            samples.push((
+                consumed,
+                cache.upload_count_for_test(),
+                cache.upload_bytes_for_test(),
+                cache.upload_nanos_for_test(),
+            ));
+            next_mb_mark += 1_000_000;
+        }
+    }
+    let wall = probe_start.elapsed();
+
+    // Final sample
+    let final_cache = harness.renderer().image_texture_cache_for_test();
+    let final_count = final_cache.upload_count_for_test();
+    let final_bytes = final_cache.upload_bytes_for_test();
+    let final_nanos = final_cache.upload_nanos_for_test();
+
+    // Sanity check — did the cap actually populate the image cache?
+    let term_image_count = harness.core_mut().term().image_cache().image_count();
+    let term_placement_count = harness.core_mut().term().image_cache().placement_count();
+    eprintln!(
+        "gpu-upload-diag: post-feed term state — images={} placements={}",
+        term_image_count, term_placement_count
+    );
+
+    eprintln!("gpu-upload-diag: results");
+    eprintln!("  bytes fed:           {} MB", bytes.len() / 1_000_000);
+    eprintln!("  wall time:           {:.3} sec", wall.as_secs_f64());
+    eprintln!("  total uploads:       {}", final_count);
+    eprintln!(
+        "  total upload bytes:  {} MB",
+        final_bytes / 1_000_000
+    );
+    eprintln!(
+        "  total upload nanos:  {:.3} sec ({:.1} %% of wall)",
+        final_nanos as f64 / 1e9,
+        if wall.as_nanos() > 0 {
+            (final_nanos as f64 / wall.as_nanos() as f64) * 100.0
+        } else {
+            0.0
+        }
+    );
+    if final_count > 0 {
+        eprintln!(
+            "  avg upload duration: {:.3} ms",
+            (final_nanos as f64 / final_count as f64) / 1e6
+        );
+        eprintln!(
+            "  avg upload size:     {:.2} KB",
+            (final_bytes as f64 / final_count as f64) / 1024.0
+        );
+    }
+
+    eprintln!("  per-MB samples (bytes_in, uploads, upload_MB, upload_ms):");
+    for (b, c, ub, un) in &samples {
+        eprintln!(
+            "    {:>5} KB → uploads={} bytes={:.1} MB total_ms={:.1}",
+            b / 1024,
+            c,
+            *ub as f64 / 1e6,
+            *un as f64 / 1e6
+        );
+    }
+
+    // Always-pass — this is diagnostic output, not an assertion.
+    // Reviewers / operators read the eprintln output to decide cure
+    // surface direction.
+}
+
+/// Direct GPU upload bandwidth ceiling probe — bypasses the VTE parser
+/// + Term entirely + drives `ensure_uploaded` with synthetic xray-shaped
+/// payloads (999×562 RGBA = 2.25 MB per image, 848 distinct image_ids
+/// matching the cap's `a=t` count).
+///
+/// Output measures the hardware/driver ceiling for kitty `a=t` traffic
+/// independent of upstream parser/cache code. If this is fast, GPU
+/// upload is NOT the bottleneck — look elsewhere. If this is slow,
+/// upload throttling is the cure surface.
+///
+/// ```text
+/// cargo test -p oriterm --features gpu-tests --release --lib \
+///   xray_gpu_upload_bandwidth_ceiling -- --ignored --nocapture
+/// ```
+#[test]
+#[ignore = "BUG-06-086 diagnostic — direct GPU upload ceiling probe; explicit --ignored"]
+fn xray_gpu_upload_bandwidth_ceiling() {
+    let Some(harness) = VisualSpecHarness::with_size(HARNESS_ROWS, HARNESS_COLS) else {
+        eprintln!("SKIP: software rasterizer unavailable");
+        return;
+    };
+
+    // xray transmits 999×562 RGBA per image, 848 distinct image_ids.
+    const WIDTH: u32 = 999;
+    const HEIGHT: u32 = 562;
+    const COUNT: u32 = 848;
+    let payload_bytes = (WIDTH * HEIGHT * 4) as usize;
+
+    // Pre-allocate one canonical 999×562 RGBA buffer — same payload
+    // gets uploaded for every image_id. The bandwidth measurement is
+    // driver-side queue.write_texture cost; payload content doesn't
+    // affect the measurement.
+    let payload = vec![0x80u8; payload_bytes];
+    eprintln!(
+        "gpu-bandwidth-probe: uploading {} images × {} KB each = {:.1} MB total",
+        COUNT,
+        payload.len() / 1024,
+        (COUNT as usize * payload.len()) as f64 / 1e6
+    );
+
+    let device = harness.gpu().device_for_test();
+    let queue = harness.gpu().queue_for_test();
+
+    // Bind-group layout matching ImageTextureCache's expected layout.
+    let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("xray-probe-image-bgl"),
+        entries: &[
+            wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 1,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                count: None,
+            },
+        ],
+    });
+
+    let mut cache = crate::gpu::image_render::ImageTextureCache::new(device);
+
+    let probe_start = Instant::now();
+    for i in 0..COUNT {
+        let image_id = oriterm_core::image::ImageId::from_raw(1000 + i);
+        cache.begin_frame();
+        let _ = cache.ensure_uploaded(
+            device,
+            queue,
+            &layout,
+            image_id,
+            0u64,
+            &payload,
+            WIDTH,
+            HEIGHT,
+        );
+    }
+    let _ = device.poll(wgpu::PollType::wait_indefinitely());
+    let wall = probe_start.elapsed();
+
+    let upload_count = cache.upload_count_for_test();
+    let upload_bytes = cache.upload_bytes_for_test();
+    let upload_nanos = cache.upload_nanos_for_test();
+
+    eprintln!("gpu-bandwidth-probe: results");
+    eprintln!("  uploads:             {}", upload_count);
+    eprintln!("  bytes uploaded:      {:.2} MB", upload_bytes as f64 / 1e6);
+    eprintln!("  wall time:           {:.3} sec", wall.as_secs_f64());
+    eprintln!(
+        "  bandwidth observed:  {:.1} MB/sec",
+        upload_bytes as f64 / 1e6 / wall.as_secs_f64()
+    );
+    eprintln!(
+        "  total upload nanos:  {:.3} sec ({:.1}%% of wall)",
+        upload_nanos as f64 / 1e9,
+        (upload_nanos as f64 / wall.as_nanos() as f64) * 100.0
+    );
+    if upload_count > 0 {
+        let avg_ms = (upload_nanos as f64 / upload_count as f64) / 1e6;
+        eprintln!("  avg upload duration: {:.3} ms", avg_ms);
+        eprintln!(
+            "  avg vs 60FPS budget: {:.1}%% of 16.67 ms (per-frame budget at 60 FPS)",
+            (avg_ms / 16.67) * 100.0
+        );
+        let target_fps = 57.0;
+        let uploads_per_sec = upload_count as f64 / wall.as_secs_f64();
+        eprintln!(
+            "  sustained-upload rate: {:.1} uploads/sec (xray target: {:.0} FPS)",
+            uploads_per_sec, target_fps
+        );
+        if uploads_per_sec < target_fps {
+            eprintln!(
+                "  CONCLUSION: GPU upload IS a bottleneck — {:.0} uploads/sec < xray {:.0} FPS target",
+                uploads_per_sec, target_fps
+            );
+        } else {
+            eprintln!(
+                "  CONCLUSION: GPU upload NOT a bottleneck — {:.0} uploads/sec >= xray {:.0} FPS target",
+                uploads_per_sec, target_fps
+            );
+        }
+    }
+}
+
+/// Parse+dispatch hot-path probe — feed full 50 MB xray slice through
+/// SpecHarness `core_mut().feed()` post-cure baseline, measuring
+/// per-chunk timing + identifying the actual bottleneck after the
+/// Δ-storage cure landed.
+#[test]
+#[ignore = "BUG-06-086 diagnostic — full 50 MB feed cost; explicit --ignored"]
+fn xray_full_feed_cost_post_cure() {
+    let Some((cap_path, _)) = resolve_cap_paths() else {
+        eprintln!("SKIP: wrapper_root unavailable");
+        return;
+    };
+    if !cap_path.exists() {
+        eprintln!("SKIP: xray cap not present");
+        return;
+    }
+    let Some(mut harness) = VisualSpecHarness::with_size(HARNESS_ROWS, HARNESS_COLS) else {
+        eprintln!("SKIP: software rasterizer unavailable");
+        return;
+    };
+
+    let raw = fs::read(&cap_path).expect("read cap");
+    let target_bytes = 50_000_000.min(raw.len());
+    let bytes = &raw[..target_bytes];
+
+    let chunk_size = FEED_CHUNK;
+    let chunk_count = bytes.len().div_ceil(chunk_size);
+    eprintln!(
+        "feed-cost-probe: feeding {} MB of cap in {} chunks of {} KB each",
+        bytes.len() / 1_000_000,
+        chunk_count,
+        chunk_size / 1024,
+    );
+
+    let mut chunk_times: Vec<u128> = Vec::with_capacity(chunk_count);
+    let probe_start = Instant::now();
+    for chunk in bytes.chunks(chunk_size) {
+        let t = Instant::now();
+        harness.core_mut().feed(chunk);
+        chunk_times.push(t.elapsed().as_nanos());
+    }
+    let wall = probe_start.elapsed();
+
+    let total_ns: u128 = chunk_times.iter().sum();
+    let avg_ns = total_ns / (chunk_times.len() as u128).max(1);
+    let max_ns = *chunk_times.iter().max().unwrap_or(&0);
+    let mut sorted = chunk_times.clone();
+    sorted.sort_unstable_by(|a, b| b.cmp(a));
+
+    eprintln!("feed-cost-probe: results");
+    eprintln!("  bytes fed:        {} MB", bytes.len() / 1_000_000);
+    eprintln!("  chunks:           {}", chunk_times.len());
+    eprintln!("  wall time:        {:.3} sec", wall.as_secs_f64());
+    eprintln!("  per-byte rate:    {:.3} µs/byte", wall.as_nanos() as f64 / bytes.len() as f64 / 1000.0);
+    eprintln!("  total feed:       {:.3} sec", total_ns as f64 / 1e9);
+    eprintln!("  avg chunk cost:   {:.3} ms", avg_ns as f64 / 1e6);
+    eprintln!("  max chunk cost:   {:.3} ms", max_ns as f64 / 1e6);
+    eprintln!("  top-10 slowest chunks (ms):");
+    for ns in sorted.iter().take(10) {
+        eprintln!("    {:.3}", *ns as f64 / 1e6);
+    }
+
+    // Per the bug entry's pre-cure measurement: 50 MB slice = 159.1 sec
+    // total feed cost, 208.6 ms avg, 451.6 ms max. Compare post-cure
+    // against those baselines.
+    eprintln!("  baseline (PRE-CURE): 159.1 sec total, 208.6 ms avg, 451.6 ms max");
+    let pre_total_s = 159.1;
+    let pre_avg_ms = 208.6;
+    let pre_max_ms = 451.6;
+    let post_total_s = wall.as_secs_f64();
+    let post_avg_ms = avg_ns as f64 / 1e6;
+    let post_max_ms = max_ns as f64 / 1e6;
+    eprintln!("  speedup ratio:");
+    eprintln!("    total:    {:.1}× (pre {:.0} s → post {:.0} s)", pre_total_s / post_total_s, pre_total_s, post_total_s);
+    eprintln!("    avg:      {:.1}× (pre {:.0} ms → post {:.0} ms)", pre_avg_ms / post_avg_ms, pre_avg_ms, post_avg_ms);
+    eprintln!("    max:      {:.1}× (pre {:.0} ms → post {:.0} ms)", pre_max_ms / post_max_ms, pre_max_ms, post_max_ms);
+
+    let post_image_count = harness.core_mut().term().image_cache().image_count();
+    let post_placement_count = harness.core_mut().term().image_cache().placement_count();
+    eprintln!("  post-feed state:  images={} placements={}", post_image_count, post_placement_count);
+}
+
+/// Production parse-path probe — bypasses SpecHarness entirely. Feeds
+/// the captured xray bytes directly through `Term::feed` (the real
+/// production path used by `oriterm.exe`), with NO recording handler,
+/// NO uncataloged detector, NO outcome accumulation. Tells us the
+/// ACTUAL post-cure cost of the production hot path.
+#[test]
+#[ignore = "BUG-06-086 diagnostic — production Term::feed cost; explicit --ignored"]
+fn xray_full_feed_cost_production_path() {
+    use oriterm_core::effect::VoidEffectSink;
+    use oriterm_core::theme::Theme;
+    use oriterm_core::Term;
+
+    let Some((cap_path, _)) = resolve_cap_paths() else {
+        eprintln!("SKIP: wrapper_root unavailable");
+        return;
+    };
+    if !cap_path.exists() {
+        eprintln!("SKIP: xray cap not present");
+        return;
+    }
+
+    let raw = fs::read(&cap_path).expect("read cap");
+    let target_bytes = 50_000_000.min(raw.len());
+    let bytes = &raw[..target_bytes];
+
+    let chunk_size = FEED_CHUNK;
+    let chunk_count = bytes.len().div_ceil(chunk_size);
+    eprintln!(
+        "production-feed-probe: feeding {} MB in {} chunks of {} KB via raw Term::feed",
+        bytes.len() / 1_000_000,
+        chunk_count,
+        chunk_size / 1024,
+    );
+
+    // Production Term + raw VTE processor, no recording overhead.
+    let mut term = Term::new(
+        HARNESS_ROWS,
+        HARNESS_COLS,
+        1000, // scrollback
+        Theme::default(),
+        VoidEffectSink,
+    );
+    term.set_cell_dimensions(8, 16);
+    let mut processor: vte::ansi::Processor = vte::ansi::Processor::new();
+
+    let mut chunk_times: Vec<u128> = Vec::with_capacity(chunk_count);
+    let probe_start = Instant::now();
+    for chunk in bytes.chunks(chunk_size) {
+        let t = Instant::now();
+        processor.advance(&mut term, chunk);
+        chunk_times.push(t.elapsed().as_nanos());
+    }
+    let wall = probe_start.elapsed();
+
+    let total_ns: u128 = chunk_times.iter().sum();
+    let avg_ns = total_ns / (chunk_times.len() as u128).max(1);
+    let max_ns = *chunk_times.iter().max().unwrap_or(&0);
+
+    eprintln!("production-feed-probe: results");
+    eprintln!("  bytes fed:        {} MB", bytes.len() / 1_000_000);
+    eprintln!("  chunks:           {}", chunk_times.len());
+    eprintln!("  wall time:        {:.3} sec", wall.as_secs_f64());
+    eprintln!("  per-byte rate:    {:.3} µs/byte", wall.as_nanos() as f64 / bytes.len() as f64 / 1000.0);
+    eprintln!("  avg chunk cost:   {:.3} ms", avg_ns as f64 / 1e6);
+    eprintln!("  max chunk cost:   {:.3} ms", max_ns as f64 / 1e6);
+
+    // Notcurses emits xray at ~18 MB/sec (per bug entry §01 measurements).
+    let notcurses_emit_rate_mbps = 18.0;
+    let our_rate_mbps = (bytes.len() as f64 / 1e6) / wall.as_secs_f64();
+    eprintln!("  our rate:         {:.2} MB/sec", our_rate_mbps);
+    eprintln!("  notcurses target: {:.0} MB/sec", notcurses_emit_rate_mbps);
+    eprintln!("  speedup needed:   {:.1}× to match notcurses real-time", notcurses_emit_rate_mbps / our_rate_mbps);
+
+    let image_count = term.image_cache().image_count();
+    let placement_count = term.image_cache().placement_count();
+    eprintln!("  post-feed state:  images={} placements={}", image_count, placement_count);
+}
