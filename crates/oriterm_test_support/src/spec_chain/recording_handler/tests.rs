@@ -14,19 +14,7 @@ use oriterm_core::image::kitty::{KittyAction, KittyTransmission};
 
 use super::DispatchArgs;
 use crate::spec_chain::SpecHarness;
-
-/// Build the full APC envelope `\x1b_G<control>;<payload_b64>\x1b\\`.
-fn kitty_apc(control: &[u8], payload_b64: &str) -> Vec<u8> {
-    let mut out = Vec::with_capacity(3 + control.len() + 1 + payload_b64.len() + 2);
-    out.extend_from_slice(b"\x1b_G");
-    out.extend_from_slice(control);
-    if !payload_b64.is_empty() {
-        out.push(b';');
-        out.extend_from_slice(payload_b64.as_bytes());
-    }
-    out.extend_from_slice(b"\x1b\\");
-    out
-}
+use crate::spec_chain::kitty_fixtures::kitty_apc;
 
 /// Extract the first `KittyApc` dispatch call's command, panicking if
 /// no such variant was recorded.

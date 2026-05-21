@@ -209,13 +209,23 @@ impl<S: EffectSink> Term<S> {
                         .get_no_touch(ImageId::from_raw(resolved.image_id))
                         .is_some()
                 {
+                    let image_id = ImageId::from_raw(resolved.image_id);
+                    // (1, 1) is the implicit default — single-cell placement
+                    // renders the full image. A recorded multi-cell grid
+                    // tells the GPU emit path to slice the source.
+                    let (placement_cols, placement_rows) = self
+                        .image_cache()
+                        .placeholder_anchor_grid_for(image_id)
+                        .unwrap_or((1, 1));
                     out.placeholder_cells.push(RenderablePlaceholderCell {
                         line: vis_line,
                         column: col,
-                        image_id: ImageId::from_raw(resolved.image_id),
+                        image_id,
                         image_row: resolved.image_row,
                         image_col: resolved.image_col,
                         placement_id: resolved.placement_id,
+                        placement_cols,
+                        placement_rows,
                     });
                     suppress_glyph = true;
                 }

@@ -4,6 +4,7 @@ mod animation;
 mod deletion;
 mod eviction;
 mod lifecycle;
+mod placeholder;
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -64,14 +65,11 @@ pub struct ImageCache {
     /// Whether animation is enabled (from config).
     pub(super) animation_enabled: bool,
     /// Image IDs anchored by kitty unicode-placeholder (`U=1`) protocol.
-    ///
-    /// `U=1` transmit/place suppresses real `ImagePlacement` creation —
-    /// instead, the client writes `U+10EEEE` cells into the grid which
-    /// resolve to the image at render time. Without an explicit anchor,
-    /// LRU eviction would priority-drop these images on any cache pressure
-    /// (no placement => unplaced rank). The anchor set extends reachability
-    /// to cover placeholder-only images.
+    /// Owned by `placeholder` submodule — see its module docs.
     pub(super) placeholder_anchors: HashSet<ImageId>,
+    /// Per-image display grid `(cols, rows)` for U=1 placements. Owned by
+    /// `placeholder` submodule — see its module docs.
+    pub(super) placeholder_anchor_grid: HashMap<ImageId, (u32, u32)>,
 }
 
 impl ImageCache {
@@ -93,34 +91,7 @@ impl ImageCache {
             frame_starts: HashMap::new(),
             animation_enabled: true,
             placeholder_anchors: HashSet::new(),
-        }
-    }
-
-    /// Record that an image is anchored by the kitty unicode-placeholder
-    /// protocol. Anchored images survive LRU eviction even without an
-    /// active placement.
-    pub(crate) fn add_placeholder_anchor(&mut self, id: ImageId) {
-        if self.placeholder_anchors.insert(id) {
-            self.dirty = true;
-        }
-    }
-
-    /// Image IDs anchored by the unicode-placeholder protocol.
-    pub fn placeholder_anchors(&self) -> &HashSet<ImageId> {
-        &self.placeholder_anchors
-    }
-
-    /// Restrict the anchor set to the supplied survivor IDs.
-    ///
-    /// Called by the `Term` layer after grid mutations that may erase
-    /// placeholder cells. The caller computes the surviving anchor set by
-    /// walking the grid for `U+10EEEE` cells; this method retains only
-    /// those entries.
-    pub(crate) fn reconcile_placeholder_anchors(&mut self, survivors: &HashSet<ImageId>) {
-        let before = self.placeholder_anchors.len();
-        self.placeholder_anchors.retain(|id| survivors.contains(id));
-        if self.placeholder_anchors.len() != before {
-            self.dirty = true;
+            placeholder_anchor_grid: HashMap::new(),
         }
     }
 
@@ -224,8 +195,27 @@ impl ImageCache {
     }
 
     /// Add a placement for an existing image.
+    ///
+    /// Bumps the underlying image's `last_accessed` recency stamp so that
+    /// re-placement of an existing image refreshes its eviction priority
+    /// among the unplaced pool. This is the canonical recency-update path
+    /// for all image-protocol create-placement flows: kitty
+    /// (`kitty_create_placement`), sixel (`sixel_create_placement`), and
+    /// iterm2 (`iterm2_create_placement`) all funnel through here, so
+    /// `eviction::evict_one`'s `min_by_key(last_accessed)` rank stays
+    /// LRU-on-place across every protocol — never falling back to the
+    /// pre-§13.6.1 FIFO-on-store-order behavior for any one protocol.
+    ///
+    /// Per `plans/spec-conformance/section-13-kitty-graphics.md §13.6.1`
+    /// — per-protocol bumps would scatter the LRU contract across N
+    /// consumer sites; an `ImageCache`-owned API is the SSOT.
     pub(crate) fn place(&mut self, placement: ImagePlacement) {
+        let image_id = placement.image_id;
         self.placements.push(placement);
+        self.access_counter += 1;
+        if let Some(img) = self.images.get_mut(&image_id) {
+            img.last_accessed = self.access_counter;
+        }
         self.dirty = true;
     }
 
@@ -259,16 +249,21 @@ impl ImageCache {
     }
 
     /// Remove an image and all its placements.
+    ///
+    /// Memory-accounting invariant: animated images use `animation_frames[id]`
+    /// as the single SSOT for size (sum of every frame); `img.data` would
+    /// double- or under-count because it points at the currently-displayed
+    /// frame, which drifts as the animation advances. Static images fall
+    /// back to `img.data`.
+    ///
+    /// Map-sync invariant: the `placeholder_anchor_grid` entry is dropped
+    /// alongside the anchor so every direct image-removal path (`d=I`, `d=F`,
+    /// LRU eviction, U=1 anchor-orphaned cleanup, store-triggered replacement)
+    /// keeps the two maps in sync. A drift here would leak grid entries
+    /// across image create/delete cycles AND let a reused `ImageId` read a
+    /// stale `(cols, rows)` tuple producing broken UV slices.
     pub(crate) fn remove_image(&mut self, id: ImageId) {
         if let Some(img) = self.images.remove(&id) {
-            // For animated images `animation_frames[id]` holds every frame
-            // (including frame 0), so it is the single SSOT for the image's
-            // memory footprint — `img.data` points at whichever frame is
-            // currently displayed and its size can drift from frame 0's as
-            // the animation advances (see `apply_frame`). Using `img.data`
-            // in that case would double-count (or under-count) depending on
-            // which frame was active. Static images have no
-            // `animation_frames` entry; fall back to `img.data`.
             if let Some(frames) = self.animation_frames.remove(&id) {
                 let total: usize = frames.iter().map(|f| f.len()).sum();
                 self.memory_used = self.memory_used.saturating_sub(total);
@@ -281,6 +276,7 @@ impl ImageCache {
             self.frame_starts.remove(&id);
             self.store_order.remove(&id);
             self.placeholder_anchors.remove(&id);
+            self.placeholder_anchor_grid.remove(&id);
             self.dirty = true;
         }
     }
@@ -424,6 +420,10 @@ impl ImageCache {
         self.frame_starts.clear();
         self.store_order.clear();
         self.placeholder_anchors.clear();
+        // Drop placement-grid entries alongside anchors — keeps the two
+        // maps in sync at cache reset (e.g., `\x1b_Gd=A` deletes all
+        // images; switching primary/alt screens with full reset).
+        self.placeholder_anchor_grid.clear();
         self.memory_used = 0;
     }
 
@@ -477,6 +477,10 @@ impl std::fmt::Debug for ImageCache {
             .field("frame_starts", &self.frame_starts.len())
             .field("animation_enabled", &self.animation_enabled)
             .field("placeholder_anchors", &self.placeholder_anchors.len())
+            .field(
+                "placeholder_anchor_grid",
+                &self.placeholder_anchor_grid.len(),
+            )
             .finish()
     }
 }

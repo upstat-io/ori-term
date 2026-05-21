@@ -153,6 +153,15 @@ pub struct RenderablePlaceholderCell {
     pub image_col: u32,
     /// Placement identifier (0 when the cell does not carry one).
     pub placement_id: u32,
+    /// Display grid `cols` for this image's U=1 placement.
+    ///
+    /// `1` when no multi-cell grid was recorded (single-cell placement).
+    /// Combined with `placement_rows`, the GPU emit path slices the image
+    /// into a `(cols × rows)` cell grid and renders this cell at
+    /// `(image_col, image_row)` within that grid.
+    pub placement_cols: u32,
+    /// Display grid `rows` for this image's U=1 placement.
+    pub placement_rows: u32,
 }
 
 /// Complete renderer snapshot extracted from `Term`.

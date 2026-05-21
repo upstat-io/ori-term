@@ -65,6 +65,12 @@ fn cross_stack_eviction_tests_drive_real_protocol_bytes() {
 
     let mut hits: Vec<(usize, &str, &str)> = Vec::new();
     for (lineno, line) in contents.lines().enumerate() {
+        // Skip comment-prefix lines (`//`, `///`, `//!`) — docstrings
+        // explaining the contract legitimately mention the banned API
+        // names; the gate's purpose is to catch real code calls.
+        if line.trim_start().starts_with("//") {
+            continue;
+        }
         for pat in &banned_patterns {
             if line.contains(pat) {
                 hits.push((lineno + 1, pat, line.trim()));

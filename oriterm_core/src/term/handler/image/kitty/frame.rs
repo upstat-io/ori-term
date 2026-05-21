@@ -17,10 +17,16 @@ impl<S: EffectSink> Term<S> {
     /// Adds a frame to an existing image. If the image is not yet
     /// animated, it is promoted to animated (existing data = frame 0).
     /// Key reinterpretation for `a=f`:
-    /// - `display_cols` (`c=`) → create/replace frame N
-    /// - `display_rows` (`r=`) → edit frame N
+    /// - `display_cols` (`c=`) → PARSED-BUT-IGNORED; per kitty spec
+    ///   selects frame-replace semantics for frame N. Current
+    ///   dispatch always appends.
+    /// - `display_rows` (`r=`) → PARSED-BUT-IGNORED; per kitty spec
+    ///   selects frame-edit semantics for frame N. Current dispatch
+    ///   always appends.
     /// - `z_index` (`z=`) → gap in ms before this frame
     /// - `cell_x_offset` (`X=`) → composition mode (0=blend, 1=overwrite)
+    ///
+    /// See: bug-tracker/plans/BUG-08-041/
     pub(super) fn kitty_frame(&mut self, cmd: KittyCommand) {
         if cmd.more_data {
             self.kitty_accumulate_chunk(cmd);

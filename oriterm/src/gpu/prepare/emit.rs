@@ -151,21 +151,6 @@ pub(super) fn draw_prompt_markers(input: &FrameInput, frame: &mut PreparedFrame,
     }
 }
 
-/// Emit cursor instances into the prepared frame.
-///
-/// The cursor shape determines the geometry:
-/// - `Block` — full cell rectangle.
-/// - `Bar` — 2px-wide vertical line at the left edge.
-/// - `Underline` — 2px-tall horizontal line at the bottom.
-/// - `HollowBlock` — 4 thin outline rectangles (top, bottom, left, right).
-/// - `Hidden` — no instances.
-///
-/// Most callers should use [`emit_cursor_for_frame`] instead. This is
-/// the lower-level shape-dispatch primitive; `emit_cursor_for_frame` owns
-/// the visibility / opacity / focus-effective-shape policy.
-#[doc(hidden)]
-mod _emit_cursor_helper_anchor {}
-
 /// Emit cursor instances for a frame, owning the visibility/opacity gate +
 /// focus-effective-shape policy + `build_cursor` dispatch.
 ///
@@ -209,6 +194,18 @@ pub(super) fn emit_cursor_for_frame(
     );
 }
 
+/// Emit cursor instances into the prepared frame.
+///
+/// The cursor shape determines the geometry:
+/// - `Block` — full cell rectangle.
+/// - `Bar` — 2px-wide vertical line at the left edge.
+/// - `Underline` — 2px-tall horizontal line at the bottom.
+/// - `HollowBlock` — 4 thin outline rectangles (top, bottom, left, right).
+/// - `Hidden` — no instances.
+///
+/// Most callers should use [`emit_cursor_for_frame`] instead. This is
+/// the lower-level shape-dispatch primitive; `emit_cursor_for_frame` owns
+/// the visibility / opacity / focus-effective-shape policy.
 #[expect(
     clippy::too_many_arguments,
     reason = "cursor geometry: frame, shape, grid position, cell size, origin offset, color, opacity"
@@ -340,15 +337,10 @@ pub(super) fn emit_image_quads(input: &FrameInput, frame: &mut PreparedFrame, ox
 /// Reads `RenderableContent::placeholder_cells` directly — no grid rescan.
 /// Each placeholder cell produces a single-cell-sized quad at the cell's
 /// position; the UV maps to the corresponding slice of the source image
-/// based on `image_row` / `image_col`. Multi-cell placements (`c>1` /
-/// `r>1`) emit one quad per cell making up the slice.
-///
-/// Currently sized for single-cell placements: when no `image_row` /
-/// `image_col` non-zero values appear, the UV covers the full image —
-/// matching the basic `c=1,r=1` pilot. Multi-cell sliced placements rely
-/// on the encoded indices and assume the image is divided uniformly into
-/// the placement's grid; without a known placement-grid (the U=1 transmit
-/// path does not store one yet), the UV falls back to the full image. The
+/// based on `image_row` / `image_col` within the recorded
+/// `(placement_cols × placement_rows)` grid. Multi-cell placements
+/// (`c>1` / `r>1`) emit one quad per cell making up the slice; single-
+/// cell placements default to `(1, 1)` and render the full image. The
 /// fragment shader clips outside the framebuffer.
 pub(super) fn emit_placeholder_quads(
     input: &FrameInput,
@@ -364,21 +356,35 @@ pub(super) fn emit_placeholder_quads(
     for pc in &input.content.placeholder_cells {
         let x = ox + pc.column.0 as f32 * cw;
         let y = oy + pc.line as f32 * ch;
-        // Without a stored placement-grid for this image, render the
-        // full image into the cell; image_row/image_col are preserved so
-        // a future multi-cell expansion can compute the UV slice without
-        // a snapshot field rename.
-        let _ = (pc.image_row, pc.image_col);
+        // (cols, rows) ≥ 1 invariant: snapshot defaults to (1, 1) for any
+        // anchor without a recorded grid; `set_placeholder_anchor_grid`
+        // rejects zero values. Division by `cols`/`rows` is therefore safe.
+        let cols = pc.placement_cols.max(1);
+        let rows = pc.placement_rows.max(1);
+        // Clamp the diacritic-encoded `(image_row, image_col)` into the
+        // recorded grid before computing UV. Well-formed clients encode
+        // `image_col < cols` / `image_row < rows`; a malformed client can
+        // emit out-of-range diacritics, in which case un-clamped math
+        // produces UV ≥ 1.0 and relies on the wgpu sampler's ClampToEdge
+        // mode (image_render bind-group) to avoid wrap-mode artifacts.
+        // The clamp is defense-in-depth — render edge-pixel under
+        // out-of-range input rather than depending on sampler config.
+        let col = pc.image_col.min(cols - 1);
+        let row = pc.image_row.min(rows - 1);
+        let uv_w = 1.0 / cols as f32;
+        let uv_h = 1.0 / rows as f32;
+        let uv_x = col as f32 * uv_w;
+        let uv_y = row as f32 * uv_h;
         let quad = super::super::prepared_frame::ImageQuad {
             image_id: pc.image_id,
             x,
             y,
             w: cw,
             h: ch,
-            uv_x: 0.0,
-            uv_y: 0.0,
-            uv_w: 1.0,
-            uv_h: 1.0,
+            uv_x,
+            uv_y,
+            uv_w,
+            uv_h,
             opacity: 1.0,
         };
         // Kitty unicode placeholders default to drawing above text.

@@ -63,11 +63,11 @@ impl Drop for TempFileFixture {
     }
 }
 
+/// Kitty graphics-protocol.rst: oversize file → `EBIG`; ENOMEM is reserved
+/// for allocator failure. Catalog row `KG-RESPONSE-EBIG`.
 #[test]
 fn kitty_store_from_file_oversized_t_eq_f_returns_ebig_with_bounded_read() {
-    // File size > max_bytes, t=f (File, never removed), EBIG reply per kitty
-    // graphics-protocol.rst (oversize → EBIG; ENOMEM reserved for allocator
-    // failure). §13.5 remap.
+    // t=f (File): source never removed on rejection.
     let mut term = Term::new(24, 80, 1000, Theme::default(), VoidEffectSink);
     const MAX_BYTES: usize = 64;
     term.set_image_limits(usize::MAX, MAX_BYTES);
@@ -91,7 +91,7 @@ fn kitty_store_from_file_oversized_t_eq_f_returns_ebig_with_bounded_read() {
     assert!(result.is_err(), "oversized file should return error");
     let err = result.unwrap_err();
     assert!(
-        err.contains("EBIG"),
+        err.to_string().contains("EBIG"),
         "error should be EBIG (kitty spec for oversize), got: {}",
         err
     );
@@ -144,10 +144,11 @@ fn kitty_store_from_file_within_size_succeeds_t_eq_t_removes_source() {
     );
 }
 
+/// Kitty graphics-protocol.rst: oversize file → `EBIG`. With t=t the
+/// RAII guard MUST remove the source even on rejection. Catalog row
+/// `KG-RESPONSE-EBIG`.
 #[test]
 fn kitty_store_from_file_oversized_t_eq_t_returns_ebig_and_removes_source() {
-    // File > max_bytes, t=t (TempFile), EBIG reply + source file IS removed.
-    // §13.5 remap from ENOMEM → EBIG per kitty spec.
     let mut term = Term::new(24, 80, 1000, Theme::default(), VoidEffectSink);
     const MAX_BYTES: usize = 64;
     term.set_image_limits(usize::MAX, MAX_BYTES);
@@ -172,7 +173,7 @@ fn kitty_store_from_file_oversized_t_eq_t_returns_ebig_and_removes_source() {
     assert!(result.is_err(), "oversized file should return error");
     let err = result.unwrap_err();
     assert!(
-        err.contains("EBIG"),
+        err.to_string().contains("EBIG"),
         "error should be EBIG (kitty spec for oversize), got: {}",
         err
     );
@@ -184,10 +185,11 @@ fn kitty_store_from_file_oversized_t_eq_t_returns_ebig_and_removes_source() {
     );
 }
 
+/// Kitty graphics-protocol.rst: descriptor-open failure → `EBADF`.
+/// EIO is reserved for mid-stream partial-read failures. Catalog row
+/// `KG-RESPONSE-EBADF`.
 #[test]
 fn kitty_store_from_file_metadata_unavailable_returns_ebadf() {
-    // Broken symlink or unreadable path: EBADF reply per kitty spec
-    // (descriptor-open failure). §13.5 remap from EIO → EBADF.
     let mut term = Term::new(24, 80, 1000, Theme::default(), VoidEffectSink);
 
     let p = KittyStoreParams {
@@ -207,7 +209,7 @@ fn kitty_store_from_file_metadata_unavailable_returns_ebadf() {
     assert!(result.is_err());
     let err = result.unwrap_err();
     assert!(
-        err.contains("EBADF") || err.contains("EINVAL"),
+        err.to_string().contains("EBADF") || err.to_string().contains("EINVAL"),
         "error should be EBADF or EINVAL (path not found), got: {}",
         err
     );
@@ -243,7 +245,7 @@ fn kitty_store_from_file_directory_path_returns_einval() {
     assert!(result.is_err());
     let err = result.unwrap_err();
     assert!(
-        err.contains("EINVAL") && err.contains("regular file"),
+        err.to_string().contains("EINVAL") && err.to_string().contains("regular file"),
         "error should be EINVAL with regular file message, got: {}",
         err
     );
@@ -252,11 +254,12 @@ fn kitty_store_from_file_directory_path_returns_einval() {
     let _ = fs::remove_dir(&test_dir);
 }
 
+/// Windows-only: `File::open` on a directory fails with `ACCESS_DENIED`
+/// which the store layer maps to kitty's `EBADF` (open-failure code per
+/// graphics-protocol.rst). Catalog row `KG-RESPONSE-EBADF`.
 #[test]
 #[cfg(windows)]
 fn kitty_store_from_file_directory_path_returns_ebadf() {
-    // Windows: File::open on a directory fails with EBADF (ACCESS_DENIED).
-    // §13.5 remap from EIO → EBADF per kitty spec (open failure).
     use std::fs;
 
     let mut term = Term::new(24, 80, 1000, Theme::default(), VoidEffectSink);
@@ -283,7 +286,7 @@ fn kitty_store_from_file_directory_path_returns_ebadf() {
     assert!(result.is_err());
     let err = result.unwrap_err();
     assert!(
-        err.contains("EBADF") && err.contains("failed to open"),
+        err.to_string().contains("EBADF") && err.to_string().contains("failed to open"),
         "error should be EBADF from File::open, got: {}",
         err
     );
@@ -315,7 +318,7 @@ fn kitty_store_from_file_empty_file_einval() {
     let err = result.unwrap_err();
     // Empty file causes RGBA decode to fail (size mismatch)
     assert!(
-        err.contains("EINVAL"),
+        err.to_string().contains("EINVAL"),
         "error should be EINVAL from pixel decode, got: {}",
         err
     );
@@ -357,12 +360,11 @@ fn kitty_store_from_file_exactly_max_bytes_succeeds() {
     );
 }
 
+/// Kitty graphics-protocol.rst: oversize file → `EBIG`. Metadata preflight
+/// rejects fast-path before the bounded read; ENOMEM is reserved for
+/// allocator failure. Catalog row `KG-RESPONSE-EBIG`.
 #[test]
 fn kitty_store_from_file_max_bytes_plus_one_rejects() {
-    // File max_bytes+1: metadata preflight check rejects with EBIG
-    // (fast-path — exits before bounded read). §13.5 remap from
-    // ENOMEM → EBIG per kitty spec (oversize → EBIG; ENOMEM reserved for
-    // allocator failure).
     let mut term = Term::new(24, 80, 1000, Theme::default(), VoidEffectSink);
     const MAX_BYTES: usize = 64;
     term.set_image_limits(usize::MAX, MAX_BYTES);
@@ -386,7 +388,7 @@ fn kitty_store_from_file_max_bytes_plus_one_rejects() {
     assert!(result.is_err());
     let err = result.unwrap_err();
     assert!(
-        err.contains("EBIG"),
+        err.to_string().contains("EBIG"),
         "error should be EBIG from preflight (kitty spec for oversize), got: {}",
         err
     );
@@ -443,8 +445,52 @@ fn kitty_store_from_file_path_traversal_rejected() {
     assert!(result.is_err());
     let err = result.unwrap_err();
     assert!(
-        err.contains("path traversal"),
+        err.to_string().contains("path traversal"),
         "path traversal should be rejected, got: {}",
         err
+    );
+}
+
+/// Architectural pin for `KG-COMPRESSION-OZ-REJECTED`: the `o=z` guard MUST
+/// construct the typed `KittyError::CompressionNotSupported` variant AND
+/// render as the byte-stream-pinned reply `EINVAL: compression not supported`.
+/// Pattern-matches the variant shape so a regression to a stringly-typed
+/// `Err("EINVAL: …")` fails the test, and asserts the rendered bytes are
+/// byte-identical to the spec reply.
+#[test]
+fn kitty_compression_oz_constructs_typed_variant_with_pinned_reply_bytes() {
+    use crate::image::kitty::KittyError;
+    use crate::term::handler::image::kitty::store::KittyStoreError;
+
+    let mut term = Term::new(24, 80, 1000, Theme::default(), VoidEffectSink);
+
+    // 1x1 RGBA payload + o=z compression flag.
+    let p = KittyStoreParams {
+        image_id: 1,
+        image_number: None,
+        payload: vec![0xFF, 0x00, 0x00, 0xFF],
+        format: 32,
+        width: 1,
+        height: 1,
+        transmission: KittyTransmission::Direct,
+        compression: Some(b'z'),
+    };
+
+    let err = term
+        .kitty_store_image(p)
+        .expect_err("o=z guard MUST reject");
+
+    assert!(
+        matches!(
+            err,
+            KittyStoreError::Protocol(KittyError::CompressionNotSupported)
+        ),
+        "o=z guard MUST construct KittyStoreError::Protocol(KittyError::CompressionNotSupported); got: {err:?}",
+    );
+
+    assert_eq!(
+        err.to_string(),
+        "EINVAL: compression not supported",
+        "Display impl MUST emit the byte-stream-pinned reply for KG-COMPRESSION-OZ-REJECTED",
     );
 }

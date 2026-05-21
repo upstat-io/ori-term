@@ -14,16 +14,8 @@
 //! gate intact. Sixel side is driven through `\x1bPq…\x1b\\` DCS.
 
 use oriterm_test_support::spec_chain::SpecHarness;
+use oriterm_test_support::spec_chain::kitty_fixtures::kitty_apc;
 use oriterm_test_support::spec_chain::sixel_fixtures::dcs_n_cols_wide;
-
-// Build an APC Kitty graphics command: `ESC _ G <body> ESC \`.
-fn kitty_apc(body: &str) -> Vec<u8> {
-    let mut buf = Vec::new();
-    buf.extend_from_slice(b"\x1b_G");
-    buf.extend_from_slice(body.as_bytes());
-    buf.extend_from_slice(b"\x1b\\");
-    buf
-}
 
 /// Catalog row: `SIXEL-CROSS-STACK-HANDOFF`.
 ///
@@ -47,7 +39,7 @@ fn sixel_and_kitty_placements_coexist_in_renderable_snapshot() {
     // `q=2` = silence response payload. "AAAAAA==" base64-decodes to 4
     // zero bytes (one transparent RGBA pixel).
     h.feed(b"\x1b[11;6H");
-    h.feed(&kitty_apc("a=T,i=1,f=32,s=1,v=1,q=2;AAAAAA=="));
+    h.feed(&kitty_apc(b"a=T,i=1,f=32,s=1,v=1,q=2", "AAAAAA=="));
 
     let snap = h.term().renderable_content();
 
@@ -123,7 +115,7 @@ fn sixel_and_kitty_placements_retain_independent_attributes() {
     // Kitty at distinct column (col=5 not col=0) so X-axis positional
     // independence is pinnable below.
     h.feed(b"\x1b[11;6H");
-    h.feed(&kitty_apc("a=T,i=1,f=32,s=1,v=1,q=2;AAAAAA=="));
+    h.feed(&kitty_apc(b"a=T,i=1,f=32,s=1,v=1,q=2", "AAAAAA=="));
 
     let snap = h.term().renderable_content();
     assert!(

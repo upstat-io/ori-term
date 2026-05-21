@@ -107,7 +107,7 @@ fn kitty_delete_a_clears_placeholder_anchors_when_no_placeholder_cells_remain() 
 }
 
 #[test]
-fn prune_scrollback_retains_anchor_when_placeholder_cells_remain_in_viewport() {
+pub(super) fn prune_scrollback_retains_anchor_when_placeholder_cells_remain_in_viewport() {
     let mut h = SpecHarness::new();
     transmit_u1(&mut h, 6);
     write_placeholder_cell(&mut h, 6, '\u{0305}', '\u{0305}');
@@ -158,7 +158,7 @@ fn prune_scrollback_clears_orphaned_placeholder_anchors_for_images_with_no_survi
 }
 
 #[test]
-fn ed_full_screen_clears_orphaned_placeholder_anchors() {
+pub(super) fn ed_full_screen_clears_orphaned_placeholder_anchors() {
     // When a placeholder cell did anchor the image but is then erased,
     // the survivor set MUST evict the anchor.
     let mut h = SpecHarness::new();
@@ -219,7 +219,6 @@ fn image_cache_lifecycle_does_not_walk_grid_cells() {
     );
 }
 
-// ---------------------------------------------------------------------------
 // §13.4 missing-reconcile-site pins.
 //
 // Every grid-mutation path that can overwrite or displace a `U+10EEEE`
@@ -228,7 +227,6 @@ fn image_cache_lifecycle_does_not_walk_grid_cells() {
 // anchor each entry. Sites covered below: ASCII fast-path print, non-ASCII
 // print, DECDC / DECIC column ops, DECERA / DECFRA rectangle ops, and the
 // inactive-alt-screen path on resize.
-// ---------------------------------------------------------------------------
 
 #[test]
 fn printable_overwrite_of_placeholder_cell_reconciles_anchor() {
@@ -373,6 +371,43 @@ fn rectangular_erase_with_placeholder_cells_reconciles_anchor() {
 }
 
 #[test]
+fn rectangular_copy_replacing_placeholder_cells_reconciles_anchor() {
+    // DECCRA (`CSI Pts;Pls;Pbs;Prs;Pps;Ptd;Pld;Ppd $ v`) copies a
+    // source rectangle to a destination rectangle. Destination cells —
+    // including any U+10EEEE placeholder cells — are overwritten with
+    // the source content. The anchor for an image whose only surviving
+    // placeholder cell is overwritten by the copy MUST be reconciled
+    // away. Regression: deccra_impl previously skipped reconcile, so
+    // the destination overwrite silently orphaned the anchor.
+    //
+    // Layout: place the U=1 placeholder at (0, 0). Copy a non-
+    // placeholder source rect (rows 5..6, cols 5..7) onto destination
+    // top-left = (0, 0). Source is blank (default cells), so the
+    // placeholder at (0, 0) gets overwritten with blanks.
+    let mut h = SpecHarness::new();
+    transmit_u1(&mut h, 106);
+    write_placeholder_cell(&mut h, 106, '\u{0305}', '\u{0305}');
+    assert!(
+        h.term()
+            .image_cache()
+            .placeholder_anchors()
+            .contains(&ImageId::from_raw(106))
+    );
+
+    // DECCRA src=(5,5)-(6,7) src_page=1 dst=(1,1) dst_page=1 —
+    // CSI Pts;Pls;Pbs;Prs;Pps;Ptd;Pld;Ppd $ v
+    h.feed(b"\x1b[5;5;6;7;1;1;1;1$v");
+
+    assert!(
+        !h.term()
+            .image_cache()
+            .placeholder_anchors()
+            .contains(&ImageId::from_raw(106)),
+        "DECCRA overwriting the only placeholder cell must reconcile the anchor away — copy_rect without reconcile is the BUG-08-cluster pattern",
+    );
+}
+
+#[test]
 fn rectangular_fill_replacing_placeholder_cells_reconciles_anchor() {
     // DECFRA (`CSI Pc;Pt;Pl;Pb;Pr $ x`) fills a rectangle with `Pc`.
     let mut h = SpecHarness::new();
@@ -398,7 +433,7 @@ fn rectangular_fill_replacing_placeholder_cells_reconciles_anchor() {
 }
 
 #[test]
-fn inactive_alt_screen_u1_anchors_reconciled_on_resize() {
+pub(super) fn inactive_alt_screen_u1_anchors_reconciled_on_resize() {
     // While alt-screen is active, transmit U=1 + write a placeholder cell
     // near the right edge so a narrower resize drops it. Switch back to
     // primary so alt is inactive, resize, then return to alt. The alt
@@ -446,7 +481,7 @@ fn inactive_alt_screen_u1_anchors_reconciled_on_resize() {
 }
 
 #[test]
-fn line_erase_csi_k_with_placeholder_cell_reconciles_anchor() {
+pub(super) fn line_erase_csi_k_with_placeholder_cell_reconciles_anchor() {
     // CSI K (EL, default Pn=0) erases from cursor to end of line. When
     // the erased span covers a `U+10EEEE` cell, the anchor must be
     // reconciled. This is the per-line EL counterpart to the per-screen
@@ -500,9 +535,9 @@ fn inactive_primary_screen_u1_anchors_reconciled_on_resize() {
     h.feed(b"\x1b[?1049h");
 
     // Resize narrower while ALT IS ACTIVE. Use reflow=false so the
-    // placeholder at the right edge of primary is truncated (the case
-    // we want to verify reconcile catches); reflow=true would migrate
-    // the cell instead of dropping it, masking the bug.
+    // placeholder at the right edge of primary is truncated — the
+    // reconcile path under test must drop the anchor; reflow=true
+    // would migrate the cell instead of dropping it, masking the bug.
     let lines = h.term().grid().lines();
     h.term_mut().resize(lines, cols / 2, false);
 
@@ -554,4 +589,296 @@ fn inactive_alt_screen_u1_anchors_retained_when_cells_survive_resize() {
             .contains(&ImageId::from_raw(107)),
         "inactive-alt anchor whose cell SURVIVES the resize must be retained",
     );
+}
+
+// ── §13.6.1 multi-cell U=1 placeholder display grid ────────────────
+
+/// Regression: spec-conformance §13.6.1 — `a=T,U=1,c=11,r=1` records the
+/// (cols, rows) display grid on the cache anchor so the GPU emit path
+/// can slice per-cell UVs. Single-cell `c=1,r=1` is the implicit default
+/// and may either record (1,1) or no entry — both render the full image.
+#[test]
+fn u1_transmit_and_place_with_explicit_grid_records_anchor_grid() {
+    let mut h = SpecHarness::new();
+    // a=T,U=1,c=11,r=1 — transmit + place + multi-cell display grid.
+    h.feed(&kitty_apc(
+        b"a=T,U=1,i=1,c=11,r=1,f=32,s=4,v=4",
+        &b64(&rgba_4x4_red()),
+    ));
+
+    assert_eq!(
+        h.term()
+            .image_cache()
+            .placeholder_anchor_grid_for(ImageId::from_raw(1)),
+        Some((11, 1)),
+        "a=T,U=1 with explicit c=11,r=1 must populate the anchor grid \
+         so emit_placeholder_quads can compute per-cell UV slices"
+    );
+}
+
+/// Regression: spec-conformance §13.6.1 — separate `a=t,U=1` then
+/// `a=p,U=1,c=2,r=3` records the grid via the `a=p` path (control-key
+/// inheritance through the kitty placement-create path).
+#[test]
+fn u1_separate_transmit_then_place_with_grid_records_anchor_grid() {
+    let mut h = SpecHarness::new();
+    h.feed(&kitty_apc(
+        b"a=t,U=1,i=2,f=32,s=4,v=4",
+        &b64(&rgba_4x4_red()),
+    ));
+    h.feed(&kitty_apc(b"a=p,U=1,i=2,c=2,r=3", ""));
+
+    assert_eq!(
+        h.term()
+            .image_cache()
+            .placeholder_anchor_grid_for(ImageId::from_raw(2)),
+        Some((2, 3)),
+        "a=p,U=1 with c=2,r=3 must populate the anchor grid"
+    );
+}
+
+/// Regression: spec-conformance §13.6.1 — `c=1,r=1` is the SINGLE-CELL
+/// case (kitty_placeholder_basic uses it). The grid IS recorded as
+/// `(1, 1)` so emit defaults its UV to the full image cell. Negative
+/// pin against a future "skip recording when c=r=1" optimization that
+/// would diverge from the multi-cell path.
+#[test]
+fn u1_single_cell_grid_records_one_by_one() {
+    let mut h = SpecHarness::new();
+    h.feed(&kitty_apc(
+        b"a=T,U=1,i=3,c=1,r=1,f=32,s=4,v=4",
+        &b64(&rgba_4x4_red()),
+    ));
+
+    assert_eq!(
+        h.term()
+            .image_cache()
+            .placeholder_anchor_grid_for(ImageId::from_raw(3)),
+        Some((1, 1)),
+        "c=1,r=1 must record the explicit single-cell grid — emit divides \
+         by cols/rows in either path, so the (1,1) entry is correct and \
+         silent skipping would create a divergence between explicit-grid \
+         and default-grid behavior"
+    );
+}
+
+/// Regression: spec-conformance §13.6.1 — `a=T,U=1` WITHOUT `c=`/`r=`
+/// records the anchor but NO grid entry. Emit falls back to (1, 1)
+/// (full image) via the `placement_cols/placement_rows` default.
+#[test]
+fn u1_transmit_without_explicit_grid_records_no_anchor_grid() {
+    let mut h = SpecHarness::new();
+    h.feed(&kitty_apc(
+        b"a=T,U=1,i=4,f=32,s=4,v=4",
+        &b64(&rgba_4x4_red()),
+    ));
+
+    assert!(
+        h.term()
+            .image_cache()
+            .placeholder_anchors()
+            .contains(&ImageId::from_raw(4)),
+        "anchor must be added even without explicit grid"
+    );
+    assert_eq!(
+        h.term()
+            .image_cache()
+            .placeholder_anchor_grid_for(ImageId::from_raw(4)),
+        None,
+        "no c=/r= → no recorded grid; snapshot defaults each placeholder \
+         cell to (1, 1) so emit renders the full image"
+    );
+}
+
+/// Regression: spec-conformance §13.6.1 — placeholder cells in the
+/// renderable snapshot carry the (cols, rows) display grid. The GPU
+/// emit path reads these fields per-cell — without them every cell
+/// would render the full image (the pre-§13.6.1 single-cell baseline).
+#[test]
+fn snapshot_placeholder_cells_carry_display_grid() {
+    let mut h = SpecHarness::new();
+    h.feed(&kitty_apc(
+        b"a=T,U=1,i=1,c=2,r=2,f=32,s=4,v=4",
+        &b64(&rgba_4x4_red()),
+    ));
+    // Park cursor at row 1, col 1 (0-indexed (0, 0)), then write a
+    // single placeholder cell with row_diacritic=0 col_diacritic=0 +
+    // fg=palette(1) carrying image_id_low=1.
+    h.feed(b"\x1b[1;1H");
+    write_placeholder_cell(&mut h, 1, '\u{0305}', '\u{0305}');
+
+    let content = h.term().renderable_content();
+    assert!(
+        !content.placeholder_cells.is_empty(),
+        "placeholder cell must appear in snapshot"
+    );
+    let pc = &content.placeholder_cells[0];
+    assert_eq!(pc.image_id, ImageId::from_raw(1));
+    assert_eq!(
+        (pc.placement_cols, pc.placement_rows),
+        (2, 2),
+        "snapshot must propagate the (c=2, r=2) display grid to the \
+         placeholder cell so emit can slice UVs per cell"
+    );
+}
+
+/// Regression: spec-conformance §13.6.1 — placeholder cells for images
+/// with NO recorded grid (no c=/r= at transmit/place) carry the
+/// (1, 1) default in the snapshot, matching the pre-§13.6.1 single-cell
+/// behavior and keeping `kitty_placeholder_basic` golden stable.
+#[test]
+fn snapshot_placeholder_cells_default_grid_to_one_by_one_when_unrecorded() {
+    let mut h = SpecHarness::new();
+    h.feed(&kitty_apc(
+        b"a=T,U=1,i=1,f=32,s=4,v=4",
+        &b64(&rgba_4x4_red()),
+    ));
+    h.feed(b"\x1b[1;1H");
+    write_placeholder_cell(&mut h, 1, '\u{0305}', '\u{0305}');
+
+    let content = h.term().renderable_content();
+    assert!(!content.placeholder_cells.is_empty());
+    let pc = &content.placeholder_cells[0];
+    assert_eq!(
+        (pc.placement_cols, pc.placement_rows),
+        (1, 1),
+        "cells without a recorded display grid default to (1, 1) so emit \
+         renders the full image — kitty_placeholder_basic pilot pin"
+    );
+}
+
+/// Regression: spec-conformance §13.4 — when a U=1 client transmits
+/// `a=T,U=1,i=<id>` WITHOUT explicit `c=`/`r=` keys (no client-supplied
+/// display grid), the snapshot's `(placement_cols, placement_rows)` MUST
+/// stay at the documented `(1, 1)` default for EVERY placeholder cell,
+/// NOT silently infer a multi-cell grid from the diacritic pattern.
+///
+/// Spec contract (per `~/projects/reference_repos/console_repos/kitty/
+/// docs/graphics-protocol.rst:577-586`): clients MUST create a virtual
+/// placement with `c=<columns>,r=<rows>` when they want multi-cell
+/// slicing. Absence is a single-cell placement that renders the full
+/// image at each placeholder cell — NOT a silent semantic shift.
+///
+/// Without this clamp, a future heuristic that scans diacritic encodings
+/// to infer the implied grid would silently re-render every cell as a
+/// slice of an inferred N×M grid, breaking the documented default.
+#[test]
+fn u1_multi_cell_without_explicit_grid_renders_slices_from_default_one_by_one() {
+    let mut h = SpecHarness::new();
+    // a=T transmit-and-place with U=1 but NO c=/r= — exercises the
+    // missing-client-geometry path. Image dimensions s=/v= are PIXEL
+    // size, not display grid.
+    h.feed(&kitty_apc(
+        b"a=T,U=1,i=10,f=32,s=4,v=4",
+        &b64(&rgba_4x4_red()),
+    ));
+
+    // Place cursor at home, then write a 2×2 pattern of placeholder
+    // cells. Each carries 2 diacritics for (row, col):
+    //   (0,0) (0,1)
+    //   (1,0) (1,1)
+    // Diacritic mapping: U+0305 → 0, U+030D → 1.
+    h.feed(b"\x1b[1;1H");
+    write_placeholder_cell(&mut h, 10, '\u{0305}', '\u{0305}');
+    write_placeholder_cell(&mut h, 10, '\u{0305}', '\u{030D}');
+    h.feed(b"\x1b[2;1H");
+    write_placeholder_cell(&mut h, 10, '\u{030D}', '\u{0305}');
+    write_placeholder_cell(&mut h, 10, '\u{030D}', '\u{030D}');
+
+    let snap = h.term().renderable_content();
+    assert_eq!(
+        snap.placeholder_cells.len(),
+        4,
+        "all 4 placeholder cells expected — got {:?}",
+        snap.placeholder_cells,
+    );
+    for pc in &snap.placeholder_cells {
+        assert_eq!(
+            (pc.placement_cols, pc.placement_rows),
+            (1, 1),
+            "placeholder cell {:?} MUST carry (1, 1) default — silent \
+             grid inference would shift slice math semantically",
+            pc,
+        );
+    }
+    // Companion clamp: each cell's decoded (image_row, image_col) MUST
+    // still reflect its written diacritic, even though slicing falls
+    // back to the full image at GPU emit. The values flow through the
+    // snapshot unchanged; emit applies the (1, 1) grid → full-image UV.
+    let by_cell: std::collections::HashMap<(usize, usize), (u32, u32)> = snap
+        .placeholder_cells
+        .iter()
+        .map(|pc| ((pc.line, pc.column.0), (pc.image_row, pc.image_col)))
+        .collect();
+    assert_eq!(by_cell.get(&(0, 0)).copied(), Some((0, 0)));
+    assert_eq!(by_cell.get(&(0, 1)).copied(), Some((0, 1)));
+    assert_eq!(by_cell.get(&(1, 0)).copied(), Some((1, 0)));
+    assert_eq!(by_cell.get(&(1, 1)).copied(), Some((1, 1)));
+}
+
+/// Regression: spec-conformance §13.4 close-out gate — round-trip the
+/// maximum kitty `U=1` diacritic count (3: row + col + image_id MSB)
+/// through the grid-cell ingest path and assert the decoded
+/// `(image_id, image_row, image_col)` triple matches the encoded values
+/// exactly. Companion architectural pin:
+/// `cell_extra_zerowidth_storage_remains_unbounded` at
+/// `oriterm_core/src/cell/tests.rs`.
+///
+/// Kitty graphics-protocol §Unicode placeholders writes up to 3
+/// diacritics per placeholder cell: 1st = image row, 2nd = image column,
+/// 3rd = high byte of `image_id` (when the 24-bit fg color cannot hold
+/// the full ID). Silent truncation in the cell layer would corrupt the
+/// decoded lookup tuple.
+///
+/// Diacritic codepoints come from `term/handler/image/kitty/placeholder/
+/// mod.rs::DIACRITICS` — position in the table equals the row/col/MSB
+/// value the diacritic encodes. The kitty docs reference
+/// (https://sw.kovidgoyal.net/kitty/graphics-protocol/#unicode-placeholders)
+/// names U+0305 → 0, U+030D → 1, U+030E → 2.
+#[test]
+fn kitty_placeholder_max_diacritic_count_round_trips_through_grid() {
+    // 24-bit fg color → low 24 bits of image_id; 3rd diacritic → high byte.
+    let id_low: u32 = 42;
+    let id_high: u8 = 1;
+    let expected_id = (u32::from(id_high) << 24) | id_low;
+
+    let mut h = SpecHarness::new();
+    // Transmit U=1 image under the FULL composite id so the decoded
+    // placeholder lookup succeeds against the cache; the placeholder
+    // anchor records `ImageId::from_raw(expected_id)`.
+    let control = format!("a=t,U=1,i={expected_id},f=32,s=4,v=4");
+    h.feed(&kitty_apc(control.as_bytes(), &b64(&rgba_4x4_red())));
+
+    // Write one placeholder cell carrying 3 diacritics:
+    //   row diacritic U+030D → row=1
+    //   col diacritic U+030E → col=2
+    //   MSB diacritic U+030D → high byte=1
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(format!("\x1b[38;5;{id_low}m").as_bytes());
+    let mut buf = [0u8; 4];
+    bytes.extend_from_slice('\u{10EEEE}'.encode_utf8(&mut buf).as_bytes());
+    bytes.extend_from_slice('\u{030D}'.encode_utf8(&mut buf).as_bytes()); // row=1
+    bytes.extend_from_slice('\u{030E}'.encode_utf8(&mut buf).as_bytes()); // col=2
+    bytes.extend_from_slice('\u{030D}'.encode_utf8(&mut buf).as_bytes()); // high=1
+    bytes.extend_from_slice(b"\x1b[39m");
+    h.feed(&bytes);
+
+    let snap = h.term().renderable_content();
+    assert_eq!(
+        snap.placeholder_cells.len(),
+        1,
+        "exactly one placeholder cell expected from a single 3-diacritic \
+         write — got {:?}",
+        snap.placeholder_cells,
+    );
+    let pc = snap.placeholder_cells[0];
+    assert_eq!(
+        pc.image_id,
+        ImageId::from_raw(expected_id),
+        "image_id MUST be reconstructed from fg color (low 24 bits) plus \
+         3rd diacritic (high byte) — silent truncation of the 3rd \
+         diacritic would collapse this back to {id_low}"
+    );
+    assert_eq!(pc.image_row, 1, "row diacritic U+030D MUST decode to 1");
+    assert_eq!(pc.image_col, 2, "col diacritic U+030E MUST decode to 2");
 }

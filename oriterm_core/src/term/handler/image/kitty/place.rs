@@ -26,10 +26,18 @@ impl<S: EffectSink> Term<S> {
 
         // U=1: placement deferred to unicode placeholder chars in cells.
         // Record the anchor so LRU eviction does not drop the image while
-        // the program writes its `U+10EEEE` cells.
+        // the program writes its `U+10EEEE` cells. When `c=N,r=M` are
+        // present, also record the placeholder display grid so the GPU
+        // emit path can compute per-cell UV slices (§13.6.1 multi-cell
+        // UV slicing).
         if cmd.unicode_placeholder {
+            let id = ImageId::from_raw(image_id);
+            let grid = match (cmd.display_cols, cmd.display_rows) {
+                (Some(cols), Some(rows)) => Some((cols, rows)),
+                _ => None,
+            };
             self.image_cache_mut()
-                .add_placeholder_anchor(ImageId::from_raw(image_id));
+                .anchor_placeholder_with_grid(id, grid);
         } else {
             self.kitty_create_placement(image_id, cmd);
         }

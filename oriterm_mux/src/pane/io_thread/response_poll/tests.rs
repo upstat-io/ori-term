@@ -98,6 +98,28 @@ fn await_pty_write(rx: &mpsc::Receiver<MuxEvent>, deadline: Duration) -> Vec<u8>
     }
 }
 
+/// Poll `mux_rx` for `window` duration, panicking the moment a
+/// `MuxEvent::PtyWrite` arrives. Non-PtyWrite events (`Snapshot`, etc.) are
+/// skipped silently. Replaces the forbidden `thread::sleep(window);
+/// rx.try_recv() …` shape: fails fast on arrival instead of waiting out the
+/// full window before draining. Pattern reference:
+/// `oriterm_mux/tests/e2e.rs::wait_for_text_in_snapshot` (positive companion).
+fn assert_no_pty_write_within(rx: &mpsc::Receiver<MuxEvent>, window: Duration, ctx: &str) {
+    let deadline = std::time::Instant::now() + window;
+    while std::time::Instant::now() < deadline {
+        match rx.try_recv() {
+            Ok(MuxEvent::PtyWrite { data, .. }) => {
+                panic!("unexpected PtyWrite {ctx} within {window:?}: {data:?}");
+            }
+            Ok(_) => continue,
+            Err(mpsc::TryRecvError::Empty) => {
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            Err(mpsc::TryRecvError::Disconnected) => break,
+        }
+    }
+}
+
 /// **THE critical pin (§01.2)**: a fulfilled `ResponseToken` unblocks
 /// the IO thread's `crossbeam_channel::select!` within one iteration —
 /// no PTY bytes, no commands required.
@@ -154,13 +176,9 @@ fn response_poll_token_requires_fulfillment() {
     // Confirm the request was registered (HostClipboardLoad emitted).
     let _token = await_host_clipboard_load(&mux_rx, Duration::from_secs(5));
 
-    // Wait briefly with NO fulfill. No PtyWrite must arrive.
-    std::thread::sleep(Duration::from_millis(150));
-    while let Ok(event) = mux_rx.try_recv() {
-        if let MuxEvent::PtyWrite { data, .. } = event {
-            panic!("unexpected PtyWrite without fulfillment: {data:?}");
-        }
-    }
+    // With NO fulfill, no PtyWrite must arrive. Poll the channel and
+    // fail fast on any PtyWrite during the window.
+    assert_no_pty_write_within(&mux_rx, Duration::from_millis(150), "without fulfillment");
 
     handle.shutdown();
 }
@@ -309,20 +327,11 @@ fn cancellation_detects_after_staging_drain() {
     // the far side of the staging hop — the consumer-side Arc is gone.
     drop(moved);
 
-    // Wait briefly for the IO thread to next poll. With pull-based
-    // polling, the cancellation should be discovered on the next
-    // poll_pending_responses cycle (driven by wake signals, command
-    // arrivals, or the sync-deadline tick — we don't need to send any
-    // bytes ourselves to drive it; the wake on registration was
-    // already delivered).
-    //
-    // No PtyWrite must ever arrive — the request was cancelled.
-    std::thread::sleep(Duration::from_millis(150));
-    if let Ok(ev) = mux_rx.try_recv() {
-        if matches!(ev, MuxEvent::PtyWrite { .. }) {
-            panic!("unexpected PtyWrite for cancelled request: {ev:?}");
-        }
-    }
+    // Cancellation must be discovered on the next poll_pending_responses
+    // cycle (driven by the wake delivered at registration). No PtyWrite
+    // must ever arrive — the request was cancelled. Poll the channel
+    // and fail fast on any PtyWrite during the window.
+    assert_no_pty_write_within(&mux_rx, Duration::from_millis(150), "for cancelled request");
 
     handle.shutdown();
 }

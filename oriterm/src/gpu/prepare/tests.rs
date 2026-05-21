@@ -4255,6 +4255,127 @@ fn mixed_z_images_split_correctly() {
     assert_eq!(frame.image_quads_above.len(), 2, "z>=0 images");
 }
 
+fn placement_with_id(id: u32, z: i32, x: f32, y: f32) -> oriterm_core::RenderablePlacement {
+    oriterm_core::RenderablePlacement {
+        image_id: oriterm_core::image::ImageId::from_raw(id),
+        viewport_x: x,
+        viewport_y: y,
+        display_width: 32.0,
+        display_height: 32.0,
+        source_x: 0.0,
+        source_y: 0.0,
+        source_w: 1.0,
+        source_h: 1.0,
+        z_index: z,
+        opacity: 1.0,
+    }
+}
+
+/// Regression: spec-conformance §13.6.1 — `emit_image_quads` z-split routes
+/// images by `z_index` alone, independent of which protocol produced them.
+/// A sixel-origin placement at `z=-1` lands in `image_quads_below`; a
+/// kitty-origin placement at `z=1` lands in `image_quads_above`. The
+/// visual pilot `kitty_sixel_mixed_with_text` exercises the same invariant
+/// at the GPU apex; this unit test pins it at the prepare boundary so a
+/// regression localizes to the right stage.
+#[test]
+fn mixed_protocol_z_split_routes_by_z_index_not_image_id() {
+    const SIXEL_ID: u32 = 100;
+    const KITTY_ID: u32 = 200;
+
+    let mut input = FrameInput::test_grid(4, 2, "");
+    input.content.cursor.visible = false;
+    input.content.images = vec![
+        placement_with_id(SIXEL_ID, -1, 0.0, 0.0),
+        placement_with_id(KITTY_ID, 1, 32.0, 0.0),
+    ];
+    let atlas = empty_atlas();
+
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
+
+    assert_eq!(frame.image_quads_below.len(), 1, "sixel z=-1 → below");
+    assert_eq!(frame.image_quads_above.len(), 1, "kitty z=1 → above");
+    assert_eq!(
+        frame.image_quads_below[0].image_id,
+        oriterm_core::image::ImageId::from_raw(SIXEL_ID),
+        "below bucket carries the sixel ImageId"
+    );
+    assert_eq!(
+        frame.image_quads_above[0].image_id,
+        oriterm_core::image::ImageId::from_raw(KITTY_ID),
+        "above bucket carries the kitty ImageId"
+    );
+}
+
+/// Regression: spec-conformance §13.6.1 — guard against the inverse
+/// failure mode of [`mixed_protocol_z_split_routes_by_z_index_not_image_id`].
+/// Swap the z-indices and verify the bucket assignment swaps too. If a
+/// future change accidentally hard-codes a particular `ImageId` (or a
+/// protocol carve-out) to one bucket, this test fails because the kitty
+/// ID now appears in `below` and the sixel ID in `above`.
+#[test]
+fn mixed_protocol_z_split_inverts_when_z_indices_swap() {
+    const SIXEL_ID: u32 = 100;
+    const KITTY_ID: u32 = 200;
+
+    let mut input = FrameInput::test_grid(4, 2, "");
+    input.content.cursor.visible = false;
+    // Inverted: sixel z=1, kitty z=-1.
+    input.content.images = vec![
+        placement_with_id(SIXEL_ID, 1, 0.0, 0.0),
+        placement_with_id(KITTY_ID, -1, 32.0, 0.0),
+    ];
+    let atlas = empty_atlas();
+
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
+
+    assert_eq!(frame.image_quads_below.len(), 1);
+    assert_eq!(frame.image_quads_above.len(), 1);
+    assert_eq!(
+        frame.image_quads_below[0].image_id,
+        oriterm_core::image::ImageId::from_raw(KITTY_ID),
+        "kitty z=-1 → below (z drives bucket, not protocol)"
+    );
+    assert_eq!(
+        frame.image_quads_above[0].image_id,
+        oriterm_core::image::ImageId::from_raw(SIXEL_ID),
+        "sixel z=1 → above (z drives bucket, not protocol)"
+    );
+}
+
+/// Regression: spec-conformance §13.6.1 — text glyphs sit between
+/// `image_quads_below` and `image_quads_above`. The split fires the same
+/// way regardless of whether the grid carries text — text content must
+/// not perturb the image-routing decision. (Renderer order is below →
+/// text → above; this test pins the producer side; the visual pilot
+/// `kitty_sixel_mixed_with_text` pins the composite.)
+#[test]
+fn mixed_protocol_z_split_unaffected_by_text_content() {
+    const SIXEL_ID: u32 = 100;
+    const KITTY_ID: u32 = 200;
+
+    let mut input = FrameInput::test_grid(4, 2, "T");
+    input.content.cursor.visible = false;
+    input.content.images = vec![
+        placement_with_id(SIXEL_ID, -1, 0.0, 0.0),
+        placement_with_id(KITTY_ID, 1, 32.0, 0.0),
+    ];
+    let atlas = empty_atlas();
+
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
+
+    assert_eq!(frame.image_quads_below.len(), 1);
+    assert_eq!(frame.image_quads_above.len(), 1);
+    assert_eq!(
+        frame.image_quads_below[0].image_id,
+        oriterm_core::image::ImageId::from_raw(SIXEL_ID),
+    );
+    assert_eq!(
+        frame.image_quads_above[0].image_id,
+        oriterm_core::image::ImageId::from_raw(KITTY_ID),
+    );
+}
+
 #[test]
 fn image_origin_offset_applied() {
     let mut input = FrameInput::test_grid(4, 2, "");
@@ -6102,10 +6223,8 @@ fn unfocused_block_cursor_cell_in_focused_search_match_uses_focused_colors() {
     );
 }
 
-/// Regression: BUG-06-031 + Hidden carve-out — `effective_cursor_shape`
-/// previously returned `HollowBlock` for ANY input shape on unfocused windows,
-/// which would convert an explicitly Hidden cursor to a visible HollowBlock
-/// outline. The §05 carve-out preserves Hidden so `emit_cursor_for_frame`'s
+/// Regression: BUG-06-031. Per §05 carve-out: an explicitly Hidden cursor
+/// stays Hidden on unfocused windows; `emit_cursor_for_frame`'s
 /// `CursorShape::Hidden => {}` branch (`emit.rs:275`) emits zero instances.
 #[test]
 fn unfocused_hidden_cursor_emits_no_cursor_instances() {
@@ -6915,8 +7034,9 @@ mod pane_damage_key {
         });
     }
 
-    // ── Matrix completeness ──
-
+    /// Every damage-key field consumed by `compute_dispatch_fingerprint`.
+    /// Iterating this constant + asserting the field count proves no new
+    /// field landed without a matching matrix-test cell.
     pub(super) const ALL_DAMAGE_KEY_FIELDS: &[&str] = &[
         // Dispatch inputs (mirror compute_dispatch_fingerprint matrix).
         "viewport.width",
@@ -6963,5 +7083,234 @@ mod pane_damage_key {
             31,
             "matrix MUST enumerate every damage_key input (22 dispatch + 9 row_state = 31)"
         );
+    }
+}
+
+// ── §13.6.1 Multi-cell U=1 placeholder UV slicing ────────────────
+
+mod placeholder_uv_slicing {
+    use super::*;
+    use oriterm_core::image::ImageId;
+    use oriterm_core::term::renderable::RenderablePlaceholderCell;
+
+    fn placeholder_cell(
+        line: usize,
+        col: usize,
+        image_id: u32,
+        image_row: u32,
+        image_col: u32,
+        placement_cols: u32,
+        placement_rows: u32,
+    ) -> RenderablePlaceholderCell {
+        RenderablePlaceholderCell {
+            line,
+            column: Column(col),
+            image_id: ImageId::from_raw(image_id),
+            image_row,
+            image_col,
+            placement_id: 0,
+            placement_cols,
+            placement_rows,
+        }
+    }
+
+    fn input_with_placeholders(cells: Vec<RenderablePlaceholderCell>) -> FrameInput {
+        let mut input = FrameInput::test_grid(20, 10, "");
+        input.content.cursor.visible = false;
+        input.content.placeholder_cells = cells;
+        input
+    }
+
+    /// Regression: spec-conformance §13.6.1 negative pin. When the
+    /// placement is single-cell (`c=1,r=1` or no recorded grid → default
+    /// `(1, 1)`), the UV MUST remain `(0, 0, 1, 1)` (full image). Fails
+    /// if a future refactor fires the slicing branch unconditionally and
+    /// produces `(0, 0, 0.something, 0.something)` for a single-cell
+    /// placement.
+    #[test]
+    fn placeholder_single_cell_does_not_apply_uv_slicing_to_image_with_c_eq_1() {
+        let input = input_with_placeholders(vec![placeholder_cell(0, 0, 1, 0, 0, 1, 1)]);
+        let atlas = empty_atlas();
+
+        let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
+
+        assert_eq!(
+            frame.image_quads_above.len(),
+            1,
+            "one placeholder cell → one quad"
+        );
+        let q = &frame.image_quads_above[0];
+        assert_eq!(q.image_id, ImageId::from_raw(1));
+        assert_eq!(q.uv_x, 0.0, "c=1 → uv_x must be 0");
+        assert_eq!(q.uv_y, 0.0, "r=1 → uv_y must be 0");
+        assert_eq!(q.uv_w, 1.0, "c=1 → uv_w must be 1.0 (full image)");
+        assert_eq!(q.uv_h, 1.0, "r=1 → uv_h must be 1.0 (full image)");
+    }
+
+    /// Regression: spec-conformance §13.6.1 positive pin. A 2×2
+    /// placement records cells at `(image_row, image_col)` = (0,0),
+    /// (0,1), (1,0), (1,1); each cell's UV MUST be the corresponding
+    /// quadrant of the source image: `(image_col * 0.5, image_row * 0.5,
+    /// 0.5, 0.5)`. Without slicing every cell would render the full
+    /// image — what the pre-§13.6.1 baseline did.
+    #[test]
+    fn placeholder_multi_cell_renders_image_slice_per_cell() {
+        let input = input_with_placeholders(vec![
+            placeholder_cell(0, 0, 7, 0, 0, 2, 2), // top-left
+            placeholder_cell(0, 1, 7, 0, 1, 2, 2), // top-right
+            placeholder_cell(1, 0, 7, 1, 0, 2, 2), // bottom-left
+            placeholder_cell(1, 1, 7, 1, 1, 2, 2), // bottom-right
+        ]);
+        let atlas = empty_atlas();
+
+        let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
+
+        assert_eq!(
+            frame.image_quads_above.len(),
+            4,
+            "four placeholder cells → four quads"
+        );
+
+        let approx = |a: f32, b: f32| (a - b).abs() < 1e-5;
+
+        // Cell (0, 0) — top-left of 2×2 grid → UV (0, 0, 0.5, 0.5)
+        let q = &frame.image_quads_above[0];
+        assert!(approx(q.uv_x, 0.0), "top-left uv_x: {}", q.uv_x);
+        assert!(approx(q.uv_y, 0.0), "top-left uv_y: {}", q.uv_y);
+        assert!(approx(q.uv_w, 0.5), "top-left uv_w: {}", q.uv_w);
+        assert!(approx(q.uv_h, 0.5), "top-left uv_h: {}", q.uv_h);
+
+        // Cell (0, 1) — top-right
+        let q = &frame.image_quads_above[1];
+        assert!(approx(q.uv_x, 0.5), "top-right uv_x: {}", q.uv_x);
+        assert!(approx(q.uv_y, 0.0), "top-right uv_y: {}", q.uv_y);
+        assert!(approx(q.uv_w, 0.5));
+        assert!(approx(q.uv_h, 0.5));
+
+        // Cell (1, 0) — bottom-left
+        let q = &frame.image_quads_above[2];
+        assert!(approx(q.uv_x, 0.0), "bottom-left uv_x: {}", q.uv_x);
+        assert!(approx(q.uv_y, 0.5), "bottom-left uv_y: {}", q.uv_y);
+        assert!(approx(q.uv_w, 0.5));
+        assert!(approx(q.uv_h, 0.5));
+
+        // Cell (1, 1) — bottom-right
+        let q = &frame.image_quads_above[3];
+        assert!(approx(q.uv_x, 0.5), "bottom-right uv_x: {}", q.uv_x);
+        assert!(approx(q.uv_y, 0.5), "bottom-right uv_y: {}", q.uv_y);
+        assert!(approx(q.uv_w, 0.5));
+        assert!(approx(q.uv_h, 0.5));
+    }
+
+    /// Regression: spec-conformance §13.6.1 — 11×1 horizontal-strip
+    /// placement (the canonical example from the plan body for the
+    /// `kitty_placeholder_sixel_coexist` pilot). Each of 11 cells must
+    /// render its own 1/11 vertical slice.
+    #[test]
+    fn placeholder_eleven_by_one_strip_slices_uv_horizontally() {
+        let cells: Vec<_> = (0..11)
+            .map(|col| placeholder_cell(0, col, 9, 0, col as u32, 11, 1))
+            .collect();
+        let input = input_with_placeholders(cells);
+        let atlas = empty_atlas();
+
+        let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
+
+        assert_eq!(frame.image_quads_above.len(), 11);
+        let slice = 1.0 / 11.0;
+        let approx = |a: f32, b: f32| (a - b).abs() < 1e-5;
+        for (i, q) in frame.image_quads_above.iter().enumerate() {
+            assert!(
+                approx(q.uv_x, i as f32 * slice),
+                "cell {i}: expected uv_x={:.5}, got {}",
+                i as f32 * slice,
+                q.uv_x
+            );
+            assert!(approx(q.uv_w, slice), "cell {i}: uv_w must be 1/11");
+            assert!(approx(q.uv_h, 1.0), "r=1 → uv_h must be 1.0");
+        }
+    }
+
+    /// Regression: spec-conformance §13.6.1 — defense-in-depth clamp
+    /// for malformed clients. A malformed client may emit a placeholder cell
+    /// whose `(image_row, image_col)` exceeds the recorded
+    /// `(placement_rows, placement_cols)` grid. Without the clamp,
+    /// `uv_x = image_col * uv_w` produces UV ≥ 1.0 — currently absorbed by
+    /// the wgpu sampler's `ClampToEdge` mode in the image_render bind-
+    /// group, but the emit-layer clamp pins edge-pixel rendering at the
+    /// math step rather than depending on sampler config.
+    #[test]
+    fn placeholder_out_of_range_image_col_clamps_to_grid_edge() {
+        let input = input_with_placeholders(vec![
+            // image_col=5 in a 2-col grid → clamps to col=1 (last column).
+            placeholder_cell(0, 0, 1, 0, 5, 2, 2),
+        ]);
+        let atlas = empty_atlas();
+
+        let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
+
+        assert_eq!(frame.image_quads_above.len(), 1);
+        let q = &frame.image_quads_above[0];
+        let approx = |a: f32, b: f32| (a - b).abs() < 1e-5;
+        // Clamped col=1: uv_x = 1 * 0.5 = 0.5 (NOT 5 * 0.5 = 2.5).
+        assert!(
+            approx(q.uv_x, 0.5),
+            "out-of-range image_col=5 must clamp to last col → uv_x=0.5, got {}",
+            q.uv_x
+        );
+        assert!(approx(q.uv_w, 0.5));
+        assert!(
+            q.uv_x + q.uv_w <= 1.0 + 1e-5,
+            "uv_x + uv_w must stay ≤ 1.0 even on out-of-range input"
+        );
+    }
+
+    /// Regression: spec-conformance §13.6.1 round-0 TPR — same shape as
+    /// the column clamp, applied to the row dimension. image_row=7 in a
+    /// 3-row grid clamps to row=2 (last row).
+    #[test]
+    fn placeholder_out_of_range_image_row_clamps_to_grid_edge() {
+        let input = input_with_placeholders(vec![placeholder_cell(0, 0, 1, 7, 0, 1, 3)]);
+        let atlas = empty_atlas();
+
+        let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
+
+        assert_eq!(frame.image_quads_above.len(), 1);
+        let q = &frame.image_quads_above[0];
+        let approx = |a: f32, b: f32| (a - b).abs() < 1e-5;
+        // Clamped row=2: uv_y = 2 * (1/3) ≈ 0.6667.
+        assert!(
+            approx(q.uv_y, 2.0 / 3.0),
+            "out-of-range image_row=7 must clamp to last row → uv_y≈0.6667, got {}",
+            q.uv_y
+        );
+        assert!(
+            q.uv_y + q.uv_h <= 1.0 + 1e-5,
+            "uv_y + uv_h must stay ≤ 1.0 even on out-of-range input"
+        );
+    }
+
+    /// Regression: spec-conformance §13.6.1 — defensive zero-cols/rows
+    /// guard. The cache rejects zero at `set_placeholder_anchor_grid`,
+    /// the snapshot defaults to `(1, 1)`, and emit applies `.max(1)`
+    /// before dividing — three layers of belt-and-suspenders. Pin
+    /// asserts the emit guard is load-bearing even if a future refactor
+    /// loosens the cache- or snapshot-layer constraints.
+    #[test]
+    fn placeholder_zero_dims_emit_guard_yields_full_image_uv() {
+        let input = input_with_placeholders(vec![placeholder_cell(0, 0, 1, 0, 0, 0, 0)]);
+        let atlas = empty_atlas();
+
+        let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
+
+        assert_eq!(frame.image_quads_above.len(), 1);
+        let q = &frame.image_quads_above[0];
+        assert_eq!(q.uv_x, 0.0);
+        assert_eq!(q.uv_y, 0.0);
+        assert_eq!(
+            q.uv_w, 1.0,
+            "zero-cols guard must clamp to 1 — no division by zero, full-image UV"
+        );
+        assert_eq!(q.uv_h, 1.0);
     }
 }

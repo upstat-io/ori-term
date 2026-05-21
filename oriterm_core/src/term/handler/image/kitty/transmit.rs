@@ -22,17 +22,26 @@ impl<S: EffectSink> Term<S> {
         let unicode_placeholder = merged.unicode_placeholder;
         let params = KittyStoreParams::from_merged(image_id, &mut merged);
 
-        if let Err(msg) = self.kitty_store_image(params) {
+        if let Err(err) = self.kitty_store_image(params) {
+            let msg = err.to_string();
             warn!("kitty transmit failed: {msg}");
             self.kitty_respond(&ctx, &msg);
             return;
         }
 
         // U=1: store anchors the image so LRU eviction doesn't drop it
-        // before the program writes the placeholder cells.
+        // before the program writes the placeholder cells. When `c=N,r=M`
+        // accompany the U=1 transmit, record the display grid so the GPU
+        // emit path can compute per-cell UV slices for the placeholder
+        // cells. See §13.6.1 multi-cell UV slicing.
         if unicode_placeholder {
+            let id = ImageId::from_raw(image_id);
+            let grid = match (merged.display_cols, merged.display_rows) {
+                (Some(cols), Some(rows)) => Some((cols, rows)),
+                _ => None,
+            };
             self.image_cache_mut()
-                .add_placeholder_anchor(ImageId::from_raw(image_id));
+                .anchor_placeholder_with_grid(id, grid);
         }
         self.kitty_respond(&ctx, "OK");
     }
@@ -48,7 +57,8 @@ impl<S: EffectSink> Term<S> {
         let ctx = KittyReplyContext::from_cmd(&merged).with_image_id(image_id);
         let params = KittyStoreParams::from_merged(image_id, &mut merged);
 
-        if let Err(msg) = self.kitty_store_image(params) {
+        if let Err(err) = self.kitty_store_image(params) {
+            let msg = err.to_string();
             warn!("kitty transmit+place failed: {msg}");
             self.kitty_respond(&ctx, &msg);
             return;
@@ -57,10 +67,17 @@ impl<S: EffectSink> Term<S> {
         // U=1: image stored but placement deferred to unicode placeholder
         // chars (U+10EEEE) that the program writes into cells. Anchor the
         // image so LRU eviction doesn't drop it. Inherits from the first
-        // chunk's command per kitty's control-key inheritance rules.
+        // chunk's command per kitty's control-key inheritance rules. When
+        // `c=N,r=M` are present, record the placeholder display grid so
+        // the GPU emit path can slice UVs per cell.
         if merged.unicode_placeholder {
+            let id = ImageId::from_raw(image_id);
+            let grid = match (merged.display_cols, merged.display_rows) {
+                (Some(cols), Some(rows)) => Some((cols, rows)),
+                _ => None,
+            };
             self.image_cache_mut()
-                .add_placeholder_anchor(ImageId::from_raw(image_id));
+                .anchor_placeholder_with_grid(id, grid);
         } else {
             self.kitty_create_placement(image_id, &merged);
         }

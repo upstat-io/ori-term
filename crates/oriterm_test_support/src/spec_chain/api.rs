@@ -88,8 +88,17 @@ impl SpecHarness {
 
     /// Create a new harness with custom terminal dimensions.
     pub fn with_size(lines: usize, cols: usize) -> Self {
+        Self::with_size_and_scrollback(lines, cols, HARNESS_SCROLLBACK)
+    }
+
+    /// Create a new harness with custom terminal dimensions and a custom
+    /// scrollback cap. Required for tests that exercise the resize ↔
+    /// `prune_scrollback` integration path — the default 1000-row cap
+    /// forces 1024+ newline workarounds to push the eviction floor past
+    /// a placement's `StableRowIndex`.
+    pub fn with_size_and_scrollback(lines: usize, cols: usize, scrollback: usize) -> Self {
         let sink = QueueingEffectSink::new();
-        let term = Term::new(lines, cols, HARNESS_SCROLLBACK, Theme::default(), sink);
+        let term = Term::new(lines, cols, scrollback, Theme::default(), sink);
         let handler = RecordingHandler::new(term);
         let processor = Processor::new();
         let perform_observer = PerformActionCollector::new();

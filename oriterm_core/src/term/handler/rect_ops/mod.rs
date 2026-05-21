@@ -129,6 +129,11 @@ impl<S: EffectSink> Term<S> {
         self.selection_dirty = true;
         self.grid_mut()
             .copy_rect(src.top, src.left, src.bot, src.right, dst_top_u, dst_left_u);
+        // DECCRA overwrites the destination rectangle with source
+        // cells; any placeholder cells in the destination are gone.
+        // Reconcile mirrors DECERA/DECFRA/DECSERA below — same pattern
+        // for any grid mutation that replaces placeholder-bearing cells.
+        self.reconcile_placeholder_anchors_from_grid();
     }
 
     /// DECFRA (CSI Pc;Pt;Pl;Pb;Pr $ x) — Fill Rectangular Area.
