@@ -76,6 +76,19 @@ pub struct ImageData {
     /// GPU layer receives `&[u8]` via [`RenderableImageData::data`] —
     /// never clone the `Arc` across the core-to-GPU boundary.
     pub(crate) data: Arc<Vec<u8>>,
+    /// Monotonic counter bumped whenever `data` is mutated.
+    ///
+    /// Drives the GPU texture re-upload gate: `ImageTextureCache`
+    /// records the generation at upload time and re-uploads when the
+    /// observed generation advances. Without this, animated images
+    /// render the first frame's pixels indefinitely because the cache
+    /// key (`ImageId`) is stable across animation advances.
+    ///
+    /// `wrapping_add(1)` on bumps so debug builds do not panic on
+    /// astronomical-but-finite continuous-append workloads — the
+    /// `pixel_generation_full_wrap_to_seeded_value_forces_reupload`
+    /// pin owns the wrap-vs-stale invariant.
+    pub(crate) pixel_generation: u64,
     /// Original format before decode.
     pub format: ImageFormat,
     /// How the image was transmitted.
@@ -391,10 +404,7 @@ impl AnimationState {
         }
         let max_skips = self.total_frames.saturating_sub(1);
         let mut skips = 0;
-        while skips < max_skips
-            && self.is_current_frame_gapless()
-            && !self.is_finished()
-        {
+        while skips < max_skips && self.is_current_frame_gapless() && !self.is_finished() {
             if !self.advance() {
                 break;
             }

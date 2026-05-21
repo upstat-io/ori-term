@@ -103,6 +103,7 @@ fn place_for_scenario(
         width: 16,
         height: 16,
         data: Arc::new(vec![128; 16 * 16 * 4]),
+        pixel_generation: 0,
         format: ImageFormat::Rgba,
         source: ImageSource::Direct,
         last_accessed: 0,

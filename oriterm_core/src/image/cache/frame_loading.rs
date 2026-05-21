@@ -13,7 +13,6 @@
 //! the helper [`ImageCache::ensure_animation_state_for_root_gap`] when
 //! the target is the root slot of a still-static image.
 
-use std::collections::hash_map::Entry;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -22,6 +21,9 @@ use super::super::{
     ImageError, ImageId,
 };
 use super::ImageCache;
+use super::frame_entry::{
+    FrameEntry, FrameId, MAX_CUMULATIVE_DRAWN_AREA_RATIO, MAX_DELTA_CHAIN_DEPTH,
+};
 
 /// Parameters for [`blit_subrect_into_canvas`].
 ///
@@ -71,16 +73,71 @@ impl ImageCache {
             1 if !self.animations.contains_key(&id) => {
                 self.images.get(&id).map(|img| img.data.clone())
             }
-            1 => self
-                .animation_frames
-                .get(&id)
-                .and_then(|frames| frames.first())
-                .cloned(),
-            n => self
-                .animation_frames
-                .get(&id)
-                .and_then(|frames| frames.get((n - 1) as usize))
-                .cloned(),
+            n => {
+                let frames = self.animation_frames.get(&id)?;
+                let entry = frames.get((n - 1) as usize)?;
+                self.compose_entry(id, entry)
+            }
+        }
+    }
+
+    /// Resolve a stable `FrameId` to its pixel bytes within `image_id`.
+    ///
+    /// Linear scan of `animation_frames[image_id]` for the entry whose
+    /// `FrameEntry::id()` matches — matches kitty's `frame_for_id` linear
+    /// scan at `graphics.c:1328-1331`. Recursive compose-on-demand for
+    /// `Delta` variants per §05 Item 2.
+    pub(crate) fn frame_for_number_by_id(
+        &self,
+        image_id: ImageId,
+        fid: FrameId,
+    ) -> Option<Arc<Vec<u8>>> {
+        let frames = self.animation_frames.get(&image_id)?;
+        let entry = frames.iter().find(|e| e.id() == fid)?;
+        self.compose_entry(image_id, entry)
+    }
+
+    /// Compose-on-demand resolver for a single `FrameEntry`.
+    ///
+    /// `Materialized` → clone Arc.
+    /// `Delta` → recurse on `base` to materialize the canvas, allocate a
+    /// fresh `Vec<u8>`, blit the sub-rect payload via the existing
+    /// `blit_subrect_into_canvas` kernel, wrap in a new `Arc`. NO
+    /// memoization per the §02 anti-cache rule — every render allocates
+    /// fresh so unbounded growth is impossible.
+    pub(super) fn compose_entry(
+        &self,
+        image_id: ImageId,
+        entry: &FrameEntry,
+    ) -> Option<Arc<Vec<u8>>> {
+        match entry {
+            FrameEntry::Materialized { data, .. } => Some(data.clone()),
+            FrameEntry::Delta {
+                base,
+                sub_rect,
+                payload,
+                compose_mode,
+                ..
+            } => {
+                let base_bytes = self.frame_for_number_by_id(image_id, *base)?;
+                let (image_w, image_h) = self
+                    .images
+                    .get(&image_id)
+                    .map(|img| (img.width, img.height))?;
+                let mut canvas: Vec<u8> = (*base_bytes).clone();
+                blit_subrect_into_canvas(
+                    &mut canvas,
+                    payload,
+                    BlitOp {
+                        canvas_w: image_w,
+                        canvas_h: image_h,
+                        blit: *sub_rect,
+                        mode: *compose_mode,
+                    },
+                )
+                .ok()?;
+                Some(Arc::new(canvas))
+            }
         }
     }
 
@@ -111,21 +168,26 @@ impl ImageCache {
         if !self.images.contains_key(&id) {
             return Err(ImageError::MissingImage { id: id.0 });
         }
-        match self.animations.entry(id) {
-            Entry::Vacant(e) => {
-                let root_bytes = self
-                    .images
-                    .get(&id)
-                    .map(|img| img.data.clone())
-                    .ok_or(ImageError::MissingImage { id: id.0 })?;
-                e.insert(AnimationState::new(vec![gap], None));
-                self.animation_frames.insert(id, vec![root_bytes]);
-            }
-            Entry::Occupied(mut e) => {
-                let state = e.get_mut();
-                if !state.frame_durations.is_empty() {
-                    state.frame_durations[0] = gap;
-                }
+        let needs_promote = !self.animations.contains_key(&id);
+        if needs_promote {
+            let root_bytes = self
+                .images
+                .get(&id)
+                .map(|img| img.data.clone())
+                .ok_or(ImageError::MissingImage { id: id.0 })?;
+            let root_id = self.alloc_frame_id();
+            self.animations
+                .insert(id, AnimationState::new(vec![gap], None));
+            self.animation_frames.insert(
+                id,
+                vec![FrameEntry::Materialized {
+                    id: root_id,
+                    data: root_bytes,
+                }],
+            );
+        } else if let Some(state) = self.animations.get_mut(&id) {
+            if !state.frame_durations.is_empty() {
+                state.frame_durations[0] = gap;
             }
         }
         Ok(())
@@ -146,6 +208,130 @@ impl ImageCache {
     ///
     /// Validates payload size, image existence, blit dims, and frame-num
     /// range before touching cache state.
+    /// Auto-promote a static image's root frame into `animation_frames`.
+    ///
+    /// Mints a fresh `FrameId` for the root so subsequent `c=N` appends
+    /// can target it as a Δ base. Idempotent — no-op when the image is
+    /// already promoted. Used by `put_frame`'s Δ-storage entry to ensure
+    /// the first `c=1` append against a static image produces a Δ
+    /// referencing the root, NOT a force-materialized canvas.
+    fn auto_promote_static_root(&mut self, image_id: ImageId) -> Result<(), ImageError> {
+        if self.animations.contains_key(&image_id) {
+            return Ok(());
+        }
+        let root_bytes = self
+            .images
+            .get(&image_id)
+            .map(|img| img.data.clone())
+            .ok_or(ImageError::MissingImage { id: image_id.0 })?;
+        let root_id = self.alloc_frame_id();
+        self.animations
+            .insert(image_id, AnimationState::new(vec![Duration::ZERO], None));
+        self.animation_frames.insert(
+            image_id,
+            vec![FrameEntry::Materialized {
+                id: root_id,
+                data: root_bytes,
+            }],
+        );
+        Ok(())
+    }
+
+    /// Resolve base-frame metadata for a `_Ga=f, c=N` Δ-storage opportunity.
+    ///
+    /// Returns `Some((base_id, is_delta_base, base_depth, base_cumulative))`
+    /// when frame `n` (1-based) exists in `animation_frames[image_id]`.
+    /// `None` when the image is unpromoted (no FrameId minted for the
+    /// static root yet — Δ storage is deferred to the next append) or
+    /// the index is out of range.
+    ///
+    /// `is_delta_base` distinguishes the chain-depth rule:
+    /// - base is Materialized → new Δ has depth 0 (first hop)
+    /// - base is Δ → new Δ has depth = base.depth + 1
+    fn resolve_base_metadata(&self, image_id: ImageId, n: u32) -> Option<(FrameId, bool, u8, u32)> {
+        if n == 0 {
+            return None;
+        }
+        let frames = self.animation_frames.get(&image_id)?;
+        let entry = frames.get((n - 1) as usize)?;
+        let is_delta_base = matches!(entry, FrameEntry::Delta { .. });
+        Some((
+            entry.id(),
+            is_delta_base,
+            entry.depth(),
+            entry.cumulative_drawn_area(),
+        ))
+    }
+
+    /// Push a Δ frame onto a promoted animation. Mirrors
+    /// [`Self::push_composed_frame`] but stores `FrameEntry::Delta`
+    /// without materializing the full canvas — `payload` is the sub-rect
+    /// RGBA bytes only.
+    ///
+    /// Caller is responsible for ensuring guards (depth + cumulative
+    /// area) permit Δ storage; this helper assumes the decision is
+    /// already made.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "Δ storage needs base+sub_rect+payload+mode+depth+area+gap to construct the entry"
+    )]
+    fn push_delta_frame(
+        &mut self,
+        image_id: ImageId,
+        base: FrameId,
+        depth: u8,
+        cumulative_drawn_area: u32,
+        sub_rect: BlitRect,
+        payload: Arc<Vec<u8>>,
+        mode: CompositionMode,
+        gap: Duration,
+    ) -> Result<u32, ImageError> {
+        let payload_len = payload.len();
+
+        // Eviction loop — same shape as push_composed_frame, just with
+        // the smaller Δ payload size as the memory delta.
+        let mut reachable = self.placed_or_anchored_id_set();
+        reachable.insert(image_id);
+        while self.memory_used + payload_len > self.memory_limit && !self.images.is_empty() {
+            if !self.evict_one(&reachable) {
+                return Err(ImageError::MemoryLimitExceeded);
+            }
+        }
+
+        let new_id = self.alloc_frame_id();
+        debug_assert!(
+            base.0 < new_id.0,
+            "Δ cycle invariant: base FrameId ({}) must be strictly less than new FrameId ({})",
+            base.0,
+            new_id.0,
+        );
+
+        let anim_frames = self.animation_frames.entry(image_id).or_default();
+        anim_frames.push(FrameEntry::Delta {
+            id: new_id,
+            base,
+            sub_rect,
+            payload,
+            compose_mode: mode,
+            depth,
+            cumulative_drawn_area,
+        });
+        self.memory_used += payload_len;
+
+        let total = anim_frames.len();
+        let state = self
+            .animations
+            .get_mut(&image_id)
+            .expect("Δ storage requires promoted animation");
+        state.frame_durations.push(gap);
+        state.total_frames = total;
+        if state.wait_mode && state.is_finished() {
+            state.loops_completed = 0;
+        }
+        self.dirty = true;
+        Ok(total as u32)
+    }
+
     pub(crate) fn put_frame(&mut self, req: FrameLoadRequest) -> Result<u32, ImageError> {
         // (Step 6.1) Image must exist.
         let (image_w, image_h) = match self.images.get(&req.image_id) {
@@ -193,6 +379,61 @@ impl ImageCache {
                     requested: *frame_num,
                     total,
                 });
+            }
+        }
+
+        // (Step 6.6.5) Δ-storage opportunity: when the request is an
+        // append + canvas references an existing promoted frame, AND the
+        // chain-depth + cumulative-area guards permit, store as
+        // `FrameEntry::Delta` without materializing the full canvas.
+        // Keeps per-append allocator pressure bounded by the sub-rect
+        // payload size (typically ≤ 1 KB) instead of the full image
+        // canvas (typically ~2.64 MB on xray's 1000×660 transmits).
+        if let (FrameTarget::Append { gap }, CanvasSource::Frame(n)) = (&req.target, &req.canvas) {
+            // Auto-promote static images on c=1 so the root has a
+            // FrameId Δ.base can reference — first c=N append on a
+            // static image still produces Δ storage.
+            if *n == 1 && !self.animations.contains_key(&req.image_id) {
+                self.auto_promote_static_root(req.image_id)?;
+            }
+            if let Some((base_id, base_is_delta, base_depth, base_cumulative)) =
+                self.resolve_base_metadata(req.image_id, *n)
+            {
+                // Δ directly off Materialized has depth 0; Δ off Δ
+                // increments base.depth by 1.
+                let new_depth = if base_is_delta {
+                    base_depth.saturating_add(1)
+                } else {
+                    0
+                };
+                let blit_area = (req.blit.width as u64).saturating_mul(req.blit.height as u64);
+                let new_cumulative = (u64::from(base_cumulative)).saturating_add(blit_area);
+                let area_cap = (image_w as u64)
+                    .saturating_mul(image_h as u64)
+                    .saturating_mul(u64::from(MAX_CUMULATIVE_DRAWN_AREA_RATIO));
+                let depth_ok = new_depth <= MAX_DELTA_CHAIN_DEPTH;
+                // `<=` so the Δ that lands EXACTLY at the cap is still
+                // stored as Δ; the NEXT append (which would exceed the
+                // cap) force-materializes per kitty's
+                // `drawn_area >= image_w * image_h * 2` trigger
+                // (graphics.c:1546).
+                let area_ok = new_cumulative <= area_cap;
+                if depth_ok && area_ok {
+                    return self.push_delta_frame(
+                        req.image_id,
+                        base_id,
+                        new_depth,
+                        new_cumulative as u32,
+                        req.blit,
+                        req.frame_data.clone(),
+                        req.composition_mode,
+                        *gap,
+                    );
+                }
+                // Guard tripped — fall through to materialize path
+                // which force-materializes the new frame, resetting
+                // the chain. Subsequent c=N appends against THIS new
+                // (now-materialized) frame start a fresh chain.
             }
         }
 
@@ -312,8 +553,12 @@ impl ImageCache {
             if gap_update.is_some() {
                 // Auto-promote to record root gap; ensures gap survives.
                 self.ensure_animation_state_for_root_gap(id, gap_update)?;
+                let root_id = self.alloc_frame_id();
                 if let Some(frames) = self.animation_frames.get_mut(&id) {
-                    frames[0] = composed;
+                    frames[0] = FrameEntry::Materialized {
+                        id: root_id,
+                        data: composed,
+                    };
                 }
             }
             self.dirty = true;
@@ -321,6 +566,7 @@ impl ImageCache {
         }
 
         // Promoted: write to animation_frames[id][frame_num - 1].
+        let new_frame_id = self.alloc_frame_id();
         let displayed = if let Some(frames) = self.animation_frames.get_mut(&id) {
             let idx = (frame_num - 1) as usize;
             if idx >= frames.len() {
@@ -329,7 +575,10 @@ impl ImageCache {
                     total: frames.len() as u32,
                 });
             }
-            frames[idx] = composed.clone();
+            frames[idx] = FrameEntry::Materialized {
+                id: new_frame_id,
+                data: composed.clone(),
+            };
             let state = self
                 .animations
                 .get(&id)
@@ -391,33 +640,51 @@ impl ImageCache {
         }
 
         // (3) Append (auto-promote when needed).
-        let added_1based = match self.animations.entry(id) {
-            Entry::Vacant(e) => {
-                let img_data = match self.images.get(&id) {
-                    Some(img) => img.data.clone(),
-                    None => return Err(ImageError::MissingImage { id: id.0 }),
-                };
-                // Root frame gap is ZERO per kitty_tests/graphics.py:1189.
-                let durations = vec![Duration::ZERO, gap];
-                let frames = vec![img_data, composed.clone()];
-                self.memory_used += composed.len();
-                e.insert(AnimationState::new(durations, None));
-                self.animation_frames.insert(id, frames);
-                2
-            }
-            Entry::Occupied(mut e) => {
-                let anim_frames = self.animation_frames.entry(id).or_default();
-                anim_frames.push(composed.clone());
-                self.memory_used += composed.len();
+        let promoted = self.animations.contains_key(&id);
+        let added_1based = if !promoted {
+            let img_data = match self.images.get(&id) {
+                Some(img) => img.data.clone(),
+                None => return Err(ImageError::MissingImage { id: id.0 }),
+            };
+            // Root frame gap is ZERO per kitty_tests/graphics.py:1189.
+            let durations = vec![Duration::ZERO, gap];
+            let root_id = self.alloc_frame_id();
+            let composed_id = self.alloc_frame_id();
+            let frames = vec![
+                FrameEntry::Materialized {
+                    id: root_id,
+                    data: img_data,
+                },
+                FrameEntry::Materialized {
+                    id: composed_id,
+                    data: composed.clone(),
+                },
+            ];
+            self.memory_used += composed.len();
+            self.animations
+                .insert(id, AnimationState::new(durations, None));
+            self.animation_frames.insert(id, frames);
+            2
+        } else {
+            let new_id = self.alloc_frame_id();
+            let anim_frames = self.animation_frames.entry(id).or_default();
+            anim_frames.push(FrameEntry::Materialized {
+                id: new_id,
+                data: composed.clone(),
+            });
+            self.memory_used += composed.len();
 
-                let state = e.get_mut();
-                state.frame_durations.push(gap);
-                state.total_frames = anim_frames.len();
-                if state.wait_mode && state.is_finished() {
-                    state.loops_completed = 0;
-                }
-                anim_frames.len() as u32
+            let total = anim_frames.len();
+            let state = self
+                .animations
+                .get_mut(&id)
+                .expect("promoted: animations entry present");
+            state.frame_durations.push(gap);
+            state.total_frames = total;
+            if state.wait_mode && state.is_finished() {
+                state.loops_completed = 0;
             }
+            total as u32
         };
 
         self.dirty = true;

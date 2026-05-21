@@ -19,6 +19,7 @@ fn make_image(id: u32, bytes: usize) -> ImageData {
         width: 100,
         height: 100,
         data: Arc::new(vec![0u8; bytes]),
+        pixel_generation: 0,
         format: ImageFormat::Rgba,
         source: ImageSource::Direct,
         last_accessed: 0,

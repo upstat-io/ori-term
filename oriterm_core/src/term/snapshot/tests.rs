@@ -51,6 +51,7 @@ fn place_test_image(
         width: 2,
         height: 2,
         data: Arc::new(vec![255; 16]),
+        pixel_generation: 0,
         format: ImageFormat::Rgba,
         source: ImageSource::Direct,
         last_accessed: 0,

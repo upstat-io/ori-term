@@ -33,6 +33,28 @@ pub(crate) struct GpuImageTexture {
     bind_group: BindGroup,
     size_bytes: usize,
     last_frame: u64,
+    /// `ImageData::pixel_generation` observed at the most recent
+    /// upload. (xray-scene lag cure) Phase 3 records it; Phase 4 Item 4a wires
+    /// the re-upload gate in `ensure_uploaded`'s Occupied arm.
+    #[allow(
+        dead_code,
+        reason = "Phase 3 scaffolding (xray-scene lag cure) — Phase 4 gates re-upload on this field"
+    )]
+    pixel_generation: u64,
+    /// Texture width — recorded so Phase 4's re-upload gate can detect
+    /// dimension changes and recreate the texture instead of writing
+    /// through `queue.write_texture` (which would mismatch).
+    #[allow(
+        dead_code,
+        reason = "Phase 3 scaffolding (xray-scene lag cure) — Phase 4 gates texture recreate on dim change"
+    )]
+    width: u32,
+    /// Texture height — see `width`.
+    #[allow(
+        dead_code,
+        reason = "Phase 3 scaffolding (xray-scene lag cure) — Phase 4 gates texture recreate on dim change"
+    )]
+    height: u32,
 }
 
 /// GPU-side image texture cache.
@@ -77,9 +99,18 @@ impl ImageTextureCache {
     ///
     /// If already uploaded, touches the LRU counter. If not, creates a new
     /// texture and uploads the RGBA data.
+    ///
+    /// `pixel_generation` is the value from the upstream
+    /// `ImageData::pixel_generation` / `RenderableImageData::pixel_generation`
+    /// field — Phase 3 records it on the entry but does NOT yet gate
+    /// re-upload (cache returns existing bind group on `Occupied`).
+    /// Phase 4 Item 4a wires the gate: on `Occupied`, compare entry's
+    /// recorded generation against the incoming value; if they differ,
+    /// re-upload `data` (recreating texture when dimensions changed) and
+    /// stamp the new generation.
     #[expect(
         clippy::too_many_arguments,
-        reason = "GPU upload needs device, queue, layout, id, data, and dimensions"
+        reason = "GPU upload needs device, queue, layout, id, generation, data, and dimensions"
     )]
     pub(crate) fn ensure_uploaded(
         &mut self,
@@ -87,6 +118,7 @@ impl ImageTextureCache {
         queue: &Queue,
         layout: &BindGroupLayout,
         id: ImageId,
+        pixel_generation: u64,
         data: &[u8],
         width: u32,
         height: u32,
@@ -97,85 +129,60 @@ impl ImageTextureCache {
             Entry::Occupied(e) => {
                 let entry = e.into_mut();
                 entry.last_frame = frame;
+                if entry.pixel_generation != pixel_generation {
+                    // Image's pixel content changed (animation advance,
+                    // frame edit, frame delete) — re-upload before the
+                    // next draw. If the dimensions changed too (rare),
+                    // recreate the texture; otherwise write_texture in
+                    // place.
+                    if entry.width == width && entry.height == height {
+                        perform_texture_upload(
+                            queue,
+                            &entry.texture,
+                            data,
+                            width,
+                            height,
+                            frame,
+                            true,
+                        );
+                    } else {
+                        // Dimensions changed — full recreate. Account
+                        // for the new memory footprint.
+                        self.gpu_memory_used =
+                            self.gpu_memory_used.saturating_sub(entry.size_bytes);
+                        let new_entry = create_texture_entry(
+                            device,
+                            queue,
+                            layout,
+                            &self.sampler,
+                            data,
+                            width,
+                            height,
+                            frame,
+                            pixel_generation,
+                        );
+                        self.gpu_memory_used += new_entry.size_bytes;
+                        *entry = new_entry;
+                        return &entry.bind_group;
+                    }
+                    entry.pixel_generation = pixel_generation;
+                }
                 &entry.bind_group
             }
             Entry::Vacant(e) => {
-                let size = Extent3d {
+                let new_entry = create_texture_entry(
+                    device,
+                    queue,
+                    layout,
+                    &self.sampler,
+                    data,
                     width,
                     height,
-                    depth_or_array_layers: 1,
-                };
-
-                // `COPY_SRC` permits diagnostic readback per §13.6.1 item 3
-                // — the cost is a one-bit hardware-state flag, no driver-side
-                // memory or perf impact. Texture already lives in VRAM under
-                // `TEXTURE_BINDING | COPY_DST`; flagging `COPY_SRC` only
-                // authorizes the `copy_texture_to_buffer` direction.
-                let texture = device.create_texture(&TextureDescriptor {
-                    label: Some("image_texture"),
-                    size,
-                    mip_level_count: 1,
-                    sample_count: 1,
-                    dimension: TextureDimension::D2,
-                    format: TextureFormat::Rgba8UnormSrgb,
-                    usage: TextureUsages::TEXTURE_BINDING
-                        | TextureUsages::COPY_DST
-                        | TextureUsages::COPY_SRC,
-                    view_formats: &[],
-                });
-
-                // Measure GPU upload duration on main thread. wgpu
-                // staging-buffer exhaustion under back-to-back large
-                // RGBA uploads (graphics-heavy workloads) would
-                // manifest as sustained >= 16ms durations here,
-                // extending frame budget and delaying event-loop poll.
-                let upload_start = std::time::Instant::now();
-                queue.write_texture(
-                    texture.as_image_copy(),
-                    data,
-                    wgpu::TexelCopyBufferLayout {
-                        offset: 0,
-                        bytes_per_row: Some(4 * width),
-                        rows_per_image: Some(height),
-                    },
-                    size,
+                    frame,
+                    pixel_generation,
                 );
-                let upload_ms = upload_start.elapsed().as_millis();
-                if upload_ms >= 16 {
-                    log::info!(
-                        target: "oriterm::gpu::image_render::upload_latency",
-                        "queue.write_texture {width}x{height} ({} bytes) took {upload_ms}ms (staging buffer pressure)",
-                        data.len()
-                    );
-                }
-
-                let view = texture.create_view(&TextureViewDescriptor::default());
-
-                let bind_group = device.create_bind_group(&BindGroupDescriptor {
-                    label: Some("image_bind_group"),
-                    layout,
-                    entries: &[
-                        BindGroupEntry {
-                            binding: 0,
-                            resource: BindingResource::TextureView(&view),
-                        },
-                        BindGroupEntry {
-                            binding: 1,
-                            resource: BindingResource::Sampler(&self.sampler),
-                        },
-                    ],
-                });
-
-                let size_bytes = (width as usize) * (height as usize) * 4;
-                self.gpu_memory_used += size_bytes;
-
-                let entry = e.insert(GpuImageTexture {
-                    texture,
-                    _view: view,
-                    bind_group,
-                    size_bytes,
-                    last_frame: frame,
-                });
+                self.gpu_memory_used += new_entry.size_bytes;
+                let entry = e.insert(new_entry);
                 &entry.bind_group
             }
         }
@@ -388,6 +395,112 @@ impl ImageTextureCache {
         drop(data);
         staging.unmap();
         Some(out)
+    }
+}
+
+/// Upload RGBA pixel data into an existing texture via `queue.write_texture`.
+///
+/// Free function so it can be called from inside `ensure_uploaded`'s
+/// Occupied arm while `&mut entry` is held — a `&self` method would
+/// conflict per Plan TPR R1. Latency log is throttled under sustained
+/// animation traffic (once per 60 frames) so the warn-on-stall signal
+/// stays visible without log-spamming kitty/xray-style workloads.
+fn perform_texture_upload(
+    queue: &Queue,
+    texture: &Texture,
+    data: &[u8],
+    width: u32,
+    height: u32,
+    frame_counter: u64,
+    animated: bool,
+) {
+    let upload_start = std::time::Instant::now();
+    queue.write_texture(
+        texture.as_image_copy(),
+        data,
+        wgpu::TexelCopyBufferLayout {
+            offset: 0,
+            bytes_per_row: Some(4 * width),
+            rows_per_image: Some(height),
+        },
+        Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        },
+    );
+    let upload_ms = upload_start.elapsed().as_millis();
+    if upload_ms >= 16 && (!animated || frame_counter % 60 == 0) {
+        log::info!(
+            target: "oriterm::gpu::image_render::upload_latency",
+            "queue.write_texture {width}x{height} ({} bytes) took {upload_ms}ms (staging buffer pressure)",
+            data.len()
+        );
+    }
+}
+
+/// Allocate a fresh `GpuImageTexture` + upload data. Used by both the
+/// Vacant arm of `ensure_uploaded` and the dim-change branch of the
+/// Occupied arm (when the texture must be recreated rather than
+/// re-uploaded into).
+#[expect(
+    clippy::too_many_arguments,
+    reason = "texture creation needs device, queue, layout, sampler, data + dims + frame + generation"
+)]
+fn create_texture_entry(
+    device: &Device,
+    queue: &Queue,
+    layout: &BindGroupLayout,
+    sampler: &wgpu::Sampler,
+    data: &[u8],
+    width: u32,
+    height: u32,
+    frame: u64,
+    pixel_generation: u64,
+) -> GpuImageTexture {
+    let size = Extent3d {
+        width,
+        height,
+        depth_or_array_layers: 1,
+    };
+    let texture = device.create_texture(&TextureDescriptor {
+        label: Some("image_texture"),
+        size,
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Rgba8UnormSrgb,
+        usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST | TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+    perform_texture_upload(
+        queue, &texture, data, width, height, frame, /* animated */ false,
+    );
+    let view = texture.create_view(&TextureViewDescriptor::default());
+    let bind_group = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("image_bind_group"),
+        layout,
+        entries: &[
+            BindGroupEntry {
+                binding: 0,
+                resource: BindingResource::TextureView(&view),
+            },
+            BindGroupEntry {
+                binding: 1,
+                resource: BindingResource::Sampler(sampler),
+            },
+        ],
+    });
+    let size_bytes = (width as usize) * (height as usize) * 4;
+    GpuImageTexture {
+        texture,
+        _view: view,
+        bind_group,
+        size_bytes,
+        last_frame: frame,
+        pixel_generation,
+        width,
+        height,
     }
 }
 

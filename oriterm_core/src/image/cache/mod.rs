@@ -4,10 +4,13 @@ mod animation;
 mod compose;
 mod deletion;
 mod eviction;
+mod frame_entry;
 mod frame_loading;
 mod lifecycle;
 mod placeholder;
 mod test_probes;
+
+pub(crate) use frame_entry::{FrameEntry, FrameId};
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -61,8 +64,20 @@ pub struct ImageCache {
     next_store_order: u64,
     /// Per-image animation state for multi-frame images.
     pub(super) animations: HashMap<ImageId, AnimationState>,
-    /// All decoded frames for animated images (frame 0 is also in `ImageData.data`).
-    pub(super) animation_frames: HashMap<ImageId, Vec<Arc<Vec<u8>>>>,
+    /// All stored frames for animated images (frame 0 is also in `ImageData.data`).
+    ///
+    /// Element type is [`FrameEntry`] — `Materialized` carries the full RGBA
+    /// canvas; `Delta` carries the sub-rect payload + stable `FrameId`
+    /// back-reference, composed on demand via [`Self::frame_for_number`].
+    /// Vec position is the 1-based kitty protocol frame index;
+    /// `FrameEntry::id()` is the stable internal reference used by
+    /// `Delta.base`.
+    pub(super) animation_frames: HashMap<ImageId, Vec<FrameEntry>>,
+    /// Monotonic `FrameId` allocator for stable internal references.
+    ///
+    /// Bumped by [`alloc_frame_id`] at every `FrameEntry` creation site.
+    /// Never wrapped; `u64` width matches `ImageData::pixel_generation`.
+    pub(super) next_frame_id: u64,
     /// When each animated image's current frame started displaying.
     pub(super) frame_starts: HashMap<ImageId, Instant>,
     /// Whether animation is enabled (from config).
@@ -91,6 +106,7 @@ impl ImageCache {
             next_store_order: 0,
             animations: HashMap::new(),
             animation_frames: HashMap::new(),
+            next_frame_id: 1,
             frame_starts: HashMap::new(),
             animation_enabled: true,
             placeholder_anchors: HashSet::new(),
@@ -142,6 +158,66 @@ impl ImageCache {
     /// Update the max single image size.
     pub fn set_max_single_image(&mut self, limit: usize) {
         self.max_single_image_bytes = limit;
+    }
+
+    /// Allocate the next monotonically-increasing `FrameId`.
+    ///
+    /// Single SSOT for FrameId assignment — every `FrameEntry` creation
+    /// path (`push_composed_frame`, `store_animated`, root-promote in
+    /// `ensure_animation_state_for_root_gap`, `replace_frame_bytes`'s
+    /// auto-promote branch) must route through here so the
+    /// `debug_assert!(base.0 < new.0)` cycle invariant on `Delta.base`
+    /// holds by construction.
+    #[allow(
+        dead_code,
+        reason = "Phase 3 scaffolding (xray-scene lag cure) — wired through put_frame in Phase 4 Item 2"
+    )]
+    pub(crate) fn alloc_frame_id(&mut self) -> FrameId {
+        let id = FrameId(self.next_frame_id);
+        self.next_frame_id = self.next_frame_id.saturating_add(1);
+        id
+    }
+
+    /// Cloned 1-based protocol-indexed frame entry, or `None` if `n == 0`
+    /// or out of range. Used by storage-layer tests + downstream compose
+    /// paths that need to inspect the variant (Materialized vs Delta) or
+    /// chain-depth/cumulative-area metadata.
+    #[allow(
+        dead_code,
+        reason = "Phase 4 Item 1 helper; tests reference it under cfg(test) — \
+                  production reads route through frame_for_number"
+    )]
+    pub(crate) fn frame_entry_at(&self, id: ImageId, n: u32) -> Option<FrameEntry> {
+        if n == 0 {
+            return None;
+        }
+        let frames = self.animation_frames.get(&id)?;
+        frames.get((n - 1) as usize).cloned()
+    }
+
+    /// Atomically swap an image's displayed RGBA bytes and bump its
+    /// `pixel_generation` counter so the GPU re-upload gate fires.
+    ///
+    /// Phase 3 scaffolding (xray-scene lag cure): the helper exists with the final
+    /// shape so animation / edit / delete paths can begin routing
+    /// through it. Bumps use `wrapping_add(1)` per Plan TPR R0
+    /// reviewer consensus — `+= 1` would panic in debug on overflow;
+    /// the GPU cache's wrap test (`pixel_generation_full_wrap_to_seeded_value_forces_reupload`)
+    /// pins the wrap-vs-stale behavior.
+    #[allow(
+        dead_code,
+        reason = "Phase 3 scaffolding (xray-scene lag cure) — wired through apply_frame + edit + delete in Phase 4"
+    )]
+    pub(crate) fn set_image_data_and_bump_generation(
+        &mut self,
+        id: ImageId,
+        new_data: Arc<Vec<u8>>,
+    ) {
+        if let Some(img) = self.images.get_mut(&id) {
+            img.data = new_data;
+            img.pixel_generation = img.pixel_generation.wrapping_add(1);
+        }
+        self.dirty = true;
     }
 
     /// Allocate the next auto-assigned image ID.
@@ -267,7 +343,7 @@ impl ImageCache {
     pub(crate) fn remove_image(&mut self, id: ImageId) {
         if let Some(img) = self.images.remove(&id) {
             if let Some(frames) = self.animation_frames.remove(&id) {
-                let total: usize = frames.iter().map(|f| f.len()).sum();
+                let total: usize = frames.iter().map(|f| f.memory_bytes()).sum();
                 self.memory_used = self.memory_used.saturating_sub(total);
             } else {
                 self.memory_used = self.memory_used.saturating_sub(img.data.len());
@@ -487,6 +563,8 @@ impl std::fmt::Debug for ImageCache {
     }
 }
 
+#[cfg(test)]
+mod delta_storage_tests;
 #[cfg(test)]
 mod matrix_tests;
 #[cfg(test)]

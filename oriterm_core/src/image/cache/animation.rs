@@ -12,14 +12,20 @@ use crate::grid::StableRowIndex;
 
 use super::super::{AnimationSnapshot, AnimationState, ImageData, ImageError, ImageId};
 use super::ImageCache;
+use super::frame_entry::FrameEntry;
 
 /// Apply a specific frame's data to the image, setting `dirty`.
 ///
 /// Takes disjoint field references so callers can hold a simultaneous
 /// borrow on `animations` (the borrow checker can't see inside `&mut
 /// self` method calls).
+///
+/// Phase 4 Item 1: extracts the `Arc<Vec<u8>>` from
+/// `FrameEntry::Materialized` only — `Delta` variants are a no-op
+/// (return early). Phase 4 Item 2 + Item 3 wire compose-on-demand
+/// + `set_image_data_and_bump_generation` routing.
 fn apply_frame(
-    animation_frames: &HashMap<ImageId, Vec<Arc<Vec<u8>>>>,
+    animation_frames: &HashMap<ImageId, Vec<FrameEntry>>,
     images: &mut HashMap<ImageId, ImageData>,
     dirty: &mut bool,
     id: ImageId,
@@ -32,7 +38,16 @@ fn apply_frame(
         return;
     };
     let idx = frame_idx.min(frames.len() - 1);
-    img.data = frames[idx].clone();
+    let bytes = match &frames[idx] {
+        FrameEntry::Materialized { data, .. } => data.clone(),
+        FrameEntry::Delta { .. } => return,
+    };
+    img.data = bytes;
+    // Phase 4 Item 3: bump generation so the GPU cache's Occupied-arm
+    // gate observes the mutation and re-uploads the texture instead of
+    // serving stale pixels from the prior frame. `wrapping_add(1)` per
+    // §05 Item 3 to avoid debug-build panic on u64 overflow.
+    img.pixel_generation = img.pixel_generation.wrapping_add(1);
     *dirty = true;
 }
 
@@ -95,8 +110,18 @@ impl ImageCache {
         self.memory_used += extra_frame_bytes;
 
         let state = AnimationState::new(durations, loop_count);
+        // Wrap each Arc as a Materialized FrameEntry with a fresh stable
+        // FrameId per §05 Item 1 (every entry creation path routes through
+        // `alloc_frame_id`).
+        let entries: Vec<FrameEntry> = frames
+            .into_iter()
+            .map(|data| FrameEntry::Materialized {
+                id: self.alloc_frame_id(),
+                data,
+            })
+            .collect();
         self.animations.insert(id, state);
-        self.animation_frames.insert(id, frames);
+        self.animation_frames.insert(id, entries);
 
         Ok(id)
     }
@@ -297,4 +322,3 @@ impl ImageCache {
         }
     }
 }
-
