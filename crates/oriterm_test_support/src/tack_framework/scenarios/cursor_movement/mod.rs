@@ -45,7 +45,7 @@
 //! as covered by 05.4. The earlier draft of this rustdoc claimed
 //! `cup` was transitively covered "since the test demonstrably
 //! uses it to home the cursor" — but (Codex
-//! /review-work) correctly rejected that claim. `clear` in
+//! review-work) correctly rejected that claim. `clear` in
 //! `extra/ori_term.info` is defined as `\E[H\E[2J`, which
 //! already homes the cursor via a LITERAL escape sequence (not
 //! via the parameterized `cup` capability). The observed "home
@@ -71,13 +71,11 @@ use crate::tack_framework::{MenuStep, ScenarioSpec, ScreenFacts};
 /// cursor-related capability short names (`cup`, `hpa`, `vpa`,
 /// `csr`, `cuu`, `cud`, `cub`, `cuf`) using [`grid_has_token`]
 /// (whitespace-bounded).
-///
 /// All 8 names are 3 characters and would false-positive on bare
 /// `str::contains` against any English word containing them —
 /// e.g. `cup` matches inside `cupboard`/`occupied`, `vpa` and
 /// `hpa` inside arbitrary letter pairs. The tokenized helper is
 /// the M3 fix from Section 04 and is mandatory.
-///
 /// **Empirical caveat (tack v1.08).** As of tack v1.08 the cursor
 /// movement screen does NOT emit any of these names — the test
 /// only outputs `This line should start in the home position. The
@@ -86,54 +84,51 @@ use crate::tack_framework::{MenuStep, ScenarioSpec, ScreenFacts};
 /// host. This is preserved as forward-compatible infrastructure
 /// for a future tack release that draws per-cap labels on the
 /// cursor movement screen.
-///
 /// Cursor MOVEMENT (the actual `cup`/`hpa`/`vpa`/`csr` pixel
 /// effects) is the domain of Section 07's GPU goldens — this
 /// parser only verifies the LABELS are present.
 pub fn parse_cursor_screen(grid: &str) -> ScreenFacts {
-    const CURSOR_CAPS: &[&str] = &["cup", "hpa", "vpa", "csr", "cuu", "cud", "cub", "cuf"];
-    let mut found = Vec::new();
-    for cap in CURSOR_CAPS {
-        if grid_has_token(grid, cap) {
-            found.push((*cap).to_string());
-        }
-    }
-    let header = grid
-        .lines()
-        .map(str::trim)
-        .find(|line| !line.is_empty())
-        .unwrap_or("")
-        .to_string();
-    ScreenFacts {
-        header_text: header,
-        capability_labels: found,
-        notes: Vec::new(),
-    }
+ const CURSOR_CAPS: &[&str] = &["cup", "hpa", "vpa", "csr", "cuu", "cud", "cub", "cuf"];
+ let mut found = Vec::new();
+ for cap in CURSOR_CAPS {
+ if grid_has_token(grid, cap) {
+ found.push((*cap).to_string());
+ }
+ }
+ let header = grid
+ .lines()
+ .map(str::trim)
+ .find(|line| !line.is_empty())
+ .unwrap_or("")
+ .to_string();
+ ScreenFacts {
+ header_text: header,
+ capability_labels: found,
+ notes: Vec::new(),
+ }
 }
 
 /// Tack cursor movement scenario.
-///
 /// Navigates the verified path from 05.0's
 /// [`super::begin_testing_inventory::BEGIN_TESTING_INVENTORY`]:
 /// `n` (enter test menu) → `m` (enter cursor movement sub-menu,
 /// prompt becomes `tack/test/move [n] >` — tack uses the short
 /// form `move`, not `cursor`) → `n` (run the standard cursor
 /// movement test, terminator is `Done`).
-///
 /// Anchor strings empirically verified against tack v1.08
 /// (2026-04-08) — see the module rustdoc for the captured-output
 /// evidence.
 pub const TACK_CURSOR_MOVEMENT: ScenarioSpec = ScenarioSpec {
-    id: "tack_cursor_movement",
-    screen_id: "tack_cursor_movement",
-    menu_path: &[
-        MenuStep::new(b"n", "tack/test [n] >"),
-        MenuStep::new(b"m", "tack/test/move [n] >"),
-        MenuStep::new(b"n", "Done"),
-    ],
-    ready_anchor: "Done",
-    quit_path: None,
-    parser: parse_cursor_screen,
+ id: "tack_cursor_movement",
+ screen_id: "tack_cursor_movement",
+ menu_path: &[
+ MenuStep::new(b"n", "tack/test [n] >"),
+ MenuStep::new(b"m", "tack/test/move [n] >"),
+ MenuStep::new(b"n", "Done"),
+ ],
+ ready_anchor: "Done",
+ quit_path: None,
+ parser: parse_cursor_screen,
 };
 
 #[cfg(test)]

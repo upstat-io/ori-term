@@ -4,7 +4,7 @@
 //! from Rust. These tests pin the behavioral contract that the function
 //! is callable on every supported platform without panicking. The
 //! load-bearing verification of audible output is the manual user test
-//! per `bug-tracker/plans//section-07-completion-checklist.md`.
+//! per .
 
 use super::play_bell;
 
@@ -13,7 +13,7 @@ use super::play_bell;
 /// misconfigurations before they reach a user.
 #[test]
 fn play_bell_does_not_panic_on_current_platform() {
-    play_bell();
+ play_bell();
 }
 
 /// Regression: `play_bell()` must be safe to call multiple
@@ -21,7 +21,7 @@ fn play_bell_does_not_panic_on_current_platform() {
 /// X11 display handle that's not properly closed between calls).
 #[test]
 fn play_bell_is_idempotent_when_called_multiple_times() {
-    for _ in 0..5 {
-        play_bell();
-    }
+ for _ in 0..5 {
+ play_bell();
+ }
 }

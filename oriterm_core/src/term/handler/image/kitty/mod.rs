@@ -17,6 +17,7 @@ use crate::term::Term;
 mod animate;
 mod delete;
 mod frame;
+mod frame_keys;
 mod place;
 pub(crate) mod placeholder;
 mod query;

@@ -4,7 +4,7 @@
 //! across `oriterm_core/tests/vttest/` and
 //! `oriterm/src/gpu/visual_regression/vttest/` with a single canonical
 //! algorithm that takes a per-screen closure for the variation. See
-//! `bug-tracker/plans/completed/00-overview.md` for the design consensus and
+//! for the design consensus and
 //! migration matrix.
 
 use crate::PtySession;
@@ -13,46 +13,43 @@ use crate::PtySession;
 /// screen until `"Enter choice number"` (or any string in
 /// `extra_sentinels`) appears in `grid_text()`, or `max_screens`
 /// iterations elapse.
-///
 /// The closure receives:
 /// 1. `&mut PtySession` — for interleaved sends or `grid_chars` access.
 /// 2. `&str text` — the captured grid text the helper already allocated
-///    for the sentinel check, so the closure does not re-pay the
-///    `grid_text()` allocation cost.
+/// for the sentinel check, so the closure does not re-pay the
+/// `grid_text()` allocation cost.
 /// 3. `usize screen` — the 1-based screen index.
-///
 /// After the closure returns, an Enter keypress is sent via
 /// [`PtySession::send_enter`], which respects LNM (Line Feed/New Line)
 /// mode and includes the 300 ms quiescent wait. See
 /// [`oriterm_core::encode_enter_base`] for the SSOT.
-///
 /// Returns the number of screens for which `on_screen` was called.
 pub fn walk_vttest_screens<F>(
-    session: &mut PtySession,
-    max_screens: usize,
-    extra_sentinels: &[&str],
-    mut on_screen: F,
+ session: &mut PtySession,
+ max_screens: usize,
+ extra_sentinels: &[&str],
+ mut on_screen: F,
 ) -> usize
 where
-    F: FnMut(&mut PtySession, &str, usize),
+ F: FnMut(&mut PtySession, &str, usize),
 {
-    let mut count = 0usize;
-    let mut screen = 1usize;
-    loop {
-        let text = session.grid_text();
-        if text.contains("Enter choice number") || extra_sentinels.iter().any(|s| text.contains(s))
-        {
-            break;
-        }
-        if count >= max_screens {
-            break;
-        }
-        on_screen(session, &text, screen);
-        count += 1;
-        session.send_enter();
-        screen += 1;
-    }
-    count
+ let mut count = 0usize;
+ let mut screen = 1usize;
+ loop {
+ let text = session.grid_text();
+ if text.contains("Enter choice number") || extra_sentinels.iter().any(|s| text.contains(s))
+ {
+ break;
+ }
+ if count >= max_screens {
+ break;
+ }
+ on_screen(session, &text, screen);
+ count += 1;
+ session.send_enter();
+ screen += 1;
+ }
+ count
 }
 
 #[cfg(test)]

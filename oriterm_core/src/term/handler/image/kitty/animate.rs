@@ -1,11 +1,15 @@
 //! Kitty graphics `a=a` (animation playback control) action.
 
+use log::warn;
+
 use crate::effect::sink::EffectSink;
 use crate::image::ImageId;
+use crate::image::ImageError;
 use crate::image::kitty::KittyCommand;
 use crate::term::Term;
 
 use super::KittyReplyContext;
+use super::frame_keys::a_a_z_to_gap_update;
 
 impl<S: EffectSink> Term<S> {
     /// Handle `a=a` — control animation playback.
@@ -58,16 +62,32 @@ impl<S: EffectSink> Term<S> {
         // graphics.c:1729-1735, z= is consumed only via r=; standalone z= is
         // a no-op. z=0 means "no gap change" (kitty's `if (g->gap)` guard at
         // 1734); negative z= clamps to ZERO (gapless edit, per change_gap at
-        // graphics.c:1348-1350).
+        // graphics.c:1348-1350). When r=1 targets the root frame, route
+        // through `ensure_animation_state_for_root_gap` so static-image
+        // root-gap storage is honored.
         if let Some(frame) = cmd.display_rows {
             if frame > 0 && cmd.z_index != 0 {
-                let gap = if cmd.z_index < 0 {
-                    std::time::Duration::ZERO
-                } else {
-                    std::time::Duration::from_millis(cmd.z_index as u64)
-                };
-                self.image_cache_mut()
-                    .set_frame_gap(id, (frame - 1) as usize, gap);
+                let gap_update = a_a_z_to_gap_update(cmd.z_index);
+                if frame == 1 {
+                    match self
+                        .image_cache_mut()
+                        .ensure_animation_state_for_root_gap(id, gap_update)
+                    {
+                        Ok(()) => {}
+                        Err(ImageError::MissingImage { .. }) => {
+                            self.kitty_respond(&ctx, "ENOENT");
+                            return;
+                        }
+                        Err(e) => {
+                            warn!("a=a root gap update failed: {e}");
+                            self.kitty_respond(&ctx, &format!("EINVAL: {e}"));
+                            return;
+                        }
+                    }
+                } else if let Some(gap) = gap_update {
+                    self.image_cache_mut()
+                        .set_frame_gap(id, (frame - 1) as usize, gap);
+                }
             }
         }
 

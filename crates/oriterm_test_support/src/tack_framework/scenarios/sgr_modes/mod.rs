@@ -47,7 +47,7 @@
 //! the parser accepts them without regressing cell attributes. That
 //! is the correct canonical home for cap-level DEC-private SGR
 //! coverage; duplicating it as a tack scenario with identical
-//! `grid_text` would be `LEAK:algorithmic-duplication`.
+//! `grid_text` would be ``.
 //!
 //! # Plan deviation: the `\r` step
 //!
@@ -65,7 +65,6 @@ use crate::tack_framework::parser::tokens::grid_has_token;
 use crate::tack_framework::{MenuStep, ScenarioSpec, ScreenFacts};
 
 /// Number of Mode labels tack draws on the SGR sub-screen (0..79).
-///
 /// Tests assert `found_modes_count >= MIN_EXPECTED_MODES` which pins
 /// the full 80-mode capture against tack v1.08. The constant lives at
 /// module scope so the sibling parser tests, the 80x24 wrapper, and
@@ -73,33 +72,30 @@ use crate::tack_framework::{MenuStep, ScenarioSpec, ScreenFacts};
 pub const MIN_EXPECTED_MODES: usize = 80;
 
 /// Section 06.2 scenario: tack's default SGR mode table.
-///
 /// Navigates `t -> g` and captures at the first appearance of the
 /// `Mode 79` label. The Mode 0..79 table is drawn IMMEDIATELY after
 /// `g` lands; there is no `\r` step (see module rustdoc for the plan
 /// deviation rationale).
 pub const TACK_TOOLS_SGR: ScenarioSpec = ScenarioSpec {
-    id: "tack_tools_sgr",
-    screen_id: "tack_tools_sgr",
-    menu_path: &[
-        MenuStep::new(b"t", "tack/tools [q] >"),
-        // After `g`, tack clears the screen and draws the 80-mode
-        // grid followed by the sgr sub-prompt. `Mode 79` is unique to
-        // this screen — no earlier menu contains it — so it is a
-        // valid post-send anchor that cannot pre-exist on the tools
-        // menu screen from the previous step.
-        MenuStep::new(b"g", "Mode 79"),
-    ],
-    ready_anchor: "Mode 79",
-    quit_path: None,
-    parser: parse_sgr_modes_screen,
+ id: "tack_tools_sgr",
+ screen_id: "tack_tools_sgr",
+ menu_path: &[
+ MenuStep::new(b"t", "tack/tools [q] >"),
+ // After `g`, tack clears the screen and draws the 80-mode
+ // grid followed by the sgr sub-prompt. `Mode 79` is unique to
+ // this screen — no earlier menu contains it — so it is a
+ // valid post-send anchor that cannot pre-exist on the tools
+ // menu screen from the previous step.
+ MenuStep::new(b"g", "Mode 79"),
+ ],
+ ready_anchor: "Mode 79",
+ quit_path: None,
+ parser: parse_sgr_modes_screen,
 };
 
 /// Count tack's 80 `Mode N` labels (N = 0..80) in `grid` as
 /// whitespace-bounded tokens.
-///
 /// # Format
-///
 /// Tack formats each label as `Mode %2d` (printf-style, 2-char
 /// right-aligned number), so single-digit modes have two spaces
 /// between `Mode` and the digit (`Mode 0`) and double-digit modes
@@ -110,25 +106,23 @@ pub const TACK_TOOLS_SGR: ScenarioSpec = ScenarioSpec {
 /// trailing `0` would need to be ASCII whitespace to satisfy the
 /// right-boundary check of a `Mode 1` match, but it is the digit
 /// `0`.
-///
 /// # Returns
-///
 /// [`ScreenFacts`] with a single note `"found_modes_count=<count>"`
 /// where `<count>` is the number of matched labels. Tests assert
 /// `count >= MIN_EXPECTED_MODES`.
 pub fn parse_sgr_modes_screen(grid: &str) -> ScreenFacts {
-    let count = count_mode_labels(grid);
-    let header = grid
-        .lines()
-        .map(str::trim)
-        .find(|line| !line.is_empty())
-        .unwrap_or("")
-        .to_string();
-    ScreenFacts {
-        header_text: header,
-        capability_labels: Vec::new(),
-        notes: vec![format!("found_modes_count={count}")],
-    }
+ let count = count_mode_labels(grid);
+ let header = grid
+ .lines()
+ .map(str::trim)
+ .find(|line| !line.is_empty())
+ .unwrap_or("")
+ .to_string();
+ ScreenFacts {
+ header_text: header,
+ capability_labels: Vec::new(),
+ notes: vec![format!("found_modes_count={count}")],
+ }
 }
 
 /// Count how many `Mode N` labels for `N = 0..80` appear in `grid`
@@ -136,18 +130,18 @@ pub fn parse_sgr_modes_screen(grid: &str) -> ScreenFacts {
 /// tests can pin individual-label behavior without spinning up the
 /// full [`parse_sgr_modes_screen`] envelope each time.
 pub(super) fn count_mode_labels(grid: &str) -> usize {
-    let mut count = 0_usize;
-    for n in 0..80_u32 {
-        // `{n:>2}` right-aligns the number in 2 chars, matching
-        // tack's `printf("%2d", n)` output exactly:
-        // n=0 -> "Mode 0" (two spaces before the digit)
-        // n=10 -> "Mode 10" (one space, two-digit number)
-        let token = format!("Mode {n:>2}");
-        if grid_has_token(grid, &token) {
-            count += 1;
-        }
-    }
-    count
+ let mut count = 0_usize;
+ for n in 0..80_u32 {
+ // `{n:>2}` right-aligns the number in 2 chars, matching
+ // tack's `printf("%2d", n)` output exactly:
+ // n=0 -> "Mode 0" (two spaces before the digit)
+ // n=10 -> "Mode 10" (one space, two-digit number)
+ let token = format!("Mode {n:>2}");
+ if grid_has_token(grid, &token) {
+ count += 1;
+ }
+ }
+ count
 }
 
 #[cfg(test)]

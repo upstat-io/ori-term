@@ -5,15 +5,12 @@
 //! viewport are animated to save CPU/GPU.
 
 use std::collections::HashMap;
-use std::collections::hash_map::Entry;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use crate::grid::StableRowIndex;
 
-use super::super::{
-    AnimationSnapshot, AnimationState, CompositionMode, ImageData, ImageError, ImageId,
-};
+use super::super::{AnimationSnapshot, AnimationState, ImageData, ImageError, ImageId};
 use super::ImageCache;
 
 /// Apply a specific frame's data to the image, setting `dirty`.
@@ -139,6 +136,13 @@ impl ImageCache {
             if state.paused || state.is_finished() || state.total_frames <= 1 {
                 continue;
             }
+            // All-gapless guard — equivalent to kitty
+            // `image_is_animatable` (graphics.c:1773-1775). When every
+            // frame's gap is `Duration::ZERO`, computing a deadline yields
+            // `now`, causing per-call churn. Skip the image entirely.
+            if state.frame_durations.iter().all(|d| d.is_zero()) {
+                continue;
+            }
 
             // Initialize frame start if first time.
             let frame_start = *self.frame_starts.entry(id).or_insert(now);
@@ -198,84 +202,6 @@ impl ImageCache {
     /// Returns `None` if the image is not animated.
     pub fn animation_snapshot(&self, id: ImageId) -> Option<AnimationSnapshot<'_>> {
         self.animations.get(&id).map(AnimationSnapshot::from)
-    }
-
-    /// Add an animation frame to an existing image (Kitty `a=f`).
-    ///
-    /// If the image is not yet animated, promotes it: the existing data
-    /// becomes frame 1 with a default gap, and the new data becomes frame 2.
-    /// `gap` is the duration before displaying this frame.
-    /// `composition_mode` controls how the frame is built from existing data.
-    ///
-    /// Returns the 1-based frame index of the newly added frame — kitty
-    /// `finish_command_response` (`graphics.c:802-806`) echoes this via the
-    /// `,r=<frame_num>` qualifier on the `a=f` OK reply so the client can
-    /// correlate the mutation to a specific frame.
-    pub(crate) fn add_animation_frame(
-        &mut self,
-        id: ImageId,
-        frame_data: Arc<Vec<u8>>,
-        gap: Duration,
-        composition_mode: CompositionMode,
-    ) -> Result<u32, ImageError> {
-        let img = self.images.get(&id).ok_or(ImageError::InvalidFormat)?;
-        let img_data = img.data.clone();
-
-        // Check total memory with new frame.
-        if frame_data.len() > self.max_single_image_bytes {
-            return Err(ImageError::OversizedImage);
-        }
-
-        let added_index_1based = match self.animations.entry(id) {
-            Entry::Vacant(e) => {
-                // Promote static image to animated: frame 0 = existing data.
-                // Frame 0 (img_data) is already counted in memory_used from
-                // the original store(). Only count the new frame.
-                self.memory_used += frame_data.len();
-                let frames = vec![img_data, frame_data];
-                let durations = vec![gap, gap];
-                e.insert(AnimationState::new(durations, None));
-                self.animation_frames.insert(id, frames);
-                // The promotion pushes frame 0 (pre-existing) + frame 1 (new).
-                // kitty's 1-based index for the new frame is 2.
-                2
-            }
-            Entry::Occupied(mut e) => {
-                let anim_frames = self.animation_frames.entry(id).or_default();
-
-                // Apply composition mode for the new frame.
-                let composed = match composition_mode {
-                    CompositionMode::Overwrite => frame_data,
-                    CompositionMode::AlphaBlend => {
-                        if let Some(prev) = anim_frames.last() {
-                            Arc::new(alpha_blend_frames(prev, &frame_data))
-                        } else {
-                            frame_data
-                        }
-                    }
-                };
-
-                self.memory_used += composed.len();
-                anim_frames.push(composed);
-
-                let state = e.get_mut();
-                state.frame_durations.push(gap);
-                state.total_frames = anim_frames.len();
-                // : in s=2 wait-mode, an animation that has
-                // exhausted its loops resumes when a new frame arrives.
-                // Reset loops_completed so is_finished() returns false
-                // and advance() can tick into the newly-appended frames.
-                if state.wait_mode && state.is_finished() {
-                    state.loops_completed = 0;
-                }
-                // Newly-pushed frame is at 0-based index `len - 1`; kitty
-                // reports it 1-based.
-                anim_frames.len() as u32
-            }
-        };
-
-        self.dirty = true;
-        Ok(added_index_1based)
     }
 
     /// Set animation playback state (Kitty `a=a`, `s=` key).
@@ -372,38 +298,3 @@ impl ImageCache {
     }
 }
 
-/// Alpha-blend `src` over `dst` (both RGBA, same length).
-fn alpha_blend_frames(dst: &[u8], src: &[u8]) -> Vec<u8> {
-    let len = dst.len().min(src.len());
-    let mut out = dst[..len].to_vec();
-
-    for i in (0..len).step_by(4) {
-        if i + 3 >= len {
-            break;
-        }
-        let sa = src[i + 3] as u32;
-        if sa == 0 {
-            continue;
-        }
-        if sa == 255 {
-            out[i] = src[i];
-            out[i + 1] = src[i + 1];
-            out[i + 2] = src[i + 2];
-            out[i + 3] = 255;
-            continue;
-        }
-        let da = out[i + 3] as u32;
-        let inv_sa = 255 - sa;
-        // Porter-Duff "source over" blend.
-        let oa = sa + (da * inv_sa) / 255;
-        if oa == 0 {
-            continue;
-        }
-        out[i] = ((src[i] as u32 * sa + out[i] as u32 * da * inv_sa / 255) / oa) as u8;
-        out[i + 1] = ((src[i + 1] as u32 * sa + out[i + 1] as u32 * da * inv_sa / 255) / oa) as u8;
-        out[i + 2] = ((src[i + 2] as u32 * sa + out[i + 2] as u32 * da * inv_sa / 255) / oa) as u8;
-        out[i + 3] = oa.min(255) as u8;
-    }
-
-    out
-}

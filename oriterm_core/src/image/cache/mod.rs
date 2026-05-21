@@ -3,8 +3,10 @@
 mod animation;
 mod deletion;
 mod eviction;
+mod frame_loading;
 mod lifecycle;
 mod placeholder;
+mod test_probes;
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -206,8 +208,7 @@ impl ImageCache {
     /// LRU-on-place across every protocol — never falling back to the
     /// pre-§13.6.1 FIFO-on-store-order behavior for any one protocol.
     ///
-    /// Per `plans/spec-conformance/section-13-kitty-graphics.md §13.6.1`
-    /// — per-protocol bumps would scatter the LRU contract across N
+    /// Per-protocol bumps would scatter the LRU contract across N
     /// consumer sites; an `ImageCache`-owned API is the SSOT.
     pub(crate) fn place(&mut self, placement: ImagePlacement) {
         let image_id = placement.image_id;

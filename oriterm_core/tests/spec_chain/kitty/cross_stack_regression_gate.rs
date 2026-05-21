@@ -17,10 +17,6 @@
 //! under §13.6 — until then, this gate is vacuously clean (target file
 //! absent). The contract: when §13.6 lands the file, this gate fires on
 //! any drift into the synthesize-cache anti-pattern.
-//!
-//! Plan body cross-reference:
-//! `plans/spec-conformance/section-13-kitty-graphics.md §13.6` line 541
-//! (`cross_stack_eviction_tests_drive_real_protocol_bytes`).
 
 use std::path::PathBuf;
 

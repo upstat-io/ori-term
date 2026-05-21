@@ -6,27 +6,30 @@ use log::warn;
 
 use crate::effect::sink::EffectSink;
 use crate::image::kitty::KittyCommand;
-use crate::image::{CompositionMode, ImageId};
+use crate::image::{
+    BlitRect, CanvasSource, FrameLoadRequest, FrameTarget, ImageError, ImageId,
+};
 use crate::term::Term;
 
 use super::KittyReplyContext;
+use super::frame_keys::{KittyFrameKeys, extract_a_f_keys};
 
 impl<S: EffectSink> Term<S> {
     /// Handle `a=f` — transmit an animation frame.
     ///
-    /// Adds a frame to an existing image. If the image is not yet
-    /// animated, it is promoted to animated (existing data = frame 0).
-    /// Key reinterpretation for `a=f`:
-    /// - `display_cols` (`c=`) → PARSED-BUT-IGNORED; per kitty spec
-    ///   selects frame-replace semantics for frame N. Current
-    ///   dispatch always appends.
-    /// - `display_rows` (`r=`) → PARSED-BUT-IGNORED; per kitty spec
-    ///   selects frame-edit semantics for frame N. Current dispatch
-    ///   always appends.
-    /// - `z_index` (`z=`) → gap in ms before this frame
-    /// - `cell_x_offset` (`X=`) → composition mode (0=blend, 1=overwrite)
+    /// Three spec arms per kitty `graphics-protocol.rst` lines 880-903:
+    /// - **Default-append**: neither `c=` nor `r=` set → append a new
+    ///   frame, canvas = `Y=` RGBA solid color.
+    /// - **`c=N` append**: `c=N` set, `r=` unset or clamped to next-append
+    ///   → append a new frame using frame N's pixel data as canvas.
+    /// - **`r=N` edit**: `r=N` within existing-frame range → edit frame N
+    ///   in place; canvas IS frame N; payload composed on top.
     ///
-    /// See: bug-tracker/plans/BUG-08-041/
+    /// `r=N > total` clamps to the next-append index per kitty
+    /// graphics.c:1558-1561 (NOT EINVAL). `c=` is consulted only on the
+    /// append path (graphics.c:1606-1635); the edit arm silently ignores
+    /// it. Sub-rect (`x=, y=, s=, v=`) applies to all three arms.
+    /// Composition mode (`X=`) selects AlphaBlend (0) or Overwrite (1).
     pub(super) fn kitty_frame(&mut self, cmd: KittyCommand) {
         if cmd.more_data {
             self.kitty_accumulate_chunk(cmd);
@@ -36,14 +39,17 @@ impl<S: EffectSink> Term<S> {
         let (image_id, mut merged) = self.kitty_finalize_payload(cmd);
         let ctx = KittyReplyContext::from_cmd(&merged).with_image_id(image_id);
 
+        // ENOENT precheck BEFORE decode (kitty graphics.c:2230-2235).
         if self.image_cache().get_no_touch(ImageId(image_id)).is_none() {
             self.kitty_respond(&ctx, "ENOENT");
             return;
         }
 
-        // Decode the frame pixel data using first-chunk format/dimensions.
+        // Decode payload — captures decoded dims for blit (load-bearing
+        // for PNG `f=100` where `s=` and decoded dims can disagree because
+        // `decode_to_rgba` reads dims from the PNG header).
         let payload = std::mem::take(&mut merged.payload);
-        let (rgba_data, _w, _h) = match Self::kitty_decode_pixels(
+        let (rgba_data, decoded_w, decoded_h) = match Self::kitty_decode_pixels(
             payload,
             merged.format,
             merged.source_width,
@@ -57,34 +63,98 @@ impl<S: EffectSink> Term<S> {
             }
         };
 
-        let gap_ms = merged.z_index.max(0) as u64;
-        let gap = std::time::Duration::from_millis(gap_ms);
+        let keys = extract_a_f_keys(&merged, decoded_w, decoded_h);
 
-        let composition_mode = if merged.cell_x_offset == 1 {
-            CompositionMode::Overwrite
+        // r-clamp + arm resolution (kitty graphics.c:1558-1561 + 1606-1635).
+        let total_frames = self
+            .image_cache()
+            .animation_total_frames(ImageId(image_id));
+        let r_target = keys.target_frame.unwrap_or(0);
+        let effective_target = if r_target == 0 || r_target > total_frames {
+            total_frames + 1
         } else {
-            CompositionMode::AlphaBlend
+            r_target
         };
+        let is_append = effective_target == total_frames + 1;
 
-        let frame_data = Arc::new(rgba_data);
+        let request = build_request(image_id, &keys, &rgba_data, is_append, effective_target);
 
-        let frame_num = match self.image_cache_mut().add_animation_frame(
-            ImageId(image_id),
-            frame_data,
-            gap,
-            composition_mode,
-        ) {
-            Ok(idx) => idx,
-            Err(e) => {
-                warn!("kitty frame add failed: {e}");
-                self.kitty_respond(&ctx, &format!("ENOMEM: {e}"));
-                return;
+        match self.image_cache_mut().put_frame(request) {
+            Ok(result_frame_num) => {
+                let ctx = ctx.with_frame_num(result_frame_num);
+                self.kitty_respond(&ctx, "OK");
             }
-        };
+            Err(e) => emit_error_reply(self, ctx, e),
+        }
+    }
+}
 
-        // kitty finish_command_response (graphics.c:802-806) echoes `,r=<frame_num>`
-        // on a=f replies so the client can correlate the OK to the added frame.
-        let ctx = ctx.with_frame_num(frame_num);
-        self.kitty_respond(&ctx, "OK");
+/// Build the `FrameLoadRequest` for the resolved arm.
+fn build_request(
+    image_id: u32,
+    keys: &KittyFrameKeys,
+    rgba_data: &[u8],
+    is_append: bool,
+    effective_target: u32,
+) -> FrameLoadRequest {
+    let target = if is_append {
+        FrameTarget::Append {
+            gap: keys.append_gap,
+        }
+    } else {
+        FrameTarget::Edit {
+            frame_num: effective_target,
+            gap_update: keys.edit_gap_update,
+        }
+    };
+    let canvas = if is_append {
+        if let Some(c) = keys.canvas_frame {
+            CanvasSource::Frame(c)
+        } else {
+            CanvasSource::SolidColor(keys.background_rgba)
+        }
+    } else {
+        CanvasSource::EditTarget
+    };
+    FrameLoadRequest {
+        image_id: ImageId(image_id),
+        target,
+        canvas,
+        blit: BlitRect {
+            dest_x: keys.blit_x,
+            dest_y: keys.blit_y,
+            width: keys.blit_w,
+            height: keys.blit_h,
+        },
+        frame_data: Arc::new(rgba_data.to_vec()),
+        composition_mode: keys.compose_mode,
+    }
+}
+
+/// Map `put_frame` errors to kitty reply codes.
+fn emit_error_reply<S: EffectSink>(
+    term: &mut Term<S>,
+    ctx: KittyReplyContext,
+    err: ImageError,
+) {
+    match err {
+        // ENOENT per kitty graphics.c:2233-2235; preserve `,r=` omission so
+        // existing `kitty_frame_reply_r_qualifier_omitted_on_missing_image_enoent`
+        // regression pin survives.
+        ImageError::MissingImage { .. } => {
+            term.kitty_respond(&ctx, "ENOENT");
+        }
+        ImageError::InvalidFrameRef { .. } => {
+            term.kitty_respond(&ctx, &format!("EINVAL: {err}"));
+        }
+        ImageError::OversizedBlit { .. } => {
+            term.kitty_respond(&ctx, &format!("EINVAL: {err}"));
+        }
+        ImageError::OversizedImage | ImageError::MemoryLimitExceeded => {
+            term.kitty_respond(&ctx, &format!("ENOMEM: {err}"));
+        }
+        ImageError::InvalidFormat | ImageError::DecodeFailed(_) => {
+            term.kitty_respond(&ctx, &format!("EINVAL: {err}"));
+        }
     }
 }

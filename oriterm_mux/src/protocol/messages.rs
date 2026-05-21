@@ -12,480 +12,472 @@ use super::host_request::{HostReplyPayload, WireClipboardSelection, WireNotifica
 use super::snapshot::{PaneSnapshot, WireSelection};
 
 /// All protocol messages — requests, responses, and notifications.
-///
 /// Each variant carries its own data. The bincode encoding includes the
 /// enum discriminant, so the `msg_type` in the frame header is redundant
 /// for deserialization but useful for pre-routing and debugging.
-///
 /// `Eq` derive dropped at `PROTOCOL_VERSION` v3 because `PaneSnapshot` carries
 /// `WirePlacement` (f32, `PartialEq` only).
-/// See: bug-tracker/plans/BUG-06-072/
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum MuxPdu {
-    // -- Requests (client → daemon) --
-    /// Client handshake. Sent immediately after connecting.
-    Hello {
-        /// OS process ID of the connecting client.
-        pid: u32,
-        /// Protocol version the client speaks.
-        protocol_version: u8,
-        /// Feature flags the client supports (bitmask).
-        features: u64,
-    },
+ // -- Requests (client → daemon) --
+ /// Client handshake. Sent immediately after connecting.
+ Hello {
+ /// OS process ID of the connecting client.
+ pid: u32,
+ /// Protocol version the client speaks.
+ protocol_version: u8,
+ /// Feature flags the client supports (bitmask).
+ features: u64,
+ },
 
-    /// Close a single pane.
-    ClosePane {
-        /// Pane to close.
-        pane_id: PaneId,
-    },
+ /// Close a single pane.
+ ClosePane {
+ /// Pane to close.
+ pane_id: PaneId,
+ },
 
-    /// Write input data to a pane's PTY. Fire-and-forget.
-    Input {
-        /// Target pane.
-        pane_id: PaneId,
-        /// Raw bytes to write.
-        data: Vec<u8>,
-    },
+ /// Write input data to a pane's PTY. Fire-and-forget.
+ Input {
+ /// Target pane.
+ pane_id: PaneId,
+ /// Raw bytes to write.
+ data: Vec<u8>,
+ },
 
-    /// Send a signal to a pane's child process group. Fire-and-forget.
-    ///
-    /// Bypasses the PTY writer when it's stalled (kernel buffer full).
-    /// Used for Ctrl+C delivery during output flooding.
-    SignalChild {
-        /// Target pane.
-        pane_id: PaneId,
-        /// Signal to send (maps to `Signal` enum).
-        signal: u8,
-    },
+ /// Send a signal to a pane's child process group. Fire-and-forget.
+ /// Bypasses the PTY writer when it's stalled (kernel buffer full).
+ /// Used for Ctrl+C delivery during output flooding.
+ SignalChild {
+ /// Target pane.
+ pane_id: PaneId,
+ /// Signal to send (maps to `Signal` enum).
+ signal: u8,
+ },
 
-    /// Resize a pane's terminal grid. Fire-and-forget.
-    Resize {
-        /// Target pane.
-        pane_id: PaneId,
-        /// New column count.
-        cols: u16,
-        /// New row count.
-        rows: u16,
-    },
+ /// Resize a pane's terminal grid. Fire-and-forget.
+ Resize {
+ /// Target pane.
+ pane_id: PaneId,
+ /// New column count.
+ cols: u16,
+ /// New row count.
+ rows: u16,
+ },
 
-    /// Subscribe to a pane's output. Returns current snapshot.
-    Subscribe {
-        /// Pane to subscribe to.
-        pane_id: PaneId,
-    },
+ /// Subscribe to a pane's output. Returns current snapshot.
+ Subscribe {
+ /// Pane to subscribe to.
+ pane_id: PaneId,
+ },
 
-    /// Unsubscribe from a pane's output.
-    Unsubscribe {
-        /// Pane to unsubscribe from.
-        pane_id: PaneId,
-    },
+ /// Unsubscribe from a pane's output.
+ Unsubscribe {
+ /// Pane to unsubscribe from.
+ pane_id: PaneId,
+ },
 
-    /// Get a full snapshot of a pane's state.
-    GetPaneSnapshot {
-        /// Target pane.
-        pane_id: PaneId,
-    },
+ /// Get a full snapshot of a pane's state.
+ GetPaneSnapshot {
+ /// Target pane.
+ pane_id: PaneId,
+ },
 
-    /// Liveness check. The daemon replies with [`PingAck`](Self::PingAck).
-    Ping,
+ /// Liveness check. The daemon replies with [`PingAck`](Self::PingAck).
+ Ping,
 
-    /// Request graceful daemon shutdown. The daemon replies with
-    /// [`ShutdownAck`](Self::ShutdownAck) and then exits.
-    Shutdown,
+ /// Request graceful daemon shutdown. The daemon replies with
+ /// [`ShutdownAck`](Self::ShutdownAck) and then exits.
+ Shutdown,
 
-    /// Scroll a pane's viewport by `delta` lines (positive = toward history).
-    /// Fire-and-forget.
-    ScrollDisplay {
-        /// Target pane.
-        pane_id: PaneId,
-        /// Lines to scroll (positive = up into scrollback, negative = down).
-        delta: i32,
-    },
+ /// Scroll a pane's viewport by `delta` lines (positive = toward history).
+ /// Fire-and-forget.
+ ScrollDisplay {
+ /// Target pane.
+ pane_id: PaneId,
+ /// Lines to scroll (positive = up into scrollback, negative = down).
+ delta: i32,
+ },
 
-    /// Scroll a pane to the live terminal position (bottom). Fire-and-forget.
-    ScrollToBottom {
-        /// Target pane.
-        pane_id: PaneId,
-    },
+ /// Scroll a pane to the live terminal position (bottom). Fire-and-forget.
+ ScrollToBottom {
+ /// Target pane.
+ pane_id: PaneId,
+ },
 
-    /// Scroll to the nearest prompt in the given direction.
-    ScrollToPrompt {
-        /// Target pane.
-        pane_id: PaneId,
-        /// Direction: `-1` = previous (up), `+1` = next (down).
-        direction: i8,
-    },
+ /// Scroll to the nearest prompt in the given direction.
+ ScrollToPrompt {
+ /// Target pane.
+ pane_id: PaneId,
+ /// Direction: `-1` = previous (up), `+1` = next (down).
+ direction: i8,
+ },
 
-    /// Set the theme and palette for a pane. Fire-and-forget.
-    SetTheme {
-        /// Target pane.
-        pane_id: PaneId,
-        /// Theme name: `"dark"` or `"light"`.
-        theme: String,
-        /// Full palette as 270 RGB triplets (same format as snapshot).
-        palette_rgb: Vec<[u8; 3]>,
-    },
+ /// Set the theme and palette for a pane. Fire-and-forget.
+ SetTheme {
+ /// Target pane.
+ pane_id: PaneId,
+ /// Theme name: `"dark"` or `"light"`.
+ theme: String,
+ /// Full palette as 270 RGB triplets (same format as snapshot).
+ palette_rgb: Vec<[u8; 3]>,
+ },
 
-    /// Set the cursor shape for a pane. Fire-and-forget.
-    SetCursorShape {
-        /// Target pane.
-        pane_id: PaneId,
-        /// Cursor shape discriminant (maps to `WireCursorShape`).
-        shape: u8,
-    },
+ /// Set the cursor shape for a pane. Fire-and-forget.
+ SetCursorShape {
+ /// Target pane.
+ pane_id: PaneId,
+ /// Cursor shape discriminant (maps to `WireCursorShape`).
+ shape: u8,
+ },
 
-    /// Set bold-as-bright behavior for a pane. Fire-and-forget.
-    SetBoldIsBright {
-        /// Target pane.
-        pane_id: PaneId,
-        /// Whether bold promotes ANSI colors to bright.
-        enabled: bool,
-    },
+ /// Set bold-as-bright behavior for a pane. Fire-and-forget.
+ SetBoldIsBright {
+ /// Target pane.
+ pane_id: PaneId,
+ /// Whether bold promotes ANSI colors to bright.
+ enabled: bool,
+ },
 
-    /// Update cell pixel dimensions for a pane so `FixedPixels` image placements recompute cell coverage after font/DPI changes. Fire-and-forget. Separate from `SetImageConfig` (cell metrics are runtime font state, not TOML config).
-    SetCellDimensions {
-        /// Target pane.
-        pane_id: PaneId,
-        /// Cell width in physical pixels.
-        width: u16,
-        /// Cell height in physical pixels.
-        height: u16,
-    },
+ /// Update cell pixel dimensions for a pane so `FixedPixels` image placements recompute cell coverage after font/DPI changes. Fire-and-forget. Separate from `SetImageConfig` (cell metrics are runtime font state, not TOML config).
+ SetCellDimensions {
+ /// Target pane.
+ pane_id: PaneId,
+ /// Cell width in physical pixels.
+ width: u16,
+ /// Cell height in physical pixels.
+ height: u16,
+ },
 
-    /// Mark all grid lines dirty in a pane (forces full re-render). Fire-and-forget.
-    MarkAllDirty {
-        /// Target pane.
-        pane_id: PaneId,
-    },
+ /// Mark all grid lines dirty in a pane (forces full re-render). Fire-and-forget.
+ MarkAllDirty {
+ /// Target pane.
+ pane_id: PaneId,
+ },
 
-    /// Open search for a pane (initializes empty search state). Fire-and-forget.
-    OpenSearch {
-        /// Target pane.
-        pane_id: PaneId,
-    },
+ /// Open search for a pane (initializes empty search state). Fire-and-forget.
+ OpenSearch {
+ /// Target pane.
+ pane_id: PaneId,
+ },
 
-    /// Close search and clear search state. Fire-and-forget.
-    CloseSearch {
-        /// Target pane.
-        pane_id: PaneId,
-    },
+ /// Close search and clear search state. Fire-and-forget.
+ CloseSearch {
+ /// Target pane.
+ pane_id: PaneId,
+ },
 
-    /// Update the search query. Recomputes matches against the full grid. Fire-and-forget.
-    SearchSetQuery {
-        /// Target pane.
-        pane_id: PaneId,
-        /// New search query text.
-        query: String,
-    },
+ /// Update the search query. Recomputes matches against the full grid. Fire-and-forget.
+ SearchSetQuery {
+ /// Target pane.
+ pane_id: PaneId,
+ /// New search query text.
+ query: String,
+ },
 
-    /// Navigate to the next search match. Fire-and-forget.
-    SearchNextMatch {
-        /// Target pane.
-        pane_id: PaneId,
-    },
+ /// Navigate to the next search match. Fire-and-forget.
+ SearchNextMatch {
+ /// Target pane.
+ pane_id: PaneId,
+ },
 
-    /// Navigate to the previous search match. Fire-and-forget.
-    SearchPrevMatch {
-        /// Target pane.
-        pane_id: PaneId,
-    },
+ /// Navigate to the previous search match. Fire-and-forget.
+ SearchPrevMatch {
+ /// Target pane.
+ pane_id: PaneId,
+ },
 
-    /// Extract plain text from a selection.
-    ExtractText {
-        /// Target pane.
-        pane_id: PaneId,
-        /// Selection to extract from.
-        selection: WireSelection,
-    },
+ /// Extract plain text from a selection.
+ ExtractText {
+ /// Target pane.
+ pane_id: PaneId,
+ /// Selection to extract from.
+ selection: WireSelection,
+ },
 
-    /// Extract HTML and plain text from a selection.
-    ExtractHtml {
-        /// Target pane.
-        pane_id: PaneId,
-        /// Selection to extract from.
-        selection: WireSelection,
-        /// Font family name for the HTML wrapper.
-        font_family: String,
-        /// Font size in points × 100 (integer for deterministic comparison).
-        font_size_x100: u16,
-    },
+ /// Extract HTML and plain text from a selection.
+ ExtractHtml {
+ /// Target pane.
+ pane_id: PaneId,
+ /// Selection to extract from.
+ selection: WireSelection,
+ /// Font family name for the HTML wrapper.
+ font_family: String,
+ /// Font size in points × 100 (integer for deterministic comparison).
+ font_size_x100: u16,
+ },
 
-    /// Client advertises protocol capabilities. Fire-and-forget.
-    SetCapabilities {
-        /// Bitmask of capability flags (e.g. [`CAP_SNAPSHOT_PUSH`]).
-        flags: u32,
-    },
+ /// Client advertises protocol capabilities. Fire-and-forget.
+ SetCapabilities {
+ /// Bitmask of capability flags (e.g. [`CAP_SNAPSHOT_PUSH`]).
+ flags: u32,
+ },
 
-    /// Spawn a new pane (shell process).
-    SpawnPane {
-        /// Shell program override (uses default shell if `None`).
-        shell: Option<String>,
-        /// Working directory override (uses current dir if `None`).
-        cwd: Option<String>,
-        /// Color theme: `"dark"`, `"light"`, or `None` for server default.
-        theme: Option<String>,
-    },
+ /// Spawn a new pane (shell process).
+ SpawnPane {
+ /// Shell program override (uses default shell if `None`).
+ shell: Option<String>,
+ /// Working directory override (uses current dir if `None`).
+ cwd: Option<String>,
+ /// Color theme: `"dark"`, `"light"`, or `None` for server default.
+ theme: Option<String>,
+ },
 
-    /// Request that other clients create a new tab. Daemon broadcasts [`NotifyNewTab`](Self::NotifyNewTab) to all other clients and replies with [`NewTabAck`](Self::NewTabAck).
-    RequestNewTab,
+ /// Request that other clients create a new tab. Daemon broadcasts [`NotifyNewTab`](Self::NotifyNewTab) to all other clients and replies with [`NewTabAck`](Self::NewTabAck).
+ RequestNewTab,
 
-    /// Set the push priority for a pane (affects push interval). Fire-and-forget. Priority: `0` = focused (4ms push), `1` = visible unfocused (16ms), `2` = hidden (100ms).
-    SetPanePriority {
-        /// Pane to set priority for.
-        pane_id: PaneId,
-        /// Priority level (0=focused, 1=visible, 2=hidden).
-        priority: u8,
-    },
+ /// Set the push priority for a pane (affects push interval). Fire-and-forget. Priority: `0` = focused (4ms push), `1` = visible unfocused (16ms), `2` = hidden (100ms).
+ SetPanePriority {
+ /// Pane to set priority for.
+ pane_id: PaneId,
+ /// Priority level (0=focused, 1=visible, 2=hidden).
+ priority: u8,
+ },
 
-    /// List all live pane IDs.
-    ListPanes,
+ /// List all live pane IDs.
+ ListPanes,
 
-    /// Configure image protocol settings for a pane. Fire-and-forget.
-    SetImageConfig {
-        /// Target pane.
-        pane_id: PaneId,
-        /// Whether image protocols are enabled.
-        enabled: bool,
-        /// CPU-side image cache memory limit in bytes.
-        memory_limit: u64,
-        /// Maximum single image size in bytes.
-        max_single: u64,
-        /// Whether animated images play their frames.
-        animation_enabled: bool,
-    },
+ /// Configure image protocol settings for a pane. Fire-and-forget.
+ SetImageConfig {
+ /// Target pane.
+ pane_id: PaneId,
+ /// Whether image protocols are enabled.
+ enabled: bool,
+ /// CPU-side image cache memory limit in bytes.
+ memory_limit: u64,
+ /// Maximum single image size in bytes.
+ max_single: u64,
+ /// Whether animated images play their frames.
+ animation_enabled: bool,
+ },
 
-    // -- Responses (daemon → client) --
-    /// Handshake acknowledgment.
-    HelloAck {
-        /// Assigned client ID for this connection.
-        client_id: ClientId,
-        /// Protocol version the server speaks.
-        protocol_version: u8,
-        /// Negotiated feature flags (intersection of client + server).
-        features: u64,
-    },
+ // -- Responses (daemon → client) --
+ /// Handshake acknowledgment.
+ HelloAck {
+ /// Assigned client ID for this connection.
+ client_id: ClientId,
+ /// Protocol version the server speaks.
+ protocol_version: u8,
+ /// Negotiated feature flags (intersection of client + server).
+ features: u64,
+ },
 
-    /// Pane closed successfully.
-    PaneClosedAck,
+ /// Pane closed successfully.
+ PaneClosedAck,
 
-    /// Subscription established with current pane state.
-    Subscribed {
-        /// Current state of the subscribed pane.
-        snapshot: PaneSnapshot,
-    },
+ /// Subscription established with current pane state.
+ Subscribed {
+ /// Current state of the subscribed pane.
+ snapshot: PaneSnapshot,
+ },
 
-    /// Unsubscription confirmed.
-    Unsubscribed,
+ /// Unsubscription confirmed.
+ Unsubscribed,
 
-    /// Full pane state snapshot.
-    PaneSnapshotResp {
-        /// Pane state.
-        snapshot: PaneSnapshot,
-    },
+ /// Full pane state snapshot.
+ PaneSnapshotResp {
+ /// Pane state.
+ snapshot: PaneSnapshot,
+ },
 
-    /// Reply to a [`Ping`](Self::Ping) request.
-    PingAck,
+ /// Reply to a [`Ping`](Self::Ping) request.
+ PingAck,
 
-    /// Acknowledgment that the daemon will shut down.
-    ShutdownAck,
+ /// Acknowledgment that the daemon will shut down.
+ ShutdownAck,
 
-    /// Response to [`ScrollToPrompt`](Self::ScrollToPrompt).
-    ScrollToPromptAck {
-        /// Whether a prompt was found and the viewport scrolled.
-        scrolled: bool,
-    },
+ /// Response to [`ScrollToPrompt`](Self::ScrollToPrompt).
+ ScrollToPromptAck {
+ /// Whether a prompt was found and the viewport scrolled.
+ scrolled: bool,
+ },
 
-    /// Response to [`ExtractText`](Self::ExtractText).
-    ExtractTextResp {
-        /// Extracted plain text.
-        text: String,
-    },
+ /// Response to [`ExtractText`](Self::ExtractText).
+ ExtractTextResp {
+ /// Extracted plain text.
+ text: String,
+ },
 
-    /// Response to [`ExtractHtml`](Self::ExtractHtml).
-    ExtractHtmlResp {
-        /// Extracted HTML with inline styles.
-        html: String,
-        /// Plain text (same as `ExtractTextResp::text`).
-        text: String,
-    },
+ /// Response to [`ExtractHtml`](Self::ExtractHtml).
+ ExtractHtmlResp {
+ /// Extracted HTML with inline styles.
+ html: String,
+ /// Plain text (same as `ExtractTextResp::text`).
+ text: String,
+ },
 
-    /// Response to [`SpawnPane`](Self::SpawnPane).
-    SpawnPaneResponse {
-        /// ID of the newly created pane.
-        pane_id: PaneId,
-    },
+ /// Response to [`SpawnPane`](Self::SpawnPane).
+ SpawnPaneResponse {
+ /// ID of the newly created pane.
+ pane_id: PaneId,
+ },
 
-    /// Response to [`ListPanes`](Self::ListPanes).
-    ListPanesResponse {
-        /// IDs of all live panes.
-        pane_ids: Vec<PaneId>,
-    },
+ /// Response to [`ListPanes`](Self::ListPanes).
+ ListPanesResponse {
+ /// IDs of all live panes.
+ pane_ids: Vec<PaneId>,
+ },
 
-    /// Acknowledgment for [`RequestNewTab`](Self::RequestNewTab).
-    NewTabAck,
+ /// Acknowledgment for [`RequestNewTab`](Self::RequestNewTab).
+ NewTabAck,
 
-    /// Error response for a failed request.
-    Error {
-        /// Human-readable error description.
-        message: String,
-    },
+ /// Error response for a failed request.
+ Error {
+ /// Human-readable error description.
+ message: String,
+ },
 
-    // -- Push notifications (daemon → client) --
-    /// Pane has new output — the client should re-fetch the snapshot.
-    NotifyPaneOutput {
-        /// Pane with new output.
-        pane_id: PaneId,
-    },
+ // -- Push notifications (daemon → client) --
+ /// Pane has new output — the client should re-fetch the snapshot.
+ NotifyPaneOutput {
+ /// Pane with new output.
+ pane_id: PaneId,
+ },
 
-    /// Pane's shell process exited.
-    NotifyPaneExited {
-        /// Pane that exited.
-        pane_id: PaneId,
-        /// Exit code from the child process (0 = clean exit).
-        exit_code: i32,
-    },
+ /// Pane's shell process exited.
+ NotifyPaneExited {
+ /// Pane that exited.
+ pane_id: PaneId,
+ /// Exit code from the child process (0 = clean exit).
+ exit_code: i32,
+ },
 
-    /// Pane metadata changed (title, icon name, or CWD).
-    NotifyPaneMetadataChanged {
-        /// Pane with updated metadata.
-        pane_id: PaneId,
-        /// Current title text.
-        title: String,
-    },
+ /// Pane metadata changed (title, icon name, or CWD).
+ NotifyPaneMetadataChanged {
+ /// Pane with updated metadata.
+ pane_id: PaneId,
+ /// Current title text.
+ title: String,
+ },
 
-    /// Bell fired in a pane.
-    NotifyPaneBell {
-        /// Pane that belled.
-        pane_id: PaneId,
-    },
+ /// Bell fired in a pane.
+ NotifyPaneBell {
+ /// Pane that belled.
+ pane_id: PaneId,
+ },
 
-    /// Window-manager urgency hint requested by a pane (mode 1042 / DECSET ?1042h); receiving client calls `request_user_attention(Some(UserAttentionType::Critical))` on the owning window when the pane is unfocused.
-    NotifyPaneUrgencyHint {
-        /// Pane requesting attention.
-        pane_id: PaneId,
-    },
+ /// Window-manager urgency hint requested by a pane (mode 1042 / DECSET ?1042h); receiving client calls `request_user_attention(Some(UserAttentionType::Critical))` on the owning window when the pane is unfocused.
+ NotifyPaneUrgencyHint {
+ /// Pane requesting attention.
+ pane_id: PaneId,
+ },
 
-    /// A command completed in a pane (OSC 133;D → duration).
-    NotifyCommandComplete {
-        /// Pane that completed a command.
-        pane_id: PaneId,
-        /// Command duration in milliseconds.
-        duration_ms: u64,
-    },
+ /// A command completed in a pane (OSC 133;D → duration).
+ NotifyCommandComplete {
+ /// Pane that completed a command.
+ pane_id: PaneId,
+ /// Command duration in milliseconds.
+ duration_ms: u64,
+ },
 
-    /// OSC 52 clipboard store request forwarded from a pane.
-    NotifyClipboardStore {
-        /// Originating pane.
-        pane_id: PaneId,
-        /// Clipboard discriminant: 0 = Clipboard, 1 = Selection.
-        clipboard_type: u8,
-        /// Text to store.
-        text: String,
-    },
+ /// OSC 52 clipboard store request forwarded from a pane.
+ NotifyClipboardStore {
+ /// Originating pane.
+ pane_id: PaneId,
+ /// Clipboard discriminant: 0 = Clipboard, 1 = Selection.
+ clipboard_type: u8,
+ /// Text to store.
+ text: String,
+ },
 
-    /// Legacy OSC 52 clipboard load notification; superseded by [`MuxPdu::NotifyHostClipboardLoad`] (carries `request_id` for reply correlation). Retained for wire-format append-only compatibility — new servers do not emit; new clients drop with a warning.
-    NotifyClipboardLoad {
-        /// Originating pane.
-        pane_id: PaneId,
-        /// Clipboard discriminant: 0 = Clipboard, 1 = Selection.
-        clipboard_type: u8,
-    },
+ /// Legacy OSC 52 clipboard load notification; superseded by [`MuxPdu::NotifyHostClipboardLoad`] (carries `request_id` for reply correlation). Retained for wire-format append-only compatibility — new servers do not emit; new clients drop with a warning.
+ NotifyClipboardLoad {
+ /// Originating pane.
+ pane_id: PaneId,
+ /// Clipboard discriminant: 0 = Clipboard, 1 = Selection.
+ clipboard_type: u8,
+ },
 
-    /// Another client requested a new tab. The receiving client should
-    /// create a new tab in its active window.
-    NotifyNewTab,
+ /// Another client requested a new tab. The receiving client should
+ /// create a new tab in its active window.
+ NotifyNewTab,
 
-    /// Server-pushed pane snapshot (proactive, throttled to ~250fps / 4ms).
-    ///
-    /// Only sent to clients that advertised [`CAP_SNAPSHOT_PUSH`].
-    NotifyPaneSnapshot {
-        /// Pane this snapshot belongs to.
-        pane_id: PaneId,
-        /// Full pane state snapshot.
-        snapshot: PaneSnapshot,
-    },
+ /// Server-pushed pane snapshot (proactive, throttled to ~250fps / 4ms).
+ /// Only sent to clients that advertised [`CAP_SNAPSHOT_PUSH`].
+ NotifyPaneSnapshot {
+ /// Pane this snapshot belongs to.
+ pane_id: PaneId,
+ /// Full pane state snapshot.
+ snapshot: PaneSnapshot,
+ },
 
-    // -- : Daemon-mode HostRequest round-trip --
-    /// Daemon-allocated OSC 52 clipboard load forwarded to a single
-    /// responder client. The client services the request locally and
-    /// replies with [`ReplyHostRequest`](Self::ReplyHostRequest).
-    NotifyHostClipboardLoad {
-        /// Originating pane.
-        pane_id: PaneId,
-        /// Server-monotonic request id (raw `HostRequestId`).
-        request_id: u64,
-        /// Wire clipboard selection (`Clipboard`/`Primary`/`Select`).
-        selection: WireClipboardSelection,
-        /// Raw OSC 52 clipboard character (`b'c'`, `b'p'`, `b's'`).
-        clipboard_char: u8,
-        /// OSC string terminator (ST or BEL) for the reply.
-        terminator: String,
-    },
-    /// Daemon-allocated OSC 4 / 10 / 11 / 12 color query forwarded to a
-    /// single responder client.
-    NotifyHostColorQuery {
-        /// Originating pane.
-        pane_id: PaneId,
-        /// Server-monotonic request id (raw `HostRequestId`).
-        request_id: u64,
-        /// OSC prefix (`"4"`, `"10"`, `"11"`, `"12"`).
-        prefix: String,
-        /// Color index (palette ≤ 270 entries fits in u32).
-        index: u32,
-        /// OSC string terminator for the reply.
-        terminator: String,
-    },
-    /// Client reply to a `NotifyHostClipboardLoad` / `NotifyHostColorQuery`.
-    ///
-    /// Fire-and-forget — the daemon dispatches the payload into its
-    /// pending host-replies map keyed by `request_id`.
-    ReplyHostRequest {
-        /// Server-allocated id from the originating notification.
-        request_id: u64,
-        /// Reply data (clipboard text or RGB triple).
-        payload: HostReplyPayload,
-    },
-    /// Desktop notification (OSC 9 / 99 / 777) forwarded from a pane.
-    ///
-    /// Stateless — no token, no reply correlation required.
-    NotifyDesktopNotification {
-        /// Originating pane.
-        pane_id: PaneId,
-        /// Wire encoding of the OSC sequence that produced the notification.
-        source: WireNotificationSource,
-        /// Notification title.
-        title: String,
-        /// Notification body.
-        body: String,
-    },
-    /// Discard pending desktop notifications for a pane (OSC `RIS` reset).
-    NotifyClearPendingDesktopNotifications {
-        /// Originating pane.
-        pane_id: PaneId,
-    },
-    /// Query a pane's PTY writer-stall state. Round-trip; daemon replies with [`WriteStalledStatus`](Self::WriteStalledStatus).
-    IsWriteStalled {
-        /// Target pane.
-        pane_id: PaneId,
-    },
-    /// Response to [`IsWriteStalled`](Self::IsWriteStalled).
-    WriteStalledStatus {
-        /// Target pane.
-        pane_id: PaneId,
-        /// Whether the pane's PTY writer thread is currently stalled on a full kernel buffer.
-        stalled: bool,
-    },
+ // -- : Daemon-mode HostRequest round-trip --
+ /// Daemon-allocated OSC 52 clipboard load forwarded to a single
+ /// responder client. The client services the request locally and
+ /// replies with [`ReplyHostRequest`](Self::ReplyHostRequest).
+ NotifyHostClipboardLoad {
+ /// Originating pane.
+ pane_id: PaneId,
+ /// Server-monotonic request id (raw `HostRequestId`).
+ request_id: u64,
+ /// Wire clipboard selection (`Clipboard`/`Primary`/`Select`).
+ selection: WireClipboardSelection,
+ /// Raw OSC 52 clipboard character (`b'c'`, `b'p'`, `b's'`).
+ clipboard_char: u8,
+ /// OSC string terminator (ST or BEL) for the reply.
+ terminator: String,
+ },
+ /// Daemon-allocated OSC 4 / 10 / 11 / 12 color query forwarded to a
+ /// single responder client.
+ NotifyHostColorQuery {
+ /// Originating pane.
+ pane_id: PaneId,
+ /// Server-monotonic request id (raw `HostRequestId`).
+ request_id: u64,
+ /// OSC prefix (`"4"`, `"10"`, `"11"`, `"12"`).
+ prefix: String,
+ /// Color index (palette ≤ 270 entries fits in u32).
+ index: u32,
+ /// OSC string terminator for the reply.
+ terminator: String,
+ },
+ /// Client reply to a `NotifyHostClipboardLoad` / `NotifyHostColorQuery`.
+ /// Fire-and-forget — the daemon dispatches the payload into its
+ /// pending host-replies map keyed by `request_id`.
+ ReplyHostRequest {
+ /// Server-allocated id from the originating notification.
+ request_id: u64,
+ /// Reply data (clipboard text or RGB triple).
+ payload: HostReplyPayload,
+ },
+ /// Desktop notification (OSC 9 / 99 / 777) forwarded from a pane.
+ /// Stateless — no token, no reply correlation required.
+ NotifyDesktopNotification {
+ /// Originating pane.
+ pane_id: PaneId,
+ /// Wire encoding of the OSC sequence that produced the notification.
+ source: WireNotificationSource,
+ /// Notification title.
+ title: String,
+ /// Notification body.
+ body: String,
+ },
+ /// Discard pending desktop notifications for a pane (OSC `RIS` reset).
+ NotifyClearPendingDesktopNotifications {
+ /// Originating pane.
+ pane_id: PaneId,
+ },
+ /// Query a pane's PTY writer-stall state. Round-trip; daemon replies with [`WriteStalledStatus`](Self::WriteStalledStatus).
+ IsWriteStalled {
+ /// Target pane.
+ pane_id: PaneId,
+ },
+ /// Response to [`IsWriteStalled`](Self::IsWriteStalled).
+ WriteStalledStatus {
+ /// Target pane.
+ pane_id: PaneId,
+ /// Whether the pane's PTY writer thread is currently stalled on a full kernel buffer.
+ stalled: bool,
+ },
 
-    /// Update the ENQ answerback string for a pane. Fire-and-forget.
-    ///
-    /// Empty bytes (default) suppress emission per ECMA-48 §8.3.40 +
-    /// `WezTerm` parity. Non-empty bytes are written verbatim to the PTY
-    /// on each `\x05` byte received from the application.
-    SetAnswerback {
-        /// Target pane.
-        pane_id: PaneId,
-        /// Raw bytes to emit on ENQ; empty disables emission.
-        bytes: Vec<u8>,
-    },
-    // Wire-compat: append-only — new variants must go at the end.
+ /// Update the ENQ answerback string for a pane. Fire-and-forget.
+ /// Empty bytes (default) suppress emission per ECMA-48 §8.3.40 +
+ /// `WezTerm` parity. Non-empty bytes are written verbatim to the PTY
+ /// on each `\x05` byte received from the application.
+ SetAnswerback {
+ /// Target pane.
+ pane_id: PaneId,
+ /// Raw bytes to emit on ENQ; empty disables emission.
+ bytes: Vec<u8>,
+ },
+ // Wire-compat: append-only — new variants must go at the end.
 }

@@ -7,6 +7,7 @@
 
 mod cache;
 mod decode;
+mod frame_load;
 pub mod iterm2;
 pub mod kitty;
 pub mod sixel;
@@ -18,6 +19,7 @@ pub use cache::ImageCache;
 pub use decode::{
     GifFrames, ImageFormat, decode_gif_frames, decode_to_rgba, detect_format, rgb_to_rgba,
 };
+pub use frame_load::{BlitRect, CanvasSource, FrameLoadRequest, FrameTarget};
 
 use crate::grid::StableRowIndex;
 
@@ -174,6 +176,37 @@ pub enum ImageError {
     DecodeFailed(String),
     /// Total image memory would exceed cache limit even after eviction.
     MemoryLimitExceeded,
+    /// Canvas-source frame reference is out of range. Used by `put_frame`
+    /// when `CanvasSource::Frame(n)` names a non-existent frame; surfaced
+    /// to kitty clients as `EINVAL: No frame with number: N found` per
+    /// kitty graphics.c:1610-1612.
+    InvalidFrameRef {
+        /// Requested 1-based frame index.
+        requested: u32,
+        /// Total frames currently in the animation (root counts as 1).
+        total: u32,
+    },
+    /// Frame blit dimensions exceed the destination image dimensions.
+    /// Surfaced as `EINVAL: Frame width {blit_w} larger than image width:
+    /// {image_w}` per kitty graphics.c:1580-1583.
+    OversizedBlit {
+        /// Blit width in pixels (from decoded payload).
+        blit_w: u32,
+        /// Blit height in pixels (from decoded payload).
+        blit_h: u32,
+        /// Target image width in pixels.
+        image_w: u32,
+        /// Target image height in pixels.
+        image_h: u32,
+    },
+    /// Target image id does not exist in the cache. Used by `put_frame`
+    /// when the lookup fails; surfaced to kitty clients as ENOENT (NOT
+    /// EINVAL) per kitty graphics.c:2233-2235 — distinct from
+    /// `InvalidFormat` so the dispatch reply path can map this to ENOENT.
+    MissingImage {
+        /// Requested image id (`i=` from the kitty command).
+        id: u32,
+    },
 }
 
 impl std::fmt::Display for ImageError {
@@ -183,6 +216,26 @@ impl std::fmt::Display for ImageError {
             Self::InvalidFormat => write!(f, "unrecognized image format"),
             Self::DecodeFailed(msg) => write!(f, "image decode failed: {msg}"),
             Self::MemoryLimitExceeded => write!(f, "image memory limit exceeded"),
+            Self::InvalidFrameRef { requested, total } => write!(
+                f,
+                "No frame with number: {requested} found (animation has {total} frames)"
+            ),
+            Self::OversizedBlit {
+                blit_w,
+                blit_h,
+                image_w,
+                image_h,
+            } => {
+                if blit_w > image_w {
+                    write!(f, "Frame width {blit_w} larger than image width: {image_w}")
+                } else {
+                    write!(
+                        f,
+                        "Frame height {blit_h} larger than image height: {image_h}"
+                    )
+                }
+            }
+            Self::MissingImage { id } => write!(f, "image with id {id} not found"),
         }
     }
 }
@@ -246,13 +299,24 @@ impl AnimationState {
         }
     }
 
-    /// Duration of the current frame (clamped to minimum).
+    /// Duration of the current frame.
+    ///
+    /// Preserves `Duration::ZERO` (gapless frames per kitty graphics.c:1798)
+    /// so `advance_animations`'s gapless-skip loop runs to completion in a
+    /// single tick instead of pausing for 16 ms on every gapless frame.
+    /// Non-zero durations are clamped to `MIN_FRAME_DURATION` to cap abusive
+    /// 1-ms-per-frame GIFs at 60 fps.
     pub fn current_duration(&self) -> Duration {
-        self.frame_durations
+        let dur = self
+            .frame_durations
             .get(self.current_frame)
             .copied()
-            .unwrap_or(MIN_FRAME_DURATION)
-            .max(MIN_FRAME_DURATION)
+            .unwrap_or(MIN_FRAME_DURATION);
+        if dur.is_zero() {
+            Duration::ZERO
+        } else {
+            dur.max(MIN_FRAME_DURATION)
+        }
     }
 
     /// Advance to the next frame. Returns `true` if the frame changed.

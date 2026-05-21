@@ -65,3 +65,70 @@ pub(super) fn count_replies_exact(h: &SpecHarness, expected: &[u8]) -> usize {
 pub(super) fn ok_reply_for(id: u32) -> Vec<u8> {
     format!("\x1b_Gi={id};OK\x1b\\").into_bytes()
 }
+
+/// Build a solid-color RGBA payload of `w × h` pixels (`w*h*4` bytes).
+pub(super) fn rgba_solid(w: u32, h: u32, r: u8, g: u8, b: u8, a: u8) -> Vec<u8> {
+    let pixels = (w as usize) * (h as usize);
+    let mut v = Vec::with_capacity(pixels * 4);
+    for _ in 0..pixels {
+        v.extend_from_slice(&[r, g, b, a]);
+    }
+    v
+}
+
+/// Assert frame `frame_num` (1-based) of `image_id` byte-equals `expected`.
+///
+/// On mismatch prints the index of the first differing byte + ±8 bytes of
+/// context so the failure diagnostic is actionable. Used by the kitty
+/// c=/r= dispatch matrix for byte-exact pin assertions — hand-computed
+/// goldens only, NEVER derived from production blend kernels.
+pub(super) fn assert_frame_eq(
+    cache: &oriterm_core::image::ImageCache,
+    image_id: oriterm_core::image::ImageId,
+    frame_num: u32,
+    expected: &[u8],
+) {
+    let actual = cache
+        .frame_bytes_for_test(image_id, frame_num)
+        .unwrap_or_else(|| {
+            panic!(
+                "frame_bytes_for_test({image_id:?}, {frame_num}) returned None"
+            )
+        });
+    if actual.as_slice() == expected {
+        return;
+    }
+    let first_diff = actual
+        .iter()
+        .zip(expected.iter())
+        .position(|(a, b)| a != b)
+        .unwrap_or_else(|| actual.len().min(expected.len()));
+    let lo = first_diff.saturating_sub(8);
+    let hi_actual = (first_diff + 8).min(actual.len());
+    let hi_expected = (first_diff + 8).min(expected.len());
+    panic!(
+        "frame {frame_num} bytes differ at index {first_diff} \
+         (actual.len={}, expected.len={}):\n  actual[{lo}..{hi_actual}] = {:?}\n\
+         expected[{lo}..{hi_expected}] = {:?}",
+        actual.len(),
+        expected.len(),
+        &actual[lo..hi_actual],
+        &expected[lo..hi_expected],
+    );
+}
+
+/// Assert an EINVAL reply was emitted for `image_id` containing `msg_fragment`.
+pub(super) fn assert_einval_reply(h: &SpecHarness, image_id: u32, msg_fragment: &str) {
+    let prefix = format!("\x1b_Gi={image_id};EINVAL");
+    assert!(
+        reply_contains(h, prefix.as_bytes()),
+        "expected EINVAL reply for i={image_id} — transcript: {:?}",
+        String::from_utf8_lossy(&reply_bytes(h)),
+    );
+    assert!(
+        reply_contains(h, msg_fragment.as_bytes()),
+        "expected EINVAL reply to contain {msg_fragment:?} — transcript: {:?}",
+        String::from_utf8_lossy(&reply_bytes(h)),
+    );
+}
+

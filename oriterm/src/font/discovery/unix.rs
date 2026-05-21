@@ -24,342 +24,339 @@ use skrifa::string::StringId;
 use super::families::PRIMARY_FAMILIES;
 use super::walk::walk_font_dirs;
 use super::{
-    DiscoveryResult, FallbackDiscovery, FamilyEntry, FamilySlots, FontOrigin,
-    resolve_fallback_chain, try_families_from_specs,
+ DiscoveryResult, FallbackDiscovery, FamilyEntry, FamilySlots, FontOrigin,
+ resolve_fallback_chain, try_families_from_specs,
 };
 
 /// Per-file shape collected during enumeration before grouping into families.
 struct RawFaceInfo {
-    display_name: String,
-    path: PathBuf,
-    face_index: u32,
-    is_bold: bool,
-    is_italic: bool,
+ display_name: String,
+ path: PathBuf,
+ face_index: u32,
+ is_bold: bool,
+ is_italic: bool,
 }
 
 /// Build a filename → full path index from the given roots. Used by both
-/// Linux and macOS `build_font_index()` per `LEAK:algorithmic-duplication`
+/// Linux and macOS `build_font_index()` per ``
 /// SSOT discipline.
 pub(super) fn build_font_index_from_roots(roots: &[PathBuf]) -> HashMap<String, PathBuf> {
-    let mut index = HashMap::new();
-    walk_font_dirs(roots, &mut |path| {
-        if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-            index
-                .entry(name.to_owned())
-                .or_insert_with(|| path.to_path_buf());
-        }
-    });
-    index
+ let mut index = HashMap::new();
+ walk_font_dirs(roots, &mut |path| {
+ if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+ index
+ .entry(name.to_owned())
+ .or_insert_with(|| path.to_path_buf());
+ }
+ });
+ index
 }
 
 /// Enumerate every monospace font family found under `roots`.
-///
 /// Walks each root recursively, memory-maps every regular file, parses the
 /// `OpenType` `name` / `OS/2` / `head` / `post` tables via `skrifa`, and groups
 /// faces by `display_name`. Only families with a Regular face are emitted —
 /// `Bold`/`Italic`/`BoldItalic`-only collections are dropped (no anchor face).
 pub(super) fn enumerate_mono_families_from_roots(roots: &[PathBuf]) -> Vec<FamilyEntry> {
-    let mut faces_by_family: HashMap<String, Vec<RawFaceInfo>> = HashMap::new();
-    walk_font_dirs(roots, &mut |path| {
-        for face in parse_face_info(path) {
-            faces_by_family
-                .entry(face.display_name.clone())
-                .or_default()
-                .push(face);
-        }
-    });
+ let mut faces_by_family: HashMap<String, Vec<RawFaceInfo>> = HashMap::new();
+ walk_font_dirs(roots, &mut |path| {
+ for face in parse_face_info(path) {
+ faces_by_family
+ .entry(face.display_name.clone())
+ .or_default()
+ .push(face);
+ }
+ });
 
-    let mut entries: Vec<FamilyEntry> = Vec::with_capacity(faces_by_family.len());
-    for (display_name, faces) in faces_by_family {
-        let regular = faces.iter().find(|f| !f.is_bold && !f.is_italic);
-        let bold = faces.iter().find(|f| f.is_bold && !f.is_italic);
-        let italic = faces.iter().find(|f| !f.is_bold && f.is_italic);
-        let bold_italic = faces.iter().find(|f| f.is_bold && f.is_italic);
-        let Some(reg) = regular else {
-            log::trace!("font enumeration: skipping family {display_name} (no regular face found)");
-            continue;
-        };
-        entries.push(FamilyEntry {
-            display_name,
-            paths: [
-                Some(reg.path.clone()),
-                bold.map(|f| f.path.clone()),
-                italic.map(|f| f.path.clone()),
-                bold_italic.map(|f| f.path.clone()),
-            ],
-            face_indices: [
-                reg.face_index,
-                bold.map_or(0, |f| f.face_index),
-                italic.map_or(0, |f| f.face_index),
-                bold_italic.map_or(0, |f| f.face_index),
-            ],
-        });
-    }
-    entries
+ let mut entries: Vec<FamilyEntry> = Vec::with_capacity(faces_by_family.len());
+ for (display_name, faces) in faces_by_family {
+ let regular = faces.iter().find(|f| !f.is_bold && !f.is_italic);
+ let bold = faces.iter().find(|f| f.is_bold && !f.is_italic);
+ let italic = faces.iter().find(|f| !f.is_bold && f.is_italic);
+ let bold_italic = faces.iter().find(|f| f.is_bold && f.is_italic);
+ let Some(reg) = regular else {
+ log::trace!("font enumeration: skipping family {display_name} (no regular face found)");
+ continue;
+ };
+ entries.push(FamilyEntry {
+ display_name,
+ paths: [
+ Some(reg.path.clone()),
+ bold.map(|f| f.path.clone()),
+ italic.map(|f| f.path.clone()),
+ bold_italic.map(|f| f.path.clone()),
+ ],
+ face_indices: [
+ reg.face_index,
+ bold.map_or(0, |f| f.face_index),
+ italic.map_or(0, |f| f.face_index),
+ bold_italic.map_or(0, |f| f.face_index),
+ ],
+ });
+ }
+ entries
 }
 
 /// Parse font file(s) into [`RawFaceInfo`] entries.
-///
 /// For `.ttc` collections, returns one entry per face. For standalone
 /// `.ttf`/`.otf`, returns a single-element `Vec`.
 #[expect(
-    unsafe_code,
-    reason = "memmap2::Mmap::map is unsafe by API; font files are read-only system resources"
+ unsafe_code,
+ reason = "memmap2::Mmap::map is unsafe by API; font files are read-only system resources"
 )]
 fn parse_face_info(path: &Path) -> Vec<RawFaceInfo> {
-    let file = match std::fs::File::open(path) {
-        Ok(f) => f,
-        Err(_) => return Vec::new(),
-    };
-    // SAFETY: Font files are read-only system resources.
-    let mmap: Mmap = match unsafe { Mmap::map(&file) } {
-        Ok(m) => m,
-        Err(_) => return Vec::new(),
-    };
+ let file = match std::fs::File::open(path) {
+ Ok(f) => f,
+ Err(_) => return Vec::new(),
+ };
+ // SAFETY: Font files are read-only system resources.
+ let mmap: Mmap = match unsafe { Mmap::map(&file) } {
+ Ok(m) => m,
+ Err(_) => return Vec::new(),
+ };
 
-    let file_ref = match FileRef::new(&mmap) {
-        Ok(r) => r,
-        Err(_) => return Vec::new(),
-    };
+ let file_ref = match FileRef::new(&mmap) {
+ Ok(r) => r,
+ Err(_) => return Vec::new(),
+ };
 
-    let face_pairs: Vec<(skrifa::FontRef<'_>, u32)> = match file_ref {
-        FileRef::Font(f) => vec![(f, 0u32)],
-        FileRef::Collection(c) => {
-            let count = c.len();
-            (0..count)
-                .filter_map(|i| c.get(i).ok().map(|f| (f, i)))
-                .collect()
-        }
-    };
+ let face_pairs: Vec<(skrifa::FontRef<'_>, u32)> = match file_ref {
+ FileRef::Font(f) => vec![(f, 0u32)],
+ FileRef::Collection(c) => {
+ let count = c.len();
+ (0..count)
+ .filter_map(|i| c.get(i).ok().map(|f| (f, i)))
+ .collect()
+ }
+ };
 
-    let mut out = Vec::with_capacity(face_pairs.len());
-    for (font, face_index) in face_pairs {
-        // Monospace gate at enumeration time.
-        let post = match font.post() {
-            Ok(p) => p,
-            Err(_) => continue,
-        };
-        if post.is_fixed_pitch() == 0 {
-            continue;
-        }
+ let mut out = Vec::with_capacity(face_pairs.len());
+ for (font, face_index) in face_pairs {
+ // Monospace gate at enumeration time.
+ let post = match font.post() {
+ Ok(p) => p,
+ Err(_) => continue,
+ };
+ if post.is_fixed_pitch() == 0 {
+ continue;
+ }
 
-        // Family name: prefer typographic (id 16); fall back to legacy (id 1).
-        let raw_name = match font
-            .localized_strings(StringId::TYPOGRAPHIC_FAMILY_NAME)
-            .english_or_first()
-            .or_else(|| {
-                font.localized_strings(StringId::FAMILY_NAME)
-                    .english_or_first()
-            }) {
-            Some(n) => n,
-            None => continue,
-        };
-        let trimmed = raw_name.to_string().trim().to_owned();
-        if trimmed.is_empty() {
-            continue;
-        }
+ // Family name: prefer typographic (id 16); fall back to legacy (id 1).
+ let raw_name = match font
+ .localized_strings(StringId::TYPOGRAPHIC_FAMILY_NAME)
+ .english_or_first()
+ .or_else(|| {
+ font.localized_strings(StringId::FAMILY_NAME)
+ .english_or_first()
+ }) {
+ Some(n) => n,
+ None => continue,
+ };
+ let trimmed = raw_name.to_string().trim().to_owned();
+ if trimmed.is_empty() {
+ continue;
+ }
 
-        // Style: `OS/2` `fsSelection` first; fall back to `head.macStyle`.
-        let (is_bold, is_italic) = if let Ok(os2) = font.os2() {
-            let fs = os2.fs_selection();
-            (
-                fs.contains(SelectionFlags::BOLD),
-                fs.contains(SelectionFlags::ITALIC),
-            )
-        } else if let Ok(head) = font.head() {
-            let mac = head.mac_style();
-            (mac.contains(MacStyle::BOLD), mac.contains(MacStyle::ITALIC))
-        } else {
-            continue;
-        };
+ // Style: `OS/2` `fsSelection` first; fall back to `head.macStyle`.
+ let (is_bold, is_italic) = if let Ok(os2) = font.os2() {
+ let fs = os2.fs_selection();
+ (
+ fs.contains(SelectionFlags::BOLD),
+ fs.contains(SelectionFlags::ITALIC),
+ )
+ } else if let Ok(head) = font.head() {
+ let mac = head.mac_style();
+ (mac.contains(MacStyle::BOLD), mac.contains(MacStyle::ITALIC))
+ } else {
+ continue;
+ };
 
-        out.push(RawFaceInfo {
-            display_name: trimmed,
-            path: path.to_path_buf(),
-            face_index,
-            is_bold,
-            is_italic,
-        });
-    }
-    out
+ out.push(RawFaceInfo {
+ display_name: trimmed,
+ path: path.to_path_buf(),
+ face_index,
+ is_bold,
+ is_italic,
+ });
+ }
+ out
 }
 
 /// Resolve a user-specified family name via the catalog bridge plus filename
 /// heuristics. Used by both Linux and macOS `try_user_family()`.
-///
 /// Lookup order:
 /// 1. `family_paths()` catalog — handles `OpenType`-`name`-table family names
-///    (e.g. `"JetBrains Mono"`) which the filename heuristics below cannot
-///    match. Sibling Bold/Italic/BoldItalic faces discovered during
-///    enumeration win; missing slots get a second chance via filename probing
-///    against the existing index (zero disk I/O).
+/// (e.g. `"JetBrains Mono"`) which the filename heuristics below cannot
+/// match. Sibling Bold/Italic/BoldItalic faces discovered during
+/// enumeration win; missing slots get a second chance via filename probing
+/// against the existing index (zero disk I/O).
 /// 2. Direct filename match (`name == filename`).
 /// 3. `{name}-Regular.{ttf,otf}` patterns plus matching Bold/Italic/BoldItalic.
 /// 4. Absolute path.
 pub(super) fn try_user_family_with_bridge(
-    name: &str,
-    index: &HashMap<String, PathBuf>,
+ name: &str,
+ index: &HashMap<String, PathBuf>,
 ) -> Option<DiscoveryResult> {
-    try_user_family_with_bridge_using(name, index, super::family_paths)
+ try_user_family_with_bridge_using(name, index, super::family_paths)
 }
 
 /// Inner shape of [`try_user_family_with_bridge`] with the catalog lookup
 /// injected. Production calls `super::family_paths`; tests inject a fixture
 /// closure so the bridge integration can be exercised without the global
 /// `OnceLock`-cached catalog (closes the F2 host-font skip per
-/// `bug-tracker/plans//section-06-tpr-findings.md` Round 0).
+/// Round 0).
 pub(super) fn try_user_family_with_bridge_using(
-    name: &str,
-    index: &HashMap<String, PathBuf>,
-    family_paths_lookup: impl FnOnce(&str) -> Option<FamilySlots>,
+ name: &str,
+ index: &HashMap<String, PathBuf>,
+ family_paths_lookup: impl FnOnce(&str) -> Option<FamilySlots>,
 ) -> Option<DiscoveryResult> {
-    let lookup = |filename: &str| -> Option<PathBuf> { index.get(filename).cloned() };
+ let lookup = |filename: &str| -> Option<PathBuf> { index.get(filename).cloned() };
 
-    // 1. Bridge: enumerated catalog (typographic family names).
-    if let Some((mut full_paths, face_indices)) = family_paths_lookup(name) {
-        if let Some(regular_path) = full_paths[0].clone() {
-            if let Some(stem) = regular_path
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .map(str::to_owned)
-            {
-                let base_stem = strip_regular_suffix(&stem);
-                if full_paths[1].is_none() {
-                    full_paths[1] = variant_from_index(&base_stem, "Bold", index);
-                }
-                if full_paths[2].is_none() {
-                    full_paths[2] = variant_from_index(&base_stem, "Italic", index);
-                }
-                if full_paths[3].is_none() {
-                    full_paths[3] = variant_from_index(&base_stem, "BoldItalic", index);
-                }
-            }
-            let mut entry = super::family_from_paths(name, full_paths, FontOrigin::UserConfig);
-            entry.face_indices = face_indices;
-            let fallbacks = resolve_fallback_chain(&lookup, FontOrigin::DirectoryScan);
-            return Some(DiscoveryResult {
-                primary: entry,
-                fallbacks,
-            });
-        }
-    }
+ // 1. Bridge: enumerated catalog (typographic family names).
+ if let Some((mut full_paths, face_indices)) = family_paths_lookup(name) {
+ if let Some(regular_path) = full_paths[0].clone() {
+ if let Some(stem) = regular_path
+ .file_stem()
+ .and_then(|s| s.to_str())
+ .map(str::to_owned)
+ {
+ let base_stem = strip_regular_suffix(&stem);
+ if full_paths[1].is_none() {
+ full_paths[1] = variant_from_index(&base_stem, "Bold", index);
+ }
+ if full_paths[2].is_none() {
+ full_paths[2] = variant_from_index(&base_stem, "Italic", index);
+ }
+ if full_paths[3].is_none() {
+ full_paths[3] = variant_from_index(&base_stem, "BoldItalic", index);
+ }
+ }
+ let mut entry = super::family_from_paths(name, full_paths, FontOrigin::UserConfig);
+ entry.face_indices = face_indices;
+ let fallbacks = resolve_fallback_chain(&lookup, FontOrigin::DirectoryScan);
+ return Some(DiscoveryResult {
+ primary: entry,
+ fallbacks,
+ });
+ }
+ }
 
-    // 2. Direct filename match.
-    if let Some(path) = index.get(name) {
-        let primary = super::family_from_paths(
-            name,
-            [Some(path.clone()), None, None, None],
-            FontOrigin::UserConfig,
-        );
-        let fallbacks = resolve_fallback_chain(&lookup, FontOrigin::DirectoryScan);
-        return Some(DiscoveryResult { primary, fallbacks });
-    }
+ // 2. Direct filename match.
+ if let Some(path) = index.get(name) {
+ let primary = super::family_from_paths(
+ name,
+ [Some(path.clone()), None, None, None],
+ FontOrigin::UserConfig,
+ );
+ let fallbacks = resolve_fallback_chain(&lookup, FontOrigin::DirectoryScan);
+ return Some(DiscoveryResult { primary, fallbacks });
+ }
 
-    // 3. `{name}-Regular.{ttf,otf}` heuristic.
-    for ext in &["ttf", "otf"] {
-        let candidate = format!("{name}-Regular.{ext}");
-        if let Some(path) = index.get(&candidate) {
-            let bold = index.get(&format!("{name}-Bold.{ext}")).cloned();
-            let italic = index.get(&format!("{name}-Italic.{ext}")).cloned();
-            let bold_italic = index.get(&format!("{name}-BoldItalic.{ext}")).cloned();
+ // 3. `{name}-Regular.{ttf,otf}` heuristic.
+ for ext in &["ttf", "otf"] {
+ let candidate = format!("{name}-Regular.{ext}");
+ if let Some(path) = index.get(&candidate) {
+ let bold = index.get(&format!("{name}-Bold.{ext}")).cloned();
+ let italic = index.get(&format!("{name}-Italic.{ext}")).cloned();
+ let bold_italic = index.get(&format!("{name}-BoldItalic.{ext}")).cloned();
 
-            let primary = super::family_from_paths(
-                name,
-                [Some(path.clone()), bold, italic, bold_italic],
-                FontOrigin::UserConfig,
-            );
-            let fallbacks = resolve_fallback_chain(&lookup, FontOrigin::DirectoryScan);
-            return Some(DiscoveryResult { primary, fallbacks });
-        }
-    }
+ let primary = super::family_from_paths(
+ name,
+ [Some(path.clone()), bold, italic, bold_italic],
+ FontOrigin::UserConfig,
+ );
+ let fallbacks = resolve_fallback_chain(&lookup, FontOrigin::DirectoryScan);
+ return Some(DiscoveryResult { primary, fallbacks });
+ }
+ }
 
-    // 4. Absolute path.
-    let path = PathBuf::from(name);
-    if path.is_absolute() && path.exists() {
-        let primary =
-            super::family_from_paths(name, [Some(path), None, None, None], FontOrigin::UserConfig);
-        let fallbacks = resolve_fallback_chain(&lookup, FontOrigin::DirectoryScan);
-        return Some(DiscoveryResult { primary, fallbacks });
-    }
+ // 4. Absolute path.
+ let path = PathBuf::from(name);
+ if path.is_absolute() && path.exists() {
+ let primary =
+ super::family_from_paths(name, [Some(path), None, None, None], FontOrigin::UserConfig);
+ let fallbacks = resolve_fallback_chain(&lookup, FontOrigin::DirectoryScan);
+ return Some(DiscoveryResult { primary, fallbacks });
+ }
 
-    None
+ None
 }
 
 /// Strip a trailing Regular/Roman suffix from a font filename stem so we can
 /// probe sibling variant filenames. Falls back to the unchanged stem when no
 /// recognized suffix is found.
 pub(super) fn strip_regular_suffix(stem: &str) -> String {
-    const SUFFIXES: &[&str] = &[
-        "-Regular", "_Regular", " Regular", "-Roman", "_Roman", " Roman", "Regular", "Roman",
-    ];
-    for suffix in SUFFIXES {
-        if stem.len() <= suffix.len() {
-            continue;
-        }
-        let cut = stem.len() - suffix.len();
-        // Boundary-safe slicing: skip if `cut` lands inside a multi-byte char.
-        if !stem.is_char_boundary(cut) {
-            continue;
-        }
-        let (head, tail) = stem.split_at(cut);
-        if tail.eq_ignore_ascii_case(suffix) {
-            return head.trim_end_matches(['-', '_', ' ']).to_owned();
-        }
-    }
-    stem.to_owned()
+ const SUFFIXES: &[&str] = &[
+ "-Regular", "_Regular", " Regular", "-Roman", "_Roman", " Roman", "Regular", "Roman",
+ ];
+ for suffix in SUFFIXES {
+ if stem.len() <= suffix.len() {
+ continue;
+ }
+ let cut = stem.len() - suffix.len();
+ // Boundary-safe slicing: skip if `cut` lands inside a multi-byte char.
+ if !stem.is_char_boundary(cut) {
+ continue;
+ }
+ let (head, tail) = stem.split_at(cut);
+ if tail.eq_ignore_ascii_case(suffix) {
+ return head.trim_end_matches(['-', '_', ' ']).to_owned();
+ }
+ }
+ stem.to_owned()
 }
 
 /// Look up a `{base_stem}-{variant}.{ttf,otf}` filename in the existing index.
 pub(super) fn variant_from_index(
-    base_stem: &str,
-    variant: &str,
-    index: &HashMap<String, PathBuf>,
+ base_stem: &str,
+ variant: &str,
+ index: &HashMap<String, PathBuf>,
 ) -> Option<PathBuf> {
-    for ext in &["ttf", "otf"] {
-        let key = format!("{base_stem}-{variant}.{ext}");
-        if let Some(path) = index.get(&key) {
-            return Some(path.clone());
-        }
-    }
-    None
+ for ext in &["ttf", "otf"] {
+ let key = format!("{base_stem}-{variant}.{ext}");
+ if let Some(path) = index.get(&key) {
+ return Some(path.clone());
+ }
+ }
+ None
 }
 
 /// Try platform default families in priority order. Identical for Linux and
 /// macOS — both walk `PRIMARY_FAMILIES` against the filename index. Closes
-/// the F1 LEAK:algorithmic-duplication finding from §06 Round 1.
+/// the F1 finding from §06 Round 1.
 pub(super) fn try_platform_defaults_with_index(
-    index: &HashMap<String, PathBuf>,
+ index: &HashMap<String, PathBuf>,
 ) -> Option<DiscoveryResult> {
-    let lookup = |filename: &str| -> Option<PathBuf> { index.get(filename).cloned() };
+ let lookup = |filename: &str| -> Option<PathBuf> { index.get(filename).cloned() };
 
-    let primary = try_families_from_specs(PRIMARY_FAMILIES, &lookup, FontOrigin::DirectoryScan)?;
-    let fallbacks = resolve_fallback_chain(&lookup, FontOrigin::DirectoryScan);
-    Some(DiscoveryResult { primary, fallbacks })
+ let primary = try_families_from_specs(PRIMARY_FAMILIES, &lookup, FontOrigin::DirectoryScan)?;
+ let fallbacks = resolve_fallback_chain(&lookup, FontOrigin::DirectoryScan);
+ Some(DiscoveryResult { primary, fallbacks })
 }
 
 /// Resolve a user-configured fallback font name to a path. Identical for
 /// Linux and macOS — try filename in index, then absolute path. Closes the
-/// F1 LEAK:algorithmic-duplication finding from §06 Round 1.
+/// F1 finding from §06 Round 1.
 pub(super) fn resolve_user_fallback_with_index(
-    family: &str,
-    index: &HashMap<String, PathBuf>,
+ family: &str,
+ index: &HashMap<String, PathBuf>,
 ) -> Option<FallbackDiscovery> {
-    if let Some(path) = index.get(family) {
-        return Some(FallbackDiscovery {
-            path: path.clone(),
-            face_index: 0,
-            origin: FontOrigin::UserConfig,
-        });
-    }
+ if let Some(path) = index.get(family) {
+ return Some(FallbackDiscovery {
+ path: path.clone(),
+ face_index: 0,
+ origin: FontOrigin::UserConfig,
+ });
+ }
 
-    let path = PathBuf::from(family);
-    if path.is_absolute() && path.exists() {
-        return Some(FallbackDiscovery {
-            path,
-            face_index: 0,
-            origin: FontOrigin::UserConfig,
-        });
-    }
+ let path = PathBuf::from(family);
+ if path.is_absolute() && path.exists() {
+ return Some(FallbackDiscovery {
+ path,
+ face_index: 0,
+ origin: FontOrigin::UserConfig,
+ });
+ }
 
-    None
+ None
 }

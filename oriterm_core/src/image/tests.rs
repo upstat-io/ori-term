@@ -724,7 +724,6 @@ fn animation_state_paused_no_advance() {
 /// `advance_consuming_gapless` skips consecutive zero-gap frames in ONE call.
 /// Per kitty `graphics.c:1798-1799` — gapless frames are intentionally not
 /// displayed.
-/// Regression: BUG-08-050.
 #[test]
 fn advance_consuming_gapless_skips_consecutive_zero_gap_frames() {
     let durations = vec![
@@ -744,7 +743,6 @@ fn advance_consuming_gapless_skips_consecutive_zero_gap_frames() {
 }
 
 /// `advance_consuming_gapless` does NOT skip past the first non-gapless frame.
-/// Regression: BUG-08-050.
 #[test]
 fn advance_consuming_gapless_no_skip_when_next_has_nonzero_gap() {
     let durations = vec![
@@ -765,7 +763,6 @@ fn advance_consuming_gapless_no_skip_when_next_has_nonzero_gap() {
 /// All-gapless animation: `advance_consuming_gapless` advances at most
 /// `total_frames - 1` times to prevent runaway. The `MIN_FRAME_DURATION`
 /// clamp at `current_duration()` is the deadline-scheduling safety net.
-/// Regression: BUG-08-050.
 #[test]
 fn advance_consuming_gapless_bounded_when_all_frames_gapless() {
     let durations = vec![Duration::ZERO, Duration::ZERO, Duration::ZERO];
@@ -783,7 +780,6 @@ fn advance_consuming_gapless_bounded_when_all_frames_gapless() {
 /// is a no-op — does NOT mutate state, does NOT call apply_frame, does NOT
 /// reset frame_starts. Per kitty `graphics.c:1737-1743` explicit equality
 /// guard `frame_idx != current_frame_index`.
-/// Regression: BUG-08-053.
 #[test]
 fn set_current_frame_idempotent_seek_does_not_reset_frame_starts() {
     let mut cache = ImageCache::new();
@@ -813,7 +809,6 @@ fn set_current_frame_idempotent_seek_does_not_reset_frame_starts() {
 /// `set_current_frame(id, N)` where `N != current_frame` DOES update the
 /// state and reset `frame_starts`. Control test proving the equality guard
 /// gates ONLY the no-op path.
-/// Regression: BUG-08-053.
 #[test]
 fn set_current_frame_real_seek_resets_frame_starts() {
     let mut cache = ImageCache::new();
@@ -849,7 +844,6 @@ fn set_current_frame_real_seek_resets_frame_starts() {
 /// to 0 per kitty `graphics.c:1764` (unconditional `current_loop = 0` for
 /// ALL s= actions). Without this reset, a pause + resume cycle on a
 /// bounded-loop animation silently shortens the effective loop count.
-/// Regression: BUG-08-052.
 #[test]
 fn set_animation_action_stop_resets_loops_completed() {
     let mut cache = ImageCache::new();
@@ -882,7 +876,6 @@ fn set_animation_action_stop_resets_loops_completed() {
 /// `s=2` ANIMATION_LOADING (`wait_mode`) HALTS at the last frame on wrap.
 /// Per kitty `graphics.c:1793-1796`. Subsequent `a=f` extends the
 /// animation; `add_animation_frame` clears `wait_mode` to resume playback.
-/// Regression: BUG-08-051.
 #[test]
 fn animation_state_wait_mode_halts_at_last_frame_on_wrap() {
     let durations = vec![Duration::from_millis(100); 2];
@@ -903,7 +896,6 @@ fn animation_state_wait_mode_halts_at_last_frame_on_wrap() {
 
 /// `s=3` ANIMATION_RUNNING (no `wait_mode`) wraps normally — control test
 /// proving the halt is gated on `wait_mode` only.
-/// Regression: BUG-08-051.
 #[test]
 fn animation_state_no_wait_mode_wraps_on_loop_end() {
     let durations = vec![Duration::from_millis(100); 2];
@@ -917,7 +909,6 @@ fn animation_state_no_wait_mode_wraps_on_loop_end() {
 
 /// `advance_consuming_gapless` returns false for paused / single-frame
 /// (delegates to `advance` for the early-exit guard).
-/// Regression: BUG-08-050.
 #[test]
 fn advance_consuming_gapless_returns_false_for_paused_or_single_frame() {
     let mut single = AnimationState::new(vec![Duration::from_millis(100)], None);
