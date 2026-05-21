@@ -729,8 +729,13 @@ fn animation_current_frame_does_not_advance_without_timer_tick() {
 fn animation_category_matrix_completeness() {
     // Categories: (a=f transmit promotion), (a=f subsequent append),
     // (a=f ENOENT negative), (a=f alphablend default), (a=f overwrite X=1),
-    // (a=a stop s=1), (a=a v=0 infinite loops), (a=a v= absent negative),
-    // (a=a r= set frame), (a=a z= set gap), (advance deadline), (no-tick negative).
+    // (a=a stop s=1), (a=a run-wait s=2/s=3), (a=a v=0 infinite loops),
+    // (a=a v= absent negative), (a=a c= seek + reply echo), (a=a c=0 no-op),
+    // (a=a c= out-of-range no-op), (a=a r= z>0 gap-target),
+    // (a=a r= z<0 gapless), (a=a r= z=0 no-op),
+    // (a=a r= out-of-range no-op), (a=a r= on static silent no-op),
+    // (a=a z= alone negative pin), (a=a r= + c= independent arms),
+    // (advance deadline), (no-tick negative).
     let categories: &[&str] = &[
         "frame_transmit_promotion_r2",
         "frame_subsequent_append_r3",
@@ -738,18 +743,26 @@ fn animation_category_matrix_completeness() {
         "frame_composite_alphablend",
         "frame_composite_overwrite",
         "animate_stop_s1",
-        "animate_run_wait_s2_collapses_with_s3",
+        "animate_run_wait_s2_vs_s3",
         "animate_v0_infinite_loops",
         "animate_v_absent_negative",
-        "animate_r2_current_frame_reply",
-        "animate_z_frame_gap",
+        "animate_c2_seek_and_reply",
+        "animate_c_zero_no_op",
+        "animate_c_out_of_range_no_op",
+        "animate_r2_z_positive_gap_target",
+        "animate_r2_z_negative_gapless",
+        "animate_r2_z_zero_no_op",
+        "animate_r_out_of_range_no_op",
+        "animate_r_on_static_silent_no_op",
+        "animate_z_alone_no_op_negative_pin",
+        "animate_r_and_c_independent_arms",
         "advance_deadline_visible",
         "no_tick_negative",
     ];
     assert_eq!(
         categories.len(),
-        13,
-        "animation matrix MUST cover 13 categories — if you add a new \
+        21,
+        "animation matrix MUST cover 21 categories — if you add a new \
          pin, bump this count so matrix completeness is self-verifying"
     );
 }
