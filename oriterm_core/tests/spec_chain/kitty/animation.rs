@@ -9,7 +9,9 @@
 //! (s=1 pauses), `KG-ANIMATE-RUN-WAIT` (s=2 resumes waiting), `KG-ANIMATE-RUN`
 //! (s=3 resumes), `KG-ANIMATE-LOOP-COUNT` (v=0 → infinite, v=N → finite),
 //! `KG-ANIMATE-SET-CURRENT-FRAME` (r=N / c=N), `KG-ANIMATE-SET-FRAME-GAP`
-//! (z=ms for current frame).
+//! (z=ms for current frame). `KG-FRAME-REPLACE` (c=N append using frame N
+//! as canvas) and `KG-FRAME-EDIT` (r=N edits frame N in place) are pinned
+//! per-test below in the c=/r= dispatch test cluster.
 
 use std::time::{Duration, Instant};
 
@@ -801,6 +803,86 @@ fn animation_current_frame_does_not_advance_without_timer_tick() {
     );
 }
 
+/// Two animated kitty images on the same pane must each advance their own
+/// frame counter independently when the cache is ticked past their deadlines.
+///
+/// Pins the cache-layer multi-image animation contract: each image's
+/// `frame_starts` entry and `current_frame` field is keyed by `ImageId`,
+/// so ticking the cache past image-A's deadline must not stall image-B's
+/// advancement. Image-A has a 30ms frame gap; image-B has a 80ms frame gap.
+/// After ticking far enough past both deadlines, both `current_frame`
+/// counters MUST be ≥ 1. A regression that conflates the two animations
+/// (e.g. a per-pane single-deadline data structure that replaces image-A's
+/// state when image-B's tick lands) would leave one of them at 0.
+///
+/// Catalog row: `KG-ANIMATE-RUN` (multi-image-per-pane independence).
+#[test]
+fn multiple_animated_kitty_images_per_pane_all_advance_independently() {
+    let frame_a = b64(&rgba_4x4_red());
+    let frame_b = b64(&rgba_4x4_red());
+
+    let mut h = SpecHarness::new();
+    // Image A: placed on screen with a 30ms first-frame gap, then a=f appends
+    // a second frame so the animation has two frames to switch between.
+    h.feed(&kitty_apc(b"a=T,i=100,f=32,s=4,v=4,z=30", &frame_a));
+    h.feed(&kitty_apc(b"a=f,i=100,f=32,s=4,v=4,z=30", &frame_a));
+    h.feed(&kitty_apc(b"a=a,i=100,s=3", ""));
+
+    // Image B: same pattern, but 80ms frame gap so its deadline lands
+    // strictly after image A's.
+    h.feed(&kitty_apc(b"a=T,i=200,f=32,s=4,v=4,z=80", &frame_b));
+    h.feed(&kitty_apc(b"a=f,i=200,f=32,s=4,v=4,z=80", &frame_b));
+    h.feed(&kitty_apc(b"a=a,i=200,s=3", ""));
+
+    let snapshot_a_before = h
+        .term()
+        .image_cache()
+        .animation_snapshot(ImageId::from_raw(100))
+        .expect("i=100 animated");
+    let snapshot_b_before = h
+        .term()
+        .image_cache()
+        .animation_snapshot(ImageId::from_raw(200))
+        .expect("i=200 animated");
+    assert_eq!(snapshot_a_before.current_frame, 0, "i=100 starts at frame 0");
+    assert_eq!(snapshot_b_before.current_frame, 0, "i=200 starts at frame 0");
+
+    // Tick #1: t0 seeds `frame_starts` for both images on first call.
+    let t0 = Instant::now();
+    h.term_mut().advance_animations(t0);
+
+    // Tick #2: advance well past BOTH deadlines (A's 30ms AND B's 80ms).
+    // `advance_animations` only advances images whose elapsed time has
+    // crossed their `current_duration()` since their `frame_starts` entry;
+    // both must have crossed by t0 + 200ms.
+    let t1 = t0 + Duration::from_millis(200);
+    h.term_mut().advance_animations(t1);
+
+    let cache = h.term().image_cache();
+    let snapshot_a = cache
+        .animation_snapshot(ImageId::from_raw(100))
+        .expect("i=100 animated");
+    let snapshot_b = cache
+        .animation_snapshot(ImageId::from_raw(200))
+        .expect("i=200 animated");
+    assert!(
+        snapshot_a.current_frame >= 1,
+        "i=100 MUST advance past frame 0 after ticking past its 30ms deadline \
+         (got current_frame={}). A regression that keys deadline state on \
+         pane-id instead of image-id would replace i=100's state with i=200's \
+         tick and leave i=100 stalled at frame 0.",
+        snapshot_a.current_frame,
+    );
+    assert!(
+        snapshot_b.current_frame >= 1,
+        "i=200 MUST advance past frame 0 after ticking past its 80ms deadline \
+         (got current_frame={}). A regression that keys deadline state on \
+         pane-id instead of image-id would replace i=200's state with i=100's \
+         tick and leave i=200 stalled at frame 0.",
+        snapshot_b.current_frame,
+    );
+}
+
 /// Matrix count assertion — enumerates the animation categories this file
 /// pins and checks we hit each one. If a category is added here, the count
 /// increments; this prevents silent matrix gaps.
@@ -838,6 +920,8 @@ fn fill_2x2(rgba: [u8; 4]) -> Vec<u8> {
 
 /// r=N edits frame N in place, does NOT append. Pre-fix: dispatch
 /// appended → 3 frames. Post-fix: 2 frames, frame 2 = blue.
+///
+/// Catalog row: `KG-FRAME-EDIT`.
 #[test]
 fn kitty_frame_r_key_edits_frame_in_place_not_append() {
     let mut h = SpecHarness::new();
@@ -854,6 +938,8 @@ fn kitty_frame_r_key_edits_frame_in_place_not_append() {
 /// c=N appends a new frame using frame N as canvas. Pre-fix: c= ignored.
 /// Post-fix: frame 3 appended with canvas=frame2(green) + 2x2 blue overlay
 /// at (1,1).
+///
+/// Catalog row: `KG-FRAME-REPLACE`.
 #[test]
 fn kitty_frame_c_key_appends_new_frame_using_frame_n_as_canvas() {
     let mut h = SpecHarness::new();

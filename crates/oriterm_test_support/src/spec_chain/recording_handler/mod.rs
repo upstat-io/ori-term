@@ -232,6 +232,7 @@ impl<S: EffectSink> Handler for RecordingHandler<S> {
  delegate_other!(clear_tabs, mode: vte::ansi::TabulationClearMode);
  delegate_other!(set_tabs, interval: u16);
  delegate_other!(reset_state);
+ delegate_other!(decstr);
  delegate_other!(reverse_index);
  delegate_other!(terminal_attribute, attr: vte::ansi::Attr);
  delegate_other!(set_mode, mode: vte::ansi::Mode);

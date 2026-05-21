@@ -17,5 +17,6 @@ pub mod cross_stack_regression_gate;
 pub mod formats;
 pub mod placeholder_anchors;
 pub mod replies;
+pub mod reset;
 pub mod transmissions;
 pub mod virtual_placements;
