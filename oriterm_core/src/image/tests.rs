@@ -721,6 +721,81 @@ fn animation_state_paused_no_advance() {
     assert_eq!(state.current_frame, 0);
 }
 
+/// `advance_consuming_gapless` skips consecutive zero-gap frames in ONE call.
+/// Per kitty `graphics.c:1798-1799` — gapless frames are intentionally not
+/// displayed.
+/// Regression: BUG-08-050.
+#[test]
+fn advance_consuming_gapless_skips_consecutive_zero_gap_frames() {
+    let durations = vec![
+        Duration::from_millis(200),
+        Duration::ZERO,
+        Duration::ZERO,
+        Duration::from_millis(200),
+    ];
+    let mut state = AnimationState::new(durations, None);
+    assert_eq!(state.current_frame, 0);
+
+    assert!(state.advance_consuming_gapless());
+    assert_eq!(
+        state.current_frame, 3,
+        "MUST skip frames 1 and 2 (both gapless) and land on frame 3"
+    );
+}
+
+/// `advance_consuming_gapless` does NOT skip past the first non-gapless frame.
+/// Regression: BUG-08-050.
+#[test]
+fn advance_consuming_gapless_no_skip_when_next_has_nonzero_gap() {
+    let durations = vec![
+        Duration::from_millis(200),
+        Duration::from_millis(100),
+        Duration::ZERO,
+    ];
+    let mut state = AnimationState::new(durations, None);
+
+    assert!(state.advance_consuming_gapless());
+    assert_eq!(
+        state.current_frame, 1,
+        "MUST advance to frame 1 (non-gapless) and STOP there — does not \
+         skip ahead because frame 1's gap is 100ms"
+    );
+}
+
+/// All-gapless animation: `advance_consuming_gapless` advances at most
+/// `total_frames - 1` times to prevent runaway. The `MIN_FRAME_DURATION`
+/// clamp at `current_duration()` is the deadline-scheduling safety net.
+/// Regression: BUG-08-050.
+#[test]
+fn advance_consuming_gapless_bounded_when_all_frames_gapless() {
+    let durations = vec![Duration::ZERO, Duration::ZERO, Duration::ZERO];
+    let mut state = AnimationState::new(durations, None);
+
+    assert!(state.advance_consuming_gapless());
+    // Bounded: started at 0, max_skips = total_frames - 1 = 2. First call to
+    // advance() moves 0→1. Then up to 2 more skip-advances: 1→2 then 2→0
+    // (wrap). Loop exits after skips==max_skips OR an advance returns false.
+    // Either way, current_frame is well-defined and not spinning.
+    assert!(state.current_frame < state.total_frames);
+}
+
+/// `advance_consuming_gapless` returns false for paused / single-frame
+/// (delegates to `advance` for the early-exit guard).
+/// Regression: BUG-08-050.
+#[test]
+fn advance_consuming_gapless_returns_false_for_paused_or_single_frame() {
+    let mut single = AnimationState::new(vec![Duration::from_millis(100)], None);
+    assert!(!single.advance_consuming_gapless());
+
+    let mut paused = AnimationState::new(
+        vec![Duration::from_millis(100), Duration::ZERO, Duration::ZERO],
+        None,
+    );
+    paused.paused = true;
+    assert!(!paused.advance_consuming_gapless());
+    assert_eq!(paused.current_frame, 0);
+}
+
 // -- ImageCache animation --
 
 /// Helper: make fake RGBA frame data.

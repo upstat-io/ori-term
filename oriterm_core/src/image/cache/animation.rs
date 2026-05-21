@@ -143,7 +143,7 @@ impl ImageCache {
             let elapsed = now.duration_since(frame_start);
             let frame_dur = state.current_duration();
 
-            if elapsed >= frame_dur && state.advance() {
+            if elapsed >= frame_dur && state.advance_consuming_gapless() {
                 let frame = state.current_frame;
                 apply_frame(
                     &self.animation_frames,

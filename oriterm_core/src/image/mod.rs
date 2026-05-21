@@ -288,6 +288,43 @@ impl AnimationState {
             false // Infinite loop.
         }
     }
+
+    /// Advance to the next non-gapless frame in this tick.
+    ///
+    /// Per kitty `graphics.c:1798-1799` skip loop: after a single
+    /// time-driven advance, consume consecutive zero-gap frames inside the
+    /// same tick so they are never displayed. Gapless frames exist as base
+    /// data for subsequent frames (per `graphics-protocol.rst:947-958`).
+    ///
+    /// Bounded by `total_frames - 1` to prevent runaway on all-gapless
+    /// animations; `current_duration()` clamps to `MIN_FRAME_DURATION` as
+    /// the deadline-scheduling safety net in that edge case.
+    ///
+    /// Returns `true` if `current_frame` changed.
+    pub fn advance_consuming_gapless(&mut self) -> bool {
+        if !self.advance() {
+            return false;
+        }
+        let max_skips = self.total_frames.saturating_sub(1);
+        let mut skips = 0;
+        while skips < max_skips
+            && self.is_current_frame_gapless()
+            && !self.is_finished()
+        {
+            if !self.advance() {
+                break;
+            }
+            skips += 1;
+        }
+        true
+    }
+
+    /// `true` when the current frame's raw gap is `Duration::ZERO`.
+    fn is_current_frame_gapless(&self) -> bool {
+        self.frame_durations
+            .get(self.current_frame)
+            .is_some_and(|d| *d == Duration::ZERO)
+    }
 }
 
 #[cfg(test)]
