@@ -296,9 +296,18 @@ impl ImageCache {
     }
 
     /// Set the loop count for an animated image (Kitty `v=` key).
+    ///
+    /// Per kitty `graphics.c:1766-1768` + `graphics-protocol.rst:942-945`:
+    /// - `v=0` is ignored (no mutation; the C-side `if (g->loop_count)` guard).
+    /// - `v=1` → infinite (`loop_count = None`, matching kitty `max_loops = 0`
+    ///   and the `!max_loops` shortcircuit at `graphics.c:1775`).
+    /// - `v=N>1` → finite N-1 loops (`loop_count = Some(N - 1)`).
     pub(crate) fn set_animation_loops(&mut self, id: ImageId, loops: u32) {
+        if loops == 0 {
+            return;
+        }
         if let Some(state) = self.animations.get_mut(&id) {
-            state.loop_count = if loops == 0 { None } else { Some(loops) };
+            state.loop_count = if loops == 1 { None } else { Some(loops - 1) };
             state.loops_completed = 0;
         }
     }

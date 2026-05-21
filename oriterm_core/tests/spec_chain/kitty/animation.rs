@@ -200,13 +200,14 @@ fn kitty_animate_s_one_pauses_and_reply_echoes_current_frame() {
     );
 }
 
-/// `a=a,v=0` sets `AnimationState::loop_count` to `None` (infinite loops per
-/// kitty graphics-protocol.rst §Animation control). Property that ONLY
-/// passes when `KittyCommand::loop_count: Option<u32>` routes `v=0` to
-/// `set_animation_loops(id, 0)` → `loop_count = None`.
-/// Catalog row: `KG-ANIMATE-LOOP-COUNT`. Closes TPR-13.0.5-R1-F3-.
+/// `a=a,v=0` is IGNORED per kitty `graphics.c:1766-1768`
+/// (`if (g->loop_count) { max_loops = g->loop_count - 1; }` — truthy guard).
+/// Prior loop_count MUST be preserved when v=0 is sent.
+/// Catalog row: `KG-ANIMATE-LOOP-COUNT` (v=0 ignored).
+/// Regression: BUG-08-048 — pre-fix code routed v=0 → loop_count=None (infinite)
+/// which was an inverted sentinel relative to kitty.
 #[test]
-fn kitty_animate_v_zero_sets_loop_count_to_none_infinite() {
+fn kitty_animate_v_zero_is_ignored_leaves_prior_loop_count_unchanged() {
     let base = b64(&rgba_4x4_red());
     let frame = b64(&rgba_4x4_red());
 
@@ -214,7 +215,7 @@ fn kitty_animate_v_zero_sets_loop_count_to_none_infinite() {
     h.feed(&kitty_apc(b"a=t,i=61,f=32,s=4,v=4", &base));
     h.feed(&kitty_apc(b"a=f,i=61,f=32,s=4,v=4", &frame));
 
-    // Seed with a finite loop count first, then v=0 MUST reset to infinite.
+    // Seed with v=5 (kitty: max_loops = 5 - 1 = 4 → Some(4)).
     h.feed(&kitty_apc(b"a=a,i=61,v=5", ""));
     assert_eq!(
         h.term()
@@ -222,10 +223,11 @@ fn kitty_animate_v_zero_sets_loop_count_to_none_infinite() {
             .animation_state(ImageId::from_raw(61))
             .expect("i=61 animated")
             .loop_count,
-        Some(5),
-        "a=a,v=5 MUST set loop_count to Some(5) as a baseline"
+        Some(4),
+        "a=a,v=5 MUST set loop_count to Some(4) (kitty: max_loops = N-1)"
     );
 
+    // v=0 MUST leave loop_count UNCHANGED at Some(4).
     h.feed(&kitty_apc(b"a=a,i=61,v=0", ""));
     assert_eq!(
         h.term()
@@ -233,9 +235,87 @@ fn kitty_animate_v_zero_sets_loop_count_to_none_infinite() {
             .animation_state(ImageId::from_raw(61))
             .expect("i=61 animated")
             .loop_count,
+        Some(4),
+        "a=a,v=0 MUST leave loop_count unchanged — kitty `if (g->loop_count)` \
+         guard at graphics.c:1766 ignores v=0 (truthy check on raw value)"
+    );
+}
+
+/// `a=a,v=1` sets `loop_count` to `None` (infinite loops). Per kitty
+/// `graphics.c:1766-1767`: `max_loops = 1 - 1 = 0`, and `image_is_animatable`
+/// at `graphics.c:1775` shortcircuits `!max_loops` to mean "infinite".
+/// Catalog row: `KG-ANIMATE-LOOP-COUNT` (v=1 infinite).
+/// Regression: BUG-08-048 — pre-fix code routed v=1 → loop_count=Some(1) (loop
+/// once and stop), opposite of kitty.
+#[test]
+fn kitty_animate_v_one_sets_loop_count_to_none_infinite() {
+    let base = b64(&rgba_4x4_red());
+    let frame = b64(&rgba_4x4_red());
+
+    let mut h = SpecHarness::new();
+    h.feed(&kitty_apc(b"a=t,i=78,f=32,s=4,v=4", &base));
+    h.feed(&kitty_apc(b"a=f,i=78,f=32,s=4,v=4", &frame));
+
+    h.feed(&kitty_apc(b"a=a,i=78,v=1", ""));
+    assert_eq!(
+        h.term()
+            .image_cache()
+            .animation_state(ImageId::from_raw(78))
+            .expect("i=78 animated")
+            .loop_count,
         None,
-        "a=a,v=0 MUST set loop_count to None (infinite) — distinguishes \
-         present-zero from absent-zero semantics"
+        "a=a,v=1 MUST set loop_count to None (infinite) — kitty max_loops=0 \
+         shortcircuit at graphics.c:1775"
+    );
+}
+
+/// `a=a,v=3` sets `loop_count` to `Some(2)` (finite 2 loops). Per kitty
+/// `graphics.c:1767`: `max_loops = 3 - 1 = 2`.
+/// Catalog row: `KG-ANIMATE-LOOP-COUNT` (finite N-1).
+/// Regression: BUG-08-048.
+#[test]
+fn kitty_animate_v_three_sets_loop_count_to_some_two_finite_loops() {
+    let base = b64(&rgba_4x4_red());
+    let frame = b64(&rgba_4x4_red());
+
+    let mut h = SpecHarness::new();
+    h.feed(&kitty_apc(b"a=t,i=79,f=32,s=4,v=4", &base));
+    h.feed(&kitty_apc(b"a=f,i=79,f=32,s=4,v=4", &frame));
+
+    h.feed(&kitty_apc(b"a=a,i=79,v=3", ""));
+    assert_eq!(
+        h.term()
+            .image_cache()
+            .animation_state(ImageId::from_raw(79))
+            .expect("i=79 animated")
+            .loop_count,
+        Some(2),
+        "a=a,v=3 MUST set loop_count to Some(2) (kitty: max_loops = 3-1 = 2)"
+    );
+}
+
+/// `a=a,v=5` sets `loop_count` to `Some(4)` (finite 4 loops). Per kitty
+/// `graphics.c:1767`: `max_loops = 5 - 1 = 4`.
+/// Catalog row: `KG-ANIMATE-LOOP-COUNT` (finite N-1).
+/// Regression: BUG-08-048 — pre-fix code mapped v=5 → Some(5).
+#[test]
+fn kitty_animate_v_five_sets_loop_count_to_some_four_finite_loops() {
+    let base = b64(&rgba_4x4_red());
+    let frame = b64(&rgba_4x4_red());
+
+    let mut h = SpecHarness::new();
+    h.feed(&kitty_apc(b"a=t,i=80,f=32,s=4,v=4", &base));
+    h.feed(&kitty_apc(b"a=f,i=80,f=32,s=4,v=4", &frame));
+
+    h.feed(&kitty_apc(b"a=a,i=80,v=5", ""));
+    assert_eq!(
+        h.term()
+            .image_cache()
+            .animation_state(ImageId::from_raw(80))
+            .expect("i=80 animated")
+            .loop_count,
+        Some(4),
+        "a=a,v=5 MUST set loop_count to Some(4) (kitty: max_loops = 5-1 = 4)"
     );
 }
 
@@ -260,10 +340,11 @@ fn kitty_animate_v_absent_leaves_prior_loop_count_unchanged() {
             .animation_state(ImageId::from_raw(62))
             .unwrap()
             .loop_count,
-        Some(7),
+        Some(6),
+        "a=a,v=7 MUST set loop_count to Some(6) (kitty: max_loops = 7-1 = 6)"
     );
 
-    // Separate a=a command with NO `v=` — loop count MUST stay at Some(7).
+    // Separate a=a command with NO `v=` — loop count MUST stay at Some(6).
     h.feed(&kitty_apc(b"a=a,i=62,s=3", ""));
     assert_eq!(
         h.term()
@@ -271,7 +352,7 @@ fn kitty_animate_v_absent_leaves_prior_loop_count_unchanged() {
             .animation_state(ImageId::from_raw(62))
             .unwrap()
             .loop_count,
-        Some(7),
+        Some(6),
         "a=a with v= absent MUST leave loop_count at its prior value — \
          a regression guard for the Some(0)-vs-None distinction"
     );
@@ -727,15 +808,10 @@ fn animation_current_frame_does_not_advance_without_timer_tick() {
 /// increments; this prevents silent matrix gaps.
 #[test]
 fn animation_category_matrix_completeness() {
-    // Categories: (a=f transmit promotion), (a=f subsequent append),
-    // (a=f ENOENT negative), (a=f alphablend default), (a=f overwrite X=1),
-    // (a=a stop s=1), (a=a run-wait s=2/s=3), (a=a v=0 infinite loops),
-    // (a=a v= absent negative), (a=a c= seek + reply echo), (a=a c=0 no-op),
-    // (a=a c= out-of-range no-op), (a=a r= z>0 gap-target),
-    // (a=a r= z<0 gapless), (a=a r= z=0 no-op),
-    // (a=a r= out-of-range no-op), (a=a r= on static silent no-op),
-    // (a=a z= alone negative pin), (a=a r= + c= independent arms),
-    // (advance deadline), (no-tick negative).
+    // Categories: a=f transmit/append/ENOENT/alphablend/overwrite, a=a s=
+    // stop/wait/run, a=a v= ignored/infinite/finite/absent, a=a c= seek and
+    // bounds guards, a=a r= z= gap-target variants, a=a z= alone guard, a=a
+    // r=+c= independent arms, advance deadline, no-tick guard.
     let categories: &[&str] = &[
         "frame_transmit_promotion_r2",
         "frame_subsequent_append_r3",
@@ -744,7 +820,10 @@ fn animation_category_matrix_completeness() {
         "frame_composite_overwrite",
         "animate_stop_s1",
         "animate_run_wait_s2_vs_s3",
-        "animate_v0_infinite_loops",
+        "animate_v0_ignored",
+        "animate_v1_infinite",
+        "animate_v3_finite_two_loops",
+        "animate_v5_finite_four_loops",
         "animate_v_absent_negative",
         "animate_c2_seek_and_reply",
         "animate_c_zero_no_op",
@@ -761,8 +840,8 @@ fn animation_category_matrix_completeness() {
     ];
     assert_eq!(
         categories.len(),
-        21,
-        "animation matrix MUST cover 21 categories — if you add a new \
+        24,
+        "animation matrix MUST cover 24 categories — if you add a new \
          pin, bump this count so matrix completeness is self-verifying"
     );
 }

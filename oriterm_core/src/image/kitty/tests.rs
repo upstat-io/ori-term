@@ -495,7 +495,8 @@ fn handler_animate_set_loops() {
         .image_cache()
         .animation_state(ImageId(1))
         .expect("animated");
-    assert_eq!(state.loop_count, Some(5));
+    // Per kitty graphics.c:1767 `max_loops = g->loop_count - 1`, v=5 → Some(4).
+    assert_eq!(state.loop_count, Some(4));
 }
 
 #[test]
