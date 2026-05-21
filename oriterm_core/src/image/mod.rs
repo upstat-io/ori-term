@@ -337,5 +337,43 @@ impl AnimationState {
     }
 }
 
+/// Read-only snapshot of an animation's protocol-observable facts.
+///
+/// Stable public API that decouples consumers from the internal
+/// `AnimationState` field layout. The frame-gap slice is borrowed (`&[Duration]`)
+/// rather than owned to avoid per-call allocation; the snapshot is `Copy`
+/// because references-to-slices are `Copy`.
+#[derive(Debug, Clone, Copy)]
+pub struct AnimationSnapshot<'a> {
+    /// Index of the currently displayed frame (0-based).
+    pub current_frame: usize,
+    /// Total number of frames.
+    pub total_frames: usize,
+    /// Per-frame gaps (raw `Duration::ZERO` for gapless frames).
+    pub frame_gaps: &'a [Duration],
+    /// Number of loops (`None` = infinite per kitty `v=1` mapping).
+    pub loop_count: Option<u32>,
+    /// Number of complete loops performed so far.
+    pub loops_completed: u32,
+    /// Whether playback is paused (Kitty `s=1`).
+    pub paused: bool,
+    /// Whether the animation is in `s=2` wait-mode.
+    pub wait_mode: bool,
+}
+
+impl<'a> From<&'a AnimationState> for AnimationSnapshot<'a> {
+    fn from(state: &'a AnimationState) -> Self {
+        Self {
+            current_frame: state.current_frame,
+            total_frames: state.total_frames,
+            frame_gaps: &state.frame_durations,
+            loop_count: state.loop_count,
+            loops_completed: state.loops_completed,
+            paused: state.paused,
+            wait_mode: state.wait_mode,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests;

@@ -198,7 +198,7 @@ fn assert_initial_animation_cache_state(harness: &VisualSpecHarness) {
         .core()
         .term()
         .image_cache()
-        .animation_state(ImageId::from_raw(IMAGE_ID))
+        .animation_snapshot(ImageId::from_raw(IMAGE_ID))
         .expect(
             "kitty animation state for IMAGE_ID must exist after a=T + a=f + a=a,s=3 — \
              indicates the byte stream did not promote the static image to animated",
@@ -249,7 +249,7 @@ fn assert_renders_dont_advance_cache(
         .core()
         .term()
         .image_cache()
-        .animation_state(ImageId::from_raw(IMAGE_ID))
+        .animation_snapshot(ImageId::from_raw(IMAGE_ID))
         .expect("animation state must still exist after re-render");
     assert_eq!(
         state.current_frame, 0,
@@ -298,7 +298,7 @@ fn drive_frame_transition_to_frame_1(harness: &mut VisualSpecHarness) {
         .core()
         .term()
         .image_cache()
-        .animation_state(ImageId::from_raw(IMAGE_ID))
+        .animation_snapshot(ImageId::from_raw(IMAGE_ID))
         .expect("animation state must still exist after advance_animations");
     assert_eq!(
         state.current_frame, 1,

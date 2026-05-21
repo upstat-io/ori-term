@@ -56,7 +56,7 @@ fn kitty_frame_reply_echoes_r_qualifier_for_added_frame_index() {
     let state = h
         .term()
         .image_cache()
-        .animation_state(ImageId::from_raw(99))
+        .animation_snapshot(ImageId::from_raw(99))
         .expect("a=f MUST promote i=99 to animated");
     assert_eq!(
         state.total_frames, 2,
@@ -88,7 +88,7 @@ fn kitty_frame_reply_echoes_r_qualifier_for_subsequent_frame_append() {
     let state = h
         .term()
         .image_cache()
-        .animation_state(ImageId::from_raw(98))
+        .animation_snapshot(ImageId::from_raw(98))
         .expect("i=98 MUST be animated after two a=f commands");
     assert_eq!(state.total_frames, 3, "three frames total after two a=f");
 }
@@ -135,7 +135,7 @@ fn kitty_frame_composite_alphablend_default_appends_frame_without_overwrite_flag
     let state = h
         .term()
         .image_cache()
-        .animation_state(ImageId::from_raw(80))
+        .animation_snapshot(ImageId::from_raw(80))
         .expect("default-composition a=f still promotes to animated");
     assert_eq!(
         state.total_frames, 2,
@@ -167,7 +167,7 @@ fn kitty_frame_composite_overwrite_when_x_one_still_appends_frame() {
     let state = h
         .term()
         .image_cache()
-        .animation_state(ImageId::from_raw(81))
+        .animation_snapshot(ImageId::from_raw(81))
         .expect("X=1 composition still promotes to animated");
     assert_eq!(state.total_frames, 2, "Overwrite MUST append frame 2");
 }
@@ -189,7 +189,7 @@ fn kitty_animate_s_one_pauses_and_reply_echoes_current_frame() {
     let state = h
         .term()
         .image_cache()
-        .animation_state(ImageId::from_raw(60))
+        .animation_snapshot(ImageId::from_raw(60))
         .expect("i=60 MUST be animated");
     assert!(state.paused, "a=a,s=1 MUST set paused = true");
 
@@ -220,7 +220,7 @@ fn kitty_animate_v_zero_is_ignored_leaves_prior_loop_count_unchanged() {
     assert_eq!(
         h.term()
             .image_cache()
-            .animation_state(ImageId::from_raw(61))
+            .animation_snapshot(ImageId::from_raw(61))
             .expect("i=61 animated")
             .loop_count,
         Some(4),
@@ -232,7 +232,7 @@ fn kitty_animate_v_zero_is_ignored_leaves_prior_loop_count_unchanged() {
     assert_eq!(
         h.term()
             .image_cache()
-            .animation_state(ImageId::from_raw(61))
+            .animation_snapshot(ImageId::from_raw(61))
             .expect("i=61 animated")
             .loop_count,
         Some(4),
@@ -260,7 +260,7 @@ fn kitty_animate_v_one_sets_loop_count_to_none_infinite() {
     assert_eq!(
         h.term()
             .image_cache()
-            .animation_state(ImageId::from_raw(78))
+            .animation_snapshot(ImageId::from_raw(78))
             .expect("i=78 animated")
             .loop_count,
         None,
@@ -286,7 +286,7 @@ fn kitty_animate_v_three_sets_loop_count_to_some_two_finite_loops() {
     assert_eq!(
         h.term()
             .image_cache()
-            .animation_state(ImageId::from_raw(79))
+            .animation_snapshot(ImageId::from_raw(79))
             .expect("i=79 animated")
             .loop_count,
         Some(2),
@@ -311,7 +311,7 @@ fn kitty_animate_v_five_sets_loop_count_to_some_four_finite_loops() {
     assert_eq!(
         h.term()
             .image_cache()
-            .animation_state(ImageId::from_raw(80))
+            .animation_snapshot(ImageId::from_raw(80))
             .expect("i=80 animated")
             .loop_count,
         Some(4),
@@ -337,7 +337,7 @@ fn kitty_animate_v_absent_leaves_prior_loop_count_unchanged() {
     assert_eq!(
         h.term()
             .image_cache()
-            .animation_state(ImageId::from_raw(62))
+            .animation_snapshot(ImageId::from_raw(62))
             .unwrap()
             .loop_count,
         Some(6),
@@ -349,7 +349,7 @@ fn kitty_animate_v_absent_leaves_prior_loop_count_unchanged() {
     assert_eq!(
         h.term()
             .image_cache()
-            .animation_state(ImageId::from_raw(62))
+            .animation_snapshot(ImageId::from_raw(62))
             .unwrap()
             .loop_count,
         Some(6),
@@ -380,7 +380,7 @@ fn kitty_animate_c_two_sets_current_frame_and_reply_echoes_r_two() {
     let state = h
         .term()
         .image_cache()
-        .animation_state(ImageId::from_raw(63))
+        .animation_snapshot(ImageId::from_raw(63))
         .expect("i=63 animated");
     assert_eq!(
         state.current_frame, 1,
@@ -415,7 +415,7 @@ fn kitty_animate_s_two_sets_wait_mode_and_s_three_clears_it() {
     assert!(
         h.term()
             .image_cache()
-            .animation_state(ImageId::from_raw(67))
+            .animation_snapshot(ImageId::from_raw(67))
             .unwrap()
             .paused,
         "a=a,s=1 MUST pause"
@@ -426,7 +426,7 @@ fn kitty_animate_s_two_sets_wait_mode_and_s_three_clears_it() {
     let state = h
         .term()
         .image_cache()
-        .animation_state(ImageId::from_raw(67))
+        .animation_snapshot(ImageId::from_raw(67))
         .unwrap();
     assert!(!state.paused, "a=a,s=2 MUST clear paused");
     assert_eq!(
@@ -440,7 +440,7 @@ fn kitty_animate_s_two_sets_wait_mode_and_s_three_clears_it() {
     let state = h
         .term()
         .image_cache()
-        .animation_state(ImageId::from_raw(67))
+        .animation_snapshot(ImageId::from_raw(67))
         .unwrap();
     assert!(
         !state.wait_mode,
@@ -466,10 +466,10 @@ fn kitty_animate_z_alone_without_r_is_no_op() {
     let baseline_durations = h
         .term()
         .image_cache()
-        .animation_state(ImageId::from_raw(64))
+        .animation_snapshot(ImageId::from_raw(64))
         .expect("i=64 animated")
-        .frame_durations
-        .clone();
+        .frame_gaps
+        .to_vec();
 
     // Standalone z= without r=: kitty's handle_animation_control_command
     // (graphics.c:1729-1735) does nothing because `g->frame_number` is 0.
@@ -478,10 +478,10 @@ fn kitty_animate_z_alone_without_r_is_no_op() {
     let state = h
         .term()
         .image_cache()
-        .animation_state(ImageId::from_raw(64))
+        .animation_snapshot(ImageId::from_raw(64))
         .expect("i=64 animated");
     assert_eq!(
-        state.frame_durations, baseline_durations,
+        state.frame_gaps, baseline_durations,
         "a=a,z=250 WITHOUT r= MUST leave frame_durations unchanged — \
          standalone z= has no kitty parity (z= consumed only via r=)"
     );
@@ -512,10 +512,10 @@ fn kitty_animate_r_two_z_positive_sets_frame_two_gap_without_seeking() {
     let state = h
         .term()
         .image_cache()
-        .animation_state(ImageId::from_raw(70))
+        .animation_snapshot(ImageId::from_raw(70))
         .expect("i=70 animated");
     assert_eq!(
-        state.frame_durations[1],
+        state.frame_gaps[1],
         Duration::from_millis(77),
         "a=a,r=2,z=77 MUST set frame_durations[1] to 77ms (gap-target arm)"
     );
@@ -546,10 +546,10 @@ fn kitty_animate_r_two_z_negative_sets_frame_two_gapless() {
     let state = h
         .term()
         .image_cache()
-        .animation_state(ImageId::from_raw(71))
+        .animation_snapshot(ImageId::from_raw(71))
         .expect("i=71 animated");
     assert_eq!(
-        state.frame_durations[1],
+        state.frame_gaps[1],
         Duration::ZERO,
         "a=a,r=2,z=-1 MUST clamp to Duration::ZERO (gapless edit)"
     );
@@ -574,10 +574,10 @@ fn kitty_animate_r_two_z_zero_is_no_op() {
     let state = h
         .term()
         .image_cache()
-        .animation_state(ImageId::from_raw(72))
+        .animation_snapshot(ImageId::from_raw(72))
         .expect("i=72 animated");
     assert_eq!(
-        state.frame_durations[1],
+        state.frame_gaps[1],
         Duration::from_millis(60),
         "a=a,r=2,z=0 MUST leave frame_durations[1] unchanged — z=0 is kitty's \
          `if (g->gap)` no-op (graphics.c:1734)"
@@ -586,7 +586,7 @@ fn kitty_animate_r_two_z_zero_is_no_op() {
 
 /// `a=a,r=99,z=Z` on an animation with fewer frames is a silent no-op —
 /// `set_frame_gap`'s bounds-check (animation.rs:309 `if frame_idx <
-/// state.frame_durations.len()`) drops the update.
+/// state.frame_gaps.len()`) drops the update.
 /// Catalog row: `KG-ANIMATE-SET-FRAME-GAP` (out-of-range no-op).
 /// Regression: BUG-08-045 — bounds-check inheritance from set_frame_gap.
 #[test]
@@ -601,20 +601,20 @@ fn kitty_animate_r_out_of_range_is_no_op() {
     let baseline_durations = h
         .term()
         .image_cache()
-        .animation_state(ImageId::from_raw(73))
+        .animation_snapshot(ImageId::from_raw(73))
         .expect("i=73 animated")
-        .frame_durations
-        .clone();
+        .frame_gaps
+        .to_vec();
 
     h.feed(&kitty_apc(b"a=a,i=73,r=99,z=77", ""));
 
     let state = h
         .term()
         .image_cache()
-        .animation_state(ImageId::from_raw(73))
+        .animation_snapshot(ImageId::from_raw(73))
         .expect("i=73 animated");
     assert_eq!(
-        state.frame_durations, baseline_durations,
+        state.frame_gaps, baseline_durations,
         "a=a,r=99,z=77 on 2-frame animation MUST be a no-op via the \
          set_frame_gap bounds-check"
     );
@@ -645,7 +645,7 @@ fn kitty_animate_r_two_z_positive_on_static_image_is_silent_no_op() {
     assert!(
         h.term()
             .image_cache()
-            .animation_state(ImageId::from_raw(74))
+            .animation_snapshot(ImageId::from_raw(74))
             .is_none(),
         "a=a,r=2,z=77 on static image MUST NOT auto-promote — that path is \
          owned by the separate auto-promote helper (see test doc comment)"
@@ -669,7 +669,7 @@ fn kitty_animate_c_zero_is_no_op() {
     let state = h
         .term()
         .image_cache()
-        .animation_state(ImageId::from_raw(75))
+        .animation_snapshot(ImageId::from_raw(75))
         .expect("i=75 animated");
     assert_eq!(
         state.current_frame, 0,
@@ -695,7 +695,7 @@ fn kitty_animate_c_out_of_range_is_no_op() {
     let state = h
         .term()
         .image_cache()
-        .animation_state(ImageId::from_raw(76))
+        .animation_snapshot(ImageId::from_raw(76))
         .expect("i=76 animated");
     assert_eq!(
         state.current_frame, 0,
@@ -727,10 +727,10 @@ fn kitty_animate_r_and_c_apply_independently() {
     let state = h
         .term()
         .image_cache()
-        .animation_state(ImageId::from_raw(77))
+        .animation_snapshot(ImageId::from_raw(77))
         .expect("i=77 animated");
     assert_eq!(
-        state.frame_durations[1],
+        state.frame_gaps[1],
         Duration::from_millis(77),
         "r=2 arm MUST set frame_durations[1] to 77ms (independent of c=)"
     );
@@ -793,7 +793,7 @@ fn animation_current_frame_does_not_advance_without_timer_tick() {
     let state = h
         .term()
         .image_cache()
-        .animation_state(ImageId::from_raw(66))
+        .animation_snapshot(ImageId::from_raw(66))
         .expect("i=66 animated");
     assert_eq!(
         state.current_frame, 0,

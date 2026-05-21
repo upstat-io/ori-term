@@ -11,7 +11,9 @@ use std::time::{Duration, Instant};
 
 use crate::grid::StableRowIndex;
 
-use super::super::{AnimationState, CompositionMode, ImageData, ImageError, ImageId};
+use super::super::{
+    AnimationSnapshot, AnimationState, CompositionMode, ImageData, ImageError, ImageId,
+};
 use super::ImageCache;
 
 /// Apply a specific frame's data to the image, setting `dirty`.
@@ -178,12 +180,24 @@ impl ImageCache {
 
     /// Get the animation state for an image (if animated).
     ///
-    /// Public so integration tests under `oriterm_core/tests/spec_chain/`
-    /// can observe `current_frame`, `loop_count`, and `frame_durations`
-    /// after `a=a` state mutations — the kitty animate-reply verification
-    /// chain needs a read-only window into `AnimationState`.
-    pub fn animation_state(&self, id: ImageId) -> Option<&AnimationState> {
+    /// `pub(crate)` — internal callers that need the full state use this.
+    /// External consumers (other workspace crates + integration tests) MUST
+    /// use the narrow [`Self::animation_snapshot`] +
+    /// [`Self::animation_frame_gaps`] accessors below to decouple from the
+    /// internal [`AnimationState`] field layout. (Demoted after migration
+    /// of all external call sites — pre-migration this was `pub`.)
+    pub(crate) fn animation_state(&self, id: ImageId) -> Option<&AnimationState> {
         self.animations.get(&id)
+    }
+
+    /// Snapshot of an animation's protocol-observable facts.
+    ///
+    /// Decouples consumers from the internal [`AnimationState`] field
+    /// layout. Includes a borrowed `&[Duration]` slice of per-frame gaps so
+    /// callers do not need a second accessor for gap reads.
+    /// Returns `None` if the image is not animated.
+    pub fn animation_snapshot(&self, id: ImageId) -> Option<AnimationSnapshot<'_>> {
+        self.animations.get(&id).map(AnimationSnapshot::from)
     }
 
     /// Add an animation frame to an existing image (Kitty `a=f`).
