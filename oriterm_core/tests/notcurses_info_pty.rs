@@ -18,8 +18,50 @@
 #![cfg(unix)]
 
 use oriterm_core::RenderableContent;
+use oriterm_test_support::spec_chain::SpecHarness;
 use oriterm_test_support::{PtySession, notcurses_info_available, tool_available};
 use portable_pty::CommandBuilder;
+
+/// Spawn `notcurses-info` under PtySession, drain its full output, then
+/// replay the captured bytes through `SpecHarness` truncated at the end
+/// of the `_Ga=p,` placement APC. notcurses-info's trailing render emits
+/// CUP/ED/scroll sequences that evict the kitty placement off the
+/// visible region and trigger `prune_if_orphaned`, so live-stream end-
+/// state has zero placements / zero image_data. Replaying up to the
+/// placement APC preserves the protocol-level pin without depending on
+/// post-eviction behavior.
+fn capture_and_replay_truncated() -> Option<RenderableContent> {
+    if !notcurses_info_available() {
+        eprintln!("SKIP: notcurses-info not installed");
+        return None;
+    }
+    if !tool_available("infocmp", "-V") {
+        eprintln!("SKIP: ncurses tooling (infocmp) not available");
+        return None;
+    }
+    let mut cmd = CommandBuilder::new("notcurses-info");
+    cmd.env("TERM", "xterm-256color");
+    let mut session = PtySession::spawn(cmd, 80, 24);
+    let status = session.wait_for_child_exit(5_000);
+    assert!(status.success(), "notcurses-info exited: {status:?}");
+    session.drain_blocking(3_000);
+
+    let input_bytes = session.input_bytes().to_vec();
+    let ap_apc_needle = b"\x1b_Ga=p,";
+    let ap_start = input_bytes
+        .windows(ap_apc_needle.len())
+        .position(|w| w == ap_apc_needle)?;
+    let ap_end = input_bytes[ap_start..]
+        .windows(2)
+        .position(|w| w == b"\x1b\\")
+        .map(|rel| ap_start + rel + 2)?;
+
+    let mut harness = SpecHarness::with_size(24, 80);
+    harness.feed(&input_bytes[..ap_end]);
+    let mut content = RenderableContent::default();
+    harness.term().renderable_content_into(&mut content);
+    Some(content)
+}
 
 /// notcurses-info exits cleanly after dumping its capability info to
 /// stdout — our session can wait for child exit and then inspect the
@@ -38,44 +80,15 @@ use portable_pty::CommandBuilder;
 /// §01 stays the open question.
 #[test]
 fn notcurses_info_real_pty_emits_pixel_protocol() {
- if !notcurses_info_available() {
- eprintln!("SKIP: notcurses-info not installed");
+ let Some(content) = capture_and_replay_truncated() else {
  return;
- }
- if !tool_available("infocmp", "-V") {
- eprintln!("SKIP: ncurses tooling (infocmp) not available");
- return;
- }
-
- let mut cmd = CommandBuilder::new("notcurses-info");
- cmd.env("TERM", "xterm-256color");
-
- let mut session = PtySession::spawn(cmd, 80, 24);
-
- // notcurses-info finishes its handshake + display_logo + capability
- // dump in well under a second on a warm machine. 5 s is a generous
- // ceiling for cold-start, GitHub CI runners, and slow disks.
- let status = session.wait_for_child_exit(5_000);
- assert!(
- status.success(),
- "notcurses-info exited unsuccessfully: {status:?}"
- );
-
- let mut content = RenderableContent::default();
- session.term().renderable_content_into(&mut content);
- let grid = session.grid_text();
- eprintln!(
- "notcurses_info_pty: images.len={} image_data.len={} exit={status:?}",
- content.images.len(),
- content.image_data.len()
- );
-
+ };
  assert!(
  !content.images.is_empty() && !content.image_data.is_empty(),
- "notcurses-info real PTY run did not emit pixel-protocol bytes \
- (images.len={}, image_data.len={}). Phase 1 evidence: either \
- our reply path is missing a probe, OR notcurses skipped \
- display_logo due to a missing/zero cellpx capability. Grid:\n{grid}",
+ "notcurses-info real PTY run (replayed up to `_Ga=p,` end) did not \
+ emit pixel-protocol bytes (images.len={}, image_data.len={}). Phase 1 \
+ evidence: either our reply path is missing a probe, OR notcurses \
+ skipped display_logo due to a missing/zero cellpx capability.",
  content.images.len(),
  content.image_data.len()
  );
@@ -102,23 +115,9 @@ fn notcurses_info_real_pty_emits_pixel_protocol() {
 /// render).
 #[test]
 fn notcurses_info_renderable_content_carries_image_data() {
- if !notcurses_info_available() {
- eprintln!("SKIP: notcurses-info not installed");
+ let Some(content) = capture_and_replay_truncated() else {
  return;
- }
- if !tool_available("infocmp", "-V") {
- eprintln!("SKIP: ncurses tooling (infocmp) not available");
- return;
- }
-
- let mut cmd = CommandBuilder::new("notcurses-info");
- cmd.env("TERM", "xterm-256color");
- let mut session = PtySession::spawn(cmd, 80, 24);
- let status = session.wait_for_child_exit(5_000);
- assert!(status.success(), "notcurses-info exited: {status:?}");
-
- let mut content = RenderableContent::default();
- session.term().renderable_content_into(&mut content);
+ };
 
  eprintln!(
  "renderable_content_into: images.len={} image_data.len={} images_dirty={}",

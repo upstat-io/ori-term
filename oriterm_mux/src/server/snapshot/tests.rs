@@ -423,9 +423,30 @@ fn notcurses_info_image_data_survives_daemon_fold() {
  status.success(),
  "notcurses-info exited unsuccessfully: {status:?}"
  );
+ session.drain_blocking(3_000);
+
+ // notcurses-info's trailing render emits CUP/ED/scroll sequences that
+ // evict the kitty placement off the visible region and trigger
+ // `prune_if_orphaned`, so live-stream end-state has zero placements.
+ // Replay the captured bytes through a fresh `Term` truncated at the
+ // `_Ga=p,` APC end — the placement is alive there.
+ use oriterm_test_support::spec_chain::SpecHarness;
+ let input_bytes = session.input_bytes().to_vec();
+ let ap_apc_needle = b"\x1b_Ga=p,";
+ let ap_start = input_bytes
+ .windows(ap_apc_needle.len())
+ .position(|w| w == ap_apc_needle)
+ .expect("notcurses-info should emit `_Ga=p,` APC for display_logo");
+ let ap_end = input_bytes[ap_start..]
+ .windows(2)
+ .position(|w| w == b"\x1b\\")
+ .map(|rel| ap_start + rel + 2)
+ .expect("`_Ga=p,` APC should terminate with ESC \\");
+ let mut harness = SpecHarness::with_size(24, 80);
+ harness.feed(&input_bytes[..ap_end]);
 
  let mut render_buf = RenderableContent::default();
- session.term().renderable_content_into(&mut render_buf);
+ harness.term().renderable_content_into(&mut render_buf);
  assert!(
  !render_buf.images.is_empty(),
  "Term snapshot extraction lost the placement"

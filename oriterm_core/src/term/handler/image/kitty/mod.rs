@@ -90,6 +90,22 @@ impl<S: EffectSink> Term<S> {
             return;
         }
 
+        // Continuation/terminator chunks of a chunked upload carry only
+        // `m=` + payload per kitty spec; their `a=` field is absent, so
+        // `decode_action(None)` defaults to `TransmitAndPlace`. The
+        // terminator chunk (`m=0`) then dispatches under that defaulted
+        // action and double-creates a placement for uploads whose first
+        // chunk was `a=t` (Transmit-only) — notcurses-info trips this
+        // every run, producing the duplicate wordmark visible in
+        // operator-side runs. Spec-aligned cure: when a chunked upload
+        // is in progress, the terminator chunk inherits the first
+        // chunk's action.
+        if !cmd.more_data
+            && let Some(loading) = self.loading_image.as_ref()
+        {
+            cmd.action = loading.start_cmd.action;
+        }
+
         // Per-command trace: high-frequency under chunked kitty transmits
         // (notcurses-demo emits thousands per graphics scene). Kept at
         // debug level so default INFO logging doesn't pay sync-write

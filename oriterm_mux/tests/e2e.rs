@@ -2517,30 +2517,58 @@ fn notcurses_info_daemon_e2e_image_data_reaches_client() {
  // the wait_for_text loop has something STABLE in the grid even after
  // notcurses-info's longer-than-viewport output scrolls past. The
  // sentinel lands on the new shell prompt line and stays visible.
- client.send_input(pane_id, b"notcurses-info; echo NCI_E2E_DONE\n");
- let _banner_snap = wait_for_text_in_snapshot(
- &mut client,
- pane_id,
- "NCI_E2E_DONE",
- Duration::from_secs(60),
- );
+ // Send notcurses-info via the shell, then immediately invoke `cat`
+ // to BLOCK the shell so no subsequent prompt redraw scrolls the
+ // kitty placement off the visible region. Without this hold,
+ // notcurses-info's trailing render plus the shell's prompt redraw
+ // produce CUP/scroll sequences that evict the placement and trigger
+ // `prune_if_orphaned`, leaving the LATEST snapshot with zero
+ // placements. Pre-cure (chunked-action inheritance bug), an extra
+ // duplicate placement at a different row happened to survive the
+ // scroll long enough for the test to catch it; post-cure that
+ // incidental safety is gone, so we must explicitly hold the shell
+ // open while the assertion fetches the snapshot.
+ client.send_input(pane_id, b"notcurses-info; cat\n");
 
- // Drain pending push events so cache_snapshot runs to completion
- // and any post-banner snapshots that carry the image_data
- // (transmitted AFTER the text banner per notcurses-info source)
- // are folded into client.image_cache. refresh_pane_snapshot is
- // the SSOT drain — without it, accumulated image_data sits in
- // pushed_snapshots forever (the reader's NotifyPaneSnapshot arm
- // only WRITES the map, the drain happens at refresh time).
- let deadline = Instant::now() + Duration::from_secs(10);
+ // Poll for a snapshot carrying a placement. `cat` blocks the shell
+ // indefinitely so once notcurses-info has emitted its kitty graphics
+ // bytes, the placement persists. 30 s ceiling — cold-start + slow
+ // CI runners.
+ let snap_with_placement: PaneSnapshot = {
+ let deadline = Instant::now() + Duration::from_secs(30);
+ let mut captured: Option<PaneSnapshot> = None;
+ while Instant::now() < deadline {
+ client.poll_events();
+ notifs.clear();
+ client.drain_notifications(&mut notifs);
+ let _ = client.refresh_pane_snapshot(pane_id);
+ if let Some(snap) = client.sync_pane_snapshot(pane_id)
+ && !snap.images.is_empty()
+ {
+ captured = Some(snap);
+ break;
+ }
+ if notifs.is_empty() {
+ thread::sleep(Duration::from_millis(20));
+ }
+ }
+ captured.expect(
+ "daemon-to-client e2e: no snapshot with a placement arrived within 30s",
+ )
+ };
+
+ // Release the `cat` hold by sending EOF (Ctrl+D) so the shell can
+ // exit cleanly. Drain notifications afterwards so the daemon settles.
+ client.send_input(pane_id, b"\x04");
+
+ // Drain pending push events so image_data folds into client cache.
+ let deadline = Instant::now() + Duration::from_secs(5);
  loop {
  client.poll_events();
  notifs.clear();
  client.drain_notifications(&mut notifs);
- // Drain pushed_snapshots → image_cache every iteration.
  let _ = client.refresh_pane_snapshot(pane_id);
- let pushed_anything = !notifs.is_empty();
- if !pushed_anything {
+ if notifs.is_empty() {
  thread::sleep(Duration::from_millis(50));
  }
  if Instant::now() >= deadline {
@@ -2548,13 +2576,7 @@ fn notcurses_info_daemon_e2e_image_data_reaches_client() {
  }
  }
 
- // Fetch the LATEST snapshot via sync_pane_snapshot — this returns a
- // clone BEFORE cache_snapshot strips image_data, so the snapshot
- // here carries inline image_data exactly as the wire would carry
- // it for a fresh client.
- let snap = client
- .sync_pane_snapshot(pane_id)
- .expect("sync_pane_snapshot must return a snapshot after notcurses-info ran");
+ let snap = snap_with_placement;
 
  eprintln!(
  "e2e snapshot: images.len={} image_data.len={} images_dirty={}",

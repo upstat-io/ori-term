@@ -902,25 +902,53 @@ fn notcurses_info_real_bytes_roundtrip_to_client_extract() {
  return;
  }
 
- // Run real notcurses-info under PtySession and let our handler
- // build up image_cache state.
+ // Run notcurses-info under PtySession to CAPTURE the full byte
+ // stream the real process emits, then replay the captured bytes
+ // truncated at the `_Ga=p,` APC end so the placement is alive when
+ // the wire-roundtrip assertions run.
  let mut cmd = CommandBuilder::new("notcurses-info");
  cmd.env("TERM", "xterm-256color");
  let mut session = PtySession::spawn(cmd, 80, 24);
  let status = session.wait_for_child_exit(5_000);
  assert!(status.success(), "notcurses-info exited: {status:?}");
+ session.drain_blocking(3000);
 
- // Extract the IO-thread snapshot (what the daemon's
- // `pane.swap_io_snapshot` would deliver to the main thread).
+ // notcurses-info's trailing render emits ED/CUP/scroll sequences that
+ // evict the kitty placement off the visible region and trigger
+ // `prune_if_orphaned`, so live-stream end-state has zero placements.
+ // To capture the WIRE protocol with real placement data, replay the
+ // captured bytes through a fresh `Term` and stop just past the `a=p`
+ // APC — the placement is alive at that point.
+ let input_bytes = session.input_bytes().to_vec();
+ let ap_apc_needle = b"\x1b_Ga=p,";
+ let ap_start = input_bytes
+ .windows(ap_apc_needle.len())
+ .position(|w| w == ap_apc_needle)
+ .expect("real notcurses-info should emit `_Ga=p,` APC for display_logo");
+ let ap_end = input_bytes[ap_start..]
+ .windows(2)
+ .position(|w| w == b"\x1b\\")
+ .map(|rel| ap_start + rel + 2)
+ .expect("`_Ga=p,` APC should terminate with ESC \\");
+
+ // Replay through a fresh `SpecHarness` so we test the SAME parse +
+ // dispatch path the IO thread runs, without the trailing eviction.
+ use oriterm_test_support::spec_chain::SpecHarness;
+ let mut harness = SpecHarness::with_size(24, 80);
+ harness.feed(&input_bytes[..ap_end]);
  let mut render_buf = RenderableContent::default();
- session.term().renderable_content_into(&mut render_buf);
+ harness.term().renderable_content_into(&mut render_buf);
  assert!(
  !render_buf.images.is_empty(),
- "real notcurses-info should produce >=1 placement"
+ "Replay of captured bytes up to `a=p` end MUST have ≥1 placement \
+              (got image_count={} placement_count={}). The cure for chunked-action-
+              inheritance is supposed to leave exactly 1 placement after `a=p`.",
+ harness.term().image_cache().image_count(),
+ harness.term().image_cache().placement_count(),
  );
  assert!(
  !render_buf.image_data.is_empty(),
- "real notcurses-info should produce >=1 image_data entry"
+ "Replay of captured bytes up to `a=p` end MUST have ≥1 image_data entry",
  );
 
  // Build the WIRE PaneSnapshot the daemon would ship to the client.
