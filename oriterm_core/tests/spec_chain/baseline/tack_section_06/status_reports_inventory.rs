@@ -30,8 +30,8 @@
 
 use oriterm_core::effect::PtyWriteKind;
 use oriterm_test_support::spec_chain::{
- ApexLayer, DispatchExpectation, EffectExpectation, ParserExpectation, ScenarioExpectations,
- SpecHarness, SpecScenario, pty_writes_of_kind,
+    ApexLayer, DispatchExpectation, EffectExpectation, ParserExpectation, ScenarioExpectations,
+    SpecHarness, SpecScenario, pty_writes_of_kind,
 };
 
 // --- DA2 -------------------------------------------------------------------
@@ -44,34 +44,34 @@ use oriterm_test_support::spec_chain::{
 /// `PtyWriteKind::DeviceAttribute` effect carrying the DA2 reply.
 #[test]
 fn da2_query_drives_to_effect_apex() {
- let scenario = SpecScenario {
- catalog_row_id: "ECMA48-CSI-DA2",
- bytes: b"\x1b[>c",
- apex_layer: ApexLayer::EffectPtyWrite,
- setup: b"",
- expectations: ScenarioExpectations {
- parser: Some(ParserExpectation {
- action: 'c',
- params: &[0],
- intermediates: b">",
- osc_command: None,
- }),
- dispatch: Some(DispatchExpectation::method("identify_terminal")),
- effect: Some(EffectExpectation::pty("DeviceAttribute")),
- ..ScenarioExpectations::default()
- },
- };
+    let scenario = SpecScenario {
+        catalog_row_id: "ECMA48-CSI-DA2",
+        bytes: b"\x1b[>c",
+        apex_layer: ApexLayer::EffectPtyWrite,
+        setup: b"",
+        expectations: ScenarioExpectations {
+            parser: Some(ParserExpectation {
+                action: 'c',
+                params: &[0],
+                intermediates: b">",
+                osc_command: None,
+            }),
+            dispatch: Some(DispatchExpectation::method("identify_terminal")),
+            effect: Some(EffectExpectation::pty("DeviceAttribute")),
+            ..ScenarioExpectations::default()
+        },
+    };
 
- let mut harness = SpecHarness::new();
- let results = harness.run_scenario(&scenario);
- for r in &results {
- assert!(
- r.passed,
- "rung {:?} failed: {}",
- r.rung_name,
- r.failure.as_deref().unwrap_or("(no message)")
- );
- }
+    let mut harness = SpecHarness::new();
+    let results = harness.run_scenario(&scenario);
+    for r in &results {
+        assert!(
+            r.passed,
+            "rung {:?} failed: {}",
+            r.rung_name,
+            r.failure.as_deref().unwrap_or("(no message)")
+        );
+    }
 }
 
 /// DA2 with explicit-zero param (`CSI > 0 c`) drives the same path.
@@ -83,34 +83,34 @@ fn da2_query_drives_to_effect_apex() {
 /// the implicit-zero green.
 #[test]
 fn da2_query_explicit_zero_param_drives_to_effect_apex() {
- let scenario = SpecScenario {
- catalog_row_id: "ECMA48-CSI-DA2",
- bytes: b"\x1b[>0c",
- apex_layer: ApexLayer::EffectPtyWrite,
- setup: b"",
- expectations: ScenarioExpectations {
- parser: Some(ParserExpectation {
- action: 'c',
- params: &[0],
- intermediates: b">",
- osc_command: None,
- }),
- dispatch: Some(DispatchExpectation::method("identify_terminal")),
- effect: Some(EffectExpectation::pty("DeviceAttribute")),
- ..ScenarioExpectations::default()
- },
- };
+    let scenario = SpecScenario {
+        catalog_row_id: "ECMA48-CSI-DA2",
+        bytes: b"\x1b[>0c",
+        apex_layer: ApexLayer::EffectPtyWrite,
+        setup: b"",
+        expectations: ScenarioExpectations {
+            parser: Some(ParserExpectation {
+                action: 'c',
+                params: &[0],
+                intermediates: b">",
+                osc_command: None,
+            }),
+            dispatch: Some(DispatchExpectation::method("identify_terminal")),
+            effect: Some(EffectExpectation::pty("DeviceAttribute")),
+            ..ScenarioExpectations::default()
+        },
+    };
 
- let mut harness = SpecHarness::new();
- let results = harness.run_scenario(&scenario);
- for r in &results {
- assert!(
- r.passed,
- "rung {:?} failed: {}",
- r.rung_name,
- r.failure.as_deref().unwrap_or("(no message)")
- );
- }
+    let mut harness = SpecHarness::new();
+    let results = harness.run_scenario(&scenario);
+    for r in &results {
+        assert!(
+            r.passed,
+            "rung {:?} failed: {}",
+            r.rung_name,
+            r.failure.as_deref().unwrap_or("(no message)")
+        );
+    }
 }
 
 /// Explicit-zero and implicit-zero DA2 forms emit identical replies.
@@ -119,24 +119,24 @@ fn da2_query_explicit_zero_param_drives_to_effect_apex() {
 /// form would fail here.
 #[test]
 fn da2_explicit_and_implicit_zero_replies_match() {
- let mut h_implicit = SpecHarness::new();
- h_implicit.feed(b"\x1b[>c");
- let reply_implicit = pty_writes_of_kind(&h_implicit, PtyWriteKind::DeviceAttribute)
- .next()
- .map(|b| b.to_vec())
- .expect("implicit-zero DA2 should emit a reply");
+    let mut h_implicit = SpecHarness::new();
+    h_implicit.feed(b"\x1b[>c");
+    let reply_implicit = pty_writes_of_kind(&h_implicit, PtyWriteKind::DeviceAttribute)
+        .next()
+        .map(|b| b.to_vec())
+        .expect("implicit-zero DA2 should emit a reply");
 
- let mut h_explicit = SpecHarness::new();
- h_explicit.feed(b"\x1b[>0c");
- let reply_explicit = pty_writes_of_kind(&h_explicit, PtyWriteKind::DeviceAttribute)
- .next()
- .map(|b| b.to_vec())
- .expect("explicit-zero DA2 should emit a reply");
+    let mut h_explicit = SpecHarness::new();
+    h_explicit.feed(b"\x1b[>0c");
+    let reply_explicit = pty_writes_of_kind(&h_explicit, PtyWriteKind::DeviceAttribute)
+        .next()
+        .map(|b| b.to_vec())
+        .expect("explicit-zero DA2 should emit a reply");
 
- assert_eq!(
- reply_implicit, reply_explicit,
- "DA2 implicit-0 (`CSI > c`) and explicit-0 (`CSI > 0 c`) must emit identical replies"
- );
+    assert_eq!(
+        reply_implicit, reply_explicit,
+        "DA2 implicit-0 (`CSI > c`) and explicit-0 (`CSI > 0 c`) must emit identical replies"
+    );
 }
 
 /// DA2 reply bytes start with `ESC [ > 0 ;` (terminal type 0).
@@ -146,22 +146,22 @@ fn da2_explicit_and_implicit_zero_replies_match() {
 /// the `DeviceAttribute` variant check above.
 #[test]
 fn da2_reply_has_secondary_prefix() {
- let mut harness = SpecHarness::new();
- harness.feed(b"\x1b[>c");
+    let mut harness = SpecHarness::new();
+    harness.feed(b"\x1b[>c");
 
- let reply = pty_writes_of_kind(&harness, PtyWriteKind::DeviceAttribute)
- .next()
- .map(|b| b.to_vec())
- .expect("DA2 should emit a DeviceAttribute effect");
+    let reply = pty_writes_of_kind(&harness, PtyWriteKind::DeviceAttribute)
+        .next()
+        .map(|b| b.to_vec())
+        .expect("DA2 should emit a DeviceAttribute effect");
 
- assert!(
- reply.starts_with(b"\x1b[>0;"),
- "DA2 reply must start with `ESC [ > 0 ;` (terminal type 0); got: {reply:?}"
- );
- assert!(
- reply.ends_with(b"c"),
- "DA2 reply must terminate with `c`; got: {reply:?}"
- );
+    assert!(
+        reply.starts_with(b"\x1b[>0;"),
+        "DA2 reply must start with `ESC [ > 0 ;` (terminal type 0); got: {reply:?}"
+    );
+    assert!(
+        reply.ends_with(b"c"),
+        "DA2 reply must terminate with `c`; got: {reply:?}"
+    );
 }
 
 // --- DA3 -------------------------------------------------------------------
@@ -174,34 +174,34 @@ fn da2_reply_has_secondary_prefix() {
 /// PTY write carrying the DCS response.
 #[test]
 fn da3_query_drives_to_effect_apex() {
- let scenario = SpecScenario {
- catalog_row_id: "ECMA48-CSI-DA3",
- bytes: b"\x1b[=c",
- apex_layer: ApexLayer::EffectPtyWrite,
- setup: b"",
- expectations: ScenarioExpectations {
- parser: Some(ParserExpectation {
- action: 'c',
- params: &[0],
- intermediates: b"=",
- osc_command: None,
- }),
- dispatch: Some(DispatchExpectation::method("identify_terminal")),
- effect: Some(EffectExpectation::pty("DeviceAttribute")),
- ..ScenarioExpectations::default()
- },
- };
+    let scenario = SpecScenario {
+        catalog_row_id: "ECMA48-CSI-DA3",
+        bytes: b"\x1b[=c",
+        apex_layer: ApexLayer::EffectPtyWrite,
+        setup: b"",
+        expectations: ScenarioExpectations {
+            parser: Some(ParserExpectation {
+                action: 'c',
+                params: &[0],
+                intermediates: b"=",
+                osc_command: None,
+            }),
+            dispatch: Some(DispatchExpectation::method("identify_terminal")),
+            effect: Some(EffectExpectation::pty("DeviceAttribute")),
+            ..ScenarioExpectations::default()
+        },
+    };
 
- let mut harness = SpecHarness::new();
- let results = harness.run_scenario(&scenario);
- for r in &results {
- assert!(
- r.passed,
- "rung {:?} failed: {}",
- r.rung_name,
- r.failure.as_deref().unwrap_or("(no message)")
- );
- }
+    let mut harness = SpecHarness::new();
+    let results = harness.run_scenario(&scenario);
+    for r in &results {
+        assert!(
+            r.passed,
+            "rung {:?} failed: {}",
+            r.rung_name,
+            r.failure.as_deref().unwrap_or("(no message)")
+        );
+    }
 }
 
 /// DA3 with explicit-zero param (`CSI = 0 c`) drives the same path.
@@ -210,34 +210,34 @@ fn da3_query_drives_to_effect_apex() {
 /// explicit-zero path can't hide behind the implicit-zero green.
 #[test]
 fn da3_query_explicit_zero_param_drives_to_effect_apex() {
- let scenario = SpecScenario {
- catalog_row_id: "ECMA48-CSI-DA3",
- bytes: b"\x1b[=0c",
- apex_layer: ApexLayer::EffectPtyWrite,
- setup: b"",
- expectations: ScenarioExpectations {
- parser: Some(ParserExpectation {
- action: 'c',
- params: &[0],
- intermediates: b"=",
- osc_command: None,
- }),
- dispatch: Some(DispatchExpectation::method("identify_terminal")),
- effect: Some(EffectExpectation::pty("DeviceAttribute")),
- ..ScenarioExpectations::default()
- },
- };
+    let scenario = SpecScenario {
+        catalog_row_id: "ECMA48-CSI-DA3",
+        bytes: b"\x1b[=0c",
+        apex_layer: ApexLayer::EffectPtyWrite,
+        setup: b"",
+        expectations: ScenarioExpectations {
+            parser: Some(ParserExpectation {
+                action: 'c',
+                params: &[0],
+                intermediates: b"=",
+                osc_command: None,
+            }),
+            dispatch: Some(DispatchExpectation::method("identify_terminal")),
+            effect: Some(EffectExpectation::pty("DeviceAttribute")),
+            ..ScenarioExpectations::default()
+        },
+    };
 
- let mut harness = SpecHarness::new();
- let results = harness.run_scenario(&scenario);
- for r in &results {
- assert!(
- r.passed,
- "rung {:?} failed: {}",
- r.rung_name,
- r.failure.as_deref().unwrap_or("(no message)")
- );
- }
+    let mut harness = SpecHarness::new();
+    let results = harness.run_scenario(&scenario);
+    for r in &results {
+        assert!(
+            r.passed,
+            "rung {:?} failed: {}",
+            r.rung_name,
+            r.failure.as_deref().unwrap_or("(no message)")
+        );
+    }
 }
 
 /// DA3 reply is a DCS frame: `ESC P ! |... ESC \` (eight hex digits).
@@ -246,18 +246,18 @@ fn da3_query_explicit_zero_param_drives_to_effect_apex() {
 /// fail here.
 #[test]
 fn da3_reply_is_dcs_unit_id_frame() {
- let mut harness = SpecHarness::new();
- harness.feed(b"\x1b[=c");
+    let mut harness = SpecHarness::new();
+    harness.feed(b"\x1b[=c");
 
- let reply = pty_writes_of_kind(&harness, PtyWriteKind::DeviceAttribute)
- .next()
- .map(|b| b.to_vec())
- .expect("DA3 should emit a DeviceAttribute effect");
+    let reply = pty_writes_of_kind(&harness, PtyWriteKind::DeviceAttribute)
+        .next()
+        .map(|b| b.to_vec())
+        .expect("DA3 should emit a DeviceAttribute effect");
 
- assert_eq!(
- reply, b"\x1bP!|00000000\x1b\\",
- "DA3 must reply with `ESC P ! | 00000000 ESC \\`; got: {reply:?}"
- );
+    assert_eq!(
+        reply, b"\x1bP!|00000000\x1b\\",
+        "DA3 must reply with `ESC P ! | 00000000 ESC \\`; got: {reply:?}"
+    );
 }
 
 // --- DSR 5 (operating status) ----------------------------------------------
@@ -270,46 +270,46 @@ fn da3_reply_is_dcs_unit_id_frame() {
 /// `DeviceAttribute` kind used for DA replies).
 #[test]
 fn dsr_5_drives_to_effect_apex() {
- let scenario = SpecScenario {
- catalog_row_id: "ECMA48-CSI-DSR-5",
- bytes: b"\x1b[5n",
- apex_layer: ApexLayer::EffectPtyWrite,
- setup: b"",
- expectations: ScenarioExpectations {
- parser: Some(ParserExpectation::csi_with_params('n', &[5])),
- dispatch: Some(DispatchExpectation::method("device_status")),
- effect: Some(EffectExpectation::pty("DeviceStatus")),
- ..ScenarioExpectations::default()
- },
- };
+    let scenario = SpecScenario {
+        catalog_row_id: "ECMA48-CSI-DSR-5",
+        bytes: b"\x1b[5n",
+        apex_layer: ApexLayer::EffectPtyWrite,
+        setup: b"",
+        expectations: ScenarioExpectations {
+            parser: Some(ParserExpectation::csi_with_params('n', &[5])),
+            dispatch: Some(DispatchExpectation::method("device_status")),
+            effect: Some(EffectExpectation::pty("DeviceStatus")),
+            ..ScenarioExpectations::default()
+        },
+    };
 
- let mut harness = SpecHarness::new();
- let results = harness.run_scenario(&scenario);
- for r in &results {
- assert!(
- r.passed,
- "rung {:?} failed: {}",
- r.rung_name,
- r.failure.as_deref().unwrap_or("(no message)")
- );
- }
+    let mut harness = SpecHarness::new();
+    let results = harness.run_scenario(&scenario);
+    for r in &results {
+        assert!(
+            r.passed,
+            "rung {:?} failed: {}",
+            r.rung_name,
+            r.failure.as_deref().unwrap_or("(no message)")
+        );
+    }
 }
 
 /// DSR 5 reply is literally `ESC [ 0 n` (ready).
 #[test]
 fn dsr_5_reply_is_ready() {
- let mut harness = SpecHarness::new();
- harness.feed(b"\x1b[5n");
+    let mut harness = SpecHarness::new();
+    harness.feed(b"\x1b[5n");
 
- let reply = pty_writes_of_kind(&harness, PtyWriteKind::DeviceStatus)
- .next()
- .map(|b| b.to_vec())
- .expect("DSR 5 should emit a DeviceStatus effect");
+    let reply = pty_writes_of_kind(&harness, PtyWriteKind::DeviceStatus)
+        .next()
+        .map(|b| b.to_vec())
+        .expect("DSR 5 should emit a DeviceStatus effect");
 
- assert_eq!(
- reply, b"\x1b[0n",
- "DSR 5 must reply with `ESC [ 0 n` (ready); got: {reply:?}"
- );
+    assert_eq!(
+        reply, b"\x1b[0n",
+        "DSR 5 must reply with `ESC [ 0 n` (ready); got: {reply:?}"
+    );
 }
 
 // --- DSR 6 (cursor position) -----------------------------------------------
@@ -322,29 +322,29 @@ fn dsr_5_reply_is_ready() {
 /// `DeviceStatus` kind used for DSR 5).
 #[test]
 fn dsr_6_drives_to_effect_apex() {
- let scenario = SpecScenario {
- catalog_row_id: "ECMA48-CSI-DSR-6",
- bytes: b"\x1b[6n",
- apex_layer: ApexLayer::EffectPtyWrite,
- setup: b"",
- expectations: ScenarioExpectations {
- parser: Some(ParserExpectation::csi_with_params('n', &[6])),
- dispatch: Some(DispatchExpectation::method("device_status")),
- effect: Some(EffectExpectation::pty("CursorReport")),
- ..ScenarioExpectations::default()
- },
- };
+    let scenario = SpecScenario {
+        catalog_row_id: "ECMA48-CSI-DSR-6",
+        bytes: b"\x1b[6n",
+        apex_layer: ApexLayer::EffectPtyWrite,
+        setup: b"",
+        expectations: ScenarioExpectations {
+            parser: Some(ParserExpectation::csi_with_params('n', &[6])),
+            dispatch: Some(DispatchExpectation::method("device_status")),
+            effect: Some(EffectExpectation::pty("CursorReport")),
+            ..ScenarioExpectations::default()
+        },
+    };
 
- let mut harness = SpecHarness::new();
- let results = harness.run_scenario(&scenario);
- for r in &results {
- assert!(
- r.passed,
- "rung {:?} failed: {}",
- r.rung_name,
- r.failure.as_deref().unwrap_or("(no message)")
- );
- }
+    let mut harness = SpecHarness::new();
+    let results = harness.run_scenario(&scenario);
+    for r in &results {
+        assert!(
+            r.passed,
+            "rung {:?} failed: {}",
+            r.rung_name,
+            r.failure.as_deref().unwrap_or("(no message)")
+        );
+    }
 }
 
 /// DSR 6 at default cursor origin replies with `ESC [ 1 ; 1 R`.
@@ -355,18 +355,18 @@ fn dsr_6_drives_to_effect_apex() {
 /// covered by origin-specific tests elsewhere in the test tree.
 #[test]
 fn dsr_6_reply_is_one_one_at_default_cursor() {
- let mut harness = SpecHarness::new();
- harness.feed(b"\x1b[6n");
+    let mut harness = SpecHarness::new();
+    harness.feed(b"\x1b[6n");
 
- let reply = pty_writes_of_kind(&harness, PtyWriteKind::CursorReport)
- .next()
- .map(|b| b.to_vec())
- .expect("DSR 6 should emit a CursorReport effect");
+    let reply = pty_writes_of_kind(&harness, PtyWriteKind::CursorReport)
+        .next()
+        .map(|b| b.to_vec())
+        .expect("DSR 6 should emit a CursorReport effect");
 
- assert_eq!(
- reply, b"\x1b[1;1R",
- "DSR 6 at default cursor must reply `ESC [ 1 ; 1 R`; got: {reply:?}"
- );
+    assert_eq!(
+        reply, b"\x1b[1;1R",
+        "DSR 6 at default cursor must reply `ESC [ 1 ; 1 R`; got: {reply:?}"
+    );
 }
 
 // --- Negative pins ---------------------------------------------------------
@@ -379,17 +379,17 @@ fn dsr_6_reply_is_one_one_at_default_cursor() {
 /// of a `CursorReport`, not absence of a `DeviceStatus`.
 #[test]
 fn dsr_6_does_not_emit_device_status() {
- let mut harness = SpecHarness::new();
- harness.feed(b"\x1b[6n");
+    let mut harness = SpecHarness::new();
+    harness.feed(b"\x1b[6n");
 
- let device_status_replies: Vec<_> = pty_writes_of_kind(&harness, PtyWriteKind::DeviceStatus)
- .map(|b| b.to_vec())
- .collect();
+    let device_status_replies: Vec<_> = pty_writes_of_kind(&harness, PtyWriteKind::DeviceStatus)
+        .map(|b| b.to_vec())
+        .collect();
 
- assert!(
- device_status_replies.is_empty(),
- "DSR 6 must not emit a DeviceStatus effect; got: {device_status_replies:?}"
- );
+    assert!(
+        device_status_replies.is_empty(),
+        "DSR 6 must not emit a DeviceStatus effect; got: {device_status_replies:?}"
+    );
 }
 
 /// Regression guard: DSR 5 must emit `DeviceStatus`, NOT `CursorReport`.
@@ -398,17 +398,17 @@ fn dsr_6_does_not_emit_device_status() {
 /// the positive DSR 5 pin above because the bytes check is separate.
 #[test]
 fn dsr_5_does_not_emit_cursor_report() {
- let mut harness = SpecHarness::new();
- harness.feed(b"\x1b[5n");
+    let mut harness = SpecHarness::new();
+    harness.feed(b"\x1b[5n");
 
- let cursor_reports: Vec<_> = pty_writes_of_kind(&harness, PtyWriteKind::CursorReport)
- .map(|b| b.to_vec())
- .collect();
+    let cursor_reports: Vec<_> = pty_writes_of_kind(&harness, PtyWriteKind::CursorReport)
+        .map(|b| b.to_vec())
+        .collect();
 
- assert!(
- cursor_reports.is_empty(),
- "DSR 5 must not emit a CursorReport effect; got: {cursor_reports:?}"
- );
+    assert!(
+        cursor_reports.is_empty(),
+        "DSR 5 must not emit a CursorReport effect; got: {cursor_reports:?}"
+    );
 }
 
 /// Regression guard: DA1 / DA2 / DA3 must emit different reply bytes.
@@ -420,28 +420,28 @@ fn dsr_5_does_not_emit_cursor_report() {
 /// distinctness across variants).
 #[test]
 fn da_variants_emit_distinct_replies() {
- let mut harness_da1 = SpecHarness::new();
- harness_da1.feed(b"\x1b[c");
- let da1_reply = pty_writes_of_kind(&harness_da1, PtyWriteKind::DeviceAttribute)
- .next()
- .map(|b| b.to_vec())
- .expect("DA1 should emit a reply");
+    let mut harness_da1 = SpecHarness::new();
+    harness_da1.feed(b"\x1b[c");
+    let da1_reply = pty_writes_of_kind(&harness_da1, PtyWriteKind::DeviceAttribute)
+        .next()
+        .map(|b| b.to_vec())
+        .expect("DA1 should emit a reply");
 
- let mut harness_da2 = SpecHarness::new();
- harness_da2.feed(b"\x1b[>c");
- let da2_reply = pty_writes_of_kind(&harness_da2, PtyWriteKind::DeviceAttribute)
- .next()
- .map(|b| b.to_vec())
- .expect("DA2 should emit a reply");
+    let mut harness_da2 = SpecHarness::new();
+    harness_da2.feed(b"\x1b[>c");
+    let da2_reply = pty_writes_of_kind(&harness_da2, PtyWriteKind::DeviceAttribute)
+        .next()
+        .map(|b| b.to_vec())
+        .expect("DA2 should emit a reply");
 
- let mut harness_da3 = SpecHarness::new();
- harness_da3.feed(b"\x1b[=c");
- let da3_reply = pty_writes_of_kind(&harness_da3, PtyWriteKind::DeviceAttribute)
- .next()
- .map(|b| b.to_vec())
- .expect("DA3 should emit a reply");
+    let mut harness_da3 = SpecHarness::new();
+    harness_da3.feed(b"\x1b[=c");
+    let da3_reply = pty_writes_of_kind(&harness_da3, PtyWriteKind::DeviceAttribute)
+        .next()
+        .map(|b| b.to_vec())
+        .expect("DA3 should emit a reply");
 
- assert_ne!(da1_reply, da2_reply, "DA1 and DA2 must differ");
- assert_ne!(da1_reply, da3_reply, "DA1 and DA3 must differ");
- assert_ne!(da2_reply, da3_reply, "DA2 and DA3 must differ");
+    assert_ne!(da1_reply, da2_reply, "DA1 and DA2 must differ");
+    assert_ne!(da1_reply, da3_reply, "DA1 and DA3 must differ");
+    assert_ne!(da2_reply, da3_reply, "DA2 and DA3 must differ");
 }

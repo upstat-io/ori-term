@@ -88,24 +88,24 @@ use crate::tack_framework::{MenuStep, ScenarioSpec, ScreenFacts};
 /// effects) is the domain of Section 07's GPU goldens — this
 /// parser only verifies the LABELS are present.
 pub fn parse_cursor_screen(grid: &str) -> ScreenFacts {
- const CURSOR_CAPS: &[&str] = &["cup", "hpa", "vpa", "csr", "cuu", "cud", "cub", "cuf"];
- let mut found = Vec::new();
- for cap in CURSOR_CAPS {
- if grid_has_token(grid, cap) {
- found.push((*cap).to_string());
- }
- }
- let header = grid
- .lines()
- .map(str::trim)
- .find(|line| !line.is_empty())
- .unwrap_or("")
- .to_string();
- ScreenFacts {
- header_text: header,
- capability_labels: found,
- notes: Vec::new(),
- }
+    const CURSOR_CAPS: &[&str] = &["cup", "hpa", "vpa", "csr", "cuu", "cud", "cub", "cuf"];
+    let mut found = Vec::new();
+    for cap in CURSOR_CAPS {
+        if grid_has_token(grid, cap) {
+            found.push((*cap).to_string());
+        }
+    }
+    let header = grid
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .unwrap_or("")
+        .to_string();
+    ScreenFacts {
+        header_text: header,
+        capability_labels: found,
+        notes: Vec::new(),
+    }
 }
 
 /// Tack cursor movement scenario.
@@ -119,16 +119,16 @@ pub fn parse_cursor_screen(grid: &str) -> ScreenFacts {
 /// (2026-04-08) — see the module rustdoc for the captured-output
 /// evidence.
 pub const TACK_CURSOR_MOVEMENT: ScenarioSpec = ScenarioSpec {
- id: "tack_cursor_movement",
- screen_id: "tack_cursor_movement",
- menu_path: &[
- MenuStep::new(b"n", "tack/test [n] >"),
- MenuStep::new(b"m", "tack/test/move [n] >"),
- MenuStep::new(b"n", "Done"),
- ],
- ready_anchor: "Done",
- quit_path: None,
- parser: parse_cursor_screen,
+    id: "tack_cursor_movement",
+    screen_id: "tack_cursor_movement",
+    menu_path: &[
+        MenuStep::new(b"n", "tack/test [n] >"),
+        MenuStep::new(b"m", "tack/test/move [n] >"),
+        MenuStep::new(b"n", "Done"),
+    ],
+    ready_anchor: "Done",
+    quit_path: None,
+    parser: parse_cursor_screen,
 };
 
 #[cfg(test)]

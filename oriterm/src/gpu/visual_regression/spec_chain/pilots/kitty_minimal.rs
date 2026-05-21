@@ -9,7 +9,7 @@
 //! GPU pipeline can render a kitty image end-to-end on the platform's
 //! native graphics backend.
 //!
-//! See: 
+//! See:
 //!
 //! **Why this matters for the wordmark gap.** The four prior Phase 1
 //! layers (handler / Term snapshot / daemon fold / client extract) all
@@ -22,8 +22,8 @@
 //! or pane-exit timing race).
 
 use oriterm_test_support::spec_chain::{
- ApexLayer, FrameInputExpectation, GoldenExpectation, GpuInstanceExpectation, RungName,
- ScenarioExpectations, SpecScenario, TextureExpectation,
+    ApexLayer, FrameInputExpectation, GoldenExpectation, GpuInstanceExpectation, RungName,
+    ScenarioExpectations, SpecScenario, TextureExpectation,
 };
 
 use super::super::visual_harness::VisualSpecHarness;
@@ -48,56 +48,56 @@ const KITTY_BYTES: &[u8] = b"\x1b_Gf=32,s=1,v=1,a=T,i=1,q=2;/wAA/w==\x1b\\";
 /// committed under `oriterm/tests/references/`.
 #[test]
 fn kitty_minimal_drives_every_rung_green() {
- let Some(mut harness) = VisualSpecHarness::new() else {
- eprintln!("SKIP: software rasterizer unavailable");
- return;
- };
+    let Some(mut harness) = VisualSpecHarness::new() else {
+        eprintln!("SKIP: software rasterizer unavailable");
+        return;
+    };
 
- let scenario = SpecScenario {
- catalog_row_id: "KG-ACTION-TRANSMIT-AND-PLACE",
- bytes: KITTY_BYTES,
- apex_layer: ApexLayer::GoldenImage,
- setup: b"",
- expectations: ScenarioExpectations {
- // Rungs 5 / 6 / 7 are the load-bearing assertions for the
- // wordmark cure surface: FrameInput must carry the placement,
- // GpuInstance must carry one image quad, texture buffer must
- // be non-empty. Parser-rung expectation omitted because there
- // is no APC-specific `ParserExpectation` constructor yet.
- frame_input: Some(FrameInputExpectation::default_grid()),
- gpu_instance: Some(GpuInstanceExpectation::at_least(1, 0).with_images(1)),
- texture: Some(TextureExpectation {
- min_non_zero_pixels: Some(1),
- width: None,
- height: None,
- }),
- golden: Some(GoldenExpectation {
- golden_name: Some("kitty_minimal"),
- }),
- ..ScenarioExpectations::default()
- },
- };
+    let scenario = SpecScenario {
+        catalog_row_id: "KG-ACTION-TRANSMIT-AND-PLACE",
+        bytes: KITTY_BYTES,
+        apex_layer: ApexLayer::GoldenImage,
+        setup: b"",
+        expectations: ScenarioExpectations {
+            // Rungs 5 / 6 / 7 are the load-bearing assertions for the
+            // wordmark cure surface: FrameInput must carry the placement,
+            // GpuInstance must carry one image quad, texture buffer must
+            // be non-empty. Parser-rung expectation omitted because there
+            // is no APC-specific `ParserExpectation` constructor yet.
+            frame_input: Some(FrameInputExpectation::default_grid()),
+            gpu_instance: Some(GpuInstanceExpectation::at_least(1, 0).with_images(1)),
+            texture: Some(TextureExpectation {
+                min_non_zero_pixels: Some(1),
+                width: None,
+                height: None,
+            }),
+            golden: Some(GoldenExpectation {
+                golden_name: Some("kitty_minimal"),
+            }),
+            ..ScenarioExpectations::default()
+        },
+    };
 
- let results = harness.run_visual_scenario(&scenario);
+    let results = harness.run_visual_scenario(&scenario);
 
- for r in &results {
- assert!(
- r.passed,
- "rung {:?} failed: {}",
- r.rung_name,
- r.failure.as_deref().unwrap_or("(no message)")
- );
- }
+    for r in &results {
+        assert!(
+            r.passed,
+            "rung {:?} failed: {}",
+            r.rung_name,
+            r.failure.as_deref().unwrap_or("(no message)")
+        );
+    }
 
- let rung_names: Vec<_> = results.iter().map(|r| r.rung_name).collect();
- assert_eq!(
- rung_names.len(),
- 8,
- "GoldenImage apex should produce exactly 8 rung results, got: {rung_names:?}"
- );
- assert_eq!(
- *rung_names.last().unwrap(),
- RungName::GoldenImage,
- "last rung should be GoldenImage"
- );
+    let rung_names: Vec<_> = results.iter().map(|r| r.rung_name).collect();
+    assert_eq!(
+        rung_names.len(),
+        8,
+        "GoldenImage apex should produce exactly 8 rung results, got: {rung_names:?}"
+    );
+    assert_eq!(
+        *rung_names.last().unwrap(),
+        RungName::GoldenImage,
+        "last rung should be GoldenImage"
+    );
 }

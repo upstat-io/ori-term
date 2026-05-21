@@ -118,74 +118,74 @@ bitflags! {
 }
 
 impl Default for TermMode {
- fn default() -> Self {
- Self::SHOW_CURSOR
- | Self::LINE_WRAP
- | Self::ALTERNATE_SCROLL
- | Self::SIXEL_SCROLLING
- | Self::CURSOR_BLINKING
- }
+    fn default() -> Self {
+        Self::SHOW_CURSOR
+            | Self::LINE_WRAP
+            | Self::ALTERNATE_SCROLL
+            | Self::SIXEL_SCROLLING
+            | Self::CURSOR_BLINKING
+    }
 }
 
 impl From<vte::ansi::KeyboardModes> for TermMode {
- fn from(modes: vte::ansi::KeyboardModes) -> Self {
- use vte::ansi::KeyboardModes;
+    fn from(modes: vte::ansi::KeyboardModes) -> Self {
+        use vte::ansi::KeyboardModes;
 
- let mut result = Self::empty();
- result.set(
- Self::DISAMBIGUATE_ESC_CODES,
- modes.contains(KeyboardModes::DISAMBIGUATE_ESC_CODES),
- );
- result.set(
- Self::REPORT_EVENT_TYPES,
- modes.contains(KeyboardModes::REPORT_EVENT_TYPES),
- );
- result.set(
- Self::REPORT_ALTERNATE_KEYS,
- modes.contains(KeyboardModes::REPORT_ALTERNATE_KEYS),
- );
- result.set(
- Self::REPORT_ALL_KEYS_AS_ESC,
- modes.contains(KeyboardModes::REPORT_ALL_KEYS_AS_ESC),
- );
- result.set(
- Self::REPORT_ASSOCIATED_TEXT,
- modes.contains(KeyboardModes::REPORT_ASSOCIATED_TEXT),
- );
- result
- }
+        let mut result = Self::empty();
+        result.set(
+            Self::DISAMBIGUATE_ESC_CODES,
+            modes.contains(KeyboardModes::DISAMBIGUATE_ESC_CODES),
+        );
+        result.set(
+            Self::REPORT_EVENT_TYPES,
+            modes.contains(KeyboardModes::REPORT_EVENT_TYPES),
+        );
+        result.set(
+            Self::REPORT_ALTERNATE_KEYS,
+            modes.contains(KeyboardModes::REPORT_ALTERNATE_KEYS),
+        );
+        result.set(
+            Self::REPORT_ALL_KEYS_AS_ESC,
+            modes.contains(KeyboardModes::REPORT_ALL_KEYS_AS_ESC),
+        );
+        result.set(
+            Self::REPORT_ASSOCIATED_TEXT,
+            modes.contains(KeyboardModes::REPORT_ASSOCIATED_TEXT),
+        );
+        result
+    }
 }
 
 impl From<TermMode> for vte::ansi::KeyboardModes {
- /// Extract the Kitty-keyboard-protocol subset of a `TermMode` as the
- /// corresponding `KeyboardModes` bitflags. Non-kitty bits are ignored.
- /// Inverse of `impl From<KeyboardModes> for TermMode`; used by the
- /// snapshot path to preserve shell-held kitty bits set via
- /// `CSI = Ps u` (set without push), which do not enter the stack.
- fn from(mode: TermMode) -> Self {
- let mut result = Self::empty();
- result.set(
- Self::DISAMBIGUATE_ESC_CODES,
- mode.contains(TermMode::DISAMBIGUATE_ESC_CODES),
- );
- result.set(
- Self::REPORT_EVENT_TYPES,
- mode.contains(TermMode::REPORT_EVENT_TYPES),
- );
- result.set(
- Self::REPORT_ALTERNATE_KEYS,
- mode.contains(TermMode::REPORT_ALTERNATE_KEYS),
- );
- result.set(
- Self::REPORT_ALL_KEYS_AS_ESC,
- mode.contains(TermMode::REPORT_ALL_KEYS_AS_ESC),
- );
- result.set(
- Self::REPORT_ASSOCIATED_TEXT,
- mode.contains(TermMode::REPORT_ASSOCIATED_TEXT),
- );
- result
- }
+    /// Extract the Kitty-keyboard-protocol subset of a `TermMode` as the
+    /// corresponding `KeyboardModes` bitflags. Non-kitty bits are ignored.
+    /// Inverse of `impl From<KeyboardModes> for TermMode`; used by the
+    /// snapshot path to preserve shell-held kitty bits set via
+    /// `CSI = Ps u` (set without push), which do not enter the stack.
+    fn from(mode: TermMode) -> Self {
+        let mut result = Self::empty();
+        result.set(
+            Self::DISAMBIGUATE_ESC_CODES,
+            mode.contains(TermMode::DISAMBIGUATE_ESC_CODES),
+        );
+        result.set(
+            Self::REPORT_EVENT_TYPES,
+            mode.contains(TermMode::REPORT_EVENT_TYPES),
+        );
+        result.set(
+            Self::REPORT_ALTERNATE_KEYS,
+            mode.contains(TermMode::REPORT_ALTERNATE_KEYS),
+        );
+        result.set(
+            Self::REPORT_ALL_KEYS_AS_ESC,
+            mode.contains(TermMode::REPORT_ALL_KEYS_AS_ESC),
+        );
+        result.set(
+            Self::REPORT_ASSOCIATED_TEXT,
+            mode.contains(TermMode::REPORT_ASSOCIATED_TEXT),
+        );
+        result
+    }
 }
 
 /// Enter-key base bytes under LNM (Line Feed/New Line) mode.
@@ -196,11 +196,11 @@ impl From<TermMode> for vte::ansi::KeyboardModes {
 #[inline]
 #[must_use]
 pub fn encode_enter_base(mode: TermMode) -> &'static [u8] {
- if mode.contains(TermMode::LINE_FEED_NEW_LINE) {
- b"\r\n"
- } else {
- b"\r"
- }
+    if mode.contains(TermMode::LINE_FEED_NEW_LINE) {
+        b"\r\n"
+    } else {
+        b"\r"
+    }
 }
 
 #[cfg(test)]

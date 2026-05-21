@@ -844,8 +844,14 @@ fn multiple_animated_kitty_images_per_pane_all_advance_independently() {
         .image_cache()
         .animation_snapshot(ImageId::from_raw(200))
         .expect("i=200 animated");
-    assert_eq!(snapshot_a_before.current_frame, 0, "i=100 starts at frame 0");
-    assert_eq!(snapshot_b_before.current_frame, 0, "i=200 starts at frame 0");
+    assert_eq!(
+        snapshot_a_before.current_frame, 0,
+        "i=100 starts at frame 0"
+    );
+    assert_eq!(
+        snapshot_b_before.current_frame, 0,
+        "i=200 starts at frame 0"
+    );
 
     // Tick #1: t0 seeds `frame_starts` for both images on first call.
     let t0 = Instant::now();
@@ -927,7 +933,10 @@ fn kitty_frame_r_key_edits_frame_in_place_not_append() {
     let mut h = SpecHarness::new();
     h.feed(&kitty_apc(b"a=t,i=99,f=32,s=4,v=4", &b64(&fill_4x4(RED))));
     h.feed(&kitty_apc(b"a=f,i=99,f=32,s=4,v=4", &b64(&fill_4x4(GREEN))));
-    h.feed(&kitty_apc(b"a=f,i=99,f=32,s=4,v=4,r=2,X=1", &b64(&fill_4x4(BLUE))));
+    h.feed(&kitty_apc(
+        b"a=f,i=99,f=32,s=4,v=4,r=2,X=1",
+        &b64(&fill_4x4(BLUE)),
+    ));
 
     let cache = h.term().image_cache();
     assert_eq!(cache.total_frames_for_test(ImageId::from_raw(99)), 2);
@@ -957,12 +966,9 @@ fn kitty_frame_c_key_appends_new_frame_using_frame_n_as_canvas() {
     // Frame 3: row-major 4x4 with blue 2x2 at (1,1)-(2,2).
     let expected: &[u8] = &[
         // row 0: GGGG
-        0, 255, 0, 255, 0, 255, 0, 255, 0, 255, 0, 255, 0, 255, 0, 255,
-        // row 1: GBBG
-        0, 255, 0, 255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 255, 0, 255,
-        // row 2: GBBG
-        0, 255, 0, 255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 255, 0, 255,
-        // row 3: GGGG
+        0, 255, 0, 255, 0, 255, 0, 255, 0, 255, 0, 255, 0, 255, 0, 255, // row 1: GBBG
+        0, 255, 0, 255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 255, 0, 255, // row 2: GBBG
+        0, 255, 0, 255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 255, 0, 255, // row 3: GGGG
         0, 255, 0, 255, 0, 255, 0, 255, 0, 255, 0, 255, 0, 255, 0, 255,
     ];
     assert_frame_eq(cache, ImageId::from_raw(99), 3, expected);
@@ -1017,7 +1023,10 @@ fn kitty_frame_default_append_alphablend_subrect_blits_onto_y_canvas() {
 fn kitty_frame_default_append_overwrite_full_frame_uses_y_canvas() {
     let mut h = SpecHarness::new();
     h.feed(&kitty_apc(b"a=t,i=12,f=32,s=4,v=4", &b64(&fill_4x4(RED))));
-    h.feed(&kitty_apc(b"a=f,i=12,f=32,s=4,v=4,X=1", &b64(&fill_4x4(GREEN))));
+    h.feed(&kitty_apc(
+        b"a=f,i=12,f=32,s=4,v=4,X=1",
+        &b64(&fill_4x4(GREEN)),
+    ));
     let cache = h.term().image_cache();
     assert_frame_eq(cache, ImageId::from_raw(12), 2, &fill_4x4(GREEN));
 }
@@ -1055,7 +1064,10 @@ fn kitty_frame_c_append_alphablend_full_frame_blends_onto_frame_n() {
     h.feed(&kitty_apc(b"a=f,i=14,f=32,s=4,v=4", &b64(&fill_4x4(GREEN))));
     // c=2 → canvas = frame 2 (green); opaque green payload blends over
     // green canvas → green.
-    h.feed(&kitty_apc(b"a=f,i=14,f=32,s=4,v=4,c=2", &b64(&fill_4x4(GREEN))));
+    h.feed(&kitty_apc(
+        b"a=f,i=14,f=32,s=4,v=4,c=2",
+        &b64(&fill_4x4(GREEN)),
+    ));
     let cache = h.term().image_cache();
     assert_eq!(cache.total_frames_for_test(ImageId::from_raw(14)), 3);
     assert_frame_eq(cache, ImageId::from_raw(14), 2, &fill_4x4(GREEN));
@@ -1137,7 +1149,10 @@ fn kitty_frame_r_edit_alphablend_full_frame_blends_onto_existing() {
     let mut h = SpecHarness::new();
     h.feed(&kitty_apc(b"a=t,i=18,f=32,s=4,v=4", &b64(&fill_4x4(RED))));
     h.feed(&kitty_apc(b"a=f,i=18,f=32,s=4,v=4", &b64(&fill_4x4(GREEN))));
-    h.feed(&kitty_apc(b"a=f,i=18,f=32,s=4,v=4,r=2", &b64(&fill_4x4(GREEN))));
+    h.feed(&kitty_apc(
+        b"a=f,i=18,f=32,s=4,v=4,r=2",
+        &b64(&fill_4x4(GREEN)),
+    ));
     let cache = h.term().image_cache();
     assert_eq!(cache.total_frames_for_test(ImageId::from_raw(18)), 2);
     assert_frame_eq(cache, ImageId::from_raw(18), 2, &fill_4x4(GREEN));
@@ -1328,7 +1343,10 @@ fn kitty_frame_r_next_boundary_without_c_appends_using_y_canvas() {
     h.feed(&kitty_apc(b"a=t,i=28,f=32,s=4,v=4", &b64(&fill_4x4(RED))));
     h.feed(&kitty_apc(b"a=f,i=28,f=32,s=4,v=4", &b64(&fill_4x4(GREEN))));
     // r=3 == total + 1 = next-append; no c=, no Y= → Y default = transparent.
-    h.feed(&kitty_apc(b"a=f,i=28,f=32,s=4,v=4,r=3", &b64(&fill_4x4(TRANSPARENT))));
+    h.feed(&kitty_apc(
+        b"a=f,i=28,f=32,s=4,v=4,r=3",
+        &b64(&fill_4x4(TRANSPARENT)),
+    ));
     let cache = h.term().image_cache();
     assert_eq!(cache.total_frames_for_test(ImageId::from_raw(28)), 3);
     // Frame 3 = transparent Y canvas with transparent payload (no-op blend).
@@ -1343,7 +1361,7 @@ fn kitty_frame_r_two_on_static_image_appends_frame_two() {
     h.feed(&kitty_apc(b"a=t,i=29,f=32,s=4,v=4", &b64(&fill_4x4(RED))));
     h.feed(&kitty_apc(
         b"a=f,i=29,f=32,s=4,v=4,r=2,X=1",
-        &b64(&fill_4x4(GREEN))
+        &b64(&fill_4x4(GREEN)),
     ));
     let cache = h.term().image_cache();
     assert_eq!(cache.total_frames_for_test(ImageId::from_raw(29)), 2);
@@ -1357,7 +1375,10 @@ fn kitty_frame_c_zero_falls_back_to_default_append() {
     let mut h = SpecHarness::new();
     h.feed(&kitty_apc(b"a=t,i=30,f=32,s=4,v=4", &b64(&fill_4x4(RED))));
     h.feed(&kitty_apc(b"a=f,i=30,f=32,s=4,v=4", &b64(&fill_4x4(GREEN))));
-    h.feed(&kitty_apc(b"a=f,i=30,f=32,s=4,v=4,c=0", &b64(&fill_4x4(BLUE))));
+    h.feed(&kitty_apc(
+        b"a=f,i=30,f=32,s=4,v=4,c=0",
+        &b64(&fill_4x4(BLUE)),
+    ));
     let cache = h.term().image_cache();
     assert_eq!(cache.total_frames_for_test(ImageId::from_raw(30)), 3);
     // c=0 → default arm → Y canvas (transparent), not frame N canvas.
@@ -1370,7 +1391,10 @@ fn kitty_frame_c_out_of_range_emits_einval_reply() {
     let mut h = SpecHarness::new();
     h.feed(&kitty_apc(b"a=t,i=31,f=32,s=4,v=4", &b64(&fill_4x4(RED))));
     h.feed(&kitty_apc(b"a=f,i=31,f=32,s=4,v=4", &b64(&fill_4x4(GREEN))));
-    h.feed(&kitty_apc(b"a=f,i=31,f=32,s=4,v=4,c=99", &b64(&fill_4x4(BLUE))));
+    h.feed(&kitty_apc(
+        b"a=f,i=31,f=32,s=4,v=4,c=99",
+        &b64(&fill_4x4(BLUE)),
+    ));
     assert_einval_reply(&h, 31, "No frame with number: 99");
     let cache = h.term().image_cache();
     assert_eq!(cache.total_frames_for_test(ImageId::from_raw(31)), 2);
@@ -1385,7 +1409,7 @@ fn kitty_frame_both_c_and_r_set_with_r_next_uses_c_as_canvas() {
     h.feed(&kitty_apc(b"a=f,i=32,f=32,s=4,v=4", &b64(&fill_4x4(GREEN))));
     h.feed(&kitty_apc(
         b"a=f,i=32,f=32,s=4,v=4,c=1,r=3,X=1",
-        &b64(&fill_4x4(RED))
+        &b64(&fill_4x4(RED)),
     ));
     let cache = h.term().image_cache();
     assert_eq!(cache.total_frames_for_test(ImageId::from_raw(32)), 3);
@@ -1401,7 +1425,7 @@ fn kitty_frame_both_c_and_r_set_with_r_existing_ignores_c() {
     h.feed(&kitty_apc(b"a=f,i=33,f=32,s=4,v=4", &b64(&fill_4x4(GREEN))));
     h.feed(&kitty_apc(
         b"a=f,i=33,f=32,s=4,v=4,c=1,r=2,X=1",
-        &b64(&fill_4x4(BLUE))
+        &b64(&fill_4x4(BLUE)),
     ));
     let cache = h.term().image_cache();
     assert_eq!(cache.total_frames_for_test(ImageId::from_raw(33)), 2);
@@ -1455,7 +1479,7 @@ fn kitty_frame_r_one_on_static_image_edits_root() {
     h.feed(&kitty_apc(b"a=t,i=37,f=32,s=4,v=4", &b64(&fill_4x4(RED))));
     h.feed(&kitty_apc(
         b"a=f,i=37,f=32,s=4,v=4,r=1,X=1",
-        &b64(&fill_4x4(BLUE))
+        &b64(&fill_4x4(BLUE)),
     ));
     let cache = h.term().image_cache();
     assert_eq!(cache.total_frames_for_test(ImageId::from_raw(37)), 1);
@@ -1473,7 +1497,7 @@ fn kitty_frame_c_one_on_static_image_uses_root_as_canvas() {
     h.feed(&kitty_apc(b"a=t,i=38,f=32,s=4,v=4", &b64(&fill_4x4(RED))));
     h.feed(&kitty_apc(
         b"a=f,i=38,f=32,s=4,v=4,c=1,X=1",
-        &b64(&fill_4x4(GREEN))
+        &b64(&fill_4x4(GREEN)),
     ));
     let cache = h.term().image_cache();
     assert_eq!(cache.total_frames_for_test(ImageId::from_raw(38)), 2);
@@ -1490,7 +1514,10 @@ fn kitty_frame_c_one_on_static_image_uses_root_as_canvas() {
 fn kitty_frame_z_zero_stores_default_gap_40ms() {
     let mut h = SpecHarness::new();
     h.feed(&kitty_apc(b"a=t,i=39,f=32,s=4,v=4", &b64(&fill_4x4(RED))));
-    h.feed(&kitty_apc(b"a=f,i=39,f=32,s=4,v=4,z=0", &b64(&fill_4x4(GREEN))));
+    h.feed(&kitty_apc(
+        b"a=f,i=39,f=32,s=4,v=4,z=0",
+        &b64(&fill_4x4(GREEN)),
+    ));
     let snap = h
         .term()
         .image_cache()
@@ -1507,7 +1534,7 @@ fn kitty_frame_z_negative_stores_zero_for_gapless() {
     h.feed(&kitty_apc(b"a=t,i=40,f=32,s=4,v=4", &b64(&fill_4x4(RED))));
     h.feed(&kitty_apc(
         b"a=f,i=40,f=32,s=4,v=4,z=-1",
-        &b64(&fill_4x4(GREEN))
+        &b64(&fill_4x4(GREEN)),
     ));
     let snap = h
         .term()
@@ -1525,7 +1552,7 @@ fn kitty_frame_z_positive_sets_gap_exactly() {
     h.feed(&kitty_apc(b"a=t,i=41,f=32,s=4,v=4", &b64(&fill_4x4(RED))));
     h.feed(&kitty_apc(
         b"a=f,i=41,f=32,s=4,v=4,z=77",
-        &b64(&fill_4x4(GREEN))
+        &b64(&fill_4x4(GREEN)),
     ));
     let snap = h
         .term()
@@ -1543,7 +1570,7 @@ fn kitty_frame_r_one_z_positive_on_static_image_auto_promotes_with_gap() {
     h.feed(&kitty_apc(b"a=t,i=42,f=32,s=4,v=4", &b64(&fill_4x4(RED))));
     h.feed(&kitty_apc(
         b"a=f,i=42,f=32,s=4,v=4,r=1,z=77,X=1",
-        &b64(&fill_4x4(BLUE))
+        &b64(&fill_4x4(BLUE)),
     ));
     let cache = h.term().image_cache();
     assert_eq!(cache.total_frames_for_test(ImageId::from_raw(42)), 1);
@@ -1566,7 +1593,7 @@ fn kitty_frame_r_one_z_zero_on_static_image_does_not_promote() {
     h.feed(&kitty_apc(b"a=t,i=43,f=32,s=4,v=4", &b64(&fill_4x4(RED))));
     h.feed(&kitty_apc(
         b"a=f,i=43,f=32,s=4,v=4,r=1,z=0,X=1",
-        &b64(&fill_4x4(BLUE))
+        &b64(&fill_4x4(BLUE)),
     ));
     let cache = h.term().image_cache();
     assert!(!cache.animation_promoted_for_test(ImageId::from_raw(43)));
@@ -1583,7 +1610,7 @@ fn kitty_frame_r_one_z_negative_on_static_image_auto_promotes_with_zero_gap() {
     h.feed(&kitty_apc(b"a=t,i=44,f=32,s=4,v=4", &b64(&fill_4x4(RED))));
     h.feed(&kitty_apc(
         b"a=f,i=44,f=32,s=4,v=4,r=1,z=-1,X=1",
-        &b64(&fill_4x4(BLUE))
+        &b64(&fill_4x4(BLUE)),
     ));
     let cache = h.term().image_cache();
     assert!(cache.animation_promoted_for_test(ImageId::from_raw(44)));
@@ -1606,7 +1633,7 @@ fn kitty_frame_r_edit_z_zero_preserves_existing_frame_gap() {
     ));
     h.feed(&kitty_apc(
         b"a=f,i=45,f=32,s=4,v=4,r=2,z=0,X=1",
-        &b64(&fill_4x4(BLUE))
+        &b64(&fill_4x4(BLUE)),
     ));
     let snap = h
         .term()
@@ -1673,7 +1700,10 @@ fn kitty_frame_vacant_promotion_root_gap_is_zero_new_frame_gets_z() {
         .image_cache()
         .animation_snapshot(ImageId::from_raw(48))
         .expect("promoted");
-    assert_eq!(snap.frame_gaps, &[Duration::ZERO, Duration::from_millis(77)]);
+    assert_eq!(
+        snap.frame_gaps,
+        &[Duration::ZERO, Duration::from_millis(77)]
+    );
 }
 
 // ----------------------------------------------------------------------------
@@ -1776,7 +1806,10 @@ fn kitty_animate_r_one_z_negative_on_promoted_image_sets_root_gapless() {
         .image_cache()
         .animation_snapshot(ImageId::from_raw(54))
         .expect("promoted");
-    assert_eq!(snap.frame_gaps, &[Duration::ZERO, Duration::from_millis(77)]);
+    assert_eq!(
+        snap.frame_gaps,
+        &[Duration::ZERO, Duration::from_millis(77)]
+    );
 }
 
 /// a=a r=1 z=0 on promoted image leaves root gap unchanged.
@@ -2129,10 +2162,7 @@ fn kitty_frame_chunked_a_f_r_edits_existing_frame_after_finalize() {
     let half = payload.len() / 2;
     let first_b64 = b64(&payload[..half]);
     let second_b64 = b64(&payload[half..]);
-    h.feed(&kitty_apc(
-        b"a=f,i=73,f=32,s=4,v=4,r=2,X=1,m=1",
-        &first_b64,
-    ));
+    h.feed(&kitty_apc(b"a=f,i=73,f=32,s=4,v=4,r=2,X=1,m=1", &first_b64));
     h.feed(&kitty_apc(b"a=f,i=73,m=0", &second_b64));
     let cache = h.term().image_cache();
     assert_eq!(cache.total_frames_for_test(ImageId::from_raw(73)), 2);
@@ -2149,10 +2179,7 @@ fn kitty_frame_chunked_a_f_c_appends_new_frame_after_finalize() {
     let half = payload.len() / 2;
     let first_b64 = b64(&payload[..half]);
     let second_b64 = b64(&payload[half..]);
-    h.feed(&kitty_apc(
-        b"a=f,i=74,f=32,s=4,v=4,c=1,X=1,m=1",
-        &first_b64,
-    ));
+    h.feed(&kitty_apc(b"a=f,i=74,f=32,s=4,v=4,c=1,X=1,m=1", &first_b64));
     h.feed(&kitty_apc(b"a=f,i=74,m=0", &second_b64));
     let cache = h.term().image_cache();
     assert_eq!(cache.total_frames_for_test(ImageId::from_raw(74)), 3);

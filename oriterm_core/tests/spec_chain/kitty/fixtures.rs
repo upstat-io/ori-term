@@ -90,11 +90,7 @@ pub(super) fn assert_frame_eq(
 ) {
     let actual = cache
         .frame_bytes_for_test(image_id, frame_num)
-        .unwrap_or_else(|| {
-            panic!(
-                "frame_bytes_for_test({image_id:?}, {frame_num}) returned None"
-            )
-        });
+        .unwrap_or_else(|| panic!("frame_bytes_for_test({image_id:?}, {frame_num}) returned None"));
     if actual.as_slice() == expected {
         return;
     }
@@ -131,4 +127,3 @@ pub(super) fn assert_einval_reply(h: &SpecHarness, image_id: u32, msg_fragment: 
         String::from_utf8_lossy(&reply_bytes(h)),
     );
 }
-

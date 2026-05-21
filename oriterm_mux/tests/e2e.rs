@@ -25,60 +25,60 @@ use oriterm_mux::{MuxClient, MuxNotification, PaneId, PaneSnapshot, WireCursorSh
 
 /// A daemon server running in a background thread for testing.
 struct TestDaemon {
- socket_path: std::path::PathBuf,
- shutdown: Arc<std::sync::atomic::AtomicBool>,
- thread: Option<thread::JoinHandle<()>>,
- _tmpdir: tempfile::TempDir,
+    socket_path: std::path::PathBuf,
+    shutdown: Arc<std::sync::atomic::AtomicBool>,
+    thread: Option<thread::JoinHandle<()>>,
+    _tmpdir: tempfile::TempDir,
 }
 
 impl TestDaemon {
- /// Start a daemon with a unique socket in a temp directory.
- fn start() -> Self {
- let tmpdir = tempfile::tempdir().expect("failed to create temp dir");
- let socket_path = tmpdir.path().join("mux.sock");
- let pid_path = tmpdir.path().join("mux.pid");
+    /// Start a daemon with a unique socket in a temp directory.
+    fn start() -> Self {
+        let tmpdir = tempfile::tempdir().expect("failed to create temp dir");
+        let socket_path = tmpdir.path().join("mux.sock");
+        let pid_path = tmpdir.path().join("mux.pid");
 
- let mut server =
- MuxServer::with_paths(&socket_path, &pid_path).expect("failed to create MuxServer");
- let shutdown = server.shutdown_flag();
+        let mut server =
+            MuxServer::with_paths(&socket_path, &pid_path).expect("failed to create MuxServer");
+        let shutdown = server.shutdown_flag();
 
- let thread = thread::spawn(move || {
- if let Err(e) = server.run() {
- eprintln!("MuxServer error: {e}");
- }
- });
+        let thread = thread::spawn(move || {
+            if let Err(e) = server.run() {
+                eprintln!("MuxServer error: {e}");
+            }
+        });
 
- // Wait for the socket to appear (server needs time to bind).
- let deadline = Instant::now() + Duration::from_secs(30);
- while !socket_path.exists() {
- if Instant::now() > deadline {
- panic!("daemon socket did not appear within 5 seconds");
- }
- thread::sleep(Duration::from_millis(10));
- }
+        // Wait for the socket to appear (server needs time to bind).
+        let deadline = Instant::now() + Duration::from_secs(30);
+        while !socket_path.exists() {
+            if Instant::now() > deadline {
+                panic!("daemon socket did not appear within 5 seconds");
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
 
- Self {
- socket_path,
- shutdown,
- thread: Some(thread),
- _tmpdir: tmpdir,
- }
- }
+        Self {
+            socket_path,
+            shutdown,
+            thread: Some(thread),
+            _tmpdir: tmpdir,
+        }
+    }
 
- /// Connect a new client to this daemon.
- fn connect_client(&self) -> MuxClient {
- let wakeup: Arc<dyn Fn() + Send + Sync> = Arc::new(|| {});
- MuxClient::connect(&self.socket_path, wakeup).expect("failed to connect MuxClient")
- }
+    /// Connect a new client to this daemon.
+    fn connect_client(&self) -> MuxClient {
+        let wakeup: Arc<dyn Fn() + Send + Sync> = Arc::new(|| {});
+        MuxClient::connect(&self.socket_path, wakeup).expect("failed to connect MuxClient")
+    }
 }
 
 impl Drop for TestDaemon {
- fn drop(&mut self) {
- self.shutdown.store(true, Ordering::Release);
- if let Some(handle) = self.thread.take() {
- let _ = handle.join();
- }
- }
+    fn drop(&mut self) {
+        self.shutdown.store(true, Ordering::Release);
+        if let Some(handle) = self.thread.take() {
+            let _ = handle.join();
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -88,138 +88,138 @@ impl Drop for TestDaemon {
 /// Build a `SpawnConfig` for tests with history suppressed so fence commands
 /// don't pollute the user's `~/.zsh_history`.
 fn test_spawn_config() -> SpawnConfig {
- SpawnConfig {
- env: vec![("HISTFILE".into(), "/dev/null".into())],
- ..SpawnConfig::default()
- }
+    SpawnConfig {
+        env: vec![("HISTFILE".into(), "/dev/null".into())],
+        ..SpawnConfig::default()
+    }
 }
 
 /// Spawn a pane in the daemon, returning its ID.
 fn spawn_test_pane(client: &mut MuxClient) -> PaneId {
- let config = test_spawn_config();
- client
- .spawn_pane(&config, Theme::Dark)
- .expect("spawn_pane should succeed")
+    let config = test_spawn_config();
+    client
+        .spawn_pane(&config, Theme::Dark)
+        .expect("spawn_pane should succeed")
 }
 
 /// Check whether `python3` is on PATH. Returns true iff the binary is
 /// invocable. Used by tests that drive a python wrapper through the PTY
 /// to gate cleanly Skip Protocol`.
 fn python3_available() -> bool {
- std::process::Command::new("python3")
- .arg("--version")
- .output()
- .map(|o| o.status.success())
- .unwrap_or(false)
+    std::process::Command::new("python3")
+        .arg("--version")
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
 }
 
 /// Spawn a pane and wait for the shell to be ready.
 /// Sends a fence command and waits for its output to appear, replacing
 /// fixed `thread::sleep` calls with event-driven readiness detection.
 fn spawn_test_pane_ready(client: &mut MuxClient) -> PaneId {
- let pane_id = spawn_test_pane(client);
- wait_for_shell_ready(client, pane_id);
- pane_id
+    let pane_id = spawn_test_pane(client);
+    wait_for_shell_ready(client, pane_id);
+    pane_id
 }
 
 /// Wait for the shell in a pane to be ready by sending a fence command.
 fn wait_for_shell_ready(client: &mut MuxClient, pane_id: PaneId) {
- client.send_input(pane_id, b"echo SHELL_READY_FENCE\n");
- wait_for_text_in_snapshot(
- client,
- pane_id,
- "SHELL_READY_FENCE",
- Duration::from_secs(30),
- );
- // Drain pending events after startup.
- client.poll_events();
- let mut notifs = Vec::new();
- client.drain_notifications(&mut notifs);
+    client.send_input(pane_id, b"echo SHELL_READY_FENCE\n");
+    wait_for_text_in_snapshot(
+        client,
+        pane_id,
+        "SHELL_READY_FENCE",
+        Duration::from_secs(30),
+    );
+    // Drain pending events after startup.
+    client.poll_events();
+    let mut notifs = Vec::new();
+    client.drain_notifications(&mut notifs);
 }
 
 /// Wait until a direct snapshot fetch contains the expected text.
 /// Polls the daemon for a fresh snapshot every 50ms until the text
 /// appears or the timeout expires.
 fn wait_for_text_in_snapshot(
- client: &mut MuxClient,
- pane_id: PaneId,
- text: &str,
- timeout: Duration,
+    client: &mut MuxClient,
+    pane_id: PaneId,
+    text: &str,
+    timeout: Duration,
 ) -> PaneSnapshot {
- let deadline = Instant::now() + timeout;
- loop {
- // Drain pending notifications so dirty flags propagate.
- client.poll_events();
- let mut notifs = Vec::new();
- client.drain_notifications(&mut notifs);
+    let deadline = Instant::now() + timeout;
+    loop {
+        // Drain pending notifications so dirty flags propagate.
+        client.poll_events();
+        let mut notifs = Vec::new();
+        client.drain_notifications(&mut notifs);
 
- if let Some(snap) = client.refresh_pane_snapshot(pane_id) {
- if snapshot_contains(snap, text) {
- return snap.clone();
- }
- }
+        if let Some(snap) = client.refresh_pane_snapshot(pane_id) {
+            if snapshot_contains(snap, text) {
+                return snap.clone();
+            }
+        }
 
- if Instant::now() > deadline {
- if let Some(snap) = client.pane_snapshot(pane_id) {
- eprintln!("=== Snapshot cells at timeout ===");
- for (i, row) in snap.cells.iter().enumerate() {
- let line: String = row.iter().map(|c| c.ch).collect();
- eprintln!(" row {i}: {line:?}");
- }
- }
- panic!("timed out waiting for text {text:?} in pane {pane_id}");
- }
- thread::sleep(Duration::from_millis(50));
- }
+        if Instant::now() > deadline {
+            if let Some(snap) = client.pane_snapshot(pane_id) {
+                eprintln!("=== Snapshot cells at timeout ===");
+                for (i, row) in snap.cells.iter().enumerate() {
+                    let line: String = row.iter().map(|c| c.ch).collect();
+                    eprintln!(" row {i}: {line:?}");
+                }
+            }
+            panic!("timed out waiting for text {text:?} in pane {pane_id}");
+        }
+        thread::sleep(Duration::from_millis(50));
+    }
 }
 
 /// Check whether a snapshot's visible cells contain a substring.
 fn snapshot_contains(snapshot: &PaneSnapshot, text: &str) -> bool {
- for row in &snapshot.cells {
- let line: String = row.iter().map(|c| c.ch).collect();
- if line.contains(text) {
- return true;
- }
- }
- false
+    for row in &snapshot.cells {
+        let line: String = row.iter().map(|c| c.ch).collect();
+        if line.contains(text) {
+            return true;
+        }
+    }
+    false
 }
 
 /// Check whether a snapshot contains a shell prompt line.
 /// Recognizes common prompt suffixes: `$` (bash/zsh), `#` (root),
 /// `%` (csh/tcsh), `>` (PowerShell/fish), `❯` (starship/pure).
 fn snapshot_has_prompt(snapshot: &PaneSnapshot) -> bool {
- const PROMPT_CHARS: &[char] = &['$', '#', '%', '>', '❯'];
- snapshot.cells.iter().any(|row| {
- let line: String = row.iter().map(|c| c.ch).collect();
- let trimmed = line.trim();
- !trimmed.is_empty() && PROMPT_CHARS.iter().any(|&ch| trimmed.ends_with(ch))
- })
+    const PROMPT_CHARS: &[char] = &['$', '#', '%', '>', '❯'];
+    snapshot.cells.iter().any(|row| {
+        let line: String = row.iter().map(|c| c.ch).collect();
+        let trimmed = line.trim();
+        !trimmed.is_empty() && PROMPT_CHARS.iter().any(|&ch| trimmed.ends_with(ch))
+    })
 }
 
 /// Poll until a snapshot satisfies a predicate, with a 15s deadline.
 /// Replaces fixed `thread::sleep` calls with event-driven waiting.
 fn poll_until(
- client: &mut MuxClient,
- pane_id: PaneId,
- what: &str,
- predicate: impl Fn(&PaneSnapshot) -> bool,
+    client: &mut MuxClient,
+    pane_id: PaneId,
+    what: &str,
+    predicate: impl Fn(&PaneSnapshot) -> bool,
 ) {
- let deadline = Instant::now() + Duration::from_secs(30);
- loop {
- client.poll_events();
- let mut n = Vec::new();
- client.drain_notifications(&mut n);
- if let Some(snap) = client.refresh_pane_snapshot(pane_id) {
- if predicate(snap) {
- return;
- }
- }
- assert!(
- Instant::now() < deadline,
- "timed out waiting for condition: {what}"
- );
- thread::sleep(Duration::from_millis(50));
- }
+    let deadline = Instant::now() + Duration::from_secs(30);
+    loop {
+        client.poll_events();
+        let mut n = Vec::new();
+        client.drain_notifications(&mut n);
+        if let Some(snap) = client.refresh_pane_snapshot(pane_id) {
+            if predicate(snap) {
+                return;
+            }
+        }
+        assert!(
+            Instant::now() < deadline,
+            "timed out waiting for condition: {what}"
+        );
+        thread::sleep(Duration::from_millis(50));
+    }
 }
 
 /// Python wrapper that puts `yes` in the PTY's foreground process group,
@@ -284,26 +284,26 @@ print('FG_GONE'); sys.stdout.flush()\"\n";
 /// in the pane snapshot.
 #[test]
 fn client_spawn_pane_type_see_output() {
- let daemon = TestDaemon::start();
- let mut client = daemon.connect_client();
+    let daemon = TestDaemon::start();
+    let mut client = daemon.connect_client();
 
- let pane_id = spawn_test_pane_ready(&mut client);
+    let pane_id = spawn_test_pane_ready(&mut client);
 
- // Send a command through the PTY.
- client.send_input(pane_id, b"echo ORITERM_E2E_TEST\n");
+    // Send a command through the PTY.
+    client.send_input(pane_id, b"echo ORITERM_E2E_TEST\n");
 
- // Wait for the output to appear in the snapshot.
- let snap = wait_for_text_in_snapshot(
- &mut client,
- pane_id,
- "ORITERM_E2E_TEST",
- Duration::from_secs(30),
- );
+    // Wait for the output to appear in the snapshot.
+    let snap = wait_for_text_in_snapshot(
+        &mut client,
+        pane_id,
+        "ORITERM_E2E_TEST",
+        Duration::from_secs(30),
+    );
 
- assert!(
- snapshot_contains(&snap, "ORITERM_E2E_TEST"),
- "snapshot should contain the echo output"
- );
+    assert!(
+        snapshot_contains(&snap, "ORITERM_E2E_TEST"),
+        "snapshot should contain the echo output"
+    );
 }
 
 /// 44.3: Push notification flow — daemon PaneOutput → client PaneOutput
@@ -318,123 +318,123 @@ fn client_spawn_pane_type_see_output() {
 /// See -Clock-Free Testing`.
 #[test]
 fn push_notification_triggers_dirty_flag() {
- let daemon = TestDaemon::start();
- let mut client = daemon.connect_client();
+    let daemon = TestDaemon::start();
+    let mut client = daemon.connect_client();
 
- let pane_id = spawn_test_pane_ready(&mut client);
+    let pane_id = spawn_test_pane_ready(&mut client);
 
- // Clear any initial dirty state.
- client.poll_events();
- let mut notifs = Vec::new();
- client.drain_notifications(&mut notifs);
- client.clear_pane_snapshot_dirty(pane_id);
+    // Clear any initial dirty state.
+    client.poll_events();
+    let mut notifs = Vec::new();
+    client.drain_notifications(&mut notifs);
+    client.clear_pane_snapshot_dirty(pane_id);
 
- // Send input to generate new output.
- client.send_input(pane_id, b"echo PUSH_TEST\n");
+    // Send input to generate new output.
+    client.send_input(pane_id, b"echo PUSH_TEST\n");
 
- // Wait for the awaited content to appear, observing the dirty flag
- // along the way. Either condition alone is necessary; both together
- // are sufficient. Polling stops as soon as content arrives — no
- // wall-clock dependence on event ordering.
- let deadline = Instant::now() + Duration::from_secs(30);
- let mut saw_dirty_flag = false;
- loop {
- client.poll_events();
- notifs.clear();
- client.drain_notifications(&mut notifs);
+    // Wait for the awaited content to appear, observing the dirty flag
+    // along the way. Either condition alone is necessary; both together
+    // are sufficient. Polling stops as soon as content arrives — no
+    // wall-clock dependence on event ordering.
+    let deadline = Instant::now() + Duration::from_secs(30);
+    let mut saw_dirty_flag = false;
+    loop {
+        client.poll_events();
+        notifs.clear();
+        client.drain_notifications(&mut notifs);
 
- if client.is_pane_snapshot_dirty(pane_id) {
- saw_dirty_flag = true;
- }
+        if client.is_pane_snapshot_dirty(pane_id) {
+            saw_dirty_flag = true;
+        }
 
- if let Some(snap) = client.refresh_pane_snapshot(pane_id) {
- if snapshot_contains(snap, "PUSH_TEST") {
- assert!(
- saw_dirty_flag,
- "PaneOutput notification must have triggered the dirty flag at \
+        if let Some(snap) = client.refresh_pane_snapshot(pane_id) {
+            if snapshot_contains(snap, "PUSH_TEST") {
+                assert!(
+                    saw_dirty_flag,
+                    "PaneOutput notification must have triggered the dirty flag at \
  some point during the wait"
- );
- return;
- }
- }
+                );
+                return;
+            }
+        }
 
- assert!(
- Instant::now() < deadline,
- "timed out waiting for PUSH_TEST to appear in pane snapshot \
+        assert!(
+            Instant::now() < deadline,
+            "timed out waiting for PUSH_TEST to appear in pane snapshot \
  (saw_dirty_flag={saw_dirty_flag})"
- );
- thread::sleep(Duration::from_millis(20));
- }
+        );
+        thread::sleep(Duration::from_millis(20));
+    }
 }
 
 /// 44.3: Multiple windows (clients) connected, each rendering its own tabs.
 #[test]
 fn multiple_clients_independent_windows() {
- let daemon = TestDaemon::start();
+    let daemon = TestDaemon::start();
 
- // Client A creates window A with one tab.
- let mut client_a = daemon.connect_client();
- let pane_a = spawn_test_pane_ready(&mut client_a);
+    // Client A creates window A with one tab.
+    let mut client_a = daemon.connect_client();
+    let pane_a = spawn_test_pane_ready(&mut client_a);
 
- // Client B creates a pane.
- let mut client_b = daemon.connect_client();
- let pane_b = spawn_test_pane_ready(&mut client_b);
+    // Client B creates a pane.
+    let mut client_b = daemon.connect_client();
+    let pane_b = spawn_test_pane_ready(&mut client_b);
 
- // Send different commands to each window.
- client_a.send_input(pane_a, b"echo WINDOW_A_OUTPUT\n");
- client_b.send_input(pane_b, b"echo WINDOW_B_OUTPUT\n");
+    // Send different commands to each window.
+    client_a.send_input(pane_a, b"echo WINDOW_A_OUTPUT\n");
+    client_b.send_input(pane_b, b"echo WINDOW_B_OUTPUT\n");
 
- // Verify each window has only its own output.
- let snap_a = wait_for_text_in_snapshot(
- &mut client_a,
- pane_a,
- "WINDOW_A_OUTPUT",
- Duration::from_secs(30),
- );
- let snap_b = wait_for_text_in_snapshot(
- &mut client_b,
- pane_b,
- "WINDOW_B_OUTPUT",
- Duration::from_secs(30),
- );
+    // Verify each window has only its own output.
+    let snap_a = wait_for_text_in_snapshot(
+        &mut client_a,
+        pane_a,
+        "WINDOW_A_OUTPUT",
+        Duration::from_secs(30),
+    );
+    let snap_b = wait_for_text_in_snapshot(
+        &mut client_b,
+        pane_b,
+        "WINDOW_B_OUTPUT",
+        Duration::from_secs(30),
+    );
 
- assert!(snapshot_contains(&snap_a, "WINDOW_A_OUTPUT"));
- assert!(!snapshot_contains(&snap_a, "WINDOW_B_OUTPUT"));
- assert!(snapshot_contains(&snap_b, "WINDOW_B_OUTPUT"));
- assert!(!snapshot_contains(&snap_b, "WINDOW_A_OUTPUT"));
+    assert!(snapshot_contains(&snap_a, "WINDOW_A_OUTPUT"));
+    assert!(!snapshot_contains(&snap_a, "WINDOW_B_OUTPUT"));
+    assert!(snapshot_contains(&snap_b, "WINDOW_B_OUTPUT"));
+    assert!(!snapshot_contains(&snap_b, "WINDOW_A_OUTPUT"));
 }
 
 /// 44.3: Window process crash → daemon keeps sessions → new client reconnects.
 #[test]
 fn client_crash_cleans_up_owned_window() {
- let daemon = TestDaemon::start();
+    let daemon = TestDaemon::start();
 
- // Client creates window and tab, sends some output.
- let pane_id = {
- let mut client = daemon.connect_client();
- let pane = spawn_test_pane_ready(&mut client);
+    // Client creates window and tab, sends some output.
+    let pane_id = {
+        let mut client = daemon.connect_client();
+        let pane = spawn_test_pane_ready(&mut client);
 
- client.send_input(pane, b"echo BEFORE_CRASH\n");
- wait_for_text_in_snapshot(&mut client, pane, "BEFORE_CRASH", Duration::from_secs(30));
+        client.send_input(pane, b"echo BEFORE_CRASH\n");
+        wait_for_text_in_snapshot(&mut client, pane, "BEFORE_CRASH", Duration::from_secs(30));
 
- // Client drops here — simulates a crash.
- pane
- };
+        // Client drops here — simulates a crash.
+        pane
+    };
 
- // Poll until the daemon cleans up the disconnected client's pane.
- let mut client2 = daemon.connect_client();
- let deadline = Instant::now() + Duration::from_secs(30);
- loop {
- let snap = client2.refresh_pane_snapshot(pane_id);
- if snap.is_none() {
- break;
- }
- assert!(
- Instant::now() < deadline,
- "pane should be cleaned up after owning client disconnects"
- );
- thread::sleep(Duration::from_millis(50));
- }
+    // Poll until the daemon cleans up the disconnected client's pane.
+    let mut client2 = daemon.connect_client();
+    let deadline = Instant::now() + Duration::from_secs(30);
+    loop {
+        let snap = client2.refresh_pane_snapshot(pane_id);
+        if snap.is_none() {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "pane should be cleaned up after owning client disconnects"
+        );
+        thread::sleep(Duration::from_millis(50));
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -444,22 +444,22 @@ fn client_crash_cleans_up_owned_window() {
 /// Wait until a snapshot is available for the given pane.
 /// Returns an owned snapshot to avoid borrow/lifetime issues in test loops.
 fn wait_for_snapshot(client: &mut MuxClient, pane_id: PaneId, timeout: Duration) -> PaneSnapshot {
- let deadline = Instant::now() + timeout;
- loop {
- client.poll_events();
- let mut notifs = Vec::new();
- client.drain_notifications(&mut notifs);
+    let deadline = Instant::now() + timeout;
+    loop {
+        client.poll_events();
+        let mut notifs = Vec::new();
+        client.drain_notifications(&mut notifs);
 
- if let Some(snap) = client.refresh_pane_snapshot(pane_id) {
- return snap.clone();
- }
+        if let Some(snap) = client.refresh_pane_snapshot(pane_id) {
+            return snap.clone();
+        }
 
- assert!(
- Instant::now() < deadline,
- "timed out waiting for snapshot on pane {pane_id}"
- );
- thread::sleep(Duration::from_millis(50));
- }
+        assert!(
+            Instant::now() < deadline,
+            "timed out waiting for snapshot on pane {pane_id}"
+        );
+        thread::sleep(Duration::from_millis(50));
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -469,122 +469,122 @@ fn wait_for_snapshot(client: &mut MuxClient, pane_id: PaneId, timeout: Duration)
 /// 14.2: Resize pane grid via IPC.
 #[test]
 fn test_resize_pane() {
- let daemon = TestDaemon::start();
- let mut client = daemon.connect_client();
+    let daemon = TestDaemon::start();
+    let mut client = daemon.connect_client();
 
- let pane_id = spawn_test_pane_ready(&mut client);
+    let pane_id = spawn_test_pane_ready(&mut client);
 
- // Resize to 40 rows × 100 cols.
- client.resize_pane_grid(pane_id, 40, 100);
+    // Resize to 40 rows × 100 cols.
+    client.resize_pane_grid(pane_id, 40, 100);
 
- // Poll until the resize is reflected in the snapshot.
- let deadline = Instant::now() + Duration::from_secs(30);
- loop {
- client.poll_events();
- let mut n = Vec::new();
- client.drain_notifications(&mut n);
- if let Some(snap) = client.refresh_pane_snapshot(pane_id) {
- if snap.cols == 100 && snap.cells.len() == 40 {
- break;
- }
- }
- assert!(
- Instant::now() < deadline,
- "timed out waiting for resize to 40x100"
- );
- thread::sleep(Duration::from_millis(50));
- }
+    // Poll until the resize is reflected in the snapshot.
+    let deadline = Instant::now() + Duration::from_secs(30);
+    loop {
+        client.poll_events();
+        let mut n = Vec::new();
+        client.drain_notifications(&mut n);
+        if let Some(snap) = client.refresh_pane_snapshot(pane_id) {
+            if snap.cols == 100 && snap.cells.len() == 40 {
+                break;
+            }
+        }
+        assert!(
+            Instant::now() < deadline,
+            "timed out waiting for resize to 40x100"
+        );
+        thread::sleep(Duration::from_millis(50));
+    }
 }
 
 /// 14.2: Scroll display up and verify display_offset.
 #[test]
 fn test_scroll_display() {
- let daemon = TestDaemon::start();
- let mut client = daemon.connect_client();
+    let daemon = TestDaemon::start();
+    let mut client = daemon.connect_client();
 
- let pane_id = spawn_test_pane_ready(&mut client);
+    let pane_id = spawn_test_pane_ready(&mut client);
 
- // Generate scrollback. The fence guarantees all output has landed.
- client.send_input(pane_id, b"for i in $(seq 1 200); do echo LINE_$i; done\n");
- wait_for_text_in_snapshot(&mut client, pane_id, "LINE_200", Duration::from_secs(30));
+    // Generate scrollback. The fence guarantees all output has landed.
+    client.send_input(pane_id, b"for i in $(seq 1 200); do echo LINE_$i; done\n");
+    wait_for_text_in_snapshot(&mut client, pane_id, "LINE_200", Duration::from_secs(30));
 
- // Wait for shell to settle — a secondary fence ensures the prompt
- // after the for-loop has been fully rendered. Without this, the
- // prompt output can race with scroll_display on the daemon,
- // causing display_offset to increment beyond the expected value.
- client.send_input(pane_id, b"echo SCROLL_IDLE_FENCE\n");
- wait_for_text_in_snapshot(
- &mut client,
- pane_id,
- "SCROLL_IDLE_FENCE",
- Duration::from_secs(30),
- );
- // Drain pending events before scrolling.
- client.poll_events();
- let mut notifs = Vec::new();
- client.drain_notifications(&mut notifs);
+    // Wait for shell to settle — a secondary fence ensures the prompt
+    // after the for-loop has been fully rendered. Without this, the
+    // prompt output can race with scroll_display on the daemon,
+    // causing display_offset to increment beyond the expected value.
+    client.send_input(pane_id, b"echo SCROLL_IDLE_FENCE\n");
+    wait_for_text_in_snapshot(
+        &mut client,
+        pane_id,
+        "SCROLL_IDLE_FENCE",
+        Duration::from_secs(30),
+    );
+    // Drain pending events before scrolling.
+    client.poll_events();
+    let mut notifs = Vec::new();
+    client.drain_notifications(&mut notifs);
 
- // Scroll up by 10 lines. The IO thread processes commands FIFO, so the
- // sync_pane_snapshot RPC chained right after scroll_display sends a
- // SnapshotNow barrier that waits behind the scroll command. Single
- // round-trip — no polling, no sleep, no flake under heavy load.
- client.scroll_display(pane_id, 10);
- let snap = client
- .sync_pane_snapshot(pane_id)
- .expect("sync_pane_snapshot must return a snapshot");
- assert_eq!(
- snap.display_offset, 10,
- "scroll_display(10) must set display_offset to 10",
- );
+    // Scroll up by 10 lines. The IO thread processes commands FIFO, so the
+    // sync_pane_snapshot RPC chained right after scroll_display sends a
+    // SnapshotNow barrier that waits behind the scroll command. Single
+    // round-trip — no polling, no sleep, no flake under heavy load.
+    client.scroll_display(pane_id, 10);
+    let snap = client
+        .sync_pane_snapshot(pane_id)
+        .expect("sync_pane_snapshot must return a snapshot");
+    assert_eq!(
+        snap.display_offset, 10,
+        "scroll_display(10) must set display_offset to 10",
+    );
 }
 
 /// 14.2: Scroll to bottom resets display_offset.
 #[test]
 fn test_scroll_to_bottom() {
- let daemon = TestDaemon::start();
- let mut client = daemon.connect_client();
+    let daemon = TestDaemon::start();
+    let mut client = daemon.connect_client();
 
- let pane_id = spawn_test_pane_ready(&mut client);
+    let pane_id = spawn_test_pane_ready(&mut client);
 
- // Generate scrollback.
- client.send_input(pane_id, b"for i in $(seq 1 200); do echo LINE_$i; done\n");
- wait_for_text_in_snapshot(&mut client, pane_id, "LINE_200", Duration::from_secs(30));
+    // Generate scrollback.
+    client.send_input(pane_id, b"for i in $(seq 1 200); do echo LINE_$i; done\n");
+    wait_for_text_in_snapshot(&mut client, pane_id, "LINE_200", Duration::from_secs(30));
 
- // Wait for shell to settle — secondary fence ensures the prompt
- // after the for-loop has been fully rendered, preventing a race
- // with scroll_display.
- client.send_input(pane_id, b"echo SCROLL_BTM_IDLE_FENCE\n");
- wait_for_text_in_snapshot(
- &mut client,
- pane_id,
- "SCROLL_BTM_IDLE_FENCE",
- Duration::from_secs(30),
- );
- client.poll_events();
- let mut notifs = Vec::new();
- client.drain_notifications(&mut notifs);
+    // Wait for shell to settle — secondary fence ensures the prompt
+    // after the for-loop has been fully rendered, preventing a race
+    // with scroll_display.
+    client.send_input(pane_id, b"echo SCROLL_BTM_IDLE_FENCE\n");
+    wait_for_text_in_snapshot(
+        &mut client,
+        pane_id,
+        "SCROLL_BTM_IDLE_FENCE",
+        Duration::from_secs(30),
+    );
+    client.poll_events();
+    let mut notifs = Vec::new();
+    client.drain_notifications(&mut notifs);
 
- // Scroll up. The SnapshotNow IO barrier inside sync_pane_snapshot waits
- // behind the ScrollDisplay command (FIFO command queue), so a single
- // round-trip is enough to observe the post-scroll state.
- client.scroll_display(pane_id, 10);
- let snap = client
- .sync_pane_snapshot(pane_id)
- .expect("sync_pane_snapshot must return a snapshot after scroll_display");
- assert_eq!(
- snap.display_offset, 10,
- "scroll_display(10) must set display_offset to 10",
- );
+    // Scroll up. The SnapshotNow IO barrier inside sync_pane_snapshot waits
+    // behind the ScrollDisplay command (FIFO command queue), so a single
+    // round-trip is enough to observe the post-scroll state.
+    client.scroll_display(pane_id, 10);
+    let snap = client
+        .sync_pane_snapshot(pane_id)
+        .expect("sync_pane_snapshot must return a snapshot after scroll_display");
+    assert_eq!(
+        snap.display_offset, 10,
+        "scroll_display(10) must set display_offset to 10",
+    );
 
- // Scroll back to bottom — same single-round-trip pattern.
- client.scroll_to_bottom(pane_id);
- let snap = client
- .sync_pane_snapshot(pane_id)
- .expect("sync_pane_snapshot must return a snapshot after scroll_to_bottom");
- assert_eq!(
- snap.display_offset, 0,
- "scroll_to_bottom must reset display_offset to 0",
- );
+    // Scroll back to bottom — same single-round-trip pattern.
+    client.scroll_to_bottom(pane_id);
+    let snap = client
+        .sync_pane_snapshot(pane_id)
+        .expect("sync_pane_snapshot must return a snapshot after scroll_to_bottom");
+    assert_eq!(
+        snap.display_offset, 0,
+        "scroll_to_bottom must reset display_offset to 0",
+    );
 }
 
 /// 14.2: Query pane mode bits — verify bracketed paste mode.
@@ -592,60 +592,60 @@ fn test_scroll_to_bottom() {
 /// emulator processes it (raw escape bytes written to stdin may not be echoed).
 #[test]
 fn test_pane_mode() {
- let daemon = TestDaemon::start();
- let mut client = daemon.connect_client();
+    let daemon = TestDaemon::start();
+    let mut client = daemon.connect_client();
 
- let pane_id = spawn_test_pane_ready(&mut client);
+    let pane_id = spawn_test_pane_ready(&mut client);
 
- // Enable bracketed paste mode via printf (stdout path ensures the
- // terminal emulator processes the escape sequence).
- client.send_input(pane_id, b"printf '\\033[?2004h'\n");
+    // Enable bracketed paste mode via printf (stdout path ensures the
+    // terminal emulator processes the escape sequence).
+    client.send_input(pane_id, b"printf '\\033[?2004h'\n");
 
- // Poll until the mode bit is set (avoids flaky fixed timeouts).
- let bracketed_paste_bit = 1u64 << 13;
- let deadline = Instant::now() + Duration::from_secs(30);
- loop {
- client.poll_events();
- let mut notifs = Vec::new();
- client.drain_notifications(&mut notifs);
- let snap = wait_for_snapshot(&mut client, pane_id, Duration::from_secs(2));
- if snap.modes & bracketed_paste_bit != 0 {
- break;
- }
- assert!(
- Instant::now() < deadline,
- "timed out waiting for bracketed paste mode bit"
- );
- thread::sleep(Duration::from_millis(50));
- }
+    // Poll until the mode bit is set (avoids flaky fixed timeouts).
+    let bracketed_paste_bit = 1u64 << 13;
+    let deadline = Instant::now() + Duration::from_secs(30);
+    loop {
+        client.poll_events();
+        let mut notifs = Vec::new();
+        client.drain_notifications(&mut notifs);
+        let snap = wait_for_snapshot(&mut client, pane_id, Duration::from_secs(2));
+        if snap.modes & bracketed_paste_bit != 0 {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "timed out waiting for bracketed paste mode bit"
+        );
+        thread::sleep(Duration::from_millis(50));
+    }
 }
 
 /// 14.2: Set cursor shape via IPC.
 #[test]
 fn test_set_cursor_shape() {
- let daemon = TestDaemon::start();
- let mut client = daemon.connect_client();
+    let daemon = TestDaemon::start();
+    let mut client = daemon.connect_client();
 
- let pane_id = spawn_test_pane_ready(&mut client);
+    let pane_id = spawn_test_pane_ready(&mut client);
 
- // Set cursor to bar shape and poll until reflected.
- client.set_cursor_shape(pane_id, oriterm_core::CursorShape::Bar);
- let deadline = Instant::now() + Duration::from_secs(30);
- loop {
- client.poll_events();
- let mut n = Vec::new();
- client.drain_notifications(&mut n);
- if let Some(snap) = client.refresh_pane_snapshot(pane_id) {
- if snap.cursor.shape == WireCursorShape::Bar {
- break;
- }
- }
- assert!(
- Instant::now() < deadline,
- "timed out waiting for cursor shape change"
- );
- thread::sleep(Duration::from_millis(50));
- }
+    // Set cursor to bar shape and poll until reflected.
+    client.set_cursor_shape(pane_id, oriterm_core::CursorShape::Bar);
+    let deadline = Instant::now() + Duration::from_secs(30);
+    loop {
+        client.poll_events();
+        let mut n = Vec::new();
+        client.drain_notifications(&mut n);
+        if let Some(snap) = client.refresh_pane_snapshot(pane_id) {
+            if snap.cursor.shape == WireCursorShape::Bar {
+                break;
+            }
+        }
+        assert!(
+            Instant::now() < deadline,
+            "timed out waiting for cursor shape change"
+        );
+        thread::sleep(Duration::from_millis(50));
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -655,92 +655,92 @@ fn test_set_cursor_shape() {
 /// 14.3: Snapshot cols reflect resize.
 #[test]
 fn test_snapshot_cols() {
- let daemon = TestDaemon::start();
- let mut client = daemon.connect_client();
+    let daemon = TestDaemon::start();
+    let mut client = daemon.connect_client();
 
- let pane_id = spawn_test_pane_ready(&mut client);
+    let pane_id = spawn_test_pane_ready(&mut client);
 
- // Resize to 120 cols and poll until reflected.
- client.resize_pane_grid(pane_id, 24, 120);
- let deadline = Instant::now() + Duration::from_secs(30);
- loop {
- client.poll_events();
- let mut n = Vec::new();
- client.drain_notifications(&mut n);
- if let Some(snap) = client.refresh_pane_snapshot(pane_id) {
- if snap.cols == 120 {
- break;
- }
- }
- assert!(
- Instant::now() < deadline,
- "timed out waiting for resize to 120 cols"
- );
- thread::sleep(Duration::from_millis(50));
- }
+    // Resize to 120 cols and poll until reflected.
+    client.resize_pane_grid(pane_id, 24, 120);
+    let deadline = Instant::now() + Duration::from_secs(30);
+    loop {
+        client.poll_events();
+        let mut n = Vec::new();
+        client.drain_notifications(&mut n);
+        if let Some(snap) = client.refresh_pane_snapshot(pane_id) {
+            if snap.cols == 120 {
+                break;
+            }
+        }
+        assert!(
+            Instant::now() < deadline,
+            "timed out waiting for resize to 120 cols"
+        );
+        thread::sleep(Duration::from_millis(50));
+    }
 }
 
 /// 14.3: Dirty flag lifecycle — dirty after output, clean after clear.
 #[test]
 fn test_snapshot_dirty_flag() {
- let daemon = TestDaemon::start();
- let mut client = daemon.connect_client();
+    let daemon = TestDaemon::start();
+    let mut client = daemon.connect_client();
 
- let pane_id = spawn_test_pane_ready(&mut client);
+    let pane_id = spawn_test_pane_ready(&mut client);
 
- // Clear initial dirty state. The daemon refresh is async (triggers
- // MarkAllDirty → server pushes snapshot), so poll until the pushed
- // snapshot arrives and the clear succeeds.
- let mut notifs = Vec::new();
- let deadline = Instant::now() + Duration::from_secs(10);
- loop {
- client.poll_events();
- notifs.clear();
- client.drain_notifications(&mut notifs);
- client.refresh_pane_snapshot(pane_id);
- client.clear_pane_snapshot_dirty(pane_id);
- if !client.is_pane_snapshot_dirty(pane_id) {
- break;
- }
- assert!(
- Instant::now() < deadline,
- "timed out waiting for clean snapshot state"
- );
- thread::sleep(Duration::from_millis(20));
- }
+    // Clear initial dirty state. The daemon refresh is async (triggers
+    // MarkAllDirty → server pushes snapshot), so poll until the pushed
+    // snapshot arrives and the clear succeeds.
+    let mut notifs = Vec::new();
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        client.poll_events();
+        notifs.clear();
+        client.drain_notifications(&mut notifs);
+        client.refresh_pane_snapshot(pane_id);
+        client.clear_pane_snapshot_dirty(pane_id);
+        if !client.is_pane_snapshot_dirty(pane_id) {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "timed out waiting for clean snapshot state"
+        );
+        thread::sleep(Duration::from_millis(20));
+    }
 
- // Generate output to make it dirty.
- client.send_input(pane_id, b"echo DIRTY_TEST\n");
+    // Generate output to make it dirty.
+    client.send_input(pane_id, b"echo DIRTY_TEST\n");
 
- // Wait for PaneOutput notification.
- let deadline = Instant::now() + Duration::from_secs(30);
- loop {
- client.poll_events();
- notifs.clear();
- client.drain_notifications(&mut notifs);
+    // Wait for PaneOutput notification.
+    let deadline = Instant::now() + Duration::from_secs(30);
+    loop {
+        client.poll_events();
+        notifs.clear();
+        client.drain_notifications(&mut notifs);
 
- if client.is_pane_snapshot_dirty(pane_id) {
- break;
- }
+        if client.is_pane_snapshot_dirty(pane_id) {
+            break;
+        }
 
- assert!(
- Instant::now() < deadline,
- "timed out waiting for dirty flag to be set"
- );
- thread::sleep(Duration::from_millis(20));
- }
+        assert!(
+            Instant::now() < deadline,
+            "timed out waiting for dirty flag to be set"
+        );
+        thread::sleep(Duration::from_millis(20));
+    }
 
- assert!(
- client.is_pane_snapshot_dirty(pane_id),
- "dirty flag should be true after pane output"
- );
+    assert!(
+        client.is_pane_snapshot_dirty(pane_id),
+        "dirty flag should be true after pane output"
+    );
 
- // Clear and verify.
- client.clear_pane_snapshot_dirty(pane_id);
- assert!(
- !client.is_pane_snapshot_dirty(pane_id),
- "dirty flag should be false after clear again"
- );
+    // Clear and verify.
+    client.clear_pane_snapshot_dirty(pane_id);
+    assert!(
+        !client.is_pane_snapshot_dirty(pane_id),
+        "dirty flag should be false after clear again"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -750,215 +750,215 @@ fn test_snapshot_dirty_flag() {
 /// 14.4: Search lifecycle — open, query, verify matches, close.
 #[test]
 fn test_search_lifecycle() {
- let daemon = TestDaemon::start();
- let mut client = daemon.connect_client();
+    let daemon = TestDaemon::start();
+    let mut client = daemon.connect_client();
 
- let pane_id = spawn_test_pane_ready(&mut client);
+    let pane_id = spawn_test_pane_ready(&mut client);
 
- // Send known text.
- client.send_input(pane_id, b"echo NEEDLE_HAYSTACK\n");
- wait_for_text_in_snapshot(
- &mut client,
- pane_id,
- "NEEDLE_HAYSTACK",
- Duration::from_secs(30),
- );
+    // Send known text.
+    client.send_input(pane_id, b"echo NEEDLE_HAYSTACK\n");
+    wait_for_text_in_snapshot(
+        &mut client,
+        pane_id,
+        "NEEDLE_HAYSTACK",
+        Duration::from_secs(30),
+    );
 
- // Open search and poll until active.
- client.open_search(pane_id);
- poll_until(&mut client, pane_id, "search_active", |snap| {
- snap.search_active
- });
+    // Open search and poll until active.
+    client.open_search(pane_id);
+    poll_until(&mut client, pane_id, "search_active", |snap| {
+        snap.search_active
+    });
 
- // Set query and poll until matches appear.
- client.search_set_query(pane_id, "NEEDLE".to_string());
- poll_until(&mut client, pane_id, "search matches", |snap| {
- snap.search_query == "NEEDLE" && !snap.search_matches.is_empty()
- });
+    // Set query and poll until matches appear.
+    client.search_set_query(pane_id, "NEEDLE".to_string());
+    poll_until(&mut client, pane_id, "search matches", |snap| {
+        snap.search_query == "NEEDLE" && !snap.search_matches.is_empty()
+    });
 
- // Close search and poll until inactive.
- client.close_search(pane_id);
- poll_until(&mut client, pane_id, "search inactive", |snap| {
- !snap.search_active && snap.search_matches.is_empty()
- });
+    // Close search and poll until inactive.
+    client.close_search(pane_id);
+    poll_until(&mut client, pane_id, "search inactive", |snap| {
+        !snap.search_active && snap.search_matches.is_empty()
+    });
 }
 
 /// 14.4: Search navigation — next/prev match changes focused index.
 #[test]
 fn test_search_navigation() {
- let daemon = TestDaemon::start();
- let mut client = daemon.connect_client();
+    let daemon = TestDaemon::start();
+    let mut client = daemon.connect_client();
 
- let pane_id = spawn_test_pane_ready(&mut client);
+    let pane_id = spawn_test_pane_ready(&mut client);
 
- // Generate multiple matches.
- client.send_input(pane_id, b"echo AAA; echo AAA; echo AAA\n");
- wait_for_text_in_snapshot(&mut client, pane_id, "AAA", Duration::from_secs(30));
+    // Generate multiple matches.
+    client.send_input(pane_id, b"echo AAA; echo AAA; echo AAA\n");
+    wait_for_text_in_snapshot(&mut client, pane_id, "AAA", Duration::from_secs(30));
 
- // Open search, set query, and poll until matches appear.
- client.open_search(pane_id);
- poll_until(&mut client, pane_id, "search_active", |snap| {
- snap.search_active
- });
- client.search_set_query(pane_id, "AAA".to_string());
- poll_until(&mut client, pane_id, "search matches >= 3", |snap| {
- snap.search_matches.len() >= 3
- });
+    // Open search, set query, and poll until matches appear.
+    client.open_search(pane_id);
+    poll_until(&mut client, pane_id, "search_active", |snap| {
+        snap.search_active
+    });
+    client.search_set_query(pane_id, "AAA".to_string());
+    poll_until(&mut client, pane_id, "search matches >= 3", |snap| {
+        snap.search_matches.len() >= 3
+    });
 
- let snap = client
- .pane_snapshot(pane_id)
- .expect("snapshot should be cached")
- .clone();
- let initial_focused = snap.search_focused;
+    let snap = client
+        .pane_snapshot(pane_id)
+        .expect("snapshot should be cached")
+        .clone();
+    let initial_focused = snap.search_focused;
 
- // Navigate next and poll until focused index changes.
- client.search_next_match(pane_id);
- poll_until(&mut client, pane_id, "focused match changed", |snap| {
- snap.search_focused != initial_focused
- });
+    // Navigate next and poll until focused index changes.
+    client.search_next_match(pane_id);
+    poll_until(&mut client, pane_id, "focused match changed", |snap| {
+        snap.search_focused != initial_focused
+    });
 
- // Close search.
- client.close_search(pane_id);
+    // Close search.
+    client.close_search(pane_id);
 }
 
 /// 14.4: Extract text via IPC — send known text, select, extract.
 #[test]
 fn test_extract_text() {
- let daemon = TestDaemon::start();
- let mut client = daemon.connect_client();
+    let daemon = TestDaemon::start();
+    let mut client = daemon.connect_client();
 
- let pane_id = spawn_test_pane_ready(&mut client);
+    let pane_id = spawn_test_pane_ready(&mut client);
 
- // Use printf to produce output that is clearly distinguishable from
- // the command line itself. The command line contains "printf" while
- // the output line starts with "EXTR_MARKER" (no "printf" prefix).
- client.send_input(pane_id, b"printf 'EXTR_MARKER\\n'\n");
+    // Use printf to produce output that is clearly distinguishable from
+    // the command line itself. The command line contains "printf" while
+    // the output line starts with "EXTR_MARKER" (no "printf" prefix).
+    client.send_input(pane_id, b"printf 'EXTR_MARKER\\n'\n");
 
- let deadline = Instant::now() + Duration::from_secs(30);
- let snap = loop {
- client.poll_events();
- let mut notifs = Vec::new();
- client.drain_notifications(&mut notifs);
+    let deadline = Instant::now() + Duration::from_secs(30);
+    let snap = loop {
+        client.poll_events();
+        let mut notifs = Vec::new();
+        client.drain_notifications(&mut notifs);
 
- if let Some(snap) = client.refresh_pane_snapshot(pane_id) {
- let has_output_row = snap.cells.iter().any(|row| {
- let line: String = row.iter().map(|c| c.ch).collect();
- line.contains("EXTR_MARKER") && !line.contains("printf")
- });
- if has_output_row {
- break snap.clone();
- }
- }
- assert!(
- Instant::now() < deadline,
- "timed out waiting for EXTR_MARKER output row"
- );
- thread::sleep(Duration::from_millis(50));
- };
+        if let Some(snap) = client.refresh_pane_snapshot(pane_id) {
+            let has_output_row = snap.cells.iter().any(|row| {
+                let line: String = row.iter().map(|c| c.ch).collect();
+                line.contains("EXTR_MARKER") && !line.contains("printf")
+            });
+            if has_output_row {
+                break snap.clone();
+            }
+        }
+        assert!(
+            Instant::now() < deadline,
+            "timed out waiting for EXTR_MARKER output row"
+        );
+        thread::sleep(Duration::from_millis(50));
+    };
 
- // The output row has "EXTR_MARKER" but not "printf".
- let (target_row, row_text) = snap
- .cells
- .iter()
- .enumerate()
- .filter_map(|(i, row)| {
- let line: String = row.iter().map(|c| c.ch).collect();
- if line.contains("EXTR_MARKER") {
- Some((i, line))
- } else {
- None
- }
- })
- .find(|(_, line)| !line.contains("printf"))
- .expect("should find output row with EXTR_MARKER");
+    // The output row has "EXTR_MARKER" but not "printf".
+    let (target_row, row_text) = snap
+        .cells
+        .iter()
+        .enumerate()
+        .filter_map(|(i, row)| {
+            let line: String = row.iter().map(|c| c.ch).collect();
+            if line.contains("EXTR_MARKER") {
+                Some((i, line))
+            } else {
+                None
+            }
+        })
+        .find(|(_, line)| !line.contains("printf"))
+        .expect("should find output row with EXTR_MARKER");
 
- let col_start = row_text
- .find("EXTR_MARKER")
- .expect("should find EXTR_MARKER in row text");
- let col_end = col_start + "EXTR_MARKER".len() - 1;
+    let col_start = row_text
+        .find("EXTR_MARKER")
+        .expect("should find EXTR_MARKER in row text");
+    let col_end = col_start + "EXTR_MARKER".len() - 1;
 
- // Build a selection covering that text.
- // `stable_row_base` is the absolute row index of viewport row 0.
- let abs_row = snap.stable_row_base + target_row as u64;
+    // Build a selection covering that text.
+    // `stable_row_base` is the absolute row index of viewport row 0.
+    let abs_row = snap.stable_row_base + target_row as u64;
 
- let selection = Selection {
- mode: SelectionMode::Char,
- anchor: SelectionPoint {
- row: StableRowIndex(abs_row),
- col: col_start,
- side: Side::Left,
- },
- pivot: SelectionPoint {
- row: StableRowIndex(abs_row),
- col: col_start,
- side: Side::Left,
- },
- end: SelectionPoint {
- row: StableRowIndex(abs_row),
- col: col_end,
- side: Side::Right,
- },
- };
+    let selection = Selection {
+        mode: SelectionMode::Char,
+        anchor: SelectionPoint {
+            row: StableRowIndex(abs_row),
+            col: col_start,
+            side: Side::Left,
+        },
+        pivot: SelectionPoint {
+            row: StableRowIndex(abs_row),
+            col: col_start,
+            side: Side::Left,
+        },
+        end: SelectionPoint {
+            row: StableRowIndex(abs_row),
+            col: col_end,
+            side: Side::Right,
+        },
+    };
 
- let text = client
- .extract_text(pane_id, &selection)
- .expect("extract_text should return text");
+    let text = client
+        .extract_text(pane_id, &selection)
+        .expect("extract_text should return text");
 
- assert_eq!(
- text.trim(),
- "EXTR_MARKER",
- "extracted text should match the marker"
- );
+    assert_eq!(
+        text.trim(),
+        "EXTR_MARKER",
+        "extracted text should match the marker"
+    );
 }
 
 /// 14.4: PaneOutput notification flow — output triggers dirty notification.
 #[test]
 fn test_notification_pane_dirty() {
- let daemon = TestDaemon::start();
- let mut client = daemon.connect_client();
+    let daemon = TestDaemon::start();
+    let mut client = daemon.connect_client();
 
- let pane_id = spawn_test_pane_ready(&mut client);
+    let pane_id = spawn_test_pane_ready(&mut client);
 
- // Clear initial state.
- client.poll_events();
- let mut notifs = Vec::new();
- client.drain_notifications(&mut notifs);
- client.clear_pane_snapshot_dirty(pane_id);
+    // Clear initial state.
+    client.poll_events();
+    let mut notifs = Vec::new();
+    client.drain_notifications(&mut notifs);
+    client.clear_pane_snapshot_dirty(pane_id);
 
- // Send input.
- client.send_input(pane_id, b"echo NOTIF_TEST\n");
+    // Send input.
+    client.send_input(pane_id, b"echo NOTIF_TEST\n");
 
- // Wait for PaneOutput notification.
- let deadline = Instant::now() + Duration::from_secs(30);
- let mut got_dirty = false;
- loop {
- client.poll_events();
- notifs.clear();
- client.drain_notifications(&mut notifs);
+    // Wait for PaneOutput notification.
+    let deadline = Instant::now() + Duration::from_secs(30);
+    let mut got_dirty = false;
+    loop {
+        client.poll_events();
+        notifs.clear();
+        client.drain_notifications(&mut notifs);
 
- for notif in &notifs {
- if let MuxNotification::PaneOutput(id) = notif {
- if *id == pane_id {
- got_dirty = true;
- }
- }
- }
+        for notif in &notifs {
+            if let MuxNotification::PaneOutput(id) = notif {
+                if *id == pane_id {
+                    got_dirty = true;
+                }
+            }
+        }
 
- if got_dirty {
- break;
- }
+        if got_dirty {
+            break;
+        }
 
- assert!(
- Instant::now() < deadline,
- "timed out waiting for PaneOutput notification"
- );
- thread::sleep(Duration::from_millis(20));
- }
+        assert!(
+            Instant::now() < deadline,
+            "timed out waiting for PaneOutput notification"
+        );
+        thread::sleep(Duration::from_millis(20));
+    }
 
- assert!(
- got_dirty,
- "should receive PaneOutput notification after output"
- );
+    assert!(
+        got_dirty,
+        "should receive PaneOutput notification after output"
+    );
 }
 
 /// Flood output does not hang the event loop.
@@ -968,49 +968,49 @@ fn test_notification_pane_dirty() {
 /// main thread. Now writes go through the reader thread's channel.
 #[test]
 fn test_flood_output_no_hang() {
- let daemon = TestDaemon::start();
- let mut client = daemon.connect_client();
+    let daemon = TestDaemon::start();
+    let mut client = daemon.connect_client();
 
- let pane_id = spawn_test_pane_ready(&mut client);
+    let pane_id = spawn_test_pane_ready(&mut client);
 
- // Generate massive output: 5000 lines of 200-char padded numbers.
- client.send_input(
- pane_id,
- b"for i in $(seq 1 5000); do printf '%0200d\\n' $i; done\n",
- );
+    // Generate massive output: 5000 lines of 200-char padded numbers.
+    client.send_input(
+        pane_id,
+        b"for i in $(seq 1 5000); do printf '%0200d\\n' $i; done\n",
+    );
 
- // Poll events in a loop with a 15-second deadline. If the main thread
- // blocks on PTY writes, this loop stalls and the test times out.
- let deadline = Instant::now() + Duration::from_secs(30);
- loop {
- client.poll_events();
- let mut notifs = Vec::new();
- client.drain_notifications(&mut notifs);
+    // Poll events in a loop with a 15-second deadline. If the main thread
+    // blocks on PTY writes, this loop stalls and the test times out.
+    let deadline = Instant::now() + Duration::from_secs(30);
+    loop {
+        client.poll_events();
+        let mut notifs = Vec::new();
+        client.drain_notifications(&mut notifs);
 
- // Check if the shell has returned to a prompt (output complete).
- if let Some(snap) = client.refresh_pane_snapshot(pane_id) {
- // Look for the last flood line — when this appears, the bulk
- // output is finishing or done.
- if snapshot_contains(snap, "5000") {
- break;
- }
- }
+        // Check if the shell has returned to a prompt (output complete).
+        if let Some(snap) = client.refresh_pane_snapshot(pane_id) {
+            // Look for the last flood line — when this appears, the bulk
+            // output is finishing or done.
+            if snapshot_contains(snap, "5000") {
+                break;
+            }
+        }
 
- assert!(
- Instant::now() < deadline,
- "timed out during flood output — main thread likely blocked on PTY write"
- );
- thread::sleep(Duration::from_millis(100));
- }
+        assert!(
+            Instant::now() < deadline,
+            "timed out during flood output — main thread likely blocked on PTY write"
+        );
+        thread::sleep(Duration::from_millis(100));
+    }
 
- // Verify the pane is still responsive by sending a marker command.
- client.send_input(pane_id, b"echo FLOOD_ALIVE\n");
- let snap =
- wait_for_text_in_snapshot(&mut client, pane_id, "FLOOD_ALIVE", Duration::from_secs(30));
- assert!(
- snapshot_contains(&snap, "FLOOD_ALIVE"),
- "pane should be responsive after flood output"
- );
+    // Verify the pane is still responsive by sending a marker command.
+    client.send_input(pane_id, b"echo FLOOD_ALIVE\n");
+    let snap =
+        wait_for_text_in_snapshot(&mut client, pane_id, "FLOOD_ALIVE", Duration::from_secs(30));
+    assert!(
+        snapshot_contains(&snap, "FLOOD_ALIVE"),
+        "pane should be responsive after flood output"
+    );
 }
 
 /// Infinite flood output should still stream visible updates.
@@ -1019,84 +1019,84 @@ fn test_flood_output_no_hang() {
 /// unbounded.
 #[test]
 fn test_infinite_flood_streams_updates() {
- let daemon = TestDaemon::start();
- let mut client = daemon.connect_client();
+    let daemon = TestDaemon::start();
+    let mut client = daemon.connect_client();
 
- let pane_id = spawn_test_pane_ready(&mut client);
+    let pane_id = spawn_test_pane_ready(&mut client);
 
- // Start an unbounded flood loop.
- client.send_input(pane_id, b"while true; do printf '%0200d\\n' 1; done\n");
+    // Start an unbounded flood loop.
+    client.send_input(pane_id, b"while true; do printf '%0200d\\n' 1; done\n");
 
- // Keep polling and refreshing snapshots. We should see flood text.
- let deadline = Instant::now() + Duration::from_secs(30);
- let mut saw_output = false;
- let mut refresh_ok = 0usize;
+    // Keep polling and refreshing snapshots. We should see flood text.
+    let deadline = Instant::now() + Duration::from_secs(30);
+    let mut saw_output = false;
+    let mut refresh_ok = 0usize;
 
- while Instant::now() < deadline {
- client.poll_events();
- let mut notifs = Vec::new();
- client.drain_notifications(&mut notifs);
+    while Instant::now() < deadline {
+        client.poll_events();
+        let mut notifs = Vec::new();
+        client.drain_notifications(&mut notifs);
 
- if let Some(snap) = client.refresh_pane_snapshot(pane_id) {
- refresh_ok += 1;
- if snapshot_contains(snap, "0000000000") {
- saw_output = true;
- break;
- }
- }
+        if let Some(snap) = client.refresh_pane_snapshot(pane_id) {
+            refresh_ok += 1;
+            if snapshot_contains(snap, "0000000000") {
+                saw_output = true;
+                break;
+            }
+        }
 
- thread::sleep(Duration::from_millis(50));
- }
+        thread::sleep(Duration::from_millis(50));
+    }
 
- // Stop the flood loop.
- client.send_input(pane_id, b"\x03");
+    // Stop the flood loop.
+    client.send_input(pane_id, b"\x03");
 
- assert!(
- saw_output,
- "no visible flood output in snapshots (successful refreshes: {refresh_ok})"
- );
+    assert!(
+        saw_output,
+        "no visible flood output in snapshots (successful refreshes: {refresh_ok})"
+    );
 }
 
 /// Exact user flood payload with concatenated `$RANDOM` values should stream.
 #[test]
 fn test_infinite_flood_random_streams_updates() {
- let daemon = TestDaemon::start();
- let mut client = daemon.connect_client();
+    let daemon = TestDaemon::start();
+    let mut client = daemon.connect_client();
 
- let pane_id = spawn_test_pane_ready(&mut client);
+    let pane_id = spawn_test_pane_ready(&mut client);
 
- client.send_input(
- pane_id,
- b"while true; do printf '%0200d\\n' $RANDOM$RANDOM$RANDOM$RANDOM; done\n",
- );
+    client.send_input(
+        pane_id,
+        b"while true; do printf '%0200d\\n' $RANDOM$RANDOM$RANDOM$RANDOM; done\n",
+    );
 
- let deadline = Instant::now() + Duration::from_secs(20);
- let mut saw_output = false;
- let mut refresh_ok = 0usize;
+    let deadline = Instant::now() + Duration::from_secs(20);
+    let mut saw_output = false;
+    let mut refresh_ok = 0usize;
 
- while Instant::now() < deadline {
- client.poll_events();
- let mut notifs = Vec::new();
- client.drain_notifications(&mut notifs);
+    while Instant::now() < deadline {
+        client.poll_events();
+        let mut notifs = Vec::new();
+        client.drain_notifications(&mut notifs);
 
- if let Some(snap) = client.refresh_pane_snapshot(pane_id) {
- refresh_ok += 1;
- if snapshot_contains(snap, "0000000000") || snapshot_contains(snap, "printf: warning:")
- {
- saw_output = true;
- break;
- }
- }
+        if let Some(snap) = client.refresh_pane_snapshot(pane_id) {
+            refresh_ok += 1;
+            if snapshot_contains(snap, "0000000000") || snapshot_contains(snap, "printf: warning:")
+            {
+                saw_output = true;
+                break;
+            }
+        }
 
- thread::sleep(Duration::from_millis(50));
- }
+        thread::sleep(Duration::from_millis(50));
+    }
 
- client.send_input(pane_id, b"\x03");
+    client.send_input(pane_id, b"\x03");
 
- assert!(
- saw_output,
- "no visible random flood output in snapshots (successful refreshes: {refresh_ok})"
- );
+    assert!(
+        saw_output,
+        "no visible random flood output in snapshots (successful refreshes: {refresh_ok})"
+    );
 }
 
 /// 14.4: PaneMetadataChanged notification fires on title change.
@@ -1105,54 +1105,54 @@ fn test_infinite_flood_random_streams_updates() {
 /// title (which races with shell integration).
 #[test]
 fn test_notification_title_changed() {
- let daemon = TestDaemon::start();
- let mut client = daemon.connect_client();
+    let daemon = TestDaemon::start();
+    let mut client = daemon.connect_client();
 
- let pane_id = spawn_test_pane_ready(&mut client);
+    let pane_id = spawn_test_pane_ready(&mut client);
 
- // Clear any pending notifications.
- client.poll_events();
- let mut notifs = Vec::new();
- client.drain_notifications(&mut notifs);
+    // Clear any pending notifications.
+    client.poll_events();
+    let mut notifs = Vec::new();
+    client.drain_notifications(&mut notifs);
 
- // Set title via OSC 0. Use printf to emit the escape through stdout
- // (the terminal emulator's input path). Sending raw escape bytes as
- // PTY input relies on terminal echo which the shell may disable in
- // raw mode during line editing.
- client.send_input(pane_id, b"printf '\\033]0;E2E_TITLE_TEST\\007'\n");
+    // Set title via OSC 0. Use printf to emit the escape through stdout
+    // (the terminal emulator's input path). Sending raw escape bytes as
+    // PTY input relies on terminal echo which the shell may disable in
+    // raw mode during line editing.
+    client.send_input(pane_id, b"printf '\\033]0;E2E_TITLE_TEST\\007'\n");
 
- // Wait for PaneMetadataChanged notification.
- // CI runners can be slow to deliver IPC notifications.
- let deadline = Instant::now() + Duration::from_secs(30);
- let mut got_title = false;
- loop {
- client.poll_events();
- notifs.clear();
- client.drain_notifications(&mut notifs);
+    // Wait for PaneMetadataChanged notification.
+    // CI runners can be slow to deliver IPC notifications.
+    let deadline = Instant::now() + Duration::from_secs(30);
+    let mut got_title = false;
+    loop {
+        client.poll_events();
+        notifs.clear();
+        client.drain_notifications(&mut notifs);
 
- for notif in &notifs {
- if let MuxNotification::PaneMetadataChanged(id) = notif {
- if *id == pane_id {
- got_title = true;
- }
- }
- }
+        for notif in &notifs {
+            if let MuxNotification::PaneMetadataChanged(id) = notif {
+                if *id == pane_id {
+                    got_title = true;
+                }
+            }
+        }
 
- if got_title {
- break;
- }
+        if got_title {
+            break;
+        }
 
- assert!(
- Instant::now() < deadline,
- "timed out waiting for PaneMetadataChanged notification"
- );
- thread::sleep(Duration::from_millis(20));
- }
+        assert!(
+            Instant::now() < deadline,
+            "timed out waiting for PaneMetadataChanged notification"
+        );
+        thread::sleep(Duration::from_millis(20));
+    }
 
- assert!(
- got_title,
- "should receive PaneMetadataChanged notification after OSC 0"
- );
+    assert!(
+        got_title,
+        "should receive PaneMetadataChanged notification after OSC 0"
+    );
 }
 
 /// Flood responsiveness: daemon snapshot path handles sustained flood.
@@ -1162,71 +1162,71 @@ fn test_notification_title_changed() {
 /// 2. No single snapshot takes longer than 2s (no momentary freeze).
 #[test]
 fn test_flood_snapshot_responsiveness() {
- let daemon = TestDaemon::start();
- let mut client = daemon.connect_client();
+    let daemon = TestDaemon::start();
+    let mut client = daemon.connect_client();
 
- let pane_id = spawn_test_pane_ready(&mut client);
+    let pane_id = spawn_test_pane_ready(&mut client);
 
- // Start infinite flood: `yes` outputs lines continuously until killed.
- client.send_input(pane_id, b"yes \"$(printf '%0200d' 0)\"\n");
+    // Start infinite flood: `yes` outputs lines continuously until killed.
+    client.send_input(pane_id, b"yes \"$(printf '%0200d' 0)\"\n");
 
- // Let the flood build momentum before measuring.
- thread::sleep(Duration::from_millis(300));
+    // Let the flood build momentum before measuring.
+    thread::sleep(Duration::from_millis(300));
 
- // Simulate the UI render loop for 3 seconds at ~60fps cadence.
- let test_duration = Duration::from_secs(3);
- // CI runners can have extreme scheduling latency.
- let max_frame_time = Duration::from_secs(2);
- let start = Instant::now();
- let mut snapshot_count = 0u32;
- let mut max_snapshot_time = Duration::ZERO;
+    // Simulate the UI render loop for 3 seconds at ~60fps cadence.
+    let test_duration = Duration::from_secs(3);
+    // CI runners can have extreme scheduling latency.
+    let max_frame_time = Duration::from_secs(2);
+    let start = Instant::now();
+    let mut snapshot_count = 0u32;
+    let mut max_snapshot_time = Duration::ZERO;
 
- while start.elapsed() < test_duration {
- let frame_start = Instant::now();
+    while start.elapsed() < test_duration {
+        let frame_start = Instant::now();
 
- // Phase 1: poll events (matches real about_to_wait path).
- client.poll_events();
- let mut notifs = Vec::new();
- client.drain_notifications(&mut notifs);
+        // Phase 1: poll events (matches real about_to_wait path).
+        client.poll_events();
+        let mut notifs = Vec::new();
+        client.drain_notifications(&mut notifs);
 
- // Phase 2: always refresh during flood — we are measuring snapshot
- // throughput, not dirty-flag propagation (which has its own latency
- // through the IPC notification path).
- client.refresh_pane_snapshot(pane_id);
- snapshot_count += 1;
+        // Phase 2: always refresh during flood — we are measuring snapshot
+        // throughput, not dirty-flag propagation (which has its own latency
+        // through the IPC notification path).
+        client.refresh_pane_snapshot(pane_id);
+        snapshot_count += 1;
 
- let frame_time = frame_start.elapsed();
- if frame_time > max_snapshot_time {
- max_snapshot_time = frame_time;
- }
+        let frame_time = frame_start.elapsed();
+        if frame_time > max_snapshot_time {
+            max_snapshot_time = frame_time;
+        }
 
- assert!(
- frame_time < max_frame_time,
- "snapshot {snapshot_count} took {frame_time:?} (max {max_frame_time:?}) — \
+        assert!(
+            frame_time < max_frame_time,
+            "snapshot {snapshot_count} took {frame_time:?} (max {max_frame_time:?}) — \
  daemon snapshot path blocked during flood output"
- );
+        );
 
- // Simulate GPU render time (~16ms for 60fps VSync).
- thread::sleep(Duration::from_millis(16));
- }
+        // Simulate GPU render time (~16ms for 60fps VSync).
+        thread::sleep(Duration::from_millis(16));
+    }
 
- // Stop the flood.
- client.send_input(pane_id, b"\x03");
- thread::sleep(Duration::from_millis(200));
+    // Stop the flood.
+    client.send_input(pane_id, b"\x03");
+    thread::sleep(Duration::from_millis(200));
 
- let elapsed = start.elapsed();
- let fps = snapshot_count as f64 / elapsed.as_secs_f64();
+    let elapsed = start.elapsed();
+    let fps = snapshot_count as f64 / elapsed.as_secs_f64();
 
- eprintln!("--- flood snapshot responsiveness ---");
- eprintln!(" snapshots: {snapshot_count}");
- eprintln!(" fps: {fps:.1}");
- eprintln!(" max frame time: {max_snapshot_time:?}");
+    eprintln!("--- flood snapshot responsiveness ---");
+    eprintln!(" snapshots: {snapshot_count}");
+    eprintln!(" fps: {fps:.1}");
+    eprintln!(" max frame time: {max_snapshot_time:?}");
 
- // CI runners are slower — only catch true hangs, not scheduling jitter.
- assert!(
- snapshot_count >= 10,
- "only {snapshot_count} snapshots in {elapsed:?} ({fps:.1} fps) — need >= 10"
- );
+    // CI runners are slower — only catch true hangs, not scheduling jitter.
+    assert!(
+        snapshot_count >= 10,
+        "only {snapshot_count} snapshots in {elapsed:?} ({fps:.1} fps) — need >= 10"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -1237,90 +1237,90 @@ fn test_flood_snapshot_responsiveness() {
 /// new client connects and operates normally.
 #[test]
 fn daemon_restart_detection_and_reconnect() {
- let tmpdir = tempfile::tempdir().expect("failed to create temp dir");
- let socket_path = tmpdir.path().join("mux.sock");
- let pid_path = tmpdir.path().join("mux.pid");
+    let tmpdir = tempfile::tempdir().expect("failed to create temp dir");
+    let socket_path = tmpdir.path().join("mux.sock");
+    let pid_path = tmpdir.path().join("mux.pid");
 
- // Phase 1: Start daemon, connect, verify working.
- let _shutdown1 = {
- let mut server =
- MuxServer::with_paths(&socket_path, &pid_path).expect("failed to create MuxServer");
- let shutdown = server.shutdown_flag();
+    // Phase 1: Start daemon, connect, verify working.
+    let _shutdown1 = {
+        let mut server =
+            MuxServer::with_paths(&socket_path, &pid_path).expect("failed to create MuxServer");
+        let shutdown = server.shutdown_flag();
 
- let sock = socket_path.clone();
- thread::spawn(move || {
- let _ = server.run();
- });
+        let sock = socket_path.clone();
+        thread::spawn(move || {
+            let _ = server.run();
+        });
 
- let deadline = Instant::now() + Duration::from_secs(30);
- while !socket_path.exists() {
- assert!(
- Instant::now() < deadline,
- "daemon socket did not appear within 5 seconds"
- );
- thread::sleep(Duration::from_millis(10));
- }
+        let deadline = Instant::now() + Duration::from_secs(30);
+        while !socket_path.exists() {
+            assert!(
+                Instant::now() < deadline,
+                "daemon socket did not appear within 5 seconds"
+            );
+            thread::sleep(Duration::from_millis(10));
+        }
 
- let wakeup: Arc<dyn Fn() + Send + Sync> = Arc::new(|| {});
- let mut client = MuxClient::connect(&sock, wakeup).expect("connect to daemon 1");
+        let wakeup: Arc<dyn Fn() + Send + Sync> = Arc::new(|| {});
+        let mut client = MuxClient::connect(&sock, wakeup).expect("connect to daemon 1");
 
- let pane = spawn_test_pane_ready(&mut client);
+        let pane = spawn_test_pane_ready(&mut client);
 
- client.send_input(pane, b"echo DAEMON1_ALIVE\n");
- wait_for_text_in_snapshot(&mut client, pane, "DAEMON1_ALIVE", Duration::from_secs(30));
+        client.send_input(pane, b"echo DAEMON1_ALIVE\n");
+        wait_for_text_in_snapshot(&mut client, pane, "DAEMON1_ALIVE", Duration::from_secs(30));
 
- assert!(client.is_connected(), "client should be connected");
+        assert!(client.is_connected(), "client should be connected");
 
- // Phase 2: Kill the daemon.
- shutdown.store(true, Ordering::Release);
- shutdown
- };
+        // Phase 2: Kill the daemon.
+        shutdown.store(true, Ordering::Release);
+        shutdown
+    };
 
- // Wait for the daemon to fully shut down and socket to be cleaned up.
- thread::sleep(Duration::from_millis(500));
+    // Wait for the daemon to fully shut down and socket to be cleaned up.
+    thread::sleep(Duration::from_millis(500));
 
- // Clean up stale socket so the next daemon can bind.
- let _ = std::fs::remove_file(&socket_path);
+    // Clean up stale socket so the next daemon can bind.
+    let _ = std::fs::remove_file(&socket_path);
 
- // Phase 3: Start a new daemon on the same socket.
- let pid_path2 = tmpdir.path().join("mux2.pid");
- let mut server2 =
- MuxServer::with_paths(&socket_path, &pid_path2).expect("failed to create MuxServer 2");
- let shutdown2 = server2.shutdown_flag();
+    // Phase 3: Start a new daemon on the same socket.
+    let pid_path2 = tmpdir.path().join("mux2.pid");
+    let mut server2 =
+        MuxServer::with_paths(&socket_path, &pid_path2).expect("failed to create MuxServer 2");
+    let shutdown2 = server2.shutdown_flag();
 
- let sock2 = socket_path.clone();
- thread::spawn(move || {
- let _ = server2.run();
- });
+    let sock2 = socket_path.clone();
+    thread::spawn(move || {
+        let _ = server2.run();
+    });
 
- let deadline = Instant::now() + Duration::from_secs(30);
- while !socket_path.exists() {
- assert!(
- Instant::now() < deadline,
- "daemon 2 socket did not appear within 5 seconds"
- );
- thread::sleep(Duration::from_millis(10));
- }
+    let deadline = Instant::now() + Duration::from_secs(30);
+    while !socket_path.exists() {
+        assert!(
+            Instant::now() < deadline,
+            "daemon 2 socket did not appear within 5 seconds"
+        );
+        thread::sleep(Duration::from_millis(10));
+    }
 
- // Phase 4: New client connects to the restarted daemon.
- let wakeup: Arc<dyn Fn() + Send + Sync> = Arc::new(|| {});
- let mut client2 = MuxClient::connect(&sock2, wakeup).expect("connect to daemon 2");
+    // Phase 4: New client connects to the restarted daemon.
+    let wakeup: Arc<dyn Fn() + Send + Sync> = Arc::new(|| {});
+    let mut client2 = MuxClient::connect(&sock2, wakeup).expect("connect to daemon 2");
 
- assert!(client2.is_connected(), "client2 should be connected");
+    assert!(client2.is_connected(), "client2 should be connected");
 
- // Create fresh session (old sessions are lost — daemon is stateless across restarts).
- let pane2 = spawn_test_pane_ready(&mut client2);
+    // Create fresh session (old sessions are lost — daemon is stateless across restarts).
+    let pane2 = spawn_test_pane_ready(&mut client2);
 
- client2.send_input(pane2, b"echo DAEMON2_ALIVE\n");
- wait_for_text_in_snapshot(
- &mut client2,
- pane2,
- "DAEMON2_ALIVE",
- Duration::from_secs(30),
- );
+    client2.send_input(pane2, b"echo DAEMON2_ALIVE\n");
+    wait_for_text_in_snapshot(
+        &mut client2,
+        pane2,
+        "DAEMON2_ALIVE",
+        Duration::from_secs(30),
+    );
 
- // Clean shutdown.
- shutdown2.store(true, Ordering::Release);
+    // Clean shutdown.
+    shutdown2.store(true, Ordering::Release);
 }
 
 /// 44.7: Raw socket round-trip latency (bypassing event loops).
@@ -1328,64 +1328,64 @@ fn daemon_restart_detection_and_reconnect() {
 /// directly — no reader threads, no mio, no mpsc channels.
 #[test]
 fn raw_socket_latency_baseline() {
- let daemon = TestDaemon::start();
+    let daemon = TestDaemon::start();
 
- // Direct blocking connection (bypasses MuxClient entirely).
- use oriterm_ipc::ClientStream;
- use oriterm_mux::protocol::{MuxPdu, ProtocolCodec};
+    // Direct blocking connection (bypasses MuxClient entirely).
+    use oriterm_ipc::ClientStream;
+    use oriterm_mux::protocol::{MuxPdu, ProtocolCodec};
 
- let mut stream = ClientStream::connect(&daemon.socket_path).expect("raw connect");
+    let mut stream = ClientStream::connect(&daemon.socket_path).expect("raw connect");
 
- // Handshake.
- let pid = std::process::id();
- ProtocolCodec::encode_frame(
- &mut stream,
- 1,
- &MuxPdu::Hello {
- pid,
- protocol_version: oriterm_mux::protocol::CURRENT_PROTOCOL_VERSION,
- features: 0,
- },
- )
- .expect("write Hello");
- let mut codec = ProtocolCodec::new();
- let frame = codec.decode_frame(&mut stream).expect("read HelloAck");
- assert!(matches!(frame.pdu, MuxPdu::HelloAck { .. }));
+    // Handshake.
+    let pid = std::process::id();
+    ProtocolCodec::encode_frame(
+        &mut stream,
+        1,
+        &MuxPdu::Hello {
+            pid,
+            protocol_version: oriterm_mux::protocol::CURRENT_PROTOCOL_VERSION,
+            features: 0,
+        },
+    )
+    .expect("write Hello");
+    let mut codec = ProtocolCodec::new();
+    let frame = codec.decode_frame(&mut stream).expect("read HelloAck");
+    assert!(matches!(frame.pdu, MuxPdu::HelloAck { .. }));
 
- // Warm up.
- for seq in 2..12u32 {
- ProtocolCodec::encode_frame(&mut stream, seq, &MuxPdu::Ping).expect("write Ping");
- let _resp = codec.decode_frame(&mut stream).expect("read PingAck");
- }
+    // Warm up.
+    for seq in 2..12u32 {
+        ProtocolCodec::encode_frame(&mut stream, seq, &MuxPdu::Ping).expect("write Ping");
+        let _resp = codec.decode_frame(&mut stream).expect("read PingAck");
+    }
 
- // Measure.
- const N: usize = 200;
- let mut latencies = Vec::with_capacity(N);
- for i in 0..N {
- let seq = 100 + i as u32;
- let start = Instant::now();
- ProtocolCodec::encode_frame(&mut stream, seq, &MuxPdu::Ping).expect("write Ping");
- let resp = codec.decode_frame(&mut stream).expect("read PingAck");
- let elapsed = start.elapsed();
- assert_eq!(resp.pdu, MuxPdu::PingAck);
- latencies.push(elapsed);
- }
+    // Measure.
+    const N: usize = 200;
+    let mut latencies = Vec::with_capacity(N);
+    for i in 0..N {
+        let seq = 100 + i as u32;
+        let start = Instant::now();
+        ProtocolCodec::encode_frame(&mut stream, seq, &MuxPdu::Ping).expect("write Ping");
+        let resp = codec.decode_frame(&mut stream).expect("read PingAck");
+        let elapsed = start.elapsed();
+        assert_eq!(resp.pdu, MuxPdu::PingAck);
+        latencies.push(elapsed);
+    }
 
- latencies.sort();
- let min = latencies[0];
- let median = latencies[N / 2];
- let p95 = latencies[N * 95 / 100];
+    latencies.sort();
+    let min = latencies[0];
+    let median = latencies[N / 2];
+    let p95 = latencies[N * 95 / 100];
 
- eprintln!("--- Raw socket Ping/PingAck latency ({N} iterations) ---");
- eprintln!(" min: {min:?}");
- eprintln!(" median: {median:?}");
- eprintln!(" p95: {p95:?}");
+    eprintln!("--- Raw socket Ping/PingAck latency ({N} iterations) ---");
+    eprintln!(" min: {min:?}");
+    eprintln!(" median: {median:?}");
+    eprintln!(" p95: {p95:?}");
 
- // This establishes the platform baseline — epoll_wait latency on WSL2.
- assert!(
- median < Duration::from_millis(5),
- "raw socket median {median:?} exceeds 5ms — platform epoll latency is the bottleneck"
- );
+    // This establishes the platform baseline — epoll_wait latency on WSL2.
+    assert!(
+        median < Duration::from_millis(5),
+        "raw socket median {median:?} exceeds 5ms — platform epoll latency is the bottleneck"
+    );
 }
 
 /// 44.7: IPC round-trip latency through daemon IPC.
@@ -1396,87 +1396,87 @@ fn raw_socket_latency_baseline() {
 /// Asserts Ping median < 1ms and snapshot median < 5ms.
 #[test]
 fn ipc_latency_under_5ms() {
- let daemon = TestDaemon::start();
- let mut client = daemon.connect_client();
+    let daemon = TestDaemon::start();
+    let mut client = daemon.connect_client();
 
- let pane_id = spawn_test_pane_ready(&mut client);
+    let pane_id = spawn_test_pane_ready(&mut client);
 
- client.send_input(pane_id, b"echo LATENCY_READY\n");
- wait_for_text_in_snapshot(
- &mut client,
- pane_id,
- "LATENCY_READY",
- Duration::from_secs(30),
- );
+    client.send_input(pane_id, b"echo LATENCY_READY\n");
+    wait_for_text_in_snapshot(
+        &mut client,
+        pane_id,
+        "LATENCY_READY",
+        Duration::from_secs(30),
+    );
 
- // Drain pending state.
- client.poll_events();
- let mut notifs = Vec::new();
- client.drain_notifications(&mut notifs);
+    // Drain pending state.
+    client.poll_events();
+    let mut notifs = Vec::new();
+    client.drain_notifications(&mut notifs);
 
- // --- Part 1: Pure IPC latency (Ping/PingAck) ---
- // Warm up.
- for _ in 0..10 {
- client.ping_rpc().expect("warmup ping");
- }
+    // --- Part 1: Pure IPC latency (Ping/PingAck) ---
+    // Warm up.
+    for _ in 0..10 {
+        client.ping_rpc().expect("warmup ping");
+    }
 
- const PING_ITERS: usize = 200;
- let mut ping_latencies = Vec::with_capacity(PING_ITERS);
- for _ in 0..PING_ITERS {
- let lat = client.ping_rpc().expect("ping_rpc should succeed");
- ping_latencies.push(lat);
- }
+    const PING_ITERS: usize = 200;
+    let mut ping_latencies = Vec::with_capacity(PING_ITERS);
+    for _ in 0..PING_ITERS {
+        let lat = client.ping_rpc().expect("ping_rpc should succeed");
+        ping_latencies.push(lat);
+    }
 
- ping_latencies.sort();
- let ping_median = ping_latencies[PING_ITERS / 2];
- let ping_p95 = ping_latencies[PING_ITERS * 95 / 100];
- let ping_min = ping_latencies[0];
+    ping_latencies.sort();
+    let ping_median = ping_latencies[PING_ITERS / 2];
+    let ping_p95 = ping_latencies[PING_ITERS * 95 / 100];
+    let ping_min = ping_latencies[0];
 
- eprintln!("--- IPC Ping/PingAck latency ({PING_ITERS} iterations) ---");
- eprintln!(" min: {ping_min:?}");
- eprintln!(" median: {ping_median:?}");
- eprintln!(" p95: {ping_p95:?}");
+    eprintln!("--- IPC Ping/PingAck latency ({PING_ITERS} iterations) ---");
+    eprintln!(" min: {ping_min:?}");
+    eprintln!(" median: {ping_median:?}");
+    eprintln!(" p95: {ping_p95:?}");
 
- // --- Part 2: Snapshot RPC latency (full render path) ---
- const SNAP_ITERS: usize = 100;
- let mut snap_latencies = Vec::with_capacity(SNAP_ITERS);
- for _ in 0..SNAP_ITERS {
- let start = Instant::now();
- let snap = client.refresh_pane_snapshot(pane_id);
- let elapsed = start.elapsed();
- assert!(snap.is_some(), "snapshot refresh should succeed");
- snap_latencies.push(elapsed);
- }
+    // --- Part 2: Snapshot RPC latency (full render path) ---
+    const SNAP_ITERS: usize = 100;
+    let mut snap_latencies = Vec::with_capacity(SNAP_ITERS);
+    for _ in 0..SNAP_ITERS {
+        let start = Instant::now();
+        let snap = client.refresh_pane_snapshot(pane_id);
+        let elapsed = start.elapsed();
+        assert!(snap.is_some(), "snapshot refresh should succeed");
+        snap_latencies.push(elapsed);
+    }
 
- snap_latencies.sort();
- let snap_median = snap_latencies[SNAP_ITERS / 2];
- let snap_p95 = snap_latencies[SNAP_ITERS * 95 / 100];
- let snap_min = snap_latencies[0];
+    snap_latencies.sort();
+    let snap_median = snap_latencies[SNAP_ITERS / 2];
+    let snap_p95 = snap_latencies[SNAP_ITERS * 95 / 100];
+    let snap_min = snap_latencies[0];
 
- eprintln!("--- IPC snapshot refresh latency ({SNAP_ITERS} iterations) ---");
- eprintln!(" min: {snap_min:?}");
- eprintln!(" median: {snap_median:?}");
- eprintln!(" p95: {snap_p95:?}");
+    eprintln!("--- IPC snapshot refresh latency ({SNAP_ITERS} iterations) ---");
+    eprintln!(" min: {snap_min:?}");
+    eprintln!(" median: {snap_median:?}");
+    eprintln!(" p95: {snap_p95:?}");
 
- assert!(
- ping_median < Duration::from_millis(1),
- "Ping median {ping_median:?} exceeds 1ms — IPC transport is too slow"
- );
+    assert!(
+        ping_median < Duration::from_millis(1),
+        "Ping median {ping_median:?} exceeds 1ms — IPC transport is too slow"
+    );
 
- // Ideal target: <5ms. Under parallel test load, CPU contention inflates
- // the snapshot RPC (which includes grid scan + bincode serialization).
- // Solo runs consistently hit ~3ms; parallel adds ~2ms of scheduling noise.
- // Warn at 5ms (ideal), hard-fail at 10ms (regression guard).
- if snap_median >= Duration::from_millis(5) {
- eprintln!(
- "WARNING: snapshot median {snap_median:?} exceeds ideal 5ms target \
+    // Ideal target: <5ms. Under parallel test load, CPU contention inflates
+    // the snapshot RPC (which includes grid scan + bincode serialization).
+    // Solo runs consistently hit ~3ms; parallel adds ~2ms of scheduling noise.
+    // Warn at 5ms (ideal), hard-fail at 10ms (regression guard).
+    if snap_median >= Duration::from_millis(5) {
+        eprintln!(
+            "WARNING: snapshot median {snap_median:?} exceeds ideal 5ms target \
  (likely CPU contention from parallel tests — solo median is ~3ms)"
- );
- }
- assert!(
- snap_median < Duration::from_millis(10),
- "snapshot median {snap_median:?} exceeds 10ms — render path regression"
- );
+        );
+    }
+    assert!(
+        snap_median < Duration::from_millis(10),
+        "snapshot median {snap_median:?} exceeds 10ms — render path regression"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -1488,56 +1488,56 @@ fn ipc_latency_under_5ms() {
 /// close it — proving the pane didn't get cleaned up prematurely.
 #[test]
 fn pane_survives_client_disconnect() {
- let daemon = TestDaemon::start();
+    let daemon = TestDaemon::start();
 
- // Client A: spawn a pane.
- let mut client_a = daemon.connect_client();
- let pane_id = spawn_test_pane_ready(&mut client_a);
+    // Client A: spawn a pane.
+    let mut client_a = daemon.connect_client();
+    let pane_id = spawn_test_pane_ready(&mut client_a);
 
- // Client A disconnects.
- drop(client_a);
+    // Client A disconnects.
+    drop(client_a);
 
- // Give the daemon time to process the disconnect.
- thread::sleep(Duration::from_millis(200));
+    // Give the daemon time to process the disconnect.
+    thread::sleep(Duration::from_millis(200));
 
- // Client B connects and closes the pane — this proves the pane is
- // still alive in the daemon (close_pane sends ClosePane RPC).
- let mut client_b = daemon.connect_client();
- let result = client_b.close_pane(pane_id);
- // close_pane on a live pane should return PaneRemoved (not NotFound).
- assert!(
- matches!(
- result,
- oriterm_mux::in_process::ClosePaneResult::PaneRemoved
- ),
- "expected PaneRemoved for a live pane, got {result:?}"
- );
+    // Client B connects and closes the pane — this proves the pane is
+    // still alive in the daemon (close_pane sends ClosePane RPC).
+    let mut client_b = daemon.connect_client();
+    let result = client_b.close_pane(pane_id);
+    // close_pane on a live pane should return PaneRemoved (not NotFound).
+    assert!(
+        matches!(
+            result,
+            oriterm_mux::in_process::ClosePaneResult::PaneRemoved
+        ),
+        "expected PaneRemoved for a live pane, got {result:?}"
+    );
 }
 
 /// Two clients can spawn and close panes independently. Verifies the
 /// daemon correctly tracks pane ownership across connections.
 #[test]
 fn multi_client_independent_panes() {
- let daemon = TestDaemon::start();
+    let daemon = TestDaemon::start();
 
- let mut client_a = daemon.connect_client();
- let mut client_b = daemon.connect_client();
+    let mut client_a = daemon.connect_client();
+    let mut client_b = daemon.connect_client();
 
- let pane_a = spawn_test_pane(&mut client_a);
- let pane_b = spawn_test_pane(&mut client_b);
+    let pane_a = spawn_test_pane(&mut client_a);
+    let pane_b = spawn_test_pane(&mut client_b);
 
- // Both panes exist.
- assert_ne!(pane_a, pane_b, "each spawn should produce a unique PaneId");
+    // Both panes exist.
+    assert_ne!(pane_a, pane_b, "each spawn should produce a unique PaneId");
 
- // Client A closes its pane.
- client_a.close_pane(pane_a);
+    // Client A closes its pane.
+    client_a.close_pane(pane_a);
 
- // Client B's pane should still be alive — send input to verify.
- client_b.send_input(pane_b, b"echo ALIVE\n");
- wait_for_text_in_snapshot(&mut client_b, pane_b, "ALIVE", Duration::from_secs(5));
+    // Client B's pane should still be alive — send input to verify.
+    client_b.send_input(pane_b, b"echo ALIVE\n");
+    wait_for_text_in_snapshot(&mut client_b, pane_b, "ALIVE", Duration::from_secs(5));
 
- // Clean up.
- client_b.close_pane(pane_b);
+    // Clean up.
+    client_b.close_pane(pane_b);
 }
 
 /// Combined Ctrl+C path: send `\x03` via PTY input AND `signal_child` so both
@@ -1554,103 +1554,103 @@ fn multi_client_independent_panes() {
 /// the parent has set the fg PGID and printed `FG_READY`.
 #[test]
 fn ctrl_c_during_flood_via_signal_child() {
- if !python3_available() {
- eprintln!("SKIP: python3 not available, skipping (job-control wrapper requires it)");
- return;
- }
- let daemon = TestDaemon::start();
- let mut client = daemon.connect_client();
+    if !python3_available() {
+        eprintln!("SKIP: python3 not available, skipping (job-control wrapper requires it)");
+        return;
+    }
+    let daemon = TestDaemon::start();
+    let mut client = daemon.connect_client();
 
- let pane_id = spawn_test_pane_ready(&mut client);
+    let pane_id = spawn_test_pane_ready(&mut client);
 
- // Spawn `yes` in its own foreground process group, gated on the parent's
- // `tcsetpgrp` completion. See `YES_FOREGROUND_WRAPPER` doc for the race
- // this avoids and why `FG_READY` is the load-bearing sync point.
- client.send_input(pane_id, YES_FOREGROUND_WRAPPER.as_bytes());
+    // Spawn `yes` in its own foreground process group, gated on the parent's
+    // `tcsetpgrp` completion. See `YES_FOREGROUND_WRAPPER` doc for the race
+    // this avoids and why `FG_READY` is the load-bearing sync point.
+    client.send_input(pane_id, YES_FOREGROUND_WRAPPER.as_bytes());
 
- // Wait for `FG_READY` — proves `tcsetpgrp(0, yes_pgid)` ran. Until this
- // sentinel appears, the kernel's foreground PGID is still the shell's,
- // and Ctrl+C would route SIGINT to the wrong group.
- wait_for_text_in_snapshot(&mut client, pane_id, "FG_READY", Duration::from_secs(30));
+    // Wait for `FG_READY` — proves `tcsetpgrp(0, yes_pgid)` ran. Until this
+    // sentinel appears, the kernel's foreground PGID is still the shell's,
+    // and Ctrl+C would route SIGINT to the wrong group.
+    wait_for_text_in_snapshot(&mut client, pane_id, "FG_READY", Duration::from_secs(30));
 
- // Ack — unblocks the wrapper so the child can `execvp('yes')` and start
- // flooding. Without this, the wrapper still blocks on `sys.stdin.readline()`
- // and `yes` never runs. With it, the wrapper has *observed* the test
- // observe `FG_READY` before any flood begins — sentinel can no longer
- // scroll off-screen mid-poll.
- client.send_input(pane_id, b"\n");
+    // Ack — unblocks the wrapper so the child can `execvp('yes')` and start
+    // flooding. Without this, the wrapper still blocks on `sys.stdin.readline()`
+    // and `yes` never runs. With it, the wrapper has *observed* the test
+    // observe `FG_READY` before any flood begins — sentinel can no longer
+    // scroll off-screen mid-poll.
+    client.send_input(pane_id, b"\n");
 
- // Wait for flooding to start — snapshot should contain a "y" line.
- let deadline = Instant::now() + Duration::from_secs(10);
- loop {
- client.poll_events();
- let mut n = Vec::new();
- client.drain_notifications(&mut n);
- if let Some(snap) = client.refresh_pane_snapshot(pane_id) {
- let has_y = snap.cells.iter().any(|row| {
- let line: String = row.iter().map(|c| c.ch).collect();
- line.starts_with('y')
- });
- if has_y {
- break;
- }
- }
- assert!(
- Instant::now() < deadline,
- "timed out waiting for `yes` output"
- );
- thread::sleep(Duration::from_millis(50));
- }
+    // Wait for flooding to start — snapshot should contain a "y" line.
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        client.poll_events();
+        let mut n = Vec::new();
+        client.drain_notifications(&mut n);
+        if let Some(snap) = client.refresh_pane_snapshot(pane_id) {
+            let has_y = snap.cells.iter().any(|row| {
+                let line: String = row.iter().map(|c| c.ch).collect();
+                line.starts_with('y')
+            });
+            if has_y {
+                break;
+            }
+        }
+        assert!(
+            Instant::now() < deadline,
+            "timed out waiting for `yes` output"
+        );
+        thread::sleep(Duration::from_millis(50));
+    }
 
- // Send Ctrl+C through the normal input path AND signal_child — this
- // is the combined-path smoke test. Either the kernel ISIG path
- // (\x03 → SIGINT to fg PGID) or signal_child (tcgetpgrp → SIGINT to
- // fg PGID) must kill `yes`. The canonical signal-only pin is
- // `signal_child_alone_kills_flooding_process` below; the canonical
- // stall-specific regression pin ( — daemon-mode
- // `is_write_stalled` RPC now wired) is
- // `signal_child_after_is_write_stalled_kills_writer_via_daemon`.
- client.send_input(pane_id, b"\x03");
- client.signal_child(pane_id, oriterm_mux::Signal::Interrupt);
+    // Send Ctrl+C through the normal input path AND signal_child — this
+    // is the combined-path smoke test. Either the kernel ISIG path
+    // (\x03 → SIGINT to fg PGID) or signal_child (tcgetpgrp → SIGINT to
+    // fg PGID) must kill `yes`. The canonical signal-only pin is
+    // `signal_child_alone_kills_flooding_process` below; the canonical
+    // stall-specific regression pin ( — daemon-mode
+    // `is_write_stalled` RPC now wired) is
+    // `signal_child_after_is_write_stalled_kills_writer_via_daemon`.
+    client.send_input(pane_id, b"\x03");
+    client.signal_child(pane_id, oriterm_mux::Signal::Interrupt);
 
- // The python wrapper prints FG_GONE after waitpid returns. Generous
- // 30-second deadline — the assertion is on the *condition*, not the
- // wall clock,-Clock-Free Testing`.
- // The deadline is a safety valve to surface a hang, not a flake source.
- let deadline = Instant::now() + Duration::from_secs(30);
- let mut saw_fg_gone = false;
- while Instant::now() < deadline {
- client.poll_events();
- let mut n = Vec::new();
- client.drain_notifications(&mut n);
- if let Some(snap) = client.refresh_pane_snapshot(pane_id) {
- if snapshot_contains(snap, "FG_GONE") {
- saw_fg_gone = true;
- break;
- }
- }
- thread::sleep(Duration::from_millis(50));
- }
+    // The python wrapper prints FG_GONE after waitpid returns. Generous
+    // 30-second deadline — the assertion is on the *condition*, not the
+    // wall clock,-Clock-Free Testing`.
+    // The deadline is a safety valve to surface a hang, not a flake source.
+    let deadline = Instant::now() + Duration::from_secs(30);
+    let mut saw_fg_gone = false;
+    while Instant::now() < deadline {
+        client.poll_events();
+        let mut n = Vec::new();
+        client.drain_notifications(&mut n);
+        if let Some(snap) = client.refresh_pane_snapshot(pane_id) {
+            if snapshot_contains(snap, "FG_GONE") {
+                saw_fg_gone = true;
+                break;
+            }
+        }
+        thread::sleep(Duration::from_millis(50));
+    }
 
- if !saw_fg_gone {
- if let Some(snap) = client.refresh_pane_snapshot(pane_id) {
- eprintln!("=== Snapshot after Ctrl+C + signal_child ===");
- for (i, row) in snap.cells.iter().enumerate() {
- let line: String = row.iter().map(|c| c.ch).collect();
- let trimmed = line.trim_end();
- if !trimmed.is_empty() {
- eprintln!(" row {i}: {trimmed:?}");
- }
- }
- }
- }
+    if !saw_fg_gone {
+        if let Some(snap) = client.refresh_pane_snapshot(pane_id) {
+            eprintln!("=== Snapshot after Ctrl+C + signal_child ===");
+            for (i, row) in snap.cells.iter().enumerate() {
+                let line: String = row.iter().map(|c| c.ch).collect();
+                let trimmed = line.trim_end();
+                if !trimmed.is_empty() {
+                    eprintln!(" row {i}: {trimmed:?}");
+                }
+            }
+        }
+    }
 
- assert!(
- saw_fg_gone,
- "Ctrl+C + signal_child must kill the foreground `yes` job"
- );
+    assert!(
+        saw_fg_gone,
+        "Ctrl+C + signal_child must kill the foreground `yes` job"
+    );
 
- client.close_pane(pane_id);
+    client.close_pane(pane_id);
 }
 
 /// Test: does plain send_input(b"\x03") kill `yes` without signal_child?
@@ -1659,73 +1659,73 @@ fn ctrl_c_during_flood_via_signal_child() {
 #[test]
 #[ignore = "flaky on CI — real PTY timing; openpty NULL termios may leave ISIG off on some runners"]
 fn plain_ctrl_c_without_signal_child() {
- let daemon = TestDaemon::start();
- let mut client = daemon.connect_client();
- let pane_id = spawn_test_pane_ready(&mut client);
+    let daemon = TestDaemon::start();
+    let mut client = daemon.connect_client();
+    let pane_id = spawn_test_pane_ready(&mut client);
 
- client.send_input(pane_id, b"yes\n");
+    client.send_input(pane_id, b"yes\n");
 
- // Wait for output.
- let deadline = Instant::now() + Duration::from_secs(10);
- loop {
- client.poll_events();
- let mut n = Vec::new();
- client.drain_notifications(&mut n);
- if let Some(snap) = client.refresh_pane_snapshot(pane_id) {
- if snap.cells.iter().any(|row| {
- row.iter()
- .map(|c| c.ch)
- .collect::<String>()
- .starts_with('y')
- }) {
- break;
- }
- }
- assert!(Instant::now() < deadline, "timed out waiting for yes");
- thread::sleep(Duration::from_millis(50));
- }
+    // Wait for output.
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        client.poll_events();
+        let mut n = Vec::new();
+        client.drain_notifications(&mut n);
+        if let Some(snap) = client.refresh_pane_snapshot(pane_id) {
+            if snap.cells.iter().any(|row| {
+                row.iter()
+                    .map(|c| c.ch)
+                    .collect::<String>()
+                    .starts_with('y')
+            }) {
+                break;
+            }
+        }
+        assert!(Instant::now() < deadline, "timed out waiting for yes");
+        thread::sleep(Duration::from_millis(50));
+    }
 
- // Let it flood.
- thread::sleep(Duration::from_millis(500));
+    // Let it flood.
+    thread::sleep(Duration::from_millis(500));
 
- // Send ONLY \x03 through normal input — no signal_child.
- client.send_input(pane_id, b"\x03");
+    // Send ONLY \x03 through normal input — no signal_child.
+    client.send_input(pane_id, b"\x03");
 
- // Check if prompt returns.
- let deadline = Instant::now() + Duration::from_secs(5);
- let mut saw_prompt = false;
- while Instant::now() < deadline {
- client.poll_events();
- let mut n = Vec::new();
- client.drain_notifications(&mut n);
- if let Some(snap) = client.refresh_pane_snapshot(pane_id) {
- if snapshot_has_prompt(&snap) {
- saw_prompt = true;
- break;
- }
- }
- thread::sleep(Duration::from_millis(50));
- }
+    // Check if prompt returns.
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let mut saw_prompt = false;
+    while Instant::now() < deadline {
+        client.poll_events();
+        let mut n = Vec::new();
+        client.drain_notifications(&mut n);
+        if let Some(snap) = client.refresh_pane_snapshot(pane_id) {
+            if snapshot_has_prompt(&snap) {
+                saw_prompt = true;
+                break;
+            }
+        }
+        thread::sleep(Duration::from_millis(50));
+    }
 
- if !saw_prompt {
- if let Some(snap) = client.refresh_pane_snapshot(pane_id) {
- eprintln!("=== Snapshot after plain \\x03 ===");
- for (i, row) in snap.cells.iter().enumerate() {
- let line: String = row.iter().map(|c| c.ch).collect();
- let trimmed = line.trim_end();
- if !trimmed.is_empty() {
- eprintln!(" row {i}: {trimmed:?}");
- }
- }
- }
- }
+    if !saw_prompt {
+        if let Some(snap) = client.refresh_pane_snapshot(pane_id) {
+            eprintln!("=== Snapshot after plain \\x03 ===");
+            for (i, row) in snap.cells.iter().enumerate() {
+                let line: String = row.iter().map(|c| c.ch).collect();
+                let trimmed = line.trim_end();
+                if !trimmed.is_empty() {
+                    eprintln!(" row {i}: {trimmed:?}");
+                }
+            }
+        }
+    }
 
- assert!(
- saw_prompt,
- "plain send_input(\\x03) must kill yes — PTY input buffer should not be full"
- );
+    assert!(
+        saw_prompt,
+        "plain send_input(\\x03) must kill yes — PTY input buffer should not be full"
+    );
 
- client.close_pane(pane_id);
+    client.close_pane(pane_id);
 }
 
 /// Canonical regression pin for : `signal_child(Interrupt)` alone
@@ -1740,94 +1740,94 @@ fn plain_ctrl_c_without_signal_child() {
 /// 25106848046) was latent here — fixing both keeps them deterministic.
 #[test]
 fn signal_child_alone_kills_flooding_process() {
- if !python3_available() {
- eprintln!("SKIP: python3 not available, skipping (job-control wrapper requires it)");
- return;
- }
- let daemon = TestDaemon::start();
- let mut client = daemon.connect_client();
+    if !python3_available() {
+        eprintln!("SKIP: python3 not available, skipping (job-control wrapper requires it)");
+        return;
+    }
+    let daemon = TestDaemon::start();
+    let mut client = daemon.connect_client();
 
- let pane_id = spawn_test_pane_ready(&mut client);
+    let pane_id = spawn_test_pane_ready(&mut client);
 
- client.send_input(pane_id, YES_FOREGROUND_WRAPPER.as_bytes());
+    client.send_input(pane_id, YES_FOREGROUND_WRAPPER.as_bytes());
 
- // Wait for FG_READY — proves `tcsetpgrp(0, yes_pgid)` ran before
- // `yes` was unblocked. Until this sentinel appears, the kernel's
- // foreground PGID is still the shell's, and `signal_child`'s
- // `tcgetpgrp(master_fd)` would resolve to the shell.
- wait_for_text_in_snapshot(&mut client, pane_id, "FG_READY", Duration::from_secs(30));
+    // Wait for FG_READY — proves `tcsetpgrp(0, yes_pgid)` ran before
+    // `yes` was unblocked. Until this sentinel appears, the kernel's
+    // foreground PGID is still the shell's, and `signal_child`'s
+    // `tcgetpgrp(master_fd)` would resolve to the shell.
+    wait_for_text_in_snapshot(&mut client, pane_id, "FG_READY", Duration::from_secs(30));
 
- // Ack — unblocks the wrapper so the child can `execvp('yes')`. See
- // `YES_FOREGROUND_WRAPPER` doc for why the stdin ack is required: without
- // it, `yes` starts flooding microseconds after `FG_READY` is printed and
- // the sentinel scrolls off the visible snapshot before the next poll.
- client.send_input(pane_id, b"\n");
+    // Ack — unblocks the wrapper so the child can `execvp('yes')`. See
+    // `YES_FOREGROUND_WRAPPER` doc for why the stdin ack is required: without
+    // it, `yes` starts flooding microseconds after `FG_READY` is printed and
+    // the sentinel scrolls off the visible snapshot before the next poll.
+    client.send_input(pane_id, b"\n");
 
- // Then wait for `yes` flooding to start.
- let deadline = Instant::now() + Duration::from_secs(10);
- loop {
- client.poll_events();
- let mut n = Vec::new();
- client.drain_notifications(&mut n);
- if let Some(snap) = client.refresh_pane_snapshot(pane_id) {
- if snap.cells.iter().any(|row| {
- row.iter()
- .map(|c| c.ch)
- .collect::<String>()
- .starts_with('y')
- }) {
- break;
- }
- }
- assert!(Instant::now() < deadline, "timed out waiting for `yes`");
- thread::sleep(Duration::from_millis(50));
- }
+    // Then wait for `yes` flooding to start.
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        client.poll_events();
+        let mut n = Vec::new();
+        client.drain_notifications(&mut n);
+        if let Some(snap) = client.refresh_pane_snapshot(pane_id) {
+            if snap.cells.iter().any(|row| {
+                row.iter()
+                    .map(|c| c.ch)
+                    .collect::<String>()
+                    .starts_with('y')
+            }) {
+                break;
+            }
+        }
+        assert!(Instant::now() < deadline, "timed out waiting for `yes`");
+        thread::sleep(Duration::from_millis(50));
+    }
 
- // Send ONLY signal_child — no send_input. The signal must reach the
- // foreground PGID via tcgetpgrp(master_fd) and kill `yes`. The python
- // wrapper above prints FG_GONE after waitpid returns, which proves
- // the foreground job died and the parent regained control.
- client.signal_child(pane_id, oriterm_mux::Signal::Interrupt);
+    // Send ONLY signal_child — no send_input. The signal must reach the
+    // foreground PGID via tcgetpgrp(master_fd) and kill `yes`. The python
+    // wrapper above prints FG_GONE after waitpid returns, which proves
+    // the foreground job died and the parent regained control.
+    client.signal_child(pane_id, oriterm_mux::Signal::Interrupt);
 
- // The python wrapper's parent prints FG_GONE after waitpid returns —
- // that's the load-bearing assertion: the foreground job (yes) died,
- // and the parent regained control. Generous 30-second deadline; the
- // assertion is on the condition, the deadline is the safety valve.
- let deadline = Instant::now() + Duration::from_secs(30);
- let mut saw_fg_gone = false;
- while Instant::now() < deadline {
- client.poll_events();
- let mut n = Vec::new();
- client.drain_notifications(&mut n);
- if let Some(snap) = client.refresh_pane_snapshot(pane_id) {
- if snapshot_contains(snap, "FG_GONE") {
- saw_fg_gone = true;
- break;
- }
- }
- thread::sleep(Duration::from_millis(50));
- }
+    // The python wrapper's parent prints FG_GONE after waitpid returns —
+    // that's the load-bearing assertion: the foreground job (yes) died,
+    // and the parent regained control. Generous 30-second deadline; the
+    // assertion is on the condition, the deadline is the safety valve.
+    let deadline = Instant::now() + Duration::from_secs(30);
+    let mut saw_fg_gone = false;
+    while Instant::now() < deadline {
+        client.poll_events();
+        let mut n = Vec::new();
+        client.drain_notifications(&mut n);
+        if let Some(snap) = client.refresh_pane_snapshot(pane_id) {
+            if snapshot_contains(snap, "FG_GONE") {
+                saw_fg_gone = true;
+                break;
+            }
+        }
+        thread::sleep(Duration::from_millis(50));
+    }
 
- if !saw_fg_gone {
- // Dump snapshot for diagnosis.
- if let Some(snap) = client.refresh_pane_snapshot(pane_id) {
- eprintln!("=== Snapshot after signal_child ===");
- for (i, row) in snap.cells.iter().enumerate() {
- let line: String = row.iter().map(|c| c.ch).collect();
- let trimmed = line.trim_end();
- if !trimmed.is_empty() {
- eprintln!(" row {i}: {trimmed:?}");
- }
- }
- }
- }
+    if !saw_fg_gone {
+        // Dump snapshot for diagnosis.
+        if let Some(snap) = client.refresh_pane_snapshot(pane_id) {
+            eprintln!("=== Snapshot after signal_child ===");
+            for (i, row) in snap.cells.iter().enumerate() {
+                let line: String = row.iter().map(|c| c.ch).collect();
+                let trimmed = line.trim_end();
+                if !trimmed.is_empty() {
+                    eprintln!(" row {i}: {trimmed:?}");
+                }
+            }
+        }
+    }
 
- assert!(
- saw_fg_gone,
- "signal_child(Interrupt) alone must kill the foreground `yes` job"
- );
+    assert!(
+        saw_fg_gone,
+        "signal_child(Interrupt) alone must kill the foreground `yes` job"
+    );
 
- client.close_pane(pane_id);
+    client.close_pane(pane_id);
 }
 
 // ---------------------------------------------------------------------------
@@ -1837,26 +1837,26 @@ fn signal_child_alone_kills_flooding_process() {
 /// Wait until `client.drain_notifications` produces a notification matched by
 /// `pred`. Returns the matched notification (moved out of the buffer).
 fn wait_for_notification<F>(
- client: &mut MuxClient,
- mut pred: F,
- timeout: Duration,
+    client: &mut MuxClient,
+    mut pred: F,
+    timeout: Duration,
 ) -> Option<MuxNotification>
 where
- F: FnMut(&MuxNotification) -> bool,
+    F: FnMut(&MuxNotification) -> bool,
 {
- let deadline = Instant::now() + timeout;
- let mut buf = Vec::new();
- loop {
- client.poll_events();
- client.drain_notifications(&mut buf);
- if let Some(idx) = buf.iter().position(&mut pred) {
- return Some(buf.swap_remove(idx));
- }
- if Instant::now() > deadline {
- return None;
- }
- thread::sleep(Duration::from_millis(20));
- }
+    let deadline = Instant::now() + timeout;
+    let mut buf = Vec::new();
+    loop {
+        client.poll_events();
+        client.drain_notifications(&mut buf);
+        if let Some(idx) = buf.iter().position(&mut pred) {
+            return Some(buf.swap_remove(idx));
+        }
+        if Instant::now() > deadline {
+            return None;
+        }
+        thread::sleep(Duration::from_millis(20));
+    }
 }
 
 /// : OSC 52 clipboard read from a daemon-mode pane round-trips
@@ -1865,42 +1865,42 @@ where
 /// reply (`\x1b]52;c;<base64>\x1b\\`) back to the pane's PTY.
 #[test]
 fn daemon_osc_52_clipboard_read_round_trip() {
- let daemon = TestDaemon::start();
- let mut client = daemon.connect_client();
- let pane_id = spawn_test_pane_ready(&mut client);
+    let daemon = TestDaemon::start();
+    let mut client = daemon.connect_client();
+    let pane_id = spawn_test_pane_ready(&mut client);
 
- // Trigger an OSC 52 read inside the shell. `cat` keeps the slave open so
- // the OSC reply (written to the PTY input) is echoed back to PTY output
- // by the kernel's tty-line discipline (echo on by default).
- client.send_input(pane_id, b"printf '\\033]52;c;?\\033\\\\' && cat\n");
+    // Trigger an OSC 52 read inside the shell. `cat` keeps the slave open so
+    // the OSC reply (written to the PTY input) is echoed back to PTY output
+    // by the kernel's tty-line discipline (echo on by default).
+    client.send_input(pane_id, b"printf '\\033]52;c;?\\033\\\\' && cat\n");
 
- let notif = wait_for_notification(
- &mut client,
- |n| matches!(n, MuxNotification::HostClipboardLoad { .. }),
- Duration::from_secs(30),
- )
- .expect("daemon must forward OSC 52 read as HostClipboardLoad");
+    let notif = wait_for_notification(
+        &mut client,
+        |n| matches!(n, MuxNotification::HostClipboardLoad { .. }),
+        Duration::from_secs(30),
+    )
+    .expect("daemon must forward OSC 52 read as HostClipboardLoad");
 
- let token = match notif {
- MuxNotification::HostClipboardLoad { reply, .. } => reply,
- _ => unreachable!(),
- };
- client
- .fulfill_host_request(
- pane_id,
- oriterm_mux::HostReply::ClipboardLoad {
- token,
- text: "hello".into(),
- },
- )
- .expect("fulfill_host_request must succeed");
+    let token = match notif {
+        MuxNotification::HostClipboardLoad { reply, .. } => reply,
+        _ => unreachable!(),
+    };
+    client
+        .fulfill_host_request(
+            pane_id,
+            oriterm_mux::HostReply::ClipboardLoad {
+                token,
+                text: "hello".into(),
+            },
+        )
+        .expect("fulfill_host_request must succeed");
 
- // OSC 52 reply for "hello" base64-encodes to "aGVsbG8=" — search the
- // snapshot for that token (PTY echoes the reply back to the user).
- wait_for_text_in_snapshot(&mut client, pane_id, "aGVsbG8", Duration::from_secs(30));
+    // OSC 52 reply for "hello" base64-encodes to "aGVsbG8=" — search the
+    // snapshot for that token (PTY echoes the reply back to the user).
+    wait_for_text_in_snapshot(&mut client, pane_id, "aGVsbG8", Duration::from_secs(30));
 
- client.send_input(pane_id, &[0x03]); // Ctrl+C to terminate cat.
- client.close_pane(pane_id);
+    client.send_input(pane_id, &[0x03]); // Ctrl+C to terminate cat.
+    client.close_pane(pane_id);
 }
 
 /// OSC 10 (default foreground) color query round-trips through the
@@ -1917,22 +1917,22 @@ fn daemon_osc_52_clipboard_read_round_trip() {
 /// `daemon_osc_52_clipboard_round_trip` for that coverage.
 #[test]
 fn daemon_osc_10_color_query_round_trip() {
- let daemon = TestDaemon::start();
- let mut client = daemon.connect_client();
- let pane_id = spawn_test_pane_ready(&mut client);
+    let daemon = TestDaemon::start();
+    let mut client = daemon.connect_client();
+    let pane_id = spawn_test_pane_ready(&mut client);
 
- client.send_input(pane_id, b"printf '\\033]10;?\\033\\\\' && cat\n");
+    client.send_input(pane_id, b"printf '\\033]10;?\\033\\\\' && cat\n");
 
- // Wait for the synchronous OSC 10 reply pattern in the snapshot.
- // The reply format is `rgb:RRRR/GGGG/BBBB` per XParseColor; the
- // assertion uses the bare `rgb:` prefix because the exact palette
- // values depend on the daemon's default palette config (which is
- // not test-injectable). `cat` echoes the bytes back through the
- // PTY so the client sees them in the snapshot.
- wait_for_text_in_snapshot(&mut client, pane_id, "rgb:", Duration::from_secs(30));
+    // Wait for the synchronous OSC 10 reply pattern in the snapshot.
+    // The reply format is `rgb:RRRR/GGGG/BBBB` per XParseColor; the
+    // assertion uses the bare `rgb:` prefix because the exact palette
+    // values depend on the daemon's default palette config (which is
+    // not test-injectable). `cat` echoes the bytes back through the
+    // PTY so the client sees them in the snapshot.
+    wait_for_text_in_snapshot(&mut client, pane_id, "rgb:", Duration::from_secs(30));
 
- client.send_input(pane_id, &[0x03]);
- client.close_pane(pane_id);
+    client.send_input(pane_id, &[0x03]);
+    client.close_pane(pane_id);
 }
 
 /// : pending host-replies for a closed pane are reaped during
@@ -1941,51 +1941,51 @@ fn daemon_osc_10_color_query_round_trip() {
 /// daemon's `pending_host_replies` map is not unbounded).
 #[test]
 fn daemon_host_request_cleanup_on_pane_close() {
- let daemon = TestDaemon::start();
- let mut client = daemon.connect_client();
- let pane_id = spawn_test_pane_ready(&mut client);
+    let daemon = TestDaemon::start();
+    let mut client = daemon.connect_client();
+    let pane_id = spawn_test_pane_ready(&mut client);
 
- client.send_input(pane_id, b"printf '\\033]52;c;?\\033\\\\' && cat\n");
- let notif = wait_for_notification(
- &mut client,
- |n| matches!(n, MuxNotification::HostClipboardLoad { .. }),
- Duration::from_secs(30),
- )
- .expect("first request must reach client");
- // Drop the token *without* fulfilling — simulates the consumer abandoning
- // the request. The daemon's pending entry MUST be reaped on pane close,
- // not held forever.
- drop(notif);
+    client.send_input(pane_id, b"printf '\\033]52;c;?\\033\\\\' && cat\n");
+    let notif = wait_for_notification(
+        &mut client,
+        |n| matches!(n, MuxNotification::HostClipboardLoad { .. }),
+        Duration::from_secs(30),
+    )
+    .expect("first request must reach client");
+    // Drop the token *without* fulfilling — simulates the consumer abandoning
+    // the request. The daemon's pending entry MUST be reaped on pane close,
+    // not held forever.
+    drop(notif);
 
- client.close_pane(pane_id);
+    client.close_pane(pane_id);
 
- // Issue another request from a fresh pane; verify the wire path still
- // works (the daemon hasn't been wedged by the abandoned token).
- let pane_id2 = spawn_test_pane_ready(&mut client);
- client.send_input(pane_id2, b"printf '\\033]52;c;?\\033\\\\' && cat\n");
- let notif2 = wait_for_notification(
- &mut client,
- |n| matches!(n, MuxNotification::HostClipboardLoad { .. }),
- Duration::from_secs(30),
- )
- .expect("second request after pane close must succeed");
- let token = match notif2 {
- MuxNotification::HostClipboardLoad { reply, .. } => reply,
- _ => unreachable!(),
- };
- client
- .fulfill_host_request(
- pane_id2,
- oriterm_mux::HostReply::ClipboardLoad {
- token,
- text: "world".into(),
- },
- )
- .expect("fulfill_host_request must succeed");
+    // Issue another request from a fresh pane; verify the wire path still
+    // works (the daemon hasn't been wedged by the abandoned token).
+    let pane_id2 = spawn_test_pane_ready(&mut client);
+    client.send_input(pane_id2, b"printf '\\033]52;c;?\\033\\\\' && cat\n");
+    let notif2 = wait_for_notification(
+        &mut client,
+        |n| matches!(n, MuxNotification::HostClipboardLoad { .. }),
+        Duration::from_secs(30),
+    )
+    .expect("second request after pane close must succeed");
+    let token = match notif2 {
+        MuxNotification::HostClipboardLoad { reply, .. } => reply,
+        _ => unreachable!(),
+    };
+    client
+        .fulfill_host_request(
+            pane_id2,
+            oriterm_mux::HostReply::ClipboardLoad {
+                token,
+                text: "world".into(),
+            },
+        )
+        .expect("fulfill_host_request must succeed");
 
- wait_for_text_in_snapshot(&mut client, pane_id2, "d29ybGQ", Duration::from_secs(30));
- client.send_input(pane_id2, &[0x03]);
- client.close_pane(pane_id2);
+    wait_for_text_in_snapshot(&mut client, pane_id2, "d29ybGQ", Duration::from_secs(30));
+    client.send_input(pane_id2, &[0x03]);
+    client.close_pane(pane_id2);
 }
 
 /// `subscribe_pane` and `set_pane_priority` were
@@ -1994,58 +1994,58 @@ fn daemon_host_request_cleanup_on_pane_close() {
 /// another client and receive its snapshots independently.
 #[test]
 fn daemon_multi_client_subscribe_and_priority() {
- let daemon = TestDaemon::start();
+    let daemon = TestDaemon::start();
 
- // Client A spawns a pane and sends identifiable output.
- let mut client_a = daemon.connect_client();
- let pane_id = spawn_test_pane_ready(&mut client_a);
- client_a.send_input(pane_id, b"echo CLIENT_A_SUBSCRIBED\n");
- wait_for_text_in_snapshot(
- &mut client_a,
- pane_id,
- "CLIENT_A_SUBSCRIBED",
- Duration::from_secs(30),
- );
+    // Client A spawns a pane and sends identifiable output.
+    let mut client_a = daemon.connect_client();
+    let pane_id = spawn_test_pane_ready(&mut client_a);
+    client_a.send_input(pane_id, b"echo CLIENT_A_SUBSCRIBED\n");
+    wait_for_text_in_snapshot(
+        &mut client_a,
+        pane_id,
+        "CLIENT_A_SUBSCRIBED",
+        Duration::from_secs(30),
+    );
 
- // Client B subscribes to the same pane via the public subscribe API.
- let mut client_b = daemon.connect_client();
- client_b
- .subscribe(pane_id)
- .expect("subscribe must succeed for connected client");
+    // Client B subscribes to the same pane via the public subscribe API.
+    let mut client_b = daemon.connect_client();
+    client_b
+        .subscribe(pane_id)
+        .expect("subscribe must succeed for connected client");
 
- // Client B can now see the pane's content independently.
- let snap_b = client_b
- .pane_snapshot(pane_id)
- .expect("snapshot cached after subscribe");
- assert!(
- snapshot_contains(&snap_b, "CLIENT_A_SUBSCRIBED"),
- "client B must see output produced before it subscribed"
- );
+    // Client B can now see the pane's content independently.
+    let snap_b = client_b
+        .pane_snapshot(pane_id)
+        .expect("snapshot cached after subscribe");
+    assert!(
+        snapshot_contains(&snap_b, "CLIENT_A_SUBSCRIBED"),
+        "client B must see output produced before it subscribed"
+    );
 
- // Set priorities — lower u8 = higher priority.
- client_a
- .set_pane_priority(pane_id, 0)
- .expect("set_pane_priority must succeed");
- client_b
- .set_pane_priority(pane_id, 10)
- .expect("set_pane_priority must succeed");
+    // Set priorities — lower u8 = higher priority.
+    client_a
+        .set_pane_priority(pane_id, 0)
+        .expect("set_pane_priority must succeed");
+    client_b
+        .set_pane_priority(pane_id, 10)
+        .expect("set_pane_priority must succeed");
 
- // Send more output from client A — both clients should see it.
- client_a.send_input(pane_id, b"echo POST_PRIORITY_OUTPUT\n");
- wait_for_text_in_snapshot(
- &mut client_a,
- pane_id,
- "POST_PRIORITY_OUTPUT",
- Duration::from_secs(30),
- );
- wait_for_text_in_snapshot(
- &mut client_b,
- pane_id,
- "POST_PRIORITY_OUTPUT",
- Duration::from_secs(30),
- );
+    // Send more output from client A — both clients should see it.
+    client_a.send_input(pane_id, b"echo POST_PRIORITY_OUTPUT\n");
+    wait_for_text_in_snapshot(
+        &mut client_a,
+        pane_id,
+        "POST_PRIORITY_OUTPUT",
+        Duration::from_secs(30),
+    );
+    wait_for_text_in_snapshot(
+        &mut client_b,
+        pane_id,
+        "POST_PRIORITY_OUTPUT",
+        Duration::from_secs(30),
+    );
 
- client_a.close_pane(pane_id);
+    client_a.close_pane(pane_id);
 }
 
 // — daemon-mode `is_write_stalled` RPC tests
@@ -2054,16 +2054,16 @@ fn daemon_multi_client_subscribe_and_priority() {
 /// must report `is_write_stalled == false` (writer is idle, not blocked).
 #[test]
 fn is_write_stalled_returns_false_for_idle_pane_via_daemon() {
- let daemon = TestDaemon::start();
- let mut client = daemon.connect_client();
- let pane_id = spawn_test_pane_ready(&mut client);
+    let daemon = TestDaemon::start();
+    let mut client = daemon.connect_client();
+    let pane_id = spawn_test_pane_ready(&mut client);
 
- assert!(
- !client.is_write_stalled(pane_id),
- "is_write_stalled must be false for a freshly spawned, idle pane"
- );
+    assert!(
+        !client.is_write_stalled(pane_id),
+        "is_write_stalled must be false for a freshly spawned, idle pane"
+    );
 
- client.close_pane(pane_id);
+    client.close_pane(pane_id);
 }
 
 /// Regression: querying `is_write_stalled` for a pane the daemon
@@ -2071,16 +2071,16 @@ fn is_write_stalled_returns_false_for_idle_pane_via_daemon() {
 /// must not panic.
 #[test]
 fn is_write_stalled_returns_false_for_unknown_pane_via_daemon() {
- let daemon = TestDaemon::start();
- let mut client = daemon.connect_client();
- let bogus = PaneId::from_raw(99_999);
+    let daemon = TestDaemon::start();
+    let mut client = daemon.connect_client();
+    let bogus = PaneId::from_raw(99_999);
 
- assert!(
- !client.is_write_stalled(bogus),
- "is_write_stalled must return false for an unknown pane id, not panic"
- );
+    assert!(
+        !client.is_write_stalled(bogus),
+        "is_write_stalled must return false for an unknown pane id, not panic"
+    );
 
- let _ = daemon;
+    let _ = daemon;
 }
 
 /// Regression: under sustained PTY-buffer-fill, the daemon-mode
@@ -2098,16 +2098,16 @@ fn is_write_stalled_returns_false_for_unknown_pane_via_daemon() {
 /// when the snapshot shows the sentinel, the `stty` command has completed and
 /// `sleep 600` is in the foreground.
 fn configure_pane_for_stall(client: &mut MuxClient, pane_id: PaneId) {
- client.send_input(
- pane_id,
- b"stty raw -echo; echo BUG_11_020_CONFIG_DONE; sleep 600\n",
- );
- wait_for_text_in_snapshot(
- client,
- pane_id,
- "BUG_11_020_CONFIG_DONE",
- Duration::from_secs(30),
- );
+    client.send_input(
+        pane_id,
+        b"stty raw -echo; echo BUG_11_020_CONFIG_DONE; sleep 600\n",
+    );
+    wait_for_text_in_snapshot(
+        client,
+        pane_id,
+        "BUG_11_020_CONFIG_DONE",
+        Duration::from_secs(30),
+    );
 }
 
 /// Pump 1 MiB chunks until `client.is_write_stalled(pane_id)` returns `true`
@@ -2120,34 +2120,34 @@ fn configure_pane_for_stall(client: &mut MuxClient, pane_id: PaneId) {
 /// CPU-constrained CI runners once any RPC saw the 5 s `RPC_TIMEOUT`. See
 /// §05 step 5.
 fn pump_until_stalled(client: &mut MuxClient, pane_id: PaneId) -> bool {
- let payload = vec![b'x'; 1024 * 1024];
- let deadline = Instant::now() + Duration::from_secs(30);
- while Instant::now() < deadline {
- client.send_input(pane_id, &payload);
- if client.is_write_stalled(pane_id) {
- return true;
- }
- thread::sleep(Duration::from_millis(2));
- }
- false
+    let payload = vec![b'x'; 1024 * 1024];
+    let deadline = Instant::now() + Duration::from_secs(30);
+    while Instant::now() < deadline {
+        client.send_input(pane_id, &payload);
+        if client.is_write_stalled(pane_id) {
+            return true;
+        }
+        thread::sleep(Duration::from_millis(2));
+    }
+    false
 }
 
 #[test]
 fn is_write_stalled_returns_true_when_writer_blocked_via_daemon() {
- let daemon = TestDaemon::start();
- let mut client = daemon.connect_client();
- let pane_id = spawn_test_pane_ready(&mut client);
+    let daemon = TestDaemon::start();
+    let mut client = daemon.connect_client();
+    let pane_id = spawn_test_pane_ready(&mut client);
 
- configure_pane_for_stall(&mut client, pane_id);
- let observed = pump_until_stalled(&mut client, pane_id);
- assert!(
- observed,
- "is_write_stalled must flip to true under sustained writer pressure"
- );
+    configure_pane_for_stall(&mut client, pane_id);
+    let observed = pump_until_stalled(&mut client, pane_id);
+    assert!(
+        observed,
+        "is_write_stalled must flip to true under sustained writer pressure"
+    );
 
- // Cleanup: signal the foreground sleep so it dies, then close.
- client.signal_child(pane_id, oriterm_mux::Signal::Interrupt);
- client.close_pane(pane_id);
+    // Cleanup: signal the foreground sleep so it dies, then close.
+    client.signal_child(pane_id, oriterm_mux::Signal::Interrupt);
+    client.close_pane(pane_id);
 }
 
 /// Regression: `is_write_stalled` is keyed per-pane, not a global
@@ -2156,28 +2156,28 @@ fn is_write_stalled_returns_true_when_writer_blocked_via_daemon() {
 /// 3-of-3 reviewer agreement).
 #[test]
 fn is_write_stalled_isolates_per_pane_via_daemon() {
- let daemon = TestDaemon::start();
- let mut client = daemon.connect_client();
- let stalled_pane = spawn_test_pane_ready(&mut client);
- let idle_pane = spawn_test_pane_ready(&mut client);
+    let daemon = TestDaemon::start();
+    let mut client = daemon.connect_client();
+    let stalled_pane = spawn_test_pane_ready(&mut client);
+    let idle_pane = spawn_test_pane_ready(&mut client);
 
- configure_pane_for_stall(&mut client, stalled_pane);
- let observed = pump_until_stalled(&mut client, stalled_pane);
- assert!(
- observed,
- "stalled_pane must enter stall under sustained writer pressure"
- );
+    configure_pane_for_stall(&mut client, stalled_pane);
+    let observed = pump_until_stalled(&mut client, stalled_pane);
+    assert!(
+        observed,
+        "stalled_pane must enter stall under sustained writer pressure"
+    );
 
- // Sibling idle pane MUST report false despite stalled_pane's state.
- assert!(
- !client.is_write_stalled(idle_pane),
- "idle sibling pane must report is_write_stalled == false; \
+    // Sibling idle pane MUST report false despite stalled_pane's state.
+    assert!(
+        !client.is_write_stalled(idle_pane),
+        "idle sibling pane must report is_write_stalled == false; \
  per-pane keying must not be muddled by another pane's stall",
- );
+    );
 
- client.signal_child(stalled_pane, oriterm_mux::Signal::Interrupt);
- client.close_pane(stalled_pane);
- client.close_pane(idle_pane);
+    client.signal_child(stalled_pane, oriterm_mux::Signal::Interrupt);
+    client.close_pane(stalled_pane);
+    client.close_pane(idle_pane);
 }
 
 /// Regression: once daemon-mode `is_write_stalled` reports `true`,
@@ -2186,74 +2186,74 @@ fn is_write_stalled_isolates_per_pane_via_daemon() {
 /// `ctrl_c_during_flood_via_signal_child` with a stall-specific pin.
 #[test]
 fn signal_child_after_is_write_stalled_kills_writer_via_daemon() {
- let daemon = TestDaemon::start();
- let mut client = daemon.connect_client();
- let pane_id = spawn_test_pane_ready(&mut client);
+    let daemon = TestDaemon::start();
+    let mut client = daemon.connect_client();
+    let pane_id = spawn_test_pane_ready(&mut client);
 
- // Inline fixture that prints `FG_GONE` after sleep dies — confirms
- // signal_child reached the foreground PGID and bash continued to the
- // next command. Synchronization via `BUG_11_020_CONFIG_DONE` sentinel
- // (poll-the-condition per `tests.md §Wall-Clock-Free Testing`).
- client.send_input(
- pane_id,
- b"stty raw -echo; echo BUG_11_020_CONFIG_DONE; sleep 600; stty cooked echo; echo FG_GONE\n",
- );
- wait_for_text_in_snapshot(
- &mut client,
- pane_id,
- "BUG_11_020_CONFIG_DONE",
- Duration::from_secs(30),
- );
+    // Inline fixture that prints `FG_GONE` after sleep dies — confirms
+    // signal_child reached the foreground PGID and bash continued to the
+    // next command. Synchronization via `BUG_11_020_CONFIG_DONE` sentinel
+    // (poll-the-condition per `tests.md §Wall-Clock-Free Testing`).
+    client.send_input(
+        pane_id,
+        b"stty raw -echo; echo BUG_11_020_CONFIG_DONE; sleep 600; stty cooked echo; echo FG_GONE\n",
+    );
+    wait_for_text_in_snapshot(
+        &mut client,
+        pane_id,
+        "BUG_11_020_CONFIG_DONE",
+        Duration::from_secs(30),
+    );
 
- let observed = pump_until_stalled(&mut client, pane_id);
- assert!(
- observed,
- "writer must enter stall before the signal_child path is exercised"
- );
+    let observed = pump_until_stalled(&mut client, pane_id);
+    assert!(
+        observed,
+        "writer must enter stall before the signal_child path is exercised"
+    );
 
- // Stall-specific regression: signal_child must succeed even when the
- // writer is blocked on `write()`. This exercises the canonical "detect
- // stall via is_write_stalled, fall through to direct signal" flow.
- let signaled = client.signal_child(pane_id, oriterm_mux::Signal::Interrupt);
- assert!(
- signaled,
- "signal_child must succeed against a stalled writer"
- );
+    // Stall-specific regression: signal_child must succeed even when the
+    // writer is blocked on `write()`. This exercises the canonical "detect
+    // stall via is_write_stalled, fall through to direct signal" flow.
+    let signaled = client.signal_child(pane_id, oriterm_mux::Signal::Interrupt);
+    assert!(
+        signaled,
+        "signal_child must succeed against a stalled writer"
+    );
 
- // After signal_child kills sleep (foreground PGID), bash continues
- // through the rest of the pipeline (stty cooked echo; echo FG_GONE).
- // The sentinel appears in the snapshot once bash regains the prompt.
- // Deadline-as-safety per `tests.md §Wall-Clock-Free Testing`.
- let deadline = Instant::now() + Duration::from_secs(30);
- let mut saw_fg_gone = false;
- while Instant::now() < deadline {
- client.poll_events();
- let mut notifs = Vec::new();
- client.drain_notifications(&mut notifs);
- if let Some(snap) = client.refresh_pane_snapshot(pane_id) {
- if snapshot_contains(snap, "FG_GONE") {
- saw_fg_gone = true;
- break;
- }
- }
- thread::sleep(Duration::from_millis(50));
- }
- assert!(
- saw_fg_gone,
- "signal_child after detected stall must kill sleep and let bash print FG_GONE"
- );
+    // After signal_child kills sleep (foreground PGID), bash continues
+    // through the rest of the pipeline (stty cooked echo; echo FG_GONE).
+    // The sentinel appears in the snapshot once bash regains the prompt.
+    // Deadline-as-safety per `tests.md §Wall-Clock-Free Testing`.
+    let deadline = Instant::now() + Duration::from_secs(30);
+    let mut saw_fg_gone = false;
+    while Instant::now() < deadline {
+        client.poll_events();
+        let mut notifs = Vec::new();
+        client.drain_notifications(&mut notifs);
+        if let Some(snap) = client.refresh_pane_snapshot(pane_id) {
+            if snapshot_contains(snap, "FG_GONE") {
+                saw_fg_gone = true;
+                break;
+            }
+        }
+        thread::sleep(Duration::from_millis(50));
+    }
+    assert!(
+        saw_fg_gone,
+        "signal_child after detected stall must kill sleep and let bash print FG_GONE"
+    );
 
- client.close_pane(pane_id);
+    client.close_pane(pane_id);
 }
 
 /// Returns true iff `notcurses-info` is installed and runnable.
 fn notcurses_info_available() -> bool {
- std::process::Command::new("notcurses-info")
- .stdin(std::process::Stdio::null())
- .stdout(std::process::Stdio::null())
- .stderr(std::process::Stdio::null())
- .status()
- .is_ok_and(|s| s.success())
+    std::process::Command::new("notcurses-info")
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .is_ok_and(|s| s.success())
 }
 
 /// Replication test for the user-observable `notcurses-info` wordmark
@@ -2280,113 +2280,113 @@ fn notcurses_info_available() -> bool {
 /// assertion passes.
 #[test]
 fn notcurses_info_user_repro_e2e_full_stack() {
- if !notcurses_info_available() {
- eprintln!("SKIP: notcurses-info not installed");
- return;
- }
+    if !notcurses_info_available() {
+        eprintln!("SKIP: notcurses-info not installed");
+        return;
+    }
 
- let daemon = TestDaemon::start();
- let mut client = daemon.connect_client();
+    let daemon = TestDaemon::start();
+    let mut client = daemon.connect_client();
 
- // The GUI applies post-spawn config after spawn_pane returns. For
- // the daemon-side Term to behave like production, we have to do
- // the same. spawn_test_pane_ready() spawns the pane but does NOT
- // run apply_post_spawn_setup (that lives in oriterm/src/app/).
- // Apply it inline here.
- let pane_id = spawn_test_pane(&mut client);
+    // The GUI applies post-spawn config after spawn_pane returns. For
+    // the daemon-side Term to behave like production, we have to do
+    // the same. spawn_test_pane_ready() spawns the pane but does NOT
+    // run apply_post_spawn_setup (that lives in oriterm/src/app/).
+    // Apply it inline here.
+    let pane_id = spawn_test_pane(&mut client);
 
- use oriterm_mux::backend::{ImageConfig, MuxBackend};
- // User-equivalent image config: enabled, ample CPU cache (typical
- // production defaults), animation enabled. Matches Config::default
- // in oriterm/src/config/terminal.rs for the `image_config()` field.
- client.set_image_config(
- pane_id,
- ImageConfig {
- enabled: true,
- memory_limit: 256 * 1024 * 1024,
- max_single: 64 * 1024 * 1024,
- animation_enabled: true,
- },
- );
- // User log line 20: "1280x960 px, 105 cols × 37 rows" with
- // Cascadia Mono 12pt. cell_w = 1280 / 105 ≈ 12 px; cell_h =
- // (960 - 36 chrome) / 37 ≈ 25 px. Apply matching dims so the
- // CSI 14t reply our handler emits matches the user's grid.
- client.set_cell_dimensions(pane_id, 12, 25);
- // Resize the daemon-side grid to match the user's setup so the
- // CSI 14t reply uses cols=105 × rows=37, matching what notcurses
- // sees on the user's machine.
- client.resize_pane_grid(pane_id, 37, 105);
+    use oriterm_mux::backend::{ImageConfig, MuxBackend};
+    // User-equivalent image config: enabled, ample CPU cache (typical
+    // production defaults), animation enabled. Matches Config::default
+    // in oriterm/src/config/terminal.rs for the `image_config()` field.
+    client.set_image_config(
+        pane_id,
+        ImageConfig {
+            enabled: true,
+            memory_limit: 256 * 1024 * 1024,
+            max_single: 64 * 1024 * 1024,
+            animation_enabled: true,
+        },
+    );
+    // User log line 20: "1280x960 px, 105 cols × 37 rows" with
+    // Cascadia Mono 12pt. cell_w = 1280 / 105 ≈ 12 px; cell_h =
+    // (960 - 36 chrome) / 37 ≈ 25 px. Apply matching dims so the
+    // CSI 14t reply our handler emits matches the user's grid.
+    client.set_cell_dimensions(pane_id, 12, 25);
+    // Resize the daemon-side grid to match the user's setup so the
+    // CSI 14t reply uses cols=105 × rows=37, matching what notcurses
+    // sees on the user's machine.
+    client.resize_pane_grid(pane_id, 37, 105);
 
- // Now wait for shell readiness — the post-spawn config above
- // applies BEFORE the user types `notcurses-info`.
- wait_for_shell_ready(&mut client, pane_id);
+    // Now wait for shell readiness — the post-spawn config above
+    // applies BEFORE the user types `notcurses-info`.
+    wait_for_shell_ready(&mut client, pane_id);
 
- client.poll_events();
- let mut notifs = Vec::new();
- client.drain_notifications(&mut notifs);
+    client.poll_events();
+    let mut notifs = Vec::new();
+    client.drain_notifications(&mut notifs);
 
- // Drive notcurses-info + sentinel echo. The sentinel stays in the
- // grid AFTER notcurses-info's output scrolls past, so wait_for_text
- // has a stable anchor.
- client.send_input(pane_id, b"notcurses-info; echo USER_REPRO_DONE\n");
- let _ = wait_for_text_in_snapshot(
- &mut client,
- pane_id,
- "USER_REPRO_DONE",
- Duration::from_secs(60),
- );
+    // Drive notcurses-info + sentinel echo. The sentinel stays in the
+    // grid AFTER notcurses-info's output scrolls past, so wait_for_text
+    // has a stable anchor.
+    client.send_input(pane_id, b"notcurses-info; echo USER_REPRO_DONE\n");
+    let _ = wait_for_text_in_snapshot(
+        &mut client,
+        pane_id,
+        "USER_REPRO_DONE",
+        Duration::from_secs(60),
+    );
 
- // Drain pushed_snapshots → client image_cache for 5s so any
- // late pushes (post-notcurses-info exit) settle.
- let deadline = Instant::now() + Duration::from_secs(5);
- while Instant::now() < deadline {
- client.poll_events();
- notifs.clear();
- client.drain_notifications(&mut notifs);
- let _ = client.refresh_pane_snapshot(pane_id);
- if notifs.is_empty() {
- thread::sleep(Duration::from_millis(50));
- }
- }
+    // Drain pushed_snapshots → client image_cache for 5s so any
+    // late pushes (post-notcurses-info exit) settle.
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while Instant::now() < deadline {
+        client.poll_events();
+        notifs.clear();
+        client.drain_notifications(&mut notifs);
+        let _ = client.refresh_pane_snapshot(pane_id);
+        if notifs.is_empty() {
+            thread::sleep(Duration::from_millis(50));
+        }
+    }
 
- // Pull a final guaranteed-fresh snapshot.
- let snap = client
- .sync_pane_snapshot(pane_id)
- .expect("sync_pane_snapshot must return a snapshot after notcurses-info ran");
+    // Pull a final guaranteed-fresh snapshot.
+    let snap = client
+        .sync_pane_snapshot(pane_id)
+        .expect("sync_pane_snapshot must return a snapshot after notcurses-info ran");
 
- eprintln!(
- "user-repro snapshot: images.len={} image_data.len={} cols={} rows={}",
- snap.images.len(),
- snap.image_data.len(),
- snap.cols,
- snap.cells.len(),
- );
+    eprintln!(
+        "user-repro snapshot: images.len={} image_data.len={} cols={} rows={}",
+        snap.images.len(),
+        snap.image_data.len(),
+        snap.cols,
+        snap.cells.len(),
+    );
 
- assert!(
- !snap.images.is_empty(),
- "USER REPRO: no placement reached the client — notcurses-info \
+    assert!(
+        !snap.images.is_empty(),
+        "USER REPRO: no placement reached the client — notcurses-info \
  did not transmit any image-protocol bytes OR the bytes were \
  dropped before our handler stored them. This is the user's \
  visible-symptom #1 (wordmark BLANK)."
- );
+    );
 
- // Every placement's image_id must resolve to pixel data (inline
- // or via the client's image_cache from earlier pushes).
- for wp in &snap.images {
- let id = oriterm_core::ImageId::from_raw(wp.image_id);
- let inline = snap.image_data.iter().find(|d| d.id == wp.image_id);
- let cached = client.pane_image_data(pane_id, id);
- assert!(
- inline.is_some() || cached.is_some(),
- "USER REPRO: placement {} reached client but no pixel \
+    // Every placement's image_id must resolve to pixel data (inline
+    // or via the client's image_cache from earlier pushes).
+    for wp in &snap.images {
+        let id = oriterm_core::ImageId::from_raw(wp.image_id);
+        let inline = snap.image_data.iter().find(|d| d.id == wp.image_id);
+        let cached = client.pane_image_data(pane_id, id);
+        assert!(
+            inline.is_some() || cached.is_some(),
+            "USER REPRO: placement {} reached client but no pixel \
  data is available (inline nor cached). Wordmark would \
  render blank.",
- wp.image_id
- );
- }
+            wp.image_id
+        );
+    }
 
- client.close_pane(pane_id);
+    client.close_pane(pane_id);
 }
 
 /// Hypothesis-pin: if the GUI calls `set_cell_dimensions(pane_id, 0, 0)`
@@ -2404,81 +2404,81 @@ fn notcurses_info_user_repro_e2e_full_stack() {
 /// AND a different code path zeroes the Term's defaults).
 #[test]
 fn notcurses_info_zero_cell_dims_disables_canpixel() {
- if !notcurses_info_available() {
- eprintln!("SKIP: notcurses-info not installed");
- return;
- }
+    if !notcurses_info_available() {
+        eprintln!("SKIP: notcurses-info not installed");
+        return;
+    }
 
- let daemon = TestDaemon::start();
- let mut client = daemon.connect_client();
- let pane_id = spawn_test_pane(&mut client);
+    let daemon = TestDaemon::start();
+    let mut client = daemon.connect_client();
+    let pane_id = spawn_test_pane(&mut client);
 
- use oriterm_mux::backend::{ImageConfig, MuxBackend};
- client.set_image_config(
- pane_id,
- ImageConfig {
- enabled: true,
- memory_limit: 256 * 1024 * 1024,
- max_single: 64 * 1024 * 1024,
- animation_enabled: true,
- },
- );
- // Deliberate zero cell dims — the hypothesized cure surface.
- client.set_cell_dimensions(pane_id, 0, 0);
- client.resize_pane_grid(pane_id, 37, 105);
- wait_for_shell_ready(&mut client, pane_id);
+    use oriterm_mux::backend::{ImageConfig, MuxBackend};
+    client.set_image_config(
+        pane_id,
+        ImageConfig {
+            enabled: true,
+            memory_limit: 256 * 1024 * 1024,
+            max_single: 64 * 1024 * 1024,
+            animation_enabled: true,
+        },
+    );
+    // Deliberate zero cell dims — the hypothesized cure surface.
+    client.set_cell_dimensions(pane_id, 0, 0);
+    client.resize_pane_grid(pane_id, 37, 105);
+    wait_for_shell_ready(&mut client, pane_id);
 
- client.poll_events();
- let mut notifs = Vec::new();
- client.drain_notifications(&mut notifs);
+    client.poll_events();
+    let mut notifs = Vec::new();
+    client.drain_notifications(&mut notifs);
 
- client.send_input(pane_id, b"notcurses-info; echo ZERO_CELL_DONE\n");
- let _ = wait_for_text_in_snapshot(
- &mut client,
- pane_id,
- "ZERO_CELL_DONE",
- Duration::from_secs(60),
- );
+    client.send_input(pane_id, b"notcurses-info; echo ZERO_CELL_DONE\n");
+    let _ = wait_for_text_in_snapshot(
+        &mut client,
+        pane_id,
+        "ZERO_CELL_DONE",
+        Duration::from_secs(60),
+    );
 
- let deadline = Instant::now() + Duration::from_secs(5);
- while Instant::now() < deadline {
- client.poll_events();
- notifs.clear();
- client.drain_notifications(&mut notifs);
- let _ = client.refresh_pane_snapshot(pane_id);
- if notifs.is_empty() {
- thread::sleep(Duration::from_millis(50));
- }
- }
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while Instant::now() < deadline {
+        client.poll_events();
+        notifs.clear();
+        client.drain_notifications(&mut notifs);
+        let _ = client.refresh_pane_snapshot(pane_id);
+        if notifs.is_empty() {
+            thread::sleep(Duration::from_millis(50));
+        }
+    }
 
- let snap = client
- .sync_pane_snapshot(pane_id)
- .expect("sync_pane_snapshot must return a snapshot");
+    let snap = client
+        .sync_pane_snapshot(pane_id)
+        .expect("sync_pane_snapshot must return a snapshot");
 
- eprintln!(
- "zero-cell-dims snapshot: images.len={} image_data.len={}",
- snap.images.len(),
- snap.image_data.len(),
- );
+    eprintln!(
+        "zero-cell-dims snapshot: images.len={} image_data.len={}",
+        snap.images.len(),
+        snap.image_data.len(),
+    );
 
- // The HYPOTHESIS: with zero cell dims, notcurses-info's canpixel
- // returns NCPIXEL_NONE → display_logo() is skipped → NO kitty
- // graphics bytes → snap.images is empty.
- // If this assertion PASSES (images.is_empty()), the hypothesis is
- // confirmed: zero cell dims cause the wordmark blank.
- // If this assertion FAILS (images.len > 0), then notcurses
- // emitted bytes regardless of zero cell dims, and the user's
- // symptom has a different root cause.
- assert!(
- snap.images.is_empty(),
- "HYPOTHESIS REJECTED: zero cell_dimensions did NOT prevent \
+    // The HYPOTHESIS: with zero cell dims, notcurses-info's canpixel
+    // returns NCPIXEL_NONE → display_logo() is skipped → NO kitty
+    // graphics bytes → snap.images is empty.
+    // If this assertion PASSES (images.is_empty()), the hypothesis is
+    // confirmed: zero cell dims cause the wordmark blank.
+    // If this assertion FAILS (images.len > 0), then notcurses
+    // emitted bytes regardless of zero cell dims, and the user's
+    // symptom has a different root cause.
+    assert!(
+        snap.images.is_empty(),
+        "HYPOTHESIS REJECTED: zero cell_dimensions did NOT prevent \
  notcurses-info from emitting image bytes. snap.images={:?}. \
  The user's symptom must have a different root cause than \
  zero cell dims.",
- snap.images.iter().map(|p| p.image_id).collect::<Vec<_>>()
- );
+        snap.images.iter().map(|p| p.image_id).collect::<Vec<_>>()
+    );
 
- client.close_pane(pane_id);
+    client.close_pane(pane_id);
 }
 
 /// End-to-end: real daemon + MuxClient + shell + notcurses-info → assert
@@ -2497,162 +2497,160 @@ fn notcurses_info_zero_cell_dims_disables_canpixel() {
 /// (width / height / data.len all > 0 and consistent).
 #[test]
 fn notcurses_info_daemon_e2e_image_data_reaches_client() {
- if !notcurses_info_available() {
- eprintln!("SKIP: notcurses-info not installed");
- return;
- }
+    if !notcurses_info_available() {
+        eprintln!("SKIP: notcurses-info not installed");
+        return;
+    }
 
- let daemon = TestDaemon::start();
- let mut client = daemon.connect_client();
- let pane_id = spawn_test_pane_ready(&mut client);
+    let daemon = TestDaemon::start();
+    let mut client = daemon.connect_client();
+    let pane_id = spawn_test_pane_ready(&mut client);
 
- // Wait for any post-init dirty / draining to settle before sending
- // the command — keeps the wait_for_text loop from racing on a fence
- // snapshot.
- client.poll_events();
- let mut notifs = Vec::new();
- client.drain_notifications(&mut notifs);
+    // Wait for any post-init dirty / draining to settle before sending
+    // the command — keeps the wait_for_text loop from racing on a fence
+    // snapshot.
+    client.poll_events();
+    let mut notifs = Vec::new();
+    client.drain_notifications(&mut notifs);
 
- // Drive notcurses-info inside the shell, then print a sentinel so
- // the wait_for_text loop has something STABLE in the grid even after
- // notcurses-info's longer-than-viewport output scrolls past. The
- // sentinel lands on the new shell prompt line and stays visible.
- // Send notcurses-info via the shell, then immediately invoke `cat`
- // to BLOCK the shell so no subsequent prompt redraw scrolls the
- // kitty placement off the visible region. Without this hold,
- // notcurses-info's trailing render plus the shell's prompt redraw
- // produce CUP/scroll sequences that evict the placement and trigger
- // `prune_if_orphaned`, leaving the LATEST snapshot with zero
- // placements. Pre-cure (chunked-action inheritance bug), an extra
- // duplicate placement at a different row happened to survive the
- // scroll long enough for the test to catch it; post-cure that
- // incidental safety is gone, so we must explicitly hold the shell
- // open while the assertion fetches the snapshot.
- client.send_input(pane_id, b"notcurses-info; cat\n");
+    // Drive notcurses-info inside the shell, then print a sentinel so
+    // the wait_for_text loop has something STABLE in the grid even after
+    // notcurses-info's longer-than-viewport output scrolls past. The
+    // sentinel lands on the new shell prompt line and stays visible.
+    // Send notcurses-info via the shell, then immediately invoke `cat`
+    // to BLOCK the shell so no subsequent prompt redraw scrolls the
+    // kitty placement off the visible region. Without this hold,
+    // notcurses-info's trailing render plus the shell's prompt redraw
+    // produce CUP/scroll sequences that evict the placement and trigger
+    // `prune_if_orphaned`, leaving the LATEST snapshot with zero
+    // placements. Pre-cure (chunked-action inheritance bug), an extra
+    // duplicate placement at a different row happened to survive the
+    // scroll long enough for the test to catch it; post-cure that
+    // incidental safety is gone, so we must explicitly hold the shell
+    // open while the assertion fetches the snapshot.
+    client.send_input(pane_id, b"notcurses-info; cat\n");
 
- // Poll for a snapshot carrying a placement. `cat` blocks the shell
- // indefinitely so once notcurses-info has emitted its kitty graphics
- // bytes, the placement persists. 30 s ceiling — cold-start + slow
- // CI runners.
- let snap_with_placement: PaneSnapshot = {
- let deadline = Instant::now() + Duration::from_secs(30);
- let mut captured: Option<PaneSnapshot> = None;
- while Instant::now() < deadline {
- client.poll_events();
- notifs.clear();
- client.drain_notifications(&mut notifs);
- let _ = client.refresh_pane_snapshot(pane_id);
- if let Some(snap) = client.sync_pane_snapshot(pane_id)
- && !snap.images.is_empty()
- {
- captured = Some(snap);
- break;
- }
- if notifs.is_empty() {
- thread::sleep(Duration::from_millis(20));
- }
- }
- captured.expect(
- "daemon-to-client e2e: no snapshot with a placement arrived within 30s",
- )
- };
+    // Poll for a snapshot carrying a placement. `cat` blocks the shell
+    // indefinitely so once notcurses-info has emitted its kitty graphics
+    // bytes, the placement persists. 30 s ceiling — cold-start + slow
+    // CI runners.
+    let snap_with_placement: PaneSnapshot = {
+        let deadline = Instant::now() + Duration::from_secs(30);
+        let mut captured: Option<PaneSnapshot> = None;
+        while Instant::now() < deadline {
+            client.poll_events();
+            notifs.clear();
+            client.drain_notifications(&mut notifs);
+            let _ = client.refresh_pane_snapshot(pane_id);
+            if let Some(snap) = client.sync_pane_snapshot(pane_id)
+                && !snap.images.is_empty()
+            {
+                captured = Some(snap);
+                break;
+            }
+            if notifs.is_empty() {
+                thread::sleep(Duration::from_millis(20));
+            }
+        }
+        captured.expect("daemon-to-client e2e: no snapshot with a placement arrived within 30s")
+    };
 
- // Release the `cat` hold by sending EOF (Ctrl+D) so the shell can
- // exit cleanly. Drain notifications afterwards so the daemon settles.
- client.send_input(pane_id, b"\x04");
+    // Release the `cat` hold by sending EOF (Ctrl+D) so the shell can
+    // exit cleanly. Drain notifications afterwards so the daemon settles.
+    client.send_input(pane_id, b"\x04");
 
- // Drain pending push events so image_data folds into client cache.
- let deadline = Instant::now() + Duration::from_secs(5);
- loop {
- client.poll_events();
- notifs.clear();
- client.drain_notifications(&mut notifs);
- let _ = client.refresh_pane_snapshot(pane_id);
- if notifs.is_empty() {
- thread::sleep(Duration::from_millis(50));
- }
- if Instant::now() >= deadline {
- break;
- }
- }
+    // Drain pending push events so image_data folds into client cache.
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        client.poll_events();
+        notifs.clear();
+        client.drain_notifications(&mut notifs);
+        let _ = client.refresh_pane_snapshot(pane_id);
+        if notifs.is_empty() {
+            thread::sleep(Duration::from_millis(50));
+        }
+        if Instant::now() >= deadline {
+            break;
+        }
+    }
 
- let snap = snap_with_placement;
+    let snap = snap_with_placement;
 
- eprintln!(
- "e2e snapshot: images.len={} image_data.len={} images_dirty={}",
- snap.images.len(),
- snap.image_data.len(),
- snap.images_dirty,
- );
- for (i, wp) in snap.images.iter().enumerate() {
- eprintln!(
- " placement[{i}]: id={} viewport=({},{}) display={}x{} z={}",
- wp.image_id,
- wp.viewport_x,
- wp.viewport_y,
- wp.display_width,
- wp.display_height,
- wp.z_index
- );
- }
- for (i, wid) in snap.image_data.iter().enumerate() {
- eprintln!(
- " image_data[{i}]: id={} {}x{} px, data.len={}B",
- wid.id,
- wid.width,
- wid.height,
- wid.data.len()
- );
- }
+    eprintln!(
+        "e2e snapshot: images.len={} image_data.len={} images_dirty={}",
+        snap.images.len(),
+        snap.image_data.len(),
+        snap.images_dirty,
+    );
+    for (i, wp) in snap.images.iter().enumerate() {
+        eprintln!(
+            " placement[{i}]: id={} viewport=({},{}) display={}x{} z={}",
+            wp.image_id,
+            wp.viewport_x,
+            wp.viewport_y,
+            wp.display_width,
+            wp.display_height,
+            wp.z_index
+        );
+    }
+    for (i, wid) in snap.image_data.iter().enumerate() {
+        eprintln!(
+            " image_data[{i}]: id={} {}x{} px, data.len={}B",
+            wid.id,
+            wid.width,
+            wid.height,
+            wid.data.len()
+        );
+    }
 
- assert!(
- !snap.images.is_empty(),
- "daemon→client e2e: no placement reached the client after notcurses-info — \
+    assert!(
+        !snap.images.is_empty(),
+        "daemon→client e2e: no placement reached the client after notcurses-info — \
  the kitty graphics bytes did not flow through one of: handler, snapshot, \
  project_per_client_pure, wire codec, or client cache_snapshot path"
- );
+    );
 
- // Note: snap.image_data MAY be empty here because the daemon's
- // project_per_client_pure filters out pixel data for image IDs the
- // client has already received (sent_images marker). The earlier push
- // delivered the image_data and it now lives in client.image_cache.
- // Every placement's image_id must resolve to a non-empty entry —
- // either inline in this snapshot OR via client.pane_image_data().
- use oriterm_mux::backend::MuxBackend;
- for wp in &snap.images {
- let id = oriterm_core::ImageId::from_raw(wp.image_id);
- // Try inline first.
- if let Some(wid) = snap.image_data.iter().find(|d| d.id == wp.image_id) {
- assert!(
- wid.width > 0 && wid.height > 0 && !wid.data.is_empty(),
- "inline image_data for placement {} has zero/empty bytes \
+    // Note: snap.image_data MAY be empty here because the daemon's
+    // project_per_client_pure filters out pixel data for image IDs the
+    // client has already received (sent_images marker). The earlier push
+    // delivered the image_data and it now lives in client.image_cache.
+    // Every placement's image_id must resolve to a non-empty entry —
+    // either inline in this snapshot OR via client.pane_image_data().
+    use oriterm_mux::backend::MuxBackend;
+    for wp in &snap.images {
+        let id = oriterm_core::ImageId::from_raw(wp.image_id);
+        // Try inline first.
+        if let Some(wid) = snap.image_data.iter().find(|d| d.id == wp.image_id) {
+            assert!(
+                wid.width > 0 && wid.height > 0 && !wid.data.is_empty(),
+                "inline image_data for placement {} has zero/empty bytes \
  ({}x{}, data.len={})",
- wp.image_id,
- wid.width,
- wid.height,
- wid.data.len()
- );
- continue;
- }
- // Fall through to client's image_cache (where pushed image_data
- // gets folded on prior snapshots).
- let arc = client.pane_image_data(pane_id, id).unwrap_or_else(|| {
- panic!(
- "placement {} has no inline image_data AND no entry in the \
+                wp.image_id,
+                wid.width,
+                wid.height,
+                wid.data.len()
+            );
+            continue;
+        }
+        // Fall through to client's image_cache (where pushed image_data
+        // gets folded on prior snapshots).
+        let arc = client.pane_image_data(pane_id, id).unwrap_or_else(|| {
+            panic!(
+                "placement {} has no inline image_data AND no entry in the \
  client's image_cache — the wordmark would render BLANK at the GPU",
- wp.image_id
- )
- });
- assert!(
- arc.width > 0 && arc.height > 0 && !arc.data.is_empty(),
- "client.image_cache entry for placement {} has zero/empty bytes \
+                wp.image_id
+            )
+        });
+        assert!(
+            arc.width > 0 && arc.height > 0 && !arc.data.is_empty(),
+            "client.image_cache entry for placement {} has zero/empty bytes \
  ({}x{}, data.len={})",
- wp.image_id,
- arc.width,
- arc.height,
- arc.data.len()
- );
- }
+            wp.image_id,
+            arc.width,
+            arc.height,
+            arc.data.len()
+        );
+    }
 
- client.close_pane(pane_id);
+    client.close_pane(pane_id);
 }

@@ -25,31 +25,31 @@ use crate::PtySession;
 /// [`oriterm_core::encode_enter_base`] for the SSOT.
 /// Returns the number of screens for which `on_screen` was called.
 pub fn walk_vttest_screens<F>(
- session: &mut PtySession,
- max_screens: usize,
- extra_sentinels: &[&str],
- mut on_screen: F,
+    session: &mut PtySession,
+    max_screens: usize,
+    extra_sentinels: &[&str],
+    mut on_screen: F,
 ) -> usize
 where
- F: FnMut(&mut PtySession, &str, usize),
+    F: FnMut(&mut PtySession, &str, usize),
 {
- let mut count = 0usize;
- let mut screen = 1usize;
- loop {
- let text = session.grid_text();
- if text.contains("Enter choice number") || extra_sentinels.iter().any(|s| text.contains(s))
- {
- break;
- }
- if count >= max_screens {
- break;
- }
- on_screen(session, &text, screen);
- count += 1;
- session.send_enter();
- screen += 1;
- }
- count
+    let mut count = 0usize;
+    let mut screen = 1usize;
+    loop {
+        let text = session.grid_text();
+        if text.contains("Enter choice number") || extra_sentinels.iter().any(|s| text.contains(s))
+        {
+            break;
+        }
+        if count >= max_screens {
+            break;
+        }
+        on_screen(session, &text, screen);
+        count += 1;
+        session.send_enter();
+        screen += 1;
+    }
+    count
 }
 
 #[cfg(test)]

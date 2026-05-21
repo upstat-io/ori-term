@@ -28,9 +28,7 @@ impl ImageCache {
         let (image_w, image_h) = match self.images.get(&req.image_id) {
             Some(img) => (img.width, img.height),
             None => {
-                return Err(ImageError::MissingImage {
-                    id: req.image_id.0,
-                });
+                return Err(ImageError::MissingImage { id: req.image_id.0 });
             }
         };
 
@@ -57,22 +55,10 @@ impl ImageCache {
         let height = if req.height == 0 { image_h } else { req.height };
 
         // Step 5: bounds checks (overflow-safe; reject if rect leaves the image).
-        let dest_ok = req
-            .dst_x
-            .checked_add(width)
-            .is_some_and(|s| s <= image_w)
-            && req
-                .dst_y
-                .checked_add(height)
-                .is_some_and(|s| s <= image_h);
-        let src_ok = req
-            .src_x
-            .checked_add(width)
-            .is_some_and(|s| s <= image_w)
-            && req
-                .src_y
-                .checked_add(height)
-                .is_some_and(|s| s <= image_h);
+        let dest_ok = req.dst_x.checked_add(width).is_some_and(|s| s <= image_w)
+            && req.dst_y.checked_add(height).is_some_and(|s| s <= image_h);
+        let src_ok = req.src_x.checked_add(width).is_some_and(|s| s <= image_w)
+            && req.src_y.checked_add(height).is_some_and(|s| s <= image_h);
         if !dest_ok || !src_ok {
             return Err(ImageError::OversizedBlit {
                 blit_w: width,

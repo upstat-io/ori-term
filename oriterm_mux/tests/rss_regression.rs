@@ -14,7 +14,7 @@
 //! does NOT show monotonic growth past a 256 KiB OS-noise tolerance.
 //!
 //! Regression:.
-//! See: 
+//! See:
 
 #![cfg(target_os = "linux")]
 
@@ -43,73 +43,73 @@ static RSS_LOCK: Mutex<()> = Mutex::new(());
 
 #[must_use]
 struct RssTestGuard {
- _lock: MutexGuard<'static, ()>,
+    _lock: MutexGuard<'static, ()>,
 }
 
 impl RssTestGuard {
- fn new() -> Self {
- Self {
- _lock: RSS_LOCK.lock().unwrap_or_else(|e| e.into_inner()),
- }
- }
+    fn new() -> Self {
+        Self {
+            _lock: RSS_LOCK.lock().unwrap_or_else(|e| e.into_inner()),
+        }
+    }
 }
 
 /// Read the current process RSS in bytes via `/proc/self/statm`.
 fn rss_bytes() -> usize {
- let statm = std::fs::read_to_string("/proc/self/statm").expect("read /proc/self/statm");
- let resident_pages: usize = statm
- .split_whitespace()
- .nth(1)
- .expect("statm rss field")
- .parse()
- .expect("parse rss pages");
- resident_pages * 4096
+    let statm = std::fs::read_to_string("/proc/self/statm").expect("read /proc/self/statm");
+    let resident_pages: usize = statm
+        .split_whitespace()
+        .nth(1)
+        .expect("statm rss field")
+        .parse()
+        .expect("parse rss pages");
+    resident_pages * 4096
 }
 
 /// `SpawnConfig` that runs a flooding command directly (no shell integration).
 fn flood_spawn_config() -> SpawnConfig {
- SpawnConfig {
- cols: 80,
- rows: 24,
- shell: Some("yes".into()),
- cwd: None,
- env: Vec::new(),
- scrollback: 1000,
- // Disable shell integration so CommandBuilder runs `yes` directly
- // rather than injecting bash/zsh hooks.
- shell_integration: false,
- }
+    SpawnConfig {
+        cols: 80,
+        rows: 24,
+        shell: Some("yes".into()),
+        cwd: None,
+        env: Vec::new(),
+        scrollback: 1000,
+        // Disable shell integration so CommandBuilder runs `yes` directly
+        // rather than injecting bash/zsh hooks.
+        shell_integration: false,
+    }
 }
 
 /// `SpawnConfig` for a quiet pane — `cat` blocks reading from PTY stdin.
 fn quiet_spawn_config() -> SpawnConfig {
- SpawnConfig {
- cols: 80,
- rows: 24,
- shell: Some("cat".into()),
- cwd: None,
- env: Vec::new(),
- scrollback: 1000,
- shell_integration: false,
- }
+    SpawnConfig {
+        cols: 80,
+        rows: 24,
+        shell: Some("cat".into()),
+        cwd: None,
+        env: Vec::new(),
+        scrollback: 1000,
+        shell_integration: false,
+    }
 }
 
 /// Pump events for `dur`, calling `poll_events` and yielding briefly between
 /// calls so the IO thread (background) gets scheduling time.
 fn pump_for<B: MuxBackend>(mux: &mut B, dur: Duration) {
- let deadline = Instant::now() + dur;
- while Instant::now() < deadline {
- mux.poll_events();
- std::thread::sleep(Duration::from_millis(20));
- }
+    let deadline = Instant::now() + dur;
+    while Instant::now() < deadline {
+        mux.poll_events();
+        std::thread::sleep(Duration::from_millis(20));
+    }
 }
 
 /// Format a measurement series as MB strings for assertion messages.
 fn fmt_mb(samples: &[usize]) -> Vec<String> {
- samples
- .iter()
- .map(|&b| format!("{:.1}", b as f64 / MB as f64))
- .collect()
+    samples
+        .iter()
+        .map(|&b| format!("{:.1}", b as f64 / MB as f64))
+        .collect()
 }
 
 /// Repro test — RSS plateaus under sustained PTY flood.
@@ -120,42 +120,42 @@ fn fmt_mb(samples: &[usize]) -> Vec<String> {
 /// `BYTE_CHANNEL_MEMORY_BUDGET = 1 MiB` and producing a stable plateau.
 #[test]
 fn mux_rss_plateaus_under_sustained_flood() {
- let _guard = RssTestGuard::new();
- let wakeup: Arc<dyn Fn() + Send + Sync> = Arc::new(|| {});
- let mut mux = EmbeddedMux::new(wakeup);
+    let _guard = RssTestGuard::new();
+    let wakeup: Arc<dyn Fn() + Send + Sync> = Arc::new(|| {});
+    let mut mux = EmbeddedMux::new(wakeup);
 
- let _pane_id = mux
- .spawn_pane(&flood_spawn_config(), Theme::Dark)
- .expect("spawn pane");
+    let _pane_id = mux
+        .spawn_pane(&flood_spawn_config(), Theme::Dark)
+        .expect("spawn pane");
 
- // Take 6 samples: a short warmup window then 5 wider windows so the
- // trend assertion has room to discriminate growth from noise.
- let mut measurements = Vec::with_capacity(6);
- for i in 0..6 {
- let win = if i == 0 {
- Duration::from_millis(200)
- } else {
- Duration::from_millis(800)
- };
- pump_for(&mut mux, win);
- measurements.push(rss_bytes());
- }
+    // Take 6 samples: a short warmup window then 5 wider windows so the
+    // trend assertion has room to discriminate growth from noise.
+    let mut measurements = Vec::with_capacity(6);
+    for i in 0..6 {
+        let win = if i == 0 {
+            Duration::from_millis(200)
+        } else {
+            Duration::from_millis(800)
+        };
+        pump_for(&mut mux, win);
+        measurements.push(rss_bytes());
+    }
 
- // After 2 warmup samples, the remaining 4 must NOT all grow past the
- // OS-noise tolerance — a real leak would scale with input volume,
- // crossing the threshold every step.
- let post_warmup = &measurements[2..];
- let all_increasing = post_warmup
- .windows(2)
- .all(|w| w[1] > w[0] + NOISE_TOLERANCE);
+    // After 2 warmup samples, the remaining 4 must NOT all grow past the
+    // OS-noise tolerance — a real leak would scale with input volume,
+    // crossing the threshold every step.
+    let post_warmup = &measurements[2..];
+    let all_increasing = post_warmup
+        .windows(2)
+        .all(|w| w[1] > w[0] + NOISE_TOLERANCE);
 
- assert!(
- !all_increasing,
- "RSS grew monotonically under sustained flood — bounded channel back-pressure failed. \
+    assert!(
+        !all_increasing,
+        "RSS grew monotonically under sustained flood — bounded channel back-pressure failed. \
  samples: {:?} (MB: {:?})",
- measurements,
- fmt_mb(&measurements),
- );
+        measurements,
+        fmt_mb(&measurements),
+    );
 }
 
 /// Regression guard — RSS does NOT exhibit unbounded-growth pattern.
@@ -167,37 +167,37 @@ fn mux_rss_plateaus_under_sustained_flood() {
 /// well under that range.
 #[test]
 fn mux_rss_negative_no_unbounded_growth() {
- let _guard = RssTestGuard::new();
- let wakeup: Arc<dyn Fn() + Send + Sync> = Arc::new(|| {});
- let mut mux = EmbeddedMux::new(wakeup);
- let _pane_id = mux
- .spawn_pane(&flood_spawn_config(), Theme::Dark)
- .expect("spawn pane");
+    let _guard = RssTestGuard::new();
+    let wakeup: Arc<dyn Fn() + Send + Sync> = Arc::new(|| {});
+    let mut mux = EmbeddedMux::new(wakeup);
+    let _pane_id = mux
+        .spawn_pane(&flood_spawn_config(), Theme::Dark)
+        .expect("spawn pane");
 
- let mut measurements = Vec::with_capacity(6);
- for i in 0..6 {
- let win = if i == 0 {
- Duration::from_millis(200)
- } else {
- Duration::from_millis(800)
- };
- pump_for(&mut mux, win);
- measurements.push(rss_bytes());
- }
+    let mut measurements = Vec::with_capacity(6);
+    for i in 0..6 {
+        let win = if i == 0 {
+            Duration::from_millis(200)
+        } else {
+            Duration::from_millis(800)
+        };
+        pump_for(&mut mux, win);
+        measurements.push(rss_bytes());
+    }
 
- // Post-warmup max - min must stay under 50 MB. Pre-fix this would
- // exceed 100 MB during a 4 s window.
- let post_warmup = &measurements[2..];
- let max = *post_warmup.iter().max().expect("≥1 post-warmup sample");
- let min = *post_warmup.iter().min().expect("≥1 post-warmup sample");
- let delta = max - min;
- assert!(
- delta < 50 * MB,
- "RSS post-warmup delta = {:.1} MB (allowed < 50 MB). samples: {:?} (MB: {:?})",
- delta as f64 / MB as f64,
- measurements,
- fmt_mb(&measurements),
- );
+    // Post-warmup max - min must stay under 50 MB. Pre-fix this would
+    // exceed 100 MB during a 4 s window.
+    let post_warmup = &measurements[2..];
+    let max = *post_warmup.iter().max().expect("≥1 post-warmup sample");
+    let min = *post_warmup.iter().min().expect("≥1 post-warmup sample");
+    let delta = max - min;
+    assert!(
+        delta < 50 * MB,
+        "RSS post-warmup delta = {:.1} MB (allowed < 50 MB). samples: {:?} (MB: {:?})",
+        delta as f64 / MB as f64,
+        measurements,
+        fmt_mb(&measurements),
+    );
 }
 
 /// Baseline — empty pane RSS does not grow without flood input.
@@ -207,28 +207,28 @@ fn mux_rss_negative_no_unbounded_growth() {
 /// shape is sensitive to actual workload, not test harness overhead.
 #[test]
 fn mux_rss_bounded_empty_pane() {
- let _guard = RssTestGuard::new();
- let wakeup: Arc<dyn Fn() + Send + Sync> = Arc::new(|| {});
- let mut mux = EmbeddedMux::new(wakeup);
- let _pane_id = mux
- .spawn_pane(&quiet_spawn_config(), Theme::Dark)
- .expect("spawn pane");
+    let _guard = RssTestGuard::new();
+    let wakeup: Arc<dyn Fn() + Send + Sync> = Arc::new(|| {});
+    let mut mux = EmbeddedMux::new(wakeup);
+    let _pane_id = mux
+        .spawn_pane(&quiet_spawn_config(), Theme::Dark)
+        .expect("spawn pane");
 
- let mut measurements = Vec::with_capacity(4);
- for _ in 0..4 {
- pump_for(&mut mux, Duration::from_millis(500));
- measurements.push(rss_bytes());
- }
+    let mut measurements = Vec::with_capacity(4);
+    for _ in 0..4 {
+        pump_for(&mut mux, Duration::from_millis(500));
+        measurements.push(rss_bytes());
+    }
 
- let all_increasing = measurements
- .windows(2)
- .all(|w| w[1] > w[0] + NOISE_TOLERANCE);
- assert!(
- !all_increasing,
- "Empty pane (no flood) RSS grew monotonically: {:?} (MB: {:?})",
- measurements,
- fmt_mb(&measurements),
- );
+    let all_increasing = measurements
+        .windows(2)
+        .all(|w| w[1] > w[0] + NOISE_TOLERANCE);
+    assert!(
+        !all_increasing,
+        "Empty pane (no flood) RSS grew monotonically: {:?} (MB: {:?})",
+        measurements,
+        fmt_mb(&measurements),
+    );
 }
 
 /// Cross-pane interaction — multiple panes flooding simultaneously.
@@ -239,36 +239,36 @@ fn mux_rss_bounded_empty_pane() {
 /// with pane count, not with input volume.
 #[test]
 fn mux_rss_plateaus_with_multiple_panes() {
- let _guard = RssTestGuard::new();
- let wakeup: Arc<dyn Fn() + Send + Sync> = Arc::new(|| {});
- let mut mux = EmbeddedMux::new(wakeup);
+    let _guard = RssTestGuard::new();
+    let wakeup: Arc<dyn Fn() + Send + Sync> = Arc::new(|| {});
+    let mut mux = EmbeddedMux::new(wakeup);
 
- for _ in 0..4 {
- mux.spawn_pane(&flood_spawn_config(), Theme::Dark)
- .expect("spawn pane");
- }
+    for _ in 0..4 {
+        mux.spawn_pane(&flood_spawn_config(), Theme::Dark)
+            .expect("spawn pane");
+    }
 
- let mut measurements = Vec::with_capacity(6);
- for i in 0..6 {
- let win = if i == 0 {
- Duration::from_millis(300)
- } else {
- Duration::from_millis(700)
- };
- pump_for(&mut mux, win);
- measurements.push(rss_bytes());
- }
+    let mut measurements = Vec::with_capacity(6);
+    for i in 0..6 {
+        let win = if i == 0 {
+            Duration::from_millis(300)
+        } else {
+            Duration::from_millis(700)
+        };
+        pump_for(&mut mux, win);
+        measurements.push(rss_bytes());
+    }
 
- let post_warmup = &measurements[2..];
- let all_increasing = post_warmup
- .windows(2)
- .all(|w| w[1] > w[0] + NOISE_TOLERANCE);
- assert!(
- !all_increasing,
- "RSS grew monotonically with 4 flooding panes: {:?} (MB: {:?})",
- measurements,
- fmt_mb(&measurements),
- );
+    let post_warmup = &measurements[2..];
+    let all_increasing = post_warmup
+        .windows(2)
+        .all(|w| w[1] > w[0] + NOISE_TOLERANCE);
+    assert!(
+        !all_increasing,
+        "RSS grew monotonically with 4 flooding panes: {:?} (MB: {:?})",
+        measurements,
+        fmt_mb(&measurements),
+    );
 }
 
 /// Resize during flood — bounded channels do not deadlock the resize path.
@@ -280,57 +280,57 @@ fn mux_rss_plateaus_with_multiple_panes() {
 /// ( owns the Resize-coalescing-via-AtomicU64 follow-up).
 #[test]
 fn mux_rss_plateaus_through_resize() {
- let _guard = RssTestGuard::new();
- let wakeup: Arc<dyn Fn() + Send + Sync> = Arc::new(|| {});
- let mut mux = EmbeddedMux::new(wakeup);
+    let _guard = RssTestGuard::new();
+    let wakeup: Arc<dyn Fn() + Send + Sync> = Arc::new(|| {});
+    let mut mux = EmbeddedMux::new(wakeup);
 
- let pane_id = mux
- .spawn_pane(&flood_spawn_config(), Theme::Dark)
- .expect("spawn pane");
+    let pane_id = mux
+        .spawn_pane(&flood_spawn_config(), Theme::Dark)
+        .expect("spawn pane");
 
- let mut measurements = Vec::with_capacity(5);
- let mut resize_observed = false;
- for i in 0..5 {
- if i == 2 {
- mux.resize_pane_grid(pane_id, 30, 100);
- }
- let win = if i == 0 {
- Duration::from_millis(200)
- } else {
- Duration::from_millis(700)
- };
- pump_for(&mut mux, win);
+    let mut measurements = Vec::with_capacity(5);
+    let mut resize_observed = false;
+    for i in 0..5 {
+        if i == 2 {
+            mux.resize_pane_grid(pane_id, 30, 100);
+        }
+        let win = if i == 0 {
+            Duration::from_millis(200)
+        } else {
+            Duration::from_millis(700)
+        };
+        pump_for(&mut mux, win);
 
- // After the resize, poll the snapshot (per pump tick) until it
- // reports the new dimensions. Sets `resize_observed` once seen
- // so the assertion at the end of the test fails fast if the
- // resize was silently dropped.
- if i >= 2 && !resize_observed {
- if let Some(snap) = mux.refresh_pane_snapshot(pane_id) {
- if snap.cells.len() == 30 && snap.cols == 100 {
- resize_observed = true;
- }
- }
- }
+        // After the resize, poll the snapshot (per pump tick) until it
+        // reports the new dimensions. Sets `resize_observed` once seen
+        // so the assertion at the end of the test fails fast if the
+        // resize was silently dropped.
+        if i >= 2 && !resize_observed {
+            if let Some(snap) = mux.refresh_pane_snapshot(pane_id) {
+                if snap.cells.len() == 30 && snap.cols == 100 {
+                    resize_observed = true;
+                }
+            }
+        }
 
- measurements.push(rss_bytes());
- }
+        measurements.push(rss_bytes());
+    }
 
- assert!(
- resize_observed,
- "Mid-flood resize never landed in a published snapshot — IO thread \
+    assert!(
+        resize_observed,
+        "Mid-flood resize never landed in a published snapshot — IO thread \
  may be deadlocked or the resize command was dropped. samples: {:?}",
- measurements,
- );
+        measurements,
+    );
 
- let post_warmup = &measurements[1..];
- let all_increasing = post_warmup
- .windows(2)
- .all(|w| w[1] > w[0] + NOISE_TOLERANCE);
- assert!(
- !all_increasing,
- "RSS grew through resize-mid-flood: {:?} (MB: {:?})",
- measurements,
- fmt_mb(&measurements),
- );
+    let post_warmup = &measurements[1..];
+    let all_increasing = post_warmup
+        .windows(2)
+        .all(|w| w[1] > w[0] + NOISE_TOLERANCE);
+    assert!(
+        !all_increasing,
+        "RSS grew through resize-mid-flood: {:?} (MB: {:?})",
+        measurements,
+        fmt_mb(&measurements),
+    );
 }

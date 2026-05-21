@@ -26,7 +26,10 @@ const CSI_CNL: &[u8] = b"\x1b[2E";
 fn harness_with_two_kitty_placements() -> SpecHarness {
     let mut h = SpecHarness::new();
     h.feed(&kitty_apc(b"a=T,i=1,f=32,s=4,v=4", &b64(&rgba_4x4_red())));
-    h.feed(&kitty_apc(b"a=T,i=2,f=32,s=4,v=4,U=1", &b64(&rgba_4x4_red())));
+    h.feed(&kitty_apc(
+        b"a=T,i=2,f=32,s=4,v=4,U=1",
+        &b64(&rgba_4x4_red()),
+    ));
     assert_eq!(
         h.term().image_cache().image_count(),
         2,

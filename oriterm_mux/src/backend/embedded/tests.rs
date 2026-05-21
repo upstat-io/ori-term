@@ -9,14 +9,14 @@ use crate::mux_event::MuxNotification;
 
 /// No-op wakeup for tests (no event loop to wake).
 fn test_wakeup() -> Arc<dyn Fn() + Send + Sync> {
- Arc::new(|| {})
+    Arc::new(|| {})
 }
 
 /// Drain notifications from the embedded backend into a `Vec`.
 fn drain(mux: &mut EmbeddedMux) -> Vec<MuxNotification> {
- let mut buf = Vec::new();
- mux.drain_notifications(&mut buf);
- buf
+    let mut buf = Vec::new();
+    mux.drain_notifications(&mut buf);
+    buf
 }
 
 // -- Object safety and basic queries --
@@ -24,45 +24,45 @@ fn drain(mux: &mut EmbeddedMux) -> Vec<MuxNotification> {
 /// `EmbeddedMux` implements `MuxBackend` (compile check via object safety).
 #[test]
 fn object_safe() {
- let mux = EmbeddedMux::new(test_wakeup());
- let _boxed: Box<dyn MuxBackend> = Box::new(mux);
+    let mux = EmbeddedMux::new(test_wakeup());
+    let _boxed: Box<dyn MuxBackend> = Box::new(mux);
 }
 
 /// `drain_notifications` returns empty when nothing has happened.
 #[test]
 fn drain_empty() {
- let mut mux = EmbeddedMux::new(test_wakeup());
- let mut buf = Vec::new();
- mux.drain_notifications(&mut buf);
- assert!(buf.is_empty());
+    let mut mux = EmbeddedMux::new(test_wakeup());
+    let mut buf = Vec::new();
+    mux.drain_notifications(&mut buf);
+    assert!(buf.is_empty());
 }
 
 /// `discard_notifications` clears pending notifications.
 #[test]
 fn discard_notifications() {
- let mut mux = EmbeddedMux::new(test_wakeup());
- mux.discard_notifications();
+    let mut mux = EmbeddedMux::new(test_wakeup());
+    mux.discard_notifications();
 }
 
 /// `poll_events` with no pending events doesn't panic.
 #[test]
 fn poll_events_empty() {
- let mut mux = EmbeddedMux::new(test_wakeup());
- mux.poll_events();
+    let mut mux = EmbeddedMux::new(test_wakeup());
+    mux.poll_events();
 }
 
 /// `event_tx` returns `Some` in embedded mode.
 #[test]
 fn event_tx_available() {
- let mux = EmbeddedMux::new(test_wakeup());
- assert!(mux.event_tx().is_some());
+    let mux = EmbeddedMux::new(test_wakeup());
+    assert!(mux.event_tx().is_some());
 }
 
 /// `pane_ids` returns empty initially.
 #[test]
 fn pane_ids_empty() {
- let mux = EmbeddedMux::new(test_wakeup());
- assert!(mux.pane_ids().is_empty());
+    let mux = EmbeddedMux::new(test_wakeup());
+    assert!(mux.pane_ids().is_empty());
 }
 
 // -- Pane entry queries (via inject_test_pane helper) --
@@ -70,26 +70,26 @@ fn pane_ids_empty() {
 /// `get_pane_entry` returns metadata for injected panes.
 #[test]
 fn get_pane_entry_after_inject() {
- let mut mux = EmbeddedMux::new(test_wakeup());
- let pid = PaneId::from_raw(100);
- mux.mux.inject_test_pane(pid);
+    let mut mux = EmbeddedMux::new(test_wakeup());
+    let pid = PaneId::from_raw(100);
+    mux.mux.inject_test_pane(pid);
 
- let entry = mux.get_pane_entry(pid).unwrap();
- assert_eq!(entry.pane, pid);
+    let entry = mux.get_pane_entry(pid).unwrap();
+    assert_eq!(entry.pane, pid);
 }
 
 /// `get_pane_entry` returns `None` after close.
 #[test]
 fn pane_entry_gone_after_close() {
- let mut mux = EmbeddedMux::new(test_wakeup());
- let p1 = PaneId::from_raw(100);
- let p2 = PaneId::from_raw(101);
- mux.mux.inject_test_pane(p1);
- mux.mux.inject_test_pane(p2);
+    let mut mux = EmbeddedMux::new(test_wakeup());
+    let p1 = PaneId::from_raw(100);
+    let p2 = PaneId::from_raw(101);
+    mux.mux.inject_test_pane(p1);
+    mux.mux.inject_test_pane(p2);
 
- mux.close_pane(p2);
- assert!(mux.get_pane_entry(p2).is_none());
- assert!(mux.get_pane_entry(p1).is_some());
+    mux.close_pane(p2);
+    assert!(mux.get_pane_entry(p2).is_none());
+    assert!(mux.get_pane_entry(p1).is_some());
 }
 
 // -- close_pane --
@@ -97,19 +97,19 @@ fn pane_entry_gone_after_close() {
 /// `close_pane` emits `PaneClosed` notification.
 #[test]
 fn close_pane_emits_notification() {
- let mut mux = EmbeddedMux::new(test_wakeup());
- let p1 = PaneId::from_raw(100);
- let p2 = PaneId::from_raw(101);
- mux.mux.inject_test_pane(p1);
- mux.mux.inject_test_pane(p2);
+    let mut mux = EmbeddedMux::new(test_wakeup());
+    let p1 = PaneId::from_raw(100);
+    let p2 = PaneId::from_raw(101);
+    mux.mux.inject_test_pane(p1);
+    mux.mux.inject_test_pane(p2);
 
- mux.close_pane(p2);
- let notes = drain(&mut mux);
- assert!(
- notes
- .iter()
- .any(|n| matches!(n, MuxNotification::PaneClosed { pane_id, .. } if *pane_id == p2))
- );
+    mux.close_pane(p2);
+    let notes = drain(&mut mux);
+    assert!(
+        notes
+            .iter()
+            .any(|n| matches!(n, MuxNotification::PaneClosed { pane_id, .. } if *pane_id == p2))
+    );
 }
 
 // -- Send + daemon mode --
@@ -117,15 +117,15 @@ fn close_pane_emits_notification() {
 /// `EmbeddedMux` satisfies `Send` (prevents accidental `Rc`/`Cell` additions).
 #[test]
 fn embedded_mux_is_send() {
- fn assert_send<T: Send>() {}
- assert_send::<EmbeddedMux>();
+    fn assert_send<T: Send>() {}
+    assert_send::<EmbeddedMux>();
 }
 
 /// `is_daemon_mode` returns false for embedded backend.
 #[test]
 fn is_not_daemon_mode() {
- let mux = EmbeddedMux::new(test_wakeup());
- assert!(!mux.is_daemon_mode());
+    let mux = EmbeddedMux::new(test_wakeup());
+    assert!(!mux.is_daemon_mode());
 }
 
 // -- IO command routing --
@@ -136,9 +136,9 @@ fn is_not_daemon_mode() {
 /// handles missing panes gracefully.
 #[test]
 fn scroll_display_missing_pane_is_noop() {
- let mut mux = EmbeddedMux::new(test_wakeup());
- let bogus = PaneId::from_raw(999);
- mux.scroll_display(bogus, 5);
+    let mut mux = EmbeddedMux::new(test_wakeup());
+    let bogus = PaneId::from_raw(999);
+    mux.scroll_display(bogus, 5);
 }
 
 /// `set_cell_dimensions` on a non-existent pane is a no-op (no panic).
@@ -150,9 +150,9 @@ fn scroll_display_missing_pane_is_noop() {
 /// broadcasts, so it must never panic on a stale pane id.
 #[test]
 fn set_cell_dimensions_missing_pane_is_noop() {
- let mut mux = EmbeddedMux::new(test_wakeup());
- let bogus = PaneId::from_raw(999);
- mux.set_cell_dimensions(bogus, 8, 16);
+    let mut mux = EmbeddedMux::new(test_wakeup());
+    let bogus = PaneId::from_raw(999);
+    mux.set_cell_dimensions(bogus, 8, 16);
 }
 
 /// `search_set_query` on a non-existent pane is a no-op (no panic).
@@ -160,16 +160,16 @@ fn set_cell_dimensions_missing_pane_is_noop() {
 /// `test_search_set_query_finds_matches` in `pane::io_thread::tests`.
 #[test]
 fn search_set_query_missing_pane_is_noop() {
- let mut mux = EmbeddedMux::new(test_wakeup());
- let bogus = PaneId::from_raw(999);
- mux.search_set_query(bogus, "foo".to_string());
+    let mut mux = EmbeddedMux::new(test_wakeup());
+    let bogus = PaneId::from_raw(999);
+    mux.search_set_query(bogus, "foo".to_string());
 }
 
 /// `is_search_active` returns false for non-existent panes.
 #[test]
 fn search_active_missing_pane() {
- let mux = EmbeddedMux::new(test_wakeup());
- assert!(!mux.is_search_active(PaneId::from_raw(999)));
+    let mux = EmbeddedMux::new(test_wakeup());
+    assert!(!mux.is_search_active(PaneId::from_raw(999)));
 }
 
 // -- Cell-metric multi-pane integration --
@@ -187,39 +187,39 @@ fn search_active_missing_pane() {
 #[cfg(unix)]
 #[test]
 fn split_pane_receives_cell_metrics_without_resize() {
- use oriterm_core::Theme;
+    use oriterm_core::Theme;
 
- use crate::domain::SpawnConfig;
+    use crate::domain::SpawnConfig;
 
- let mut mux = EmbeddedMux::new(test_wakeup());
- let config = SpawnConfig::default();
+    let mut mux = EmbeddedMux::new(test_wakeup());
+    let config = SpawnConfig::default();
 
- // Spawn two panes (simulating a split).
- let p1 = mux.spawn_pane(&config, Theme::Dark).expect("spawn p1");
- let p2 = mux.spawn_pane(&config, Theme::Dark).expect("spawn p2");
+    // Spawn two panes (simulating a split).
+    let p1 = mux.spawn_pane(&config, Theme::Dark).expect("spawn p1");
+    let p2 = mux.spawn_pane(&config, Theme::Dark).expect("spawn p2");
 
- // Clear initial dirty flags from spawn.
- mux.poll_events();
- mux.clear_pane_snapshot_dirty(p1);
- mux.clear_pane_snapshot_dirty(p2);
+    // Clear initial dirty flags from spawn.
+    mux.poll_events();
+    mux.clear_pane_snapshot_dirty(p1);
+    mux.clear_pane_snapshot_dirty(p2);
 
- // Seed the "split" pane with cell metrics (no resize involved).
- mux.set_cell_dimensions(p2, 10, 20);
+    // Seed the "split" pane with cell metrics (no resize involved).
+    mux.set_cell_dimensions(p2, 10, 20);
 
- assert!(
- mux.is_pane_snapshot_dirty(p2),
- "newly split pane must be dirty after receiving cell metrics"
- );
- // p1 should not be affected.
- assert!(
- !mux.is_pane_snapshot_dirty(p1),
- "sibling pane must NOT be dirtied by a targeted set_cell_dimensions"
- );
+    assert!(
+        mux.is_pane_snapshot_dirty(p2),
+        "newly split pane must be dirty after receiving cell metrics"
+    );
+    // p1 should not be affected.
+    assert!(
+        !mux.is_pane_snapshot_dirty(p1),
+        "sibling pane must NOT be dirtied by a targeted set_cell_dimensions"
+    );
 
- mux.close_pane(p1);
- mux.close_pane(p2);
- mux.cleanup_closed_pane(p1);
- mux.cleanup_closed_pane(p2);
+    mux.close_pane(p1);
+    mux.close_pane(p2);
+    mux.cleanup_closed_pane(p1);
+    mux.cleanup_closed_pane(p2);
 }
 
 /// Regression: after a font change, BOTH panes in a split receive
@@ -231,40 +231,40 @@ fn split_pane_receives_cell_metrics_without_resize() {
 #[cfg(unix)]
 #[test]
 fn both_split_panes_receive_updated_metrics_after_font_change() {
- use oriterm_core::Theme;
+    use oriterm_core::Theme;
 
- use crate::domain::SpawnConfig;
+    use crate::domain::SpawnConfig;
 
- let mut mux = EmbeddedMux::new(test_wakeup());
- let config = SpawnConfig::default();
+    let mut mux = EmbeddedMux::new(test_wakeup());
+    let config = SpawnConfig::default();
 
- let p1 = mux.spawn_pane(&config, Theme::Dark).expect("spawn p1");
- let p2 = mux.spawn_pane(&config, Theme::Dark).expect("spawn p2");
+    let p1 = mux.spawn_pane(&config, Theme::Dark).expect("spawn p1");
+    let p2 = mux.spawn_pane(&config, Theme::Dark).expect("spawn p2");
 
- // Initial seeding.
- mux.set_cell_dimensions(p1, 8, 16);
- mux.set_cell_dimensions(p2, 8, 16);
- mux.poll_events();
- mux.clear_pane_snapshot_dirty(p1);
- mux.clear_pane_snapshot_dirty(p2);
+    // Initial seeding.
+    mux.set_cell_dimensions(p1, 8, 16);
+    mux.set_cell_dimensions(p2, 8, 16);
+    mux.poll_events();
+    mux.clear_pane_snapshot_dirty(p1);
+    mux.clear_pane_snapshot_dirty(p2);
 
- // Simulate font change: updated cell metrics to both panes.
- mux.set_cell_dimensions(p1, 10, 20);
- mux.set_cell_dimensions(p2, 10, 20);
+    // Simulate font change: updated cell metrics to both panes.
+    mux.set_cell_dimensions(p1, 10, 20);
+    mux.set_cell_dimensions(p2, 10, 20);
 
- assert!(
- mux.is_pane_snapshot_dirty(p1),
- "first pane must be dirty after font-change broadcast"
- );
- assert!(
- mux.is_pane_snapshot_dirty(p2),
- "second pane must be dirty after font-change broadcast"
- );
+    assert!(
+        mux.is_pane_snapshot_dirty(p1),
+        "first pane must be dirty after font-change broadcast"
+    );
+    assert!(
+        mux.is_pane_snapshot_dirty(p2),
+        "second pane must be dirty after font-change broadcast"
+    );
 
- mux.close_pane(p1);
- mux.close_pane(p2);
- mux.cleanup_closed_pane(p1);
- mux.cleanup_closed_pane(p2);
+    mux.close_pane(p1);
+    mux.close_pane(p2);
+    mux.cleanup_closed_pane(p1);
+    mux.cleanup_closed_pane(p2);
 }
 
 /// Regression: a pane in a new window receives cell metrics immediately
@@ -277,28 +277,28 @@ fn both_split_panes_receive_updated_metrics_after_font_change() {
 #[cfg(unix)]
 #[test]
 fn new_window_pane_receives_cell_metrics_on_creation() {
- use oriterm_core::Theme;
+    use oriterm_core::Theme;
 
- use crate::domain::SpawnConfig;
+    use crate::domain::SpawnConfig;
 
- let mut mux = EmbeddedMux::new(test_wakeup());
- let config = SpawnConfig::default();
- let pane_id = mux.spawn_pane(&config, Theme::Dark).expect("spawn_pane");
+    let mut mux = EmbeddedMux::new(test_wakeup());
+    let config = SpawnConfig::default();
+    let pane_id = mux.spawn_pane(&config, Theme::Dark).expect("spawn_pane");
 
- // Clear initial dirty flag from spawn.
- mux.poll_events();
- mux.clear_pane_snapshot_dirty(pane_id);
+    // Clear initial dirty flag from spawn.
+    mux.poll_events();
+    mux.clear_pane_snapshot_dirty(pane_id);
 
- // Immediately seed cell metrics (simulating window creation path).
- mux.set_cell_dimensions(pane_id, 12, 24);
+    // Immediately seed cell metrics (simulating window creation path).
+    mux.set_cell_dimensions(pane_id, 12, 24);
 
- assert!(
- mux.is_pane_snapshot_dirty(pane_id),
- "new-window pane must be dirty after initial cell metric seeding"
- );
+    assert!(
+        mux.is_pane_snapshot_dirty(pane_id),
+        "new-window pane must be dirty after initial cell metric seeding"
+    );
 
- mux.close_pane(pane_id);
- mux.cleanup_closed_pane(pane_id);
+    mux.close_pane(pane_id);
+    mux.cleanup_closed_pane(pane_id);
 }
 
 /// End-to-end verification: `SetCellDimensions` is processed by the
@@ -316,62 +316,62 @@ fn new_window_pane_receives_cell_metrics_on_creation() {
 #[cfg(unix)]
 #[test]
 fn new_window_pane_cell_metrics_reach_io_thread() {
- use std::time::{Duration, Instant};
+    use std::time::{Duration, Instant};
 
- use oriterm_core::Theme;
+    use oriterm_core::Theme;
 
- use crate::domain::SpawnConfig;
+    use crate::domain::SpawnConfig;
 
- let mut mux = EmbeddedMux::new(test_wakeup());
- let config = SpawnConfig::default();
- let pane_id = mux.spawn_pane(&config, Theme::Dark).expect("spawn_pane");
+    let mut mux = EmbeddedMux::new(test_wakeup());
+    let config = SpawnConfig::default();
+    let pane_id = mux.spawn_pane(&config, Theme::Dark).expect("spawn_pane");
 
- // Wait for the initial shell-startup snapshot burst to settle.
- // Crucially, consume the initial snapshot via `refresh_pane_snapshot`
- // so `has_new()` returns false. Break early once two consecutive
- // polls show no new snapshot (PTY quiescent).
- let settle_deadline = Instant::now() + Duration::from_secs(2);
- let mut consecutive_quiet = 0u32;
- while Instant::now() < settle_deadline {
- mux.poll_events();
- if mux.refresh_pane_snapshot(pane_id).is_some() {
- consecutive_quiet = 0;
- } else {
- consecutive_quiet += 1;
- if consecutive_quiet >= 4 {
- break; // 4 × 50ms = 200ms with no new snapshot → settled
- }
- }
- mux.clear_pane_snapshot_dirty(pane_id);
- std::thread::sleep(Duration::from_millis(50));
- }
+    // Wait for the initial shell-startup snapshot burst to settle.
+    // Crucially, consume the initial snapshot via `refresh_pane_snapshot`
+    // so `has_new()` returns false. Break early once two consecutive
+    // polls show no new snapshot (PTY quiescent).
+    let settle_deadline = Instant::now() + Duration::from_secs(2);
+    let mut consecutive_quiet = 0u32;
+    while Instant::now() < settle_deadline {
+        mux.poll_events();
+        if mux.refresh_pane_snapshot(pane_id).is_some() {
+            consecutive_quiet = 0;
+        } else {
+            consecutive_quiet += 1;
+            if consecutive_quiet >= 4 {
+                break; // 4 × 50ms = 200ms with no new snapshot → settled
+            }
+        }
+        mux.clear_pane_snapshot_dirty(pane_id);
+        std::thread::sleep(Duration::from_millis(50));
+    }
 
- // Send cell dimensions. The backend only marks dirty if the
- // pane exists, so the dirty flag reflects a real command dispatch.
- mux.set_cell_dimensions(pane_id, 12, 24);
- mux.clear_pane_snapshot_dirty(pane_id);
+    // Send cell dimensions. The backend only marks dirty if the
+    // pane exists, so the dirty flag reflects a real command dispatch.
+    mux.set_cell_dimensions(pane_id, 12, 24);
+    mux.clear_pane_snapshot_dirty(pane_id);
 
- // Poll until the IO thread processes SetCellDimensions, sets
- // grid_dirty, and produces a new snapshot. poll_events detects the
- // new snapshot via has_new_snapshot and re-sets snapshot_dirty.
- let deadline = Instant::now() + Duration::from_secs(5);
- let mut io_processed = false;
- while Instant::now() < deadline {
- mux.poll_events();
- if mux.is_pane_snapshot_dirty(pane_id) {
- io_processed = true;
- break;
- }
- std::thread::sleep(Duration::from_millis(20));
- }
+    // Poll until the IO thread processes SetCellDimensions, sets
+    // grid_dirty, and produces a new snapshot. poll_events detects the
+    // new snapshot via has_new_snapshot and re-sets snapshot_dirty.
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let mut io_processed = false;
+    while Instant::now() < deadline {
+        mux.poll_events();
+        if mux.is_pane_snapshot_dirty(pane_id) {
+            io_processed = true;
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
 
- assert!(
- io_processed,
- "IO thread must process SetCellDimensions and produce a new snapshot"
- );
+    assert!(
+        io_processed,
+        "IO thread must process SetCellDimensions and produce a new snapshot"
+    );
 
- mux.close_pane(pane_id);
- mux.cleanup_closed_pane(pane_id);
+    mux.close_pane(pane_id);
+    mux.cleanup_closed_pane(pane_id);
 }
 
 // -- IO-thread snapshot integration --
@@ -381,49 +381,49 @@ fn new_window_pane_cell_metrics_reach_io_thread() {
 #[cfg(unix)]
 #[test]
 fn poll_events_uses_has_new_snapshot() {
- use oriterm_core::Theme;
+    use oriterm_core::Theme;
 
- use crate::domain::SpawnConfig;
+    use crate::domain::SpawnConfig;
 
- let mut mux = EmbeddedMux::new(test_wakeup());
- let config = SpawnConfig::default();
- let pane_id = mux.spawn_pane(&config, Theme::Dark).expect("spawn_pane");
+    let mut mux = EmbeddedMux::new(test_wakeup());
+    let config = SpawnConfig::default();
+    let pane_id = mux.spawn_pane(&config, Theme::Dark).expect("spawn_pane");
 
- // Send a command to generate output.
- mux.send_input(pane_id, b"echo SNAPSHOT_TEST\n");
+    // Send a command to generate output.
+    mux.send_input(pane_id, b"echo SNAPSHOT_TEST\n");
 
- // Poll until the IO thread produces a snapshot (max 5 seconds).
- let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
- let mut saw_dirty = false;
- let mut saw_pane_output = false;
- while std::time::Instant::now() < deadline {
- mux.poll_events();
- if mux.is_pane_snapshot_dirty(pane_id) {
- saw_dirty = true;
- }
- let mut notifs = Vec::new();
- mux.drain_notifications(&mut notifs);
- if notifs
- .iter()
- .any(|n| matches!(n, MuxNotification::PaneOutput(id) if *id == pane_id))
- {
- saw_pane_output = true;
- }
- if saw_dirty && saw_pane_output {
- break;
- }
- std::thread::sleep(std::time::Duration::from_millis(20));
- }
+    // Poll until the IO thread produces a snapshot (max 5 seconds).
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    let mut saw_dirty = false;
+    let mut saw_pane_output = false;
+    while std::time::Instant::now() < deadline {
+        mux.poll_events();
+        if mux.is_pane_snapshot_dirty(pane_id) {
+            saw_dirty = true;
+        }
+        let mut notifs = Vec::new();
+        mux.drain_notifications(&mut notifs);
+        if notifs
+            .iter()
+            .any(|n| matches!(n, MuxNotification::PaneOutput(id) if *id == pane_id))
+        {
+            saw_pane_output = true;
+        }
+        if saw_dirty && saw_pane_output {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
 
- assert!(saw_dirty, "IO-thread snapshot should mark pane dirty");
- assert!(
- saw_pane_output,
- "poll_events should emit PaneOutput when IO thread produces a snapshot"
- );
+    assert!(saw_dirty, "IO-thread snapshot should mark pane dirty");
+    assert!(
+        saw_pane_output,
+        "poll_events should emit PaneOutput when IO thread produces a snapshot"
+    );
 
- // Cleanup: close and drop the pane.
- mux.close_pane(pane_id);
- mux.cleanup_closed_pane(pane_id);
+    // Cleanup: close and drop the pane.
+    mux.close_pane(pane_id);
+    mux.cleanup_closed_pane(pane_id);
 }
 
 /// Spawn a pane, close it via `cleanup_closed_pane`, verify full lifecycle:
@@ -431,40 +431,40 @@ fn poll_events_uses_has_new_snapshot() {
 #[cfg(unix)]
 #[test]
 fn cleanup_closed_pane_with_io_thread() {
- use oriterm_core::Theme;
+    use oriterm_core::Theme;
 
- use crate::domain::SpawnConfig;
+    use crate::domain::SpawnConfig;
 
- let mut mux = EmbeddedMux::new(test_wakeup());
- let config = SpawnConfig::default();
- let pane_id = mux.spawn_pane(&config, Theme::Dark).expect("spawn_pane");
+    let mut mux = EmbeddedMux::new(test_wakeup());
+    let config = SpawnConfig::default();
+    let pane_id = mux.spawn_pane(&config, Theme::Dark).expect("spawn_pane");
 
- // Verify pane exists and has a snapshot.
- assert!(mux.pane_ids().contains(&pane_id));
+    // Verify pane exists and has a snapshot.
+    assert!(mux.pane_ids().contains(&pane_id));
 
- // Close and cleanup — should shut down IO thread, reader, writer.
- // `cleanup_closed_pane` drops the Pane on a background thread which
- // calls PaneIoHandle::shutdown() (joins IO thread) and PtyHandle::Drop
- // (kills PTY, joins reader/writer threads).
- mux.close_pane(pane_id);
- mux.cleanup_closed_pane(pane_id);
+    // Close and cleanup — should shut down IO thread, reader, writer.
+    // `cleanup_closed_pane` drops the Pane on a background thread which
+    // calls PaneIoHandle::shutdown() (joins IO thread) and PtyHandle::Drop
+    // (kills PTY, joins reader/writer threads).
+    mux.close_pane(pane_id);
+    mux.cleanup_closed_pane(pane_id);
 
- // Pane should be fully gone from all maps.
- assert!(mux.pane_snapshot(pane_id).is_none());
- assert!(!mux.pane_ids().contains(&pane_id));
- assert!(!mux.is_pane_snapshot_dirty(pane_id));
- assert!(!mux.is_selection_dirty(pane_id));
+    // Pane should be fully gone from all maps.
+    assert!(mux.pane_snapshot(pane_id).is_none());
+    assert!(!mux.pane_ids().contains(&pane_id));
+    assert!(!mux.is_pane_snapshot_dirty(pane_id));
+    assert!(!mux.is_selection_dirty(pane_id));
 
- // Wait for the background drop thread to complete. If IO/reader/writer
- // threads leak (fail to join), this is where we'd see a timeout.
- std::thread::sleep(std::time::Duration::from_millis(500));
+    // Wait for the background drop thread to complete. If IO/reader/writer
+    // threads leak (fail to join), this is where we'd see a timeout.
+    std::thread::sleep(std::time::Duration::from_millis(500));
 
- // After cleanup, poll_events should not crash or reference the dead pane.
- mux.poll_events();
+    // After cleanup, poll_events should not crash or reference the dead pane.
+    mux.poll_events();
 
- // No lingering snapshot or renderable cache.
- let mut buf = oriterm_core::RenderableContent::default();
- assert!(!mux.swap_renderable_content(pane_id, &mut buf));
+    // No lingering snapshot or renderable cache.
+    let mut buf = oriterm_core::RenderableContent::default();
+    assert!(!mux.swap_renderable_content(pane_id, &mut buf));
 }
 
 // -- pane_mode bridge (Section 09 TPR) --
@@ -480,58 +480,58 @@ fn cleanup_closed_pane_with_io_thread() {
 #[cfg(unix)]
 #[test]
 fn pane_mode_reflects_decbkm_set() {
- use std::time::{Duration, Instant};
+    use std::time::{Duration, Instant};
 
- use oriterm_core::{Theme, term::mode::TermMode};
+    use oriterm_core::{Theme, term::mode::TermMode};
 
- use crate::domain::SpawnConfig;
+    use crate::domain::SpawnConfig;
 
- let mut mux = EmbeddedMux::new(test_wakeup());
- let config = SpawnConfig::default();
- let pane_id = mux.spawn_pane(&config, Theme::Dark).expect("spawn_pane");
+    let mut mux = EmbeddedMux::new(test_wakeup());
+    let config = SpawnConfig::default();
+    let pane_id = mux.spawn_pane(&config, Theme::Dark).expect("spawn_pane");
 
- // Wait for initial shell startup to settle.
- let settle = Instant::now() + Duration::from_secs(2);
- while Instant::now() < settle {
- mux.poll_events();
- std::thread::sleep(Duration::from_millis(50));
- }
+    // Wait for initial shell startup to settle.
+    let settle = Instant::now() + Duration::from_secs(2);
+    while Instant::now() < settle {
+        mux.poll_events();
+        std::thread::sleep(Duration::from_millis(50));
+    }
 
- // DECBKM should NOT be set initially.
- let initial = mux.pane_mode(pane_id).unwrap_or(0);
- assert_eq!(
- initial & TermMode::DECBKM.bits(),
- 0,
- "DECBKM must be clear before CSI ? 67 h"
- );
+    // DECBKM should NOT be set initially.
+    let initial = mux.pane_mode(pane_id).unwrap_or(0);
+    assert_eq!(
+        initial & TermMode::DECBKM.bits(),
+        0,
+        "DECBKM must be clear before CSI ? 67 h"
+    );
 
- // Use printf to emit CSI ? 67 h from the shell to PTY stdout.
- // send_input writes to PTY stdin; the shell executes the printf
- // command and its output (the escape sequence) flows through the
- // PTY to the IO thread's VTE parser.
- mux.send_input(pane_id, b"printf '\\033[?67h'\n");
+    // Use printf to emit CSI ? 67 h from the shell to PTY stdout.
+    // send_input writes to PTY stdin; the shell executes the printf
+    // command and its output (the escape sequence) flows through the
+    // PTY to the IO thread's VTE parser.
+    mux.send_input(pane_id, b"printf '\\033[?67h'\n");
 
- // Wait for the IO thread to process the escape sequence and update mode_cache.
- let deadline = Instant::now() + Duration::from_secs(5);
- let mut saw_decbkm = false;
- while Instant::now() < deadline {
- mux.poll_events();
- if let Some(bits) = mux.pane_mode(pane_id) {
- if bits & TermMode::DECBKM.bits() != 0 {
- saw_decbkm = true;
- break;
- }
- }
- std::thread::sleep(Duration::from_millis(20));
- }
+    // Wait for the IO thread to process the escape sequence and update mode_cache.
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let mut saw_decbkm = false;
+    while Instant::now() < deadline {
+        mux.poll_events();
+        if let Some(bits) = mux.pane_mode(pane_id) {
+            if bits & TermMode::DECBKM.bits() != 0 {
+                saw_decbkm = true;
+                break;
+            }
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
 
- assert!(
- saw_decbkm,
- "pane_mode() must reflect DECBKM after CSI ? 67 h is processed"
- );
+    assert!(
+        saw_decbkm,
+        "pane_mode() must reflect DECBKM after CSI ? 67 h is processed"
+    );
 
- mux.close_pane(pane_id);
- mux.cleanup_closed_pane(pane_id);
+    mux.close_pane(pane_id);
+    mux.cleanup_closed_pane(pane_id);
 }
 
 /// Regression guard: `pane_mode()` clears DECBKM after `CSI ? 67 l`.
@@ -540,68 +540,68 @@ fn pane_mode_reflects_decbkm_set() {
 #[cfg(unix)]
 #[test]
 fn pane_mode_clears_decbkm_on_reset() {
- use std::time::{Duration, Instant};
+    use std::time::{Duration, Instant};
 
- use oriterm_core::{Theme, term::mode::TermMode};
+    use oriterm_core::{Theme, term::mode::TermMode};
 
- use crate::domain::SpawnConfig;
+    use crate::domain::SpawnConfig;
 
- let mut mux = EmbeddedMux::new(test_wakeup());
- let config = SpawnConfig::default();
- let pane_id = mux.spawn_pane(&config, Theme::Dark).expect("spawn_pane");
+    let mut mux = EmbeddedMux::new(test_wakeup());
+    let config = SpawnConfig::default();
+    let pane_id = mux.spawn_pane(&config, Theme::Dark).expect("spawn_pane");
 
- // Settle.
- let settle = Instant::now() + Duration::from_secs(2);
- while Instant::now() < settle {
- mux.poll_events();
- std::thread::sleep(Duration::from_millis(50));
- }
+    // Settle.
+    let settle = Instant::now() + Duration::from_secs(2);
+    while Instant::now() < settle {
+        mux.poll_events();
+        std::thread::sleep(Duration::from_millis(50));
+    }
 
- // Set DECBKM first via printf (PTY output -> VTE parser).
- mux.send_input(pane_id, b"printf '\\033[?67h'\n");
- let deadline = Instant::now() + Duration::from_secs(5);
- while Instant::now() < deadline {
- mux.poll_events();
- if let Some(bits) = mux.pane_mode(pane_id) {
- if bits & TermMode::DECBKM.bits() != 0 {
- break;
- }
- }
- std::thread::sleep(Duration::from_millis(20));
- }
+    // Set DECBKM first via printf (PTY output -> VTE parser).
+    mux.send_input(pane_id, b"printf '\\033[?67h'\n");
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while Instant::now() < deadline {
+        mux.poll_events();
+        if let Some(bits) = mux.pane_mode(pane_id) {
+            if bits & TermMode::DECBKM.bits() != 0 {
+                break;
+            }
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
 
- // Now reset DECBKM via printf.
- mux.send_input(pane_id, b"printf '\\033[?67l'\n");
- let deadline = Instant::now() + Duration::from_secs(5);
- let mut saw_clear = false;
- while Instant::now() < deadline {
- mux.poll_events();
- if let Some(bits) = mux.pane_mode(pane_id) {
- if bits & TermMode::DECBKM.bits() == 0 {
- saw_clear = true;
- break;
- }
- }
- std::thread::sleep(Duration::from_millis(20));
- }
+    // Now reset DECBKM via printf.
+    mux.send_input(pane_id, b"printf '\\033[?67l'\n");
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let mut saw_clear = false;
+    while Instant::now() < deadline {
+        mux.poll_events();
+        if let Some(bits) = mux.pane_mode(pane_id) {
+            if bits & TermMode::DECBKM.bits() == 0 {
+                saw_clear = true;
+                break;
+            }
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
 
- assert!(
- saw_clear,
- "pane_mode() must clear DECBKM after CSI ? 67 l is processed"
- );
+    assert!(
+        saw_clear,
+        "pane_mode() must clear DECBKM after CSI ? 67 l is processed"
+    );
 
- mux.close_pane(pane_id);
- mux.cleanup_closed_pane(pane_id);
+    mux.close_pane(pane_id);
+    mux.cleanup_closed_pane(pane_id);
 }
 
 /// `pane_mode()` returns `None` for a non-existent pane.
 #[test]
 fn pane_mode_returns_none_for_missing_pane() {
- let mux = EmbeddedMux::new(test_wakeup());
- assert!(
- mux.pane_mode(PaneId::from_raw(999)).is_none(),
- "pane_mode must return None for an unknown pane id"
- );
+    let mux = EmbeddedMux::new(test_wakeup());
+    assert!(
+        mux.pane_mode(PaneId::from_raw(999)).is_none(),
+        "pane_mode must return None for an unknown pane id"
+    );
 }
 
 /// property: `sync_pane_snapshot` returns `None` for an
@@ -613,13 +613,13 @@ fn pane_mode_returns_none_for_missing_pane() {
 /// or None" contract documented on the trait method.
 #[test]
 fn sync_pane_snapshot_returns_none_for_missing_pane() {
- let mut mux = EmbeddedMux::new(test_wakeup());
- let bogus = PaneId::from_raw(99_999);
- assert!(
- mux.sync_pane_snapshot(bogus).is_none(),
- "sync_pane_snapshot must return None for an unknown pane id, \
+    let mut mux = EmbeddedMux::new(test_wakeup());
+    let bogus = PaneId::from_raw(99_999);
+    assert!(
+        mux.sync_pane_snapshot(bogus).is_none(),
+        "sync_pane_snapshot must return None for an unknown pane id, \
  not silently fall back to refresh_pane_snapshot's cached value",
- );
+    );
 }
 
 /// Regression: embedded `is_write_stalled` must continue returning `false`
@@ -627,12 +627,12 @@ fn sync_pane_snapshot_returns_none_for_missing_pane() {
 /// pane ⇒ `false` rather than `Err`).
 #[test]
 fn is_write_stalled_returns_false_for_unknown_pane_in_embedded() {
- let mut mux = EmbeddedMux::new(test_wakeup());
- let bogus = PaneId::from_raw(99_999);
- assert!(
- !mux.is_write_stalled(bogus),
- "embedded is_write_stalled must return false for an unknown pane",
- );
+    let mut mux = EmbeddedMux::new(test_wakeup());
+    let bogus = PaneId::from_raw(99_999);
+    assert!(
+        !mux.is_write_stalled(bogus),
+        "embedded is_write_stalled must return false for an unknown pane",
+    );
 }
 
 // -- bell_panes contract tests --
@@ -642,14 +642,14 @@ fn is_write_stalled_returns_false_for_unknown_pane_in_embedded() {
 /// `bell_panes` SSOT.
 #[test]
 fn embedded_clear_bell_clears_has_bell() {
- let mut mux = EmbeddedMux::new(test_wakeup());
- let p = PaneId::from_raw(1);
+    let mut mux = EmbeddedMux::new(test_wakeup());
+    let p = PaneId::from_raw(1);
 
- mux.set_bell(p);
- assert!(mux.has_bell(p));
+    mux.set_bell(p);
+    assert!(mux.has_bell(p));
 
- mux.clear_bell(p);
- assert!(!mux.has_bell(p), "embedded clear_bell must clear has_bell");
+    mux.clear_bell(p);
+    assert!(!mux.has_bell(p), "embedded clear_bell must clear has_bell");
 }
 
 /// Embedded backend's `cleanup_closed_pane` drains `bell_panes` along
@@ -657,16 +657,16 @@ fn embedded_clear_bell_clears_has_bell() {
 /// regression guard.
 #[test]
 fn embedded_cleanup_closed_pane_drains_bell_panes() {
- let mut mux = EmbeddedMux::new(test_wakeup());
- let p = PaneId::from_raw(1);
+    let mut mux = EmbeddedMux::new(test_wakeup());
+    let p = PaneId::from_raw(1);
 
- mux.set_bell(p);
- assert!(mux.has_bell(p));
+    mux.set_bell(p);
+    assert!(mux.has_bell(p));
 
- mux.cleanup_closed_pane(p);
+    mux.cleanup_closed_pane(p);
 
- assert!(
- !mux.has_bell(p),
- "embedded cleanup_closed_pane must drain bell_panes"
- );
+    assert!(
+        !mux.has_bell(p),
+        "embedded cleanup_closed_pane must drain bell_panes"
+    );
 }

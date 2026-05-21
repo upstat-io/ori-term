@@ -31,75 +31,75 @@ use oriterm_test_support::tack_framework::ScenarioRunner;
 use oriterm_test_support::tack_framework::scenarios::cursor_movement::TACK_CURSOR_MOVEMENT;
 
 fn run_cursor_movement_at(cols: u16, rows: u16) {
- if !ScenarioRunner::available() {
- eprintln!("tack or tic unavailable, skipping tack_cursor_movement_{cols}x{rows}");
- return;
- }
- let outcome = ScenarioRunner::run_at(&TACK_CURSOR_MOVEMENT, cols, rows);
+    if !ScenarioRunner::available() {
+        eprintln!("tack or tic unavailable, skipping tack_cursor_movement_{cols}x{rows}");
+        return;
+    }
+    let outcome = ScenarioRunner::run_at(&TACK_CURSOR_MOVEMENT, cols, rows);
 
- // End-to-end pin: tack ran the standard cursor movement test
- // and reported its terminator. Catches regressions in spawn /
- // navigate / capture / quit pipeline at this size.
- assert!(
- outcome.grid_text.contains("Done"),
- "expected captured grid at {cols}x{rows} to contain 'Done' terminator, got:\n{}",
- outcome.grid_text
- );
+    // End-to-end pin: tack ran the standard cursor movement test
+    // and reported its terminator. Catches regressions in spawn /
+    // navigate / capture / quit pipeline at this size.
+    assert!(
+        outcome.grid_text.contains("Done"),
+        "expected captured grid at {cols}x{rows} to contain 'Done' terminator, got:\n{}",
+        outcome.grid_text
+    );
 
- // SEMANTIC PINS: tack v1.08's cursor movement test only
- // surfaces the (clear) cap name plus a single descriptive
- // header line. These two assertions are the canonical
- // semantic claims for 05.4 cap-coverage:
- // 1. "This line should start in the home position" — proves
- // tack entered the cursor movement test code path. Note
- // this does NOT independently prove `cup` was exercised:
- // `clear` in `extra/ori_term.info` is defined as
- // `\E[H\E[2J`, which already homes the cursor via a
- // literal escape (NOT an invocation of the parameterized
- // `cup` capability). The "home position" behavior is
- // therefore explained entirely by `clear` itself; a `cup`
- // regression would not be caught here. (fix.)
- // 2. "(clear)" — proves tack referenced the clear cap by its
- // terminfo short name (the canonical tack output format
- // matching the (am)/(os)/(bel)/(colors)/(pairs) pattern
- // from prior screens). This is the cap-coverage pin for
- // `clear` in 05.5.
- // Per the empirical-finding block in 05.4, only `clear` is
- // honestly covered by 05.4. Coverage for `cup`, `csr`, `hpa`,
- // `vpa`, `cuu`, `cud`, `cub`, `cuf` must come from Section
- // 07's GPU goldens or vttest — `cup` was previously claimed
- // as transitively covered, but (Codex
- // review-work) correctly identified that the home behavior
- // is explained by `clear`'s literal escape and does not
- // independently exercise `cup`.
- assert!(
- outcome
- .grid_text
- .contains("This line should start in the home position"),
- "expected captured grid at {cols}x{rows} to contain 'This line should start in the home position' header, got:\n{}",
- outcome.grid_text
- );
- assert!(
- outcome.grid_text.contains("(clear)"),
- "expected captured grid at {cols}x{rows} to contain '(clear)' parenthesized cap, got:\n{}",
- outcome.grid_text
- );
+    // SEMANTIC PINS: tack v1.08's cursor movement test only
+    // surfaces the (clear) cap name plus a single descriptive
+    // header line. These two assertions are the canonical
+    // semantic claims for 05.4 cap-coverage:
+    // 1. "This line should start in the home position" — proves
+    // tack entered the cursor movement test code path. Note
+    // this does NOT independently prove `cup` was exercised:
+    // `clear` in `extra/ori_term.info` is defined as
+    // `\E[H\E[2J`, which already homes the cursor via a
+    // literal escape (NOT an invocation of the parameterized
+    // `cup` capability). The "home position" behavior is
+    // therefore explained entirely by `clear` itself; a `cup`
+    // regression would not be caught here. (fix.)
+    // 2. "(clear)" — proves tack referenced the clear cap by its
+    // terminfo short name (the canonical tack output format
+    // matching the (am)/(os)/(bel)/(colors)/(pairs) pattern
+    // from prior screens). This is the cap-coverage pin for
+    // `clear` in 05.5.
+    // Per the empirical-finding block in 05.4, only `clear` is
+    // honestly covered by 05.4. Coverage for `cup`, `csr`, `hpa`,
+    // `vpa`, `cuu`, `cud`, `cub`, `cuf` must come from Section
+    // 07's GPU goldens or vttest — `cup` was previously claimed
+    // as transitively covered, but (Codex
+    // review-work) correctly identified that the home behavior
+    // is explained by `clear`'s literal escape and does not
+    // independently exercise `cup`.
+    assert!(
+        outcome
+            .grid_text
+            .contains("This line should start in the home position"),
+        "expected captured grid at {cols}x{rows} to contain 'This line should start in the home position' header, got:\n{}",
+        outcome.grid_text
+    );
+    assert!(
+        outcome.grid_text.contains("(clear)"),
+        "expected captured grid at {cols}x{rows} to contain '(clear)' parenthesized cap, got:\n{}",
+        outcome.grid_text
+    );
 
- // Insta snapshot of the full grid for visual regression.
- insta::assert_snapshot!(outcome.snapshot_name(), outcome.grid_text);
+    // Insta snapshot of the full grid for visual regression.
+    insta::assert_snapshot!(outcome.snapshot_name(), outcome.grid_text);
 }
 
 #[test]
 fn tack_cursor_movement_80x24() {
- run_cursor_movement_at(80, 24);
+    run_cursor_movement_at(80, 24);
 }
 
 #[test]
 fn tack_cursor_movement_97x33() {
- run_cursor_movement_at(97, 33);
+    run_cursor_movement_at(97, 33);
 }
 
 #[test]
 fn tack_cursor_movement_120x40() {
- run_cursor_movement_at(120, 40);
+    run_cursor_movement_at(120, 40);
 }

@@ -250,8 +250,7 @@ fn notcurses_info_query_secdevattr_emits_da2_reply() {
     let needle = b"\x1b[>";
     let terminator = b"c";
     assert!(
-        find_subslice(&stream, needle).is_some()
-            && stream.iter().any(|b| *b == terminator[0]),
+        find_subslice(&stream, needle).is_some() && stream.iter().any(|b| *b == terminator[0]),
         "SECDEVATTR (\\x1b[>c) MUST reply with \\x1b[><pp>;<pv>;<pc>c; got {:?}",
         String::from_utf8_lossy(&stream),
     );
@@ -399,12 +398,20 @@ fn notcurses_info_query_geompixel_emits_size_reply_nonzero() {
         String::from_utf8_lossy(&stream),
     );
     // Extract Ph + Pw and assert both non-zero.
-    let after = find_subslice(&stream, prefix).map(|i| &stream[i + prefix.len()..]).unwrap();
+    let after = find_subslice(&stream, prefix)
+        .map(|i| &stream[i + prefix.len()..])
+        .unwrap();
     let semi = after.iter().position(|b| *b == b';').expect("semicolon");
-    let ph: u32 = std::str::from_utf8(&after[..semi]).unwrap().parse().unwrap();
+    let ph: u32 = std::str::from_utf8(&after[..semi])
+        .unwrap()
+        .parse()
+        .unwrap();
     let rest = &after[semi + 1..];
     let t_idx = rest.iter().position(|b| *b == b't').expect("t terminator");
-    let pw: u32 = std::str::from_utf8(&rest[..t_idx]).unwrap().parse().unwrap();
+    let pw: u32 = std::str::from_utf8(&rest[..t_idx])
+        .unwrap()
+        .parse()
+        .unwrap();
     assert!(
         ph > 0 && pw > 0,
         "GEOMPIXEL reply MUST report non-zero pixel dims (got ph={ph} pw={pw}). \
@@ -424,12 +431,20 @@ fn notcurses_info_query_geomcell_emits_size_reply_nonzero() {
         "GEOMCELL (\\x1b[18t) MUST reply with \\x1b[8;<pl>;<pc>t; got {:?}",
         String::from_utf8_lossy(&stream),
     );
-    let after = find_subslice(&stream, prefix).map(|i| &stream[i + prefix.len()..]).unwrap();
+    let after = find_subslice(&stream, prefix)
+        .map(|i| &stream[i + prefix.len()..])
+        .unwrap();
     let semi = after.iter().position(|b| *b == b';').expect("semicolon");
-    let pl: u32 = std::str::from_utf8(&after[..semi]).unwrap().parse().unwrap();
+    let pl: u32 = std::str::from_utf8(&after[..semi])
+        .unwrap()
+        .parse()
+        .unwrap();
     let rest = &after[semi + 1..];
     let t_idx = rest.iter().position(|b| *b == b't').expect("t terminator");
-    let pc: u32 = std::str::from_utf8(&rest[..t_idx]).unwrap().parse().unwrap();
+    let pc: u32 = std::str::from_utf8(&rest[..t_idx])
+        .unwrap()
+        .parse()
+        .unwrap();
     assert!(
         pl > 0 && pc > 0,
         "GEOMCELL reply MUST report non-zero cell dims (got pl={pl} pc={pc})."
@@ -530,7 +545,10 @@ fn notcurses_info_handshake_full_dump() {
     let bytes = notcurses_info_init_stream();
     let mut h = SpecHarness::new();
     h.feed(&bytes);
-    eprintln!("--- notcurses-info full init dump ({} bytes sent) ---", bytes.len());
+    eprintln!(
+        "--- notcurses-info full init dump ({} bytes sent) ---",
+        bytes.len()
+    );
     let mut count = 0usize;
     let mut total = 0usize;
     for (i, (b, kind)) in pty_writes(&h).into_iter().enumerate() {

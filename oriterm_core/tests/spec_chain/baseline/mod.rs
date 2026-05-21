@@ -1,6 +1,6 @@
 //! Baseline ECMA-48 + DEC private mode spec_chain coverage.
 //!
-//! Subsections of 
+//! Subsections of
 //! land their spec_chain conversions here:
 //!
 //! - `tack_section_05` — converts the `n) begin testing` menu scenarios

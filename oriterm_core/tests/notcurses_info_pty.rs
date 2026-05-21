@@ -7,7 +7,7 @@
 //! `notcurses_check_pixel_support()` gate (`tcache.cellpxy != 0 &&
 //! tcache.cellpxx != 0`) opens and `display_logo()` runs.
 //!
-//! See: 
+//! See:
 //!
 //! Phase 1 evidence: if `renderable_content_into` yields a non-empty
 //! `images` placement list and non-empty `image_data` payloads after a
@@ -80,18 +80,18 @@ fn capture_and_replay_truncated() -> Option<RenderableContent> {
 /// §01 stays the open question.
 #[test]
 fn notcurses_info_real_pty_emits_pixel_protocol() {
- let Some(content) = capture_and_replay_truncated() else {
- return;
- };
- assert!(
- !content.images.is_empty() && !content.image_data.is_empty(),
- "notcurses-info real PTY run (replayed up to `_Ga=p,` end) did not \
+    let Some(content) = capture_and_replay_truncated() else {
+        return;
+    };
+    assert!(
+        !content.images.is_empty() && !content.image_data.is_empty(),
+        "notcurses-info real PTY run (replayed up to `_Ga=p,` end) did not \
  emit pixel-protocol bytes (images.len={}, image_data.len={}). Phase 1 \
  evidence: either our reply path is missing a probe, OR notcurses \
  skipped display_logo due to a missing/zero cellpx capability.",
- content.images.len(),
- content.image_data.len()
- );
+        content.images.len(),
+        content.image_data.len()
+    );
 }
 
 /// Verify the full daemon-side snapshot extraction path produces a
@@ -115,84 +115,84 @@ fn notcurses_info_real_pty_emits_pixel_protocol() {
 /// render).
 #[test]
 fn notcurses_info_renderable_content_carries_image_data() {
- let Some(content) = capture_and_replay_truncated() else {
- return;
- };
+    let Some(content) = capture_and_replay_truncated() else {
+        return;
+    };
 
- eprintln!(
- "renderable_content_into: images.len={} image_data.len={} images_dirty={}",
- content.images.len(),
- content.image_data.len(),
- content.images_dirty,
- );
- for (i, img) in content.image_data.iter().enumerate() {
- eprintln!(
- " image_data[{i}]: id={:?} {}x{} px, data.len={}B",
- img.id,
- img.width,
- img.height,
- img.data.len(),
- );
- }
- for (i, p) in content.images.iter().enumerate() {
- eprintln!(
- " images[{i}]: id={:?} viewport=({},{}) display={}x{} z={}",
- p.image_id, p.viewport_x, p.viewport_y, p.display_width, p.display_height, p.z_index,
- );
- }
+    eprintln!(
+        "renderable_content_into: images.len={} image_data.len={} images_dirty={}",
+        content.images.len(),
+        content.image_data.len(),
+        content.images_dirty,
+    );
+    for (i, img) in content.image_data.iter().enumerate() {
+        eprintln!(
+            " image_data[{i}]: id={:?} {}x{} px, data.len={}B",
+            img.id,
+            img.width,
+            img.height,
+            img.data.len(),
+        );
+    }
+    for (i, p) in content.images.iter().enumerate() {
+        eprintln!(
+            " images[{i}]: id={:?} viewport=({},{}) display={}x{} z={}",
+            p.image_id, p.viewport_x, p.viewport_y, p.display_width, p.display_height, p.z_index,
+        );
+    }
 
- assert!(
- !content.images.is_empty(),
- "snapshot extraction lost the placement: images.len()=0"
- );
- assert!(
- !content.image_data.is_empty(),
- "snapshot extraction has placements but no image_data — \
+    assert!(
+        !content.images.is_empty(),
+        "snapshot extraction lost the placement: images.len()=0"
+    );
+    assert!(
+        !content.image_data.is_empty(),
+        "snapshot extraction has placements but no image_data — \
  pixel bytes will not reach the GUI. images.len()={}, \
  image_data.len()=0.",
- content.images.len(),
- );
+        content.images.len(),
+    );
 
- let referenced_ids: std::collections::HashSet<_> =
- content.images.iter().map(|p| p.image_id).collect();
- let provided_ids: std::collections::HashSet<_> =
- content.image_data.iter().map(|d| d.id).collect();
- let missing: Vec<_> = referenced_ids.difference(&provided_ids).collect();
- assert!(
- missing.is_empty(),
- "snapshot has placements referencing image ids with no \
+    let referenced_ids: std::collections::HashSet<_> =
+        content.images.iter().map(|p| p.image_id).collect();
+    let provided_ids: std::collections::HashSet<_> =
+        content.image_data.iter().map(|d| d.id).collect();
+    let missing: Vec<_> = referenced_ids.difference(&provided_ids).collect();
+    assert!(
+        missing.is_empty(),
+        "snapshot has placements referencing image ids with no \
  image_data entry — those placements will render blank: \
  referenced={referenced_ids:?} provided={provided_ids:?} missing={missing:?}"
- );
+    );
 
- for img in &content.image_data {
- assert!(
- img.width > 0 && img.height > 0,
- "image_data entry for {:?} has zero dimensions {}x{} — \
+    for img in &content.image_data {
+        assert!(
+            img.width > 0 && img.height > 0,
+            "image_data entry for {:?} has zero dimensions {}x{} — \
  the GPU pipeline will skip a zero-size placement",
- img.id,
- img.width,
- img.height,
- );
- assert!(
- !img.data.is_empty(),
- "image_data entry for {:?} has empty pixel buffer \
+            img.id,
+            img.width,
+            img.height,
+        );
+        assert!(
+            !img.data.is_empty(),
+            "image_data entry for {:?} has empty pixel buffer \
  (dims {}x{}) — the wire ships placeholder metadata only",
- img.id,
- img.width,
- img.height,
- );
- let expected_min_bytes = (img.width as usize) * (img.height as usize);
- assert!(
- img.data.len() >= expected_min_bytes,
- "image_data for {:?} carries {}B of pixels but dims \
+            img.id,
+            img.width,
+            img.height,
+        );
+        let expected_min_bytes = (img.width as usize) * (img.height as usize);
+        assert!(
+            img.data.len() >= expected_min_bytes,
+            "image_data for {:?} carries {}B of pixels but dims \
  {}x{} would need at least {}B (1 byte/pixel even at \
  worst-case grayscale)",
- img.id,
- img.data.len(),
- img.width,
- img.height,
- expected_min_bytes,
- );
- }
+            img.id,
+            img.data.len(),
+            img.width,
+            img.height,
+            expected_min_bytes,
+        );
+    }
 }

@@ -9,11 +9,11 @@
 /// project's parameter-hygiene rule (>4 params → struct).
 #[derive(Clone, Copy, Debug)]
 pub(in crate::app) struct RedrawPredicateInputs {
- pub snap_is_none: bool,
- pub snap_dirty: bool,
- pub pane_changed: bool,
- pub preedit_revision: u64,
- pub prev_preedit_revision: u64,
+    pub snap_is_none: bool,
+    pub snap_dirty: bool,
+    pub pane_changed: bool,
+    pub preedit_revision: u64,
+    pub prev_preedit_revision: u64,
 }
 
 /// Output of [`compute_redraw_predicates`] — split predicate gating two
@@ -32,8 +32,8 @@ pub(in crate::app) struct RedrawPredicateInputs {
 /// anchor surface.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(in crate::app) struct RedrawPredicates {
- pub snapshot_changed: bool,
- pub content_changed: bool,
+    pub snapshot_changed: bool,
+    pub content_changed: bool,
 }
 
 /// Split predicate gating the snapshot-refresh / swap fast-path vs the
@@ -41,12 +41,12 @@ pub(in crate::app) struct RedrawPredicates {
 /// the load-bearing rationale on why these two predicates must remain
 /// separate — see the regression anchor at the type-level doc.
 pub(in crate::app) fn compute_redraw_predicates(inputs: RedrawPredicateInputs) -> RedrawPredicates {
- let snapshot_changed = inputs.snap_is_none || inputs.snap_dirty || inputs.pane_changed;
- let preedit_revision_changed = inputs.preedit_revision != inputs.prev_preedit_revision;
- RedrawPredicates {
- snapshot_changed,
- content_changed: snapshot_changed || preedit_revision_changed,
- }
+    let snapshot_changed = inputs.snap_is_none || inputs.snap_dirty || inputs.pane_changed;
+    let preedit_revision_changed = inputs.preedit_revision != inputs.prev_preedit_revision;
+    RedrawPredicates {
+        snapshot_changed,
+        content_changed: snapshot_changed || preedit_revision_changed,
+    }
 }
 
 #[cfg(test)]

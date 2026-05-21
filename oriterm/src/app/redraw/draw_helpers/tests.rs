@@ -7,8 +7,8 @@ use super::post_render_ui_stale;
 /// successful frame.
 #[test]
 fn ok_no_animation_resets_stale() {
- assert!(!post_render_ui_stale(false, false, false));
- assert!(!post_render_ui_stale(true, false, false));
+    assert!(!post_render_ui_stale(false, false, false));
+    assert!(!post_render_ui_stale(true, false, false));
 }
 
 /// happy path with chrome animation sets
@@ -16,8 +16,8 @@ fn ok_no_animation_resets_stale() {
 /// keeps the cache stale across frames.
 #[test]
 fn ok_with_animation_sets_stale() {
- assert!(post_render_ui_stale(false, false, true));
- assert!(post_render_ui_stale(true, false, true));
+    assert!(post_render_ui_stale(false, false, true));
+    assert!(post_render_ui_stale(true, false, true));
 }
 
 /// error path with prior stale bit
@@ -27,10 +27,10 @@ fn ok_with_animation_sets_stale() {
 /// `SurfaceError::Outdated`, `Lost`, `OutOfMemory`, `Other`, `Timeout`.
 #[test]
 fn err_preserves_prior_stale_bit() {
- // No animation: prior stale survives the error.
- assert!(post_render_ui_stale(true, true, false));
- // Animation: result is true regardless.
- assert!(post_render_ui_stale(true, true, true));
+    // No animation: prior stale survives the error.
+    assert!(post_render_ui_stale(true, true, false));
+    // Animation: result is true regardless.
+    assert!(post_render_ui_stale(true, true, true));
 }
 
 /// error path with NO prior stale bit and
@@ -39,7 +39,7 @@ fn err_preserves_prior_stale_bit() {
 /// into the post-fold value.
 #[test]
 fn err_no_prior_stale_no_animation_returns_false() {
- assert!(!post_render_ui_stale(false, true, false));
+    assert!(!post_render_ui_stale(false, true, false));
 }
 
 /// error path with NO prior stale bit but
@@ -47,7 +47,7 @@ fn err_no_prior_stale_no_animation_returns_false() {
 /// of the error path.
 #[test]
 fn err_no_prior_stale_with_animation_returns_true() {
- assert!(post_render_ui_stale(false, true, true));
+    assert!(post_render_ui_stale(false, true, true));
 }
 
 /// self-verifying matrix completeness:
@@ -55,19 +55,19 @@ fn err_no_prior_stale_with_animation_returns_true() {
 /// is total.
 #[test]
 fn matrix_is_total_and_self_verifying() {
- let mut count = 0;
- for prev in [false, true] {
- for err in [false, true] {
- for anim in [false, true] {
- let actual = post_render_ui_stale(prev, err, anim);
- let expected = (prev && err) || anim;
- assert_eq!(actual, expected, "prev={prev} err={err} anim={anim}");
- count += 1;
- }
- }
- }
- assert_eq!(
- count, 8,
- "must exercise all 8 cells of the 2x2x2 truth table"
- );
+    let mut count = 0;
+    for prev in [false, true] {
+        for err in [false, true] {
+            for anim in [false, true] {
+                let actual = post_render_ui_stale(prev, err, anim);
+                let expected = (prev && err) || anim;
+                assert_eq!(actual, expected, "prev={prev} err={err} anim={anim}");
+                count += 1;
+            }
+        }
+    }
+    assert_eq!(
+        count, 8,
+        "must exercise all 8 cells of the 2x2x2 truth table"
+    );
 }

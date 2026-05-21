@@ -13,8 +13,8 @@
 
 use std::sync::Arc;
 
-use super::ImageCache;
 use super::super::ImageId;
+use super::ImageCache;
 
 impl ImageCache {
     /// Byte-exact pixel data for the 1-based frame `frame_num`.

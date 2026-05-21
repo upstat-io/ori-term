@@ -3,8 +3,8 @@
 use log::warn;
 
 use crate::effect::sink::EffectSink;
-use crate::image::ImageId;
 use crate::image::ImageError;
+use crate::image::ImageId;
 use crate::image::kitty::KittyCommand;
 use crate::term::Term;
 

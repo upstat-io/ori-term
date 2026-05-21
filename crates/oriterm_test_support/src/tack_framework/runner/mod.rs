@@ -66,8 +66,8 @@
 use portable_pty::ExitStatus;
 
 use crate::session::{
- PtySession, tack_available, tack_runner_available_combine, tack_version_supported,
- tic_available,
+    PtySession, tack_available, tack_runner_available_combine, tack_version_supported,
+    tic_available,
 };
 use crate::terminfo::TerminfoEnv;
 
@@ -90,7 +90,7 @@ pub mod stable;
 /// suffix) propagates automatically because every consumer routes
 /// through this one function.
 fn scenario_name(screen_id: &str, cols: u16, rows: u16) -> String {
- format!("{screen_id}_{cols}x{rows}")
+    format!("{screen_id}_{cols}x{rows}")
 }
 
 /// CI-safe wait for tack's main-menu prompt after spawning. Tack
@@ -134,19 +134,19 @@ pub(super) const TACK_QUIT_MAX_ITERATIONS: u32 = 5;
 /// (the panic message references the missing 05.0 work, not a
 /// downstream tack failure).
 pub(super) fn prepare_and_navigate(
- spec: &ScenarioSpec,
- cols: u16,
- rows: u16,
+    spec: &ScenarioSpec,
+    cols: u16,
+    rows: u16,
 ) -> (PtySession, TerminfoEnv, String, ScreenFacts) {
- assert_no_unverified_sentinels(spec.id, spec.menu_path, None, &[spec.ready_anchor]);
- let env = TerminfoEnv::compile();
- let mut session = PtySession::spawn_tack(&env, cols, rows);
- session.wait_for(TACK_MAIN_MENU_PROMPT, MAIN_MENU_READY_TIMEOUT_MS);
- TackNavigator::navigate(&mut session, spec.menu_path);
- session.wait_for(spec.ready_anchor, READY_ANCHOR_TIMEOUT_MS);
- let grid_text = session.grid_text();
- let parsed = (spec.parser)(&grid_text);
- (session, env, grid_text, parsed)
+    assert_no_unverified_sentinels(spec.id, spec.menu_path, None, &[spec.ready_anchor]);
+    let env = TerminfoEnv::compile();
+    let mut session = PtySession::spawn_tack(&env, cols, rows);
+    session.wait_for(TACK_MAIN_MENU_PROMPT, MAIN_MENU_READY_TIMEOUT_MS);
+    TackNavigator::navigate(&mut session, spec.menu_path);
+    session.wait_for(spec.ready_anchor, READY_ANCHOR_TIMEOUT_MS);
+    let grid_text = session.grid_text();
+    let parsed = (spec.parser)(&grid_text);
+    (session, env, grid_text, parsed)
 }
 
 /// Scan a `&[MenuStep]` (and optional `phase_trigger` / extra
@@ -167,48 +167,48 @@ pub(super) fn prepare_and_navigate(
 /// "sentinel detection runs before PTY spawn" semantic the unit
 /// tests pin.
 pub(super) fn assert_no_unverified_sentinels(
- scenario_id: &str,
- menu_path: &[MenuStep],
- phase_trigger: Option<&[u8]>,
- anchors: &[&str],
+    scenario_id: &str,
+    menu_path: &[MenuStep],
+    phase_trigger: Option<&[u8]>,
+    anchors: &[&str],
 ) {
- for (idx, step) in menu_path.iter().enumerate() {
- assert!(
- !is_unverified_menu_key(step.send),
- "scenario {scenario_id}: menu_path[{idx}].send is the \
+    for (idx, step) in menu_path.iter().enumerate() {
+        assert!(
+            !is_unverified_menu_key(step.send),
+            "scenario {scenario_id}: menu_path[{idx}].send is the \
  unverified-menu-key sentinel. Look up the verified \
  key in BEGIN_TESTING_INVENTORY (see 05.0) and replace \
  `unverified_menu_key()` with the real key bytes."
- );
- assert!(
- !is_unverified_anchor(step.wait_for),
- "scenario {scenario_id}: menu_path[{idx}].wait_for is \
+        );
+        assert!(
+            !is_unverified_anchor(step.wait_for),
+            "scenario {scenario_id}: menu_path[{idx}].wait_for is \
  the unverified-anchor sentinel. Look up the verified \
  sub-menu prompt in the 05.0 discovery snapshot and \
  replace `unverified_anchor()` with the real string."
- );
- for (alt_idx, alt) in step.or_wait_for.iter().enumerate() {
- assert!(
- !is_unverified_anchor(alt),
- "scenario {scenario_id}: menu_path[{idx}].or_wait_for[{alt_idx}] \
+        );
+        for (alt_idx, alt) in step.or_wait_for.iter().enumerate() {
+            assert!(
+                !is_unverified_anchor(alt),
+                "scenario {scenario_id}: menu_path[{idx}].or_wait_for[{alt_idx}] \
  is the unverified-anchor sentinel."
- );
- }
- }
- if let Some(trigger) = phase_trigger {
- assert!(
- !is_unverified_menu_key(trigger),
- "scenario {scenario_id}: phase_trigger is the \
+            );
+        }
+    }
+    if let Some(trigger) = phase_trigger {
+        assert!(
+            !is_unverified_menu_key(trigger),
+            "scenario {scenario_id}: phase_trigger is the \
  unverified-menu-key sentinel."
- );
- }
- for anchor in anchors {
- assert!(
- !is_unverified_anchor(anchor),
- "scenario {scenario_id}: anchor is the \
+        );
+    }
+    for anchor in anchors {
+        assert!(
+            !is_unverified_anchor(anchor),
+            "scenario {scenario_id}: anchor is the \
  unverified-anchor sentinel."
- );
- }
+        );
+    }
 }
 
 /// Quit tack via `quit_tack` (or `quit_path` override) and assert
@@ -220,23 +220,23 @@ pub(super) fn assert_no_unverified_sentinels(
 /// quit + exit-status assertion) cannot drift between the two
 /// public entry points.
 pub(super) fn finish_and_assert(
- session: &mut PtySession,
- quit_path: Option<fn(&mut PtySession) -> ExitStatus>,
- scenario_id: &str,
- cols: u16,
- rows: u16,
+    session: &mut PtySession,
+    quit_path: Option<fn(&mut PtySession) -> ExitStatus>,
+    scenario_id: &str,
+    cols: u16,
+    rows: u16,
 ) -> ExitStatus {
- let exit = match quit_path {
- Some(quit) => quit(session),
- None => session.quit_tack(TACK_QUIT_MAX_ITERATIONS),
- };
- assert!(
- exit.success(),
- "scenario {scenario_id} ({cols}x{rows}): tack exited non-zero: \
+    let exit = match quit_path {
+        Some(quit) => quit(session),
+        None => session.quit_tack(TACK_QUIT_MAX_ITERATIONS),
+    };
+    assert!(
+        exit.success(),
+        "scenario {scenario_id} ({cols}x{rows}): tack exited non-zero: \
  {exit:?}\nGrid:\n{grid}",
- grid = session.grid_text(),
- );
- exit
+        grid = session.grid_text(),
+    );
+    exit
 }
 
 /// The result of running one scenario: the captured grid text and
@@ -248,39 +248,39 @@ pub(super) fn finish_and_assert(
 /// when navigation produces the same screen.
 #[derive(Clone, Debug)]
 pub struct ScenarioOutcome {
- /// The scenario's semantic test name (e.g. `"tack_modes_am"`).
- pub scenario_id: &'static str,
- /// Dedupable screen identity for snapshot naming
- /// (e.g. `"tack_modes"` for every modes scenario).
- pub screen_id: &'static str,
- /// Grid columns the scenario ran at.
- pub cols: u16,
- /// Grid rows the scenario ran at.
- pub rows: u16,
- /// Captured grid text at the moment of parsing.
- pub grid_text: String,
- /// Parser-extracted typed facts about the screen.
- pub parsed: ScreenFacts,
+    /// The scenario's semantic test name (e.g. `"tack_modes_am"`).
+    pub scenario_id: &'static str,
+    /// Dedupable screen identity for snapshot naming
+    /// (e.g. `"tack_modes"` for every modes scenario).
+    pub screen_id: &'static str,
+    /// Grid columns the scenario ran at.
+    pub cols: u16,
+    /// Grid rows the scenario ran at.
+    pub rows: u16,
+    /// Captured grid text at the moment of parsing.
+    pub grid_text: String,
+    /// Parser-extracted typed facts about the screen.
+    pub parsed: ScreenFacts,
 }
 
 impl ScenarioOutcome {
- /// Insta snapshot name: `<screen_id>_<cols>x<rows>`. Multiple
- /// scenarios that share `screen_id` AND size will share an insta
- /// `.snap` file. Delegates to the canonical [`scenario_name`]
- /// SSOT helper so [`LiveSession::snapshot_name`] and Section 07
- /// stay in lockstep automatically.
- #[must_use]
- pub fn snapshot_name(&self) -> String {
- scenario_name(self.screen_id, self.cols, self.rows)
- }
+    /// Insta snapshot name: `<screen_id>_<cols>x<rows>`. Multiple
+    /// scenarios that share `screen_id` AND size will share an insta
+    /// `.snap` file. Delegates to the canonical [`scenario_name`]
+    /// SSOT helper so [`LiveSession::snapshot_name`] and Section 07
+    /// stay in lockstep automatically.
+    #[must_use]
+    pub fn snapshot_name(&self) -> String {
+        scenario_name(self.screen_id, self.cols, self.rows)
+    }
 
- /// PNG golden name: same convention as [`Self::snapshot_name`].
- /// Used by Section 07's GPU bridge as the SSOT for golden
- /// filenames.
- #[must_use]
- pub fn golden_name(&self) -> String {
- self.snapshot_name()
- }
+    /// PNG golden name: same convention as [`Self::snapshot_name`].
+    /// Used by Section 07's GPU bridge as the SSOT for golden
+    /// filenames.
+    #[must_use]
+    pub fn golden_name(&self) -> String {
+        self.snapshot_name()
+    }
 }
 
 /// # Snapshot policy for duplicate-screen scenarios
@@ -299,19 +299,19 @@ impl ScenarioOutcome {
 pub struct ScenarioRunner;
 
 impl ScenarioRunner {
- /// Returns true iff `tack` and `tic` are available AND the
- /// installed tack reports a version compatible with Section
- /// 05's pinned catalog. Call at the top of every test that
- /// runs scenarios so the test skips cleanly when any of the
- /// three preconditions is missing.
- /// AND-combines the three boolean gates via the pure
- /// [`tack_runner_available_combine`] helper. The split lets
- /// unit tests pin the AND-combine semantic without depending
- /// on host-installed tack/tic.
- #[must_use]
- pub fn available() -> bool {
- tack_runner_available_combine(tack_available(), tic_available(), tack_version_supported())
- }
+    /// Returns true iff `tack` and `tic` are available AND the
+    /// installed tack reports a version compatible with Section
+    /// 05's pinned catalog. Call at the top of every test that
+    /// runs scenarios so the test skips cleanly when any of the
+    /// three preconditions is missing.
+    /// AND-combines the three boolean gates via the pure
+    /// [`tack_runner_available_combine`] helper. The split lets
+    /// unit tests pin the AND-combine semantic without depending
+    /// on host-installed tack/tic.
+    #[must_use]
+    pub fn available() -> bool {
+        tack_runner_available_combine(tack_available(), tic_available(), tack_version_supported())
+    }
 }
 
 /// Wrapper that returns a LIVE [`PtySession`] instead of just text.
@@ -329,67 +329,67 @@ impl ScenarioRunner {
 /// semantics. See M5 in the Codex review at the top of section-04
 /// for the rationale.
 pub struct LiveSession {
- /// The live PTY session running tack.
- pub session: PtySession,
- /// Parser-extracted facts captured at the moment of navigation.
- pub facts: ScreenFacts,
- /// The scenario's semantic test name.
- pub scenario_id: &'static str,
- /// Dedupable screen identity for golden naming.
- pub screen_id: &'static str,
- /// Grid columns the session was opened at.
- pub cols: u16,
- /// Grid rows the session was opened at.
- pub rows: u16,
- /// Held to keep the temp terminfo dir alive for tack's lazy reads.
- pub(super) _terminfo: TerminfoEnv,
- /// Per-scenario quit override propagated from `ScenarioSpec`.
- pub(super) quit_path: Option<fn(&mut PtySession) -> ExitStatus>,
+    /// The live PTY session running tack.
+    pub session: PtySession,
+    /// Parser-extracted facts captured at the moment of navigation.
+    pub facts: ScreenFacts,
+    /// The scenario's semantic test name.
+    pub scenario_id: &'static str,
+    /// Dedupable screen identity for golden naming.
+    pub screen_id: &'static str,
+    /// Grid columns the session was opened at.
+    pub cols: u16,
+    /// Grid rows the session was opened at.
+    pub rows: u16,
+    /// Held to keep the temp terminfo dir alive for tack's lazy reads.
+    pub(super) _terminfo: TerminfoEnv,
+    /// Per-scenario quit override propagated from `ScenarioSpec`.
+    pub(super) quit_path: Option<fn(&mut PtySession) -> ExitStatus>,
 }
 
 impl LiveSession {
- /// Snapshot/golden name for this live session: same convention
- /// as [`ScenarioOutcome::snapshot_name`] —
- /// `"<screen_id>_<cols>x<rows>"`.
- /// Delegates to the canonical [`scenario_name`] SSOT helper.
- /// Section 07's GPU bridge MUST call this (or its
- /// [`Self::golden_name`] alias) instead of rebuilding the
- /// format literal at the call site — rebuilding at any second
- /// site is ``. A future change to the
- /// naming convention propagates automatically.
- #[must_use]
- pub fn snapshot_name(&self) -> String {
- scenario_name(self.screen_id, self.cols, self.rows)
- }
+    /// Snapshot/golden name for this live session: same convention
+    /// as [`ScenarioOutcome::snapshot_name`] —
+    /// `"<screen_id>_<cols>x<rows>"`.
+    /// Delegates to the canonical [`scenario_name`] SSOT helper.
+    /// Section 07's GPU bridge MUST call this (or its
+    /// [`Self::golden_name`] alias) instead of rebuilding the
+    /// format literal at the call site — rebuilding at any second
+    /// site is ``. A future change to the
+    /// naming convention propagates automatically.
+    #[must_use]
+    pub fn snapshot_name(&self) -> String {
+        scenario_name(self.screen_id, self.cols, self.rows)
+    }
 
- /// PNG golden name: identical to [`Self::snapshot_name`]. Used
- /// by Section 07's `run_tack_scenario_golden` as the SSOT golden
- /// filename. Section 07 MUST call `live.golden_name()` instead
- /// of rebuilding `format!("{}_{}x{}",...)` at the call site.
- #[must_use]
- pub fn golden_name(&self) -> String {
- self.snapshot_name()
- }
+    /// PNG golden name: identical to [`Self::snapshot_name`]. Used
+    /// by Section 07's `run_tack_scenario_golden` as the SSOT golden
+    /// filename. Section 07 MUST call `live.golden_name()` instead
+    /// of rebuilding `format!("{}_{}x{}",...)` at the call site.
+    #[must_use]
+    pub fn golden_name(&self) -> String {
+        self.snapshot_name()
+    }
 
- /// Quit tack cleanly via the same [`PtySession::quit_tack`]
- /// helper as [`ScenarioRunner::run_at`], asserting
- /// `exit.success()`. Consumes `self` so the caller can't use
- /// the session after `finish` — `Drop` runs on the held fields
- /// the moment `finish` returns and the temp terminfo + child
- /// are reaped together.
- /// Delegates the actual quit + assertion to
- /// [`finish_and_assert`] so this method and
- /// [`ScenarioRunner::run_at`] cannot drift on the C2/C3 fixes.
- /// Section 07 GPU goldens call this AFTER `render_to_pixels`.
- pub fn finish(mut self) -> ExitStatus {
- finish_and_assert(
- &mut self.session,
- self.quit_path,
- self.scenario_id,
- self.cols,
- self.rows,
- )
- }
+    /// Quit tack cleanly via the same [`PtySession::quit_tack`]
+    /// helper as [`ScenarioRunner::run_at`], asserting
+    /// `exit.success()`. Consumes `self` so the caller can't use
+    /// the session after `finish` — `Drop` runs on the held fields
+    /// the moment `finish` returns and the temp terminfo + child
+    /// are reaped together.
+    /// Delegates the actual quit + assertion to
+    /// [`finish_and_assert`] so this method and
+    /// [`ScenarioRunner::run_at`] cannot drift on the C2/C3 fixes.
+    /// Section 07 GPU goldens call this AFTER `render_to_pixels`.
+    pub fn finish(mut self) -> ExitStatus {
+        finish_and_assert(
+            &mut self.session,
+            self.quit_path,
+            self.scenario_id,
+            self.cols,
+            self.rows,
+        )
+    }
 }
 
 #[cfg(test)]

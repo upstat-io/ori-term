@@ -6,9 +6,7 @@ use log::warn;
 
 use crate::effect::sink::EffectSink;
 use crate::image::kitty::KittyCommand;
-use crate::image::{
-    BlitRect, CanvasSource, FrameLoadRequest, FrameTarget, ImageError, ImageId,
-};
+use crate::image::{BlitRect, CanvasSource, FrameLoadRequest, FrameTarget, ImageError, ImageId};
 use crate::term::Term;
 
 use super::KittyReplyContext;
@@ -66,9 +64,7 @@ impl<S: EffectSink> Term<S> {
         let keys = extract_a_f_keys(&merged, decoded_w, decoded_h);
 
         // r-clamp + arm resolution (kitty graphics.c:1558-1561 + 1606-1635).
-        let total_frames = self
-            .image_cache()
-            .animation_total_frames(ImageId(image_id));
+        let total_frames = self.image_cache().animation_total_frames(ImageId(image_id));
         let r_target = keys.target_frame.unwrap_or(0);
         let effective_target = if r_target == 0 || r_target > total_frames {
             total_frames + 1
@@ -132,11 +128,7 @@ fn build_request(
 }
 
 /// Map `put_frame` errors to kitty reply codes.
-fn emit_error_reply<S: EffectSink>(
-    term: &mut Term<S>,
-    ctx: KittyReplyContext,
-    err: ImageError,
-) {
+fn emit_error_reply<S: EffectSink>(term: &mut Term<S>, ctx: KittyReplyContext, err: ImageError) {
     match err {
         // ENOENT per kitty graphics.c:2233-2235; preserve `,r=` omission so
         // existing `kitty_frame_reply_r_qualifier_omitted_on_missing_image_enoent`
