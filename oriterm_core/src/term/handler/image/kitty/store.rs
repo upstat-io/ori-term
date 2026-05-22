@@ -7,35 +7,25 @@ use std::sync::Arc;
 use std::os::unix::fs::OpenOptionsExt;
 
 use crate::effect::sink::EffectSink;
-use crate::image::kitty::{KittyError, KittyTransmission};
+use crate::image::kitty::KittyTransmission;
 use crate::image::{ImageData, ImageId, ImageSource, decode_to_rgba, rgb_to_rgba};
 use crate::term::Term;
 
 use super::KittyStoreParams;
 use super::prepare::prepare_image_bytes;
 
-/// Error from `kitty_store_image` / `kitty_store_from_file`. `Protocol`
-/// wraps a parser-layer `KittyError` and renders as `EINVAL: <variant text>`
-/// via Display delegation. `Reply` carries store-specific stringly-typed
-/// reply text (EBADF, EBIG, EIO, ENOMEM, EINVAL-shaped strings produced
-/// inside the store layer).
+/// Error from `kitty_store_image` / `kitty_store_from_file`. `Reply`
+/// carries store-specific stringly-typed reply text (EBADF, EBIG, EIO,
+/// ENOMEM, EINVAL-shaped strings produced inside the store layer).
 #[derive(Debug)]
 pub(super) enum KittyStoreError {
-    /// Typed parser-layer protocol error; store layer prepends the EINVAL
-    /// reply prefix via Display.
-    Protocol(KittyError),
-    /// Store-specific stringly-typed reply text.
+    /// Store-layer stringly-typed reply text.
     Reply(String),
 }
 
 impl std::fmt::Display for KittyStoreError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            // Delegate variant text to KittyError's Display and prepend the
-            // kitty-protocol reply prefix at the store boundary.
-            // `CompressionNotSupported` renders byte-stream-pinned reply
-            // `EINVAL: compression not supported` per `KG-COMPRESSION-OZ-REJECTED`.
-            Self::Protocol(e) => write!(f, "EINVAL: {e}"),
             Self::Reply(s) => f.write_str(s),
         }
     }
@@ -115,14 +105,6 @@ fn open_regular_file(path: &std::path::Path) -> Result<(std::fs::File, std::fs::
 impl<S: EffectSink> Term<S> {
     /// Decode and store image data in the cache.
     pub(super) fn kitty_store_image(&mut self, p: KittyStoreParams) -> Result<(), KittyStoreError> {
-        // Fail-closed reject for `o=z`: ori_term does not implement zlib
-        // decompression. Catalog row `KG-COMPRESSION-OZ-REJECTED`.
-        if p.compression == Some(b'z') {
-            return Err(KittyStoreError::Protocol(
-                KittyError::CompressionNotSupported,
-            ));
-        }
-
         let (pixel_data, source) = match p.transmission {
             KittyTransmission::Direct => (p.payload, ImageSource::Direct),
             KittyTransmission::File | KittyTransmission::TempFile => {
@@ -291,6 +273,9 @@ impl<S: EffectSink> Term<S> {
                 "EBIG: file exceeds max image size".to_string(),
             ));
         }
+
+        let expected_size = expected_decoded_size_for_format(p.format, p.width, p.height);
+        let file_data = prepare_image_bytes(file_data, p.compression, expected_size, max_bytes)?;
 
         let source = ImageSource::File(path.to_path_buf());
 

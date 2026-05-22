@@ -146,10 +146,6 @@ pub enum KittyError {
     InvalidBase64,
     /// Unsupported format value.
     UnsupportedFormat(u32),
-    /// Compression flag set (`o=z`) but decompression not implemented;
-    /// `ori_term` fails closed at `kitty_store_image` entry with EINVAL
-    /// rather than silently reading the compressed bytes as raw pixel data.
-    CompressionNotSupported,
 }
 
 impl std::fmt::Display for KittyError {
@@ -158,7 +154,6 @@ impl std::fmt::Display for KittyError {
             Self::InvalidControlData(s) => write!(f, "invalid control data: {s}"),
             Self::InvalidBase64 => write!(f, "invalid base64 payload"),
             Self::UnsupportedFormat(n) => write!(f, "unsupported format: {n}"),
-            Self::CompressionNotSupported => write!(f, "compression not supported"),
         }
     }
 }

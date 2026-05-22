@@ -553,6 +553,7 @@ fn kitty_store_image_oz_f24_round_trips_rgb_to_rgba() {
 /// decompresses to the PNG bytes, then `decode_to_rgba` parses to RGBA.
 /// EXPECTED-FAIL pre-Phase 4.
 #[test]
+#[cfg(feature = "image-protocol")]
 fn kitty_store_image_oz_f100_round_trips_png() {
     use crate::image::ImageId;
     use flate2::Compression;
@@ -561,19 +562,16 @@ fn kitty_store_image_oz_f100_round_trips_png() {
 
     let mut term = Term::new(24, 80, 1000, Theme::default(), VoidEffectSink);
 
-    // 1x1 PNG (red pixel) — minimum-valid PNG byte sequence.
-    let png_red_1x1: Vec<u8> = vec![
-        0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, // signature
-        0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52, // IHDR len + tag
-        0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, // w=1, h=1
-        0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53, // depth=8, color=2 (RGB)
-        0xDE, // IHDR CRC
-        0x00, 0x00, 0x00, 0x0C, 0x49, 0x44, 0x41, 0x54, // IDAT len + tag
-        0x08, 0x99, 0x63, 0xF8, 0xCF, 0xC0, 0x00, 0x00, 0x00, 0x03, 0x00, 0x01, // deflated red px
-        0x9A, 0xF6, 0x4A, 0xE8, // IDAT CRC
-        0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, // IEND
-        0xAE, 0x42, 0x60, 0x82,
-    ];
+    // 1x1 PNG (red pixel) — encoded via the `image` crate so the IHDR /
+    // IDAT / IEND CRCs are valid (hand-rolled PNG bytes fail the decoder's
+    // CRC check).
+    let img = image::RgbaImage::from_pixel(1, 1, image::Rgba([255, 0, 0, 255]));
+    let mut png_red_1x1 = Vec::new();
+    img.write_to(
+        &mut std::io::Cursor::new(&mut png_red_1x1),
+        image::ImageFormat::Png,
+    )
+    .expect("png encode");
 
     let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
     encoder.write_all(&png_red_1x1).expect("encode");

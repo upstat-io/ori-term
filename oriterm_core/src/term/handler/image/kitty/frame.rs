@@ -11,6 +11,8 @@ use crate::term::Term;
 
 use super::KittyReplyContext;
 use super::frame_keys::{KittyFrameKeys, extract_a_f_keys};
+use super::prepare::prepare_image_bytes;
+use super::store::expected_decoded_size_for_format;
 
 impl<S: EffectSink> Term<S> {
     /// Handle `a=f` — transmit an animation frame.
@@ -47,6 +49,19 @@ impl<S: EffectSink> Term<S> {
         // for PNG `f=100` where `s=` and decoded dims can disagree because
         // `decode_to_rgba` reads dims from the PNG header).
         let payload = std::mem::take(&mut merged.payload);
+        let expected_size =
+            expected_decoded_size_for_format(merged.format, merged.source_width, merged.source_height);
+        let max_bytes = self.image_cache().max_single_image_bytes();
+        let payload = match prepare_image_bytes(payload, merged.compression, expected_size, max_bytes)
+        {
+            Ok(buf) => buf,
+            Err(e) => {
+                let msg = e.to_string();
+                warn!("kitty frame prepare failed: {msg}");
+                self.kitty_respond(&ctx, &msg);
+                return;
+            }
+        };
         let (rgba_data, decoded_w, decoded_h) = match Self::kitty_decode_pixels(
             payload,
             merged.format,
