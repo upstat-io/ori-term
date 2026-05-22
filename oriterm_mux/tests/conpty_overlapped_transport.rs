@@ -28,7 +28,9 @@
 //! - Test #4: resize mid-output (--large mode + session.resize)
 //!
 //! Out-of-scope: write blocking + true backpressure (require helper
-//! variants that block on parent drainage; filed as follow-ups).
+//! variants that block on parent drainage; to be filed at Phase 5
+//! close-out per the bug plan's /improve-tooling retrospective —
+//! current implementation is unidirectional child→parent).
 //!
 //! Regression: BUG-07-050 — Windows ConPTY/APC cure path has no
 //! automated end-to-end test pin.
