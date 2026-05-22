@@ -88,13 +88,6 @@ fn xtversion_responds_with_dcs_version_string() {
     let mut effects = Vec::new();
     t.effect_sink().drain_into(&mut effects);
 
-    // ori_term advertises as kitty(0.20.0) so notcurses-class
-    // graphics-flood producers gate kitty animation + o=z compression on
-    // the kitty XTVERSION identification — without it producers fall
-    // back to NCPIXEL_KITTY_STATIC + raw transmits which saturate
-    // the WSL+ConPTY transport at ~50 MB/sec. Tradeoff: kitty
-    // identification + comprehensive kitty graphics support, in exchange
-    // for compression. See status.rs:135-159 for the full rationale.
     let expected_bytes = b"\x1bP>|kitty(0.20.0)\x1b\\".to_vec();
     let matched = effects.iter().any(|e| {
         matches!(

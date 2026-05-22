@@ -24,11 +24,18 @@ fn make_image(id: u32, bytes: usize) -> ImageData {
     }
 }
 
-/// Helper: create a placement at the given cell position.
+/// Helper: create a placement at the given cell position. Each call mints a
+/// unique `placement_id` so callers can stack multiple placements on the same
+/// image_id without tripping the dedup contract (per kitty graphics protocol:
+/// unnamed `(image_id, placement_id=None)` placements replace each other; only
+/// distinct placement_ids stack).
 fn make_placement(image_id: u32, col: usize, row: u64) -> ImagePlacement {
+    use std::sync::atomic::{AtomicU32, Ordering};
+    static PID_COUNTER: AtomicU32 = AtomicU32::new(1);
+    let placement_id = Some(PID_COUNTER.fetch_add(1, Ordering::Relaxed));
     ImagePlacement {
         image_id: ImageId(image_id),
-        placement_id: None,
+        placement_id,
         source_x: 0,
         source_y: 0,
         source_w: 100,

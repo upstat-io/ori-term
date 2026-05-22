@@ -378,21 +378,12 @@ impl<S: EffectSink> PaneIoThread<S> {
         // chunk processing exceeds 8 ms (a single 60 FPS budget).
         // Throttled by an internal counter to one log per 32 slow
         // chunks so flood output doesn't drown the operator log.
-        //
-        // Diagnostic mode: `ORITERM_PERF_ALL_CHUNKS=1` bypasses both the
-        // 8 ms threshold and the 1/32 throttle so EVERY chunk gets a
-        // sub-phase breakdown logged. Surfaces per-chunk cost localization
-        // when drain cycles aggregate to ~60 ms median while no individual
-        // chunk hits the 8 ms threshold.
         let total = chunk_start.elapsed();
-        let log_all_chunks = std::env::var_os("ORITERM_PERF_ALL_CHUNKS").is_some();
-        if log_all_chunks || total.as_millis() >= 8 {
+        if total.as_millis() >= 8 {
             use std::sync::atomic::{AtomicU64, Ordering};
             static SLOW_COUNTER: AtomicU64 = AtomicU64::new(0);
             let n = SLOW_COUNTER.fetch_add(1, Ordering::Relaxed);
-            // Throttle ONLY in the default (>=8 ms) path; always-log mode
-            // emits every chunk.
-            if log_all_chunks || n % 32 == 0 {
+            if n % 32 == 0 {
                 log::info!(
                     target: "oriterm_mux::pane::io_thread::chunk",
                     "SLOW chunk #{} bytes={} total={:.2?} raw={:.2?} vte={:.2?} \

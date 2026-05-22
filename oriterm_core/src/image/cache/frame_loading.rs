@@ -333,8 +333,6 @@ impl ImageCache {
     }
 
     pub(crate) fn put_frame(&mut self, req: FrameLoadRequest) -> Result<u32, ImageError> {
-        let t_total = std::time::Instant::now();
-        let log_stages = std::env::var_os("ORITERM_PERF_PUT_FRAME").is_some();
         // (Step 6.1) Image must exist.
         let (image_w, image_h) = match self.images.get(&req.image_id) {
             Some(img) => (img.width, img.height),
@@ -388,88 +386,23 @@ impl ImageCache {
         // append + canvas references an existing promoted frame, AND the
         // chain-depth + cumulative-area guards permit, store as
         // `FrameEntry::Delta` without materializing the full canvas.
-        let t_delta = std::time::Instant::now();
-        let total_frames_before = self.animation_total_frames(req.image_id);
         if let Some(delta_result) = self.try_push_delta_append(&req, image_w, image_h)? {
-            if log_stages {
-                log::info!(
-                    target: "oriterm_core::image::cache::put_frame",
-                    "put_frame DELTA: total_before={total_frames_before} total_us={} delta_us={}",
-                    t_total.elapsed().as_micros(),
-                    t_delta.elapsed().as_micros()
-                );
-            }
             return delta_result;
         }
-        let dur_delta_check = t_delta.elapsed();
 
-        // (Step 6.6.6) Full-frame fast path. When the new frame's blit
-        // rectangle covers the entire image, the previous canvas is
-        // completely overwritten or fully alpha-blended — either way, the
-        // clone-then-blit dance can be replaced by "use req.frame_data as
-        // the new canvas".
-        //
-        // For Overwrite, this is exact. For AlphaBlend, this is exact
-        // when the source is fully opaque (alpha=0xFF on every pixel) —
-        // blend(opaque_src, prev) == src. notcurses-class video producers
-        // emit `NCVISUAL_OPTION_ADDALPHA` payloads where the alpha channel
-        // is uniformly 0xFF for video frames; relying on that property
-        // here matches the observed kitty-animation workload.
-        // For AlphaBlend payloads with non-opaque pixels, the fast path
-        // would diverge from the slow path's blended output; the trade
-        // accepts that for the operator-visible performance cure.
-        //
-        // dominant pattern for video-animation kitty payloads
-        // (notcurses-demo xray sends one full-frame per video frame),
-        // where the canvas-clone memcpy would otherwise burn 2.25 MB per
-        // frame × thousands of frames per scene.
-        if req.blit.width == image_w
-            && req.blit.height == image_h
-            && req.blit.dest_x == 0
-            && req.blit.dest_y == 0
-        {
-            // frame_data is the full canvas already — no blit needed.
-            let result = match req.target {
-                FrameTarget::Append { gap } => {
-                    self.push_composed_frame(req.image_id, req.frame_data.clone(), gap)
-                }
-                FrameTarget::Edit {
-                    frame_num,
-                    gap_update,
-                } => self.replace_frame_bytes(
-                    req.image_id,
-                    frame_num,
-                    req.frame_data.clone(),
-                    gap_update,
-                ),
-            };
-            if log_stages {
-                log::info!(
-                    target: "oriterm_core::image::cache::put_frame",
-                    "put_frame FULL_OVERWRITE: total_before={total_frames_before} total_us={} \
-                     image_id={} blit={}x{}",
-                    t_total.elapsed().as_micros(),
-                    req.image_id.0,
-                    req.blit.width,
-                    req.blit.height
-                );
-            }
-            return result;
-        }
-
-        // (Step 6.6.7) Edit-with-sub-rect fast path. When Edit replaces
-        // frame N's bytes with a small modification of the existing
-        // contents, the canvas-clone is the dominant cost. Use
-        // `Arc::make_mut` on the existing frame's Arc to mutate in place
-        // when the Arc is uniquely held (no snapshot/img.data sharing);
-        // otherwise fall through to the clone-then-blit path.
+        // (Step 6.6.6) In-place Edit fast path. notcurses' kitty animation
+        // sends many `_Ga=f,r=N` Edits per frame with tiny sub-rect blits
+        // onto a multi-megabyte canvas; the default slow path clones the
+        // entire prev canvas (~7 MiB) per Edit just to mutate ~7 KiB of
+        // pixels. Try `Arc::make_mut` to mutate the existing canvas in
+        // place when the Arc is uniquely held — detach the
+        // `images[id].data` sync-mirror first so `make_mut` sees a unique
+        // Arc, then restore the mirror to the mutated Arc.
         if let (FrameTarget::Edit { frame_num, gap_update }, CanvasSource::EditTarget) =
             (&req.target, &req.canvas)
         {
-            let frame_idx = (*frame_num as usize).checked_sub(1);
-            let promoted = self.animations.contains_key(&req.image_id);
-            if let Some(idx) = frame_idx
-                && promoted
+            if let Some(idx) = (*frame_num as usize).checked_sub(1)
+                && self.animations.contains_key(&req.image_id)
                 && let Some(result) = self.try_edit_in_place(
                     req.image_id,
                     idx,
@@ -480,22 +413,11 @@ impl ImageCache {
                     *gap_update,
                 )
             {
-                if log_stages {
-                    log::info!(
-                        target: "oriterm_core::image::cache::put_frame",
-                        "put_frame EDIT_INPLACE: total_us={} image_id={} blit={}x{}",
-                        t_total.elapsed().as_micros(),
-                        req.image_id.0,
-                        req.blit.width,
-                        req.blit.height
-                    );
-                }
                 return result;
             }
         }
 
         // (Step 6.7) Resolve canvas bytes.
-        let t_canvas = std::time::Instant::now();
         let canvas_bytes = match req.canvas {
             CanvasSource::SolidColor(rgba) => {
                 let pixel = rgba_u32_to_bytes(rgba);
@@ -545,11 +467,8 @@ impl ImageCache {
             },
         )?;
 
-        let dur_canvas_and_blit = t_canvas.elapsed();
-
         // (Step 6.10) Dispatch by target.
-        let t_dispatch = std::time::Instant::now();
-        let result = match req.target {
+        match req.target {
             FrameTarget::Append { gap } => {
                 let composed_arc = Arc::new(composed);
                 self.push_composed_frame(req.image_id, composed_arc, gap)
@@ -558,20 +477,7 @@ impl ImageCache {
                 frame_num,
                 gap_update,
             } => self.put_frame_edit(req.image_id, frame_num, composed, gap_update),
-        };
-        let dur_dispatch = t_dispatch.elapsed();
-        if log_stages {
-            log::info!(
-                target: "oriterm_core::image::cache::put_frame",
-                "put_frame MATERIALIZE: total_before={total_frames_before} total_us={} \
-                 delta_check_us={} canvas_blit_us={} dispatch_us={}",
-                t_total.elapsed().as_micros(),
-                dur_delta_check.as_micros(),
-                dur_canvas_and_blit.as_micros(),
-                dur_dispatch.as_micros()
-            );
         }
-        result
     }
 
     /// Δ-storage append fast-path. Returns:
@@ -666,14 +572,12 @@ impl ImageCache {
     ) -> Option<Result<u32, ImageError>> {
         let frames = self.animation_frames.get_mut(&id)?;
         let entry = frames.get_mut(idx)?;
-        let FrameEntry::Materialized { id: frame_id, data } = entry else {
+        let FrameEntry::Materialized { data, .. } = entry else {
             return None;
         };
-        let frame_id = *frame_id;
 
-        // Detach the `images[id].data` mirror so the Arc has one fewer
-        // strong reference before `make_mut` decides whether to clone.
-        // We'll restore the mirror after the mutation lands.
+        // Detach `images[id].data` mirror so the Arc has one fewer
+        // strong ref before `make_mut` decides whether to clone.
         let img_was_shared = self
             .images
             .get(&id)
@@ -692,7 +596,6 @@ impl ImageCache {
             return None;
         };
 
-        // `make_mut` returns &mut Vec<u8>; clones only if Arc is shared.
         let canvas = Arc::make_mut(data);
         let blit_op = BlitOp {
             canvas_w: image_w,
@@ -701,8 +604,6 @@ impl ImageCache {
             mode: req.composition_mode,
         };
         if let Err(e) = blit_subrect_into_canvas(canvas, &req.frame_data, blit_op) {
-            // Restore img.data sync before returning the error so the
-            // mirror invariant holds even on failure.
             let restored = data.clone();
             if img_was_shared
                 && let Some(img) = self.images.get_mut(&id)
@@ -719,14 +620,12 @@ impl ImageCache {
             img.data = new_arc;
             img.pixel_generation = img.pixel_generation.wrapping_add(1);
         }
-        // gap update on the in-place path.
         if let Some(gap) = gap_update
             && let Some(state) = self.animations.get_mut(&id)
-            && (idx as usize) < state.frame_durations.len()
+            && idx < state.frame_durations.len()
         {
             state.frame_durations[idx] = gap;
         }
-        let _ = frame_id;
         self.dirty = true;
         Some(Ok(frame_num))
     }

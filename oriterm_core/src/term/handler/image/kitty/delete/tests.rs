@@ -158,10 +158,13 @@ fn delete_i_removes_all_placements_for_image_id_keeps_image_data() {
     let mut t = term();
     stage_basic(&mut t, 1, 10, 0);
     // Add a second placement for image 1 directly (not via store, which would
-    // replace the image entry).
+    // replace the image entry). Use a distinct `placement_id` so the kitty-
+    // protocol dedup (a new `(image_id, placement_id=None)` replaces the
+    // existing implicit placement) doesn't collapse the two placements into
+    // one — this test exercises the multi-placement-per-image delete path.
     t.image_cache_mut().place(ImagePlacement {
         image_id: ImageId::from_raw(1),
-        placement_id: None,
+        placement_id: Some(99),
         source_x: 0,
         source_y: 0,
         source_w: 10,

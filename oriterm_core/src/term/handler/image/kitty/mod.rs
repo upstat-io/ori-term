@@ -72,18 +72,6 @@ impl<S: EffectSink> Term<S> {
         if !self.image_protocol_enabled {
             return;
         }
-        // Diagnostic: `ORITERM_PERF_NOOP_KITTY=1` short-circuits the entire
-        // kitty handler so the perf harness can isolate how much of the
-        // io_thread's "vte" sub-phase is parser-state-machine walking the
-        // APC payload bytes vs actual handler work (base64 decode, zlib,
-        // RGBA decode, ImageCache::store, eviction).
-        if std::env::var_os("ORITERM_PERF_NOOP_KITTY").is_some() {
-            let _ = data;
-            return;
-        }
-        let t_total = std::time::Instant::now();
-        let log_full = std::env::var_os("ORITERM_PERF_KITTY_FULL").is_some();
-        let data_len = data.len();
         let mut cmd = KittyCommand::default();
         if let Err(e) = parse_kitty_command_into(&mut cmd, data) {
             warn!("kitty graphics parse error: {e}");
@@ -133,9 +121,6 @@ impl<S: EffectSink> Term<S> {
             cmd.payload.len(),
         );
 
-        let t_dispatch = std::time::Instant::now();
-        let action = cmd.action;
-        let more = cmd.more_data;
         match cmd.action {
             KittyAction::Query => self.kitty_query(&cmd),
             KittyAction::Transmit => self.kitty_transmit(cmd),
@@ -145,18 +130,6 @@ impl<S: EffectSink> Term<S> {
             KittyAction::Frame => self.kitty_frame(cmd),
             KittyAction::Animate => self.kitty_animate(&cmd),
             KittyAction::Compose => self.kitty_compose(cmd),
-        }
-        if log_full {
-            let dispatch_us = t_dispatch.elapsed().as_micros();
-            let total_us = t_total.elapsed().as_micros();
-            // Parse cost = total - dispatch; covers parse_kitty_command_into
-            // (base64 decode + control parse) + the loading_image bookkeeping.
-            let parse_us = total_us.saturating_sub(dispatch_us);
-            log::info!(
-                target: "oriterm_core::term::handler::image::kitty",
-                "handle_kitty_graphics: data_bytes={data_len} action={action:?} more={more} \
-                 total_us={total_us} parse_us={parse_us} dispatch_us={dispatch_us}"
-            );
         }
     }
 

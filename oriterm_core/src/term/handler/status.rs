@@ -134,36 +134,21 @@ impl<S: EffectSink> Term<S> {
 
     /// XTVERSION (CSI > q): report terminal name and version per xterm.
     ///
-    /// Reply format: `DCS > | kitty(<kitty-version>) ST`.
+    /// Reply format: `DCS > | kitty(0.20.0) ST`.
     ///
-    /// ori_term advertises as kitty-compatible because notcurses-class
-    /// graphics-flood producers gate compression (`o=z`) and animated
-    /// kitty graphics on a kitty(>=0.20.0) XTVERSION reply per
-    /// `reference_repos/console_repos/notcurses/src/lib/in.c:1557` +
+    /// ori_term advertises as kitty-compatible (minimum version 0.20.0)
+    /// because notcurses-class graphics-flood producers gate compression
+    /// (`o=z`) and animated kitty graphics on this XTVERSION reply per
+    /// `notcurses/src/lib/in.c:1557` +
     /// `termdesc.c::apply_kitty_heuristics`. Without the kitty
-    /// identification, notcurses produces uncompressed 2.25 MB
-    /// per-frame transmits that saturate the WSL+ConPTY transport at
-    /// ~50 MB/sec; with kitty identification + compression the same
-    /// content drops to ~50 MB total for the xray scene.
-    ///
-    /// Tradeoff: terminals that detect us as kitty MAY use kitty-
-    /// specific extensions (kitty keyboard protocol, kitty graphics
-    /// animation, push/pop colors). ori_term supports the kitty
-    /// graphics protocol comprehensively (transmit, place, delete,
-    /// frame, animate, compose, query, unicode placeholder, o=z
-    /// compression). Other kitty-specific surfaces are partial; the
-    /// tradeoff accepts the partial coverage in exchange for the
-    /// operator-visible performance cure.
+    /// identification, notcurses produces uncompressed per-frame
+    /// transmits that saturate the WSL+ConPTY transport at ~50 MB/sec.
     ///
     /// The Ps=0 gate is enforced at the parser level
     /// (`crates/vte/src/ansi/dispatch/csi/mod.rs`) per xterm
     /// `charproc.c::CASE_REPORT_VERSION` semantics; this handler runs
     /// only for default/zero Ps and emits the constant reply.
     pub(super) fn status_xtversion(&mut self) {
-        // kitty(0.20.0) — minimum version that triggers notcurses'
-        // NCPIXEL_KITTY_ANIMATED + compression path per
-        // `notcurses/src/lib/termdesc.c::apply_kitty_heuristics`
-        // (compare_versions(termversion, "0.20.0") >= 0).
         let response = "\x1bP>|kitty(0.20.0)\x1b\\";
         self.effect_sink.push(Effect::Pty(PtyEffect::Write {
             bytes: response.as_bytes().to_vec(),

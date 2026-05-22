@@ -105,8 +105,6 @@ fn open_regular_file(path: &std::path::Path) -> Result<(std::fs::File, std::fs::
 impl<S: EffectSink> Term<S> {
     /// Decode and store image data in the cache.
     pub(super) fn kitty_store_image(&mut self, p: KittyStoreParams) -> Result<(), KittyStoreError> {
-        let t_total = std::time::Instant::now();
-        let log_stages = std::env::var_os("ORITERM_PERF_KITTY_STAGES").is_some();
         let (pixel_data, source) = match p.transmission {
             KittyTransmission::Direct => (p.payload, ImageSource::Direct),
             KittyTransmission::File | KittyTransmission::TempFile => {
@@ -121,14 +119,10 @@ impl<S: EffectSink> Term<S> {
 
         let expected_size = expected_decoded_size_for_format(p.format, p.width, p.height);
         let max_bytes = self.image_cache().max_single_image_bytes();
-        let t_prep = std::time::Instant::now();
         let pixel_data = prepare_image_bytes(pixel_data, p.compression, expected_size, max_bytes)?;
-        let dur_prep = t_prep.elapsed();
 
-        let t_decode = std::time::Instant::now();
         let (rgba_data, w, h) = Self::kitty_decode_pixels(pixel_data, p.format, p.width, p.height)
             .map_err(KittyStoreError::Reply)?;
-        let dur_decode = t_decode.elapsed();
 
         let img = ImageData {
             id: ImageId(p.image_id),
@@ -142,21 +136,9 @@ impl<S: EffectSink> Term<S> {
             image_number: p.image_number,
         };
 
-        let t_store = std::time::Instant::now();
         self.image_cache_mut()
             .store(img)
             .map_err(|e| KittyStoreError::Reply(format!("ENOMEM: {e}")))?;
-        let dur_store = t_store.elapsed();
-
-        if log_stages {
-            log::info!(
-                target: "oriterm_core::term::handler::image::kitty::store",
-                "kitty_store_image stages: total={:.2?} prep={:.2?} decode={:.2?} store={:.2?} \
-                 w={w} h={h} format={} compression={:?}",
-                t_total.elapsed(), dur_prep, dur_decode, dur_store,
-                p.format, p.compression,
-            );
-        }
 
         Ok(())
     }

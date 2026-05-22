@@ -289,6 +289,15 @@ impl ImageCache {
     /// consumer sites; an `ImageCache`-owned API is the SSOT.
     pub(crate) fn place(&mut self, placement: ImagePlacement) {
         let image_id = placement.image_id;
+        // Per kitty graphics protocol: a new placement with the same
+        // `(image_id, placement_id)` REPLACES the existing one. Without
+        // this dedup, moving a kitty-graphics plane (notcurses-demo
+        // `intro` orca: `ncplane_move_yx` + re-Place at the new offset)
+        // appends a new placement per frame and the old placements stay
+        // alive — every previous position renders as a ghost, producing
+        // the visible "trail" of orcas the operator reports.
+        self.placements
+            .retain(|p| !(p.image_id == image_id && p.placement_id == placement.placement_id));
         self.placements.push(placement);
         self.access_counter += 1;
         if let Some(img) = self.images.get_mut(&image_id) {
