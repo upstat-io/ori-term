@@ -185,10 +185,11 @@ impl ImageTextureCache {
                             queue,
                             &entry.texture,
                             data,
-                            width,
-                            height,
-                            frame,
-                            true,
+                            (width, height),
+                            UploadLatencyCtx {
+                                frame_counter: frame,
+                                animated: true,
+                            },
                         );
                         self.upload_count += 1;
                         self.upload_bytes += data.len() as u64;
@@ -452,6 +453,17 @@ impl ImageTextureCache {
 
 /// Upload RGBA pixel data into an existing texture via `queue.write_texture`.
 ///
+/// Throttle context for `perform_texture_upload` latency logs.
+///
+/// Bundled to keep the upload signature within the workspace's
+/// `too_many_arguments` ceiling — the upload itself only needs
+/// dims; this is purely diagnostic.
+#[derive(Clone, Copy)]
+struct UploadLatencyCtx {
+    frame_counter: u64,
+    animated: bool,
+}
+
 /// Free function so it can be called from inside `ensure_uploaded`'s
 /// Occupied arm while `&mut entry` is held — a `&self` method would
 /// conflict per Plan TPR R1. Latency log is throttled under sustained
@@ -461,11 +473,10 @@ fn perform_texture_upload(
     queue: &Queue,
     texture: &Texture,
     data: &[u8],
-    width: u32,
-    height: u32,
-    frame_counter: u64,
-    animated: bool,
+    dims: (u32, u32),
+    latency_ctx: UploadLatencyCtx,
 ) {
+    let (width, height) = dims;
     let upload_start = std::time::Instant::now();
     queue.write_texture(
         texture.as_image_copy(),
@@ -482,7 +493,7 @@ fn perform_texture_upload(
         },
     );
     let upload_ms = upload_start.elapsed().as_millis();
-    if upload_ms >= 16 && (!animated || frame_counter % 60 == 0) {
+    if upload_ms >= 16 && (!latency_ctx.animated || latency_ctx.frame_counter.is_multiple_of(60)) {
         log::info!(
             target: "oriterm::gpu::image_render::upload_latency",
             "queue.write_texture {width}x{height} ({} bytes) took {upload_ms}ms (staging buffer pressure)",
@@ -526,7 +537,14 @@ fn create_texture_entry(
         view_formats: &[],
     });
     perform_texture_upload(
-        queue, &texture, data, width, height, frame, /* animated */ false,
+        queue,
+        &texture,
+        data,
+        (width, height),
+        UploadLatencyCtx {
+            frame_counter: frame,
+            animated: false,
+        },
     );
     let view = texture.create_view(&TextureViewDescriptor::default());
     let bind_group = device.create_bind_group(&BindGroupDescriptor {

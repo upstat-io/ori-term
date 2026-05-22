@@ -240,6 +240,8 @@ impl PerfStats {
                 full_phases.widgets,
                 full_phases.gpu_render,
             );
+        } else {
+            // Frame within budget — no diagnostic log needed.
         }
     }
 

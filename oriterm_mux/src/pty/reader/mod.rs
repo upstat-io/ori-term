@@ -15,8 +15,8 @@ use super::adopt::{AdoptedPtyHandle, ExitSignal};
 
 /// PTY read buffer size.
 /// 1 MB to match notcurses-class graphics-flood producers at sustained
-/// 100+ MB/s. Smaller buffers (e.g. 128 KB matching WezTerm) cap reader
-/// throughput around 40 MB/sec on Windows ConPTY due to per-read syscall
+/// 100+ MB/s. Smaller buffers (e.g. 128 KB matching `WezTerm`) cap reader
+/// throughput around 40 MB/sec on Windows `ConPTY` due to per-read syscall
 /// overhead — that becomes the bottleneck for kitty pixel-graphics
 /// scenes (notcurses-demo xray) where producers emit at 80-130 MB/sec
 /// unblocked. The conditional inter-read sleep below (fires when

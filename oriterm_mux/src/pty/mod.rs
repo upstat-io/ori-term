@@ -31,6 +31,7 @@ pub(crate) use spawn::compute_wslenv;
 pub use spawn::{PtyConfig, PtyControl, PtyHandle, spawn_pty};
 
 /// Commands sent from the main thread to the PTY writer thread.
+///
 /// Delivered via `std::sync::mpsc::channel`. The sender is held by
 /// [`PaneNotifier`](crate::pane::PaneNotifier), the receiver by the
 /// writer thread spawned via [`spawn_pty_writer`].
@@ -48,6 +49,7 @@ pub enum Msg {
 const WRITER_RECV_TIMEOUT: Duration = Duration::from_millis(100);
 
 /// Spawn a dedicated PTY writer thread.
+///
 /// Uses a write-stall detection flag (`write_stalled`) to signal the main
 /// thread when a blocking `write()` is stuck (e.g., child doesn't read
 /// stdin during output flooding). The main thread checks this flag when

@@ -82,6 +82,7 @@ pub enum BeginTestingStatus {
 /// The pinned inventory of tack's begin-testing submenu, as captured
 /// against tack v1.08 / ncurses 6.x via the discovery test in
 /// `oriterm_core/tests/tack/test_menu/begin_testing_inventory.rs`.
+///
 /// **Ordering** mirrors the captured menu (top to bottom in the
 /// snapshot at
 /// `oriterm_core/tests/tack/test_menu/snapshots/tack__test_menu__begin_testing_inventory__tack_begin_testing_menu_80x24.snap`)
@@ -91,20 +92,20 @@ pub enum BeginTestingStatus {
 /// **Plan/reality mismatches surfaced by 05.0 discovery** (recorded
 /// here so 05.4b and 05.5 can address them):
 /// - `a) test alternate character set and graphic rendition` is a
-/// COMBINED entry. The plan envisioned ACS and SGR as separate
-/// submenu entries; tack v1.08 merges them. One scenario covers
-/// both mission criteria items.
+///   COMBINED entry. The plan envisioned ACS and SGR as separate
+///   submenu entries; tack v1.08 merges them. One scenario covers
+///   both mission criteria items.
 /// - `p) test padding and string capabilities` is a COMBINED entry
-/// covering BOTH "pad timing" and "send strings" from the plan's
-/// mission criterion. One scenario covers both.
+///   covering BOTH "pad timing" and "send strings" from the plan's
+///   mission criterion. One scenario covers both.
 /// - There is NO `l) test labels` entry in tack v1.08. The plan's
-/// mission criterion mentions "labels" but the menu does not
-/// expose one. 05.4b reconciles this by either dropping labels
-/// from the criterion (if it never existed in tack) or by
-/// verifying labels are part of `a)` / `p)` coverage.
+///   mission criterion mentions "labels" but the menu does not
+///   expose one. 05.4b reconciles this by either dropping labels
+///   from the criterion (if it never existed in tack) or by
+///   verifying labels are part of `a)` / `p)` coverage.
 /// - The plan also mentions an "output" interactive screen; tack
-/// v1.08's begin-testing submenu has no `o)` or output entry.
-/// This is recorded as a non-issue.
+///   v1.08's begin-testing submenu has no `o)` or output entry.
+///   This is recorded as a non-issue.
 pub const BEGIN_TESTING_INVENTORY: &[BeginTestingKey] = &[
     BeginTestingKey {
         key: 'e',
@@ -251,6 +252,7 @@ pub const BEGIN_TESTING_INVENTORY: &[BeginTestingKey] = &[
 
 /// Compare a discovered key set against [`BEGIN_TESTING_INVENTORY`]
 /// and return `Err(diff_message)` on any mismatch.
+///
 /// **Algorithmic-DRY canonical home.** Both the integration test in
 /// `oriterm_core/tests/tack/test_menu/begin_testing_inventory.rs`
 /// and the sibling unit test in [`tests::begin_testing_inventory_drift_gate_pin`]

@@ -27,6 +27,7 @@ use crate::protocol::MuxPdu;
 use self::transport::ClientTransport;
 
 /// IPC client backend for daemon mode.
+///
 /// Sends mux operations to the daemon over an IPC socket and blocks on
 /// responses. Pane data is not stored locally — the daemon owns all
 /// terminal state. A background reader thread receives push notifications

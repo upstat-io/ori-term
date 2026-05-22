@@ -165,7 +165,7 @@ impl ImageCache {
             // `image_is_animatable` (graphics.c:1773-1775). When every
             // frame's gap is `Duration::ZERO`, computing a deadline yields
             // `now`, causing per-call churn. Skip the image entirely.
-            if state.frame_durations.iter().all(|d| d.is_zero()) {
+            if state.frame_durations.iter().all(Duration::is_zero) {
                 continue;
             }
 

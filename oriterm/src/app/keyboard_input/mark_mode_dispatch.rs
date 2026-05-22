@@ -153,14 +153,14 @@ pub(super) trait MarkModeSink {
 /// Returns `false` when:
 /// - `input.active_pane_id == None` (no pane to dispatch against);
 /// - `input.mark_mode_active == false` (mark mode not active — caller
-/// forwards to keybinding/PTY);
+///   forwards to keybinding/PTY);
 /// - `mark_mode_should_exit(resources) == true` ( path —
-/// `sink.exit_mark_mode` called, caller forwards to keybinding/PTY).
-/// Returns `true` when:
+///   `sink.exit_mark_mode` called, caller forwards to keybinding/PTY).
+///   Returns `true` when:
 /// - Released event with mark mode active (consume-all);
 /// - Pressed event after successful key dispatch.
-/// The return value drives the caller's `if x { return; }` short-circuit
-/// — ignoring it would silently mis-route every key event.
+///   The return value drives the caller's `if x { return; }` short-circuit
+///   — ignoring it would silently mis-route every key event.
 #[must_use]
 pub(super) fn dispatch_mark_mode<S: MarkModeSink>(input: MarkModeDispatch, sink: &mut S) -> bool {
     let Some(pane_id) = input.active_pane_id else {

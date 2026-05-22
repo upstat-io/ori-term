@@ -12,6 +12,7 @@ use super::host_request::{HostReplyPayload, WireClipboardSelection, WireNotifica
 use super::snapshot::{PaneSnapshot, WireSelection};
 
 /// All protocol messages — requests, responses, and notifications.
+///
 /// Each variant carries its own data. The bincode encoding includes the
 /// enum discriminant, so the `msg_type` in the frame header is redundant
 /// for deserialization but useful for pre-routing and debugging.

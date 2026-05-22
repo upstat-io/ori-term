@@ -23,7 +23,7 @@ impl<S: EffectSink> Term<S> {
     ///   Kitty uses `ENOSPC` at `graphics.c:1870` for its disk-cache writeback
     ///   path; this crate has no disk cache, so the RAM-bound `ENOMEM` matches
     ///   the `emit_error_reply` convention in `frame.rs:153`.
-    pub(super) fn kitty_compose(&mut self, cmd: KittyCommand) {
+    pub(super) fn kitty_compose(&mut self, cmd: &KittyCommand) {
         // ID resolution: `i=` takes priority; fall back to `I=` via
         // `newest_by_image_number` (kitty `graphics.c:2264` accept
         // id-or-image-number). Mirrors `animate.rs:31`.
@@ -36,11 +36,11 @@ impl<S: EffectSink> Term<S> {
         }) {
             id
         } else {
-            let ctx = KittyReplyContext::from_cmd(&cmd);
+            let ctx = KittyReplyContext::from_cmd(cmd);
             self.kitty_respond(&ctx, "ENOENT");
             return;
         };
-        let ctx = KittyReplyContext::from_cmd(&cmd).with_image_id(image_id);
+        let ctx = KittyReplyContext::from_cmd(cmd).with_image_id(image_id);
 
         // ENOENT precheck before any cache mutation.
         if self.image_cache().get_no_touch(ImageId(image_id)).is_none() {
@@ -48,7 +48,7 @@ impl<S: EffectSink> Term<S> {
             return;
         }
 
-        let keys = extract_a_c_keys(&cmd);
+        let keys = extract_a_c_keys(cmd);
         // r= and c= are mandatory for compose; 0 / absent → ENOENT.
         if keys.src_frame == 0 || keys.dst_frame == 0 {
             self.kitty_respond(&ctx, "ENOENT");
@@ -70,7 +70,7 @@ impl<S: EffectSink> Term<S> {
 
         match self.image_cache_mut().compose_frame(req) {
             Ok(()) => self.kitty_respond(&ctx, "OK"),
-            Err(e) => emit_compose_error_reply(self, ctx, e),
+            Err(e) => emit_compose_error_reply(self, ctx, &e),
         }
     }
 }
@@ -101,9 +101,9 @@ impl<S: EffectSink> Term<S> {
 /// Documented divergence preferred over closure-parameterized consolidation
 /// that would obscure the spec mapping.
 fn emit_compose_error_reply<S: EffectSink>(
-    term: &mut Term<S>,
+    term: &Term<S>,
     ctx: KittyReplyContext,
-    err: ImageError,
+    err: &ImageError,
 ) {
     match err {
         ImageError::MissingImage { .. } | ImageError::InvalidFrameRef { .. } => {

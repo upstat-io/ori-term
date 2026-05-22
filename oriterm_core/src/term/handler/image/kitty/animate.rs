@@ -87,6 +87,8 @@ impl<S: EffectSink> Term<S> {
                 } else if let Some(gap) = gap_update {
                     self.image_cache_mut()
                         .set_frame_gap(id, (frame - 1) as usize, gap);
+                } else {
+                    // z=0 on a non-root frame — kitty parity: do not touch gap.
                 }
             }
         }

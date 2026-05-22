@@ -21,13 +21,13 @@
 //!
 //! Wrapper-asserted caps (the only entries in `covered`):
 //! - `bel` — `(bel)` asserted by `tack_acs_graphic_chars` and
-//! `tack_graphic_rendition_sgr` (same screen on tack v1.08).
+//!   `tack_graphic_rendition_sgr` (same screen on tack v1.08).
 //! - `colors` — `(colors)` asserted by all 3 `tack_color_*` size
-//! wrappers.
+//!   wrappers.
 //! - `pairs` — `(pairs)` asserted by all 3 `tack_color_*` size
-//! wrappers.
+//!   wrappers.
 //! - `clear` — `(clear)` asserted by all 3 `tack_cursor_movement_*`
-//! size wrappers.
+//!   size wrappers.
 //!
 //! Note: `os` is asserted by `tack_modes_am` (via the parser's
 //! `KNOWN: &["os"]`), but `os` is NOT declared in

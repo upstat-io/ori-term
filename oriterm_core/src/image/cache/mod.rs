@@ -164,7 +164,7 @@ impl ImageCache {
 
     /// Allocate the next monotonically-increasing `FrameId`.
     ///
-    /// Single SSOT for FrameId assignment — every `FrameEntry` creation
+    /// Single SSOT for `FrameId` assignment — every `FrameEntry` creation
     /// path (`push_composed_frame`, `store_animated`, root-promote in
     /// `ensure_animation_state_for_root_gap`, `replace_frame_bytes`'s
     /// auto-promote branch) must route through here so the
@@ -360,7 +360,7 @@ impl ImageCache {
     pub(crate) fn remove_image(&mut self, id: ImageId) {
         if let Some(img) = self.images.remove(&id) {
             if let Some(frames) = self.animation_frames.remove(&id) {
-                let total: usize = frames.iter().map(|f| f.memory_bytes()).sum();
+                let total: usize = frames.iter().map(FrameEntry::memory_bytes).sum();
                 self.memory_used = self.memory_used.saturating_sub(total);
             } else {
                 self.memory_used = self.memory_used.saturating_sub(img.data.len());
@@ -563,6 +563,7 @@ impl std::fmt::Debug for ImageCache {
             .field("memory_limit", &self.memory_limit)
             .field("max_single_image_bytes", &self.max_single_image_bytes)
             .field("next_id", &self.next_id)
+            .field("next_frame_id", &self.next_frame_id)
             .field("access_counter", &self.access_counter)
             .field("dirty", &self.dirty)
             .field("store_order", &self.store_order.len())

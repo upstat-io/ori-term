@@ -15,10 +15,10 @@
 //!
 //! - `magic`: `0x4F54` ("OT") — early detection of non-oriterm connections.
 //! - `ver`: protocol version. See [`PROTOCOL_VERSION`] for the
-//! canonical value (currently `2`); the constant doc comment
-//! carries the reason for the latest bump.
+//!   canonical value (currently `2`); the constant doc comment
+//!   carries the reason for the latest bump.
 //! - `flags`: `0x01` = `COMPRESSED` (payload is zstd-compressed). Unknown bits
-//! are silently ignored on decode for forward compatibility.
+//!   are silently ignored on decode for forward compatibility.
 //! - `type`: message type ID for pre-routing and debugging.
 //! - `seq`: request/response correlation. Notifications use `seq = 0`.
 //! - `payload_len`: u32, max 16 MiB.
@@ -52,6 +52,7 @@ pub use snapshot::{
 pub const HEADER_LEN: usize = 14;
 
 /// Maximum payload size (80 MiB).
+///
 /// Sized to comfortably accommodate the core image cache's per-image limit
 /// (`DEFAULT_MAX_SINGLE_IMAGE = 64 MiB` at `oriterm_core/src/image/cache/mod.rs:20`)
 /// plus cell payload headroom. Raised from 16 MiB at `PROTOCOL_VERSION` v3
@@ -64,6 +65,7 @@ pub const MAX_PAYLOAD: u32 = 80 * 1024 * 1024;
 pub const FRAME_MAGIC: u16 = 0x4F54;
 
 /// Current protocol version. Incremented on breaking wire changes.
+///
 /// v2 — bumped when `PaneSnapshot::has_bell` and `MuxPdu::ClearBell`
 /// were stripped from the wire (bell state moved to client-local
 /// `bell_panes`).
@@ -87,6 +89,7 @@ pub const PROTOCOL_VERSION: u8 = 3;
 pub const FLAG_COMPRESSED: u8 = 0x01;
 
 /// Current IPC protocol version for Hello/HelloAck negotiation.
+///
 /// Re-export of [`PROTOCOL_VERSION`] — the frame-header version
 /// (used in every encode via `FrameHeader.version`) and the
 /// handshake version (used in `MuxPdu::Hello` / `MuxPdu::HelloAck`

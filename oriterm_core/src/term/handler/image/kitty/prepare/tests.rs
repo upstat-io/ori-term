@@ -31,7 +31,12 @@ fn zlib_encode(raw: &[u8]) -> Vec<u8> {
 fn rgba_4x4() -> Vec<u8> {
     let mut out = Vec::with_capacity(64);
     for i in 0..16u8 {
-        out.extend_from_slice(&[i.wrapping_mul(17), i.wrapping_mul(23), i.wrapping_mul(29), 0xFF]);
+        out.extend_from_slice(&[
+            i.wrapping_mul(17),
+            i.wrapping_mul(23),
+            i.wrapping_mul(29),
+            0xFF,
+        ]);
     }
     out
 }
@@ -262,12 +267,7 @@ fn prepare_oz_buffer_never_grows_past_cap_plus_one() {
 
     // Sub-pin A: at-cap succeeds.
     let exact = vec![0u8; CAP];
-    let exact_result = prepare_image_bytes(
-        zlib_encode(&exact),
-        Some(b'z'),
-        Some(CAP),
-        CAP,
-    );
+    let exact_result = prepare_image_bytes(zlib_encode(&exact), Some(b'z'), Some(CAP), CAP);
     assert!(
         exact_result.is_ok(),
         "at-cap decompress MUST succeed (sub-pin A of buffer-bounded invariant)"
@@ -275,12 +275,7 @@ fn prepare_oz_buffer_never_grows_past_cap_plus_one() {
 
     // Sub-pin B: cap+1 rejects.
     let over = vec![0u8; CAP + 1];
-    let over_result = prepare_image_bytes(
-        zlib_encode(&over),
-        Some(b'z'),
-        Some(CAP + 1),
-        CAP,
-    );
+    let over_result = prepare_image_bytes(zlib_encode(&over), Some(b'z'), Some(CAP + 1), CAP);
     assert!(
         over_result.is_err(),
         "cap+1 decompress MUST reject (sub-pin B of buffer-bounded invariant)"

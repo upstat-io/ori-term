@@ -23,15 +23,15 @@
 //! limit. The mandatory split (per 05.0.b's "first commit" task):
 //!
 //! - `runner/mod.rs` (this file) — type defs ([`ScenarioRunner`],
-//! [`ScenarioOutcome`], [`LiveSession`]), shared private helpers
-//! ([`prepare_and_navigate`], [`finish_and_assert`],
-//! [`scenario_name`]), and the canonical timing constants
-//! ([`MAIN_MENU_READY_TIMEOUT_MS`], [`READY_ANCHOR_TIMEOUT_MS`],
-//! [`TACK_MAIN_MENU_PROMPT`], [`TACK_QUIT_MAX_ITERATIONS`]).
+//!   [`ScenarioOutcome`], [`LiveSession`]), shared private helpers
+//!   ([`prepare_and_navigate`], [`finish_and_assert`],
+//!   [`scenario_name`]), and the canonical timing constants
+//!   ([`MAIN_MENU_READY_TIMEOUT_MS`], [`READY_ANCHOR_TIMEOUT_MS`],
+//!   [`TACK_MAIN_MENU_PROMPT`], [`TACK_QUIT_MAX_ITERATIONS`]).
 //! - `runner/stable.rs` — the stable-screen API
-//! (`ScenarioRunner::run`, `run_at`, `run_with_session_at`). All
-//! pre-05.0.b methods live here so the diff for the phase-capture
-//! feat commit is reviewable on its own.
+//!   (`ScenarioRunner::run`, `run_at`, `run_with_session_at`). All
+//!   pre-05.0.b methods live here so the diff for the phase-capture
+//!   feat commit is reviewable on its own.
 //!
 //! 05.0.b's feat commit adds `runner/phase.rs` with `run_phase[_at]`
 //! plus the sentinel-detection helper they share with the stable
@@ -85,7 +85,7 @@ pub mod stable;
 /// delegate here. Section 07's GPU bridge MUST also call this (or
 /// equivalently `live.golden_name()`) instead of rebuilding the
 /// format literal — rebuilding at any second site is
-/// ``.
+/// algorithmic duplication.
 /// A future change to the naming convention (e.g., adding a theme
 /// suffix) propagates automatically because every consumer routes
 /// through this one function.
@@ -241,6 +241,7 @@ pub(super) fn finish_and_assert(
 
 /// The result of running one scenario: the captured grid text and
 /// the per-scenario parser's typed extraction.
+///
 /// Carries SIZE-AWARE identity: `scenario_id` is the test name,
 /// `screen_id` is the dedupable screen identity. [`Self::snapshot_name`]
 /// and [`Self::golden_name`] build the insta/PNG file names from
@@ -315,6 +316,7 @@ impl ScenarioRunner {
 }
 
 /// Wrapper that returns a LIVE [`PtySession`] instead of just text.
+///
 /// Used by Section 07 GPU goldens to render the live session through
 /// the GPU pipeline before quitting.
 /// The `_terminfo` field is intentionally unused at the call site —
@@ -355,7 +357,7 @@ impl LiveSession {
     /// Section 07's GPU bridge MUST call this (or its
     /// [`Self::golden_name`] alias) instead of rebuilding the
     /// format literal at the call site — rebuilding at any second
-    /// site is ``. A future change to the
+    /// site is algorithmic duplication. A future change to the
     /// naming convention propagates automatically.
     #[must_use]
     pub fn snapshot_name(&self) -> String {

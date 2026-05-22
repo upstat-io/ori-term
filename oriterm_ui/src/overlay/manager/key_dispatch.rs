@@ -3,19 +3,19 @@
 //! Owns BOTH key dispatch entry points on `OverlayManager`:
 //!
 //! - [`OverlayManager::process_key_event`]: legacy `on_input`-only routing —
-//! special-cases `Escape` to dismiss the topmost overlay, otherwise routes
-//! the event through `deliver_via_pipeline` to `widget.on_input()`. Kept as
-//! the keymap-miss fallback for overlays whose `key_context()` has no
-//! binding in `Keymap::defaults()` (e.g. `SettingsPanel`).
+//!   special-cases `Escape` to dismiss the topmost overlay, otherwise routes
+//!   the event through `deliver_via_pipeline` to `widget.on_input()`. Kept as
+//!   the keymap-miss fallback for overlays whose `key_context()` has no
+//!   binding in `Keymap::defaults()` (e.g. `SettingsPanel`).
 //! - [`OverlayManager::process_key_event_with_keymap`]: keymap-first routing.
-//! Looks up the topmost overlay's context in the
-//! provided keymap and dispatches via
-//! [`crate::pipeline::dispatch_keymap_action`] when a binding matches. On a
-//! `widget::Dismiss` match, the manager translates the result into
-//! [`OverlayEventResult::Dismissed`] directly so dialog-window dispatch
-//! paths (which only handle the `Dismissed` variant, not
-//! `WidgetAction::DismissOverlay`) work correctly. Falls through to
-//! `process_key_event` on a keymap miss.
+//!   Looks up the topmost overlay's context in the
+//!   provided keymap and dispatches via
+//!   [`crate::pipeline::dispatch_keymap_action`] when a binding matches. On a
+//!   `widget::Dismiss` match, the manager translates the result into
+//!   [`OverlayEventResult::Dismissed`] directly so dialog-window dispatch
+//!   paths (which only handle the `Dismissed` variant, not
+//!   `WidgetAction::DismissOverlay`) work correctly. Falls through to
+//!   `process_key_event` on a keymap miss.
 //!
 //! See (post-archival) for the
 //! design rationale, including why the dispatch lives on `OverlayManager`
@@ -125,20 +125,20 @@ impl OverlayManager {
     /// Resolves the topmost overlay's `key_context()` against the provided
     /// keymap. On a hit:
     /// - `widget::Dismiss` → manager-level dismissal returning
-    /// [`OverlayEventResult::Dismissed`] (so dialog-window paths that
-    /// only handle `Dismissed` work correctly without widget cooperation).
+    ///   [`OverlayEventResult::Dismissed`] (so dialog-window paths that
+    ///   only handle `Dismissed` work correctly without widget cooperation).
     /// - Anything else → [`crate::pipeline::dispatch_keymap_action`] on the
-    /// overlay's root widget; result wrapped in
-    /// [`OverlayEventResult::Delivered`].
-    /// On a miss, falls through to [`OverlayManager::process_key_event`]
-    /// (the legacy `on_input` pipeline plus inline-Escape backstop) so
-    /// overlays with no keymap-bound context still dismiss on Escape and
-    /// reach `widget.on_input` for non-keymap-routed keys.
-    /// `focus_path` is hardcoded to `[overlay_root_id]` matching the
-    /// existing `deliver_via_pipeline` keyboard path. Overlays do not
-    /// currently have a focused-child model; future work to plumb a real
-    /// overlay focus path would update this method along with
-    /// `event_routing::deliver_via_pipeline`.
+    ///   overlay's root widget; result wrapped in
+    ///   [`OverlayEventResult::Delivered`].
+    ///   On a miss, falls through to [`OverlayManager::process_key_event`]
+    ///   (the legacy `on_input` pipeline plus inline-Escape backstop) so
+    ///   overlays with no keymap-bound context still dismiss on Escape and
+    ///   reach `widget.on_input` for non-keymap-routed keys.
+    ///   `focus_path` is hardcoded to `[overlay_root_id]` matching the
+    ///   existing `deliver_via_pipeline` keyboard path. Overlays do not
+    ///   currently have a focused-child model; future work to plumb a real
+    ///   overlay focus path would update this method along with
+    ///   `event_routing::deliver_via_pipeline`.
     #[expect(
         clippy::too_many_arguments,
         reason = "event routing: event, keymap, measurer, theme, focus, tree, animator, now"

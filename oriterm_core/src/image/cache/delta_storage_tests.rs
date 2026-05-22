@@ -112,7 +112,7 @@ fn put_frame_default_append_solid_color_stores_materialized() {
     let id = store_base_image(&mut cache, 1);
 
     cache
-        .put_frame(append_request_solid(id, 0x00_00_00_00))
+        .put_frame(&append_request_solid(id, 0x00_00_00_00))
         .expect("default-append must succeed");
 
     // Frame 1 = root (Materialized), frame 2 = newly appended (also
@@ -140,7 +140,7 @@ fn put_frame_edit_r_eq_n_replaces_materialized_in_place() {
 
     // Append a Materialized frame 2.
     cache
-        .put_frame(append_request_solid(id, 0xFF_00_00_FF))
+        .put_frame(&append_request_solid(id, 0xFF_00_00_FF))
         .expect("seed append");
 
     // Edit frame 2 with a sub-rect overlay.
@@ -160,7 +160,7 @@ fn put_frame_edit_r_eq_n_replaces_materialized_in_place() {
         frame_data: Arc::new(vec![0xEE; 4 * 4 * 4]),
         composition_mode: CompositionMode::Overwrite,
     };
-    cache.put_frame(req).expect("edit must succeed");
+    cache.put_frame(&req).expect("edit must succeed");
 
     let frame2 = cache.frame_entry_at(id, 2).expect("frame 2 present");
     assert!(
@@ -185,17 +185,19 @@ fn put_frame_edit_shared_arc_clones_and_bumps_generation() {
     let mut cache = ImageCache::new();
     let id = store_base_image(&mut cache, 1);
     cache
-        .put_frame(append_request_solid(id, 0xFF_00_00_FF))
+        .put_frame(&append_request_solid(id, 0xFF_00_00_FF))
         .expect("seed append (promotes image to animation)");
 
     // Sync `images[id].data` to point at the same Arc as
     // animation_frames[id][1]'s Materialized payload, simulating the
     // post-Animate state where this is the currently-displayed frame.
-    let frame2_arc: Arc<Vec<u8>> =
-        match cache.frame_entry_at(id, 2).expect("frame 2 must be present") {
-            FrameEntry::Materialized { data, .. } => data,
-            other => panic!("frame 2 must be Materialized, got {other:?}"),
-        };
+    let frame2_arc: Arc<Vec<u8>> = match cache
+        .frame_entry_at(id, 2)
+        .expect("frame 2 must be present")
+    {
+        FrameEntry::Materialized { data, .. } => data,
+        other => panic!("frame 2 must be Materialized, got {other:?}"),
+    };
     let pre_arc_ptr = Arc::as_ptr(&frame2_arc);
     cache.set_image_data_and_bump_generation(id, frame2_arc.clone());
     let pre_gen = cache
@@ -220,7 +222,7 @@ fn put_frame_edit_shared_arc_clones_and_bumps_generation() {
         frame_data: Arc::new(vec![0xEE; 4 * 4 * 4]),
         composition_mode: CompositionMode::Overwrite,
     };
-    cache.put_frame(req).expect("edit must succeed");
+    cache.put_frame(&req).expect("edit must succeed");
 
     let post_arc_ptr = match cache.frame_entry_at(id, 2).expect("frame 2") {
         FrameEntry::Materialized { data, .. } => Arc::as_ptr(&data),
@@ -267,7 +269,7 @@ fn put_frame_edit_uniquely_held_canvas_mutates_in_place_and_bumps_generation() {
     let mut cache = ImageCache::new();
     let id = store_base_image(&mut cache, 1);
     cache
-        .put_frame(append_request_solid(id, 0xFF_00_00_FF))
+        .put_frame(&append_request_solid(id, 0xFF_00_00_FF))
         .expect("seed append (promotes image to animation)");
 
     // Same setup as the shared-arc companion test, but DROP the local
@@ -275,7 +277,10 @@ fn put_frame_edit_uniquely_held_canvas_mutates_in_place_and_bumps_generation() {
     // refs at edit-time (animation_frames + images.data) — both of
     // which try_edit_in_place releases via the detach-restore dance,
     // leaving Arc::make_mut to mutate the unique Arc in place.
-    let pre_arc_ptr = match cache.frame_entry_at(id, 2).expect("frame 2 must be present") {
+    let pre_arc_ptr = match cache
+        .frame_entry_at(id, 2)
+        .expect("frame 2 must be present")
+    {
         FrameEntry::Materialized { data, .. } => {
             let ptr = Arc::as_ptr(&data);
             cache.set_image_data_and_bump_generation(id, data);
@@ -306,7 +311,7 @@ fn put_frame_edit_uniquely_held_canvas_mutates_in_place_and_bumps_generation() {
         frame_data: Arc::new(vec![0xEE; 4 * 4 * 4]),
         composition_mode: CompositionMode::Overwrite,
     };
-    cache.put_frame(req).expect("edit must succeed");
+    cache.put_frame(&req).expect("edit must succeed");
 
     let post_arc_ptr = match cache.frame_entry_at(id, 2).expect("frame 2") {
         FrameEntry::Materialized { data, .. } => Arc::as_ptr(&data),
@@ -342,10 +347,7 @@ fn put_frame_edit_uniquely_held_canvas_mutates_in_place_and_bumps_generation() {
 fn put_frame_static_root_edit_bumps_pixel_generation() {
     let mut cache = ImageCache::new();
     let id = store_base_image(&mut cache, 1);
-    let pre_gen = cache
-        .get_no_touch(id)
-        .expect("image 1")
-        .pixel_generation;
+    let pre_gen = cache.get_no_touch(id).expect("image 1").pixel_generation;
     let pre_byte = cache.get_no_touch(id).expect("image 1").data[0];
 
     // Static-root edit: r=1 against an unpromoted image, sub-rect blit.
@@ -365,12 +367,11 @@ fn put_frame_static_root_edit_bumps_pixel_generation() {
         frame_data: Arc::new(vec![0x42; 4 * 4 * 4]),
         composition_mode: CompositionMode::Overwrite,
     };
-    cache.put_frame(req).expect("static-root edit must succeed");
+    cache
+        .put_frame(&req)
+        .expect("static-root edit must succeed");
 
-    let post_gen = cache
-        .get_no_touch(id)
-        .expect("image 1")
-        .pixel_generation;
+    let post_gen = cache.get_no_touch(id).expect("image 1").pixel_generation;
     assert_eq!(
         post_gen,
         pre_gen.wrapping_add(1),
@@ -402,12 +403,12 @@ fn put_frame_c_eq_materialized_base_stores_delta_with_depth_zero() {
     let id = store_base_image(&mut cache, 1);
     // Seed: frame 2 Materialized (solid-color append).
     cache
-        .put_frame(append_request_solid(id, 0xFF_00_00_FF))
+        .put_frame(&append_request_solid(id, 0xFF_00_00_FF))
         .expect("seed");
 
     // Now append with c=1 (frame 1 is the Materialized root).
     let req = append_request_c(id, 1, 0, 0, 4, 4);
-    cache.put_frame(req).expect("c=N append must succeed");
+    cache.put_frame(&req).expect("c=N append must succeed");
 
     let frame3 = cache.frame_entry_at(id, 3).expect("frame 3 present");
     match frame3 {
@@ -443,11 +444,11 @@ fn put_frame_c_eq_delta_base_increments_depth() {
     let id = store_base_image(&mut cache, 1);
     // Append frame 2 with c=1 → Delta depth 0.
     cache
-        .put_frame(append_request_c(id, 1, 0, 0, 4, 4))
+        .put_frame(&append_request_c(id, 1, 0, 0, 4, 4))
         .expect("seed delta depth=0");
     // Append frame 3 with c=2 → Delta depth 1.
     cache
-        .put_frame(append_request_c(id, 2, 4, 0, 4, 4))
+        .put_frame(&append_request_c(id, 2, 4, 0, 4, 4))
         .expect("delta depth=1");
 
     let frame3 = cache.frame_entry_at(id, 3).expect("frame 3 present");
@@ -484,19 +485,19 @@ fn put_frame_depth_4_forces_materialize() {
     // Chain: frame 1 (Mat) → 2 (Δd=0) → 3 (Δd=1) → 4 (Δd=2) → 5 (Δd=3)
     // → 6 (force-Mat at would-be depth 4).
     cache
-        .put_frame(append_request_c(id, 1, 0, 0, 4, 4))
+        .put_frame(&append_request_c(id, 1, 0, 0, 4, 4))
         .expect("seed 2");
     cache
-        .put_frame(append_request_c(id, 2, 4, 0, 4, 4))
+        .put_frame(&append_request_c(id, 2, 4, 0, 4, 4))
         .expect("seed 3");
     cache
-        .put_frame(append_request_c(id, 3, 8, 0, 4, 4))
+        .put_frame(&append_request_c(id, 3, 8, 0, 4, 4))
         .expect("seed 4");
     cache
-        .put_frame(append_request_c(id, 4, 12, 0, 4, 4))
+        .put_frame(&append_request_c(id, 4, 12, 0, 4, 4))
         .expect("seed 5");
     cache
-        .put_frame(append_request_c(id, 5, 16, 0, 4, 4))
+        .put_frame(&append_request_c(id, 5, 16, 0, 4, 4))
         .expect("force-mat 6");
 
     let frame5 = cache.frame_entry_at(id, 5).expect("frame 5 present");
@@ -537,15 +538,15 @@ fn put_frame_cumulative_area_threshold_forces_materialize() {
 
     // Two full-canvas Δ appends — cumulative area 400 then 800.
     cache
-        .put_frame(append_request_c(id, 1, 0, 0, IMAGE_W, IMAGE_H))
+        .put_frame(&append_request_c(id, 1, 0, 0, IMAGE_W, IMAGE_H))
         .expect("Δ #1, area=400");
     cache
-        .put_frame(append_request_c(id, 2, 0, 0, IMAGE_W, IMAGE_H))
+        .put_frame(&append_request_c(id, 2, 0, 0, IMAGE_W, IMAGE_H))
         .expect("Δ #2, area=800 (hits 2× image area cap)");
     // Third append at would-be depth=2: depth check passes (under 3),
     // BUT cumulative area would exceed 2 × image area → force-materialize.
     cache
-        .put_frame(append_request_c(id, 3, 0, 0, IMAGE_W, IMAGE_H))
+        .put_frame(&append_request_c(id, 3, 0, 0, IMAGE_W, IMAGE_H))
         .expect("force-mat by area");
 
     let frame4 = cache.frame_entry_at(id, 4).expect("frame 4 present");
@@ -573,10 +574,10 @@ fn delete_frame_does_not_drift_delta_base_references() {
     let mut cache = ImageCache::new();
     let id = store_base_image(&mut cache, 1);
     cache
-        .put_frame(append_request_c(id, 1, 0, 0, 4, 4))
+        .put_frame(&append_request_c(id, 1, 0, 0, 4, 4))
         .expect("frame 2 Δ base=1");
     cache
-        .put_frame(append_request_c(id, 2, 4, 0, 4, 4))
+        .put_frame(&append_request_c(id, 2, 4, 0, 4, 4))
         .expect("frame 3 Δ base=2");
 
     // Snapshot frame 3's pre-deletion pixels.
@@ -611,11 +612,11 @@ fn delete_base_frame_cascades_or_materializes_dependents() {
     let id = store_base_image(&mut cache, 1);
     // Append frame 2 (Mat, solid-color so it can be the Δ base).
     cache
-        .put_frame(append_request_solid(id, 0xFF_00_00_FF))
+        .put_frame(&append_request_solid(id, 0xFF_00_00_FF))
         .expect("frame 2 Mat");
     // Append frame 3 (Δ base=frame 2).
     cache
-        .put_frame(append_request_c(id, 2, 0, 0, 4, 4))
+        .put_frame(&append_request_c(id, 2, 0, 0, 4, 4))
         .expect("frame 3 Δ base=2");
 
     let before = cache
@@ -650,10 +651,10 @@ fn frame_for_number_materializes_delta_chain_to_full_rgba() {
     let mut cache = ImageCache::new();
     let id = store_base_image(&mut cache, 1);
     cache
-        .put_frame(append_request_c(id, 1, 0, 0, 4, 4))
+        .put_frame(&append_request_c(id, 1, 0, 0, 4, 4))
         .expect("frame 2");
     cache
-        .put_frame(append_request_c(id, 2, 4, 0, 4, 4))
+        .put_frame(&append_request_c(id, 2, 4, 0, 4, 4))
         .expect("frame 3");
 
     let bytes = cache
@@ -680,7 +681,7 @@ fn frame_for_number_does_not_cache_materialized_result() {
     let mut cache = ImageCache::new();
     let id = store_base_image(&mut cache, 1);
     cache
-        .put_frame(append_request_c(id, 1, 0, 0, 4, 4))
+        .put_frame(&append_request_c(id, 1, 0, 0, 4, 4))
         .expect("Δ frame 2");
 
     let first = cache.frame_bytes_for_test(id, 2).expect("first compose");
@@ -707,13 +708,13 @@ fn delta_base_id_strictly_less_than_dependent_id_invariant() {
     let mut cache = ImageCache::new();
     let id = store_base_image(&mut cache, 1);
     cache
-        .put_frame(append_request_c(id, 1, 0, 0, 4, 4))
+        .put_frame(&append_request_c(id, 1, 0, 0, 4, 4))
         .expect("Δ 2");
     cache
-        .put_frame(append_request_c(id, 2, 4, 0, 4, 4))
+        .put_frame(&append_request_c(id, 2, 4, 0, 4, 4))
         .expect("Δ 3");
     cache
-        .put_frame(append_request_c(id, 3, 8, 0, 4, 4))
+        .put_frame(&append_request_c(id, 3, 8, 0, 4, 4))
         .expect("Δ 4");
 
     for frame_num in 2u32..=4 {
@@ -766,7 +767,7 @@ fn put_frame_oversized_payload_dims_rejected_at_append_time() {
     };
 
     let err = cache
-        .put_frame(req)
+        .put_frame(&req)
         .expect_err("oversized payload dims must reject");
     assert!(
         matches!(err, ImageError::OversizedBlit { .. }),
@@ -802,7 +803,7 @@ fn put_frame_destination_overflow_silently_clipped() {
         composition_mode: CompositionMode::Overwrite,
     };
 
-    let result = cache.put_frame(req);
+    let result = cache.put_frame(&req);
     assert!(
         result.is_ok(),
         "dest-offset overflow must silent-clip, not reject; got {result:?}"
@@ -826,10 +827,10 @@ fn animated_image_apply_frame_bumps_pixel_generation() {
 
     // Promote to animation: two Materialized frames.
     cache
-        .put_frame(append_request_solid(id, 0xFF_00_00_FF))
+        .put_frame(&append_request_solid(id, 0xFF_00_00_FF))
         .expect("frame 2");
     cache
-        .put_frame(append_request_solid(id, 0x00_FF_00_FF))
+        .put_frame(&append_request_solid(id, 0x00_FF_00_FF))
         .expect("frame 3");
 
     let gen_before = cache
@@ -860,10 +861,10 @@ fn remove_animation_frame_bumps_pixel_generation_when_displayed_data_changes() {
     let mut cache = ImageCache::new();
     let id = store_base_image(&mut cache, 1);
     cache
-        .put_frame(append_request_solid(id, 0xFF_00_00_FF))
+        .put_frame(&append_request_solid(id, 0xFF_00_00_FF))
         .expect("frame 2");
     cache
-        .put_frame(append_request_solid(id, 0x00_FF_00_FF))
+        .put_frame(&append_request_solid(id, 0x00_FF_00_FF))
         .expect("frame 3");
     cache.set_current_frame(id, 2); // displays frame 3 (index 2)
 
@@ -909,10 +910,10 @@ fn advance_animations_phase_split_does_not_borrow_conflict() {
     let mut cache = ImageCache::new();
     let id = store_base_image(&mut cache, 1);
     cache
-        .put_frame(append_request_solid(id, 0xFF_00_00_FF))
+        .put_frame(&append_request_solid(id, 0xFF_00_00_FF))
         .expect("frame 2");
     cache
-        .put_frame(append_request_solid(id, 0x00_FF_00_FF))
+        .put_frame(&append_request_solid(id, 0x00_FF_00_FF))
         .expect("frame 3");
 
     // Place the image so advance_animations considers it.
@@ -964,12 +965,12 @@ fn cascade_delete_borrow_safe_with_delta_children() {
     let mut cache = ImageCache::new();
     let id = store_base_image(&mut cache, 1);
     cache
-        .put_frame(append_request_solid(id, 0xFF_00_00_FF))
+        .put_frame(&append_request_solid(id, 0xFF_00_00_FF))
         .expect("Mat frame 2");
     // Add 4 Deltas all using frame 2 as their base.
     for i in 0..4 {
         cache
-            .put_frame(append_request_c(id, 2, (i * 4) as u32, 0, 4, 4))
+            .put_frame(&append_request_c(id, 2, (i * 4) as u32, 0, 4, 4))
             .unwrap_or_else(|_| panic!("Δ {} append", i));
     }
 
@@ -999,11 +1000,11 @@ fn lru_eviction_drops_image_atomically_with_all_frames() {
     let mut cache = ImageCache::new();
     let id = store_base_image(&mut cache, 1);
     cache
-        .put_frame(append_request_solid(id, 0xFF_00_00_FF))
+        .put_frame(&append_request_solid(id, 0xFF_00_00_FF))
         .expect("frame 2");
     for i in 0..4 {
         cache
-            .put_frame(append_request_c(id, 2, (i * 4) as u32, 0, 4, 4))
+            .put_frame(&append_request_c(id, 2, (i * 4) as u32, 0, 4, 4))
             .unwrap_or_else(|_| panic!("Δ {} append", i));
     }
 
@@ -1036,10 +1037,10 @@ fn reachable_image_with_delta_frames_not_evicted_under_pressure() {
     let mut cache = ImageCache::new();
     let id = store_base_image(&mut cache, 1);
     cache
-        .put_frame(append_request_solid(id, 0xFF_00_00_FF))
+        .put_frame(&append_request_solid(id, 0xFF_00_00_FF))
         .expect("frame 2");
     cache
-        .put_frame(append_request_c(id, 2, 0, 0, 4, 4))
+        .put_frame(&append_request_c(id, 2, 0, 0, 4, 4))
         .expect("Δ frame 3");
 
     cache.place(ImagePlacement {

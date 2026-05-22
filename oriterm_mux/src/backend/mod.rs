@@ -4,9 +4,9 @@
 //! multiplexer state. Two implementations exist:
 //!
 //! - [`EmbeddedMux`] — in-process mux for single-process mode. Wraps
-//! [`InProcessMux`](crate::in_process::InProcessMux) and owns `Pane` structs directly.
+//!   [`InProcessMux`](crate::in_process::InProcessMux) and owns `Pane` structs directly.
 //! - [`MuxClient`] — IPC client for daemon mode. Sends requests to a
-//! [`MuxServer`](crate::server::MuxServer) over a Unix socket / named pipe.
+//!   [`MuxServer`](crate::server::MuxServer) over a Unix socket / named pipe.
 
 pub mod client;
 pub mod embedded;
@@ -32,6 +32,7 @@ pub use self::embedded::EmbeddedMux;
 pub use self::types::{AdoptPaneRequest, HostReply, ImageConfig};
 
 /// Abstraction over in-process and daemon-mode multiplexer access.
+///
 /// The App calls trait methods identically regardless of whether
 /// terminal state lives in-process ([`EmbeddedMux`]) or in a remote
 /// daemon ([`MuxClient`]). All methods are synchronous.
@@ -381,12 +382,12 @@ pub trait MuxBackend {
     /// method:
     /// 1. Sends a `SnapshotNow` IO command to the pane's IO thread.
     /// 2. Waits for the IO thread to process all earlier commands (FIFO)
-    /// and publish a fresh snapshot to the double buffer.
+    ///    and publish a fresh snapshot to the double buffer.
     /// 3. Returns the fresh snapshot, owned (no shared borrow).
-    /// Used by tests and any caller that needs deterministic
-    /// "scroll then read" semantics. Production render code should
-    /// continue to use the async push pipeline via
-    /// `refresh_pane_snapshot`.
+    ///    Used by tests and any caller that needs deterministic
+    ///    "scroll then read" semantics. Production render code should
+    ///    continue to use the async push pipeline via
+    ///    `refresh_pane_snapshot`.
     fn sync_pane_snapshot(&mut self, pane_id: PaneId) -> Option<PaneSnapshot>;
 
     /// Clear the dirty flag for a pane's cached snapshot.
@@ -421,7 +422,7 @@ pub trait MuxBackend {
     /// signals the wake channel so the IO thread's `select!` wakes
     /// within one iteration. The daemon backend returns `Err` until a
     /// reply-PDU wire design lands (tracked separately — see
-    /// §01.4`).
+    /// §01.4).
     /// A duplicate fulfill is logged (the
     /// [`oriterm_core::effect::AlreadyFulfilled`] error is caught and
     /// collapsed to `Ok(())`) — routing bugs surface as log noise, not

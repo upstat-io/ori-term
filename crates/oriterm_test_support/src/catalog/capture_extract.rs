@@ -4,22 +4,22 @@
 //! [`Tuple`] per recognized escape sequence. Does NOT reimplement
 //! the VT state machine — consumes the vendored `vte` crate
 //! directly. See
-//! bootstrap.md §01.3` for the rationale.
+//! bootstrap.md §01.3 for the rationale.
 //!
 //! Payload normalization is exhaustive per the plan's
 //! "Payload normalization for captures" rules:
 //!
 //! - PM / SOS payloads collapse to `Pt` with the canonical `ST`
-//! terminator.
+//!   terminator.
 //! - APC payloads with a recognized `_G` prefix (kitty) collapse
-//! to `(APC, [_G], key-value, ST)`. Unknown APC prefixes fall
-//! back to `(APC, [], Pt, ST)` — the payload's first byte is
-//! NOT interpreted as a phantom intermediate.
+//!   to `(APC, [_G], key-value, ST)`. Unknown APC prefixes fall
+//!   back to `(APC, [], Pt, ST)` — the payload's first byte is
+//!   NOT interpreted as a phantom intermediate.
 //! - DCS sixel (`q` final) collapses to `(DCS, [], Pid, q)`; all
-//! other DCS forms collapse to `(DCS, [sorted ints], Pt, final)`.
+//!   other DCS forms collapse to `(DCS, [sorted ints], Pt, final)`.
 //! - OSC tuples place the dispatch selector in `final_byte` per the
-//! SSOT alignment (`OSC 4 ; 1 ; rgb:ff/00/00` →
-//! `(OSC, [], index;rgb, 4)`). Payload placeholders go in `params`.
+//!   SSOT alignment (`OSC 4 ; 1 ; rgb:ff/00/00` →
+//!   `(OSC, [], index;rgb, 4)`). Payload placeholders go in `params`.
 //! - CSI numeric params collapse to `Ps` / `Ps;Ps` per arity.
 
 use std::collections::BTreeMap;

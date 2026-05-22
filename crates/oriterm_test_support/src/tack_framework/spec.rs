@@ -7,6 +7,7 @@ use super::parser::ScreenParserFn;
 /// A single navigation step: send these bytes, then wait until the
 /// PTY grid contains the primary anchor string (or one of the
 /// alternates).
+///
 /// `wait_for` is the deterministic synchronization primitive — it
 /// replaces fixed sleeps that race in CI. The anchor is a literal
 /// substring expected in the grid AFTER tack processes `send`.
@@ -60,6 +61,7 @@ impl MenuStep {
 }
 
 /// Static description of a single tack scenario.
+///
 /// Constructible as `const` so test catalogs can list scenarios in
 /// arrays. The whole spec is data — no closures, no I/O — until the
 /// `parser` and (optional) `quit_path` function pointers are invoked
@@ -142,6 +144,7 @@ impl ScenarioSpec {
 }
 
 /// Static description of a single phase-capture tack scenario.
+///
 /// Used for tack screens where the fact of interest is visible only
 /// briefly mid-run — typically when tack is sweeping through a list
 /// of capabilities and printing a line per cap before moving on.
@@ -219,6 +222,7 @@ pub struct PhaseSpec {
 }
 
 /// Sentinel byte sequence for unverified menu keys.
+///
 /// Used by 05.2 / 05.3 / 05.4 / 05.4b `MenuStep::send` and
 /// `PhaseSpec::phase_trigger` placeholders for menu keys that 05.0's
 /// `BEGIN_TESTING_INVENTORY` discovery has not yet pinned.
@@ -250,6 +254,7 @@ pub const fn unverified_menu_key() -> &'static [u8] {
 }
 
 /// Sentinel anchor string for unverified anchors.
+///
 /// Used by 05.2 / 05.3 / 05.4 / 05.4b `MenuStep::wait_for`,
 /// `ScenarioSpec::ready_anchor`, `PhaseSpec::phase_setup_anchor`,
 /// and `PhaseSpec::phase_anchor` placeholders that 05.0's discovery
@@ -266,6 +271,7 @@ pub const fn unverified_anchor() -> &'static str {
 
 /// Predicate: does `bytes` look like the [`unverified_menu_key`]
 /// sentinel?
+///
 /// Equality check, not substring — the sentinel is a sequence of
 /// known length, and a substring check would false-match real keys
 /// that happen to contain a NUL.

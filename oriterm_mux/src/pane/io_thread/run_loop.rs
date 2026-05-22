@@ -223,16 +223,16 @@ impl<S: EffectSink> PaneIoThread<S> {
     /// `HostEffect::ChildExit`, flush once more, then return.
     /// Sequence (per §17 of the effect-cutover plan blind-spot analysis):
     /// 1. Final `drain_effects_into_mux_events()` — flush any effects
-    /// produced during the preceding parse cycle.
+    ///    produced during the preceding parse cycle.
     /// 2. `maybe_produce_snapshot()` — publish the PTY's final cell
-    /// content to the main thread BEFORE `MuxEvent::PaneExited`
-    /// arrives. Gated by Mode 2026 synchronized-output so sync-active
-    /// panes defer the snapshot per the application's request.
+    ///    content to the main thread BEFORE `MuxEvent::PaneExited`
+    ///    arrives. Gated by Mode 2026 synchronized-output so sync-active
+    ///    panes defer the snapshot per the application's request.
     /// 3. Exit-code source: cached `pending_child_exit` if the watcher
-    /// already fired, otherwise `child_exit_rx.recv_timeout(5s)`.
+    ///    already fired, otherwise `child_exit_rx.recv_timeout(5s)`.
     /// 4. Emit `HostEffect::ChildExit { code }` through the sink.
     /// 5. Final `drain_effects_into_mux_events()` — routes to
-    /// `MuxEvent::PaneExited { pane_id, exit_code }`.
+    ///    `MuxEvent::PaneExited { pane_id, exit_code }`.
     /// 6. Return from `run()`.
     fn handle_pty_eof(&mut self) {
         // (1) Flush in-flight effects from the last parse chunk.

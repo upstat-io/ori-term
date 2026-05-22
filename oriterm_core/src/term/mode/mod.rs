@@ -189,6 +189,7 @@ impl From<TermMode> for vte::ansi::KeyboardModes {
 }
 
 /// Enter-key base bytes under LNM (Line Feed/New Line) mode.
+///
 /// SSOT for the rule "LNM controls what Enter transmits." When LNM is set,
 /// Enter sends CR+LF (`\r\n`); otherwise it sends CR (`\r`). Both the
 /// application key encoder (`oriterm/src/key_encoding/legacy.rs`) and the

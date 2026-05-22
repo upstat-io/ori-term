@@ -4,12 +4,12 @@
 //! preserve the static-image-rendering correctness path:
 //!
 //! - **Server side** (`SnapshotCache.image_data_store`) — keeps the most-recent
-//! `Arc<RenderableImageData>` per `(PaneId, ImageId)` so the per-client dispatch
-//! slow path can build `WireImageData` entries on demand without re-extracting
-//! from `Term`.
+//!   `Arc<RenderableImageData>` per `(PaneId, ImageId)` so the per-client dispatch
+//!   slow path can build `WireImageData` entries on demand without re-extracting
+//!   from `Term`.
 //! - **Client side** (`MuxClient.image_cache`) — resolves placements arriving in a
-//! wire `PaneSnapshot` whose `image_data` was filtered out by the server (steady
-//! state — client already has the bytes).
+//!   wire `PaneSnapshot` whose `image_data` was filtered out by the server (steady
+//!   state — client already has the bytes).
 //!
 //! Eviction is **reachability-bounded**: an entry is NEVER evicted if its
 //! `(PaneId, ImageId)` is currently referenced by a placement in the latest
@@ -30,6 +30,7 @@ use crate::PaneId;
 pub const DEFAULT_MEMORY_CAP_BYTES: usize = 320 * 1024 * 1024;
 
 /// Bounded LRU cache mapping `(PaneId, ImageId)` to `Arc<RenderableImageData>`.
+///
 /// `F` is the **reachability oracle** — a closure that returns `true` iff the
 /// given `(PaneId, ImageId)` is currently referenced by a placement in the
 /// caller's latest snapshot for that pane. Each insert path computes its own

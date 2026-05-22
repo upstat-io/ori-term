@@ -63,11 +63,11 @@ pub(crate) enum FrameEntry {
     Delta {
         /// Stable internal identifier for this entry.
         id: FrameId,
-        /// Stable FrameId of the entry this delta composes onto.
+        /// Stable `FrameId` of the entry this delta composes onto.
         ///
         /// Invariant: `base.0 < id.0` — verified via
         /// `debug_assert!` at append time. Cycles impossible by
-        /// construction because `put_frame` mints a new FrameId only
+        /// construction because `put_frame` mints a new `FrameId` only
         /// after the request's `c=N` resolves an earlier one.
         base: FrameId,
         /// Destination sub-rect in canvas coordinates.

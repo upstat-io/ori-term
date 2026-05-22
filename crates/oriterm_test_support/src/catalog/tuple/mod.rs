@@ -6,7 +6,7 @@
 //! regardless of which extractor produced it, so set-equality on
 //! `Vec<Tuple>` answers "does this row cover this dispatch arm?".
 //!
-//! See §01.3.a`
+//! See §01.3.a
 //! for the full rules.
 
 mod canonical;
@@ -89,11 +89,11 @@ impl Category {
 /// - `intermediates` — sorted byte sequence (`?`, `>`, `$`,...).
 /// - `params` — normalized parameter placeholder (`Ps`, `Ps;Ps`, `text`, …).
 /// - `final_byte` — the dispatch-triggering byte for CSI/ESC/DCS,
-/// the OSC dispatch selector (numeric id like `"52"` or alias
-/// like `"L"`/`"l"`) for OSC, or the canonical terminator
-/// (`ST`) for PM/SOS/APC. The OSC SSOT alignment
-/// places the dispatch discriminator in this slot for OSC so
-/// that `signature()` yields per-selector-distinct values.
+///   the OSC dispatch selector (numeric id like `"52"` or alias
+///   like `"L"`/`"l"`) for OSC, or the canonical terminator
+///   (`ST`) for PM/SOS/APC. The OSC SSOT alignment
+///   places the dispatch discriminator in this slot for OSC so
+///   that `signature()` yields per-selector-distinct values.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Tuple {
     pub category: Category,

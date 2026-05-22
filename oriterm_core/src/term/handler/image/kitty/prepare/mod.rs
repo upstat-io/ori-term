@@ -50,12 +50,12 @@ pub(super) fn prepare_image_bytes(
     // extra byte (no unbounded allocation regardless of the zlib bomb's
     // claimed expansion ratio).
     let limit = cap.saturating_add(1);
-    let mut decoder = ZlibDecoder::new(&raw[..]).take(limit as u64);
+    let mut decoder = ZlibDecoder::new(&*raw).take(limit as u64);
     let mut out = Vec::with_capacity(cap.min(64 * 1024));
 
-    decoder.read_to_end(&mut out).map_err(|e| {
-        KittyStoreError::Reply(format!("EINVAL: zlib decode failed: {e}"))
-    })?;
+    decoder
+        .read_to_end(&mut out)
+        .map_err(|e| KittyStoreError::Reply(format!("EINVAL: zlib decode failed: {e}")))?;
 
     if out.len() > cap {
         return Err(KittyStoreError::Reply(

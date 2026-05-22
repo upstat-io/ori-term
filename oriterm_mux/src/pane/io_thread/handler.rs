@@ -19,11 +19,11 @@ impl<S: EffectSink + 'static> PaneIoThread<S> {
     /// `Grid::resize()`) to also resize the alt grid and prune image caches.
     /// Resize routing:
     /// - Spawned panes have `pty_control: Some(_)` and use the
-    /// `portable_pty::MasterPty::resize` path.
+    ///   `portable_pty::MasterPty::resize` path.
     /// - Adopted panes (Section 03.9 Windows Default Terminal handoff)
-    /// have `pty_control: None` and `adopted_signal: Some(_)` — they
-    /// write the conhost signal pipe protocol via
-    /// `AdoptedSignal::resize` (`PTY_SIGNAL_RESIZE_WINDOW`).
+    ///   have `pty_control: None` and `adopted_signal: Some(_)` — they
+    ///   write the conhost signal pipe protocol via
+    ///   `AdoptedSignal::resize` (`PTY_SIGNAL_RESIZE_WINDOW`).
     /// - Tests typically have both `None` and skip the syscall.
     pub(super) fn process_resize(&mut self, rows: u16, cols: u16) {
         self.terminal.resize(rows as usize, cols as usize, true);

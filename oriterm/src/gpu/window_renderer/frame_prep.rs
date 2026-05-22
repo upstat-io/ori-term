@@ -149,12 +149,13 @@ impl WindowRenderer {
     }
 
     /// Run Phase B + B2 of the prepare pipeline.
+    ///
     /// Caches shaped glyphs (routes to mono, subpixel, or color atlas) and
     /// builtin geometric glyphs + decoration patterns. Builtins always go to
     /// the mono atlas (alpha-only bitmaps).
     /// Single SSOT consumed by both single-pane [`prepare`] and multi-pane
     /// `prepare_pane_into` so the Phase-B+B2 sequence never drifts between
-    /// the two render paths (``).
+    /// the two render paths.
     /// Pre-condition: [`shape_frame`] (Phase A) has populated
     /// `self.shaping.frame` for the current frame.
     pub(super) fn cache_glyphs_and_builtins(&mut self, input: &FrameInput, gpu: &GpuState) {

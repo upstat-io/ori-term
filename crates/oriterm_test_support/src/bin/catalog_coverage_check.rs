@@ -6,7 +6,7 @@
 //! - `0` — success.
 //! - `1` — one or more findings; also emitted on io / parse errors.
 //!
-//! See §01.3.a`
+//! See §01.3.a
 //! for the full subcommand surface.
 
 use std::path::PathBuf;

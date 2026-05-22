@@ -106,7 +106,7 @@ impl<S: EffectSink> Term<S> {
     /// gate — a post-reset client must not see ghost images or
     /// memory-leaked image data. Spec rationale: kitty graphics-protocol
     /// "When resetting the terminal, all images that are visible on the
-    /// screen must be cleared". WezTerm parity: `kitty_remove_all_placements`
+    /// screen must be cleared". `WezTerm` parity: `kitty_remove_all_placements`
     /// on DECSTR.
     pub(super) fn soft_reset(&mut self) {
         debug!("DECSTR: soft terminal reset");

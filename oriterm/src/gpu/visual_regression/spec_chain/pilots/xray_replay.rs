@@ -587,10 +587,7 @@ fn xray_replay_gpu_upload_diagnostic() {
     eprintln!("  bytes fed:           {} MB", bytes.len() / 1_000_000);
     eprintln!("  wall time:           {:.3} sec", wall.as_secs_f64());
     eprintln!("  total uploads:       {}", final_count);
-    eprintln!(
-        "  total upload bytes:  {} MB",
-        final_bytes / 1_000_000
-    );
+    eprintln!("  total upload bytes:  {} MB", final_bytes / 1_000_000);
     eprintln!(
         "  total upload nanos:  {:.3} sec ({:.1} %% of wall)",
         final_nanos as f64 / 1e9,
@@ -700,14 +697,7 @@ fn xray_gpu_upload_bandwidth_ceiling() {
         let image_id = oriterm_core::image::ImageId::from_raw(1000 + i);
         cache.begin_frame();
         let _ = cache.ensure_uploaded(
-            device,
-            queue,
-            &layout,
-            image_id,
-            0u64,
-            &payload,
-            WIDTH,
-            HEIGHT,
+            device, queue, &layout, image_id, 0u64, &payload, WIDTH, HEIGHT,
         );
     }
     let _ = device.poll(wgpu::PollType::wait_indefinitely());
@@ -809,7 +799,10 @@ fn xray_full_feed_cost_post_cure() {
     eprintln!("  bytes fed:        {} MB", bytes.len() / 1_000_000);
     eprintln!("  chunks:           {}", chunk_times.len());
     eprintln!("  wall time:        {:.3} sec", wall.as_secs_f64());
-    eprintln!("  per-byte rate:    {:.3} µs/byte", wall.as_nanos() as f64 / bytes.len() as f64 / 1000.0);
+    eprintln!(
+        "  per-byte rate:    {:.3} µs/byte",
+        wall.as_nanos() as f64 / bytes.len() as f64 / 1000.0
+    );
     eprintln!("  total feed:       {:.3} sec", total_ns as f64 / 1e9);
     eprintln!("  avg chunk cost:   {:.3} ms", avg_ns as f64 / 1e6);
     eprintln!("  max chunk cost:   {:.3} ms", max_ns as f64 / 1e6);
@@ -829,13 +822,31 @@ fn xray_full_feed_cost_post_cure() {
     let post_avg_ms = avg_ns as f64 / 1e6;
     let post_max_ms = max_ns as f64 / 1e6;
     eprintln!("  speedup ratio:");
-    eprintln!("    total:    {:.1}× (pre {:.0} s → post {:.0} s)", pre_total_s / post_total_s, pre_total_s, post_total_s);
-    eprintln!("    avg:      {:.1}× (pre {:.0} ms → post {:.0} ms)", pre_avg_ms / post_avg_ms, pre_avg_ms, post_avg_ms);
-    eprintln!("    max:      {:.1}× (pre {:.0} ms → post {:.0} ms)", pre_max_ms / post_max_ms, pre_max_ms, post_max_ms);
+    eprintln!(
+        "    total:    {:.1}× (pre {:.0} s → post {:.0} s)",
+        pre_total_s / post_total_s,
+        pre_total_s,
+        post_total_s
+    );
+    eprintln!(
+        "    avg:      {:.1}× (pre {:.0} ms → post {:.0} ms)",
+        pre_avg_ms / post_avg_ms,
+        pre_avg_ms,
+        post_avg_ms
+    );
+    eprintln!(
+        "    max:      {:.1}× (pre {:.0} ms → post {:.0} ms)",
+        pre_max_ms / post_max_ms,
+        pre_max_ms,
+        post_max_ms
+    );
 
     let post_image_count = harness.core_mut().term().image_cache().image_count();
     let post_placement_count = harness.core_mut().term().image_cache().placement_count();
-    eprintln!("  post-feed state:  images={} placements={}", post_image_count, post_placement_count);
+    eprintln!(
+        "  post-feed state:  images={} placements={}",
+        post_image_count, post_placement_count
+    );
 }
 
 /// Production parse-path probe — bypasses SpecHarness entirely. Feeds
@@ -846,9 +857,9 @@ fn xray_full_feed_cost_post_cure() {
 #[test]
 #[ignore = "BUG-06-086 diagnostic — production Term::feed cost; explicit --ignored"]
 fn xray_full_feed_cost_production_path() {
+    use oriterm_core::Term;
     use oriterm_core::effect::VoidEffectSink;
     use oriterm_core::theme::Theme;
-    use oriterm_core::Term;
 
     let Some((cap_path, _)) = resolve_cap_paths() else {
         eprintln!("SKIP: wrapper_root unavailable");
@@ -900,7 +911,10 @@ fn xray_full_feed_cost_production_path() {
     eprintln!("  bytes fed:        {} MB", bytes.len() / 1_000_000);
     eprintln!("  chunks:           {}", chunk_times.len());
     eprintln!("  wall time:        {:.3} sec", wall.as_secs_f64());
-    eprintln!("  per-byte rate:    {:.3} µs/byte", wall.as_nanos() as f64 / bytes.len() as f64 / 1000.0);
+    eprintln!(
+        "  per-byte rate:    {:.3} µs/byte",
+        wall.as_nanos() as f64 / bytes.len() as f64 / 1000.0
+    );
     eprintln!("  avg chunk cost:   {:.3} ms", avg_ns as f64 / 1e6);
     eprintln!("  max chunk cost:   {:.3} ms", max_ns as f64 / 1e6);
 
@@ -909,9 +923,15 @@ fn xray_full_feed_cost_production_path() {
     let our_rate_mbps = (bytes.len() as f64 / 1e6) / wall.as_secs_f64();
     eprintln!("  our rate:         {:.2} MB/sec", our_rate_mbps);
     eprintln!("  notcurses target: {:.0} MB/sec", notcurses_emit_rate_mbps);
-    eprintln!("  speedup needed:   {:.1}× to match notcurses real-time", notcurses_emit_rate_mbps / our_rate_mbps);
+    eprintln!(
+        "  speedup needed:   {:.1}× to match notcurses real-time",
+        notcurses_emit_rate_mbps / our_rate_mbps
+    );
 
     let image_count = term.image_cache().image_count();
     let placement_count = term.image_cache().placement_count();
-    eprintln!("  post-feed state:  images={} placements={}", image_count, placement_count);
+    eprintln!(
+        "  post-feed state:  images={} placements={}",
+        image_count, placement_count
+    );
 }

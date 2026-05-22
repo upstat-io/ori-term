@@ -231,7 +231,7 @@ impl<S: EffectSink> PaneIoThread<S> {
     /// stay responsive and the main thread sees render progress even within a
     /// single large PTY read (up to 1 MB).
     ///
-    /// Returns (drain_commands_dur, maybe_snapshot_dur) summed across all
+    /// Returns (`drain_commands_dur`, `maybe_snapshot_dur`) summed across all
     /// inter-chunk boundaries within this byte buffer. The caller aggregates
     /// these across messages in `process_pending_bytes` so the SLOW drain
     /// cycle log can attribute time to the sub-phases that fall OUTSIDE
@@ -383,7 +383,7 @@ impl<S: EffectSink> PaneIoThread<S> {
             use std::sync::atomic::{AtomicU64, Ordering};
             static SLOW_COUNTER: AtomicU64 = AtomicU64::new(0);
             let n = SLOW_COUNTER.fetch_add(1, Ordering::Relaxed);
-            if n % 32 == 0 {
+            if n.is_multiple_of(32) {
                 log::info!(
                     target: "oriterm_mux::pane::io_thread::chunk",
                     "SLOW chunk #{} bytes={} total={:.2?} raw={:.2?} vte={:.2?} \
@@ -490,24 +490,24 @@ impl<S: EffectSink> PaneIoThread<S> {
     /// agreement against the `select!` default-arm anchor in
     /// Two surfaces shrink:
     /// 1. `snapshot_buf` — IO-thread scratch buffer. Receives the OLD
-    /// front via `flip_swap`. Do NOT `clear()` before shrinking —
-    /// `clear()` zeros `len`, making `maybe_shrink`'s gate
-    /// `cap > 4*len` always fire (since `cap > 0`), which would
-    /// `shrink_to(0)` and force a full reallocation on the next
-    /// `renderable_content_into()`. Mirrors the main-thread pattern
-    /// at `oriterm_mux/src/backend/embedded/mod.rs` which calls
-    /// `content.maybe_shrink()` directly without clearing.
+    ///    front via `flip_swap`. Do NOT `clear()` before shrinking —
+    ///    `clear()` zeros `len`, making `maybe_shrink`'s gate
+    ///    `cap > 4*len` always fire (since `cap > 0`), which would
+    ///    `shrink_to(0)` and force a full reallocation on the next
+    ///    `renderable_content_into()`. Mirrors the main-thread pattern
+    ///    at `oriterm_mux/src/backend/embedded/mod.rs` which calls
+    ///    `content.maybe_shrink()` directly without clearing.
     /// 2. `double_buffer.front` — the resting front buffer. Under
-    /// quiescence, rotation does not run, so the front holds peak-
-    /// flood capacity until explicitly shrunk.
-    /// **`effects_buf` is intentionally NOT shrunk here.** The drain
-    /// pattern in `effect_router/mod.rs` always leaves
-    /// `effects_buf.len() == 0` with capacity preserved. Calling
-    /// `maybe_shrink_vec(&mut effects_buf)` here would gate-fire
-    /// (`cap > 4*0 && cap > 4096`) and `shrink_to(0)`, forcing
-    /// reallocation on every effect push during the next flood. Pinned
-    /// by §03 regression guard "`effects_buf` preserved".
-    /// Regression:.
+    ///    quiescence, rotation does not run, so the front holds peak-
+    ///    flood capacity until explicitly shrunk.
+    ///    **`effects_buf` is intentionally NOT shrunk here.** The drain
+    ///    pattern in `effect_router/mod.rs` always leaves
+    ///    `effects_buf.len() == 0` with capacity preserved. Calling
+    ///    `maybe_shrink_vec(&mut effects_buf)` here would gate-fire
+    ///    (`cap > 4*0 && cap > 4096`) and `shrink_to(0)`, forcing
+    ///    reallocation on every effect push during the next flood. Pinned
+    ///    by §03 regression guard "`effects_buf` preserved".
+    ///    Regression:.
     fn maybe_shrink_buffers(&mut self) {
         #[cfg(test)]
         self.shrink_call_count.fetch_add(1, Ordering::Release);

@@ -31,11 +31,11 @@ pub(super) struct KittyFrameKeys {
     pub(super) compose_mode: CompositionMode,
     /// `Y=` — RGBA solid background (default 0x00000000 = transparent).
     pub(super) background_rgba: u32,
-    /// Append-arm gap (z-normalized): z>0 → from_millis; z<0 → ZERO; z==0
-    /// → DEFAULT_FRAME_GAP. Per kitty graphics.c:1597.
+    /// Append-arm gap (z-normalized): z>0 → `from_millis`; z<0 → ZERO; z==0
+    /// → `DEFAULT_FRAME_GAP`. Per kitty graphics.c:1597.
     pub(super) append_gap: Duration,
     /// Edit-arm gap-update intent: None when z==0 (do NOT touch existing
-    /// frame's gap); Some(ZERO) when z<0; Some(from_millis) when z>0. Per
+    /// frame's gap); Some(ZERO) when z<0; `Some(from_millis)` when z>0. Per
     /// kitty graphics.c:1651.
     pub(super) edit_gap_update: Option<Duration>,
     /// Blit width — decoded payload dimension (NOT `s=`). For PNG

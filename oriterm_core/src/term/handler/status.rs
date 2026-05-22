@@ -20,14 +20,14 @@ use super::helpers::{crate_version_number, mode_report_value, named_private_mode
 
 /// XTVERSION advertise — SSOT for the reply byte string.
 ///
-/// ori_term reports as `kitty(0.20.0)` to unlock notcurses' `o=z`
+/// `ori_term` reports as `kitty(0.20.0)` to unlock notcurses' `o=z`
 /// compression + `NCPIXEL_KITTY_ANIMATED` paths per
 /// `notcurses/src/lib/termdesc.c::apply_kitty_heuristics`. Bumping the
 /// version here is a protocol-deviation decision — pair any change with
 /// the `DFCT-CSI-XTVERSION` row in
 /// `plans/spec-conformance/catalog/de-facto-behaviors.md`.
 ///
-/// The 4 prior textual copies (status_xtversion + 3 test sites) now
+/// The 4 prior textual copies (`status_xtversion` + 3 test sites) now
 /// reference this single constant instead of repeating the literal.
 pub(crate) const XTVERSION_REPLY: &[u8] = b"\x1bP>|kitty(0.20.0)\x1b\\";
 

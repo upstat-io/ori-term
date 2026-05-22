@@ -64,7 +64,11 @@ impl Drop for TempFileGuard<'_> {
 /// `s=`/`v=` control fields up front; the caller's `max_bytes` then bounds
 /// the helper's output. Overflow saturates to `usize::MAX` so the helper's
 /// own cap clamp handles oversized requests with `EBIG`.
-pub(super) fn expected_decoded_size_for_format(format: u32, width: u32, height: u32) -> Option<usize> {
+pub(super) fn expected_decoded_size_for_format(
+    format: u32,
+    width: u32,
+    height: u32,
+) -> Option<usize> {
     let channels: usize = match format {
         24 => 3,
         32 => 4,

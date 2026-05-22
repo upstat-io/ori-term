@@ -692,8 +692,7 @@ fn kitty_store_from_file_oz_decompresses_file_bytes() {
     let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
     encoder.write_all(&raw_rgba).expect("encode");
     let compressed = encoder.finish().expect("finish");
-    let fixture = TempFileFixture::new("oz_decompress", &compressed)
-        .expect("temp file write");
+    let fixture = TempFileFixture::new("oz_decompress", &compressed).expect("temp file write");
 
     let p = KittyStoreParams {
         image_id: 10,
@@ -730,8 +729,8 @@ fn kitty_store_from_file_oz_corrupt_returns_einval() {
     let mut term = Term::new(24, 80, 1000, Theme::default(), VoidEffectSink);
     term.set_image_limits(usize::MAX, 64 * 1024);
 
-    let fixture = TempFileFixture::new("oz_corrupt_file", &vec![0xFFu8; 32])
-        .expect("temp file write");
+    let fixture =
+        TempFileFixture::new("oz_corrupt_file", &vec![0xFFu8; 32]).expect("temp file write");
     let fixture_path = fixture.path().to_path_buf();
 
     let p = KittyStoreParams {
@@ -777,8 +776,7 @@ fn kitty_store_from_file_no_compression_still_reads_and_stores_raw_file() {
     term.set_image_limits(usize::MAX, 64 * 1024);
 
     let raw_rgba: Vec<u8> = (0..64u8).map(|i| i.wrapping_mul(13)).collect();
-    let fixture = TempFileFixture::new("no_compress_file", &raw_rgba)
-        .expect("temp file write");
+    let fixture = TempFileFixture::new("no_compress_file", &raw_rgba).expect("temp file write");
 
     let p = KittyStoreParams {
         image_id: 12,

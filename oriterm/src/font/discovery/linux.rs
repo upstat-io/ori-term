@@ -3,7 +3,7 @@
 //! Owns only the platform-specific bit — `font_dirs()`. Enumeration, parsing,
 //! grouping, the resolution-bridge logic, the platform-default fallback walk,
 //! and the user-fallback resolver all live in the shared `super::unix` module
-//! per `` SSOT discipline.
+//! per SSOT discipline.
 
 use std::collections::HashMap;
 use std::path::PathBuf;

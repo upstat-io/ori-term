@@ -104,6 +104,7 @@ fn install_logger_once() {
 
 /// Run `body` with a fresh `MemorySink` installed at `level` for the calling
 /// thread only.
+///
 /// See: `MemorySink` for the captured-record buffer + thread-local install.
 /// Concurrent tests on other threads see their traces silently dropped (no
 /// thread-local sink installed); records fired on this thread go into the

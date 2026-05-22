@@ -16,8 +16,8 @@ use oriterm_core::effect::{Effect, HostRequest, PtyEffect, PtyWriteKind};
 use oriterm_test_support::spec_chain::SpecHarness;
 
 use super::fixtures::{
-    b64, count_replies_exact, kitty_apc, ok_reply_for, placement_count, reply_bytes, rgba_solid,
-    reply_contains, rgba_4x4_red, tmp_dir,
+    b64, count_replies_exact, kitty_apc, ok_reply_for, placement_count, reply_bytes,
+    reply_contains, rgba_4x4_red, rgba_solid, tmp_dir,
 };
 
 // ===========================================================================

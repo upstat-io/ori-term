@@ -13,17 +13,18 @@ use crate::PtySession;
 /// screen until `"Enter choice number"` (or any string in
 /// `extra_sentinels`) appears in `grid_text()`, or `max_screens`
 /// iterations elapse.
+///
 /// The closure receives:
 /// 1. `&mut PtySession` — for interleaved sends or `grid_chars` access.
 /// 2. `&str text` — the captured grid text the helper already allocated
-/// for the sentinel check, so the closure does not re-pay the
-/// `grid_text()` allocation cost.
+///    for the sentinel check, so the closure does not re-pay the
+///    `grid_text()` allocation cost.
 /// 3. `usize screen` — the 1-based screen index.
-/// After the closure returns, an Enter keypress is sent via
-/// [`PtySession::send_enter`], which respects LNM (Line Feed/New Line)
-/// mode and includes the 300 ms quiescent wait. See
-/// [`oriterm_core::encode_enter_base`] for the SSOT.
-/// Returns the number of screens for which `on_screen` was called.
+///    After the closure returns, an Enter keypress is sent via
+///    [`PtySession::send_enter`], which respects LNM (Line Feed/New Line)
+///    mode and includes the 300 ms quiescent wait. See
+///    [`oriterm_core::encode_enter_base`] for the SSOT.
+///    Returns the number of screens for which `on_screen` was called.
 pub fn walk_vttest_screens<F>(
     session: &mut PtySession,
     max_screens: usize,

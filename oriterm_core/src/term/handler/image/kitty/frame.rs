@@ -29,7 +29,7 @@ impl<S: EffectSink> Term<S> {
     /// graphics.c:1558-1561 (NOT EINVAL). `c=` is consulted only on the
     /// append path (graphics.c:1606-1635); the edit arm silently ignores
     /// it. Sub-rect (`x=, y=, s=, v=`) applies to all three arms.
-    /// Composition mode (`X=`) selects AlphaBlend (0) or Overwrite (1).
+    /// Composition mode (`X=`) selects `AlphaBlend` (0) or Overwrite (1).
     pub(super) fn kitty_frame(&mut self, cmd: KittyCommand) {
         if cmd.more_data {
             self.kitty_accumulate_chunk(cmd);
@@ -49,19 +49,22 @@ impl<S: EffectSink> Term<S> {
         // for PNG `f=100` where `s=` and decoded dims can disagree because
         // `decode_to_rgba` reads dims from the PNG header).
         let payload = std::mem::take(&mut merged.payload);
-        let expected_size =
-            expected_decoded_size_for_format(merged.format, merged.source_width, merged.source_height);
+        let expected_size = expected_decoded_size_for_format(
+            merged.format,
+            merged.source_width,
+            merged.source_height,
+        );
         let max_bytes = self.image_cache().max_single_image_bytes();
-        let payload = match prepare_image_bytes(payload, merged.compression, expected_size, max_bytes)
-        {
-            Ok(buf) => buf,
-            Err(e) => {
-                let msg = e.to_string();
-                warn!("kitty frame prepare failed: {msg}");
-                self.kitty_respond(&ctx, &msg);
-                return;
-            }
-        };
+        let payload =
+            match prepare_image_bytes(payload, merged.compression, expected_size, max_bytes) {
+                Ok(buf) => buf,
+                Err(e) => {
+                    let msg = e.to_string();
+                    warn!("kitty frame prepare failed: {msg}");
+                    self.kitty_respond(&ctx, &msg);
+                    return;
+                }
+            };
         let (rgba_data, decoded_w, decoded_h) = match Self::kitty_decode_pixels(
             payload,
             merged.format,
@@ -90,12 +93,12 @@ impl<S: EffectSink> Term<S> {
 
         let request = build_request(image_id, &keys, &rgba_data, is_append, effective_target);
 
-        match self.image_cache_mut().put_frame(request) {
+        match self.image_cache_mut().put_frame(&request) {
             Ok(result_frame_num) => {
                 let ctx = ctx.with_frame_num(result_frame_num);
                 self.kitty_respond(&ctx, "OK");
             }
-            Err(e) => emit_error_reply(self, ctx, e),
+            Err(e) => emit_error_reply(self, ctx, &e),
         }
     }
 }
@@ -143,7 +146,7 @@ fn build_request(
 }
 
 /// Map `put_frame` errors to kitty reply codes.
-fn emit_error_reply<S: EffectSink>(term: &mut Term<S>, ctx: KittyReplyContext, err: ImageError) {
+fn emit_error_reply<S: EffectSink>(term: &Term<S>, ctx: KittyReplyContext, err: &ImageError) {
     match err {
         // ENOENT per kitty graphics.c:2233-2235; preserve `,r=` omission so
         // existing `kitty_frame_reply_r_qualifier_omitted_on_missing_image_enoent`
@@ -151,17 +154,14 @@ fn emit_error_reply<S: EffectSink>(term: &mut Term<S>, ctx: KittyReplyContext, e
         ImageError::MissingImage { .. } => {
             term.kitty_respond(&ctx, "ENOENT");
         }
-        ImageError::InvalidFrameRef { .. } => {
-            term.kitty_respond(&ctx, &format!("EINVAL: {err}"));
-        }
-        ImageError::OversizedBlit { .. } => {
+        ImageError::InvalidFrameRef { .. }
+        | ImageError::OversizedBlit { .. }
+        | ImageError::InvalidFormat
+        | ImageError::DecodeFailed(_) => {
             term.kitty_respond(&ctx, &format!("EINVAL: {err}"));
         }
         ImageError::OversizedImage | ImageError::MemoryLimitExceeded => {
             term.kitty_respond(&ctx, &format!("ENOMEM: {err}"));
-        }
-        ImageError::InvalidFormat | ImageError::DecodeFailed(_) => {
-            term.kitty_respond(&ctx, &format!("EINVAL: {err}"));
         }
         ImageError::OverlappingFrames => {
             unreachable!("OverlappingFrames is compose-specific; frame.rs cannot emit it")

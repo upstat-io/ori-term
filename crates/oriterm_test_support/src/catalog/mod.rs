@@ -8,14 +8,14 @@
 //! library:
 //!
 //! - `catalog_coverage_check` (Section 01.3) — bootstrap-mode
-//! coverage gate. Drives CI to fail when a dispatch arm is
-//! missing a catalog row, when a catalog row references a
-//! stale symbol, when `Spec source` cites a peer terminal
-//! (wezterm et al.), or when a `Verification: verified` row
-//! is present in bootstrap mode.
+//!   coverage gate. Drives CI to fail when a dispatch arm is
+//!   missing a catalog row, when a catalog row references a
+//!   stale symbol, when `Spec source` cites a peer terminal
+//!   (wezterm et al.), or when a `Verification: verified` row
+//!   is present in bootstrap mode.
 //! - `spec_coverage_report` (Section 04.8) — per-stack absolute
-//! verified count + citation scan. Imports
-//! [`parse_catalog_markdown`] to populate its coverage table.
+//!   verified count + citation scan. Imports
+//!   [`parse_catalog_markdown`] to populate its coverage table.
 //!
 //! All public parsers return [`Result`] so callers can propagate
 //! schema errors via `?` at a single boundary. Consumers MUST NOT
@@ -23,7 +23,7 @@
 //! schema enforcement, and silently dropping parse failures would
 //! let drift in.
 //!
-//! See §01.3`
+//! See §01.3
 //! for the full scope.
 
 pub mod capture_extract;
@@ -54,6 +54,7 @@ pub use tuple::{Category, Tuple, canonical_tuple, osc_placeholder};
 
 /// Walk a catalog directory and return sorted paths to all `.md` data
 /// files, excluding `README.md` and `_`-prefixed files.
+///
 /// This is the SSOT for catalog file enumeration — used by
 /// [`check::check`], [`reconcile::load_all_catalog_rows`], and the
 /// `extract-catalog-tuples` binary subcommand.

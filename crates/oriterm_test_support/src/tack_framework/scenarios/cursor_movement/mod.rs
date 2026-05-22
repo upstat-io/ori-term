@@ -71,6 +71,7 @@ use crate::tack_framework::{MenuStep, ScenarioSpec, ScreenFacts};
 /// cursor-related capability short names (`cup`, `hpa`, `vpa`,
 /// `csr`, `cuu`, `cud`, `cub`, `cuf`) using [`grid_has_token`]
 /// (whitespace-bounded).
+///
 /// All 8 names are 3 characters and would false-positive on bare
 /// `str::contains` against any English word containing them —
 /// e.g. `cup` matches inside `cupboard`/`occupied`, `vpa` and
@@ -109,6 +110,7 @@ pub fn parse_cursor_screen(grid: &str) -> ScreenFacts {
 }
 
 /// Tack cursor movement scenario.
+///
 /// Navigates the verified path from 05.0's
 /// [`super::begin_testing_inventory::BEGIN_TESTING_INVENTORY`]:
 /// `n` (enter test menu) → `m` (enter cursor movement sub-menu,

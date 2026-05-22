@@ -147,6 +147,7 @@ pub struct WireSearchMatch {
 }
 
 /// Image placement on the wire — viewport position + UV + ordering for a referenced `ImageId`.
+///
 /// Mirrors [`oriterm_core::RenderablePlacement`] but with `image_id: u32` (the raw
 /// `ImageId` inner value) so the wire schema decouples from the Rust newtype.
 /// f32 fields preclude `Eq`; this drops `PaneSnapshot`'s `Eq` derive transitively (and `MuxPdu`'s),
@@ -179,6 +180,7 @@ pub struct WirePlacement {
 }
 
 /// Decoded image pixel data on the wire — RGBA bytes + dimensions for one `ImageId`.
+///
 /// Owned `Vec<u8>` for the pixel buffer (necessary for bincode `Deserialize`). Server-side
 /// fill path clones `Arc<Vec<u8>>::to_vec()` on the slow path (when image data must flow
 /// over the wire — first-observation OR `images_dirty=true`); fast path (steady-state
@@ -202,6 +204,7 @@ pub struct WireImageData {
 }
 
 /// Full snapshot of a pane's visible state.
+///
 /// Transferred when a client subscribes to a pane or explicitly requests
 /// a snapshot. Contains everything needed to render the pane from scratch.
 /// `Default` produces an empty snapshot suitable as an initial cache entry.
@@ -307,6 +310,7 @@ pub struct PaneSnapshot {
 }
 
 /// A selection on the wire.
+///
 /// Encodes the three-point selection model (`anchor`, `pivot`, `end`) with
 /// mode, stable row indices, and side information. Decoupled from
 /// `oriterm_core::Selection` (which uses `StableRowIndex` and `Side` enums).
@@ -396,6 +400,7 @@ impl WireSelection {
 }
 
 /// Known OSC 22 mouse cursor icons and their stable wire indices.
+///
 /// The wire index space is project-owned so reordering of variants in the
 /// upstream `cursor_icon` crate cannot invalidate serialized daemon
 /// snapshots. Only icons listed here round-trip through the wire; unknown
@@ -442,6 +447,7 @@ pub const OSC22_KNOWN_ICONS: &[CursorIcon] = &[
 
 /// Encode a `CursorIcon` into a stable wire index, or `None` if the icon
 /// is not in [`OSC22_KNOWN_ICONS`].
+///
 /// Uses linear scan; the slice is ~34 entries so O(n) is cheap compared to
 /// a per-variant match table (which would not be kept in sync on upstream
 /// variant reorderings).

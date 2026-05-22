@@ -53,6 +53,7 @@ const WAKER: Token = Token(1);
 const CLIENT_BASE: usize = 2;
 
 /// Daemon server owning all PTY sessions and managing IPC clients.
+///
 /// Runs a single-threaded `mio`-based event loop: accepts connections from
 /// window processes, dispatches mux operations, drains PTY events, and
 /// pushes notifications to subscribed clients.
@@ -256,7 +257,7 @@ impl MuxServer {
     /// Three-phase processing:
     /// 1. Trailing-edge flush — retry deferred pushes from previous cycles.
     /// 2. Route new notifications — `PaneOutput` triggers snapshot push
-    /// (or deferral); other notifications use existing routing.
+    ///    (or deferral); other notifications use existing routing.
     /// 3. Update write interests for connections with pending data.
     #[allow(
         clippy::too_many_lines,

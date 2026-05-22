@@ -46,13 +46,7 @@ impl ImageCache {
     pub(crate) fn animation_total_frames(&self, id: ImageId) -> u32 {
         match self.animation_frames.get(&id) {
             Some(frames) => frames.len() as u32,
-            None => {
-                if self.images.contains_key(&id) {
-                    1
-                } else {
-                    0
-                }
-            }
+            None => u32::from(self.images.contains_key(&id)),
         }
     }
 
@@ -145,7 +139,7 @@ impl ImageCache {
     ///
     /// Used by both `a=f,r=1,z!=0` (frame.rs) and `a=a,r=1,z!=0`
     /// (animate.rs) on still-static images: kitty stores the root gap
-    /// on `Frame.gap` (graphics.c) but ori_term's `ImageData` has no
+    /// on `Frame.gap` (graphics.c) but `ori_term`'s `ImageData` has no
     /// equivalent. Path: auto-promote to a 1-frame animation whose
     /// `frame_durations[0]` is the requested gap.
     ///
@@ -189,6 +183,8 @@ impl ImageCache {
             if !state.frame_durations.is_empty() {
                 state.frame_durations[0] = gap;
             }
+        } else {
+            // Already promoted but no animation state — no gap to record.
         }
         Ok(())
     }
@@ -241,7 +237,7 @@ impl ImageCache {
     ///
     /// Returns `Some((base_id, is_delta_base, base_depth, base_cumulative))`
     /// when frame `n` (1-based) exists in `animation_frames[image_id]`.
-    /// `None` when the image is unpromoted (no FrameId minted for the
+    /// `None` when the image is unpromoted (no `FrameId` minted for the
     /// static root yet — Δ storage is deferred to the next append) or
     /// the index is out of range.
     ///
@@ -332,7 +328,64 @@ impl ImageCache {
         Ok(total as u32)
     }
 
-    pub(crate) fn put_frame(&mut self, req: FrameLoadRequest) -> Result<u32, ImageError> {
+    pub(crate) fn put_frame(&mut self, req: &FrameLoadRequest) -> Result<u32, ImageError> {
+        let (image_w, image_h) = self.validate_frame_request(req)?;
+
+        // (Step 6.6.5) Δ-storage opportunity: when the request is an
+        // append + canvas references an existing promoted frame, AND the
+        // chain-depth + cumulative-area guards permit, store as
+        // `FrameEntry::Delta` without materializing the full canvas.
+        if let Some(delta_result) = self.try_push_delta_append(req, image_w, image_h)? {
+            return delta_result;
+        }
+
+        // (Step 6.6.6) In-place Edit fast path. notcurses' kitty animation
+        // sends many `_Ga=f,r=N` Edits per frame with tiny sub-rect blits
+        // onto a multi-megabyte canvas; the default slow path clones the
+        // entire prev canvas (~7 MiB) per Edit just to mutate ~7 KiB of
+        // pixels. Try `Arc::make_mut` to mutate the existing canvas in
+        // place when the Arc is uniquely held — detach the
+        // `images[id].data` sync-mirror first so `make_mut` sees a unique
+        // Arc, then restore the mirror to the mutated Arc.
+        if matches!(
+            (&req.target, &req.canvas),
+            (FrameTarget::Edit { .. }, CanvasSource::EditTarget),
+        ) && self.animations.contains_key(&req.image_id)
+            && let Some(result) = self.try_edit_in_place(req, (image_w, image_h))
+        {
+            return result;
+        }
+
+        // (Step 6.7) Resolve canvas bytes + (Step 6.8/6.9) blit the payload.
+        let mut composed = self.resolve_canvas_bytes(req, image_w, image_h)?;
+        blit_subrect_into_canvas(
+            &mut composed,
+            &req.frame_data,
+            BlitOp {
+                canvas_w: image_w,
+                canvas_h: image_h,
+                blit: req.blit,
+                mode: req.composition_mode,
+            },
+        )?;
+
+        // (Step 6.10) Dispatch by target.
+        match &req.target {
+            FrameTarget::Append { gap } => {
+                let composed_arc = Arc::new(composed);
+                self.push_composed_frame(req.image_id, &composed_arc, *gap)
+            }
+            FrameTarget::Edit {
+                frame_num,
+                gap_update,
+            } => self.put_frame_edit(req.image_id, *frame_num, composed, *gap_update),
+        }
+    }
+
+    /// Validate `req` against image existence, blit-fit, size invariants,
+    /// canvas/target consistency, and edit-target frame-num range.
+    /// Returns the target image's canvas dimensions on success.
+    fn validate_frame_request(&self, req: &FrameLoadRequest) -> Result<(u32, u32), ImageError> {
         // (Step 6.1) Image must exist.
         let (image_w, image_h) = match self.images.get(&req.image_id) {
             Some(img) => (img.width, img.height),
@@ -366,8 +419,9 @@ impl ImageCache {
         // (Step 6.5) Request consistency: EditTarget pairs with Edit;
         // SolidColor/Frame pair with Append.
         match (&req.canvas, &req.target) {
-            (CanvasSource::EditTarget, FrameTarget::Edit { .. }) => {}
-            (CanvasSource::SolidColor(_) | CanvasSource::Frame(_), FrameTarget::Append { .. }) => {}
+            (CanvasSource::EditTarget, FrameTarget::Edit { .. })
+            | (CanvasSource::SolidColor(_) | CanvasSource::Frame(_), FrameTarget::Append { .. }) => {
+            }
             _ => return Err(ImageError::InvalidFormat),
         }
 
@@ -382,60 +436,33 @@ impl ImageCache {
             }
         }
 
-        // (Step 6.6.5) Δ-storage opportunity: when the request is an
-        // append + canvas references an existing promoted frame, AND the
-        // chain-depth + cumulative-area guards permit, store as
-        // `FrameEntry::Delta` without materializing the full canvas.
-        if let Some(delta_result) = self.try_push_delta_append(&req, image_w, image_h)? {
-            return delta_result;
-        }
+        Ok((image_w, image_h))
+    }
 
-        // (Step 6.6.6) In-place Edit fast path. notcurses' kitty animation
-        // sends many `_Ga=f,r=N` Edits per frame with tiny sub-rect blits
-        // onto a multi-megabyte canvas; the default slow path clones the
-        // entire prev canvas (~7 MiB) per Edit just to mutate ~7 KiB of
-        // pixels. Try `Arc::make_mut` to mutate the existing canvas in
-        // place when the Arc is uniquely held — detach the
-        // `images[id].data` sync-mirror first so `make_mut` sees a unique
-        // Arc, then restore the mirror to the mutated Arc.
-        if let (FrameTarget::Edit { frame_num, gap_update }, CanvasSource::EditTarget) =
-            (&req.target, &req.canvas)
-        {
-            if let Some(idx) = (*frame_num as usize).checked_sub(1)
-                && self.animations.contains_key(&req.image_id)
-                && let Some(result) = self.try_edit_in_place(
-                    req.image_id,
-                    idx,
-                    *frame_num,
-                    &req,
-                    image_w,
-                    image_h,
-                    *gap_update,
-                )
-            {
-                return result;
-            }
-        }
-
-        // (Step 6.7) Resolve canvas bytes.
-        let canvas_bytes = match req.canvas {
+    /// Resolve the canvas bytes for `req` per `CanvasSource`:
+    /// solid-color fill, copy of frame `n`, or copy of the edit-target frame.
+    fn resolve_canvas_bytes(
+        &self,
+        req: &FrameLoadRequest,
+        image_w: u32,
+        image_h: u32,
+    ) -> Result<Vec<u8>, ImageError> {
+        match &req.canvas {
             CanvasSource::SolidColor(rgba) => {
-                let pixel = rgba_u32_to_bytes(rgba);
+                let pixel = rgba_u32_to_bytes(*rgba);
                 let pixels = (image_w as usize) * (image_h as usize);
                 let mut buf = Vec::with_capacity(pixels * 4);
                 for _ in 0..pixels {
                     buf.extend_from_slice(&pixel);
                 }
-                buf
+                Ok(buf)
             }
-            CanvasSource::Frame(n) => match self.frame_for_number(req.image_id, n) {
-                Some(bytes) => (*bytes).clone(),
-                None => {
-                    return Err(ImageError::InvalidFrameRef {
-                        requested: n,
-                        total: self.animation_total_frames(req.image_id),
-                    });
-                }
+            CanvasSource::Frame(n) => match self.frame_for_number(req.image_id, *n) {
+                Some(bytes) => Ok((*bytes).clone()),
+                None => Err(ImageError::InvalidFrameRef {
+                    requested: *n,
+                    total: self.animation_total_frames(req.image_id),
+                }),
             },
             CanvasSource::EditTarget => {
                 let frame_num = match &req.target {
@@ -443,40 +470,13 @@ impl ImageCache {
                     FrameTarget::Append { .. } => unreachable!("validated above"),
                 };
                 match self.frame_for_number(req.image_id, frame_num) {
-                    Some(bytes) => (*bytes).clone(),
-                    None => {
-                        return Err(ImageError::InvalidFrameRef {
-                            requested: frame_num,
-                            total: self.animation_total_frames(req.image_id),
-                        });
-                    }
+                    Some(bytes) => Ok((*bytes).clone()),
+                    None => Err(ImageError::InvalidFrameRef {
+                        requested: frame_num,
+                        total: self.animation_total_frames(req.image_id),
+                    }),
                 }
             }
-        };
-
-        // (Step 6.8/6.9) Blit the payload onto the canvas.
-        let mut composed = canvas_bytes;
-        blit_subrect_into_canvas(
-            &mut composed,
-            &req.frame_data,
-            BlitOp {
-                canvas_w: image_w,
-                canvas_h: image_h,
-                blit: req.blit,
-                mode: req.composition_mode,
-            },
-        )?;
-
-        // (Step 6.10) Dispatch by target.
-        match req.target {
-            FrameTarget::Append { gap } => {
-                let composed_arc = Arc::new(composed);
-                self.push_composed_frame(req.image_id, composed_arc, gap)
-            }
-            FrameTarget::Edit {
-                frame_num,
-                gap_update,
-            } => self.put_frame_edit(req.image_id, frame_num, composed, gap_update),
         }
     }
 
@@ -562,14 +562,20 @@ impl ImageCache {
     /// memcpy that the slow path performs unconditionally.
     fn try_edit_in_place(
         &mut self,
-        id: ImageId,
-        idx: usize,
-        frame_num: u32,
         req: &FrameLoadRequest,
-        image_w: u32,
-        image_h: u32,
-        gap_update: Option<Duration>,
+        image_dims: (u32, u32),
     ) -> Option<Result<u32, ImageError>> {
+        let FrameTarget::Edit {
+            frame_num,
+            gap_update,
+        } = req.target
+        else {
+            return None;
+        };
+        let id = req.image_id;
+        let idx = (frame_num as usize).checked_sub(1)?;
+        let (image_w, image_h) = image_dims;
+
         let frames = self.animation_frames.get_mut(&id)?;
         let entry = frames.get_mut(idx)?;
         let FrameEntry::Materialized { data, .. } = entry else {
@@ -581,11 +587,8 @@ impl ImageCache {
         let img_was_shared = self
             .images
             .get(&id)
-            .map(|img| Arc::ptr_eq(&img.data, data))
-            .unwrap_or(false);
-        if img_was_shared
-            && let Some(img) = self.images.get_mut(&id)
-        {
+            .is_some_and(|img| Arc::ptr_eq(&img.data, data));
+        if img_was_shared && let Some(img) = self.images.get_mut(&id) {
             img.data = Arc::new(Vec::new());
         }
 
@@ -605,18 +608,14 @@ impl ImageCache {
         };
         if let Err(e) = blit_subrect_into_canvas(canvas, &req.frame_data, blit_op) {
             let restored = data.clone();
-            if img_was_shared
-                && let Some(img) = self.images.get_mut(&id)
-            {
+            if img_was_shared && let Some(img) = self.images.get_mut(&id) {
                 img.data = restored;
             }
             return Some(Err(e));
         }
 
         let new_arc = data.clone();
-        if img_was_shared
-            && let Some(img) = self.images.get_mut(&id)
-        {
+        if img_was_shared && let Some(img) = self.images.get_mut(&id) {
             img.data = new_arc;
             img.pixel_generation = img.pixel_generation.wrapping_add(1);
         }
@@ -758,7 +757,7 @@ impl ImageCache {
     pub(crate) fn push_composed_frame(
         &mut self,
         id: ImageId,
-        composed: Arc<Vec<u8>>,
+        composed: &Arc<Vec<u8>>,
         gap: Duration,
     ) -> Result<u32, ImageError> {
         // (1) Oversized image gate FIRST — matches store_animated.

@@ -38,7 +38,7 @@ struct RawFaceInfo {
 }
 
 /// Build a filename → full path index from the given roots. Used by both
-/// Linux and macOS `build_font_index()` per ``
+/// Linux and macOS `build_font_index()` per
 /// SSOT discipline.
 pub(super) fn build_font_index_from_roots(roots: &[PathBuf]) -> HashMap<String, PathBuf> {
     let mut index = HashMap::new();
@@ -186,10 +186,10 @@ fn parse_face_info(path: &Path) -> Vec<RawFaceInfo> {
 /// heuristics. Used by both Linux and macOS `try_user_family()`.
 /// Lookup order:
 /// 1. `family_paths()` catalog — handles `OpenType`-`name`-table family names
-/// (e.g. `"JetBrains Mono"`) which the filename heuristics below cannot
-/// match. Sibling Bold/Italic/BoldItalic faces discovered during
-/// enumeration win; missing slots get a second chance via filename probing
-/// against the existing index (zero disk I/O).
+///    (e.g. `"JetBrains Mono"`) which the filename heuristics below cannot
+///    match. Sibling Bold/Italic/BoldItalic faces discovered during
+///    enumeration win; missing slots get a second chance via filename probing
+///    against the existing index (zero disk I/O).
 /// 2. Direct filename match (`name == filename`).
 /// 3. `{name}-Regular.{ttf,otf}` patterns plus matching Bold/Italic/BoldItalic.
 /// 4. Absolute path.

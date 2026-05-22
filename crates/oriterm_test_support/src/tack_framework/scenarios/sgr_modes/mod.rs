@@ -47,7 +47,7 @@
 //! the parser accepts them without regressing cell attributes. That
 //! is the correct canonical home for cap-level DEC-private SGR
 //! coverage; duplicating it as a tack scenario with identical
-//! `grid_text` would be ``.
+//! `grid_text` would be algorithmic duplication.
 //!
 //! # Plan deviation: the `\r` step
 //!
@@ -65,6 +65,7 @@ use crate::tack_framework::parser::tokens::grid_has_token;
 use crate::tack_framework::{MenuStep, ScenarioSpec, ScreenFacts};
 
 /// Number of Mode labels tack draws on the SGR sub-screen (0..79).
+///
 /// Tests assert `found_modes_count >= MIN_EXPECTED_MODES` which pins
 /// the full 80-mode capture against tack v1.08. The constant lives at
 /// module scope so the sibling parser tests, the 80x24 wrapper, and
@@ -72,6 +73,7 @@ use crate::tack_framework::{MenuStep, ScenarioSpec, ScreenFacts};
 pub const MIN_EXPECTED_MODES: usize = 80;
 
 /// Section 06.2 scenario: tack's default SGR mode table.
+///
 /// Navigates `t -> g` and captures at the first appearance of the
 /// `Mode 79` label. The Mode 0..79 table is drawn IMMEDIATELY after
 /// `g` lands; there is no `\r` step (see module rustdoc for the plan

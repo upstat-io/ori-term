@@ -129,7 +129,7 @@ impl<S: EffectSink> Term<S> {
             KittyAction::Delete => self.kitty_delete(&cmd),
             KittyAction::Frame => self.kitty_frame(cmd),
             KittyAction::Animate => self.kitty_animate(&cmd),
-            KittyAction::Compose => self.kitty_compose(cmd),
+            KittyAction::Compose => self.kitty_compose(&cmd),
         }
     }
 

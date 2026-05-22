@@ -20,6 +20,7 @@ use super::{FamilyEntry, FamilySlots};
 use std::path::PathBuf;
 
 /// All installed monospace font families on the host system.
+///
 /// Sorted case-insensitively, deduplicated by `display_name` (first-seen wins).
 /// Lazily initialized on first call; subsequent calls are O(1) lookups against
 /// the cached `OnceLock`. Powers the searchable font-family dropdown in the
