@@ -127,7 +127,10 @@ fn conpty_apc_multiple_frames_burst_emits_all_images() {
     session
         .poll_until_or_fail(
             5_000,
-            |s| s.term().image_cache().image_count() == 20,
+            |s| {
+                s.term().image_cache().image_count()
+                    == apc_payload::multi_count() as usize
+            },
             |s| forbid_token_check(s),
         )
         .expect("multi-frame burst interaction failed");
@@ -173,6 +176,16 @@ fn conpty_apc_resize_mid_output_preserves_payload() {
             |s| forbid_token_check(s),
         )
         .expect("resize-mid-output interaction failed");
+}
+
+/// Cross-CU dead-code anchor — see `apc_payload::dead_code_anchor`.
+/// Calling it from a `#[test]` shim from THIS compilation unit marks
+/// `emit_*` as "used" from the test's perspective, mirroring the
+/// `apc_emitter` binary's main() call that marks `forbid_tokens` as
+/// "used" from the binary's perspective.
+#[test]
+fn dead_code_anchor_shim() {
+    apc_payload::dead_code_anchor();
 }
 
 /// Shared early-fail closure for poll_until_or_fail's forbid-output

@@ -263,6 +263,7 @@ impl PtySession {
     /// automated end-to-end test pin; this primitive enables the
     /// combined `image_count` + forbid-output check.
     /// See: bug-tracker/plans/BUG-07-050/00-overview.md
+    #[must_use = "the bounded-poll outcome describes whether the wait succeeded, timed out, or hit an early-fail condition; dropping it would silently swallow the test signal"]
     pub fn poll_until_or_fail<F, G>(
         &mut self,
         timeout_ms: u64,

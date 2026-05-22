@@ -444,8 +444,16 @@ impl PtySession {
     /// Regression: BUG-07-050 — resize-mid-output PTY/ConPTY interaction coverage.
     /// See: bug-tracker/plans/BUG-07-050/00-overview.md
     pub fn resize(&mut self, cols: u16, rows: u16) -> std::io::Result<()> {
-        self.cols = cols;
-        self.rows = rows;
+        // Order matches the production IO-thread handler at
+        // `oriterm_mux/src/pane/io_thread/handler.rs:28-40`: resize the
+        // inner Term FIRST so grid_text() / image-placement bounds /
+        // renderable dimensions match the new geometry, THEN propagate
+        // to the master PTY. On the master-side failure path, the Term
+        // would have been resized to the new geometry — we DON'T roll
+        // it back because production also doesn't (and rolling back
+        // would require reflow snapshotting). Cached dimensions stay
+        // pinned to the master state.
+        self.term.resize(rows as usize, cols as usize, true);
         self.master_holder
             .resize(PtySize {
                 cols,
@@ -453,7 +461,10 @@ impl PtySession {
                 pixel_width: 0,
                 pixel_height: 0,
             })
-            .map_err(|e| std::io::Error::other(e.to_string()))
+            .map_err(std::io::Error::other)?;
+        self.cols = cols;
+        self.rows = rows;
+        Ok(())
     }
 }
 

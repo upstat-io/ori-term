@@ -15,43 +15,49 @@
 //! `conpty_overlapped_transport.rs` MUST update automatically. This
 //! module is that automatic link — colocating payload bytes and
 //! forbid-token list closes the drift class.
-//!
-//! The `#[allow(dead_code)]` on individual items is structurally
-//! required: each consumer (helper bin vs integration test) uses a
-//! SUBSET of the module's exports. From the helper bin's view,
-//! `forbid_tokens` is unused; from the test's view, `emit_*` may be
-//! used only via the bin's runtime invocation (not at the test's
-//! compile-time link layer). Without the allow, `-D dead_code` rejects
-//! each CU's view of the unused subset.
 
-#![allow(dead_code)]
-
+use base64::Engine;
+use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use std::io::Write;
 
-/// Tokens that MUST NOT appear in the parent's `grid_text` after
-/// successful transport. Derived from the payload definitions `emit_*`
-/// produce; if any of these substrings appear in `grid_text`, the
-/// pre-cure `ConPTY` ESC-stripping regression is occurring (APC bytes
-/// leaked as literal text into the grid).
-pub fn forbid_tokens() -> Vec<&'static str> {
-    vec![
-        // Image IDs the helper emits (1..=20 for emit_multi; 1 for emit_default + emit_large)
-        "Gi=1", "Gi=2", "Gi=3", "Gi=4", "Gi=5",
-        "Gi=6", "Gi=7", "Gi=8", "Gi=9", "Gi=10",
-        "Gi=11", "Gi=12", "Gi=13", "Gi=14", "Gi=15",
-        "Gi=16", "Gi=17", "Gi=18", "Gi=19", "Gi=20",
-        // Action token (kitty TRANSMIT) — emit_* all use a=T
-        "a=T",
-        // Format tokens — f=24 (RGB) for default + multi; f=32 (RGBA) for large
-        "f=24", "f=32",
-    ]
+// === Single source of truth for payload tokens ===
+//
+// emit_* and forbid_tokens BOTH derive from these constants. Changing
+// ACTION_TRANSMIT here changes both the helper's emitted bytes AND the
+// forbid-substring check — they cannot drift.
+
+/// Image-ID prefix used by every emit_* payload (`Gi=N`).
+const ID_PREFIX: &str = "Gi=";
+/// Kitty action token — TRANSMIT (`a=T`).
+const ACTION_TRANSMIT: &str = "a=T";
+/// Kitty format token for RGB payloads (`f=24`).
+const FORMAT_RGB: &str = "f=24";
+/// Kitty format token for RGBA payloads (`f=32`).
+const FORMAT_RGBA: &str = "f=32";
+/// Image ID `emit_multi` cycles through: 1..=`MAX_MULTI_ID`.
+const MAX_MULTI_ID: u32 = 20;
+
+/// Substrings that MUST NOT appear in the parent's `grid_text` after
+/// successful transport. If any appear, the pre-cure `ConPTY`
+/// ESC-stripping regression is occurring (APC bytes leaked as literal
+/// text into the grid).
+///
+/// Derived from the same constants `emit_*` use to build payloads — the
+/// forbid check and the helper payloads cannot drift independently.
+/// Using `Gi=` (prefix only) covers every image ID `emit_multi` cycles
+/// through without enumerating each one.
+pub fn forbid_tokens() -> &'static [&'static str] {
+    &[ID_PREFIX, ACTION_TRANSMIT, FORMAT_RGB, FORMAT_RGBA]
 }
 
-/// `emit_default` — single small kitty `a=T` (transmit) frame: 1×1 RGB
-/// pixel, base64 `"AAAA"`. Bumps `image_count` from 0 to 1.
+/// `emit_default` — single small kitty TRANSMIT frame: 1×1 RGB pixel,
+/// base64 `"AAAA"`. Bumps `image_count` from 0 to 1.
 pub fn emit_default(out: &mut impl Write) {
-    let payload = b"\x1b_Gi=1,a=T,f=24,s=1,v=1;AAAA\x1b\\";
-    out.write_all(payload).expect("write default APC frame");
+    let payload = format!(
+        "\x1b_{ID_PREFIX}1,{ACTION_TRANSMIT},{FORMAT_RGB},s=1,v=1;AAAA\x1b\\"
+    );
+    out.write_all(payload.as_bytes())
+        .expect("write default APC frame");
 }
 
 /// `emit_large` — 128×64 RGBA frame = 32,768 bytes raw; GUARANTEED to
@@ -65,56 +71,58 @@ pub fn emit_large(out: &mut impl Write) {
         "large payload must exceed canonical 16KB ConPTY buffer to prove multi-chunk reads"
     );
     let raw = vec![0xAAu8; raw_len];
-    let b64 = base64_encode(&raw);
-    let header = format!("\x1b_Gi=1,a=T,f=32,s={},v={};", dims.0, dims.1);
+    let b64 = BASE64_STANDARD.encode(&raw);
+    let header = format!(
+        "\x1b_{ID_PREFIX}1,{ACTION_TRANSMIT},{FORMAT_RGBA},s={},v={};",
+        dims.0, dims.1
+    );
     out.write_all(header.as_bytes()).expect("write large header");
     out.write_all(b64.as_bytes()).expect("write large payload");
     out.write_all(b"\x1b\\").expect("write large terminator");
 }
 
-/// `emit_multi` — 20 back-to-back TRANSMIT frames with image IDs 1..=20.
-/// Exercises multi-frame parsing under sustained writer load.
-/// Bumps `image_count` to EXACTLY 20.
+/// `emit_multi` — `MAX_MULTI_ID` back-to-back TRANSMIT frames with image
+/// IDs 1..=`MAX_MULTI_ID`. Exercises multi-frame parsing under sustained
+/// writer load. Bumps `image_count` to EXACTLY `MAX_MULTI_ID`.
 pub fn emit_multi(out: &mut impl Write) {
-    for id in 1u32..=20 {
-        let payload = format!("\x1b_Gi={id},a=T,f=24,s=1,v=1;AAAA\x1b\\");
+    for id in 1u32..=MAX_MULTI_ID {
+        let payload = format!(
+            "\x1b_{ID_PREFIX}{id},{ACTION_TRANSMIT},{FORMAT_RGB},s=1,v=1;AAAA\x1b\\"
+        );
         out.write_all(payload.as_bytes())
             .expect("write multi APC frame");
     }
 }
 
-// Inline base64 (no external dep — keeps helper module minimal).
-fn base64_encode(data: &[u8]) -> String {
-    const TABLE: &[u8; 64] =
-        b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut out = String::with_capacity(data.len().div_ceil(3) * 4);
-    let mut i = 0;
-    while i + 3 <= data.len() {
-        let n = ((data[i] as u32) << 16)
-            | ((data[i + 1] as u32) << 8)
-            | (data[i + 2] as u32);
-        out.push(TABLE[((n >> 18) & 63) as usize] as char);
-        out.push(TABLE[((n >> 12) & 63) as usize] as char);
-        out.push(TABLE[((n >> 6) & 63) as usize] as char);
-        out.push(TABLE[(n & 63) as usize] as char);
-        i += 3;
-    }
-    let rem = data.len() - i;
-    if rem == 1 {
-        let n = (data[i] as u32) << 16;
-        out.push(TABLE[((n >> 18) & 63) as usize] as char);
-        out.push(TABLE[((n >> 12) & 63) as usize] as char);
-        out.push('=');
-        out.push('=');
-    } else if rem == 2 {
-        let n = ((data[i] as u32) << 16) | ((data[i + 1] as u32) << 8);
-        out.push(TABLE[((n >> 18) & 63) as usize] as char);
-        out.push(TABLE[((n >> 12) & 63) as usize] as char);
-        out.push(TABLE[((n >> 6) & 63) as usize] as char);
-        out.push('=');
-    } else {
-        // rem == 0: no padding required; the while-loop above consumed
-        // every byte cleanly.
-    }
-    out
+/// Number of frames `emit_multi` emits. Test assertions check
+/// `image_count == multi_count()` for the multi-frame interaction.
+pub fn multi_count() -> u32 {
+    MAX_MULTI_ID
+}
+
+/// Cross-compilation-unit usage anchor — call once from each consumer's
+/// entry path.
+///
+/// Both consumers (`apc_emitter.rs` and `conpty_overlapped_transport.rs`)
+/// only use a SUBSET of this module's exports — the helper binary calls
+/// `emit_*` and never `forbid_tokens`; the integration test calls
+/// `forbid_tokens` and never `emit_*` (it spawns the binary instead).
+/// Without this anchor, each CU's `-D dead_code` lint would reject the
+/// unused subset.
+///
+/// `apc_emitter.rs main()` calls this once at startup; the integration
+/// test calls it once from a `#[test]` shim. Both invocations are pure
+/// noise at runtime (function-pointer references, no actual call into
+/// the referenced items) but satisfy the dead-code analyzer from each
+/// CU's perspective. This pattern replaces a prior module-level
+/// `#![allow(dead_code)]` that would have silenced the lint instead of
+/// addressing the underlying cross-CU sharing constraint.
+pub fn dead_code_anchor() {
+    let _ = (
+        forbid_tokens as fn() -> &'static [&'static str],
+        emit_default as fn(&mut std::io::Stdout),
+        emit_large as fn(&mut std::io::Stdout),
+        emit_multi as fn(&mut std::io::Stdout),
+        multi_count as fn() -> u32,
+    );
 }

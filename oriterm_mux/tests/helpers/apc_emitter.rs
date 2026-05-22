@@ -31,14 +31,25 @@ use std::io::Write;
 mod apc_payload;
 
 fn main() {
+    // Cross-CU dead-code anchor — see apc_payload::dead_code_anchor.
+    apc_payload::dead_code_anchor();
+
     let args: Vec<String> = std::env::args().collect();
-    let mode = args.get(1).map_or("default", String::as_str);
     let stdout = std::io::stdout();
     let mut out = stdout.lock();
-    match mode {
-        "--large" => apc_payload::emit_large(&mut out),
-        "--multi" => apc_payload::emit_multi(&mut out),
-        _ => apc_payload::emit_default(&mut out),
+    // Reject unknown modes with a non-zero exit so a misspelled
+    // --large / --multi argument fails LOUDLY in the integration test
+    // (otherwise the wait_for_child_exit assertion would treat the
+    // default mode's image_count == 1 as "passing" for a test that
+    // was supposed to exercise --large or --multi).
+    match args.get(1).map(String::as_str) {
+        Some("--large") => apc_payload::emit_large(&mut out),
+        Some("--multi") => apc_payload::emit_multi(&mut out),
+        None => apc_payload::emit_default(&mut out),
+        Some(other) => {
+            eprintln!("apc_emitter: unknown mode {other:?}; expected --large, --multi, or no argument");
+            std::process::exit(2);
+        }
     }
     out.flush().expect("flush stdout");
 }
