@@ -8,6 +8,7 @@ mod frame_entry;
 mod frame_loading;
 mod lifecycle;
 mod placeholder;
+#[cfg(any(test, feature = "test-support"))]
 mod test_probes;
 
 pub(crate) use frame_entry::{FrameEntry, FrameId};

@@ -1969,6 +1969,7 @@ dependencies = [
  "insta",
  "libc",
  "log",
+ "oriterm_core",
  "oriterm_test_support",
  "parking_lot",
  "portable-pty",

@@ -52,12 +52,6 @@ impl ImageCache {
         self.images.get(&id).map(|img| img.data.clone())
     }
 
-    /// Total decoded-image bytes currently held in this cache.
-    #[doc(hidden)]
-    pub fn memory_used_for_test(&self) -> usize {
-        self.memory_used
-    }
-
     /// True iff the cache currently holds an image with `id`.
     #[doc(hidden)]
     pub fn contains_image_for_test(&self, id: ImageId) -> bool {

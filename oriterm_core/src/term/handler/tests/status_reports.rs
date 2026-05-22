@@ -92,7 +92,7 @@ fn xtversion_responds_with_dcs_version_string() {
     let mut effects = Vec::new();
     t.effect_sink().drain_into(&mut effects);
 
-    let expected_bytes = b"\x1bP>|kitty(0.20.0)\x1b\\".to_vec();
+    let expected_bytes = crate::term::handler::status::XTVERSION_REPLY.to_vec();
     let matched = effects.iter().any(|e| {
         matches!(
         e,
