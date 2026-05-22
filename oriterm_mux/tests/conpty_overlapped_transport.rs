@@ -180,14 +180,24 @@ fn conpty_apc_resize_mid_output_preserves_payload() {
         .expect("resize-mid-output interaction failed");
 }
 
-/// Cross-CU dead-code anchor — see `apc_payload::dead_code_anchor`.
-/// Calling it from a `#[test]` shim from THIS compilation unit marks
-/// `emit_*` as "used" from the test's perspective, mirroring the
-/// `apc_emitter` binary's main() call that marks `forbid_tokens` as
-/// "used" from the binary's perspective.
+/// Verifies the SSOT contract between `apc_payload::forbid_tokens` and
+/// `apc_payload::emit_*` AND anchors the cross-CU dead-code references.
+/// The forbid-token list MUST cover the action + format substrings
+/// that every emit_* function produces; without this invariant the
+/// regression-check coverage would drift independently from the
+/// helper payloads.
 #[test]
-fn dead_code_anchor_shim() {
+fn ssot_forbid_tokens_cover_emit_payloads() {
     apc_payload::dead_code_anchor();
+    let tokens = apc_payload::forbid_tokens();
+    // Anchor substrings the emit_* functions interpolate into every
+    // payload — see apc_payload.rs for the constants these strings
+    // mirror (ID_PREFIX, ACTION_TRANSMIT, FORMAT_RGB, FORMAT_RGBA).
+    assert!(tokens.contains(&"Gi="), "forbid_tokens missing Gi= prefix");
+    assert!(tokens.contains(&"a=T"), "forbid_tokens missing a=T action");
+    assert!(tokens.contains(&"f=24"), "forbid_tokens missing f=24 format");
+    assert!(tokens.contains(&"f=32"), "forbid_tokens missing f=32 format");
+    assert!(apc_payload::multi_count() > 0, "multi_count must be positive");
 }
 
 /// Shared early-fail closure for poll_until_or_fail's forbid-output
