@@ -20,7 +20,7 @@ use std::fmt;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crossbeam_channel::Receiver;
 
@@ -138,7 +138,7 @@ pub struct PaneIoThread<S: EffectSink + 'static> {
     /// is emitted so the main thread can update its `RenderScheduler`.
     /// `None` means "no deadline currently in effect" — both the initial
     /// state and the state after all animations finish/pause.
-    last_animation_deadline: Option<std::time::Instant>,
+    last_animation_deadline: Option<Instant>,
     /// Pending resize slot — coalesces resize requests via last-writer-
     /// wins atomic store. Encoded by [`pack_pending_resize`]; decoded
     /// by [`unpack_pending_resize`]. `apply_pending_resize` swaps the
@@ -230,20 +230,34 @@ impl<S: EffectSink> PaneIoThread<S> {
     /// commands are drained and snapshots are published so that resize/scroll
     /// stay responsive and the main thread sees render progress even within a
     /// single large PTY read (up to 1 MB).
-    fn handle_bytes_chunked(&mut self, bytes: &[u8]) {
+    ///
+    /// Returns (drain_commands_dur, maybe_snapshot_dur) summed across all
+    /// inter-chunk boundaries within this byte buffer. The caller aggregates
+    /// these across messages in `process_pending_bytes` so the SLOW drain
+    /// cycle log can attribute time to the sub-phases that fall OUTSIDE
+    /// `handle_bytes` (which has its own raw/vte/housekeeping/effects-drain
+    /// instrumentation at lines 311-380).
+    fn handle_bytes_chunked(&mut self, bytes: &[u8]) -> (Duration, Duration) {
+        let mut drain_cmds_total = Duration::ZERO;
+        let mut snapshot_total = Duration::ZERO;
         let mut offset = 0;
         while offset < bytes.len() {
             let end = (offset + MAX_PARSE_CHUNK).min(bytes.len());
             self.handle_bytes(&bytes[offset..end]);
             offset = end;
+            let t = Instant::now();
             self.drain_commands();
+            drain_cmds_total += t.elapsed();
             if self.shutdown.load(Ordering::Acquire) {
-                return;
+                return (drain_cmds_total, snapshot_total);
             }
             // Publish intermediate snapshots between chunks so the main thread
             // sees progress even within a single large forwarded read.
+            let t = Instant::now();
             self.maybe_produce_snapshot();
+            snapshot_total += t.elapsed();
         }
+        (drain_cmds_total, snapshot_total)
     }
 
     /// Process all pending byte messages with bounded chunking.
@@ -256,20 +270,26 @@ impl<S: EffectSink> PaneIoThread<S> {
         // durations >= 50ms indicate the IO thread is saturated —
         // bytes arrive faster than they can be parsed + stored.
         // Logs the messages-drained count + total bytes.
-        let drain_start = std::time::Instant::now();
+        let drain_start = Instant::now();
         let mut messages_drained: usize = 0;
         let mut bytes_drained: usize = 0;
+        let mut snapshot_total = Duration::ZERO;
+        let mut drain_cmds_total = Duration::ZERO;
         while let Ok(bytes) = self.byte_rx.try_recv() {
             messages_drained += 1;
             bytes_drained += bytes.len();
-            self.handle_bytes_chunked(&bytes);
+            let (cmd_dur, snap_dur) = self.handle_bytes_chunked(&bytes);
+            drain_cmds_total += cmd_dur;
+            snapshot_total += snap_dur;
             if self.shutdown.load(Ordering::Acquire) {
                 return;
             }
             // Produce snapshot between messages to keep the main thread fed.
             // Without this, flood output fills the queue faster than parsing
             // drains it, and `maybe_produce_snapshot()` never runs.
+            let t = Instant::now();
             self.maybe_produce_snapshot();
+            snapshot_total += t.elapsed();
         }
         let drain_ms = drain_start.elapsed().as_millis();
         // 10ms threshold captures sub-saturation drain costs (formerly 50ms
@@ -279,7 +299,11 @@ impl<S: EffectSink> PaneIoThread<S> {
         if messages_drained > 0 && drain_ms >= 10 {
             log::info!(
             target: "oriterm_mux::pane::io_thread::iteration",
-            "drain cycle messages={messages_drained} bytes={bytes_drained} duration_ms={drain_ms}"
+            "drain cycle messages={messages_drained} bytes={bytes_drained} \
+             duration_ms={drain_ms} \
+             drain_cmds_ms={} snapshot_ms={}",
+            drain_cmds_total.as_millis(),
+            snapshot_total.as_millis()
             );
         }
     }
@@ -308,10 +332,10 @@ impl<S: EffectSink> PaneIoThread<S> {
         }
 
         let evicted_before = self.terminal.grid().total_evicted();
-        let chunk_start = std::time::Instant::now();
+        let chunk_start = Instant::now();
 
         // 1. Raw interceptor for shell integration (OSC 7, 133, etc.).
-        let raw_start = std::time::Instant::now();
+        let raw_start = Instant::now();
         {
             let mut interceptor = RawInterceptor::new(&mut self.terminal);
             self.raw_parser.advance(&mut interceptor, bytes);
@@ -319,7 +343,7 @@ impl<S: EffectSink> PaneIoThread<S> {
         let raw_dur = raw_start.elapsed();
 
         // 2. High-level VTE processor.
-        let vte_start = std::time::Instant::now();
+        let vte_start = Instant::now();
         self.processor.advance(&mut self.terminal, bytes);
         let vte_dur = vte_start.elapsed();
 
@@ -333,7 +357,7 @@ impl<S: EffectSink> PaneIoThread<S> {
         }
 
         // 3. Post-parse housekeeping (shared with handle_sync_timeout).
-        let hk_start = std::time::Instant::now();
+        let hk_start = Instant::now();
         self.post_parse_housekeeping(evicted_before);
         let hk_dur = hk_start.elapsed();
 
@@ -341,7 +365,7 @@ impl<S: EffectSink> PaneIoThread<S> {
         // boundary (not only at the top of handle_bytes_chunked) so a
         // 1 MB forwarded read doesn't accumulate 16 chunks worth of
         // effects before they reach the main thread.
-        let drain_start = std::time::Instant::now();
+        let drain_start = Instant::now();
         self.drain_effects_into_mux_events();
         let drain_dur = drain_start.elapsed();
 
@@ -349,12 +373,21 @@ impl<S: EffectSink> PaneIoThread<S> {
         // chunk processing exceeds 8 ms (a single 60 FPS budget).
         // Throttled by an internal counter to one log per 32 slow
         // chunks so flood output doesn't drown the operator log.
+        //
+        // Diagnostic mode: `ORITERM_PERF_ALL_CHUNKS=1` bypasses both the
+        // 8 ms threshold and the 1/32 throttle so EVERY chunk gets a
+        // sub-phase breakdown logged. Surfaces per-chunk cost localization
+        // when drain cycles aggregate to ~60 ms median while no individual
+        // chunk hits the 8 ms threshold.
         let total = chunk_start.elapsed();
-        if total.as_millis() >= 8 {
+        let log_all_chunks = std::env::var_os("ORITERM_PERF_ALL_CHUNKS").is_some();
+        if log_all_chunks || total.as_millis() >= 8 {
             use std::sync::atomic::{AtomicU64, Ordering};
             static SLOW_COUNTER: AtomicU64 = AtomicU64::new(0);
             let n = SLOW_COUNTER.fetch_add(1, Ordering::Relaxed);
-            if n % 32 == 0 {
+            // Throttle ONLY in the default (>=8 ms) path; always-log mode
+            // emits every chunk.
+            if log_all_chunks || n % 32 == 0 {
                 log::info!(
                     target: "oriterm_mux::pane::io_thread::chunk",
                     "SLOW chunk #{} bytes={} total={:.2?} raw={:.2?} vte={:.2?} \

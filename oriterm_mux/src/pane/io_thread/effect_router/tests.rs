@@ -905,8 +905,8 @@ fn xtversion_byte_parse_emits_pty_write_response() {
         MuxEvent::PtyWrite { data, .. } => {
             let s = String::from_utf8_lossy(&data);
             assert!(
-                s.starts_with("\x1bP>|oriterm("),
-                "XTVERSION reply must begin with DCS > | oriterm( prefix, got: {s}"
+                s.starts_with("\x1bP>|kitty("),
+                "XTVERSION reply must begin with DCS > | kitty( prefix, got: {s}"
             );
             assert!(
                 s.ends_with("\x1b\\"),
@@ -932,8 +932,8 @@ fn xtversion_split_chunk_byte_parse_emits_pty_write_response() {
     match event {
         MuxEvent::PtyWrite { data, .. } => {
             assert!(
-                String::from_utf8_lossy(&data).contains("oriterm"),
-                "XTVERSION split-chunk reply must contain 'oriterm'"
+                String::from_utf8_lossy(&data).contains("kitty"),
+                "XTVERSION split-chunk reply must contain 'kitty'"
             );
         }
         other => panic!("expected PtyWrite, got {other:?}"),

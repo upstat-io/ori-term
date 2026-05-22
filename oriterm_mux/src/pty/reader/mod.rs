@@ -14,21 +14,24 @@ use crossbeam_channel::Sender;
 use super::adopt::{AdoptedPtyHandle, ExitSignal};
 
 /// PTY read buffer size.
-/// 128 KB matches `WezTerm`. Smaller buffers cause the reader to return
-/// from `read()` more frequently, which drains the `ConPTY` output pipe
-/// in smaller chunks. This gives conhost more opportunities to process
-/// the input pipe between output flushes — critical for Ctrl+C delivery
-/// during sustained output flooding. Alacritty uses 1 MB but
-/// doesn't use `ConPTY` (it uses non-blocking I/O with polling).
-const READ_BUFFER_SIZE: usize = 0x2_0000; // 128 KB
+/// 1 MB to match notcurses-class graphics-flood producers at sustained
+/// 100+ MB/s. Smaller buffers (e.g. 128 KB matching WezTerm) cap reader
+/// throughput around 40 MB/sec on Windows ConPTY due to per-read syscall
+/// overhead — that becomes the bottleneck for kitty pixel-graphics
+/// scenes (notcurses-demo xray) where producers emit at 80-130 MB/sec
+/// unblocked. The conditional inter-read sleep below (fires when
+/// `n < 4096`) still gives conhost scheduling opportunities for Ctrl+C
+/// during text floods or interactive sessions where individual reads
+/// stay small. Alacritty also uses 1 MB.
+const READ_BUFFER_SIZE: usize = 0x10_0000; // 1 MB
 
 /// Per-pane memory budget for the reader → IO thread byte queue heap.
 /// `BYTE_CHANNEL_CAPACITY` is derived from this so the cap stays in
-/// lockstep with `READ_BUFFER_SIZE` if either changes. 1 MiB per pane
+/// lockstep with `READ_BUFFER_SIZE` if either changes. 8 MiB per pane
 /// is the back-pressure trigger point: tighter starves the child via
-/// kernel PTY back-pressure; looser defeats the bounded-growth invariant
-/// pinned by §03 Pin 1 in .
-pub(crate) const BYTE_CHANNEL_MEMORY_BUDGET: usize = 1024 * 1024; // 1 MiB
+/// kernel PTY back-pressure; looser defeats the bounded-growth invariant.
+/// Sized for 8 in-flight 1 MB reads.
+pub(crate) const BYTE_CHANNEL_MEMORY_BUDGET: usize = 8 * 1024 * 1024; // 8 MiB
 
 /// Bounded capacity for the reader → IO thread byte channel, in messages.
 /// `BYTE_CHANNEL_MEMORY_BUDGET / READ_BUFFER_SIZE` = 1 MiB / 128 KiB =

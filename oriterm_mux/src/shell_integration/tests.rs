@@ -923,7 +923,7 @@ fn multiple_osc133a_without_completion_creates_separate_markers() {
 /// `handle_bytes`. Asserts EXACTLY one PTY write; a leftover raw-interceptor
 /// arm would produce two replies and surface here.
 #[test]
-fn xtversion_responds_with_oriterm_version() {
+fn xtversion_responds_with_kitty_advertise() {
     let sink = QueueingEffectSink::new();
     let mut term = Term::new(24, 80, 100, Theme::Dark, sink);
 
@@ -949,8 +949,8 @@ fn xtversion_responds_with_oriterm_version() {
     assert_eq!(*kind, oriterm_core::effect::PtyWriteKind::DeviceAttribute);
     let s = String::from_utf8_lossy(bytes);
     assert!(
-        s.contains("oriterm"),
-        "XTVERSION reply must contain 'oriterm', got: {s}"
+        s.contains("kitty"),
+        "XTVERSION reply must contain 'kitty', got: {s}"
     );
 }
 

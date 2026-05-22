@@ -404,7 +404,7 @@ fn xtversion_inside_mode_2026_emits_response_inline() {
     harness.feed(b"\x1b[?2026h\x1b[>q");
     assert_pty_response_contains(
         &harness,
-        b"\x1bP>|oriterm(",
+        b"\x1bP>|kitty(",
         "XTVERSION inline inside Mode 2026",
     );
     assert_pty_response_contains(&harness, b")\x1b\\", "XTVERSION ST tail");
