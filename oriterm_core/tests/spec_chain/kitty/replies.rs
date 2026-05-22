@@ -301,44 +301,192 @@ fn kitty_response_eio_still_emitted_on_partial_read_failure_after_successful_ope
 }
 
 // ===========================================================================
-// Compression (o=z) reject — §13.5 guard at kitty_store_image entry
+// Compression (o=z) round-trip — §13.5 helper at kitty_store_image entry
 // ===========================================================================
+//
+// Pre-Phase 4: every test in this section EXCEPT the no-compression clamp
+// fails. Post-cure: `prepare_image_bytes` decompresses → store/place
+// succeeds → reply chain matches the catalog row's new
+// `KG-COMPRESSION-OZ-ROUND-TRIP` shape.
 
-/// Catalog row: `KG-COMPRESSION-OZ-REJECTED`.
+/// Construct a zlib-encoded payload for an APC transmit. Phase 3 helper —
+/// scoped here since this is the only place that builds compressed kitty
+/// payloads for the spec-chain rung.
+fn zlib_encode(raw: &[u8]) -> Vec<u8> {
+    use flate2::Compression;
+    use flate2::write::ZlibEncoder;
+    use std::io::Write;
+    let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
+    encoder.write_all(raw).expect("encode");
+    encoder.finish().expect("finish")
+}
+
+/// Pin REPLACES the legacy rejection assertion
+/// `kitty_transmission_compression_oz_rejected_with_einval_reply` that
+/// cited `KG-COMPRESSION-OZ-REJECTED`. Phase 4 (NEW-1.6) flips the catalog
+/// row from `KG-COMPRESSION-OZ-REJECTED` to `KG-COMPRESSION-OZ-ROUND-TRIP`
+/// and restores the citation in the same commit; pre-flip the cite is
+/// withheld to keep `spec-coverage-report --check` clean.
 ///
-/// `o=z` is rejected at `kitty_store_image` entry with an
-/// `EINVAL: compression not supported` reply.
+/// `o=z` MUST round-trip through the shared `prepare_image_bytes` helper:
+/// payload decompresses to the original RGBA bytes, store succeeds, place
+/// follows, OK reply emitted (when `q=0`).
+///
+/// EXPECTED-FAIL pre-Phase 4 — the rejection block at store.rs:99-103
+/// still fires before the helper can decompress.
 #[test]
-fn kitty_transmission_compression_oz_rejected_with_einval_reply() {
+fn kitty_compression_oz_round_trips_with_ok_reply() {
+    let raw = rgba_4x4_red();
+    let compressed = b64(&zlib_encode(&raw));
+
     let mut h = SpecHarness::new();
-    h.feed(&kitty_apc(
-        b"a=T,i=150,f=32,s=4,v=4,o=z",
-        &b64(&rgba_4x4_red()),
-    ));
+    h.feed(&kitty_apc(b"a=T,i=150,f=32,s=4,v=4,o=z", &compressed));
 
     assert_eq!(
         placement_count(&h),
+        1,
+        "o=z MUST create a placement post-cure (round-trip via prepare_image_bytes)",
+    );
+    assert_eq!(
+        h.term().image_cache().image_count(),
+        1,
+        "o=z MUST store the decompressed image post-cure",
+    );
+    assert!(
+        reply_contains(&h, &ok_reply_for(150)),
+        "o=z MUST emit OK reply post-cure — got {:?}",
+        String::from_utf8_lossy(&reply_bytes(&h)),
+    );
+}
+
+/// Boundary clamp — separate transmit + place sequence. Phase 4 (NEW-1.6)
+/// re-adds the `KG-COMPRESSION-OZ-ROUND-TRIP` citation to this pin in
+/// the same commit that flips the catalog row.
+///
+/// Extended xray-shape pin: `a=t,o=z` then `a=p` (transmit-only followed
+/// by separate placement). Mirrors the actual xray byte-stream shape per
+/// §01.B re-investigation. EXPECTED-FAIL pre-Phase 4.
+#[test]
+fn kitty_compression_oz_then_place_succeeds() {
+    let raw = rgba_4x4_red();
+    let compressed = b64(&zlib_encode(&raw));
+
+    let mut h = SpecHarness::new();
+    h.feed(&kitty_apc(b"a=t,i=152,f=32,s=4,v=4,o=z", &compressed));
+    h.feed(&kitty_apc(b"a=p,i=152", ""));
+
+    assert_eq!(
+        placement_count(&h),
+        1,
+        "transmit-only o=z then explicit a=p MUST place post-cure",
+    );
+    assert_eq!(
+        h.term().image_cache().image_count(),
+        1,
+        "transmit-only o=z MUST store the image",
+    );
+}
+
+/// Phase 4 (NEW-1.6) adds a new catalog row `KG-COMPRESSION-UNKNOWN-REJECTED`
+/// alongside the ROUND-TRIP rename of OZ-REJECTED + restores the citation
+/// to this pin in the same commit. Pre-flip the cite is withheld to keep
+/// `spec-coverage-report --check` clean. Fixes the silent-treat-as-
+/// uncompressed surface for `o=x` Plan TPR surfaced — pre-helper, any
+/// non-`z` value flows through as if uncompressed.
+///
+/// EXPECTED-FAIL pre-Phase 4 — currently the parser drops `o=x` into
+/// `compression: Some(b'x')` and `kitty_store_image` falls through the
+/// `Some(b'z')` rejection check (since b'x' != b'z') + treats the bytes
+/// as uncompressed. Tests fail today because the kitty handler succeeds
+/// instead of rejecting.
+#[test]
+fn kitty_compression_unknown_x_emits_einval_reply() {
+    let mut h = SpecHarness::new();
+    h.feed(&kitty_apc(
+        b"a=T,i=153,f=32,s=4,v=4,o=x",
+        &b64(&rgba_4x4_red()),
+    ));
+
+    let replies = reply_bytes(&h);
+    let s = String::from_utf8_lossy(&replies);
+    assert!(
+        s.contains("EINVAL"),
+        "o=x MUST emit EINVAL reply — got {s:?}",
+    );
+    assert!(
+        s.contains("unsupported compression") || s.contains("o=x"),
+        "o=x EINVAL MUST name the unsupported compression value — got {s:?}",
+    );
+    assert_eq!(
+        placement_count(&h),
         0,
-        "o=z MUST NOT create a placement — upload is rejected entirely",
+        "rejected o=x MUST NOT create a placement — got {} placements",
+        placement_count(&h),
     );
     assert_eq!(
         h.term().image_cache().image_count(),
         0,
-        "o=z MUST NOT store an image — upload is rejected entirely",
-    );
-    let replies = reply_bytes(&h);
-    let s = String::from_utf8_lossy(&replies);
-    assert!(
-        s.contains("EINVAL: compression not supported"),
-        "o=z MUST emit EINVAL: compression not supported reply — got {s:?}",
+        "rejected o=x MUST NOT store an image",
     );
 }
 
-/// Catalog row: `KG-COMPRESSION-OZ-REJECTED` (boundary clamp).
+/// MANDATORY xray-replay regression pin (chunked-shape variant of the
+/// round-trip cure). Phase 4 (NEW-1.6) re-adds the catalog cite once the
+/// row is flipped.
 ///
-/// Same transmit without `o=z` MUST succeed. Clamps the guard so a future
-/// refactor cannot silently widen the reject path to reject all
-/// transmissions.
+/// Feeds an xray-shape multi-chunk byte stream: first chunk carries
+/// control keys (`a=t,o=z,m=1`), middle chunk `m=1`, terminator `m=0`,
+/// then a separate `a=p` place. Pins the END-TO-END accumulation +
+/// decompress + store + place chain that xray actually exercises in
+/// production — distinct from the single-chunk pin above.
+///
+/// Payload shape: zlib-compressed 64-byte 4×4 RGBA (compresses to
+/// ~10-16 bytes), split into 3 chunks of size ⌈n/3⌉. The size mirrors
+/// xray's ~3 KB/chunk shape compressed (proportional, not literal).
+///
+/// EXPECTED-FAIL pre-Phase 4.
+#[test]
+fn kitty_chunked_oz_xray_shape_round_trips() {
+    let raw = rgba_4x4_red();
+    let compressed = zlib_encode(&raw);
+    let b64_payload = b64(&compressed);
+    let total = b64_payload.len();
+    let third = total.div_ceil(3);
+    let first = &b64_payload[..third.min(total)];
+    let mid = &b64_payload[third.min(total)..(2 * third).min(total)];
+    let last = &b64_payload[(2 * third).min(total)..];
+
+    let mut h = SpecHarness::new();
+    // First chunk: full control keys + m=1 + first base64 fragment.
+    h.feed(&kitty_apc(b"a=t,i=160,f=32,s=4,v=4,q=2,o=z,m=1", first));
+    // Middle continuation: only m=1 + payload (per spec, subsequent
+    // chunks omit control keys).
+    h.feed(&kitty_apc(b"m=1", mid));
+    // Terminator: m=0 (signals end of payload).
+    h.feed(&kitty_apc(b"m=0", last));
+    // Separate place.
+    h.feed(&kitty_apc(b"a=p,i=160,q=2", ""));
+
+    assert_eq!(
+        h.term().image_cache().image_count(),
+        1,
+        "chunked o=z xray-shape MUST land 1 image post-cure",
+    );
+    assert_eq!(
+        placement_count(&h),
+        1,
+        "chunked o=z xray-shape MUST land 1 placement post-cure",
+    );
+    // q=2 suppresses replies — assertion is on the cache state, not the
+    // reply transcript.
+}
+
+/// Negative clamp on the o=z cure surface. Phase 4 (NEW-1.6) re-adds
+/// the catalog cite once the row is flipped.
+///
+/// Same transmit without `o=z` MUST still succeed. Pins that the helper
+/// insertion at store.rs does not regress the uncompressed-path semantics.
+/// Passes today AND post-cure (legacy rejection only fires on `o=z`).
 #[test]
 fn kitty_transmission_compression_unspecified_still_processes_payload() {
     let mut h = SpecHarness::new();

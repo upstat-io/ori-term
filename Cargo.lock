@@ -1963,6 +1963,7 @@ dependencies = [
  "base64",
  "bitflags 2.11.1",
  "criterion",
+ "flate2",
  "image",
  "indexmap",
  "insta",

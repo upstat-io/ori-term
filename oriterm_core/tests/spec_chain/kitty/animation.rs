@@ -2293,3 +2293,129 @@ fn animation_category_matrix_completeness() {
          bump this count so matrix completeness is self-verifying"
     );
 }
+
+// ===========================================================================
+// NEW-1.4 — `a=f` frame transmit with o=z compression
+// ===========================================================================
+//
+// Cure surface: term_repo/oriterm_core/src/term/handler/image/kitty/frame.rs:49-55
+// (silently ignores merged.compression today). Phase 4 wires the shared
+// `prepare_image_bytes` helper between the payload-take and the decode.
+//
+// All three NEW-1.4 pins below are EXPECTED-FAIL pre-Phase 4. The no-
+// compression clamp passes today and must STILL pass post-cure.
+
+/// Compress `raw` with zlib at default compression. Phase 4-only helper —
+/// scoped here rather than `fixtures.rs` since this is the only file that
+/// constructs zlib-compressed kitty payloads.
+fn zlib_encode(raw: &[u8]) -> Vec<u8> {
+    use flate2::Compression;
+    use flate2::write::ZlibEncoder;
+    use std::io::Write;
+    let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
+    encoder.write_all(raw).expect("encode write");
+    encoder.finish().expect("encode finish")
+}
+
+/// `a=f` with `o=z` MUST decompress the frame payload before the decode +
+/// blit. Today frame.rs:49 ignores `merged.compression` so the compressed
+/// bytes flow into `kitty_decode_pixels` as if they were raw RGBA — size
+/// mismatch fires EINVAL and no frame lands. Post-Phase-4 the helper
+/// decompresses first; frame 2 lands with the original RGBA bytes blitted.
+///
+/// See: bug-tracker/plans/BUG-06-086/section-03b-tdd-matrix.md
+/// §"NEW-1.4 — `kitty_frame` integration test".
+#[test]
+fn kitty_frame_oz_compression_handled_not_ignored() {
+    let base = b64(&rgba_4x4_red());
+
+    // Frame 2 payload: zlib-compressed 4×4 solid green RGBA.
+    let frame_raw = rgba_solid(4, 4, 0, 255, 0, 255);
+    let frame_payload = b64(&zlib_encode(&frame_raw));
+
+    let mut h = SpecHarness::new();
+    h.feed(&kitty_apc(b"a=t,i=200,f=32,s=4,v=4", &base));
+    // Sanity: base transmit must succeed first so we have an image to
+    // append a frame to (frame.rs precheck ENOENT otherwise).
+    assert!(
+        reply_contains(&h, &ok_reply_for(200)),
+        "base transmit MUST succeed — got {:?}",
+        String::from_utf8_lossy(&reply_bytes(&h))
+    );
+
+    h.feed(&kitty_apc(b"a=f,i=200,f=32,s=4,v=4,o=z", &frame_payload));
+
+    assert!(
+        reply_contains(&h, &ok_reply_with_frame(200, 2)),
+        "a=f,i=200,o=z MUST emit OK with ,r=2 post-cure — got {:?}",
+        String::from_utf8_lossy(&reply_bytes(&h)),
+    );
+
+    // Frame 2 bytes MUST equal the pre-compression RGBA (helper
+    // decompressed; blit then applied).
+    assert_frame_eq(
+        h.term().image_cache(),
+        ImageId::from_raw(200),
+        2,
+        &frame_raw,
+    );
+}
+
+/// `a=f` with `o=z` + corrupt zlib MUST emit EINVAL via kitty_respond and
+/// MUST NOT modify the cache (frame count remains 1, just the static base).
+/// Today the corrupt payload would flow through to kitty_decode_pixels and
+/// fire a size-mismatch EINVAL — coincidentally an EINVAL, but with the
+/// wrong message and a confusing diagnostic. Post-cure: helper rejects
+/// up-front with `EINVAL: ...` naming the zlib decode failure.
+#[test]
+fn kitty_frame_oz_corrupt_returns_einval_via_reply() {
+    let base = b64(&rgba_4x4_red());
+    let garbage_payload = b64(&[0xFFu8, 0xFE, 0xFD, 0xFC, 0xFB, 0xFA, 0xF9, 0xF8]);
+
+    let mut h = SpecHarness::new();
+    h.feed(&kitty_apc(b"a=t,i=201,f=32,s=4,v=4", &base));
+    assert!(
+        reply_contains(&h, &ok_reply_for(201)),
+        "base transmit MUST succeed",
+    );
+
+    h.feed(&kitty_apc(b"a=f,i=201,f=32,s=4,v=4,o=z", &garbage_payload));
+
+    assert_einval_reply(&h, 201, "EINVAL");
+    let total_frames = h
+        .term()
+        .image_cache()
+        .total_frames_for_test(ImageId::from_raw(201));
+    assert!(
+        total_frames <= 1,
+        "rejected a=f,o=z MUST NOT add a frame — total_frames={total_frames}",
+    );
+}
+
+/// Boundary clamp — `a=f` WITHOUT `o=z` MUST continue to land frame 2 in
+/// cache from the raw RGBA payload (the helper insertion at frame.rs:49
+/// must not regress the uncompressed-frame path). Passes today AND
+/// post-cure.
+#[test]
+fn kitty_frame_no_compression_still_processed_as_uncompressed() {
+    let base = b64(&rgba_4x4_red());
+    let frame_raw = rgba_solid(4, 4, 0, 0, 255, 255);
+    let frame_payload = b64(&frame_raw);
+
+    let mut h = SpecHarness::new();
+    h.feed(&kitty_apc(b"a=t,i=202,f=32,s=4,v=4", &base));
+    h.feed(&kitty_apc(b"a=f,i=202,f=32,s=4,v=4", &frame_payload));
+
+    assert!(
+        reply_contains(&h, &ok_reply_with_frame(202, 2)),
+        "a=f without o=z MUST emit OK with ,r=2 — got {:?}",
+        String::from_utf8_lossy(&reply_bytes(&h)),
+    );
+
+    assert_frame_eq(
+        h.term().image_cache(),
+        ImageId::from_raw(202),
+        2,
+        &frame_raw,
+    );
+}

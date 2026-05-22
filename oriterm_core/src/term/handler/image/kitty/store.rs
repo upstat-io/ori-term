@@ -12,6 +12,7 @@ use crate::image::{ImageData, ImageId, ImageSource, decode_to_rgba, rgb_to_rgba}
 use crate::term::Term;
 
 use super::KittyStoreParams;
+use super::prepare::prepare_image_bytes;
 
 /// Error from `kitty_store_image` / `kitty_store_from_file`. `Protocol`
 /// wraps a parser-layer `KittyError` and renders as `EINVAL: <variant text>`
@@ -67,6 +68,26 @@ impl Drop for TempFileGuard<'_> {
     }
 }
 
+/// Pre-compute the expected post-decode payload size for raw-pixel formats
+/// (`f=32` → `w*h*4`, `f=24` → `w*h*3`). Returns `None` for `f=100` (PNG)
+/// and any other format where the decoded size is not derivable from the
+/// `s=`/`v=` control fields up front; the caller's `max_bytes` then bounds
+/// the helper's output. Overflow saturates to `usize::MAX` so the helper's
+/// own cap clamp handles oversized requests with `EBIG`.
+pub(super) fn expected_decoded_size_for_format(format: u32, width: u32, height: u32) -> Option<usize> {
+    let channels: usize = match format {
+        24 => 3,
+        32 => 4,
+        _ => return None,
+    };
+    Some(
+        (width as usize)
+            .checked_mul(height as usize)
+            .and_then(|wh| wh.checked_mul(channels))
+            .unwrap_or(usize::MAX),
+    )
+}
+
 /// Open `path` with `O_NONBLOCK` on Unix, fstat the OPENED descriptor, and
 /// reject non-regular files (FIFO, socket, char-device, dir, Windows
 /// reparse-point that doesn't resolve to a regular file). The returned
@@ -113,6 +134,10 @@ impl<S: EffectSink> Term<S> {
                 ));
             }
         };
+
+        let expected_size = expected_decoded_size_for_format(p.format, p.width, p.height);
+        let max_bytes = self.image_cache().max_single_image_bytes();
+        let pixel_data = prepare_image_bytes(pixel_data, p.compression, expected_size, max_bytes)?;
 
         let (rgba_data, w, h) = Self::kitty_decode_pixels(pixel_data, p.format, p.width, p.height)
             .map_err(KittyStoreError::Reply)?;

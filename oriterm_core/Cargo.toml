@@ -25,6 +25,7 @@ libc = "0.2"
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
 insta = "1"
 oriterm_test_support = { path = "../crates/oriterm_test_support" }
 portable-pty = "0.9.0"
@@ -40,6 +41,10 @@ harness = false
 
 [[bench]]
 name = "vte_throughput"
+harness = false
+
+[[bench]]
+name = "kitty_decode"
 harness = false
 
 [lints]

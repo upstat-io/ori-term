@@ -137,23 +137,7 @@ impl ImageCache {
             (idx, target_fid, dependents)
         };
 
-        // Phase 2 (cascade-materialize without holding frames borrow):
-        // for each Δ dependent of the soon-to-be-deleted frame,
-        // compose-on-demand to a full canvas so the back-reference no
-        // longer matters. Each materialization may itself recurse
-        // through other Δ entries, so we hold only `&self` here.
-        let mut materialized: Vec<(usize, Arc<Vec<u8>>)> =
-            Vec::with_capacity(dependent_indices.len());
-        for dep_idx in dependent_indices {
-            let entry = {
-                let frames = self.animation_frames.get(&id).expect("present per phase 1");
-                frames[dep_idx].clone()
-            };
-            let Some(bytes) = self.compose_entry(id, &entry) else {
-                continue;
-            };
-            materialized.push((dep_idx, bytes));
-        }
+        let materialized = self.materialize_delta_dependents(id, &dependent_indices);
 
         // Phase 3 (mutable replace + remove): re-acquire the mut borrow
         // and apply cascade results, then delete the target frame.
@@ -214,19 +198,14 @@ impl ImageCache {
         // current, pre-removal current_frame=2 → post-adjustment=1, and the
         // displayed bytes must match `frames[1]` (old frame 3), not frames[0].
         let current_frame = self.animations.get(&id).map_or(0, |s| s.current_frame);
-        if let Some(img) = self.images.get_mut(&id) {
-            if let Some(frame) = frames.get(current_frame) {
-                // Phase 4 Item 1: extract Arc from FrameEntry::Materialized.
-                // Phase 4 Item 2 will resolve Delta via compose-on-demand.
-                if let super::frame_entry::FrameEntry::Materialized { data, .. } = frame {
-                    img.data = data.clone();
-                    // Phase 4 Item 3: bump pixel_generation so the GPU
-                    // re-uploads on the next render — without this the
-                    // cache continues serving the deleted frame's
-                    // pixels. Per Plan TPR R0.
-                    img.pixel_generation = img.pixel_generation.wrapping_add(1);
-                }
-            }
+        if let Some(img) = self.images.get_mut(&id)
+            && let Some(super::frame_entry::FrameEntry::Materialized { data, .. }) =
+                frames.get(current_frame)
+        {
+            img.data = data.clone();
+            // pixel_generation bump so the GPU re-uploads on the next render —
+            // without this the cache continues serving the deleted frame's pixels.
+            img.pixel_generation = img.pixel_generation.wrapping_add(1);
         }
 
         // Reset the frame-start timer so `advance_animations` re-initializes
@@ -243,6 +222,30 @@ impl ImageCache {
         }
         self.dirty = true;
         now_static
+    }
+
+    /// Compose-on-demand for each Δ dependent of a soon-to-be-deleted frame.
+    /// Returns `(dep_idx, materialized_bytes)` pairs ready for caller-side
+    /// substitution + memory accounting. Holds only `&self` while composing
+    /// so each materialization can recurse through other Δ entries cleanly.
+    fn materialize_delta_dependents(
+        &self,
+        id: ImageId,
+        dependent_indices: &[usize],
+    ) -> Vec<(usize, Arc<Vec<u8>>)> {
+        let mut materialized: Vec<(usize, Arc<Vec<u8>>)> =
+            Vec::with_capacity(dependent_indices.len());
+        for &dep_idx in dependent_indices {
+            let entry = {
+                let frames = self.animation_frames.get(&id).expect("present per phase 1");
+                frames[dep_idx].clone()
+            };
+            let Some(bytes) = self.compose_entry(id, &entry) else {
+                continue;
+            };
+            materialized.push((dep_idx, bytes));
+        }
+        materialized
     }
 }
 

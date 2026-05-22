@@ -386,55 +386,8 @@ impl ImageCache {
         // append + canvas references an existing promoted frame, AND the
         // chain-depth + cumulative-area guards permit, store as
         // `FrameEntry::Delta` without materializing the full canvas.
-        // Keeps per-append allocator pressure bounded by the sub-rect
-        // payload size (typically ≤ 1 KB) instead of the full image
-        // canvas (typically ~2.64 MB on xray's 1000×660 transmits).
-        if let (FrameTarget::Append { gap }, CanvasSource::Frame(n)) = (&req.target, &req.canvas) {
-            // Auto-promote static images on c=1 so the root has a
-            // FrameId Δ.base can reference — first c=N append on a
-            // static image still produces Δ storage.
-            if *n == 1 && !self.animations.contains_key(&req.image_id) {
-                self.auto_promote_static_root(req.image_id)?;
-            }
-            if let Some((base_id, base_is_delta, base_depth, base_cumulative)) =
-                self.resolve_base_metadata(req.image_id, *n)
-            {
-                // Δ directly off Materialized has depth 0; Δ off Δ
-                // increments base.depth by 1.
-                let new_depth = if base_is_delta {
-                    base_depth.saturating_add(1)
-                } else {
-                    0
-                };
-                let blit_area = (req.blit.width as u64).saturating_mul(req.blit.height as u64);
-                let new_cumulative = (u64::from(base_cumulative)).saturating_add(blit_area);
-                let area_cap = (image_w as u64)
-                    .saturating_mul(image_h as u64)
-                    .saturating_mul(u64::from(MAX_CUMULATIVE_DRAWN_AREA_RATIO));
-                let depth_ok = new_depth <= MAX_DELTA_CHAIN_DEPTH;
-                // `<=` so the Δ that lands EXACTLY at the cap is still
-                // stored as Δ; the NEXT append (which would exceed the
-                // cap) force-materializes per kitty's
-                // `drawn_area >= image_w * image_h * 2` trigger
-                // (graphics.c:1546).
-                let area_ok = new_cumulative <= area_cap;
-                if depth_ok && area_ok {
-                    return self.push_delta_frame(
-                        req.image_id,
-                        base_id,
-                        new_depth,
-                        new_cumulative as u32,
-                        req.blit,
-                        req.frame_data.clone(),
-                        req.composition_mode,
-                        *gap,
-                    );
-                }
-                // Guard tripped — fall through to materialize path
-                // which force-materializes the new frame, resetting
-                // the chain. Subsequent c=N appends against THIS new
-                // (now-materialized) frame start a fresh chain.
-            }
+        if let Some(delta_result) = self.try_push_delta_append(&req, image_w, image_h)? {
+            return delta_result;
         }
 
         // (Step 6.7) Resolve canvas bytes.
@@ -498,6 +451,74 @@ impl ImageCache {
                 gap_update,
             } => self.put_frame_edit(req.image_id, frame_num, composed, gap_update),
         }
+    }
+
+    /// Δ-storage append fast-path. Returns:
+    /// - `Ok(Some(...))` — request landed as `FrameEntry::Delta`; caller returns immediately.
+    /// - `Ok(None)` — Δ path did not apply (wrong target/canvas, base unresolvable, or
+    ///   chain/area guard tripped); caller falls through to the materialize path.
+    /// - `Err(...)` — auto-promote of the static root failed.
+    ///
+    /// Keeps per-append allocator pressure bounded by the sub-rect payload size
+    /// (typically ≤ 1 KB) instead of the full image canvas (~2.64 MB on xray's
+    /// 1000×660 transmits).
+    fn try_push_delta_append(
+        &mut self,
+        req: &FrameLoadRequest,
+        image_w: u32,
+        image_h: u32,
+    ) -> Result<Option<Result<u32, ImageError>>, ImageError> {
+        let (FrameTarget::Append { gap }, CanvasSource::Frame(n)) = (&req.target, &req.canvas)
+        else {
+            return Ok(None);
+        };
+
+        // Auto-promote static images on c=1 so the root has a FrameId
+        // Δ.base can reference — first c=N append on a static image
+        // still produces Δ storage.
+        if *n == 1 && !self.animations.contains_key(&req.image_id) {
+            self.auto_promote_static_root(req.image_id)?;
+        }
+
+        let Some((base_id, base_is_delta, base_depth, base_cumulative)) =
+            self.resolve_base_metadata(req.image_id, *n)
+        else {
+            return Ok(None);
+        };
+
+        // Δ directly off Materialized has depth 0; Δ off Δ increments base.depth by 1.
+        let new_depth = if base_is_delta {
+            base_depth.saturating_add(1)
+        } else {
+            0
+        };
+        let blit_area = (req.blit.width as u64).saturating_mul(req.blit.height as u64);
+        let new_cumulative = (u64::from(base_cumulative)).saturating_add(blit_area);
+        let area_cap = (image_w as u64)
+            .saturating_mul(image_h as u64)
+            .saturating_mul(u64::from(MAX_CUMULATIVE_DRAWN_AREA_RATIO));
+        let depth_ok = new_depth <= MAX_DELTA_CHAIN_DEPTH;
+        // `<=` so the Δ that lands EXACTLY at the cap is still stored as Δ;
+        // the NEXT append (which would exceed the cap) force-materializes
+        // per kitty's `drawn_area >= image_w * image_h * 2` trigger
+        // (graphics.c:1546).
+        let area_ok = new_cumulative <= area_cap;
+        if !(depth_ok && area_ok) {
+            // Guard tripped — fall through to materialize path which
+            // force-materializes the new frame, resetting the chain.
+            return Ok(None);
+        }
+
+        Ok(Some(self.push_delta_frame(
+            req.image_id,
+            base_id,
+            new_depth,
+            new_cumulative as u32,
+            req.blit,
+            req.frame_data.clone(),
+            req.composition_mode,
+            *gap,
+        )))
     }
 
     /// Edit-arm body for `put_frame`: replace `frame_num`'s bytes with
@@ -641,7 +662,27 @@ impl ImageCache {
 
         // (3) Append (auto-promote when needed).
         let promoted = self.animations.contains_key(&id);
-        let added_1based = if !promoted {
+        let added_1based = if promoted {
+            let new_id = self.alloc_frame_id();
+            let anim_frames = self.animation_frames.entry(id).or_default();
+            anim_frames.push(FrameEntry::Materialized {
+                id: new_id,
+                data: composed.clone(),
+            });
+            self.memory_used += composed.len();
+
+            let total = anim_frames.len();
+            let state = self
+                .animations
+                .get_mut(&id)
+                .expect("promoted: animations entry present");
+            state.frame_durations.push(gap);
+            state.total_frames = total;
+            if state.wait_mode && state.is_finished() {
+                state.loops_completed = 0;
+            }
+            total as u32
+        } else {
             let img_data = match self.images.get(&id) {
                 Some(img) => img.data.clone(),
                 None => return Err(ImageError::MissingImage { id: id.0 }),
@@ -665,26 +706,6 @@ impl ImageCache {
                 .insert(id, AnimationState::new(durations, None));
             self.animation_frames.insert(id, frames);
             2
-        } else {
-            let new_id = self.alloc_frame_id();
-            let anim_frames = self.animation_frames.entry(id).or_default();
-            anim_frames.push(FrameEntry::Materialized {
-                id: new_id,
-                data: composed.clone(),
-            });
-            self.memory_used += composed.len();
-
-            let total = anim_frames.len();
-            let state = self
-                .animations
-                .get_mut(&id)
-                .expect("promoted: animations entry present");
-            state.frame_durations.push(gap);
-            state.total_frames = total;
-            if state.wait_mode && state.is_finished() {
-                state.loops_completed = 0;
-            }
-            total as u32
         };
 
         self.dirty = true;
