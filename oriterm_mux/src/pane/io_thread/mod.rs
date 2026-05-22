@@ -297,13 +297,18 @@ impl<S: EffectSink> PaneIoThread<S> {
         // localize where the IO thread spends its byte-drain budget under
         // graphics floods even when no single cycle hits hard backpressure.
         if messages_drained > 0 && drain_ms >= 10 {
+            let cache = self.terminal.image_cache();
             log::info!(
             target: "oriterm_mux::pane::io_thread::iteration",
             "drain cycle messages={messages_drained} bytes={bytes_drained} \
              duration_ms={drain_ms} \
-             drain_cmds_ms={} snapshot_ms={}",
+             drain_cmds_ms={} snapshot_ms={} \
+             img_count={} placement_count={} mem_used={}",
             drain_cmds_total.as_millis(),
-            snapshot_total.as_millis()
+            snapshot_total.as_millis(),
+            cache.image_count(),
+            cache.placement_count(),
+            cache.memory_used_for_test()
             );
         }
     }

@@ -16,11 +16,22 @@ impl PtySystem for ConPtySystem {
         // between `hInput` and `hOutput` of CreatePseudoConsole — matches
         // Microsoft Terminal's ConptyConnection.cpp:406-407.
         //
+        // 8 MiB pipe buffer (was 128 KiB) so notcurses-class graphics-flood
+        // producers can blast a full ~3 MB initial-frame transmit (and
+        // ~256 KB compressed delta-frames) into the pipe without blocking
+        // before conhost reads. Smaller buffers cause the producer's
+        // first `write()` to block on conhost's read-rate ceiling, which
+        // notcurses' deadline-based frame dropper then registers as
+        // "dropped" frames for the entire deadline-overrun window
+        // (the prior 13-second initial-blast drain was the load-bearing
+        // symptom). conhost's own internal buffer is still the next-tier
+        // limit; the pipe-buffer bump removes the first-tier bottleneck.
+        //
         // Destructure so we own `server` and `client` independently
         // (cannot drop the client field while the struct is still
         // partially borrowed).
         let OverlappedPipe { server, client } =
-            OverlappedPipe::new(PipeAccess::Duplex, 128 * 1024)?;
+            OverlappedPipe::new(PipeAccess::Duplex, 8 * 1024 * 1024)?;
 
         // Pass the SAME client handle to both hInput and hOutput slots
         // (ConptyConnection.cpp:406-407 calls
