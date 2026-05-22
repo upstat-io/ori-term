@@ -236,6 +236,30 @@ impl<S: EffectSink> PaneIoThread<S> {
                         self.pane_id,
                     );
                 }
+                Effect::ImageDecode(req) => {
+                    let seq = req.sequence_id;
+                    let image_id = req.image_id;
+                    let payload_bytes = req.payload.len();
+                    let reply_ctx = req.reply_ctx;
+                    let placement = req.placement.clone();
+                    if let Err(err) = self.image_worker.enqueue(req) {
+                        // Enqueue failure routes through Term::apply_decoded_image
+                        // so the reply sequencer resolves in command order.
+                        // Layer boundary: oriterm_mux passes the raw
+                        // EnqueueError variant via ImageDecodeError;
+                        // oriterm_core's apply_decoded_image formats the
+                        // kitty reply string.
+                        let synthetic = super::image_worker::synthesize_enqueue_failure(
+                            seq,
+                            image_id,
+                            payload_bytes,
+                            reply_ctx,
+                            placement,
+                            err,
+                        );
+                        self.terminal.apply_decoded_image(synthetic);
+                    }
+                }
             }
         }
 

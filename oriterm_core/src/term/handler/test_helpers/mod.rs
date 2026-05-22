@@ -124,6 +124,7 @@ fn legacy_format_effect(effect: &Effect) -> Option<String> {
             format!("ColorRequest({index})")
         }
         Effect::Presentation(PresentationEffect::Abort { .. }) => return None,
+        Effect::ImageDecode(_) => return None,
     })
 }
 

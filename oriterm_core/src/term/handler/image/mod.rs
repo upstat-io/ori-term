@@ -4,7 +4,7 @@
 //! parser and executes commands against the `ImageCache`.
 
 mod iterm2;
-pub(in crate::term) mod kitty;
+pub(crate) mod kitty;
 mod sixel;
 
 use log::debug;

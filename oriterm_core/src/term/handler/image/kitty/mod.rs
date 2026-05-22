@@ -22,11 +22,13 @@ mod frame;
 mod frame_keys;
 mod place;
 pub(crate) mod placeholder;
-mod prepare;
+pub(crate) mod prepare;
 mod query;
 mod response;
 mod store;
 mod transmit;
+
+pub(crate) use prepare::prepare_image_bytes;
 
 pub(in crate::term::handler::image::kitty) use response::KittyReplyContext;
 
@@ -131,6 +133,48 @@ impl<S: EffectSink> Term<S> {
             KittyAction::Animate => self.kitty_animate(&cmd),
             KittyAction::Compose => self.kitty_compose(&cmd),
         }
+    }
+
+    /// Apply a worker-thread decode result onto Term state and emit the
+    /// corresponding kitty reply. Called by the IO thread (in `oriterm_mux`)
+    /// after draining a result from the `ImageWorker` result channel. The
+    /// sequencer (Phase 4 — to be wired alongside Transmit/Frame async-dispatch
+    /// refactor) ensures replies emit in command-issue order even when async
+    /// (worker) and synchronous (Query / Place) commands interleave.
+    pub fn apply_decoded_image(
+        &self,
+        result: crate::image::worker_pipeline::ImageDecodeResult,
+    ) {
+        use super::super::image::kitty::response::KittyReplyContext;
+        use crate::image::worker_pipeline::ImageDecodeError;
+        let reply_msg = match result.decoded {
+            Ok(_decoded) => {
+                // Phase 4 — actual cache mutation + placement application
+                // lands when the sequencer + Term-owned pending-decode mirror
+                // state ship. Current arm preserves the layer-boundary contract:
+                // ImageDecodeError → kitty reply string formatted HERE in
+                // oriterm_core, not in oriterm_mux's effect_router.
+                "OK".to_string()
+            }
+            Err(ImageDecodeError::Reply(msg)) => msg,
+            Err(ImageDecodeError::Panicked { message }) => {
+                format!("EINVAL: internal decode failure: {message}")
+            }
+            Err(ImageDecodeError::EnqueueOverflow) => {
+                "ENOMEM: image decode queue full".to_string()
+            }
+            Err(ImageDecodeError::EnqueueWorkerDead) => {
+                "EINVAL: image worker unavailable".to_string()
+            }
+        };
+        let ctx = KittyReplyContext {
+            image_id: result.reply_ctx.image_id,
+            image_number: result.reply_ctx.image_number,
+            placement_id: result.reply_ctx.placement_id,
+            frame_num: result.reply_ctx.frame_num,
+            quiet: result.reply_ctx.quiet,
+        };
+        self.kitty_respond(&ctx, &reply_msg);
     }
 
     /// Handle a malformed-base64 chunk: emit EINVAL once per failed upload

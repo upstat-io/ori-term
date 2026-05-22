@@ -12,6 +12,7 @@ mod commands;
 mod effect_router;
 mod handle;
 mod handler;
+pub(crate) mod image_worker;
 mod response_poll;
 mod run_loop;
 pub(crate) mod snapshot;
@@ -146,6 +147,11 @@ pub struct PaneIoThread<S: EffectSink + 'static> {
     /// [`PaneIoHandle::pending_resize`] in [`new_with_handle`].
     /// Regression:.
     pub(super) pending_resize: Arc<AtomicU64>,
+    /// Per-pane image decode worker. Receives `Effect::ImageDecode` from
+    /// the effect router; the worker thread calls `run_image_decode` and
+    /// pushes results back via `result_rx`, which the IO thread drains
+    /// and feeds into `Term::apply_decoded_image`.
+    pub(crate) image_worker: image_worker::ImageWorker,
     /// Test-only counter — incremented at the top of
     /// [`Self::maybe_shrink_buffers`]. Pins that the OUTER run loop
     /// (not the `select!` `default(timeout)` arm) is the call path,
@@ -265,7 +271,18 @@ impl<S: EffectSink> PaneIoThread<S> {
     /// [`handle_bytes_chunked()`](Self::handle_bytes_chunked). Snapshots
     /// are produced between messages so the main thread sees progress
     /// even during sustained flood output.
+    /// Drain any decoded image results from the worker thread and apply
+    /// them to `Term`. Called at function entry of both `process_pending_bytes`
+    /// and `maybe_produce_snapshot` so the fence guarantees snapshots and
+    /// new byte-dispatch both see post-drain cache state.
+    fn drain_worker_results(&self) {
+        for result in self.image_worker.try_drain_results() {
+            self.terminal.apply_decoded_image(result);
+        }
+    }
+
     fn process_pending_bytes(&mut self) {
+        self.drain_worker_results();
         // Measure total wall time for one drain cycle. Sustained
         // durations >= 50ms indicate the IO thread is saturated —
         // bytes arrive faster than they can be parsed + stored.
@@ -521,6 +538,7 @@ impl<S: EffectSink> PaneIoThread<S> {
     /// is set, the application is building a frame — skip snapshot
     /// publication to avoid exposing mid-mutation grid state.
     fn maybe_produce_snapshot(&mut self) {
+        self.drain_worker_results();
         if self.terminal.mode().contains(TermMode::SYNC_UPDATE) {
             return;
         }

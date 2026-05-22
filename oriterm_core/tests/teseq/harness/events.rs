@@ -94,7 +94,8 @@ fn record_effect(effect: Effect) -> Option<RecordedEvent> {
         | Effect::Host(HostEffect::AudioRequest(_))
         | Effect::Host(HostEffect::PrintRequest(_))
         | Effect::Host(HostEffect::UrgencyHint)
-        | Effect::Presentation(_) => return None,
+        | Effect::Presentation(_)
+        | Effect::ImageDecode(_) => return None,
     })
 }
 

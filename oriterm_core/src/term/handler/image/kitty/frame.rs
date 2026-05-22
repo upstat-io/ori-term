@@ -11,7 +11,7 @@ use crate::term::Term;
 
 use super::KittyReplyContext;
 use super::frame_keys::{KittyFrameKeys, extract_a_f_keys};
-use super::prepare::prepare_image_bytes;
+use super::prepare::{kitty_decode_pixels, prepare_image_bytes};
 use super::store::expected_decoded_size_for_format;
 
 impl<S: EffectSink> Term<S> {
@@ -65,7 +65,7 @@ impl<S: EffectSink> Term<S> {
                     return;
                 }
             };
-        let (rgba_data, decoded_w, decoded_h) = match Self::kitty_decode_pixels(
+        let (rgba_data, decoded_w, decoded_h) = match kitty_decode_pixels(
             payload,
             merged.format,
             merged.source_width,

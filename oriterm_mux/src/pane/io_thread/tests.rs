@@ -185,6 +185,7 @@ fn make_sync_thread_with_term(term: Term<VoidEffectSink>) -> PaneIoThread<VoidEf
         effects_buf: Vec::new(),
         last_animation_deadline: None,
         pending_resize: Arc::new(AtomicU64::new(PENDING_RESIZE_NONE)),
+        image_worker: super::image_worker::ImageWorker::spawn(),
         shrink_call_count: Arc::new(AtomicUsize::new(0)),
         start_barrier: None,
     }
@@ -226,6 +227,7 @@ fn make_sync_thread_with_wakeup() -> (PaneIoThread<VoidEffectSink>, Arc<AtomicU6
         effects_buf: Vec::new(),
         last_animation_deadline: None,
         pending_resize: Arc::new(AtomicU64::new(PENDING_RESIZE_NONE)),
+        image_worker: super::image_worker::ImageWorker::spawn(),
         shrink_call_count: Arc::new(AtomicUsize::new(0)),
         start_barrier: None,
     };
@@ -285,6 +287,7 @@ fn shutdown_via_channel_disconnect() {
         effects_buf: Vec::new(),
         last_animation_deadline: None,
         pending_resize: Arc::new(AtomicU64::new(PENDING_RESIZE_NONE)),
+        image_worker: super::image_worker::ImageWorker::spawn(),
         shrink_call_count: Arc::new(AtomicUsize::new(0)),
         start_barrier: None,
     };
@@ -383,6 +386,7 @@ fn byte_delivery_parses_vte() {
         effects_buf: Vec::new(),
         last_animation_deadline: None,
         pending_resize: Arc::new(AtomicU64::new(PENDING_RESIZE_NONE)),
+        image_worker: super::image_worker::ImageWorker::spawn(),
         shrink_call_count: Arc::new(AtomicUsize::new(0)),
         start_barrier: None,
     };
@@ -538,6 +542,7 @@ fn handle_bytes_chunked_drains_commands() {
         effects_buf: Vec::new(),
         last_animation_deadline: None,
         pending_resize: Arc::new(AtomicU64::new(PENDING_RESIZE_NONE)),
+        image_worker: super::image_worker::ImageWorker::spawn(),
         shrink_call_count: Arc::new(AtomicUsize::new(0)),
         start_barrier: None,
     };
@@ -789,6 +794,7 @@ fn make_sync_thread_with_cmd_tx() -> (PaneIoThread<VoidEffectSink>, Sender<PaneI
         effects_buf: Vec::new(),
         last_animation_deadline: None,
         pending_resize: Arc::new(AtomicU64::new(PENDING_RESIZE_NONE)),
+        image_worker: super::image_worker::ImageWorker::spawn(),
         shrink_call_count: Arc::new(AtomicUsize::new(0)),
         start_barrier: None,
     };
@@ -2041,6 +2047,7 @@ fn make_sync_thread_generic<S: oriterm_core::effect::EffectSink + 'static>(
         effects_buf: Vec::new(),
         last_animation_deadline: None,
         pending_resize: Arc::new(AtomicU64::new(PENDING_RESIZE_NONE)),
+        image_worker: super::image_worker::ImageWorker::spawn(),
         shrink_call_count: Arc::new(AtomicUsize::new(0)),
         start_barrier: None,
     };
@@ -2586,6 +2593,7 @@ fn spawn_queueing_eof_rig() -> EofTestRig {
         effects_buf: Vec::new(),
         last_animation_deadline: None,
         pending_resize: Arc::new(AtomicU64::new(PENDING_RESIZE_NONE)),
+        image_worker: super::image_worker::ImageWorker::spawn(),
         shrink_call_count: Arc::new(AtomicUsize::new(0)),
         start_barrier: None,
     };

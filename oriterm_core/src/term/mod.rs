@@ -9,7 +9,7 @@ mod alt_screen;
 pub mod charset;
 mod colors_state;
 mod dec_observable;
-mod handler;
+pub(crate) mod handler;
 mod image_config;
 mod iterm2_state;
 pub mod mode;
