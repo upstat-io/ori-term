@@ -35,7 +35,10 @@ pub(crate) const MAX_PENDING_BYTES: usize = 128 * 1024 * 1024;
 /// Per-pane image decode worker handle. Owned by `PaneIoThread`; shutdown
 /// happens via `Drop` (drops request sender → worker thread exits).
 pub struct ImageWorker {
-    request_tx: Sender<ImageDecodeRequest>,
+    /// `Option` so `Drop` can `take()` and explicitly drop the sender
+    /// BEFORE joining the worker thread. Otherwise the worker stays
+    /// blocked on `request_rx.recv()` and `join()` deadlocks.
+    request_tx: Option<Sender<ImageDecodeRequest>>,
     result_rx: Receiver<ImageDecodeResult>,
     pending_request_bytes: Arc<AtomicUsize>,
     join_handle: Option<JoinHandle<()>>,
@@ -66,7 +69,7 @@ impl ImageWorker {
             .expect("failed to spawn image worker thread");
 
         Self {
-            request_tx,
+            request_tx: Some(request_tx),
             result_rx,
             pending_request_bytes,
             join_handle: Some(join_handle),
@@ -99,7 +102,13 @@ impl ImageWorker {
         // Rollback on send failure: budget reservation must not leak when
         // the worker thread has died. Otherwise the budget would permanently
         // exceed MAX_PENDING_BYTES across pane lifetime.
-        if let Err(e) = self.request_tx.send(req) {
+        let Some(tx) = self.request_tx.as_ref() else {
+            // Sender already dropped (shutdown in progress). Rollback bytes.
+            self.pending_request_bytes
+                .fetch_sub(bytes, Ordering::AcqRel);
+            return Err(EnqueueError::WorkerDead);
+        };
+        if let Err(e) = tx.send(req) {
             self.pending_request_bytes
                 .fetch_sub(bytes, Ordering::AcqRel);
             log::warn!("image worker request channel send failed: {e:?}");
@@ -146,14 +155,12 @@ impl ImageWorker {
 
 impl Drop for ImageWorker {
     fn drop(&mut self) {
-        // Drop the request sender first so the worker observes EOF on its
-        // next recv() and exits cleanly. Then join with a bounded wait so a
-        // pane teardown can't hang on a stuck worker.
-        // (Dropping `self.request_tx` happens implicitly via the field move
-        // out of the struct, but we can also explicitly close by replacing
-        // with a fresh dummy. Since this struct is consumed entirely at
-        // Drop, just relying on field drop order is fine — `request_tx`
-        // drops before `join_handle` per Rust's struct field drop order.)
+        // CRITICAL ordering: drop the request sender FIRST so the worker
+        // observes EOF on its next recv() and exits cleanly. Then join the
+        // handle. Without this explicit take(), Drop would call join() while
+        // request_tx is still alive (struct fields drop AFTER Drop::drop
+        // returns); the worker stays blocked on recv() and join() deadlocks.
+        self.request_tx.take();
         if let Some(handle) = self.join_handle.take() {
             // Best-effort join; do not panic the IO thread if the worker
             // panicked or hung.
