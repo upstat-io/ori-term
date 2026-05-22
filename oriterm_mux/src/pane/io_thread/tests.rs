@@ -3927,10 +3927,24 @@ fn send_resize_during_drain_before_snapshot_reflects_post_resize() {
     barrier.wait();
     handle.send_resize(24, 40);
     let (reply_tx, reply_rx) = crossbeam_channel::bounded::<()>(1);
-    handle.send_command(PaneIoCommand::SnapshotNow { reply: reply_tx });
+    // BLOCKING send (not the non-blocking handle.send_command) — the
+    // cmd_tx is intentionally saturated above. send_command's try_send
+    // would drop the command (and reply_tx with it) under saturation,
+    // producing a `Disconnected` flake on slow Windows CI runners where
+    // the IO thread has not yet had a chance to free a slot. Blocking
+    // send is correct in this test path because the assertion's goal is
+    // "SnapshotNow eventually lands while pending_resize is observable"
+    // — saturation must not silently drop it.
+    handle
+        .cmd_tx
+        .send(PaneIoCommand::SnapshotNow { reply: reply_tx })
+        .expect("cmd_tx send must succeed");
+    // 60s safety valve (was 5s — too tight for loaded Windows CI runners
+    // per tests.md §Wall-Clock-Free Testing; the deadline is a hang
+    // detector, not a primary signal).
     reply_rx
-        .recv_timeout(Duration::from_secs(5))
-        .expect("SnapshotNow reply did not arrive within deadline");
+        .recv_timeout(Duration::from_secs(60))
+        .expect("SnapshotNow reply did not arrive within safety-valve deadline");
     let mut snap = RenderableContent::default();
     assert!(
         handle.double_buffer().swap_front(&mut snap),
