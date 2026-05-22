@@ -240,6 +240,51 @@ impl PtySession {
         matched
     }
 
+    /// Bounded-poll combinator: succeeds when `success` returns true,
+    /// fails early when `early_fail` returns Some(msg), errors on
+    /// timeout.
+    ///
+    /// Delegates to [`poll_until`] (the SSOT chunk-at-a-time bounded-
+    /// poll helper). Tests that need to assert a positive condition
+    /// AND reject an alternate failure mode in a single bounded wait
+    /// MUST call this method instead of inlining the loop or
+    /// sequencing a `wait_for_X` followed by an `assert!` — the assert
+    /// becomes unreachable when the positive wait panics on timeout
+    /// in the regression mode, producing a check that cannot fail in
+    /// the bug it claims to guard.
+    ///
+    /// Returns:
+    /// - `Ok(())` when `success(self)` returns true within `timeout_ms`.
+    /// - `Err(msg)` immediately when `early_fail(self)` returns
+    ///   `Some(msg)` on any iteration.
+    /// - `Err("timed out after {timeout_ms}ms")` when neither fires.
+    ///
+    /// Regression: BUG-07-050 — Windows `ConPTY`/APC cure has no
+    /// automated end-to-end test pin; this primitive enables the
+    /// combined `image_count` + forbid-output check.
+    /// See: bug-tracker/plans/BUG-07-050/00-overview.md
+    pub fn poll_until_or_fail<F, G>(
+        &mut self,
+        timeout_ms: u64,
+        success: F,
+        early_fail: G,
+    ) -> Result<(), String>
+    where
+        F: Fn(&Self) -> bool,
+        G: Fn(&Self) -> Option<String>,
+    {
+        let outcome = poll_until::<Result<(), String>, _>(self, timeout_ms, |session| {
+            if let Some(msg) = early_fail(session) {
+                return PollStep::Done(Err(msg));
+            }
+            if success(session) {
+                return PollStep::Done(Ok(()));
+            }
+            PollStep::NotYet
+        });
+        outcome.unwrap_or_else(|| Err(format!("timed out after {timeout_ms}ms")))
+    }
+
     /// Drain bytes from the PTY incrementally — feeding the VTE
     /// processor ONE byte at a time and checking `grid_text()` after
     /// each byte — until `needle` appears in the grid OR the deadline

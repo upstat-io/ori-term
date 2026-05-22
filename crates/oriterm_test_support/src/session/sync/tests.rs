@@ -17,7 +17,7 @@ use crate::session::PtySession;
 /// `ConPTY`. When `PtySession::drop` terminates `cmd.exe`, the
 /// grandchild becomes orphaned and remains attached to the
 /// pseudoconsole as a still-alive console client.
-/// `ClosePseudoConsole` (called when `_master` drops) then
+/// `ClosePseudoConsole` (called when `master_holder` drops) then
 /// blocks waiting for the orphaned grandchild to release the
 /// HPCON.
 /// 2. **No shared kernel resources.** `ping.exe` (and similar
@@ -265,7 +265,7 @@ fn pty_session_repeated_spawn_drop_cycle_succeeds_on_subsequent_cmd_exe_spawn() 
     // path on every platform. On Unix the 6th spawn always succeeds
     // even without the fix (no HPCON contract to violate), but the
     // test still pins the structural invariant that the master is
-    // held — a future refactor that removes the `_master` field on
+    // held — a future refactor that removes the `master_holder` field on
     // the assumption "Unix doesn't need it" would not regress on
     // Unix but would regress on Windows CI. Running this test on
     // Unix gives non-Windows contributors a local sanity check that

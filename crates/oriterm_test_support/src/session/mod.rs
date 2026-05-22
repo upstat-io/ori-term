@@ -96,10 +96,10 @@ static CONPTY_LIFETIME_LOCK: Mutex<()> = Mutex::new(());
 ///
 /// **Field declaration order is load-bearing.** Rust drops struct fields
 /// in declaration order after [`Drop::drop`] returns. `child` MUST be
-/// declared before `_master` so the child handle drops first and the
+/// declared before `master_holder` so the child handle drops first and the
 /// `PTY` master drops last. On Windows ``ConPTY`` this enforces Microsoft's
 /// `ClosePseudoConsole` contract: the call must follow child exit, not
-/// precede it. See `Self::_master` for the full rationale.
+/// precede it. See `Self::master_holder` for the full rationale.
 pub struct PtySession {
     rx: std::sync::mpsc::Receiver<Vec<u8>>,
     writer: Box<dyn Write + Send>,
@@ -135,7 +135,7 @@ pub struct PtySession {
     /// **Field order matters (see struct doc above).** This field is
     /// declared AFTER `child` so Rust's declaration-order field-drop
     /// sequence runs `child` first (the [`Child`] handle drops, the
-    /// process slot is reaped) and THEN drops `_master` (which calls
+    /// process slot is reaped) and THEN drops `master_holder` (which calls
     /// `ClosePseudoConsole` on a child that has already exited — the
     /// Microsoft-sanctioned ordering). The synchronous
     /// `kill()` + `wait()` inside [`Drop::drop`] ensures the child has
@@ -158,14 +158,14 @@ pub struct PtySession {
     /// not coincidence.
     ///
     /// [docs]: https://learn.microsoft.com/en-us/windows/console/closepseudoconsole
-    _master: Box<dyn MasterPty + Send>,
+    master_holder: Box<dyn MasterPty + Send>,
     /// Process-wide `ConPTY` serialization guard. See
     /// [`CONPTY_LIFETIME_LOCK`] for the rationale. Held for the
     /// entire `PtySession` lifetime so concurrent
     /// `PtySession`-using tests are forced into serial
     /// execution on Windows.
     ///
-    /// Field declared LAST so its drop runs after `_master`'s
+    /// Field declared LAST so its drop runs after `master_holder`'s
     /// drop — the lock is released only after
     /// `ClosePseudoConsole` has fully completed, so the next
     /// test's `spawn` (which acquires the lock) sees a clean
@@ -189,7 +189,7 @@ impl PtySession {
         // field below and dropped only when `PtySession` drops, so
         // concurrent test threads block here until the previous
         // session has fully torn down (including `ClosePseudoConsole`
-        // running through `_master`'s drop).
+        // running through `master_holder`'s drop).
         //
         // Poison recovery: a panicked test inside the session body
         // would poison the mutex on guard drop. We recover via
@@ -252,9 +252,9 @@ impl PtySession {
             // Dropping `pair.master` at function exit would call
             // `ClosePseudoConsole` on a still-running child, violating
             // Microsoft's contract and corrupting the console subsystem
-            // state on Windows. See the `_master` field doc for the
+            // state on Windows. See the `master_holder` field doc for the
             // full rationale.
-            _master: pair.master,
+            master_holder: pair.master,
             #[cfg(windows)]
             _conpty_guard: conpty_guard,
         }
@@ -431,6 +431,30 @@ impl PtySession {
     pub fn size_label(&self) -> String {
         format!("{}x{}", self.cols, self.rows)
     }
+
+    /// Resize the PTY to (`cols`, `rows`). Updates the session's tracked
+    /// dimensions and forwards the resize to the underlying master PTY
+    /// (`MasterPty::resize` at `crates/portable-pty/src/lib.rs:92`).
+    ///
+    /// Used by the resize-mid-output interaction test — calls into the
+    /// underlying portable-pty primitive while the child is still
+    /// writing. On Windows `ConPTY` this propagates the resize to the
+    /// pseudoconsole via `ResizePseudoConsole`.
+    ///
+    /// Regression: BUG-07-050 — resize-mid-output PTY/ConPTY interaction coverage.
+    /// See: bug-tracker/plans/BUG-07-050/00-overview.md
+    pub fn resize(&mut self, cols: u16, rows: u16) -> std::io::Result<()> {
+        self.cols = cols;
+        self.rows = rows;
+        self.master_holder
+            .resize(PtySize {
+                cols,
+                rows,
+                pixel_width: 0,
+                pixel_height: 0,
+            })
+            .map_err(|e| std::io::Error::other(e.to_string()))
+    }
 }
 
 impl Drop for PtySession {
@@ -447,12 +471,12 @@ impl Drop for PtySession {
         // discard it (test teardown doesn't inspect it).
         //
         // **Ordering contract.** This synchronous reap MUST happen
-        // before `_master` drops below (declaration-order field drop
-        // runs `child` before `_master`). On Windows `ConPTY` this
+        // before `master_holder` drops below (declaration-order field drop
+        // runs `child` before `master_holder`). On Windows `ConPTY` this
         // ordering is load-bearing: `ClosePseudoConsole` is called
-        // inside `_master`'s drop chain, and Microsoft's documented
+        // inside `master_holder`'s drop chain, and Microsoft's documented
         // contract is that the call must follow child exit, not
-        // precede it. Dropping `_master` while a child is still alive
+        // precede it. Dropping `master_holder` while a child is still alive
         // leaks console-subsystem DLL state and eventually causes new
         // `cmd.exe` spawns to fail with `STATUS_DLL_INIT_FAILED` or
         // hang inside `WaitForSingleObject`.
