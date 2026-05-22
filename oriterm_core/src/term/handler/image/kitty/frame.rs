@@ -146,7 +146,7 @@ fn build_request(
 }
 
 /// Map `put_frame` errors to kitty reply codes.
-fn emit_error_reply<S: EffectSink>(term: &Term<S>, ctx: KittyReplyContext, err: &ImageError) {
+fn emit_error_reply<S: EffectSink>(term: &mut Term<S>, ctx: KittyReplyContext, err: &ImageError) {
     match err {
         // ENOENT per kitty graphics.c:2233-2235; preserve `,r=` omission so
         // existing `kitty_frame_reply_r_qualifier_omitted_on_missing_image_enoent`

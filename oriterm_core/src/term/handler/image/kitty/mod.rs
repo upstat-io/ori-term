@@ -123,6 +123,13 @@ impl<S: EffectSink> Term<S> {
             cmd.payload.len(),
         );
 
+        // Mint per-command sequence id. kitty_respond reads this via
+        // current_command_seq to route the reply through the sequencer in
+        // command-issue order. Sync arms emit a Ready slot inline; async
+        // arms (Transmit / Frame) push a Pending placeholder + emit
+        // Effect::ImageDecode. Resolved later via apply_decoded_image.
+        let seq = self.next_kitty_seq();
+        self.set_current_command_seq(Some(seq));
         match cmd.action {
             KittyAction::Query => self.kitty_query(&cmd),
             KittyAction::Transmit => self.kitty_transmit(cmd),
@@ -133,6 +140,10 @@ impl<S: EffectSink> Term<S> {
             KittyAction::Animate => self.kitty_animate(&cmd),
             KittyAction::Compose => self.kitty_compose(&cmd),
         }
+        self.set_current_command_seq(None);
+        // Drain ready slots from the sequencer head. Stops at the first
+        // Pending slot (head-of-line blocking until that async resolves).
+        self.flush_pending_replies_mut();
     }
 
     /// Apply a worker-thread decode result onto Term state and emit the
@@ -142,31 +153,33 @@ impl<S: EffectSink> Term<S> {
     /// refactor) ensures replies emit in command-issue order even when async
     /// (worker) and synchronous (Query / Place) commands interleave.
     pub fn apply_decoded_image(
-        &self,
+        &mut self,
         result: crate::image::worker_pipeline::ImageDecodeResult,
     ) {
         use super::super::image::kitty::response::KittyReplyContext;
         use crate::image::worker_pipeline::ImageDecodeError;
-        let reply_msg = match result.decoded {
-            Ok(_decoded) => {
-                // Phase 4 — actual cache mutation + placement application
-                // lands when the sequencer + Term-owned pending-decode mirror
-                // state ship. Current arm preserves the layer-boundary contract:
-                // ImageDecodeError → kitty reply string formatted HERE in
-                // oriterm_core, not in oriterm_mux's effect_router.
-                "OK".to_string()
-            }
-            Err(ImageDecodeError::Reply(msg)) => msg,
-            Err(ImageDecodeError::Panicked { message }) => {
-                format!("EINVAL: internal decode failure: {message}")
-            }
-            Err(ImageDecodeError::EnqueueOverflow) => {
-                "ENOMEM: image decode queue full".to_string()
-            }
-            Err(ImageDecodeError::EnqueueWorkerDead) => {
-                "EINVAL: image worker unavailable".to_string()
-            }
-        };
+        use crate::image::{ImageData, ImageFormat, ImageId};
+        use std::sync::Arc;
+
+        let seq = result.sequence_id;
+        let image_id = result.image_id;
+
+        // Tombstone check: record_decode_applied returns false when the
+        // (image_id, seq) pair was NOT in pending_image_decodes — meaning
+        // Delete cleared the entire image_id entry between enqueue and
+        // apply. Resolve sequencer slot to None (silent advance) and drop
+        // store + placement work.
+        let tombstoned = !self.record_decode_applied(image_id, seq);
+        if tombstoned {
+            self.resolve_pending_reply(seq, None);
+            self.deferred_placements.remove(&image_id);
+            log::debug!("dropped tombstoned decode result image_id={image_id} seq={seq}");
+            return;
+        }
+
+        // Build the kitty reply context from the worker-pipeline shape
+        // (DecodeReplyContext is the cross-crate seam; KittyReplyContext
+        // is the kitty-private form used by kitty_respond's framing).
         let ctx = KittyReplyContext {
             image_id: result.reply_ctx.image_id,
             image_number: result.reply_ctx.image_number,
@@ -174,9 +187,186 @@ impl<S: EffectSink> Term<S> {
             frame_num: result.reply_ctx.frame_num,
             quiet: result.reply_ctx.quiet,
         };
-        self.kitty_respond(&ctx, &reply_msg);
+
+        let reply_effect = match result.decoded {
+            Ok(decoded) => {
+                let decoded_w = decoded.width;
+                let decoded_h = decoded.height;
+                let cell_w = self.cell_pixel_width.max(1) as u32;
+                let cell_h = self.cell_pixel_height.max(1) as u32;
+                let img = ImageData {
+                    id: ImageId(image_id),
+                    width: decoded_w,
+                    height: decoded_h,
+                    data: Arc::new(decoded.rgba_bytes),
+                    pixel_generation: 0,
+                    format: ImageFormat::Rgba,
+                    source: decoded.source,
+                    last_accessed: 0,
+                    image_number: result.reply_ctx.image_number,
+                };
+                let store_result = self.image_cache_mut().store(img);
+                match store_result {
+                    Ok(_) => {
+                        // Apply the placement that came with the request
+                        // (a=T transmit-and-place) if present.
+                        if let Some(params) = result.placement.clone() {
+                            let placement = make_placement_from_params(
+                                ImageId(image_id),
+                                &params,
+                                &DecodedDims {
+                                    img_w: decoded_w,
+                                    img_h: decoded_h,
+                                    cell_w,
+                                    cell_h,
+                                },
+                            );
+                            self.image_cache_mut().place(placement);
+                        }
+                        // Apply any deferred placements (Place commands that
+                        // arrived before the decode completed).
+                        let deferred = self.take_deferred_placements(image_id);
+                        for params in deferred {
+                            let placement = make_placement_from_params(
+                                ImageId(image_id),
+                                &params,
+                                &DecodedDims {
+                                    img_w: decoded_w,
+                                    img_h: decoded_h,
+                                    cell_w,
+                                    cell_h,
+                                },
+                            );
+                            self.image_cache_mut().place(placement);
+                        }
+                        build_reply_effect(&ctx, "OK")
+                    }
+                    Err(e) => {
+                        self.deferred_placements.remove(&image_id);
+                        build_reply_effect(&ctx, &format!("ENOMEM: {e}"))
+                    }
+                }
+            }
+            Err(ImageDecodeError::Reply(msg)) => {
+                self.deferred_placements.remove(&image_id);
+                build_reply_effect(&ctx, &msg)
+            }
+            Err(ImageDecodeError::Panicked { message }) => {
+                self.deferred_placements.remove(&image_id);
+                build_reply_effect(&ctx, &format!("EINVAL: internal decode failure: {message}"))
+            }
+            Err(ImageDecodeError::EnqueueOverflow) => {
+                self.deferred_placements.remove(&image_id);
+                build_reply_effect(&ctx, "ENOMEM: image decode queue full")
+            }
+            Err(ImageDecodeError::EnqueueWorkerDead) => {
+                self.deferred_placements.remove(&image_id);
+                build_reply_effect(&ctx, "EINVAL: image worker unavailable")
+            }
+        };
+
+        // Resolve the sequencer slot with the materialized reply (skip
+        // emission if reply_effect is None — quiet level suppressed it).
+        self.resolve_pending_reply(seq, reply_effect);
+        self.flush_pending_replies_mut();
     }
 
+}
+
+/// Build a kitty reply Effect from a `KittyReplyContext` + message body,
+/// honoring `quiet`. Returns `None` when the reply is suppressed.
+fn build_reply_effect(ctx: &KittyReplyContext, msg: &str) -> Option<crate::effect::Effect> {
+    use crate::effect::{Effect, PtyEffect, PtyWriteKind};
+    use std::fmt::Write as _;
+    if ctx.quiet >= 2 {
+        return None;
+    }
+    if ctx.quiet >= 1 && msg == "OK" {
+        return None;
+    }
+    let head = match (ctx.image_id, ctx.image_number) {
+        (0, Some(n)) => format!("I={n}"),
+        (id, Some(n)) => format!("i={id},I={n}"),
+        (id, None) => format!("i={id}"),
+    };
+    let mut qualifiers = String::new();
+    if let Some(pid) = ctx.placement_id {
+        let _ = write!(qualifiers, ",p={pid}");
+    }
+    if let Some(frame) = ctx.frame_num {
+        let _ = write!(qualifiers, ",r={frame}");
+    }
+    let response = format!("\x1b_G{head}{qualifiers};{msg}\x1b\\");
+    Some(Effect::Pty(PtyEffect::Write {
+        bytes: response.into_bytes(),
+        kind: PtyWriteKind::ImageProtocolReply,
+    }))
+}
+
+/// Decoded-image + cell-pixel dimensions resolved at apply time. Bundles
+/// the four scalars previously passed individually to keep
+/// `make_placement_from_params` under the 5-argument clippy threshold.
+struct DecodedDims {
+    img_w: u32,
+    img_h: u32,
+    cell_w: u32,
+    cell_h: u32,
+}
+
+/// Build an `ImagePlacement` from the worker-pipeline `PlacementParams`.
+/// Resolves cells from `display_cols`/`display_rows` when explicit, or
+/// computes from decoded image dims + cell pixel dims when implicit.
+/// Matches `kitty_create_placement`'s sizing logic so async placements
+/// behave identically to sync placements.
+fn make_placement_from_params(
+    image_id: crate::image::ImageId,
+    params: &crate::image::worker_pipeline::PlacementParams,
+    dims: &DecodedDims,
+) -> crate::image::ImagePlacement {
+    use crate::grid::StableRowIndex;
+    use crate::image::PlacementSizing;
+    let &DecodedDims {
+        img_w,
+        img_h,
+        cell_w,
+        cell_h,
+    } = dims;
+    let explicit_cells = params.display_cols.is_some() || params.display_rows.is_some();
+    let cols = params
+        .display_cols
+        .unwrap_or_else(|| if img_w > 0 { img_w.div_ceil(cell_w) } else { 1 })
+        as usize;
+    let rows = params
+        .display_rows
+        .unwrap_or_else(|| if img_h > 0 { img_h.div_ceil(cell_h) } else { 1 })
+        as usize;
+    let sizing = if explicit_cells {
+        PlacementSizing::CellCount
+    } else {
+        PlacementSizing::FixedPixels {
+            width: cols as u32 * cell_w,
+            height: rows as u32 * cell_h,
+        }
+    };
+    crate::image::ImagePlacement {
+        image_id,
+        placement_id: params.placement_id,
+        source_x: params.source_x,
+        source_y: params.source_y,
+        source_w: params.source_w,
+        source_h: params.source_h,
+        cell_col: params.cursor_col as usize,
+        cell_row: StableRowIndex(u64::from(params.cursor_row)),
+        cols,
+        rows,
+        z_index: params.z_index,
+        cell_x_offset: 0,
+        cell_y_offset: 0,
+        sizing,
+    }
+}
+
+impl<S: EffectSink> Term<S> {
     /// Handle a malformed-base64 chunk: emit EINVAL once per failed upload
     /// and update the per-upload failure latch so subsequent malformed
     /// chunks of the same upload are suppressed. §13.5 EINVAL-flood

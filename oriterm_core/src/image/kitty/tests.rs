@@ -239,6 +239,12 @@ fn source_rect_params() {
 #[derive(Clone, Default)]
 struct RecordingListener {
     events: Arc<Mutex<Vec<String>>>,
+    /// Queue of non-PTY-write effects (e.g. `Effect::ImageDecode`) so the
+    /// test helper `feed` can drain and synchronously simulate the
+    /// IO-thread worker. PTY-write effects also land here so non-PTY
+    /// tests can `drain_into` them, mirroring the production
+    /// `QueueingEffectSink` contract.
+    queued: Arc<Mutex<Vec<Effect>>>,
 }
 
 impl RecordingListener {
@@ -253,13 +259,16 @@ impl RecordingListener {
 
 impl EffectSink for RecordingListener {
     fn push(&self, effect: Effect) {
-        if let Effect::Pty(PtyEffect::Write { bytes, .. }) = effect {
-            let s = String::from_utf8_lossy(&bytes).into_owned();
+        if let Effect::Pty(PtyEffect::Write { ref bytes, .. }) = effect {
+            let s = String::from_utf8_lossy(bytes).into_owned();
             self.events.lock().expect("lock poisoned").push(s);
         }
+        self.queued.lock().expect("lock poisoned").push(effect);
     }
 
-    fn drain_into(&self, _out: &mut Vec<Effect>) {}
+    fn drain_into(&self, out: &mut Vec<Effect>) {
+        out.append(&mut self.queued.lock().expect("lock poisoned"));
+    }
 }
 
 fn term_with_recorder() -> (Term<RecordingListener>, RecordingListener) {
@@ -268,9 +277,20 @@ fn term_with_recorder() -> (Term<RecordingListener>, RecordingListener) {
     (term, recorder)
 }
 
-fn feed(term: &mut impl vte::ansi::Handler, bytes: &[u8]) {
+fn feed<S: EffectSink>(term: &mut Term<S>, bytes: &[u8]) {
     let mut processor: Processor = Processor::new();
     processor.advance(term, bytes);
+    // Simulate the IO-thread ImageWorker inline: any Effect::ImageDecode
+    // emitted by handle_kitty_graphics gets decoded synchronously and
+    // applied back to Term, so cache state is immediately observable.
+    let mut scratch: Vec<Effect> = Vec::new();
+    term.effect_sink().drain_into(&mut scratch);
+    for effect in scratch {
+        if let Effect::ImageDecode(req) = effect {
+            let result = crate::image::worker_pipeline::run_image_decode(req);
+            term.apply_decoded_image(result);
+        }
+    }
 }
 
 /// Build an APC Kitty graphics command: ESC _ G <body> ESC \

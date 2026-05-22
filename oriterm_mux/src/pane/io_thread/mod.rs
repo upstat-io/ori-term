@@ -275,7 +275,7 @@ impl<S: EffectSink> PaneIoThread<S> {
     /// them to `Term`. Called at function entry of both `process_pending_bytes`
     /// and `maybe_produce_snapshot` so the fence guarantees snapshots and
     /// new byte-dispatch both see post-drain cache state.
-    fn drain_worker_results(&self) {
+    fn drain_worker_results(&mut self) {
         for result in self.image_worker.try_drain_results() {
             self.terminal.apply_decoded_image(result);
         }

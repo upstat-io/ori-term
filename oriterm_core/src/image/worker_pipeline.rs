@@ -225,58 +225,16 @@ fn decode_payload(
         max_bytes,
     )
     .map_err(|e| ImageDecodeError::Reply(e.to_string()))?;
-    let (rgba_bytes, decoded_w, decoded_h) = match format {
-        24 => {
-            let expected = (width as usize)
-                .checked_mul(height as usize)
-                .and_then(|wh| wh.checked_mul(3))
-                .ok_or_else(|| ImageDecodeError::Reply("EINVAL: dimension overflow".to_string()))?;
-            if prepared.len() != expected {
-                return Err(ImageDecodeError::Reply(format!(
-                    "EINVAL: f=24 expected {expected} bytes, got {}",
-                    prepared.len()
-                )));
-            }
-            let rgba = rgb_to_rgba(&prepared).ok_or_else(|| {
-                ImageDecodeError::Reply("EINVAL: rgb_to_rgba length mismatch".to_string())
-            })?;
-            (rgba, width, height)
-        }
-        32 => {
-            let expected = (width as usize)
-                .checked_mul(height as usize)
-                .and_then(|wh| wh.checked_mul(4))
-                .ok_or_else(|| ImageDecodeError::Reply("EINVAL: dimension overflow".to_string()))?;
-            if prepared.len() != expected {
-                return Err(ImageDecodeError::Reply(format!(
-                    "EINVAL: f=32 expected {expected} bytes, got {}",
-                    prepared.len()
-                )));
-            }
-            (prepared, width, height)
-        }
-        100 => {
-            #[cfg(feature = "image-protocol")]
-            {
-                let (rgba, w, h) = crate::image::decode::decode_to_rgba(&prepared).map_err(|e| {
-                    ImageDecodeError::Reply(format!("EINVAL: PNG decode failed: {e}"))
-                })?;
-                (rgba, w, h)
-            }
-            #[cfg(not(feature = "image-protocol"))]
-            {
-                let _ = prepared;
-                return Err(ImageDecodeError::Reply(
-                    "EINVAL: PNG decode unavailable without image-protocol feature".to_string(),
-                ));
-            }
-        }
-        other => {
-            return Err(ImageDecodeError::Reply(format!(
-                "EINVAL: unsupported format f={other}"
-            )));
-        }
-    };
+    // Delegate to the canonical synchronous decoder so error message
+    // shapes (e.g. "EINVAL: RGBA payload size N != expected M") stay
+    // single-sourced — both the sync legacy fallback path and the worker
+    // path produce byte-identical replies.
+    let (rgba_bytes, decoded_w, decoded_h) =
+        crate::term::handler::image::kitty::prepare::kitty_decode_pixels(
+            prepared, format, width, height,
+        )
+        .map_err(ImageDecodeError::Reply)?;
+    let _ = &rgb_to_rgba; // suppress unused import; helper used inside kitty_decode_pixels
     Ok(DecodedImage {
         rgba_bytes,
         width: decoded_w,

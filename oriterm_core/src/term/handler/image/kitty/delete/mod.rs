@@ -38,6 +38,14 @@ impl<S: EffectSink> Term<S> {
         // resurrect an image whose placements/data this command will drop.
         self.loading_image = None;
 
+        // Tombstone any pending worker decodes for this image_id (when
+        // the delete targets a specific id). Late-arriving worker results
+        // will be dropped by apply_decoded_image's record_decode_applied
+        // returning false. Drops any deferred placements too.
+        if let Some(image_id) = cmd.image_id {
+            self.clear_pending_decodes_for(image_id);
+        }
+
         let spec = cmd.delete_specifier.unwrap_or(b'a');
         let before_pls = self.image_cache().placement_count();
 

@@ -29,7 +29,7 @@ pub use renderable::{
 };
 pub use shell_state::{Notification, PendingMarks, PromptMarker, PromptState};
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::{BTreeSet, HashMap, VecDeque};
 
 use vte::ansi::KeyboardModes;
 use vte::ansi::cursor_icon::CursorIcon;
@@ -289,6 +289,46 @@ pub struct Term<S: EffectSink> {
     /// `term/src/terminalstate/performer.rs:473-479`). Terminal-global
     /// config — survives RIS / DECSTR / DECSC/DECRC / alt-screen toggle.
     answerback: Vec<u8>,
+    /// Per-`image_id` `sequence_id`s currently enqueued for worker decode.
+    /// `HashMap<image_id, BTreeSet<sequence_id>>` handles N concurrent
+    /// decodes for the same `image_id` without conflation.
+    /// See: bug-tracker/plans/BUG-06-088/section-05-implementation.md
+    pending_image_decodes: HashMap<u32, BTreeSet<u64>>,
+    /// Placements arriving before their Transmit decode completes; applied
+    /// on `apply_decoded_image` alongside `image_cache.store()`.
+    deferred_placements: HashMap<u32, Vec<crate::image::worker_pipeline::PlacementParams>>,
+    /// Monotonically-incrementing sequence id stamped on every kitty
+    /// command at receipt. Drives the reply sequencer so replies emit in
+    /// command-issue order regardless of sync vs async dispatch.
+    kitty_reply_seq: u64,
+    /// Current command's sequence id, set by `handle_kitty_graphics` at
+    /// entry and cleared at exit. `kitty_respond` consults this to route
+    /// the reply through the sequencer; `None` outside handler context
+    /// falls back to direct push (legacy path for `apply_decoded_image`
+    /// drain calls that happen outside `handle_kitty_graphics`).
+    current_command_seq: Option<u64>,
+    /// FIFO queue of replies awaiting flush. `Ready { effect: Some(e) }`
+    /// pushes `e` to the effect sink; `Ready { effect: None }` advances
+    /// silently (tombstone resolution); `Pending` blocks queue head until
+    /// the matching worker result resolves it.
+    pending_replies: VecDeque<PendingReply>,
+}
+
+/// Reply sequencer queue entry.
+#[derive(Debug, Clone)]
+pub enum PendingReply {
+    /// Reply is materialized. `None` = silent tombstone slot;
+    /// `Some(effect)` = ready to push to sink.
+    Ready {
+        seq: u64,
+        effect: Option<crate::effect::Effect>,
+    },
+    /// Async decode is in flight; queue head blocks here until
+    /// `apply_decoded_image` resolves this slot.
+    Pending {
+        seq: u64,
+        image_id: u32,
+    },
 }
 
 impl<S: EffectSink> Term<S> {
@@ -349,6 +389,150 @@ impl<S: EffectSink> Term<S> {
             status_line_type: 0,
             ace_mode: AceMode::default(),
             answerback: Vec::new(),
+            pending_image_decodes: HashMap::new(),
+            deferred_placements: HashMap::new(),
+            kitty_reply_seq: 0,
+            current_command_seq: None,
+            pending_replies: VecDeque::new(),
+        }
+    }
+
+    /// Mint the next kitty command sequence id (monotonically increasing).
+    pub(crate) fn next_kitty_seq(&mut self) -> u64 {
+        let seq = self.kitty_reply_seq;
+        self.kitty_reply_seq = self.kitty_reply_seq.wrapping_add(1);
+        seq
+    }
+
+    /// Set the current command's sequence id; called at `handle_kitty_graphics`
+    /// entry. `kitty_respond` reads this to route through the sequencer.
+    pub(crate) fn set_current_command_seq(&mut self, seq: Option<u64>) {
+        self.current_command_seq = seq;
+    }
+
+    /// Read the current command's sequence id (if inside `handle_kitty_graphics`).
+    pub(crate) fn current_command_seq(&self) -> Option<u64> {
+        self.current_command_seq
+    }
+
+    /// Returns true if any decode is pending for `image_id`.
+    pub(crate) fn has_pending_decode(&self, image_id: u32) -> bool {
+        self.pending_image_decodes
+            .get(&image_id)
+            .is_some_and(|s| !s.is_empty())
+    }
+
+    /// Record that a decode for `(image_id, seq)` has been enqueued.
+    pub(crate) fn record_decode_enqueued(&mut self, image_id: u32, seq: u64) {
+        self.pending_image_decodes
+            .entry(image_id)
+            .or_default()
+            .insert(seq);
+    }
+
+    /// Mark a previously-enqueued decode as applied. Returns `true` if the
+    /// `(image_id, seq)` pair was present (and is now removed); `false` if
+    /// the decode was tombstoned (Delete cleared it before result landed).
+    pub(crate) fn record_decode_applied(&mut self, image_id: u32, seq: u64) -> bool {
+        let removed = self
+            .pending_image_decodes
+            .get_mut(&image_id)
+            .is_some_and(|s| s.remove(&seq));
+        if removed
+            && self
+                .pending_image_decodes
+                .get(&image_id)
+                .is_some_and(BTreeSet::is_empty)
+        {
+            self.pending_image_decodes.remove(&image_id);
+        }
+        removed
+    }
+
+    /// Clear all pending decodes + deferred placements for `image_id`.
+    /// Called by `kitty_delete` so late-arriving worker results are
+    /// dropped via `record_decode_applied` returning `false`.
+    pub(crate) fn clear_pending_decodes_for(&mut self, image_id: u32) {
+        self.pending_image_decodes.remove(&image_id);
+        self.deferred_placements.remove(&image_id);
+    }
+
+    /// Stash a placement for an image whose decode is still pending. Applied
+    /// on `apply_decoded_image` alongside the store.
+    pub(crate) fn stash_deferred_placement(
+        &mut self,
+        image_id: u32,
+        params: crate::image::worker_pipeline::PlacementParams,
+    ) {
+        self.deferred_placements
+            .entry(image_id)
+            .or_default()
+            .push(params);
+    }
+
+    /// Take all deferred placements for `image_id`. Called by
+    /// `apply_decoded_image` after the decode lands.
+    pub(crate) fn take_deferred_placements(
+        &mut self,
+        image_id: u32,
+    ) -> Vec<crate::image::worker_pipeline::PlacementParams> {
+        self.deferred_placements
+            .remove(&image_id)
+            .unwrap_or_default()
+    }
+
+    /// Push a reply effect to the sequencer as ready-to-flush.
+    pub(crate) fn push_ready_reply(&mut self, seq: u64, effect: crate::effect::Effect) {
+        self.pending_replies.push_back(PendingReply::Ready {
+            seq,
+            effect: Some(effect),
+        });
+    }
+
+    /// Push a placeholder slot for an async decode. Resolved later by
+    /// `apply_decoded_image` via `resolve_pending_reply`.
+    pub(crate) fn push_pending_reply(&mut self, seq: u64, image_id: u32) {
+        self.pending_replies
+            .push_back(PendingReply::Pending { seq, image_id });
+    }
+
+    /// Resolve a previously-pushed `Pending` slot with the materialized
+    /// reply effect (`Some(effect)` to push, `None` to silently drop —
+    /// tombstone path).
+    pub(crate) fn resolve_pending_reply(
+        &mut self,
+        seq: u64,
+        effect: Option<crate::effect::Effect>,
+    ) {
+        for slot in &mut self.pending_replies {
+            if let PendingReply::Pending {
+                seq: pending_seq, ..
+            } = slot
+                && *pending_seq == seq
+            {
+                *slot = PendingReply::Ready { seq, effect };
+                return;
+            }
+        }
+        debug_assert!(
+            false,
+            "resolve_pending_reply: no Pending slot for seq={seq} — sequencer drift"
+        );
+    }
+
+    /// Drain head-of-queue `Ready` slots, pushing each effect to the sink
+    /// (or skipping `None` tombstones). Stops at the first `Pending` slot.
+    pub(crate) fn flush_pending_replies_mut(&mut self) {
+        while let Some(slot) = self.pending_replies.front() {
+            match slot {
+                PendingReply::Ready { effect, .. } => {
+                    if let Some(eff) = effect.clone() {
+                        self.effect_sink.push(eff);
+                    }
+                    self.pending_replies.pop_front();
+                }
+                PendingReply::Pending { .. } => break,
+            }
         }
     }
 
