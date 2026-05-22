@@ -7,34 +7,25 @@ use std::sync::Arc;
 use std::os::unix::fs::OpenOptionsExt;
 
 use crate::effect::sink::EffectSink;
-use crate::image::kitty::{KittyError, KittyTransmission};
+use crate::image::kitty::KittyTransmission;
 use crate::image::{ImageData, ImageId, ImageSource, decode_to_rgba, rgb_to_rgba};
 use crate::term::Term;
 
 use super::KittyStoreParams;
+use super::prepare::prepare_image_bytes;
 
-/// Error from `kitty_store_image` / `kitty_store_from_file`. `Protocol`
-/// wraps a parser-layer `KittyError` and renders as `EINVAL: <variant text>`
-/// via Display delegation. `Reply` carries store-specific stringly-typed
-/// reply text (EBADF, EBIG, EIO, ENOMEM, EINVAL-shaped strings produced
-/// inside the store layer).
+/// Error from `kitty_store_image` / `kitty_store_from_file`. `Reply`
+/// carries store-specific stringly-typed reply text (EBADF, EBIG, EIO,
+/// ENOMEM, EINVAL-shaped strings produced inside the store layer).
 #[derive(Debug)]
 pub(super) enum KittyStoreError {
-    /// Typed parser-layer protocol error; store layer prepends the EINVAL
-    /// reply prefix via Display.
-    Protocol(KittyError),
-    /// Store-specific stringly-typed reply text.
+    /// Store-layer stringly-typed reply text.
     Reply(String),
 }
 
 impl std::fmt::Display for KittyStoreError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            // Delegate variant text to KittyError's Display and prepend the
-            // kitty-protocol reply prefix at the store boundary.
-            // `CompressionNotSupported` renders byte-stream-pinned reply
-            // `EINVAL: compression not supported` per `KG-COMPRESSION-OZ-REJECTED`.
-            Self::Protocol(e) => write!(f, "EINVAL: {e}"),
             Self::Reply(s) => f.write_str(s),
         }
     }
@@ -67,6 +58,30 @@ impl Drop for TempFileGuard<'_> {
     }
 }
 
+/// Pre-compute the expected post-decode payload size for raw-pixel formats
+/// (`f=32` → `w*h*4`, `f=24` → `w*h*3`). Returns `None` for `f=100` (PNG)
+/// and any other format where the decoded size is not derivable from the
+/// `s=`/`v=` control fields up front; the caller's `max_bytes` then bounds
+/// the helper's output. Overflow saturates to `usize::MAX` so the helper's
+/// own cap clamp handles oversized requests with `EBIG`.
+pub(super) fn expected_decoded_size_for_format(
+    format: u32,
+    width: u32,
+    height: u32,
+) -> Option<usize> {
+    let channels: usize = match format {
+        24 => 3,
+        32 => 4,
+        _ => return None,
+    };
+    Some(
+        (width as usize)
+            .checked_mul(height as usize)
+            .and_then(|wh| wh.checked_mul(channels))
+            .unwrap_or(usize::MAX),
+    )
+}
+
 /// Open `path` with `O_NONBLOCK` on Unix, fstat the OPENED descriptor, and
 /// reject non-regular files (FIFO, socket, char-device, dir, Windows
 /// reparse-point that doesn't resolve to a regular file). The returned
@@ -94,14 +109,6 @@ fn open_regular_file(path: &std::path::Path) -> Result<(std::fs::File, std::fs::
 impl<S: EffectSink> Term<S> {
     /// Decode and store image data in the cache.
     pub(super) fn kitty_store_image(&mut self, p: KittyStoreParams) -> Result<(), KittyStoreError> {
-        // Fail-closed reject for `o=z`: ori_term does not implement zlib
-        // decompression. Catalog row `KG-COMPRESSION-OZ-REJECTED`.
-        if p.compression == Some(b'z') {
-            return Err(KittyStoreError::Protocol(
-                KittyError::CompressionNotSupported,
-            ));
-        }
-
         let (pixel_data, source) = match p.transmission {
             KittyTransmission::Direct => (p.payload, ImageSource::Direct),
             KittyTransmission::File | KittyTransmission::TempFile => {
@@ -114,6 +121,10 @@ impl<S: EffectSink> Term<S> {
             }
         };
 
+        let expected_size = expected_decoded_size_for_format(p.format, p.width, p.height);
+        let max_bytes = self.image_cache().max_single_image_bytes();
+        let pixel_data = prepare_image_bytes(pixel_data, p.compression, expected_size, max_bytes)?;
+
         let (rgba_data, w, h) = Self::kitty_decode_pixels(pixel_data, p.format, p.width, p.height)
             .map_err(KittyStoreError::Reply)?;
 
@@ -122,6 +133,7 @@ impl<S: EffectSink> Term<S> {
             width: w,
             height: h,
             data: Arc::new(rgba_data),
+            pixel_generation: 0,
             format: crate::image::ImageFormat::Rgba,
             source,
             last_accessed: 0,
@@ -266,6 +278,9 @@ impl<S: EffectSink> Term<S> {
             ));
         }
 
+        let expected_size = expected_decoded_size_for_format(p.format, p.width, p.height);
+        let file_data = prepare_image_bytes(file_data, p.compression, expected_size, max_bytes)?;
+
         let source = ImageSource::File(path.to_path_buf());
 
         let (rgba_data, w, h) = if p.format == 24 || p.format == 32 {
@@ -281,6 +296,7 @@ impl<S: EffectSink> Term<S> {
             width: w,
             height: h,
             data: Arc::new(rgba_data),
+            pixel_generation: 0,
             format: crate::image::ImageFormat::Rgba,
             source,
             last_accessed: 0,

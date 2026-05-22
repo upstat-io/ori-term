@@ -1174,11 +1174,11 @@ fn hover_transition_sends_leave_to_old_overlay() {
         None,
     );
     assert!(matches!(
-        result,
-        OverlayEventResult::Delivered {
-            overlay_id,
-            ..
-        } if overlay_id == id_a
+    result,
+    OverlayEventResult::Delivered {
+    overlay_id,
+    ..
+    } if overlay_id == id_a
     ));
 
     // Hover into overlay B — should send Leave to A internally.
@@ -1189,11 +1189,11 @@ fn hover_transition_sends_leave_to_old_overlay() {
         None,
     );
     assert!(matches!(
-        result,
-        OverlayEventResult::Delivered {
-            overlay_id,
-            ..
-        } if overlay_id == id_b
+    result,
+    OverlayEventResult::Delivered {
+    overlay_id,
+    ..
+    } if overlay_id == id_b
     ));
 
     // Hover outside both — should clear tracking.
@@ -2338,12 +2338,9 @@ fn modal_dim_rect_opacity_tracks_dim_layer() {
 // focus toggle lives. The gate routes FocusNext/FocusPrev through the
 // legacy `process_key_event` so `on_input` continues to receive Tab.
 
-/// Regression: BUG-03-003 R1-F1 — FocusNext/FocusPrev fall-through gate at
+/// Regression: R1-F1 — FocusNext/FocusPrev fall-through gate at
 /// `oriterm_ui/src/overlay/manager/key_dispatch.rs:221`. Replaced bespoke
 /// FocusFallthroughProbe with shared `oriterm_ui::testing::RecordingWidget`.
-///
-/// See: bug-tracker/plans/completed/BUG-07-023/00-overview.md
-///
 /// Pins: Tab on a modal overlay reaches `on_input` via the FocusNext
 /// fall-through gate (without it, Tab would be silently consumed by
 /// `dispatch_keymap_action`).
@@ -2389,16 +2386,13 @@ fn tab_on_overlay_falls_through_to_on_input_via_focus_gate() {
         events.count_keydowns(),
         1,
         "Tab MUST reach widget.on_input via the FocusNext fall-through gate \
-         (key_dispatch.rs:221). 0 KeyDowns means the gate was removed and Tab \
-         was silently swallowed by dispatch_keymap_action.",
+ (key_dispatch.rs:221). 0 KeyDowns means the gate was removed and Tab \
+ was silently swallowed by dispatch_keymap_action.",
     );
 }
 
-/// Regression: BUG-03-003 R1-F1 (FocusPrev branch). Migrated to shared
+/// Regression: R1-F1 (FocusPrev branch). Migrated to shared
 /// RecordingWidget helper.
-///
-/// See: bug-tracker/plans/completed/BUG-07-023/00-overview.md
-///
 /// Pins: Shift+Tab on a modal overlay reaches `on_input` via the FocusPrev
 /// fall-through gate. Pairs with the FocusNext test as a symmetric peer.
 #[test]
@@ -2447,15 +2441,12 @@ fn shift_tab_on_overlay_falls_through_to_on_input_via_focus_gate() {
         events.count_keydowns(),
         1,
         "Shift+Tab MUST reach widget.on_input via the FocusPrev fall-through \
-         gate (key_dispatch.rs:221). 0 KeyDowns means the gate was removed.",
+ gate (key_dispatch.rs:221). 0 KeyDowns means the gate was removed.",
     );
 }
 
-/// Regression: BUG-03-003 R1-F1 — runtime no-override pin. Migrated to
+/// Regression: R1-F1 — runtime no-override pin. Migrated to
 /// shared RecordingWidget helper.
-///
-/// See: bug-tracker/plans/completed/BUG-07-023/00-overview.md
-///
 /// Pins: `<RecordingWidget as Widget>::handle_keymap_action(...)` returns
 /// `None` at runtime via the trait default. Pairs with the structural
 /// source-grep pin in `testing/tests.rs::recording_widget_source_does_not_
@@ -2471,7 +2462,7 @@ fn recording_widget_handle_keymap_action_returns_none() {
     assert!(
         result.is_none(),
         "RecordingWidget must NOT impl handle_keymap_action — the FocusNext \
-         fall-through gate exists precisely because widgets without this \
-         impl would otherwise see Tab silently consumed.",
+ fall-through gate exists precisely because widgets without this \
+ impl would otherwise see Tab silently consumed.",
     );
 }

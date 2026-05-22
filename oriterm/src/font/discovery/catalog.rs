@@ -4,7 +4,7 @@
 //! used by the resolution-bridge, and the test/bench seam
 //! [`enumerate_mono_families_from_roots()`]. Extracted from `mod.rs` to keep
 //! that file under the 500-line size limit (closes Round 1 F4 +
-//! F1 BLOAT findings — `bug-tracker/plans//section-06-tpr-findings.md`).
+//! F1 BLOAT findings — ).
 
 use std::collections::HashMap;
 use std::sync::OnceLock;
@@ -26,7 +26,6 @@ use std::path::PathBuf;
 /// the cached `OnceLock`. Powers the searchable font-family dropdown in the
 /// settings overlay and bridges enumerated family names back to file paths
 /// via [`family_paths`].
-///
 /// On Linux/macOS the catalog is built by walking standard font directories,
 /// memory-mapping each candidate file, and parsing the `OpenType` `name` /
 /// `OS/2` / `head` / `post` tables via `skrifa`. On Windows the catalog is
@@ -51,12 +50,10 @@ pub fn enumerate_mono_families() -> &'static [FamilyEntry] {
 }
 
 /// Force the monospace family catalog to populate.
-///
 /// One-shot helper for the post-first-render prewarm path: kicks the same
 /// `OnceLock::get_or_init` that any later [`enumerate_mono_families`] call
 /// would, so the first Settings dialog open finds a hot cache and does not
 /// stall the UI thread on platform font enumeration.
-///
 /// Idempotent — safe to call from any thread, before or after
 /// [`enumerate_mono_families`] has been called elsewhere.
 pub(crate) fn prewarm_catalog() {
@@ -64,7 +61,6 @@ pub(crate) fn prewarm_catalog() {
 }
 
 /// Resolve an enumerated family name to its `(paths, face_indices)` slot pair.
-///
 /// Used by `try_user_family` on each platform as the bridge between an
 /// `OpenType`-name-table family name (e.g. `"JetBrains Mono"`) and the actual
 /// file paths discovered during enumeration. Returns `None` if the family was

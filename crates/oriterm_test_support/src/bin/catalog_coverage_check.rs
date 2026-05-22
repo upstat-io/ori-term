@@ -6,7 +6,7 @@
 //! - `0` — success.
 //! - `1` — one or more findings; also emitted on io / parse errors.
 //!
-//! See `plans/spec-conformance/section-01-catalog-bootstrap.md §01.3.a`
+//! See §01.3.a
 //! for the full subcommand surface.
 
 use std::path::PathBuf;
@@ -41,7 +41,7 @@ fn resolve_captures_dir(cli_arg: Option<PathBuf>) -> Option<PathBuf> {
 fn skip_no_wrapper(arg_name: &str, command_name: &str) -> ExitCode {
     eprintln!(
         "SKIP: {command_name} — wrapper repo not discoverable from {} \
-         (standalone term_repo checkout — pass {arg_name} explicitly to override)",
+ (standalone term_repo checkout — pass {arg_name} explicitly to override)",
         env!("CARGO_MANIFEST_DIR"),
     );
     ExitCode::SUCCESS
@@ -392,7 +392,7 @@ fn run_capture_top10_covered(
             top10.len()
         );
         for (tuple, count) in &missing {
-            eprintln!("  {count}\t{tuple}");
+            eprintln!(" {count}\t{tuple}");
         }
         ExitCode::from(1)
     }

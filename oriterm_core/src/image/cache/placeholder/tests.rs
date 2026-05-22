@@ -19,6 +19,7 @@ fn make_image(id: u32, bytes: usize) -> ImageData {
         width: 100,
         height: 100,
         data: Arc::new(vec![0u8; bytes]),
+        pixel_generation: 0,
         format: ImageFormat::Rgba,
         source: ImageSource::Direct,
         last_accessed: 0,
@@ -192,7 +193,7 @@ fn reconcile_placeholder_anchors_drops_grid_for_evicted_ids() {
         cache.placeholder_anchor_grid_for(ImageId(1)),
         None,
         "grid for evicted image_id=1 must drop alongside the anchor — \
-         stale grid entries are a LEAK:scattered-knowledge regression"
+         stale grid entries are a scattered-knowledge leak"
     );
     assert!(cache.placeholder_anchors().contains(&ImageId(2)));
     assert_eq!(cache.placeholder_anchor_grid_for(ImageId(2)), Some((5, 1)));

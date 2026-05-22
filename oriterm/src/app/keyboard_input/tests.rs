@@ -461,7 +461,6 @@ fn pty_input_redraws_without_a_cached_snapshot() {
 
 /// Verify that bound key combos are intercepted by the keybinding table
 /// before reaching PTY encoding.
-///
 /// In `handle_keyboard_input`, bindings are checked (via `find_binding`)
 /// before `encode_key_to_pty`. When a binding is found and `execute_action`
 /// returns `true`, the method returns early — PTY encoding is never reached.
@@ -513,12 +512,10 @@ fn binding_takes_priority_over_pty_send() {
 
 /// Verify that Ctrl+C uses SmartCopy, which conditionally falls through
 /// to PTY encoding when no selection exists.
-///
 /// Dispatch path with no selection:
 /// find_binding(Ctrl+C) → SmartCopy
 /// → execute_action(SmartCopy) returns false (no selection)
 /// → encode_key_to_pty(Ctrl+C) → sends \x03 (ETX/SIGINT)
-///
 /// Dispatch path with selection:
 /// find_binding(Ctrl+C) → SmartCopy
 /// → execute_action(SmartCopy) copies + returns true (event consumed)
@@ -579,7 +576,6 @@ fn ctrl_c_smart_copy_falls_through_to_pty_without_selection() {
 /// when mux/cursor/snapshot was None during mark mode. The pure decision
 /// predicate `mark_mode_should_exit` returns false ONLY when all three
 /// resources are present, so the caller proceeds into mark-mode dispatch.
-/// See: bug-tracker/plans//00-overview.md
 #[test]
 fn mark_mode_exit_decision_with_all_resources_present_returns_false() {
     let resources = MarkModeResources {
@@ -597,7 +593,6 @@ fn mark_mode_exit_decision_with_all_resources_present_returns_false() {
 /// bug returned `true` (silent swallow) at `mod.rs:177`; the fix routes
 /// through `mark_mode_should_exit → true → caller exits mark mode +
 /// returns false → keystroke flows to keybinding then PTY`.
-/// See: bug-tracker/plans//00-overview.md
 #[test]
 fn mark_mode_exit_decision_with_mux_missing_returns_true() {
     let resources = MarkModeResources {
@@ -614,7 +609,6 @@ fn mark_mode_exit_decision_with_mux_missing_returns_true() {
 /// Regression: pins the cursor-None recovery path. The
 /// original bug returned `true` (silent swallow) at `mod.rs:183`; the fix
 /// routes the keystroke through normal dispatch instead.
-/// See: bug-tracker/plans//00-overview.md
 #[test]
 fn mark_mode_exit_decision_with_cursor_missing_returns_true() {
     let resources = MarkModeResources {
@@ -631,7 +625,6 @@ fn mark_mode_exit_decision_with_cursor_missing_returns_true() {
 /// Regression: pins the snapshot-None recovery path. The
 /// original bug returned `true` (silent swallow) at `mod.rs:189`; the fix
 /// routes the keystroke through normal dispatch instead.
-/// See: bug-tracker/plans//00-overview.md
 #[test]
 fn mark_mode_exit_decision_with_snapshot_missing_returns_true() {
     let resources = MarkModeResources {
@@ -651,7 +644,6 @@ fn mark_mode_exit_decision_with_snapshot_missing_returns_true() {
 /// while the other 7 return true. The `count == 8` assertion proves no
 /// cells were skipped per `tests.md §Matrix Testing Rule` self-verifying
 /// completeness pattern.
-/// See: bug-tracker/plans//00-overview.md
 #[test]
 fn mark_mode_exit_decision_truth_table_complete() {
     let mut count = 0;
@@ -686,12 +678,9 @@ fn mark_mode_exit_decision_truth_table_complete() {
 }
 
 // --- Mark-mode dispatch chain () ---
-//
 // Pins the wiring between gate decision, pre-handler refresh, pure handler
 // dispatch, and post-handler state mutations. Replaces the
 // helper-test-only coverage of `mark_mode_should_exit`.
-//
-// See: bug-tracker/plans//00-overview.md.
 
 /// Distinguishable record of every `MarkModeSink` method invocation. Stored
 /// in `RecordingSink::call_log` (RefCell — &self query methods record too).
@@ -743,7 +732,6 @@ enum MethodCall {
 /// too) and lets each test configure resource presence + the dispatch
 /// result. All call accounting is derived from `call_log` via the query
 /// methods on `impl RecordingSink`; no parallel counter fields per
-///.
 #[derive(Default)]
 struct RecordingSink {
     cursor_for_pane: HashMap<PaneId, MarkCursor>,
@@ -757,7 +745,6 @@ struct RecordingSink {
 
 impl RecordingSink {
     // ── Query methods (all derive from `call_log` — single SSOT) ────────
-    //
     // Every accounting helper iterates `call_log.borrow()` to count or
     // collect call sites. Adding a new helper means filtering on a new
     // `MethodCall` variant, NOT adding a parallel counter field.
@@ -1050,14 +1037,11 @@ fn dispatch_with(sink: &mut RecordingSink, cell: DispatchCell) -> bool {
 
 /// PIN 1 — Pressed event 16-cell truth table over
 /// `(mux_present, cursor_present, snapshot_present) × event_repeat`.
-///
 /// Pins that the missing-resource recovery path returns false (forwards to
 /// PTY) for every cell where any required resource is absent, and that
 /// dispatch proceeds (returns true + key handler runs + mark_dirty fires)
 /// for both `event_repeat = false` AND `event_repeat = true` when all
 /// resources are present — proving repeat orthogonality.
-///
-/// See: bug-tracker/plans//section-03-tdd-matrix.md (Pin 1).
 #[test]
 fn dispatch_mark_mode_pressed_truth_table_pins_exit_on_missing_resource() {
     let pane_id = make_pane_id();
@@ -1140,8 +1124,6 @@ fn dispatch_mark_mode_pressed_truth_table_pins_exit_on_missing_resource() {
 
 /// PIN 2 — Released event consumes regardless of resources. The Pressed-only
 /// branch in `dispatch_mark_mode` never queries resources for Released events.
-///
-/// See: bug-tracker/plans//section-03-tdd-matrix.md (Pin 2).
 #[test]
 fn dispatch_mark_mode_released_event_consumes_regardless_of_resources() {
     let pane_id = make_pane_id();
@@ -1216,8 +1198,6 @@ fn dispatch_mark_mode_released_event_consumes_regardless_of_resources() {
 
 /// PIN 3 — Mark mode inactive: passthrough returns false without ANY sink
 /// query or mutation. Pins the early `if !mark_mode_active { return false; }`.
-///
-/// See: bug-tracker/plans//section-03-tdd-matrix.md (Pin 3).
 #[test]
 fn dispatch_mark_mode_inactive_returns_false_without_side_effects() {
     let pane_id = make_pane_id();
@@ -1288,8 +1268,6 @@ fn dispatch_mark_mode_inactive_returns_false_without_side_effects() {
 /// PIN 4 — No active pane: returns false short-circuiting before any sink
 /// method is called. The `let Some(pane_id) = input.active_pane_id else
 /// return false` exit fires before reaching `mark_mode_active` check.
-///
-/// See: bug-tracker/plans//section-03-tdd-matrix.md (Pin 4).
 #[test]
 fn dispatch_mark_mode_no_active_pane_returns_false_without_side_effects() {
     let mut cell_count = 0;
@@ -1328,8 +1306,6 @@ fn dispatch_mark_mode_no_active_pane_returns_false_without_side_effects() {
 
 /// PIN 5 — `MarkAction::Handled { scroll_delta: Some(d) }` calls
 /// `scroll_display(pane_id, d)`.
-///
-/// See: bug-tracker/plans//section-03-tdd-matrix.md (Pin 5).
 #[test]
 fn dispatch_mark_mode_handled_with_scroll_delta_calls_scroll_display() {
     let pane_id = make_pane_id();
@@ -1362,8 +1338,6 @@ fn dispatch_mark_mode_handled_with_scroll_delta_calls_scroll_display() {
 
 /// PIN 6 — `MarkAction::Handled { scroll_delta: None }` skips
 /// `scroll_display`. Pins the `if let Some(delta)` guard.
-///
-/// See: bug-tracker/plans//section-03-tdd-matrix.md (Pin 6).
 #[test]
 fn dispatch_mark_mode_handled_without_scroll_delta_skips_scroll_display() {
     let pane_id = make_pane_id();
@@ -1390,8 +1364,6 @@ fn dispatch_mark_mode_handled_without_scroll_delta_skips_scroll_display() {
 
 /// PIN 7 — `MarkAction::Exit { copy: true }` calls both `exit_mark_mode`
 /// and `copy_selection`.
-///
-/// See: bug-tracker/plans//section-03-tdd-matrix.md (Pin 7).
 #[test]
 fn dispatch_mark_mode_exit_with_copy_calls_exit_mark_mode_and_copy_selection() {
     let pane_id = make_pane_id();
@@ -1422,8 +1394,6 @@ fn dispatch_mark_mode_exit_with_copy_calls_exit_mark_mode_and_copy_selection() {
 }
 
 /// PIN 8 — `MarkAction::Exit { copy: false }` calls `exit_mark_mode` only.
-///
-/// See: bug-tracker/plans//section-03-tdd-matrix.md (Pin 8).
 #[test]
 fn dispatch_mark_mode_exit_without_copy_calls_exit_mark_mode_only() {
     let pane_id = make_pane_id();
@@ -1454,8 +1424,6 @@ fn dispatch_mark_mode_exit_without_copy_calls_exit_mark_mode_only() {
 }
 
 /// PIN 9 — `MarkAction::Ignored` only fires `mark_dirty`.
-///
-/// See: bug-tracker/plans//section-03-tdd-matrix.md (Pin 9).
 #[test]
 fn dispatch_mark_mode_ignored_action_only_marks_dirty() {
     let pane_id = make_pane_id();
@@ -1487,8 +1455,6 @@ fn dispatch_mark_mode_ignored_action_only_marks_dirty() {
 }
 
 /// PIN 10 — `result.new_cursor = Some(c)` calls `set_mark_cursor(pane, c)`.
-///
-/// See: bug-tracker/plans//section-03-tdd-matrix.md (Pin 10).
 #[test]
 fn dispatch_mark_mode_with_new_cursor_calls_set_mark_cursor() {
     let pane_id = make_pane_id();
@@ -1520,8 +1486,6 @@ fn dispatch_mark_mode_with_new_cursor_calls_set_mark_cursor() {
 }
 
 /// PIN 11 — `result.new_cursor = None` skips `set_mark_cursor`.
-///
-/// See: bug-tracker/plans//section-03-tdd-matrix.md (Pin 11).
 #[test]
 fn dispatch_mark_mode_without_new_cursor_skips_set_mark_cursor() {
     let pane_id = make_pane_id();
@@ -1545,8 +1509,6 @@ fn dispatch_mark_mode_without_new_cursor_skips_set_mark_cursor() {
 }
 
 /// PIN 12 — `SelectionUpdate::Set(s)` calls `set_pane_selection(pane, s)`.
-///
-/// See: bug-tracker/plans//section-03-tdd-matrix.md (Pin 12).
 #[test]
 fn dispatch_mark_mode_with_selection_set_calls_set_pane_selection() {
     let pane_id = make_pane_id();
@@ -1576,8 +1538,6 @@ fn dispatch_mark_mode_with_selection_set_calls_set_pane_selection() {
 }
 
 /// PIN 13 — `SelectionUpdate::Clear` calls `clear_pane_selection(pane)`.
-///
-/// See: bug-tracker/plans//section-03-tdd-matrix.md (Pin 13).
 #[test]
 fn dispatch_mark_mode_with_selection_clear_calls_clear_pane_selection() {
     let pane_id = make_pane_id();
@@ -1607,8 +1567,6 @@ fn dispatch_mark_mode_with_selection_clear_calls_clear_pane_selection() {
 
 /// PIN 13B — `result.new_selection = None` skips both selection mutations.
 /// Pins the outer-Some guard around the SelectionUpdate match.
-///
-/// See: bug-tracker/plans//section-03-tdd-matrix.md (Pin 13B).
 #[test]
 fn dispatch_mark_mode_with_selection_none_skips_set_and_clear() {
     let pane_id = make_pane_id();
@@ -1635,8 +1593,6 @@ fn dispatch_mark_mode_with_selection_none_skips_set_and_clear() {
 /// PIN 14a — Snapshot refresh strictly precedes the resource query. Pins
 /// that a stale-snapshot cycle gets a chance to refill before being
 /// declared missing.
-///
-/// See: bug-tracker/plans//section-03-tdd-matrix.md (Pin 14).
 #[test]
 fn dispatch_mark_mode_pressed_refreshes_snapshot_before_mark_mode_resources_query() {
     let pane_id = make_pane_id();
@@ -1685,8 +1641,6 @@ fn dispatch_mark_mode_pressed_refreshes_snapshot_before_mark_mode_resources_quer
 
 /// PIN 14b — Refresh promoting an absent snapshot to present allows
 /// dispatch to proceed. Pins that refresh ordering matters semantically.
-///
-/// See: bug-tracker/plans//section-03-tdd-matrix.md (Pin 14).
 #[test]
 fn dispatch_mark_mode_pressed_refresh_can_promote_snapshot_present() {
     let pane_id = make_pane_id();
@@ -1717,9 +1671,7 @@ fn dispatch_mark_mode_pressed_refresh_can_promote_snapshot_present() {
 /// keystroke. The combination `return false AND exit_mark_mode called` IS
 /// the contract; a regression that returns true would cause the
 /// caller's `if x { return; }` to swallow the keystroke.
-///
-/// See: bug-tracker/plans//section-03-tdd-matrix.md (Pin 15).
-/// Anti-regression for: bug-tracker/plans/completed/.
+/// Anti-regression for:
 #[test]
 fn dispatch_mark_mode_missing_mux_does_not_silently_consume_keystroke() {
     let pane_id = make_pane_id();
@@ -1765,8 +1717,6 @@ fn dispatch_mark_mode_missing_mux_does_not_silently_consume_keystroke() {
 /// (CONTROL | SHIFT) so a regression that drops modifiers would fail —
 /// passing `ModifiersState::empty()` would produce a tautological in==out
 /// match.
-///
-/// See: bug-tracker/plans//section-03-tdd-matrix.md (Pin 16).
 #[test]
 fn dispatch_mark_mode_propagates_args_to_dispatch_mark_mode_key() {
     let pane_id = make_pane_id();
@@ -1810,8 +1760,6 @@ fn dispatch_mark_mode_propagates_args_to_dispatch_mark_mode_key() {
 
 /// PIN 16b — `Option<Selection> = None` propagates correctly. Companion
 /// to PIN 16a; pins that absence flows through the dispatch chain.
-///
-/// See: bug-tracker/plans//section-03-tdd-matrix.md (Pin 16).
 #[test]
 fn dispatch_mark_mode_propagates_none_selection() {
     let pane_id = make_pane_id();
@@ -1840,7 +1788,7 @@ fn dispatch_mark_mode_propagates_none_selection() {
 
 // ── preedit_revision tracking ────────────────────────────────────
 
-/// Regression: BUG-06-054 / BUG-06-053 — multi-pane render cache needs
+/// Regression: / — multi-pane render cache needs
 /// per-preedit-mutation invalidation. Single-pane cache uses `dirty`
 /// + per-row dirty tracking; multi-pane needs a monotonic revision
 /// counter on `ImeState` so the focused-pane damage_key changes when

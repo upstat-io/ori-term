@@ -3,7 +3,7 @@
 //! Owns only the platform-specific bit — `font_dirs()`. Enumeration, parsing,
 //! grouping, the resolution-bridge logic, the platform-default fallback walk,
 //! and the user-fallback resolver all live in the shared `super::unix` module
-//! per `LEAK:algorithmic-duplication` SSOT discipline. Future enhancement:
+//! per `` SSOT discipline. Future enhancement:
 //! `CoreText` `CTFontCreateWithName` API for better matching.
 
 use std::collections::HashMap;
@@ -12,7 +12,6 @@ use std::path::PathBuf;
 use super::{DiscoveryResult, FallbackDiscovery, FamilyEntry};
 
 /// Standard font directories on macOS, in priority order.
-///
 /// User fonts take precedence, then system-wide, then Apple system fonts.
 pub(super) fn font_dirs() -> Vec<PathBuf> {
     let mut dirs = Vec::with_capacity(4);

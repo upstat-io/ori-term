@@ -21,7 +21,6 @@ fn tool_available_returns_false_when_binary_spawns_but_exits_nonzero() {
     // that launches but reports failure (wrong flag, missing
     // terminfo path, broken install) is NOT available — it would
     // slip past the skip gate and panic downstream instead.
-    //
     // Pre-fix, this function used `Command::status().is_ok()`
     // which only tested whether the spawn syscall succeeded.
     // The fix tightens to also check `status.success()`. This
@@ -35,8 +34,8 @@ fn tool_available_returns_false_when_binary_spawns_but_exits_nonzero() {
     assert!(
         !result,
         "tool_available must reject a probe that spawns but exits non-zero \
-         (regression — only checking Command::status().is_ok() \
-         and missing the status.success() check)"
+ (regression — only checking Command::status().is_ok() \
+ and missing the status.success() check)"
     );
 }
 
@@ -59,7 +58,6 @@ fn vttest_available_pinned_to_capital_v_probe_via_direct_spawn() {
     // `vttest -V` spawn — independent ground truth, decoupled from
     // `tool_available`. Mirrors `tack_available_pinned_to_h_probe_via_direct_spawn`
     // and closes the regression vector.
-    //
     // Why a separate test from `vttest_available_matches_tool_available`:
     // the existing test compares both sides against `tool_available("vttest", "-V")`,
     // so on a host WITHOUT vttest both sides return false and the
@@ -68,14 +66,12 @@ fn vttest_available_pinned_to_capital_v_probe_via_direct_spawn() {
     // test spawns `vttest -V` DIRECTLY (not through `tool_available`)
     // so the truth source cannot co-vary with any future
     // `tool_available` change.
-    //
     // ALSO: when both `vttest -V` succeeds AND `vttest --help` fails
     // (the empirical reality on every dev/CI host), the test asserts
     // `vttest_available()` returns true even though the `--help` path
     // would say false. Behavioral contract: vttest_available()
     // reflects whether vttest is RUNNABLE, not whether `--help`
     // happens to exit zero.
-    //
     // On hosts WITHOUT vttest installed, the test emits a visible SKIP
     // message ( Skip Protocol) and
     // returns early.
@@ -94,9 +90,9 @@ fn vttest_available_pinned_to_capital_v_probe_via_direct_spawn() {
     assert!(
         vttest_available(),
         "vttest_available() returned false on a host where `vttest -V` \
-         exits 0 — the probe flag is wrong (likely reverted to `--help`, \
-         which exits 1 on vttest 2.7, fails the status.success() check, \
-         and silently skips every vttest integration test)."
+ exits 0 — the probe flag is wrong (likely reverted to `--help`, \
+ which exits 1 on vttest 2.7, fails the status.success() check, \
+ and silently skips every vttest integration test)."
     );
 
     // Belt-and-braces: explicitly catch the --help revert by checking
@@ -114,7 +110,7 @@ fn vttest_available_pinned_to_capital_v_probe_via_direct_spawn() {
         debug_assert!(
             vttest_available(),
             "vttest --help exits 1 but vttest_available() returned false: \
-             probe is using --help (regression)"
+ probe is using --help (regression)"
         );
     }
 }
@@ -147,7 +143,6 @@ fn tack_available_pinned_to_h_probe_via_direct_spawn() {
     // Verifies for `tack_available()` must agree with
     // a DIRECT `tack -h` spawn — independent ground truth, decoupled
     // from `tool_available`.
-    //
     // Why a separate test from `tack_available_matches_tool_available`:
     // the existing test compares `tack_available()` to
     // `tool_available("tack", "-h")`. On a host where tack IS installed,
@@ -155,16 +150,14 @@ fn tack_available_pinned_to_h_probe_via_direct_spawn() {
     // true → assert_eq fails). On a host WITHOUT tack, both sides
     // return false and the assertion passes vacuously — the
     // regression slips through any CI lane that lacks tack. Codex
-    // /review-work flagged the gap as a silent-skip
+    // review-work flagged the gap as a silent-skip
     // vector that would let the original `-V` regression come back
     // unnoticed in CI.
-    //
     // This test strengthens the pin by spawning `tack -h` DIRECTLY
     // (not through `tool_available`, so the truth source cannot
     // co-vary with any future `tool_available` change), then
     // asserting `tack_available()` agrees on hosts where the bare
     // probe succeeds.
-    //
     // ALSO: when both `tack -h` succeeds AND `tack -V` fails (the
     // tack v1.08 reality on every dev/CI host that ships ncurses
     // tack), the test additionally asserts `tack_available()` returns
@@ -173,7 +166,6 @@ fn tack_available_pinned_to_h_probe_via_direct_spawn() {
     // tack is RUNNABLE, not whether `-V` happens to exit zero. The
     // regression it catches: a future commit that "simplifies"
     // `tack_available()` back to `tool_available("tack", "-V")`.
-    //
     // On hosts WITHOUT tack installed, the test emits a visible SKIP
     // message ( Skip Protocol) and
     // returns early. The dev environment (Linux/WSL) and Linux CI both
@@ -195,9 +187,9 @@ fn tack_available_pinned_to_h_probe_via_direct_spawn() {
     assert!(
         tack_available(),
         "tack_available() returned false on a host where `tack -h` \
-         exits 0 — the probe flag is wrong (likely reverted to `-V`, \
-         which exits 1 on tack v1.08, fails the status.success() \
-         check, and silently skips every tack integration test)."
+ exits 0 — the probe flag is wrong (likely reverted to `-V`, \
+ which exits 1 on tack v1.08, fails the status.success() \
+ check, and silently skips every tack integration test)."
     );
 
     // Belt-and-braces: explicitly catch the -V revert by checking
@@ -223,7 +215,7 @@ fn tack_available_pinned_to_h_probe_via_direct_spawn() {
         debug_assert!(
             tack_available(),
             "tack -V exits 1 but tack_available() returned false: \
-             probe is using -V (regression)"
+ probe is using -V (regression)"
         );
     }
 }

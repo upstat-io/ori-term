@@ -6,18 +6,16 @@
 //! `font/collection/mod.rs` for the SSOT.
 //!
 //! Adding independent cell metric fields (`cell_width_px`, `cell_height_px`)
-//! would create a `LEAK:shadow-home` against `FontCollection::cell_metrics()`.
+//! would create a `` against `FontCollection::cell_metrics()`.
 
 use crate::font::{FontSet, GlyphFormat, HintingMode};
 
 /// Configuration for spec-conformance golden image tests.
-///
 /// Cell metrics (`cell_width_px`, `cell_height_px`) are intentionally absent.
 /// Construct a `FontCollection` from the font parameters in this struct and
 /// call `FontCollection::cell_metrics()` to obtain authoritative cell
 /// dimensions. Adding independent cell metric fields here would create a
-/// `LEAK:shadow-home` against `font/collection/mod.rs`.
-///
+/// `` against `font/collection/mod.rs`.
 /// `Debug` is implemented manually because `FontSet` intentionally does not
 /// derive `Debug` (its owned byte buffers are large and uninformative).
 #[derive(Clone)]
@@ -40,7 +38,6 @@ pub struct GoldenLaneConfig {
 
     // FrameInput determinism.
     /// Whether subpixel positioning is enabled.
-    ///
     /// `false` snaps all glyphs to integer pixel boundaries, eliminating
     /// fractional-offset variation that causes cross-run pixel differences.
     pub subpixel_positioning: bool,
@@ -53,10 +50,8 @@ pub struct GoldenLaneConfig {
 
     // Harness font override (test-only).
     /// Optional test-only `FontSet` override for the deterministic lane.
-    ///
     /// `None` (the `SPEC_DEFAULT` value) keeps `FontSet::embedded()` — the
     /// canonical JetBrains Mono fixture used by every production golden.
-    ///
     /// `Some(custom)` lets a test inject a font that advertises coverage of
     /// a built-in-rendered codepoint with an obviously-wrong glyph, so the
     /// precedence tests in §11.2 can prove the built-in Canvas renderer
@@ -83,12 +78,11 @@ impl std::fmt::Debug for GoldenLaneConfig {
 
 impl GoldenLaneConfig {
     /// Canonical spec-conformance defaults.
-    ///
     /// - 12pt @ 96 DPI: matches existing visual_regression test font.
     /// - `HintingMode::None`: grayscale alpha for reproducibility.
     /// - `GlyphFormat::Alpha`: no subpixel color rendering.
     /// - `subpixel_positioning: false`: snaps glyphs to integer pixel
-    ///   boundaries for exact matching.
+    /// boundaries for exact matching.
     /// - `pixel_tolerance: 0`: exact per-pixel match required.
     /// - `max_diff_percent: 0.0`: zero mismatches allowed.
     pub const SPEC_DEFAULT: Self = Self {

@@ -40,7 +40,7 @@ fn surfaces(set_bell: bool, transient_pulse: bool, audio: bool) -> CommandComple
 
 // Helper-level tests: command_complete_action
 
-/// Regression: BUG-02-013 — duration < threshold must Suppress regardless
+/// duration < threshold must Suppress regardless
 /// of mode/focus/per-surface flags.
 #[test]
 fn command_complete_action_below_threshold_returns_suppress() {
@@ -54,7 +54,7 @@ fn command_complete_action_below_threshold_returns_suppress() {
     assert_eq!(result, CommandCompleteAction::Suppress);
 }
 
-/// Regression: BUG-02-013 — mode=Never must Suppress.
+/// mode=Never must Suppress.
 #[test]
 fn command_complete_action_with_mode_never_returns_suppress() {
     let result = command_complete_action(&inputs(
@@ -67,7 +67,7 @@ fn command_complete_action_with_mode_never_returns_suppress() {
     assert_eq!(result, CommandCompleteAction::Suppress);
 }
 
-/// Regression: BUG-02-013 — mode=Unfocused with focused pane must Suppress.
+/// mode=Unfocused with focused pane must Suppress.
 #[test]
 fn command_complete_action_with_mode_unfocused_and_focused_pane_returns_suppress() {
     let result = command_complete_action(&inputs(
@@ -82,7 +82,7 @@ fn command_complete_action_with_mode_unfocused_and_focused_pane_returns_suppress
 
 // Per-surface decision pins (Fire branch)
 
-/// Regression: BUG-02-013 — PRIMARY REPRO FIX. Always+focused must Fire
+/// PRIMARY REPRO FIX. Always+focused must Fire
 /// transient_pulse + audio (set_bell stays background-only by design).
 #[test]
 fn command_complete_action_with_mode_always_focused_pane_returns_fire_with_pulse_and_audio() {
@@ -99,7 +99,7 @@ fn command_complete_action_with_mode_always_focused_pane_returns_fire_with_pulse
     );
 }
 
-/// Regression: BUG-02-013 — Always+unfocused fires all four surfaces.
+/// Always+unfocused fires all four surfaces.
 #[test]
 fn command_complete_action_with_mode_always_unfocused_pane_returns_fire_with_all_surfaces() {
     let result = command_complete_action(&inputs(
@@ -115,7 +115,7 @@ fn command_complete_action_with_mode_always_unfocused_pane_returns_fire_with_all
     );
 }
 
-/// Regression: BUG-02-013 — existing Unfocused+unfocused path must not
+/// existing Unfocused+unfocused path must not
 /// regress; fires all surfaces.
 #[test]
 fn command_complete_action_with_mode_unfocused_unfocused_pane_returns_fire_with_all_surfaces() {
@@ -132,7 +132,7 @@ fn command_complete_action_with_mode_unfocused_unfocused_pane_returns_fire_with_
     );
 }
 
-/// Regression: BUG-02-013 — independence pin. Bell-disabled focused pane
+/// independence pin. Bell-disabled focused pane
 /// must still fire audio when mode authorizes.
 #[test]
 fn command_complete_action_focused_with_bell_disabled_fires_audio_only() {
@@ -149,7 +149,7 @@ fn command_complete_action_focused_with_bell_disabled_fires_audio_only() {
     );
 }
 
-/// Regression: BUG-02-013 — independence pin. Audio-disabled focused pane
+/// independence pin. Audio-disabled focused pane
 /// must still fire transient pulse when mode authorizes.
 #[test]
 fn command_complete_action_focused_with_audio_disabled_fires_pulse_only() {
@@ -166,7 +166,7 @@ fn command_complete_action_focused_with_audio_disabled_fires_pulse_only() {
     );
 }
 
-/// Regression: BUG-02-013 — cross-clamp for unfocused row.
+/// cross-clamp for unfocused row.
 #[test]
 fn command_complete_action_unfocused_with_bell_disabled_fires_audio_only() {
     let result = command_complete_action(&inputs(
@@ -182,7 +182,7 @@ fn command_complete_action_unfocused_with_bell_disabled_fires_audio_only() {
     );
 }
 
-/// Regression: BUG-02-013 — cross-clamp for unfocused row.
+/// cross-clamp for unfocused row.
 #[test]
 fn command_complete_action_unfocused_with_audio_disabled_fires_visuals_only() {
     let result = command_complete_action(&inputs(
@@ -198,7 +198,7 @@ fn command_complete_action_unfocused_with_audio_disabled_fires_visuals_only() {
     );
 }
 
-/// Regression: BUG-02-013 — empty per-surface configuration suppresses
+/// empty per-surface configuration suppresses
 /// every surface but mode still authorizes the Fire variant.
 #[test]
 fn command_complete_action_with_no_gates_open_fires_nothing() {
@@ -217,7 +217,7 @@ fn command_complete_action_with_no_gates_open_fires_nothing() {
 
 // Semantic + negative pins
 
-/// Regression: BUG-02-013 — semantic pin. Always+focused with all gates
+/// invariant check. Always+focused with all gates
 /// open returns the EXACT Fire(surfaces) shape that survives the bug fix.
 /// Permanent regression guard.
 #[test]
@@ -239,7 +239,7 @@ fn command_complete_action_with_mode_always_focused_returns_pulse_and_audio_not_
     );
 }
 
-/// Regression: BUG-02-013 — negative pin. Across ALL focused cells,
+/// invariant check. Across ALL focused cells,
 /// `set_bell` must NEVER fire. Forbid-output pin proves the suppression
 /// is active, not coincidental.
 #[test]
@@ -322,7 +322,7 @@ impl CommandCompleteSink for SpySinkWithLog {
     }
 }
 
-/// Regression: BUG-02-013 — set_bell fires on live pane, also triggers sync.
+/// set_bell fires on live pane, also triggers sync.
 #[test]
 fn dispatch_command_complete_with_set_bell_true_calls_set_bell_and_sync() {
     let pane = PaneId::from_raw(1);
@@ -337,7 +337,7 @@ fn dispatch_command_complete_with_set_bell_true_calls_set_bell_and_sync() {
     assert_eq!(sink.audio_calls, 0);
 }
 
-/// Regression: BUG-02-013 — orphan-pane guard. set_bell MUST NOT fire on
+/// orphan-pane guard. set_bell MUST NOT fire on
 /// a closed pane (would reinsert into EmbeddedMux::bell_panes).
 #[test]
 fn dispatch_command_complete_with_set_bell_true_skips_when_pane_orphan() {
@@ -351,7 +351,7 @@ fn dispatch_command_complete_with_set_bell_true_skips_when_pane_orphan() {
     assert!(sink.sync_calls.is_empty());
 }
 
-/// Regression: BUG-02-013 — transient pulse fires on live pane with mark_dirty.
+/// transient pulse fires on live pane with mark_dirty.
 #[test]
 fn dispatch_command_complete_with_transient_pulse_true_calls_ring_and_mark_dirty() {
     let pane = PaneId::from_raw(1);
@@ -366,7 +366,7 @@ fn dispatch_command_complete_with_transient_pulse_true_calls_ring_and_mark_dirty
     assert_eq!(sink.audio_calls, 0);
 }
 
-/// Regression: BUG-02-013 — orphan-pane guard. Transient pulse + dirty
+/// orphan-pane guard. Transient pulse + dirty
 /// mark MUST NOT fire on closed pane (avoids mark_all_windows_dirty
 /// fallback in redraw/mod.rs:49-50).
 #[test]
@@ -381,7 +381,7 @@ fn dispatch_command_complete_with_transient_pulse_true_skips_when_pane_orphan() 
     assert!(sink.dirty_calls.is_empty());
 }
 
-/// Regression: BUG-02-013 — audio fires even for orphan panes (documented
+/// audio fires even for orphan panes (documented
 /// benign behavior; the user's command genuinely finished).
 #[test]
 fn dispatch_command_complete_with_audio_true_calls_play_audio_regardless_of_pane_liveness() {
@@ -406,7 +406,7 @@ fn dispatch_command_complete_with_audio_true_calls_play_audio_regardless_of_pane
     assert_eq!(sink_live.audio_calls, 1);
 }
 
-/// Regression: BUG-02-013 — log_completion fires on every Fire dispatch
+/// log_completion fires on every Fire dispatch
 /// (preserves the Phase-1.75 log-preservation invariant).
 #[test]
 fn dispatch_command_complete_logs_completion_unconditionally_when_action_is_fire() {
@@ -422,7 +422,7 @@ fn dispatch_command_complete_logs_completion_unconditionally_when_action_is_fire
     assert_eq!(log_calls[0].1, THIRTY_S);
 }
 
-/// Regression: BUG-02-013 — empty surfaces dispatch only logs completion.
+/// empty surfaces dispatch only logs completion.
 #[test]
 fn dispatch_command_complete_with_no_surfaces_only_logs_completion() {
     let pane = PaneId::from_raw(1);
@@ -437,7 +437,7 @@ fn dispatch_command_complete_with_no_surfaces_only_logs_completion() {
 
 // Combined helper × dispatch end-to-end pin
 
-/// Regression: BUG-02-013 — PRIMARY REPRO FIX END-TO-END. Composes
+/// PRIMARY REPRO FIX END-TO-END. Composes
 /// command_complete_action(Always+focused) → Fire(surfaces) →
 /// dispatch_command_complete with live pane. Spy must record:
 /// 1 log + 0 set_bell + 0 sync + 1 ring + 1 mark_dirty + 1 audio.

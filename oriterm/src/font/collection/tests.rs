@@ -26,7 +26,6 @@ fn system_collection(format: GlyphFormat) -> FontCollection {
 }
 
 /// Helper: build a FontCollection from ONLY the embedded Regular font.
-///
 /// Guarantees no Bold/Italic/BoldItalic variants and no fallbacks, so
 /// style substitution tests behave deterministically.
 fn embedded_only_collection(format: GlyphFormat) -> FontCollection {
@@ -106,7 +105,6 @@ fn font_set_load_default_succeeds() {
 fn from_test_bytes_accepts_subcell_precedence_fixture() {
     // Proves the committed `subcell-precedence-test.ttf` fixture is a valid
     // TTF that round-trips through `FontSet::from_test_bytes` → `FontCollection::new`.
-    //
     // If this fails, either the fixture needs regeneration (see
     // `crates/oriterm_test_support/tests/fixtures/fonts/generate_subcell_precedence_test.py`)
     // or the font pipeline has regressed on minimal glyph tables.
@@ -2385,7 +2383,6 @@ fn alpha_correction_applied_to_rasterized_glyph() {
 }
 
 /// Compute mean alpha of a rasterized glyph bitmap.
-///
 /// Returns a value in `[0.0, 1.0]` representing the average coverage.
 /// Higher values mean heavier/bolder strokes.
 fn mean_alpha(bitmap: &[u8]) -> f64 {
@@ -2399,7 +2396,6 @@ fn mean_alpha(bitmap: &[u8]) -> f64 {
 /// Rasterize `'H'` through two `embedded_only` collections that differ only in
 /// `gamma_lut`: one at default `TEXT_GAMMA` 1.8, one with gamma 1.0 (identity
 /// LUT via `set_gamma_for_test`). Returns `(gamma_1_8_bitmap, identity_bitmap)`.
-///
 /// Pair-fixture for the regression suite. Under the Alpha-only
 /// guard the two bitmaps are byte-equal for subpixel formats (neither path
 /// applies `apply_alpha_correction`) and differ for `Alpha` (only the
@@ -2537,14 +2533,12 @@ fn effective_bold_weight_clamped_to_range() {
 }
 
 // : subpixel bitmap gamma correction.
-//
 // Pin that `FontCollection::rasterize` / `rasterize_with_weight` do NOT apply
 // the gamma LUT to subpixel RGBA bitmaps. Per zeno `Format::Subpixel`, each of
 // the R / G / B bytes is an independent per-channel LCD coverage value; applying
 // a per-byte gamma boost magnifies per-channel asymmetry (color fringing) and
 // over-thickens strokes. Only `GlyphFormat::Alpha` coverage is boosted — see
 // the `rasterize.rs` module doc for the canonical per-format rule.
-//
 // Red-first construction: pair two `FontCollection` instances identical except
 // for `gamma_lut` (default `TEXT_GAMMA` 1.8 vs test-only identity via
 // `set_gamma_for_test(1.0)`). Under the Alpha-only guard, subpixel bitmaps are
@@ -2554,14 +2548,13 @@ fn effective_bold_weight_clamped_to_range() {
 // `apply_alpha_correction` and the subpixel equality pins fail.
 
 /// Regression: SubpixelRgb bitmap must not receive gamma LUT.
-/// See: bug-tracker/plans/completed/00-overview.md §2 Red-first fail pins.
 #[test]
 fn subpixel_rgb_bitmap_not_gamma_boosted() {
     let (gamma_bitmap, raw_bitmap) = rasterize_h_gamma_pair(GlyphFormat::SubpixelRgb, false);
     assert_eq!(
         gamma_bitmap, raw_bitmap,
         "SubpixelRgb bitmap must be identical regardless of gamma \
-         (guard must skip apply_alpha_correction for subpixel formats)"
+ (guard must skip apply_alpha_correction for subpixel formats)"
     );
 }
 
@@ -2585,7 +2578,7 @@ fn subpixel_rgb_ui_text_path_bitmap_not_gamma_boosted() {
     assert_eq!(
         gamma_bitmap, raw_bitmap,
         "UI-text-path SubpixelRgb bitmap must be identical regardless of gamma \
-         (the rasterize_with_weight guard must also skip subpixel)"
+ (the rasterize_with_weight guard must also skip subpixel)"
     );
 }
 
@@ -2597,7 +2590,7 @@ fn alpha_bitmap_still_gamma_boosted() {
     assert_ne!(
         gamma_bitmap, raw_bitmap,
         "Alpha bitmap must differ between gamma=1.8 and gamma=1.0 \
-         (grayscale path must still apply gamma correction)"
+ (grayscale path must still apply gamma correction)"
     );
     assert!(
         mean_alpha(&gamma_bitmap) > mean_alpha(&raw_bitmap),
@@ -2674,8 +2667,8 @@ fn synthetic_bold_subpixel_rgb_heavier_than_regular() {
     assert!(
         resolved_bold.synthetic.contains(SyntheticFlags::BOLD),
         "embedded font set must force synthetic bold for 'H' \
-         (resolved.synthetic = {:?}) — if a native Bold face is added, this \
-         test must be retargeted at a Regular-only corpus",
+ (resolved.synthetic = {:?}) — if a native Bold face is added, this \
+ test must be retargeted at a Regular-only corpus",
         resolved_bold.synthetic,
     );
     assert!(
@@ -2701,7 +2694,7 @@ fn synthetic_bold_subpixel_rgb_heavier_than_regular() {
     assert!(
         bold_mean > regular_mean,
         "synthetic-bold SubpixelRgb 'H' (mean={bold_mean:.4}) must be heavier \
-         than regular (mean={regular_mean:.4}) — if it isn't, embolden_strength \
-         must become format-aware per the §3 Implementation fallback plan",
+ than regular (mean={regular_mean:.4}) — if it isn't, embolden_strength \
+ must become format-aware per the §3 Implementation fallback plan",
     );
 }

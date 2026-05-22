@@ -58,7 +58,7 @@
 //!
 //! Originally drafted as a doc-only stub citing the 05.0
 //! `begin_testing_inventory` drift gate as covering help
-//! behavior. (Codex /review-work iteration 2 of M2)
+//! behavior. (Codex review-work iteration 2 of M2)
 //! correctly noted that the drift gate only sends `n` and
 //! never `?`, so the duplicate claim was unverified — promoted
 //! to a real test in the same fix. then noted the
@@ -96,7 +96,7 @@ fn tack_help_redisplays_begin_testing_menu() {
     if !ScenarioRunner::available() {
         eprintln!(
             "tack/tic unavailable or tack version unsupported, skipping \
-             tack_help_redisplays_begin_testing_menu"
+ tack_help_redisplays_begin_testing_menu"
         );
         return;
     }
@@ -169,8 +169,8 @@ fn tack_help_redisplays_begin_testing_menu() {
         assert!(
             post_help.contains(&formatted),
             "post-`?` grid missing menu entry {formatted:?} — `?` may have navigated to a \
-             distinct screen, in which case BEGIN_TESTING_INVENTORY should reclassify `?` from \
-             Duplicate back to Scenario. Got:\n{post_help}"
+ distinct screen, in which case BEGIN_TESTING_INVENTORY should reclassify `?` from \
+ Duplicate back to Scenario. Got:\n{post_help}"
         );
     }
 

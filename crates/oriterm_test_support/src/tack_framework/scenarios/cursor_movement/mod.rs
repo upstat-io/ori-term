@@ -45,7 +45,7 @@
 //! as covered by 05.4. The earlier draft of this rustdoc claimed
 //! `cup` was transitively covered "since the test demonstrably
 //! uses it to home the cursor" — but (Codex
-//! /review-work) correctly rejected that claim. `clear` in
+//! review-work) correctly rejected that claim. `clear` in
 //! `extra/ori_term.info` is defined as `\E[H\E[2J`, which
 //! already homes the cursor via a LITERAL escape sequence (not
 //! via the parameterized `cup` capability). The observed "home
@@ -77,7 +77,6 @@ use crate::tack_framework::{MenuStep, ScenarioSpec, ScreenFacts};
 /// e.g. `cup` matches inside `cupboard`/`occupied`, `vpa` and
 /// `hpa` inside arbitrary letter pairs. The tokenized helper is
 /// the M3 fix from Section 04 and is mandatory.
-///
 /// **Empirical caveat (tack v1.08).** As of tack v1.08 the cursor
 /// movement screen does NOT emit any of these names — the test
 /// only outputs `This line should start in the home position. The
@@ -86,7 +85,6 @@ use crate::tack_framework::{MenuStep, ScenarioSpec, ScreenFacts};
 /// host. This is preserved as forward-compatible infrastructure
 /// for a future tack release that draws per-cap labels on the
 /// cursor movement screen.
-///
 /// Cursor MOVEMENT (the actual `cup`/`hpa`/`vpa`/`csr` pixel
 /// effects) is the domain of Section 07's GPU goldens — this
 /// parser only verifies the LABELS are present.
@@ -119,7 +117,6 @@ pub fn parse_cursor_screen(grid: &str) -> ScreenFacts {
 /// prompt becomes `tack/test/move [n] >` — tack uses the short
 /// form `move`, not `cursor`) → `n` (run the standard cursor
 /// movement test, terminator is `Done`).
-///
 /// Anchor strings empirically verified against tack v1.08
 /// (2026-04-08) — see the module rustdoc for the captured-output
 /// evidence.

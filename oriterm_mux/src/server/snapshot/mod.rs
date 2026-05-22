@@ -21,7 +21,6 @@ use crate::protocol::{WireSearchMatch, encode_cursor_icon};
 use crate::{PaneId, PaneSnapshot, WireCell, WireCursor, WireCursorShape, WireRgb};
 
 /// Cached snapshots with reusable allocation buffers.
-///
 /// Encapsulates the per-pane snapshot cache and the shared
 /// [`RenderableContent`] scratch buffer used during snapshot building.
 /// The server layer interacts with this type instead of touching
@@ -32,21 +31,16 @@ pub(crate) struct SnapshotCache {
     /// Shared scratch buffer for IO-thread snapshot swap.
     render_buf: RenderableContent,
     /// Bounded LRU store of image pixel data, keyed by `(PaneId, ImageId)`.
-    ///
     /// Server-side SSOT for daemon-mode image bytes. The dispatch slow path
     /// reads from this to build per-client `WireImageData` entries on demand
     /// (so cached `PaneSnapshot` entries can stay image-data-free, and per-
     /// subscriber filtering doesn't re-extract from `Term`).
-    ///
-    /// See: bug-tracker/plans/BUG-06-072/
     image_data_store: ImageCache,
 }
 
 /// Pixel-data evictions surfaced by the most recent `build*` call.
-///
 /// Callers must propagate these to every client's `sent_images` so that a
 /// snapshot later referencing the evicted ID re-includes its `WireImageData`.
-/// See: bug-tracker/plans/BUG-06-072/section-05-implementation.md
 pub(crate) type EvictedImageKeys = Vec<(PaneId, ImageId)>;
 
 impl SnapshotCache {
@@ -60,7 +54,6 @@ impl SnapshotCache {
     }
 
     /// Build a snapshot for a pane, reusing cached allocations.
-    ///
     /// Reads the IO thread's latest snapshot via zero-lock swap. Also folds
     /// any new `RenderableImageData` from `render_buf` into the server-side
     /// `image_data_store` (server-side SSOT for daemon-mode image bytes).
@@ -92,11 +85,9 @@ impl SnapshotCache {
     }
 
     /// Look up `(pane_id, image_id)` in the server-side pixel-data store.
-    ///
     /// Used by per-client snapshot projection (`push_snapshot_to_subscribers`,
     /// `GetPaneSnapshot` RPC) to fetch the `Arc<RenderableImageData>` to attach
     /// inline as `WireImageData` when a client needs it.
-    /// See: bug-tracker/plans/BUG-06-072/
     pub fn image_data(
         &mut self,
         pane_id: PaneId,
@@ -106,7 +97,6 @@ impl SnapshotCache {
     }
 
     /// Clone the cached snapshot for a pane (for sending over IPC).
-    ///
     /// Builds a fresh snapshot if none is cached. Returns the snapshot plus
     /// any evicted `(PaneId, ImageId)` keys from the image-data store.
     pub fn build_clone(
@@ -119,7 +109,6 @@ impl SnapshotCache {
     }
 
     /// Build a snapshot and move it out of the cache.
-    ///
     /// Avoids the `clone()` in [`build_clone`] by taking ownership via
     /// `mem::take`. The cache entry is left empty (default) — the next
     /// `build` call will re-populate it (losing one frame of allocation
@@ -144,7 +133,6 @@ impl SnapshotCache {
 
 /// Fold pixel data from a freshly-swapped `render_buf` into the server-side
 /// `image_data_store`, using cross-pane reachability for eviction decisions.
-///
 /// Computed reachability set walks ALL panes' latest cached snapshots — an
 /// image bytes entry for pane B may be evicted by pane A's insert under
 /// memory pressure, so we cannot evict bytes still referenced by B.
@@ -160,7 +148,6 @@ fn fold_image_data_store(
     // Compute upfront reachability set: every `(PaneId, ImageId)` referenced
     // by a placement in any pane's latest cached snapshot — PLUS every ID
     // about to be inserted from THIS render_buf for THIS pane.
-    //
     // The new IDs must be marked reachable because the cached snapshot's
     // placements (`cache[pane_id].images`) are NOT yet updated to reference
     // them — `fill_snapshot_from_renderable` runs AFTER this fold. Without
@@ -190,7 +177,6 @@ fn fold_image_data_store(
 }
 
 /// Fill snapshot metadata and wire cells from a pre-built [`RenderableContent`].
-///
 /// Used when the IO thread has already produced a snapshot — no terminal lock
 /// needed. Palette and grid dimensions come from `RenderableContent`'s metadata
 /// fields (`cols`, `lines`, `scrollback_len`, `palette_snapshot`).
@@ -205,12 +191,10 @@ pub(crate) fn fill_snapshot_from_renderable(
 }
 
 /// Fill the `images` placement list + `images_dirty` flag from `render_buf`.
-///
 /// `image_data` deliberately stays empty in the CACHED `PaneSnapshot` — the
 /// dispatch layer projects per-client `image_data` at queue time, reading
 /// pixels from `SnapshotCache.image_data_store` (kept in sync separately
 /// by `fold_image_data_store`).
-/// See: bug-tracker/plans/BUG-06-072/section-05-implementation.md
 fn fill_images_from_renderable(render_buf: &RenderableContent, out: &mut PaneSnapshot) {
     out.images.clear();
     out.images.reserve(
@@ -241,7 +225,6 @@ fn fill_images_from_renderable(render_buf: &RenderableContent, out: &mut PaneSna
 }
 
 /// Convert [`RenderableContent`] cells to wire format without `&Term`.
-///
 /// Hyperlink URIs come from `RenderableCell::hyperlink_uri`, populated
 /// during `renderable_content_into()`.
 fn fill_wire_cells_from_renderable(render_buf: &RenderableContent, out: &mut PaneSnapshot) {
@@ -289,7 +272,6 @@ fn fill_wire_cells_from_renderable(render_buf: &RenderableContent, out: &mut Pan
 }
 
 /// Fill all snapshot fields except `cells` from a pre-built [`RenderableContent`].
-///
 /// Reads palette, grid dimensions, and scrollback length from the snapshot's
 /// metadata fields. Pane-local data (title, CWD, search) comes from `&Pane`.
 fn fill_metadata_from_renderable(
@@ -302,7 +284,6 @@ fn fill_metadata_from_renderable(
 }
 
 /// Fill the `RenderableContent`-derived portion of snapshot metadata.
-///
 /// All fields here are scalars or wire-index encodings of IO-thread state
 /// (cursor, palette, modes, dimensions, OSC 22 mouse cursor icon, search).
 /// Pane-specific fields (title, `icon_name`, cwd, `has_unseen_output`) are
@@ -341,7 +322,6 @@ pub(crate) fn fill_wire_metadata_from_renderable(
 }
 
 /// Fill the [`Pane`]-derived portion of snapshot metadata.
-///
 /// Separated from [`fill_wire_metadata_from_renderable`] so the wire
 /// mapping of `RenderableContent` → `PaneSnapshot` can be unit-tested
 /// without needing a full `Pane` (PTY + threads).
@@ -354,7 +334,6 @@ fn fill_pane_metadata(pane: &Pane, out: &mut PaneSnapshot) {
 }
 
 /// Fill search state in a [`PaneSnapshot`] from [`RenderableContent`] fields.
-///
 /// Reads search data that the IO thread populated during snapshot production.
 fn fill_search_from_renderable(render_buf: &RenderableContent, out: &mut PaneSnapshot) {
     if render_buf.search_active {

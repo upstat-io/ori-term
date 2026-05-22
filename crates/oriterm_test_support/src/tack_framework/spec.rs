@@ -11,7 +11,6 @@ use super::parser::ScreenParserFn;
 /// `wait_for` is the deterministic synchronization primitive — it
 /// replaces fixed sleeps that race in CI. The anchor is a literal
 /// substring expected in the grid AFTER tack processes `send`.
-///
 /// **Pre-existing-anchor rule.** The anchor MUST NOT already be
 /// present in the grid BEFORE the send. The navigator checks this
 /// (see `TackNavigator::navigate` in 04.2) and panics if it is.
@@ -19,19 +18,15 @@ use super::parser::ScreenParserFn;
 /// `wait_for` return immediately and the next keystroke goes to the
 /// wrong state — pick a SUBMENU-specific string (a sub-menu header,
 /// a key prompt unique to the destination screen) instead.
-///
 /// `or_wait_for` is the alternate-anchor extension point: real tack
 /// flows hit pagers ("press any key"), `--more--` prompts, and
 /// alternate sub-menu wording across distros. Listing alternates
 /// here lets one `MenuStep` handle either case without branching in
 /// the navigator.
-///
 /// Example:
-///
 /// ```ignore
 /// MenuStep::new(b"m", "tack [m] >");
 /// ```
-///
 /// — sends `m` (the change-modes choice) and waits until the
 /// modes-submenu prompt `tack [m] >` appears. NOTE: do NOT use
 /// `"modes"` as the anchor here — the word "modes" appears on the
@@ -78,7 +73,6 @@ pub struct ScenarioSpec {
     /// snapshot name — the snapshot name is built from
     /// `screen_id`+`cols`x`rows` so size-matrix runs share goldens
     /// when navigation produces the same screen).
-    ///
     /// Convention: `tack_<menu>_<screen>_<assertion>` lowercase
     /// `snake_case`.
     pub id: &'static str,
@@ -93,11 +87,9 @@ pub struct ScenarioSpec {
     /// Sequence of navigation steps from tack's main menu to the
     /// target screen. Each step sends one or more bytes and waits
     /// for an anchor string to appear in the grid.
-    ///
     /// Example for the modes screen (`n` -> `m`). Note both anchors
     /// are SUB-menu prompts unique to their destination — neither is
     /// a substring of the prior screen.
-    ///
     /// ```ignore
     /// &[
     /// MenuStep::new(b"n", "tack [n] >"),
@@ -110,7 +102,6 @@ pub struct ScenarioSpec {
     /// runner calls `session.wait_for(ready_anchor,...)` once more
     /// to make sure the screen has fully painted before `grid_text`
     /// is captured.
-    ///
     /// Same pre-existing-anchor rule as [`MenuStep::wait_for`]: the
     /// anchor must be SCREEN-specific, not a word that's already on
     /// the prior menu.
@@ -160,17 +151,14 @@ impl ScenarioSpec {
 /// The stable-screen [`ScenarioSpec`] cannot capture these because
 /// the 300 ms `send` quiesce + 200 ms `wait_for_*` quiesce lets the
 /// line scroll off before `grid_text()` is read.
-///
 /// `PhaseSpec` reuses the same spawn + main-menu wait + terminfo
 /// lifetime as [`ScenarioSpec`], but the navigation + capture path
 /// uses [`crate::session::PtySession::send_raw`] (no built-in
 /// quiesce) and polls for the `phase_anchor` with NO post-match
 /// quiesce.
-///
 /// **Pre-existing-anchor rule.** Same as [`MenuStep::wait_for`]:
 /// `phase_anchor` MUST NOT already be present in the grid before
 /// the phase-trigger keystroke lands. The runner enforces this.
-///
 /// **NOT for stable screens.** Stable screens (color, cursor,
 /// `graphic_rendition`) MUST continue to use [`ScenarioSpec`] so they
 /// inherit the proven 500 ms quiesce contract that the existing
@@ -238,14 +226,12 @@ pub struct PhaseSpec {
 /// Used by 05.2 / 05.3 / 05.4 / 05.4b `MenuStep::send` and
 /// `PhaseSpec::phase_trigger` placeholders for menu keys that 05.0's
 /// `BEGIN_TESTING_INVENTORY` discovery has not yet pinned.
-///
 /// Returns a non-printable, recognizable, byte sequence so that
 /// `runner::assert_no_unverified_sentinels` can detect it BEFORE
 /// writing it to tack's PTY. The runner panics with a referral to
 /// 05.0 instead of silently sending garbage to tack.
-///
 /// **Why a runtime sentinel and not `compile_error!`.** An earlier
-/// `/review-plan` draft used `compile_error!` directives in
+/// `review-plan` draft used `compile_error!` directives in
 /// 05.2 / 05.3 / 05.4 to gate the new scenarios on 05.0's discovery
 /// work. That broke `cargo check` for the entire `oriterm_test_support`
 /// crate while 05.0 was in flight, which in turn blocked unrelated
@@ -254,10 +240,9 @@ pub struct PhaseSpec {
 /// used in a passing test until the implementer reads the
 /// inventory and replaces it with a real key — but lets the
 /// workspace continue to compile so concurrent work in adjacent
-/// files is not blocked. The Codex midpoint review of `/review-plan`
+/// files is not blocked. The Codex midpoint review of `review-plan`
 /// flagged the `compile_error!` approach as too hostile in a
 /// multi-agent flow (Pivot 3).
-///
 /// The sentinel is `b"\x00__UNVERIFIED__\x00"`. The leading and
 /// trailing NUL bytes guarantee it cannot collide with any printable
 /// navigation key (tack uses ASCII letter and punctuation keys), and
@@ -274,7 +259,6 @@ pub const fn unverified_menu_key() -> &'static [u8] {
 /// `ScenarioSpec::ready_anchor`, `PhaseSpec::phase_setup_anchor`,
 /// and `PhaseSpec::phase_anchor` placeholders that 05.0's discovery
 /// has not yet pinned.
-///
 /// Same rationale as [`unverified_menu_key`]. Detected by
 /// [`is_unverified_anchor`] before any `wait_for_*` call. The
 /// string contains characters tack would never put on screen so it
@@ -298,7 +282,6 @@ pub fn is_unverified_menu_key(bytes: &[u8]) -> bool {
 
 /// Predicate: does `s` look like the [`unverified_anchor`]
 /// sentinel?
-///
 /// Equality check.
 #[must_use]
 pub fn is_unverified_anchor(s: &str) -> bool {

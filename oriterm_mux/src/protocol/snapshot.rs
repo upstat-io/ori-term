@@ -24,7 +24,6 @@ pub struct WireRgb {
 }
 
 /// Terminal color on the wire (unresolved palette reference).
-///
 /// Reserved for future incremental wire format where cells send only
 /// changed fields and colors may reference palette indices.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -39,13 +38,11 @@ pub enum WireColor {
 }
 
 /// Cell SGR flags as raw bits.
-///
 /// Maps 1:1 to `oriterm_core::CellFlags` bits. Using raw `u32` avoids
 /// coupling the wire format to the bitflags type.
 pub type WireCellFlags = u32;
 
 /// A single terminal cell on the wire.
-///
 /// Colors are pre-resolved RGB values — bold-as-bright, dim, and inverse
 /// have already been applied server-side via `renderable_content()`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -67,7 +64,6 @@ pub struct WireCell {
 }
 
 /// Cursor shape on the wire.
-///
 /// Stable `#[repr(u8)]` encoding decoupled from `oriterm_core::CursorShape`.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[repr(u8)]
@@ -136,7 +132,6 @@ pub struct WireCursor {
 }
 
 /// A search match position on the wire.
-///
 /// Uses raw `u64` for stable row indices and `u16` for columns,
 /// decoupled from `oriterm_core::SearchMatch` (which uses `StableRowIndex`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -155,7 +150,6 @@ pub struct WireSearchMatch {
 ///
 /// Mirrors [`oriterm_core::RenderablePlacement`] but with `image_id: u32` (the raw
 /// `ImageId` inner value) so the wire schema decouples from the Rust newtype.
-///
 /// f32 fields preclude `Eq`; this drops `PaneSnapshot`'s `Eq` derive transitively (and `MuxPdu`'s),
 /// so wire-protocol types now derive `PartialEq` only. `assert_eq!` callers continue to work
 /// (`assert_eq!` requires `PartialEq + Debug`, not `Eq`).
@@ -201,20 +195,23 @@ pub struct WireImageData {
     pub width: u32,
     /// Height in pixels.
     pub height: u32,
+    /// Monotonic counter from `ImageData::pixel_generation` so client-side
+    /// GPU upload can detect mutated frames after IPC transfer.
+    /// Defaults to 0 for backward compatibility with pre-cure snapshots
+    /// (a single un-mutated image generation).
+    #[serde(default)]
+    pub pixel_generation: u64,
 }
 
 /// Full snapshot of a pane's visible state.
 ///
 /// Transferred when a client subscribes to a pane or explicitly requests
 /// a snapshot. Contains everything needed to render the pane from scratch.
-///
 /// `Default` produces an empty snapshot suitable as an initial cache entry.
-///
 /// `Eq` is no longer derived because `WirePlacement` contains f32 fields. `PartialEq`
 /// continues to work for `==` and `assert_eq!`. Callers do not require `Eq` semantics
 /// on `PaneSnapshot` (verified — no `HashSet<PaneSnapshot>` or `HashMap<PaneSnapshot, _>`
 /// use exists in the workspace).
-/// See: bug-tracker/plans/BUG-06-072/
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct PaneSnapshot {
     /// Visible grid contents (rows × cols).
@@ -224,20 +221,17 @@ pub struct PaneSnapshot {
     /// Color palette as 270 RGB triplets.
     pub palette: Vec<[u8; 3]>,
     /// Image placements visible in this snapshot.
-    ///
     /// Small structs (~52 bytes each); always populated when source has placements.
     /// The pixel data for each placement lives in `image_data` (when transmitted inline)
     /// OR in the client's per-pane image cache (resolved at extract time).
     pub images: Vec<WirePlacement>,
     /// Decoded pixel data for newly-needed `ImageId`s.
-    ///
     /// Populated by the server-side dispatch layer ONLY when (a) `images_dirty == true`
     /// for this snapshot, OR (b) one or more `images[*].image_id` is new-to-this-client
     /// (first-observation handshake per `ClientConnection.sent_images` tracking).
     /// Steady-state frames (no new images, no dirty flag) carry an empty `image_data`.
     pub image_data: Vec<WireImageData>,
     /// Whether the image cache changed since the last snapshot for this pane.
-    ///
     /// When `true`, the client clears its cached image data and treats the wire snapshot's
     /// `image_data` as authoritative. Mirrors `oriterm_core::RenderableContent.images_dirty`.
     /// When `true`, the client also sets `out.all_dirty = true` to force a full repaint
@@ -250,9 +244,7 @@ pub struct PaneSnapshot {
     /// Current working directory (from OSC 7), if known.
     pub cwd: Option<String>,
     /// Terminal mode flags as raw bits.
-    ///
     /// # Wire format
-    ///
     /// | Bit | Mode |
     /// |-----|------|
     /// | 0 | `SHOW_CURSOR` (DECTCEM) |
@@ -288,14 +280,12 @@ pub struct PaneSnapshot {
     /// Current scroll position (0 = bottom, `scrollback_len` = top).
     pub display_offset: u32,
     /// Absolute row index of the first viewport row.
-    ///
     /// Matches `StableRowIndex` semantics: accounts for scrollback eviction,
     /// not just current buffer length.
     pub stable_row_base: u64,
     /// Whether the pane has output the user hasn't seen (background tab).
     pub has_unseen_output: bool,
     /// Grid column count.
-    ///
     /// Explicit to avoid fragile `cells[0].len()` inference.
     pub cols: u16,
 
@@ -312,7 +302,6 @@ pub struct PaneSnapshot {
     pub search_total_matches: u32,
     /// Mouse cursor icon requested by the shell (OSC 22), encoded as a
     /// stable `u8` index per [`encode_cursor_icon`] / [`decode_cursor_icon`].
-    ///
     /// `None` means no OSC 22 has been received (or the icon is unknown).
     /// The wire index space is project-owned (not `CursorIcon::default()`
     /// ordinal) so reordering of upstream `cursor_icon` variants cannot
@@ -417,7 +406,6 @@ impl WireSelection {
 /// snapshots. Only icons listed here round-trip through the wire; unknown
 /// icons encode as `None` (decoder yields `None`, renderer falls back to
 /// the default pointer).
-///
 /// New icons MUST be appended; existing entries MUST NOT change index.
 /// Section 10.5 references this slice to build its OSC 22 matrix.
 pub const OSC22_KNOWN_ICONS: &[CursorIcon] = &[

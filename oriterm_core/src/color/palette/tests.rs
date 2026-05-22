@@ -14,7 +14,6 @@ fn default_color_0_is_black() {
 
 /// Regression: pins the canonical xterm white (0xE5E5E5),
 /// not the Tango "Aluminium 2" value (0xD3D7CF) the palette had before.
-/// See: bug-tracker/plans/completed/00-overview.md
 #[test]
 fn default_color_7_is_xterm_white() {
     let p = Palette::default();
@@ -669,7 +668,6 @@ fn set_default_changes_reset_baseline() {
 /// palette under a "Standard xterm" comment. Yellow must be 0xCDCD00 (the
 /// value in xterm `ttyDefaultColors`), not 0xC4A000 (Tango "Butter Dark" —
 /// orange-tinged), the user-most-visible divergence.
-/// See: bug-tracker/plans/completed/00-overview.md
 #[test]
 fn default_color_3_is_xterm_yellow() {
     let p = Palette::default();
@@ -758,16 +756,16 @@ fn default_color_11_is_not_tango_bright_yellow() {
 fn default_ansi_palette_xterm_reference_matches_all_entries() {
     let p = Palette::default();
     let xterm: [(u8, u8, u8); 16] = [
-        (0x00, 0x00, 0x00), // 0  Black
-        (0xcd, 0x00, 0x00), // 1  Red
-        (0x00, 0xcd, 0x00), // 2  Green
-        (0xcd, 0xcd, 0x00), // 3  Yellow
-        (0x00, 0x00, 0xee), // 4  Blue
-        (0xcd, 0x00, 0xcd), // 5  Magenta
-        (0x00, 0xcd, 0xcd), // 6  Cyan
-        (0xe5, 0xe5, 0xe5), // 7  White
-        (0x7f, 0x7f, 0x7f), // 8  Bright Black (gray)
-        (0xff, 0x00, 0x00), // 9  Bright Red
+        (0x00, 0x00, 0x00), // 0 Black
+        (0xcd, 0x00, 0x00), // 1 Red
+        (0x00, 0xcd, 0x00), // 2 Green
+        (0xcd, 0xcd, 0x00), // 3 Yellow
+        (0x00, 0x00, 0xee), // 4 Blue
+        (0xcd, 0x00, 0xcd), // 5 Magenta
+        (0x00, 0xcd, 0xcd), // 6 Cyan
+        (0xe5, 0xe5, 0xe5), // 7 White
+        (0x7f, 0x7f, 0x7f), // 8 Bright Black (gray)
+        (0xff, 0x00, 0x00), // 9 Bright Red
         (0x00, 0xff, 0x00), // 10 Bright Green
         (0xff, 0xff, 0x00), // 11 Bright Yellow
         (0x5c, 0x5c, 0xff), // 12 Bright Blue

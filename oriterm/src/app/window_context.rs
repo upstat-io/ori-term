@@ -26,7 +26,6 @@ use crate::widgets::terminal_grid::TerminalGridWidget;
 use crate::window::TermWindow;
 
 /// Per-window state: widgets, caches, interaction state, and dirty flag.
-///
 /// Each OS window gets its own `WindowContext`. The [`App`](super::App) stores
 /// these in a `HashMap<WindowId, WindowContext>` keyed by winit window ID.
 pub(crate) struct WindowContext {
@@ -92,7 +91,6 @@ pub(crate) struct WindowContext {
     )]
     pub(super) damage: DamageSet,
     /// Chrome/overlay content has changed since the last full content render.
-    ///
     /// When `true`, the GPU content cache texture is stale and
     /// `render_to_surface` must do a full render even if terminal content
     /// hasn't changed. Set by chrome hover, overlay animations, and other
@@ -101,7 +99,7 @@ pub(crate) struct WindowContext {
     /// Previous frame's text blink opacity — detects blink changes that
     /// require a full content cache re-render (not just cursor overlay).
     pub(super) prev_text_blink_opacity: f32,
-    /// Regression: BUG-06-053 — previous frame's IME `preedit_revision`;
+    /// previous frame's IME `preedit_revision`;
     /// change detected by the single-pane `content_changed` predicate to
     /// force re-extract from snapshot when IME composition shrinks/clears.
     /// Multi-pane uses `compute_dispatch_fingerprint.preedit_revision`;
@@ -119,7 +117,6 @@ pub(crate) struct WindowContext {
 
 impl WindowContext {
     /// Create a new window context from its constituent parts.
-    ///
     /// The `window`, `tab_bar`, and `terminal_grid` are created during init;
     /// all other fields start at their defaults.
     pub fn new(
@@ -168,7 +165,6 @@ impl WindowContext {
     }
 
     /// Force full content re-extract and re-shape on the next redraw.
-    ///
     /// Called after font config changes so the redraw path treats the next
     /// frame as content-changed even though terminal content didn't change.
     pub(super) fn invalidate_font_caches(&mut self) {

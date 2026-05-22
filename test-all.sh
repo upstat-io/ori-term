@@ -29,6 +29,16 @@ if ! python3 scripts/prose-lint.py .; then
     exit 1
 fi
 
+# §13.N close-out gate: forbid single-commit re-bless of kitty goldens
+# alongside §05 GPU pipeline changes. Forces the two-commit discipline so
+# operator visual-diff review can attribute pixel changes correctly.
+echo ""
+echo "=== cross-section-golden-rebless (last commit) ==="
+if ! ./scripts/check-cross-section-golden-rebless.sh; then
+    echo "cross-section-golden-rebless gate failed — see violation above."
+    exit 1
+fi
+
 echo ""
 # Spec-conformance coverage gates run after prose-lint — same ordering
 # CI uses to fail-fast on doc + catalog drift before any cargo work.

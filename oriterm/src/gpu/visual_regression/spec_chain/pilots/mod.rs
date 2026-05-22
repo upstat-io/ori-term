@@ -28,3 +28,4 @@ pub mod sixel_repeat;
 pub mod sixel_scrolling_off;
 pub mod sixel_set_to_bg;
 pub mod sixel_transparency;
+pub mod xray_replay;

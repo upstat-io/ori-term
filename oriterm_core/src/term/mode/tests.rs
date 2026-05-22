@@ -185,7 +185,7 @@ fn reverse_video_set_and_clear() {
 #[test]
 fn term_mode_size_is_8_bytes() {
     // Structural regression guard: TermMode is a u64 bitflags.
-    // Widened from u32 in plan `plans/spec-conformance/section-08` §08.3
+    // Widened from u32 in plan §08.3
     // to carry DECLRMM (mode 69 = bit 32). If this assertion breaks, a
     // flag overflowed u64 or the representation was changed — both
     // require explicit review.
@@ -208,7 +208,7 @@ fn keyboard_modes_termmode_roundtrip_preserves_all_bits() {
         assert_eq!(
             km, round_trip,
             "KeyboardModes -> TermMode -> KeyboardModes must round-trip \
-             for bits {bits:#b}: got {round_trip:?} from {km:?}"
+ for bits {bits:#b}: got {round_trip:?} from {km:?}"
         );
     }
 }

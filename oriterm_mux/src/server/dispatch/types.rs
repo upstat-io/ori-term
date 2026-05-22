@@ -14,7 +14,6 @@ use super::super::host_request::PendingHostReply;
 use super::super::snapshot::SnapshotCache;
 
 /// Side effects returned from [`super::dispatch_request`].
-///
 /// Moves PDU-internal routing decisions out of the caller and into the
 /// dispatch function. The caller reads named fields instead of inspecting
 /// the raw PDU.
@@ -32,7 +31,6 @@ pub(in crate::server) struct DispatchResult {
     /// snapshot under memory pressure). Caller must `forget_sent_image` on
     /// every OTHER connection so the next snapshot referencing the evicted
     /// ID re-includes its pixel data.
-    /// See: bug-tracker/plans/BUG-06-072/
     pub evicted_image_keys: Vec<(PaneId, ImageId)>,
     /// Deferred `sent_images` mutations for the requesting client, computed
     /// by `project_per_client_pure` without mutating `conn`. The caller
@@ -41,12 +39,10 @@ pub(in crate::server) struct DispatchResult {
     /// MUST NOT apply these — drop them. A stranded mutation after a failed
     /// queue would leave stale tracking that prevents the trailing-edge
     /// resend.
-    /// See: bug-tracker/plans/BUG-06-072/
     pub pending_image_mutations: Option<super::super::push::PendingImageMutations>,
 }
 
 /// Shared context for request dispatch.
-///
 /// Groups the server-owned state that `dispatch_request` needs. Avoids
 /// threading 6+ scratch buffers as individual parameters.
 pub(in crate::server) struct DispatchContext<'a> {

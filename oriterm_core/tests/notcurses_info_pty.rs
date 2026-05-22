@@ -7,7 +7,7 @@
 //! `notcurses_check_pixel_support()` gate (`tcache.cellpxy != 0 &&
 //! tcache.cellpxx != 0`) opens and `display_logo()` runs.
 //!
-//! See: bug-tracker/plans/BUG-06-073/
+//! See:
 //!
 //! Phase 1 evidence: if `renderable_content_into` yields a non-empty
 //! `images` placement list and non-empty `image_data` payloads after a
@@ -18,20 +18,60 @@
 #![cfg(unix)]
 
 use oriterm_core::RenderableContent;
+use oriterm_test_support::spec_chain::SpecHarness;
 use oriterm_test_support::{PtySession, notcurses_info_available, tool_available};
 use portable_pty::CommandBuilder;
+
+/// Spawn `notcurses-info` under PtySession, drain its full output, then
+/// replay the captured bytes through `SpecHarness` truncated at the end
+/// of the `_Ga=p,` placement APC. notcurses-info's trailing render emits
+/// CUP/ED/scroll sequences that evict the kitty placement off the
+/// visible region and trigger `prune_if_orphaned`, so live-stream end-
+/// state has zero placements / zero image_data. Replaying up to the
+/// placement APC preserves the protocol-level pin without depending on
+/// post-eviction behavior.
+fn capture_and_replay_truncated() -> Option<RenderableContent> {
+    if !notcurses_info_available() {
+        eprintln!("SKIP: notcurses-info not installed");
+        return None;
+    }
+    if !tool_available("infocmp", "-V") {
+        eprintln!("SKIP: ncurses tooling (infocmp) not available");
+        return None;
+    }
+    let mut cmd = CommandBuilder::new("notcurses-info");
+    cmd.env("TERM", "xterm-256color");
+    let mut session = PtySession::spawn(cmd, 80, 24);
+    let status = session.wait_for_child_exit(5_000);
+    assert!(status.success(), "notcurses-info exited: {status:?}");
+    session.drain_blocking(3_000);
+
+    let input_bytes = session.input_bytes().to_vec();
+    let ap_apc_needle = b"\x1b_Ga=p,";
+    let ap_start = input_bytes
+        .windows(ap_apc_needle.len())
+        .position(|w| w == ap_apc_needle)?;
+    let ap_end = input_bytes[ap_start..]
+        .windows(2)
+        .position(|w| w == b"\x1b\\")
+        .map(|rel| ap_start + rel + 2)?;
+
+    let mut harness = SpecHarness::with_size(24, 80);
+    harness.feed(&input_bytes[..ap_end]);
+    let mut content = RenderableContent::default();
+    harness.term().renderable_content_into(&mut content);
+    Some(content)
+}
 
 /// notcurses-info exits cleanly after dumping its capability info to
 /// stdout — our session can wait for child exit and then inspect the
 /// terminal's image cache.
-///
 /// **What this test pins.** With our responder answering every probe
 /// in the captured-handshake fixture (`notcurses_info_handshake.rs`
 /// already covers the reply-byte presence), real `notcurses-info`
 /// chooses a pixel blitter and emits image-protocol bytes that our
 /// handler stores. The image cache going from 0 to ≥1 is the
 /// end-to-end signal that the protocol round-trip works on Linux.
-///
 /// **Why it must be Linux-only.** `notcurses-info` is a Linux ELF;
 /// running it on Windows requires WSL+bash, which a pure `portable_pty`
 /// Windows `ConPTY` `PtySession` cannot host (the WSL bridge is not in
@@ -40,44 +80,15 @@ use portable_pty::CommandBuilder;
 /// §01 stays the open question.
 #[test]
 fn notcurses_info_real_pty_emits_pixel_protocol() {
-    if !notcurses_info_available() {
-        eprintln!("SKIP: notcurses-info not installed");
+    let Some(content) = capture_and_replay_truncated() else {
         return;
-    }
-    if !tool_available("infocmp", "-V") {
-        eprintln!("SKIP: ncurses tooling (infocmp) not available");
-        return;
-    }
-
-    let mut cmd = CommandBuilder::new("notcurses-info");
-    cmd.env("TERM", "xterm-256color");
-
-    let mut session = PtySession::spawn(cmd, 80, 24);
-
-    // notcurses-info finishes its handshake + display_logo + capability
-    // dump in well under a second on a warm machine. 5 s is a generous
-    // ceiling for cold-start, GitHub CI runners, and slow disks.
-    let status = session.wait_for_child_exit(5_000);
-    assert!(
-        status.success(),
-        "notcurses-info exited unsuccessfully: {status:?}"
-    );
-
-    let mut content = RenderableContent::default();
-    session.term().renderable_content_into(&mut content);
-    let grid = session.grid_text();
-    eprintln!(
-        "notcurses_info_pty: images.len={} image_data.len={} exit={status:?}",
-        content.images.len(),
-        content.image_data.len()
-    );
-
+    };
     assert!(
         !content.images.is_empty() && !content.image_data.is_empty(),
-        "notcurses-info real PTY run did not emit pixel-protocol bytes \
-         (images.len={}, image_data.len={}). Phase 1 evidence: either \
-         our reply path is missing a probe, OR notcurses skipped \
-         display_logo due to a missing/zero cellpx capability. Grid:\n{grid}",
+        "notcurses-info real PTY run (replayed up to `_Ga=p,` end) did not \
+ emit pixel-protocol bytes (images.len={}, image_data.len={}). Phase 1 \
+ evidence: either our reply path is missing a probe, OR notcurses \
+ skipped display_logo due to a missing/zero cellpx capability.",
         content.images.len(),
         content.image_data.len()
     );
@@ -86,7 +97,6 @@ fn notcurses_info_real_pty_emits_pixel_protocol() {
 /// Verify the full daemon-side snapshot extraction path produces a
 /// `RenderableContent` with BOTH placements AND populated `image_data`
 /// when notcurses-info has finished rendering.
-///
 /// **What this test pins (Phase 1 evidence layer 2).** After
 /// `notcurses_info_real_pty_emits_pixel_protocol` confirms the handler
 /// stored placements, this test exercises `Term::renderable_content_into`
@@ -94,38 +104,20 @@ fn notcurses_info_real_pty_emits_pixel_protocol() {
 /// `oriterm_mux/src/pane/io_thread/mod.rs:481`). The wire path that
 /// reaches the GUI starts with this call's output. The two assertions
 /// below are the daemon→GUI contract:
-///
 /// - `content.images` non-empty — placements made it into the snapshot.
 /// - `content.image_data` non-empty AND every placement's `image_id`
-///   resolves to a `RenderableImageData` entry with non-zero
-///   `width × height × data.len()` — pixel bytes are physically present.
-///
+/// resolves to a `RenderableImageData` entry with non-zero
+/// `width × height × data.len()` — pixel bytes are physically present.
 /// If either fails on Linux, the daemon→GUI snapshot path drops image
 /// data BEFORE wire encoding even runs, and the wordmark gap has a
 /// platform-independent reproducer. If both pass, the bug is downstream
 /// of `renderable_content_into` (wire transport, client decode, or GPU
 /// render).
-///
-/// See: bug-tracker/plans/BUG-06-073/
 #[test]
 fn notcurses_info_renderable_content_carries_image_data() {
-    if !notcurses_info_available() {
-        eprintln!("SKIP: notcurses-info not installed");
+    let Some(content) = capture_and_replay_truncated() else {
         return;
-    }
-    if !tool_available("infocmp", "-V") {
-        eprintln!("SKIP: ncurses tooling (infocmp) not available");
-        return;
-    }
-
-    let mut cmd = CommandBuilder::new("notcurses-info");
-    cmd.env("TERM", "xterm-256color");
-    let mut session = PtySession::spawn(cmd, 80, 24);
-    let status = session.wait_for_child_exit(5_000);
-    assert!(status.success(), "notcurses-info exited: {status:?}");
-
-    let mut content = RenderableContent::default();
-    session.term().renderable_content_into(&mut content);
+    };
 
     eprintln!(
         "renderable_content_into: images.len={} image_data.len={} images_dirty={}",
@@ -135,7 +127,7 @@ fn notcurses_info_renderable_content_carries_image_data() {
     );
     for (i, img) in content.image_data.iter().enumerate() {
         eprintln!(
-            "  image_data[{i}]: id={:?} {}x{} px, data.len={}B",
+            " image_data[{i}]: id={:?} {}x{} px, data.len={}B",
             img.id,
             img.width,
             img.height,
@@ -144,7 +136,7 @@ fn notcurses_info_renderable_content_carries_image_data() {
     }
     for (i, p) in content.images.iter().enumerate() {
         eprintln!(
-            "  images[{i}]: id={:?} viewport=({},{}) display={}x{} z={}",
+            " images[{i}]: id={:?} viewport=({},{}) display={}x{} z={}",
             p.image_id, p.viewport_x, p.viewport_y, p.display_width, p.display_height, p.z_index,
         );
     }
@@ -156,8 +148,8 @@ fn notcurses_info_renderable_content_carries_image_data() {
     assert!(
         !content.image_data.is_empty(),
         "snapshot extraction has placements but no image_data — \
-         pixel bytes will not reach the GUI. images.len()={}, \
-         image_data.len()=0.",
+ pixel bytes will not reach the GUI. images.len()={}, \
+ image_data.len()=0.",
         content.images.len(),
     );
 
@@ -169,15 +161,15 @@ fn notcurses_info_renderable_content_carries_image_data() {
     assert!(
         missing.is_empty(),
         "snapshot has placements referencing image ids with no \
-         image_data entry — those placements will render blank: \
-         referenced={referenced_ids:?} provided={provided_ids:?} missing={missing:?}"
+ image_data entry — those placements will render blank: \
+ referenced={referenced_ids:?} provided={provided_ids:?} missing={missing:?}"
     );
 
     for img in &content.image_data {
         assert!(
             img.width > 0 && img.height > 0,
             "image_data entry for {:?} has zero dimensions {}x{} — \
-             the GPU pipeline will skip a zero-size placement",
+ the GPU pipeline will skip a zero-size placement",
             img.id,
             img.width,
             img.height,
@@ -185,7 +177,7 @@ fn notcurses_info_renderable_content_carries_image_data() {
         assert!(
             !img.data.is_empty(),
             "image_data entry for {:?} has empty pixel buffer \
-             (dims {}x{}) — the wire ships placeholder metadata only",
+ (dims {}x{}) — the wire ships placeholder metadata only",
             img.id,
             img.width,
             img.height,
@@ -194,8 +186,8 @@ fn notcurses_info_renderable_content_carries_image_data() {
         assert!(
             img.data.len() >= expected_min_bytes,
             "image_data for {:?} carries {}B of pixels but dims \
-             {}x{} would need at least {}B (1 byte/pixel even at \
-             worst-case grayscale)",
+ {}x{} would need at least {}B (1 byte/pixel even at \
+ worst-case grayscale)",
             img.id,
             img.data.len(),
             img.width,

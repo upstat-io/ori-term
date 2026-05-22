@@ -5,6 +5,8 @@
 //! whether to additionally prune orphaned image data for the uppercase
 //! variant via `prune_if_orphaned`.
 
+use std::sync::Arc;
+
 use super::super::{ImageId, ImagePlacement};
 use super::ImageCache;
 use crate::grid::StableRowIndex;
@@ -96,24 +98,82 @@ impl ImageCache {
     /// Returns `true` if the image is left with no extra frames (caller
     /// uses this to decide image-data pruning on `d=F`).
     pub(crate) fn remove_animation_frame(&mut self, id: ImageId, frame_number: u32) -> bool {
-        let Some(frames) = self.animation_frames.get_mut(&id) else {
-            return true; // static image
+        // Phase 1 (immutable scan): identify the target frame's stable
+        // FrameId + collect indices of any Δ dependents whose `base`
+        // matches it. Drop the borrow before materializing.
+        let (idx, target_fid, dependent_indices) = {
+            let Some(frames) = self.animation_frames.get(&id) else {
+                return true; // static image
+            };
+            if frames.len() <= 1 {
+                let _ = frames;
+                self.animations.remove(&id);
+                self.animation_frames.remove(&id);
+                self.frame_starts.remove(&id);
+                return true;
+            }
+            let total = frames.len() as u32;
+            let mut requested = if frame_number == 0 { 1 } else { frame_number };
+            requested = requested.min(total);
+            let idx = (requested - 1) as usize;
+            let target_fid = frames[idx].id();
+            let dependents: Vec<usize> = frames
+                .iter()
+                .enumerate()
+                .filter_map(|(i, entry)| {
+                    if i == idx {
+                        return None;
+                    }
+                    match entry {
+                        super::frame_entry::FrameEntry::Delta { base, .. }
+                            if *base == target_fid =>
+                        {
+                            Some(i)
+                        }
+                        _ => None,
+                    }
+                })
+                .collect();
+            (idx, target_fid, dependents)
         };
-        if frames.len() <= 1 {
-            // Only root frame present — nothing to remove; leave as static.
-            self.animations.remove(&id);
-            self.animation_frames.remove(&id);
-            self.frame_starts.remove(&id);
+
+        let materialized = self.materialize_delta_dependents(id, &dependent_indices);
+
+        // Phase 3 (mutable replace + remove): re-acquire the mut borrow
+        // and apply cascade results, then delete the target frame.
+        let _ = target_fid; // captured for assertions only
+        let Some(frames) = self.animation_frames.get_mut(&id) else {
             return true;
+        };
+
+        // Account for memory inflation: each Δ→Mat replacement increases
+        // the in-cache footprint from `payload.len()` to the full canvas
+        // size. Reuse the existing FrameId so back-references would still
+        // resolve to the same entry if anything held a stale FrameId
+        // reference (defensive).
+        for (dep_idx, bytes) in materialized {
+            let fid = frames[dep_idx].id();
+            let old_bytes = frames[dep_idx].memory_bytes();
+            let new_bytes = bytes.len();
+            frames[dep_idx] = super::frame_entry::FrameEntry::Materialized {
+                id: fid,
+                data: bytes,
+            };
+            if new_bytes > old_bytes {
+                self.memory_used = self.memory_used.saturating_add(new_bytes - old_bytes);
+            } else {
+                self.memory_used = self.memory_used.saturating_sub(old_bytes - new_bytes);
+            }
         }
 
-        let total = frames.len() as u32;
-        let mut requested = if frame_number == 0 { 1 } else { frame_number };
-        requested = requested.min(total);
-        let idx = (requested - 1) as usize;
+        // Re-borrow after cascade for the actual removal.
+        let frames = self
+            .animation_frames
+            .get_mut(&id)
+            .expect("present after cascade phase");
 
         let removed = frames.remove(idx);
-        self.memory_used = self.memory_used.saturating_sub(removed.len());
+        self.memory_used = self.memory_used.saturating_sub(removed.memory_bytes());
 
         if let Some(state) = self.animations.get_mut(&id) {
             // Adjust `current_frame` based on its position relative to the
@@ -138,10 +198,14 @@ impl ImageCache {
         // current, pre-removal current_frame=2 → post-adjustment=1, and the
         // displayed bytes must match `frames[1]` (old frame 3), not frames[0].
         let current_frame = self.animations.get(&id).map_or(0, |s| s.current_frame);
-        if let Some(img) = self.images.get_mut(&id) {
-            if let Some(frame) = frames.get(current_frame) {
-                img.data = frame.clone();
-            }
+        if let Some(img) = self.images.get_mut(&id)
+            && let Some(super::frame_entry::FrameEntry::Materialized { data, .. }) =
+                frames.get(current_frame)
+        {
+            img.data = data.clone();
+            // pixel_generation bump so the GPU re-uploads on the next render —
+            // without this the cache continues serving the deleted frame's pixels.
+            img.pixel_generation = img.pixel_generation.wrapping_add(1);
         }
 
         // Reset the frame-start timer so `advance_animations` re-initializes
@@ -158,6 +222,30 @@ impl ImageCache {
         }
         self.dirty = true;
         now_static
+    }
+
+    /// Compose-on-demand for each Δ dependent of a soon-to-be-deleted frame.
+    /// Returns `(dep_idx, materialized_bytes)` pairs ready for caller-side
+    /// substitution + memory accounting. Holds only `&self` while composing
+    /// so each materialization can recurse through other Δ entries cleanly.
+    fn materialize_delta_dependents(
+        &self,
+        id: ImageId,
+        dependent_indices: &[usize],
+    ) -> Vec<(usize, Arc<Vec<u8>>)> {
+        let mut materialized: Vec<(usize, Arc<Vec<u8>>)> =
+            Vec::with_capacity(dependent_indices.len());
+        for &dep_idx in dependent_indices {
+            let entry = {
+                let frames = self.animation_frames.get(&id).expect("present per phase 1");
+                frames[dep_idx].clone()
+            };
+            let Some(bytes) = self.compose_entry(id, &entry) else {
+                continue;
+            };
+            materialized.push((dep_idx, bytes));
+        }
+        materialized
     }
 }
 

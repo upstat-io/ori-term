@@ -8,10 +8,15 @@ license.workspace = true
 [features]
 default = ["image-protocol"]
 image-protocol = ["dep:image"]
+# Enables `ImageCache::*_for_test` probes for integration tests that
+# compile as external crates (cannot reach `pub(crate)` items). Off by
+# default — release builds do NOT ship these accessors.
+test-support = []
 
 [dependencies]
 base64 = "0.22"
 bitflags = "2"
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "bmp", "webp"], optional = true }
 indexmap = "2"
 log = "0.4"
@@ -26,6 +31,10 @@ libc = "0.2"
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
 insta = "1"
+# Self-dep with `test-support` so the `ImageCache::*_for_test` probes
+# light up for integration tests under `tests/spec_chain/` (which
+# compile as external crates against the crate's public API).
+oriterm_core = { path = ".", features = ["test-support"] }
 oriterm_test_support = { path = "../crates/oriterm_test_support" }
 portable-pty = "0.9.0"
 serde = { version = "1", features = ["derive"] }
@@ -40,6 +49,10 @@ harness = false
 
 [[bench]]
 name = "vte_throughput"
+harness = false
+
+[[bench]]
+name = "kitty_decode"
 harness = false
 
 [lints]

@@ -323,7 +323,6 @@ fn kitty_plain_text() {
 /// no `text` must fall back to the logical-char byte rather than returning
 /// empty. Prior to the fix this returned an empty vec and the shell silently
 /// dropped the keystroke on backends that don't populate `text`.
-/// See: bug-tracker/plans/completed/00-overview.md
 #[test]
 fn kitty_plain_char_no_text_field_falls_back_to_logical_char() {
     let r = enc(
@@ -1003,15 +1002,12 @@ fn kitty_alternate_key_not_reported_without_flag() {
 // --- property: post-crash restore produces plain ASCII ---
 
 /// Regression: headline user-visible symptom pin.
-///
 /// After a kitty-aware child program crashes mid-command and the shell
 /// emits its next OSC 133 ; A prompt, the `keyboard_mode_stack` must be
 /// restored to its pre-command snapshot. The `TermMode::KITTY_KEYBOARD_PROTOCOL`
 /// bits clear; `encode_key` takes the legacy branch; typing 'a' at the
 /// shell prompt produces plain ASCII `b"a"`, NOT the raw CSI u fragments
 /// (`0;1;100u7;1;97u`) that the shell doesn't understand.
-///
-/// See: bug-tracker/plans/completed/00-overview.md §2 (Property).
 #[test]
 fn legacy_key_encoding_after_child_crash_produces_raw_ascii_not_csi_u() {
     use oriterm_core::effect::VoidEffectSink;

@@ -1,6 +1,5 @@
 //! Kitty unicode-placeholder (`U=1`) anchor management.
 //!
-//! Per `plans/spec-conformance/section-13-kitty-graphics.md` §13.4 + §13.6.1,
 //! `U=1` transmit/place suppresses real `ImagePlacement` creation — the client
 //! writes `U+10EEEE` cells into the grid which resolve to the image at render
 //! time. Without an explicit anchor, LRU eviction would priority-drop these

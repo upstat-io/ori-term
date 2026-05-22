@@ -25,14 +25,12 @@ fn reextracts_when_content_changed_or_frame_missing() {
     assert!(should_reextract_scratch_frame(false, true, true));
 }
 
-/// Regression: BUG-06-056 — `render_chrome` MUST read all chrome-relevant
+/// `render_chrome` MUST read all chrome-relevant
 /// focused-pane data (`content_cols`, `content_rows`, `search`) from
 /// `ChromeParams`, NOT from `ctx.frame`. Reading `ctx.frame` after the
 /// per-pane scratch loop returns the last-iterated pane's state in
 /// multi-pane mode, which displays wrong cols/rows in the status bar when
 /// the focused pane is not last in iteration order.
-///
-/// See: bug-tracker/plans/BUG-06-056/section-01-root-cause-analysis.md
 #[test]
 fn render_chrome_source_scan_excludes_ctx_frame_chrome_field_reads() {
     let src = include_str!("../chrome.rs");
@@ -63,11 +61,10 @@ fn test_snapshot(cols: u16, rows: usize, search_active: bool) -> PaneSnapshot {
     snap
 }
 
-/// Regression: BUG-06-056 — `focused_pane_chrome_state` returns the
+/// `focused_pane_chrome_state` returns the
 /// FOCUSED pane's cols/rows regardless of which pane was last iterated.
 /// Source-scan above proves chrome.rs reads from params; this test
 /// proves params carry the right values for the focused pane.
-/// See: bug-tracker/plans/BUG-06-056/section-01-root-cause-analysis.md
 #[test]
 fn focused_pane_chrome_state_returns_focused_pane_cols_rows() {
     let focused = test_snapshot(80, 24, false);
@@ -77,7 +74,7 @@ fn focused_pane_chrome_state_returns_focused_pane_cols_rows() {
     assert!(search.is_none(), "no search when search_active=false");
 }
 
-/// Regression: BUG-06-056 negative pin — asymmetric pane dimensions.
+/// Regression: invariant check — asymmetric pane dimensions.
 /// If the focused pane is 80x24 and another pane is 132x43, status bar
 /// MUST report 80x24. Pre-fix, this asserted on the last-iterated pane's
 /// 132x43; post-fix, this proves the helper picks the focused pane.
@@ -108,7 +105,6 @@ fn focused_pane_chrome_state_no_snapshot_returns_zeros() {
 /// as Some(FrameSearch). The search bar overlay reads from this; without
 /// this path the search bar would be invisible after the post-loop
 /// search-restoration block was removed.
-/// See: bug-tracker/plans/BUG-06-056/section-01-root-cause-analysis.md
 #[test]
 fn focused_pane_chrome_state_active_search_produces_some_search() {
     let focused = test_snapshot(80, 24, true);

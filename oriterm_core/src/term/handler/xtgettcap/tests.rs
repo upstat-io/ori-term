@@ -11,7 +11,6 @@ use super::super::test_helpers::{feed, term_with_recorder};
 // ---------------------------------------------------------------------------
 
 /// Feed an XTGETTCAP query and return the recorded PtyWrite event strings.
-///
 /// Constructs a fresh `Term + RecordingListener`, drives the canonical
 /// DCS sequence `\x1bP+q<payload>\x1b\\` through the VTE processor, and
 /// returns the `PtyWrite(...)` event strings (one per ori_term reply).
@@ -37,7 +36,7 @@ fn concat(events: &[String]) -> String {
 // Handler-level reply tests — one per cap (13 total per §02 consensus)
 // ---------------------------------------------------------------------------
 
-/// Regression: BUG-06-074 §03 — query `544E` → reply contains hex of `oriterm`.
+/// Regression: §03 — query `544E` → reply contains hex of `oriterm`.
 #[test]
 fn xtgettcap_single_tn_returns_oriterm_hex() {
     let events = xtgettcap_replies(b"544E");
@@ -49,7 +48,7 @@ fn xtgettcap_single_tn_returns_oriterm_hex() {
     );
 }
 
-/// Regression: BUG-06-074 §03 — query `524742` → reply contains hex of `8/8/8`.
+/// Regression: §03 — query `524742` → reply contains hex of `8/8/8`.
 #[test]
 fn xtgettcap_single_rgb_returns_8_8_8_hex() {
     let events = xtgettcap_replies(b"524742");
@@ -61,7 +60,7 @@ fn xtgettcap_single_rgb_returns_8_8_8_hex() {
     );
 }
 
-/// Regression: BUG-06-074 §03 — query `436F` (`Co`) → reply contains hex of `256`.
+/// Regression: §03 — query `436F` (`Co`) → reply contains hex of `256`.
 #[test]
 fn xtgettcap_single_co_returns_256_hex() {
     let events = xtgettcap_replies(b"436F");
@@ -73,7 +72,7 @@ fn xtgettcap_single_co_returns_256_hex() {
     );
 }
 
-/// Regression: BUG-06-074 §03 — query `colors` hex → reply hex of `256`.
+/// Regression: §03 — query `colors` hex → reply hex of `256`.
 #[test]
 fn xtgettcap_single_colors_returns_256_hex() {
     // "colors" = 63 6F 6C 6F 72 73 → uppercase canonical hex 636F6C6F7273
@@ -86,7 +85,7 @@ fn xtgettcap_single_colors_returns_256_hex() {
     );
 }
 
-/// Regression: BUG-06-074 §03 (R1 + R3) — query `687061` (`hpa`) → reply hex of `\x1b[%i%p1%dG`.
+/// Regression: §03 (R1 + R3) — query `687061` (`hpa`) → reply hex of `\x1b[%i%p1%dG`.
 #[test]
 fn xtgettcap_single_hpa_returns_csi_template_hex() {
     let events = xtgettcap_replies(b"687061");
@@ -98,7 +97,7 @@ fn xtgettcap_single_hpa_returns_csi_template_hex() {
     );
 }
 
-/// Regression: BUG-06-074 — fish probe `indn` returns the canonical
+/// fish probe `indn` returns the canonical
 /// `\x1b[%p1%dS` CSI template hex-encoded.
 #[test]
 fn xtgettcap_single_indn_returns_csi_template_hex() {
@@ -113,7 +112,7 @@ fn xtgettcap_single_indn_returns_csi_template_hex() {
     );
 }
 
-/// Regression: BUG-06-074 — `Setulc` (underline color) returns the
+/// `Setulc` (underline color) returns the
 /// canonical `\x1b[58:2::%p1%d:%p2%d:%p3%dm` hex-encoded.
 #[test]
 fn xtgettcap_single_setulc_returns_sgr_58_colon_template() {
@@ -130,7 +129,7 @@ fn xtgettcap_single_setulc_returns_sgr_58_colon_template() {
     );
 }
 
-/// Regression: BUG-06-074 — `Smol` (overline) returns the canonical
+/// `Smol` (overline) returns the canonical
 /// `\x1b[53m` hex-encoded.
 #[test]
 fn xtgettcap_single_smol_returns_sgr_53_hex() {
@@ -145,7 +144,7 @@ fn xtgettcap_single_smol_returns_sgr_53_hex() {
     );
 }
 
-/// Regression: BUG-06-074 — `Se` (cursor normal) returns the canonical
+/// `Se` (cursor normal) returns the canonical
 /// `\x1b[2 q` hex-encoded.
 #[test]
 fn xtgettcap_single_se_returns_sgr_2_sp_q_hex() {
@@ -160,7 +159,7 @@ fn xtgettcap_single_se_returns_sgr_2_sp_q_hex() {
     );
 }
 
-/// Regression: BUG-06-074 — `Ss` (cursor style) returns the canonical
+/// `Ss` (cursor style) returns the canonical
 /// `\x1b[%p1%d q` hex-encoded.
 #[test]
 fn xtgettcap_single_ss_returns_sgr_n_sp_q_hex() {
@@ -175,7 +174,7 @@ fn xtgettcap_single_ss_returns_sgr_n_sp_q_hex() {
     );
 }
 
-/// Regression: BUG-06-074 — fish probe `query-os-name` returns the HOST OS
+/// fish probe `query-os-name` returns the HOST OS
 /// NAME (Linux/Darwin/Windows), NOT the terminal name.
 #[test]
 fn xtgettcap_single_query_os_name_returns_host_os_hex() {
@@ -200,7 +199,7 @@ fn xtgettcap_single_query_os_name_returns_host_os_hex() {
     );
 }
 
-/// Regression: BUG-06-074 §03 — query `Smulx` → reply hex of `\x1b[4:%p1%dm`.
+/// Regression: §03 — query `Smulx` → reply hex of `\x1b[4:%p1%dm`.
 #[test]
 fn xtgettcap_single_smulx_returns_sgr_4_colon_template() {
     // "Smulx" = 53 6D 75 6C 78 → uppercase hex 536D756C78
@@ -214,7 +213,7 @@ fn xtgettcap_single_smulx_returns_sgr_4_colon_template() {
     );
 }
 
-/// Regression: BUG-06-074 §03 — query `Ms` (clipboard OSC 52) returns
+/// Regression: §03 — query `Ms` (clipboard OSC 52) returns
 /// the canonical full hex-encoded `\x1b]52;%p1%s;%p2%s\x1b\\` value.
 #[test]
 fn xtgettcap_single_ms_returns_osc_52_hex() {
@@ -222,7 +221,7 @@ fn xtgettcap_single_ms_returns_osc_52_hex() {
     let events = xtgettcap_replies(b"4D73");
     let s = concat(&events);
     // "\x1b]52;%p1%s;%p2%s\x1b\\" = 1B 5D 35 32 3B 25 70 31 25 73 3B
-    //   25 70 32 25 73 1B 5C → "1B5D35323B25703125733B25703225731B5C"
+    // 25 70 32 25 73 1B 5C → "1B5D35323B25703125733B25703225731B5C"
     let canonical = "\x1bP1+r4D73=1B5D35323B25703125733B25703225731B5C\x1b\\";
     assert!(
         s.contains(canonical),
@@ -232,7 +231,7 @@ fn xtgettcap_single_ms_returns_osc_52_hex() {
     );
 }
 
-/// Regression: BUG-06-074 §03 — unknown cap → DCS 0+r reply.
+/// Regression: §03 — unknown cap → DCS 0+r reply.
 #[test]
 fn xtgettcap_unknown_cap_returns_dcs_0_plus_r() {
     // "99" is not a valid cap name (it's hex digits, decodes to byte 0x99 which is no known cap)
@@ -249,7 +248,7 @@ fn xtgettcap_unknown_cap_returns_dcs_0_plus_r() {
 // Edge cases
 // ---------------------------------------------------------------------------
 
-/// Regression: BUG-06-074 §03 — exact notcurses query `544e;524742;687061` (lowercase TN).
+/// Regression: §03 — exact notcurses query `544e;524742;687061` (lowercase TN).
 /// Reply is single grouped DCS 1+r with all three known caps in order.
 #[test]
 fn xtgettcap_notcurses_full_query_all_known() {
@@ -272,7 +271,7 @@ fn xtgettcap_notcurses_full_query_all_known() {
     );
 }
 
-/// Regression: BUG-06-074 §03 — mixed known+unknown caps split into 2 replies.
+/// Regression: §03 — mixed known+unknown caps split into 2 replies.
 /// Pins ordering: known reply emitted FIRST, unknown reply SECOND.
 #[test]
 fn xtgettcap_multi_cap_mixed_known_unknown() {
@@ -319,7 +318,7 @@ fn xtgettcap_multi_cap_mixed_known_unknown() {
     );
 }
 
-/// Regression: BUG-06-074 §03 — empty payload → no reply (graceful no-op).
+/// Regression: §03 — empty payload → no reply (graceful no-op).
 #[test]
 fn xtgettcap_empty_payload() {
     let events = xtgettcap_replies(b"");
@@ -330,7 +329,7 @@ fn xtgettcap_empty_payload() {
     );
 }
 
-/// Regression: BUG-06-074 §03 — empty chunk in multi-cap query is skipped.
+/// Regression: §03 — empty chunk in multi-cap query is skipped.
 #[test]
 fn xtgettcap_empty_chunk_in_multi() {
     let events = xtgettcap_replies(b"544E;;524742");
@@ -342,7 +341,7 @@ fn xtgettcap_empty_chunk_in_multi() {
     );
 }
 
-/// Regression: BUG-06-074 §03 — malformed odd-length hex → cap skipped.
+/// Regression: §03 — malformed odd-length hex → cap skipped.
 #[test]
 fn xtgettcap_malformed_hex_odd_length() {
     // "544" is 3 hex chars — odd length, can't decode
@@ -354,7 +353,7 @@ fn xtgettcap_malformed_hex_odd_length() {
     );
 }
 
-/// Regression: BUG-06-074 §03 — malformed non-hex char → cap skipped.
+/// Regression: §03 — malformed non-hex char → cap skipped.
 #[test]
 fn xtgettcap_malformed_hex_non_hex_char() {
     // "GG" contains 'G' which is not a hex digit
@@ -370,7 +369,7 @@ fn xtgettcap_malformed_hex_non_hex_char() {
 // Aborted DCS (CAN/SUB/ESC mid-payload)
 // ---------------------------------------------------------------------------
 
-/// Regression: BUG-06-074 — DCS aborted mid-payload via CAN (0x18) MUST
+/// DCS aborted mid-payload via CAN (0x18) MUST
 /// suppress the reply. Drives bytes through the real Processor + the
 /// xtgettcap_replies path's RecordingListener, asserting zero
 /// PtyWrite events when the DCS is interrupted.
@@ -391,7 +390,7 @@ fn xtgettcap_aborted_via_can_emits_no_reply() {
     );
 }
 
-/// Regression: BUG-06-074 — DCS aborted mid-payload via ESC (0x1b)
+/// DCS aborted mid-payload via ESC (0x1b)
 /// followed by a new ESC sequence (ESC[H = home cursor) MUST suppress
 /// the xtgettcap reply AND allow the following CSI to dispatch
 /// normally. Pins parser-state cleanup across the abort/recover boundary.
@@ -421,7 +420,7 @@ fn xtgettcap_aborted_via_esc_recovers_to_next_csi() {
         (cursor.line(), cursor.col().0),
         (0, 0),
         "ESC abort must recover so CSI [ H dispatches and homes cursor; \
-         cursor is at line={}, col={}",
+ cursor is at line={}, col={}",
         cursor.line(),
         cursor.col().0,
     );
@@ -431,14 +430,14 @@ fn xtgettcap_aborted_via_esc_recovers_to_next_csi() {
 // Hex codec case-insensitivity
 // ---------------------------------------------------------------------------
 
-/// Regression: BUG-06-074 §03 — uppercase hex decode (xterm canon).
+/// Regression: §03 — uppercase hex decode (xterm canon).
 #[test]
 fn hex_decode_tn_uppercase_input_yields_reply() {
     let events = xtgettcap_replies(b"544E");
     assert!(!events.is_empty(), "uppercase TN should decode");
 }
 
-/// Regression: BUG-06-074 §03 — lowercase hex decode (notcurses sends lowercase).
+/// Regression: §03 — lowercase hex decode (notcurses sends lowercase).
 #[test]
 fn hex_decode_tn_lowercase_input_yields_reply() {
     let events = xtgettcap_replies(b"544e");
@@ -449,7 +448,7 @@ fn hex_decode_tn_lowercase_input_yields_reply() {
 // Byte-exact grouped reply (the load-bearing regression guard)
 // ---------------------------------------------------------------------------
 
-/// Regression: BUG-06-074 — byte-exact grouped reply for the exact
+/// byte-exact grouped reply for the exact
 /// notcurses query. Pins reply ORDERING + grouped envelope + per-cap hex
 /// encoding correctness in one assertion. A reply with reversed ordering,
 /// missing trailing ST, or wrong hex case fails this assertion.

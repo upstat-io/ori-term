@@ -23,7 +23,6 @@ fn test_registry() -> UiFontSizes {
 
 /// Helper: build a `UiFontSizes` from IBM Plex Mono (UI font) with empty
 /// fallbacks, a single preloaded size, and default settings.
-///
 /// Used by the regression suite where the test needs a clean
 /// "no-fallback" baseline so that an injected fallback is unambiguously
 /// observable on every rebuild path.
@@ -44,7 +43,6 @@ fn ui_test_registry() -> UiFontSizes {
 }
 
 /// Helper: construct a `FontData` from the embedded test emoji bytes.
-///
 /// Returns a fresh `Arc<FontBytes>` on each call — callers that need to
 /// observe `Arc::ptr_eq` identity must reuse the returned value directly.
 fn test_emoji_font_data() -> FontData {
@@ -276,7 +274,7 @@ fn create_default_collection_applies_post_rebuild_hook() {
 // rebuild path (set_dpi, ensure_size, create_default_collection) and
 // inject_fallbacks must be idempotent so DPI changes + GPU-recovery
 // re-injection cannot grow the fallback chain unboundedly.
-// See bug-tracker/plans/completed/00-overview.md.
+// See
 
 /// Regression: emoji vanishes from tab titles after DPI change.
 /// Pins that the default collection retains its injected fallback across

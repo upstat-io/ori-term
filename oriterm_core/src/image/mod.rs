@@ -6,7 +6,9 @@
 //! and LRU eviction.
 
 mod cache;
+mod compose;
 mod decode;
+mod frame_load;
 pub mod iterm2;
 pub mod kitty;
 pub mod sixel;
@@ -15,9 +17,11 @@ use std::sync::Arc;
 use std::time::Duration;
 
 pub use cache::ImageCache;
+pub use compose::ComposeRequest;
 pub use decode::{
     GifFrames, ImageFormat, decode_gif_frames, decode_to_rgba, detect_format, rgb_to_rgba,
 };
+pub use frame_load::{BlitRect, CanvasSource, FrameLoadRequest, FrameTarget};
 
 use crate::grid::StableRowIndex;
 
@@ -72,6 +76,19 @@ pub struct ImageData {
     /// GPU layer receives `&[u8]` via [`RenderableImageData::data`] —
     /// never clone the `Arc` across the core-to-GPU boundary.
     pub(crate) data: Arc<Vec<u8>>,
+    /// Monotonic counter bumped whenever `data` is mutated.
+    ///
+    /// Drives the GPU texture re-upload gate: `ImageTextureCache`
+    /// records the generation at upload time and re-uploads when the
+    /// observed generation advances. Without this, animated images
+    /// render the first frame's pixels indefinitely because the cache
+    /// key (`ImageId`) is stable across animation advances.
+    ///
+    /// `wrapping_add(1)` on bumps so debug builds do not panic on
+    /// astronomical-but-finite continuous-append workloads — the
+    /// `pixel_generation_full_wrap_to_seeded_value_forces_reupload`
+    /// pin owns the wrap-vs-stale invariant.
+    pub(crate) pixel_generation: u64,
     /// Original format before decode.
     pub format: ImageFormat,
     /// How the image was transmitted.
@@ -174,6 +191,41 @@ pub enum ImageError {
     DecodeFailed(String),
     /// Total image memory would exceed cache limit even after eviction.
     MemoryLimitExceeded,
+    /// Canvas-source frame reference is out of range. Used by `put_frame`
+    /// when `CanvasSource::Frame(n)` names a non-existent frame; surfaced
+    /// to kitty clients as `EINVAL: No frame with number: N found` per
+    /// kitty graphics.c:1610-1612.
+    InvalidFrameRef {
+        /// Requested 1-based frame index.
+        requested: u32,
+        /// Total frames currently in the animation (root counts as 1).
+        total: u32,
+    },
+    /// Frame blit dimensions exceed the destination image dimensions.
+    /// Surfaced as `EINVAL: Frame width {blit_w} larger than image width:
+    /// {image_w}` per kitty graphics.c:1580-1583.
+    OversizedBlit {
+        /// Blit width in pixels (from decoded payload).
+        blit_w: u32,
+        /// Blit height in pixels (from decoded payload).
+        blit_h: u32,
+        /// Target image width in pixels.
+        image_w: u32,
+        /// Target image height in pixels.
+        image_h: u32,
+    },
+    /// Target image id does not exist in the cache. Used by `put_frame`
+    /// when the lookup fails; surfaced to kitty clients as ENOENT (NOT
+    /// EINVAL) per kitty graphics.c:2233-2235 — distinct from
+    /// `InvalidFormat` so the dispatch reply path can map this to ENOENT.
+    MissingImage {
+        /// Requested image id (`i=` from the kitty command).
+        id: u32,
+    },
+    /// Same-frame compose with overlapping source and destination
+    /// rectangles. Per kitty graphics.c:1849, this is an EINVAL with a
+    /// specific message — emitted by `compose_frame` only.
+    OverlappingFrames,
 }
 
 impl std::fmt::Display for ImageError {
@@ -183,6 +235,30 @@ impl std::fmt::Display for ImageError {
             Self::InvalidFormat => write!(f, "unrecognized image format"),
             Self::DecodeFailed(msg) => write!(f, "image decode failed: {msg}"),
             Self::MemoryLimitExceeded => write!(f, "image memory limit exceeded"),
+            Self::InvalidFrameRef { requested, total } => write!(
+                f,
+                "No frame with number: {requested} found (animation has {total} frames)"
+            ),
+            Self::OversizedBlit {
+                blit_w,
+                blit_h,
+                image_w,
+                image_h,
+            } => {
+                if blit_w > image_w {
+                    write!(f, "Frame width {blit_w} larger than image width: {image_w}")
+                } else {
+                    write!(
+                        f,
+                        "Frame height {blit_h} larger than image height: {image_h}"
+                    )
+                }
+            }
+            Self::MissingImage { id } => write!(f, "image with id {id} not found"),
+            Self::OverlappingFrames => write!(
+                f,
+                "source and destination rectangles overlap and the src and destination frames are the same"
+            ),
         }
     }
 }
@@ -246,19 +322,33 @@ impl AnimationState {
         }
     }
 
-    /// Duration of the current frame (clamped to minimum).
+    /// Duration of the current frame.
+    ///
+    /// Preserves `Duration::ZERO` (gapless frames per kitty graphics.c:1798)
+    /// so `advance_animations`'s gapless-skip loop runs to completion in a
+    /// single tick instead of pausing for 16 ms on every gapless frame.
+    /// Non-zero durations are clamped to `MIN_FRAME_DURATION` to cap abusive
+    /// 1-ms-per-frame GIFs at 60 fps.
     pub fn current_duration(&self) -> Duration {
-        self.frame_durations
+        let dur = self
+            .frame_durations
             .get(self.current_frame)
             .copied()
-            .unwrap_or(MIN_FRAME_DURATION)
-            .max(MIN_FRAME_DURATION)
+            .unwrap_or(MIN_FRAME_DURATION);
+        if dur.is_zero() {
+            Duration::ZERO
+        } else {
+            dur.max(MIN_FRAME_DURATION)
+        }
     }
 
     /// Advance to the next frame. Returns `true` if the frame changed.
     ///
-    /// Handles loop counting and stops at the final frame when loops
-    /// are exhausted.
+    /// Handles loop counting + stops at the final frame when loops are
+    /// exhausted OR when `wait_mode` (Kitty `s=2` `ANIMATION_LOADING`) is set
+    /// and we would wrap. Per kitty `graphics.c:1793-1796`, `ANIMATION_LOADING`
+    /// halts at the last frame on wrap, waiting for a new `a=f` frame to
+    /// extend the animation; `ANIMATION_RUNNING` (`s=3`) wraps normally.
     pub fn advance(&mut self) -> bool {
         if self.paused || self.total_frames <= 1 {
             return false;
@@ -266,7 +356,14 @@ impl AnimationState {
 
         let next = self.current_frame + 1;
         if next >= self.total_frames {
-            // Looped back to start.
+            // Wrap branch — loop counting + wait-mode halt.
+            if self.wait_mode {
+                // s=2 ANIMATION_LOADING: halt at the last frame; do not
+                // wrap. A subsequent `a=f` will extend `total_frames` and
+                // `add_animation_frame` clears wait_mode on resume per
+                // existing logic.
+                return false;
+            }
             if let Some(max_loops) = self.loop_count {
                 self.loops_completed += 1;
                 if self.loops_completed >= max_loops {
@@ -286,6 +383,78 @@ impl AnimationState {
             self.loops_completed >= max_loops
         } else {
             false // Infinite loop.
+        }
+    }
+
+    /// Advance to the next non-gapless frame in this tick.
+    ///
+    /// Per kitty `graphics.c:1798-1799` skip loop: after a single
+    /// time-driven advance, consume consecutive zero-gap frames inside the
+    /// same tick so they are never displayed. Gapless frames exist as base
+    /// data for subsequent frames (per `graphics-protocol.rst:947-958`).
+    ///
+    /// Bounded by `total_frames - 1` to prevent runaway on all-gapless
+    /// animations; `current_duration()` clamps to `MIN_FRAME_DURATION` as
+    /// the deadline-scheduling safety net in that edge case.
+    ///
+    /// Returns `true` if `current_frame` changed.
+    pub fn advance_consuming_gapless(&mut self) -> bool {
+        if !self.advance() {
+            return false;
+        }
+        let max_skips = self.total_frames.saturating_sub(1);
+        let mut skips = 0;
+        while skips < max_skips && self.is_current_frame_gapless() && !self.is_finished() {
+            if !self.advance() {
+                break;
+            }
+            skips += 1;
+        }
+        true
+    }
+
+    /// `true` when the current frame's raw gap is `Duration::ZERO`.
+    fn is_current_frame_gapless(&self) -> bool {
+        self.frame_durations
+            .get(self.current_frame)
+            .is_some_and(|d| *d == Duration::ZERO)
+    }
+}
+
+/// Read-only snapshot of an animation's protocol-observable facts.
+///
+/// Stable public API that decouples consumers from the internal
+/// `AnimationState` field layout. The frame-gap slice is borrowed (`&[Duration]`)
+/// rather than owned to avoid per-call allocation; the snapshot is `Copy`
+/// because references-to-slices are `Copy`.
+#[derive(Debug, Clone, Copy)]
+pub struct AnimationSnapshot<'a> {
+    /// Index of the currently displayed frame (0-based).
+    pub current_frame: usize,
+    /// Total number of frames.
+    pub total_frames: usize,
+    /// Per-frame gaps (raw `Duration::ZERO` for gapless frames).
+    pub frame_gaps: &'a [Duration],
+    /// Number of loops (`None` = infinite per kitty `v=1` mapping).
+    pub loop_count: Option<u32>,
+    /// Number of complete loops performed so far.
+    pub loops_completed: u32,
+    /// Whether playback is paused (Kitty `s=1`).
+    pub paused: bool,
+    /// Whether the animation is in `s=2` wait-mode.
+    pub wait_mode: bool,
+}
+
+impl<'a> From<&'a AnimationState> for AnimationSnapshot<'a> {
+    fn from(state: &'a AnimationState) -> Self {
+        Self {
+            current_frame: state.current_frame,
+            total_frames: state.total_frames,
+            frame_gaps: &state.frame_durations,
+            loop_count: state.loop_count,
+            loops_completed: state.loops_completed,
+            paused: state.paused,
+            wait_mode: state.wait_mode,
         }
     }
 }

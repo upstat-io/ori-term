@@ -37,7 +37,6 @@ use crate::mux_event::MuxEvent;
 impl<S: EffectSink> PaneIoThread<S> {
     /// Drain queued effects from the terminal's sink and route them to
     /// `MuxEvent` / wakeup / pending-response registrations.
-    ///
     /// Called after every `handle_bytes()` parse chunk, after
     /// `drain_commands` finishes (so a fulfilled reply in the same tick
     /// enters the same drain), and after `handle_sync_timeout`. The
@@ -46,7 +45,7 @@ impl<S: EffectSink> PaneIoThread<S> {
     #[allow(
         clippy::too_many_lines,
         reason = "single-match-statement router: dispatch table for 20+ Effect variants \
- belongs in one place; splitting would violate SSOT (LEAK:duplicated-dispatch)"
+ belongs in one place; splitting would violate SSOT ()"
     )]
     pub(crate) fn drain_effects_into_mux_events(&mut self) {
         self.terminal
@@ -145,8 +144,8 @@ impl<S: EffectSink> PaneIoThread<S> {
                     // contract is "clear discards preceding only" per
                     // host.rs:42-50 and plan blind-spot §7.
                     let suppressed = matches!(
-                     last_clear_index,
-                     Some(clear_at) if idx < clear_at
+                    last_clear_index,
+                    Some(clear_at) if idx < clear_at
                     );
                     if !suppressed {
                         self.send_mux_event(MuxEvent::DesktopNotification {
@@ -245,7 +244,6 @@ impl<S: EffectSink> PaneIoThread<S> {
     }
 
     /// Canonical `MuxEvent` emission path.
-    ///
     /// Every `MuxEvent` produced by the router MUST go through this
     /// helper so the wakeup callback fires — the winit event loop
     /// otherwise never observes the queued state change and
@@ -257,7 +255,6 @@ impl<S: EffectSink> PaneIoThread<S> {
     }
 
     /// Fire the wakeup callback WITHOUT queuing a `MuxEvent`.
-    ///
     /// Used for `UiEffect::CursorBlinkChanged` and `UiEffect::MouseCursorDirty`,
     /// which have no `MuxEvent` counterpart but still need the winit loop
     /// to observe the state change (cursor blink enable/disable, mouse

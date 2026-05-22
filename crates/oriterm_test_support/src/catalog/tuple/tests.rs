@@ -71,7 +71,7 @@ fn dcs_decrqss_canonicalizes_to_dcs_dollar_pt_q() {
 }
 
 /// Regression: OSC selector lives in `final_byte`,
-/// payload placeholders live in `params`. See: bug-tracker/plans/completed/00-overview.md
+/// payload placeholders live in `params`. See:
 #[test]
 fn osc_title_canonicalizes_with_selector_in_final_byte() {
     let t = canonical_tuple("`OSC 0 ; Pt BEL|ST`").expect("OSC 0 must canonicalize");
@@ -193,7 +193,6 @@ fn signature_preserves_csi_final_byte() {
 }
 
 // -------- csi_params_placeholder SSOT helper -------------------------------
-//
 // `csi_params_placeholder` is the canonical home for CSI arity-driven
 // placeholder normalization (mirrors `osc_placeholder` for OSC). Capture
 // extraction calls it via `csi_params_placeholder(params.len())`. These

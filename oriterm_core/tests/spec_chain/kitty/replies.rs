@@ -9,15 +9,15 @@
 //!
 //! Catalog rows: `KG-RESPONSE-OK`, `KG-RESPONSE-EBADF`, `KG-RESPONSE-EBIG`,
 //! `KG-RESPONSE-EINVAL`, `KG-RESPONSE-ENOENT`, `KG-RESPONSE-ENOMEM`,
-//! `KG-RESPONSE-EIO`, `KG-RESPONSE-QUIET`, `KG-COMPRESSION-OZ-REJECTED`,
-//! `KG-ACTION-COMPOSE` (reject-helper observable).
+//! `KG-RESPONSE-EIO`, `KG-RESPONSE-QUIET`, `KG-COMPRESSION-OZ-ROUND-TRIP`,
+//! `KG-COMPRESSION-UNKNOWN-REJECTED`, `KG-ACTION-COMPOSE` (reject-helper observable).
 
 use oriterm_core::effect::{Effect, HostRequest, PtyEffect, PtyWriteKind};
 use oriterm_test_support::spec_chain::SpecHarness;
 
 use super::fixtures::{
     b64, count_replies_exact, kitty_apc, ok_reply_for, placement_count, reply_bytes,
-    reply_contains, rgba_4x4_red, tmp_dir,
+    reply_contains, rgba_4x4_red, rgba_solid, tmp_dir,
 };
 
 // ===========================================================================
@@ -301,44 +301,190 @@ fn kitty_response_eio_still_emitted_on_partial_read_failure_after_successful_ope
 }
 
 // ===========================================================================
-// Compression (o=z) reject — §13.5 guard at kitty_store_image entry
+// Compression (o=z) round-trip — §13.5 helper at kitty_store_image entry
 // ===========================================================================
+//
+// Pre-Phase 4: every test in this section EXCEPT the no-compression clamp
+// fails. Post-cure: `prepare_image_bytes` decompresses → store/place
+// succeeds → reply chain matches the catalog row's new
+// `KG-COMPRESSION-OZ-ROUND-TRIP` shape.
 
-/// Catalog row: `KG-COMPRESSION-OZ-REJECTED`.
+/// Construct a zlib-encoded payload for an APC transmit. Phase 3 helper —
+/// scoped here since this is the only place that builds compressed kitty
+/// payloads for the spec-chain rung.
+fn zlib_encode(raw: &[u8]) -> Vec<u8> {
+    use flate2::Compression;
+    use flate2::write::ZlibEncoder;
+    use std::io::Write;
+    let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
+    encoder.write_all(raw).expect("encode");
+    encoder.finish().expect("finish")
+}
+
+/// Catalog row: `KG-COMPRESSION-OZ-ROUND-TRIP`.
 ///
-/// `o=z` is rejected at `kitty_store_image` entry with an
-/// `EINVAL: compression not supported` reply.
+/// Pin REPLACES the legacy rejection assertion
+/// `kitty_transmission_compression_oz_rejected_with_einval_reply` that
+/// cited the now-retired rejection row.
+///
+/// `o=z` MUST round-trip through the shared `prepare_image_bytes` helper:
+/// payload decompresses to the original RGBA bytes, store succeeds, place
+/// follows, OK reply emitted (when `q=0`).
 #[test]
-fn kitty_transmission_compression_oz_rejected_with_einval_reply() {
+fn kitty_compression_oz_round_trips_with_ok_reply() {
+    let raw = rgba_4x4_red();
+    let compressed = b64(&zlib_encode(&raw));
+
     let mut h = SpecHarness::new();
-    h.feed(&kitty_apc(
-        b"a=T,i=150,f=32,s=4,v=4,o=z",
-        &b64(&rgba_4x4_red()),
-    ));
+    h.feed(&kitty_apc(b"a=T,i=150,f=32,s=4,v=4,o=z", &compressed));
 
     assert_eq!(
         placement_count(&h),
+        1,
+        "o=z MUST create a placement post-cure (round-trip via prepare_image_bytes)",
+    );
+    assert_eq!(
+        h.term().image_cache().image_count(),
+        1,
+        "o=z MUST store the decompressed image post-cure",
+    );
+    assert!(
+        reply_contains(&h, &ok_reply_for(150)),
+        "o=z MUST emit OK reply post-cure — got {:?}",
+        String::from_utf8_lossy(&reply_bytes(&h)),
+    );
+}
+
+/// Catalog row: `KG-COMPRESSION-OZ-ROUND-TRIP` (transmit + separate place
+/// shape).
+///
+/// Extended xray-shape pin: `a=t,o=z` then `a=p` (transmit-only followed
+/// by separate placement). Mirrors the actual xray byte-stream shape per
+/// §01.B re-investigation.
+#[test]
+fn kitty_compression_oz_then_place_succeeds() {
+    let raw = rgba_4x4_red();
+    let compressed = b64(&zlib_encode(&raw));
+
+    let mut h = SpecHarness::new();
+    h.feed(&kitty_apc(b"a=t,i=152,f=32,s=4,v=4,o=z", &compressed));
+    h.feed(&kitty_apc(b"a=p,i=152", ""));
+
+    assert_eq!(
+        placement_count(&h),
+        1,
+        "transmit-only o=z then explicit a=p MUST place post-cure",
+    );
+    assert_eq!(
+        h.term().image_cache().image_count(),
+        1,
+        "transmit-only o=z MUST store the image",
+    );
+}
+
+/// Catalog row: `KG-COMPRESSION-UNKNOWN-REJECTED`.
+///
+/// Fixes the silent-treat-as-uncompressed surface for `o=x` Plan TPR
+/// surfaced — pre-helper, any non-`z` value flows through as if
+/// uncompressed.
+///
+/// Post-cure: `prepare_image_bytes` rejects any `compression != None` and
+/// `!= Some(b'z')` with `EINVAL: unsupported compression o=<char>`.
+#[test]
+fn kitty_compression_unknown_x_emits_einval_reply() {
+    let mut h = SpecHarness::new();
+    h.feed(&kitty_apc(
+        b"a=T,i=153,f=32,s=4,v=4,o=x",
+        &b64(&rgba_4x4_red()),
+    ));
+
+    let replies = reply_bytes(&h);
+    let s = String::from_utf8_lossy(&replies);
+    assert!(
+        s.contains("EINVAL"),
+        "o=x MUST emit EINVAL reply — got {s:?}",
+    );
+    assert!(
+        s.contains("unsupported compression") || s.contains("o=x"),
+        "o=x EINVAL MUST name the unsupported compression value — got {s:?}",
+    );
+    assert_eq!(
+        placement_count(&h),
         0,
-        "o=z MUST NOT create a placement — upload is rejected entirely",
+        "rejected o=x MUST NOT create a placement — got {} placements",
+        placement_count(&h),
     );
     assert_eq!(
         h.term().image_cache().image_count(),
         0,
-        "o=z MUST NOT store an image — upload is rejected entirely",
-    );
-    let replies = reply_bytes(&h);
-    let s = String::from_utf8_lossy(&replies);
-    assert!(
-        s.contains("EINVAL: compression not supported"),
-        "o=z MUST emit EINVAL: compression not supported reply — got {s:?}",
+        "rejected o=x MUST NOT store an image",
     );
 }
 
-/// Catalog row: `KG-COMPRESSION-OZ-REJECTED` (boundary clamp).
+/// Catalog row: `KG-COMPRESSION-OZ-ROUND-TRIP` (chunked-shape variant).
 ///
-/// Same transmit without `o=z` MUST succeed. Clamps the guard so a future
-/// refactor cannot silently widen the reject path to reject all
-/// transmissions.
+/// MANDATORY xray-replay regression pin.
+///
+/// Feeds an xray-shape multi-chunk byte stream: first chunk carries
+/// control keys (`a=t,o=z,m=1`), middle chunk `m=1`, terminator `m=0`,
+/// then a separate `a=p` place. Pins the END-TO-END accumulation +
+/// decompress + store + place chain that xray actually exercises in
+/// production — distinct from the single-chunk pin above.
+///
+/// Payload shape: zlib-compressed 64×64 RGBA (16 KiB raw → ~100 bytes
+/// zlib → ~140 chars base64). Splits on base64-character boundaries
+/// (multiples of 4) per the kitty spec's per-chunk base64-decode contract.
+/// Each chunk's base64 MUST decode independently — splitting mid-character
+/// would fail base64 parse on the first chunk.
+#[test]
+fn kitty_chunked_oz_xray_shape_round_trips() {
+    // Larger fixture so the base64 payload comfortably exceeds 3×4=12 chars,
+    // letting us split cleanly at base64-character boundaries.
+    let raw = rgba_solid(64, 64, 255, 0, 0, 255);
+    let compressed = zlib_encode(&raw);
+    let b64_payload = b64(&compressed);
+    let total = b64_payload.len();
+
+    // Round each split point DOWN to a multiple of 4 so each chunk's base64
+    // decodes independently.
+    let round_down_4 = |n: usize| (n / 4) * 4;
+    let split_a = round_down_4(total / 3).max(4);
+    let split_b = round_down_4((2 * total) / 3).max(split_a + 4);
+    let first = &b64_payload[..split_a];
+    let mid = &b64_payload[split_a..split_b];
+    let last = &b64_payload[split_b..];
+    assert_eq!(first.len() % 4, 0, "first chunk MUST be base64-aligned");
+    assert_eq!(mid.len() % 4, 0, "mid chunk MUST be base64-aligned");
+
+    let mut h = SpecHarness::new();
+    // First chunk: full control keys + m=1 + first base64 fragment.
+    h.feed(&kitty_apc(b"a=t,i=160,f=32,s=64,v=64,q=2,o=z,m=1", first));
+    // Middle continuation: only m=1 + payload (per spec, subsequent
+    // chunks omit control keys).
+    h.feed(&kitty_apc(b"m=1", mid));
+    // Terminator: m=0 (signals end of payload).
+    h.feed(&kitty_apc(b"m=0", last));
+    // Separate place.
+    h.feed(&kitty_apc(b"a=p,i=160,q=2", ""));
+
+    assert_eq!(
+        h.term().image_cache().image_count(),
+        1,
+        "chunked o=z xray-shape MUST land 1 image post-cure",
+    );
+    assert_eq!(
+        placement_count(&h),
+        1,
+        "chunked o=z xray-shape MUST land 1 placement post-cure",
+    );
+    // q=2 suppresses replies — assertion is on the cache state, not the
+    // reply transcript.
+}
+
+/// Catalog row: `KG-COMPRESSION-OZ-ROUND-TRIP` (no-compression boundary clamp).
+///
+/// Same transmit without `o=z` MUST still succeed. Pins that the helper
+/// insertion at store.rs does not regress the uncompressed-path semantics.
 #[test]
 fn kitty_transmission_compression_unspecified_still_processes_payload() {
     let mut h = SpecHarness::new();
@@ -357,35 +503,41 @@ fn kitty_transmission_compression_unspecified_still_processes_payload() {
 }
 
 // ===========================================================================
-// Compose (a=c) reject — §13.5 explicit-reject helper
+// Compose (a=c) — error-reply boundary clamp
 // ===========================================================================
 
-/// Catalog row: `KG-ACTION-COMPOSE` (explicit reject).
+/// Catalog row: `KG-ACTION-COMPOSE` (boundary clamp — full matrix lives
+/// in `tests/spec_chain/kitty/compose.rs`).
 ///
-/// `a=c` (kitty Compose action) is recognized but not implemented; the
-/// `kitty_compose_reject` helper emits `EINVAL: action `c` not implemented`
-/// rather than silently routing through the unknown-action fallback to
-/// `TransmitAndPlace`.
+/// `a=c` against an image that does not exist MUST emit ENOENT (not
+/// EINVAL, not OK). Inverse of the now-deleted reject-helper test that
+/// pinned the legacy `kitty_compose_reject` path. The full Compose
+/// matrix (error responses, composition modes, fallback regression)
+/// lives in the dedicated `compose.rs` test file.
 #[test]
-fn kitty_action_compose_rejected_with_einval_reply() {
+fn kitty_action_compose_missing_image_emits_enoent_not_legacy_reject() {
     let mut h = SpecHarness::new();
-    h.feed(&kitty_apc(b"a=c,i=30,r=2,c=1", &b64(&rgba_4x4_red())));
+    h.feed(&kitty_apc(b"a=c,i=30,r=1,c=2,w=4,h=4,C=1", ""));
 
     assert_eq!(
         placement_count(&h),
         0,
-        "a=c MUST NOT create a placement — the compose handler is not implemented",
+        "a=c against missing image MUST NOT create a placement",
     );
     assert_eq!(
         h.term().image_cache().image_count(),
         0,
-        "a=c MUST NOT store an image — the compose handler is not implemented",
+        "a=c against missing image MUST NOT store an image",
     );
     let replies = reply_bytes(&h);
     let s = String::from_utf8_lossy(&replies);
     assert!(
-        s.contains("EINVAL: action `c` not implemented"),
-        "a=c MUST emit EINVAL: action `c` not implemented reply — got {s:?}",
+        !s.contains("action `c` not implemented"),
+        "a=c MUST NOT emit the legacy `action c not implemented` reject — got {s:?}",
+    );
+    assert!(
+        s.contains("ENOENT"),
+        "a=c against missing image MUST emit ENOENT — got {s:?}",
     );
 }
 

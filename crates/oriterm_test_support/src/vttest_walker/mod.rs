@@ -4,7 +4,7 @@
 //! across `oriterm_core/tests/vttest/` and
 //! `oriterm/src/gpu/visual_regression/vttest/` with a single canonical
 //! algorithm that takes a per-screen closure for the variation. See
-//! `bug-tracker/plans/completed/00-overview.md` for the design consensus and
+//! for the design consensus and
 //! migration matrix.
 
 use crate::PtySession;
@@ -20,13 +20,11 @@ use crate::PtySession;
 ///    for the sentinel check, so the closure does not re-pay the
 ///    `grid_text()` allocation cost.
 /// 3. `usize screen` — the 1-based screen index.
-///
-/// After the closure returns, an Enter keypress is sent via
-/// [`PtySession::send_enter`], which respects LNM (Line Feed/New Line)
-/// mode and includes the 300 ms quiescent wait. See
-/// [`oriterm_core::encode_enter_base`] for the SSOT.
-///
-/// Returns the number of screens for which `on_screen` was called.
+///    After the closure returns, an Enter keypress is sent via
+///    [`PtySession::send_enter`], which respects LNM (Line Feed/New Line)
+///    mode and includes the 300 ms quiescent wait. See
+///    [`oriterm_core::encode_enter_base`] for the SSOT.
+///    Returns the number of screens for which `on_screen` was called.
 pub fn walk_vttest_screens<F>(
     session: &mut PtySession,
     max_screens: usize,

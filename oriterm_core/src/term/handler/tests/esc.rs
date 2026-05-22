@@ -583,7 +583,6 @@ fn decaln_clears_cell_attributes() {
 /// snapshots to `Some(VecDeque::new())` (not `None`) so a child that later
 /// pushes kitty modes and crashes can still have those pushes cleaned at
 /// the next OSC 133 ; A / ; D.
-/// See: bug-tracker/plans/completed/00-overview.md
 #[test]
 fn keyboard_mode_stack_ris_during_command_sets_saved_to_empty_snapshot() {
     use std::collections::VecDeque;

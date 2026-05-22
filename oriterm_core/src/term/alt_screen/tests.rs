@@ -150,7 +150,6 @@ fn resize_on_alt_screen_then_snapshot() {
 
 /// Regression: kitty keyboard mode bits leaked across
 /// `?1049h/l` toggles before the reapply-top fix in `toggle_alt_common`.
-/// See: bug-tracker/plans/completed/00-overview.md
 #[test]
 fn toggle_alt_common_swaps_nonempty_stacks_reapplies_new_active_top() {
     let mut term = make_term();
@@ -280,7 +279,6 @@ fn alt_grid_survives_exit() {
 }
 
 // Graceful fallback tests: ALT_SCREEN set without alt_grid allocated.
-//
 // In debug builds, `debug_assert!` fires to catch the inconsistency during
 // development. In release builds, the methods fall back to the primary
 // grid/cache via `unwrap_or` so the terminal never crashes.

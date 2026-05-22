@@ -20,7 +20,7 @@ use std::fmt;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crossbeam_channel::Receiver;
 
@@ -56,14 +56,12 @@ use crate::shell_integration::interceptor::RawInterceptor;
 const CHILD_EXIT_WAIT_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Maximum bytes parsed before re-checking for commands.
-///
 /// Matches the old `PtyEventLoop::MAX_LOCKED_PARSE` (64 KB). A single 1 MB forwarded
 /// read is sliced into chunks at this boundary so resize/copy commands stay
 /// responsive under sustained output.
 const MAX_PARSE_CHUNK: usize = 0x1_0000; // 64 KB
 
 /// Terminal IO thread — owns `Term<S>` and processes commands + PTY bytes.
-///
 /// Generic over `S: EffectSink` so the IO thread's `Term` can use
 /// `QueueingEffectSink` (the production path post effect-cutover §01.1)
 /// or any other `EffectSink` impl in tests.
@@ -140,7 +138,7 @@ pub struct PaneIoThread<S: EffectSink + 'static> {
     /// is emitted so the main thread can update its `RenderScheduler`.
     /// `None` means "no deadline currently in effect" — both the initial
     /// state and the state after all animations finish/pause.
-    last_animation_deadline: Option<std::time::Instant>,
+    last_animation_deadline: Option<Instant>,
     /// Pending resize slot — coalesces resize requests via last-writer-
     /// wins atomic store. Encoded by [`pack_pending_resize`]; decoded
     /// by [`unpack_pending_resize`]. `apply_pending_resize` swaps the
@@ -152,7 +150,6 @@ pub struct PaneIoThread<S: EffectSink + 'static> {
     /// [`Self::maybe_shrink_buffers`]. Pins that the OUTER run loop
     /// (not the `select!` `default(timeout)` arm) is the call path,
     /// per §03 regression guard 3 in
-    /// `bug-tracker/plans//section-03-tdd-matrix.md`.
     /// Production builds carry zero overhead — the field is `#[cfg(test)]`.
     /// Shared with the spawning test thread via `Arc` so the test can
     /// observe the counter while the IO thread runs.
@@ -169,15 +166,14 @@ pub struct PaneIoThread<S: EffectSink + 'static> {
 
 impl<S: EffectSink> PaneIoThread<S> {
     /// Take any pending resize from the atomic slot and apply it.
-    ///
     /// Idempotent — empty-slot fast path is one atomic load + one
     /// branch. Called both BEFORE the `cmd_rx` drain begins (so any
     /// command in the drain reads post-resize geometry) AND
     /// unconditionally before each command in the drain (so a
     /// `send_resize()` that lands during the drain still flushes
     /// before the next command). Closes the race surfaced in §04
-    /// review round 1 Codex F1; broadened to all commands per
-    /// Round 3 Gemini F1.
+    /// review round 1 ; broadened to all commands per
+    /// review pass F1.
     pub(super) fn apply_pending_resize(&mut self) {
         // Empty-slot fast path: an `Acquire` load + branch costs ~one
         // cycle and avoids the full `AcqRel` read-modify-write on every
@@ -199,14 +195,13 @@ impl<S: EffectSink> PaneIoThread<S> {
     }
 
     /// Drain all pending commands from the command channel.
-    ///
     /// `apply_pending_resize` is called unconditionally at drain entry
     /// AND before each command so that any reply-bearing command in
     /// this cycle reads post-resize terminal state — preserving the
     /// `SnapshotNow` FIFO barrier contract at
     /// `commands/mod.rs:45-56`. Cost is one atomic load per command
     /// (negligible vs. per-command work). Pinned by §04 Plan TPR
-    /// Round 0 F1 + Round 1 Codex F1 + Round 3 Gemini F1.
+    /// Round 0 F1 + review pass F1 + review pass F1.
     fn drain_commands(&mut self) {
         // Apply any pending resize FIRST so reply-bearing commands later
         // in this cycle read terminal state AFTER the geometry change.
@@ -231,29 +226,41 @@ impl<S: EffectSink> PaneIoThread<S> {
     }
 
     /// Parse a byte buffer with bounded chunking.
-    ///
     /// Slices `bytes` into [`MAX_PARSE_CHUNK`]-sized pieces. Between chunks,
     /// commands are drained and snapshots are published so that resize/scroll
     /// stay responsive and the main thread sees render progress even within a
     /// single large PTY read (up to 1 MB).
-    fn handle_bytes_chunked(&mut self, bytes: &[u8]) {
+    ///
+    /// Returns (`drain_commands_dur`, `maybe_snapshot_dur`) summed across all
+    /// inter-chunk boundaries within this byte buffer. The caller aggregates
+    /// these across messages in `process_pending_bytes` so the SLOW drain
+    /// cycle log can attribute time to the sub-phases that fall OUTSIDE
+    /// `handle_bytes` (which has its own raw/vte/housekeeping/effects-drain
+    /// instrumentation at lines 311-380).
+    fn handle_bytes_chunked(&mut self, bytes: &[u8]) -> (Duration, Duration) {
+        let mut drain_cmds_total = Duration::ZERO;
+        let mut snapshot_total = Duration::ZERO;
         let mut offset = 0;
         while offset < bytes.len() {
             let end = (offset + MAX_PARSE_CHUNK).min(bytes.len());
             self.handle_bytes(&bytes[offset..end]);
             offset = end;
+            let t = Instant::now();
             self.drain_commands();
+            drain_cmds_total += t.elapsed();
             if self.shutdown.load(Ordering::Acquire) {
-                return;
+                return (drain_cmds_total, snapshot_total);
             }
             // Publish intermediate snapshots between chunks so the main thread
             // sees progress even within a single large forwarded read.
+            let t = Instant::now();
             self.maybe_produce_snapshot();
+            snapshot_total += t.elapsed();
         }
+        (drain_cmds_total, snapshot_total)
     }
 
     /// Process all pending byte messages with bounded chunking.
-    ///
     /// Drains the byte channel and passes each message through
     /// [`handle_bytes_chunked()`](Self::handle_bytes_chunked). Snapshots
     /// are produced between messages so the main thread sees progress
@@ -263,20 +270,26 @@ impl<S: EffectSink> PaneIoThread<S> {
         // durations >= 50ms indicate the IO thread is saturated —
         // bytes arrive faster than they can be parsed + stored.
         // Logs the messages-drained count + total bytes.
-        let drain_start = std::time::Instant::now();
+        let drain_start = Instant::now();
         let mut messages_drained: usize = 0;
         let mut bytes_drained: usize = 0;
+        let mut snapshot_total = Duration::ZERO;
+        let mut drain_cmds_total = Duration::ZERO;
         while let Ok(bytes) = self.byte_rx.try_recv() {
             messages_drained += 1;
             bytes_drained += bytes.len();
-            self.handle_bytes_chunked(&bytes);
+            let (cmd_dur, snap_dur) = self.handle_bytes_chunked(&bytes);
+            drain_cmds_total += cmd_dur;
+            snapshot_total += snap_dur;
             if self.shutdown.load(Ordering::Acquire) {
                 return;
             }
             // Produce snapshot between messages to keep the main thread fed.
             // Without this, flood output fills the queue faster than parsing
             // drains it, and `maybe_produce_snapshot()` never runs.
+            let t = Instant::now();
             self.maybe_produce_snapshot();
+            snapshot_total += t.elapsed();
         }
         let drain_ms = drain_start.elapsed().as_millis();
         // 10ms threshold captures sub-saturation drain costs (formerly 50ms
@@ -284,29 +297,60 @@ impl<S: EffectSink> PaneIoThread<S> {
         // localize where the IO thread spends its byte-drain budget under
         // graphics floods even when no single cycle hits hard backpressure.
         if messages_drained > 0 && drain_ms >= 10 {
+            let cache = self.terminal.image_cache();
             log::info!(
-                target: "oriterm_mux::pane::io_thread::iteration",
-                "drain cycle messages={messages_drained} bytes={bytes_drained} duration_ms={drain_ms}"
+            target: "oriterm_mux::pane::io_thread::iteration",
+            "drain cycle messages={messages_drained} bytes={bytes_drained} \
+             duration_ms={drain_ms} \
+             drain_cmds_ms={} snapshot_ms={} \
+             img_count={} placement_count={} mem_used={}",
+            drain_cmds_total.as_millis(),
+            snapshot_total.as_millis(),
+            cache.image_count(),
+            cache.placement_count(),
+            cache.memory_used()
             );
         }
     }
 
     /// Parse a chunk of PTY output through both VTE parsers.
-    ///
     /// Runs the raw interceptor
     /// for shell integration, then the high-level processor, then deferred
     /// prompt marking and marker pruning.
     fn handle_bytes(&mut self, bytes: &[u8]) {
+        // Raw PTY tap — when ORITERM_PERF_TAP is set, append every
+        // byte received from the PTY to the path it specifies.
+        // Captures the exact stream notcurses (or any subprocess)
+        // wrote so the perf harness can parse notcurses' end-of-demo
+        // table out of the rendered ANSI bytes. NO buffering — the
+        // tap is meant for offline diagnostic use, not perf-critical
+        // workloads.
+        if let Ok(tap_path) = std::env::var("ORITERM_PERF_TAP") {
+            use std::io::Write;
+            if let Ok(mut f) = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&tap_path)
+            {
+                let _ = f.write_all(bytes);
+            }
+        }
+
         let evicted_before = self.terminal.grid().total_evicted();
+        let chunk_start = Instant::now();
 
         // 1. Raw interceptor for shell integration (OSC 7, 133, etc.).
+        let raw_start = Instant::now();
         {
             let mut interceptor = RawInterceptor::new(&mut self.terminal);
             self.raw_parser.advance(&mut interceptor, bytes);
         }
+        let raw_dur = raw_start.elapsed();
 
         // 2. High-level VTE processor.
+        let vte_start = Instant::now();
         self.processor.advance(&mut self.terminal, bytes);
+        let vte_dur = vte_start.elapsed();
 
         // 3b. Set grid_dirty after parsing — the VTE handler does not fire
         // Event::Wakeup itself. The old reader thread did this explicitly
@@ -318,17 +362,45 @@ impl<S: EffectSink> PaneIoThread<S> {
         }
 
         // 3. Post-parse housekeeping (shared with handle_sync_timeout).
+        let hk_start = Instant::now();
         self.post_parse_housekeeping(evicted_before);
+        let hk_dur = hk_start.elapsed();
 
         // 4. Drain queued effects into MuxEvents. Placed INSIDE per-chunk
         // boundary (not only at the top of handle_bytes_chunked) so a
         // 1 MB forwarded read doesn't accumulate 16 chunks worth of
         // effects before they reach the main thread.
+        let drain_start = Instant::now();
         self.drain_effects_into_mux_events();
+        let drain_dur = drain_start.elapsed();
+
+        // Per-chunk SLOW log — surfaces which sub-phase dominates when
+        // chunk processing exceeds 8 ms (a single 60 FPS budget).
+        // Throttled by an internal counter to one log per 32 slow
+        // chunks so flood output doesn't drown the operator log.
+        let total = chunk_start.elapsed();
+        if total.as_millis() >= 8 {
+            use std::sync::atomic::{AtomicU64, Ordering};
+            static SLOW_COUNTER: AtomicU64 = AtomicU64::new(0);
+            let n = SLOW_COUNTER.fetch_add(1, Ordering::Relaxed);
+            if n.is_multiple_of(32) {
+                log::info!(
+                    target: "oriterm_mux::pane::io_thread::chunk",
+                    "SLOW chunk #{} bytes={} total={:.2?} raw={:.2?} vte={:.2?} \
+                     housekeeping={:.2?} drain={:.2?}",
+                    n,
+                    bytes.len(),
+                    total,
+                    raw_dur,
+                    vte_dur,
+                    hk_dur,
+                    drain_dur,
+                );
+            }
+        }
     }
 
     /// Handle Mode 2026 sync timeout — exit the sync window and publish.
-    ///
     /// Called when the `crossbeam_channel::select!` `default(timeout)` arm
     /// fires, meaning the application opened a Mode 2026 sync window and
     /// did not close it with ESU within `SYNC_UPDATE_TIMEOUT`. Bytes inside
@@ -377,7 +449,6 @@ impl<S: EffectSink> PaneIoThread<S> {
 
     /// Post-parse housekeeping shared between `handle_bytes()` and
     /// `handle_sync_timeout()`.
-    ///
     /// Runs deferred prompt marking, marker pruning for scrollback eviction,
     /// mode cache update, and selection-dirty propagation. Called after the
     /// normal byte-parse path AND after a Mode 2026 timeout closes the sync
@@ -412,14 +483,11 @@ impl<S: EffectSink> PaneIoThread<S> {
     }
 
     /// Shrink IO-thread-owned grow-only buffers at quiescence.
-    ///
     /// Called from `run_loop` AFTER `process_pending_bytes` +
     /// `drain_commands` + `maybe_produce_snapshot` complete and BEFORE
     /// the IO thread re-enters `select!`. This is the canonical "about
     /// to block waiting for work" boundary — see §02 fix-consensus
     /// agreement against the `select!` default-arm anchor in
-    /// `bug-tracker/plans//`.
-    ///
     /// Two surfaces shrink:
     /// 1. `snapshot_buf` — IO-thread scratch buffer. Receives the OLD
     ///    front via `flip_swap`. Do NOT `clear()` before shrinking —
@@ -432,16 +500,14 @@ impl<S: EffectSink> PaneIoThread<S> {
     /// 2. `double_buffer.front` — the resting front buffer. Under
     ///    quiescence, rotation does not run, so the front holds peak-
     ///    flood capacity until explicitly shrunk.
-    ///
-    /// **`effects_buf` is intentionally NOT shrunk here.** The drain
-    /// pattern in `effect_router/mod.rs` always leaves
-    /// `effects_buf.len() == 0` with capacity preserved. Calling
-    /// `maybe_shrink_vec(&mut effects_buf)` here would gate-fire
-    /// (`cap > 4*0 && cap > 4096`) and `shrink_to(0)`, forcing
-    /// reallocation on every effect push during the next flood. Pinned
-    /// by §03 regression guard "`effects_buf` preserved".
-    ///
-    /// Regression:.
+    ///    **`effects_buf` is intentionally NOT shrunk here.** The drain
+    ///    pattern in `effect_router/mod.rs` always leaves
+    ///    `effects_buf.len() == 0` with capacity preserved. Calling
+    ///    `maybe_shrink_vec(&mut effects_buf)` here would gate-fire
+    ///    (`cap > 4*0 && cap > 4096`) and `shrink_to(0)`, forcing
+    ///    reallocation on every effect push during the next flood. Pinned
+    ///    by §03 regression guard "`effects_buf` preserved".
+    ///    Regression:.
     fn maybe_shrink_buffers(&mut self) {
         #[cfg(test)]
         self.shrink_call_count.fetch_add(1, Ordering::Release);
@@ -451,7 +517,6 @@ impl<S: EffectSink> PaneIoThread<S> {
     }
 
     /// Produce a snapshot if state changed and synchronized output allows it.
-    ///
     /// Respects Mode 2026 (synchronized output): when `TermMode::SYNC_UPDATE`
     /// is set, the application is building a frame — skip snapshot
     /// publication to avoid exposing mid-mutation grid state.
@@ -492,7 +557,6 @@ impl<S: EffectSink> PaneIoThread<S> {
     }
 
     /// Produce a rendering snapshot and publish it to the double buffer.
-    ///
     /// Called after processing bytes or commands that change terminal state.
     /// Reuses buffer allocations via the double-buffer flip — after warmup,
     /// this is zero-allocation.

@@ -345,13 +345,11 @@ fn invalidate_single_pane_triggers_reprepare() {
 
 // ── damage_key ───────────────────────────────────────────────────
 
-/// Regression: BUG-06-054 — damage_key SSOT routing for multi-pane cache.
-///
+/// damage_key SSOT routing for multi-pane cache.
 /// Three cache-hit conditions must hold:
 /// 1. `!dirty`
 /// 2. `cached.layout == *layout`
 /// 3. `cached.damage_key == damage_key`
-///
 /// Each of these positive/negative pairs clamps one input.
 
 #[test]

@@ -9,7 +9,7 @@
 //! the static SSOT gate that catches "added a cap to terminfo,
 //! forgot to add a scenario."
 //!
-//! Owner-partitioned design (Pivot 5 of /review-plan): each
+//! Owner-partitioned design (Pivot 5 of review-plan): each
 //! consuming section owns its own contribution; this test sums
 //! them. There is no central `EXEMPT_CAPS` constant.
 
@@ -32,20 +32,19 @@ fn tack_cap_coverage_matrix() {
     assert!(
         uncovered.is_empty(),
         "{} caps in extra/ori_term.info are not exercised by any \
-         Section 05/06/08 scenario and not on any section's \
-         `exempt` list:\n  {}\n\n\
-         Either add a scenario that exercises them, or add an \
-         entry to the owning section's \
-         `CapCoverageContribution::exempt` with a justification \
-         (and a `deferred to Section NN` note).",
+ Section 05/06/08 scenario and not on any section's \
+ `exempt` list:\n {}\n\n\
+ Either add a scenario that exercises them, or add an \
+ entry to the owning section's \
+ `CapCoverageContribution::exempt` with a justification \
+ (and a `deferred to Section NN` note).",
         uncovered.len(),
-        uncovered.join("\n  "),
+        uncovered.join("\n "),
     );
 
     // Regression guard: a cap appearing in BOTH any section's `covered`
     // AND any section's `exempt` is a stale exemption — the matrix
     // fails loudly so the cleanup happens.
-    //
     // Note: expand_kf_caps() and expand_modified_key_caps() now feed
     // into covered_caps() (via section_08::covered_caps_08), not
     // exempt_caps(). The stale-exemption check only scans the
@@ -64,9 +63,9 @@ fn tack_cap_coverage_matrix() {
     assert!(
         stale_exemptions.is_empty(),
         "Stale exemption entries — these caps are now in some \
-         section's `covered` and should be REMOVED from the \
-         exempting section's `exempt` (or from the iterator helper \
-         that produces them):\n  {}",
-        stale_exemptions.join("\n  "),
+ section's `covered` and should be REMOVED from the \
+ exempting section's `exempt` (or from the iterator helper \
+ that produces them):\n {}",
+        stale_exemptions.join("\n "),
     );
 }

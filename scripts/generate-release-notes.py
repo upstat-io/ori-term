@@ -47,25 +47,25 @@ def get_prev_tag(current_tag):
 
 
 def gather_commit_log(prev_tag, current_tag):
-    """Get commit log between two tags."""
+    """Get commit log between two tags. No truncation — every commit feeds the prompt."""
     if prev_tag:
         return run(f'git log "{prev_tag}..HEAD" --pretty=format:"- %s (%h)" --no-merges')
-    return run('git log --pretty=format:"- %s (%h)" --no-merges -20')
+    return run('git log --pretty=format:"- %s (%h)" --no-merges -500')
 
 
 def gather_pr_bodies(prev_tag):
-    """Fetch merged PR descriptions via gh CLI."""
+    """Fetch merged PR descriptions via gh CLI. High limit so nothing is dropped silently."""
     if prev_tag:
         prev_date = run(f'git log -1 --format=%aI "{prev_tag}"')
         if prev_date:
             return run(
-                f'gh pr list --state merged --base main --limit 20 '
+                f'gh pr list --state merged --base main --limit 500 '
                 f'--json number,title,body,mergedAt '
                 f'--jq \'[.[] | select(.mergedAt >= "{prev_date}")] | .[] | '
                 f'"## PR #\\(.number): \\(.title)\\n\\(.body // "(no description)")\\n"\''
             )
     return run(
-        'gh pr list --state merged --base main --limit 5 '
+        'gh pr list --state merged --base main --limit 500 '
         '--json number,title,body '
         '--jq \'.[] | "## PR #\\(.number): \\(.title)\\n\\(.body // "(no description)")\\n"\''
     )
@@ -76,60 +76,116 @@ def generate_ai_notes(tag, prev_tag, commit_log, pr_bodies):
     if not os.environ.get("COPILOT_GITHUB_TOKEN"):
         return None
 
-    prompt = f"""You are writing release notes for **oriterm** ({tag}), a GPU-accelerated terminal emulator built in Rust with wgpu. It is in alpha stage. The audience is developers who use terminal emulators daily and care about performance, rendering correctness, and keyboard-driven workflows.
+    prompt = f"""You are writing PUBLIC release notes for **oriterm** ({tag}), a GPU-accelerated terminal emulator built in Rust. oriterm is in alpha. The audience is end users and developers who use terminal emulators daily and care about performance, rendering correctness, graphics protocol support, and keyboard-driven workflows. These notes will be published on the GitHub release page and the oriterm.com changelog — they are read by people who have NEVER seen our internal plans, bug tracker, or codebase layout.
 
-Write clear, curated release notes in markdown. Do NOT wrap in ```markdown fences.
+Take your time. Read EVERY pull request description and EVERY commit line in full before you write a single bullet. There is no time pressure. Accuracy, completeness, and clarity matter far more than brevity. If you are unsure whether to include a change, include it. Re-read the inputs before finalizing.
 
-## Format
+## Output format
 
-Start with a 1-3 sentence summary describing the theme of this release.
+Output clean markdown. Do NOT wrap the response in ```markdown fences. Do NOT include a top-level title — the GitHub release UI supplies one.
 
-Then group changes into sections (omit empty ones):
-- **Rendering** — GPU pipeline, glyph atlas, shaders, text rendering, color accuracy
-- **Terminal Emulation** — VTE handling, grid, scrollback, reflow, escape sequence support
-- **UI** — widgets, window chrome, tab bar, status bar, dialogs, keyboard shortcuts
-- **Input** — keyboard handling, mouse events, selection, clipboard, IME
-- **Multiplexer** — pane management, PTY I/O, splits, session persistence
-- **Performance** — latency, memory, CPU usage, allocation reduction
-- **Bug Fixes** — corrected behavior that was broken in a previous release
-- **Platform** — Windows, macOS, Linux-specific changes, cross-compilation
+Structure the output in this order, omitting any empty sections:
 
-End with a brief **What's Next** section — 2-3 bullet points on near-term focus areas, derived from the commit log and PR descriptions.
+1. **Summary** — one short paragraph (1-3 sentences) describing the theme of this release. Lead with the biggest user-facing wins.
+2. **Highlights** — if 3+ standout changes exist, list 3-6 of them as one-sentence bullets at the top.
+3. **Breaking changes** — if any config keys, keybindings, CLI flags, or default behaviors changed in a way that may affect existing users, list them here with the prefix `**Breaking:**` and an explicit migration sentence per bullet.
+4. **Categorized changes** — every distinct user-facing change goes here, grouped by category. Use these section headers exactly; omit empty ones:
+   - **Features** — new user-facing capabilities
+   - **Rendering** — GPU pipeline, glyph atlas, shaders, color accuracy, font rendering, ligatures, emoji, cursor rendering
+   - **Terminal Emulation** — VT parsing, grid, scrollback, reflow, escape sequences, sixel graphics, kitty graphics, iTerm2 graphics, OSC handling, mouse reporting modes, keyboard protocols
+   - **UI** — widgets, window chrome, tab bar, status bar, dialogs, themes, scrollbar, command palette
+   - **Input** — keyboard handling, mouse events, selection, clipboard, IME, keybindings, hyperlinks
+   - **Multiplexer & PTY** — pane management, splits, PTY I/O, session model, process handling
+   - **Performance** — latency, memory, CPU usage, startup time, allocation reduction (quantify with concrete numbers whenever the data is in the inputs)
+   - **Configuration** — user-facing config additions, renames, removals, default changes
+   - **Bug Fixes** — behavior that was broken in a previous release and now works correctly
+   - **Platform** — Windows, macOS, Linux specific changes
+   - **Documentation** — user-facing docs only (skip internal plan/design docs)
+5. **Known issues** — only if any are evident in the inputs. Short bullets. Never fabricate.
+6. **What's Next** — only if a clear, data-supported theme emerges from the inputs. 2-3 short bullets. Never invent roadmap items not present in the data.
+
+## Bullet style
 
 For each bullet:
-- **Bold title** followed by 1-2 sentences explaining what changed and why it matters to users
-- Use past tense ("Added", "Fixed", "Improved")
-- Frame everything through user impact — if a change has no user-visible effect, omit it entirely
+- Lead with a **bold action clause** stating WHAT changed, then a sentence (or two) on WHY it matters to the user
+- Past tense action verbs: Added, Fixed, Improved, Changed, Removed, Optimized, Renamed
+- User-impact framing: describe the user-visible effect, never the implementation
+- Quantify performance work whenever the inputs supply numbers (e.g. "30% faster startup", "12ms → 4ms input latency", "Reduced idle CPU from 8% to 1%")
+- Plain English. No jargon, no internal vocabulary, no acronyms the user has not seen before in the product
 
-## Core Principle: Deliverables, Not Process
+## ABSOLUTE BAN — never expose internal references
 
-Release notes describe what was DELIVERED, not the process of delivery. Review feedback, iterative refinements, and internal cleanup are part of delivering a feature correctly — not separate items.
+The PR descriptions and commit messages contain heavy internal-process vocabulary. STRIP ALL OF IT. A reader outside the project must understand every bullet with zero context about how oriterm is organized internally.
 
-Apply this to ALL process artifacts:
-- **Internal plan references** — strip section numbers, plan IDs, and internal tracking codes. Use plain English.
-- **Iterative refinements** — hardening, edge case fixes, and polish done during development are part of the feature, not separate items.
-- **Test additions** — only mention if they represent a new testing capability (e.g., headless widget testing), not routine test coverage.
+NEVER include ANY of the following in any bullet, heading, summary, or sentence:
 
-**The test**: would an outside contributor who has never seen our plans or internal tracking understand every bullet? If not, rewrite it.
+- **Plan references** — "Section 38", "§38.4", "Section NN", "subsection X.Y", "Phase 1", "Phase 1.75", "Tier 0/1/2/3/4/5/6/7/8", "Tier 4M", roadmap section numbers, plan directory names, "plans/<anything>"
+- **Bug IDs** — `BUG-XX-NNN` patterns (e.g. `BUG-06-086`, `BUG-11-028`), `bug-tracker/...`, any bracketed identifier from the issue tracker. Refer to a bug by what it was, in plain English ("the kitty XTVERSION crash on Linux"), never by its tracker code.
+- **PR numbers in bullet prose** — the GitHub release UI links these automatically. Do not bake `#123` or `PR #456` into the bullet text.
+- **Internal crate names** — `oriterm_core`, `oriterm_ui`, `oriterm_mux`, `oriterm_ipc`, `oriterm_test_support`, `oriterm` (the crate). Say "the terminal", "the UI", "the multiplexer", "the test harness" instead.
+- **Dependency names** — `wgpu`, `winit`, `rustybuzz`, `swash`, `vte`, `portable-pty`, `fontations`, `skrifa`, `read-fonts`. Say "GPU rendering", "windowing", "text shaping", "font rasterization", "VT parsing", "pseudo-terminal layer" instead.
+- **Rust types** — `FairMutex`, `Arc<Grid>`, `Vec<Cell>`, `ProcessModel`, `WidgetTestHarness`, `SpecHarness`. Describe the behavior, not the type.
+- **Pipeline / phase / rung vocabulary** — "Parser → Dispatch → State → Renderable → FrameInput → GpuInstance → TextureRender → GoldenImage", "rung 3", "Phase 2.5", "the spec chain", "the visual harness"
+- **File paths** — `src/...`, `crates/...`, `term_repo/...`, `plans/...`, anything that looks like a path
+- **Process artifacts** — "TPR findings", "TPR cycle", "impl-hygiene review", "RCA cycle", "matrix coverage", "Mikado leaf", "rerouted plan", "amended plan", "resume_pointer", "block-gate", "section close", "subsection close", "Phase N close", "reviewed: true/false"
+- **Tracker / planning vocabulary** — "deferred", "blocked-by", "tracked for later", "in-progress section", "active subsection"
 
-## Rules
-- The PR descriptions are your PRIMARY source — they contain human-written summaries of what changed and why
-- The commit log is supplementary — use it to catch anything the PRs missed
-- Curate ruthlessly — 4 meaningful bullets beats 12 granular ones. Combine related work into single entries.
-- Never dump the git log — every entry must be written for humans
-- Never say "Internal improvements and maintenance" — if it matters, describe the impact; if it doesn't, omit it
-- Skip version-bump commits and nightly automation PRs
-- Do not reproduce test plan checklists
-- Quantify performance improvements when data is available ("2.3x faster", "12ms to 4ms")
-- If a change has no user-visible effect (pure refactoring, internal code movement), omit it entirely
+### Mapping examples — apply this discipline mechanically
+
+| Internal phrasing (in the inputs) | Public bullet (in your output) |
+|---|---|
+| "fix(BUG-06-086): kitty XTVERSION crash cycle 3" | **Fixed kitty graphics XTVERSION crash on Linux** — querying terminal version no longer terminates the session under affected compositors. |
+| "Section 12.3 — implement OSC 52 clipboard sync" | **Added OSC 52 clipboard sync** — applications running inside oriterm can now read from and write to the system clipboard using the standard OSC 52 sequence. |
+| "Phase 4 TPR findings landed for §38 sixel" | **Improved sixel image rendering** — fixed color accuracy and palette handling for sixel graphics. |
+| "BUG-11-028 close — rerouted to plans/clippy-gate-hardening §3" | (omit — internal hygiene, no user impact) |
+| "feat(oriterm_ui): WidgetTestHarness for headless interaction tests" | (omit — internal test infrastructure) |
+
+If a PR description is dominated by internal process language (TPR rounds, RCA cycles, plan resume pointers, hygiene findings), extract ONLY the user-visible deliverable from it and discard the rest. If after stripping internal process there is no user-visible deliverable left, omit the entry entirely.
+
+## DO NOT truncate
+
+**List every distinct user-facing change as its own bullet.** Do NOT consolidate, summarize, or curate down to a "tasteful" subset. If the release contains 40 distinct user-facing changes, the notes have 40 bullets. If it contains 100, the notes have 100. There is no upper limit. Length is not a problem; missing changes is.
+
+The ONLY merge allowed: when two or more commits/PRs describe the *same* deliverable (e.g. an initial implementation plus follow-up fixes against the same feature, or a multi-commit feature broken up for review), merge them into ONE bullet that describes the final delivered behavior. "Related" does NOT mean "the same" — keep distinct features as distinct bullets and distinct bug fixes as distinct bullets.
+
+If a single PR delivers multiple independent user-facing changes (e.g. "Added kitty graphics support, fixed selection wrapping, improved scrollback memory"), SPLIT it into multiple bullets — one per distinct change.
+
+When in doubt about whether two items are "the same deliverable" or "two distinct deliverables", treat them as distinct and write two bullets.
+
+## Omit only true noise
+
+Skip ONLY these:
+
+- Version-bump commits (`chore: release vX.Y.Z`, `chore(release):`, lockfile bumps)
+- Nightly / CI automation PRs that change no production code
+- Pure refactoring with ZERO user-visible effect. Be conservative: if a refactor improved performance, fixed a latent bug, or unblocked a feature, KEEP it and describe the user-visible effect.
+- Internal tooling, plan-corpus scripts, diagnostics, hygiene scripts, hooks, prose linting — none of this ships to users
+- Internal documentation, design docs, plan files, retrospectives, TPR/RCA artifacts
+- Test additions, unless they represent a brand-new TESTING CAPABILITY exposed to users (extremely rare for an end-user terminal)
+
+When in doubt, include rather than omit.
+
+## Final self-check before emitting output
+
+Before you finalize, scan your draft for:
+
+1. Any string matching `BUG-`, `§`, `Section NN`, `Phase`, `Tier`, `Mikado`, `TPR`, `RCA`, `plans/`, `bug-tracker/`, `subsection`, `resume_pointer`, `reviewed:`, `oriterm_` (as a crate name), `wgpu`, `winit`, `vte`, `rustybuzz`, `swash`, `portable-pty`, `crates/`, `term_repo/` — if any are present, rewrite the bullet.
+2. Any bullet whose meaning would be lost on a reader who has never seen the codebase — rewrite or omit.
+3. Whether you have one bullet per distinct user-facing change. If you consolidated for taste rather than because they were the same deliverable, split them back apart.
+4. Whether every performance claim has a number from the inputs (not invented).
+5. Whether every "What's Next" item is supported by evidence in the inputs (not invented).
 
 ## Input
 
-Pull request descriptions (primary source):
+Pull request descriptions (primary source — read every one in full):
+
 {pr_bodies}
 
 Commit log ({prev_tag or 'beginning'}..{tag}):
-{commit_log}"""
+
+{commit_log}
+
+Now write the release notes. Take as long as you need."""
 
     try:
         import asyncio
@@ -149,7 +205,7 @@ Commit log ({prev_tag or 'beginning'}..{tag}):
                     streaming=False,
                     on_permission_request=approve_all,
                 )
-                reply = await session.send_and_wait(prompt, timeout=120.0)
+                reply = await session.send_and_wait(prompt, timeout=900.0)
                 if reply is None:
                     return None
                 text = reply.data.content

@@ -2,7 +2,7 @@
 //!
 //! `covered` lists ONLY the caps that a Section 05 `#[test] fn`
 //! wrapper directly asserts via `outcome.grid_text.contains(...)`.
-//! Per (Codex /review-work
+//! Per (Codex review-work
 //! findings), the looser interpretation — "any cap tack might
 //! invoke during a Section 05 test path" — was REJECTED:
 //! claiming caps as covered without an assertion that catches a

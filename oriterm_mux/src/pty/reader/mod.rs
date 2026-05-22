@@ -14,26 +14,26 @@ use crossbeam_channel::Sender;
 use super::adopt::{AdoptedPtyHandle, ExitSignal};
 
 /// PTY read buffer size.
-///
-/// 128 KB matches `WezTerm`. Smaller buffers cause the reader to return
-/// from `read()` more frequently, which drains the `ConPTY` output pipe
-/// in smaller chunks. This gives conhost more opportunities to process
-/// the input pipe between output flushes — critical for Ctrl+C delivery
-/// during sustained output flooding. Alacritty uses 1 MB but
-/// doesn't use `ConPTY` (it uses non-blocking I/O with polling).
-const READ_BUFFER_SIZE: usize = 0x2_0000; // 128 KB
+/// 1 MB to match notcurses-class graphics-flood producers at sustained
+/// 100+ MB/s. Smaller buffers (e.g. 128 KB matching `WezTerm`) cap reader
+/// throughput around 40 MB/sec on Windows `ConPTY` due to per-read syscall
+/// overhead — that becomes the bottleneck for kitty pixel-graphics
+/// scenes (notcurses-demo xray) where producers emit at 80-130 MB/sec
+/// unblocked. The conditional inter-read sleep below (fires when
+/// `n < 4096`) still gives conhost scheduling opportunities for Ctrl+C
+/// during text floods or interactive sessions where individual reads
+/// stay small. Alacritty also uses 1 MB.
+const READ_BUFFER_SIZE: usize = 0x10_0000; // 1 MB
 
 /// Per-pane memory budget for the reader → IO thread byte queue heap.
-///
 /// `BYTE_CHANNEL_CAPACITY` is derived from this so the cap stays in
-/// lockstep with `READ_BUFFER_SIZE` if either changes. 1 MiB per pane
+/// lockstep with `READ_BUFFER_SIZE` if either changes. 8 MiB per pane
 /// is the back-pressure trigger point: tighter starves the child via
-/// kernel PTY back-pressure; looser defeats the bounded-growth invariant
-/// pinned by §03 Pin 1 in `bug-tracker/plans//`.
-pub(crate) const BYTE_CHANNEL_MEMORY_BUDGET: usize = 1024 * 1024; // 1 MiB
+/// kernel PTY back-pressure; looser defeats the bounded-growth invariant.
+/// Sized for 8 in-flight 1 MB reads.
+pub(crate) const BYTE_CHANNEL_MEMORY_BUDGET: usize = 8 * 1024 * 1024; // 8 MiB
 
 /// Bounded capacity for the reader → IO thread byte channel, in messages.
-///
 /// `BYTE_CHANNEL_MEMORY_BUDGET / READ_BUFFER_SIZE` = 1 MiB / 128 KiB =
 /// 8 messages. The reader's `byte_tx.send(...)` blocks when the queue
 /// is full, propagating back-pressure through the kernel PTY buffer to
@@ -48,7 +48,6 @@ const _: () = assert!(
 );
 
 /// PTY byte forwarder — reads shell output and sends to the IO thread.
-///
 /// Runs on a dedicated thread spawned by [`PtyReader::spawn`]. The main
 /// loop reads from the PTY fd and forwards raw bytes to the Terminal IO
 /// thread via a crossbeam channel. No VTE parsing — the IO thread owns
@@ -85,7 +84,6 @@ impl PtyReader {
 
     /// Attach an exit signal to wake an [`AdoptedPtyHandle::wait`] caller
     /// when the reader thread exits.
-    ///
     /// Used by `oriterm_mux::domain::handoff::adopt_pane` for Section 03.9
     /// Windows Default Terminal handoff. Spawned PTYs do not call this.
     #[must_use]
@@ -102,7 +100,6 @@ impl PtyReader {
     }
 
     /// Main read loop — runs until PTY closes or shutdown is signaled.
-    ///
     /// After each read, sleeps 1ms so that `ConPTY`'s conhost can process
     /// the input pipe between output bursts. Without this, the tight read
     /// loop keeps the output pipe drained so aggressively that conhost
@@ -156,10 +153,10 @@ impl PtyReader {
                 let kb_per_sec = (throughput_bytes as f64 / 1024.0) / window_elapsed.as_secs_f64();
                 if throughput_bytes >= 256 * 1024 {
                     log::info!(
-                        target: "oriterm_mux::pty::reader::throughput",
-                        "pty read throughput {kb_per_sec:.0} KB/s ({} bytes in {:.2?})",
-                        throughput_bytes,
-                        window_elapsed,
+                    target: "oriterm_mux::pty::reader::throughput",
+                    "pty read throughput {kb_per_sec:.0} KB/s ({} bytes in {:.2?})",
+                    throughput_bytes,
+                    window_elapsed,
                     );
                 }
                 throughput_window_start = std::time::Instant::now();
@@ -178,8 +175,8 @@ impl PtyReader {
             let send_blocked_ms = send_start.elapsed().as_millis();
             if send_blocked_ms >= 10 {
                 log::warn!(
-                    target: "oriterm_mux::pty::reader::send_block",
-                    "byte_tx.send blocked {send_blocked_ms}ms (IO thread backpressure; consumer slower than producer)"
+                target: "oriterm_mux::pty::reader::send_block",
+                "byte_tx.send blocked {send_blocked_ms}ms (IO thread backpressure; consumer slower than producer)"
                 );
             }
 
@@ -190,7 +187,6 @@ impl PtyReader {
             // starving conhost's input thread. A 1ms sleep
             // after each read gives conhost scheduling time to handle
             // Ctrl+C between output bursts.
-            //
             // Conditional: skip the sleep when this read returned any
             // substantial batch (> 4 KB). ConPTY's slave→master shuttle
             // delivers in chunks well below the 128 KB read buffer; a
@@ -201,7 +197,6 @@ impl PtyReader {
             // bytes) and idle wakeups still hit it — preserving the
             // conhost-scheduling slot that makes Ctrl+C responsive during
             // text floods.
-            //
             // Unix PTYs don't need this — the kernel scheduler provides
             // natural interleaving between the child process and our reader.
             #[cfg(windows)]

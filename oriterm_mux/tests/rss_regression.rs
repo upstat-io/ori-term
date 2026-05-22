@@ -14,7 +14,7 @@
 //! does NOT show monotonic growth past a 256 KiB OS-noise tolerance.
 //!
 //! Regression:.
-//! See: bug-tracker/plans//section-03-tdd-matrix.md.
+//! See:
 
 #![cfg(target_os = "linux")]
 
@@ -113,7 +113,6 @@ fn fmt_mb(samples: &[usize]) -> Vec<String> {
 }
 
 /// Repro test — RSS plateaus under sustained PTY flood.
-///
 /// Regression:. Pre-fix the byte channel was unbounded, so
 /// `yes`'s ~10 MB/s output grew the queue heap proportionally to flood
 /// duration. Post-fix the bounded channel back-pressures through the
@@ -153,14 +152,13 @@ fn mux_rss_plateaus_under_sustained_flood() {
     assert!(
         !all_increasing,
         "RSS grew monotonically under sustained flood — bounded channel back-pressure failed. \
-         samples: {:?} (MB: {:?})",
+ samples: {:?} (MB: {:?})",
         measurements,
         fmt_mb(&measurements),
     );
 }
 
 /// Regression guard — RSS does NOT exhibit unbounded-growth pattern.
-///
 /// Regression:. Forbid-output pin per
 /// Testing Protocol`. Pre-fix the
 /// unbounded queue grew the heap by ~128 KiB per queued message; over a
@@ -203,7 +201,6 @@ fn mux_rss_negative_no_unbounded_growth() {
 }
 
 /// Baseline — empty pane RSS does not grow without flood input.
-///
 /// Regression: §03 edge case "empty pane". Spawns `cat`
 /// (which blocks reading PTY stdin and produces no output) and verifies
 /// the no-flood baseline doesn't exhibit growth — proves the trend
@@ -235,7 +232,6 @@ fn mux_rss_bounded_empty_pane() {
 }
 
 /// Cross-pane interaction — multiple panes flooding simultaneously.
-///
 /// Regression: §03 edge case "multiple panes". Spawns 4
 /// flooding panes; each bounded byte channel caps at 1 MiB, so the
 /// expected worst-case queue heap is ~4 MiB regardless of flood
@@ -276,7 +272,6 @@ fn mux_rss_plateaus_with_multiple_panes() {
 }
 
 /// Resize during flood — bounded channels do not deadlock the resize path.
-///
 /// Regression: §03 cross-feature interaction "resize during
 /// flood". Sends a Resize command mid-flood; verifies the IO thread
 /// completes the resize (snapshot reports rows=30, cols=100) AND RSS
@@ -324,7 +319,7 @@ fn mux_rss_plateaus_through_resize() {
     assert!(
         resize_observed,
         "Mid-flood resize never landed in a published snapshot — IO thread \
-         may be deadlocked or the resize command was dropped. samples: {:?}",
+ may be deadlocked or the resize command was dropped. samples: {:?}",
         measurements,
     );
 

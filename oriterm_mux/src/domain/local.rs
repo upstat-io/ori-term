@@ -18,7 +18,6 @@ use crate::pane::{Pane, PaneNotifier, PaneParts};
 use crate::pty::{PtyConfig, PtyReader, spawn_pty, spawn_pty_writer};
 
 /// Spawns shells on the local machine.
-///
 /// The simplest domain — creates a PTY via `portable-pty`, wires up
 /// the Terminal IO thread as the sole terminal owner, and returns a
 /// fully assembled `Pane`.
@@ -61,7 +60,6 @@ impl LocalDomain {
     }
 
     /// Spawn a new pane with a live shell process.
-    ///
     /// Creates the PTY, a single `Term` owned exclusively by the IO thread,
     /// a PTY byte reader, and a PTY writer thread. The IO thread handles all
     /// VTE parsing, commands, and snapshot production. The main thread
@@ -101,8 +99,8 @@ impl LocalDomain {
             .ok_or_else(|| io::Error::other("PTY control unavailable"))?;
 
         // 2b. Dup the master fd for signal delivery (Unix).
-        //     `tcgetpgrp(master_fd)` needs a valid fd to the PTY master.
-        //     The control handle moves to the IO thread, so we dup it now.
+        // `tcgetpgrp(master_fd)` needs a valid fd to the PTY master.
+        // The control handle moves to the IO thread, so we dup it now.
         #[cfg(unix)]
         #[allow(
             unsafe_code,
@@ -127,10 +125,10 @@ impl LocalDomain {
         let io_selection_dirty = Arc::new(AtomicBool::new(false));
 
         // 4. Create the single Term with a QueueingEffectSink. The IO
-        //    thread drains the sink after every VTE parse chunk and
-        //    routes effects to MuxEvents via the effect router
-        //    (effect-cutover 01.1). This is the only event path —
-        //    legacy adapters were removed in §01.3.
+        // thread drains the sink after every VTE parse chunk and
+        // routes effects to MuxEvents via the effect router
+        // (effect-cutover 01.1). This is the only event path —
+        // legacy adapters were removed in §01.3.
         let io_term = Term::new(
             usize::from(config.rows),
             usize::from(config.cols),
@@ -145,12 +143,12 @@ impl LocalDomain {
         let write_stalled = Arc::new(AtomicBool::new(false));
 
         // 6. Create the Terminal IO thread + handle FIRST so the
-        //    writer thread receives a clone of the IO-thread wake
-        //    sender. The writer thread `try_send`s on this channel
-        //    when it sets `shutdown` so the IO thread observes
-        //    shutdown out of `select!` within one iteration —
-        // closes the §04 review round 5 Codex F1 in-`select!`
-        //    window for the writer-thread setter.
+        // writer thread receives a clone of the IO-thread wake
+        // sender. The writer thread `try_send`s on this channel
+        // when it sets `shutdown` so the IO thread observes
+        // shutdown out of `select!` within one iteration —
+        // closes the §04 review round 5 in-`select!`
+        // window for the writer-thread setter.
         let (io_thread, mut io_handle) = io_thread::new_with_handle(io_thread::IoThreadConfig {
             terminal: io_term,
             pane_id,
@@ -174,10 +172,10 @@ impl LocalDomain {
         io_handle.set_join(io_join);
 
         // 7. Spawn the writer thread (owns rx + writer, sets shutdown
-        //    flag, wakes the IO thread on exit). The write_stalled
-        //    flag lets the main thread detect when the writer is
-        //    blocked on a full kernel PTY buffer and send SIGINT
-        //    directly to the child process group.
+        // flag, wakes the IO thread on exit). The write_stalled
+        // flag lets the main thread detect when the writer is
+        // blocked on a full kernel PTY buffer and send SIGINT
+        // directly to the child process group.
         let writer_thread = spawn_pty_writer(
             writer,
             rx,

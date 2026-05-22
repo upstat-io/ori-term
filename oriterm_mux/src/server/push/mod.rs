@@ -22,7 +22,6 @@ mod projection;
 pub(in crate::server) use projection::{PendingImageMutations, project_per_client_pure};
 
 /// Minimum interval between snapshot pushes for focused panes (priority 0).
-///
 /// Set low (4ms / 250fps) so the daemon's push throttle never gates
 /// interactive typing. The client's own frame budget (16ms) is the
 /// authoritative render cadence — a second unsynchronized 16ms gate
@@ -39,7 +38,6 @@ pub const HIDDEN_PUSH_INTERVAL: Duration = Duration::from_millis(100);
 const WRITE_HIGH_WATER: usize = 512 * 1024;
 
 /// Shared context for push operations.
-///
 /// Groups the server-owned state that push functions need. Avoids
 /// threading 7+ scratch buffers as individual parameters.
 pub(super) struct PushContext<'a> {
@@ -63,7 +61,6 @@ pub(super) fn interval_for_priority(priority: u8) -> Duration {
 }
 
 /// Compute the effective push interval for a pane across all subscribers.
-///
 /// Uses the highest priority (lowest number) among all subscribers to
 /// determine the interval. Returns `SNAPSHOT_PUSH_INTERVAL` (4ms) if no
 /// subscribers have an explicit priority set.
@@ -97,11 +94,9 @@ pub(super) struct PushBroker<'a> {
 /// Project a per-client `PaneSnapshot` and queue it onto `conn`. On queue
 /// success (and ONLY on success) applies the deferred `sent_images`
 /// mutations.
-///
 /// Returns `Err` if the underlying `queue_frame` failed (transport error);
 /// `sent_images` is NOT mutated on the error path so the trailing-edge
 /// flush retries against the latest snapshot.
-/// See: bug-tracker/plans/BUG-06-072/
 fn project_and_queue_per_client(
     pane_id: PaneId,
     snapshot: &PaneSnapshot,
@@ -125,7 +120,6 @@ fn project_and_queue_per_client(
 /// Push a snapshot to all capable subscribers for a pane, respecting
 /// backpressure. Subscribers above the write high-water mark are added to
 /// `deferred` for trailing-edge retry.
-///
 /// Clients without `CAP_SNAPSHOT_PUSH` receive a bare `NotifyPaneOutput`
 /// instead and are never added to the deferred set.
 pub(super) fn push_snapshot_to_subscribers(
@@ -215,7 +209,6 @@ pub(super) fn push_snapshot_to_subscribers(
 /// `build_and_take` so the next snapshot referencing an evicted ID re-includes
 /// its pixel data (per-client filter will see `!has_sent_image` and project the
 /// `WireImageData`).
-/// See: bug-tracker/plans/BUG-06-072/
 pub(super) fn propagate_image_evictions(
     evicted: &[(PaneId, ImageId)],
     connections: &mut HashMap<ClientId, ClientConnection>,
@@ -248,7 +241,6 @@ pub(super) fn defer_all_subscribers(
 }
 
 /// Send bare `NotifyPaneOutput` to subscribers without `CAP_SNAPSHOT_PUSH`.
-///
 /// Non-capable clients need bare dirty notifications regardless of throttle
 /// state so they can trigger RPC-based snapshot refresh.
 fn notify_bare_to_non_capable(
@@ -269,11 +261,9 @@ fn notify_bare_to_non_capable(
 }
 
 /// Build and push (or defer) a snapshot for a single pane.
-///
 /// If the throttle interval has elapsed, builds a snapshot and pushes it
 /// to all capable subscribers (with backpressure deferral). Non-capable
 /// clients receive a bare `NotifyPaneOutput`.
-///
 /// If throttled, defers all capable subscribers to `pending_push` for
 /// trailing-edge retry and sends bare notifications to non-capable clients.
 pub fn push_or_defer_pane(ctx: &mut PushContext<'_>, now: Instant, pane_id: PaneId) {
@@ -304,7 +294,6 @@ pub fn push_or_defer_pane(ctx: &mut PushContext<'_>, now: Instant, pane_id: Pane
 
 /// Trailing-edge flush: retry deferred pushes for panes whose throttle
 /// interval has elapsed.
-///
 /// For each pane in `pending_push`:
 /// 1. Prune stale clients (disconnected, unsubscribed, no capability).
 /// 2. If set is empty after pruning, remove entry and skip.

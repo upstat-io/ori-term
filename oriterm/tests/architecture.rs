@@ -113,7 +113,6 @@ fn interaction_state_through_window_root() {
 // Crate dependency direction validation
 
 /// Extracts dependency crate names from a `Cargo.toml` string.
-///
 /// Only scans lines inside `[dependencies]`, `[dev-dependencies]`,
 /// `[build-dependencies]`, and their `[target.*.dependencies]` variants.
 /// Ignores `[package]`, `[features]`, `[lints]`, comments, etc.
@@ -229,7 +228,7 @@ fn oriterm_ipc_is_standalone() {
 // → pre-render source → set_visible). Without all of these, the new
 // window appears blank or with stale source-window dimensions. These
 // grep-based pins catch accidental removal.
-// See bug-tracker/plans/completed/00-overview.md.
+// See
 
 /// `move_tab_to_new_window_embedded` must include the canonical call
 /// sequence from `tear_off_tab` (no visible-then-render flash). Bounded
@@ -286,8 +285,8 @@ fn move_to_new_window_embedded_mirrors_tear_off_sequence() {
             Some(rel) => cursor += rel + required.len(),
             None => panic!(
                 "move_tab_to_new_window_embedded must call `{required}` AFTER the prior step \
-                 (mirror invariant). Either the call is missing or the canonical \
-                 sequence has been reordered.",
+ (mirror invariant). Either the call is missing or the canonical \
+ sequence has been reordered.",
             ),
         }
     }
@@ -337,15 +336,14 @@ fn move_tab_to_window_helper_remains_removed() {
     assert!(
         !body.contains("fn move_tab_to_window("),
         "fn move_tab_to_window must remain removed; resurrecting it would re-introduce a regression \
-         where resize_all_panes targets the focused window, not the destination. If a cross-window \
-         move helper is needed, design it with destination-targeted layout from day 1.",
+ where resize_all_panes targets the focused window, not the destination. If a cross-window \
+ move helper is needed, design it with destination-targeted layout from day 1.",
     );
 }
 
 /// File-size pin for the refactor — ensures `oriterm/src/app/mod.rs`
 /// stays under the 500-line hard limit Size`,
 /// and that the relocation didn't regress any of the 10 touched files.
-///
 /// Touched-set (10 paths total):
 /// - `oriterm/src/app/mod.rs` (574 → < 500 after relocation)
 /// - 5 existing destinations that absorbed methods (`pane_accessors.rs`, `redraw/mod.rs`,
@@ -355,18 +353,14 @@ fn move_tab_to_window_helper_remains_removed() {
 /// under 500.
 /// - 3 new submodules created by the refactor (`focus_accessors.rs`, `dpi_change.rs`,
 /// `tab_management/width_lock.rs`) — must each be under 500 from creation.
-///
 /// Path discovery uses `oriterm_test_support::paths::term_workspace_root()` per
 /// /Subrepo Path Discovery`. Every touched
 /// file MUST exist post-fix — a missing file means the relocation regressed and the
 /// pin fails immediately (no silent skip). The pin's correctness depends on every path
 /// in the touched-set being checked.
-///
 /// Other over-budget files in `oriterm/src/app/` (`event_loop.rs` 532,
 /// `init/mod.rs` 611, `event_loop_helpers/mod.rs` 504) are tracked separately
 /// (, etc.) and are not in this refactor's touched-set.
-///
-/// See: bug-tracker/plans//
 #[test]
 fn app_module_touched_set_under_500_lines() {
     // The 10 files this refactor touches. Paths are relative to oriterm/src/.
@@ -434,7 +428,7 @@ fn app_module_touched_set_under_500_lines() {
     if !over_budget.is_empty() {
         let detail = over_budget
             .iter()
-            .map(|(p, n)| format!("  {p} = {n} lines (limit {FILE_SIZE_LIMIT})"))
+            .map(|(p, n)| format!(" {p} = {n} lines (limit {FILE_SIZE_LIMIT})"))
             .collect::<Vec<_>>()
             .join("\n");
         panic!(

@@ -132,6 +132,11 @@ pub struct RenderableImageData {
     pub width: u32,
     /// Height in pixels.
     pub height: u32,
+    /// Monotonic counter copied from `ImageData::pixel_generation` so the
+    /// GPU texture cache can detect that an image's pixels have been
+    /// rewritten (animation advance, frame edit, frame delete) and
+    /// re-upload before the next draw.
+    pub pixel_generation: u64,
 }
 
 /// A grid cell carrying a resolved kitty unicode-placeholder reference.

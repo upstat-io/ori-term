@@ -85,7 +85,6 @@ fn numpad_0_app_keypad() {
 /// Regression: numpad digits with no `APP_KEYPAD` must emit the
 /// digit byte even when winit does not populate `KeyEvent::text`. Before the
 /// fix this returned empty bytes and the shell saw no keystrokes.
-/// See: bug-tracker/plans/completed/00-overview.md
 #[test]
 fn numpad_5_no_app_keypad_no_text_falls_back_to_logical_char() {
     let r = enc_numpad(
@@ -171,11 +170,9 @@ fn numpad_divide_app_keypad() {
 }
 
 // --- regression: numpad character keys without APP_KEYPAD ---
-//
 // When winit does not populate `KeyEvent::text` for numpad characters — some
 // backends and certain Ctrl-combos leave it `None` — the encoder must fall
 // back to the logical-key character rather than returning empty bytes.
-// See: bug-tracker/plans/completed/00-overview.md
 
 /// Helper: every digit with `text=None` maps to the digit byte.
 #[test]
@@ -415,7 +412,6 @@ fn multichar_character_kitty_disambiguate_press_emits_text() {
 }
 
 // --- Named keys with unambiguous legacy in Kitty mode: release suppression ---
-//
 // Round-1 TPR finding ( + agreement): Named keys that fall
 // through the kitty.rs `has_unambiguous_legacy` shortcut to `legacy::encode_legacy`
 // were bypassing the release-suppression check. The top-of-`encode_kitty`

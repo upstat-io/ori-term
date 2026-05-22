@@ -32,7 +32,6 @@ mod tools_menu;
 
 /// Smoke test: spawn tack under the pinned terminfo, wait for the
 /// main menu, capture as snapshot, quit cleanly.
-///
 /// This is the canary that proves the tack pipeline (PtySession +
 /// TerminfoEnv + tack child) works end-to-end. If it fails, no
 /// scenario test in Sections 04-06 of the tack-conformance plan can
@@ -50,7 +49,6 @@ fn tack_smoke_main_menu_at_80x24() {
     // Wait for the main menu prompt to appear. The exact prompt string
     // `tack [n] >` is documented in the tack man page and verified
     // live during plan creation.
-    //
     // Race-condition note: `wait_for` uses `drain_blocking(100)` plus
     // a content scan; it does not race on DECRQSS/DA handshakes
     // because `PtySession::drain()` writes captured `PtyWrite`
@@ -66,7 +64,6 @@ fn tack_smoke_main_menu_at_80x24() {
     // regressions where the snapshot updates but a critical menu item
     // disappears. The substrings come from the live tack capture
     // during plan creation.
-    //
     // Verified against tack v1.08 (ncurses 6.4) on Linux x86_64 —
     // update this comment (and the snapshot via `INSTA_UPDATE=1`) if
     // a distro upgrade changes the main-menu wording.
@@ -93,10 +90,9 @@ fn tack_smoke_main_menu_at_80x24() {
     // observes `try_wait()` between sends; Phase 2 IS exactly
     // `wait_for_child_exit(2_000)`. The previous
     // `send(b"q\n") + wait_for_child_exit(2_000)` antipattern is
-    // banned project-wide — see plans/tack-conformance/section-04
+    // banned project-wide — see
     // -scenario-framework.md, runner/mod.rs, and quit_tack's
     // rustdoc for the rationale.
-    //
     // Exit-status assertion: verified exit 0 across 10 consecutive
     // runs on ncurses 6.4 / tack v1.08 (Linux x86_64). The
     // supplementary `eprintln!` keeps the exact code in CI logs so

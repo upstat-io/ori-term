@@ -27,7 +27,7 @@
 //! `extra/ori_term.info` declares NO reset-string capabilities at
 //! all (neither `rs1`, `rs2`, nor `rs3`). The previous version of
 //! this comment incorrectly said "ori_term.info declares `rs2`
-//! instead" (Codex /review-work iteration 4 of M2)
+//! instead" (Codex review-work iteration 4 of M2)
 //! correctly noted that this was a factual error against the
 //! pinned terminfo source. Whether `extra/ori_term.info` should
 //! declare any reset string is a Section 05.5 cap-coverage matrix
@@ -60,7 +60,6 @@ fn tack_padding() {
     // SEMANTIC PINS: tack v1.08's padding test surfaces the
     // (rs1) reset_1string cap probe. These two assertions are
     // the canonical semantic claims for 05.4b cap-coverage:
-    //
     // 1. "(rs1)" — proves tack referenced the rs1 cap by its
     // terminfo short name (the canonical tack output format
     // matching the (am)/(os)/(bel)/(colors)/(pairs)/(clear)
@@ -69,7 +68,6 @@ fn tack_padding() {
     // 2. "reset_1string" — proves tack referenced the cap by its
     // terminfo full name. Catches a regression where tack
     // swaps to a different cap probe.
-    //
     // The `not present` part of tack's output is NOT pinned
     // because that's a property of the current ori_term.info
     // (which declares NO reset-string caps at all — neither rs1,

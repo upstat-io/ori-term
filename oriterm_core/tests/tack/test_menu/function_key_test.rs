@@ -36,7 +36,7 @@
 //! 08's keyboard-encoding crate and use the keymap dispatch
 //! that Section 08 will define).
 //!
-//! (Codex /review-work iteration 2 of M2) flagged
+//! (Codex review-work iteration 2 of M2) flagged
 //! the previous version of this stub for overstating coverage:
 //! it claimed Section 08's cross-check "covers the same ground"
 //! and "is faster, deterministic, and doesn't require human

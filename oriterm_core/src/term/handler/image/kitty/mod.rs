@@ -15,10 +15,14 @@ use crate::image::kitty::{
 use crate::term::Term;
 
 mod animate;
+mod compose;
+mod compose_keys;
 mod delete;
 mod frame;
+mod frame_keys;
 mod place;
 pub(crate) mod placeholder;
+mod prepare;
 mod query;
 mod response;
 mod store;
@@ -87,6 +91,22 @@ impl<S: EffectSink> Term<S> {
             return;
         }
 
+        // Continuation/terminator chunks of a chunked upload carry only
+        // `m=` + payload per kitty spec; their `a=` field is absent, so
+        // `decode_action(None)` defaults to `TransmitAndPlace`. The
+        // terminator chunk (`m=0`) then dispatches under that defaulted
+        // action and double-creates a placement for uploads whose first
+        // chunk was `a=t` (Transmit-only) — notcurses-info trips this
+        // every run, producing the duplicate wordmark visible in
+        // operator-side runs. Spec-aligned cure: when a chunked upload
+        // is in progress, the terminator chunk inherits the first
+        // chunk's action.
+        if !cmd.more_data
+            && let Some(loading) = self.loading_image.as_ref()
+        {
+            cmd.action = loading.start_cmd.action;
+        }
+
         // Per-command trace: high-frequency under chunked kitty transmits
         // (notcurses-demo emits thousands per graphics scene). Kept at
         // debug level so default INFO logging doesn't pay sync-write
@@ -109,17 +129,8 @@ impl<S: EffectSink> Term<S> {
             KittyAction::Delete => self.kitty_delete(&cmd),
             KittyAction::Frame => self.kitty_frame(cmd),
             KittyAction::Animate => self.kitty_animate(&cmd),
-            KittyAction::Compose => self.kitty_compose_reject(&cmd),
+            KittyAction::Compose => self.kitty_compose(&cmd),
         }
-    }
-
-    /// Reject `a=c` Compose action with an `EINVAL: action `c` not implemented`
-    /// reply. The reject helper makes the missing handler observable to
-    /// clients via a spec-compliant EINVAL reply while keeping the catalog
-    /// row `KG-ACTION-COMPOSE` honest about the absent implementation.
-    pub(super) fn kitty_compose_reject(&self, cmd: &KittyCommand) {
-        let ctx = KittyReplyContext::from_cmd(cmd);
-        self.kitty_respond(&ctx, "EINVAL: action `c` not implemented");
     }
 
     /// Handle a malformed-base64 chunk: emit EINVAL once per failed upload

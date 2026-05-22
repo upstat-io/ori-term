@@ -13,13 +13,11 @@ use crate::gpu::visual_regression::{
     GoldenLaneConfig, headless_env_with_pinned_software_rasterizer,
 };
 
-/// Regression: BUG-06-027 — Frame N+1's `WindowRenderer::prepare` must
+/// Frame N+1's `WindowRenderer::prepare` must
 /// dispatch through the incremental branch (production fix's
 /// pre-dispatch save_terminal_tier publishes Frame N's terminal tier into
 /// saved_tier), AND `render_frame_cached` must produce pixel-identical
 /// output relative to Frame N for the same input.
-///
-/// See: bug-tracker/plans/completed/BUG-06-027/
 #[test]
 fn incremental_dispatch_cached_render_path_matches_fresh_rebuild() {
     let config = GoldenLaneConfig::SPEC_DEFAULT;
@@ -65,7 +63,7 @@ fn incremental_dispatch_cached_render_path_matches_fresh_rebuild() {
     assert!(
         renderer.prepared.was_incremental,
         "Frame 1 must dispatch incremental — production fix's pre-dispatch \
-         save_terminal_tier should publish Frame 0's terminal tier into saved_tier"
+ save_terminal_tier should publish Frame 0's terminal tier into saved_tier"
     );
 
     let target1 = renderer.render_frame_cached(&gpu, &pipelines, w, h, true);
@@ -76,6 +74,6 @@ fn incremental_dispatch_cached_render_path_matches_fresh_rebuild() {
     assert_eq!(
         pixels_0, pixels_1,
         "incremental-path cached render must produce pixel-identical output \
-         to the prior frame for unchanged input (replay correctness end-to-end)"
+ to the prior frame for unchanged input (replay correctness end-to-end)"
     );
 }

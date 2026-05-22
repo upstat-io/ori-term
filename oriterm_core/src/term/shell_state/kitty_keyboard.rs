@@ -9,7 +9,7 @@
 //! `pre_command_kb_mode_bits_snapshot`, `inactive_keyboard_mode_bits`,
 //! and `inactive_pre_command_kb_mode_bits_snapshot` live here.
 //!
-//! See (`bug-tracker/plans/completed/00-overview.md`) for the full
+//! See () for the full
 //! contract: paired per-screen snapshots + live per-screen bits.
 
 use std::collections::VecDeque;
@@ -34,7 +34,6 @@ impl<S: EffectSink> Term<S> {
 
     /// Pre-command snapshot of the active-screen keyboard mode stack
     /// (taken at OSC 133 ; C, consumed at OSC 133 ; A / ; D).
-    ///
     /// `None` means no snapshot is active for this screen. `Some(deque)`
     /// holds the verbatim contents of [`Self::keyboard_mode_stack`] at
     /// the moment the pre-command snapshot was taken. See.
@@ -43,7 +42,6 @@ impl<S: EffectSink> Term<S> {
     }
 
     /// Pre-command snapshot of the inactive-screen keyboard mode stack.
-    ///
     /// See [`Self::pre_command_kb_stack_snapshot`] for semantics. Paired
     /// with that field and swapped alongside the stacks on alt-screen
     /// toggle so a snapshot taken on one screen only fires restore on
@@ -82,7 +80,6 @@ impl<S: EffectSink> Term<S> {
     /// capture the current Kitty-keyboard-protocol `TermMode` bits so a
     /// subsequent OSC 133 `;A` / `;D` (or OSC 633 `;A` / `;D`) can
     /// restore them verbatim.
-    ///
     /// Contents-based (not just depth-based) so we recover shell-held
     /// modes even when the child over-pops via `CSI < N u` or pushes past
     /// [`crate::term::KEYBOARD_MODE_STACK_MAX_DEPTH`] and `pop_front`
@@ -107,7 +104,6 @@ impl<S: EffectSink> Term<S> {
 
     /// If a snapshot is active, replace BOTH stacks with the snapshotted
     /// contents and apply the snapshotted `TermMode` bits directly.
-    ///
     /// Applying the paired BITS snapshot (rather than deriving from
     /// stack top) preserves shell-held kitty state set via `CSI = Ps u`
     /// WITHOUT pushing — the top of an empty stack is `NO_MODE`, which

@@ -4,7 +4,7 @@
 //! from Rust. These tests pin the behavioral contract that the function
 //! is callable on every supported platform without panicking. The
 //! load-bearing verification of audible output is the manual user test
-//! per `bug-tracker/plans//section-07-completion-checklist.md`.
+//! per .
 
 use super::play_bell;
 

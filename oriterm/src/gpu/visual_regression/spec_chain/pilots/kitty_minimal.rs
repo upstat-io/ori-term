@@ -9,7 +9,7 @@
 //! GPU pipeline can render a kitty image end-to-end on the platform's
 //! native graphics backend.
 //!
-//! See: bug-tracker/plans/BUG-06-073/
+//! See:
 //!
 //! **Why this matters for the wordmark gap.** The four prior Phase 1
 //! layers (handler / Term snapshot / daemon fold / client extract) all
@@ -29,7 +29,6 @@ use oriterm_test_support::spec_chain::{
 use super::super::visual_harness::VisualSpecHarness;
 
 /// Minimal kitty graphics transmit+place sequence.
-///
 /// Breakdown:
 /// - `\x1b_G` — APC introducer for kitty graphics
 /// - `f=32` — pixel format = 32-bit RGBA
@@ -39,13 +38,11 @@ use super::super::visual_harness::VisualSpecHarness;
 /// - `q=2` — suppress all responses (quiet mode)
 /// - `;/wAA/w==` — base64 payload for one RGBA red pixel (FF 00 00 FF)
 /// - `\x1b\\` — ST (String Terminator)
-///
 /// Payload provenance: `/wAA/w==` decodes via standard base64 to the
 /// four bytes `0xFF 0x00 0x00 0xFF` — opaque red in RGBA8.
 const KITTY_BYTES: &[u8] = b"\x1b_Gf=32,s=1,v=1,a=T,i=1,q=2;/wAA/w==\x1b\\";
 
 /// Pilot test: drives the minimal kitty RGBA transmit+place through every rung.
-///
 /// Uses the deterministic golden lane (Section 05) via `VisualSpecHarness`.
 /// The golden image is captured with `ORITERM_UPDATE_GOLDEN=1` and
 /// committed under `oriterm/tests/references/`.

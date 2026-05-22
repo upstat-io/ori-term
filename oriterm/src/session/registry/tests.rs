@@ -155,7 +155,7 @@ fn windows_returns_all() {
 }
 
 // pane_position regression suite —.
-// See bug-tracker/plans//section-03-tdd-matrix.md.
+// See
 
 /// Edge case: empty registry — pane is registered nowhere.
 /// Pins `tab_for_pane` returning None at the head of the chain.

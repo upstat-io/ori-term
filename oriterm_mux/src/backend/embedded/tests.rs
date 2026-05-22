@@ -131,7 +131,6 @@ fn is_not_daemon_mode() {
 // -- IO command routing --
 
 /// `scroll_display` on a non-existent pane is a no-op (no panic).
-///
 /// The actual command routing is verified by `test_scroll_display_command`
 /// in `pane::io_thread::tests`. This test confirms the EmbeddedMux method
 /// handles missing panes gracefully.
@@ -143,7 +142,6 @@ fn scroll_display_missing_pane_is_noop() {
 }
 
 /// `set_cell_dimensions` on a non-existent pane is a no-op (no panic).
-///
 /// The actual command routing is verified by
 /// `test_set_cell_dimensions_command_marks_dirty` in
 /// `pane::io_thread::tests`. This test confirms the EmbeddedMux method
@@ -158,7 +156,6 @@ fn set_cell_dimensions_missing_pane_is_noop() {
 }
 
 /// `search_set_query` on a non-existent pane is a no-op (no panic).
-///
 /// The actual search command handling is verified by
 /// `test_search_set_query_finds_matches` in `pane::io_thread::tests`.
 #[test]
@@ -179,8 +176,7 @@ fn search_active_missing_pane() {
 
 /// Regression: a newly created pane (simulating a split) receives cell
 /// metrics without needing a grid resize first.
-/// See: plans/spec-conformance/section-07-image-lifecycle-correctness.md §07.N
-///
+/// See: §07.N
 /// Tests the backend dispatch layer: `EmbeddedMux::set_cell_dimensions`
 /// enqueues the command to the correct pane and marks it snapshot-dirty.
 /// The IO-thread handler (`PaneIoCommand::SetCellDimensions`) is tested
@@ -231,7 +227,7 @@ fn split_pane_receives_cell_metrics_without_resize() {
 /// multiple panes correctly. IO-thread processing is verified by
 /// `new_window_pane_cell_metrics_reach_io_thread` and the unit test
 /// `test_set_cell_dimensions_command_marks_dirty`.
-/// See: plans/spec-conformance/section-07-image-lifecycle-correctness.md §07.N
+/// See: §07.N
 #[cfg(unix)]
 #[test]
 fn both_split_panes_receive_updated_metrics_after_font_change() {
@@ -273,8 +269,7 @@ fn both_split_panes_receive_updated_metrics_after_font_change() {
 
 /// Regression: a pane in a new window receives cell metrics immediately
 /// on creation — before any resize or DPI event arrives.
-/// See: plans/spec-conformance/section-07-image-lifecycle-correctness.md §07.N
-///
+/// See: §07.N
 /// Tests the backend dispatch layer (same coverage scope as
 /// `split_pane_receives_cell_metrics_without_resize`). The IO-thread
 /// end-to-end path is verified by the companion test
@@ -311,8 +306,7 @@ fn new_window_pane_receives_cell_metrics_on_creation() {
 /// flag set by `EmbeddedMux::set_cell_dimensions`, we poll until the
 /// IO thread produces a NEW snapshot — proving the command reached the
 /// handler and triggered `grid_dirty`.
-/// See: plans/spec-conformance/section-07-image-lifecycle-correctness.md §07.N
-///
+/// See: §07.N
 /// Note: this test cannot distinguish a snapshot triggered by
 /// `SetCellDimensions` from one triggered by late shell output — the
 /// snapshot API does not expose cell dimensions. The 2s settle period
@@ -478,10 +472,8 @@ fn cleanup_closed_pane_with_io_thread() {
 /// Bridge: `pane_mode()` returns DECBKM bit after the IO thread processes
 /// `CSI ? 67 h`. Proves the full path: VTE parser -> `post_parse_housekeeping()`
 /// -> `mode_cache` -> `Pane::mode()` -> `EmbeddedMux::pane_mode()`.
-///
 /// Closes the test gap identified by `` — io_thread bridge
 /// tests stopped at `mode_cache`; this test verifies the downstream consumer.
-///
 /// Uses `printf` to emit the escape sequence from the shell process to the
 /// PTY output (where the VTE parser reads it), not `send_input` which writes
 /// to PTY stdin and would not trigger VTE parsing.
@@ -543,7 +535,6 @@ fn pane_mode_reflects_decbkm_set() {
 }
 
 /// Regression guard: `pane_mode()` clears DECBKM after `CSI ? 67 l`.
-///
 /// Companion to `pane_mode_reflects_decbkm_set` — proves the reset path
 /// also propagates through the embedded backend's `pane_mode()`.
 #[cfg(unix)]
@@ -613,9 +604,8 @@ fn pane_mode_returns_none_for_missing_pane() {
     );
 }
 
-/// TPR-6 property: `sync_pane_snapshot` returns `None` for an
+/// property: `sync_pane_snapshot` returns `None` for an
 /// unknown pane id rather than blocking on a non-existent IO thread.
-///
 /// We can't easily simulate the timeout case (the IO thread always
 /// responds quickly under test load) but we CAN verify that the
 /// missing-pane fast path returns None instead of producing a stale
@@ -628,14 +618,13 @@ fn sync_pane_snapshot_returns_none_for_missing_pane() {
     assert!(
         mux.sync_pane_snapshot(bogus).is_none(),
         "sync_pane_snapshot must return None for an unknown pane id, \
-         not silently fall back to refresh_pane_snapshot's cached value",
+ not silently fall back to refresh_pane_snapshot's cached value",
     );
 }
 
 /// Regression: embedded `is_write_stalled` must continue returning `false`
 /// for an unknown pane id (matches the daemon-side server dispatch contract: missing
 /// pane ⇒ `false` rather than `Err`).
-/// See: bug-tracker/plans//00-overview.md
 #[test]
 fn is_write_stalled_returns_false_for_unknown_pane_in_embedded() {
     let mut mux = EmbeddedMux::new(test_wakeup());

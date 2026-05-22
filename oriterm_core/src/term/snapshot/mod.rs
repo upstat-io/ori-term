@@ -403,6 +403,7 @@ impl<S: EffectSink> Term<S> {
                     data: img.data.clone(),
                     width: img.width,
                     height: img.height,
+                    pixel_generation: img.pixel_generation,
                 });
             }
         }
@@ -423,6 +424,7 @@ impl<S: EffectSink> Term<S> {
                     data: img.data.clone(),
                     width: img.width,
                     height: img.height,
+                    pixel_generation: img.pixel_generation,
                 });
                 out.seen_image_ids.insert(pc.image_id);
             }

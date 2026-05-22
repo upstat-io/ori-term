@@ -43,6 +43,7 @@ fn stage(
         width: 10,
         height: 10,
         data: Arc::new(vec![0u8; 400]),
+        pixel_generation: 0,
         format: ImageFormat::Rgba,
         source: ImageSource::Direct,
         last_accessed: 0,
@@ -157,10 +158,13 @@ fn delete_i_removes_all_placements_for_image_id_keeps_image_data() {
     let mut t = term();
     stage_basic(&mut t, 1, 10, 0);
     // Add a second placement for image 1 directly (not via store, which would
-    // replace the image entry).
+    // replace the image entry). Use a distinct `placement_id` so the kitty-
+    // protocol dedup (a new `(image_id, placement_id=None)` replaces the
+    // existing implicit placement) doesn't collapse the two placements into
+    // one — this test exercises the multi-placement-per-image delete path.
     t.image_cache_mut().place(ImagePlacement {
         image_id: ImageId::from_raw(1),
-        placement_id: None,
+        placement_id: Some(99),
         source_x: 0,
         source_y: 0,
         source_w: 10,
@@ -809,6 +813,7 @@ fn stage_rect(
         width: (cols * 10) as u32,
         height: (rows * 10) as u32,
         data: Arc::new(vec![0u8; cols * rows * 400]),
+        pixel_generation: 0,
         format: ImageFormat::Rgba,
         source: ImageSource::Direct,
         last_accessed: 0,
@@ -898,6 +903,7 @@ fn delete_q_removes_placement_when_target_cell_is_inside_span_and_z_matches() {
         width: 30,
         height: 20,
         data: Arc::new(vec![0u8; 2400]),
+        pixel_generation: 0,
         format: ImageFormat::Rgba,
         source: ImageSource::Direct,
         last_accessed: 0,
@@ -1001,6 +1007,7 @@ fn delete_f_root_frame_leaves_current_frame_pointing_at_same_logical_frame() {
         width: 1,
         height: 1,
         data: Arc::new(vec![0xAA; 4]),
+        pixel_generation: 0,
         format: ImageFormat::Rgba,
         source: ImageSource::Direct,
         last_accessed: 0,
@@ -1102,6 +1109,7 @@ fn delete_f_root_syncs_image_data_to_surviving_current_frame() {
         width: 1,
         height: 1,
         data: Arc::new(vec![0xAA; 4]),
+        pixel_generation: 0,
         format: ImageFormat::Rgba,
         source: ImageSource::Direct,
         last_accessed: 0,
@@ -1159,6 +1167,7 @@ fn delete_f_resets_frame_starts_so_animation_timer_reinitializes() {
         width: 1,
         height: 1,
         data: Arc::new(vec![0xAA; 4]),
+        pixel_generation: 0,
         format: ImageFormat::Rgba,
         source: ImageSource::Direct,
         last_accessed: 0,
@@ -1236,6 +1245,7 @@ fn delete_p_does_not_match_zero_span_placement() {
         width: 10,
         height: 10,
         data: Arc::new(vec![0u8; 400]),
+        pixel_generation: 0,
         format: ImageFormat::Rgba,
         source: ImageSource::Direct,
         last_accessed: 0,
@@ -1291,6 +1301,7 @@ fn delete_a_does_not_match_zero_height_placement() {
         width: 10,
         height: 10,
         data: Arc::new(vec![0u8; 400]),
+        pixel_generation: 0,
         format: ImageFormat::Rgba,
         source: ImageSource::Direct,
         last_accessed: 0,
@@ -1342,6 +1353,7 @@ fn delete_animated_image_after_advance_correctly_releases_memory() {
         width: 4,
         height: 4,
         data: Arc::new(vec![0xAA; 64]), // F0: 64 bytes
+        pixel_generation: 0,
         format: ImageFormat::Rgba,
         source: ImageSource::Direct,
         last_accessed: 0,

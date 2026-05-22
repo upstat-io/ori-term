@@ -3,7 +3,7 @@
 //! Owns only the platform-specific bit — `font_dirs()`. Enumeration, parsing,
 //! grouping, the resolution-bridge logic, the platform-default fallback walk,
 //! and the user-fallback resolver all live in the shared `super::unix` module
-//! per `LEAK:algorithmic-duplication` SSOT discipline.
+//! per SSOT discipline.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -11,7 +11,6 @@ use std::path::PathBuf;
 use super::{DiscoveryResult, FallbackDiscovery, FamilyEntry};
 
 /// Standard font directories on Linux, in priority order.
-///
 /// User fonts take precedence over system fonts so personal installations
 /// override distribution-provided versions.
 pub(super) fn font_dirs() -> Vec<PathBuf> {
@@ -25,7 +24,6 @@ pub(super) fn font_dirs() -> Vec<PathBuf> {
 }
 
 /// Build a filename → full path index by scanning all font directories once.
-///
 /// First-seen wins: if the same filename exists in multiple directories, the
 /// one from the highest-priority directory (user before system) is kept.
 pub(crate) fn build_font_index() -> HashMap<String, PathBuf> {

@@ -17,7 +17,7 @@
 //! TPR surfaced — under memory pressure, the cache keeps still-referenced entries
 //! even past `memory_cap`. The cap is a soft limit; correctness wins.
 //!
-//! See: bug-tracker/plans/BUG-06-072/
+//! See:
 
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
@@ -35,7 +35,6 @@ pub const DEFAULT_MEMORY_CAP_BYTES: usize = 320 * 1024 * 1024;
 /// given `(PaneId, ImageId)` is currently referenced by a placement in the
 /// caller's latest snapshot for that pane. Each insert path computes its own
 /// reachability set at eviction time. See `insert` for the contract.
-///
 /// Internally Mutex-free; callers wrap in `Mutex<ImageCache<...>>` when they
 /// need interior mutability across `&self` API boundaries (see
 /// `MuxBackend::pane_image_data`).
@@ -70,16 +69,13 @@ impl ImageCache {
     }
 
     /// Insert (or replace) the pixel data for `(pane_id, id)`.
-    ///
     /// Runs reachability-bounded eviction until `memory_used <= memory_cap` OR
     /// all entries are still-referenced (in which case `memory_used` may exceed
     /// the soft cap). `reachable` is the reachability oracle — `reachable(p, i)`
     /// must return `true` iff `(p, i)` is referenced by a placement in the
     /// caller's latest snapshot for pane `p`.
-    ///
     /// Returns the list of evicted keys (caller propagates server-driven
     /// invalidation — server-side `sent_images` must drop the evicted IDs).
-    /// See: bug-tracker/plans/BUG-06-072/
     pub fn insert<F>(
         &mut self,
         pane_id: PaneId,
@@ -153,7 +149,6 @@ impl ImageCache {
     }
 
     /// Reachability-bounded LRU eviction.
-    ///
     /// Walks `lru` front-to-back (oldest first); skips entries reported as
     /// still-referenced by `reachable`; evicts the first non-referenced entry
     /// and repeats until `memory_used <= memory_cap`. If every entry is

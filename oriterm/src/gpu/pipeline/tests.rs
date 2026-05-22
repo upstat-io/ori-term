@@ -225,7 +225,6 @@ fn gpu_ui_rect_pipeline_succeeds() {
 }
 
 // --- §13.6.1 item 13: image pipeline state frozen baseline ---
-//
 // Runs on the default `cargo test -p oriterm --lib` invocation (no
 // feature gate, no `#[ignore]`). Asserts the production
 // `create_image_pipeline`'s state dump matches the frozen baseline. Any
@@ -260,16 +259,15 @@ fn image_pipeline_state_matches_frozen_baseline() {
     assert_eq!(
         dump, expected,
         "§13.6.1 item 13: image pipeline state drift detected. If you \
-         intentionally changed pipeline state, update this baseline in the \
-         same commit + update the §13.6.1 plan if the change has \
-         architectural significance. If you did NOT intend a state change, \
-         a refactor has silently altered the image pipeline — investigate \
-         BEFORE updating the baseline."
+ intentionally changed pipeline state, update this baseline in the \
+ same commit + update the §13.6.1 plan if the change has \
+ architectural significance. If you did NOT intend a state change, \
+ a refactor has silently altered the image pipeline — investigate \
+ BEFORE updating the baseline."
     );
 }
 
 // --- §13.6.1 item 6: overlay pass `LoadOp::Load` gate ---
-//
 // Source-grep proxy: reads `window_renderer/render.rs`, asserts every
 // `overlay_cursor_pass` `RenderPassDescriptor` uses `LoadOp::Load` not
 // `LoadOp::Clear`. The runtime alternative — synthesizing a `prepared`
@@ -278,7 +276,6 @@ fn image_pipeline_state_matches_frozen_baseline() {
 // exposed to tests and would entangle the probe with widget / cursor
 // state. The source-grep gate pins the load-op invariant with zero new
 // test surface area.
-//
 // Runs by default (no feature gate, no `#[ignore]`). A regression that
 // flipped either overlay-pass `LoadOp::Load` to `LoadOp::Clear` would
 // fail this test before any visual-regression suite ran.
@@ -300,9 +297,9 @@ fn overlay_pass_uses_load_op_not_clear_op() {
     assert!(
         !overlay_pass_blocks.is_empty(),
         "§13.6.1 item 6: did not find any `overlay_cursor_pass` descriptor \
-         in render.rs — the file structure changed; update this gate to \
-         match the new label OR investigate why the overlay pass no longer \
-         exists"
+ in render.rs — the file structure changed; update this gate to \
+ match the new label OR investigate why the overlay pass no longer \
+ exists"
     );
     // Skip the first occurrence — it is the file-level comment block label.
     // Keep occurrences that introduce a RenderPassDescriptor (next ~600
@@ -314,37 +311,35 @@ fn overlay_pass_uses_load_op_not_clear_op() {
     assert!(
         !descriptor_blocks.is_empty(),
         "§13.6.1 item 6: found `overlay_cursor_pass` labels but none \
-         introduce a `RenderPassDescriptor`/`begin_render_pass` — file \
-         shape changed; update this gate"
+ introduce a `RenderPassDescriptor`/`begin_render_pass` — file \
+ shape changed; update this gate"
     );
     for (i, block) in descriptor_blocks.iter().enumerate() {
         assert!(
             block.contains("LoadOp::Load"),
             "§13.6.1 item 6: overlay_cursor_pass descriptor #{i} does NOT \
-             contain `LoadOp::Load` — the overlay pass MUST preserve the \
-             cached-content blit underneath it. Found block: {block:?}"
+ contain `LoadOp::Load` — the overlay pass MUST preserve the \
+ cached-content blit underneath it. Found block: {block:?}"
         );
         assert!(
             !block.contains("LoadOp::Clear"),
             "§13.6.1 item 6: overlay_cursor_pass descriptor #{i} contains \
-             `LoadOp::Clear` — would wipe the cache blit and produce \
-             black/transparent output beneath cursor + overlays. Found \
-             block: {block:?}"
+ `LoadOp::Clear` — would wipe the cache blit and produce \
+ black/transparent output beneath cursor + overlays. Found \
+ block: {block:?}"
         );
     }
 }
 
 /// §13.6.1 item 19: bisection-matrix completeness assertion.
-///
 /// Enumerates the 10 instrumentation probes the §13.6.1 deliverable
 /// requires. The 3 orchestration probes (content_cache_view,
 /// copy_cache_to_output, overlay_pass) are kept SEPARATE — collapsing
 /// them into a single "orchestration" entry regresses to the
 /// pre-§13.6.1 ambiguity where the failing-stage diagnostic bucket
 /// collapsed 3 stages and provided no cure guidance per
-/// `plans/spec-conformance/section-13-kitty-graphics.md` §13.6.1
+/// §13.6.1
 /// success criterion line 550 (blind-spots.json blind_spots[0]).
-///
 /// This test exists as a constant-time enumeration gate. If a future
 /// refactor reduces the probe set without updating this list, the
 /// assertion fires immediately — the §13.6.1 bisection contract is
@@ -375,11 +370,11 @@ fn instrumentation_bisection_matrix_completeness() {
         PROBES.len(),
         10,
         "§13.6.1 item 19: bisection matrix MUST enumerate exactly 10 probes. \
-         The 3 orchestration probes (content_cache_view, copy_cache_to_output, \
-         overlay_pass_load_op) MUST stay separate; collapsing them regresses \
-         the diagnostic to pre-§13.6.1 ambiguity. If you intentionally added \
-         or removed a probe, update this assertion AND update §13.6.1 success \
-         criterion line 550 + the §13.6.1 plan body in the same commit."
+ The 3 orchestration probes (content_cache_view, copy_cache_to_output, \
+ overlay_pass_load_op) MUST stay separate; collapsing them regresses \
+ the diagnostic to pre-§13.6.1 ambiguity. If you intentionally added \
+ or removed a probe, update this assertion AND update §13.6.1 success \
+ criterion line 550 + the §13.6.1 plan body in the same commit."
     );
 
     let unique: std::collections::HashSet<_> = PROBES.iter().copied().collect();
@@ -387,6 +382,6 @@ fn instrumentation_bisection_matrix_completeness() {
         unique.len(),
         PROBES.len(),
         "§13.6.1 item 19: probe names must be distinct — duplicates indicate \
-         a copy-paste error in the matrix."
+ a copy-paste error in the matrix."
     );
 }

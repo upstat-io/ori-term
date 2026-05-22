@@ -23,7 +23,7 @@
 //! schema enforcement, and silently dropping parse failures would
 //! let drift in.
 //!
-//! See `plans/spec-conformance/section-01-catalog-bootstrap.md §01.3`
+//! See §01.3
 //! for the full scope.
 
 pub mod capture_extract;

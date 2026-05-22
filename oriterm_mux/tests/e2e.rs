@@ -114,7 +114,6 @@ fn python3_available() -> bool {
 }
 
 /// Spawn a pane and wait for the shell to be ready.
-///
 /// Sends a fence command and waits for its output to appear, replacing
 /// fixed `thread::sleep` calls with event-driven readiness detection.
 fn spawn_test_pane_ready(client: &mut MuxClient) -> PaneId {
@@ -139,7 +138,6 @@ fn wait_for_shell_ready(client: &mut MuxClient, pane_id: PaneId) {
 }
 
 /// Wait until a direct snapshot fetch contains the expected text.
-///
 /// Polls the daemon for a fresh snapshot every 50ms until the text
 /// appears or the timeout expires.
 fn wait_for_text_in_snapshot(
@@ -166,7 +164,7 @@ fn wait_for_text_in_snapshot(
                 eprintln!("=== Snapshot cells at timeout ===");
                 for (i, row) in snap.cells.iter().enumerate() {
                     let line: String = row.iter().map(|c| c.ch).collect();
-                    eprintln!("  row {i}: {line:?}");
+                    eprintln!(" row {i}: {line:?}");
                 }
             }
             panic!("timed out waiting for text {text:?} in pane {pane_id}");
@@ -187,7 +185,6 @@ fn snapshot_contains(snapshot: &PaneSnapshot, text: &str) -> bool {
 }
 
 /// Check whether a snapshot contains a shell prompt line.
-///
 /// Recognizes common prompt suffixes: `$` (bash/zsh), `#` (root),
 /// `%` (csh/tcsh), `>` (PowerShell/fish), `❯` (starship/pure).
 fn snapshot_has_prompt(snapshot: &PaneSnapshot) -> bool {
@@ -200,7 +197,6 @@ fn snapshot_has_prompt(snapshot: &PaneSnapshot) -> bool {
 }
 
 /// Poll until a snapshot satisfies a predicate, with a 15s deadline.
-///
 /// Replaces fixed `thread::sleep` calls with event-driven waiting.
 fn poll_until(
     client: &mut MuxClient,
@@ -231,7 +227,6 @@ fn poll_until(
 /// complete before any flood begins), and gates the pipe-unblock on a stdin
 /// ack (so the test is guaranteed to have *observed* `FG_READY` before the
 /// flood begins).
-///
 /// Sequence (parent ⟂ child are scheduled independently after `fork`):
 /// 1. Child: `setpgid(0, 0)` → blocks on `read(pipe_r)`. No output yet.
 /// 2. Parent: redundant `setpgid(pid, pid)` (covers race). Parent is still
@@ -248,20 +243,17 @@ fn poll_until(
 /// `tcsetpgrp` completed before `yes` floods.
 /// 6. Parent writes 1 byte to `pipe_w`; child unblocks, `execvp('yes')`.
 /// 7. Parent `waitpid`s; on `yes` death prints `FG_GONE`.
-///
 /// Without the pipe gate (step 1 + step 6), on a slow CI runner the child
 /// could run far enough to `execvp('yes')` and start flooding output
 /// BEFORE the parent's `tcsetpgrp` completed — at which point `\x03`
 /// (kernel ISIG) and `signal_child` (`tcgetpgrp`) both resolved to the
 /// SHELL's PGID, killing python and orphaning `yes`. That broke nightly
 /// CI run 25106848046.
-///
 /// Without the stdin ack (step 4), `yes` started flooding microseconds
 /// after `FG_READY` was printed, scrolling the sentinel off the visible
 /// 24-row snapshot before the test's 50ms-poll observation window caught
 /// it. The screen stayed full of `y` and the test panicked waiting for
 /// `FG_READY`. That broke nightly CI run 25140980371.
-///
 /// Tests using this wrapper MUST:
 /// 1. Poll for `FG_READY` in the snapshot.
 /// 2. Send `b"\n"` via `send_input` to ack — unblocks the parent's stdin
@@ -269,7 +261,6 @@ fn poll_until(
 /// 3. Wait for `y` flooding to start (proves `tcsetpgrp` completed).
 /// 4. Send Ctrl+C / `signal_child` to kill the foreground job.
 /// 5. Wait for `FG_GONE` to confirm the parent regained control.
-///
 /// See -Clock-Free Testing`.
 const YES_FOREGROUND_WRAPPER: &str = "python3 -uc \"\
 import os, sys; \
@@ -317,7 +308,6 @@ fn client_spawn_pane_type_see_output() {
 
 /// 44.3: Push notification flow — daemon PaneOutput → client PaneOutput
 /// → snapshot refresh → rendered content.
-///
 /// Regression: earlier version asserted on the FIRST observed
 /// dirty flag and required `PUSH_TEST` to be present in that snapshot.
 /// The dirty flag fires multiple times (input echo, prompt redraw, real
@@ -362,7 +352,7 @@ fn push_notification_triggers_dirty_flag() {
                 assert!(
                     saw_dirty_flag,
                     "PaneOutput notification must have triggered the dirty flag at \
-                     some point during the wait"
+ some point during the wait"
                 );
                 return;
             }
@@ -371,7 +361,7 @@ fn push_notification_triggers_dirty_flag() {
         assert!(
             Instant::now() < deadline,
             "timed out waiting for PUSH_TEST to appear in pane snapshot \
-             (saw_dirty_flag={saw_dirty_flag})"
+ (saw_dirty_flag={saw_dirty_flag})"
         );
         thread::sleep(Duration::from_millis(20));
     }
@@ -452,7 +442,6 @@ fn client_crash_cleans_up_owned_window() {
 // ---------------------------------------------------------------------------
 
 /// Wait until a snapshot is available for the given pane.
-///
 /// Returns an owned snapshot to avoid borrow/lifetime issues in test loops.
 fn wait_for_snapshot(client: &mut MuxClient, pane_id: PaneId, timeout: Duration) -> PaneSnapshot {
     let deadline = Instant::now() + timeout;
@@ -599,7 +588,6 @@ fn test_scroll_to_bottom() {
 }
 
 /// 14.2: Query pane mode bits — verify bracketed paste mode.
-///
 /// Uses `printf` to emit the DECSET sequence through stdout so the terminal
 /// emulator processes it (raw escape bytes written to stdin may not be echoed).
 #[test]
@@ -974,7 +962,6 @@ fn test_notification_pane_dirty() {
 }
 
 /// Flood output does not hang the event loop.
-///
 /// Sends a command that generates massive output and verifies the pane
 /// remains responsive afterwards. Before the fix, `PaneNotifier::notify()`
 /// blocked on the PTY writer when the kernel buffer was full, freezing the
@@ -1027,7 +1014,6 @@ fn test_flood_output_no_hang() {
 }
 
 /// Infinite flood output should still stream visible updates.
-///
 /// Reproduces the user's manual stress case (`while true` flood loop) and
 /// verifies the daemon can continue serving snapshots while output is
 /// unbounded.
@@ -1114,7 +1100,6 @@ fn test_infinite_flood_random_streams_updates() {
 }
 
 /// 14.4: PaneMetadataChanged notification fires on title change.
-///
 /// The shell's prompt may subsequently overwrite the title via OSC 0/7,
 /// so we only verify the notification arrives, not the final snapshot
 /// title (which races with shell integration).
@@ -1171,7 +1156,6 @@ fn test_notification_title_changed() {
 }
 
 /// Flood responsiveness: daemon snapshot path handles sustained flood.
-///
 /// Continuously refreshes snapshots during infinite flood output.
 /// Verifies that:
 /// 1. At least 10 snapshots complete in 3 seconds (no sustained hang).
@@ -1219,7 +1203,7 @@ fn test_flood_snapshot_responsiveness() {
         assert!(
             frame_time < max_frame_time,
             "snapshot {snapshot_count} took {frame_time:?} (max {max_frame_time:?}) — \
-             daemon snapshot path blocked during flood output"
+ daemon snapshot path blocked during flood output"
         );
 
         // Simulate GPU render time (~16ms for 60fps VSync).
@@ -1234,9 +1218,9 @@ fn test_flood_snapshot_responsiveness() {
     let fps = snapshot_count as f64 / elapsed.as_secs_f64();
 
     eprintln!("--- flood snapshot responsiveness ---");
-    eprintln!("  snapshots:       {snapshot_count}");
-    eprintln!("  fps:             {fps:.1}");
-    eprintln!("  max frame time:  {max_snapshot_time:?}");
+    eprintln!(" snapshots: {snapshot_count}");
+    eprintln!(" fps: {fps:.1}");
+    eprintln!(" max frame time: {max_snapshot_time:?}");
 
     // CI runners are slower — only catch true hangs, not scheduling jitter.
     assert!(
@@ -1340,7 +1324,6 @@ fn daemon_restart_detection_and_reconnect() {
 }
 
 /// 44.7: Raw socket round-trip latency (bypassing event loops).
-///
 /// Connects a raw blocking socket to the daemon and measures Ping/PingAck
 /// directly — no reader threads, no mio, no mpsc channels.
 #[test]
@@ -1394,9 +1377,9 @@ fn raw_socket_latency_baseline() {
     let p95 = latencies[N * 95 / 100];
 
     eprintln!("--- Raw socket Ping/PingAck latency ({N} iterations) ---");
-    eprintln!("  min:    {min:?}");
-    eprintln!("  median: {median:?}");
-    eprintln!("  p95:    {p95:?}");
+    eprintln!(" min: {min:?}");
+    eprintln!(" median: {median:?}");
+    eprintln!(" p95: {p95:?}");
 
     // This establishes the platform baseline — epoll_wait latency on WSL2.
     assert!(
@@ -1406,11 +1389,9 @@ fn raw_socket_latency_baseline() {
 }
 
 /// 44.7: IPC round-trip latency through daemon IPC.
-///
 /// Measures pure IPC overhead using Ping/PingAck (zero-payload round-trip).
 /// This isolates transport and thread-wakeup latency from snapshot building,
 /// serialization, and PTY processing.
-///
 /// Also measures snapshot refresh RPC for the full render-path latency.
 /// Asserts Ping median < 1ms and snapshot median < 5ms.
 #[test]
@@ -1452,9 +1433,9 @@ fn ipc_latency_under_5ms() {
     let ping_min = ping_latencies[0];
 
     eprintln!("--- IPC Ping/PingAck latency ({PING_ITERS} iterations) ---");
-    eprintln!("  min:    {ping_min:?}");
-    eprintln!("  median: {ping_median:?}");
-    eprintln!("  p95:    {ping_p95:?}");
+    eprintln!(" min: {ping_min:?}");
+    eprintln!(" median: {ping_median:?}");
+    eprintln!(" p95: {ping_p95:?}");
 
     // --- Part 2: Snapshot RPC latency (full render path) ---
     const SNAP_ITERS: usize = 100;
@@ -1473,9 +1454,9 @@ fn ipc_latency_under_5ms() {
     let snap_min = snap_latencies[0];
 
     eprintln!("--- IPC snapshot refresh latency ({SNAP_ITERS} iterations) ---");
-    eprintln!("  min:    {snap_min:?}");
-    eprintln!("  median: {snap_median:?}");
-    eprintln!("  p95:    {snap_p95:?}");
+    eprintln!(" min: {snap_min:?}");
+    eprintln!(" median: {snap_median:?}");
+    eprintln!(" p95: {snap_p95:?}");
 
     assert!(
         ping_median < Duration::from_millis(1),
@@ -1489,7 +1470,7 @@ fn ipc_latency_under_5ms() {
     if snap_median >= Duration::from_millis(5) {
         eprintln!(
             "WARNING: snapshot median {snap_median:?} exceeds ideal 5ms target \
-             (likely CPU contention from parallel tests — solo median is ~3ms)"
+ (likely CPU contention from parallel tests — solo median is ~3ms)"
         );
     }
     assert!(
@@ -1564,11 +1545,8 @@ fn multi_client_independent_panes() {
 /// The canonical signal-only regression pin lives in
 /// `signal_child_alone_kills_flooding_process` below — this test acts as a
 /// smoke test that the combined path doesn't regress.
-///
 /// Regression: `signal_child` now uses `tcgetpgrp(master_fd)` to
 /// route SIGINT to the foreground PGID instead of the shell PGID.
-/// See: bug-tracker/plans/completed/00-overview.md
-///
 /// Flake fix (nightly run 25106848046, 2026-04-29): the previous wrapper let
 /// the child `execvp('yes')` BEFORE the parent's `tcsetpgrp` completed; on
 /// slow CI Ctrl+C then routed SIGINT to the shell PGID, killing python and
@@ -1661,7 +1639,7 @@ fn ctrl_c_during_flood_via_signal_child() {
                 let line: String = row.iter().map(|c| c.ch).collect();
                 let trimmed = line.trim_end();
                 if !trimmed.is_empty() {
-                    eprintln!("  row {i}: {trimmed:?}");
+                    eprintln!(" row {i}: {trimmed:?}");
                 }
             }
         }
@@ -1736,7 +1714,7 @@ fn plain_ctrl_c_without_signal_child() {
                 let line: String = row.iter().map(|c| c.ch).collect();
                 let trimmed = line.trim_end();
                 if !trimmed.is_empty() {
-                    eprintln!("  row {i}: {trimmed:?}");
+                    eprintln!(" row {i}: {trimmed:?}");
                 }
             }
         }
@@ -1755,10 +1733,7 @@ fn plain_ctrl_c_without_signal_child() {
 /// the prompt. Pre-fix, `kill(-shell_pid, SIGINT)` did not reach the `yes`
 /// process group; post-fix, `tcgetpgrp(master_fd)` routes SIGINT to the
 /// PTY's foreground PGID.
-///
 /// Regression:.
-/// See: bug-tracker/plans/completed/00-overview.md
-///
 /// Uses `YES_FOREGROUND_WRAPPER` (pipe-gated) so the parent's `tcsetpgrp`
 /// is observed via the `FG_READY` sentinel before `signal_child` is called.
 /// The same race that broke the combined-path test on nightly (run
@@ -1841,7 +1816,7 @@ fn signal_child_alone_kills_flooding_process() {
                 let line: String = row.iter().map(|c| c.ch).collect();
                 let trimmed = line.trim_end();
                 if !trimmed.is_empty() {
-                    eprintln!("  row {i}: {trimmed:?}");
+                    eprintln!(" row {i}: {trimmed:?}");
                 }
             }
         }
@@ -1937,12 +1912,9 @@ fn daemon_osc_52_clipboard_read_round_trip() {
 /// This test verifies the reply byte stream reaches the client through
 /// the snapshot path (the `cat` process echoes the reply bytes back;
 /// the client sees them via snapshot updates).
-///
 /// OSC 52 still uses the async host-request path because clipboard
 /// state lives in the client, not the terminal palette; see
 /// `daemon_osc_52_clipboard_round_trip` for that coverage.
-///
-/// See: bug-tracker/plans/completed/BUG-06-073/
 #[test]
 fn daemon_osc_10_color_query_round_trip() {
     let daemon = TestDaemon::start();
@@ -2016,11 +1988,10 @@ fn daemon_host_request_cleanup_on_pane_close() {
     client.close_pane(pane_id2);
 }
 
-/// Regression: BUG-11-046 — `subscribe_pane` and `set_pane_priority` were
+/// `subscribe_pane` and `set_pane_priority` were
 /// not publicly accessible, blocking e2e multi-client priority routing tests.
 /// This test proves that a second client can subscribe to a pane spawned by
 /// another client and receive its snapshots independently.
-/// See: bug-tracker/plans/completed/BUG-11-046/00-overview.md
 #[test]
 fn daemon_multi_client_subscribe_and_priority() {
     let daemon = TestDaemon::start();
@@ -2081,7 +2052,6 @@ fn daemon_multi_client_subscribe_and_priority() {
 
 /// Regression: a freshly spawned daemon-mode pane with no traffic
 /// must report `is_write_stalled == false` (writer is idle, not blocked).
-/// See: bug-tracker/plans//00-overview.md
 #[test]
 fn is_write_stalled_returns_false_for_idle_pane_via_daemon() {
     let daemon = TestDaemon::start();
@@ -2099,7 +2069,6 @@ fn is_write_stalled_returns_false_for_idle_pane_via_daemon() {
 /// Regression: querying `is_write_stalled` for a pane the daemon
 /// has never seen must return `false` (mirrors `EmbeddedMux` semantics) and
 /// must not panic.
-/// See: bug-tracker/plans//00-overview.md
 #[test]
 fn is_write_stalled_returns_false_for_unknown_pane_via_daemon() {
     let daemon = TestDaemon::start();
@@ -2119,13 +2088,11 @@ fn is_write_stalled_returns_false_for_unknown_pane_via_daemon() {
 /// semantic positive pin: before the fix, the trait default returns `false`
 /// regardless of writer state, so this test loops without ever observing
 /// `true` and times out.
-/// See: bug-tracker/plans//00-overview.md
 /// Configure a daemon-mode pane for deterministic write-stall observation:
 /// puts the line discipline in raw mode (no echo, no canonical buffering),
 /// then runs `sleep 600` as the foreground job. Bytes sent via `send_input`
 /// pile up in the kernel pipe buffer because nothing reads them — `sleep`
 /// doesn't read stdin and the raw line discipline doesn't drain via echo.
-///
 /// Synchronization uses a `BUG_11_020_CONFIG_DONE` sentinel (poll-the-condition
 /// per `tests.md §Wall-Clock-Free Testing`), not a fixed `thread::sleep` —
 /// when the snapshot shows the sentinel, the `stty` command has completed and
@@ -2147,7 +2114,6 @@ fn configure_pane_for_stall(client: &mut MuxClient, pane_id: PaneId) {
 /// or the deadline expires. Returns `true` if stall was observed, `false` on
 /// timeout. Deadline-as-safety, not deadline-as-signal, per
 /// `tests.md §Wall-Clock-Free Testing`.
-///
 /// 1 MiB chunks plus a per-poll deadline check keep the per-iteration RPC
 /// budget bounded. The pre-fix shape (8 MiB chunks + a 50-deep inner poll
 /// loop with no inner deadline) burned ~250 s per outer iter on
@@ -2188,7 +2154,6 @@ fn is_write_stalled_returns_true_when_writer_blocked_via_daemon() {
 /// flag. With one pane stalled by flooding, a sibling idle pane must report
 /// `is_write_stalled == false` (multi-pane isolation pin per Plan TPR
 /// 3-of-3 reviewer agreement).
-/// See: bug-tracker/plans//00-overview.md
 #[test]
 fn is_write_stalled_isolates_per_pane_via_daemon() {
     let daemon = TestDaemon::start();
@@ -2207,7 +2172,7 @@ fn is_write_stalled_isolates_per_pane_via_daemon() {
     assert!(
         !client.is_write_stalled(idle_pane),
         "idle sibling pane must report is_write_stalled == false; \
-         per-pane keying must not be muddled by another pane's stall",
+ per-pane keying must not be muddled by another pane's stall",
     );
 
     client.signal_child(stalled_pane, oriterm_mux::Signal::Interrupt);
@@ -2219,7 +2184,6 @@ fn is_write_stalled_isolates_per_pane_via_daemon() {
 /// `signal_child` must successfully kill the flooding process. This replaces
 /// the "either path kills `yes`" smoke-test framing of
 /// `ctrl_c_during_flood_via_signal_child` with a stall-specific pin.
-/// See: bug-tracker/plans//00-overview.md
 #[test]
 fn signal_child_after_is_write_stalled_kills_writer_via_daemon() {
     let daemon = TestDaemon::start();
@@ -2296,29 +2260,24 @@ fn notcurses_info_available() -> bool {
 /// gap, with GUI-equivalent post-spawn config applied. Reproduces the
 /// failure deterministically on Linux so the cure surface is visible
 /// in test output BEFORE any code change.
-///
 /// **What this mirrors from the user's setup**:
 /// - daemon + MuxClient over Unix socket (`TestDaemon`)
 /// - real notcurses-info Linux binary as the WSL-side child
 /// - GUI's post-spawn config (`set_image_config` + `set_cell_dimensions`)
-///   applied AFTER spawn — matching `oriterm/src/app/post_spawn.rs`
+/// applied AFTER spawn — matching `oriterm/src/app/post_spawn.rs`
 /// - 105 cols × 37 rows grid (matches user's window log line 20)
 /// - cell dims realistic for Cascadia Mono 12pt @ 96 DPI (8 × 16)
-///
 /// **What this asserts (every user-visible symptom)**:
 /// - Daemon log emits a `kitty:` action line per
-///   `oriterm_core/src/term/handler/image/kitty/mod.rs:94` — meaning
-///   notcurses-info actually emitted image-protocol bytes.
+/// `oriterm_core/src/term/handler/image/kitty/mod.rs:94` — meaning
+/// notcurses-info actually emitted image-protocol bytes.
 /// - Term image_cache has ≥1 placement after notcurses-info runs.
 /// - Final pane snapshot reaches the client with a placement + the
-///   client cache holds non-empty pixel data for it (so the wordmark
-///   would render at the GPU).
-///
+/// client cache holds non-empty pixel data for it (so the wordmark
+/// would render at the GPU).
 /// If ANY assertion fails, the user-visible symptom has a deterministic
 /// reproducer. The test is the cure target; the fix lands when every
 /// assertion passes.
-///
-/// See: bug-tracker/plans/BUG-06-073/
 #[test]
 fn notcurses_info_user_repro_e2e_full_stack() {
     if !notcurses_info_available() {
@@ -2407,9 +2366,9 @@ fn notcurses_info_user_repro_e2e_full_stack() {
     assert!(
         !snap.images.is_empty(),
         "USER REPRO: no placement reached the client — notcurses-info \
-         did not transmit any image-protocol bytes OR the bytes were \
-         dropped before our handler stored them. This is the user's \
-         visible-symptom #1 (wordmark BLANK)."
+ did not transmit any image-protocol bytes OR the bytes were \
+ dropped before our handler stored them. This is the user's \
+ visible-symptom #1 (wordmark BLANK)."
     );
 
     // Every placement's image_id must resolve to pixel data (inline
@@ -2421,8 +2380,8 @@ fn notcurses_info_user_repro_e2e_full_stack() {
         assert!(
             inline.is_some() || cached.is_some(),
             "USER REPRO: placement {} reached client but no pixel \
-             data is available (inline nor cached). Wordmark would \
-             render blank.",
+ data is available (inline nor cached). Wordmark would \
+ render blank.",
             wp.image_id
         );
     }
@@ -2437,15 +2396,12 @@ fn notcurses_info_user_repro_e2e_full_stack() {
 /// returns `NCPIXEL_NONE` → `display_logo()` is skipped → wordmark
 /// blank AND zero `kitty:`/`sixel:` log lines (matches the user's
 /// observed daemon log shape).
-///
 /// This test deliberately sets cell dims to (0, 0) BEFORE spawn-ready
 /// and asserts the resulting daemon log lacks any `kitty:` handler
 /// entries — proving the bug shape when cell dims are zero. The cure
 /// surface for the user's actual bug is then: the GUI is calling
 /// `set_cell_dimensions` with zero / wrong values (or never calling it
 /// AND a different code path zeroes the Term's defaults).
-///
-/// See: bug-tracker/plans/BUG-06-073/
 #[test]
 fn notcurses_info_zero_cell_dims_disables_canpixel() {
     if !notcurses_info_available() {
@@ -2508,19 +2464,17 @@ fn notcurses_info_zero_cell_dims_disables_canpixel() {
     // The HYPOTHESIS: with zero cell dims, notcurses-info's canpixel
     // returns NCPIXEL_NONE → display_logo() is skipped → NO kitty
     // graphics bytes → snap.images is empty.
-    //
     // If this assertion PASSES (images.is_empty()), the hypothesis is
     // confirmed: zero cell dims cause the wordmark blank.
-    //
     // If this assertion FAILS (images.len > 0), then notcurses
     // emitted bytes regardless of zero cell dims, and the user's
     // symptom has a different root cause.
     assert!(
         snap.images.is_empty(),
         "HYPOTHESIS REJECTED: zero cell_dimensions did NOT prevent \
-         notcurses-info from emitting image bytes. snap.images={:?}. \
-         The user's symptom must have a different root cause than \
-         zero cell dims.",
+ notcurses-info from emitting image bytes. snap.images={:?}. \
+ The user's symptom must have a different root cause than \
+ zero cell dims.",
         snap.images.iter().map(|p| p.image_id).collect::<Vec<_>>()
     );
 
@@ -2529,7 +2483,6 @@ fn notcurses_info_zero_cell_dims_disables_canpixel() {
 
 /// End-to-end: real daemon + MuxClient + shell + notcurses-info → assert
 /// image data flows through the full daemon→client pipeline.
-///
 /// **The closest Linux analog to the user's repro for the
 /// notcurses-info wordmark gap.** Spawns the actual `MuxServer` in a
 /// background thread, connects a `MuxClient` over a Unix domain
@@ -2539,12 +2492,9 @@ fn notcurses_info_zero_cell_dims_disables_canpixel() {
 /// image cache directly (server-pushed `WireImageData` was drained
 /// there at `cache_snapshot` time) to assert image bytes survived the
 /// IPC round-trip.
-///
 /// Asserts: ≥1 placement referenced by the latest snapshot AND the
 /// client's image cache holds non-empty pixel data for that placement
 /// (width / height / data.len all > 0 and consistent).
-///
-/// See: bug-tracker/plans/BUG-06-073/
 #[test]
 fn notcurses_info_daemon_e2e_image_data_reaches_client() {
     if !notcurses_info_available() {
@@ -2567,30 +2517,56 @@ fn notcurses_info_daemon_e2e_image_data_reaches_client() {
     // the wait_for_text loop has something STABLE in the grid even after
     // notcurses-info's longer-than-viewport output scrolls past. The
     // sentinel lands on the new shell prompt line and stays visible.
-    client.send_input(pane_id, b"notcurses-info; echo NCI_E2E_DONE\n");
-    let _banner_snap = wait_for_text_in_snapshot(
-        &mut client,
-        pane_id,
-        "NCI_E2E_DONE",
-        Duration::from_secs(60),
-    );
+    // Send notcurses-info via the shell, then immediately invoke `cat`
+    // to BLOCK the shell so no subsequent prompt redraw scrolls the
+    // kitty placement off the visible region. Without this hold,
+    // notcurses-info's trailing render plus the shell's prompt redraw
+    // produce CUP/scroll sequences that evict the placement and trigger
+    // `prune_if_orphaned`, leaving the LATEST snapshot with zero
+    // placements. Pre-cure (chunked-action inheritance bug), an extra
+    // duplicate placement at a different row happened to survive the
+    // scroll long enough for the test to catch it; post-cure that
+    // incidental safety is gone, so we must explicitly hold the shell
+    // open while the assertion fetches the snapshot.
+    client.send_input(pane_id, b"notcurses-info; cat\n");
 
-    // Drain pending push events so cache_snapshot runs to completion
-    // and any post-banner snapshots that carry the image_data
-    // (transmitted AFTER the text banner per notcurses-info source)
-    // are folded into client.image_cache. refresh_pane_snapshot is
-    // the SSOT drain — without it, accumulated image_data sits in
-    // pushed_snapshots forever (the reader's NotifyPaneSnapshot arm
-    // only WRITES the map, the drain happens at refresh time).
-    let deadline = Instant::now() + Duration::from_secs(10);
+    // Poll for a snapshot carrying a placement. `cat` blocks the shell
+    // indefinitely so once notcurses-info has emitted its kitty graphics
+    // bytes, the placement persists. 30 s ceiling — cold-start + slow
+    // CI runners.
+    let snap_with_placement: PaneSnapshot = {
+        let deadline = Instant::now() + Duration::from_secs(30);
+        let mut captured: Option<PaneSnapshot> = None;
+        while Instant::now() < deadline {
+            client.poll_events();
+            notifs.clear();
+            client.drain_notifications(&mut notifs);
+            let _ = client.refresh_pane_snapshot(pane_id);
+            if let Some(snap) = client.sync_pane_snapshot(pane_id)
+                && !snap.images.is_empty()
+            {
+                captured = Some(snap);
+                break;
+            }
+            if notifs.is_empty() {
+                thread::sleep(Duration::from_millis(20));
+            }
+        }
+        captured.expect("daemon-to-client e2e: no snapshot with a placement arrived within 30s")
+    };
+
+    // Release the `cat` hold by sending EOF (Ctrl+D) so the shell can
+    // exit cleanly. Drain notifications afterwards so the daemon settles.
+    client.send_input(pane_id, b"\x04");
+
+    // Drain pending push events so image_data folds into client cache.
+    let deadline = Instant::now() + Duration::from_secs(5);
     loop {
         client.poll_events();
         notifs.clear();
         client.drain_notifications(&mut notifs);
-        // Drain pushed_snapshots → image_cache every iteration.
         let _ = client.refresh_pane_snapshot(pane_id);
-        let pushed_anything = !notifs.is_empty();
-        if !pushed_anything {
+        if notifs.is_empty() {
             thread::sleep(Duration::from_millis(50));
         }
         if Instant::now() >= deadline {
@@ -2598,13 +2574,7 @@ fn notcurses_info_daemon_e2e_image_data_reaches_client() {
         }
     }
 
-    // Fetch the LATEST snapshot via sync_pane_snapshot — this returns a
-    // clone BEFORE cache_snapshot strips image_data, so the snapshot
-    // here carries inline image_data exactly as the wire would carry
-    // it for a fresh client.
-    let snap = client
-        .sync_pane_snapshot(pane_id)
-        .expect("sync_pane_snapshot must return a snapshot after notcurses-info ran");
+    let snap = snap_with_placement;
 
     eprintln!(
         "e2e snapshot: images.len={} image_data.len={} images_dirty={}",
@@ -2614,7 +2584,7 @@ fn notcurses_info_daemon_e2e_image_data_reaches_client() {
     );
     for (i, wp) in snap.images.iter().enumerate() {
         eprintln!(
-            "  placement[{i}]: id={} viewport=({},{}) display={}x{} z={}",
+            " placement[{i}]: id={} viewport=({},{}) display={}x{} z={}",
             wp.image_id,
             wp.viewport_x,
             wp.viewport_y,
@@ -2625,7 +2595,7 @@ fn notcurses_info_daemon_e2e_image_data_reaches_client() {
     }
     for (i, wid) in snap.image_data.iter().enumerate() {
         eprintln!(
-            "  image_data[{i}]: id={} {}x{} px, data.len={}B",
+            " image_data[{i}]: id={} {}x{} px, data.len={}B",
             wid.id,
             wid.width,
             wid.height,
@@ -2636,8 +2606,8 @@ fn notcurses_info_daemon_e2e_image_data_reaches_client() {
     assert!(
         !snap.images.is_empty(),
         "daemon→client e2e: no placement reached the client after notcurses-info — \
-         the kitty graphics bytes did not flow through one of: handler, snapshot, \
-         project_per_client_pure, wire codec, or client cache_snapshot path"
+ the kitty graphics bytes did not flow through one of: handler, snapshot, \
+ project_per_client_pure, wire codec, or client cache_snapshot path"
     );
 
     // Note: snap.image_data MAY be empty here because the daemon's
@@ -2654,7 +2624,7 @@ fn notcurses_info_daemon_e2e_image_data_reaches_client() {
             assert!(
                 wid.width > 0 && wid.height > 0 && !wid.data.is_empty(),
                 "inline image_data for placement {} has zero/empty bytes \
-                 ({}x{}, data.len={})",
+ ({}x{}, data.len={})",
                 wp.image_id,
                 wid.width,
                 wid.height,
@@ -2667,14 +2637,14 @@ fn notcurses_info_daemon_e2e_image_data_reaches_client() {
         let arc = client.pane_image_data(pane_id, id).unwrap_or_else(|| {
             panic!(
                 "placement {} has no inline image_data AND no entry in the \
-                 client's image_cache — the wordmark would render BLANK at the GPU",
+ client's image_cache — the wordmark would render BLANK at the GPU",
                 wp.image_id
             )
         });
         assert!(
             arc.width > 0 && arc.height > 0 && !arc.data.is_empty(),
             "client.image_cache entry for placement {} has zero/empty bytes \
-             ({}x{}, data.len={})",
+ ({}x{}, data.len={})",
             wp.image_id,
             arc.width,
             arc.height,

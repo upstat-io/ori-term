@@ -89,10 +89,8 @@ pub enum BeginTestingStatus {
 /// so the file reads in the same visual order as the snapshot.
 /// Drift detection is set-based ([`assert_inventory_drift`]),
 /// so order is not load-bearing.
-///
 /// **Plan/reality mismatches surfaced by 05.0 discovery** (recorded
 /// here so 05.4b and 05.5 can address them):
-///
 /// - `a) test alternate character set and graphic rendition` is a
 ///   COMBINED entry. The plan envisioned ACS and SGR as separate
 ///   submenu entries; tack v1.08 merges them. One scenario covers
@@ -149,7 +147,7 @@ pub const BEGIN_TESTING_INVENTORY: &[BeginTestingKey] = &[
         // DelegatedToSection { section: "08" } classification is
         // CORRECT (function-key coverage belongs in Section 08's
         // keyboard-encoding crate, not in Section 05's tack
-        // catalog), but per (Codex /review-work
+        // catalog), but per (Codex review-work
         // iteration 2 of M2): Section 08 is currently
         // `status: not-started` and the planned cross-check file
         // `oriterm/src/key_encoding/terminfo_xcheck.rs` does NOT
@@ -222,7 +220,6 @@ pub const BEGIN_TESTING_INVENTORY: &[BeginTestingKey] = &[
         // begin-testing menu does NOT navigate to a separate help
         // screen — it simply re-displays the same begin-testing
         // menu inline.
-        //
         // **Coverage source after fix:**
         // the duplicate claim is backed by a REAL automated test
         // at `oriterm_core/tests/tack/test_menu/help.rs`
@@ -238,11 +235,10 @@ pub const BEGIN_TESTING_INVENTORY: &[BeginTestingKey] = &[
         // navigate away).
         // 7. Snapshots the post-`?` grid via insta for byte-level
         // visual regression.
-        //
         // The previous version of this comment said the 05.0
         // begin_testing_inventory drift gate covered help
         // behavior, which was UNVERIFIED — the drift gate only
-        // sends `n` and never `?`. (Codex /review-work
+        // sends `n` and never `?`. (Codex review-work
         // iteration 2 of M2) flagged the gap; then
         // flagged this comment as still pointing at the old
         // owner. The Duplicate classification is now backed by
@@ -263,9 +259,7 @@ pub const BEGIN_TESTING_INVENTORY: &[BeginTestingKey] = &[
 /// call this helper. There is exactly one place where the drift gate
 /// algorithm lives. Adding a third consumer = re-export, never
 /// re-implement.
-///
 /// # Errors
-///
 /// Returns `Err` whenever `discovered` and the pinned inventory
 /// disagree on any key. The error message includes both the
 /// discovered set and the pinned set so the caller can show the
@@ -280,10 +274,10 @@ pub fn assert_inventory_drift(discovered: &BTreeSet<char>) -> Result<(), String>
     let only_in_pinned: BTreeSet<&char> = pinned.difference(discovered).collect();
     Err(format!(
         "begin-testing menu drift detected.\n\
-         Discovered: {discovered:?}\n\
-         Pinned:     {pinned:?}\n\
-         Only in discovered (new keys, add to inventory): {only_in_discovered:?}\n\
-         Only in pinned (removed keys, drop from inventory): {only_in_pinned:?}"
+ Discovered: {discovered:?}\n\
+ Pinned: {pinned:?}\n\
+ Only in discovered (new keys, add to inventory): {only_in_discovered:?}\n\
+ Only in pinned (removed keys, drop from inventory): {only_in_pinned:?}"
     ))
 }
 

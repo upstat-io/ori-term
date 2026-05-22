@@ -130,6 +130,7 @@ fn mk_image_data(image_id: u32, bytes: usize) -> RenderableImageData {
         data: Arc::new(vec![0xAB; bytes]),
         width: 1,
         height: bytes as u32,
+        pixel_generation: 0,
     }
 }
 
@@ -181,7 +182,6 @@ fn fill_images_from_renderable_copies_placements_and_dirty_flag() {
 
 /// When `RenderableContent.images` is empty, `fill_images_from_renderable`
 /// MUST clear any stale placements left over from a prior fill.
-/// See: bug-tracker/plans/BUG-06-072/
 #[test]
 fn fill_images_from_renderable_clears_stale_placements() {
     let mut snap = PaneSnapshot::default();
@@ -226,7 +226,6 @@ fn snapshot_cache_image_data_miss_returns_none() {
 /// fold). Without this protection, an LRU eviction triggered by cap pressure
 /// picks the just-inserted entry as the victim — daemon clients then receive
 /// the placement with no pixel data and render blank.
-/// See: bug-tracker/plans/BUG-06-072/
 #[test]
 fn fold_image_data_store_keeps_new_ids_under_pressure() {
     use super::fold_image_data_store;
@@ -334,7 +333,6 @@ fn image_cache_cross_pane_reachability_protects_other_panes() {
 /// path doesn't redundantly call `mark_image_sent` for the same ID. The
 /// same dedupe contract applies to the projected `image_data` Vec — pixel
 /// bytes are shipped over the wire ONCE per ID, not per placement.
-/// See: bug-tracker/plans/BUG-06-072/
 #[test]
 fn pending_image_mutations_dedupe_by_id() {
     // Build a snapshot with TWO placements pointing at the same ImageId(7).
@@ -352,7 +350,6 @@ fn pending_image_mutations_dedupe_by_id() {
 /// Pin: `PendingImageMutations` applied to a `ClientConnection` mark every
 /// projected `(pane_id, id)` as sent and (when dirty) clear the prior set.
 /// Verifies the post-queue apply path without needing a real IPC stream.
-/// See: bug-tracker/plans/BUG-06-072/
 #[test]
 fn pending_image_mutations_apply_to_marks_and_clears() {
     use crate::server::push::PendingImageMutations;
@@ -389,7 +386,6 @@ fn cached_pane_snapshot_helper_carries_only_placements() {
 /// AND `fold_image_data_store` AND `fill_images_from_renderable`, and the
 /// resulting `SnapshotCache` carries the real pixel data retrievable via
 /// `cache.image_data(pane_id, image_id)`.
-///
 /// **What this test covers that the others don't.** The unit tests above
 /// use `mk_image_data(id, 80)` — 80 bytes of `0xAB` filler, NOT real
 /// image bytes. The Linux `PtySession` test in `oriterm_core/tests/notcurses_info_pty.rs`
@@ -398,14 +394,11 @@ fn cached_pane_snapshot_helper_carries_only_placements() {
 /// `notcurses-info` produces real bytes via `Term`'s extract path, the
 /// daemon's fold step copies them into `image_data_store`, and a lookup
 /// MUST return those bytes (not None, not zero-length, not wrong-id).
-///
 /// If this test fails, the daemon-side projection drops real image data
 /// even though it accepts synthetic data — a regression the existing
 /// `mk_image_data`-based tests cannot catch. If it passes, the wordmark
 /// cure surface is downstream of the daemon's snapshot projection
 /// (wire codec, IPC transport, client decode, or GPU render).
-///
-/// See: bug-tracker/plans/BUG-06-073/
 #[cfg(unix)]
 #[test]
 fn notcurses_info_image_data_survives_daemon_fold() {
@@ -431,9 +424,30 @@ fn notcurses_info_image_data_survives_daemon_fold() {
         status.success(),
         "notcurses-info exited unsuccessfully: {status:?}"
     );
+    session.drain_blocking(3_000);
+
+    // notcurses-info's trailing render emits CUP/ED/scroll sequences that
+    // evict the kitty placement off the visible region and trigger
+    // `prune_if_orphaned`, so live-stream end-state has zero placements.
+    // Replay the captured bytes through a fresh `Term` truncated at the
+    // `_Ga=p,` APC end — the placement is alive there.
+    use oriterm_test_support::spec_chain::SpecHarness;
+    let input_bytes = session.input_bytes().to_vec();
+    let ap_apc_needle = b"\x1b_Ga=p,";
+    let ap_start = input_bytes
+        .windows(ap_apc_needle.len())
+        .position(|w| w == ap_apc_needle)
+        .expect("notcurses-info should emit `_Ga=p,` APC for display_logo");
+    let ap_end = input_bytes[ap_start..]
+        .windows(2)
+        .position(|w| w == b"\x1b\\")
+        .map(|rel| ap_start + rel + 2)
+        .expect("`_Ga=p,` APC should terminate with ESC \\");
+    let mut harness = SpecHarness::with_size(24, 80);
+    harness.feed(&input_bytes[..ap_end]);
 
     let mut render_buf = RenderableContent::default();
-    session.term().renderable_content_into(&mut render_buf);
+    harness.term().renderable_content_into(&mut render_buf);
     assert!(
         !render_buf.images.is_empty(),
         "Term snapshot extraction lost the placement"
@@ -470,7 +484,7 @@ fn notcurses_info_image_data_survives_daemon_fold() {
         let arc = store.get(pane_id, id).unwrap_or_else(|| {
             panic!(
                 "image_data_store lookup miss for ({pane_id}, {id:?}) after fold — \
-                 placement would render blank on the client"
+ placement would render blank on the client"
             )
         });
         assert!(

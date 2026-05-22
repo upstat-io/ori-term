@@ -10,7 +10,6 @@ use crate::gpu::frame_input::{FrameInput, SelectionDamageSnapshot};
 use super::{BufferLengths, RowInstanceRanges, build_dirty_set, mark_selection_damage};
 
 /// Build a snapshot covering lines `start..=end` with default column extents.
-///
 /// Uses char mode with column 0..80 to represent a typical full-line selection.
 fn snap(start: usize, end: usize) -> SelectionDamageSnapshot {
     SelectionDamageSnapshot {
@@ -103,7 +102,7 @@ fn dirty_set_with_prev_hover(
     buf
 }
 
-/// Regression: BUG-06-027 — when the cursor moves between frames, the
+/// when the cursor moves between frames, the
 /// previous cursor row must also be marked dirty so its cells regenerate
 /// without inheriting the "with cursor" per-cell colors that were baked
 /// into `saved_tier`.
@@ -126,7 +125,7 @@ fn cursor_move_dirties_previous_cursor_row() {
     assert!(!dirty[1], "non-cursor row stays clean");
 }
 
-/// Regression: BUG-06-027 — when the hovered cell moves, both the
+/// when the hovered cell moves, both the
 /// previous and current hover rows must be dirtied so the hyperlink
 /// solid-underline decoration migrates with the mouse without falling
 /// back to a full rebuild.
@@ -148,7 +147,7 @@ fn hover_move_dirties_previous_and_current_hover_rows() {
     assert!(!dirty[4]);
 }
 
-/// Regression: BUG-06-027 negative pin — when the hovered cell does not
+/// Regression: invariant check — when the hovered cell does not
 /// change, `build_dirty_set` must not dirty hover rows.
 #[test]
 fn hover_stationary_does_not_dirty_hover_rows() {
@@ -162,7 +161,7 @@ fn hover_stationary_does_not_dirty_hover_rows() {
     assert!(dirty.iter().all(|&d| !d), "no rows dirtied");
 }
 
-/// Regression: BUG-06-027 negative pin — when the cursor stays put,
+/// Regression: invariant check — when the cursor stays put,
 /// `build_dirty_set` must not gratuitously dirty extra rows.
 #[test]
 fn cursor_stationary_does_not_dirty_previous_cursor_row() {

@@ -14,7 +14,7 @@
 //! Canonical home for trace-emission tests across the workspace. Earlier
 //! duplicates in `oriterm_core/src/grid/dirty/trace_capture.rs` and
 //! `oriterm/src/gpu/prepare/trace_capture.rs` were consolidated here per
-//! impl-hygiene F-01 LEAK:algorithmic-duplication.
+//! impl-hygiene F-01 .
 
 use std::cell::RefCell;
 use std::sync::{Arc, Mutex, OnceLock};
@@ -45,7 +45,6 @@ impl MemorySink {
     }
 
     /// Snapshot the captured records.
-    ///
     /// Panics if the internal mutex was poisoned by a panic in another
     /// thread — that's a real bug to surface, not a silent empty-Vec.
     pub fn records(&self) -> Vec<CapturedRecord> {
@@ -68,8 +67,8 @@ impl MemorySink {
 }
 
 thread_local! {
-    static THREAD_SINK: RefCell<Option<MemorySink>> = const { RefCell::new(None) };
-    static THREAD_LEVEL: RefCell<LevelFilter> = const { RefCell::new(LevelFilter::Off) };
+ static THREAD_SINK: RefCell<Option<MemorySink>> = const { RefCell::new(None) };
+ static THREAD_LEVEL: RefCell<LevelFilter> = const { RefCell::new(LevelFilter::Off) };
 }
 
 struct TestLogger;
@@ -107,7 +106,6 @@ fn install_logger_once() {
 /// thread only.
 ///
 /// See: `MemorySink` for the captured-record buffer + thread-local install.
-///
 /// Concurrent tests on other threads see their traces silently dropped (no
 /// thread-local sink installed); records fired on this thread go into the
 /// fresh `MemorySink` for the duration of `body`. Per-thread isolation

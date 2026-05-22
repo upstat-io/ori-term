@@ -224,7 +224,6 @@ fn discovered_family_name_nonempty() {
 }
 
 /// All discovered variant paths (Bold/Italic/BoldItalic) are distinct from Regular.
-///
 /// If DirectWrite or directory scan returned the same file for multiple variants,
 /// the discovery layer should have filtered them to `None`.
 #[test]
@@ -316,7 +315,6 @@ fn font_index_keys_are_filenames() {
 }
 
 // --- Family-catalog enumeration (`enumerate_mono_families_from_roots`) ---
-//
 // Tests below construct a synthetic font dir via `tempfile::TempDir`, drop one
 // or more embedded font fixtures into it, and call the platform's `_from_roots`
 // helper directly so the OnceLock-cached system catalog is bypassed. The
@@ -369,7 +367,7 @@ fn enumerate_jbm_fixture_yields_jetbrains_mono_display_name() {
     assert!(
         jbm.is_some(),
         "expected display_name 'JetBrains Mono' (from OpenType name table), \
-         got {:?}",
+ got {:?}",
         entries.iter().map(|f| &f.display_name).collect::<Vec<_>>()
     );
     let jbm = jbm.unwrap();
@@ -532,7 +530,6 @@ fn enumerate_mono_families_returns_slice_no_panic() {
 }
 
 // --- Resolution-bridge integration ---
-//
 // Pin 2 (§03 Property): if "JetBrains Mono" appears in the system catalog
 // (typical Linux box where the user installed JBM, or any system where the
 // embedded JBM fixture happens to be in scope), `discover_fonts(Some("JetBrains
@@ -610,7 +607,7 @@ fn try_user_family_with_bridge_returns_none_when_catalog_misses() {
 // --- Algorithmic-duplication regression ---
 
 /// Linux/macOS `index_font_dir` collapsed into a single canonical
-/// `walk_font_dirs` helper (closes 's `LEAK:algorithmic-duplication`
+/// `walk_font_dirs` helper (closes 's ``
 /// finding). This test pins the SSOT at the API level: both platforms expose
 /// `build_font_index` returning equivalently-shaped indices over their roots.
 #[cfg(target_os = "linux")]
@@ -667,10 +664,9 @@ fn verify_result_consistency(result: &super::DiscoveryResult) {
     }
 }
 
-/// Regression: BUG-04-008 — `prewarm_catalog()` populates `FAMILY_CATALOG`
+/// `prewarm_catalog()` populates `FAMILY_CATALOG`
 /// so the first Settings dialog open finds a hot cache instead of stalling
 /// the UI thread on platform font enumeration.
-///
 /// `OnceLock::get_or_init` is process-global; since other tests in this
 /// binary may already have warmed the catalog, the assertion is structural:
 /// after `prewarm_catalog()` returns, `enumerate_mono_families()` returns
@@ -693,7 +689,7 @@ fn prewarm_catalog_populates_family_catalog() {
     );
 }
 
-/// Regression: BUG-04-008 — `prewarm_catalog()` is idempotent under
+/// `prewarm_catalog()` is idempotent under
 /// repeated and concurrent calls. `OnceLock::get_or_init` allows exactly
 /// one initializer; concurrent callers block until the first completes,
 /// then read the stable result.

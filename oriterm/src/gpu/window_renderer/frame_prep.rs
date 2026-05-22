@@ -11,7 +11,6 @@ use super::helpers::{CombinedAtlasLookup, ensure_glyphs_cached, grid_raster_keys
 use super::{EMPTY_KEYS_CAP, WindowRenderer};
 
 /// Number of frames an image texture may go unused before eviction.
-///
 /// At a 60Hz refresh this is ~1s of idle retention; higher refresh rates
 /// evict proportionally faster, which is acceptable for a frame-cache
 /// retention policy (the goal is "evict if not actively used", not a
@@ -26,7 +25,6 @@ impl WindowRenderer {
     /// via [`super::super::prepare::compute_dispatch_fingerprint`]:
     /// viewport, full `CellMetrics`, content dims, origin, blink/palette
     /// /dim opacities, subpixel positioning, search state.
-    ///
     /// Bitwise-exact comparison via `.to_bits()` — replaces the prior
     /// `> 0.001` and `< f32::EPSILON` thresholds with one rule. Effect
     /// is extra rebuilds on tiny float deltas, never stale reuse.
@@ -43,7 +41,6 @@ impl WindowRenderer {
     /// — so selection/hover/cursor changes MUST gate the fast path
     /// independently of the fingerprint, or stale decorations replay
     /// from the cached terminal tier.
-    ///
     /// Cursor gating: the resolved cursor `(line, column, shape, visible)`
     /// is compared via visibility-canonicalized `Option<RenderableCursor>`
     /// `PartialEq`. Hidden-to-hidden cursor position changes canonicalize to
@@ -54,20 +51,16 @@ impl WindowRenderer {
     }
 
     /// Run the Prepare phase: shape text and build GPU instance buffers.
-    ///
     /// Fills `self.prepared` via buffer reuse (no per-frame allocation after
     /// the first frame).
-    ///
     /// The `origin` offset positions the grid on screen (from layout). The
     /// `cursor_opacity` controls cursor emission opacity (from application
     /// blink state) — when `false`, no cursor instances are emitted even
     /// if the terminal reports the cursor as visible.
-    ///
     /// When `content_changed` is false the shaping phase is skipped entirely,
     /// reusing the previous frame's [`ShapedFrame`]. Decorations (cursor,
     /// selection, URL hover) only affect the prepare phase, so they work
     /// correctly with cached shaping data.
-    ///
     /// Three phases:
     /// 1. **Shape** — segment rows into runs and shape via rustybuzz.
     /// 2. **Cache** — rasterize and upload any missing shaped glyphs.
@@ -160,11 +153,9 @@ impl WindowRenderer {
     /// Caches shaped glyphs (routes to mono, subpixel, or color atlas) and
     /// builtin geometric glyphs + decoration patterns. Builtins always go to
     /// the mono atlas (alpha-only bitmaps).
-    ///
     /// Single SSOT consumed by both single-pane [`prepare`] and multi-pane
     /// `prepare_pane_into` so the Phase-B+B2 sequence never drifts between
-    /// the two render paths (`LEAK:algorithmic-duplication`).
-    ///
+    /// the two render paths.
     /// Pre-condition: [`shape_frame`] (Phase A) has populated
     /// `self.shaping.frame` for the current frame.
     pub(super) fn cache_glyphs_and_builtins(&mut self, input: &FrameInput, gpu: &GpuState) {
@@ -196,7 +187,6 @@ impl WindowRenderer {
     }
 
     /// Begin the per-frame image-texture-cache lifecycle.
-    ///
     /// Advances the LRU frame counter on [`ImageTextureCache`]. Must be
     /// paired with a corresponding [`finish_image_frame`] call to bracket
     /// the per-pane [`ensure_pane_images_uploaded`] uploads. Called ONCE
@@ -212,7 +202,6 @@ impl WindowRenderer {
     }
 
     /// Upload all image textures referenced by this pane / frame.
-    ///
     /// Per-pane component of the image-texture-cache lifecycle: ensures
     /// each image in `input.content.image_data` is uploaded (touches
     /// existing entries' LRU position via [`ImageTextureCache::ensure_uploaded`]).
@@ -235,6 +224,7 @@ impl WindowRenderer {
                 &gpu.queue,
                 &pipelines.image_texture_layout,
                 img_data.id,
+                img_data.pixel_generation,
                 &img_data.data,
                 img_data.width,
                 img_data.height,
@@ -243,7 +233,6 @@ impl WindowRenderer {
     }
 
     /// Finish the per-frame image-texture-cache lifecycle: evict stale + over-limit.
-    ///
     /// Runs the eviction passes that bound GPU memory. Called ONCE per
     /// visual frame to keep `frame_counter`-based eviction deltas consistent
     /// (a per-pane finish would tighten the effective retention window
@@ -260,7 +249,6 @@ impl WindowRenderer {
     }
 
     /// Refresh LRU `last_frame` for images visible in a cached pane.
-    ///
     /// Returns `true` iff every image quad referenced by `cached` was
     /// found in `image_texture_cache` and successfully touched. Returns
     /// `false` when one or more referenced images have been evicted
@@ -272,7 +260,6 @@ impl WindowRenderer {
     /// [`get_bind_group`](ImageTextureCache::get_bind_group) `None` arm
     /// in `render_helpers.rs::draw_image_quads`) — and re-route through
     /// `prepare_pane_into` to re-upload the evicted textures.
-    ///
     /// When the multi-pane redraw loop serves a pane from
     /// `PaneRenderCache` (i.e. `prepare_pane_into` is skipped because the
     /// pane is clean), the cached `PreparedFrame` already contains its
@@ -302,7 +289,6 @@ impl WindowRenderer {
     }
 
     /// Upload image textures for a single-pane frame.
-    ///
     /// Thin wrapper composing the per-frame lifecycle for the single-pane
     /// render path: `begin_image_frame` → `ensure_pane_images_uploaded` →
     /// `finish_image_frame`. Multi-pane callers invoke the three helpers
@@ -320,14 +306,12 @@ impl WindowRenderer {
     }
 
     /// Update the GPU memory limit for image textures.
-    ///
     /// Triggers immediate eviction if current usage exceeds the new limit.
     pub fn set_image_gpu_memory_limit(&mut self, limit: usize) {
         self.image_texture_cache.set_gpu_memory_limit(limit);
     }
 
     /// Shrink grow-only buffers if capacity vastly exceeds usage.
-    ///
     /// Called after rendering to bound memory waste to 2× actual usage.
     /// Also caps `empty_keys` at 10,000 entries to prevent unbounded growth
     /// from pathological glyph-missing scenarios.

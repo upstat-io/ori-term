@@ -38,7 +38,6 @@ pub use spawn::{PtyConfig, PtyControl, PtyHandle, spawn_pty};
 #[derive(Debug)]
 pub enum Msg {
     /// Raw bytes to write to the PTY (keyboard input, escape responses).
-    ///
     /// Sent by `PaneNotifier::notify()` on the main thread, written
     /// immediately by the dedicated writer thread.
     Input(Vec<u8>),
@@ -56,19 +55,17 @@ const WRITER_RECV_TIMEOUT: Duration = Duration::from_millis(100);
 /// stdin during output flooding). The main thread checks this flag when
 /// the user presses Ctrl+C and sends SIGINT directly to the child process
 /// group, bypassing the blocked writer.
-///
 /// Separating reads and writes onto different threads prevents a deadlock
 /// during shell startup: the shell sends DA1 (device attributes query),
 /// the VTE parser generates the response via `Event::PtyWrite`, and the
 /// main thread enqueues it as `Msg::Input`. If the writer lived on the
 /// reader thread, the response would be stuck behind a blocking `read()`
 /// that never returns because the shell is waiting for the DA response.
-///
 /// `io_wake_tx` is a clone of `PaneIoHandle::io_wake_tx`. When the
 /// writer thread exits, it sets `shutdown` AND wakes the IO thread so
 /// the IO thread observes shutdown without waiting on `byte_rx` EOF
 /// or the 24h `IDLE_WAKE_CEILING`. Closes the §04 review round 5
-/// Codex F1 in-`select!` window for the writer-thread setter.
+/// in-`select!` window for the writer-thread setter.
 pub fn spawn_pty_writer(
     mut writer: Box<dyn Write + Send>,
     rx: mpsc::Receiver<Msg>,
@@ -84,7 +81,7 @@ pub fn spawn_pty_writer(
             // Wake the IO thread so it observes shutdown out of
             // `select!` within one iteration. Best-effort: bounded(1)
             // — if a wake is already pending the existing wake is
-            // sufficient. Pinned by §04 review round 5 Codex F1
+            // sufficient. Pinned by §04 review round 5
             // and the §03 regression guard
             // `idle_io_thread_observes_writer_thread_shutdown_within_one_iteration`.
             let _ = io_wake_tx.try_send(());
@@ -92,7 +89,6 @@ pub fn spawn_pty_writer(
 }
 
 /// Writer loop — coalesces queued input, detects write stalls.
-///
 /// Sets `write_stalled` before each potentially-blocking `write()` call
 /// and clears it after. The main thread reads this flag to decide whether
 /// to deliver Ctrl+C via direct signal rather than through the PTY pipe.
@@ -157,7 +153,6 @@ fn pty_writer_loop(
 }
 
 /// Drain all immediately-available messages into `buf`.
-///
 /// Returns `true` if a `Shutdown` message was received.
 fn drain_channel(rx: &mpsc::Receiver<Msg>, buf: &mut Vec<u8>) -> bool {
     while let Ok(msg) = rx.try_recv() {

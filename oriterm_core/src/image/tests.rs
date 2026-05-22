@@ -16,6 +16,7 @@ fn make_image(id: u32, bytes: usize) -> ImageData {
         width: 100,
         height: 100,
         data: Arc::new(vec![0u8; bytes]),
+        pixel_generation: 0,
         format: ImageFormat::Rgba,
         source: ImageSource::Direct,
         last_accessed: 0,
@@ -23,11 +24,18 @@ fn make_image(id: u32, bytes: usize) -> ImageData {
     }
 }
 
-/// Helper: create a placement at the given cell position.
+/// Helper: create a placement at the given cell position. Each call mints a
+/// unique `placement_id` so callers can stack multiple placements on the same
+/// image_id without tripping the dedup contract (per kitty graphics protocol:
+/// unnamed `(image_id, placement_id=None)` placements replace each other; only
+/// distinct placement_ids stack).
 fn make_placement(image_id: u32, col: usize, row: u64) -> ImagePlacement {
+    use std::sync::atomic::{AtomicU32, Ordering};
+    static PID_COUNTER: AtomicU32 = AtomicU32::new(1);
+    let placement_id = Some(PID_COUNTER.fetch_add(1, Ordering::Relaxed));
     ImagePlacement {
         image_id: ImageId(image_id),
-        placement_id: None,
+        placement_id,
         source_x: 0,
         source_y: 0,
         source_w: 100,
@@ -719,6 +727,208 @@ fn animation_state_paused_no_advance() {
     state.paused = true;
     assert!(!state.advance());
     assert_eq!(state.current_frame, 0);
+}
+
+/// `advance_consuming_gapless` skips consecutive zero-gap frames in ONE call.
+/// Per kitty `graphics.c:1798-1799` — gapless frames are intentionally not
+/// displayed.
+#[test]
+fn advance_consuming_gapless_skips_consecutive_zero_gap_frames() {
+    let durations = vec![
+        Duration::from_millis(200),
+        Duration::ZERO,
+        Duration::ZERO,
+        Duration::from_millis(200),
+    ];
+    let mut state = AnimationState::new(durations, None);
+    assert_eq!(state.current_frame, 0);
+
+    assert!(state.advance_consuming_gapless());
+    assert_eq!(
+        state.current_frame, 3,
+        "MUST skip frames 1 and 2 (both gapless) and land on frame 3"
+    );
+}
+
+/// `advance_consuming_gapless` does NOT skip past the first non-gapless frame.
+#[test]
+fn advance_consuming_gapless_no_skip_when_next_has_nonzero_gap() {
+    let durations = vec![
+        Duration::from_millis(200),
+        Duration::from_millis(100),
+        Duration::ZERO,
+    ];
+    let mut state = AnimationState::new(durations, None);
+
+    assert!(state.advance_consuming_gapless());
+    assert_eq!(
+        state.current_frame, 1,
+        "MUST advance to frame 1 (non-gapless) and STOP there — does not \
+         skip ahead because frame 1's gap is 100ms"
+    );
+}
+
+/// All-gapless animation: `advance_consuming_gapless` advances at most
+/// `total_frames - 1` times to prevent runaway. The `MIN_FRAME_DURATION`
+/// clamp at `current_duration()` is the deadline-scheduling safety net.
+#[test]
+fn advance_consuming_gapless_bounded_when_all_frames_gapless() {
+    let durations = vec![Duration::ZERO, Duration::ZERO, Duration::ZERO];
+    let mut state = AnimationState::new(durations, None);
+
+    assert!(state.advance_consuming_gapless());
+    // Bounded: started at 0, max_skips = total_frames - 1 = 2. First call to
+    // advance() moves 0→1. Then up to 2 more skip-advances: 1→2 then 2→0
+    // (wrap). Loop exits after skips==max_skips OR an advance returns false.
+    // Either way, current_frame is well-defined and not spinning.
+    assert!(state.current_frame < state.total_frames);
+}
+
+/// `set_current_frame(id, N)` where `N` equals the existing `current_frame`
+/// is a no-op — does NOT mutate state, does NOT call apply_frame, does NOT
+/// reset frame_starts. Per kitty `graphics.c:1737-1743` explicit equality
+/// guard `frame_idx != current_frame_index`.
+#[test]
+fn set_current_frame_idempotent_seek_does_not_reset_frame_starts() {
+    let mut cache = ImageCache::new();
+    let frames = vec![make_frame(10, 64), make_frame(20, 64), make_frame(30, 64)];
+    let durations = vec![Duration::from_millis(50); 3];
+    let img = make_image(1, 64);
+    cache.store_animated(img, frames, durations, None).unwrap();
+    cache.place(make_placement(1, 0, 0));
+
+    // Drive one advance to seed frame_starts.
+    let t0 = Instant::now();
+    let _ = cache.advance_animations(t0, StableRowIndex(0), StableRowIndex(10));
+    let before = *cache.frame_starts.get(&ImageId(1)).expect("seeded");
+
+    // Idempotent seek: set current_frame to its existing value.
+    let current = cache.animations.get(&ImageId(1)).unwrap().current_frame;
+    cache.set_current_frame(ImageId(1), current);
+
+    let after = *cache.frame_starts.get(&ImageId(1)).expect("still seeded");
+    assert_eq!(
+        before, after,
+        "Idempotent set_current_frame MUST NOT reset frame_starts — kitty \
+         graphics.c:1737-1743 equality guard"
+    );
+}
+
+/// `set_current_frame(id, N)` where `N != current_frame` DOES update the
+/// state and reset `frame_starts`. Control test proving the equality guard
+/// gates ONLY the no-op path.
+#[test]
+fn set_current_frame_real_seek_resets_frame_starts() {
+    let mut cache = ImageCache::new();
+    let frames = vec![make_frame(10, 64), make_frame(20, 64), make_frame(30, 64)];
+    let durations = vec![Duration::from_millis(50); 3];
+    let img = make_image(1, 64);
+    cache.store_animated(img, frames, durations, None).unwrap();
+    cache.place(make_placement(1, 0, 0));
+
+    let t0 = Instant::now();
+    let _ = cache.advance_animations(t0, StableRowIndex(0), StableRowIndex(10));
+    let before = *cache.frame_starts.get(&ImageId(1)).expect("seeded");
+
+    // Real seek: jump to a DIFFERENT frame.
+    let current = cache.animations.get(&ImageId(1)).unwrap().current_frame;
+    let target = (current + 1) % cache.animations.get(&ImageId(1)).unwrap().total_frames;
+    std::thread::sleep(Duration::from_millis(1)); // Ensure now != before.
+    cache.set_current_frame(ImageId(1), target);
+
+    let after = *cache.frame_starts.get(&ImageId(1)).expect("still seeded");
+    assert_ne!(
+        before, after,
+        "Non-idempotent set_current_frame MUST reset frame_starts to now"
+    );
+    assert_eq!(
+        cache.animations.get(&ImageId(1)).unwrap().current_frame,
+        target,
+        "current_frame MUST update to target"
+    );
+}
+
+/// `set_animation_action(id, 1)` (kitty `s=1` stop) resets `loops_completed`
+/// to 0 per kitty `graphics.c:1764` (unconditional `current_loop = 0` for
+/// ALL s= actions). Without this reset, a pause + resume cycle on a
+/// bounded-loop animation silently shortens the effective loop count.
+#[test]
+fn set_animation_action_stop_resets_loops_completed() {
+    let mut cache = ImageCache::new();
+    let frames = vec![make_frame(10, 64), make_frame(20, 64)];
+    let durations = vec![Duration::from_millis(100); 2];
+    let img = make_image(1, 64);
+
+    cache
+        .store_animated(img, frames, durations, Some(5))
+        .unwrap();
+    cache.place(make_placement(1, 0, 0));
+
+    // Seed loops_completed via direct field access (pub(super) within image/).
+    cache
+        .animations
+        .get_mut(&ImageId(1))
+        .unwrap()
+        .loops_completed = 3;
+
+    cache.set_animation_action(ImageId(1), 1);
+
+    let state = cache.animations.get(&ImageId(1)).unwrap();
+    assert_eq!(
+        state.loops_completed, 0,
+        "s=1 (stop) MUST reset loops_completed per kitty graphics.c:1764"
+    );
+    assert!(state.paused, "s=1 MUST set paused = true");
+}
+
+/// `s=2` ANIMATION_LOADING (`wait_mode`) HALTS at the last frame on wrap.
+/// Per kitty `graphics.c:1793-1796`. Subsequent `a=f` extends the
+/// animation; `add_animation_frame` clears `wait_mode` to resume playback.
+#[test]
+fn animation_state_wait_mode_halts_at_last_frame_on_wrap() {
+    let durations = vec![Duration::from_millis(100); 2];
+    let mut state = AnimationState::new(durations, None);
+    state.wait_mode = true;
+
+    // 0 → 1 normal advance.
+    assert!(state.advance());
+    assert_eq!(state.current_frame, 1);
+
+    // 1 → would wrap to 0; wait_mode MUST halt instead.
+    assert!(!state.advance(), "wait_mode MUST halt at last frame");
+    assert_eq!(
+        state.current_frame, 1,
+        "wait_mode MUST preserve current_frame at the last frame on wrap"
+    );
+}
+
+/// `s=3` ANIMATION_RUNNING (no `wait_mode`) wraps normally — control test
+/// proving the halt is gated on `wait_mode` only.
+#[test]
+fn animation_state_no_wait_mode_wraps_on_loop_end() {
+    let durations = vec![Duration::from_millis(100); 2];
+    let mut state = AnimationState::new(durations, None);
+    // wait_mode left at default `false` — s=3 semantics.
+
+    assert!(state.advance()); // 0 → 1
+    assert!(state.advance()); // 1 → wrap → 0
+    assert_eq!(state.current_frame, 0);
+}
+
+/// `advance_consuming_gapless` returns false for paused / single-frame
+/// (delegates to `advance` for the early-exit guard).
+#[test]
+fn advance_consuming_gapless_returns_false_for_paused_or_single_frame() {
+    let mut single = AnimationState::new(vec![Duration::from_millis(100)], None);
+    assert!(!single.advance_consuming_gapless());
+
+    let mut paused = AnimationState::new(
+        vec![Duration::from_millis(100), Duration::ZERO, Duration::ZERO],
+        None,
+    );
+    paused.paused = true;
+    assert!(!paused.advance_consuming_gapless());
+    assert_eq!(paused.current_frame, 0);
 }
 
 // -- ImageCache animation --

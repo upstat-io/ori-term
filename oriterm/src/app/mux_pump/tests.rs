@@ -33,12 +33,12 @@ fn purge_drops_preceding_desktop_notifications_for_same_pane() {
     purge_pending_desktop_notifications(&mut buf);
     assert_eq!(buf.len(), 2, "got {buf:?}");
     assert!(matches!(
-        &buf[0],
-        MuxNotification::ClearPendingDesktopNotifications(p) if *p == pane
+    &buf[0],
+    MuxNotification::ClearPendingDesktopNotifications(p) if *p == pane
     ));
     assert!(matches!(
-        &buf[1],
-        MuxNotification::DesktopNotification { title, .. } if title == "C"
+    &buf[1],
+    MuxNotification::DesktopNotification { title, .. } if title == "C"
     ));
 }
 
@@ -54,12 +54,12 @@ fn purge_only_targets_matching_pane() {
     purge_pending_desktop_notifications(&mut buf);
     assert_eq!(buf.len(), 2);
     assert!(matches!(
-        &buf[0],
-        MuxNotification::DesktopNotification { title, .. } if title == "B1"
+    &buf[0],
+    MuxNotification::DesktopNotification { title, .. } if title == "B1"
     ));
     assert!(matches!(
-        &buf[1],
-        MuxNotification::ClearPendingDesktopNotifications(p) if *p == pane_a
+    &buf[1],
+    MuxNotification::ClearPendingDesktopNotifications(p) if *p == pane_a
     ));
 }
 
@@ -86,8 +86,8 @@ fn purge_handles_multiple_clear_markers() {
         MuxNotification::ClearPendingDesktopNotifications(_)
     ));
     assert!(matches!(
-        &buf[2],
-        MuxNotification::DesktopNotification { title, .. } if title == "C"
+    &buf[2],
+    MuxNotification::DesktopNotification { title, .. } if title == "C"
     ));
 }
 
@@ -140,10 +140,9 @@ fn clear_pending_notifications_purges_all_staging_buffers() {
 }
 
 // ── : resolve_host_color_query helper tests ──────────────
-//
 // The helper resolves OSC 4 / OSC 10 / OSC 11 / OSC 12 color queries
 // against the pane's palette snapshot. Layer 1 of the TDD
-// matrix per `bug-tracker/plans//section-03-tdd-matrix.md`.
+// matrix per .
 // VTE dispatch index space:
 // - OSC 4 ; Pn ; ? → index = u8 (0..=255), per
 // crates/vte/src/ansi/colors.rs:197-209
@@ -337,7 +336,6 @@ fn resolve_host_color_query_does_not_return_black_for_valid_in_range_index() {
 }
 
 // -- apply_bell_focus_decision regression pins --
-//
 // The PaneBell + DesktopNotification arms each gate `set_bell` /
 // `clear_bell` on `is_pane_in_focused_tab`. The decision step is
 // extracted as `apply_bell_focus_decision` so the gate composition
@@ -345,10 +343,9 @@ fn resolve_host_color_query_does_not_return_black_for_valid_in_range_index() {
 // without requiring a full App fixture. Exercised against a real
 // `EmbeddedMux` because EmbeddedMux's set_bell / clear_bell only
 // mutate `bell_panes` (no spawned-pane requirement).
-//
 // Naming pinned per the SSOT mapping:
-//   focused-tab input ⇒ clear_bell only (silent bell convention)
-//   background-tab input ⇒ set_bell only (light the tab indicator)
+// focused-tab input ⇒ clear_bell only (silent bell convention)
+// background-tab input ⇒ set_bell only (light the tab indicator)
 // These are the load-bearing cells the bell-icon-on-focused-tab
 // regression would have to break. Either branch firing the wrong
 // method (or both methods) would fail one of the asserts below.
@@ -374,7 +371,7 @@ fn apply_bell_focus_decision_focused_tab_clears_only() {
     assert!(
         !mux.has_bell(pane),
         "focused-tab input must call clear_bell — pinned against \
-         a regression that swapped the branches",
+ a regression that swapped the branches",
     );
 }
 
@@ -390,7 +387,7 @@ fn apply_bell_focus_decision_background_tab_sets_only() {
     assert!(
         mux.has_bell(pane),
         "background-tab input must call set_bell — pinned against \
-         a regression that suppressed the persistent tab indicator",
+ a regression that suppressed the persistent tab indicator",
     );
 }
 
@@ -454,12 +451,10 @@ fn apply_bell_focus_decision_does_not_mutate_unrelated_panes() {
 }
 
 // -- pump_mux_events_core regression pins --
-//
 // `pump_mux_events_core` carves the side-effect protocol out of
 // `App::pump_mux_events` so the gate check + daemon-connectivity check +
 // `poll_events → drain_notifications → empty-check → purge` ordering can
 // be tested against a recording `MuxBackend` without an `App` fixture.
-//
 // `RecordingMuxBackend` implements only the 5 methods `pump_mux_events_core`
 // actually calls; every other trait method is `unimplemented!()` because
 // reaching it would mean the helper deviated from its documented protocol.
@@ -511,7 +506,7 @@ impl RecordingMuxBackend {
 #[expect(
     clippy::unimplemented,
     reason = "RecordingMuxBackend implements only the 5 methods pump_mux_events_core calls; \
-              reaching any other method means the helper deviated from its protocol"
+ reaching any other method means the helper deviated from its protocol"
 )]
 impl MuxBackend for RecordingMuxBackend {
     fn is_daemon_mode(&self) -> bool {
@@ -876,8 +871,8 @@ fn pump_mux_events_core_embedded_gate_open_drain_yields_many_returns_has_notific
         MuxNotification::ClearPendingDesktopNotifications(_)
     ));
     assert!(matches!(
-        &buf[1],
-        MuxNotification::DesktopNotification { title, .. } if title == "C"
+    &buf[1],
+    MuxNotification::DesktopNotification { title, .. } if title == "C"
     ));
 }
 
@@ -906,8 +901,8 @@ fn pump_mux_events_core_daemon_gate_open_drain_yields_many_returns_has_notificat
         MuxNotification::ClearPendingDesktopNotifications(_)
     ));
     assert!(matches!(
-        &buf[1],
-        MuxNotification::DesktopNotification { title, .. } if title == "B"
+    &buf[1],
+    MuxNotification::DesktopNotification { title, .. } if title == "B"
     ));
     let calls = backend.calls();
     let idx = calls.iter().position(|c| *c == RecordedCall::IsConnected);
@@ -1079,8 +1074,8 @@ fn pump_mux_events_core_no_mux_preserves_pre_existing_buf() {
         buf.len()
     );
     assert!(matches!(
-        &buf[0],
-        MuxNotification::DesktopNotification { title, .. } if title == "PRE_EXISTING"
+    &buf[0],
+    MuxNotification::DesktopNotification { title, .. } if title == "PRE_EXISTING"
     ));
 }
 
@@ -1097,8 +1092,8 @@ fn pump_mux_events_core_no_pending_wakeup_preserves_pre_existing_buf() {
     assert_eq!(result, PumpResult::NoPendingWakeup);
     assert_eq!(buf.len(), 1, "buf preserved on gate-closed early-exit");
     assert!(matches!(
-        &buf[0],
-        MuxNotification::DesktopNotification { title, .. } if title == "PRE_EXISTING"
+    &buf[0],
+    MuxNotification::DesktopNotification { title, .. } if title == "PRE_EXISTING"
     ));
 }
 
@@ -1122,8 +1117,8 @@ fn pump_mux_events_core_drain_replaces_pre_existing_buf() {
     // would let pre-existing entries leak through.
     assert_eq!(buf.len(), 1, "drain replaced pre-existing buf; got {buf:?}");
     assert!(matches!(
-        &buf[0],
-        MuxNotification::DesktopNotification { title, .. } if title == "FROM_DRAIN"
+    &buf[0],
+    MuxNotification::DesktopNotification { title, .. } if title == "FROM_DRAIN"
     ));
 }
 
@@ -1140,8 +1135,8 @@ fn pump_mux_events_core_daemon_disconnect_preserves_pre_existing_buf() {
     assert_eq!(result, PumpResult::DaemonDisconnect);
     assert_eq!(buf.len(), 1, "daemon-disconnect early-exit preserves buf");
     assert!(matches!(
-        &buf[0],
-        MuxNotification::DesktopNotification { title, .. } if title == "PRE_EXISTING"
+    &buf[0],
+    MuxNotification::DesktopNotification { title, .. } if title == "PRE_EXISTING"
     ));
 }
 

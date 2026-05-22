@@ -23,7 +23,6 @@ pub struct DispatchCall {
 }
 
 /// Typed argument capture for each handler method family.
-///
 /// Exhaustive coverage is built incrementally as pilots exercise methods.
 /// Methods not yet covered use `Other`.
 #[derive(Debug, Clone)]
@@ -62,7 +61,6 @@ pub enum DispatchArgs {
     Xtgettcap { payload: Vec<u8>, aborted: bool },
     /// `Handler::apc_dispatch` routed to the Kitty graphics protocol
     /// (payload's first byte is `G`).
-    ///
     /// The captured `KittyCommand` lets matrix tests assert per-cell
     /// dispatch identity (action × format × transmission) rather than
     /// collapsing every APC `_G` into the generic `Other` arm. The
@@ -76,7 +74,6 @@ pub enum DispatchArgs {
 }
 
 /// Recording wrapper around `Term<S>`.
-///
 /// Implements `Handler` by recording a `DispatchCall` for each method
 /// call, then delegating to the inner `Term`.
 pub struct RecordingHandler<S: EffectSink> {
@@ -120,18 +117,17 @@ impl<S: EffectSink> RecordingHandler<S> {
 }
 
 /// Macro for handler methods that just record `Other` and delegate.
-///
 /// Uses `Handler::$method` to ensure we call the trait impl, not any
 /// inherent method with a different signature (e.g. `set_cursor_shape`
 /// has both a Handler trait method taking `vte::ansi::CursorShape` and
 /// an inherent Term method taking `oriterm_core::CursorShape`).
 macro_rules! delegate_other {
-    ($method:ident $(, $arg:ident : $ty:ty)*) => {
-        fn $method(&mut self $(, $arg: $ty)*) {
-            self.record_other(stringify!($method));
-            Handler::$method(&mut self.term $(, $arg)*);
-        }
-    };
+ ($method:ident $(, $arg:ident : $ty:ty)*) => {
+ fn $method(&mut self $(, $arg: $ty)*) {
+ self.record_other(stringify!($method));
+ Handler::$method(&mut self.term $(, $arg)*);
+ }
+ };
 }
 
 impl<S: EffectSink> Handler for RecordingHandler<S> {
@@ -236,6 +232,7 @@ impl<S: EffectSink> Handler for RecordingHandler<S> {
     delegate_other!(clear_tabs, mode: vte::ansi::TabulationClearMode);
     delegate_other!(set_tabs, interval: u16);
     delegate_other!(reset_state);
+    delegate_other!(decstr);
     delegate_other!(reverse_index);
     delegate_other!(terminal_attribute, attr: vte::ansi::Attr);
     delegate_other!(set_mode, mode: vte::ansi::Mode);
@@ -384,7 +381,7 @@ impl<S: EffectSink> Handler for RecordingHandler<S> {
     }
 
     // Registration sync for the OSC 1337 non-image sub-ops added in §10.0
-    // (plans/spec-conformance/section-10-osc-suite.md §10.0 REGISTRATION
+    // ( §10.0 REGISTRATION
     // SYNC). Without these arms, SpecHarness silently drops the new
     // Handler::iterm2_* dispatches and §10.7's spec_chain tests cannot
     // observe them.

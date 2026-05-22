@@ -105,7 +105,6 @@ pub struct MuxServer {
     scratch_immediate_push: Vec<PaneId>,
     /// Reusable scratch buffer for closed-pane IDs collected during the
     /// `drain_mux_events` cleanup pass — preserves capacity across cycles
-    ///.
     scratch_pane_closed: Vec<PaneId>,
 
     // Server-push state.
@@ -181,7 +180,6 @@ impl MuxServer {
     }
 
     /// Arc reference to the waker for cross-thread use.
-    ///
     /// PTY reader threads call `waker.wake()` to notify the event loop
     /// that new [`MuxEvent`]s are available.
     pub fn waker(&self) -> Arc<Waker> {
@@ -189,7 +187,6 @@ impl MuxServer {
     }
 
     /// Arc reference to the shutdown flag.
-    ///
     /// Signal handlers set this to `true` to trigger graceful shutdown.
     pub fn shutdown_flag(&self) -> Arc<AtomicBool> {
         Arc::clone(&self.shutdown)
@@ -257,7 +254,6 @@ impl MuxServer {
     }
 
     /// Drain `MuxEvent`s from PTY reader threads and push notifications.
-    ///
     /// Three-phase processing:
     /// 1. Trailing-edge flush — retry deferred pushes from previous cycles.
     /// 2. Route new notifications — `PaneOutput` triggers snapshot push
@@ -288,7 +284,6 @@ impl MuxServer {
         }
 
         // Phase 2: Route new notifications.
-        //
         // Drain `notification_buf` BY-VALUE so host-request `ResponseToken`s
         // can be moved across the staging-buffer boundary into
         // `pending_host_replies` (cloning would defeat `Arc::strong_count`
@@ -408,11 +403,10 @@ impl MuxServer {
     }
 
     /// Attempt to queue `pdu` to client `cid`. Returns `true` on success.
-    ///
     /// Shared between the host-request dispatch path
     /// (`dispatch_host_request_notification`) and the stateless-fallback
     /// `SinglePaneSubscriber` arm so single-responder queueing has one
-    /// canonical home ( / §LEAK:algorithmic-duplication).
+    /// canonical home ( / §).
     /// `kind` is a short string slug (e.g. `"HostRequest"`,
     /// `"single-responder notification"`) used purely for diagnostic logs
     /// when the queue or the responder is unavailable.
@@ -433,7 +427,6 @@ impl MuxServer {
 
     /// Route a host-request notification to a single responder + register
     /// the pending entry on successful queueing ().
-    ///
     /// `notif` MUST be `HostClipboardLoad` or `HostColorQuery`; the caller
     /// (`drain_mux_events`) already checked the variant. Token entries are
     /// registered only after a successful `queue_frame` so a failed delivery
@@ -475,7 +468,6 @@ impl MuxServer {
     }
 
     /// Remove all per-pane tracking state for a closed pane.
-    ///
     /// Clears snapshot cache, push timestamps, pending pushes, subscription
     /// entries, and per-connection subscription sets. Centralizes cleanup
     /// that previously lived in three separate locations.
@@ -509,7 +501,6 @@ impl MuxServer {
     }
 
     /// Check if the server should auto-exit.
-    ///
     /// Exits when all panes have exited AND no clients are connected,
     /// with a startup grace period so the server doesn't exit immediately
     /// before any client has connected.

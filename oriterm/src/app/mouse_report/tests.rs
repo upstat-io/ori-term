@@ -705,7 +705,6 @@ fn scroll_release_still_encodes_as_press() {
 }
 
 // -- Multi-button state machine --
-//
 // Verifies that encode_mouse_event produces the correct button codes when
 // multiple buttons transition through press/motion/release sequences.
 
@@ -1188,7 +1187,6 @@ fn x10_mode_scroll_release_is_suppressed() {
 }
 
 // -- Dispatch-level coordinate boundary tests --
-//
 // These test the full encode_mouse_event dispatch path at Normal mode's
 // 222/223 boundary (fencepost) to verify no off-by-one in dispatch.
 
@@ -1243,14 +1241,11 @@ fn dispatch_utf8_boundary_one_past_max_drops() {
 }
 
 // -- App-level scenarios (documented, not unit-testable) --
-//
 // The following scenarios require the full App context and cannot be tested
 // at the encoding layer:
-//
 // - Same-cell motion deduplication: App::report_mouse_motion skips reporting
 // when mouse.last_reported_cell() matches the current cell. The dedup
 // happens before encode_mouse_event is ever called.
-//
 // - Focus-loss button release synthesis: When the window loses focus with
 // buttons held, the app should synthesize release events for all held
 // buttons. This prevents apps (vim, tmux) from thinking buttons are still
@@ -1555,7 +1550,7 @@ fn tier2_alt_scroll_payload_shift_held_returns_none() {
     );
 }
 
-// --- Shift-bypass × DECCKM × direction (per Plan-TPR R1 [TPR-04-007-]) ---
+// --- Shift-bypass × DECCKM × direction (per Plan-TPR R1 [-]) ---
 
 /// Catalog row: DEC-ALT-SCROLL
 #[test]
@@ -1755,7 +1750,7 @@ fn classify_wheel_event_mouse_x10_with_alt_scroll_set_returns_mouse_report() {
     assert_eq!(classify_wheel_event(mode, false), WheelTier::MouseReport);
 }
 
-// --- Shift-bypass × ANY_MOUSE (per Plan-TPR R3 [TPR-04-022-]) ---
+// --- Shift-bypass × ANY_MOUSE (per Plan-TPR R3 [-]) ---
 
 /// Catalog row: DEC-ALT-SCROLL
 #[test]
@@ -1786,7 +1781,7 @@ fn classify_wheel_event_shift_held_mouse_x10_with_alt_scroll_returns_viewport_sc
 }
 
 /// Catalog row: DEC-ALT-SCROLL
-/// Pure Tier-2 shift-bypass (no ANY_MOUSE flags) per Plan-TPR R5 [TPR-04-029-].
+/// Pure Tier-2 shift-bypass (no ANY_MOUSE flags) per Plan-TPR R5 [-].
 #[test]
 fn classify_wheel_event_shift_held_alt_scroll_only_returns_viewport_scroll() {
     let mode = TermMode::ALT_SCREEN | TermMode::ALTERNATE_SCROLL;
@@ -1866,7 +1861,6 @@ fn classify_wheel_event_any_mouse_member_count_assertion() {
 }
 
 // --- : dispatch_wheel wiring matrix ---
-//
 // Tests pin the wiring layer extracted from `App::handle_mouse_wheel`:
 // `dispatch_wheel<S: WheelSink>(WheelDispatch, &mut S)` consumes a sink
 // trait so the side-effect surface (PTY writes, viewport scroll, mark-dirty)
@@ -1886,7 +1880,6 @@ use super::wheel_dispatch::{WheelDispatch, WheelSink, dispatch_wheel};
 /// Premature Abstraction`); promote to
 /// `oriterm_test_support` only when a second sink type (e.g., 's
 /// keyboard-wiring sink) creates a second concrete consumer.
-///
 /// `cell_for_report_value` is the value `dispatch_wheel`'s Tier-1 arm
 /// receives when it asks the sink for the cell coordinate (None matches
 /// pre-fix `mouse_cell_clamped() == None` semantics).
@@ -2415,7 +2408,6 @@ fn dispatch_wheel_viewport_scroll_does_not_query_cell_for_report() {
 }
 
 // --- : cross-site convergence pin ---
-//
 // Pinned by Plan-review round 0 F2: keyboard arrow encoding via the public
 // `encode_key` dispatcher must produce IDENTICAL bytes to mouse-wheel
 // `tier2_alt_scroll_payload` for the (DECCKM × direction) cells the wheel

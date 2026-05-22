@@ -99,7 +99,15 @@ impl<S: EffectSink> Term<S> {
     ///
     /// Resets modes, SGR attributes, cursor position, scroll region,
     /// tab stops, and charsets. Does NOT clear screen contents,
-    /// scrollback, title, palette, or image caches — that is RIS (ESC c).
+    /// scrollback, title, or palette — that is RIS (ESC c).
+    ///
+    /// Kitty image cache + placements + U=1 placeholder anchors are
+    /// cleared on DECSTR per §13.N kitty graphics protocol close-out
+    /// gate — a post-reset client must not see ghost images or
+    /// memory-leaked image data. Spec rationale: kitty graphics-protocol
+    /// "When resetting the terminal, all images that are visible on the
+    /// screen must be cleared". `WezTerm` parity: `kitty_remove_all_placements`
+    /// on DECSTR.
     pub(super) fn soft_reset(&mut self) {
         debug!("DECSTR: soft terminal reset");
 
@@ -133,6 +141,12 @@ impl<S: EffectSink> Term<S> {
         // is reset above via `soft_reset_grid`, but `char_protection`
         // mirrors the same state on Term and must follow suit.
         self.char_protection = false;
+
+        // Kitty image caches per §13.N close-out gate.
+        self.image_cache.clear();
+        if let Some(cache) = &mut self.alt_image_cache {
+            cache.clear();
+        }
     }
 
     /// Reset SGR-relevant state on a single grid (DECSTR scope).

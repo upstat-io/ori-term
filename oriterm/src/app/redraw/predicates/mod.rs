@@ -1,6 +1,6 @@
 //! Split-predicate gating for the single-pane redraw closure.
 //!
-//! Regression: BUG-06-053 — `content_changed` previously omitted
+//! Regression: — `content_changed` previously omitted
 //! `preedit_revision` input; IME preedit-shrink frames reused stale
 //! `frame.content` carrying the prior frame's destructive overlay.
 
@@ -18,7 +18,6 @@ pub(in crate::app) struct RedrawPredicateInputs {
 
 /// Output of [`compute_redraw_predicates`] — split predicate gating two
 /// distinct redraw decisions.
-///
 /// `snapshot_changed` gates the snapshot-refresh + embedded
 /// `swap_renderable_content` fast-path. `swap_renderable_content` does a
 /// blind `std::mem::swap` on its renderable cache (per
@@ -26,7 +25,6 @@ pub(in crate::app) struct RedrawPredicateInputs {
 /// `content_changed` predicate fired the swap on a preedit-only frame,
 /// the swap would surface the prior frame's destructive preedit overlay
 /// rather than a fresh re-extracted buffer.
-///
 /// `content_changed` is the broader predicate that gates re-extract from
 /// `PaneSnapshot` and the subsequent `WindowRenderer::prepare` shape
 /// pass. Re-extracting from the canonical snapshot restores clean cells

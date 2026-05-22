@@ -7,13 +7,13 @@
 //! # Catalog rows verified
 //!
 //! - `ECMA48-C0-ENQ` — Enquiry / Answerback control character (`0x05`) →
-//!   `Effect::Pty(PtyEffect::Write { kind: PtyWriteKind::Answerback, .. })`
-//!   when answerback is configured non-empty; no effect when empty (default).
+//! `Effect::Pty(PtyEffect::Write { kind: PtyWriteKind::Answerback, .. })`
+//! when answerback is configured non-empty; no effect when empty (default).
 //!
 //! Replaces the load-bearing regression guard
 //! `ecma48_c0_enq_catalog_row_still_missing` that pinned the catalog status
 //! until the answerback dispatch chain landed.
-//! See: bug-tracker/plans/completed/BUG-08-006/00-overview.md
+//! See:
 
 use oriterm_core::effect::{Effect, PtyWriteKind};
 use oriterm_test_support::spec_chain::{
@@ -38,12 +38,10 @@ fn snapshot_visible_chars(harness: &SpecHarness) -> Vec<char> {
 }
 
 /// ENQ drives parser → dispatch → effect-emit when answerback configured.
-///
-/// Regression: BUG-08-006 — drives `ECMA48-C0-ENQ` end-to-end and pins
+/// drives `ECMA48-C0-ENQ` end-to-end and pins
 /// byte-exact answerback emission with `PtyWriteKind::Answerback` kind.
 /// Side-effect clamps assert ENQ does NOT emit Host effects or mutate
 /// renderable state.
-/// See: bug-tracker/plans/completed/BUG-08-006/section-03-tdd-matrix.md
 #[test]
 fn ecma48_c0_enq_drives_to_pty_write_apex() {
     let scenario = SpecScenario {
@@ -124,8 +122,7 @@ fn ecma48_c0_enq_drives_to_pty_write_apex() {
 }
 
 /// Empty-answerback no-emit policy holds even with concurrent unrelated PTY writes.
-///
-/// Regression: BUG-08-006 — kind-specific negative pin proves no false-positive
+/// kind-specific invariant check proves no false-positive
 /// when DA1 reply (PtyWriteKind::DeviceAttribute) is emitted in the same transcript.
 #[test]
 fn enq_without_configured_answerback_emits_no_answerback_effect_in_mixed_transcript() {
@@ -151,8 +148,7 @@ fn enq_without_configured_answerback_emits_no_answerback_effect_in_mixed_transcr
 }
 
 /// Configured answerback survives RIS (ESC c).
-///
-/// Regression: BUG-08-006 — `answerback` is terminal-global config (alongside
+/// `answerback` is terminal-global config (alongside
 /// `bold_is_bright` / `image_protocol_enabled`). `esc_reset_state` does
 /// field-by-field resets that explicitly omit `answerback`.
 #[test]
@@ -171,8 +167,7 @@ fn enq_after_ris_preserves_configured_answerback() {
 }
 
 /// Configured answerback survives DECSTR (CSI ! p).
-///
-/// Regression: BUG-08-006 — `soft_reset` is narrower than RIS and likewise
+/// `soft_reset` is narrower than RIS and likewise
 /// excludes terminal-global config.
 #[test]
 fn enq_after_decstr_preserves_configured_answerback() {
@@ -190,8 +185,7 @@ fn enq_after_decstr_preserves_configured_answerback() {
 }
 
 /// Configured answerback emits in both primary and alt screens (3 DECSET modes).
-///
-/// Regression: BUG-08-006 — alt-screen toggle swaps grid + charset state +
+/// alt-screen toggle swaps grid + charset state +
 /// origin-mode + keyboard-mode stacks, NOT terminal-global config. Tests all
 /// 3 distinct alt-screen DECSET modes (47 / 1047 / 1049).
 #[test]
@@ -224,8 +218,7 @@ fn enq_during_alt_screen_emits_terminal_global_answerback() {
 }
 
 /// DECSC/DECRC does NOT clobber answerback.
-///
-/// Regression: BUG-08-006 — DECSC saves cursor + active charset + origin-mode
+/// DECSC saves cursor + active charset + origin-mode
 /// only; DECRC restores those fields. Terminal-global config (including
 /// answerback) is unaffected.
 #[test]

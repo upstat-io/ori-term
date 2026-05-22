@@ -19,7 +19,6 @@ use crate::gpu::frame_input::{FrameInput, ViewportSize};
 use crate::gpu::visual_regression::headless_env;
 
 /// Render a frame at the given viewport size, returning the pixel buffer.
-///
 /// Uses `compute_window_layout` to derive grid cols/rows from viewport
 /// dimensions — the same path as production `handle_resize()`.
 fn render_at_size(
@@ -49,7 +48,6 @@ fn render_at_size(
 }
 
 /// Render a frame at the given viewport size with tab bar and status bar.
-///
 /// Exercises the full layout path including chrome.
 fn render_at_size_with_chrome(
     gpu: &crate::gpu::state::GpuState,
@@ -232,7 +230,6 @@ fn resize_stress_alternating_grow_shrink() {
 }
 
 // -- Cached render path tests --
-//
 // These test the production render path where content is cached in an
 // offscreen texture and copied to the output. The key scenario: prepare()
 // runs at viewport size A, then the surface is reconfigured to size B
@@ -240,10 +237,9 @@ fn resize_stress_alternating_grow_shrink() {
 // the stale viewport A dimensions, overrunning the smaller destination.
 
 /// Prepare at 960px height, render to 955px target.
-///
 /// Reproduces the exact crash from the log:
 /// `Copy of Y 0..960 would end up overrunning the bounds of the
-///  Destination texture of Y size 955`
+/// Destination texture of Y size 955`
 #[test]
 fn cached_path_vertical_shrink_during_render() {
     let Some((gpu, pipelines, mut renderer)) = headless_env() else {
@@ -298,7 +294,6 @@ fn cached_path_vertical_shrink_20px() {
 }
 
 // -- Resize-grow uncovered-region clearing tests --
-//
 // When the render destination is LARGER than the prepared viewport
 // (the resize-grow case — winit `Resized` fires between `prepare()` and
 // `render_to_surface()`), the partial cache copy fills only the
@@ -308,13 +303,12 @@ fn cached_path_vertical_shrink_20px() {
 
 /// Shared helper: prepare + render through `render_frame_cached` with a
 /// caller-controlled palette background + opacity, then read back pixels.
-///
 /// Returns `(pixels, target_w)` for `pixel_rgba_at(...)` lookups.
 #[allow(
     clippy::too_many_arguments,
     reason = "test matrix helper — each parameter is a deliberate axis the \
-    cached_path_* tests vary independently (viewport/target dimensions, palette \
-    background, opacity); collapsing into a struct would obscure the matrix shape"
+ cached_path_* tests vary independently (viewport/target dimensions, palette \
+ background, opacity); collapsing into a struct would obscure the matrix shape"
 )]
 fn prepare_and_render_cached_with_clear(
     gpu: &crate::gpu::state::GpuState,
@@ -358,9 +352,8 @@ fn rgba_approx_eq(a: [u8; 4], b: [u8; 4], epsilon: u8) -> bool {
         .all(|(x, y)| x.abs_diff(*y) <= epsilon)
 }
 
-/// Regression: BUG-06-052 — semantic pin on both axes; pixels outside the
+/// invariant check on both axes; pixels outside the
 /// prepared viewport equal `clear_color()`.
-///
 /// Uses a MID-TONE color (Rgb(128, 64, 200)) rather than saturated extremes —
 /// saturated colors mask sRGB round-trip bugs because 0 and 255 map identically
 /// in sRGB and linear space. Mid-tones exercise the sRGB→linear→sRGB round
@@ -391,11 +384,11 @@ fn cached_path_grow_both_axes_clears_uncovered_to_clear_color() {
     assert!(
         rgba_approx_eq(outside, [128, 64, 200, 255], 4),
         "uncovered pixel at (1100,700) should be mid-tone purple (128,64,200,255) \
-         after sRGB round-trip, got {outside:?}"
+ after sRGB round-trip, got {outside:?}"
     );
 }
 
-/// Regression: BUG-06-052 — horizontal-only grow; clear pass must fire.
+/// horizontal-only grow; clear pass must fire.
 #[test]
 fn cached_path_grow_horizontal_only_clears_uncovered_strip() {
     let Some((gpu, pipelines, mut renderer)) = headless_env() else {
@@ -425,7 +418,7 @@ fn cached_path_grow_horizontal_only_clears_uncovered_strip() {
     );
 }
 
-/// Regression: BUG-06-052 — vertical-only grow; clear pass must fire.
+/// vertical-only grow; clear pass must fire.
 #[test]
 fn cached_path_grow_vertical_only_clears_uncovered_strip() {
     let Some((gpu, pipelines, mut renderer)) = headless_env() else {
@@ -455,7 +448,7 @@ fn cached_path_grow_vertical_only_clears_uncovered_strip() {
     );
 }
 
-/// Regression: BUG-06-052 — mixed-axis: width grows, height shrinks. `||`
+/// mixed-axis: width grows, height shrinks. `||`
 /// gate must fire when EITHER grows.
 #[test]
 fn cached_path_grow_h_shrink_v_clears_horizontal_grow_region() {
@@ -486,7 +479,7 @@ fn cached_path_grow_h_shrink_v_clears_horizontal_grow_region() {
     );
 }
 
-/// Regression: BUG-06-052 — mixed-axis: width shrinks, height grows;
+/// mixed-axis: width shrinks, height grows;
 /// inverse-axis coverage for the `||` gate.
 #[test]
 fn cached_path_shrink_h_grow_v_clears_vertical_grow_region() {
@@ -517,7 +510,7 @@ fn cached_path_shrink_h_grow_v_clears_vertical_grow_region() {
     );
 }
 
-/// Regression: BUG-06-052 — common-path guard: `dst == vp` must continue
+/// common-path guard: `dst == vp` must continue
 /// to work post-fix. Pins both readback length AND non-zero rendered
 /// output (rejects a hypothetical no-op render that would also satisfy
 /// length but produce all-zero pixels).
@@ -550,7 +543,7 @@ fn cached_path_dst_eq_vp_no_extra_clear() {
     );
 }
 
-/// Regression: BUG-06-052 — opacity dimension: opacity < 1.0 with non-zero
+/// opacity dimension: opacity < 1.0 with non-zero
 /// background. Verifies the premultiplied-alpha clear value reaches the
 /// uncovered region.
 #[test]
@@ -594,7 +587,7 @@ fn cached_path_grow_clears_with_semi_transparent_clear() {
     );
 }
 
-/// Regression: BUG-06-052 — deterministic pin against wgpu zero-init
+/// deterministic pin against wgpu zero-init
 /// masking. Two-frame sequence with DIFFERENT clear colors; the uncovered
 /// region after the second (grown) frame MUST be the CURRENT clear color,
 /// NEVER black ([0,0,0,0]) and NEVER the prior frame's clear color
@@ -643,13 +636,13 @@ fn cached_path_grow_uncovered_region_takes_current_clear_not_zero_init() {
     assert!(
         outside[0] > 200 && outside[1] < 32 && outside[2] < 32,
         "uncovered pixel at (1100,700) must be RED (current clear), \
-         got {outside:?} — green ({:?}) or zero would indicate the \
-         uncovered region inherited stale state instead of current clear",
+ got {outside:?} — green ({:?}) or zero would indicate the \
+ uncovered region inherited stale state instead of current clear",
         [0, 255, 0, 255]
     );
 }
 
-/// Regression: BUG-06-052 — exercise the `needs_full_render=false` branch.
+/// exercise the `needs_full_render=false` branch.
 /// First frame renders full at `dst == vp` (populates content cache); second
 /// frame requests `needs_full_render=false` at `dst > vp` so the cache is
 /// REUSED and only the overlay/cursor buffers refresh. The clear pass +
@@ -689,11 +682,11 @@ fn cached_path_grow_with_cache_reuse_clears_uncovered_region() {
     assert!(
         rgba_approx_eq(outside, [128, 64, 200, 255], 4),
         "uncovered pixel at (1100,700) under cache-reuse path should be \
-         mid-tone purple, got {outside:?}"
+ mid-tone purple, got {outside:?}"
     );
 }
 
-/// Regression: BUG-06-052 — boundary: 1x1 destination smaller than 800x600
+/// boundary: 1x1 destination smaller than 800x600
 /// viewport — the `dst > vp` gate stays FALSE on both axes (1 < 800, 1 < 600)
 /// so the pre-clear pass does NOT fire; the test exercises the SHRINK-clamp
 /// path where `copy_texture_to_texture` writes the minimum extent (1×1)
@@ -732,7 +725,7 @@ fn cached_path_shrink_to_1x1_does_not_panic_and_writes_pixel() {
     );
 }
 
-/// Regression: BUG-06-052 — rapid alternation: grow/shrink cycles, uncovered
+/// rapid alternation: grow/shrink cycles, uncovered
 /// region matches current clear across the resize stream.
 #[test]
 fn cached_path_rapid_grow_shrink_alternation_clears_each_grow_frame() {

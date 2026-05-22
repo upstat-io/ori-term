@@ -82,6 +82,7 @@ impl<S: EffectSink> Term<S> {
             width: w,
             height: h,
             data: Arc::new(rgba),
+            pixel_generation: 0,
             format: ImageFormat::Rgba,
             source: ImageSource::Direct,
             last_accessed: 0,

@@ -44,7 +44,6 @@ impl Row {
     /// Returns `true` when this row has a real spec source — not
     /// `MISSING`, not a peer terminal reference, not the `—`
     /// placeholder.
-    ///
     /// This is the SSOT for the "spec-sourced" filter used by the
     /// reconciler and the `extract-top-down-tuples` subcommand.
     #[must_use]
@@ -75,8 +74,8 @@ impl Verification {
     /// Returns true for statuses that `--bootstrap-mode` forbids
     /// (Section 01 never bootstraps verified rows — those statuses
     /// are earned by the verification chain harness in Sections
-    /// 04–20). See `plans/spec-conformance/section-01-catalog-
-    /// bootstrap.md §01.1.g` "NEGATIVE CRITERION".
+    /// 04–20). See
+    /// bootstrap.md §01.1.g "NEGATIVE CRITERION".
     #[must_use]
     pub const fn is_bootstrap_forbidden(self) -> bool {
         matches!(

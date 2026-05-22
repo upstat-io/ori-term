@@ -32,7 +32,6 @@ impl AtlasLookup for TestAtlas {
 }
 
 /// Create a deterministic atlas entry for a character.
-///
 /// UV coordinates are derived from the char code for predictable assertions.
 fn test_entry(ch: char) -> AtlasEntry {
     let code = ch as u32;
@@ -1000,7 +999,7 @@ fn shaped_one_row(
 #[test]
 fn shaped_single_glyph_one_bg_one_fg() {
     let size_q6 = 768; // 12px * 64
-    let input = FrameInput::test_grid(3, 1, "A  ");
+    let input = FrameInput::test_grid(3, 1, "A ");
     let atlas = key_atlas_with(&[42], size_q6);
 
     let glyphs = vec![ShapedGlyph {
@@ -1208,7 +1207,7 @@ fn shaped_missing_glyph_in_atlas_skips_fg() {
 fn shaped_empty_glyphs_produces_bg_only() {
     // All cells are spaces → no shaped glyphs → bg only.
     let size_q6 = 768;
-    let input = FrameInput::test_grid(3, 1, "   ");
+    let input = FrameInput::test_grid(3, 1, " ");
     let atlas = KeyTestAtlas(HashMap::new());
 
     let shaped = ShapedFrame::new(3, size_q6);
@@ -1496,7 +1495,6 @@ fn frame_with_underline_color(flags: CellFlags, color: Rgb) -> FrameInput {
 }
 
 /// Count background instances beyond the 1 base background rect per cell.
-///
 /// In a 1×1 grid, the first bg instance is always the cell background.
 /// Any additional instances come from decorations.
 fn decoration_bg_count(frame: &PreparedFrame) -> usize {
@@ -2386,7 +2384,7 @@ fn shaped_frame_smaller_than_viewport_skips_excess_cells() {
 fn shaped_frame_fewer_rows_than_viewport_skips_excess_rows() {
     // Viewport has 3 rows, shaped frame has 1 row.
     let size_q6 = 768;
-    let input = FrameInput::test_grid(2, 3, "AB    ");
+    let input = FrameInput::test_grid(2, 3, "AB ");
 
     let atlas = key_atlas_with(&[10], size_q6);
 
@@ -4447,13 +4445,11 @@ fn shaped_multi_row(
     (sf, all_ids)
 }
 
-/// Regression: BUG-06-027 — three-frame sequence proves both that the
+/// three-frame sequence proves both that the
 /// production fix populates `saved_tier` (Frame 1 dispatches incremental)
 /// AND that the `!all_dirty` guard remains load-bearing (Frame 2 with
 /// `all_dirty=true` dispatches full-rebuild even when `saved_tier` is
 /// populated).
-///
-/// See: bug-tracker/plans/completed/BUG-06-027/
 #[test]
 fn incremental_all_dirty_matches_full_rebuild() {
     let size_q6 = 768;
@@ -4500,7 +4496,7 @@ fn incremental_all_dirty_matches_full_rebuild() {
     assert!(
         !frame.was_incremental,
         "all_dirty=true must dispatch to full-rebuild even when saved_tier is populated \
-         (the !all_dirty guard remains load-bearing)"
+ (the !all_dirty guard remains load-bearing)"
     );
 
     // Output equivalence: the full-rebuild branch produces output identical
@@ -4554,7 +4550,7 @@ fn incremental_no_dirty_rows_matches_cached() {
     assert!(
         frame.was_incremental,
         "second pass must hit the incremental path (production dispatch \
-         should resolve can_incremental=true with saved_tier populated)"
+ should resolve can_incremental=true with saved_tier populated)"
     );
 
     assert_eq!(
@@ -4569,14 +4565,14 @@ fn incremental_no_dirty_rows_matches_cached() {
     );
 }
 
-/// Regression: BUG-06-025 — chrome and overlay tier buffers
+/// chrome and overlay tier buffers
 /// (`ui_rects`, `ui_glyphs`, `ui_subpixel_glyphs`, `ui_color_glyphs`,
 /// `overlay_*`) accumulated frame-after-frame on the incremental prepare
 /// path. Production wires `chrome::render_chrome` AFTER `prepare()` and
 /// appends fresh chrome instances each frame; without this clear the
 /// buffer grew unbounded and stale glyphs from prior frames remained
 /// visible whenever chrome content shrank (e.g., shorter tab title after
-/// OSC 0/2 updates during high-throughput PTY output like /commit-push).
+/// OSC 0/2 updates during high-throughput PTY output like commit-push).
 /// Push one `ScreenRect` to all 8 chrome + overlay writer tiers plus
 /// `overlay_draw_ranges`, simulating post-prepare chrome rendering.
 fn populate_test_chrome_and_overlay_buffers(frame: &mut PreparedFrame) {
@@ -4656,12 +4652,11 @@ fn assert_chrome_and_overlay_buffers_empty(frame: &PreparedFrame) {
     );
 }
 
-/// Regression: BUG-06-025 negative pin — confirms chrome + overlay clear
+/// Regression: invariant check — confirms chrome + overlay clear
 /// contract holds on the incremental path. Without `clear_ephemeral_tiers()`
 /// the incremental render dispatch, OSC 0/2 title updates (which shrink tab
 /// titles and reduce overlay glyph count) would leave stale chrome/overlay
 /// glyphs from prior frames, causing unbounded buffer accumulation.
-///
 /// Frame N populates chrome buffers; Frame N+1's incremental dispatch must
 /// clear them via `clear_ephemeral_tiers()`, matching the cursor-blink fast
 /// path's SSOT clear contract.
@@ -4712,7 +4707,7 @@ fn prepare_frame_incremental_with_stale_chrome_clears_ephemeral_tiers() {
     assert_chrome_and_overlay_buffers_empty(&frame);
 }
 
-/// Regression: BUG-06-025 negative pin — confirms that the chrome and
+/// Regression: invariant check — confirms that the chrome and
 /// overlay clear contract holds across BOTH non-cursor-blink prepare
 /// paths (full rebuild via `out.clear()` AND incremental via
 /// `out.clear_ephemeral_tiers()`). If the incremental path ever drops
@@ -4792,8 +4787,7 @@ fn prepare_frame0_steady(
     (frame, input, shaped, atlas)
 }
 
-/// Regression: BUG-06-027 — Frame 1 dispatches incremental.
-///
+/// Frame 1 dispatches incremental.
 /// Before the fix, `saved_tier` was populated only INSIDE the incremental
 /// branch itself, so the dispatch predicate at `prepare/mod.rs` saw an
 /// empty `saved_tier` on every frame and full-rebuild ran every time.
@@ -4818,7 +4812,7 @@ fn incremental_second_frame_after_full_rebuild_dispatches_incremental() {
     assert!(
         frame.was_incremental,
         "Frame 1 must dispatch incremental: production fix's pre-dispatch \
-         save_terminal_tier populated saved_tier from Frame 0"
+ save_terminal_tier populated saved_tier from Frame 0"
     );
     assert!(
         frame.saved_tier.has_cached_rows(),
@@ -4826,8 +4820,7 @@ fn incremental_second_frame_after_full_rebuild_dispatches_incremental() {
     );
 }
 
-/// Regression: BUG-06-027 — chained steady-state frames stay incremental.
-///
+/// chained steady-state frames stay incremental.
 /// Frame 0 full-rebuild → Frame 1 incremental → Frame 2 incremental.
 /// Pre-fix the incremental optimization was dormant; post-fix it remains
 /// active across consecutive steady-state frames.
@@ -4848,7 +4841,7 @@ fn incremental_chained_frames_remain_incremental() {
     assert!(frame.was_incremental, "Frame 2 incremental");
 }
 
-/// Regression: BUG-06-027 — `all_dirty=true` interruption does not
+/// `all_dirty=true` interruption does not
 /// permanently break the incremental chain. Frame 0 full-rebuild → Frame 1
 /// incremental → Frame 2 `all_dirty=true` full-rebuild → Frame 3 incremental.
 /// Pins that the dispatch predicate's `!all_dirty` clause is the only
@@ -4877,7 +4870,7 @@ fn incremental_all_dirty_recovery_resumes_incremental() {
     );
 }
 
-/// Regression: BUG-06-027 — replay of clean rows produces output identical
+/// replay of clean rows produces output identical
 /// to a fresh full rebuild across all four terminal-tier buffers
 /// (backgrounds + mono glyphs + subpixel glyphs + color glyphs). The
 /// equivalence assertion in the existing `incremental_no_dirty_rows_matches_cached`
@@ -4886,8 +4879,6 @@ fn incremental_all_dirty_recovery_resumes_incremental() {
 /// entries) and `subpixel_positioning = true` to populate every buffer,
 /// then asserts `was_incremental` AND non-empty buffers AND output
 /// equivalence.
-///
-/// See: bug-tracker/plans/completed/BUG-06-027/
 #[test]
 fn incremental_replay_clean_rows_matches_fresh_rebuild_output_across_all_buffers() {
     let size_q6 = 768;
@@ -4920,7 +4911,7 @@ fn incremental_replay_clean_rows_matches_fresh_rebuild_output_across_all_buffers
     assert!(
         frame.was_incremental,
         "Frame 1 must dispatch incremental for the equivalence assertion below \
-         to pin actual replay output (not vacuously equal full-rebuild bytes)"
+ to pin actual replay output (not vacuously equal full-rebuild bytes)"
     );
     assert_eq!(
         fresh.backgrounds.as_bytes(),
@@ -4944,7 +4935,7 @@ fn incremental_replay_clean_rows_matches_fresh_rebuild_output_across_all_buffers
     );
 }
 
-/// Regression: BUG-06-027 — viewport change forces full-rebuild. Three-frame
+/// viewport change forces full-rebuild. Three-frame
 /// sequence: Frame 0 full rebuild populates saved_tier; Frame 1 same
 /// viewport proves incremental reachable; Frame 2 with changed viewport
 /// asserts dispatch falls back to full-rebuild because saved_tier rows
@@ -5002,7 +4993,7 @@ fn incremental_dispatch_falls_back_on_viewport_change() {
     );
 }
 
-/// Regression: BUG-06-027 — content grid topology change (cols × rows)
+/// content grid topology change (cols × rows)
 /// dispatches full-rebuild even when the pixel viewport stays the same.
 /// Pixel viewport tracks (width_px, height_px); content grid tracks
 /// (cols, rows). During async resize in daemon mode the snapshot grid
@@ -5044,7 +5035,7 @@ fn incremental_dispatch_falls_back_on_content_grid_change() {
     );
 }
 
-/// Regression: BUG-06-027 — cell-size change (scale or font swap) forces
+/// cell-size change (scale or font swap) forces
 /// full-rebuild. The dispatch fingerprint hashes all 6 CellMetrics fields
 /// so per-cell-layout changes that leave the pixel viewport unchanged
 /// still invalidate the saved tier.
@@ -5077,7 +5068,7 @@ fn incremental_dispatch_falls_back_on_cell_size_change() {
     );
 }
 
-/// Regression: BUG-06-027 — incremental dispatch with partial damage
+/// incremental dispatch with partial damage
 /// replays clean rows from saved_tier across all four terminal-tier
 /// buffers (backgrounds + mono + subpixel + color glyphs). Frame 0 full
 /// rebuild populates row ranges; Frame 1 with damage on row 1 only must
@@ -5143,7 +5134,7 @@ fn incremental_dispatch_with_partial_damage_replays_clean_rows_across_all_buffer
     );
 }
 
-/// Regression: BUG-06-027 — scrollback shift via caller's `all_dirty=true`
+/// scrollback shift via caller's `all_dirty=true`
 /// signal dispatches full-rebuild. Three-frame sequence proves incremental
 /// is reachable in steady state and the fallback is structural, not
 /// vacuous.
@@ -5168,7 +5159,7 @@ fn incremental_dispatch_invalidates_on_scrollback_shift() {
     );
 }
 
-/// Regression: BUG-06-027 — cursor move dirties BOTH the previous cursor
+/// cursor move dirties BOTH the previous cursor
 /// row AND the current cursor row when the cursor cell can carry inverted
 /// per-cell colors. Pre-fix, `build_dirty_set` only marked the current
 /// cursor row dirty; the previous cursor row replayed stale "with cursor"
@@ -5216,7 +5207,7 @@ fn incremental_dispatch_with_cursor_move_dirties_current_and_previous_cursor_row
     );
 }
 
-/// Regression: BUG-06-027 — `fg_dim` (pane focus dimming) change forces
+/// `fg_dim` (pane focus dimming) change forces
 /// full-rebuild. Per-cell glyph alpha bakes `fg_dim` at emit time
 /// (`emit_cell.rs::fg_alpha`), so a focus change without `all_dirty`
 /// would replay stale dimmed alpha from saved_tier.
@@ -5240,7 +5231,7 @@ fn incremental_dispatch_falls_back_on_fg_dim_change() {
     );
 }
 
-/// Regression: BUG-06-027 — hover changes stay on the incremental path
+/// hover changes stay on the incremental path
 /// (no full-rebuild fallback) and dirty just the affected rows. Hover is
 /// row-granular, not frame-granular: full-rebuild on every mouse move
 /// would be O(N) waste vs the O(1) row-dirty pattern.
@@ -5270,7 +5261,7 @@ fn incremental_dispatch_with_hover_change_stays_incremental_and_dirties_affected
     assert!(!frame.scratch_dirty[1], "non-hover row stays clean");
 }
 
-/// Regression: BUG-06-027 — subpixel-positioning toggle forces full-rebuild.
+/// subpixel-positioning toggle forces full-rebuild.
 /// The flag routes `AtlasKind::Subpixel` glyphs to either `subpixel_glyphs`
 /// (when true) or `glyphs` (when false); a toggle would leave saved cells
 /// in the wrong buffer.
@@ -5294,7 +5285,7 @@ fn incremental_dispatch_falls_back_on_subpixel_positioning_toggle() {
     );
 }
 
-/// Regression: BUG-06-027 — search-state change forces full-rebuild.
+/// search-state change forces full-rebuild.
 /// Search match highlighting bakes per-cell colors at emit time; without
 /// a guard, the cache would replay stale highlights when the user types
 /// a new query, navigates between matches, or scrolls.
@@ -5331,7 +5322,7 @@ fn incremental_dispatch_falls_back_on_search_state_change() {
     );
 }
 
-/// Regression: BUG-06-027 — text blink opacity change forces full-rebuild.
+/// text blink opacity change forces full-rebuild.
 /// Per-cell instances bake `text_blink_opacity` at emit time; replaying
 /// clean rows would carry stale opacity. The dispatch fingerprint's
 /// `text_blink_opacity` hash input catches this.
@@ -5355,7 +5346,7 @@ fn incremental_dispatch_falls_back_on_text_blink_opacity_change() {
     );
 }
 
-/// Regression: BUG-06-027 — origin change (e.g., scroll without all_dirty)
+/// origin change (e.g., scroll without all_dirty)
 /// dispatches full-rebuild. Without an origin guard the saved_tier's
 /// pixel-positioned cell instances would render at the wrong Y.
 #[test]
@@ -5533,9 +5524,7 @@ fn non_blink_cell_ignores_text_blink_opacity() {
 }
 
 /// Dirty-skip trace-emission tests.
-///
 /// See: `oriterm_test_support::log_capture` for the thread-local sink.
-///
 /// These tests drive the production `prepare_frame_shaped_into()` path
 /// (NOT a stub harness) and assert the trace contract via thread-local
 /// log capture. Emission tests must observe the real prepare path so the
@@ -5787,8 +5776,7 @@ mod dispatch_fingerprint {
         assert_ne!(compute_dispatch_fingerprint(&input, origin), baseline_fp);
     }
 
-    /// Regression: BUG-06-030 — all 6 CellMetrics fields hashed (not just 3).
-    /// See: bug-tracker/plans/completed/BUG-06-030/section-03-tdd-matrix.md
+    /// all 6 CellMetrics fields hashed (not just 3).
     #[test]
     fn fingerprint_changes_with_cell_size_underline_offset() {
         let (mut input, origin) = baseline();
@@ -5971,9 +5959,8 @@ mod dispatch_fingerprint {
         );
     }
 
-    /// Regression: BUG-06-030 — bitwise-exact via `.to_bits()`; `+0.0` and
+    /// bitwise-exact via `.to_bits()`; `+0.0` and
     /// `-0.0` produce different fingerprints (one spurious rebuild on flip).
-    /// See: bug-tracker/plans/completed/BUG-06-030/
     #[test]
     fn fingerprint_distinguishes_positive_zero_from_negative_zero() {
         let (mut input, origin) = baseline();
@@ -5984,7 +5971,7 @@ mod dispatch_fingerprint {
         assert_ne!(
             pos_zero, neg_zero,
             "bitwise-exact via .to_bits() distinguishes +0.0 from -0.0 \
-             (one spurious rebuild on flip, accepted per consensus)"
+ (one spurious rebuild on flip, accepted per consensus)"
         );
     }
 
@@ -6002,7 +5989,7 @@ mod dispatch_fingerprint {
         assert_ne!(
             baseline_fp, perturbed_fp,
             "bitwise-exact comparison must invalidate on the smallest \
-             representable f32 delta (extra rebuilds, never stale reuse)"
+ representable f32 delta (extra rebuilds, never stale reuse)"
         );
     }
 
@@ -6030,7 +6017,6 @@ mod dispatch_fingerprint {
 /// Helper: build a 3-cell row "ABC" with non-palette bg so bg quads are
 /// emitted, the cursor at column 1, selection covering all three columns,
 /// and the requested cursor shape + window-focus state.
-///
 /// Returns the configured `FrameInput`. Caller chooses whether to run via
 /// `prepare_frame` (unshaped) or `prepare_frame_shaped` / `prepare_frame_shaped_into`
 /// (shaped/incremental production paths) to exercise both EmitCtx build sites.
@@ -6098,7 +6084,7 @@ fn focus_cursor_selection_input(shape: CursorShape, window_focused: bool) -> Fra
     input
 }
 
-/// Regression: BUG-06-031 — `is_block_cursor_cell` predicate at
+/// `is_block_cursor_cell` predicate at
 /// `prepare/resolve.rs:81` previously checked the raw `cursor.shape == Block`
 /// instead of the focus-effective shape, so an unfocused window with a
 /// configured Block cursor (rendered as a hollow outline) suppressed
@@ -6121,7 +6107,7 @@ fn unfocused_block_cursor_cell_in_selection_inverts() {
     );
 }
 
-/// Regression: BUG-06-031 — focused configured `HollowBlock` cursor on a
+/// focused configured `HollowBlock` cursor on a
 /// selected cell already inverts correctly today; pin guards against future
 /// regression where a fix to the unfocused-Block bug accidentally suppresses
 /// selection for the configured-HollowBlock case.
@@ -6139,7 +6125,7 @@ fn focused_hollow_block_cursor_cell_in_selection_inverts() {
     );
 }
 
-/// Regression: BUG-06-031 — unfocused `Bar` cursor (effective `HollowBlock`
+/// unfocused `Bar` cursor (effective `HollowBlock`
 /// via focus override) on a selected cell must invert. Cross-shape coverage
 /// for the focus override path.
 #[test]
@@ -6156,7 +6142,7 @@ fn unfocused_bar_cursor_cell_in_selection_inverts() {
     );
 }
 
-/// Regression: BUG-06-031 — unfocused `Underline` cursor (effective
+/// unfocused `Underline` cursor (effective
 /// `HollowBlock`) on a selected cell must invert. Cross-shape coverage.
 #[test]
 fn unfocused_underline_cursor_cell_in_selection_inverts() {
@@ -6172,7 +6158,7 @@ fn unfocused_underline_cursor_cell_in_selection_inverts() {
     );
 }
 
-/// Regression: BUG-06-031 — unfocused Block cursor cell that is BOTH selected
+/// unfocused Block cursor cell that is BOTH selected
 /// AND a search match: same `!is_block_cursor_cell` gate at `resolve.rs:108`
 /// applies to the search branch. Pin asserts search-match highlighting also
 /// works under the hollow cursor.
@@ -6199,7 +6185,7 @@ fn unfocused_block_cursor_cell_in_search_match_highlights() {
     );
 }
 
-/// Regression: BUG-06-031 — focused-search match (FocusedMatch branch at
+/// focused-search match (FocusedMatch branch at
 /// `resolve.rs:110`) under unfocused Block cursor must use SEARCH_FOCUSED_BG.
 /// Separate code path from the regular Match branch.
 #[test]
@@ -6223,7 +6209,7 @@ fn unfocused_block_cursor_cell_in_focused_search_match_uses_focused_colors() {
     );
 }
 
-/// Regression: BUG-06-031. Per §05 carve-out: an explicitly Hidden cursor
+/// Regression: . Per §05 carve-out: an explicitly Hidden cursor
 /// stays Hidden on unfocused windows; `emit_cursor_for_frame`'s
 /// `CursorShape::Hidden => {}` branch (`emit.rs:275`) emits zero instances.
 #[test]
@@ -6266,7 +6252,7 @@ fn resolve_cursor_state_unfocused_hidden_preserves_hidden() {
     );
 }
 
-/// Regression: BUG-06-031 — semantic pin. `resolve_cursor_state` must return
+/// invariant check. `resolve_cursor_state` must return
 /// `HollowBlock` for an unfocused window with configured `Block` cursor.
 /// ONLY passes with the Option C fix.
 #[test]
@@ -6284,7 +6270,7 @@ fn resolve_cursor_state_unfocused_block_resolves_to_hollow_block() {
     );
 }
 
-/// Regression: BUG-06-031 — focus-override identity. `resolve_cursor_state`
+/// focus-override identity. `resolve_cursor_state`
 /// on a focused window preserves the configured shape unchanged.
 #[test]
 fn resolve_cursor_state_focused_block_preserves_block() {
@@ -6301,7 +6287,7 @@ fn resolve_cursor_state_focused_block_preserves_block() {
     );
 }
 
-/// Regression: BUG-06-031 — fingerprint-preserves regression guard. Option C
+/// fingerprint-preserves regression guard. Option C
 /// does NOT add `window_focused` to `compute_dispatch_fingerprint` (focus
 /// invalidation flows through the row-state path via `resolve_cursor_state`'s
 /// shape change). Guards against a future regression where someone re-adds
@@ -6323,7 +6309,7 @@ fn focus_transition_preserves_dispatch_fingerprint() {
     );
 }
 
-/// Regression: BUG-06-031 — `effective_cursor_shape` idempotency table.
+/// `effective_cursor_shape` idempotency table.
 /// Verifies the 5-variant × 2-focus matrix: focused returns identity for
 /// all 5 shapes; unfocused returns HollowBlock for Block/Bar/Underline/HollowBlock
 /// and Hidden for Hidden (carve-out).
@@ -6367,7 +6353,7 @@ fn effective_cursor_shape_idempotency_table() {
     }
 }
 
-/// Regression: BUG-06-031 — `prev_resolved_cursor` storage captures the
+/// `prev_resolved_cursor` storage captures the
 /// effective cursor shape (post-Option-C). On focus transition with all
 /// other inputs identical, `has_row_state_change`-style comparison must
 /// detect the shape difference, so the cursor-only fast path is invalidated
@@ -6407,7 +6393,7 @@ fn focus_transition_changes_resolved_cursor_shape() {
     );
 }
 
-/// Regression: BUG-06-031 — semantic pin. Unfocused Block cursor cell
+/// invariant check. Unfocused Block cursor cell
 /// in selection has different per-cell colors than the palette default
 /// (i.e., selection inversion is NOT suppressed). ONLY passes with Option C.
 #[test]
@@ -6425,13 +6411,11 @@ fn unfocused_block_cursor_does_not_suppress_selection() {
 }
 
 // ── evaluate_row_state_change matrix tests ─────────────────────────────────
-//
-/// Regression: BUG-06-039 — cursor blink crossing the 0.5 opacity threshold
+/// cursor blink crossing the 0.5 opacity threshold
 /// left stale per-cell colors on the cursor cell. The fix added a snapshot
 /// field `prev_block_cursor_color_exclusion_active` to PreparedFrame and a
 /// pure gate predicate `evaluate_row_state_change` (gates.rs) that detects
 /// threshold crossings and bypasses the cursor-only fast path on cross.
-/// See: bug-tracker/plans/completed/BUG-06-039/
 use super::evaluate_row_state_change;
 
 fn empty_prepared() -> PreparedFrame {
@@ -6591,8 +6575,8 @@ fn compute_dispatch_fingerprint_body_does_not_reference_cursor_opacity() {
     assert!(
         !body.contains("cursor_opacity"),
         "compute_dispatch_fingerprint body MUST NOT reference cursor_opacity \
-         (perf invariant — opacity belongs in evaluate_row_state_change, \
-         not the dispatch fingerprint)"
+ (perf invariant — opacity belongs in evaluate_row_state_change, \
+ not the dispatch fingerprint)"
     );
 }
 
@@ -6642,13 +6626,12 @@ fn prev_resolved_cursor_assignment_co_located_with_threshold_pin() {
         assert!(
             window.contains(&needle),
             "SSOT pairing violation: {receiver}.prev_resolved_cursor assignment \
-             at line {line_num} not paired with {needle} within ±20 lines"
+ at line {line_num} not paired with {needle} within ±20 lines"
         );
     }
 }
 
 // ── compute_pane_damage_key matrix ──────────────────────────────────
-//
 // Mirror of the compute_dispatch_fingerprint matrix in
 // window_renderer/tests.rs, extended to cover PaneRowState fields.
 // Each test perturbs ONE input and asserts the damage_key changes.
@@ -7121,7 +7104,7 @@ mod placeholder_uv_slicing {
         input
     }
 
-    /// Regression: spec-conformance §13.6.1 negative pin. When the
+    /// Regression: spec-conformance §13.6.1 invariant check. When the
     /// placement is single-cell (`c=1,r=1` or no recorded grid → default
     /// `(1, 1)`), the UV MUST remain `(0, 0, 1, 1)` (full image). Fails
     /// if a future refactor fires the slicing branch unconditionally and

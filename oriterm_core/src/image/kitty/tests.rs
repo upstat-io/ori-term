@@ -495,7 +495,8 @@ fn handler_animate_set_loops() {
         .image_cache()
         .animation_state(ImageId(1))
         .expect("animated");
-    assert_eq!(state.loop_count, Some(5));
+    // Per kitty graphics.c:1767 `max_loops = g->loop_count - 1`, v=5 → Some(4).
+    assert_eq!(state.loop_count, Some(4));
 }
 
 #[test]
@@ -548,9 +549,9 @@ fn parse_unknown_action_value_falls_back_to_transmit_and_place() {
 
 /// Companion to `parse_unknown_action_value_falls_back_to_transmit_and_place`:
 /// `a=c` is now an EXPLICIT arm routed to `KittyAction::Compose` (which
-/// the dispatcher then rejects with EINVAL via `kitty_compose_reject`).
-/// The spec-defined `a=T` is also an explicit arm. Pinning both prevents
-/// drift back to the pre-§13.5 silent-fallback shape.
+/// the dispatcher handles via `Term::kitty_compose`). The spec-defined
+/// `a=T` is also an explicit arm. Pinning both prevents drift back to
+/// the pre-§13.5 silent-fallback shape.
 #[test]
 fn parse_spec_defined_action_values_route_to_explicit_variants() {
     let cmd = parse_kitty_command(b"a=c,i=1").unwrap();
@@ -569,6 +570,54 @@ fn parse_spec_defined_action_values_route_to_explicit_variants() {
         "a=T MUST route to KittyAction::TransmitAndPlace via the explicit \
          match arm; routing through the generic unknown-action fallback makes \
          the spec-defined arm indistinguishable from genuine unknowns"
+    );
+}
+
+/// Catalog row: `KG-ACTION-COMPOSE` (parser-layer pin for `w=`/`h=`).
+///
+/// Compose requires `w=` and `h=` keys (rectangle dimensions in pixels)
+/// per kitty `graphics.c:1830-1831 handle_compose_command`. Confirms the
+/// parser populates `cmd.width_px`/`cmd.height_px` round-trip from
+/// `a=c,w=N,h=M` and leaves them `None` when the keys are absent.
+#[test]
+fn parse_a_c_w_and_h_keys_round_trip_to_width_px_and_height_px() {
+    let cmd = parse_kitty_command(b"a=c,i=1,r=1,c=1,w=10,h=20").unwrap();
+    assert_eq!(
+        cmd.width_px,
+        Some(10),
+        "`w=10` MUST round-trip to cmd.width_px=Some(10)"
+    );
+    assert_eq!(
+        cmd.height_px,
+        Some(20),
+        "`h=20` MUST round-trip to cmd.height_px=Some(20)"
+    );
+
+    // Absent w/h leaves both fields None — the 0 = absent default is
+    // interpreted later at extract_a_c_keys, not at the parser layer.
+    let cmd = parse_kitty_command(b"a=c,i=1,r=1,c=1").unwrap();
+    assert_eq!(
+        cmd.width_px, None,
+        "`w=` absent MUST parse to cmd.width_px=None (distinct from w=0)"
+    );
+    assert_eq!(
+        cmd.height_px, None,
+        "`h=` absent MUST parse to cmd.height_px=None"
+    );
+
+    // Explicit zero: w=0 / h=0 parses to Some(0), letting extract_a_c_keys
+    // distinguish "absent" from "explicitly zero" if compose semantics
+    // ever need that distinction. Today both default to full-image dims.
+    let cmd = parse_kitty_command(b"a=c,i=1,r=1,c=1,w=0,h=0").unwrap();
+    assert_eq!(
+        cmd.width_px,
+        Some(0),
+        "`w=0` MUST parse to Some(0), not None"
+    );
+    assert_eq!(
+        cmd.height_px,
+        Some(0),
+        "`h=0` MUST parse to Some(0), not None"
     );
 }
 

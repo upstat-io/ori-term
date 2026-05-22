@@ -38,7 +38,7 @@ struct RawFaceInfo {
 }
 
 /// Build a filename → full path index from the given roots. Used by both
-/// Linux and macOS `build_font_index()` per `LEAK:algorithmic-duplication`
+/// Linux and macOS `build_font_index()` per
 /// SSOT discipline.
 pub(super) fn build_font_index_from_roots(roots: &[PathBuf]) -> HashMap<String, PathBuf> {
     let mut index = HashMap::new();
@@ -53,7 +53,6 @@ pub(super) fn build_font_index_from_roots(roots: &[PathBuf]) -> HashMap<String, 
 }
 
 /// Enumerate every monospace font family found under `roots`.
-///
 /// Walks each root recursively, memory-maps every regular file, parses the
 /// `OpenType` `name` / `OS/2` / `head` / `post` tables via `skrifa`, and groups
 /// faces by `display_name`. Only families with a Regular face are emitted —
@@ -99,7 +98,6 @@ pub(super) fn enumerate_mono_families_from_roots(roots: &[PathBuf]) -> Vec<Famil
 }
 
 /// Parse font file(s) into [`RawFaceInfo`] entries.
-///
 /// For `.ttc` collections, returns one entry per face. For standalone
 /// `.ttf`/`.otf`, returns a single-element `Vec`.
 #[expect(
@@ -186,7 +184,6 @@ fn parse_face_info(path: &Path) -> Vec<RawFaceInfo> {
 
 /// Resolve a user-specified family name via the catalog bridge plus filename
 /// heuristics. Used by both Linux and macOS `try_user_family()`.
-///
 /// Lookup order:
 /// 1. `family_paths()` catalog — handles `OpenType`-`name`-table family names
 ///    (e.g. `"JetBrains Mono"`) which the filename heuristics below cannot
@@ -207,7 +204,7 @@ pub(super) fn try_user_family_with_bridge(
 /// injected. Production calls `super::family_paths`; tests inject a fixture
 /// closure so the bridge integration can be exercised without the global
 /// `OnceLock`-cached catalog (closes the F2 host-font skip per
-/// `bug-tracker/plans//section-06-tpr-findings.md` Round 0).
+/// Round 0).
 pub(super) fn try_user_family_with_bridge_using(
     name: &str,
     index: &HashMap<String, PathBuf>,
@@ -326,7 +323,7 @@ pub(super) fn variant_from_index(
 
 /// Try platform default families in priority order. Identical for Linux and
 /// macOS — both walk `PRIMARY_FAMILIES` against the filename index. Closes
-/// the F1 LEAK:algorithmic-duplication finding from §06 Round 1.
+/// the F1 finding from §06 Round 1.
 pub(super) fn try_platform_defaults_with_index(
     index: &HashMap<String, PathBuf>,
 ) -> Option<DiscoveryResult> {
@@ -339,7 +336,7 @@ pub(super) fn try_platform_defaults_with_index(
 
 /// Resolve a user-configured fallback font name to a path. Identical for
 /// Linux and macOS — try filename in index, then absolute path. Closes the
-/// F1 LEAK:algorithmic-duplication finding from §06 Round 1.
+/// F1 finding from §06 Round 1.
 pub(super) fn resolve_user_fallback_with_index(
     family: &str,
     index: &HashMap<String, PathBuf>,

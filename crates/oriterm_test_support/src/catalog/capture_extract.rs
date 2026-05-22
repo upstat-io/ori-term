@@ -3,8 +3,8 @@
 //! Streams a PTY `.cap` file through `vte::Parser` and emits one
 //! [`Tuple`] per recognized escape sequence. Does NOT reimplement
 //! the VT state machine — consumes the vendored `vte` crate
-//! directly. See `plans/spec-conformance/section-01-catalog-
-//! bootstrap.md §01.3` for the rationale.
+//! directly. See
+//! bootstrap.md §01.3 for the rationale.
 //!
 //! Payload normalization is exhaustive per the plan's
 //! "Payload normalization for captures" rules:
@@ -56,12 +56,9 @@ impl std::error::Error for CaptureExtractError {
 }
 
 /// Extract (tuple, count) pairs from a `.cap` file.
-///
 /// The return type is a sorted `Vec<(Tuple, u32)>` so callers can
 /// report top-N frequencies without a second pass.
-///
 /// # Errors
-///
 /// Returns [`CaptureExtractError::Io`] if the file cannot be read.
 pub fn extract_capture_tuples(cap_path: &Path) -> Result<Vec<(Tuple, u32)>, CaptureExtractError> {
     let bytes = fs::read(cap_path).map_err(|source| CaptureExtractError::Io {
@@ -142,7 +139,7 @@ impl vte::Perform for TupleSink {
                 // canonical signature for non-UTF-8 selectors).
                 eprintln!(
                     "warning: capture_extract::osc_dispatch: skipped malformed selector \
-                     (bytes={:02x?}): {e}",
+ (bytes={:02x?}): {e}",
                     params[0]
                 );
                 return;

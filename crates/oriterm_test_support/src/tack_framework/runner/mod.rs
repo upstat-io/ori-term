@@ -79,15 +79,13 @@ pub mod phase;
 pub mod stable;
 
 /// Canonical name format for snapshot/golden files: `<screen_id>_<cols>x<rows>`.
-///
 /// SINGLE SOURCE OF TRUTH for snapshot/golden naming. Both
 /// [`ScenarioOutcome::snapshot_name`] / [`ScenarioOutcome::golden_name`]
 /// and [`LiveSession::snapshot_name`] / [`LiveSession::golden_name`]
 /// delegate here. Section 07's GPU bridge MUST also call this (or
 /// equivalently `live.golden_name()`) instead of rebuilding the
 /// format literal — rebuilding at any second site is
-/// `LEAK:scattered-knowledge`.
-///
+/// algorithmic duplication.
 /// A future change to the naming convention (e.g., adding a theme
 /// suffix) propagates automatically because every consumer routes
 /// through this one function.
@@ -123,11 +121,9 @@ pub(super) const TACK_QUIT_MAX_ITERATIONS: u32 = 5;
 /// for the ready anchor, capture the grid, and run the parser. The
 /// shared pipeline that both [`ScenarioRunner::run_at`] and
 /// [`ScenarioRunner::run_with_session_at`] consume.
-///
 /// Returns the live `(session, env, grid_text, parsed)` tuple. The
 /// `env` MUST be held by the caller (see `LiveSession::_terminfo`
 /// and the `tic` lazy-read race rationale).
-///
 /// **Sentinel detection runs FIRST.** Before any I/O, we scan the
 /// scenario's `menu_path` and `ready_anchor` for the
 /// `unverified_menu_key()` / `unverified_anchor()` sentinels added
@@ -158,14 +154,12 @@ pub(super) fn prepare_and_navigate(
 /// / [`crate::tack_framework::spec::unverified_anchor`] sentinels.
 /// Panics on the FIRST hit with a referral to 05.0's
 /// `BEGIN_TESTING_INVENTORY`.
-///
 /// SHARED gate between
 /// [`ScenarioRunner::run_at`] (via [`prepare_and_navigate`]) and
 /// `ScenarioRunner::run_phase_at` (via
 /// [`phase::run_phase_at_inner`]). Both code paths route through
 /// this single helper so a regression that weakens the gate fires
 /// in BOTH the stable and phase test matrices simultaneously.
-///
 /// Both consumers call this BEFORE any PTY I/O. The detection is a
 /// pure data scan: it does not touch [`PtySession`],
 /// [`TerminfoEnv`], or any external resource. Therefore the gate
@@ -182,22 +176,22 @@ pub(super) fn assert_no_unverified_sentinels(
         assert!(
             !is_unverified_menu_key(step.send),
             "scenario {scenario_id}: menu_path[{idx}].send is the \
-             unverified-menu-key sentinel. Look up the verified \
-             key in BEGIN_TESTING_INVENTORY (see 05.0) and replace \
-             `unverified_menu_key()` with the real key bytes."
+ unverified-menu-key sentinel. Look up the verified \
+ key in BEGIN_TESTING_INVENTORY (see 05.0) and replace \
+ `unverified_menu_key()` with the real key bytes."
         );
         assert!(
             !is_unverified_anchor(step.wait_for),
             "scenario {scenario_id}: menu_path[{idx}].wait_for is \
-             the unverified-anchor sentinel. Look up the verified \
-             sub-menu prompt in the 05.0 discovery snapshot and \
-             replace `unverified_anchor()` with the real string."
+ the unverified-anchor sentinel. Look up the verified \
+ sub-menu prompt in the 05.0 discovery snapshot and \
+ replace `unverified_anchor()` with the real string."
         );
         for (alt_idx, alt) in step.or_wait_for.iter().enumerate() {
             assert!(
                 !is_unverified_anchor(alt),
                 "scenario {scenario_id}: menu_path[{idx}].or_wait_for[{alt_idx}] \
-                 is the unverified-anchor sentinel."
+ is the unverified-anchor sentinel."
             );
         }
     }
@@ -205,14 +199,14 @@ pub(super) fn assert_no_unverified_sentinels(
         assert!(
             !is_unverified_menu_key(trigger),
             "scenario {scenario_id}: phase_trigger is the \
-             unverified-menu-key sentinel."
+ unverified-menu-key sentinel."
         );
     }
     for anchor in anchors {
         assert!(
             !is_unverified_anchor(anchor),
             "scenario {scenario_id}: anchor is the \
-             unverified-anchor sentinel."
+ unverified-anchor sentinel."
         );
     }
 }
@@ -220,7 +214,6 @@ pub(super) fn assert_no_unverified_sentinels(
 /// Quit tack via `quit_tack` (or `quit_path` override) and assert
 /// `exit.success()` with a panic message that includes the scenario
 /// identity and the captured grid.
-///
 /// SHARED IMPLEMENTATION between [`ScenarioRunner::run_at`] and
 /// [`LiveSession::finish`] — both flows must produce the same
 /// post-quit assertion semantics so the C2/C3 fixes (state-aware
@@ -240,7 +233,7 @@ pub(super) fn finish_and_assert(
     assert!(
         exit.success(),
         "scenario {scenario_id} ({cols}x{rows}): tack exited non-zero: \
-         {exit:?}\nGrid:\n{grid}",
+ {exit:?}\nGrid:\n{grid}",
         grid = session.grid_text(),
     );
     exit
@@ -292,7 +285,6 @@ impl ScenarioOutcome {
 }
 
 /// # Snapshot policy for duplicate-screen scenarios
-///
 /// When multiple scenarios visit the SAME tack screen (e.g. seven
 /// `tack_modes_*` variants that all navigate `[n] [m]`), they all
 /// produce the same `screen_id` and the same `grid_text`. Tests
@@ -301,7 +293,6 @@ impl ScenarioOutcome {
 /// scenarios sharing one `screen_id` write ONE `.snap` file. The
 /// individual scenarios still differ on the `parsed` field (which
 /// cap they assert).
-///
 /// Convention: the FIRST scenario in alphabetical order
 /// (e.g. `tack_modes_am`) is documented as the snapshot owner so the
 /// test that "owns" the insta golden is unambiguous. The rest of the
@@ -314,7 +305,6 @@ impl ScenarioRunner {
     /// 05's pinned catalog. Call at the top of every test that
     /// runs scenarios so the test skips cleanly when any of the
     /// three preconditions is missing.
-    ///
     /// AND-combines the three boolean gates via the pure
     /// [`tack_runner_available_combine`] helper. The split lets
     /// unit tests pin the AND-combine semantic without depending
@@ -326,14 +316,13 @@ impl ScenarioRunner {
 }
 
 /// Wrapper that returns a LIVE [`PtySession`] instead of just text.
+///
 /// Used by Section 07 GPU goldens to render the live session through
 /// the GPU pipeline before quitting.
-///
 /// The `_terminfo` field is intentionally unused at the call site —
 /// its only job is to outlive the session, because tack reads
 /// terminfo lazily during screen redraws and dropping the
 /// [`TerminfoEnv`] before the session would race with tack's reads.
-///
 /// **Cleanup contract:** GPU callers MUST call [`Self::finish`]
 /// after rendering. Relying on `Drop` works for FD cleanup but loses
 /// the exit-status assertion that catches tack regressions.
@@ -364,12 +353,11 @@ impl LiveSession {
     /// Snapshot/golden name for this live session: same convention
     /// as [`ScenarioOutcome::snapshot_name`] —
     /// `"<screen_id>_<cols>x<rows>"`.
-    ///
     /// Delegates to the canonical [`scenario_name`] SSOT helper.
     /// Section 07's GPU bridge MUST call this (or its
     /// [`Self::golden_name`] alias) instead of rebuilding the
     /// format literal at the call site — rebuilding at any second
-    /// site is `LEAK:scattered-knowledge`. A future change to the
+    /// site is algorithmic duplication. A future change to the
     /// naming convention propagates automatically.
     #[must_use]
     pub fn snapshot_name(&self) -> String {
@@ -391,11 +379,9 @@ impl LiveSession {
     /// the session after `finish` — `Drop` runs on the held fields
     /// the moment `finish` returns and the temp terminfo + child
     /// are reaped together.
-    ///
     /// Delegates the actual quit + assertion to
     /// [`finish_and_assert`] so this method and
     /// [`ScenarioRunner::run_at`] cannot drift on the C2/C3 fixes.
-    ///
     /// Section 07 GPU goldens call this AFTER `render_to_pixels`.
     pub fn finish(mut self) -> ExitStatus {
         finish_and_assert(

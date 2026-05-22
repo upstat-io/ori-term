@@ -8,7 +8,7 @@
 //! [`project_per_client_pure`] for the projection skeleton and apply the
 //! returned [`PendingImageMutations`] post-queue-success.
 //!
-//! See: bug-tracker/plans/BUG-06-072/
+//! See:
 
 use std::collections::HashSet;
 
@@ -22,12 +22,10 @@ use super::super::connection::ClientConnection;
 use super::super::snapshot::SnapshotCache;
 
 /// Deferred `sent_images` mutations to apply ONLY after a queue succeeds.
-///
 /// [`project_per_client_pure`] produces this side-table; callers apply via
 /// [`Self::apply_to`] AFTER `conn.queue_frame(...)` returns `Ok(())`. Failed
 /// queues drop the mutations and the trailing-edge flush retries against
 /// the latest snapshot.
-/// See: bug-tracker/plans/BUG-06-072/
 pub(in crate::server) struct PendingImageMutations {
     /// When `Some(pane_id)`, clear that pane's `sent_images` before applying
     /// `mark_sent` (set when `images_dirty == true` — server is resending
@@ -54,20 +52,17 @@ impl PendingImageMutations {
 }
 
 /// Pure (no-mutation) per-client snapshot projection.
-///
 /// Reads `conn` to compute `needed_ids` (placements whose pixel data the
 /// client hasn't received yet) but does NOT mutate `conn.sent_images` — the
 /// caller applies the returned [`PendingImageMutations`] AFTER successfully
 /// queuing the projected snapshot. This pre-queue-mutation deferral is the
 /// success-only contract: a failed queue MUST NOT leave stale
 /// `sent_images` state that the trailing-edge flush would otherwise skip.
-///
 /// Single SSOT for the per-client projection skeleton across both call
 /// sites — `project_and_queue_per_client` (push side — applies mutations
 /// inline on queue success) AND the dispatch RPC handlers (Subscribe /
 /// `GetPaneSnapshot` — return mutations via `DispatchResult` for the
 /// caller to apply after `conn.queue_frame` on the response succeeds).
-/// See: bug-tracker/plans/BUG-06-072/
 pub(in crate::server) fn project_per_client_pure(
     pane_id: PaneId,
     snapshot: &PaneSnapshot,
@@ -101,6 +96,7 @@ pub(in crate::server) fn project_per_client_pure(
                 data: arc.data.to_vec(),
                 width: arc.width,
                 height: arc.height,
+                pixel_generation: arc.pixel_generation,
             });
         } else {
             let cid_repr = cid.map_or_else(|| "rpc".to_string(), |c| c.to_string());

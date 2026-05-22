@@ -2,14 +2,14 @@
 //! every reply ori_term emits that notcurses-info's `display_logo()`
 //! gate depends on.
 //!
-//! See: bug-tracker/plans/BUG-06-073/
+//! See:
 //!
 //! Gate chain (per `notcurses/src/info/main.c:524-530` +
 //! `notcurses/src/lib/notcurses.c:1156-1161`):
 //!
 //! ```c
 //! if(notcurses_canpixel(nc)){
-//!     display_logo(stdn, path);  // wordmark rendering path
+//! display_logo(stdn, path); // wordmark rendering path
 //! }
 //! // canpixel returns nc->tcache.pixel_implementation iff
 //! // tcache.cellpxy != 0 && tcache.cellpxx != 0
@@ -133,8 +133,6 @@ fn extract_xtsmgraphics_sixel_geometry(stream: &[u8]) -> Option<(u32, u32)> {
 /// Regression: `\x1b[c` (DA1) reply must be present. notcurses uses DA1
 /// as the end-of-handshake marker; without it notcurses blocks waiting
 /// for the reply and never proceeds to `display_logo()`.
-///
-/// See: bug-tracker/plans/BUG-06-073/
 #[test]
 fn notcurses_info_replies_include_da1() {
     let Some(stream) = replay_and_collect_replies() else {
@@ -144,7 +142,7 @@ fn notcurses_info_replies_include_da1() {
         find_subslice(&stream, b"\x1b[?64;6;4c").is_some()
             || find_subslice(&stream, b"\x1b[?6").is_some(),
         "DA1 reply (\\x1b[?64;6;4c) missing from notcurses-info handshake replies. \
-         Full stream:\n{:?}",
+ Full stream:\n{:?}",
         String::from_utf8_lossy(&stream)
     );
 }
@@ -153,8 +151,6 @@ fn notcurses_info_replies_include_da1() {
 /// answered with `\x1b_Gi=1;OK\x1b\\` so notcurses sets
 /// `pixel_implementation = NCPIXEL_KITTY_*`. Without this reply
 /// notcurses falls through to sixel detection only.
-///
-/// See: bug-tracker/plans/BUG-06-073/
 #[test]
 fn notcurses_info_replies_include_kitty_graphics_ok() {
     let Some(stream) = replay_and_collect_replies() else {
@@ -163,7 +159,7 @@ fn notcurses_info_replies_include_kitty_graphics_ok() {
     assert!(
         find_subslice(&stream, b"\x1b_Gi=1;OK\x1b\\").is_some(),
         "Kitty graphics OK reply (\\x1b_Gi=1;OK\\x1b\\\\) missing from \
-         notcurses-info handshake replies. Full stream:\n{:?}",
+ notcurses-info handshake replies. Full stream:\n{:?}",
         String::from_utf8_lossy(&stream)
     );
 }
@@ -173,8 +169,6 @@ fn notcurses_info_replies_include_kitty_graphics_ok() {
 /// `cellpxx` from `Ph / rows` and `Pw / cols`; if either component is
 /// zero, `notcurses_check_pixel_support()` early-returns
 /// `NCPIXEL_NONE` and `display_logo()` is skipped.
-///
-/// See: bug-tracker/plans/BUG-06-073/
 #[test]
 fn notcurses_info_replies_include_nonzero_csi14t() {
     let Some(stream) = replay_and_collect_replies() else {
@@ -183,14 +177,14 @@ fn notcurses_info_replies_include_nonzero_csi14t() {
     let (h, w) = extract_csi14t_reply(&stream).unwrap_or_else(|| {
         panic!(
             "CSI 14t reply (\\x1b[4;H;Wt) missing from notcurses-info handshake \
-             replies. Full stream:\n{:?}",
+ replies. Full stream:\n{:?}",
             String::from_utf8_lossy(&stream)
         )
     });
     assert!(
         h > 0 && w > 0,
         "CSI 14t reply must have non-zero pixel dims; got h={h} w={w}. \
-         Zero dims would make notcurses cellpxy/cellpxx=0 → canpixel=false."
+ Zero dims would make notcurses cellpxy/cellpxx=0 → canpixel=false."
     );
 }
 
@@ -199,8 +193,6 @@ fn notcurses_info_replies_include_nonzero_csi14t() {
 /// This is the fallback path notcurses uses when the kitty graphics OK
 /// reply is absent — without non-zero sixel geometry, notcurses sets
 /// `pixel_implementation = NCPIXEL_NONE`.
-///
-/// See: bug-tracker/plans/BUG-06-073/
 #[test]
 fn notcurses_info_replies_include_nonzero_xtsmgraphics_sixel() {
     let Some(stream) = replay_and_collect_replies() else {
@@ -209,7 +201,7 @@ fn notcurses_info_replies_include_nonzero_xtsmgraphics_sixel() {
     let (w, h) = extract_xtsmgraphics_sixel_geometry(&stream).unwrap_or_else(|| {
         panic!(
             "XTSMGRAPHICS Pi=2 success reply (\\x1b[?2;0;W;H S) missing. \
-             Full stream:\n{:?}",
+ Full stream:\n{:?}",
             String::from_utf8_lossy(&stream)
         )
     });
@@ -222,8 +214,6 @@ fn notcurses_info_replies_include_nonzero_xtsmgraphics_sixel() {
 /// Diagnostic: dump every reply the handshake emits. Pinned as
 /// `#[test]` so it runs alongside the assertion tests above and the
 /// dump is captured in test output via `cargo test -- --nocapture`.
-///
-/// See: bug-tracker/plans/BUG-06-073/
 #[test]
 fn notcurses_info_handshake_dump() {
     let bytes = match notcurses_info_startup_bytes() {
@@ -244,7 +234,7 @@ fn notcurses_info_handshake_dump() {
             pty_count += 1;
             total_bytes += bytes.len();
             eprintln!(
-                "  [{i}] kind={:?} ({} bytes): {:?}",
+                " [{i}] kind={:?} ({} bytes): {:?}",
                 kind,
                 bytes.len(),
                 String::from_utf8_lossy(bytes),

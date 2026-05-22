@@ -8,11 +8,9 @@ use crate::session::PtySession;
 /// pin tests. Two-arm cross-platform: Unix `/bin/sh -c "sleep 10"`,
 /// Windows `cmd.exe /C "pause > NUL"` (blocks until killed on both
 /// arms).
-///
 /// Windows note: we use `pause`, an in-process `cmd.exe` builtin,
 /// rather than spawning a real subprocess like `ping.exe`. Two
 /// reasons:
-///
 /// 1. **Grandchild orphan avoidance.** Wrapping a real subprocess
 /// in `cmd.exe /C "child …"` makes the wrapper the immediate
 /// child and the real subprocess a grandchild attached to the
@@ -28,7 +26,6 @@ use crate::session::PtySession;
 /// per-test wall-clock from <1 s to 10+ s. `pause` is a pure
 /// user-mode busy-loop on console input — no network, no file
 /// I/O, no inherited resource contention.
-///
 /// `pause` consumes one byte from stdin and exits. None of the
 /// silent-long-lived consumers write to the child after spawn,
 /// so `pause` blocks for the full test duration; the
@@ -253,7 +250,6 @@ fn pty_session_repeated_spawn_drop_cycle_succeeds_on_subsequent_cmd_exe_spawn() 
     // sleep on Unix), drops each, then spawns a fresh
     // cmd.exe /C exit 0 (or /bin/sh -c "exit 0" on Unix) and asserts
     // the 6th child exits cleanly.
-    //
     // Before the fix, the 6th spawn on Windows hangs inside
     // `WaitForSingleObject` (or returns `STATUS_DLL_INIT_FAILED` /
     // 0xC0000142, depending on the host) because the prior 5 spawns
@@ -265,7 +261,6 @@ fn pty_session_repeated_spawn_drop_cycle_succeeds_on_subsequent_cmd_exe_spawn() 
     // `pair.master` at function exit, before the child was reaped;
     // the fix is to hold `pair.master` inside `PtySession` so it
     // outlives the child.
-    //
     // Cross-platform: the test exercises the same `PtySession` code
     // path on every platform. On Unix the 6th spawn always succeeds
     // even without the fix (no HPCON contract to violate), but the
@@ -339,18 +334,15 @@ fn pty_session_wait_for_any_bounded_poll_invariant() {
 /// `feed_and_flush` captures it via `take_responses` and writes it
 /// through the PTY writer using the same path it already uses for
 /// DA/DSR replies.
-///
 /// Proof-of-work: spawn a stdin-echo child in raw mode, forge an
 /// OSC 10 query into the child's stdin, then observe that after
 /// `drain_blocking` finishes, the captured-reply stream contains the
 /// canonical reply prefix.
-///
 /// Raw mode is load-bearing: the PTY line discipline defaults to
 /// ICANON + ECHOCTL, which echoes `\x1b` as the visible two-byte
 /// sequence `^[` — that is NOT a valid OSC query for VTE. `stty raw
 /// -echo` disables canonical mode and terminal-driver echo; `cat`
 /// then provides byte-exact echo from stdin to stdout.
-///
 /// Platform scope: the raw-mode `stty` + `cat` pipeline is
 /// POSIX-specific. Windows ConPTY has a different line-discipline
 /// model with no direct `stty raw` equivalent; the synchronous OSC
@@ -359,16 +351,14 @@ fn pty_session_wait_for_any_bounded_poll_invariant() {
 /// (which exercise `Term<PtyResponder>` directly, no PTY). The test
 /// function exists on every platform; only the body skips on non-Unix
 /// hosts with a loud `eprintln!`.
-///
-/// See: bug-tracker/plans/completed/BUG-06-073/
 #[test]
 fn pty_session_drain_writes_osc_responses_back() {
     #[cfg(not(unix))]
     {
         eprintln!(
             "pty_session_drain_writes_osc_responses_back: skipping on \
-             non-unix host — raw-mode PTY echo pipeline is POSIX-specific; \
-             Windows coverage lives in pty_responder sibling unit tests"
+ non-unix host — raw-mode PTY echo pipeline is POSIX-specific; \
+ Windows coverage lives in pty_responder sibling unit tests"
         );
         return;
     }
@@ -417,8 +407,8 @@ fn pty_session_drain_writes_osc_responses_back() {
         assert!(
             reply.contains("\x1b]10;rgb:"),
             "captured reply stream must contain the OSC 10 reply \
-             prefix `ESC]10;rgb:` after the round-trip — feed_and_flush \
-             failed to capture + write the sync reply. Captured: {reply:?}"
+ prefix `ESC]10;rgb:` after the round-trip — feed_and_flush \
+ failed to capture + write the sync reply. Captured: {reply:?}"
         );
     }
 }
@@ -426,7 +416,6 @@ fn pty_session_drain_writes_osc_responses_back() {
 impl PtySession {
     /// Replace the reader channel with a pre-closed one so subsequent
     /// `recv_timeout` calls see `Disconnected` immediately.
-    ///
     /// The reader thread still holds the old `tx` end; its next
     /// `tx.send()` returns `Err` and breaks the read loop — no leak.
     fn force_close_rx_for_disconnect_test(&mut self) {
@@ -441,14 +430,12 @@ fn drain_until_returns_none_immediately_on_channel_disconnect() {
     // (the reader thread has hung up because the child exited or
     // the PTY closed) returns None IMMEDIATELY, not after burning
     // the full timeout budget.
-    //
     // The earlier draft used `let Ok(chunk) =... else { continue; }`
     // which collapsed both Timeout and Disconnected into "loop
     // again," so a child that exited before the phase anchor
     // appeared would burn the full 5 s deadline before reporting
     // a (misleading) timeout. The fix distinguishes the two
     // RecvTimeoutError variants and returns None on Disconnected.
-    //
     // We directly close the channel instead of relying on timers
     // for the reader thread to observe EOF. On Windows, ConPTY
     // keeps the pipe open until the master handle drops — which
@@ -467,7 +454,7 @@ fn drain_until_returns_none_immediately_on_channel_disconnect() {
     assert!(
         captured.is_none(),
         "drain_until must return None when the needle never appears \
-         and the channel disconnects"
+ and the channel disconnects"
     );
     // The disconnect-fast-return is a 1 s upper bound (very
     // generous — the actual return should be sub-100 ms). The
@@ -477,8 +464,8 @@ fn drain_until_returns_none_immediately_on_channel_disconnect() {
     assert!(
         elapsed < Duration::from_millis(1_000),
         "drain_until must return immediately on channel disconnect, \
-         not burn the full 5 s timeout: elapsed {elapsed:?} \
-         (regression — recv_timeout's Disconnected variant is being \
-         treated like Timeout instead of returning None)"
+ not burn the full 5 s timeout: elapsed {elapsed:?} \
+ (regression — recv_timeout's Disconnected variant is being \
+ treated like Timeout instead of returning None)"
     );
 }

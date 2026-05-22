@@ -7,23 +7,23 @@
 //!
 //! # Section index
 //!
-//! | Line  | Section                                                  |
+//! | Line | Section |
 //! |-------|----------------------------------------------------------|
-//! |  212+ | Lifecycle tests (spawn, shutdown, drop)                  |
-//! |  419+ | Section 02: VTE parsing through IO thread                |
-//! |  581+ | Section 03: snapshot production                          |
-//! |  735+ | Section 05: resize handling                              |
-//! | 1002+ | Section 06: command dispatch (scroll/theme/cursor/etc.)  |
-//! | 1280+ | Section 06: search, mark mode, selection                 |
-//! | 1489+ | Snapshot publication races between parse chunks          |
-//! | 1519+ | Section 08.4: threading stress                           |
-//! | 1765+ | Section 08: resize quality                               |
-//! | 1834+ | Section 03.5d: reply-return path                         |
-//! | 1987+ | Section 06.5: sync timeout + edge cases                  |
-//! | 2383+ | Section 09.2: Mode 2026 parser → mode_cache bridge       |
-//! | 2938+ | Bounded byte channel + symmetric IO-thread shrink        |
-//! | 3248+ | §03 matrix: bounded cmd_tx + atomic-coalescing resize    |
-//! | 3829+ | §03 cross-feature interaction tests (Round 1 §06 F1)     |
+//! | 212+ | Lifecycle tests (spawn, shutdown, drop) |
+//! | 419+ | Section 02: VTE parsing through IO thread |
+//! | 581+ | Section 03: snapshot production |
+//! | 735+ | Section 05: resize handling |
+//! | 1002+ | Section 06: command dispatch (scroll/theme/cursor/etc.) |
+//! | 1280+ | Section 06: search, mark mode, selection |
+//! | 1489+ | Snapshot publication races between parse chunks |
+//! | 1519+ | Section 08.4: threading stress |
+//! | 1765+ | Section 08: resize quality |
+//! | 1834+ | Section 03.5d: reply-return path |
+//! | 1987+ | Section 06.5: sync timeout + edge cases |
+//! | 2383+ | Section 09.2: Mode 2026 parser → mode_cache bridge |
+//! | 2938+ | Bounded byte channel + symmetric IO-thread shrink |
+//! | 3248+ | §03 matrix: bounded cmd_tx + atomic-coalescing resize |
+//! | 3829+ | §03 cross-feature interaction tests (Round 1 §06 F1) |
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
@@ -42,7 +42,6 @@ use super::snapshot::SnapshotDoubleBuffer;
 use super::{IoThreadConfig, PaneIoCommand, PaneIoHandle, PaneIoThread, new_with_handle};
 
 /// Test helper: pack and store a pending resize on the slot.
-///
 /// Stand-in for `PaneIoHandle::send_resize` when the test exercises a
 /// `PaneIoThread` directly without a paired handle.
 fn pack_then_store(slot: &Arc<AtomicU64>, rows: u16, cols: u16) {
@@ -55,7 +54,6 @@ use crate::pty::spawn::ExitStatus;
 
 /// Test helper: dummy pane_id + live channels for constructing
 /// `PaneIoThread` in synchronous tests.
-///
 /// The `_keep_alive` fields are leaked via a `OnceLock<Vec<..>>` so the
 /// channels stay open for the duration of the test process — leaking
 /// is intentional and preferable to `std::mem::forget` call sites
@@ -495,7 +493,6 @@ fn mode_cache_updated_after_parse() {
 }
 
 /// `handle_bytes_chunked` drains commands between 64KB chunks.
-///
 /// Pre-queues Shutdown, then passes a 200KB buffer. Proves early exit by
 /// comparing scrollback eviction against a full-parse baseline: if
 /// `drain_commands()` fires between chunks, fewer lines are evicted.
@@ -558,7 +555,7 @@ fn handle_bytes_chunked_drains_commands() {
     assert!(
         partial_eviction < full_eviction,
         "early exit should parse fewer lines than full buffer: \
-         partial={partial_eviction}, full={full_eviction}"
+ partial={partial_eviction}, full={full_eviction}"
     );
 }
 
@@ -653,7 +650,6 @@ fn produce_snapshot_resets_damage() {
 }
 
 /// `maybe_produce_snapshot()` respects synchronized output (Mode 2026).
-///
 /// When `TermMode::SYNC_UPDATE` is set, snapshot publication is deferred
 /// even though grid mutations dispatch inline. Pinning the SSOT-correct
 /// gate (mode flag, not byte buffer) per §03.
@@ -705,7 +701,6 @@ fn produce_snapshot_wakeup_only_when_dirty() {
 }
 
 /// Shutdown flushes any parsed-but-unpublished state.
-///
 /// Bytes processed in the `select!` arm must be snapshot-published
 /// even if shutdown is queued before the next `maybe_produce_snapshot()`.
 #[test]
@@ -760,7 +755,6 @@ fn produce_snapshot_fires_wakeup() {
 // --- Resize tests (Section 05) ---
 
 /// Helper: create a sync thread with a command sender for testing.
-///
 /// Bounded to match production shape (). Tests using this
 /// fixture do NOT exercise saturation — they drive `drain_commands`
 /// directly with a small command set — so production-shape parity
@@ -900,9 +894,8 @@ fn test_spawn_size_resize_is_deduped() {
     );
 }
 
-/// Section 03.9 Phase 4 / TPR-4: process_resize routes to
+/// Section 03.9 Phase 4 / : process_resize routes to
 /// `adopted_signal.resize()` when `pty_control` is `None`.
-///
 /// Property: install a stub `AdoptedSignal` (which always errors on
 /// resize) and verify that process_resize:
 /// 1. Calls the grid reflow path (terminal dimensions update).
@@ -932,7 +925,7 @@ fn process_resize_routes_through_adopted_signal_when_pty_control_none() {
     assert_eq!(
         t.last_pty_size, new_packed,
         "process_resize must update last_pty_size even when both \
-         pty_control is None and adopted_signal returns an error",
+ pty_control is None and adopted_signal returns an error",
     );
     assert_eq!(
         t.terminal.grid().lines(),
@@ -1544,7 +1537,6 @@ fn handle_bytes_chunked_publishes_intermediate_snapshots() {
 // --- Section 08.4 threading stress tests ---
 
 /// IO thread panic does not crash the main thread or hang shutdown.
-///
 /// Spawns a thread that panics after receiving a command, wraps it in a
 /// `PaneIoHandle`, and verifies that `shutdown()` completes without hanging
 /// or propagating the panic. Tests the `let _ = handle.join()` error-swallowing
@@ -1713,7 +1705,6 @@ fn test_multiple_panes_concurrent_resize() {
 // Testing`) AND assumed unbounded `cmd_tx`. Both assumptions are
 // invalid post-fix: `cmd_tx` is bounded(`CMD_CHANNEL_CAPACITY`) and
 // drops the overflow with `log::error!`. Replacement coverage:
-//
 // - `cmd_tx_at_capacity_returns_full_error_synchronously` — pins the
 // bounded-saturation contract synchronously (no wall-clock).
 // - `drain_after_three_atomic_stores_processes_only_last` +
@@ -1782,15 +1773,14 @@ fn test_snapshot_swap_under_contention() {
     assert!(
         total_consumes > 0,
         "consumer must observe at least one snapshot \
-         (during={consume_count}, post-contention={final_swap}, \
-         produced={produce_count})"
+ (during={consume_count}, post-contention={final_swap}, \
+ produced={produce_count})"
     );
 }
 
 // --- Section 08 resize quality verification ---
 
 /// Rapid resize: 50 successive resizes with varying dimensions.
-///
 /// Verifies: final grid matches last resize, no orphaned commands,
 /// snapshot reflects correct final dimensions.
 #[test]
@@ -1826,7 +1816,6 @@ fn test_rapid_resize_50_cycles() {
 }
 
 /// Resize during active byte processing: content + resize interleaved 50 times.
-///
 /// Verifies no panic, final dimensions correct, text preserved through reflows.
 #[test]
 fn test_resize_during_sustained_output() {
@@ -1860,7 +1849,6 @@ fn test_resize_during_sustained_output() {
 
 /// Register a `ClipboardLoad` pending response, fulfill the token, poll,
 /// and verify the `Effect::Pty` reply contains correct base64 content.
-///
 /// Pins the production reply-return path activated by effect-cutover
 /// §01.1: register-poll-fulfill round trip on `Term<QueueingEffectSink>`.
 #[test]
@@ -2010,10 +1998,8 @@ fn multiple_pending_responses_polled_independently() {
 }
 
 // --- Section 06.5: Sync timeout + edge case test matrix ---
-//
 // BSU = \x1b[?2026h (begin synchronized update)
 // ESU = \x1b[?2026l (end synchronized update / commit)
-//
 // These tests exercise handle_sync_timeout() directly (synchronous)
 // except run_loop_sync_timeout_fires which uses the spawned run() loop.
 
@@ -2063,7 +2049,6 @@ fn make_sync_thread_generic<S: oriterm_core::effect::EffectSink + 'static>(
 
 /// Property: timeout publishes the inline-mutated grid + clears
 /// SYNC_UPDATE.
-///
 /// Bytes inside the sync window dispatched inline as they arrived,
 /// mutating the grid immediately. The timeout path's job is to clear
 /// the SYNC_UPDATE gate and publish the accumulated state.
@@ -2366,7 +2351,7 @@ fn run_loop_sync_timeout_fires() {
         assert!(
             Instant::now() < deadline,
             "IO thread sync timeout did not fire within 5s deadline; \
-             run-loop deadline arm or handle_sync_timeout is broken"
+ run-loop deadline arm or handle_sync_timeout is broken"
         );
         std::thread::sleep(Duration::from_millis(20));
     }
@@ -2409,7 +2394,6 @@ fn no_timeout_when_not_in_sync() {
 
 /// Bridge cell: `CSI ? 2026 h` propagates `TermMode::SYNC_UPDATE` into
 /// `mode_cache` via `post_parse_housekeeping()`.
-///
 /// Proves the parser → mode_cache → publication-gate SSOT contract is
 /// live. Section 06 owns the apex tests (publication suppression +
 /// timeout-abort); Section 09 owns only this bridge proving the bit
@@ -2441,7 +2425,6 @@ fn bridge_mode_2026_propagates_to_mode_cache() {
 
 /// Bridge cell: `CSI ? 2026 l` clears `TermMode::SYNC_UPDATE` from
 /// `mode_cache`.
-///
 /// Completes the round-trip bridge: set → verify set → reset → verify
 /// cleared. Without this, a broken DECRST path could leave stale bits
 /// in the cache, causing the publication gate to suppress snapshots
@@ -2472,7 +2455,6 @@ fn bridge_mode_2026_reset_clears_mode_cache() {
 // ── DECBKM (mode 67) bridge cells ──────────────────────────────────
 
 /// Bridge cell: `CSI ? 67 h` propagates `TermMode::DECBKM` into `mode_cache`.
-///
 /// Section 09.4b: proves the parser → `post_parse_housekeeping()` →
 /// `mode_cache` SSOT contract is live for mode 67. Without this bridge,
 /// the key encoder on the main thread would never see DECBKM.
@@ -2543,7 +2525,6 @@ fn bridge_decnkm_propagates_to_mode_cache() {
 }
 
 // EOF + ordering + multi-chunk pins (effect-cutover §01.1 Phase J)
-//
 // These tests pin the load-bearing invariants of `handle_pty_eof` and
 // `handle_bytes_chunked` against the production code path (not the
 // VoidEffectSink synchronous helpers). They use a dedicated rig that
@@ -2552,7 +2533,6 @@ fn bridge_decnkm_propagates_to_mode_cache() {
 // byte_rx EOF, and so `mux_rx` and `double_buffer` stay observable.
 
 /// Test rig for `handle_pty_eof` + multi-chunk + ordering scenarios.
-///
 /// Holds the test side of every channel so the test controls EOF timing,
 /// exit-status delivery, and snapshot observation.
 struct EofTestRig {
@@ -2796,7 +2776,6 @@ fn final_snapshot_precedes_pane_exited() {
 /// before the final snapshot lands in the double buffer. Inverse phrasing
 /// of `final_snapshot_precedes_pane_exited` — both pins exist so the
 /// regression is impossible to commit even if one test is later weakened.
-///
 /// Polls both observation sources in lockstep: snapshot publication
 /// (visible via `double_buffer.swap_front` returning cells matching the
 /// marker) MUST be observable BEFORE `PaneExited` is received via
@@ -2836,7 +2815,7 @@ fn pane_exited_does_not_precede_final_snapshot() {
             assert!(
                 snapshot_observed_with_marker,
                 "PaneExited arrived before the final snapshot was visible — \
-                 ordering invariant violated"
+ ordering invariant violated"
             );
             drop(rig.child_exit_tx);
             rig.join.join().expect("IO thread joined cleanly");
@@ -2853,7 +2832,6 @@ fn pane_exited_does_not_precede_final_snapshot() {
 /// `handle_bytes_chunked` loop. A 65 KB forwarded read containing
 /// bell-producing bytes (just over `MAX_PARSE_CHUNK = 64 KB`) routes
 /// ALL of them through the router across at least 2 chunks.
-///
 /// If the drain only fired at the end of the outer `handle_bytes_chunked`
 /// loop, the effects buffer would accumulate the full 65 K entries
 /// before draining; the per-chunk drain bounds it to <= 64 K.
@@ -2903,7 +2881,6 @@ fn multi_chunk_parse_drains_between_chunks() {
 /// `never()` swap-out in the disconnected arm, `select!` would pick
 /// that arm every iteration and saturate a core until shutdown
 /// arrived.
-///
 /// We assert two things after dropping `child_exit_tx`:
 /// 1. A subsequent `Shutdown` command still joins quickly (the spin
 /// must not starve `cmd_rx` delivery).
@@ -2927,7 +2904,7 @@ fn child_exit_disconnect_does_not_spin_loop() {
     assert!(
         elapsed < Duration::from_secs(2),
         "Shutdown after child_exit_rx disconnect took {elapsed:?} — \
-         IO thread likely spinning on the disconnected select! arm"
+ IO thread likely spinning on the disconnected select! arm"
     );
     drop(rig.byte_tx);
     drop(rig.mux_rx);
@@ -2953,7 +2930,7 @@ fn io_wake_disconnect_does_not_spin_loop() {
     assert!(
         elapsed < Duration::from_secs(2),
         "Shutdown after io_wake_rx disconnect took {elapsed:?} — \
-         IO thread likely spinning on the disconnected select! arm"
+ IO thread likely spinning on the disconnected select! arm"
     );
     drop(rig.byte_tx);
     drop(rig.mux_rx);
@@ -2963,7 +2940,6 @@ fn io_wake_disconnect_does_not_spin_loop() {
 // --- : bounded byte channel + symmetric IO-thread shrink ---
 
 /// Helper: fill a `RenderableContent` with `n` placeholder cells.
-///
 /// Mirrors `snapshot/tests.rs::content_with_cells`. Used to drive the
 /// `RenderableContent::maybe_shrink` capacity gate (`cap > 4*len &&
 /// cap > 4096`).
@@ -2987,13 +2963,11 @@ fn populate_renderable(buf: &mut RenderableContent, n: usize) {
 }
 
 /// Pin 1 — bounded byte-channel capacity.
-///
 /// Regression: pre-fix the byte channel was
 /// `crossbeam_channel::unbounded()`, so a flooded reader could grow the
 /// queue heap without bound. Pins that `try_send` returns
 /// `TrySendError::Full` exactly when the queue holds
 /// `BYTE_CHANNEL_CAPACITY` messages.
-/// See: bug-tracker/plans//section-03-tdd-matrix.md §"Semantic pins" Pin 1.
 #[test]
 fn byte_channel_capacity_blocks_at_bound() {
     let (_thread, handle) = make_pair();
@@ -3013,10 +2987,8 @@ fn byte_channel_capacity_blocks_at_bound() {
 }
 
 /// Pin 2 — `byte_tx` reports `BYTE_CHANNEL_CAPACITY` via `Sender::capacity`.
-///
 /// Regression:. Pins both the cap value AND the bounded shape
 /// (an unbounded `Sender::capacity` returns `None`).
-/// See: bug-tracker/plans//section-03-tdd-matrix.md §"Semantic pins" Pin 2.
 #[test]
 fn byte_tx_capacity_reports_bound() {
     let (_thread, handle) = make_pair();
@@ -3029,13 +3001,11 @@ fn byte_tx_capacity_reports_bound() {
 }
 
 /// Pin 4 — Drop counter increments on pane close within deadline.
-///
 /// Regression:. Spawns N IO threads, drops their handles, and
 /// polls the cfg-gated `drop_counter` until it reaches N within a 5 s
 /// safety deadline (-Clock-Free Testing`
 /// — poll the condition, not the clock). Pins that `PaneIoHandle::Drop`
 /// runs `shutdown()` then increments the counter.
-/// See: bug-tracker/plans//section-03-tdd-matrix.md §"Semantic pins" Pin 4.
 #[test]
 fn drop_counter_reaches_n_within_deadline() {
     let n = 4usize;
@@ -3063,14 +3033,12 @@ fn drop_counter_reaches_n_within_deadline() {
 }
 
 /// Pin 3a — `maybe_shrink_buffers` shrinks `snapshot_buf`.
-///
 /// Regression:. Pre-fix the IO thread had no symmetric
 /// `maybe_shrink` discipline against the main-thread side; after a
 /// flood, `snapshot_buf` retained peak capacity indefinitely. Populates
 /// the buffer past the shrink-gate threshold (cap > 4*len && cap > 4096),
 /// truncates to a small viewport, calls the helper, and asserts capacity
 /// reduces without losing content.
-/// See: bug-tracker/plans//section-03-tdd-matrix.md §"Semantic pins" Pin 3.
 #[test]
 fn maybe_shrink_buffers_shrinks_snapshot_buf() {
     let mut t = make_sync_thread();
@@ -3099,15 +3067,13 @@ fn maybe_shrink_buffers_shrinks_snapshot_buf() {
 }
 
 /// Regression guard — `effects_buf` capacity is preserved by `maybe_shrink_buffers`.
-///
 /// Regression:. The drain pattern in
 /// `oriterm_mux/src/pane/io_thread/effect_router/mod.rs` always leaves
 /// `effects_buf.len() == 0` with retained capacity. A naïve
 /// `maybe_shrink_vec` would gate-fire (cap > 4*0 && cap > 4096) and
 /// `shrink_to(0)`, forcing reallocation on every effect push during the
 /// next flood. Pins that the helper deliberately excludes effects_buf —
-/// /tpr-review round 1 critical finding.
-/// See: bug-tracker/plans//section-03-tdd-matrix.md §"Negative pins" pin "effects_buf preserved".
+/// tpr-review round 1 critical finding.
 #[test]
 fn effects_buf_capacity_preserved_after_shrink() {
     let mut t = make_sync_thread();
@@ -3130,16 +3096,14 @@ fn effects_buf_capacity_preserved_after_shrink() {
 }
 
 /// Regression guard 2 — Drop accounting lives on `PaneIoHandle`, not on `EffectSink`.
-///
-/// Regression:. /tp-help round 1 ( + ) rejected
+/// Regression:. tp-help round 1 ( + ) rejected
 /// 's proposal to track lifecycle via the `EffectSink` trait —
 /// per-pane lifecycle accounting in a generic effect-routing abstraction
-/// is `LEAK:layer-bleeding`
+/// is ``
 /// §Finding Categories`. This pin is type-level: a minimal `EffectSink`
 /// impl with only `push` and `drain_into` compiles unchanged — proving
 /// no required lifecycle method leaked into the trait. Drop accounting
 /// is installed via `PaneIoHandle::set_drop_counter` (cfg(test) field).
-/// See: bug-tracker/plans//section-03-tdd-matrix.md §"Negative pins" pin 2.
 #[test]
 fn effect_sink_remains_lifecycle_pure() {
     use oriterm_core::effect::Effect;
@@ -3165,8 +3129,7 @@ fn effect_sink_remains_lifecycle_pure() {
 
 /// Regression guard 3 — `maybe_shrink_buffers` runs from the OUTER run loop,
 /// not from the `select!` `default(timeout)` arm.
-///
-/// Regression:. /tp-help round 1 ( + ) rejected
+/// Regression:. tp-help round 1 ( + ) rejected
 /// anchoring the shrink call to the `select!` default arm: on an idle
 /// pane that arm fires once per `IDLE_WAKE_CEILING = 24h`, so a default-
 /// arm anchor would never trigger in observable time. Pin spawns a real
@@ -3176,7 +3139,6 @@ fn effect_sink_remains_lifecycle_pure() {
 /// refactor moves `maybe_shrink_buffers()` to the `default(timeout)`
 /// arm or removes the call entirely, the counter stays at 0 and this
 /// test fails.
-/// See: bug-tracker/plans//section-03-tdd-matrix.md §"Negative pins" pin 3.
 #[test]
 fn maybe_shrink_runs_in_run_loop() {
     let shutdown = Arc::new(AtomicBool::new(false));
@@ -3234,14 +3196,12 @@ fn maybe_shrink_runs_in_run_loop() {
 }
 
 /// Edge case — `maybe_shrink_buffers` runs cleanly while sync output is active.
-///
 /// Regression:. Mode 2026 sync (BSU pending, ESU not yet)
 /// keeps `TermMode::SYNC_UPDATE` set and forces
 /// `maybe_produce_snapshot()` to defer. The shrink helper touches
 /// IO-thread-owned `snapshot_buf` + the lock-protected `slot.front`,
 /// never the VTE processor's parser timer — so it must be safe to
 /// call mid-sync without mutating sync state.
-/// See: bug-tracker/plans//section-03-tdd-matrix.md §"Edge cases" — sync-active.
 #[test]
 fn maybe_shrink_during_sync_active() {
     let (mut t, _wakeup_count) = make_sync_thread_with_wakeup();
@@ -3271,19 +3231,15 @@ fn maybe_shrink_during_sync_active() {
 }
 
 // --- §03 matrix: bounded cmd_tx + atomic-coalescing resize ---
-//
 // Pins the cmd_tx-bounding contract, the pending_resize tag-bit
 // encoding, the drain-time apply ordering, the wake topology, the
 // shutdown-saturation belt-and-suspenders, and the SSOT classification
 // for reply-bearing variants. Reverting any single piece breaks at
 // least one of these tests.
-// See: bug-tracker/plans//section-03-tdd-matrix.md.
 
 /// Pin the bounded-cmd_tx contract: a fresh handle reports a finite
 /// capacity. Replaces the unbounded shape that motivated.
-///
 /// Regression: exact failing case `cmd_tx_is_bounded`.
-/// See: bug-tracker/plans//section-03-tdd-matrix.md.
 #[test]
 fn new_with_handle_uses_bounded_cmd_tx() {
     let (_thread, handle) = make_pair();
@@ -3295,9 +3251,7 @@ fn new_with_handle_uses_bounded_cmd_tx() {
 }
 
 /// Pin the sentinel: `PENDING_RESIZE_NONE` decodes to `None`.
-///
 /// Regression: edge case `pending_resize_none_sentinel`.
-/// See: bug-tracker/plans//section-03-tdd-matrix.md.
 #[test]
 fn pending_resize_none_sentinel_means_no_pending() {
     assert!(unpack_pending_resize(PENDING_RESIZE_NONE).is_none());
@@ -3306,9 +3260,7 @@ fn pending_resize_none_sentinel_means_no_pending() {
 /// Pin the tag-bit at the upper boundary: `(u16::MAX, u16::MAX)`
 /// round-trips without truncation and the tag bit (bit 48) does not
 /// collide with the row/col fields.
-///
 /// Regression: edge case `pack_pending_resize_max_dimensions_round_trip`.
-/// See: bug-tracker/plans//section-03-tdd-matrix.md §04 review round 0 F2.
 #[test]
 fn pack_pending_resize_max_dimensions_round_trip() {
     let packed = pack_pending_resize(u16::MAX, u16::MAX);
@@ -3319,9 +3271,7 @@ fn pack_pending_resize_max_dimensions_round_trip() {
 /// distinctly from the `PENDING_RESIZE_NONE` sentinel. Without the
 /// tag bit, `pack(0,0) == 0 == PENDING_RESIZE_NONE`, and a legitimate
 /// resize-to-zero request would be silently swallowed.
-///
 /// Regression: closes §04 review round 0 F2.
-/// See: bug-tracker/plans//section-03-tdd-matrix.md.
 #[test]
 fn pack_pending_resize_zero_zero_round_trip() {
     let packed = pack_pending_resize(0, 0);
@@ -3334,9 +3284,7 @@ fn pack_pending_resize_zero_zero_round_trip() {
 
 /// Pin the encoding across a representative set of `(rows, cols)`
 /// values: every input round-trips through pack → unpack.
-///
 /// Regression: edge case `pack_pending_resize_arbitrary_round_trip`.
-/// See: bug-tracker/plans//section-03-tdd-matrix.md.
 #[test]
 fn pack_pending_resize_arbitrary_round_trip() {
     let cases = [
@@ -3362,8 +3310,7 @@ fn pack_pending_resize_arbitrary_round_trip() {
 /// round-trip over the same case set, plus the explicit sentinel
 /// check. Compile-time enforces `pub(crate)` visibility on the
 /// helpers.
-///
-/// Regression: closes §04 review round 1 Codex F6.
+/// Regression: closes §04 review round 1 .
 #[test]
 fn pack_unpack_pending_resize_is_pure_function() {
     let cases = [
@@ -3386,11 +3333,9 @@ fn pack_unpack_pending_resize_is_pure_function() {
 /// Pin the saturation contract synchronously: `cmd_tx.try_send`
 /// returns `Err(TrySendError::Full(_))` exactly at capacity. Wall-
 /// clock-free per `tests.md §Wall-Clock-Free Testing`.
-///
 /// Uses `make_pair()` (no spawned IO thread) per §04 review round 4
-/// Gemini F1 — a live thread would async-drain `cmd_tx` and break the
+/// — a live thread would async-drain `cmd_tx` and break the
 /// saturation assertion.
-///
 /// Regression: exact failing case
 /// `cmd_tx_at_capacity_returns_full_error_synchronously`. Replaces
 /// the wall-clock-dependent `test_command_channel_flood`.
@@ -3413,7 +3358,6 @@ fn cmd_tx_at_capacity_returns_full_error_synchronously() {
 /// Pin that a pre-drain atomic store reaches `process_resize` via
 /// `apply_pending_resize`. Drives `drain_commands()` directly so
 /// crossbeam's `select!` non-determinism is irrelevant.
-///
 /// Regression: cross-pattern coverage
 /// `drain_after_atomic_store_processes_resize`.
 #[test]
@@ -3429,7 +3373,6 @@ fn drain_after_atomic_store_processes_resize() {
 /// the latest `(rows, cols)` reaches `process_resize`. Replacement
 /// for the original `test_resize_coalescing` against the now-removed
 /// `PaneIoCommand::Resize` variant.
-///
 /// Regression: cross-pattern coverage
 /// `drain_after_three_atomic_stores_processes_only_last`.
 #[test]
@@ -3450,10 +3393,9 @@ fn drain_after_three_atomic_stores_processes_only_last() {
 /// scroll/mark-dirty commands land together, the resize is applied
 /// BEFORE the other commands so any reply-bearing command later in
 /// the same drain reads post-resize geometry.
-///
 /// Regression: cross-pattern coverage
 /// `drain_applies_pending_resize_before_other_commands`. Per §04
-/// review round 0 F1 and Round 1 Codex F2 + Gemini F1.
+/// review round 0 F1 and review pass F2 + .
 #[test]
 fn drain_applies_pending_resize_before_other_commands() {
     let (mut t, cmd_tx) = make_sync_thread_with_cmd_tx();
@@ -3477,7 +3419,6 @@ fn drain_applies_pending_resize_before_other_commands() {
 /// `PENDING_RESIZE_NONE` sentinel, `apply_pending_resize` MUST NOT
 /// invoke `process_resize`. Verified by checking that
 /// `last_pty_size` is unchanged.
-///
 /// Regression: cross-pattern regression guard
 /// `drain_with_no_pending_resize_does_not_call_process_resize`.
 #[test]
@@ -3494,8 +3435,7 @@ fn drain_with_no_pending_resize_does_not_call_process_resize() {
 /// Pin the resize-then-Shutdown drain ordering: a pending resize is
 /// applied before `Shutdown` short-circuits the drain. Replacement
 /// for the rejected "shutdown wins over pending_resize" formulation
-/// per §04 review round 1 Codex F2.
-///
+/// per §04 review round 1 .
 /// Regression: cross-pattern coverage
 /// `shutdown_after_pending_resize_applies_resize_then_terminates`.
 #[test]
@@ -3522,7 +3462,6 @@ fn shutdown_after_pending_resize_applies_resize_then_terminates() {
 /// Step 2's per-iteration re-flush AND the SnapshotNow FIFO barrier
 /// at `commands/mod.rs:45-56` (snapshot reply is sent only AFTER
 /// post-resize state is published to the double buffer).
-///
 /// Regression: property
 /// `drain_commands_applies_pending_resize_before_reply_bearing_commands`.
 /// Round 1 code-TPR F1 — the prior MarkAllDirty proxy did not
@@ -3563,8 +3502,7 @@ fn drain_commands_applies_pending_resize_before_reply_bearing_commands() {
 /// complement to the live-thread probabilistic crossbeam-arm pin.
 /// Drives `drain_commands` directly with a pre-staged slot and
 /// command so non-determinism is irrelevant.
-///
-/// Regression: closes §04 review round 4 Codex F4.
+/// Regression: closes §04 review round 4 .
 #[test]
 fn drain_commands_applies_pending_resize_before_non_reply_command() {
     let (mut t, cmd_tx) = make_sync_thread_with_cmd_tx();
@@ -3592,7 +3530,6 @@ fn drain_commands_applies_pending_resize_before_non_reply_command() {
 /// WITHOUT joining (would deadlock at the barrier), then releases the
 /// barrier. The IO thread drains the saturated queue, observes the
 /// shutdown flag, and exits deterministically.
-///
 /// Regression: Q4 belt-and-suspenders — uses loop-entry `Barrier` so
 /// saturation is staged before the IO thread begins draining.
 #[test]
@@ -3662,8 +3599,7 @@ fn shutdown_under_cmd_tx_saturation_still_terminates() {
 /// under `cmd_tx` saturation, with the IO thread held at the loop-entry
 /// barrier. Pins the `matches!(&cmd, PaneIoCommand::Shutdown)` special-
 /// case in `send_command`.
-///
-/// Regression: closes §04 review round 4 Codex F3 — uses loop-entry
+/// Regression: closes §04 review round 4 — uses loop-entry
 /// `Barrier` for deterministic shutdown-via-send_command under saturation.
 #[test]
 fn send_command_shutdown_under_cmd_tx_saturation_still_terminates() {
@@ -3718,8 +3654,7 @@ fn send_command_shutdown_under_cmd_tx_saturation_still_terminates() {
 /// `select!` within one iteration. Simulates the writer-thread exit
 /// path: set `shutdown` AND `try_send` on `io_wake_tx`. Pins §05
 /// Step 6C's writer-thread wake plumbing.
-///
-/// Regression: closes §04 review round 5 Codex F1 + F2.
+/// Regression: closes §04 review round 5 + F2.
 /// Wall-clock-free per `tests.md §Wall-Clock-Free Testing`: poll
 /// `JoinHandle::is_finished()` instead of asserting on
 /// `start.elapsed()`.
@@ -3742,9 +3677,8 @@ fn idle_io_thread_observes_writer_thread_shutdown_within_one_iteration() {
 /// returns `true`; every non-reply variant returns `false`. A
 /// future contributor adding a new reply-bearing variant without
 /// updating the predicate fails this test.
-///
 /// Regression: SSOT exhaustiveness guard, closes §04
-/// review round 2 Opencode F2.
+/// review round 2 .
 #[test]
 fn is_reply_bearing_predicate_matches_reply_field_presence() {
     use oriterm_core::grid::StableRowIndex;
@@ -3852,7 +3786,6 @@ fn is_reply_bearing_predicate_matches_reply_field_presence() {
 }
 
 // --- §03 cross-feature interaction tests (Round 1 §06 F1) ---
-//
 // The §03 test matrix enumerated four cross-feature interaction tests
 // that exercise the live IO thread under concurrent send_resize +
 // reply-bearing or flooded inputs. They were missed in the initial
@@ -3865,7 +3798,6 @@ fn is_reply_bearing_predicate_matches_reply_field_presence() {
 /// iteration, observable via a snapshot whose dimensions match the
 /// stored geometry. Wall-clock-free: poll the snapshot until it
 /// matches; a 5s safety deadline surfaces hangs.
-///
 /// Regression: cross-feature
 /// `live_io_thread_atomic_store_wakes_within_one_iteration`.
 #[test]
@@ -3881,7 +3813,7 @@ fn live_io_thread_atomic_store_wakes_within_one_iteration() {
         assert!(
             Instant::now() < deadline,
             "IO thread did not observe send_resize within deadline; \
-             pending_resize wake topology is broken"
+ pending_resize wake topology is broken"
         );
         std::thread::sleep(Duration::from_millis(20));
     }
@@ -3893,7 +3825,6 @@ fn live_io_thread_atomic_store_wakes_within_one_iteration() {
 /// geometry (last-writer-wins on the atomic slot, never dropped
 /// despite cmd_tx pressure). Wall-clock-free: condition-poll the
 /// snapshot.
-///
 /// Regression: cross-feature
 /// `resize_during_pty_flood_preserves_final_geometry`.
 #[test]
@@ -3928,7 +3859,7 @@ fn resize_during_pty_flood_preserves_final_geometry() {
         assert!(
             Instant::now() < deadline,
             "final geometry (50, 200) did not appear within deadline; \
-             snap was ({}, {})",
+ snap was ({}, {})",
             snap.lines,
             snap.cols,
         );
@@ -3945,10 +3876,9 @@ fn resize_during_pty_flood_preserves_final_geometry() {
 /// full queue. The second resize + SnapshotNow land while the IO thread is
 /// mid-drain (256 commands ≠ instant), guaranteeing the re-flush is
 /// exercised deterministically.
-///
 /// Regression: cross-feature
 /// `send_resize_during_drain_before_snapshot_reflects_post_resize`
-/// (closes §04 review round 1 Codex F1 — loop-entry `Barrier` pins the
+/// (closes §04 review round 1 — loop-entry `Barrier` pins the
 /// mid-drain race deterministically).
 #[test]
 fn send_resize_during_drain_before_snapshot_reflects_post_resize() {
@@ -3997,10 +3927,24 @@ fn send_resize_during_drain_before_snapshot_reflects_post_resize() {
     barrier.wait();
     handle.send_resize(24, 40);
     let (reply_tx, reply_rx) = crossbeam_channel::bounded::<()>(1);
-    handle.send_command(PaneIoCommand::SnapshotNow { reply: reply_tx });
+    // BLOCKING send (not the non-blocking handle.send_command) — the
+    // cmd_tx is intentionally saturated above. send_command's try_send
+    // would drop the command (and reply_tx with it) under saturation,
+    // producing a `Disconnected` flake on slow Windows CI runners where
+    // the IO thread has not yet had a chance to free a slot. Blocking
+    // send is correct in this test path because the assertion's goal is
+    // "SnapshotNow eventually lands while pending_resize is observable"
+    // — saturation must not silently drop it.
+    handle
+        .cmd_tx
+        .send(PaneIoCommand::SnapshotNow { reply: reply_tx })
+        .expect("cmd_tx send must succeed");
+    // 60s safety valve (was 5s — too tight for loaded Windows CI runners
+    // per tests.md §Wall-Clock-Free Testing; the deadline is a hang
+    // detector, not a primary signal).
     reply_rx
-        .recv_timeout(Duration::from_secs(5))
-        .expect("SnapshotNow reply did not arrive within deadline");
+        .recv_timeout(Duration::from_secs(60))
+        .expect("SnapshotNow reply did not arrive within safety-valve deadline");
     let mut snap = RenderableContent::default();
     assert!(
         handle.double_buffer().swap_front(&mut snap),
@@ -4009,7 +3953,7 @@ fn send_resize_during_drain_before_snapshot_reflects_post_resize() {
     assert_eq!(
         snap.cols, 40,
         "snapshot cols must reflect post-resize geometry; per-command \
-         apply_pending_resize flush must pick up the mid-drain send_resize"
+ apply_pending_resize flush must pick up the mid-drain send_resize"
     );
     handle.shutdown();
 }
@@ -4021,10 +3965,9 @@ fn send_resize_during_drain_before_snapshot_reflects_post_resize() {
 /// Wall-clock-free per `tests.md §Wall-Clock-Free Testing`: each
 /// trial recv_timeouts on its own SnapshotNow reply; no measured
 /// latency.
-///
 /// Regression: cross-feature
 /// `idle_select_cmd_rx_arm_applies_pending_resize_before_reply_bearing`
-/// (closes §04 review round 2 Codex F1).
+/// (closes §04 review round 2 ).
 #[test]
 fn idle_select_cmd_rx_arm_applies_pending_resize_before_reply_bearing() {
     let (mut handle, _shutdown) = spawn_pair_with_flag();
@@ -4057,23 +4000,20 @@ fn idle_select_cmd_rx_arm_applies_pending_resize_before_reply_bearing() {
 }
 
 // §03 matrix — Mode 2026 inline dispatch + snapshot gating.
-//
 // These pins enforce the user-visible "no partial frames" invariant
 // via snapshot-publication gating on `TermMode::SYNC_UPDATE`, while
 // device queries and grid mutations dispatch INLINE during the sync
 // window. The vendored vte parser carries no byte-level buffer; the
 // only sync state is the deadline timer used by the run loop's
-// `select!` deadline arm. See bug-tracker/plans//.
+// `select!` deadline arm. See
 
 /// Property: BSU + grid-mutating bytes mutate the grid INLINE,
 /// while snapshot publication is suppressed via the `SYNC_UPDATE`
 /// mode flag.
-///
 /// Asserts (a) "Hello" lands in the grid before the chunk completes
 /// (inline dispatch — no buffering), AND (b) `maybe_produce_snapshot`
 /// returns without publishing because `TermMode::SYNC_UPDATE` gates
 /// the snapshot pipeline.
-///
 /// Regression: §03 semantic-pin.
 #[test]
 fn mode_2026_active_does_not_publish_snapshot_yet_processes_bytes() {
@@ -4107,7 +4047,6 @@ fn mode_2026_active_does_not_publish_snapshot_yet_processes_bytes() {
 
 /// Sync timeout path: 150 ms timer expiry unsets the mode, emits
 /// `PresentationEffect::Abort`, and forces a snapshot publication.
-///
 /// Regression: §03 — pins the rewritten `handle_sync_timeout`
 /// path (no buffered-byte replay, just mode unset + snapshot force).
 #[test]
@@ -4163,7 +4102,6 @@ fn mode_2026_timeout_unsets_sync_mode_emits_abort_forces_snapshot() {
 
 /// ESU dispatched inline with BSU: mode flag clears AND parser-side
 /// timer disarms within the same `handle_bytes()` call.
-///
 /// Regression: §03 — pins the ESU dispatch arm's
 /// `clear_timeout` call so a future revert won't leave the timer
 /// armed after ESU.
@@ -4187,17 +4125,14 @@ fn mode_2026_esu_unsets_mode_clears_processor_timeout() {
 /// Regression pin for the ESU-arm timer-disarm: after BSU + DA1 + ESU
 /// in one parser advance, the parser-side sync timer is disarmed, the
 /// mode flag is cleared, and the DA1 response is in the effect sink.
-///
 /// Without the ESU-arm `clear_timeout` call, the parser-side timer
 /// would remain armed after ESU and the run loop's
 /// `crossbeam_channel::select!` `default(timeout)` arm would fire
 /// ~150 ms later — invoking `handle_sync_timeout` on already-cleared
 /// state and emitting a spurious Abort effect.
-///
 /// The disarmed timer (`sync_timeout().sync_timeout() == None`) IS the
 /// assertion: the select! arm only fires when a deadline is pending,
 /// so a `None` timer guarantees no spurious timeout invocation.
-///
 /// Regression: §03 ESU-arm timer-disarm pin.
 #[test]
 fn bsu_after_query_inside_sync_does_not_fire_spurious_handle_sync_timeout() {
@@ -4220,9 +4155,9 @@ fn bsu_after_query_inside_sync_does_not_fire_spurious_handle_sync_timeout() {
     t.terminal.effect_sink().drain_into(&mut effects);
     let da1_emitted = effects.iter().any(|e| {
         matches!(
-            e,
-            Effect::Pty(PtyEffect::Write { bytes, .. })
-                if bytes.as_slice() == b"\x1b[?64;6;4c"
+        e,
+        Effect::Pty(PtyEffect::Write { bytes, .. })
+        if bytes.as_slice() == b"\x1b[?64;6;4c"
         )
     });
     assert!(
@@ -4248,24 +4183,20 @@ fn bsu_after_query_inside_sync_does_not_fire_spurious_handle_sync_timeout() {
 
 /// Combined-dispatch pin: queries + grid-mutating bytes interleave
 /// correctly inside a single sync window.
-///
 /// Feed BSU + DA1 + "Hello" + DSR 5 + ESU in one chunk via the
 /// processor. The fix's inline dispatch must:
 /// (a) emit DA1 response within the sync window,
 /// (b) emit DSR 5 response,
 /// (c) leave "Hello" in the grid by the time the chunk completes,
 /// (d) clear the SYNC_UPDATE mode flag at ESU.
-///
 /// All four observations land via INLINE dispatch — bytes are processed
 /// as they arrive, not deferred to ESU. This is the combined-dispatch
 /// pin: queries + grid mutation + ESU all flow through the handler in
 /// one chunk without buffering.
-///
 /// The companion `mode_2026_active_does_not_publish_snapshot_yet_processes_bytes`
 /// pins the snapshot-gate invariant (grid mutates inline BEFORE ESU,
 /// but the snapshot publish defers until the gate clears). This test
 /// pins the combined post-ESU view.
-///
 /// Regression: §03 combined-dispatch pin.
 #[test]
 fn queries_interleaved_with_grid_mutation_dispatch_inline_during_sync() {
@@ -4319,7 +4250,6 @@ fn queries_interleaved_with_grid_mutation_dispatch_inline_during_sync() {
 /// Step 4b regression pin: a `PaneIoCommand::SnapshotNow` issued mid-
 /// sync must NOT publish a mid-mutation snapshot while
 /// `TermMode::SYNC_UPDATE` is set.
-///
 /// Inline byte dispatch lands the mutation in the grid the moment the
 /// chunk arrives; without this gate, a `SnapshotNow` request from the
 /// main thread mid-sync would expose a partial-frame view of the grid.
@@ -4327,7 +4257,6 @@ fn queries_interleaved_with_grid_mutation_dispatch_inline_during_sync() {
 /// without publishing whenever `TermMode::SYNC_UPDATE` is set; the
 /// reply still fires (the request was acknowledged), and the snapshot
 /// publishes on the next ESU/timeout that clears the gate.
-///
 /// Regression: §03 SnapshotNow gate pin (Step 4b).
 #[test]
 fn snapshot_now_during_mode_2026_defers_to_sync_end() {

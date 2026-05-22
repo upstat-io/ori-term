@@ -7,9 +7,9 @@
 //!
 //! ```text
 //! ┌────────────┬───────────┬──────────┬──────────┬──────────┬───────────────┐
-//! │ magic(u16) │ ver(u8)   │ flags(u8)│ type(u16)│ seq(u32) │ payload_len(u32)│
+//! │ magic(u16) │ ver(u8) │ flags(u8)│ type(u16)│ seq(u32) │ payload_len(u32)│
 //! ├────────────┴───────────┴──────────┴──────────┴──────────┴───────────────┤
-//! │ payload (bincode-encoded MuxPdu variant)                                │
+//! │ payload (bincode-encoded MuxPdu variant) │
 //! └─────────────────────────────────────────────────────────────────────────┘
 //! ```
 //!
@@ -59,7 +59,6 @@ pub const HEADER_LEN: usize = 14;
 /// because daemon-mode image rendering requires shipping pixel data over the wire.
 /// Compression at `protocol/encode.rs:27-54` applies automatically when payload exceeds
 /// `COMPRESSION_THRESHOLD` and zstd shrinks it.
-/// See: bug-tracker/plans/BUG-06-072/
 pub const MAX_PAYLOAD: u32 = 80 * 1024 * 1024;
 
 /// Magic bytes identifying an oriterm IPC frame (`0x4F54` = "OT").
@@ -70,18 +69,14 @@ pub const FRAME_MAGIC: u16 = 0x4F54;
 /// v2 — bumped when `PaneSnapshot::has_bell` and `MuxPdu::ClearBell`
 /// were stripped from the wire (bell state moved to client-local
 /// `bell_panes`).
-///
 /// v3 — bumped when `PaneSnapshot` gained `images`/`image_data`/`images_dirty` fields.
 /// `Eq` derive dropped from `PaneSnapshot` and `MuxPdu` because `WirePlacement` carries
 /// f32 fields (f32 implements `PartialEq` only). `MAX_PAYLOAD` raised from 16 MiB to
 /// 80 MiB to ship kitty/sixel/iTerm2 pixel data over the wire.
-/// See: bug-tracker/plans/BUG-06-072/
-///
 /// vN → vN+1 is a hard break in bincode-encoded `PaneSnapshot` / `MuxPdu` layout; a
 /// mismatched peer would silently misdecode every snapshot frame. The Hello handshake
 /// rejects any non-equal version pair so the mismatch surfaces as a connection error
 /// instead.
-///
 /// SSOT: this constant is the single literal source for the wire
 /// version; [`CURRENT_PROTOCOL_VERSION`] is a re-export, NOT an
 /// independent definition. A reviewer who bumps one without the
@@ -136,7 +131,6 @@ impl FrameHeader {
     }
 
     /// Decode a header from a 14-byte buffer.
-    ///
     /// Does not validate the magic or version — callers must check those.
     pub fn decode(buf: &[u8; HEADER_LEN]) -> Self {
         let magic = u16::from_le_bytes([buf[0], buf[1]]);

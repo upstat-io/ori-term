@@ -5,7 +5,6 @@ use oriterm_core::RenderableContent;
 use super::SnapshotDoubleBuffer;
 
 /// Helper: create a `RenderableContent` with `n` dummy cells on line 0.
-///
 /// Uses `renderable_content_into` indirectly — populates the `cells` vec
 /// directly with default-constructed cells (all fields zero/empty).
 fn content_with_cells(n: usize) -> RenderableContent {
@@ -98,7 +97,6 @@ fn first_flip_does_not_set_all_dirty() {
 }
 
 /// Buffer allocations are retained through flip/swap cycles.
-///
 /// After warmup, both the producer (IO thread) and consumer (main thread)
 /// get pre-allocated buffers back from each swap — no new allocations.
 #[test]
@@ -223,7 +221,6 @@ fn consumed_seqno_tracks_consumer() {
 // --- : front-buffer shrink at quiescence ---
 
 /// `maybe_shrink_front` reduces front-buffer capacity at quiescence.
-///
 /// Regression:. After a flood, the front buffer holds the
 /// most-recent peak content — without an explicit shrink it retains the
 /// peak capacity indefinitely. Pins that `maybe_shrink_front` calls
@@ -231,7 +228,6 @@ fn consumed_seqno_tracks_consumer() {
 /// cap > 4096 → shrink_to(2*len)) without mutating `seqno` /
 /// `consumed_seqno`. Sync-suppression invariants pinned by callers of
 /// `seqno()` / `consumed_seqno()` must be preserved.
-/// See: bug-tracker/plans//section-03-tdd-matrix.md §"Edge cases" — front-buffer shrink.
 #[test]
 fn front_buffer_shrinks_at_quiescence() {
     let db = SnapshotDoubleBuffer::new();

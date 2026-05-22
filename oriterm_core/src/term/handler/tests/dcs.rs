@@ -88,7 +88,6 @@ fn query_keyboard_mode_responds_with_current() {
 /// Set-only modes enabled via `CSI = Ps u` do not enter the stack; a
 /// stack-top-derived report would incorrectly reply `?0u` while the
 /// bits are actually live.
-/// See: bug-tracker/plans/completed/00-overview.md §2.5 review round 6.
 #[test]
 fn query_keyboard_mode_set_only_via_csi_equals_u_reports_live_bits() {
     let (mut t, listener) = term_with_recorder();

@@ -40,7 +40,6 @@ pub trait MuxBackend {
     // Event pump
 
     /// Whether a PTY wakeup has arrived since the last `poll_events` call.
-    ///
     /// Used by the event loop to skip `poll_events` when no PTY activity
     /// has occurred. Conservative default: always returns `true` so
     /// existing code compiles before both backends implement.
@@ -49,7 +48,6 @@ pub trait MuxBackend {
     }
 
     /// Drain `MuxEvent`s from PTY reader threads and emit notifications.
-    ///
     /// In embedded mode, this processes the mpsc channel. In client mode,
     /// this is a no-op (the reader thread pushes directly).
     fn poll_events(&mut self);
@@ -66,13 +64,11 @@ pub trait MuxBackend {
     // Pane operations
 
     /// Spawn a pane with a new PTY process.
-    ///
     /// The client owns tab/window grouping — the mux creates the pane
     /// and manages its PTY lifecycle. Returns `PaneId` for the new pane.
     fn spawn_pane(&mut self, config: &SpawnConfig, theme: Theme) -> io::Result<PaneId>;
 
     /// Adopt a pane from a Windows console handoff.
-    ///
     /// Wraps the pre-existing PTY handles delivered by `conhost.exe`'s
     /// `ITerminalHandoff3::EstablishPtyHandoff` callback (Section 03.9
     /// Phase 3) into a [`Pane`](crate::pane::Pane). Embedded mux uses
@@ -80,7 +76,6 @@ pub trait MuxBackend {
     /// daemon mode rejects the call because the COM server is a
     /// `REGCLS_SINGLEUSE` standalone process that cannot relay handoffs
     /// over IPC.
-    ///
     /// Default impl returns `Err(io::Error::other("not supported"))`
     /// so non-handoff backends compile without changes.
     fn adopt_pane(
@@ -99,7 +94,6 @@ pub trait MuxBackend {
     // Grid operations
 
     /// Resize a pane's terminal grid and PTY.
-    ///
     /// In embedded mode, resizes the old Term for dual-Term consistency and
     /// sends a `Resize` command to the IO thread (which does reflow + PTY
     /// resize). In daemon mode, sends a fire-and-forget `Resize` PDU.
@@ -108,10 +102,9 @@ pub trait MuxBackend {
     // Mode query
 
     /// Terminal mode bits for a pane (raw `u64`).
-    ///
     /// In embedded mode, reads the lock-free atomic cache.
     /// In daemon mode, reads from the cached snapshot. Widened to
-    /// `u64` in plan `plans/spec-conformance/section-08` §08.3 for
+    /// `u64` in plan §08.3 for
     /// DECLRMM (mode 69 = bit 32).
     fn pane_mode(&self, pane_id: PaneId) -> Option<u64>;
 
@@ -128,7 +121,6 @@ pub trait MuxBackend {
 
     /// Update the ENQ answerback string emitted on `\x05` per ECMA-48
     /// §8.3.40 + `WezTerm` parity (`term/src/terminalstate/performer.rs:473-478`).
-    ///
     /// Empty bytes (default) suppress emission. Non-empty bytes are
     /// written verbatim to the PTY on each ENQ byte received.
     /// Implementations MUST NOT mark the pane snapshot dirty —
@@ -186,12 +178,10 @@ pub trait MuxBackend {
     // Clipboard text extraction
 
     /// Extract plain text from a selection range.
-    ///
     /// Returns `None` if the pane doesn't exist or the selection is empty.
     fn extract_text(&mut self, pane_id: PaneId, selection: &Selection) -> Option<String>;
 
     /// Extract HTML (with inline styles) and plain text from a selection.
-    ///
     /// `font_family` and `font_size` are used for the HTML wrapper.
     /// Returns `None` if the pane doesn't exist or the selection is empty.
     fn extract_html(
@@ -205,17 +195,14 @@ pub trait MuxBackend {
     // Input
 
     /// Send raw bytes to a pane's PTY.
-    ///
     /// In embedded mode, delegates to [`Pane::write_input`].
     /// In daemon mode, sends a fire-and-forget `Input` PDU to the daemon.
     fn send_input(&mut self, pane_id: PaneId, data: &[u8]);
 
     /// Whether the PTY writer thread for a pane is blocked on a write.
-    ///
     /// When `true`, the kernel PTY buffer is full and keyboard input
     /// queued via [`send_input`](Self::send_input) won't reach the child.
     /// Use [`signal_child`](Self::signal_child) to send Ctrl+C directly.
-    ///
     /// Receiver is `&mut self` because the daemon backend round-trips this
     /// query through the IPC transport (the transport's reply-channel
     /// allocation requires `&mut self`); the embedded backend's body only
@@ -225,7 +212,6 @@ pub trait MuxBackend {
     }
 
     /// Send a signal directly to a pane's child process group.
-    ///
     /// Bypasses the PTY writer when stalled. Returns `true` if sent.
     fn signal_child(&mut self, _pane_id: PaneId, _signal: crate::Signal) -> bool {
         false
@@ -234,14 +220,12 @@ pub trait MuxBackend {
     // Pane metadata
 
     /// Current working directory of a pane (from OSC 7).
-    ///
     /// Borrows from the cached snapshot's `cwd` field.
     fn pane_cwd(&self, pane_id: PaneId) -> Option<&str> {
         self.pane_snapshot(pane_id).and_then(|s| s.cwd.as_deref())
     }
 
     /// Record a bell on a pane in the backend's local `bell_panes` set.
-    ///
     /// Called by the App's `MuxNotification::PaneBell` /
     /// `DesktopNotification` / `CommandComplete` arms after the focus
     /// gate decides the bell is "background-worthy." Both `EmbeddedMux`
@@ -250,14 +234,12 @@ pub trait MuxBackend {
     fn set_bell(&mut self, _pane_id: PaneId) {}
 
     /// Clear the bell on a pane.
-    ///
     /// Called from the focused-pane bell arm and the focus-change clear
     /// sweep. Both real backends override with `bell_panes.remove`; the
     /// trait default is a no-op.
     fn clear_bell(&mut self, _pane_id: PaneId) {}
 
     /// Whether the bell is currently active for a pane.
-    ///
     /// Default fallback for backends that don't override. Both
     /// `EmbeddedMux` and `MuxClient` override this with their local
     /// `bell_panes` set — bells are client-local UI state, not
@@ -268,18 +250,15 @@ pub trait MuxBackend {
     }
 
     /// Mark a pane as having unseen output.
-    ///
     /// Called when a non-active pane receives output. The tab bar reads this
     /// via the snapshot to show a "modified" indicator dot.
     fn set_unseen_output(&mut self, _pane_id: PaneId) {}
 
     /// Clear the unseen output flag for a pane.
-    ///
     /// Called when a pane becomes the active/focused tab.
     fn mark_output_seen(&mut self, _pane_id: PaneId) {}
 
     /// Whether a pane has output the user hasn't seen.
-    ///
     /// In embedded mode, reads directly from the [`Pane`] (avoids snapshot
     /// staleness). In daemon mode, reads from the cached pushed snapshot.
     fn has_unseen_output(&self, pane_id: PaneId) -> bool {
@@ -288,14 +267,12 @@ pub trait MuxBackend {
     }
 
     /// Clean up a closed pane's resources.
-    ///
     /// In embedded mode, removes the pane from storage and drops it on a
     /// background thread (PTY kill, reader join, child reap). In client
     /// mode this is a no-op — the daemon owns pane resources.
     fn cleanup_closed_pane(&mut self, _pane_id: PaneId) {}
 
     /// Build a `Selection` covering the nearest command output zone.
-    ///
     /// Uses shell integration markers to find the output region around
     /// the viewport center. Returns `None` if no zone is found or shell
     /// integration is not active.
@@ -304,7 +281,6 @@ pub trait MuxBackend {
     }
 
     /// Build a `Selection` covering the nearest command input zone.
-    ///
     /// Uses shell integration markers to find the input region around
     /// the viewport center. Returns `None` if no zone is found or shell
     /// integration is not active.
@@ -324,7 +300,6 @@ pub trait MuxBackend {
     fn pane_ids(&self) -> Vec<PaneId>;
 
     /// Subscribe to a pane's notification stream.
-    ///
     /// In daemon mode, sends a `Subscribe` PDU and caches the initial snapshot.
     /// In embedded mode, does nothing (already "subscribed" in-process).
     fn subscribe(&mut self, _pane_id: PaneId) -> io::Result<()> {
@@ -332,7 +307,6 @@ pub trait MuxBackend {
     }
 
     /// Unsubscribe from a pane's notification stream.
-    ///
     /// In daemon mode, sends an `Unsubscribe` PDU.
     fn unsubscribe(&mut self, _pane_id: PaneId) -> io::Result<()> {
         Ok(())
@@ -347,7 +321,6 @@ pub trait MuxBackend {
     fn default_domain(&self) -> DomainId;
 
     /// Whether the daemon connection is alive.
-    ///
     /// Always `true` for embedded mode (no remote connection).
     /// In daemon mode, reflects the transport's liveness state.
     fn is_connected(&self) -> bool {
@@ -355,20 +328,17 @@ pub trait MuxBackend {
     }
 
     /// Whether this backend is running in daemon (IPC client) mode.
-    ///
     /// Embedded mode returns `false`. Client mode returns `true`.
     fn is_daemon_mode(&self) -> bool;
 
     // Snapshot access
 
     /// Swap the cached [`RenderableContent`] for a pane into `target`.
-    ///
     /// In embedded mode, [`refresh_pane_snapshot`](Self::refresh_pane_snapshot)
     /// captures the `RenderableContent` extracted from the terminal. This
     /// method swaps it directly into the caller's `FrameInput.content`,
     /// bypassing the `RenderableContent → WireCell → RenderableContent`
     /// round-trip that the snapshot path requires.
-    ///
     /// Returns `true` if the swap succeeded (embedded mode). Returns `false`
     /// in daemon mode (caller must use `pane_snapshot()` + conversion).
     fn swap_renderable_content(
@@ -380,20 +350,17 @@ pub trait MuxBackend {
     }
 
     /// Cached snapshot for a pane.
-    ///
     /// Returns the most recently cached snapshot, or `None` if no snapshot
     /// has been built/fetched yet.
     fn pane_snapshot(&self, pane_id: PaneId) -> Option<&PaneSnapshot>;
 
     /// Look up decoded image pixel data for `(pane_id, image_id)`.
-    ///
     /// Daemon-mode clients return their cached `Arc<RenderableImageData>` (cheap
     /// refcount clone). Embedded backends bypass the extract path entirely via
     /// `swap_renderable_content` so the default `None` is correct. Used by the
     /// extract path closure when a `WirePlacement` arrives without its
     /// `WireImageData` (the server filtered out the bytes because the client
     /// already has them).
-    /// See: bug-tracker/plans/BUG-06-072/
     fn pane_image_data(
         &self,
         _pane_id: PaneId,
@@ -410,7 +377,6 @@ pub trait MuxBackend {
 
     /// Synchronously fetch a fresh snapshot, draining any in-flight IO
     /// commands first.
-    ///
     /// Unlike [`refresh_pane_snapshot`](Self::refresh_pane_snapshot),
     /// which is fast-path push-driven and may return stale data, this
     /// method:
@@ -418,23 +384,20 @@ pub trait MuxBackend {
     /// 2. Waits for the IO thread to process all earlier commands (FIFO)
     ///    and publish a fresh snapshot to the double buffer.
     /// 3. Returns the fresh snapshot, owned (no shared borrow).
-    ///
-    /// Used by tests and any caller that needs deterministic
-    /// "scroll then read" semantics. Production render code should
-    /// continue to use the async push pipeline via
-    /// `refresh_pane_snapshot`.
+    ///    Used by tests and any caller that needs deterministic
+    ///    "scroll then read" semantics. Production render code should
+    ///    continue to use the async push pipeline via
+    ///    `refresh_pane_snapshot`.
     fn sync_pane_snapshot(&mut self, pane_id: PaneId) -> Option<PaneSnapshot>;
 
     /// Clear the dirty flag for a pane's cached snapshot.
     fn clear_pane_snapshot_dirty(&mut self, pane_id: PaneId);
 
     /// Whether the terminal's `selection_dirty` flag is set for a pane.
-    ///
     /// The flag is set when terminal output modifies grid content that would
     /// invalidate a text selection (character printing, scrolling, erasing,
     /// etc.). It is NOT set by cursor movement, SGR changes, or other
     /// non-content-modifying operations.
-    ///
     /// In embedded mode, reads the flag from the terminal. In daemon mode,
     /// returns `false` — the daemon propagates invalidation via snapshot
     /// changes instead.
@@ -443,27 +406,23 @@ pub trait MuxBackend {
     }
 
     /// Clear the terminal's `selection_dirty` flag for a pane.
-    ///
     /// Must be called after checking `is_selection_dirty()` to prevent
     /// the flag from being re-read on subsequent poll cycles.
     fn clear_selection_dirty(&mut self, _pane_id: PaneId) {}
 
     /// Shrink renderable content caches if capacity vastly exceeds usage.
-    ///
     /// Called after rendering to bound memory waste. Default is a no-op
     /// (daemon mode doesn't cache `RenderableContent`).
     fn maybe_shrink_renderable_caches(&mut self) {}
 
     /// Fulfill a host-request response.
-    ///
     /// Called by the main thread after it resolves the value for a
     /// `MuxNotification::HostClipboardLoad` / `HostColorQuery` token.
     /// The embedded backend looks up the pane's `PaneIoHandle` and
     /// signals the wake channel so the IO thread's `select!` wakes
     /// within one iteration. The daemon backend returns `Err` until a
     /// reply-PDU wire design lands (tracked separately — see
-    /// `plans/effect-cutover/section-01-migrate-mux-consumer.md §01.4`).
-    ///
+    /// §01.4).
     /// A duplicate fulfill is logged (the
     /// [`oriterm_core::effect::AlreadyFulfilled`] error is caught and
     /// collapsed to `Ok(())`) — routing bugs surface as log noise, not

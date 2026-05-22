@@ -7,8 +7,8 @@
 //! reverse-video handling, same `subpixel_positioning: true`,
 //! same unused selection/search/hover/mark fields. This module is
 //! the single canonical home for that construction; duplicating it
-//! is `LEAK:algorithmic-duplication` and will be caught by
-//! `/impl-hygiene-review`.
+//! is `` and will be caught by
+//! `impl-hygiene-review`.
 
 use oriterm_core::{Rgb, TermMode};
 use oriterm_test_support::PtySession;
@@ -18,16 +18,13 @@ use crate::gpu::frame_input::{FrameInput, FramePalette, ViewportSize};
 
 /// Build a [`FrameInput`] from a live [`PtySession`] with the standard
 /// golden-test palette.
-///
 /// Uses the fixture-specific fg `(211, 215, 207)` / palette_bg `(1, 1, 1)`
 /// pair and all overlay fields (`selection`, `search`, `hovered_cell`,
 /// etc.) set to their neutral defaults. `subpixel_positioning` is
 /// caller-controlled: legacy vttest/tack goldens pass `true`;
 /// spec-conformance goldens pass `false` for deterministic pixel output.
-///
 /// Both vttest and tack GPU goldens consume this — having two copies
-/// is `LEAK:algorithmic-duplication`.
-///
+/// is ``.
 /// **NOT** the canonical xterm/`oriterm_core::palette` foreground (`0xE5E5E5`
 /// after ); the value here is a stable historical baseline that
 /// existing golden snapshots were captured against. Re-baselining all

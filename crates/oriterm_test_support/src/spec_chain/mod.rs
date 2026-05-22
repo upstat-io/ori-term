@@ -5,7 +5,7 @@
 //! frame-input → gpu-instance → texture → golden) and asserts the
 //! per-rung observation. A row is `verified` when every rung passes.
 //!
-//! See `plans/spec-conformance/00-overview.md` for the architecture.
+//! See for the architecture.
 
 mod api;
 pub mod coverage;

@@ -80,7 +80,10 @@ fn da3_produces_tertiary_device_attributes() {
 /// `oriterm_core::Term::status_xtversion` (was in `oriterm_mux` interceptor).
 /// Pins reply byte format AND `PtyWriteKind::DeviceAttribute` classification
 /// alongside the DA1/DA2/DA3 family.
-/// See: bug-tracker/plans//section-03-tdd-matrix.md
+/// Catalog row: `DFCT-CSI-XTVERSION`.
+/// See: bug-tracker/plans/completed/BUG-06-086/ — kitty(0.20.0) advertise
+/// unlocks notcurses' `o=z` compression path; trade-off rationale lives
+/// in the catalog Notes column.
 #[test]
 fn xtversion_responds_with_dcs_version_string() {
     let mut t = term_with_effect_sink();
@@ -89,13 +92,12 @@ fn xtversion_responds_with_dcs_version_string() {
     let mut effects = Vec::new();
     t.effect_sink().drain_into(&mut effects);
 
-    let version = env!("CARGO_PKG_VERSION");
-    let expected_bytes = format!("\x1bP>|oriterm({version})\x1b\\").into_bytes();
+    let expected_bytes = crate::term::handler::status::XTVERSION_REPLY.to_vec();
     let matched = effects.iter().any(|e| {
         matches!(
-            e,
-            Effect::Pty(PtyEffect::Write { bytes, kind })
-                if *bytes == expected_bytes && *kind == PtyWriteKind::DeviceAttribute
+        e,
+        Effect::Pty(PtyEffect::Write { bytes, kind })
+        if *bytes == expected_bytes && *kind == PtyWriteKind::DeviceAttribute
         )
     });
     assert!(
@@ -118,8 +120,8 @@ fn xtversion_does_not_fire_for_nonzero_ps() {
 
     let leaked = effects.iter().any(|e| {
         matches!(
-            e,
-            Effect::Pty(PtyEffect::Write { bytes, .. }) if bytes.starts_with(b"\x1bP>|")
+        e,
+        Effect::Pty(PtyEffect::Write { bytes, .. }) if bytes.starts_with(b"\x1bP>|")
         )
     });
     assert!(
@@ -256,7 +258,6 @@ fn csi_18t_at_97x33() {
 // --- Comprehensive DECRQM coverage for DEC private modes ---
 
 /// Assert DECRQM response for a private mode.
-///
 /// Feeds optional `setup` bytes (e.g. DECSET to change the mode),
 /// then sends the DECRQM query `CSI ? <mode_num> $ p` and checks
 /// the response `CSI ? <mode_num> ; <expected_value> $ y`.
@@ -588,26 +589,20 @@ fn decrqm_verifies_default_mode_flags() {
 }
 
 // --- XTSMGRAPHICS (CSI ? Pi ; Pa ; Pv S) ---
-//
 // XTSMGRAPHICS is xterm's set-or-request graphics attribute query. Apps
 // using sixel (notcurses, mlterm, libsixel) send these at startup to
 // negotiate color-register count and graphics-area geometry. Without
 // replies, those apps default to conservative sizes or skip sixel.
-//
 // Pi values per xterm ctlseqs / `charproc.c:5153-5279`:
 // 1 = number of color registers
 // 2 = sixel graphics geometry (pixels)
 // 3 = ReGIS graphics geometry (unsupported — Ps=3 failure)
-//
 // Pa values:
 // 1 = read, 2 = reset, 3 = set, 4 = read maximum
-//
 // Reply format: `CSI ? Pi ; Ps [; Pv [; Pv2]] S`. Ps=0 success, Ps=1
 // bad-value (unknown Pi), Ps=2 bad-item (unknown Pa), Ps=3 failure.
-//
 // Test grid: default 24x80 with cell_pixel_width=8, cell_pixel_height=16,
 // so Pi=2 geometry replies report 640x384 pixels.
-//
 // Regression: XTSMGRAPHICS query had no reply path before
 // this fix; vte CSI dispatch had no `('S', [b'?'])` arm and Handler
 // trait had no `graphics_attribute` method.
@@ -924,7 +919,6 @@ fn xtsmgraphics_pi3_unknown_pa_replies_status2() {
 }
 
 // --- Unknown Pi × Pa matrix (outer-match short-circuit invariant) ---
-//
 // Per xterm `charproc.c:5258`, unknown Pi → status=1 regardless of Pa
 // (the outer Pi switch fails before the inner Pa branches execute).
 // These cells pin the outer-match short-circuit invariant — if a
@@ -1028,7 +1022,6 @@ fn xtsmgraphics_ris_resets_color_register_count_to_default() {
 }
 
 // --- Arity edge cases (silent drop per xterm `charproc.c:5159`) ---
-//
 // xterm checks `nparam != 3` and silently drops malformed-arity
 // queries — no reply is constructed. The vte dispatch arm enforces
 // this; the handler tests verify no `\x1b[?...S` reply lands on the
@@ -1202,7 +1195,6 @@ fn xtsmgraphics_reply_uses_graphics_attribute_report_kind() {
 }
 
 // --- Image-protocol-disabled gate (3-of-3 reviewer agreement) ---
-//
 // Per xterm `charproc.c:5198-5200` (Pi=1) + `:5226-5227` (Pi=2): when
 // sixel/ReGIS is disabled, success replies downgrade to Ps=3 and drop
 // the Pv field. oriterm's `image_protocol_enabled` field is the
@@ -1285,7 +1277,6 @@ fn xtsmgraphics_disabled_pa3_set_does_not_leak_color_register_count() {
     // Pi=1 block, BEFORE any Pa dispatch. If the gate fires AFTER the
     // match, Pa=3 set leaks `color_register_count` even though the reply
     // is downgraded to Ps=3.
-    //
     // Repro: disable image protocol → Pa=3 set Pv=100 → re-enable →
     // Pa=1 read MUST return 256 (default), NOT 100 (the leaked value).
     let (mut t, listener) = term_with_recorder();
@@ -1368,9 +1359,8 @@ fn xtsmgraphics_set_image_protocol_enabled_re_enables_replies() {
 
 // --- ENQ / Answerback ---
 
-/// Regression: BUG-08-006 — empty answerback (default) suppresses emission entirely.
+/// empty answerback (default) suppresses emission entirely.
 /// Per `WezTerm` `term/src/terminalstate/performer.rs:473-479`, only emit when non-empty.
-/// See: bug-tracker/plans/completed/BUG-08-006/section-03-tdd-matrix.md
 #[test]
 fn enq_with_empty_answerback_emits_no_pty_write() {
     let mut t = term_with_effect_sink();
@@ -1389,7 +1379,7 @@ fn enq_with_empty_answerback_emits_no_pty_write() {
     );
 }
 
-/// Regression: BUG-08-006 — non-empty answerback emits exact bytes with Answerback kind.
+/// non-empty answerback emits exact bytes with Answerback kind.
 /// Fixture intentionally includes non-text bytes (NUL `\x00`, high `\xff`) to prove
 /// Vec<u8> byte-channel preservation per WezTerm reference (PTY answerback may
 /// carry arbitrary bytes per ECMA-48 §8.3.40 host-defined response).
@@ -1422,7 +1412,7 @@ fn enq_with_configured_answerback_emits_exact_bytes_with_answerback_kind() {
     );
 }
 
-/// Regression: BUG-08-006 — multiple ENQ bytes each fire independently.
+/// multiple ENQ bytes each fire independently.
 #[test]
 fn enq_repeats_answerback_for_each_invocation() {
     let mut t = term_with_effect_sink();
@@ -1454,7 +1444,7 @@ fn enq_repeats_answerback_for_each_invocation() {
     }
 }
 
-/// Regression: BUG-08-006 — ACK (0x06, adjacent C0 byte) must NOT emit answerback.
+/// ACK (0x06, adjacent C0 byte) must NOT emit answerback.
 /// Proves the dispatch routing is byte-exact, not "any unhandled C0 emits answerback."
 #[test]
 fn ack_0x06_does_not_emit_pty_write() {

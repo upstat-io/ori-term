@@ -220,7 +220,6 @@ fn rebuild_reregisters_widgets() {
 }
 
 /// `rebuild` syncs InteractionManager focus when focused widget leaves the order.
-///
 /// Regression test for `rebuild()` calls `set_focus_order()` which
 /// may clear FocusManager's focus, but InteractionManager was not updated.
 #[test]
@@ -453,7 +452,6 @@ fn overlay_mouse_does_not_make_background_widget_hot() {
 // -- Dirty marking integration tests (Section 03) --
 
 /// Hovering a button marks it `Prepaint`-dirty in the InvalidationTracker.
-///
 /// End-to-end: hover → InteractionManager::update_hot_path → mark_widgets_prepaint_dirty → tracker.
 #[test]
 fn hover_marks_widget_prepaint_dirty() {
@@ -497,7 +495,6 @@ fn hover_marks_widget_prepaint_dirty() {
 
 /// `sync_focus_order` clears InteractionManager focus when the focused widget
 /// leaves the new order — models the dialog reset-defaults / page-switch flow.
-///
 /// Regression test for dialog content handlers previously
 /// duplicated the sync logic inline; now they call `sync_focus_order()`
 /// directly, so this test covers all three production call sites.
@@ -579,7 +576,6 @@ fn sync_focus_order_noop_without_focus() {
 // -- clear_hot_path tests (regression) --
 
 /// `clear_hot_path` clears stale hover state after a tree rebuild.
-///
 /// Regression test for dialog page rebuilds left old widgets
 /// logically hot until the next cursor move.
 #[test]
@@ -651,7 +647,6 @@ fn clear_hot_path_marks_dirty() {
 
 /// `refresh_hot_path` preserves hover on widgets still under the cursor
 /// after a tree rebuild.
-///
 /// Regression: `clear_hot_path()` unconditionally dropped hover on all
 /// widgets, including those that survived the rebuild and were still
 /// under the cursor.
@@ -850,7 +845,6 @@ fn tick(root: &mut WindowRoot, start: Instant, delta: Duration) {
 /// flash overlay at full intensity (opacity 1.0) and marks the window dirty.
 /// Pins the entry-point invariant: a configured BEL produces an observable
 /// overlay before the fade-out tween begins.
-/// See: bug-tracker/plans//section-03-tdd-matrix.md test 1.
 #[test]
 fn ring_visual_bell_starts_flash_overlay_at_full_intensity() {
     let mut root = WindowRoot::new(LabelWidget::new("bell"));
@@ -869,7 +863,6 @@ fn ring_visual_bell_starts_flash_overlay_at_full_intensity() {
 /// configured `duration_ms`, computed by `Easing::EaseOut.apply(t)`.
 /// Pins the fade-out tween: the overlay does not stay at full opacity, and
 /// each successive sample is strictly less than the prior.
-/// See: bug-tracker/plans//section-03-tdd-matrix.md test 2.
 #[test]
 fn ring_visual_bell_fades_monotonically_over_duration() {
     let mut root = WindowRoot::new(LabelWidget::new("bell"));
@@ -907,7 +900,6 @@ fn ring_visual_bell_fades_monotonically_over_duration() {
 /// (`mux_pump`) is also expected to gate on `BellConfig::is_enabled()`,
 /// but `WindowRoot::ring_visual_bell` defends in depth so the API is
 /// safe to call unconditionally.
-/// See: bug-tracker/plans//section-03-tdd-matrix.md test 3.
 #[test]
 fn ring_visual_bell_with_zero_duration_is_a_noop() {
     let mut root = WindowRoot::new(LabelWidget::new("bell"));
@@ -948,7 +940,6 @@ fn ring_visual_bell_does_not_intercept_input() {
 /// Regression: the flash overlay's bounds always equal the
 /// current viewport. Distinguishability from the per-tab pulse: visual
 /// bell covers the whole window, audible bell flashes one tab.
-/// See: bug-tracker/plans//section-03-tdd-matrix.md test 5.
 #[test]
 fn ring_visual_bell_overlay_covers_full_viewport() {
     let mut root = WindowRoot::new(LabelWidget::new("bell"));
@@ -964,7 +955,6 @@ fn ring_visual_bell_overlay_covers_full_viewport() {
 /// Regression: `Easing::Linear` produces a proportional fade.
 /// At t=50ms of 200ms (phase=0.25), `Easing::Linear.apply(0.25) = 0.25`,
 /// so opacity = 1.0 - 0.25 = 0.75 ± 0.01.
-/// See: bug-tracker/plans//section-03-tdd-matrix.md test 6.
 #[test]
 fn ring_visual_bell_linear_curve_fades_proportionally() {
     let mut root = WindowRoot::new(LabelWidget::new("bell"));
@@ -990,7 +980,6 @@ fn ring_visual_bell_linear_curve_fades_proportionally() {
 /// still in flight REPLACES the first overlay (single-flash invariant).
 /// `flash_overlay_count` stays at 1 — the overlay does not stack. Prevents
 /// heap accumulation under bell-storm scenarios.
-/// See: bug-tracker/plans//section-03-tdd-matrix.md test 7.
 #[test]
 fn ring_visual_bell_replaces_in_flight_animation() {
     let mut root = WindowRoot::new(LabelWidget::new("bell"));
@@ -1022,7 +1011,6 @@ fn ring_visual_bell_replaces_in_flight_animation() {
 /// flash, the overlay's bounds update to the new viewport. Without this,
 /// an interactive resize during a bell would leave a flash overlay covering
 /// only part of the new window.
-/// See: bug-tracker/plans//section-03-tdd-matrix.md test 14.
 #[test]
 fn ring_visual_bell_during_resize_repositions_overlay() {
     let small = Rect::new(0.0, 0.0, 800.0, 600.0);
@@ -1044,7 +1032,6 @@ fn ring_visual_bell_during_resize_repositions_overlay() {
 /// Regression: 10 back-to-back `ring_visual_bell` calls under
 /// a bell storm produce exactly one in-flight overlay; each call replaces
 /// the previous. Prevents heap growth under shell-emitted BEL storms.
-/// See: bug-tracker/plans//section-03-tdd-matrix.md test 15.
 #[test]
 fn ring_visual_bell_storm_replaces_overlay_each_time_no_accumulation() {
     let mut root = WindowRoot::new(LabelWidget::new("bell"));
@@ -1108,7 +1095,7 @@ fn compute_layout_gcs_stale_registrations() {
 // -- : Overlay key dispatch goes through keymap --
 // Regression tests for — overlay key dispatch was bypassing the
 // keymap path for non-Escape keys, breaking ArrowDown/ArrowUp/Enter on
-// MenuWidget-backed popup overlays. See bug-tracker/plans//.
+// MenuWidget-backed popup overlays. See
 
 fn menu_with_items(items: &[&str]) -> MenuWidget {
     let entries: Vec<MenuEntry> = items
@@ -1130,14 +1117,12 @@ fn key_event(k: Key) -> KeyEvent {
 /// handle_keymap_action → navigate_keyboard). Pre-fix: routes through
 /// on_input which returns ignored() for non-searchable mode, so hovered
 /// stays at 0. Post-fix: routes through keymap-first dispatch.
-///
 /// Asserts on observable navigation: send ArrowDown, then Enter, and
 /// verify Enter emits `Selected { index: 1 }` (advanced from 0). If the
 /// keymap path is broken, ArrowDown is swallowed without state change
 /// and Enter would emit `Selected { index: 0 }` — the assertion fails.
-///
 /// Regression: overlay key dispatch bypassed keymap for
-/// non-Escape keys. See bug-tracker/plans/completed/.
+/// non-Escape keys. See
 #[test]
 fn arrow_down_on_menu_overlay_advances_hover_via_keymap() {
     let menu = menu_with_items(&["Alpha", "Beta", "Gamma"]);
@@ -1190,9 +1175,9 @@ fn arrow_down_on_menu_overlay_advances_hover_via_keymap() {
                 assert_eq!(
                     index, 1,
                     "ArrowDown twice then Enter must select index 1 \
-                     (proves keymap-path navigation advanced through both \
-                     None→0 and 0→1 transitions); other indices indicate \
-                     one or both ArrowDowns were silently swallowed"
+ (proves keymap-path navigation advanced through both \
+ None→0 and 0→1 transitions); other indices indicate \
+ one or both ArrowDowns were silently swallowed"
                 );
             }
             other => {
@@ -1208,7 +1193,6 @@ fn arrow_down_on_menu_overlay_advances_hover_via_keymap() {
 /// appended to the filter query as a literal space character. Rejects the
 /// regression where the keymap-first dispatch wires Space→Confirm for the
 /// "MenuSearchable" context (which would steal printable filter input).
-///
 /// Regression: design pin — searchable Menu uses a distinct
 /// "MenuSearchable" key_context that intentionally omits the Space binding.
 #[test]
@@ -1247,7 +1231,7 @@ fn space_on_searchable_menu_overlay_does_not_confirm() {
                     Some(crate::action::WidgetAction::Selected { .. })
                 ),
                 "Space on searchable Menu must NOT emit Selected — it must \
-                 reach on_input as a filter character"
+ reach on_input as a filter character"
             );
         }
         other => panic!("expected Delivered, got {other:?}"),
@@ -1262,14 +1246,12 @@ fn space_on_searchable_menu_overlay_does_not_confirm() {
 /// a matched `widget::Dismiss` action into `Dismissed(id)` itself so
 /// Dialog windows dismiss correctly even though `DialogWidget` does not
 /// implement `handle_keymap_action`.
-///
 /// Test isolates the keymap translation from the legacy inline Escape
 /// short-circuit by REBINDING `Dismiss` to a non-Escape key (`F1`) for
 /// the `"Dialog"` context, then pressing F1. The legacy inline path
 /// only matches `Key::Escape`, so F1 cannot reach it — the only way for
 /// this test to produce `Dismissed(id)` is via the keymap path's
 /// `widget::Dismiss → Dismissed(id)` translation.
-///
 /// Regression: Round 0 + Phase 5 code review round 0
 /// ( F3 + F2 agreement).
 #[test]
@@ -1316,7 +1298,7 @@ fn dialog_escape_dismisses_via_keymap_translation() {
     assert!(
         matches!(result, OverlayEventResult::Dismissed(d_id) if d_id == id),
         "Dialog 'q'->Dismiss must produce Dismissed(id) via keymap \
-         translation, got {result:?}"
+ translation, got {result:?}"
     );
 }
 
@@ -1327,12 +1309,10 @@ fn dialog_escape_dismisses_via_keymap_translation() {
 /// which has no Enter binding in the default keymap. Falls through to
 /// the on_input pipeline where the modal's input handling owns the
 /// outcome.
-///
 /// This pins the intentional design constraint that overlays do not plumb
 /// a focused-child context path through the keymap. If a future fix lands
 /// per-overlay focus paths, this test becomes the regression guard that
 /// flags the behavior change.
-///
 /// Regression: Phase 2.5 Plan TPR design pin — F3 +
 /// F2 + F4 (3-of-3 agreement).
 #[test]
@@ -1370,7 +1350,7 @@ fn enter_on_dialog_with_focused_button_does_not_activate_via_keymap() {
             assert!(
                 response.action.is_none(),
                 "Enter on Dialog overlay must NOT activate via keymap — \
-                 ctx_stack is [\"Dialog\"], not [\"Button\"]"
+ ctx_stack is [\"Dialog\"], not [\"Button\"]"
             );
         }
         OverlayEventResult::Blocked => {

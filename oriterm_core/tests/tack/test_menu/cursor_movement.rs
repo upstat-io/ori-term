@@ -50,7 +50,6 @@ fn run_cursor_movement_at(cols: u16, rows: u16) {
     // surfaces the (clear) cap name plus a single descriptive
     // header line. These two assertions are the canonical
     // semantic claims for 05.4 cap-coverage:
-    //
     // 1. "This line should start in the home position" — proves
     // tack entered the cursor movement test code path. Note
     // this does NOT independently prove `cup` was exercised:
@@ -65,13 +64,12 @@ fn run_cursor_movement_at(cols: u16, rows: u16) {
     // matching the (am)/(os)/(bel)/(colors)/(pairs) pattern
     // from prior screens). This is the cap-coverage pin for
     // `clear` in 05.5.
-    //
     // Per the empirical-finding block in 05.4, only `clear` is
     // honestly covered by 05.4. Coverage for `cup`, `csr`, `hpa`,
     // `vpa`, `cuu`, `cud`, `cub`, `cuf` must come from Section
     // 07's GPU goldens or vttest — `cup` was previously claimed
     // as transitively covered, but (Codex
-    // /review-work) correctly identified that the home behavior
+    // review-work) correctly identified that the home behavior
     // is explained by `clear`'s literal escape and does not
     // independently exercise `cup`.
     assert!(

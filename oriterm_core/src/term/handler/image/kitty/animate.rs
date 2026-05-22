@@ -1,20 +1,26 @@
 //! Kitty graphics `a=a` (animation playback control) action.
 
+use log::warn;
+
 use crate::effect::sink::EffectSink;
+use crate::image::ImageError;
 use crate::image::ImageId;
 use crate::image::kitty::KittyCommand;
 use crate::term::Term;
 
 use super::KittyReplyContext;
+use super::frame_keys::a_a_z_to_gap_update;
 
 impl<S: EffectSink> Term<S> {
     /// Handle `a=a` — control animation playback.
     ///
-    /// Key reinterpretation for `a=a`:
+    /// Key reinterpretation for `a=a` per kitty graphics-protocol.rst §Animation
+    /// control + graphics.c:1729-1743:
     /// - `source_width` (`s=`) → action (1=stop, 2=run wait, 3=run)
-    /// - `display_rows` (`r=`) → set current frame
-    /// - `z_index` (`z=`) → set gap for current frame (ms)
-    /// - `display_cols` (`c=`) → set displayed frame
+    /// - `display_rows` (`r=`) → gap-target frame selector (paired with `z=`)
+    /// - `z_index` (`z=`) → gap value in ms; consumed only via `r=`; negative
+    ///   clamps to ZERO (gapless); 0 means no gap change
+    /// - `display_cols` (`c=`) → current-frame seek (1-based)
     /// - `source_height` (`v=`) → loop count (0=infinite)
     pub(super) fn kitty_animate(&mut self, cmd: &KittyCommand) {
         // : missing `i=` MUST emit ENOENT, mirroring `kitty_place`
@@ -52,28 +58,47 @@ impl<S: EffectSink> Term<S> {
             self.image_cache_mut().set_animation_loops(id, loops);
         }
 
-        // `r=` → set current frame (1-based in Kitty protocol).
+        // `r=` + `z=` → set gap of frame r (gap-target selector). Per kitty
+        // graphics.c:1729-1735, z= is consumed only via r=; standalone z= is
+        // a no-op. z=0 means "no gap change" (kitty's `if (g->gap)` guard at
+        // 1734); negative z= clamps to ZERO (gapless edit, per change_gap at
+        // graphics.c:1348-1350). When r=1 targets the root frame, route
+        // through `ensure_animation_state_for_root_gap` so static-image
+        // root-gap storage is honored.
         if let Some(frame) = cmd.display_rows {
-            if frame > 0 {
-                self.image_cache_mut()
-                    .set_current_frame(id, (frame - 1) as usize);
+            if frame > 0 && cmd.z_index != 0 {
+                let gap_update = a_a_z_to_gap_update(cmd.z_index);
+                if frame == 1 {
+                    match self
+                        .image_cache_mut()
+                        .ensure_animation_state_for_root_gap(id, gap_update)
+                    {
+                        Ok(()) => {}
+                        Err(ImageError::MissingImage { .. }) => {
+                            self.kitty_respond(&ctx, "ENOENT");
+                            return;
+                        }
+                        Err(e) => {
+                            warn!("a=a root gap update failed: {e}");
+                            self.kitty_respond(&ctx, &format!("EINVAL: {e}"));
+                            return;
+                        }
+                    }
+                } else if let Some(gap) = gap_update {
+                    self.image_cache_mut()
+                        .set_frame_gap(id, (frame - 1) as usize, gap);
+                } else {
+                    // z=0 on a non-root frame — kitty parity: do not touch gap.
+                }
             }
         }
 
-        // `c=` → set displayed frame (1-based).
+        // `c=` → seek to frame c (current-frame selector). Per kitty
+        // graphics.c:1737-1743, c=N updates current_frame_index when in range.
         if let Some(frame) = cmd.display_cols {
             if frame > 0 {
                 self.image_cache_mut()
                     .set_current_frame(id, (frame - 1) as usize);
-            }
-        }
-
-        // `z=` → set gap for current frame.
-        if cmd.z_index > 0 {
-            let gap = std::time::Duration::from_millis(cmd.z_index as u64);
-            if let Some(state) = self.image_cache().animation_state(id) {
-                let frame_idx = state.current_frame;
-                self.image_cache_mut().set_frame_gap(id, frame_idx, gap);
             }
         }
 

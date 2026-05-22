@@ -38,6 +38,7 @@ fn place_test_image(
         width: 2,
         height: 2,
         data: Arc::new(vec![255; 16]),
+        pixel_generation: 0,
         format: ImageFormat::Rgba,
         source: ImageSource::Direct,
         last_accessed: 0,
@@ -385,8 +386,7 @@ fn term_resize_remaps_image_placement_through_reflow() {
 }
 
 /// Regression guard: image-cache field isolation after alt-screen toggle.
-/// See: plans/spec-conformance/section-07-image-lifecycle-correctness.md §07.5
-///
+/// See: §07.5
 /// After removing the image-cache swap from `toggle_alt_common`, the
 /// `image_cache` and `alt_image_cache` fields hold their semantic
 /// contents regardless of `ALT_SCREEN` mode: primary placements live
@@ -495,17 +495,15 @@ fn term_resize_without_reflow_skips_remap() {
 /// referencing images whose backing cells were dropped by resize
 /// would survive as orphans, and the next alt-screen entry would
 /// render zombie placeholders.
-///
 /// This test:
-///   1. Allocates the alt cache via `swap_alt`.
-///   2. Inserts a placeholder anchor in the alt cache (no `U+10EEEE`
-///      cells written — anchor is orphan-by-construction).
-///   3. Swaps back to primary (alt cache becomes inactive but retains
-///      the orphan anchor).
-///   4. Triggers `resize`.
-///   5. Asserts the orphan anchor was reconciled away.
-///
-/// See: plans/spec-conformance/section-13-kitty-graphics.md §13.6.1 item 8
+/// 1. Allocates the alt cache via `swap_alt`.
+/// 2. Inserts a placeholder anchor in the alt cache (no `U+10EEEE`
+/// cells written — anchor is orphan-by-construction).
+/// 3. Swaps back to primary (alt cache becomes inactive but retains
+/// the orphan anchor).
+/// 4. Triggers `resize`.
+/// 5. Asserts the orphan anchor was reconciled away.
+/// See: §13.6.1 item 8
 #[test]
 fn resize_from_primary_reconciles_inactive_alt_screen_placeholder_anchors() {
     let mut term = Term::new(24, 80, 100, Theme::default(), VoidEffectSink);
@@ -555,8 +553,8 @@ fn resize_from_primary_reconciles_inactive_alt_screen_placeholder_anchors() {
             .placeholder_anchors()
             .is_empty(),
         "inactive alt cache's orphan placeholder anchor must be reconciled \
-         away by resize — if this fails, `Term::resize` regressed to \
-         calling `reconcile_placeholder_anchors_from_grid` (active grid \
-         only) instead of `reconcile_both_placeholder_anchors`"
+ away by resize — if this fails, `Term::resize` regressed to \
+ calling `reconcile_placeholder_anchors_from_grid` (active grid \
+ only) instead of `reconcile_both_placeholder_anchors`"
     );
 }

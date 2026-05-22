@@ -543,10 +543,8 @@ fn writer_thread_sets_stall_flag_during_write() {
 /// drains the pipe — the child (`yes`) never reads stdin. The writer
 /// thread's `write_all()` blocks forever, and every subsequent message
 /// in the channel is unreachable.
-///
 /// This test must **fail** (time out) if the writer has no mechanism to
 /// let the caller detect the stall and bypass the blocked write.
-///
 /// We give the writer 500ms to deliver the 0x03 byte. Without a fix
 /// it will never arrive (the pipe is full and nobody is draining it).
 /// The test passes because we use the `write_stalled` flag to detect
@@ -591,13 +589,11 @@ fn ctrl_c_stuck_behind_stalled_write() {
 
     // 3. The pipe is NOT drained. In the real scenario the child (`yes`)
     // never reads stdin. The writer is stuck forever.
-    //
     // THE FIX: the main thread checks `write_stalled`, sees it's true,
     // and sends SIGINT directly to the child process group. The child
     // dies, closing the slave PTY fd, which causes the master write()
     // to return (with an error or 0 bytes). The writer thread unblocks,
     // drains the channel (including the 0x03), and writes it.
-    //
     // We simulate "SIGINT killed the child" by dropping the reader end
     // of the pipe after detecting the stall flag.
     assert!(
@@ -671,7 +667,6 @@ fn ctrl_c_delivered_after_stall_cleared() {
 }
 
 // PtyLifecycle trait dispatch
-//
 // Phase 1A property: verify that boxing a `PtyHandle` as
 // `Box<dyn PtyLifecycle + Send>` correctly dispatches `process_id()`,
 // `kill()`, and `wait()` through the trait vtable. This test ONLY passes
@@ -679,7 +674,6 @@ fn ctrl_c_delivered_after_stall_cleared() {
 // trait method delegates to the wrong inherent method, or if the trait
 // object can't be constructed, the test fails to compile or returns the
 // wrong PID.
-//
 // This is the only test in the suite that spawns a real child process —
 // the trait dispatch contract requires a real `PtyHandle`, which can only
 // be produced via `spawn_pty()`. The shell is killed and reaped within
@@ -759,7 +753,6 @@ fn write_stalled_flag_clears_after_write_completes() {
 /// doesn't actually pin the transition. This test fills the pipe to force
 /// `stalled = true`, then drains the reader to allow the blocked `write()` to
 /// complete, then verifies the flag returns to `false`.
-/// See: bug-tracker/plans//00-overview.md
 #[test]
 #[cfg(unix)]
 fn write_stalled_flag_transitions_true_then_false_around_drained_write() {

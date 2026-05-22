@@ -174,14 +174,14 @@ fn input_with_image(image_id: ImageId) -> FrameInput {
             data: Arc::new(pixels),
             width: 2,
             height: 2,
+            pixel_generation: 0,
         });
     input
 }
 
-/// Regression: BUG-06-062 — multi-pane prepare_pane_into was missing
+/// multi-pane prepare_pane_into was missing
 /// Phase D (upload_image_textures), so kitty / sixel images extracted
 /// from snapshots reached the frame but never reached the GPU.
-/// See: bug-tracker/plans/BUG-06-062/00-overview.md
 #[test]
 fn multi_pane_prepare_uploads_image_textures() {
     let (gpu, pipelines, mut renderer) = headless_env().expect("GPU available");
@@ -203,11 +203,10 @@ fn multi_pane_prepare_uploads_image_textures() {
     );
 }
 
-/// Regression: BUG-06-062 — image_texture_cache frame_counter must advance
+/// image_texture_cache frame_counter must advance
 /// exactly once per visual frame in multi-pane mode, regardless of pane
 /// count. Naive per-pane upload would advance N times, tightening the
 /// effective evict_unused retention window to THRESHOLD/pane_count.
-/// See: bug-tracker/plans/BUG-06-062/00-overview.md
 #[test]
 fn multi_pane_frame_counter_advances_once_per_frame_regardless_of_panes() {
     let (gpu, pipelines, mut renderer) = headless_env().expect("GPU available");
@@ -228,16 +227,15 @@ fn multi_pane_frame_counter_advances_once_per_frame_regardless_of_panes() {
         after - before,
         1,
         "image_texture_cache.frame_counter must advance exactly once per visual frame, \
-         not N times where N = pane count"
+ not N times where N = pane count"
     );
 }
 
-/// Regression: BUG-06-062 pane-cache invariant — a pane served from
+/// Regression: pane-cache invariant — a pane served from
 /// PaneRenderCache skips prepare_pane_into. Without touch_cached_pane_images,
 /// the image texture last_frame never advances and evict_unused(THRESHOLD)
 /// drops it after THRESHOLD cached frames, leaving cached image quads with
 /// None bind groups.
-/// See: bug-tracker/plans/BUG-06-062/00-overview.md
 #[test]
 fn touch_cached_pane_images_refreshes_last_frame() {
     use crate::gpu::prepared_frame::ImageQuad;
@@ -302,10 +300,9 @@ fn touch_cached_pane_images_refreshes_last_frame() {
     );
 }
 
-/// Regression: BUG-06-062 — touch_cached_pane_images returns false when
+/// touch_cached_pane_images returns false when
 /// a referenced image has been evicted between cache write and now.
 /// Caller must invalidate the pane cache and fall through to re-prepare.
-/// See: bug-tracker/plans/BUG-06-062/00-overview.md (Code TPR F1)
 #[test]
 fn touch_cached_pane_images_returns_false_when_image_evicted() {
     use crate::gpu::prepared_frame::ImageQuad;
@@ -336,13 +333,12 @@ fn touch_cached_pane_images_returns_false_when_image_evicted() {
     assert!(
         !all_present,
         "touch_cached_pane_images must return false when any referenced image is missing — \
-         caller relies on this to invalidate the pane cache and fall through to cache-miss"
+ caller relies on this to invalidate the pane cache and fall through to cache-miss"
     );
 }
 
-/// Regression: BUG-06-062 — touch_cached_pane_images returns true when
+/// touch_cached_pane_images returns true when
 /// every referenced image is present in the cache.
-/// See: bug-tracker/plans/BUG-06-062/00-overview.md
 #[test]
 fn touch_cached_pane_images_returns_true_when_all_present() {
     use crate::gpu::prepared_frame::ImageQuad;
@@ -384,10 +380,9 @@ fn touch_cached_pane_images_returns_true_when_all_present() {
     );
 }
 
-/// Regression: BUG-06-062 pane-cache eviction without touch — WITHOUT the
+/// Regression: pane-cache eviction without touch — WITHOUT the
 /// touch call, the same scenario MUST result in the image being evicted.
 /// Proves the touch is load-bearing, not coincidental.
-/// See: bug-tracker/plans/BUG-06-062/00-overview.md
 #[test]
 fn touch_cached_pane_images_negative_pin_eviction_without_touch() {
     use crate::gpu::prepared_frame::ImageQuad;

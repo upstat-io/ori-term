@@ -26,7 +26,7 @@
 //! variant) and 08.8b (`ECMA48-DCS-DECRQSS-DECSLRM`). The generic
 //! DECRQSS round-trip is covered in-depth by those subsections;
 //! duplicating the surface-level round-trip here would be
-//! `LEAK:algorithmic-duplication`.
+//! ``.
 
 use oriterm_core::effect::PtyWriteKind;
 use oriterm_test_support::spec_chain::{
@@ -37,7 +37,6 @@ use oriterm_test_support::spec_chain::{
 // --- DA2 -------------------------------------------------------------------
 
 /// DA2 (`CSI > c`) drives parser → dispatch → effect apex.
-///
 /// Tack's `da2` sub-test at `status_reports_inventory[3]` emits
 /// `CSI > c` and validates the response format. This replay verifies
 /// ori_term tokenizes the sequence with the `>` intermediate, routes
@@ -76,7 +75,6 @@ fn da2_query_drives_to_effect_apex() {
 }
 
 /// DA2 with explicit-zero param (`CSI > 0 c`) drives the same path.
-///
 /// Tack's `status_reports_inventory` fixtures label this probe as
 /// `(CSI > 0 c)` (per `crates/oriterm_test_support/src/tack_framework/scenarios/status_reports/tests.rs:25-27`),
 /// not the implicit-zero `CSI > c` form. This matrix cell pins the
@@ -116,7 +114,6 @@ fn da2_query_explicit_zero_param_drives_to_effect_apex() {
 }
 
 /// Explicit-zero and implicit-zero DA2 forms emit identical replies.
-///
 /// Proves the two forms are behaviorally equivalent at the effect
 /// layer — a regression that reported a different value for one
 /// form would fail here.
@@ -143,7 +140,6 @@ fn da2_explicit_and_implicit_zero_replies_match() {
 }
 
 /// DA2 reply bytes start with `ESC [ > 0 ;` (terminal type 0).
-///
 /// Confirms the effect transcript contains the DA2-specific prefix,
 /// not the DA1 prefix (`ESC [ ?`). Without this pin, a regression
 /// that accidentally returned the DA1 reply for `CSI > c` would pass
@@ -171,7 +167,6 @@ fn da2_reply_has_secondary_prefix() {
 // --- DA3 -------------------------------------------------------------------
 
 /// DA3 (`CSI = c`) drives parser → dispatch → effect apex.
-///
 /// Tack's `da3` sub-test at `status_reports_inventory[18]` emits
 /// `CSI = c` and expects a DCS `!|` unit-ID response. This replay
 /// verifies ori_term tokenizes the `=` intermediate, routes through
@@ -210,7 +205,6 @@ fn da3_query_drives_to_effect_apex() {
 }
 
 /// DA3 with explicit-zero param (`CSI = 0 c`) drives the same path.
-///
 /// Matrix cell pairing: tack's fixture labels DA3 as `(CSI = 0 c)`
 /// (explicit-zero). Pins the verbatim form so regressions in the
 /// explicit-zero path can't hide behind the implicit-zero green.
@@ -247,7 +241,6 @@ fn da3_query_explicit_zero_param_drives_to_effect_apex() {
 }
 
 /// DA3 reply is a DCS frame: `ESC P ! |... ESC \` (eight hex digits).
-///
 /// Pins the xterm-standard unit-ID format. Regressions that emit a
 /// CSI response instead of DCS, or return the wrong digit count,
 /// fail here.
@@ -270,7 +263,6 @@ fn da3_reply_is_dcs_unit_id_frame() {
 // --- DSR 5 (operating status) ----------------------------------------------
 
 /// DSR operating status (`CSI 5 n`) drives parser → dispatch → effect apex.
-///
 /// Tack's `dsr_status` sub-test at `status_reports_inventory[1]`
 /// emits `CSI 5 n` and expects a `CSI 0 n` (ready) response. This
 /// replay verifies ori_term routes through `device_status(5)` and
@@ -323,7 +315,6 @@ fn dsr_5_reply_is_ready() {
 // --- DSR 6 (cursor position) -----------------------------------------------
 
 /// DSR cursor position report (`CSI 6 n`) drives parser → dispatch → effect apex.
-///
 /// Tack's `dsr_cpr` sub-test at `status_reports_inventory[2]` emits
 /// `CSI 6 n` and validates the response format `ESC [ r ; c R`. This
 /// replay verifies ori_term routes through `device_status(6)` and
@@ -357,7 +348,6 @@ fn dsr_6_drives_to_effect_apex() {
 }
 
 /// DSR 6 at default cursor origin replies with `ESC [ 1 ; 1 R`.
-///
 /// The default SpecHarness state has the cursor at (0, 0); CPR
 /// reports 1-based coordinates per ECMA-48 §8.3.35, so the reply is
 /// `ESC [ 1 ; 1 R`. If DECOM were active and the scroll region
@@ -382,7 +372,6 @@ fn dsr_6_reply_is_one_one_at_default_cursor() {
 // --- Negative pins ---------------------------------------------------------
 
 /// Regression guard: DSR 6 must emit `CursorReport`, NOT `DeviceStatus`.
-///
 /// Matrix pair with `dsr_5_does_not_emit_cursor_report`. Without
 /// this pin, a regression that routed `CSI 6 n` to the
 /// `DeviceStatus` kind (instead of `CursorReport`) would pass the
@@ -404,7 +393,6 @@ fn dsr_6_does_not_emit_device_status() {
 }
 
 /// Regression guard: DSR 5 must emit `DeviceStatus`, NOT `CursorReport`.
-///
 /// Without this pin, a regression that routed both DSR variants to
 /// the same `PtyWriteKind` (e.g. always `CursorReport`) would pass
 /// the positive DSR 5 pin above because the bytes check is separate.
@@ -424,7 +412,6 @@ fn dsr_5_does_not_emit_cursor_report() {
 }
 
 /// Regression guard: DA1 / DA2 / DA3 must emit different reply bytes.
-///
 /// Proves the three DA variants dispatch to different response
 /// bodies based on intermediate, not a single shared reply. Without
 /// this pin, a regression that ignored the intermediate and always

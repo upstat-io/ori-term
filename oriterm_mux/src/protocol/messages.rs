@@ -16,10 +16,8 @@ use super::snapshot::{PaneSnapshot, WireSelection};
 /// Each variant carries its own data. The bincode encoding includes the
 /// enum discriminant, so the `msg_type` in the frame header is redundant
 /// for deserialization but useful for pre-routing and debugging.
-///
 /// `Eq` derive dropped at `PROTOCOL_VERSION` v3 because `PaneSnapshot` carries
 /// `WirePlacement` (f32, `PartialEq` only).
-/// See: bug-tracker/plans/BUG-06-072/
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum MuxPdu {
     // -- Requests (client → daemon) --
@@ -48,7 +46,6 @@ pub enum MuxPdu {
     },
 
     /// Send a signal to a pane's child process group. Fire-and-forget.
-    ///
     /// Bypasses the PTY writer when it's stalled (kernel buffer full).
     /// Used for Ctrl+C delivery during output flooding.
     SignalChild {
@@ -396,7 +393,6 @@ pub enum MuxPdu {
     NotifyNewTab,
 
     /// Server-pushed pane snapshot (proactive, throttled to ~250fps / 4ms).
-    ///
     /// Only sent to clients that advertised [`CAP_SNAPSHOT_PUSH`].
     NotifyPaneSnapshot {
         /// Pane this snapshot belongs to.
@@ -436,7 +432,6 @@ pub enum MuxPdu {
         terminator: String,
     },
     /// Client reply to a `NotifyHostClipboardLoad` / `NotifyHostColorQuery`.
-    ///
     /// Fire-and-forget — the daemon dispatches the payload into its
     /// pending host-replies map keyed by `request_id`.
     ReplyHostRequest {
@@ -446,7 +441,6 @@ pub enum MuxPdu {
         payload: HostReplyPayload,
     },
     /// Desktop notification (OSC 9 / 99 / 777) forwarded from a pane.
-    ///
     /// Stateless — no token, no reply correlation required.
     NotifyDesktopNotification {
         /// Originating pane.
@@ -477,7 +471,6 @@ pub enum MuxPdu {
     },
 
     /// Update the ENQ answerback string for a pane. Fire-and-forget.
-    ///
     /// Empty bytes (default) suppress emission per ECMA-48 §8.3.40 +
     /// `WezTerm` parity. Non-empty bytes are written verbatim to the PTY
     /// on each `\x05` byte received from the application.

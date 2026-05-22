@@ -7,7 +7,7 @@
 //! IO-thread handler are tested in `oriterm_mux` (see
 //! `backend::embedded::tests` and `pane::io_thread::tests`).
 //!
-//! See: plans/spec-conformance/section-07-image-lifecycle-correctness.md §07.N
+//! See: §07.N
 
 use super::{cell_metric_broadcast_needed, collect_window_pane_ids, try_claim_broadcast};
 
@@ -53,8 +53,7 @@ fn negative_pin_degenerate_dims_short_circuit() {
 /// Regression: a font-size change that does NOT alter grid cols/rows
 /// must still trigger a cell-metric broadcast. This pins the decision
 /// helper: changed pixel dims fire even when grid cols/rows are constant.
-/// See: plans/spec-conformance/section-07-image-lifecycle-correctness.md §07.N
-///
+/// See: §07.N
 /// The full broadcast fanout (`broadcast_cell_metrics_to_window` →
 /// `mux.set_cell_dimensions` for all panes) is verified at the mux
 /// level by `both_split_panes_receive_updated_metrics_after_font_change`
@@ -127,7 +126,7 @@ fn try_claim_broadcast_full_sequence() {
 /// Regression: `broadcast_cell_metrics_to_window` must reach every pane
 /// across all tabs in the target window. This tests the extracted
 /// enumeration helper independently of the App fixture.
-/// See: plans/spec-conformance/section-07-image-lifecycle-correctness.md §07.N
+/// See: §07.N
 #[test]
 fn collect_window_pane_ids_spans_all_tabs() {
     use oriterm_mux::PaneId;
@@ -157,7 +156,7 @@ fn collect_window_pane_ids_spans_all_tabs() {
 }
 
 /// Regression guard: a window with no tabs returns an empty list.
-/// See: plans/spec-conformance/section-07-image-lifecycle-correctness.md §07.N
+/// See: §07.N
 #[test]
 fn collect_window_pane_ids_empty_window() {
     use crate::session::{SessionRegistry, Window};
@@ -171,7 +170,7 @@ fn collect_window_pane_ids_empty_window() {
 }
 
 /// Regression guard: a non-existent window returns an empty list.
-/// See: plans/spec-conformance/section-07-image-lifecycle-correctness.md §07.N
+/// See: §07.N
 #[test]
 fn collect_window_pane_ids_missing_window() {
     use crate::session::SessionRegistry;

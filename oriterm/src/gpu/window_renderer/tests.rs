@@ -13,23 +13,20 @@
 //! regression pin for chrome.rs's parallel-predicate consumption.
 
 // --- Chrome render SSOT consolidation pins ---
-//
 // Pin the `cache_invalidated_this_frame` SSOT contract:
 // - Constructor-init: both `WindowRenderer::new` and `new_ui_only` start
-//   with the flag false (no frame prepared yet).
+// with the flag false (no frame prepared yet).
 // - Multi-pane setter: `begin_multi_pane_frame` unconditionally sets the
-//   flag true (multi-pane always rebuilds the aggregate prepared frame).
+// flag true (multi-pane always rebuilds the aggregate prepared frame).
 // - Chrome SSOT consumer: source-scan archaeology asserts `chrome.rs`
-//   reads from `renderer.cache_invalidated_this_frame()` and does NOT
-//   maintain a parallel `ChromeParams` predicate.
+// reads from `renderer.cache_invalidated_this_frame()` and does NOT
+// maintain a parallel `ChromeParams` predicate.
 
 /// Regression: chrome.rs must read from
 /// `WindowRenderer::cache_invalidated_this_frame()` and NOT carry a
 /// parallel `ChromeParams::{content_dirty, selection_changed, blink_changed}`
 /// predicate. Drift would re-introduce the SSOT violation; this test
 /// fails at compile time if `chrome.rs` regresses.
-///
-/// See: bug-tracker/plans/BUG-06-033/section-03-tdd-matrix.md §"Parallel-
 /// predicate regression pin (renderer-level surrogate + automated archaeology)"
 #[test]
 fn chrome_render_queries_renderer_ssot() {
@@ -39,7 +36,7 @@ fn chrome_render_queries_renderer_ssot() {
     assert!(
         chrome_src.contains("renderer.cache_invalidated_this_frame() || ctx.ui_stale"),
         "chrome.rs must read needs_full_render from renderer.cache_invalidated_this_frame() \
-         (SSOT consolidation regression)"
+ (SSOT consolidation regression)"
     );
 
     // Negative: the old parallel-predicate fields must be gone from chrome.
@@ -70,7 +67,6 @@ use oriterm_core::Rgb;
 use crate::gpu::visual_regression::headless_env;
 
 /// Constructor pin: fresh `WindowRenderer::new` reports cache-NOT-invalidated.
-///
 /// No frame has been prepared yet, so the flag must default to false.
 #[cfg(feature = "gpu-tests")]
 #[test]
@@ -118,7 +114,6 @@ fn new_ui_only_constructor_initializes_cache_invalidated_to_false() {
 /// Multi-pane setter pin: `begin_multi_pane_frame` unconditionally sets
 /// the flag true. Multi-pane always rebuilds the aggregate prepared
 /// frame (no incremental fast path), so the SSOT must report invalidation.
-///
 /// Note: this is a setter-correctness pin, not a regression pin —
 /// `multi_pane/mod.rs:122-127` already triggers `any_content_changed`
 /// via `is_focused`, so the chrome stale-blit case the parallel
@@ -136,15 +131,14 @@ fn begin_multi_pane_frame_sets_cache_invalidated_true() {
     assert!(
         renderer.cache_invalidated_this_frame(),
         "begin_multi_pane_frame must set cache_invalidated_this_frame=true \
-         (multi-pane always rebuilds, no incremental fast path)"
+ (multi-pane always rebuilds, no incremental fast path)"
     );
 }
 
-/// Regression: BUG-06-030 — selection change MUST cause the full prepare
+/// selection change MUST cause the full prepare
 /// pass to run, NOT the cursor-only fast path. Calls `WindowRenderer::prepare`
 /// directly and asserts on `cache_invalidated_this_frame()` so the integrated
 /// dispatch semantic is exercised end-to-end.
-/// See: bug-tracker/plans/completed/BUG-06-030/
 #[cfg(feature = "gpu-tests")]
 #[test]
 fn fast_path_skipped_when_selection_changes() {
@@ -179,7 +173,7 @@ fn fast_path_skipped_when_selection_changes() {
     assert!(
         renderer.cache_invalidated_this_frame(),
         "selection change MUST force full prepare; fast path with stale selection \
-         would replay stale decorations from saved_tier"
+ would replay stale decorations from saved_tier"
     );
 }
 
@@ -203,7 +197,7 @@ fn fast_path_skipped_when_hovered_cell_changes() {
     assert!(
         renderer.cache_invalidated_this_frame(),
         "hovered_cell change MUST force full prepare; fast path with stale hover \
-         would replay stale hyperlink-underline decorations from saved_tier"
+ would replay stale hyperlink-underline decorations from saved_tier"
     );
 }
 
@@ -255,13 +249,12 @@ fn fast_path_taken_when_hovered_cell_unchanged() {
 }
 
 // --- Cursor position/shape/visibility row-state pins ---
-/// Regression: BUG-06-040 — `WindowRenderer::has_row_state_change` did not
+/// `WindowRenderer::has_row_state_change` did not
 /// gate the cursor-only fast path on cursor position, shape, or visibility,
 /// so cursor moves under a stationary content frame replayed stale per-cell
 /// colors at the old + new cursor positions. The fix extends the predicate
 /// with `prev_resolved_cursor: Option<RenderableCursor>` (visibility-
 /// canonicalized: invisible cursors store as None).
-/// See: bug-tracker/plans/completed/BUG-06-040/
 #[cfg(feature = "gpu-tests")]
 use oriterm_core::{Column, CursorShape, RenderableCursor};
 
@@ -303,7 +296,7 @@ fn fast_path_skipped_when_cursor_column_changes() {
     assert!(
         renderer.cache_invalidated_this_frame(),
         "cursor column change MUST force full prepare; fast path with stale cursor \
-         would replay stale per-cell colors at the OLD cursor position"
+ would replay stale per-cell colors at the OLD cursor position"
     );
 }
 
@@ -375,8 +368,8 @@ fn fast_path_skipped_when_cursor_shape_changes() {
     assert!(
         renderer.cache_invalidated_this_frame(),
         "cursor shape change at same position MUST force full prepare; \
-         is_block_cursor_cell gates on shape, so stale Block-shape colors leak \
-         when fast path replays without re-emission"
+ is_block_cursor_cell gates on shape, so stale Block-shape colors leak \
+ when fast path replays without re-emission"
     );
 }
 
@@ -556,7 +549,7 @@ fn fast_path_skipped_when_cursor_moves_off_cjk_wide_cell() {
     assert!(
         renderer.cache_invalidated_this_frame(),
         "cursor move off CJK base cell MUST force full prepare; \
-         is_block_cursor_cell wide-char branch needs re-emission for the wide pair"
+ is_block_cursor_cell wide-char branch needs re-emission for the wide pair"
     );
 }
 
@@ -636,8 +629,8 @@ fn fast_path_taken_when_invisible_cursor_moves() {
     assert!(
         !renderer.cache_invalidated_this_frame(),
         "invisible cursor 'move' MUST NOT invalidate the fast path; \
-         visibility-canonicalized storage rule (None for invisible) makes \
-         hidden-to-hidden comparisons no-op"
+ visibility-canonicalized storage rule (None for invisible) makes \
+ hidden-to-hidden comparisons no-op"
     );
 }
 
@@ -669,12 +662,11 @@ fn fast_path_taken_when_mark_cursor_active_and_terminal_cursor_moves() {
     assert!(
         !renderer.cache_invalidated_this_frame(),
         "mark_cursor masks terminal cursor; terminal cursor moves under an active \
-         mark override MUST NOT invalidate the fast path"
+ mark override MUST NOT invalidate the fast path"
     );
 }
 
 /// Decode an instance's bg_color from the InstanceWriter byte buffer.
-///
 /// Uses `instance_writer::OFF_*` constants as the layout SSOT — the 96-byte
 /// record shape is owned by `instance_writer/mod.rs`.
 #[cfg(feature = "gpu-tests")]
@@ -775,8 +767,8 @@ fn cell_colors_correct_after_cursor_moves_within_selection() {
         old_bg,
         rgb_to_f32(cell_fg.r, cell_fg.g, cell_fg.b),
         "OLD cursor cell at (1,3) MUST emit selection-inverted bg = cell.fg \
-         after frame 2; stale Block-cursor-suppressed colors would leak \
-         without the prev_resolved_cursor fast-path gate"
+ after frame 2; stale Block-cursor-suppressed colors would leak \
+ without the prev_resolved_cursor fast-path gate"
     );
 
     // NEW cursor cell — block-cursor-suppressed, so bg_color = cell.bg.
@@ -852,7 +844,7 @@ fn cell_colors_correct_after_cursor_moves_within_search_match() {
     assert_eq!(
         old_bg, search_match_bg,
         "OLD cursor cell at (2,6) MUST emit SEARCH_MATCH_BG after cursor moves \
-         off — stale block-cursor suppression would leak without the gate"
+ off — stale block-cursor suppression would leak without the gate"
     );
 
     let new_bg =
@@ -861,12 +853,11 @@ fn cell_colors_correct_after_cursor_moves_within_search_match() {
         new_bg,
         rgb_to_f32(cell_bg.r, cell_bg.g, cell_bg.b),
         "NEW cursor cell at (2,4) MUST emit block-cursor-suppressed bg = cell.bg \
-         (search highlight suppressed by is_block_cursor_cell)"
+ (search highlight suppressed by is_block_cursor_cell)"
     );
 }
 
 // --- Full predicate-clause matrix for cache_invalidated_this_frame ---
-//
 // Pins every dispatch-fingerprint field (`compute_dispatch_fingerprint` at
 // `gpu/prepare/mod.rs:66`) and every top-level clause of `can_reuse_content_cache`
 // (at `frame_prep.rs:104-108`). Future field additions to either site that lack a
@@ -1014,14 +1005,13 @@ fn content_cols_change_invalidates_cache() {
     });
 }
 
-/// Regression: BUG-06-037 — `content_cols` is masked in the integrated helper
+/// `content_cols` is masked in the integrated helper
 /// because `cached_valid` (frame_prep.rs:97) ALSO flips false when `cols`
 /// changes (`shaping.frame.cols() == cols`). The integrated helper above
 /// therefore cannot distinguish whether the cache invalidated via the
 /// `dispatch_changed` clause or the `cached_valid` clause; if `content_cols`
 /// were silently dropped from `compute_dispatch_fingerprint`, the integrated
 /// pin would still pass via the `cached_valid` path.
-///
 /// This direct-fingerprint pin closes the gap: it asserts that `content_cols`
 /// alone produces a different `compute_dispatch_fingerprint` value, isolating
 /// the `dispatch_changed` contribution from the `cached_valid` masking.
@@ -1067,7 +1057,7 @@ fn origin_y_change_invalidates_cache() {
 
 // --- Per-cell alpha multipliers (4) ---
 
-/// Regression: BUG-06-037 — `palette.opacity` is in the dispatch fingerprint;
+/// `palette.opacity` is in the dispatch fingerprint;
 /// mutation MUST invalidate the cache via the SSOT predicate.
 #[cfg(feature = "gpu-tests")]
 #[test]
@@ -1077,7 +1067,7 @@ fn palette_opacity_change_invalidates_cache() {
     });
 }
 
-/// Regression: BUG-06-037 — one-ULP delta still invalidates.
+/// one-ULP delta still invalidates.
 /// `compute_dispatch_fingerprint` hashes `f32` via `to_bits()`, so even the
 /// smallest representable change (one bit in the mantissa) produces a
 /// fingerprint difference. `f32::from_bits` adjusts the underlying bits by
@@ -1108,7 +1098,7 @@ fn fg_dim_change_invalidates_cache() {
 
 // --- Palette overlay colors (3) ---
 
-/// Regression: BUG-06-038 — palette.background MUST invalidate (selection-INVERSE
+/// palette.background MUST invalidate (selection-INVERSE
 /// fallback at resolve.rs:98 + emit_cell_bg skip at emit_cell/mod.rs:91).
 #[cfg(feature = "gpu-tests")]
 #[test]
@@ -1118,7 +1108,7 @@ fn palette_background_change_invalidates_cache() {
     });
 }
 
-/// Regression: BUG-06-038 — palette.foreground MUST invalidate (selection-INVERSE
+/// palette.foreground MUST invalidate (selection-INVERSE
 /// fallback at resolve.rs:98 + selection fg=bg fallback at resolve.rs:102 +
 /// draw_url_hover_underline ephemeral consumer at emit.rs:300).
 #[cfg(feature = "gpu-tests")]
@@ -1129,7 +1119,7 @@ fn palette_foreground_change_invalidates_cache() {
     });
 }
 
-/// Regression: BUG-06-038 — palette.cursor_color MUST invalidate. Cursor
+/// palette.cursor_color MUST invalidate. Cursor
 /// rect feeds the ephemeral cursor tier today (clear_ephemeral_tiers @
 /// prepare/mod.rs:288); inclusion is defense-in-depth + future-proofing.
 #[cfg(feature = "gpu-tests")]
@@ -1142,7 +1132,7 @@ fn palette_cursor_color_change_invalidates_cache() {
 
 // --- Palette selection-color overrides (6) ---
 
-/// Regression: BUG-06-038 — selection_fg None → Some MUST invalidate.
+/// selection_fg None → Some MUST invalidate.
 #[cfg(feature = "gpu-tests")]
 #[test]
 fn palette_selection_fg_none_to_some_invalidates_cache() {
@@ -1155,7 +1145,7 @@ fn palette_selection_fg_none_to_some_invalidates_cache() {
     });
 }
 
-/// Regression: BUG-06-038 — selection_fg Some → None MUST invalidate.
+/// selection_fg Some → None MUST invalidate.
 #[cfg(feature = "gpu-tests")]
 #[test]
 fn palette_selection_fg_some_to_none_invalidates_cache() {
@@ -1179,7 +1169,7 @@ fn palette_selection_fg_some_to_none_invalidates_cache() {
     );
 }
 
-/// Regression: BUG-06-038 — selection_fg Some(A) → Some(B) MUST invalidate.
+/// selection_fg Some(A) → Some(B) MUST invalidate.
 #[cfg(feature = "gpu-tests")]
 #[test]
 fn palette_selection_fg_some_value_change_invalidates_cache() {
@@ -1207,7 +1197,7 @@ fn palette_selection_fg_some_value_change_invalidates_cache() {
     );
 }
 
-/// Regression: BUG-06-038 — selection_bg None → Some MUST invalidate.
+/// selection_bg None → Some MUST invalidate.
 #[cfg(feature = "gpu-tests")]
 #[test]
 fn palette_selection_bg_none_to_some_invalidates_cache() {
@@ -1220,7 +1210,7 @@ fn palette_selection_bg_none_to_some_invalidates_cache() {
     });
 }
 
-/// Regression: BUG-06-038 — selection_bg Some → None MUST invalidate.
+/// selection_bg Some → None MUST invalidate.
 #[cfg(feature = "gpu-tests")]
 #[test]
 fn palette_selection_bg_some_to_none_invalidates_cache() {
@@ -1244,7 +1234,7 @@ fn palette_selection_bg_some_to_none_invalidates_cache() {
     );
 }
 
-/// Regression: BUG-06-038 — selection_bg Some(A) → Some(B) MUST invalidate.
+/// selection_bg Some(A) → Some(B) MUST invalidate.
 #[cfg(feature = "gpu-tests")]
 #[test]
 fn palette_selection_bg_some_value_change_invalidates_cache() {
@@ -1274,7 +1264,7 @@ fn palette_selection_bg_some_value_change_invalidates_cache() {
 
 // --- Palette direct-fingerprint pins (8) ---
 
-/// Regression: BUG-06-038 — direct-fingerprint pin for palette.background.
+/// direct-fingerprint pin for palette.background.
 #[test]
 fn palette_background_alters_dispatch_fingerprint_directly() {
     assert_palette_field_alters_dispatch_fingerprint("palette.background", |input| {
@@ -1282,7 +1272,7 @@ fn palette_background_alters_dispatch_fingerprint_directly() {
     });
 }
 
-/// Regression: BUG-06-038 — direct-fingerprint pin for palette.foreground (.g channel).
+/// direct-fingerprint pin for palette.foreground (.g channel).
 #[test]
 fn palette_foreground_alters_dispatch_fingerprint_directly() {
     assert_palette_field_alters_dispatch_fingerprint("palette.foreground", |input| {
@@ -1290,7 +1280,7 @@ fn palette_foreground_alters_dispatch_fingerprint_directly() {
     });
 }
 
-/// Regression: BUG-06-038 — direct-fingerprint pin for palette.cursor_color (.b channel).
+/// direct-fingerprint pin for palette.cursor_color (.b channel).
 #[test]
 fn palette_cursor_color_alters_dispatch_fingerprint_directly() {
     assert_palette_field_alters_dispatch_fingerprint("palette.cursor_color", |input| {
@@ -1298,7 +1288,7 @@ fn palette_cursor_color_alters_dispatch_fingerprint_directly() {
     });
 }
 
-/// Regression: BUG-06-038 — direct-fingerprint pin for palette.opacity. Already
+/// direct-fingerprint pin for palette.opacity. Already
 /// passes pre-fix; verifies the migration to damage_fingerprint().hash() preserves
 /// opacity contribution.
 #[test]
@@ -1308,7 +1298,7 @@ fn palette_opacity_alters_dispatch_fingerprint_directly() {
     });
 }
 
-/// Regression: BUG-06-038 — direct-fingerprint pin for selection_fg None → Some.
+/// direct-fingerprint pin for selection_fg None → Some.
 #[test]
 fn palette_selection_fg_alters_dispatch_fingerprint_directly() {
     assert_palette_field_alters_dispatch_fingerprint("palette.selection_fg", |input| {
@@ -1320,7 +1310,7 @@ fn palette_selection_fg_alters_dispatch_fingerprint_directly() {
     });
 }
 
-/// Regression: BUG-06-038 — direct-fingerprint pin for selection_bg None → Some.
+/// direct-fingerprint pin for selection_bg None → Some.
 #[test]
 fn palette_selection_bg_alters_dispatch_fingerprint_directly() {
     assert_palette_field_alters_dispatch_fingerprint("palette.selection_bg", |input| {
@@ -1332,7 +1322,7 @@ fn palette_selection_bg_alters_dispatch_fingerprint_directly() {
     });
 }
 
-/// Regression: BUG-06-038 — selection_fg Some(A) → Some(B) direct-fingerprint pin.
+/// selection_fg Some(A) → Some(B) direct-fingerprint pin.
 /// Without gpu-tests, ensures the inner Rgb value (not just the Option discriminant)
 /// hashes through.
 #[test]
@@ -1358,7 +1348,7 @@ fn palette_selection_fg_some_value_alters_dispatch_fingerprint_directly() {
     );
 }
 
-/// Regression: BUG-06-038 — selection_bg Some(A) → Some(B) direct-fingerprint pin.
+/// selection_bg Some(A) → Some(B) direct-fingerprint pin.
 #[test]
 fn palette_selection_bg_some_value_alters_dispatch_fingerprint_directly() {
     let mut input1 = crate::gpu::frame_input::FrameInput::test_grid(10, 10, "");
@@ -1394,7 +1384,7 @@ fn subpixel_positioning_change_invalidates_cache() {
 
 // --- Search (1) ---
 
-/// Regression: BUG-06-037 — flipping `search_fingerprint` `None → Some`
+/// flipping `search_fingerprint` `None → Some`
 /// MUST invalidate the cache via the SSOT predicate. The Option discriminant
 /// itself is hashed by `compute_dispatch_fingerprint` via Hash-derived
 /// enums; `FrameSearch::for_test` is the cfg(test) constructor that
@@ -1499,8 +1489,7 @@ fn no_terminal_data_invalidates_cache() {
 /// MUST invalidate the cache via the integrated SSOT predicate. Mutates
 /// `hovered_cell` because it is the most isolated row_state input — no
 /// dispatch fingerprint impact, no other row_state side effects.
-///
-/// Regression: BUG-06-037 — pins the row_state_changed top-level clause of
+/// pins the row_state_changed top-level clause of
 /// `can_reuse_content_cache` (frame_prep.rs:99,106).
 #[cfg(feature = "gpu-tests")]
 #[test]

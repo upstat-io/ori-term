@@ -29,7 +29,7 @@ jobs:
     name: Prepare Release
     if: "!startsWith(github.event.head_commit.message, 'chore: release v')"
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 25
     outputs:
       tag: ${{ steps.tag.outputs.tag }}
       skip: ${{ steps.tag.outputs.skip }}

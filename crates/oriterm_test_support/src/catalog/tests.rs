@@ -48,7 +48,7 @@ use crate::spec_chain::uncataloged::{UncatalogedDetector, perform_action_to_tupl
 /// Resolve the term_repo workspace root via the canonical SSOT helper.
 /// All call sites in this file use term-repo-relative paths (vte source
 /// scanning); `paths::term_workspace_root()` is always available and has
-/// no wrapper concern. See `bug-tracker/plans/completed/`.
+/// no wrapper concern. See .
 fn workspace_root() -> &'static std::path::Path {
     crate::paths::term_workspace_root()
 }
@@ -223,20 +223,16 @@ fn build_dispatch_map_includes_known_handler_names() {
 }
 
 // -------- Cross-producer SSOT alignment matrix ----------------
-//
 // Four producers construct OSC tuples that MUST yield identical
 // `TupleSig` for the same OSC sequence:
-//
 // 1. catalog `parse_osc` (`canonical_tuple`) — `tuple/canonical.rs`
 // 2. dispatch `extract_dispatch_tuples` — `dispatch_extract/osc.rs`
 // 3. capture `extract_capture_tuples` — `capture_extract.rs`
 // 4. runtime `UncatalogedDetector::feed_actions` — `spec_chain/uncataloged/mod.rs`
-//
 // Pre-fix, producer 4 alone placed the OSC selector in `final_byte`
 // and producers 1+2+3 placed it in `params` with the terminator in
 // `final_byte` (collapsing all OSCs to `("OSC", [], "BEL")`). After
 // the SSOT alignment, all four put the selector in `final_byte`.
-//
 // OSC 7/9/99/133/633/777 are owned by `oriterm_mux::shell_integration::
 // RawInterceptor` and have NO arm in `crates/vte/src/ansi/dispatch/osc.rs`.
 // The matrix excludes them — including them would assert against a
@@ -439,7 +435,7 @@ fn osc_tuple_sig_aligns_across_all_four_producers() {
             let t2 = dispatch_tuple(selector).unwrap_or_else(|| {
                 panic!(
                     "selector {selector}: dispatch_extract must yield a tuple with \
-                     selector in final_byte (got dispatch tuples: {:?})",
+ selector in final_byte (got dispatch tuples: {:?})",
                     extract_dispatch_tuples(&workspace_root())
                         .expect("extract")
                         .into_iter()
@@ -465,7 +461,7 @@ fn osc_tuple_sig_aligns_across_all_four_producers() {
     assert_eq!(
         producer_cells_exercised, expected_cells,
         "self-verifying matrix completeness — expected {expected_cells} producer cells \
-         (9 selectors × {producer_count} producers), got {producer_cells_exercised}"
+ (9 selectors × {producer_count} producers), got {producer_cells_exercised}"
     );
 }
 
@@ -529,7 +525,7 @@ fn classify_from_map_osc_normalizes_via_final_byte_only() {
         Classification::Dispatched { .. } => {}
         Classification::NoDispatch => panic!(
             "classify_from_map must dispatch capture-shape OSC 0; \
-             dispatch map has: {:?}",
+ dispatch map has: {:?}",
             map.keys()
                 .filter(|k| k.category == Category::Osc && k.final_byte == "0")
                 .collect::<Vec<_>>()
@@ -561,11 +557,9 @@ fn classify_from_map_osc_normalizes_via_final_byte_only() {
 // =========================================================================
 // CSI cross-producer SSOT-alignment matrix
 // =========================================================================
-//
 // Mirrors the OSC matrix shape for CSI selectors. Per-producer params
 // contract is TIERED (catalog/capture share arity-driven shape; dispatch
 // is arity-agnostic `"Ps"`; runtime is empty by contract):
-//
 // catalog.params == capture.params (Ps;Ps for arity 2, Ps for arity 1, - for arity 0)
 // dispatch.params == "Ps" (single placeholder regardless of arity)
 // runtime.params == "" (empty by contract — runtime observer fast-path)
@@ -712,7 +706,7 @@ fn csi_tuple_sig_aligns_across_all_four_producers() {
             let t2 = dispatch_csi_tuple(action_byte).unwrap_or_else(|| {
                 panic!(
                     "selector {action_byte}: dispatch_extract must yield a CSI tuple with \
-                     selector {action_byte} and empty intermediates"
+ selector {action_byte} and empty intermediates"
                 )
             });
             // Dispatch always emits "Ps" (arity-agnostic arm pattern).
@@ -734,7 +728,7 @@ fn csi_tuple_sig_aligns_across_all_four_producers() {
     assert_eq!(
         producer_cells_exercised, expected_cells,
         "CSI matrix completeness — expected {expected_cells} producer cells \
-         (2 selectors × {producer_count} producers), got {producer_cells_exercised}"
+ (2 selectors × {producer_count} producers), got {producer_cells_exercised}"
     );
 }
 
@@ -775,7 +769,6 @@ fn csi_tuple_sig_does_not_collapse_to_intermediate() {
 // =========================================================================
 // DCS cross-producer SSOT-alignment matrix
 // =========================================================================
-//
 // Per-producer params contract: catalog == capture == dispatch (all
 // emit `Pid` for q+empty-intermediates, `Pt` otherwise); runtime
 // is empty by contract.
@@ -923,7 +916,7 @@ fn dcs_tuple_sig_aligns_across_all_four_producers() {
     assert_eq!(
         producer_cells_exercised, expected_cells,
         "DCS matrix completeness — expected {expected_cells} producer cells \
-         (2 inputs × {producer_count} producers), got {producer_cells_exercised}"
+ (2 inputs × {producer_count} producers), got {producer_cells_exercised}"
     );
 }
 
@@ -956,7 +949,6 @@ fn dcs_tuple_sig_pid_pt_split_pinned() {
 // =========================================================================
 // ESC cross-producer SSOT-alignment matrix
 // =========================================================================
-//
 // Per-producer params contract: catalog == capture == dispatch (all
 // emit `"-"`); runtime is empty by contract.
 
@@ -1075,7 +1067,7 @@ fn esc_tuple_sig_aligns_across_all_four_producers() {
     assert_eq!(
         producer_cells_exercised, expected_cells,
         "ESC matrix completeness — expected {expected_cells} producer cells \
-         (2 selectors × {producer_count} producers), got {producer_cells_exercised}"
+ (2 selectors × {producer_count} producers), got {producer_cells_exercised}"
     );
 }
 
@@ -1121,7 +1113,6 @@ fn esc_charset_designation_routes_to_da_not_esc() {
 // =========================================================================
 // APC cross-producer SSOT-alignment matrix (3 producers + runtime-None pin)
 // =========================================================================
-//
 // APC has 3 tuple producers: catalog, dispatch, capture all emit the
 // generic `(APC, [], "Pt", "ST")`. Runtime is FILTERED — `ApcEnd`
 // returns `None` per `spec_chain/uncataloged/mod.rs:152-158` because
@@ -1212,7 +1203,7 @@ fn apc_tuple_sig_aligns_across_three_producers() {
     assert_eq!(
         producer_cells_exercised, expected_cells,
         "APC matrix completeness — expected {expected_cells} producer cells \
-         ({producer_count} producers), got {producer_cells_exercised}"
+ ({producer_count} producers), got {producer_cells_exercised}"
     );
 }
 

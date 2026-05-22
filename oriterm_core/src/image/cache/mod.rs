@@ -1,10 +1,17 @@
 //! Image cache with LRU eviction and configurable memory limits.
 
 mod animation;
+mod compose;
 mod deletion;
 mod eviction;
+mod frame_entry;
+mod frame_loading;
 mod lifecycle;
 mod placeholder;
+#[cfg(any(test, feature = "test-support"))]
+mod test_probes;
+
+pub(crate) use frame_entry::{FrameEntry, FrameId};
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -58,8 +65,20 @@ pub struct ImageCache {
     next_store_order: u64,
     /// Per-image animation state for multi-frame images.
     pub(super) animations: HashMap<ImageId, AnimationState>,
-    /// All decoded frames for animated images (frame 0 is also in `ImageData.data`).
-    pub(super) animation_frames: HashMap<ImageId, Vec<Arc<Vec<u8>>>>,
+    /// All stored frames for animated images (frame 0 is also in `ImageData.data`).
+    ///
+    /// Element type is [`FrameEntry`] — `Materialized` carries the full RGBA
+    /// canvas; `Delta` carries the sub-rect payload + stable `FrameId`
+    /// back-reference, composed on demand via [`Self::frame_for_number`].
+    /// Vec position is the 1-based kitty protocol frame index;
+    /// `FrameEntry::id()` is the stable internal reference used by
+    /// `Delta.base`.
+    pub(super) animation_frames: HashMap<ImageId, Vec<FrameEntry>>,
+    /// Monotonic `FrameId` allocator for stable internal references.
+    ///
+    /// Bumped by [`alloc_frame_id`] at every `FrameEntry` creation site.
+    /// Never wrapped; `u64` width matches `ImageData::pixel_generation`.
+    pub(super) next_frame_id: u64,
     /// When each animated image's current frame started displaying.
     pub(super) frame_starts: HashMap<ImageId, Instant>,
     /// Whether animation is enabled (from config).
@@ -88,6 +107,7 @@ impl ImageCache {
             next_store_order: 0,
             animations: HashMap::new(),
             animation_frames: HashMap::new(),
+            next_frame_id: 1,
             frame_starts: HashMap::new(),
             animation_enabled: true,
             placeholder_anchors: HashSet::new(),
@@ -109,9 +129,10 @@ impl ImageCache {
         std::mem::replace(&mut self.dirty, false)
     }
 
-    /// Total bytes of decoded image data in the cache.
-    #[cfg(test)]
-    pub(crate) fn memory_used(&self) -> usize {
+    /// Total bytes of decoded image data in the cache. Read by the IO thread's
+    /// drain-cycle diagnostic accounting (see
+    /// `oriterm_mux/src/pane/io_thread/mod.rs::process_pending_bytes`).
+    pub fn memory_used(&self) -> usize {
         self.memory_used
     }
 
@@ -139,6 +160,66 @@ impl ImageCache {
     /// Update the max single image size.
     pub fn set_max_single_image(&mut self, limit: usize) {
         self.max_single_image_bytes = limit;
+    }
+
+    /// Allocate the next monotonically-increasing `FrameId`.
+    ///
+    /// Single SSOT for `FrameId` assignment — every `FrameEntry` creation
+    /// path (`push_composed_frame`, `store_animated`, root-promote in
+    /// `ensure_animation_state_for_root_gap`, `replace_frame_bytes`'s
+    /// auto-promote branch) must route through here so the
+    /// `debug_assert!(base.0 < new.0)` cycle invariant on `Delta.base`
+    /// holds by construction.
+    #[allow(
+        dead_code,
+        reason = "Phase 3 scaffolding (xray-scene lag cure) — wired through put_frame in Phase 4 Item 2"
+    )]
+    pub(crate) fn alloc_frame_id(&mut self) -> FrameId {
+        let id = FrameId(self.next_frame_id);
+        self.next_frame_id = self.next_frame_id.saturating_add(1);
+        id
+    }
+
+    /// Cloned 1-based protocol-indexed frame entry, or `None` if `n == 0`
+    /// or out of range. Used by storage-layer tests + downstream compose
+    /// paths that need to inspect the variant (Materialized vs Delta) or
+    /// chain-depth/cumulative-area metadata.
+    #[allow(
+        dead_code,
+        reason = "Phase 4 Item 1 helper; tests reference it under cfg(test) — \
+                  production reads route through frame_for_number"
+    )]
+    pub(crate) fn frame_entry_at(&self, id: ImageId, n: u32) -> Option<FrameEntry> {
+        if n == 0 {
+            return None;
+        }
+        let frames = self.animation_frames.get(&id)?;
+        frames.get((n - 1) as usize).cloned()
+    }
+
+    /// Atomically swap an image's displayed RGBA bytes and bump its
+    /// `pixel_generation` counter so the GPU re-upload gate fires.
+    ///
+    /// Phase 3 scaffolding (xray-scene lag cure): the helper exists with the final
+    /// shape so animation / edit / delete paths can begin routing
+    /// through it. Bumps use `wrapping_add(1)` per Plan TPR R0
+    /// reviewer consensus — `+= 1` would panic in debug on overflow;
+    /// the GPU cache's wrap test (`pixel_generation_full_wrap_to_seeded_value_forces_reupload`)
+    /// pins the wrap-vs-stale behavior.
+    #[allow(
+        dead_code,
+        reason = "Phase 3 scaffolding (xray-scene lag cure) — wired through apply_frame + edit + delete in Phase 4"
+    )]
+    pub(crate) fn set_image_data_and_bump_generation(
+        &mut self,
+        id: ImageId,
+        new_data: Arc<Vec<u8>>,
+    ) {
+        if let Some(img) = self.images.get_mut(&id) {
+            img.data = new_data;
+            img.pixel_generation = img.pixel_generation.wrapping_add(1);
+        }
+        self.dirty = true;
     }
 
     /// Allocate the next auto-assigned image ID.
@@ -206,11 +287,25 @@ impl ImageCache {
     /// LRU-on-place across every protocol — never falling back to the
     /// pre-§13.6.1 FIFO-on-store-order behavior for any one protocol.
     ///
-    /// Per `plans/spec-conformance/section-13-kitty-graphics.md §13.6.1`
-    /// — per-protocol bumps would scatter the LRU contract across N
+    /// Per-protocol bumps would scatter the LRU contract across N
     /// consumer sites; an `ImageCache`-owned API is the SSOT.
     pub(crate) fn place(&mut self, placement: ImagePlacement) {
         let image_id = placement.image_id;
+        // Per kitty graphics protocol: a new placement with the same
+        // `(image_id, placement_id)` REPLACES the existing one. Without
+        // this dedup, moving a kitty-graphics plane (notcurses-demo
+        // `intro` orca: `ncplane_move_yx` + re-Place at the new offset)
+        // appends a new placement per frame and the old placements stay
+        // alive — every previous position renders as a ghost, producing
+        // the visible "trail" of orcas the operator reports.
+        //
+        // Complexity: O(N) per call over `self.placements`. Acceptable
+        // for typical workloads where placements ≤ low double digits
+        // (viewport-visible imagery cap). High-placement scenarios may
+        // benefit from a parallel `(image_id, placement_id) → index`
+        // map for O(1) dedup — see `bug-tracker/section-06-rendering-perf.md`.
+        self.placements
+            .retain(|p| !(p.image_id == image_id && p.placement_id == placement.placement_id));
         self.placements.push(placement);
         self.access_counter += 1;
         if let Some(img) = self.images.get_mut(&image_id) {
@@ -265,7 +360,7 @@ impl ImageCache {
     pub(crate) fn remove_image(&mut self, id: ImageId) {
         if let Some(img) = self.images.remove(&id) {
             if let Some(frames) = self.animation_frames.remove(&id) {
-                let total: usize = frames.iter().map(|f| f.len()).sum();
+                let total: usize = frames.iter().map(FrameEntry::memory_bytes).sum();
                 self.memory_used = self.memory_used.saturating_sub(total);
             } else {
                 self.memory_used = self.memory_used.saturating_sub(img.data.len());
@@ -468,6 +563,7 @@ impl std::fmt::Debug for ImageCache {
             .field("memory_limit", &self.memory_limit)
             .field("max_single_image_bytes", &self.max_single_image_bytes)
             .field("next_id", &self.next_id)
+            .field("next_frame_id", &self.next_frame_id)
             .field("access_counter", &self.access_counter)
             .field("dirty", &self.dirty)
             .field("store_order", &self.store_order.len())
@@ -485,6 +581,8 @@ impl std::fmt::Debug for ImageCache {
     }
 }
 
+#[cfg(test)]
+mod delta_storage_tests;
 #[cfg(test)]
 mod matrix_tests;
 #[cfg(test)]

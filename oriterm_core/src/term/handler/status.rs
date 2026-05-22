@@ -18,6 +18,19 @@ use crate::term::{Term, TermMode};
 
 use super::helpers::{crate_version_number, mode_report_value, named_private_mode_flag};
 
+/// XTVERSION advertise — SSOT for the reply byte string.
+///
+/// `ori_term` reports as `kitty(0.20.0)` to unlock notcurses' `o=z`
+/// compression + `NCPIXEL_KITTY_ANIMATED` paths per
+/// `notcurses/src/lib/termdesc.c::apply_kitty_heuristics`. Bumping the
+/// version here is a protocol-deviation decision — pair any change with
+/// the `DFCT-CSI-XTVERSION` row in
+/// `plans/spec-conformance/catalog/de-facto-behaviors.md`.
+///
+/// The 4 prior textual copies (`status_xtversion` + 3 test sites) now
+/// reference this single constant instead of repeating the literal.
+pub(crate) const XTVERSION_REPLY: &[u8] = b"\x1bP>|kitty(0.20.0)\x1b\\";
+
 /// Build the SGR parameter string for the current cursor attributes.
 ///
 /// Returns `"0"` when all attributes are default, otherwise a semicolon-
@@ -134,17 +147,17 @@ impl<S: EffectSink> Term<S> {
 
     /// XTVERSION (CSI > q): report terminal name and version per xterm.
     ///
-    /// Reply format: `DCS > | oriterm(<version>) ST`.
+    /// Reply bytes are the module-level `XTVERSION_REPLY` SSOT constant
+    /// — see its doc-comment for the kitty-advertise rationale and the
+    /// catalog cross-reference for protocol-deviation tracking.
     ///
     /// The Ps=0 gate is enforced at the parser level
     /// (`crates/vte/src/ansi/dispatch/csi/mod.rs`) per xterm
     /// `charproc.c::CASE_REPORT_VERSION` semantics; this handler runs
     /// only for default/zero Ps and emits the constant reply.
     pub(super) fn status_xtversion(&mut self) {
-        let version = env!("CARGO_PKG_VERSION");
-        let response = format!("\x1bP>|oriterm({version})\x1b\\");
         self.effect_sink.push(Effect::Pty(PtyEffect::Write {
-            bytes: response.into_bytes(),
+            bytes: XTVERSION_REPLY.to_vec(),
             kind: PtyWriteKind::DeviceAttribute,
         }));
     }

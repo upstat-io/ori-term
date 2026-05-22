@@ -34,7 +34,6 @@ fn poll_events_noop() {
 /// hang) when the client has no live transport. The defense flows through
 /// `MuxClient::rpc()`'s `Err(NotConnected)` return path; `is_write_stalled` collapses
 /// the error to `false`.
-/// See: bug-tracker/plans//00-overview.md
 #[test]
 fn is_write_stalled_returns_false_when_transport_disconnected() {
     let mut client = MuxClient::new();
@@ -453,7 +452,6 @@ mod transport_tests {
     use super::super::transport::ClientTransport;
 
     /// Consume the `SetCapabilities` frame that the client sends after Hello.
-    ///
     /// Test servers must call this after writing `HelloAck` to stay in sync
     /// with the client's handshake sequence.
     fn consume_set_capabilities(codec: &mut ProtocolCodec, stream: &mut UnixStream) {
@@ -1164,7 +1162,6 @@ mod transport_tests {
 }
 
 // -- bell_panes contract tests --
-//
 // Pin the architecture: `has_bell()` reads ONLY from `bell_panes`,
 // independent of any `pane_snapshots` mutation. Bell state is decoupled
 // from snapshot replication so a daemon-pushed snapshot insert cannot
@@ -1184,7 +1181,7 @@ fn pane_bell_on_focused_pane_clears_has_bell_in_client_mode_after_snapshot_push(
     let p = PaneId::from_raw(1);
 
     // Simulate the App's PaneBell arm flow on a focused pane:
-    //   set_bell (pre-focus-gate), clear_bell (focus-gated path).
+    // set_bell (pre-focus-gate), clear_bell (focus-gated path).
     client.set_bell(p);
     client.clear_bell(p);
 
@@ -1409,9 +1406,8 @@ fn remove_snapshot_drains_bell_panes() {
 
 // -- subscribe_pane / set_pane_priority public API tests --
 
-/// Regression: BUG-11-046 — subscribe was `pub(crate)`, blocking e2e
+/// subscribe was `pub(crate)`, blocking e2e
 /// multi-client priority routing tests. Must be `pub` and return `io::Result`.
-/// See: bug-tracker/plans/completed/BUG-11-046/00-overview.md
 #[test]
 fn subscribe_unconnected_returns_err() {
     use crate::backend::MuxBackend;
@@ -1421,9 +1417,8 @@ fn subscribe_unconnected_returns_err() {
     assert_eq!(result.unwrap_err().kind(), std::io::ErrorKind::NotConnected);
 }
 
-/// Regression: BUG-11-046 — set_pane_priority didn't exist at all.
+/// set_pane_priority didn't exist at all.
 /// Must be `pub`, return `io::Result`, and fail on disconnected transport.
-/// See: bug-tracker/plans/completed/BUG-11-046/00-overview.md
 #[test]
 fn set_pane_priority_unconnected_returns_err() {
     let mut client = MuxClient::new();

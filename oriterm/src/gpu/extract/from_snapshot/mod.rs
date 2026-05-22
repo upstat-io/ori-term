@@ -5,7 +5,7 @@
 //! `RenderableCell`, `WireCursor` → `RenderableCursor`, palette array →
 //! `FramePalette`. Image pixel data resolves through the caller-supplied
 //! `image_lookup` closure (`MuxClient.image_cache` keyed by `(PaneId, ImageId)`).
-//! See: bug-tracker/plans/BUG-06-072/
+//! See:
 
 use std::sync::Arc;
 
@@ -27,7 +27,6 @@ const PALETTE_BACKGROUND: usize = 257;
 const PALETTE_CURSOR: usize = 258;
 
 /// Build a [`FrameInput`] from a daemon-mode [`PaneSnapshot`].
-///
 /// Wire cells already have pre-resolved RGB colors, so this is a
 /// straightforward type conversion — no palette lookups needed for
 /// per-cell fg/bg.
@@ -63,14 +62,12 @@ pub(crate) fn extract_frame_from_snapshot(
 }
 
 /// Convert a [`PaneSnapshot`] into [`RenderableContent`].
-///
 /// Wire RGB values map directly to [`Rgb`]; no palette resolution needed.
 /// Image placements come straight from `snapshot.images`; image pixel data
 /// comes from the wire snapshot itself (first-observation / dirty path) OR
 /// from the caller-supplied `image_lookup` closure (steady-state cache hit).
 /// Placements whose `ImageId` is in neither location are dropped with a
 /// `log::warn!` (release-mode contract: skip the placement, never crash).
-/// See: bug-tracker/plans/BUG-06-072/
 fn snapshot_to_renderable(
     snapshot: &PaneSnapshot,
     image_lookup: &dyn Fn(ImageId) -> Option<Arc<RenderableImageData>>,
@@ -123,11 +120,9 @@ fn snapshot_to_renderable(
 
 /// Populate `content.images` / `content.image_data` / `content.images_dirty`
 /// from the wire snapshot, resolving cache hits via `image_lookup`.
-///
 /// Drops placements whose `ImageId` is in neither the wire snapshot's inline
 /// `image_data` nor the lookup closure — that's a malformed-server signal,
 /// `log::warn!` in release builds, `debug_assert!` in test/debug.
-/// See: bug-tracker/plans/BUG-06-072/
 fn populate_images_from_wire(
     snapshot: &PaneSnapshot,
     content: &mut RenderableContent,
@@ -149,6 +144,7 @@ fn populate_images_from_wire(
             data: Arc::new(wid.data.clone()),
             width: wid.width,
             height: wid.height,
+            pixel_generation: wid.pixel_generation,
         });
         have_inline.insert(id);
     }
@@ -189,7 +185,6 @@ fn wire_placement_to_renderable(wp: &WirePlacement) -> RenderablePlacement {
 }
 
 /// Refill an existing [`RenderableContent`] from a [`PaneSnapshot`], reusing allocations.
-///
 /// Clears and repopulates `out.cells` and `out.damage` without freeing their
 /// backing storage, avoiding per-frame allocation churn.
 fn snapshot_to_renderable_into(
@@ -243,7 +238,6 @@ fn snapshot_to_renderable_into(
 }
 
 /// Refill an existing [`FrameInput`] from a [`PaneSnapshot`], reusing allocations.
-///
 /// Like [`extract_frame_from_snapshot`] but refills `out` in place, reusing
 /// the `Vec` allocations inside `out.content`. Avoids per-frame allocation
 /// for the `cells` and `damage` vectors.

@@ -128,12 +128,11 @@ fn check_rejects_duplicate_row_id() {
 fn check_with_workspace_root_runs_dispatch_coverage() {
     // Two ownership domains: catalog lives at the wrapper root, vte source
     // lives at the term workspace root. Use the canonical SSOT helpers per
-    // `bug-tracker/plans/completed/`.
     let term_root = crate::paths::term_workspace_root();
     let Some(catalog_dir) = crate::paths::catalog_dir() else {
         eprintln!(
             "SKIP check_with_workspace_root_runs_dispatch_coverage: \
-             wrapper repo not discoverable from {} (standalone term_repo checkout)",
+ wrapper repo not discoverable from {} (standalone term_repo checkout)",
             env!("CARGO_MANIFEST_DIR")
         );
         return;
@@ -183,8 +182,8 @@ fn check_with_workspace_root_runs_dispatch_coverage() {
     assert!(
         !dispatch_findings.is_empty(),
         "expected at least one DispatchWithoutCatalogRow finding \
-         when workspace_root is provided — the dispatch-coverage path \
-         may not have run"
+ when workspace_root is provided — the dispatch-coverage path \
+ may not have run"
     );
 }
 
@@ -193,13 +192,11 @@ fn check_with_workspace_root_runs_dispatch_coverage() {
 // rows (because bootstrap mode forbids them). The comment on
 // `CheckMode::Bootstrap` explicitly bounds its lifetime: "Used by
 // Section 01's gate until Section 04.7 freezes the schema."
-//
 // Section 04.7 froze the schema, and Section 08+ now drives rows to
 // `verified` as the verification-chain harness lands. Asserting the
 // real catalog still passes bootstrap mode is incompatible with the
 // catalog's intended evolution — it would break on every future
 // verification.
-//
 // The fixture-based `check_rejects_verified_status_in_bootstrap_mode`
 // test above still exercises the bootstrap-mode rejection API itself,
 // and `check_with_workspace_root_runs_dispatch_coverage` runs the real

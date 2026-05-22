@@ -123,16 +123,14 @@ fn pty_reader_large_buffer_forwarding() {
 // --- : bounded-channel disconnect-unblock contract ---
 
 /// Pin 5 — bounded-channel disconnect unblocks blocked sender.
-///
 /// Regression:. The bounded byte-channel back-pressure design
 /// relies on `crossbeam_channel`'s disconnect-unblock contract: when the
 /// receiver is dropped, a blocked or pending `send()` on the sender
 /// returns `Err(SendError)` rather than hanging. This UNIT-tests the
 /// crossbeam contract directly so the bounded-channel design can rely on
 /// it without spinning up a `PaneIoThread` (whose IO thread would
-/// deadlock when the byte queue saturates — verified during /tpr-review
+/// deadlock when the byte queue saturates — verified during tpr-review
 /// round 3, F1/F2 + F1 + F4).
-/// See: bug-tracker/plans//section-03-tdd-matrix.md §"Semantic pins" Pin 5.
 #[test]
 fn reader_send_returns_err_on_disconnect() {
     // Bounded channel of capacity 1 — easy to fill.

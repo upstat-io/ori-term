@@ -342,7 +342,7 @@ fn clear_pending_notifications_collapses_preceding_in_batch() {
     );
 }
 
-/// Blind-spot §7 contract pin (corrected post-TPR-01-F1):
+/// Blind-spot §7 contract pin (corrected post-):
 /// `ClearPendingNotifications` collapses ONLY preceding
 /// `DesktopNotification` effects in the same batch — notifications
 /// that follow the clear marker survive. Pinned by the canonical
@@ -494,7 +494,7 @@ fn pending_response_not_cancelled_if_fulfilled_before_drop() {
     assert!(t.pending_responses.is_empty());
 }
 
-/// Regression: BUG-11-049 — `PollResult` variants must stay exhaustive in
+/// `PollResult` variants must stay exhaustive in
 /// `response_poll::poll_pending_responses`. An added variant without a
 /// consumer-match arm would silently fall through the catch-all.
 #[test]
@@ -627,9 +627,7 @@ fn no_cloned_host_clipboard_load_notification_in_staging() {
 /// `HostEffect::AudioRequest` to a dedicated log-only arm,
 /// `AudioRequest` MUST NOT emit any `MuxEvent` — stays open
 /// and the audio-pipeline producer-side gap remains tracked.
-///
 /// Regression: split combined VisualBell|AudioRequest|PrintRequest arm
-/// See: bug-tracker/plans//00-overview.md
 #[test]
 fn audio_request_remains_log_only() {
     use oriterm_core::effect::{AudioKind, AudioRequest as AudioReq};
@@ -655,9 +653,7 @@ fn audio_request_remains_log_only() {
 /// preservation pin (§03 test 20): after the router-arm
 /// split, `HostEffect::PrintRequest` MUST NOT emit any `MuxEvent` —
 /// stays open.
-///
 /// Regression: split combined VisualBell|AudioRequest|PrintRequest arm
-/// See: bug-tracker/plans//00-overview.md
 #[test]
 fn print_request_remains_log_only() {
     use oriterm_core::effect::{PrintKind, PrintRequest as PrintReq};
@@ -736,15 +732,13 @@ fn clear_pending_notifications_does_not_retro_collapse_across_drains() {
 }
 
 // --- — DA/DSR/CSI 18t/DECRQM byte-parse → MuxEvent round-trip ---
-//
 // These tests pin the byte-parse → effect-emit → router → MuxEvent leg for
 // every response kind handled in oriterm_core/src/term/handler/status.rs.
 // Each test calls handle_bytes() with the canonical query bytes and asserts
 // mux_rx receives MuxEvent::PtyWrite with the byte-exact response.
-// See bug-tracker/plans/completed/.
+// See
 
 /// Regression: DA1 (CSI c) emits VT420-class device attributes.
-/// See: bug-tracker/plans/completed/BUG-11-004/section-03-tdd-matrix.md
 #[test]
 fn da1_byte_parse_emits_pty_write_response() {
     let (mut t, mux_rx, _wake) = make_router_harness();
@@ -895,14 +889,11 @@ fn decrqm_reset_byte_parse_emits_value_two() {
 }
 
 /// Regression: XTVERSION (CSI > q) emits DCS terminal-version response.
-///
 /// Joins the cluster covering every response kind handled in
 /// `oriterm_core/src/term/handler/status.rs`. XTVERSION's reply pipeline:
 /// raw bytes → vte CSI dispatch arm `('q', [b'>'])` (Ps=0 gate) →
 /// `Handler::xtversion()` → `Term::status_xtversion()` → `effect_sink` →
 /// `drain_effects_into_mux_events` → `MuxEvent::PtyWrite`.
-///
-/// See: bug-tracker/plans/completed/BUG-11-004/section-03-tdd-matrix.md
 #[test]
 fn xtversion_byte_parse_emits_pty_write_response() {
     let (mut t, mux_rx, _wake) = make_router_harness();
@@ -914,8 +905,8 @@ fn xtversion_byte_parse_emits_pty_write_response() {
         MuxEvent::PtyWrite { data, .. } => {
             let s = String::from_utf8_lossy(&data);
             assert!(
-                s.starts_with("\x1bP>|oriterm("),
-                "XTVERSION reply must begin with DCS > | oriterm( prefix, got: {s}"
+                s.starts_with("\x1bP>|kitty("),
+                "XTVERSION reply must begin with DCS > | kitty( prefix, got: {s}"
             );
             assert!(
                 s.ends_with("\x1b\\"),
@@ -927,7 +918,6 @@ fn xtversion_byte_parse_emits_pty_write_response() {
 }
 
 /// Regression: split-chunk XTVERSION still emits exactly one response.
-///
 /// Pins that the parser handles partial-byte input correctly: feeding
 /// `\x1b[>` then `q` as separate `handle_bytes` calls must produce the
 /// same single PtyWrite as the single-chunk case.
@@ -942,8 +932,8 @@ fn xtversion_split_chunk_byte_parse_emits_pty_write_response() {
     match event {
         MuxEvent::PtyWrite { data, .. } => {
             assert!(
-                String::from_utf8_lossy(&data).contains("oriterm"),
-                "XTVERSION split-chunk reply must contain 'oriterm'"
+                String::from_utf8_lossy(&data).contains("kitty"),
+                "XTVERSION split-chunk reply must contain 'kitty'"
             );
         }
         other => panic!("expected PtyWrite, got {other:?}"),
@@ -978,12 +968,10 @@ fn decrqm_unknown_mode_emits_value_zero() {
 }
 
 /// Regression: XTSMGRAPHICS query had no reply path.
-///
 /// Pins the full pipeline: raw bytes → vte parser → CSI dispatch arm
 /// `('S', [b'?'])` → `Handler::graphics_attribute` → `Term`'s
 /// `status_graphics_attribute` helper → `effect_sink` →
 /// `drain_effects_into_mux_events` → `MuxEvent::PtyWrite`.
-///
 /// Without the dispatch arm + Handler method + helper + sync points,
 /// no PtyWrite event reaches the mux.
 #[test]
@@ -1005,12 +993,11 @@ fn xtsmgraphics_byte_parse_emits_pty_write_response() {
     }
 }
 
-/// Regression: BUG-08-006 — ENQ (`0x05`) byte-parse through router emits
+/// ENQ (`0x05`) byte-parse through router emits
 /// `MuxEvent::PtyWrite` carrying the configured answerback bytes.
 /// Distinguishes the kinds-array test (which proves preservation given an
 /// Answerback effect) from the real-byte-parse path (which proves the
 /// dispatch chain produces the effect when ENQ byte arrives at the mux).
-/// See: bug-tracker/plans/completed/BUG-08-006/section-03-tdd-matrix.md
 #[test]
 fn enq_byte_through_router_emits_pty_write_with_answerback_bytes() {
     let (mut t, mux_rx, _wake) = make_router_harness();
@@ -1062,8 +1049,8 @@ fn pty_write_kind_image_protocol_reply_lands_as_byte_stream_in_mux_event_pty_wri
             assert_eq!(
                 data, reply_bytes,
                 "kitty image-protocol reply bytes MUST flow byte-exact through \
-                 the mux boundary — the kind discriminator is dropped per §13.5 \
-                 but the bytes survive"
+ the mux boundary — the kind discriminator is dropped per §13.5 \
+ but the bytes survive"
             );
         }
         other => panic!("expected PtyWrite, got {other:?}"),
@@ -1097,7 +1084,7 @@ fn pty_write_kind_discriminator_dropped_at_mux_boundary() {
             assert_eq!(
                 data, b"x",
                 "MuxEvent::PtyWrite carries bytes only; if a future refactor \
-                 adds a kind field back, update this test consciously"
+ adds a kind field back, update this test consciously"
             );
         }
         other => panic!("expected PtyWrite, got {other:?}"),

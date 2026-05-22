@@ -13,7 +13,6 @@ impl WindowRenderer {
     // ── Font configuration ──
 
     /// Replace the entire font collection (family, weight, features changed).
-    ///
     /// Clears all GPU atlases and re-caches ASCII glyphs with the new fonts,
     /// then re-injects the new terminal font's emoji fallback into the
     /// current UI font registry so the tab bar, dialogs, and all UI text
@@ -30,7 +29,6 @@ impl WindowRenderer {
     }
 
     /// Replace the UI font sizes registry (font family/weight/features changed).
-    ///
     /// Stores the new registry without clearing atlases — call
     /// [`replace_font_collection`] afterward to clear and re-prewarm both
     /// terminal and UI atlases in one pass. `replace_font_collection` is
@@ -39,14 +37,13 @@ impl WindowRenderer {
     /// does NOT inject: during config reload the fresh registry passed
     /// here would otherwise pick up the OLD terminal font's emoji (since
     /// the new `FontCollection` has not been installed yet). See
-    /// Codex F1 for the ordering gotcha.
+    /// for the ordering gotcha.
     pub fn replace_ui_font_sizes(&mut self, sizes: UiFontSizes) {
         self.ui_font_sizes = Some(sizes);
     }
 
     /// Inject the current terminal font's emoji fallback into the current
     /// UI font registry, if both sides are populated.
-    ///
     /// Canonical wiring point between the terminal font (source of the
     /// emoji fallback) and the UI font registry (consumer). Called by
     /// [`WindowRenderer::new`] right after construction and by
@@ -54,7 +51,6 @@ impl WindowRenderer {
     /// so every change to EITHER side converges on the same wiring step
     /// without duplicating the "extract from `font_collection`, call
     /// `inject_fallbacks` if non-empty" sequence at the call sites.
-    ///
     /// Relies on `UiFontSizes::inject_fallbacks` idempotency: calling this
     /// helper twice with the same emoji data is safe even when the
     /// underlying registry is the same one that was already populated.
@@ -69,11 +65,9 @@ impl WindowRenderer {
     }
 
     /// Change font size, recomputing metrics, clearing atlases, and re-caching.
-    ///
     /// Delegates to [`FontCollection::set_size`] for metrics + glyph cache,
     /// then clears all GPU atlases, re-populates the appropriate atlas with
     /// ASCII glyphs, and rebuilds bind groups for the new texture state.
-    ///
     /// The `dpi` parameter is the physical DPI (encodes scale). If it changed
     /// (window moved to a different-DPI monitor), the UI font registry is
     /// rebuilt at the new physical sizes.
@@ -92,12 +86,10 @@ impl WindowRenderer {
     }
 
     /// Change hinting mode, clearing atlases and re-caching.
-    ///
     /// No-ops if the mode is unchanged. Mirrors [`set_font_size`] but only
     /// invalidates the glyph cache and atlases — cell metrics are unaffected
     /// because swash's `Metrics` API (used for cell dimensions) is independent
     /// of the hint flag.
-    ///
     /// Prefer [`set_hinting_and_format`] when both change together (e.g.
     /// scale factor change) to avoid a double clear-and-recache.
     #[allow(
@@ -113,11 +105,9 @@ impl WindowRenderer {
 
     /// Change rasterization format (e.g. `Alpha` → `SubpixelRgb`), clearing
     /// atlases and re-caching.
-    ///
     /// No-ops if the format is unchanged. Typically called once at startup
     /// after the display scale factor is known to enable LCD subpixel
     /// rendering on non-high-DPI displays.
-    ///
     /// Prefer [`set_hinting_and_format`] when both change together (e.g.
     /// scale factor change) to avoid a double clear-and-recache.
     #[allow(
@@ -133,11 +123,9 @@ impl WindowRenderer {
 
     /// Change both hinting mode and glyph format for the **terminal** font,
     /// clearing atlases once.
-    ///
     /// Used during scale factor changes where both settings typically change
     /// together. Avoids the double clear-and-recache that would happen from
     /// calling [`set_hinting_mode`] and [`set_glyph_format`] separately.
-    ///
     /// UI fonts are intentionally unaffected — they always use
     /// `GlyphFormat::Alpha` / `HintingMode::None` (set at construction and
     /// in `rebuild_ui_font_sizes`).
@@ -155,7 +143,6 @@ impl WindowRenderer {
     }
 
     /// Set whether subpixel glyph positioning is enabled.
-    ///
     /// When disabled, all glyphs snap to integer pixel X boundaries (no
     /// fractional subpixel phase). Takes effect at the next prepare pass.
     pub fn set_subpixel_positioning(&mut self, enabled: bool) {
@@ -168,7 +155,6 @@ impl WindowRenderer {
     }
 
     /// Change the atlas texture filtering mode, recreating all bind groups.
-    ///
     /// Snapshots atlas generations so `rebuild_stale_atlas_bind_groups()` does
     /// not immediately re-rebuild the bind groups we just created.
     pub fn set_atlas_filtering(
@@ -204,12 +190,10 @@ impl WindowRenderer {
     }
 
     /// Clear all atlases and empty-key set, then re-cache ASCII.
-    ///
     /// `clear()` resets the packer and cache but the underlying texture
     /// persists at its current size. Bind group rebuild is handled lazily
     /// by `rebuild_stale_atlas_bind_groups()` at the next render if the
     /// atlas grows during re-caching.
-    ///
     /// Prewarms both terminal and UI font atlases so neither has first-frame
     /// atlas misses after a font configuration change.
     fn clear_and_recache(&mut self, gpu: &GpuState) {

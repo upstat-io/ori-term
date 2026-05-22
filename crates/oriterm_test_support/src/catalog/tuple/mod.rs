@@ -6,7 +6,7 @@
 //! regardless of which extractor produced it, so set-equality on
 //! `Vec<Tuple>` answers "does this row cover this dispatch arm?".
 //!
-//! See `plans/spec-conformance/section-01-catalog-bootstrap.md §01.3.a`
+//! See §01.3.a
 //! for the full rules.
 
 mod canonical;
@@ -64,7 +64,6 @@ impl Display for Category {
 }
 
 /// Parse a category string back to [`Category`].
-///
 /// Accepts the canonical display form: `C0`, `C1`, `ESC`, `CSI`,
 /// `OSC`, `DCS`, `APC`, `PM`, `SOS`, `DA`.
 impl Category {
@@ -86,7 +85,6 @@ impl Category {
 }
 
 /// Canonical tuple form for a single escape sequence.
-///
 /// - `category` — see [`Category`].
 /// - `intermediates` — sorted byte sequence (`?`, `>`, `$`,...).
 /// - `params` — normalized parameter placeholder (`Ps`, `Ps;Ps`, `text`, …).
@@ -106,7 +104,6 @@ pub struct Tuple {
 
 impl Tuple {
     /// Construct a tuple with already-canonicalized components.
-    ///
     /// Intermediates are sorted in-place so that `[b'?', b'$']` and
     /// `[b'$', b'?']` produce the same tuple. Callers passing a
     /// pre-sorted slice pay only the comparison cost.
@@ -127,7 +124,6 @@ impl Tuple {
     }
 
     /// Normalize this tuple to its comparison signature.
-    ///
     /// `TupleSig` is `(category_string, sorted_intermediates, final_byte)`.
     /// `final_byte` is preserved verbatim — the OSC SSOT alignment
     /// places the OSC selector in `final_byte`, and DCS
@@ -144,13 +140,11 @@ impl Tuple {
     }
 
     /// Parse a tuple from the canonical [`Display`] form.
-    ///
     /// ```text
     /// (CSI, [?], Ps, h)
     /// (OSC, [], index;rgb, 4)
     /// (CSI, [0x20], Ps, q)
     /// ```
-    ///
     /// Accepts both single-character intermediates (`?`, `$`) and
     /// hex-encoded bytes (`0x20`, `0x3f`). Whitespace around
     /// delimiters is tolerated.
@@ -176,7 +170,6 @@ impl Tuple {
 }
 
 /// Parse the intermediates list from display form.
-///
 /// Accepts: empty string, comma-separated graphic chars (`?`, `$`),
 /// hex bytes (`0x20`), or multi-char intermediates (`_G` → `[b'_', b'G']`).
 fn parse_display_intermediates(s: &str) -> Option<Vec<u8>> {

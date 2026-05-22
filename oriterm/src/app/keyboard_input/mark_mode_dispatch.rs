@@ -21,7 +21,6 @@ use super::super::mark_mode::{
 };
 
 /// Snapshot of which mark-mode resources are currently available.
-///
 /// Mark mode requires three resources to process a key: a mux to route
 /// scroll/refresh, a per-pane mark cursor, and a pane snapshot to read
 /// the grid contents. Any of these can become `None` during a race
@@ -35,13 +34,10 @@ pub(super) struct MarkModeResources {
 
 /// Pure decision predicate. Returns `true` when mark mode must be exited
 /// because a required resource is missing.
-///
 /// The caller responds by calling `exit_mark_mode` and returning `false`
 /// so the keystroke flows on to normal key dispatch (keybinding lookup,
 /// then `encode_key_to_pty`) instead of being silently swallowed.
-///
 /// Returns `false` only when all three resources are present.
-///
 /// Note: the cursor-missing path is technically unreachable in the
 /// single-threaded `App` context (no mutation of `mark_cursors` between
 /// `is_mark_mode` and `pane_mark_cursor`). The recovery path is
@@ -49,7 +45,6 @@ pub(super) struct MarkModeResources {
 /// the Defensive-Code-for-Impossible-States rule
 /// — silently swallowing keystrokes when an "unreachable" precondition
 /// fails is the bug this guard exists to prevent. See
-/// `bug-tracker/plans/completed/section-02-fix-consensus.md`
 /// "Reviewer notes adopted" for the full justification.
 #[must_use]
 pub(super) fn mark_mode_should_exit(resources: MarkModeResources) -> bool {
@@ -84,7 +79,6 @@ pub(super) struct MarkModeDispatch {
 }
 
 /// Bundled inputs to [`MarkModeSink::dispatch_mark_mode_key`].
-///
 /// Keeps the trait method signature within the `>4 parameters → struct`
 /// Parameter Hygiene rule. Owns `MarkModeKeyEvent` by value (not borrow)
 /// so [`RecordingSink`] tests can construct test inputs without a `'a`
@@ -98,13 +92,11 @@ pub(super) struct MarkKeyInput {
 }
 
 /// Side-effect surface consumed by [`dispatch_mark_mode`].
-///
 /// Extracted so the mark-mode-key wiring can be matrix-tested headlessly
 /// (a `RecordingSink` impl in `tests.rs` records calls; production uses
 /// `impl MarkModeSink for App`). Per & External
 /// Resource Abstraction — the logic layer must not embed concrete runtime
 /// resources, so the side effects flow through this trait.
-///
 /// Method-name overlap with `App` inherent methods: six trait methods
 /// share names with inherent methods on `App`
 /// (`pane_mark_cursor`, `pane_selection`, `exit_mark_mode`,
@@ -121,7 +113,6 @@ pub(super) trait MarkModeSink {
     /// Current mark cursor position for the pane (None if no cursor).
     fn pane_mark_cursor(&self, pane_id: PaneId) -> Option<MarkCursor>;
     /// Current selection on the pane (None if no selection).
-    ///
     /// Returns `Selection` by value (not by borrow) so the test sink can
     /// satisfy the trait without exposing a borrow into its `HashMap`
     /// storage. `Selection` is `Copy`, so the cost is a stack copy on
@@ -149,7 +140,6 @@ pub(super) trait MarkModeSink {
     /// internally and calls `mark_mode::handle_mark_mode_key` against the
     /// constructed `SnapshotGrid`. Tests return a pre-configured
     /// `MarkModeResult` via `take()` (`MarkModeResult` is non-`Clone`).
-    ///
     /// Infallible per the Defensive-Code-for-Impossible-States rule:
     /// `mark_mode_should_exit` synchronously gates resource presence;
     /// the snapshot is guaranteed by the caller.
@@ -160,20 +150,17 @@ pub(super) trait MarkModeSink {
 /// resources are present, into [`MarkModeSink::dispatch_mark_mode_key`].
 /// Generic over the sink type for static dispatch per
 /// Choice.
-///
 /// Returns `false` when:
 /// - `input.active_pane_id == None` (no pane to dispatch against);
 /// - `input.mark_mode_active == false` (mark mode not active — caller
 ///   forwards to keybinding/PTY);
 /// - `mark_mode_should_exit(resources) == true` ( path —
 ///   `sink.exit_mark_mode` called, caller forwards to keybinding/PTY).
-///
-/// Returns `true` when:
+///   Returns `true` when:
 /// - Released event with mark mode active (consume-all);
 /// - Pressed event after successful key dispatch.
-///
-/// The return value drives the caller's `if x { return; }` short-circuit
-/// — ignoring it would silently mis-route every key event.
+///   The return value drives the caller's `if x { return; }` short-circuit
+///   — ignoring it would silently mis-route every key event.
 #[must_use]
 pub(super) fn dispatch_mark_mode<S: MarkModeSink>(input: MarkModeDispatch, sink: &mut S) -> bool {
     let Some(pane_id) = input.active_pane_id else {

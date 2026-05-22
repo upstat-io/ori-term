@@ -13,12 +13,10 @@ use super::{PaneIoCommand, PaneIoThread};
 
 impl<S: EffectSink + 'static> PaneIoThread<S> {
     /// Process a resize command on the IO thread.
-    ///
     /// Performs grid reflow, then sends SIGWINCH to the PTY. The ordering
     /// is critical: reflow first so the shell sees the correct dimensions
     /// when it handles SIGWINCH. Uses `Term::resize()` (not
     /// `Grid::resize()`) to also resize the alt grid and prune image caches.
-    ///
     /// Resize routing:
     /// - Spawned panes have `pty_control: Some(_)` and use the
     ///   `portable_pty::MasterPty::resize` path.
@@ -53,7 +51,6 @@ impl<S: EffectSink + 'static> PaneIoThread<S> {
     }
 
     /// Build a line selection from a range-finding function on the terminal.
-    ///
     /// Used by `SelectCommandOutput` and `SelectCommandInput` commands.
     fn build_zone_selection(
         &self,
@@ -84,7 +81,6 @@ impl<S: EffectSink + 'static> PaneIoThread<S> {
     }
 
     /// Handle a command from the main thread.
-    ///
     /// Display-affecting commands (scroll, theme, cursor, dirty) are handled
     /// here so the IO thread's `Term` stays in sync with user operations.
     /// Resize is handled separately via `process_resize()` with coalescing.
@@ -179,10 +175,10 @@ impl<S: EffectSink + 'static> PaneIoThread<S> {
                 // turning a real bug into a silent hang. Per
                 // Code for Impossible
                 // States`. Pinned by §04 review round 3
-                // Codex F1 + Opencode F1.
+                // + .
                 unreachable!(
                     "Shutdown must be intercepted by drain_commands() or run_loop's \
-                     select! cmd_rx arm before reaching handle_command()"
+ select! cmd_rx arm before reaching handle_command()"
                 );
             }
             // Request-response commands with reply channels.

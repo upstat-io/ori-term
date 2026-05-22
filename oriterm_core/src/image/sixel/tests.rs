@@ -352,9 +352,8 @@ fn palette_reset_per_dcs_negative_pin_bypass_breaks_vt340_fingerprint() {
 // (`graphics_sixel.c:697-698`: `s_Pregister %= valid_registers;`). The
 // `color_registers` value is snapshotted into `SixelParser::new` at DCS-hook
 // time; in-flight XTSMGRAPHICS mutations do NOT retroactively affect the
-// active parser. See `bug-tracker/plans//section-03-tdd-matrix.md`
-// for the full matrix; the tests below cover the `idx-class × count × op-class`
-// dimensions called out there.
+// active parser. The tests below cover the
+// `idx-class × count × op-class` dimensions of the fix matrix.
 
 /// No-wrap edge: count=256, idx=0 (the floor).
 #[test]

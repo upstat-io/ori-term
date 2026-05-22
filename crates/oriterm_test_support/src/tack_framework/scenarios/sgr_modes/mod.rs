@@ -47,7 +47,7 @@
 //! the parser accepts them without regressing cell attributes. That
 //! is the correct canonical home for cap-level DEC-private SGR
 //! coverage; duplicating it as a tack scenario with identical
-//! `grid_text` would be `LEAK:algorithmic-duplication`.
+//! `grid_text` would be algorithmic duplication.
 //!
 //! # Plan deviation: the `\r` step
 //!
@@ -97,9 +97,7 @@ pub const TACK_TOOLS_SGR: ScenarioSpec = ScenarioSpec {
 
 /// Count tack's 80 `Mode N` labels (N = 0..80) in `grid` as
 /// whitespace-bounded tokens.
-///
 /// # Format
-///
 /// Tack formats each label as `Mode %2d` (printf-style, 2-char
 /// right-aligned number), so single-digit modes have two spaces
 /// between `Mode` and the digit (`Mode 0`) and double-digit modes
@@ -110,9 +108,7 @@ pub const TACK_TOOLS_SGR: ScenarioSpec = ScenarioSpec {
 /// trailing `0` would need to be ASCII whitespace to satisfy the
 /// right-boundary check of a `Mode 1` match, but it is the digit
 /// `0`.
-///
 /// # Returns
-///
 /// [`ScreenFacts`] with a single note `"found_modes_count=<count>"`
 /// where `<count>` is the number of matched labels. Tests assert
 /// `count >= MIN_EXPECTED_MODES`.

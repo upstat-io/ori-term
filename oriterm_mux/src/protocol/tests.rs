@@ -147,7 +147,7 @@ fn protocol_version_constants_agree() {
     assert_eq!(
         PROTOCOL_VERSION, CURRENT_PROTOCOL_VERSION,
         "frame-header PROTOCOL_VERSION and handshake CURRENT_PROTOCOL_VERSION \
-         must be the same byte — alias enforces this at compile time"
+ must be the same byte — alias enforces this at compile time"
     );
 }
 
@@ -1527,7 +1527,6 @@ fn msg_type_decodes_new_host_request_ids() {
 // -- IsWriteStalled / WriteStalledStatus round-trips --
 
 /// Regression: IsWriteStalled request must round-trip losslessly.
-/// See: bug-tracker/plans//00-overview.md
 #[test]
 fn roundtrip_is_write_stalled_request() {
     let pdu = MuxPdu::IsWriteStalled {
@@ -1538,7 +1537,6 @@ fn roundtrip_is_write_stalled_request() {
 }
 
 /// Regression: WriteStalledStatus { stalled: true } must round-trip losslessly.
-/// See: bug-tracker/plans//00-overview.md
 #[test]
 fn roundtrip_write_stalled_status_true() {
     let pdu = MuxPdu::WriteStalledStatus {
@@ -1550,7 +1548,6 @@ fn roundtrip_write_stalled_status_true() {
 }
 
 /// Regression: WriteStalledStatus { stalled: false } must round-trip losslessly.
-/// See: bug-tracker/plans//00-overview.md
 #[test]
 fn roundtrip_write_stalled_status_false() {
     let pdu = MuxPdu::WriteStalledStatus {
@@ -1562,7 +1559,6 @@ fn roundtrip_write_stalled_status_false() {
 }
 
 /// Regression: IsWriteStalled is not fire-and-forget; it expects a response.
-/// See: bug-tracker/plans//section-03-tdd-matrix.md (classifier pin)
 #[test]
 fn write_stalled_request_classified_as_round_trip_rpc() {
     let pdu = MuxPdu::IsWriteStalled {
@@ -1572,7 +1568,6 @@ fn write_stalled_request_classified_as_round_trip_rpc() {
 }
 
 /// Regression: WriteStalledStatus is a response, not a push notification.
-/// See: bug-tracker/plans//section-03-tdd-matrix.md (classifier pin)
 #[test]
 fn write_stalled_status_response_is_not_notification() {
     let pdu = MuxPdu::WriteStalledStatus {
@@ -1583,7 +1578,6 @@ fn write_stalled_status_response_is_not_notification() {
 }
 
 /// Regression: MsgType IDs decode for the new variants.
-/// See: bug-tracker/plans//section-03-tdd-matrix.md
 #[test]
 fn msg_type_decodes_is_write_stalled_ids() {
     assert_eq!(MsgType::from_u16(0x012E), Some(MsgType::IsWriteStalled));
@@ -1649,21 +1643,20 @@ fn set_answerback_bincode_discriminant_appended_after_write_stalled_status() {
         new_disc,
         prior_disc + 1,
         "SetAnswerback bincode discriminant ({new_disc}) must be exactly WriteStalledStatus's + 1 \
-         ({}); placing the variant mid-enum silently breaks wire compatibility for every \
-         subsequent variant",
+ ({}); placing the variant mid-enum silently breaks wire compatibility for every \
+ subsequent variant",
         prior_disc + 1
     );
 }
 
 /// `PROTOCOL_VERSION` is at v3 — guards against a silent revert of the
 /// wire-schema extension that ships daemon-mode image data.
-/// See: bug-tracker/plans/BUG-06-072/
 #[test]
 fn protocol_version_pinned_at_v3_for_image_schema() {
     assert_eq!(
         PROTOCOL_VERSION, 3,
         "PaneSnapshot image fields require PROTOCOL_VERSION >= 3; reverting it \
-         silently misdecodes every image-carrying frame on peer pairs that disagree"
+ silently misdecodes every image-carrying frame on peer pairs that disagree"
     );
 }
 
@@ -1671,21 +1664,19 @@ fn protocol_version_pinned_at_v3_for_image_schema() {
 /// single image plus cell payload headroom). A silent drop back to the
 /// pre-v3 16 MiB ceiling would reject any frame carrying a moderately-sized
 /// kitty/sixel image with an `io::Error` instead of transmitting it.
-/// See: bug-tracker/plans/BUG-06-072/
 #[test]
 fn max_payload_supports_64mib_single_image() {
     const SINGLE_IMAGE_LIMIT: u32 = 64 * 1024 * 1024;
     assert!(
         MAX_PAYLOAD >= SINGLE_IMAGE_LIMIT,
         "MAX_PAYLOAD ({MAX_PAYLOAD}) must accommodate the 64 MiB per-image limit \
-         from oriterm_core::image::cache::DEFAULT_MAX_SINGLE_IMAGE plus cell payload"
+ from oriterm_core::image::cache::DEFAULT_MAX_SINGLE_IMAGE plus cell payload"
     );
 }
 
 /// A `PaneSnapshot` carrying `images` + `image_data` + `images_dirty`
 /// roundtrips through `ProtocolCodec::encode_frame` / `decode_frame` byte-for-byte.
 /// ONLY passes with the v3 wire schema in place.
-/// See: bug-tracker/plans/BUG-06-072/
 #[test]
 fn roundtrip_pane_snapshot_with_image_payload() {
     use super::snapshot::{WireImageData, WirePlacement};
@@ -1709,6 +1700,7 @@ fn roundtrip_pane_snapshot_with_image_payload() {
         data: pixels.clone(),
         width: 1,
         height: 2,
+        pixel_generation: 0,
     }];
     snap.images_dirty = true;
     let decoded = roundtrip(99, MuxPdu::PaneSnapshotResp { snapshot: snap });
@@ -1722,10 +1714,40 @@ fn roundtrip_pane_snapshot_with_image_payload() {
     assert!(snapshot.images_dirty);
 }
 
+/// Regression — xray-scene lag cure: `WireImageData.pixel_generation` must round-trip
+/// through the daemon push protocol — without it, daemon-rendered panes
+/// serve stale GPU textures forever because the client's GPU texture
+/// cache key (`ImageId`) never advances even as the server-side animation
+/// progresses. Pre-scaffolding: field absent → wire-decode would lose it.
+/// Post-scaffolding (Phase 3): field present + `#[serde(default)]` for
+/// backward compat with older snapshots. Phase 4 bumps `PROTOCOL_VERSION`
+/// and wires server projection to populate from `RenderableImageData`.
+#[test]
+fn wire_image_data_pixel_generation_survives_roundtrip() {
+    use super::snapshot::WireImageData;
+    let mut snap = sample_snapshot();
+    snap.image_data = vec![WireImageData {
+        id: 0x1234_5678,
+        data: vec![0u8; 16],
+        width: 2,
+        height: 2,
+        pixel_generation: 42,
+    }];
+
+    let decoded = roundtrip(101, MuxPdu::PaneSnapshotResp { snapshot: snap });
+    let MuxPdu::PaneSnapshotResp { snapshot } = decoded.pdu else {
+        panic!("unexpected PDU variant after decode")
+    };
+    assert_eq!(snapshot.image_data.len(), 1);
+    assert_eq!(
+        snapshot.image_data[0].pixel_generation, 42,
+        "pixel_generation must round-trip through wire encode/decode"
+    );
+}
+
 /// Encoded `PaneSnapshot` with EMPTY image vectors stays empty on the decode
 /// side — guards against a future fill regression that fabricates a default
 /// placement on an empty source.
-/// See: bug-tracker/plans/BUG-06-072/
 #[test]
 fn roundtrip_pane_snapshot_with_no_images_stays_empty() {
     let snap = sample_snapshot();

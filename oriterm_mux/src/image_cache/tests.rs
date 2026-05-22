@@ -1,7 +1,7 @@
 //! Unit tests for the bounded LRU image cache.
 //!
-//! See: bug-tracker/plans/BUG-06-072/section-03-tdd-matrix.md
-//!      §"Cache pins (cluster-1 + R2 fixes — apply BOTH sides via shared ImageCache)"
+//! See:
+//! §"Cache pins (cluster-1 + R2 fixes — apply BOTH sides via shared ImageCache)"
 
 use std::sync::Arc;
 
@@ -17,6 +17,7 @@ fn mk_image(id: u32, bytes: usize) -> Arc<RenderableImageData> {
         data: Arc::new(vec![0xAB; bytes]),
         width: 1,
         height: bytes as u32,
+        pixel_generation: 0,
     })
 }
 
@@ -93,7 +94,6 @@ fn get_bumps_lru_and_protects_recent_entry() {
 /// Cross-pane same raw ImageId — keyed by `(PaneId, ImageId)`, NOT global.
 /// ImageId is per-Term-instance scoped (see `oriterm_core::image::mod.rs`), so a
 /// global-key cache would corrupt multi-pane rendering.
-/// See: bug-tracker/plans/BUG-06-072/
 #[test]
 fn cross_pane_same_image_id_stores_distinct_entries() {
     let mut cache = ImageCache::with_memory_cap(1_000_000);

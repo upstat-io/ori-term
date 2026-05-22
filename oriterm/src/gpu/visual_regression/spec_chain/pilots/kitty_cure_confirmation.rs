@@ -5,26 +5,26 @@
 //! is to clamp the cure for the kitty quad → texture pipeline gap:
 //!
 //! - **Item 14**: `kitty_image_renders_visible_red_pixel_at_cell_zero_zero`
-//!   — regression guard (cell-pinned, not region-scan). Passes ONLY when the
-//!   kitty image actually paints red pixels at cell (0,0). Permanent
-//!   regression guard against future re-breakage AND against placement-
-//!   drift regressions (the region-anchored alternative passes when a
-//!   stray red pixel sits ANYWHERE in the search rectangle).
+//! — regression guard (cell-pinned, not region-scan). Passes ONLY when the
+//! kitty image actually paints red pixels at cell (0,0). Permanent
+//! regression guard against future re-breakage AND against placement-
+//! drift regressions (the region-anchored alternative passes when a
+//! stray red pixel sits ANYWHERE in the search rectangle).
 //!
 //! - **Item 15**: `kitty_image_and_text_glyph_both_visible_in_same_cell_under_premul_alpha_blend`
-//!   — clamps the `PREMUL_ALPHA_BLEND` contract. The blend-bypass
-//!   diagnostic feature flag (`gpu-debug-image-blend-off`) provides a
-//!   `blend: None` pipeline variant that would falsely appear to "fix"
-//!   the bug while breaking text-over-image compositing. This pairing
-//!   test ensures the cure preserves the production blend contract.
+//! — clamps the `PREMUL_ALPHA_BLEND` contract. The blend-bypass
+//! diagnostic feature flag (`gpu-debug-image-blend-off`) provides a
+//! `blend: None` pipeline variant that would falsely appear to "fix"
+//! the bug while breaking text-over-image compositing. This pairing
+//! test ensures the cure preserves the production blend contract.
 //!
 //! - **Item 17**: `kitty_image_pipeline_does_not_silently_drop_quads`
-//!   — negative-case guard. Catches the failure mode where the cure regresses
-//!   to "draw fires but does nothing" by asserting the diagnostic
-//!   surfaces (prepared quads + texture upload) stay populated.
+//! — negative-case guard. Catches the failure mode where the cure regresses
+//! to "draw fires but does nothing" by asserting the diagnostic
+//! surfaces (prepared quads + texture upload) stay populated.
 //!
 //! Plan body cross-reference:
-//! `plans/spec-conformance/section-13-kitty-graphics.md §13.6.1` items
+//! §13.6.1` items
 //! 14, 15, 17 + success criterion lines 549-554.
 
 use base64::Engine;
@@ -89,12 +89,10 @@ fn cell_to_pixel(harness: &VisualSpecHarness, col: usize, row: usize) -> (usize,
 }
 
 /// §13.6.1 item 14 — cure-confirmation gate, cell-pinned regression guard.
-///
 /// Feeds an opaque-red 1×1 kitty image at cell (0,0) via TransmitAndPlace.
 /// Resolves cell (0,0) coordinates via `FontCollection::cell_metrics()`
 /// (the SSOT from §05) and asserts that the rendered output contains
 /// red pixels at the exact cell-(0,0) sub-region.
-///
 /// **Cell-pinned vs region-scan**: a region-anchored assertion over a
 /// 16×8 rectangle passes when a stray red pixel exists ANYWHERE in
 /// that area, even if the image rendered at the wrong cell. Cell-pinned
@@ -142,30 +140,28 @@ fn kitty_image_renders_visible_red_pixel_at_cell_zero_zero() {
     assert!(
         red_in_cell >= 4,
         "§13.6.1 item 14 (cure-confirmation gate): cell (0,0) contains \
-         {red_in_cell} red-ish pixels (r>200,g<50,b<50); expected ≥4 \
-         inside the {cell_w}×{cell_h} cell region at pixel (px_x={px_x}, \
-         px_y={py}). The kitty image is not painting visible pixels at \
-         the correct cell. Non-red sample colors from the cell: {samples:?}. \
-         Cure status: image bytes flow through Parser→cache→snapshot→prepare→\
-         record_image_draws AND reach the content_cache_view (per probe 4 — \
-         128 red pixels in cache view), but the final readback is dark or \
-         clobbered. Cure surface candidates: cursor pass overdraws the image \
-         cell, cell BG draws AFTER image, copy_cache_to_output stage truncates \
-         to a clip rect that excludes (0,0), or the harness's read_render_target \
-         reads from the wrong attachment.",
+ {red_in_cell} red-ish pixels (r>200,g<50,b<50); expected ≥4 \
+ inside the {cell_w}×{cell_h} cell region at pixel (px_x={px_x}, \
+ px_y={py}). The kitty image is not painting visible pixels at \
+ the correct cell. Non-red sample colors from the cell: {samples:?}. \
+ Cure status: image bytes flow through Parser→cache→snapshot→prepare→\
+ record_image_draws AND reach the content_cache_view (per probe 4 — \
+ 128 red pixels in cache view), but the final readback is dark or \
+ clobbered. Cure surface candidates: cursor pass overdraws the image \
+ cell, cell BG draws AFTER image, copy_cache_to_output stage truncates \
+ to a clip rect that excludes (0,0), or the harness's read_render_target \
+ reads from the wrong attachment.",
         py = px_y,
         samples = sample_colors,
     );
 }
 
 /// §13.6.1 item 15 — blend-bypass success-trap pairing.
-///
 /// Feeds a semi-transparent (alpha=128) red 1×1 kitty image AT cell
 /// (0,0), then writes a white 'X' text glyph also AT cell (0,0). The
 /// rendered output must show BOTH the image's red contribution AND
 /// the text glyph's white pixels — the `PREMUL_ALPHA_BLEND` contract
 /// produces a blended composite.
-///
 /// **Why this matters**: the
 /// `gpu-debug-image-blend-off` diagnostic feature provides a
 /// `blend: None` pipeline variant where direct writes succeed but
@@ -223,18 +219,17 @@ fn kitty_image_and_text_glyph_both_visible_in_same_cell_under_premul_alpha_blend
     assert!(
         red_count >= 1 && white_count >= 1,
         "§13.6.1 item 15 (blend-pairing): cell (0,0) must contain BOTH \
-         the semi-transparent image tint AND the text glyph after \
-         PREMUL_ALPHA_BLEND compositing — saw {red_count} red-tinted \
-         pixels + {white_count} white pixels. If white_count == 0, the \
-         image is overdrawing the text opaquely (production switched \
-         to blend: None — banned). If red_count == 0, the image is not \
-         rendering at all (item 14's bug). Both must be > 0 to confirm \
-         the cure preserves the production blend contract.",
+ the semi-transparent image tint AND the text glyph after \
+ PREMUL_ALPHA_BLEND compositing — saw {red_count} red-tinted \
+ pixels + {white_count} white pixels. If white_count == 0, the \
+ image is overdrawing the text opaquely (production switched \
+ to blend: None — banned). If red_count == 0, the image is not \
+ rendering at all (item 14's bug). Both must be > 0 to confirm \
+ the cure preserves the production blend contract.",
     );
 }
 
 /// §13.6.1 item 17 — silent-drop negative-case guard.
-///
 /// Catches the failure mode where the cure regresses to "draw fires but
 /// does nothing" by ensuring the diagnostic surfaces (prepared quads +
 /// texture upload) stay populated even if pixels later regress.
@@ -254,10 +249,10 @@ fn kitty_image_pipeline_does_not_silently_drop_quads() {
     assert!(
         above >= 1,
         "§13.6.1 item 17 (silent-drop guard): prepared.image_quads_above \
-         must contain at least 1 quad after a successful kitty placement; \
-         got below={below}, above={above}. Zero quads = the placement was \
-         silently dropped between snapshot and prepare; downstream cure \
-         work is pointless because there is no image to render."
+ must contain at least 1 quad after a successful kitty placement; \
+ got below={below}, above={above}. Zero quads = the placement was \
+ silently dropped between snapshot and prepare; downstream cure \
+ work is pointless because there is no image to render."
     );
 
     // Texture upload verification — the cached texture for ImageId(3)
@@ -271,8 +266,8 @@ fn kitty_image_pipeline_does_not_silently_drop_quads() {
     assert!(
         tex.is_some(),
         "§13.6.1 item 17 (silent-drop guard): ImageId(3)'s texture must \
-         be uploaded to the GPU after prepare runs. None = the image's \
-         RGBA bytes never reached GPU memory; downstream cure work is \
-         pointless."
+ be uploaded to the GPU after prepare runs. None = the image's \
+ RGBA bytes never reached GPU memory; downstream cure work is \
+ pointless."
     );
 }

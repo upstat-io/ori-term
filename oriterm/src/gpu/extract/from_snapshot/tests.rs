@@ -614,13 +614,11 @@ fn large_snapshot_through_extract() {
 }
 
 /// Regression: daemon first-frame extract must decode `mouse_cursor_icon`.
-///
 /// `snapshot_to_renderable()` builds `RenderableContent::default()` and then
 /// populates the fields; `mouse_cursor_icon` defaults to `None`. If the
 /// function fails to assign it, daemon clients render the first frame with
 /// no OSC 22 cursor icon even when the wire snapshot carries one.
-///
-/// See: plans/spec-conformance/section-10-osc-suite.md §10.5 daemon pin.
+/// See: §10.5 daemon pin.
 #[test]
 fn snapshot_to_renderable_populates_mouse_cursor_icon() {
     use vte::ansi::cursor_icon::CursorIcon;
@@ -741,6 +739,7 @@ fn wire_image_data(id: u32, bytes: &[u8]) -> oriterm_mux::protocol::snapshot::Wi
         data: bytes.to_vec(),
         width: 1,
         height: bytes.len() as u32 / 4,
+        pixel_generation: 0,
     }
 }
 
@@ -749,7 +748,6 @@ fn wire_image_data(id: u32, bytes: &[u8]) -> oriterm_mux::protocol::snapshot::Wi
 /// `FrameInput.content.images` AND `image_data`. ONLY passes when the extract
 /// path actually forwards the wire image fields (the proximate cause of the
 /// bug was unconditional `.clear()` on these vectors).
-/// See: bug-tracker/plans/BUG-06-072/
 #[test]
 fn daemon_pane_snapshot_roundtrips_inline_image_data() {
     use oriterm_core::ImageId;
@@ -783,7 +781,6 @@ fn daemon_pane_snapshot_roundtrips_inline_image_data() {
 /// client with empty `FrameInput.content.images`. Rejects the pre-fix behavior
 /// where `extract_frame_from_snapshot_into` unconditionally called
 /// `out.images.clear()` and dropped all daemon-mode image rendering.
-/// See: bug-tracker/plans/BUG-06-072/
 #[test]
 fn daemon_pane_snapshot_does_not_drop_images_when_source_has_them() {
     let pixels = vec![0u8; 16];
@@ -850,6 +847,7 @@ fn daemon_pane_snapshot_resolves_placement_via_image_lookup() {
         data: cached_pixels.clone(),
         width: 1,
         height: 1,
+        pixel_generation: 0,
     });
 
     // Snapshot has a placement but NO inline image_data — must resolve via lookup.
@@ -875,7 +873,6 @@ fn daemon_pane_snapshot_resolves_placement_via_image_lookup() {
 /// End-to-end pin: real `notcurses-info` bytes produced by `Term` flow
 /// through the daemon→client wire shape into `extract_frame_from_snapshot`
 /// with non-empty `FrameInput.content.images` AND `image_data`.
-///
 /// **Why this is the next-layer-down test for the wordmark gap.** The
 /// sibling integration tests
 /// (`oriterm_core/tests/notcurses_info_pty.rs` and
@@ -885,14 +882,11 @@ fn daemon_pane_snapshot_resolves_placement_via_image_lookup() {
 /// extends the same real-notcurses-bytes trace through the *client-side*
 /// extract path that consumes `PaneSnapshot.image_data` (the wire
 /// encoding the daemon ships per-client).
-///
 /// If this test fails on Linux, the client-side `populate_images_from_wire`
 /// drops real notcurses image data even though it accepts synthetic data
 /// — a regression the existing `wire_image_data`-based tests cannot
 /// catch. If it passes, the cure surface is downstream of the client
 /// extract (GPU pipeline, texture upload, or render).
-///
-/// See: bug-tracker/plans/BUG-06-073/
 #[cfg(unix)]
 #[test]
 fn notcurses_info_real_bytes_roundtrip_to_client_extract() {
@@ -910,25 +904,53 @@ fn notcurses_info_real_bytes_roundtrip_to_client_extract() {
         return;
     }
 
-    // Run real notcurses-info under PtySession and let our handler
-    // build up image_cache state.
+    // Run notcurses-info under PtySession to CAPTURE the full byte
+    // stream the real process emits, then replay the captured bytes
+    // truncated at the `_Ga=p,` APC end so the placement is alive when
+    // the wire-roundtrip assertions run.
     let mut cmd = CommandBuilder::new("notcurses-info");
     cmd.env("TERM", "xterm-256color");
     let mut session = PtySession::spawn(cmd, 80, 24);
     let status = session.wait_for_child_exit(5_000);
     assert!(status.success(), "notcurses-info exited: {status:?}");
+    session.drain_blocking(3000);
 
-    // Extract the IO-thread snapshot (what the daemon's
-    // `pane.swap_io_snapshot` would deliver to the main thread).
+    // notcurses-info's trailing render emits ED/CUP/scroll sequences that
+    // evict the kitty placement off the visible region and trigger
+    // `prune_if_orphaned`, so live-stream end-state has zero placements.
+    // To capture the WIRE protocol with real placement data, replay the
+    // captured bytes through a fresh `Term` and stop just past the `a=p`
+    // APC — the placement is alive at that point.
+    let input_bytes = session.input_bytes().to_vec();
+    let ap_apc_needle = b"\x1b_Ga=p,";
+    let ap_start = input_bytes
+        .windows(ap_apc_needle.len())
+        .position(|w| w == ap_apc_needle)
+        .expect("real notcurses-info should emit `_Ga=p,` APC for display_logo");
+    let ap_end = input_bytes[ap_start..]
+        .windows(2)
+        .position(|w| w == b"\x1b\\")
+        .map(|rel| ap_start + rel + 2)
+        .expect("`_Ga=p,` APC should terminate with ESC \\");
+
+    // Replay through a fresh `SpecHarness` so we test the SAME parse +
+    // dispatch path the IO thread runs, without the trailing eviction.
+    use oriterm_test_support::spec_chain::SpecHarness;
+    let mut harness = SpecHarness::with_size(24, 80);
+    harness.feed(&input_bytes[..ap_end]);
     let mut render_buf = RenderableContent::default();
-    session.term().renderable_content_into(&mut render_buf);
+    harness.term().renderable_content_into(&mut render_buf);
     assert!(
         !render_buf.images.is_empty(),
-        "real notcurses-info should produce >=1 placement"
+        "Replay of captured bytes up to `a=p` end MUST have ≥1 placement \
+              (got image_count={} placement_count={}). The cure for chunked-action-
+              inheritance is supposed to leave exactly 1 placement after `a=p`.",
+        harness.term().image_cache().image_count(),
+        harness.term().image_cache().placement_count(),
     );
     assert!(
         !render_buf.image_data.is_empty(),
-        "real notcurses-info should produce >=1 image_data entry"
+        "Replay of captured bytes up to `a=p` end MUST have ≥1 image_data entry",
     );
 
     // Build the WIRE PaneSnapshot the daemon would ship to the client.
@@ -962,6 +984,7 @@ fn notcurses_info_real_bytes_roundtrip_to_client_extract() {
             data: (*img.data).clone(),
             width: img.width,
             height: img.height,
+            pixel_generation: img.pixel_generation,
         });
     }
 
@@ -1031,7 +1054,7 @@ fn notcurses_info_real_bytes_roundtrip_to_client_extract() {
     );
     for img in &frame.content.image_data {
         eprintln!(
-            "  client image_data: id={:?} {}x{} px, data.len={}B",
+            " client image_data: id={:?} {}x{} px, data.len={}B",
             img.id,
             img.width,
             img.height,
@@ -1062,8 +1085,8 @@ fn notcurses_info_real_bytes_roundtrip_to_client_extract() {
     assert!(
         missing.is_empty(),
         "client extract: placement(s) reference IDs with no image_data - \
-         those placements would render BLANK at the GPU: \
-         referenced={referenced_ids:?} provided={provided_ids:?} missing={missing:?}"
+ those placements would render BLANK at the GPU: \
+ referenced={referenced_ids:?} provided={provided_ids:?} missing={missing:?}"
     );
 
     for (i, img) in frame.content.image_data.iter().enumerate() {
@@ -1076,7 +1099,7 @@ fn notcurses_info_real_bytes_roundtrip_to_client_extract() {
         assert!(
             !img.data.is_empty(),
             "client image_data[{i}] has empty pixel buffer (dims {}x{}) - \
-             wire decoding dropped the bytes",
+ wire decoding dropped the bytes",
             img.width,
             img.height
         );

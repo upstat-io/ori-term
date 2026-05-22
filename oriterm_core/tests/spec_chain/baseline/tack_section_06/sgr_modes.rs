@@ -17,7 +17,7 @@
 //! The remaining 76 modes tack emits are covered by direct-VTE SGR
 //! xcheck tests (`oriterm_core/src/term/handler/tack_cap_xcheck/`) and
 //! unit tests on `sgr::apply` (`oriterm_core/src/term/handler/sgr.rs`).
-//! Replaying all 80 here would be `LEAK:algorithmic-duplication` —
+//! Replaying all 80 here would be `` —
 //! the canonical per-mode coverage already lives at the handler
 //! layer. The four modes verified here are the most visually
 //! distinctive mode labels on tack's SGR screen (reset, bold,
@@ -33,7 +33,6 @@ use oriterm_test_support::spec_chain::{
 // --- SGR 1 (Bold) ----------------------------------------------------------
 
 /// `CSI 1 m` sets the BOLD flag on the cursor template.
-///
 /// Default template flags are empty; the assertion proves the SGR 1
 /// handler actually transitions the flag. Without the post-assertion,
 /// a no-op handler would still pass the "flags include BOLD" check
@@ -89,7 +88,6 @@ fn sgr_1_sets_bold_flag() {
 // --- SGR 4 (Underline) -----------------------------------------------------
 
 /// `CSI 4 m` sets the UNDERLINE flag on the cursor template.
-///
 /// Underline sets the base `UNDERLINE` flag — ori_term's underline
 /// variants (curly / dotted / dashed / double) are separate flags that
 /// are NOT set by plain SGR 4; the assertion below confirms the base
@@ -137,7 +135,6 @@ fn sgr_4_sets_underline_flag() {
 // --- SGR 7 (Reverse) -------------------------------------------------------
 
 /// `CSI 7 m` sets the INVERSE flag on the cursor template.
-///
 /// Tack's SGR table renders `Mode 7` with reversed video; this pin
 /// verifies the flag is actually set, not merely that the sequence
 /// was parsed.
@@ -181,7 +178,6 @@ fn sgr_7_sets_inverse_flag() {
 // --- SGR 0 (Reset) ---------------------------------------------------------
 
 /// `CSI 0 m` resets all SGR flags after they have been set.
-///
 /// Matrix: feed SGR 1 + 4 + 7 first to set BOLD + UNDERLINE + INVERSE,
 /// then feed SGR 0 and assert every flag returns to the default
 /// (empty) state. This guarantees SGR 0 actually resets, not just
@@ -236,7 +232,6 @@ fn sgr_0_clears_all_set_flags() {
 }
 
 /// Empty SGR (`CSI m`) is equivalent to `CSI 0 m` per ECMA-48 §8.3.117.
-///
 /// Regression guard that doubles as the "bare SGR resets" positive: after
 /// setting BOLD, a lone `CSI m` must clear it. A regression that
 /// treated empty-param SGR as a no-op would fail here.
@@ -265,7 +260,6 @@ fn empty_sgr_resets_like_sgr_0() {
 // --- Negative pins ---------------------------------------------------------
 
 /// Regression guard: SGR 1 must NOT set INVERSE (cross-mode isolation).
-///
 /// Without this pin, a regression that bulk-set multiple flags on any
 /// SGR sequence would pass the positive per-mode pins above (each
 /// checks only its own flag).

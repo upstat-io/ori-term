@@ -37,8 +37,6 @@ fn feed(term: &mut Term<PtyResponder>, bytes: &[u8]) {
 /// `Palette::for_theme(self.theme)` plus any runtime OSC 4/104
 /// mutations, so no GUI-thread lookup is needed (the sync emission is
 /// load-bearing for Windows ConPTY child handshake polling windows).
-///
-/// See: bug-tracker/plans/completed/BUG-06-073/
 #[test]
 fn pty_responder_captures_color_request() {
     let (mut term, responder) = term_with_responder();
@@ -57,7 +55,7 @@ fn pty_responder_captures_color_request() {
     assert!(
         responder.take_osc_responses().is_empty(),
         "Sync OSC 10/11/12 path must NOT populate the osc_responses queue \
-         (that queue now only handles OSC 52 ClipboardLoad)"
+ (that queue now only handles OSC 52 ClipboardLoad)"
     );
     assert!(
         responder.take_clipboard_stores().is_empty(),
@@ -68,8 +66,6 @@ fn pty_responder_captures_color_request() {
 /// Terminator parity: the synchronous formatter captures the query's
 /// terminator, so a BEL-terminated OSC 10 query must produce a
 /// BEL-terminated response.
-///
-/// See: bug-tracker/plans/completed/BUG-06-073/
 #[test]
 fn pty_responder_captures_color_request_bel_terminated() {
     let (mut term, responder) = term_with_responder();
@@ -129,7 +125,6 @@ fn pty_responder_captures_clipboard_store() {
 }
 
 /// §10.2 blind-spot #6 remediation — embedded-backend SSOT pin.
-///
 /// The daemon-path OSC 52 round-trip is pinned in
 /// `oriterm_mux/src/pane/io_thread/response_poll/tests.rs::osc52_register_
 /// poll_roundtrip`; this sibling test pins the embedded-backend path so
@@ -137,7 +132,6 @@ fn pty_responder_captures_clipboard_store() {
 /// the two consumers. The responder's reply MUST come from the canonical
 /// `format_clipboard_reply` helper — byte-equality against the helper's
 /// output rejects any ad-hoc reply formatting.
-///
 /// Matrix: all three `ClipboardSelection` variants (`c`, `s`, `p`) plus
 /// both terminators (ST, BEL) — `q` has no variant and is exercised as a
 /// drop in `oriterm_core/tests/spec_chain/osc/clipboard.rs::
@@ -166,8 +160,8 @@ fn osc52_embedded_backend_fulfills_via_session_pty_responder() {
             osc,
             vec![expected.clone()],
             "OSC 52 load (Pc={}, terminator={:?}) must round-trip via \
-             format_clipboard_reply — no ad-hoc formatting at the responder \
-             call site. got {osc:?}, want [{expected:?}]",
+ format_clipboard_reply — no ad-hoc formatting at the responder \
+ call site. got {osc:?}, want [{expected:?}]",
             clipboard_char as char,
             terminator,
         );

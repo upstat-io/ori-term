@@ -33,7 +33,6 @@ fn dirty_flag_cross_thread_pattern() {
 }
 
 /// Unseen output flag: set and clear round-trip (simulated with bool).
-///
 /// Mirrors the `has_bell` pattern: set on background output, clear on focus.
 #[test]
 fn unseen_output_set_and_clear() {
@@ -72,7 +71,6 @@ fn selection_dirty_swap_clear() {
 /// Regression: `resolve_target_pgid` with no master fd must fall
 /// back to the shell PID and report `resolved_via_tcgetpgrp = false` so the
 /// caller does NOT apply ESRCH-as-success on the fallback path.
-/// See: bug-tracker/plans//00-overview.md
 #[cfg(unix)]
 #[test]
 fn resolve_target_pgid_with_no_master_fd_returns_shell_pid() {
@@ -88,7 +86,6 @@ fn resolve_target_pgid_with_no_master_fd_returns_shell_pid() {
 /// (a pipe) must fall back to the shell PID. `tcgetpgrp` on a pipe returns
 /// -1 with `ENOTTY`; the helper must report `resolved_via_tcgetpgrp = false`
 /// so the caller does NOT apply ESRCH-as-success on the fallback path.
-/// See: bug-tracker/plans//00-overview.md
 #[cfg(unix)]
 #[test]
 #[allow(

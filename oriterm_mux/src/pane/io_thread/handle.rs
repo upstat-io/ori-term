@@ -28,7 +28,6 @@ use crate::pty::reader::BYTE_CHANNEL_CAPACITY;
 use crate::pty::spawn::ExitStatus;
 
 /// Per-pane memory budget for the IO thread's command channel heap.
-///
 /// Sized to absorb realistic command bursts (mouse wheel, keyboard
 /// repeat) without blocking the main thread, while keeping per-pane
 /// command-queue heap bounded. Largest command is `SetTheme(Theme,
@@ -49,7 +48,6 @@ const _: () = assert!(
 /// Tag bit for a valid pending resize. Setting this bit lets the slot
 /// encode any `(rows, cols) ∈ [0, u16::MAX]²` unambiguously, with `0`
 /// reserved as the sentinel for "no pending resize".
-///
 /// Bit layout:
 /// - bit 48 = valid tag
 /// - bits 32..48 = rows
@@ -78,14 +76,12 @@ pub(super) fn unpack_pending_resize(packed: u64) -> Option<(u16, u16)> {
 }
 
 /// Main-thread handle to a Terminal IO thread.
-///
 /// Provides non-blocking command sending and byte forwarding. The IO thread
 /// processes commands in order and produces snapshots. The main thread reads
 /// the latest snapshot via the shared [`SnapshotDoubleBuffer`].
 /// Created by [`new_with_handle()`].
 pub struct PaneIoHandle {
     /// Send commands to the IO thread.
-    ///
     /// Bounded at [`CMD_CHANNEL_CAPACITY`]; senders use `try_send` so
     /// the main thread never blocks. Resize is routed through
     /// [`Self::send_resize`] (atomic slot + wake) and never traverses
@@ -98,7 +94,6 @@ pub struct PaneIoHandle {
     /// Shared double buffer — main thread reads snapshots from here.
     pub(crate) double_buffer: SnapshotDoubleBuffer,
     /// Bounded(1) wake channel for IO thread state changes.
-    ///
     /// Used by [`Self::fulfill_clipboard_load`],
     /// [`Self::fulfill_color_query`], [`Self::send_resize`], the
     /// [`Self::send_command`] Shutdown special-case, and [`Self::shutdown`]
@@ -108,14 +103,12 @@ pub struct PaneIoHandle {
     /// side.
     pub(crate) io_wake_tx: Sender<()>,
     /// Pending resize slot — last-writer-wins coalescing.
-    ///
     /// Encoded via [`pack_pending_resize`]. Stored by
     /// [`Self::send_resize`], swapped out by the IO thread's
     /// `apply_pending_resize` helper. Replaces routing Resize through
     /// `cmd_tx` (which broke under saturation: see ).
     pub(crate) pending_resize: Arc<AtomicU64>,
     /// Durable shutdown flag, shared with the IO thread.
-    ///
     /// Cloned from [`IoThreadConfig::shutdown`] in [`new_with_handle`].
     /// [`Self::shutdown`] and the [`Self::send_command`] Shutdown
     /// special-case set this directly so the IO thread observes
@@ -124,19 +117,17 @@ pub struct PaneIoHandle {
     /// Test-only Drop sentinel — counter incremented after `shutdown()`
     /// returns inside the existing `Drop` impl. Production builds carry
     /// zero overhead — the field is `#[cfg(test)]`. Used by §03 Pin 4
-    /// in `bug-tracker/plans//section-03-tdd-matrix.md`.
+    /// in .
     #[cfg(test)]
     pub(crate) drop_counter: Option<Arc<std::sync::atomic::AtomicUsize>>,
 }
 
 impl PaneIoHandle {
     /// Send a command to the IO thread.
-    ///
     /// Non-blocking. On a saturated `cmd_tx` the command is dropped
     /// with a `log::error!`; reply-bearing commands surface the failure
     /// to the caller via `recv_timeout` returning `Disconnected` when
     /// the dropped reply Sender is closed.
-    ///
     /// `Shutdown` is special-cased: it sets the durable
     /// [`Self::shutdown_flag`] BEFORE the `try_send` so the IO thread
     /// observes shutdown even under saturation.
@@ -145,7 +136,6 @@ impl PaneIoHandle {
         // atomic flag) — never silently drop under saturation. Belt-
         // and-suspenders: set the flag first, then try_send the
         // command, then wake.
-        //
         // `matches!(&cmd,...)` borrows so `cmd` flows into `try_send`
         // unmoved (PaneIoCommand is non-Copy).
         if matches!(&cmd, PaneIoCommand::Shutdown) {
@@ -160,7 +150,6 @@ impl PaneIoHandle {
     }
 
     /// Request a resize via the atomic coalescing slot.
-    ///
     /// Last-writer-wins: if multiple `send_resize` calls land before
     /// the IO thread drains the slot, only the latest dimensions are
     /// applied. Wakes the IO thread out of `select!` within one loop
@@ -180,7 +169,6 @@ impl PaneIoHandle {
     }
 
     /// Clone the IO-thread wake sender (for the PTY writer thread).
-    ///
     /// The writer thread sets [`IoThreadConfig::shutdown`] directly
     /// when it exits; without a wake, an idle IO thread blocked in
     /// `select!` would not observe the shutdown until `byte_rx` EOF
@@ -198,7 +186,6 @@ impl PaneIoHandle {
     }
 
     /// Fulfill a clipboard-load `ResponseToken` and wake the IO thread.
-    ///
     /// Returns `Err(AlreadyFulfilled)` if a previous fulfill already
     /// succeeded (routing-bug detection per the single-assignment
     /// contract on [`ResponseToken::fulfill`]).
@@ -227,7 +214,6 @@ impl PaneIoHandle {
     }
 
     /// Shut down the IO thread and wait for it to exit.
-    ///
     /// Sets [`Self::shutdown_flag`] FIRST so the IO thread observes
     /// shutdown even when `cmd_tx` is saturated. The follow-up
     /// `try_send(Shutdown)` is best-effort (faster path on a non-
@@ -255,11 +241,10 @@ impl PaneIoHandle {
     }
 
     /// Test-only — install a shared Drop counter.
-    ///
     /// The counter is incremented inside the existing `Drop` impl after
     /// `shutdown()` returns, so observers can pin the "every Drop runs
     /// to completion" invariant without a flaky wall-clock budget.
-    /// Used by §03 Pin 4 in `bug-tracker/plans//`.
+    /// Used by §03 Pin 4 in .
     #[cfg(test)]
     pub(crate) fn set_drop_counter(&mut self, counter: Arc<std::sync::atomic::AtomicUsize>) {
         self.drop_counter = Some(counter);
@@ -295,7 +280,6 @@ pub struct IoThreadConfig<S: EffectSink + 'static> {
     /// this to reach the main thread's mux event pump.
     pub mux_tx: mpsc::Sender<MuxEvent>,
     /// Child-process exit channel.
-    ///
     /// Delivered by the watcher thread spawned in [`crate::pty::spawn_pty`]
     /// (or the adopted-pane equivalent). When the PTY reader observes
     /// EOF, the IO thread waits briefly on this channel for the real

@@ -39,12 +39,10 @@ pub(crate) struct ClientConnection {
     /// project per-client `image_data` — when an `ImageId` is in this set AND
     /// the snapshot's `images_dirty == false`, the projection omits the wire
     /// `WireImageData` for that ID (client resolves via its `image_cache`).
-    ///
     /// Server-driven invalidation: when `SnapshotCache.image_data_store`
     /// evicts a `(PaneId, ImageId)` under memory pressure, that ID is removed
     /// from EVERY connection's `sent_images[pane_id]` so the next snapshot
     /// referencing the ID re-includes its pixel data.
-    /// See: bug-tracker/plans/BUG-06-072/
     sent_images: HashMap<PaneId, HashSet<ImageId>>,
 }
 
@@ -127,7 +125,6 @@ impl ClientConnection {
     }
 
     /// Queue a frame for sending and attempt to flush.
-    ///
     /// If the stream returns `WouldBlock`, the remaining bytes are kept
     /// in the write buffer. The caller should register `WRITABLE` interest
     /// when [`has_pending_writes`] returns `true`.

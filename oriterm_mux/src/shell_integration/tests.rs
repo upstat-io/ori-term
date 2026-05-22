@@ -922,9 +922,8 @@ fn multiple_osc133a_without_completion_creates_separate_markers() {
 /// the order the IO thread uses at `oriterm_mux/src/pane/io_thread/mod.rs`
 /// `handle_bytes`. Asserts EXACTLY one PTY write; a leftover raw-interceptor
 /// arm would produce two replies and surface here.
-/// See: bug-tracker/plans//section-03-tdd-matrix.md
 #[test]
-fn xtversion_responds_with_oriterm_version() {
+fn xtversion_responds_with_kitty_advertise() {
     let sink = QueueingEffectSink::new();
     let mut term = Term::new(24, 80, 100, Theme::Dark, sink);
 
@@ -950,8 +949,8 @@ fn xtversion_responds_with_oriterm_version() {
     assert_eq!(*kind, oriterm_core::effect::PtyWriteKind::DeviceAttribute);
     let s = String::from_utf8_lossy(bytes);
     assert!(
-        s.contains("oriterm"),
-        "XTVERSION reply must contain 'oriterm', got: {s}"
+        s.contains("kitty"),
+        "XTVERSION reply must contain 'kitty', got: {s}"
     );
 }
 
@@ -984,14 +983,12 @@ fn interceptor_osc7_non_utf8_bytes_returns_empty_path() {
 }
 
 // spec_chain_helper: production-order dual-pass byte feed.
-//
 // `spec_chain_helper::feed_mux_and_proc` encapsulates the production
 // "interceptor FIRST, processor SECOND" byte-feed order so downstream
 // spec_chain tests for OSC 7 / 9 / 99 / 133 / 633 / 777 cannot accidentally
 // reorder the two passes (a silent false-green source). It lives in the
 // sibling unit-test module because `RawInterceptor` is `pub(crate)` and
 // integration tests in `oriterm_mux/tests/` cannot reach it.
-//
 // The high-level `vte::ansi::Processor` silently drops OSC 133 / 9 / 99 / 777
 // (no `Handler` trait route exists for them), so a test that calls only
 // `Processor::advance` would observe NO state mutation for those sequences
@@ -1009,7 +1006,6 @@ mod spec_chain_helper {
     /// Feed `bytes` through the production-order parser chain:
     /// the raw `vte::Parser` + `RawInterceptor` runs first, then the
     /// high-level `vte::ansi::Processor` runs on the same bytes.
-    ///
     /// Both passes mutate `term`. The interceptor handles OSC 7 / 9 / 99
     /// / 133 / 633 / 777, and the high-level processor drives every
     /// other OSC, CSI, ESC, and DCS sequence.
@@ -1044,8 +1040,8 @@ fn osc133a_via_processor_only_does_not_change_prompt_state() {
         term.prompt_state(),
         PromptState::None,
         "high-level Processor must NOT route OSC 133 to a Handler hook \
-         — if this assertion ever fires, OSC 133 was added to the \
-         high-level dispatcher and would be double-handled in production"
+ — if this assertion ever fires, OSC 133 was added to the \
+ high-level dispatcher and would be double-handled in production"
     );
     assert!(
         !term.prompt_mark_pending(),
@@ -1071,9 +1067,9 @@ fn osc133a_via_spec_chain_helper_sets_prompt_start() {
         term.prompt_state(),
         PromptState::PromptStart,
         "production-order dual-pass MUST drive OSC 133;A through the \
-         interceptor — if this assertion fails, the interceptor pass \
-         was dropped and downstream spec_chain tests would silently \
-         pass against a parser that never saw the sequence"
+ interceptor — if this assertion fails, the interceptor pass \
+ was dropped and downstream spec_chain tests would silently \
+ pass against a parser that never saw the sequence"
     );
     assert!(
         term.prompt_mark_pending(),
@@ -1082,7 +1078,6 @@ fn osc133a_via_spec_chain_helper_sets_prompt_start() {
 }
 
 // §10.3 — OSC 9 / 99 / 777 desktop notifications.
-//
 // These tests pin the `NotificationSource` discriminator that the mux
 // interceptor produces for each OSC variant, plus a regression guard proving
 // the high-level `vte::ansi::Processor` does NOT route OSC 9 to a
@@ -1292,13 +1287,12 @@ fn osc9_via_processor_without_mux_drops() {
     assert!(
         notifs.is_empty(),
         "high-level Processor must NOT route OSC 9 to a notification \
-         effect — if this assertion fires, OSC 9 was added to the \
-         high-level dispatcher and would be double-handled in production"
+ effect — if this assertion fires, OSC 9 was added to the \
+ high-level dispatcher and would be double-handled in production"
     );
 }
 
 // §10.4 — OSC 133 semantic prompt + OSC 633 VS Code shell integration.
-//
 // Both OSC 133 and OSC 633 drive the same `PromptState` state machine through
 // the mux interceptor. OSC 633 additionally records the raw command line via
 // `E` and routes property settings (`P;Cwd=...`) through `Term::set_cwd` —
@@ -1370,7 +1364,6 @@ fn osc133_c_sets_output_state() {
 /// duration. The deferred-mark helpers are invoked between feeds so the
 /// `PromptMarker` for the completed lifecycle carries A/B/C fields — this
 /// mirrors `post_parse_housekeeping` in production.
-///
 /// The exhaustive match on `PromptMarker { prompt, command, output }` is a
 /// property: if a future refactor adds a fourth field (e.g. `complete`),
 /// this test MUST be updated explicitly — it will not silently compile. This
@@ -1500,7 +1493,7 @@ fn osc133_full_lifecycle_records_markers() {
     assert!(
         marker.prompt < cmd && cmd < out,
         "prompt < command < output must hold after \\r\\n-advanced lifecycle: \
-         got prompt={}, command={cmd}, output={out}",
+ got prompt={}, command={cmd}, output={out}",
         marker.prompt,
     );
 }
@@ -1627,14 +1620,13 @@ fn osc633_via_high_level_processor_drops() {
         term.prompt_state(),
         PromptState::None,
         "high-level Processor must NOT route OSC 633;A — if this assertion \
-         fires, OSC 633 was added to the high-level dispatcher and would be \
-         double-handled in production"
+ fires, OSC 633 was added to the high-level dispatcher and would be \
+ double-handled in production"
     );
     assert!(!term.prompt_mark_pending());
 }
 
 // §10.8 — OSC 7 CWD via production-order dual-pass.
-//
 // OSC 7 is interceptor-handled: the high-level `vte::ansi::Processor`
 // does NOT route it to a `Handler` method (the default
 // `Handler::set_working_directory` is a no-op, and `Term` does not
@@ -1659,7 +1651,7 @@ fn osc7_file_uri_sets_cwd() {
         term.cwd(),
         Some("/home/user/project"),
         "production dual-pass must drive OSC 7 through the interceptor's \
-         parse_osc7_path → percent_decode → Term::set_cwd pipeline"
+ parse_osc7_path → percent_decode → Term::set_cwd pipeline"
     );
 }
 
@@ -1761,15 +1753,14 @@ fn osc7_via_high_level_processor_drops() {
     assert!(
         term.cwd().is_none(),
         "high-level Processor must NOT route OSC 7 — Term does not override \
-         Handler::set_working_directory; the canonical path is the interceptor. \
-         If this assertion fires, a `b\"7\"` arm with a non-default handler \
-         override was added, which would create a second dispatch path \
-         and cause double-handling in production"
+ Handler::set_working_directory; the canonical path is the interceptor. \
+ If this assertion fires, a `b\"7\"` arm with a non-default handler \
+ override was added, which would create a second dispatch path \
+ and cause double-handling in production"
     );
 }
 
 // — Kitty keyboard mode stack snapshot / restore via OSC 133 / 633
-//
 // Shell-integration protocol tests for the fix
 // - OSC 133 ; C (command-start) takes a paired contents-based snapshot.
 // - OSC 133 ; A (next prompt) / ; D (command-done) restores verbatim
@@ -1794,7 +1785,6 @@ use spec_chain_helper::feed_mux_and_proc;
 /// crashes without popping, `;A` next prompt. Stack must restore to
 /// snapshotted empty depth AND `KITTY_KEYBOARD_PROTOCOL` bits cleared.
 /// This is the user-visible crash-during-command symptom.
-/// See: bug-tracker/plans/completed/00-overview.md
 #[test]
 fn keyboard_mode_stack_child_crash_on_osc_133_a_restores_to_snapshot_depth() {
     let mut term = make_term();
@@ -2220,7 +2210,6 @@ fn csi_push_and_osc_133_c_same_chunk_snapshot_still_captures_pre_chunk_depth() {
 /// preserve the shell's set-only bits — prior to the paired bits
 /// snapshot, reapplying stack-top (`NO_MODE` for empty stack) would
 /// silently clear the shell's kitty state at every prompt boundary.
-/// See: bug-tracker/plans/completed/00-overview.md §2.5 review round 1.
 #[test]
 fn keyboard_mode_stack_shell_set_without_push_csi_equals_u_survives_restore() {
     let mut term = make_term();
@@ -2258,7 +2247,6 @@ fn keyboard_mode_stack_shell_set_without_push_csi_equals_u_survives_restore() {
 /// then user enters/exits alt screen (e.g. pages a manpage). Bits
 /// must survive — live per-screen `inactive_keyboard_mode_bits` tracks
 /// the off-screen effective bits so alt toggles preserve set state.
-/// See: bug-tracker/plans/completed/00-overview.md §2.5 review round 3.
 #[test]
 fn kitty_set_only_bits_without_shell_integration_survive_alt_roundtrip() {
     let mut term = make_term();
@@ -2276,7 +2264,7 @@ fn kitty_set_only_bits_without_shell_integration_survive_alt_roundtrip() {
     assert!(
         term.mode().contains(TermMode::DISAMBIGUATE_ESC_CODES),
         "primary's set-only kitty bits must survive alt round-trip even \
-         without shell integration"
+ without shell integration"
     );
 }
 
@@ -2309,7 +2297,6 @@ fn kitty_mid_command_bit_mutation_survives_alt_roundtrip() {
 /// not persisted. Previously restore discarded the inactive bits snap;
 /// now it applies the snap to `inactive_keyboard_mode_bits` so the alt
 /// screen's mid-command mutations are cleaned at the prompt boundary.
-/// See: bug-tracker/plans/completed/00-overview.md §2.5 review round 5.
 #[test]
 fn inactive_screen_bit_mutation_during_command_restored_on_primary_d() {
     let mut term = make_term();
@@ -2349,7 +2336,6 @@ fn inactive_screen_bit_mutation_during_command_restored_on_primary_d() {
 /// shell-set bits. Without the paired swap, alt-side `;A` incorrectly
 /// applies primary's DISAMBIGUATE bits to the alt screen and then
 /// consumes/loses primary's paired snap.
-/// See: bug-tracker/plans/completed/00-overview.md §2.5 review round 4.
 #[test]
 fn alt_side_a_restore_uses_alt_paired_snapshot_not_primary() {
     let mut term = make_term();
@@ -2371,7 +2357,7 @@ fn alt_side_a_restore_uses_alt_paired_snapshot_not_primary() {
     assert!(
         !term.mode().intersects(TermMode::KITTY_KEYBOARD_PROTOCOL),
         "alt-side `;A` restore must NOT apply primary's paired bits \
-         snapshot to the alt screen"
+ snapshot to the alt screen"
     );
 
     // Exit alt — live inactive_keyboard_mode_bits carries primary's
@@ -2381,7 +2367,7 @@ fn alt_side_a_restore_uses_alt_paired_snapshot_not_primary() {
     assert!(
         term.mode().contains(TermMode::DISAMBIGUATE_ESC_CODES),
         "primary's original kitty bits must survive the alt round-trip \
-         via the live per-screen bits field"
+ via the live per-screen bits field"
     );
 }
 
@@ -2390,7 +2376,6 @@ fn alt_side_a_restore_uses_alt_paired_snapshot_not_primary() {
 /// the alt side (misbehaving integration or background emission).
 /// `CSI = 1u; OSC 133;C; ?1049h; OSC 133;A; ?1049l` must end with
 /// `DISAMBIGUATE_ESC_CODES` still active on primary.
-/// See: bug-tracker/plans/completed/00-overview.md §2.5 review round 2.
 #[test]
 fn kitty_set_only_bits_survive_alt_screen_roundtrip_with_a_on_alt() {
     let mut term = make_term();
@@ -2410,7 +2395,7 @@ fn kitty_set_only_bits_survive_alt_screen_roundtrip_with_a_on_alt() {
     assert!(
         term.mode().contains(TermMode::DISAMBIGUATE_ESC_CODES),
         "set-only kitty bits must survive an alt-screen round-trip that \
-         consumes the paired snapshot on the wrong screen"
+ consumes the paired snapshot on the wrong screen"
     );
 }
 
@@ -2445,7 +2430,6 @@ fn keyboard_mode_stack_shell_set_then_child_set_mutation_then_a_reapplies_shell_
 /// Result: stack = snapshot minus one pop. Documents the tradeoff
 /// called out in the plan's §2.5 Round 2 F2 disagreement — the
 /// raw-first-then-high-level architecture is the chosen SSOT per plan.
-/// See: bug-tracker/plans/completed/00-overview.md §2.5.
 #[test]
 fn csi_pop_and_osc_133_d_same_chunk_raw_first_restores_then_pop_applies() {
     let mut term = make_term();
@@ -2464,7 +2448,7 @@ fn csi_pop_and_osc_133_d_same_chunk_raw_first_restores_then_pop_applies() {
     assert!(
         term.keyboard_mode_stack().is_empty(),
         "raw-first invariant: restore then pop produces empty stack — \
-         documented tradeoff, not a separate fix"
+ documented tradeoff, not a separate fix"
     );
     assert!(!term.mode().intersects(TermMode::KITTY_KEYBOARD_PROTOCOL));
     // Shell-held mode is gone from the stack but remains in

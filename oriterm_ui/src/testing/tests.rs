@@ -467,7 +467,6 @@ fn harness_root_accessor() {
 }
 
 // -- RecordingWidget tests --
-//
 // These tests pin the public surface of `super::RecordingWidget` and
 // `super::RecordedEvents`. They use unbound keys (`Key::Character('x')`)
 // for keyboard cells so global keymap actions like FocusNext don't
@@ -477,7 +476,6 @@ fn harness_root_accessor() {
 /// verbatim — filtering out pipeline-injected lifecycle/hot-state events
 /// from the comparison. Pins variant + payload + order via element-wise
 /// equality on the filtered subset.
-///
 /// Extracted from four matrix tests that all shared the same filter-then-eq
 /// pattern. The fifth matrix test keeps its own set-membership assertion
 /// since it uses a different shape (assert on length + per-event contains).
@@ -495,9 +493,7 @@ fn assert_filtered_matches(events: &super::RecordedEvents, dispatched: &[InputEv
     );
 }
 
-/// Regression: BUG-07-023 — RecordingWidget helper extraction.
-///
-/// See: bug-tracker/plans/completed/BUG-07-023/00-overview.md
+/// RecordingWidget helper extraction.
 /// Pins: a single KeyDown via the harness pipeline appears in `events.all()`
 /// with the dispatched key + modifiers preserved verbatim.
 #[test]
@@ -513,14 +509,13 @@ fn recording_widget_records_keydown_events() {
     let recorded = events.all();
     assert!(
         recorded.iter().any(|e| matches!(
-            e,
-            InputEvent::KeyDown { key: Key::Character('x'), modifiers: m } if *m == Modifiers::NONE,
+        e,
+        InputEvent::KeyDown { key: Key::Character('x'), modifiers: m } if *m == Modifiers::NONE,
         )),
         "expected KeyDown {{ key: Character('x'), modifiers: NONE }}, got {recorded:?}",
     );
 }
 
-/// Regression: BUG-07-023.
 /// Pins: every InputEvent variant (KeyDown, KeyUp, MouseDown, MouseUp,
 /// MouseMove, Scroll) is recorded with all inner fields preserved.
 #[test]
@@ -593,7 +588,6 @@ fn recording_widget_records_all_input_variants_with_payloads() {
     assert_filtered_matches(&events, &expected);
 }
 
-/// Regression: BUG-07-023.
 /// Pins: each modifier variant (single + multi-modifier combos) is
 /// preserved verbatim in `events.all()`.
 #[test]
@@ -642,7 +636,6 @@ fn recording_widget_records_modifier_variants() {
     }
 }
 
-/// Regression: BUG-07-023.
 /// Pins: MouseDown + MouseUp for every MouseButton variant at two
 /// distinct in-bounds positions all reach the recording widget.
 #[test]
@@ -696,7 +689,6 @@ fn recording_widget_records_mouse_button_and_position_matrix() {
     }
 }
 
-/// Regression: BUG-07-023.
 /// Pins: every `ScrollDelta` variant (Pixels, Lines) is recorded with
 /// payload preserved.
 #[test]
@@ -731,7 +723,6 @@ fn recording_widget_records_scroll_delta_variants() {
     }
 }
 
-/// Regression: BUG-07-023.
 /// Pins: KeyDown immediately followed by KeyUp produces both events
 /// in the recorded sequence in dispatched order.
 #[test]
@@ -758,7 +749,6 @@ fn recording_widget_records_keydown_keyup_pair_in_order() {
     assert_filtered_matches(&events, &dispatched);
 }
 
-/// Regression: BUG-07-023.
 /// Pins TWO properties at once via a mixed-payload sequence [A, A, B, B, A]:
 /// (1) NO DEDUP — the 3 identical A events show up as 3 separate entries
 /// rather than collapsing to 1 (`A` appears 3× and `B` appears 2×, matching
@@ -796,7 +786,6 @@ fn recording_widget_records_repeated_events_in_order() {
     assert_filtered_matches(&events, &dispatched);
 }
 
-/// Regression: BUG-07-023.
 /// Pins: `count_keydowns()` filters to KeyDown only.
 #[test]
 fn recording_widget_count_keydowns_filters_correctly() {
@@ -834,7 +823,6 @@ fn recording_widget_count_keydowns_filters_correctly() {
     );
 }
 
-/// Regression: BUG-07-023.
 /// Pins: `last_event()` returns the most recent recorded event.
 #[test]
 fn recording_widget_last_event_returns_most_recent() {
@@ -858,7 +846,6 @@ fn recording_widget_last_event_returns_most_recent() {
     assert!(matches!(last, InputEvent::MouseMove { pos, .. } if pos == pos2));
 }
 
-/// Regression: BUG-07-023.
 /// Pins: `all()` preserves observation order across mixed-variant dispatch.
 #[test]
 fn recording_widget_all_returns_observation_order() {
@@ -890,7 +877,6 @@ fn recording_widget_all_returns_observation_order() {
     assert_filtered_matches(&events, &dispatched);
 }
 
-/// Regression: BUG-07-023.
 /// Pins: pre-input handle reports zero across all query methods.
 #[test]
 fn recording_widget_empty_handle_reports_zero() {
@@ -903,7 +889,6 @@ fn recording_widget_empty_handle_reports_zero() {
     assert_eq!(events.count_keydowns(), 0);
 }
 
-/// Regression: BUG-07-023.
 /// Pins: `Widget::key_context()` returns the constructor-provided Some(...) value.
 #[test]
 fn recording_widget_returns_configured_key_context_some() {
@@ -911,7 +896,6 @@ fn recording_widget_returns_configured_key_context_some() {
     assert_eq!(probe.key_context(), Some("Probe"));
 }
 
-/// Regression: BUG-07-023.
 /// Pins: `Widget::key_context()` returns None when constructed with None.
 #[test]
 fn recording_widget_returns_configured_key_context_none() {
@@ -919,7 +903,6 @@ fn recording_widget_returns_configured_key_context_none() {
     assert_eq!(probe.key_context(), None);
 }
 
-/// Regression: BUG-07-023.
 /// Pins: `Widget::sense()` returns the constructor-provided Sense.
 #[test]
 fn recording_widget_returns_configured_sense() {
@@ -929,7 +912,6 @@ fn recording_widget_returns_configured_sense() {
     }
 }
 
-/// Regression: BUG-07-023.
 /// Pins: layout box dimensions equal the module-level constants.
 #[test]
 fn recording_widget_layout_uses_pinned_dimensions() {
@@ -952,12 +934,11 @@ fn recording_widget_layout_uses_pinned_dimensions() {
     );
 }
 
-/// Regression: BUG-07-023 — RecordingWidget must inherit the trait default
+/// RecordingWidget must inherit the trait default
 /// for `handle_keymap_action`. The runtime pin
 /// (`overlay/tests.rs::recording_widget_handle_keymap_action_returns_none`)
 /// cannot detect an explicit override that returns `None`; this structural
 /// pin asserts the override is not defined at all.
-/// See: bug-tracker/plans/completed/BUG-07-023/00-overview.md
 #[test]
 fn recording_widget_source_does_not_define_handle_keymap_action() {
     let path =
@@ -983,9 +964,9 @@ fn recording_widget_source_does_not_define_handle_keymap_action() {
     assert!(
         !code_only.contains("fn handle_keymap_action("),
         "RecordingWidget must NOT define handle_keymap_action — the trait \
-         default returning None is the FocusNext fall-through gate's required \
-         shape. An explicit override (even one returning None) passes the \
-         runtime pin in overlay/tests.rs but breaks the structural contract.",
+ default returning None is the FocusNext fall-through gate's required \
+ shape. An explicit override (even one returning None) passes the \
+ runtime pin in overlay/tests.rs but breaks the structural contract.",
     );
 }
 

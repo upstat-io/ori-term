@@ -31,7 +31,6 @@ const IDLE_WAKE_CEILING: Duration = Duration::from_hours(24);
 
 impl<S: EffectSink> PaneIoThread<S> {
     /// Run the IO thread message loop.
-    ///
     /// Priority: drain commands first, then process pending bytes with
     /// bounded chunking. Blocks via `crossbeam_channel::select!` when both
     /// channels are empty. Exits on `Shutdown` command or channel disconnect.
@@ -66,7 +65,7 @@ impl<S: EffectSink> PaneIoThread<S> {
                 // would fall through to tick_animations + maybe_produce_snapshot
                 // + maybe_shrink_buffers + select! (timeout up to
                 // IDLE_WAKE_CEILING = 24h), delaying shutdown by an arbitrary
-                // wait. Regression: / /tpr-review round 4 F1.
+                // wait. Regression: / tpr-review round 4 F1.
                 self.maybe_produce_snapshot();
                 return;
             }
@@ -108,11 +107,11 @@ impl<S: EffectSink> PaneIoThread<S> {
             };
 
             crossbeam_channel::select! {
-                recv(self.cmd_rx) -> msg => if self.handle_cmd_arm(msg) { return; },
-                recv(self.byte_rx) -> msg => if self.handle_byte_arm(msg) { return; },
-                recv(self.child_exit_rx) -> status => self.handle_child_exit_arm(status),
-                recv(self.io_wake_rx) -> msg => self.handle_io_wake_arm(msg),
-                default(timeout) => self.handle_timeout_arm(sync_deadline),
+            recv(self.cmd_rx) -> msg => if self.handle_cmd_arm(msg) { return; },
+            recv(self.byte_rx) -> msg => if self.handle_byte_arm(msg) { return; },
+            recv(self.child_exit_rx) -> status => self.handle_child_exit_arm(status),
+            recv(self.io_wake_rx) -> msg => self.handle_io_wake_arm(msg),
+            default(timeout) => self.handle_timeout_arm(sync_deadline),
             }
         }
     }
@@ -186,7 +185,6 @@ impl<S: EffectSink> PaneIoThread<S> {
 
     /// Tick animation state and emit `MuxEvent::AnimationDeadlineChanged` on
     /// the deadline edge.
-    ///
     /// Returns the next frame deadline (or `None` when no animation is
     /// active or viewport-visible) for use as the `select!` timeout below.
     /// Sets `grid_dirty` when the image cache was mutated (frame applied)
@@ -223,9 +221,7 @@ impl<S: EffectSink> PaneIoThread<S> {
     /// Handle PTY end-of-file: flush pending effects, produce the final
     /// snapshot, consume or wait for the child's exit status, emit
     /// `HostEffect::ChildExit`, flush once more, then return.
-    ///
     /// Sequence (per §17 of the effect-cutover plan blind-spot analysis):
-    ///
     /// 1. Final `drain_effects_into_mux_events()` — flush any effects
     ///    produced during the preceding parse cycle.
     /// 2. `maybe_produce_snapshot()` — publish the PTY's final cell
@@ -254,7 +250,7 @@ impl<S: EffectSink> PaneIoThread<S> {
         } else {
             log::error!(
                 "PaneIoThread ({}): child exit not observed within {:?}; emitting \
-                 ChildExit {{ code: 0 }} as fallback",
+ ChildExit {{ code: 0 }} as fallback",
                 self.pane_id,
                 CHILD_EXIT_WAIT_TIMEOUT,
             );

@@ -17,7 +17,7 @@
 //!   `WidgetAction::DismissOverlay`) work correctly. Falls through to
 //!   `process_key_event` on a keymap miss.
 //!
-//! See `bug-tracker/plans/completed/` (post-archival) for the
+//! See (post-archival) for the
 //! design rationale, including why the dispatch lives on `OverlayManager`
 //! (data locality + SRP, mirrors `process_mouse_event`'s pattern) and why
 //! the inline `Escape` short-circuit is acceptable as a fallback (mutually
@@ -42,12 +42,10 @@ use super::{OverlayEventResult, OverlayKind, OverlayManager, OverlayResponse};
 impl OverlayManager {
     /// Routes a key event through the overlay stack via the legacy `on_input`
     /// pipeline.
-    ///
     /// Escape dismisses the topmost overlay with a fade-out animation.
     /// Modal overlays never pass through. The `focused_widget` parameter
     /// indicates which widget currently has keyboard focus (from the app
     /// layer's `FocusManager`).
-    ///
     /// As of this is the keymap-miss fallback for
     /// [`OverlayManager::process_key_event_with_keymap`]; direct callers
     /// (legacy paths that don't supply a keymap) still get the same behavior
@@ -124,7 +122,6 @@ impl OverlayManager {
 
     /// Routes a key event through the overlay stack with keymap-first
     /// dispatch ().
-    ///
     /// Resolves the topmost overlay's `key_context()` against the provided
     /// keymap. On a hit:
     /// - `widget::Dismiss` → manager-level dismissal returning
@@ -133,17 +130,15 @@ impl OverlayManager {
     /// - Anything else → [`crate::pipeline::dispatch_keymap_action`] on the
     ///   overlay's root widget; result wrapped in
     ///   [`OverlayEventResult::Delivered`].
-    ///
-    /// On a miss, falls through to [`OverlayManager::process_key_event`]
-    /// (the legacy `on_input` pipeline plus inline-Escape backstop) so
-    /// overlays with no keymap-bound context still dismiss on Escape and
-    /// reach `widget.on_input` for non-keymap-routed keys.
-    ///
-    /// `focus_path` is hardcoded to `[overlay_root_id]` matching the
-    /// existing `deliver_via_pipeline` keyboard path. Overlays do not
-    /// currently have a focused-child model; future work to plumb a real
-    /// overlay focus path would update this method along with
-    /// `event_routing::deliver_via_pipeline`.
+    ///   On a miss, falls through to [`OverlayManager::process_key_event`]
+    ///   (the legacy `on_input` pipeline plus inline-Escape backstop) so
+    ///   overlays with no keymap-bound context still dismiss on Escape and
+    ///   reach `widget.on_input` for non-keymap-routed keys.
+    ///   `focus_path` is hardcoded to `[overlay_root_id]` matching the
+    ///   existing `deliver_via_pipeline` keyboard path. Overlays do not
+    ///   currently have a focused-child model; future work to plumb a real
+    ///   overlay focus path would update this method along with
+    ///   `event_routing::deliver_via_pipeline`.
     #[expect(
         clippy::too_many_arguments,
         reason = "event routing: event, keymap, measurer, theme, focus, tree, animator, now"

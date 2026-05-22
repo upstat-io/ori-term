@@ -235,16 +235,14 @@ fn extend_from_shifts_overlay_draw_ranges_correctly() {
 }
 
 // ── Regression pin against re-introducing enumerated prev_* fields ──
-//
 // The previous design had 9 prev_* fields on PreparedFrame used solely by the
 // dispatch predicate; the fingerprint refactor replaced them with a single
 // prev_dispatch_fingerprint field. This test asserts the 9 identifiers no
 // longer appear in the source — re-introducing any of them would silently
 // re-create the sync-point drift hazard.
 
-/// Regression: BUG-06-030 — 9 enumerated prev_* fields replaced with single
+/// 9 enumerated prev_* fields replaced with single
 /// content-aware fingerprint; this test prevents accidental re-introduction.
-/// See: bug-tracker/plans/completed/BUG-06-030/
 #[test]
 fn enumerated_prev_fields_removed() {
     let manifest = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR set by cargo");
@@ -272,15 +270,15 @@ fn enumerated_prev_fields_removed() {
         assert!(
             !source.contains(forbidden),
             "regression: {} re-introduced as a field declaration in {}. \
-             The fingerprint refactor removed these in favor of prev_dispatch_fingerprint; \
-             re-adding any of them re-creates the parallel-sync-point drift hazard.",
+ The fingerprint refactor removed these in favor of prev_dispatch_fingerprint; \
+ re-adding any of them re-creates the parallel-sync-point drift hazard.",
             forbidden,
             path.display()
         );
     }
 }
 
-/// Regression: BUG-06-040 — `prev_cursor_line: Option<usize>` field was
+/// `prev_cursor_line: Option<usize>` field was
 /// renamed to `prev_resolved_cursor: Option<RenderableCursor>` (visibility-
 /// canonicalized SSOT). This test asserts the old field name no longer
 /// appears in field-access patterns under `oriterm/src/gpu/`. Excludes
@@ -288,7 +286,6 @@ fn enumerated_prev_fields_removed() {
 /// affect correctness — and (b) the `selection_damage::dirty_set`
 /// parameter named `prev_cursor_line: Option<usize>`, which is local to
 /// that function's signature and intentionally retained.
-/// See: bug-tracker/plans/completed/BUG-06-040/
 #[test]
 fn prev_cursor_line_field_access_removed() {
     let manifest = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR set by cargo");
@@ -320,8 +317,8 @@ fn prev_cursor_line_field_access_removed() {
     assert!(
         offending.is_empty(),
         "regression: prev_cursor_line field-access patterns survived the rename to \
-         prev_resolved_cursor. Offending sites:\n  {}",
-        offending.join("\n  ")
+ prev_resolved_cursor. Offending sites:\n {}",
+        offending.join("\n ")
     );
 }
 

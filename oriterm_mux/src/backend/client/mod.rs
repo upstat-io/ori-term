@@ -32,7 +32,6 @@ use self::transport::ClientTransport;
 /// responses. Pane data is not stored locally — the daemon owns all
 /// terminal state. A background reader thread receives push notifications
 /// from the daemon and buffers them for [`drain_notifications`].
-///
 /// Cached [`PaneSnapshot`]s are stored locally for rendering. The dirty
 /// set tracks which panes have received `PaneOutput` notifications since
 /// the last render. The render path checks dirty, fetches a fresh
@@ -73,23 +72,18 @@ pub struct MuxClient {
     /// snapshots. Bounded LRU with reachability-bounded eviction (entries
     /// referenced by the latest `pane_snapshots[pane_id].images` are never
     /// evicted under memory pressure — soft cap, correctness wins).
-    ///
     /// Populated in `cache_snapshot` by draining `snapshot.image_data` BEFORE
     /// storing the stripped snapshot. Consulted by `extract_frame_from_snapshot`
     /// when a `WirePlacement` arrives without its `WireImageData` (steady-state
     /// path: server filtered out the bytes because they were already sent).
-    ///
     /// `Mutex` provides interior mutability so `MuxBackend::pane_image_data`
     /// can return `Option<Arc<RenderableImageData>>` with `&self` API surface.
     /// Lock scope is short — one map lookup + Arc clone per access.
-    ///
-    /// See: bug-tracker/plans/BUG-06-072/
     image_cache: Arc<Mutex<ImageCache>>,
 }
 
 impl MuxClient {
     /// Connect to a running daemon at `socket_path`.
-    ///
     /// Performs the Hello handshake and spawns the background reader thread.
     /// `wakeup` is called when push notifications arrive (wakes the event loop).
     pub fn connect(
@@ -112,7 +106,6 @@ impl MuxClient {
     }
 
     /// Create an unconnected client stub for testing.
-    ///
     /// All RPC methods will fail gracefully (return defaults or errors).
     #[cfg(test)]
     pub fn new() -> Self {
@@ -138,12 +131,10 @@ impl MuxClient {
     }
 
     /// Cache a snapshot for a pane (used when subscribe responses arrive).
-    ///
     /// SSOT for all client snapshot ingest paths — drains `snapshot.image_data`
     /// into `self.image_cache` (per-pane keyed bounded LRU) BEFORE storing the
     /// stripped snapshot in `pane_snapshots`. Without the drain, the unbounded
     /// `pane_snapshots` map would retain megabytes of pixel data per pane.
-    /// See: bug-tracker/plans/BUG-06-072/
     pub(crate) fn cache_snapshot(&mut self, pane_id: PaneId, mut snapshot: PaneSnapshot) {
         if !snapshot.image_data.is_empty() {
             // Compute the reachability set BEFORE locking the cache: this
@@ -174,6 +165,7 @@ impl MuxClient {
                     data: Arc::new(wid.data),
                     width: wid.width,
                     height: wid.height,
+                    pixel_generation: wid.pixel_generation,
                 });
                 cache.insert(pane_id, id, arc, |p, i| reachable.contains(&(p, i)));
             }
@@ -182,7 +174,6 @@ impl MuxClient {
     }
 
     /// Look up image pixel data for `(pane_id, image_id)` in the client cache.
-    ///
     /// Returns an owned `Arc` (cheap refcount clone) so callers don't have to
     /// hold the cache lock. Used by `MuxBackend::pane_image_data` and the
     /// extract path's borrowed-closure lookup.
@@ -198,7 +189,6 @@ impl MuxClient {
     }
 
     /// Remove all per-pane caches for `pane_id` (used when a pane is closed).
-    ///
     /// Drains every backend-local index keyed by `PaneId` so explicit
     /// `close_pane`, notification-driven `cleanup_closed_pane`, and any
     /// other close path share one cleanup point. `bell_panes` is included
@@ -221,7 +211,6 @@ impl MuxClient {
     }
 
     /// Set this client's priority for a pane (0 = focused/highest, 255 = lowest).
-    ///
     /// Sends a fire-and-forget `MuxPdu::SetPanePriority` to the daemon.
     /// Returns `Err(NotConnected)` if not connected.
     pub fn set_pane_priority(&mut self, pane_id: PaneId, priority: u8) -> io::Result<()> {
@@ -238,7 +227,6 @@ impl MuxClient {
     }
 
     /// Send a Ping RPC and wait for `PingAck`. Returns the round-trip duration.
-    ///
     /// Measures raw IPC overhead with zero payload (no snapshot building,
     /// no serialization of grid data). Used for latency diagnostics.
     pub fn ping_rpc(&mut self) -> io::Result<Duration> {
@@ -259,7 +247,6 @@ impl MuxClient {
     }
 
     /// Re-subscribe to all previously cached panes after a reconnection.
-    ///
     /// The transport reader thread clears its subscription state on
     /// disconnect. After `MuxClient` reconnects, it must re-establish
     /// its interest in all panes it is currently rendering so the
@@ -274,12 +261,10 @@ impl MuxClient {
     }
 
     /// Attempt to reconnect to the daemon.
-    ///
     /// Drops the old transport (joining the reader thread), establishes a new
     /// connection, and re-subscribes to all panes that were in the snapshot
     /// cache. Cached snapshots survive — the UI shows last-known state during
     /// the reconnection window.
-    ///
     /// Returns `Ok(())` on success, `Err` if the connection could not be
     /// re-established (daemon down, socket gone, etc.).
     pub fn reconnect(&mut self) -> io::Result<()> {
@@ -318,7 +303,6 @@ impl MuxClient {
     }
 
     /// Attempt reconnection with exponential backoff.
-    ///
     /// Tries up to `max_attempts` times with 500ms between attempts. Returns
     /// `Ok(())` on the first successful reconnection, or the last error if
     /// all attempts fail. The caller (App event loop) decides what to do on

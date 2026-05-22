@@ -10,7 +10,6 @@ use crate::gpu::pipelines::GpuPipelines;
 use crate::gpu::state::GpuState;
 
 /// Create a headless GPU environment for texture tests.
-///
 /// Returns `None` when no adapter is available.
 fn headless_gpu() -> Option<(GpuState, GpuPipelines)> {
     let gpu = GpuState::new_headless().ok()?;
@@ -39,6 +38,7 @@ fn ensure_uploaded_creates_texture_and_returns_bind_group() {
         &gpu.queue,
         &pipelines.image_texture_layout,
         ImageId::from_raw(1),
+        0u64,
         &data,
         4,
         4,
@@ -65,6 +65,7 @@ fn ensure_uploaded_deduplicates_same_id() {
         &gpu.queue,
         layout,
         ImageId::from_raw(1),
+        0u64,
         &data,
         4,
         4,
@@ -74,6 +75,7 @@ fn ensure_uploaded_deduplicates_same_id() {
         &gpu.queue,
         layout,
         ImageId::from_raw(1),
+        0u64,
         &data,
         4,
         4,
@@ -102,6 +104,7 @@ fn evict_unused_removes_old_textures() {
         &gpu.queue,
         layout,
         ImageId::from_raw(1),
+        0u64,
         &data,
         2,
         2,
@@ -114,6 +117,7 @@ fn evict_unused_removes_old_textures() {
         &gpu.queue,
         layout,
         ImageId::from_raw(2),
+        0u64,
         &data,
         2,
         2,
@@ -148,6 +152,7 @@ fn evict_unused_keeps_recently_used() {
         &gpu.queue,
         layout,
         ImageId::from_raw(1),
+        0u64,
         &data,
         2,
         2,
@@ -157,6 +162,7 @@ fn evict_unused_keeps_recently_used() {
         &gpu.queue,
         layout,
         ImageId::from_raw(2),
+        0u64,
         &data,
         2,
         2,
@@ -169,6 +175,7 @@ fn evict_unused_keeps_recently_used() {
         &gpu.queue,
         layout,
         ImageId::from_raw(1),
+        0u64,
         &data,
         2,
         2,
@@ -178,6 +185,7 @@ fn evict_unused_keeps_recently_used() {
         &gpu.queue,
         layout,
         ImageId::from_raw(2),
+        0u64,
         &data,
         2,
         2,
@@ -208,6 +216,7 @@ fn evict_over_limit_removes_lru() {
         &gpu.queue,
         layout,
         ImageId::from_raw(1),
+        0u64,
         &fake_rgba(8, 8),
         8,
         8,
@@ -219,6 +228,7 @@ fn evict_over_limit_removes_lru() {
         &gpu.queue,
         layout,
         ImageId::from_raw(2),
+        0u64,
         &fake_rgba(8, 8),
         8,
         8,
@@ -247,6 +257,7 @@ fn set_gpu_memory_limit_triggers_eviction() {
         &gpu.queue,
         layout,
         ImageId::from_raw(1),
+        0u64,
         &fake_rgba(8, 8),
         8,
         8,
@@ -257,6 +268,7 @@ fn set_gpu_memory_limit_triggers_eviction() {
         &gpu.queue,
         layout,
         ImageId::from_raw(2),
+        0u64,
         &fake_rgba(8, 8),
         8,
         8,
@@ -286,6 +298,7 @@ fn gpu_memory_tracks_uploads_and_removals() {
         &gpu.queue,
         layout,
         ImageId::from_raw(1),
+        0u64,
         &fake_rgba(4, 4),
         4,
         4,
@@ -297,6 +310,7 @@ fn gpu_memory_tracks_uploads_and_removals() {
         &gpu.queue,
         layout,
         ImageId::from_raw(2),
+        0u64,
         &fake_rgba(8, 8),
         8,
         8,
@@ -323,11 +337,10 @@ fn remove_nonexistent_is_noop() {
     assert_eq!(cache.texture_count(), 0);
 }
 
-/// Regression: BUG-06-062 — touch_image for an Occupied entry stamps
+/// touch_image for an Occupied entry stamps
 /// last_frame = frame_counter, refreshing the LRU position. Without touch,
 /// images in panes served from PaneRenderCache age out and silently skip
 /// at draw time.
-/// See: bug-tracker/plans/BUG-06-062/00-overview.md
 #[test]
 fn touch_image_stamps_last_frame_for_occupied_entry() {
     let Some((gpu, pipelines)) = headless_gpu() else {
@@ -342,6 +355,7 @@ fn touch_image_stamps_last_frame_for_occupied_entry() {
         &gpu.queue,
         &pipelines.image_texture_layout,
         id,
+        0u64,
         &fake_rgba(4, 4),
         4,
         4,
@@ -369,11 +383,10 @@ fn touch_image_stamps_last_frame_for_occupied_entry() {
     );
 }
 
-/// Regression: BUG-06-062 — touch_image for a Vacant entry is a no-op —
+/// touch_image for a Vacant entry is a no-op —
 /// does not insert, does not advance any counter. Returns false to signal
 /// the caller that the image is already evicted; the caller must
 /// invalidate any cached state referencing it.
-/// See: bug-tracker/plans/BUG-06-062/00-overview.md
 #[test]
 fn touch_image_is_noop_for_vacant_entry() {
     let Some((gpu, _)) = headless_gpu() else {
@@ -395,10 +408,9 @@ fn touch_image_is_noop_for_vacant_entry() {
     );
 }
 
-/// Regression: BUG-06-062 — touch_image returns true when the entry exists.
+/// touch_image returns true when the entry exists.
 /// The return value is the eviction-detection contract consumed by
 /// `touch_cached_pane_images` in `frame_prep.rs`.
-/// See: bug-tracker/plans/BUG-06-062/00-overview.md
 #[test]
 fn touch_image_returns_true_for_occupied_entry() {
     let Some((gpu, pipelines)) = headless_gpu() else {
@@ -412,10 +424,198 @@ fn touch_image_returns_true_for_occupied_entry() {
         &gpu.queue,
         &pipelines.image_texture_layout,
         id,
+        0u64,
         &fake_rgba(4, 4),
         4,
         4,
     );
 
     assert!(cache.touch_image(id), "touch on Occupied must return true");
+}
+
+// ── (xray-scene lag cure) pixel_generation re-upload gate ─────────────────────
+//
+// Animated images mutate `ImageData::data` on every `apply_frame`. The
+// cache key is the stable `ImageId`, so the GPU texture cache's Occupied
+// arm returns the cached bind group without re-uploading new bytes →
+// renders stale pixels until LRU eviction. Cure: `pixel_generation`
+// counter on `ImageData`, bumped on every mutation; GPU cache re-uploads
+// when the observed generation advances. Phase 3 records the generation
+// on each entry; Phase 4 wires the gate. Pre-fix all four tests below
+// fail because the Occupied arm short-circuits without checking the
+// recorded generation.
+
+/// Regression: §03 GPU texture invalidation pin (Plan TPR R0 reviewer consensus).
+/// Drive 2 generations through `ensure_uploaded` — first with
+/// `pixel_generation=0` + data_A, then `pixel_generation=1` + data_B.
+/// Read back the texture via `read_texture_for_test`; assert pixel
+/// content matches `data_B`, NOT `data_A`. This IS the clamp-from-below assertion
+/// for the GPU stale-texture defect that motivates the entire fix.
+/// Failure mode pre-fix: Occupied arm returns cached bind group
+/// without re-uploading; readback shows `data_A` → assert fires.
+#[test]
+fn gpu_texture_serves_fresh_pixels_after_generation_advance() {
+    let Some((gpu, pipelines)) = headless_gpu() else {
+        return;
+    };
+    let mut cache = ImageTextureCache::new(&gpu.device);
+    let layout = &pipelines.image_texture_layout;
+    let id = ImageId::from_raw(1);
+    let data_a = vec![0xAAu8; 16]; // 2×2 RGBA all-0xAA
+    let data_b = vec![0xBBu8; 16]; // 2×2 RGBA all-0xBB
+
+    cache.begin_frame();
+    cache.ensure_uploaded(&gpu.device, &gpu.queue, layout, id, 0u64, &data_a, 2, 2);
+    cache.begin_frame();
+    cache.ensure_uploaded(
+        &gpu.device,
+        &gpu.queue,
+        layout,
+        id,
+        1u64, // ← generation advanced
+        &data_b,
+        2,
+        2,
+    );
+
+    let pixels = cache
+        .read_texture_for_test(id, &gpu.device, &gpu.queue)
+        .expect("texture readback must succeed");
+    assert_eq!(
+        pixels, data_b,
+        "GPU texture must reflect data_B after generation advance; pre-fix Occupied arm returns stale data_A"
+    );
+}
+
+/// Regression: §03 GPU texture invalidation companion pin. When
+/// `pixel_generation` is UNCHANGED between two consecutive uploads
+/// of the same `ImageId`, the cache MUST NOT re-upload — verified
+/// by checking the readback pixels match the FIRST upload (no
+/// silent overwrite by the second call's data). Catches the
+/// regression where Phase 4 over-zealously re-uploads on every
+/// `ensure_uploaded` call, defeating the cache's purpose.
+/// Failure mode pre-fix: trivially passes (cache returns Occupied
+/// without re-upload today). Failure mode post-fix-if-too-aggressive:
+/// cache re-uploads even when generation matches → second call's
+/// `data_b` overwrites → readback differs from `data_a`.
+#[test]
+fn ensure_uploaded_returns_cached_when_generation_unchanged() {
+    let Some((gpu, pipelines)) = headless_gpu() else {
+        return;
+    };
+    let mut cache = ImageTextureCache::new(&gpu.device);
+    let layout = &pipelines.image_texture_layout;
+    let id = ImageId::from_raw(1);
+    let data_a = vec![0xAAu8; 16];
+    let data_b = vec![0xBBu8; 16];
+
+    cache.begin_frame();
+    cache.ensure_uploaded(&gpu.device, &gpu.queue, layout, id, 0u64, &data_a, 2, 2);
+    cache.begin_frame();
+    // Second call: SAME generation (0), DIFFERENT data — must NOT re-upload.
+    cache.ensure_uploaded(&gpu.device, &gpu.queue, layout, id, 0u64, &data_b, 2, 2);
+
+    let pixels = cache
+        .read_texture_for_test(id, &gpu.device, &gpu.queue)
+        .expect("readback");
+    assert_eq!(
+        pixels, data_a,
+        "same-generation call MUST NOT re-upload; cached pixels must remain data_A"
+    );
+}
+
+/// Regression: §03 + Plan TPR R0 reviewer consensus + R3 reviewer consensus wrap-cycle pin.
+/// The MAX→0 boundary alone is insufficient — the real stale case
+/// is "cached gen=0 with data_A; image side wraps a full u64 cycle
+/// back to gen=0 with data_B; ensure_uploaded equality check sees
+/// gen==gen and skips the upload". Test setup: (1) seed gen=0
+/// data_A; (2) re-upload at gen=0 with data_B AND mark this as
+/// post-wrap (via a test-only seam OR an explicit different
+/// `epoch_force_reupload` mechanism Phase 4 picks). For Phase 3 we
+/// assert the desired behavior: a documented "different data with
+/// same generation key" MUST cause re-upload. Cure surface options
+/// per §05 Item 4a (Phase 4 picks): wrap-epoch field, cache clear
+/// on observed wrap, or saturating-add.
+/// Failure mode pre-fix: the cache does not detect wrap; readback
+/// returns data_A. POST-fix: depends on Phase 4's chosen cure.
+#[test]
+fn pixel_generation_full_wrap_to_seeded_value_forces_reupload() {
+    let Some((gpu, pipelines)) = headless_gpu() else {
+        return;
+    };
+    let mut cache = ImageTextureCache::new(&gpu.device);
+    let layout = &pipelines.image_texture_layout;
+    let id = ImageId::from_raw(1);
+    let data_a = vec![0xAAu8; 16];
+    let data_b = vec![0xBBu8; 16];
+
+    // Seed: gen=0, data_A.
+    cache.begin_frame();
+    cache.ensure_uploaded(&gpu.device, &gpu.queue, layout, id, 0u64, &data_a, 2, 2);
+    // Simulate one full wrap-cycle by jumping to gen=u64::MAX then back to 0.
+    // Both calls use the SAME id; the second call (gen=u64::MAX) advances
+    // the cache's recorded generation off zero; the third call (gen=0)
+    // would-be "cycled back to zero" with different data.
+    cache.begin_frame();
+    cache.ensure_uploaded(&gpu.device, &gpu.queue, layout, id, u64::MAX, &data_a, 2, 2);
+    cache.begin_frame();
+    cache.ensure_uploaded(&gpu.device, &gpu.queue, layout, id, 0u64, &data_b, 2, 2);
+
+    let pixels = cache
+        .read_texture_for_test(id, &gpu.device, &gpu.queue)
+        .expect("readback");
+    assert_eq!(
+        pixels, data_b,
+        "wrap-back to seeded generation with different data MUST force re-upload; \
+ cure surface (epoch, cache-clear, or saturating-add) is Phase 4's pick"
+    );
+}
+
+/// Regression: §03 propagation pin — `pixel_generation` reaches the
+/// GPU cache via the snapshot → FrameInput path. Build a
+/// `RenderableImageData` with `pixel_generation = 7`, hand it to a
+/// frame-prep step (here simulated by directly invoking
+/// `ensure_uploaded` with the value), confirm the upload landed.
+/// This test is structural — it asserts the parameter wiring; the
+/// behavior gate is owned by the wrap-cycle test above.
+/// Failure mode pre-fix: the parameter exists post-Phase-3-scaffold,
+/// so this test PASSES today as a clamp from above. If a future
+/// regression drops the parameter from the call chain, the
+/// compile-time mismatch surfaces here.
+#[test]
+fn pixel_generation_propagates_through_snapshot_to_frame_input() {
+    use oriterm_core::RenderableImageData;
+    use std::sync::Arc;
+
+    let Some((gpu, pipelines)) = headless_gpu() else {
+        return;
+    };
+    let mut cache = ImageTextureCache::new(&gpu.device);
+    let layout = &pipelines.image_texture_layout;
+
+    let img = RenderableImageData {
+        id: ImageId::from_raw(42),
+        data: Arc::new(vec![0xCC; 16]),
+        width: 2,
+        height: 2,
+        pixel_generation: 7,
+    };
+
+    cache.begin_frame();
+    cache.ensure_uploaded(
+        &gpu.device,
+        &gpu.queue,
+        layout,
+        img.id,
+        img.pixel_generation,
+        &img.data,
+        img.width,
+        img.height,
+    );
+
+    // Structural assertion: upload succeeded, texture present.
+    assert!(
+        cache.get_bind_group(img.id).is_some(),
+        "RenderableImageData.pixel_generation parameter must reach the cache without compile-time loss"
+    );
 }
