@@ -308,7 +308,7 @@ impl<S: EffectSink> PaneIoThread<S> {
             snapshot_total.as_millis(),
             cache.image_count(),
             cache.placement_count(),
-            cache.memory_used_for_test()
+            cache.memory_used()
             );
         }
     }

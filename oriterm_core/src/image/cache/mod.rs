@@ -128,9 +128,10 @@ impl ImageCache {
         std::mem::replace(&mut self.dirty, false)
     }
 
-    /// Total bytes of decoded image data in the cache.
-    #[cfg(test)]
-    pub(crate) fn memory_used(&self) -> usize {
+    /// Total bytes of decoded image data in the cache. Read by the IO thread's
+    /// drain-cycle diagnostic accounting (see
+    /// `oriterm_mux/src/pane/io_thread/mod.rs::process_pending_bytes`).
+    pub fn memory_used(&self) -> usize {
         self.memory_used
     }
 
@@ -296,6 +297,12 @@ impl ImageCache {
         // appends a new placement per frame and the old placements stay
         // alive — every previous position renders as a ghost, producing
         // the visible "trail" of orcas the operator reports.
+        //
+        // Complexity: O(N) per call over `self.placements`. Acceptable
+        // for typical workloads where placements ≤ low double digits
+        // (viewport-visible imagery cap). High-placement scenarios may
+        // benefit from a parallel `(image_id, placement_id) → index`
+        // map for O(1) dedup — see `bug-tracker/section-06-rendering-perf.md`.
         self.placements
             .retain(|p| !(p.image_id == image_id && p.placement_id == placement.placement_id));
         self.placements.push(placement);

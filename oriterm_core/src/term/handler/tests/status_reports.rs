@@ -80,6 +80,10 @@ fn da3_produces_tertiary_device_attributes() {
 /// `oriterm_core::Term::status_xtversion` (was in `oriterm_mux` interceptor).
 /// Pins reply byte format AND `PtyWriteKind::DeviceAttribute` classification
 /// alongside the DA1/DA2/DA3 family.
+/// Catalog row: `DFCT-CSI-XTVERSION`.
+/// See: bug-tracker/plans/completed/BUG-06-086/ — kitty(0.20.0) advertise
+/// unlocks notcurses' `o=z` compression path; trade-off rationale lives
+/// in the catalog Notes column.
 #[test]
 fn xtversion_responds_with_dcs_version_string() {
     let mut t = term_with_effect_sink();

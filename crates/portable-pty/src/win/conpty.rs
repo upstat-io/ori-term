@@ -16,6 +16,9 @@ impl PtySystem for ConPtySystem {
         // between `hInput` and `hOutput` of CreatePseudoConsole — matches
         // Microsoft Terminal's ConptyConnection.cpp:406-407.
         //
+        // VENDORED PATCH (oriterm): 8 MiB pipe buffer (was 128 KiB upstream)
+        // — see `crates/portable-pty/README.md` for full rationale.
+        //
         // 8 MiB pipe buffer (was 128 KiB) so notcurses-class graphics-flood
         // producers can blast a full ~3 MB initial-frame transmit (and
         // ~256 KB compressed delta-frames) into the pipe without blocking

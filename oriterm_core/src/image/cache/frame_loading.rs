@@ -676,9 +676,15 @@ impl ImageCache {
         let promoted = self.animations.contains_key(&id);
 
         if frame_num == 1 && !promoted {
-            // Static-image root edit.
+            // Static-image root edit. Bump `pixel_generation` so the GPU
+            // upload path's re-upload gate (which compares last-uploaded
+            // generation to the current `pixel_generation`) re-uploads
+            // the texture; without the bump the renderer would keep the
+            // stale pre-edit texture even though the underlying bytes
+            // changed.
             if let Some(img) = self.images.get_mut(&id) {
                 img.data = composed.clone();
+                img.pixel_generation = img.pixel_generation.wrapping_add(1);
             }
             if gap_update.is_some() {
                 // Auto-promote to record root gap; ensures gap survives.

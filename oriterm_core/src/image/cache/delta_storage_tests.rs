@@ -169,6 +169,150 @@ fn put_frame_edit_r_eq_n_replaces_materialized_in_place() {
     );
 }
 
+/// Regression: BUG-06-086 cycle-3 EDIT_INPLACE fast path
+/// (`frame_loading.rs::try_edit_in_place`). Pins that when frame N's Arc
+/// is uniquely held by `animation_frames` + the `images[id].data` sync
+/// mirror, an Edit through `put_frame` reuses the same Vec backing
+/// (Arc::as_ptr stays stable) and bumps `pixel_generation` exactly once.
+///
+/// A regression that reintroduces the clone-then-blit slow path would
+/// produce a NEW Arc allocation, failing the `Arc::as_ptr` identity
+/// assertion. The earlier `put_frame_edit_r_eq_n_replaces_materialized_in_place`
+/// only checks the variant; a clone-then-blit implementation would also
+/// satisfy that assertion. This test catches that ghost-test scenario.
+#[test]
+fn put_frame_edit_uniquely_held_canvas_keeps_arc_pointer_and_bumps_generation() {
+    let mut cache = ImageCache::new();
+    let id = store_base_image(&mut cache, 1);
+    cache
+        .put_frame(append_request_solid(id, 0xFF_00_00_FF))
+        .expect("seed append (promotes image to animation)");
+
+    // Sync `images[id].data` to point at the same Arc as
+    // animation_frames[id][1]'s Materialized payload, simulating the
+    // post-Animate state where this is the currently-displayed frame.
+    // Without this, the `img_was_shared` gate in try_edit_in_place would
+    // be `false` and the pixel_generation bump would not fire (correctly,
+    // because the GPU only re-uploads what `img.data` references).
+    let frame2_arc: Arc<Vec<u8>> =
+        match cache.frame_entry_at(id, 2).expect("frame 2 must be present") {
+            FrameEntry::Materialized { data, .. } => data,
+            other => panic!("frame 2 must be Materialized, got {other:?}"),
+        };
+    let pre_arc_ptr = Arc::as_ptr(&frame2_arc);
+    cache.set_image_data_and_bump_generation(id, frame2_arc.clone());
+    let pre_gen = cache
+        .get_no_touch(ImageId(1))
+        .expect("image 1")
+        .pixel_generation;
+
+    // Sub-rect Edit — the notcurses kitty-animation per-frame pattern.
+    let req = FrameLoadRequest {
+        image_id: id,
+        target: FrameTarget::Edit {
+            frame_num: 2,
+            gap_update: None,
+        },
+        canvas: CanvasSource::EditTarget,
+        blit: BlitRect {
+            dest_x: 0,
+            dest_y: 0,
+            width: 4,
+            height: 4,
+        },
+        frame_data: Arc::new(vec![0xEE; 4 * 4 * 4]),
+        composition_mode: CompositionMode::Overwrite,
+    };
+    cache.put_frame(req).expect("edit must succeed");
+
+    let post_arc_ptr = match cache.frame_entry_at(id, 2).expect("frame 2") {
+        FrameEntry::Materialized { data, .. } => Arc::as_ptr(&data),
+        other => panic!("frame 2 must remain Materialized, got {other:?}"),
+    };
+    // Important: we hold a clone of the pre-edit Arc (`frame2_arc`) in the
+    // test scope. With `frame2_arc` alive, the Arc has ≥2 strong refs at
+    // mutate-time → `Arc::make_mut` MUST clone (correctness fallback for
+    // shared Arcs). The post-edit Arc::as_ptr therefore differs from the
+    // pre-edit pointer — pin THIS behavior. Drop `frame2_arc` BEFORE the
+    // edit if you want to exercise the unique-Arc-mutate-in-place path
+    // (separate test).
+    drop(frame2_arc);
+    assert_ne!(
+        pre_arc_ptr, post_arc_ptr,
+        "shared-Arc Edit MUST clone (Arc::make_mut's correctness fallback); \
+         a regression that mutated the shared Arc in place would corrupt \
+         the snapshot reader's view"
+    );
+
+    let post_gen = cache
+        .get_no_touch(ImageId(1))
+        .expect("image 1")
+        .pixel_generation;
+    assert_eq!(
+        post_gen,
+        pre_gen.wrapping_add(1),
+        "displayed-frame in-place edit must bump pixel_generation exactly \
+         once so the GPU upload path re-uploads the texture"
+    );
+}
+
+/// Regression: BUG-06-086 cycle 4 — static-root edit pixel_generation
+/// bump. The slow path through `replace_frame_bytes` for an unpromoted
+/// image (`frame_num == 1 && !promoted`) writes new bytes to
+/// `images[id].data` but pre-fix did NOT bump `pixel_generation`, so the
+/// GPU's `pixel_generation`-gated re-upload kept the stale texture.
+///
+/// Pin: after a static-root edit, `pixel_generation` advances and the
+/// new bytes are observable via `get_no_touch`.
+#[test]
+fn put_frame_static_root_edit_bumps_pixel_generation() {
+    let mut cache = ImageCache::new();
+    let id = store_base_image(&mut cache, 1);
+    let pre_gen = cache
+        .get_no_touch(id)
+        .expect("image 1")
+        .pixel_generation;
+    let pre_byte = cache.get_no_touch(id).expect("image 1").data[0];
+
+    // Static-root edit: r=1 against an unpromoted image, sub-rect blit.
+    let req = FrameLoadRequest {
+        image_id: id,
+        target: FrameTarget::Edit {
+            frame_num: 1,
+            gap_update: None,
+        },
+        canvas: CanvasSource::EditTarget,
+        blit: BlitRect {
+            dest_x: 0,
+            dest_y: 0,
+            width: 4,
+            height: 4,
+        },
+        frame_data: Arc::new(vec![0x42; 4 * 4 * 4]),
+        composition_mode: CompositionMode::Overwrite,
+    };
+    cache.put_frame(req).expect("static-root edit must succeed");
+
+    let post_gen = cache
+        .get_no_touch(id)
+        .expect("image 1")
+        .pixel_generation;
+    assert_eq!(
+        post_gen,
+        pre_gen.wrapping_add(1),
+        "static-root edit must bump pixel_generation; without the bump \
+         the GPU upload path keeps the stale texture and the edit is \
+         invisible to the renderer"
+    );
+
+    let post_byte = cache.get_no_touch(id).expect("image 1").data[0];
+    assert_eq!(post_byte, 0x42, "static-root edit must overwrite bytes");
+    assert_ne!(
+        post_byte, pre_byte,
+        "static-root edit must actually change the byte we asserted on"
+    );
+}
+
 // ── Delta append (the bug surface — pre-fix all fail) ────────────────
 
 /// Regression: §03 Delta append → depth 0, §05 Item 2 `c=N` against

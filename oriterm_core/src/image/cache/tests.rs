@@ -534,3 +534,106 @@ fn place_with_no_underlying_image_does_not_panic() {
         "orphan place() must not synthesize an ImageData entry for image_id=99"
     );
 }
+
+// ── ImageCache::place() dedup ────────────────────────────────────────
+
+/// Regression: BUG-06-086 cycle 4 — kitty graphics protocol mandates
+/// that a new placement with the SAME `(image_id, placement_id)`
+/// REPLACES the existing entry. For implicit `placement_id: None`
+/// (single-placement-per-image), two `place()` calls for the same image
+/// MUST collapse to one placement — without this, kitty-plane movement
+/// (re-Place at a new (X, Y) per notcurses' `ncplane_move_yx`) would render every previous
+/// position as a ghost (the operator-visible orca-trail symptom that
+/// triggered the cycle-4 RCA).
+#[test]
+fn place_same_image_id_and_none_placement_id_dedups_to_one_placement() {
+    let mut cache = ImageCache::new();
+    cache.store(make_image(1, 256)).unwrap();
+    let mut p1 = make_placement(1, 0, 0, 1, 1);
+    let mut p2 = make_placement(1, 5, 0, 1, 1);
+    p1.placement_id = None;
+    p2.placement_id = None;
+
+    cache.place(p1);
+    cache.place(p2);
+
+    assert_eq!(
+        cache.placement_count(),
+        1,
+        "same (image_id, None) MUST collapse to one placement"
+    );
+    // Surviving placement is the LAST one issued.
+    let surviving = &cache.placements[0];
+    assert_eq!(surviving.cell_col, 5);
+}
+
+/// Regression: BUG-06-086 cycle 4 — same as above but for explicit
+/// matching `placement_id: Some(N)`. Per kitty graphics protocol, a
+/// placement with id N replaces a prior placement with id N for the
+/// same image.
+#[test]
+fn place_same_image_id_and_same_explicit_placement_id_dedups_to_one_placement() {
+    let mut cache = ImageCache::new();
+    cache.store(make_image(1, 256)).unwrap();
+    let mut p1 = make_placement(1, 0, 0, 1, 1);
+    let mut p2 = make_placement(1, 5, 0, 1, 1);
+    p1.placement_id = Some(7);
+    p2.placement_id = Some(7);
+
+    cache.place(p1);
+    cache.place(p2);
+
+    assert_eq!(
+        cache.placement_count(),
+        1,
+        "same (image_id, Some(7)) MUST collapse to one placement"
+    );
+    assert_eq!(cache.placements[0].cell_col, 5);
+}
+
+/// Regression: BUG-06-086 cycle 4 negative pin — the dedup MUST NOT
+/// collapse placements with DIFFERENT `placement_id`s. Multi-placement
+/// scenarios (kitty `_Ga=p,i=N,p=M` with multiple distinct `p=`
+/// values) require N distinct entries in the cache to survive.
+#[test]
+fn place_same_image_id_different_explicit_placement_ids_stacks() {
+    let mut cache = ImageCache::new();
+    cache.store(make_image(1, 256)).unwrap();
+    let mut p1 = make_placement(1, 0, 0, 1, 1);
+    let mut p2 = make_placement(1, 5, 0, 1, 1);
+    p1.placement_id = Some(1);
+    p2.placement_id = Some(2);
+
+    cache.place(p1);
+    cache.place(p2);
+
+    assert_eq!(
+        cache.placement_count(),
+        2,
+        "different placement_ids on the same image_id MUST stack"
+    );
+}
+
+/// Regression: BUG-06-086 cycle 4 — dedup MUST scope to the placement's
+/// own image_id. Two images each with one placement (placement_id=None
+/// for both) MUST produce two placements, not one.
+#[test]
+fn place_different_image_ids_with_none_placement_id_do_not_dedup() {
+    let mut cache = ImageCache::new();
+    cache.store(make_image(1, 256)).unwrap();
+    cache.store(make_image(2, 256)).unwrap();
+    let mut p1 = make_placement(1, 0, 0, 1, 1);
+    let mut p2 = make_placement(2, 0, 0, 1, 1);
+    p1.placement_id = None;
+    p2.placement_id = None;
+
+    cache.place(p1);
+    cache.place(p2);
+
+    assert_eq!(
+        cache.placement_count(),
+        2,
+        "dedup must scope to (image_id, placement_id); different image_ids \
+         with placement_id=None MUST stack"
+    );
+}
