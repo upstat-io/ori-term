@@ -240,12 +240,13 @@ impl<S: EffectSink + 'static> PaneIoThread<S> {
             PaneIoCommand::SnapshotNow { reply } => {
                 // Force grid_dirty so produce_snapshot doesn't no-op when
                 // the caller chained SnapshotNow after non-mutating commands.
-                // Route through `maybe_produce_snapshot` so Mode 2026 active
+                // Route through `publish_pending_snapshot` so Mode 2026 active
                 // sync windows defer the publish to ESU/timeout — without
                 // this gate, mid-sync SnapshotNow would expose a partial
-                // frame.
+                // frame. Bypasses rate-limit since SnapshotNow is an
+                // explicit caller-driven flush.
                 self.grid_dirty.store(true, Ordering::Release);
-                self.maybe_produce_snapshot();
+                self.publish_pending_snapshot();
                 let _ = reply.send(());
             }
             _ => {} // All other variants handled in handle_command.

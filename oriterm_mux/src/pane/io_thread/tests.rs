@@ -185,6 +185,7 @@ fn make_sync_thread_with_term(term: Term<VoidEffectSink>) -> PaneIoThread<VoidEf
         effects_buf: Vec::new(),
         last_animation_deadline: None,
         pending_resize: Arc::new(AtomicU64::new(PENDING_RESIZE_NONE)),
+        last_snapshot_publish: None,
         shrink_call_count: Arc::new(AtomicUsize::new(0)),
         start_barrier: None,
     }
@@ -226,6 +227,7 @@ fn make_sync_thread_with_wakeup() -> (PaneIoThread<VoidEffectSink>, Arc<AtomicU6
         effects_buf: Vec::new(),
         last_animation_deadline: None,
         pending_resize: Arc::new(AtomicU64::new(PENDING_RESIZE_NONE)),
+        last_snapshot_publish: None,
         shrink_call_count: Arc::new(AtomicUsize::new(0)),
         start_barrier: None,
     };
@@ -285,6 +287,7 @@ fn shutdown_via_channel_disconnect() {
         effects_buf: Vec::new(),
         last_animation_deadline: None,
         pending_resize: Arc::new(AtomicU64::new(PENDING_RESIZE_NONE)),
+        last_snapshot_publish: None,
         shrink_call_count: Arc::new(AtomicUsize::new(0)),
         start_barrier: None,
     };
@@ -383,6 +386,7 @@ fn byte_delivery_parses_vte() {
         effects_buf: Vec::new(),
         last_animation_deadline: None,
         pending_resize: Arc::new(AtomicU64::new(PENDING_RESIZE_NONE)),
+        last_snapshot_publish: None,
         shrink_call_count: Arc::new(AtomicUsize::new(0)),
         start_barrier: None,
     };
@@ -538,6 +542,7 @@ fn handle_bytes_chunked_drains_commands() {
         effects_buf: Vec::new(),
         last_animation_deadline: None,
         pending_resize: Arc::new(AtomicU64::new(PENDING_RESIZE_NONE)),
+        last_snapshot_publish: None,
         shrink_call_count: Arc::new(AtomicUsize::new(0)),
         start_barrier: None,
     };
@@ -789,6 +794,7 @@ fn make_sync_thread_with_cmd_tx() -> (PaneIoThread<VoidEffectSink>, Sender<PaneI
         effects_buf: Vec::new(),
         last_animation_deadline: None,
         pending_resize: Arc::new(AtomicU64::new(PENDING_RESIZE_NONE)),
+        last_snapshot_publish: None,
         shrink_call_count: Arc::new(AtomicUsize::new(0)),
         start_barrier: None,
     };
@@ -1506,31 +1512,74 @@ fn test_select_command_input_reply() {
 
 // --- snapshot publication between parse chunks ---
 
-/// A large byte message (> MAX_PARSE_CHUNK) should produce intermediate
-/// snapshots between 64 KB chunks, not just after the entire message.
+/// A chunked byte drain must produce at least one snapshot wakeup AND
+/// leave a consumable final snapshot reflecting post-parse state.
+/// Regression: BUG-06-088 cure attempt #2 — rate-limit collapses
+/// per-chunk wakeups; the contract is "main thread sees state, not
+/// N intermediate wakeups". Intermediate publishes during a slow
+/// parse remain possible (see `maybe_produce_snapshot_skips_within_interval`).
 #[test]
-fn handle_bytes_chunked_publishes_intermediate_snapshots() {
+fn handle_bytes_chunked_publishes_final_snapshot() {
     let (mut t, wakeup_count) = make_sync_thread_with_wakeup();
 
-    // 200 KB message = ~3 chunks of 64 KB each.
     let big = vec![b'A'; 200_000];
     t.grid_dirty.store(true, Ordering::Release);
 
     wakeup_count.store(0, Ordering::SeqCst);
     t.handle_bytes_chunked(&big);
 
-    // Should have produced multiple snapshots (one per chunk boundary).
     let wakeups = wakeup_count.load(Ordering::SeqCst);
     assert!(
-        wakeups >= 2,
-        "expected >=2 intermediate wakeups for 200KB message, got {wakeups}"
+        wakeups >= 1,
+        "expected >=1 wakeup after chunked parsing, got {wakeups}"
     );
 
-    // Verify the final snapshot is consumable.
     let mut snap = RenderableContent::default();
     assert!(
         t.double_buffer.swap_front(&mut snap),
         "snapshot should be available after chunked parsing"
+    );
+}
+
+/// Rate-limit gate: a second `maybe_produce_snapshot` call within the
+/// `SNAPSHOT_INTERVAL` window MUST skip without firing the wakeup.
+/// Regression: BUG-06-088 — the per-message publish amplified
+/// `Arc::make_mut` clones of the animation canvas.
+#[test]
+fn maybe_produce_snapshot_skips_within_interval() {
+    let (mut t, wakeup_count) = make_sync_thread_with_wakeup();
+    t.grid_dirty.store(true, Ordering::Release);
+
+    t.maybe_produce_snapshot();
+    let after_first = wakeup_count.load(Ordering::SeqCst);
+    assert_eq!(after_first, 1, "first call must publish");
+
+    t.grid_dirty.store(true, Ordering::Release);
+    t.maybe_produce_snapshot();
+    let after_second = wakeup_count.load(Ordering::SeqCst);
+    assert_eq!(
+        after_second, 1,
+        "second call within rate-limit window must skip; got wakeups={after_second}"
+    );
+}
+
+/// Rate-limit bypass: `publish_pending_snapshot` MUST fire regardless of
+/// when the previous publish happened (used at shutdown / EOF / sync-end /
+/// `SnapshotNow` / end-of-loop-iteration quiescence).
+#[test]
+fn publish_pending_snapshot_bypasses_rate_limit() {
+    let (mut t, wakeup_count) = make_sync_thread_with_wakeup();
+    t.grid_dirty.store(true, Ordering::Release);
+
+    t.maybe_produce_snapshot();
+    assert_eq!(wakeup_count.load(Ordering::SeqCst), 1);
+
+    t.grid_dirty.store(true, Ordering::Release);
+    t.publish_pending_snapshot();
+    assert_eq!(
+        wakeup_count.load(Ordering::SeqCst),
+        2,
+        "publish_pending_snapshot must bypass the rate-limit gate"
     );
 }
 
@@ -2041,6 +2090,7 @@ fn make_sync_thread_generic<S: oriterm_core::effect::EffectSink + 'static>(
         effects_buf: Vec::new(),
         last_animation_deadline: None,
         pending_resize: Arc::new(AtomicU64::new(PENDING_RESIZE_NONE)),
+        last_snapshot_publish: None,
         shrink_call_count: Arc::new(AtomicUsize::new(0)),
         start_barrier: None,
     };
@@ -2586,6 +2636,7 @@ fn spawn_queueing_eof_rig() -> EofTestRig {
         effects_buf: Vec::new(),
         last_animation_deadline: None,
         pending_resize: Arc::new(AtomicU64::new(PENDING_RESIZE_NONE)),
+        last_snapshot_publish: None,
         shrink_call_count: Arc::new(AtomicUsize::new(0)),
         start_barrier: None,
     };

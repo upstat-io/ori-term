@@ -284,6 +284,58 @@ fn xray_af_timing_with_per_call_snapshot() {
     eprintln!();
 }
 
+/// Simulate the rate-limited snapshot publisher cure: snapshot acquires
+/// new Arc refs only once per K a=f calls (mimicking a 60 Hz publish gate
+/// instead of per-message publish). Inside one batch, Arcs are uniquely
+/// held by the cache, so subsequent a=f Edits hit the in-place fast path.
+///
+/// Per-call cost should converge toward `(clone_cost / K) + fast_path_cost`.
+/// With K=10 and clone_cost ~45 µs, per-call should be ~4.5 µs — a 10×
+/// reduction vs per-call snapshot.
+#[test]
+#[ignore]
+fn xray_af_timing_with_rate_limited_snapshot() {
+    let mut term = setup_term_with_animation();
+    let mut proc: Processor = Processor::new();
+    for _ in 0..10 {
+        proc.advance(&mut term, XRAY_AF_BYTES);
+    }
+    let _ = term.take_kitty_handler_stats();
+
+    const N: u32 = 1000;
+    const BATCH: u32 = 10;
+    let start = Instant::now();
+    let mut snap_opt: Option<Vec<Arc<Vec<u8>>>> = None;
+    for i in 0..N {
+        if i % BATCH == 0 {
+            drop(snap_opt.take());
+            snap_opt = Some(
+                term.image_cache()
+                    .animation_frame_arcs_for_test(ImageId(IMAGE_ID))
+                    .expect("snapshot"),
+            );
+        }
+        proc.advance(&mut term, XRAY_AF_BYTES);
+    }
+    drop(snap_opt);
+    let elapsed = start.elapsed();
+    let stats = term.take_kitty_handler_stats();
+    let per_call_ns = elapsed.as_nanos() as u64 / u64::from(N);
+    let f_idx = 5;
+    let f_calls = stats.per_action_calls[f_idx];
+    let per_call_f_ns = if f_calls > 0 {
+        stats.per_action_ns[f_idx] / u64::from(f_calls)
+    } else { 0 };
+
+    eprintln!();
+    eprintln!("=== xray a=f with rate-limited snapshot batch={BATCH} ({N} calls) ===");
+    eprintln!("total wall-clock:   {elapsed:?}");
+    eprintln!("per call (wall):    {per_call_ns} ns ({:.2} µs)", per_call_ns as f64 / 1000.0);
+    eprintln!("F per-call:         {per_call_f_ns} ns ({:.2} µs)", per_call_f_ns as f64 / 1000.0);
+    eprintln!("expected: ~(clone_cost/{BATCH}) + fast_path = ~4.5 µs/call");
+    eprintln!();
+}
+
 #[test]
 fn xray_af_fixture_round_trip_smoke() {
     // Smoke test: confirm setup + parse + dispatch path doesn't panic.

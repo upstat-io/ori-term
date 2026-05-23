@@ -61,6 +61,15 @@ const CHILD_EXIT_WAIT_TIMEOUT: Duration = Duration::from_secs(5);
 /// responsive under sustained output.
 const MAX_PARSE_CHUNK: usize = 0x1_0000; // 64 KB
 
+/// Minimum interval between snapshot publishes from hot byte-drain paths.
+/// 16 ms ≈ 60 Hz — at or above typical display refresh rate, so the main
+/// thread cannot observe more frequent updates anyway. Batching mutations
+/// across this window collapses N per-chunk Arc clones (kitty animation
+/// canvas, 2.25 MB at 60 fps with 100 a=f/frame) into ~1 clone per frame.
+/// Flush-path publishes (shutdown, sync-timeout, `SnapshotNow`, PTY EOF)
+/// bypass this gate via `publish_pending_snapshot`.
+const SNAPSHOT_INTERVAL: Duration = Duration::from_millis(16);
+
 /// Terminal IO thread — owns `Term<S>` and processes commands + PTY bytes.
 /// Generic over `S: EffectSink` so the IO thread's `Term` can use
 /// `QueueingEffectSink` (the production path post effect-cutover §01.1)
@@ -146,6 +155,11 @@ pub struct PaneIoThread<S: EffectSink + 'static> {
     /// [`PaneIoHandle::pending_resize`] in [`new_with_handle`].
     /// Regression:.
     pub(super) pending_resize: Arc<AtomicU64>,
+    /// Time of the most recent `produce_snapshot()` call. Used by
+    /// `maybe_produce_snapshot` to rate-limit hot byte-drain publishes
+    /// to `SNAPSHOT_INTERVAL` (~60 Hz). `None` until the first publish.
+    /// Flush-path callers use `publish_pending_snapshot` to bypass.
+    last_snapshot_publish: Option<Instant>,
     /// Test-only counter — incremented at the top of
     /// [`Self::maybe_shrink_buffers`]. Pins that the OUTER run loop
     /// (not the `select!` `default(timeout)` arm) is the call path,
@@ -464,9 +478,10 @@ impl<S: EffectSink> PaneIoThread<S> {
         self.emit_sync_abort_effect();
 
         // Force snapshot publication — the sync window's accumulated
-        // mutations are now ready to land.
+        // mutations are now ready to land. Bypasses rate-limit because
+        // sync-window close is a deadline-driven flush, not a hot-path tick.
         self.grid_dirty.store(true, Ordering::Release);
-        self.maybe_produce_snapshot();
+        self.publish_pending_snapshot();
     }
 
     /// Emit a `PresentationEffect::Abort` through the terminal's effect sink.
@@ -560,6 +575,27 @@ impl<S: EffectSink> PaneIoThread<S> {
         if !self.grid_dirty.load(Ordering::Acquire) {
             return;
         }
+        if let Some(last) = self.last_snapshot_publish {
+            if last.elapsed() < SNAPSHOT_INTERVAL {
+                return;
+            }
+        }
+        self.produce_snapshot();
+    }
+
+    /// Publish a snapshot without rate-limiting — used at flush points
+    /// (shutdown, PTY EOF, sync-timeout, explicit `SnapshotNow`, end of
+    /// each run-loop iteration) where the latest state must reach the
+    /// main thread regardless of how recently the previous publish fired.
+    /// Still respects `TermMode::SYNC_UPDATE` and `grid_dirty` — those are
+    /// correctness gates, not performance gates.
+    fn publish_pending_snapshot(&mut self) {
+        if self.terminal.mode().contains(TermMode::SYNC_UPDATE) {
+            return;
+        }
+        if !self.grid_dirty.load(Ordering::Acquire) {
+            return;
+        }
         self.produce_snapshot();
     }
 
@@ -599,6 +635,7 @@ impl<S: EffectSink> PaneIoThread<S> {
         self.fill_search_snapshot();
         self.terminal.reset_damage();
         self.double_buffer.flip_swap(&mut self.snapshot_buf);
+        self.last_snapshot_publish = Some(Instant::now());
 
         // Clear grid_dirty and fire wakeup so the main thread renders.
         if self.grid_dirty.swap(false, Ordering::AcqRel) {

@@ -359,6 +359,7 @@ pub fn new_with_handle<S: EffectSink + 'static>(
         effects_buf: Vec::new(),
         last_animation_deadline: None,
         pending_resize: Arc::clone(&pending_resize),
+        last_snapshot_publish: None,
         #[cfg(test)]
         shrink_call_count: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
         #[cfg(test)]
