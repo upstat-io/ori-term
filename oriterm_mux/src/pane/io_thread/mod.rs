@@ -160,6 +160,29 @@ pub struct PaneIoThread<S: EffectSink + 'static> {
     /// to `SNAPSHOT_INTERVAL` (~60 Hz). `None` until the first publish.
     /// Flush-path callers use `publish_pending_snapshot` to bypass.
     last_snapshot_publish: Option<Instant>,
+    /// Accumulator for `handle_bytes` wall time across one drain cycle.
+    /// Reset by `process_pending_bytes` at the top of each cycle, summed by
+    /// `handle_bytes` per chunk, logged in the drain-cycle iteration log.
+    drain_handle_bytes_ns: u64,
+    /// Accumulator for `handle_kitty_graphics` total time across one drain
+    /// cycle. Reset by `process_pending_bytes` at the top of each cycle,
+    /// summed from `take_kitty_handler_stats` after each chunk's VTE parse,
+    /// logged in the drain-cycle iteration log so the operator can attribute
+    /// drain time to kitty work vs other VTE handlers.
+    drain_kitty_ns: u64,
+    /// Accumulator for `handle_bytes_chunked` wall time across one drain
+    /// cycle — measures the full chunked-byte processing including channel
+    /// receive overhead. Gap vs `drain_handle_bytes_ns` localizes time
+    /// spent outside `handle_bytes` (channel recv, loop overhead, Vec
+    /// drop, etc.).
+    drain_chunked_ns: u64,
+    /// Persistent buffered handle for the `ORITERM_PERF_TAP` byte stream.
+    /// `None` until the first PTY byte arrives with the env var set;
+    /// subsequent writes reuse the handle so the perf-tap costs ~ns per
+    /// byte instead of ~280 us per chunk (the previous open + close on
+    /// each call added ~24 ms per drain under graphics flood — pure
+    /// instrumentation overhead, not a real bottleneck).
+    perf_tap_writer: Option<std::io::BufWriter<std::fs::File>>,
     /// Test-only counter — incremented at the top of
     /// [`Self::maybe_shrink_buffers`]. Pins that the OUTER run loop
     /// (not the `select!` `default(timeout)` arm) is the call path,
@@ -289,10 +312,17 @@ impl<S: EffectSink> PaneIoThread<S> {
         let mut bytes_drained: usize = 0;
         let mut snapshot_total = Duration::ZERO;
         let mut drain_cmds_total = Duration::ZERO;
+        // Reset drain-cycle aggregates so handle_bytes accumulates fresh
+        // per-cycle attribution from this point forward.
+        self.drain_handle_bytes_ns = 0;
+        self.drain_kitty_ns = 0;
+        self.drain_chunked_ns = 0;
         while let Ok(bytes) = self.byte_rx.try_recv() {
             messages_drained += 1;
             bytes_drained += bytes.len();
+            let t = Instant::now();
             let (cmd_dur, snap_dur) = self.handle_bytes_chunked(&bytes);
+            self.drain_chunked_ns = self.drain_chunked_ns.saturating_add(t.elapsed().as_nanos() as u64);
             drain_cmds_total += cmd_dur;
             snapshot_total += snap_dur;
             if self.shutdown.load(Ordering::Acquire) {
@@ -317,9 +347,13 @@ impl<S: EffectSink> PaneIoThread<S> {
             "drain cycle messages={messages_drained} bytes={bytes_drained} \
              duration_ms={drain_ms} \
              drain_cmds_ms={} snapshot_ms={} \
+             chunked_ms={} handle_bytes_ms={} kitty_ms={} \
              img_count={} placement_count={} mem_used={}",
             drain_cmds_total.as_millis(),
             snapshot_total.as_millis(),
+            self.drain_chunked_ns / 1_000_000,
+            self.drain_handle_bytes_ns / 1_000_000,
+            self.drain_kitty_ns / 1_000_000,
             cache.image_count(),
             cache.placement_count(),
             cache.memory_used()
@@ -332,26 +366,21 @@ impl<S: EffectSink> PaneIoThread<S> {
     /// for shell integration, then the high-level processor, then deferred
     /// prompt marking and marker pruning.
     fn handle_bytes(&mut self, bytes: &[u8]) {
+        let chunk_start = Instant::now();
         // Raw PTY tap — when ORITERM_PERF_TAP is set, append every
-        // byte received from the PTY to the path it specifies.
+        // byte received from the PTY to the buffered file handle.
         // Captures the exact stream notcurses (or any subprocess)
         // wrote so the perf harness can parse notcurses' end-of-demo
-        // table out of the rendered ANSI bytes. NO buffering — the
-        // tap is meant for offline diagnostic use, not perf-critical
-        // workloads.
-        if let Ok(tap_path) = std::env::var("ORITERM_PERF_TAP") {
-            use std::io::Write;
-            if let Ok(mut f) = std::fs::OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(&tap_path)
-            {
-                let _ = f.write_all(bytes);
-            }
-        }
+        // table out of the rendered ANSI bytes. The handle is opened
+        // once on first write and reused — `BufWriter` collapses the
+        // per-byte syscall cost to roughly memcpy speed; the file
+        // flushes on PaneIoThread drop. The previous per-chunk open +
+        // close pattern added ~280 µs per chunk × ~86 chunks per
+        // drain cycle of artificial overhead under WSL→Windows
+        // interop, masquerading as real graphics-flood latency.
+        self.write_perf_tap(bytes);
 
         let evicted_before = self.terminal.grid().total_evicted();
-        let chunk_start = Instant::now();
 
         // 1. Raw interceptor for shell integration (OSC 7, 133, etc.).
         let raw_start = Instant::now();
@@ -391,6 +420,14 @@ impl<S: EffectSink> PaneIoThread<S> {
         let drain_start = Instant::now();
         self.drain_effects_into_mux_events();
         let drain_dur = drain_start.elapsed();
+
+        // Accumulate drain-cycle aggregates so the iteration log can
+        // attribute total drain time to handle_bytes work + kitty work
+        // (drain_handle_bytes_ns and drain_kitty_ns are reset by
+        // process_pending_bytes at the top of each cycle).
+        let chunk_total_ns = chunk_start.elapsed().as_nanos() as u64;
+        self.drain_handle_bytes_ns = self.drain_handle_bytes_ns.saturating_add(chunk_total_ns);
+        self.drain_kitty_ns = self.drain_kitty_ns.saturating_add(kitty_stats.total_ns);
 
         // Per-chunk SLOW log — surfaces which sub-phase dominates when
         // chunk processing exceeds 8 ms (a single 60 FPS budget).
@@ -581,6 +618,33 @@ impl<S: EffectSink> PaneIoThread<S> {
             }
         }
         self.produce_snapshot();
+    }
+
+    /// Write `bytes` to the persistent perf-tap buffered file handle if
+    /// `ORITERM_PERF_TAP` is set. Opens the file lazily on first call;
+    /// subsequent calls reuse the buffered writer. Best-effort: file
+    /// open or write failures silently disable the tap for this process.
+    fn write_perf_tap(&mut self, bytes: &[u8]) {
+        use std::io::Write;
+        if self.perf_tap_writer.is_none() {
+            let tap_path = match std::env::var("ORITERM_PERF_TAP") {
+                Ok(p) => p,
+                Err(_) => return,
+            };
+            match std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&tap_path)
+            {
+                Ok(f) => {
+                    self.perf_tap_writer = Some(std::io::BufWriter::with_capacity(64 * 1024, f));
+                }
+                Err(_) => return,
+            }
+        }
+        if let Some(w) = self.perf_tap_writer.as_mut() {
+            let _ = w.write_all(bytes);
+        }
     }
 
     /// Publish a snapshot without rate-limiting — used at flush points

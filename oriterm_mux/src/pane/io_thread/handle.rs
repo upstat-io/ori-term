@@ -360,6 +360,10 @@ pub fn new_with_handle<S: EffectSink + 'static>(
         last_animation_deadline: None,
         pending_resize: Arc::clone(&pending_resize),
         last_snapshot_publish: None,
+        drain_handle_bytes_ns: 0,
+        drain_kitty_ns: 0,
+        drain_chunked_ns: 0,
+        perf_tap_writer: None,
         #[cfg(test)]
         shrink_call_count: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
         #[cfg(test)]

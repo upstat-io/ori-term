@@ -18,7 +18,7 @@ use std::time::{Duration, Instant};
 
 use vte::ansi::Processor;
 
-use crate::effect::VoidEffectSink;
+use crate::effect::{QueueingEffectSink, VoidEffectSink};
 use crate::image::{ImageData, ImageId, ImageSource};
 use crate::term::Term;
 use crate::theme::Theme;
@@ -333,6 +333,133 @@ fn xray_af_timing_with_rate_limited_snapshot() {
     eprintln!("per call (wall):    {per_call_ns} ns ({:.2} µs)", per_call_ns as f64 / 1000.0);
     eprintln!("F per-call:         {per_call_f_ns} ns ({:.2} µs)", per_call_f_ns as f64 / 1000.0);
     eprintln!("expected: ~(clone_cost/{BATCH}) + fast_path = ~4.5 µs/call");
+    eprintln!();
+}
+
+/// Replay a 306 KB chunk captured from the actual notcurses xray PTY tap
+/// at offset ~50 MB (mid-run, post-image-transmit). The chunk contains 171
+/// APC commands (85 a=a animation control + 84 a=f frame Edits + 1 a=p
+/// place + 1 a=d delete) — representative of ~1 frame's worth of work.
+///
+/// Measures total wall + per-substep timing so we can identify the
+/// dominant cost contributor to the 29 ms median drain cycle observed
+/// post-rate-limit cure. Goal per user 2026-05-23: drive drain duration
+/// under the 17 ms xray budget so the dropped-frame counter reaches 0.
+///
+/// Run via:
+/// ```text
+/// cargo test -p oriterm_core --release \
+///     --lib term::handler::image::kitty::frame::tests::xray_drain_chunk \
+///     -- --nocapture --ignored
+/// ```
+const XRAY_DRAIN_CHUNK: &[u8] = include_bytes!("xray_drain_chunk.bin");
+
+fn setup_term_with_drain_images() -> Term<QueueingEffectSink> {
+    let mut term = Term::new(50, 200, 1000, Theme::default(), QueueingEffectSink::new());
+    let cache = term.image_cache_mut();
+    // Three image_ids referenced by the drain chunk, each with 3+ frames
+    // so the r=2 Edit-frame path resolves cleanly.
+    for image_id in [13537382u32, 13537383, 13537384] {
+        let initial = ImageData {
+            id: ImageId(image_id),
+            width: CANVAS_W,
+            height: CANVAS_H,
+            data: build_canvas_bytes(),
+            pixel_generation: 0,
+            format: crate::image::ImageFormat::Rgba,
+            source: ImageSource::Direct,
+            last_accessed: 0,
+            image_number: None,
+        };
+        let frames = vec![build_canvas_bytes(), build_canvas_bytes(), build_canvas_bytes()];
+        let durations = vec![
+            Duration::from_millis(33),
+            Duration::from_millis(33),
+            Duration::from_millis(33),
+        ];
+        cache
+            .store_animated(initial, frames, durations, Some(0))
+            .expect("test setup: store_animated must succeed");
+    }
+    term
+}
+
+#[test]
+#[ignore]
+fn xray_drain_chunk_timing() {
+    let mut term = setup_term_with_drain_images();
+    let mut proc: Processor = Processor::new();
+
+    for _ in 0..3 {
+        proc.advance(&mut term, XRAY_DRAIN_CHUNK);
+    }
+    let _ = term.take_kitty_handler_stats();
+
+    const N: u32 = 10;
+    let start = Instant::now();
+    for _ in 0..N {
+        proc.advance(&mut term, XRAY_DRAIN_CHUNK);
+    }
+    let elapsed = start.elapsed();
+    let stats = term.take_kitty_handler_stats();
+
+    let per_iter_ms = elapsed.as_secs_f64() * 1000.0 / f64::from(N);
+    let bytes_per_iter = XRAY_DRAIN_CHUNK.len();
+
+    eprintln!();
+    eprintln!("=== xray drain chunk timing ({N} iterations of {bytes_per_iter}B chunk) ===");
+    eprintln!("total wall:        {elapsed:?}");
+    eprintln!("per iter wall:     {per_iter_ms:.2} ms");
+    eprintln!("xray frame budget: 17.4 ms (57 FPS)");
+    eprintln!("budget headroom:   {:.1}× ({:+.2} ms)",
+        17.4 / per_iter_ms, 17.4 - per_iter_ms);
+    eprintln!();
+    eprintln!("--- handle_kitty_graphics aggregate ---");
+    eprintln!("total kitty calls:  {}", stats.total_calls);
+    eprintln!("total kitty ns:     {} ({:.3} ms total)",
+        stats.total_ns, stats.total_ns as f64 / 1e6);
+    eprintln!("kitty per call:     {} ns ({:.2} µs)",
+        if stats.total_calls > 0 { stats.total_ns / u64::from(stats.total_calls) } else { 0 },
+        if stats.total_calls > 0 {
+            (stats.total_ns / u64::from(stats.total_calls)) as f64 / 1000.0
+        } else { 0.0 });
+    eprintln!();
+    eprintln!("--- per-action breakdown (cumulative across {N} iterations) ---");
+    // Index order from oriterm_core/src/term/handler/image/kitty/mod.rs:135:
+    //   0=Query, 1=Transmit, 2=TransmitAndPlace, 3=Place, 4=Delete, 5=Frame, 6=Animate, 7=Compose
+    let labels = ["Query", "Transmit", "TransmitAndPlace", "Place", "Delete", "Frame", "Animate", "Compose"];
+    for (i, label) in labels.iter().enumerate() {
+        let calls = stats.per_action_calls[i];
+        let ns = stats.per_action_ns[i];
+        if calls > 0 {
+            eprintln!("  {label:18} calls={calls:6} total={:.3} ms  per-call={:.2} µs",
+                ns as f64 / 1e6,
+                ns as f64 / f64::from(calls) / 1000.0);
+        }
+    }
+    eprintln!();
+    eprintln!("--- substep breakdown (cumulative) ---");
+    eprintln!("  prepare (b64+zlib+fmt): {} ns ({:.3} ms)  per-F-call={:.2} µs",
+        stats.prepare_ns,
+        stats.prepare_ns as f64 / 1e6,
+        if stats.per_action_calls[5] > 0 {
+            stats.prepare_ns as f64 / f64::from(stats.per_action_calls[5]) / 1000.0
+        } else { 0.0 });
+    eprintln!("  format decode:          {} ns ({:.3} ms)",
+        stats.format_ns,
+        stats.format_ns as f64 / 1e6);
+    eprintln!("  store/blit:             {} ns ({:.3} ms)",
+        stats.store_ns,
+        stats.store_ns as f64 / 1e6);
+    eprintln!();
+    let kitty_ms = stats.total_ns as f64 / 1e6;
+    let total_ms = elapsed.as_secs_f64() * 1000.0;
+    eprintln!("--- attribution ---");
+    eprintln!("kitty handler total:    {kitty_ms:.3} ms ({:.1}%)",
+        kitty_ms / total_ms * 100.0);
+    eprintln!("vte parser + other:     {:.3} ms ({:.1}%)",
+        total_ms - kitty_ms,
+        (total_ms - kitty_ms) / total_ms * 100.0);
     eprintln!();
 }
 
