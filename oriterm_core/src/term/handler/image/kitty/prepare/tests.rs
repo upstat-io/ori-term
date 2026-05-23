@@ -308,3 +308,98 @@ fn prepare_unknown_compression_emits_via_reply_variant_not_protocol() {
         "helper MUST emit via KittyStoreError::Reply, not Protocol — got {err:?}"
     );
 }
+
+// ===========================================================================
+// BUG-06-088 — SIMD inflate backend swap (Round 2 cure direction)
+// ===========================================================================
+
+/// Regression: BUG-06-088 — realistic xray-shape roundtrip preserves
+/// correctness under flate2 backend swap.
+///
+/// Drives a 2.25 MB f=32+o=z payload at notcurses-demo xray's per-frame
+/// geometry (999×562 RGBA) through `prepare_image_bytes`. Asserts the
+/// decompressed bytes match the original input byte-for-byte. Encoder +
+/// decoder both use the workspace-selected flate2 backend; backend swap
+/// is transparent at the flate2 API surface so this test exercises the
+/// new backend end-to-end once Phase 4 lands the Cargo.toml feature swap.
+///
+/// Correctness-preservation pin: passes under BOTH miniz_oxide (current
+/// rust_backend) AND zlib-rs (Phase 4 cure backend) — zlib format is
+/// format. The test fails only if the new backend produces incorrect
+/// output, catching backend-swap regression at unit-test time before the
+/// `xray_perf.py` closure gate runs.
+#[test]
+fn prepare_oz_realistic_xray_shape_roundtrip() {
+    // xray's per-frame geometry: 999×562 RGBA = 2,246,952 bytes.
+    const XRAY_WIDTH: usize = 999;
+    const XRAY_HEIGHT: usize = 562;
+    let raw_size = XRAY_WIDTH * XRAY_HEIGHT * 4;
+    // Build a representative high-correlation payload (xray scene has
+    // smoothly varying content — zlib compresses well at this geometry).
+    let mut raw = Vec::with_capacity(raw_size);
+    for y in 0..XRAY_HEIGHT {
+        for x in 0..XRAY_WIDTH {
+            let r = ((x * 256 / XRAY_WIDTH) & 0xFF) as u8;
+            let g = ((y * 256 / XRAY_HEIGHT) & 0xFF) as u8;
+            let b = ((x + y) & 0xFF) as u8;
+            raw.extend_from_slice(&[r, g, b, 0xFF]);
+        }
+    }
+    assert_eq!(raw.len(), raw_size, "test setup: raw payload size mismatch");
+
+    let compressed = zlib_encode(&raw);
+    assert!(
+        compressed.len() < raw_size,
+        "test setup: compressed ({}) must be smaller than raw ({})",
+        compressed.len(),
+        raw_size,
+    );
+
+    let decompressed =
+        prepare_image_bytes(compressed, Some(b'z'), Some(raw_size), TEST_MAX_BYTES)
+            .expect("BUG-06-088 cure: realistic xray-shape roundtrip MUST succeed");
+
+    assert_eq!(
+        decompressed.len(),
+        raw_size,
+        "BUG-06-088 cure: decompressed size MUST equal raw size",
+    );
+    assert_eq!(
+        decompressed, raw,
+        "BUG-06-088 cure: decompressed bytes MUST match raw payload byte-for-byte",
+    );
+}
+
+/// Regression: BUG-06-088 — zlib-rs is the active flate2 backend.
+///
+/// Reads Cargo.lock from the workspace root and asserts the `zlib-rs`
+/// crate is present in the resolved dependency graph. Catches accidental
+/// revert in dependency-management changes (e.g., a future Cargo.toml
+/// edit that drops the `zlib-rs` feature and reverts to `rust_backend`).
+///
+/// Pre-Phase-4 state: this test FAILS at baseline (HEAD pre-Cargo.toml
+/// swap) because the resolved graph contains `miniz_oxide` but NOT
+/// `zlib-rs`. Post-Phase-4 it passes once the feature swap lands.
+///
+/// Path resolution: uses CARGO_MANIFEST_DIR to locate workspace
+/// Cargo.lock (one level above this crate's manifest). Robust against
+/// running from different CWDs.
+#[test]
+fn flate2_backend_is_zlib_rs() {
+    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR")
+        .expect("CARGO_MANIFEST_DIR not set — test harness invariant");
+    let lock_path = std::path::Path::new(&manifest_dir)
+        .parent()
+        .expect("oriterm_core has no parent dir")
+        .join("Cargo.lock");
+    let lock = std::fs::read_to_string(&lock_path).unwrap_or_else(|e| {
+        panic!("BUG-06-088 cure: Cargo.lock not readable at {lock_path:?}: {e}")
+    });
+    assert!(
+        lock.contains("name = \"zlib-rs\""),
+        "BUG-06-088 cure: zlib-rs not in Cargo.lock resolved deps. \
+         Check term_repo/oriterm_core/Cargo.toml flate2 feature line — \
+         should be `features = [\"zlib-rs\"]`, not `[\"rust_backend\"]`. \
+         See bug-tracker/plans/BUG-06-088/section-05-implementation.md Item 1.",
+    );
+}

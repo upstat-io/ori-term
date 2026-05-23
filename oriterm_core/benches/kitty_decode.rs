@@ -59,5 +59,65 @@ fn bench_zlib_decompress_xray_shape(c: &mut Criterion) {
     });
 }
 
-criterion_group!(benches, bench_zlib_decompress_xray_shape);
+/// BUG-06-088 SIMD direction — small-payload bench variants.
+///
+/// zlib-rs's SIMD paths have a startup cost; for small kitty transmits
+/// (under ~4 KB) miniz_oxide may actually be faster. Notcurses xray uses
+/// 2.25 MB frames so the primary workload is in the large regime, but
+/// other kitty workloads with small `o=z` transmits could regress.
+///
+/// Add 128-byte and 4-KB variants alongside the existing 2.25 MB bench
+/// to detect SIMD startup-cost regression. If >1.5× regression vs the
+/// baseline at small sizes lands post-Cargo.toml swap, §05 Item 9 + §03
+/// small-payload bench specify scope-expanding §05 with a hybrid-backend
+/// wrapper item (zlib-rs for ≥4 KB, scalar fallback for smaller).
+
+fn small_payload(size: usize) -> Vec<u8> {
+    // Synthetic small payload — pseudo-random pattern to avoid trivial
+    // run-length compression. Backend behavior on actual small zlib
+    // payloads matters; using a fixed seed keeps the bench deterministic.
+    let raw: Vec<u8> = (0..size).map(|i| ((i.wrapping_mul(0x9E3779B9)) & 0xFF) as u8).collect();
+    let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
+    encoder.write_all(&raw).expect("zlib encode");
+    encoder.finish().expect("zlib finish")
+}
+
+fn bench_zlib_decompress_small_128b(c: &mut Criterion) {
+    let compressed = small_payload(128);
+
+    c.bench_function("zlib_decompress_small_128b", |b| {
+        b.iter(|| {
+            use flate2::read::ZlibDecoder;
+            use std::io::Read;
+
+            let mut decoder = ZlibDecoder::new(black_box(&compressed[..]));
+            let mut out = Vec::with_capacity(128);
+            decoder.read_to_end(&mut out).expect("zlib decode");
+            black_box(out);
+        });
+    });
+}
+
+fn bench_zlib_decompress_small_4kb(c: &mut Criterion) {
+    let compressed = small_payload(4096);
+
+    c.bench_function("zlib_decompress_small_4kb", |b| {
+        b.iter(|| {
+            use flate2::read::ZlibDecoder;
+            use std::io::Read;
+
+            let mut decoder = ZlibDecoder::new(black_box(&compressed[..]));
+            let mut out = Vec::with_capacity(4096);
+            decoder.read_to_end(&mut out).expect("zlib decode");
+            black_box(out);
+        });
+    });
+}
+
+criterion_group!(
+    benches,
+    bench_zlib_decompress_xray_shape,
+    bench_zlib_decompress_small_128b,
+    bench_zlib_decompress_small_4kb
+);
 criterion_main!(benches);
