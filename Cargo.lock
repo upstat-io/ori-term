@@ -1970,6 +1970,7 @@ dependencies = [
  "insta",
  "libc",
  "log",
+ "miniz_oxide",
  "oriterm_core",
  "oriterm_test_support",
  "parking_lot",

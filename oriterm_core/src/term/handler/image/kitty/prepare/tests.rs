@@ -4,7 +4,7 @@
 //! points: pass-through (`compression = None`), zlib roundtrip
 //! (`compression = Some(b'z')`), cap+1 zip-bomb defense, strict
 //! expected-size check for raw-pixel formats, error mapping via
-//! `KittyStoreError::Reply`, and the BUG-06-088 backend-swap pins
+//! `KittyStoreError::Reply`, and the SIMD-backend swap pins
 //! (realistic xray-shape roundtrip + flate2 backend declaration).
 
 use std::io::Write;
@@ -39,9 +39,7 @@ fn rgba_4x4() -> Vec<u8> {
     out
 }
 
-// ===========================================================================
 // Positive (round-trip success)
-// ===========================================================================
 
 /// `compression == None` → byte-for-byte pass-through, regardless of cap.
 #[test]
@@ -88,9 +86,7 @@ fn prepare_oz_decompressed_size_matches_expected_size_for_f32() {
     assert_eq!(result.len(), 64);
 }
 
-// ===========================================================================
 // Negative (failure modes)
-// ===========================================================================
 
 /// Random non-zlib bytes with `Some(b'z')` → EINVAL.
 #[test]
@@ -203,9 +199,7 @@ fn prepare_unknown_compression_q_returns_einval() {
     );
 }
 
-// ===========================================================================
 // Bounded-cap semantics
-// ===========================================================================
 
 /// `expected_decoded_size > max_bytes` → helper clamps the cap to
 /// `max_bytes` and rejects when real output exceeds it.
@@ -237,9 +231,7 @@ fn prepare_oz_no_expected_size_uses_max_bytes() {
     assert_eq!(result.len(), 512);
 }
 
-// ===========================================================================
 // Memory + alloc shape pins
-// ===========================================================================
 
 /// Helper's internal buffer is bounded at `cap + 1` regardless of zlib
 /// stream size. This pins the structural invariant — without the helper
@@ -252,9 +244,8 @@ fn prepare_oz_no_expected_size_uses_max_bytes() {
 /// time (proves the helper bailed early) — but wall-clock is flaky per
 /// `tests.md §Wall-Clock-Free Testing`. So we use the boundary clamp +
 /// unbounded zip-bomb pins above as the structural proof of bounded reads
-/// and leave the explicit allocator instrumentation to the Phase 4
-/// criterion bench at `benches/kitty_decode.rs` (per §03b NEW-1 + Item 7
-/// follow-up gate).
+/// and leave the explicit allocator instrumentation to the criterion
+/// bench at `benches/kitty_decode.rs`.
 #[test]
 fn prepare_oz_buffer_never_grows_past_cap_plus_one() {
     // Multi-cell pin: the boundary clamp + the unbounded zip-bomb together
@@ -285,9 +276,7 @@ fn prepare_oz_buffer_never_grows_past_cap_plus_one() {
     );
 }
 
-// ===========================================================================
 // KittyStoreError variant pin (preserves Protocol vs Reply discipline)
-// ===========================================================================
 
 /// EINVAL on unknown compression MUST flow through `KittyStoreError::Reply`
 /// (the store-layer stringly-typed reply variant), NOT through
@@ -328,16 +317,7 @@ fn prepare_oz_realistic_xray_shape_roundtrip() {
     const XRAY_WIDTH: usize = 999;
     const XRAY_HEIGHT: usize = 562;
     let raw_size = XRAY_WIDTH * XRAY_HEIGHT * 4;
-    // Smoothly varying content — zlib compresses well at this geometry.
-    let mut raw = Vec::with_capacity(raw_size);
-    for y in 0..XRAY_HEIGHT {
-        for x in 0..XRAY_WIDTH {
-            let r = ((x * 256 / XRAY_WIDTH) & 0xFF) as u8;
-            let g = ((y * 256 / XRAY_HEIGHT) & 0xFF) as u8;
-            let b = ((x + y) & 0xFF) as u8;
-            raw.extend_from_slice(&[r, g, b, 0xFF]);
-        }
-    }
+    let raw = oriterm_test_support::fixtures::xray_gradient_rgba(XRAY_WIDTH, XRAY_HEIGHT);
     assert_eq!(raw.len(), raw_size, "test setup: raw payload size mismatch");
 
     let compressed = zlib_encode(&raw);
@@ -378,7 +358,7 @@ fn prepare_oz_realistic_xray_shape_roundtrip() {
 /// active).
 ///
 /// Path resolution: uses `oriterm_test_support::paths::term_workspace_root()`
-/// per `.claude/rules/test-organization.md §Wrapper/Subrepo Path Discovery`.
+/// to locate the workspace Cargo.toml in a CWD-robust way.
 #[test]
 fn flate2_backend_is_zlib_rs() {
     let manifest_path = oriterm_test_support::paths::term_workspace_root()

@@ -38,16 +38,7 @@ fn compress_fixture(raw: &[u8]) -> Vec<u8> {
 /// well, which doesn't exercise the decoder at xray's real per-frame
 /// size.
 fn xray_compressed_payload() -> Vec<u8> {
-    let raw_size = XRAY_WIDTH * XRAY_HEIGHT * 4;
-    let mut raw = Vec::with_capacity(raw_size);
-    for y in 0..XRAY_HEIGHT {
-        for x in 0..XRAY_WIDTH {
-            let r = ((x * 256 / XRAY_WIDTH) & 0xFF) as u8;
-            let g = ((y * 256 / XRAY_HEIGHT) & 0xFF) as u8;
-            let b = ((x + y) & 0xFF) as u8;
-            raw.extend_from_slice(&[r, g, b, 0xFF]);
-        }
-    }
+    let raw = oriterm_test_support::fixtures::xray_gradient_rgba(XRAY_WIDTH, XRAY_HEIGHT);
     compress_fixture(&raw)
 }
 
@@ -58,9 +49,9 @@ fn bench_zlib_decompress_xray_shape(c: &mut Criterion) {
     c.bench_function("zlib_decompress_xray_shape_2_25mb", |b| {
         b.iter(|| {
             // Direct flate2 decode — mirrors what `prepare_image_bytes`
-            // will do internally post-Phase 4. Pre-Phase 4 this measures
-            // the underlying decoder cost so we can compare against the
-            // helper's overhead once it lands.
+            // does internally. Measures the underlying decoder cost
+            // independent of the helper's `Vec::with_capacity` + bounded-
+            // read overhead.
             use flate2::read::ZlibDecoder;
             use std::io::Read;
 
