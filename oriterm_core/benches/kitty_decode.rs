@@ -13,22 +13,30 @@
 //! cargo bench -p oriterm_core --bench kitty_decode
 //! ```
 
-use std::io::Write;
-
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
-use flate2::Compression;
-use flate2::write::ZlibEncoder;
 
 /// xray's per-frame geometry: 999×562 RGBA = 2.25 MB raw.
 const XRAY_WIDTH: usize = 999;
 const XRAY_HEIGHT: usize = 562;
 
+/// Default zlib compression level (6) — matches `Compression::default()`
+/// in flate2 and `notcurses`'s zlib invocation per the kitty protocol.
+const ZLIB_LEVEL: u8 = 6;
+
+/// Compress via `miniz_oxide` directly so the bench fixture is
+/// independent of the flate2 backend feature under test. Cross-backend
+/// bench comparison then measures pure decoder cost without
+/// encoder-side variance.
+fn compress_fixture(raw: &[u8]) -> Vec<u8> {
+    miniz_oxide::deflate::compress_to_vec_zlib(raw, ZLIB_LEVEL)
+}
+
 /// Build a representative xray-shape compressed payload: a smoothly
-/// varying RGBA gradient at xray's geometry, zlib-encoded. Mirror the
-/// test corpus pattern (smooth x/y gradient) so the bench fixture's
-/// compression ratio is realistic — a solid-fill payload compresses
-/// pathologically well (~2 KB), which doesn't exercise the decoder at
-/// xray's real per-frame size.
+/// varying RGBA gradient at xray's geometry. Mirror the test corpus
+/// pattern (smooth x/y gradient) so the bench fixture's compression
+/// ratio is realistic — a solid-fill payload compresses pathologically
+/// well, which doesn't exercise the decoder at xray's real per-frame
+/// size.
 fn xray_compressed_payload() -> Vec<u8> {
     let raw_size = XRAY_WIDTH * XRAY_HEIGHT * 4;
     let mut raw = Vec::with_capacity(raw_size);
@@ -40,9 +48,7 @@ fn xray_compressed_payload() -> Vec<u8> {
             raw.extend_from_slice(&[r, g, b, 0xFF]);
         }
     }
-    let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
-    encoder.write_all(&raw).expect("zlib encode");
-    encoder.finish().expect("zlib finish")
+    compress_fixture(&raw)
 }
 
 fn bench_zlib_decompress_xray_shape(c: &mut Criterion) {
@@ -81,10 +87,9 @@ fn small_payload(size: usize) -> Vec<u8> {
     // Synthetic small payload — pseudo-random pattern to avoid trivial
     // run-length compression. Backend behavior on actual small zlib
     // payloads matters; using a fixed seed keeps the bench deterministic.
-    let raw: Vec<u8> = (0..size).map(|i| ((i.wrapping_mul(0x9E3779B9)) & 0xFF) as u8).collect();
-    let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
-    encoder.write_all(&raw).expect("zlib encode");
-    encoder.finish().expect("zlib finish")
+    let raw: Vec<u8> =
+        (0..size).map(|i| ((i.wrapping_mul(0x9E3779B9)) & 0xFF) as u8).collect();
+    compress_fixture(&raw)
 }
 
 fn bench_zlib_decompress_small_128b(c: &mut Criterion) {

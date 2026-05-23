@@ -31,6 +31,10 @@ libc = "0.2"
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
 insta = "1"
+# Backend-independent zlib encoder for bench fixtures. Independent of
+# the flate2 backend feature so cross-backend bench comparisons measure
+# decoder cost without encoder-side variance.
+miniz_oxide = "0.8"
 # Self-dep with `test-support` so the `ImageCache::*_for_test` probes
 # light up for integration tests under `tests/spec_chain/` (which
 # compile as external crates against the crate's public API).
