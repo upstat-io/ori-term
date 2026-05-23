@@ -710,11 +710,13 @@ fn xray_drain_chunk_startup_probe_responses() {
     eprintln!();
 }
 
-/// Burst-write end-to-end timing test (per BUG-06-088 §05 Item 26
-/// hypothesis): notcurses writes ~654 KB per xray frame in a tight
-/// burst via write() syscalls. Measure end-to-end wall time for one
-/// such frame through `Term::advance`. If this exceeds the 17.4 ms
-/// xray budget, the IO-thread + VTE path is the bottleneck. If it's
+/// Regression: BUG-06-088 — burst-write end-to-end timing.
+/// See: bug-tracker/plans/completed/BUG-06-088/section-05-implementation.md §Item 27.
+///
+/// notcurses writes ~654 KB per xray frame in a tight burst via write()
+/// syscalls. Measure end-to-end wall time for one such frame through
+/// `Term::advance`. If this exceeds the 17.4 ms xray budget, the
+/// IO-thread + VTE path is the bottleneck. If it's
 /// well under, the production drop cause is upstream (kernel PTY
 /// buffer cycling, reader-thread scheduling, etc.).
 ///
