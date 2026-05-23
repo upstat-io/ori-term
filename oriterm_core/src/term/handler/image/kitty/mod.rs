@@ -69,6 +69,17 @@ impl KittyStoreParams {
 impl<S: EffectSink> Term<S> {
     /// Parse and execute a Kitty graphics command.
     pub(super) fn handle_kitty_graphics(&mut self, data: &[u8]) {
+        let start = std::time::Instant::now();
+        self.handle_kitty_graphics_inner(data);
+        let elapsed_ns = start.elapsed().as_nanos().min(u64::MAX as u128) as u64;
+        self.record_kitty_handler_sample(elapsed_ns);
+    }
+
+    /// Inner dispatch — separated so the outer `handle_kitty_graphics`
+    /// can wrap timing around every exit path (early returns, parse
+    /// errors, action match) without needing a Drop guard or returning
+    /// early past a `let _t = ...` accumulator.
+    fn handle_kitty_graphics_inner(&mut self, data: &[u8]) {
         if !self.image_protocol_enabled {
             return;
         }

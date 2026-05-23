@@ -195,6 +195,14 @@ pub struct Term<S: EffectSink> {
     alt_image_cache: Option<ImageCache>,
     /// In-progress chunked Kitty image transmission.
     loading_image: Option<crate::image::kitty::LoadingImage>,
+    /// Time accumulated inside `handle_kitty_graphics` since the last
+    /// `take_kitty_handler_stats()` call, in nanoseconds. Surfaces in
+    /// `oriterm_mux`'s SLOW chunk diagnostic log so reviewers can
+    /// attribute vte sub-phase cost across kitty handler runs vs other
+    /// VTE handlers.
+    kitty_handler_ns: u64,
+    /// Count of `handle_kitty_graphics` invocations since the last drain.
+    kitty_handler_calls: u32,
     /// In-progress sixel image (active during DCS sixel sequence).
     sixel_parser: Option<SixelParser>,
     /// Cell width in pixels (set by GUI after font metrics are known).
@@ -331,6 +339,8 @@ impl<S: EffectSink> Term<S> {
             image_cache: ImageCache::new(),
             alt_image_cache: None,
             loading_image: None,
+            kitty_handler_ns: 0,
+            kitty_handler_calls: 0,
             sixel_parser: None,
             cell_pixel_width: 8,
             cell_pixel_height: 16,
@@ -369,6 +379,29 @@ impl<S: EffectSink> Term<S> {
     /// Reset the selection-dirty flag after handling invalidation.
     pub fn clear_selection_dirty(&mut self) {
         self.selection_dirty = false;
+    }
+
+    /// Drain accumulated kitty handler timing and call count.
+    ///
+    /// Returns `(handler_nanoseconds, call_count)` and resets the
+    /// accumulators to zero. Called by `oriterm_mux`'s IO-thread chunk
+    /// loop after VTE processing to attribute vte sub-phase cost
+    /// across kitty handler runs vs other VTE handlers (text, SGR,
+    /// scroll regions, etc.) — surfaces in the SLOW chunk diagnostic
+    /// log when per-chunk vte cost exceeds the 8 ms frame budget.
+    pub fn take_kitty_handler_stats(&mut self) -> (u64, u32) {
+        let ns = self.kitty_handler_ns;
+        let calls = self.kitty_handler_calls;
+        self.kitty_handler_ns = 0;
+        self.kitty_handler_calls = 0;
+        (ns, calls)
+    }
+
+    /// Add a timing sample to the kitty handler accumulator.
+    /// Internal API used by `handle_kitty_graphics` only.
+    pub(crate) fn record_kitty_handler_sample(&mut self, ns: u64) {
+        self.kitty_handler_ns = self.kitty_handler_ns.saturating_add(ns);
+        self.kitty_handler_calls = self.kitty_handler_calls.saturating_add(1);
     }
 
     /// Reference to the active grid.

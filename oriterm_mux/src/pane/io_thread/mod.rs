@@ -351,6 +351,10 @@ impl<S: EffectSink> PaneIoThread<S> {
         let vte_start = Instant::now();
         self.processor.advance(&mut self.terminal, bytes);
         let vte_dur = vte_start.elapsed();
+        // Drain accumulated kitty-handler timing so the SLOW chunk log
+        // attributes vte cost across kitty handler runs vs other VTE
+        // handlers (text, SGR, scroll regions, etc.).
+        let (kitty_ns, kitty_calls) = self.terminal.take_kitty_handler_stats();
 
         // 3b. Set grid_dirty after parsing — the VTE handler does not fire
         // Event::Wakeup itself. The old reader thread did this explicitly
@@ -387,12 +391,14 @@ impl<S: EffectSink> PaneIoThread<S> {
                 log::info!(
                     target: "oriterm_mux::pane::io_thread::chunk",
                     "SLOW chunk #{} bytes={} total={:.2?} raw={:.2?} vte={:.2?} \
-                     housekeeping={:.2?} drain={:.2?}",
+                     kitty={:.2?}/{}calls housekeeping={:.2?} drain={:.2?}",
                     n,
                     bytes.len(),
                     total,
                     raw_dur,
                     vte_dur,
+                    Duration::from_nanos(kitty_ns),
+                    kitty_calls,
                     hk_dur,
                     drain_dur,
                 );
