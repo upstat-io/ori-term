@@ -8,9 +8,13 @@
 //!
 //! ## Scenario
 //!
-//! Sixel `z = -1` paints a solid-red 30×12-px region spanning cells
-//! `(10..13, 5)` (3 cells horizontally at 10-px cell width). Text and
-//! kitty are then layered on top to exercise the 3-layer composite:
+//! Sixel `z = -1` paints a solid-red 30×12-px region (sub-cell
+//! vertically — `12 / cell_h_px` ≈ 0.55 cell at typical 22 px metric,
+//! NOT a full cell tall; the sub-cell extent is INTENTIONAL — assertions
+//! check per-cell pixel color counts with `≥4` thresholds, not full-cell
+//! coverage). Horizontal extent of 30 px ≈ 3 cells wide at 10-px cell
+//! width, spanning cells `(10..13, 5)` on the test box. Text and kitty
+//! are then layered on top to exercise the 3-layer composite:
 //!
 //! | Cell        | Sixel z=-1 | Text glyph | Kitty z=1 | Renders as       |
 //! |-------------|------------|------------|-----------|------------------|

@@ -5,8 +5,13 @@
 //!
 //! Drives a 3-layer composite anchored at row=5, col=10:
 //!   1. Sixel placement at `z = -1` — drawn BELOW text. Paints 30×12
-//!      pixels (≈3 cells wide × 1 cell tall) starting at (col=10,
-//!      row=5) — red fills cells `(10..13, 5)`.
+//!      pixels (sub-cell vertically — only `12 / cell_h_px` ≈ 0.55 cell
+//!      at the typical 22 px metric, NOT a full cell tall as the prior
+//!      wording claimed). The sub-cell vertical extent is INTENTIONAL —
+//!      assertions at `count_at_cell()` (lines 212-263) check per-cell
+//!      pixel color counts with `≥4` thresholds, not full-cell coverage.
+//!      Horizontal extent of 30 px is ≈3 cells wide at 10-px cell width,
+//!      placing red into cells `(10..13, 5)` on the test box.
 //!   2. Text glyph `T` — drawn between image layers. Written outside
 //!      the kitty-covered cell (col=13) so it remains visible in the
 //!      rendered output.
