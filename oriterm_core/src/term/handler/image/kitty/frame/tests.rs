@@ -9,7 +9,7 @@
 //!     -- --nocapture --ignored
 //! ```
 //!
-//! Marked `#[ignore]` so it does not run in the default test suite — it is
+//! Marked `#[ignore = "BUG-06-091: xray timing diagnostic — measurement-only, no passing threshold; tracked via BUG-06-091 for re-enablement as bounded assertions OR conversion to non-test helpers; provenance: BUG-06-088 closed kitty hi-def perf investigation"]` so it does not run in the default test suite — it is
 //! a diagnostic harness, not a correctness pin. The realistic xray-shape
 //! roundtrip + 14 existing prepare boundary tests cover correctness.
 
@@ -90,7 +90,7 @@ fn time_af_calls(term: &mut Term<VoidEffectSink>, n: u32) -> (Duration, crate::t
 }
 
 #[test]
-#[ignore]
+#[ignore = "BUG-06-091: xray timing diagnostic — measurement-only, no passing threshold; tracked via BUG-06-091 for re-enablement as bounded assertions OR conversion to non-test helpers; provenance: BUG-06-088 closed kitty hi-def perf investigation"]
 fn xray_af_timing() {
     let mut term = setup_term_with_animation();
     const N: u32 = 1000;
@@ -144,7 +144,7 @@ fn xray_af_timing() {
 /// ref held by the renderer side, then measures per-call cost. Expected
 /// per-call cost: ~45 µs (vs 0.30 µs without extra refs).
 #[test]
-#[ignore]
+#[ignore = "BUG-06-091: xray timing diagnostic — measurement-only, no passing threshold; tracked via BUG-06-091 for re-enablement as bounded assertions OR conversion to non-test helpers; provenance: BUG-06-088 closed kitty hi-def perf investigation"]
 fn xray_af_timing_with_shared_canvas_arc() {
     let mut term = setup_term_with_animation();
 
@@ -192,7 +192,7 @@ fn xray_af_timing_with_shared_canvas_arc() {
 /// resolve_canvas_bytes which clones the 2.25 MB canvas per call.
 /// Generates a synthetic a=f sequence with r=0 (Append).
 #[test]
-#[ignore]
+#[ignore = "BUG-06-091: xray timing diagnostic — measurement-only, no passing threshold; tracked via BUG-06-091 for re-enablement as bounded assertions OR conversion to non-test helpers; provenance: BUG-06-088 closed kitty hi-def perf investigation"]
 fn xray_af_timing_append_path() {
     let mut term = setup_term_with_animation();
 
@@ -246,7 +246,7 @@ fn find_subslice(haystack: &[u8], needle: &[u8]) -> Option<usize> {
 /// state). Each a=f Edit therefore sees Arc strong_count > 1 and
 /// Arc::make_mut clones.
 #[test]
-#[ignore]
+#[ignore = "BUG-06-091: xray timing diagnostic — measurement-only, no passing threshold; tracked via BUG-06-091 for re-enablement as bounded assertions OR conversion to non-test helpers; provenance: BUG-06-088 closed kitty hi-def perf investigation"]
 fn xray_af_timing_with_per_call_snapshot() {
     let mut term = setup_term_with_animation();
     let mut proc: Processor = Processor::new();
@@ -293,7 +293,7 @@ fn xray_af_timing_with_per_call_snapshot() {
 /// With K=10 and clone_cost ~45 µs, per-call should be ~4.5 µs — a 10×
 /// reduction vs per-call snapshot.
 #[test]
-#[ignore]
+#[ignore = "BUG-06-091: xray timing diagnostic — measurement-only, no passing threshold; tracked via BUG-06-091 for re-enablement as bounded assertions OR conversion to non-test helpers; provenance: BUG-06-088 closed kitty hi-def perf investigation"]
 fn xray_af_timing_with_rate_limited_snapshot() {
     let mut term = setup_term_with_animation();
     let mut proc: Processor = Processor::new();
@@ -385,7 +385,7 @@ fn setup_term_with_drain_images() -> Term<QueueingEffectSink> {
 }
 
 #[test]
-#[ignore]
+#[ignore = "BUG-06-091: xray timing diagnostic — measurement-only, no passing threshold; tracked via BUG-06-091 for re-enablement as bounded assertions OR conversion to non-test helpers; provenance: BUG-06-088 closed kitty hi-def perf investigation"]
 fn xray_drain_chunk_timing() {
     let mut term = setup_term_with_drain_images();
     let mut proc: Processor = Processor::new();
@@ -474,7 +474,7 @@ fn xray_drain_chunk_timing() {
 /// after the perf-tap I/O was eliminated. Goal: identify whether a
 /// memchr-based ApcString fast-path could collapse this cost.
 #[test]
-#[ignore]
+#[ignore = "BUG-06-091: xray timing diagnostic — measurement-only, no passing threshold; tracked via BUG-06-091 for re-enablement as bounded assertions OR conversion to non-test helpers; provenance: BUG-06-088 closed kitty hi-def perf investigation"]
 fn xray_drain_chunk_vte_per_byte_cost() {
     let mut term = setup_term_with_drain_images();
     let mut proc: Processor = Processor::new();
@@ -516,7 +516,7 @@ fn xray_drain_chunk_vte_per_byte_cost() {
 /// effects from kitty handlers. Other VTE handlers should also be
 /// silent during xray steady state (no DA/DSR queries from notcurses).
 #[test]
-#[ignore]
+#[ignore = "BUG-06-091: xray timing diagnostic — measurement-only, no passing threshold; tracked via BUG-06-091 for re-enablement as bounded assertions OR conversion to non-test helpers; provenance: BUG-06-088 closed kitty hi-def perf investigation"]
 fn xray_drain_chunk_effects_emitted() {
     use crate::effect::{Effect, EffectSink};
     let mut term = setup_term_with_drain_images();
@@ -594,7 +594,7 @@ fn xray_drain_chunk_effects_emitted() {
 /// rate may be caused by notcurses choosing a verbose encoding because
 /// some startup probe never received a response.
 #[test]
-#[ignore]
+#[ignore = "BUG-06-091: xray timing diagnostic — measurement-only, no passing threshold; tracked via BUG-06-091 for re-enablement as bounded assertions OR conversion to non-test helpers; provenance: BUG-06-088 closed kitty hi-def perf investigation"]
 fn xray_drain_chunk_startup_probe_responses() {
     use crate::effect::{Effect, EffectSink};
     use vte::ansi::Processor;
@@ -726,7 +726,7 @@ fn xray_drain_chunk_startup_probe_responses() {
 const XRAY_FRAME_BURST: &[u8] = include_bytes!("xray_frame_burst.bin");
 
 #[test]
-#[ignore]
+#[ignore = "BUG-06-091: xray timing diagnostic — measurement-only, no passing threshold; tracked via BUG-06-091 for re-enablement as bounded assertions OR conversion to non-test helpers; provenance: BUG-06-088 closed kitty hi-def perf investigation"]
 fn xray_frame_burst_e2e_timing() {
     let mut term = setup_term_with_drain_images();
     let mut proc: Processor = Processor::new();

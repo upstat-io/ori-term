@@ -103,6 +103,12 @@ const SIXEL_RED_WIDE: &[u8] = b"\x1bPq#0;2;100;0;0#0!30~-#0!30~\x1b\\";
 /// Payload `AAD//w==` decodes to `0x00 0x00 0xFF 0xFF` — opaque blue.
 const KITTY_BLUE_Z1: &[u8] = b"\x1b_Gf=32,s=1,v=1,a=T,i=20,z=1,q=2;AAD//w==\x1b\\";
 
+/// Pins text-interleaved 3-layer composition: sixel z=-1 + text glyphs
+/// ('X' on red, 'Y' on default bg) + kitty z=+1 across cells 10..13.
+/// Catalog row: `KG-CROSS-STACK-SIXEL-MIXED-Z-ORDER` (shared with
+/// `kitty_sixel_mixed_z_order.rs` — this pilot pins the text-on-image
+/// leg, sibling pilot pins same-cell occlusion). Pins that the text
+/// pass runs after `image_quads_below` and before `image_quads_above`.
 #[test]
 fn kitty_sixel_mixed_with_text_renders_three_layer_composition() {
     let Some(mut harness) = VisualSpecHarness::new() else {

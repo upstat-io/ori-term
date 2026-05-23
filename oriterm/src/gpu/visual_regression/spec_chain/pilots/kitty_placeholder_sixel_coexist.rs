@@ -65,6 +65,13 @@ const KITTY_TRANSMIT_U1_11X1: &[u8] = b"\x1b_Ga=T,U=1,i=1,f=32,s=11,v=1,c=11,r=1
 /// 88 bytes total. Cells written contiguously at the parked cursor.
 const PLACEHOLDER_CELLS_11: &[u8] = b"\x1b[38;5;1m\xf4\x8e\xbb\xae\xcc\x85\xcc\x85\xf4\x8e\xbb\xae\xcc\x85\xcc\x8d\xf4\x8e\xbb\xae\xcc\x85\xcc\x8e\xf4\x8e\xbb\xae\xcc\x85\xcc\x90\xf4\x8e\xbb\xae\xcc\x85\xcc\x92\xf4\x8e\xbb\xae\xcc\x85\xcc\xbd\xf4\x8e\xbb\xae\xcc\x85\xcc\xbe\xf4\x8e\xbb\xae\xcc\x85\xcc\xbf\xf4\x8e\xbb\xae\xcc\x85\xcd\x86\xf4\x8e\xbb\xae\xcc\x85\xcd\x8a\xf4\x8e\xbb\xae\xcc\x85\xcd\x8b\x1b[39m";
 
+/// Pins cross-protocol coexistence at the GPU apex: kitty U=1
+/// placeholder (11 cells) + sixel cache-coordinate placement (8 cells)
+/// hold their cache entries concurrently and emit 12 image quads in one
+/// frame. Catalog row: `KG-CROSS-STACK-SIXEL-PLACEHOLDER-COEXIST`.
+/// Image-dimension pins assert the sixel fills ≥ 8 cells × ≥ 1 cell
+/// after cell-scaled byte construction via `dcs_red_pixel_block` —
+/// rejects the prior sub-cell-pixel regression class.
 #[test]
 fn kitty_placeholder_and_sixel_coexist_at_gpu_apex() {
     let Some(mut harness) = VisualSpecHarness::new() else {

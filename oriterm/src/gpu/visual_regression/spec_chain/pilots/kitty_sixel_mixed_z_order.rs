@@ -110,6 +110,11 @@ const SIXEL_RED_WIDE: &[u8] = b"\x1bPq#0;2;100;0;0#0!30~-#0!30~\x1b\\";
 /// Payload `AAD//w==` decodes to `0x00 0x00 0xFF 0xFF` — opaque blue.
 const KITTY_BLUE_Z1: &[u8] = b"\x1b_Gf=32,s=1,v=1,a=T,i=10,z=1,q=2;AAD//w==\x1b\\";
 
+/// Pins z-order composition: sixel z=-1 (cells 10..13) drawn BELOW
+/// text, text glyph 'T' (cell 13) drawn BETWEEN image layers, kitty
+/// z=+1 (cell 10) drawn ABOVE text. Catalog row:
+/// `KG-CROSS-STACK-SIXEL-MIXED-Z-ORDER`. Per-cell pixel-count
+/// assertions via `count_at_cell()` confirm layering correctness.
 #[test]
 fn kitty_and_sixel_render_with_mixed_z_order() {
     let Some(mut harness) = VisualSpecHarness::new() else {
