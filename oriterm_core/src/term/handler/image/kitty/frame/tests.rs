@@ -583,6 +583,133 @@ fn xray_drain_chunk_effects_emitted() {
     eprintln!();
 }
 
+/// Replay the EXACT notcurses-demo startup query stream (captured from
+/// `oriterm-perf-last-tap.bin` offset 0-2930) and report which queries
+/// ori_term answers and which it silently drops. Missing responses force
+/// notcurses to fall back to less efficient encodings (no palette index
+/// re-use, no synchronized output gating, etc.), inflating bytes-per-frame
+/// and adding write() blocking time per the drop-counter mechanism.
+///
+/// Theory (per user 2026-05-23): the remaining ~22 drops/sec sustained
+/// rate may be caused by notcurses choosing a verbose encoding because
+/// some startup probe never received a response.
+#[test]
+#[ignore]
+fn xray_drain_chunk_startup_probe_responses() {
+    use crate::effect::{Effect, EffectSink};
+    use vte::ansi::Processor;
+    let mut term = setup_term_with_drain_images();
+    let mut proc: Processor = Processor::new();
+
+    // Replay the exact captured startup query stream. The bytes are the
+    // first 2930 bytes of oriterm-perf-last-tap.bin captured during a
+    // notcurses-demo xray run.
+    const STARTUP_BYTES: &[u8] = include_bytes!("xray_startup_bytes.bin");
+
+    let mut effects: Vec<Effect> = Vec::new();
+    proc.advance(&mut term, STARTUP_BYTES);
+    term.effect_sink().drain_into(&mut effects);
+
+    eprintln!();
+    eprintln!("=== startup probe replay: {} bytes → {} effects ===", STARTUP_BYTES.len(), effects.len());
+    let mut pty_writes: Vec<&[u8]> = Vec::new();
+    let mut other_count = 0;
+    for e in &effects {
+        match e {
+            Effect::Pty(crate::effect::PtyEffect::Write { bytes, .. }) => {
+                pty_writes.push(bytes.as_slice());
+            }
+            _ => other_count += 1,
+        }
+    }
+    let total_reply_bytes: usize = pty_writes.iter().map(|b| b.len()).sum();
+    eprintln!("  PTY-write effects: {} (total {} bytes)", pty_writes.len(), total_reply_bytes);
+    eprintln!("  other effects: {other_count}");
+    eprintln!();
+
+    // Classify queries received from notcurses
+    use std::collections::BTreeMap;
+    let mut query_counts: BTreeMap<&'static str, usize> = BTreeMap::new();
+    // Walk the stream and count each query type
+    let mut i = 0;
+    while i < STARTUP_BYTES.len() {
+        if STARTUP_BYTES[i..].starts_with(b"\x1b[6n") {
+            *query_counts.entry("CSI 6 n (DSR cursor)").or_insert(0) += 1;
+            i += 4;
+        } else if STARTUP_BYTES[i..].starts_with(b"\x1b[c") || STARTUP_BYTES[i..].starts_with(b"\x1b[0c") {
+            *query_counts.entry("CSI c (DA1)").or_insert(0) += 1;
+            i += 3;
+        } else if STARTUP_BYTES[i..].starts_with(b"\x1b[>c") {
+            *query_counts.entry("CSI > c (DA2)").or_insert(0) += 1;
+            i += 4;
+        } else if STARTUP_BYTES[i..].starts_with(b"\x1b[=c") {
+            *query_counts.entry("CSI = c (TDA)").or_insert(0) += 1;
+            i += 4;
+        } else if STARTUP_BYTES[i..].starts_with(b"\x1b[>0q") {
+            *query_counts.entry("XTVERSION CSI > q").or_insert(0) += 1;
+            i += 5;
+        } else if STARTUP_BYTES[i..].starts_with(b"\x1bP+q") {
+            *query_counts.entry("XTGETTCAP DCS +q").or_insert(0) += 1;
+            i += 4;
+        } else if STARTUP_BYTES[i..].starts_with(b"\x1b]4;") {
+            *query_counts.entry("OSC 4 ; N ; ? (palette color)").or_insert(0) += 1;
+            i += 4;
+        } else if STARTUP_BYTES[i..].starts_with(b"\x1b]10;?") || STARTUP_BYTES[i..].starts_with(b"\x1b]11;?") {
+            *query_counts.entry("OSC 10/11 (fg/bg color)").or_insert(0) += 1;
+            i += 6;
+        } else if STARTUP_BYTES[i..].starts_with(b"\x1b[?2026$p") {
+            *query_counts.entry("DECRQM ?2026 (sync output)").or_insert(0) += 1;
+            i += 9;
+        } else if STARTUP_BYTES[i..].starts_with(b"\x1b[?1016$p") {
+            *query_counts.entry("DECRQM ?1016 (pixel mouse)").or_insert(0) += 1;
+            i += 9;
+        } else if STARTUP_BYTES[i..].starts_with(b"\x1b[?") && STARTUP_BYTES[i..].contains(&b'S') && STARTUP_BYTES[i..6.min(STARTUP_BYTES.len()-i)+i].contains(&b';') {
+            *query_counts.entry("XTSMGRAPHICS ?Pi;Pa;Pv S").or_insert(0) += 1;
+            i += 1;
+        } else if STARTUP_BYTES[i..].starts_with(b"\x1b_Gi=1,a=q") {
+            *query_counts.entry("kitty graphics i=1,a=q").or_insert(0) += 1;
+            i += 12;
+        } else if STARTUP_BYTES[i..].starts_with(b"\x1b[14t") || STARTUP_BYTES[i..].starts_with(b"\x1b[18t") {
+            *query_counts.entry("CSI 14/18 t (window size)").or_insert(0) += 1;
+            i += 5;
+        } else if STARTUP_BYTES[i..].starts_with(b"\x1b[>u") || STARTUP_BYTES[i..].starts_with(b"\x1b[?u") {
+            *query_counts.entry("kitty keyboard query").or_insert(0) += 1;
+            i += 4;
+        } else if STARTUP_BYTES[i..].starts_with(b"\x1b[1t") {
+            *query_counts.entry("CSI 1 t (icon-name request)").or_insert(0) += 1;
+            i += 4;
+        } else {
+            i += 1;
+        }
+    }
+    eprintln!("Queries observed in startup stream:");
+    for (q, c) in &query_counts {
+        eprintln!("  [{c:3}×] {q}");
+    }
+    let total_queries: usize = query_counts.values().sum();
+    eprintln!("  TOTAL queries: {total_queries}");
+    eprintln!();
+    eprintln!("Response coverage: {} responses / {} queries = {:.0}%",
+        pty_writes.len(), total_queries,
+        if total_queries > 0 { 100.0 * pty_writes.len() as f64 / total_queries as f64 } else { 0.0 });
+    eprintln!();
+
+    // Print the first 10 actual reply bytes so we can see WHAT we send back
+    eprintln!("First 10 responses (lossy str):");
+    for (i, b) in pty_writes.iter().take(10).enumerate() {
+        eprintln!("  [{i}] {:?}", String::from_utf8_lossy(b));
+    }
+    eprintln!();
+
+    // Print the LAST 20 responses (after the 256 OSC 4 replies)
+    eprintln!("Last 20 responses (lossy str):");
+    let start = pty_writes.len().saturating_sub(20);
+    for (i, b) in pty_writes.iter().enumerate().skip(start) {
+        eprintln!("  [{i}] {:?}", String::from_utf8_lossy(b));
+    }
+    eprintln!();
+}
+
 #[test]
 fn xray_af_fixture_round_trip_smoke() {
     // Smoke test: confirm setup + parse + dispatch path doesn't panic.
