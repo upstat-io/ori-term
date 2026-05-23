@@ -710,6 +710,92 @@ fn xray_drain_chunk_startup_probe_responses() {
     eprintln!();
 }
 
+/// Burst-write end-to-end timing test (per BUG-06-088 §05 Item 26
+/// hypothesis): notcurses writes ~654 KB per xray frame in a tight
+/// burst via write() syscalls. Measure end-to-end wall time for one
+/// such frame through `Term::advance`. If this exceeds the 17.4 ms
+/// xray budget, the IO-thread + VTE path is the bottleneck. If it's
+/// well under, the production drop cause is upstream (kernel PTY
+/// buffer cycling, reader-thread scheduling, etc.).
+///
+/// Fixture: 669 KB extracted from a captured xray PTY tap at offset
+/// 50 MB (mid-run, clean APC boundaries). Represents one notcurses
+/// xray frame's APC payload + animation commands.
+const XRAY_FRAME_BURST: &[u8] = include_bytes!("xray_frame_burst.bin");
+
+#[test]
+#[ignore]
+fn xray_frame_burst_e2e_timing() {
+    let mut term = setup_term_with_drain_images();
+    let mut proc: Processor = Processor::new();
+
+    // Pre-populate image_ids that appear in the burst chunk.
+    // The chunk uses image_id 13365262 (an a=a animation control target).
+    {
+        use crate::image::{ImageData, ImageId, ImageSource};
+        let cache = term.image_cache_mut();
+        for image_id in [13365262u32, 13365263] {
+            let initial = ImageData {
+                id: ImageId(image_id),
+                width: CANVAS_W,
+                height: CANVAS_H,
+                data: build_canvas_bytes(),
+                pixel_generation: 0,
+                format: crate::image::ImageFormat::Rgba,
+                source: ImageSource::Direct,
+                last_accessed: 0,
+                image_number: None,
+            };
+            let frames = vec![build_canvas_bytes(), build_canvas_bytes(), build_canvas_bytes()];
+            let durations = vec![
+                Duration::from_millis(33),
+                Duration::from_millis(33),
+                Duration::from_millis(33),
+            ];
+            // Best-effort — duplicate image_ids may already exist.
+            let _ = cache.store_animated(initial, frames, durations, Some(0));
+        }
+    }
+
+    // Warm-up: 3 passes to fill instruction + branch caches
+    for _ in 0..3 {
+        proc.advance(&mut term, XRAY_FRAME_BURST);
+    }
+    let _ = term.take_kitty_handler_stats();
+
+    const N: u32 = 10;
+    let bytes_per_iter = XRAY_FRAME_BURST.len();
+    let start = Instant::now();
+    for _ in 0..N {
+        proc.advance(&mut term, XRAY_FRAME_BURST);
+    }
+    let elapsed = start.elapsed();
+    let stats = term.take_kitty_handler_stats();
+
+    let per_iter_ms = elapsed.as_secs_f64() * 1000.0 / f64::from(N);
+    let per_iter_ns = elapsed.as_nanos() as u64 / u64::from(N);
+    let throughput_mb_per_s = (bytes_per_iter as f64 * 1000.0) / (per_iter_ms * 1024.0 * 1024.0);
+
+    eprintln!();
+    eprintln!("=== xray frame burst e2e timing ({N} iter × {bytes_per_iter}B = {:.1} KB) ===",
+        bytes_per_iter as f64 / 1024.0);
+    eprintln!("total wall:      {elapsed:?}");
+    eprintln!("per frame burst: {per_iter_ms:.2} ms  ({per_iter_ns} ns)");
+    eprintln!("throughput:      {throughput_mb_per_s:.1} MB/s");
+    eprintln!();
+    eprintln!("xray budget:     17.4 ms / frame");
+    eprintln!("budget headroom: {:.1}× ({:+.2} ms)",
+        17.4 / per_iter_ms, 17.4 - per_iter_ms);
+    eprintln!();
+    eprintln!("--- attribution ---");
+    let kitty_ms = stats.total_ns as f64 / 1e6 / f64::from(N);
+    eprintln!("kitty handler:   {kitty_ms:.2} ms/iter ({:.0}%)",
+        100.0 * kitty_ms / per_iter_ms);
+    eprintln!("non-kitty VTE:   {:.2} ms/iter ({:.0}%)",
+        per_iter_ms - kitty_ms, 100.0 * (per_iter_ms - kitty_ms) / per_iter_ms);
+    eprintln!();
+}
+
 #[test]
 fn xray_af_fixture_round_trip_smoke() {
     // Smoke test: confirm setup + parse + dispatch path doesn't panic.
