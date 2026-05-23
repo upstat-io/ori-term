@@ -16,7 +16,7 @@ test-support = []
 [dependencies]
 base64 = "0.22"
 bitflags = "2"
-flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
+flate2 = { version = "1", default-features = false, features = ["zlib-rs"] }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "bmp", "webp"], optional = true }
 indexmap = "2"
 log = "0.4"

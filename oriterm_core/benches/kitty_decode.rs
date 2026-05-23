@@ -59,18 +59,16 @@ fn bench_zlib_decompress_xray_shape(c: &mut Criterion) {
     });
 }
 
-/// BUG-06-088 SIMD direction — small-payload bench variants.
+/// Small-payload bench variants — SIMD startup-cost regression detection.
 ///
-/// zlib-rs's SIMD paths have a startup cost; for small kitty transmits
-/// (under ~4 KB) miniz_oxide may actually be faster. Notcurses xray uses
-/// 2.25 MB frames so the primary workload is in the large regime, but
-/// other kitty workloads with small `o=z` transmits could regress.
+/// SIMD-aware zlib backends have a per-call startup cost; small kitty
+/// transmits (under ~4 KB) may regress vs the scalar fallback. Notcurses
+/// xray uses 2.25 MB frames so the primary workload is in the large
+/// regime, but other workloads with small `o=z` transmits could regress.
 ///
-/// Add 128-byte and 4-KB variants alongside the existing 2.25 MB bench
-/// to detect SIMD startup-cost regression. If >1.5× regression vs the
-/// baseline at small sizes lands post-Cargo.toml swap, §05 Item 9 + §03
-/// small-payload bench specify scope-expanding §05 with a hybrid-backend
-/// wrapper item (zlib-rs for ≥4 KB, scalar fallback for smaller).
+/// 128-byte and 4-KB variants alongside the 2.25 MB bench surface any
+/// startup-cost asymmetry. If >1.5× regression at small sizes lands, the
+/// owning plan scope-expands with a hybrid-backend wrapper item.
 
 fn small_payload(size: usize) -> Vec<u8> {
     // Synthetic small payload — pseudo-random pattern to avoid trivial
