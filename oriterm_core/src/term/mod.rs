@@ -34,9 +34,9 @@ use std::collections::{HashMap, VecDeque};
 /// Per-chunk kitty handler diagnostic breakdown.
 ///
 /// Returned by `Term::take_kitty_handler_stats()`. Index into the
-/// per-action arrays via the `KittyAction` discriminant: 0=Query,
-/// 1=Transmit, 2=TransmitAndPlace, 3=Place, 4=Delete, 5=Frame,
-/// 6=Animate, 7=Compose. The fixed-length-8 form avoids dragging
+/// per-action arrays via the `KittyAction` discriminant: 0=`Query`,
+/// 1=`Transmit`, 2=`TransmitAndPlace`, 3=`Place`, 4=`Delete`, 5=`Frame`,
+/// 6=`Animate`, 7=`Compose`. The fixed-length-8 form avoids dragging
 /// `KittyAction` into this diagnostic struct's public dependency surface.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct KittyHandlerStats {
@@ -48,6 +48,13 @@ pub struct KittyHandlerStats {
     pub per_action_ns: [u64; 8],
     /// Call count per kitty action.
     pub per_action_calls: [u32; 8],
+    /// Cumulative time inside `prepare_image_bytes` (zlib decompress).
+    pub prepare_ns: u64,
+    /// Cumulative time inside `kitty_decode_pixels` (format decode:
+    /// f=32 identity, f=24 RGB→RGBA, f=100 PNG decode).
+    pub format_ns: u64,
+    /// Cumulative time inside `ImageCache::store` (memcpy + insert).
+    pub store_ns: u64,
 }
 
 impl KittyHandlerStats {
@@ -65,6 +72,18 @@ impl KittyHandlerStats {
             _ => "?",
         }
     }
+}
+
+/// Substep within `kitty_store_image` for per-step timing instrumentation.
+#[derive(Debug, Clone, Copy)]
+pub enum KittySubstep {
+    /// `prepare_image_bytes` — zlib decompress + zip-bomb defense.
+    Prepare,
+    /// `kitty_decode_pixels` — format-specific RGBA conversion
+    /// (f=32 identity, f=24 RGB→RGBA, f=100 PNG decode).
+    Format,
+    /// `ImageCache::store` — memcpy into Arc + hashmap insert.
+    Store,
 }
 
 use vte::ansi::KeyboardModes;
@@ -240,12 +259,19 @@ pub struct Term<S: EffectSink> {
     /// Count of `handle_kitty_graphics` invocations since the last drain.
     kitty_handler_calls: u32,
     /// Time per `KittyAction` variant, in nanoseconds. Index 0-7 maps to
-    /// Query, Transmit, TransmitAndPlace, Place, Delete, Frame, Animate,
-    /// Compose. Surfaces per-action breakdown in SLOW chunk log so
-    /// reviewers can attribute kitty handler cost to the dominant action.
+    /// `Query`, `Transmit`, `TransmitAndPlace`, `Place`, `Delete`, `Frame`,
+    /// `Animate`, `Compose`. Surfaces per-action breakdown in SLOW chunk
+    /// log so reviewers can attribute kitty handler cost to the dominant action.
     kitty_action_ns: [u64; 8],
     /// Count per `KittyAction` variant, parallel to `kitty_action_ns`.
     kitty_action_calls: [u32; 8],
+    /// Per-substep timing (zlib + format + store) for `kitty_store_image`.
+    /// Surfaces in the SLOW chunk log so reviewers can attribute the
+    /// dominant kitty `Transmit` / `TransmitAndPlace` cost across the
+    /// inflate / format-decode / `ImageCache::store` sub-chain.
+    kitty_prepare_ns: u64,
+    kitty_format_ns: u64,
+    kitty_store_ns: u64,
     /// In-progress sixel image (active during DCS sixel sequence).
     sixel_parser: Option<SixelParser>,
     /// Cell width in pixels (set by GUI after font metrics are known).
@@ -386,6 +412,9 @@ impl<S: EffectSink> Term<S> {
             kitty_handler_calls: 0,
             kitty_action_ns: [0; 8],
             kitty_action_calls: [0; 8],
+            kitty_prepare_ns: 0,
+            kitty_format_ns: 0,
+            kitty_store_ns: 0,
             sixel_parser: None,
             cell_pixel_width: 8,
             cell_pixel_height: 16,
@@ -440,12 +469,34 @@ impl<S: EffectSink> Term<S> {
             total_calls: self.kitty_handler_calls,
             per_action_ns: self.kitty_action_ns,
             per_action_calls: self.kitty_action_calls,
+            prepare_ns: self.kitty_prepare_ns,
+            format_ns: self.kitty_format_ns,
+            store_ns: self.kitty_store_ns,
         };
         self.kitty_handler_ns = 0;
         self.kitty_handler_calls = 0;
         self.kitty_action_ns = [0; 8];
         self.kitty_action_calls = [0; 8];
+        self.kitty_prepare_ns = 0;
+        self.kitty_format_ns = 0;
+        self.kitty_store_ns = 0;
         stats
+    }
+
+    /// Add a substep timing sample inside `kitty_store_image`.
+    /// Internal API; `step` is one of "prepare", "format", or "store".
+    pub(crate) fn record_kitty_substep_ns(&mut self, step: KittySubstep, ns: u64) {
+        match step {
+            KittySubstep::Prepare => {
+                self.kitty_prepare_ns = self.kitty_prepare_ns.saturating_add(ns);
+            }
+            KittySubstep::Format => {
+                self.kitty_format_ns = self.kitty_format_ns.saturating_add(ns);
+            }
+            KittySubstep::Store => {
+                self.kitty_store_ns = self.kitty_store_ns.saturating_add(ns);
+            }
+        }
     }
 
     /// Add a timing sample to the total kitty handler accumulator.

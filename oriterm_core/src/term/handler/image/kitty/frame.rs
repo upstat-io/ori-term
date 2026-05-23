@@ -145,6 +145,9 @@ fn build_request(
     }
 }
 
+#[cfg(test)]
+mod tests;
+
 /// Map `put_frame` errors to kitty reply codes.
 fn emit_error_reply<S: EffectSink>(term: &Term<S>, ctx: KittyReplyContext, err: &ImageError) {
     match err {

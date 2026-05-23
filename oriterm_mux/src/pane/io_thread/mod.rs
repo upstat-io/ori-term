@@ -412,7 +412,9 @@ impl<S: EffectSink> PaneIoThread<S> {
                 log::info!(
                     target: "oriterm_mux::pane::io_thread::chunk",
                     "SLOW chunk #{} bytes={} total={:.2?} raw={:.2?} vte={:.2?} \
-                     kitty={:.2?}/{}calls [{}] housekeeping={:.2?} drain={:.2?}",
+                     kitty={:.2?}/{}calls [{}] \
+                     substeps[prepare={:.2?} format={:.2?} store={:.2?}] \
+                     housekeeping={:.2?} drain={:.2?}",
                     n,
                     bytes.len(),
                     total,
@@ -421,6 +423,9 @@ impl<S: EffectSink> PaneIoThread<S> {
                     Duration::from_nanos(kitty_stats.total_ns),
                     kitty_stats.total_calls,
                     actions_buf,
+                    Duration::from_nanos(kitty_stats.prepare_ns),
+                    Duration::from_nanos(kitty_stats.format_ns),
+                    Duration::from_nanos(kitty_stats.store_ns),
                     hk_dur,
                     drain_dur,
                 );

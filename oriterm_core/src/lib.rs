@@ -36,8 +36,8 @@ pub use selection::{
     SelectionPoint, logical_line_end, logical_line_start,
 };
 pub use term::{
-    AceMode, DamageLine, KittyHandlerStats, Notification, PromptMarker, PromptState,
-    RenderableCell, RenderableContent, RenderableCursor, RenderableImageData,
+    AceMode, DamageLine, KittyHandlerStats, KittySubstep, Notification, PromptMarker,
+    PromptState, RenderableCell, RenderableContent, RenderableCursor, RenderableImageData,
     RenderablePlacement, Term, TermDamage, TermMode, encode_enter_base, maybe_shrink_vec,
 };
 pub use theme::Theme;
