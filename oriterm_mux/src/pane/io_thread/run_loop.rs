@@ -83,6 +83,11 @@ impl<S: EffectSink> PaneIoThread<S> {
             // `process_pending_bytes` ARE rate-limited via `maybe_produce_snapshot`.
             self.publish_pending_snapshot();
 
+            // Flush the perf-tap so its on-disk view stays current — needed
+            // when the process is taskkilled before clean shutdown drops the
+            // BufWriter. No-op when the tap is not enabled.
+            self.flush_perf_tap();
+
             // 4b. Quiescence boundary — about to block waiting for work.
             // Runs every loop iteration; cap-gated `maybe_shrink` is
             // ~O(1) when capacity is already tight, so cost is

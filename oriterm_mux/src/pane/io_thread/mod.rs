@@ -652,7 +652,8 @@ impl<S: EffectSink> PaneIoThread<S> {
             };
             match std::fs::OpenOptions::new()
                 .create(true)
-                .append(true)
+                .truncate(true)
+                .write(true)
                 .open(&tap_path)
             {
                 Ok(f) => {
@@ -663,6 +664,18 @@ impl<S: EffectSink> PaneIoThread<S> {
         }
         if let Some(w) = self.perf_tap_writer.as_mut() {
             let _ = w.write_all(bytes);
+        }
+    }
+
+    /// Flush the perf-tap buffered writer if it's open. Called at the
+    /// drain-cycle quiescence point so the tap file reflects the latest
+    /// state even when the process is killed via SIGKILL / `taskkill`
+    /// (where Rust drop handlers do not run). Cheap when nothing's
+    /// buffered.
+    fn flush_perf_tap(&mut self) {
+        use std::io::Write;
+        if let Some(w) = self.perf_tap_writer.as_mut() {
+            let _ = w.flush();
         }
     }
 
