@@ -27,12 +27,23 @@ use flate2::write::ZlibEncoder;
 const XRAY_WIDTH: usize = 999;
 const XRAY_HEIGHT: usize = 562;
 
-/// Build a representative xray-shape compressed payload: solid-color
-/// RGBA at xray's geometry, zlib-encoded. Solid fill compresses well
-/// (~10× ratio) — representative of xray's high inter-pixel correlation.
+/// Build a representative xray-shape compressed payload: a smoothly
+/// varying RGBA gradient at xray's geometry, zlib-encoded. Mirror the
+/// test corpus pattern (smooth x/y gradient) so the bench fixture's
+/// compression ratio is realistic — a solid-fill payload compresses
+/// pathologically well (~2 KB), which doesn't exercise the decoder at
+/// xray's real per-frame size.
 fn xray_compressed_payload() -> Vec<u8> {
     let raw_size = XRAY_WIDTH * XRAY_HEIGHT * 4;
-    let raw = vec![0x80u8; raw_size];
+    let mut raw = Vec::with_capacity(raw_size);
+    for y in 0..XRAY_HEIGHT {
+        for x in 0..XRAY_WIDTH {
+            let r = ((x * 256 / XRAY_WIDTH) & 0xFF) as u8;
+            let g = ((y * 256 / XRAY_HEIGHT) & 0xFF) as u8;
+            let b = ((x + y) & 0xFF) as u8;
+            raw.extend_from_slice(&[r, g, b, 0xFF]);
+        }
+    }
     let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
     encoder.write_all(&raw).expect("zlib encode");
     encoder.finish().expect("zlib finish")

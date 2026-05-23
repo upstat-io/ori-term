@@ -365,31 +365,46 @@ fn prepare_oz_realistic_xray_shape_roundtrip() {
     );
 }
 
-/// Regression: BUG-06-088 — zlib-rs is the active flate2 backend.
+/// Regression: BUG-06-088 — zlib-rs is the declared flate2 backend.
 /// See: bug-tracker/plans/BUG-06-088/section-05-implementation.md
 ///
-/// Reads Cargo.lock from the workspace root and asserts the `zlib-rs`
-/// crate is present in the resolved dependency graph. Catches accidental
-/// revert in dependency-management changes (e.g., a future Cargo.toml
-/// edit that drops the `zlib-rs` feature and reverts to `rust_backend`).
+/// Reads `oriterm_core/Cargo.toml` directly and asserts the flate2
+/// dependency line declares `features = ["zlib-rs"]`. Catches accidental
+/// revert in dependency-management changes (e.g., a future edit that
+/// drops the `zlib-rs` feature and reverts to `rust_backend`).
 ///
-/// Path resolution: uses CARGO_MANIFEST_DIR to locate workspace
-/// Cargo.lock (one level above this crate's manifest).
+/// Pins INTENT (our declared feature) rather than RESOLVED graph
+/// (which can include extra features via workspace-wide unification but
+/// doesn't change what backend flate2 actually uses — flate2's lib.rs
+/// precedence rules favor `any_zlib` over `rust_backend` when both are
+/// active).
+///
+/// Path resolution: uses `oriterm_test_support::paths::term_workspace_root()`
+/// per `.claude/rules/test-organization.md §Wrapper/Subrepo Path Discovery`.
 #[test]
 fn flate2_backend_is_zlib_rs() {
-    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR")
-        .expect("CARGO_MANIFEST_DIR not set — test harness invariant");
-    let lock_path = std::path::Path::new(&manifest_dir)
-        .parent()
-        .expect("oriterm_core has no parent dir")
-        .join("Cargo.lock");
-    let lock = std::fs::read_to_string(&lock_path).unwrap_or_else(|e| {
-        panic!("Cargo.lock not readable at {lock_path:?}: {e}")
+    let manifest_path = oriterm_test_support::paths::term_workspace_root()
+        .join("oriterm_core")
+        .join("Cargo.toml");
+    let manifest = std::fs::read_to_string(&manifest_path).unwrap_or_else(|e| {
+        panic!("oriterm_core/Cargo.toml not readable at {manifest_path:?}: {e}")
     });
+    // Match the flate2 line. flate2 is a single dependency; the line
+    // declares its features. Any line shape like:
+    //   flate2 = { version = "1", default-features = false, features = ["zlib-rs"] }
+    // is acceptable as long as `features = ["zlib-rs"]` is present in
+    // the same logical declaration. A multi-line declaration would be
+    // flagged by a different review (clippy/fmt).
+    let flate2_line = manifest
+        .lines()
+        .find(|line| line.trim_start().starts_with("flate2 ") || line.trim_start().starts_with("flate2="))
+        .unwrap_or_else(|| {
+            panic!("flate2 dependency line not found in oriterm_core/Cargo.toml")
+        });
     assert!(
-        lock.contains("name = \"zlib-rs\""),
-        "zlib-rs not in Cargo.lock resolved deps. \
-         Check oriterm_core/Cargo.toml flate2 feature line — \
-         should be `features = [\"zlib-rs\"]`, not `[\"rust_backend\"]`.",
+        flate2_line.contains("features = [\"zlib-rs\"]"),
+        "flate2 declared features do NOT include zlib-rs. \
+         Line: {flate2_line:?}. \
+         Check oriterm_core/Cargo.toml — must declare `features = [\"zlib-rs\"]`, not `[\"rust_backend\"]`.",
     );
 }
