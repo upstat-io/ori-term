@@ -1,13 +1,11 @@
 //! Unit tests for `prepare_image_bytes`.
 //!
-//! Phase 3 (TDD-first) shape: every test except `prepare_none_compression_passes_through`
-//! is EXPECTED TO FAIL pre-Phase 4 because the helper stub returns
-//! `Err(KittyStoreError::Reply("STUB: ..."))` for any `Some(_)`. Phase 4
-//! lands the real body (zlib decompress with `cap + 1` zip-bomb defense +
-//! unknown-compression rejection); these pins then go green.
-//!
-//! See: bug-tracker/plans/BUG-06-086/section-03b-tdd-matrix.md
-//! §"NEW-1 — `prepare_image_bytes` helper tests".
+//! Covers the zlib decompression helper at all kitty payload entry
+//! points: pass-through (`compression = None`), zlib roundtrip
+//! (`compression = Some(b'z')`), cap+1 zip-bomb defense, strict
+//! expected-size check for raw-pixel formats, error mapping via
+//! `KittyStoreError::Reply`, and the BUG-06-088 backend-swap pins
+//! (realistic xray-shape roundtrip + flate2 backend declaration).
 
 use std::io::Write;
 

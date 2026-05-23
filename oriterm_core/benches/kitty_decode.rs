@@ -1,16 +1,12 @@
 //! Decode-cost criterion bench for the kitty `o=z` zlib decompression
-//! path — Item 7 follow-on gate.
+//! path.
 //!
-//! See: bug-tracker/plans/BUG-06-086/section-03b-tdd-matrix.md
-//! §"REQUIRED — decode-cost criterion benchmark".
-//!
-//! Phase 3 (TDD-first) ships this skeleton with a placeholder workload so
-//! the bench compiles + runs end-to-end. Phase 4 wires the real cure
-//! surface (the shared `prepare_image_bytes` helper) and replaces the
-//! placeholder with an xray-shape compressed-RGBA workload (~199 KB
-//! compressed → 2.25 MB decoded, mirroring xray's 999×562 per-frame
-//! geometry). The post-Phase-4 bench drives Item 7's
-//! `Vec::with_capacity ≥ 20%` attribution gate per §05b.
+//! Three workloads exercise different size regimes:
+//! - `zlib_decompress_xray_shape_2_25mb` — xray-geometry (999×562 RGBA,
+//!   2.25 MB decoded) gradient payload, representative of notcurses-demo
+//!   xray's per-frame size.
+//! - `zlib_decompress_small_128b` — small-payload startup-cost variant.
+//! - `zlib_decompress_small_4kb` — small-payload tail variant.
 //!
 //! Run via:
 //! ```text
@@ -62,7 +58,7 @@ fn bench_zlib_decompress_xray_shape(c: &mut Criterion) {
             use flate2::read::ZlibDecoder;
             use std::io::Read;
 
-            let mut decoder = ZlibDecoder::new(black_box(&compressed[..]));
+            let mut decoder = ZlibDecoder::new(black_box(compressed.as_slice()));
             let mut out = Vec::with_capacity(expected_size);
             decoder.read_to_end(&mut out).expect("zlib decode");
             black_box(out);
@@ -99,7 +95,7 @@ fn bench_zlib_decompress_small_128b(c: &mut Criterion) {
             use flate2::read::ZlibDecoder;
             use std::io::Read;
 
-            let mut decoder = ZlibDecoder::new(black_box(&compressed[..]));
+            let mut decoder = ZlibDecoder::new(black_box(compressed.as_slice()));
             let mut out = Vec::with_capacity(128);
             decoder.read_to_end(&mut out).expect("zlib decode");
             black_box(out);
@@ -115,7 +111,7 @@ fn bench_zlib_decompress_small_4kb(c: &mut Criterion) {
             use flate2::read::ZlibDecoder;
             use std::io::Read;
 
-            let mut decoder = ZlibDecoder::new(black_box(&compressed[..]));
+            let mut decoder = ZlibDecoder::new(black_box(compressed.as_slice()));
             let mut out = Vec::with_capacity(4096);
             decoder.read_to_end(&mut out).expect("zlib decode");
             black_box(out);
