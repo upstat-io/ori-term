@@ -31,6 +31,42 @@ pub use shell_state::{Notification, PendingMarks, PromptMarker, PromptState};
 
 use std::collections::{HashMap, VecDeque};
 
+/// Per-chunk kitty handler diagnostic breakdown.
+///
+/// Returned by `Term::take_kitty_handler_stats()`. Index into the
+/// per-action arrays via the `KittyAction` discriminant: 0=Query,
+/// 1=Transmit, 2=TransmitAndPlace, 3=Place, 4=Delete, 5=Frame,
+/// 6=Animate, 7=Compose. The fixed-length-8 form avoids dragging
+/// `KittyAction` into this diagnostic struct's public dependency surface.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct KittyHandlerStats {
+    /// Total time inside `handle_kitty_graphics` (all actions, all calls).
+    pub total_ns: u64,
+    /// Total invocations of `handle_kitty_graphics`.
+    pub total_calls: u32,
+    /// Time per kitty action (indexed 0-7 per the doc above).
+    pub per_action_ns: [u64; 8],
+    /// Call count per kitty action.
+    pub per_action_calls: [u32; 8],
+}
+
+impl KittyHandlerStats {
+    /// Short label for action index, suitable for compact log output.
+    pub fn action_label(idx: usize) -> &'static str {
+        match idx {
+            0 => "Q",
+            1 => "T",
+            2 => "TP",
+            3 => "P",
+            4 => "D",
+            5 => "F",
+            6 => "A",
+            7 => "C",
+            _ => "?",
+        }
+    }
+}
+
 use vte::ansi::KeyboardModes;
 use vte::ansi::cursor_icon::CursorIcon;
 
@@ -203,6 +239,13 @@ pub struct Term<S: EffectSink> {
     kitty_handler_ns: u64,
     /// Count of `handle_kitty_graphics` invocations since the last drain.
     kitty_handler_calls: u32,
+    /// Time per `KittyAction` variant, in nanoseconds. Index 0-7 maps to
+    /// Query, Transmit, TransmitAndPlace, Place, Delete, Frame, Animate,
+    /// Compose. Surfaces per-action breakdown in SLOW chunk log so
+    /// reviewers can attribute kitty handler cost to the dominant action.
+    kitty_action_ns: [u64; 8],
+    /// Count per `KittyAction` variant, parallel to `kitty_action_ns`.
+    kitty_action_calls: [u32; 8],
     /// In-progress sixel image (active during DCS sixel sequence).
     sixel_parser: Option<SixelParser>,
     /// Cell width in pixels (set by GUI after font metrics are known).
@@ -341,6 +384,8 @@ impl<S: EffectSink> Term<S> {
             loading_image: None,
             kitty_handler_ns: 0,
             kitty_handler_calls: 0,
+            kitty_action_ns: [0; 8],
+            kitty_action_calls: [0; 8],
             sixel_parser: None,
             cell_pixel_width: 8,
             cell_pixel_height: 16,
@@ -381,27 +426,44 @@ impl<S: EffectSink> Term<S> {
         self.selection_dirty = false;
     }
 
-    /// Drain accumulated kitty handler timing and call count.
+    /// Drain accumulated kitty handler timing.
     ///
-    /// Returns `(handler_nanoseconds, call_count)` and resets the
+    /// Returns the full per-chunk diagnostic breakdown and resets the
     /// accumulators to zero. Called by `oriterm_mux`'s IO-thread chunk
     /// loop after VTE processing to attribute vte sub-phase cost
-    /// across kitty handler runs vs other VTE handlers (text, SGR,
-    /// scroll regions, etc.) — surfaces in the SLOW chunk diagnostic
-    /// log when per-chunk vte cost exceeds the 8 ms frame budget.
-    pub fn take_kitty_handler_stats(&mut self) -> (u64, u32) {
-        let ns = self.kitty_handler_ns;
-        let calls = self.kitty_handler_calls;
+    /// across kitty handler runs vs other VTE handlers — surfaces in
+    /// the SLOW chunk diagnostic log when per-chunk vte cost exceeds
+    /// the 8 ms frame budget.
+    pub fn take_kitty_handler_stats(&mut self) -> KittyHandlerStats {
+        let stats = KittyHandlerStats {
+            total_ns: self.kitty_handler_ns,
+            total_calls: self.kitty_handler_calls,
+            per_action_ns: self.kitty_action_ns,
+            per_action_calls: self.kitty_action_calls,
+        };
         self.kitty_handler_ns = 0;
         self.kitty_handler_calls = 0;
-        (ns, calls)
+        self.kitty_action_ns = [0; 8];
+        self.kitty_action_calls = [0; 8];
+        stats
     }
 
-    /// Add a timing sample to the kitty handler accumulator.
+    /// Add a timing sample to the total kitty handler accumulator.
     /// Internal API used by `handle_kitty_graphics` only.
     pub(crate) fn record_kitty_handler_sample(&mut self, ns: u64) {
         self.kitty_handler_ns = self.kitty_handler_ns.saturating_add(ns);
         self.kitty_handler_calls = self.kitty_handler_calls.saturating_add(1);
+    }
+
+    /// Add a timing sample to a per-action accumulator.
+    /// Internal API used by `handle_kitty_graphics` only.
+    pub(crate) fn record_kitty_action_sample(&mut self, action_idx: usize, ns: u64) {
+        if action_idx < 8 {
+            self.kitty_action_ns[action_idx] =
+                self.kitty_action_ns[action_idx].saturating_add(ns);
+            self.kitty_action_calls[action_idx] =
+                self.kitty_action_calls[action_idx].saturating_add(1);
+        }
     }
 
     /// Reference to the active grid.

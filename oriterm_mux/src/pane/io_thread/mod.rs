@@ -26,7 +26,7 @@ use crossbeam_channel::Receiver;
 
 use oriterm_core::effect::sink::EffectSink;
 use oriterm_core::effect::{Effect, PendingResponse};
-use oriterm_core::{RenderableContent, Term, TermMode};
+use oriterm_core::{KittyHandlerStats, RenderableContent, Term, TermMode};
 use vte::ansi::{Handler as _, NamedPrivateMode, PrivateMode};
 
 pub use commands::PaneIoCommand;
@@ -354,7 +354,7 @@ impl<S: EffectSink> PaneIoThread<S> {
         // Drain accumulated kitty-handler timing so the SLOW chunk log
         // attributes vte cost across kitty handler runs vs other VTE
         // handlers (text, SGR, scroll regions, etc.).
-        let (kitty_ns, kitty_calls) = self.terminal.take_kitty_handler_stats();
+        let kitty_stats = self.terminal.take_kitty_handler_stats();
 
         // 3b. Set grid_dirty after parsing — the VTE handler does not fire
         // Event::Wakeup itself. The old reader thread did this explicitly
@@ -388,17 +388,39 @@ impl<S: EffectSink> PaneIoThread<S> {
             static SLOW_COUNTER: AtomicU64 = AtomicU64::new(0);
             let n = SLOW_COUNTER.fetch_add(1, Ordering::Relaxed);
             if n.is_multiple_of(32) {
+                // Build per-action breakdown: include only actions
+                // observed at least once this chunk, in `LABEL=Tms/Ncalls`
+                // form. Empty when no kitty actions hit (all vte cost
+                // would then be in non-kitty VTE handlers).
+                let mut actions_buf = String::new();
+                for i in 0..8 {
+                    if kitty_stats.per_action_calls[i] > 0 {
+                        if !actions_buf.is_empty() {
+                            actions_buf.push(' ');
+                        }
+                        let _ = fmt::Write::write_fmt(
+                            &mut actions_buf,
+                            format_args!(
+                                "{}={:.2?}/{}",
+                                KittyHandlerStats::action_label(i),
+                                Duration::from_nanos(kitty_stats.per_action_ns[i]),
+                                kitty_stats.per_action_calls[i],
+                            ),
+                        );
+                    }
+                }
                 log::info!(
                     target: "oriterm_mux::pane::io_thread::chunk",
                     "SLOW chunk #{} bytes={} total={:.2?} raw={:.2?} vte={:.2?} \
-                     kitty={:.2?}/{}calls housekeeping={:.2?} drain={:.2?}",
+                     kitty={:.2?}/{}calls [{}] housekeeping={:.2?} drain={:.2?}",
                     n,
                     bytes.len(),
                     total,
                     raw_dur,
                     vte_dur,
-                    Duration::from_nanos(kitty_ns),
-                    kitty_calls,
+                    Duration::from_nanos(kitty_stats.total_ns),
+                    kitty_stats.total_calls,
+                    actions_buf,
                     hk_dur,
                     drain_dur,
                 );

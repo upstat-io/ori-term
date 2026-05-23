@@ -132,6 +132,17 @@ impl<S: EffectSink> Term<S> {
             cmd.payload.len(),
         );
 
+        let action_idx = match cmd.action {
+            KittyAction::Query => 0,
+            KittyAction::Transmit => 1,
+            KittyAction::TransmitAndPlace => 2,
+            KittyAction::Place => 3,
+            KittyAction::Delete => 4,
+            KittyAction::Frame => 5,
+            KittyAction::Animate => 6,
+            KittyAction::Compose => 7,
+        };
+        let action_start = std::time::Instant::now();
         match cmd.action {
             KittyAction::Query => self.kitty_query(&cmd),
             KittyAction::Transmit => self.kitty_transmit(cmd),
@@ -142,6 +153,8 @@ impl<S: EffectSink> Term<S> {
             KittyAction::Animate => self.kitty_animate(&cmd),
             KittyAction::Compose => self.kitty_compose(&cmd),
         }
+        let action_ns = action_start.elapsed().as_nanos().min(u64::MAX as u128) as u64;
+        self.record_kitty_action_sample(action_idx, action_ns);
     }
 
     /// Handle a malformed-base64 chunk: emit EINVAL once per failed upload
