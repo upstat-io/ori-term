@@ -8,17 +8,17 @@ use std::os::unix::fs::OpenOptionsExt;
 
 use crate::effect::sink::EffectSink;
 use crate::image::kitty::KittyTransmission;
-use crate::image::{ImageData, ImageId, ImageSource, decode_to_rgba};
+use crate::image::{ImageData, ImageId, ImageSource, decode_to_rgba, rgb_to_rgba};
 use crate::term::Term;
 
 use super::KittyStoreParams;
-use super::prepare::{kitty_decode_pixels, prepare_image_bytes};
+use super::prepare::prepare_image_bytes;
 
 /// Error from `kitty_store_image` / `kitty_store_from_file`. `Reply`
 /// carries store-specific stringly-typed reply text (EBADF, EBIG, EIO,
 /// ENOMEM, EINVAL-shaped strings produced inside the store layer).
 #[derive(Debug)]
-pub(crate) enum KittyStoreError {
+pub(super) enum KittyStoreError {
     /// Store-layer stringly-typed reply text.
     Reply(String),
 }
@@ -125,7 +125,7 @@ impl<S: EffectSink> Term<S> {
         let max_bytes = self.image_cache().max_single_image_bytes();
         let pixel_data = prepare_image_bytes(pixel_data, p.compression, expected_size, max_bytes)?;
 
-        let (rgba_data, w, h) = kitty_decode_pixels(pixel_data, p.format, p.width, p.height)
+        let (rgba_data, w, h) = Self::kitty_decode_pixels(pixel_data, p.format, p.width, p.height)
             .map_err(KittyStoreError::Reply)?;
 
         let img = ImageData {
@@ -147,10 +147,83 @@ impl<S: EffectSink> Term<S> {
         Ok(())
     }
 
-    // kitty_decode_pixels + kitty_decode_pixels_inner extracted to free fns
-    // at `super::prepare::{kitty_decode_pixels, kitty_decode_pixels_inner}` so
-    // the worker-thread runner at `crate::image::worker_pipeline::run_image_decode`
-    // can invoke them without coupling to `Term`.
+    /// Decode pixel data from format code to RGBA.
+    ///
+    /// Wraps `kitty_decode_pixels_inner` with a duration measurement.
+    /// f=32 (raw RGBA) is a size-check + ownership transfer (fast);
+    /// f=24 (RGB→RGBA) is a memory expansion (mid); f=100 (PNG) is
+    /// decompression (slow under large transmits). Sustained >= 5ms
+    /// per call points to inline-decode IO-thread saturation under
+    /// graphics-heavy workloads.
+    pub(super) fn kitty_decode_pixels(
+        payload: Vec<u8>,
+        format: u32,
+        width: u32,
+        height: u32,
+    ) -> Result<(Vec<u8>, u32, u32), String> {
+        let decode_start = std::time::Instant::now();
+        let payload_len = payload.len();
+        let result = Self::kitty_decode_pixels_inner(payload, format, width, height);
+        let elapsed_us = decode_start.elapsed().as_micros();
+        if elapsed_us >= 5_000 {
+            log::info!(
+                target: "oriterm_core::term::handler::image::kitty::decode_pixels",
+                "format={format} payload_bytes={payload_len} width={width} height={height} duration_us={elapsed_us}"
+            );
+        }
+        result
+    }
+
+    fn kitty_decode_pixels_inner(
+        payload: Vec<u8>,
+        format: u32,
+        width: u32,
+        height: u32,
+    ) -> Result<(Vec<u8>, u32, u32), String> {
+        match format {
+            32 => {
+                if width == 0 || height == 0 {
+                    return Err("EINVAL: missing s= or v= for raw RGBA".to_string());
+                }
+                // : width/height are u32 from the kitty APC parameter
+                // parser and attacker-controlled. `(w as usize) * (h as usize) * 4`
+                // panics in debug or wraps in release on extreme dimensions.
+                // Reject with EINVAL when the byte count cannot be represented.
+                let expected = (width as usize)
+                    .checked_mul(height as usize)
+                    .and_then(|wh| wh.checked_mul(4))
+                    .ok_or_else(|| {
+                        format!("EINVAL: RGBA dimensions {width}x{height} overflow usize")
+                    })?;
+                if payload.len() != expected {
+                    return Err(format!(
+                        "EINVAL: RGBA payload size {} != expected {expected}",
+                        payload.len(),
+                    ));
+                }
+                Ok((payload, width, height))
+            }
+            24 => {
+                if width == 0 || height == 0 {
+                    return Err("EINVAL: missing s= or v= for raw RGB".to_string());
+                }
+                // : same overflow shape — pre-check the RGB byte count
+                // before passing the payload to `rgb_to_rgba` so an oversized
+                // `width * height * 3` cannot wrap silently.
+                let _expected = (width as usize)
+                    .checked_mul(height as usize)
+                    .and_then(|wh| wh.checked_mul(3))
+                    .ok_or_else(|| {
+                        format!("EINVAL: RGB dimensions {width}x{height} overflow usize")
+                    })?;
+                rgb_to_rgba(&payload)
+                    .map(|rgba| (rgba, width, height))
+                    .ok_or_else(|| "EINVAL: RGB payload length not a multiple of 3".to_string())
+            }
+            100 => decode_to_rgba(&payload).map_err(|e| format!("EINVAL: PNG decode failed: {e}")),
+            _ => Err(format!("EINVAL: unsupported format f={format}")),
+        }
+    }
 
     /// Store image from a file path (t=f or t=t transmission).
     pub(super) fn kitty_store_from_file(
@@ -211,7 +284,7 @@ impl<S: EffectSink> Term<S> {
         let source = ImageSource::File(path.to_path_buf());
 
         let (rgba_data, w, h) = if p.format == 24 || p.format == 32 {
-            kitty_decode_pixels(file_data, p.format, p.width, p.height)
+            Self::kitty_decode_pixels(file_data, p.format, p.width, p.height)
                 .map_err(KittyStoreError::Reply)?
         } else {
             decode_to_rgba(&file_data)

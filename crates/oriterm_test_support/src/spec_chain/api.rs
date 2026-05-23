@@ -131,31 +131,10 @@ impl SpecHarness {
         self.handler
             .drain_calls_into(&mut self.outcome.dispatched_calls);
         // Drain effects from Term's owned QueueingEffectSink.
-        let mut scratch: Vec<Effect> = Vec::new();
         self.handler
             .term()
             .effect_sink()
-            .drain_into(&mut scratch);
-        // Simulate the IO-thread ImageWorker inline: any Effect::ImageDecode
-        // gets decoded synchronously and applied back to Term, so existing
-        // SpecHarness-based tests continue to see immediate cache state
-        // even though production now offloads decode to a worker thread.
-        let mut passthrough = Vec::with_capacity(scratch.len());
-        for effect in scratch {
-            match effect {
-                Effect::ImageDecode(req) => {
-                    let result = oriterm_core::image::worker_pipeline::run_image_decode(req);
-                    self.handler.term_mut().apply_decoded_image(result);
-                }
-                other => passthrough.push(other),
-            }
-        }
-        // apply_decoded_image may have pushed more replies; re-drain.
-        self.handler
-            .term()
-            .effect_sink()
-            .drain_into(&mut passthrough);
-        self.outcome.effects_emitted.extend(passthrough);
+            .drain_into(&mut self.outcome.effects_emitted);
         // Feed observed parser actions to the uncataloged detector.
         self.uncataloged.feed_actions(&self.outcome.perform_actions);
     }

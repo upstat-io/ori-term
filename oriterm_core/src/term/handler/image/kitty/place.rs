@@ -19,18 +19,6 @@ impl<S: EffectSink> Term<S> {
             return;
         };
 
-        // Pending-decode race: a Place arriving while the same image_id's
-        // Transmit decode is still in flight on the worker would ENOENT
-        // against an empty cache. Defer the placement instead —
-        // apply_decoded_image picks up the deferred params on drain and
-        // applies them alongside the store.
-        if self.has_pending_decode(image_id) {
-            let params = make_placement_params_from_cmd(cmd);
-            self.stash_deferred_placement(image_id, params);
-            self.kitty_respond(&ctx, "OK");
-            return;
-        }
-
         if self.image_cache().get_no_touch(ImageId(image_id)).is_none() {
             self.kitty_respond(&ctx, "ENOENT");
             return;
@@ -111,8 +99,6 @@ impl<S: EffectSink> Term<S> {
 
         self.image_cache_mut().place(placement);
 
-        let _ = explicit_cells; // suppress unused-let warning when cursor-move branch is taken
-
         if !cmd.no_cursor_move {
             let grid = self.grid_mut();
             for _ in 0..rows.saturating_sub(1) {
@@ -139,26 +125,5 @@ impl<S: EffectSink> Term<S> {
             let new_col = current_col.saturating_add(cols).min(max_col);
             grid.cursor_mut().set_col(Column(new_col));
         }
-    }
-}
-
-/// Build `PlacementParams` from a `KittyCommand` for deferred-placement
-/// stashing. Cursor + cell snapshot is captured at dispatch time so the
-/// placement reflects the state at the moment the program emitted the
-/// Place command, not at apply time.
-fn make_placement_params_from_cmd(
-    cmd: &KittyCommand,
-) -> crate::image::worker_pipeline::PlacementParams {
-    crate::image::worker_pipeline::PlacementParams {
-        placement_id: cmd.placement_id,
-        cursor_col: 0,
-        cursor_row: 0,
-        z_index: cmd.z_index,
-        source_x: cmd.source_x,
-        source_y: cmd.source_y,
-        source_w: cmd.source_width,
-        source_h: cmd.source_height,
-        display_cols: cmd.display_cols,
-        display_rows: cmd.display_rows,
     }
 }

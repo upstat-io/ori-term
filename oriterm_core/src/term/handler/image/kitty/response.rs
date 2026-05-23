@@ -67,7 +67,7 @@ impl<S: EffectSink> Term<S> {
     /// (which suppresses replies for un-correlatable requests); the
     /// deviation is pinned by the §13.1/§13.2 catalog rows as
     /// `verified-with-deviation`.
-    pub(super) fn kitty_respond(&mut self, ctx: &KittyReplyContext, msg: &str) {
+    pub(super) fn kitty_respond(&self, ctx: &KittyReplyContext, msg: &str) {
         if ctx.quiet >= 2 {
             return;
         }
@@ -93,23 +93,9 @@ impl<S: EffectSink> Term<S> {
             let _ = write!(qualifiers, ",r={frame}");
         }
         let response = format!("\x1b_G{head}{qualifiers};{msg}\x1b\\");
-        let effect = Effect::Pty(PtyEffect::Write {
+        self.effect_sink.push(Effect::Pty(PtyEffect::Write {
             bytes: response.into_bytes(),
             kind: PtyWriteKind::ImageProtocolReply,
-        });
-        // Reply routing:
-        // - Inside handle_kitty_graphics (current_command_seq is Some): push
-        //   to the reply sequencer so the reply emits in command-issue order,
-        //   even when sync (Query / Delete / Place) and async (Transmit /
-        //   Frame) commands interleave.
-        // - Outside handle_kitty_graphics (e.g., apply_decoded_image draining
-        //   a worker result): the caller owns sequencer routing via
-        //   resolve_pending_reply; this branch is reserved for legacy /
-        //   fallback callers that don't participate in sequencing.
-        if let Some(seq) = self.current_command_seq() {
-            self.push_ready_reply(seq, effect);
-        } else {
-            self.effect_sink.push(effect);
-        }
+        }));
     }
 }

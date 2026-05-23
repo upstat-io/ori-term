@@ -11,7 +11,7 @@ use crate::term::Term;
 
 use super::KittyReplyContext;
 use super::frame_keys::{KittyFrameKeys, extract_a_f_keys};
-use super::prepare::{kitty_decode_pixels, prepare_image_bytes};
+use super::prepare::prepare_image_bytes;
 use super::store::expected_decoded_size_for_format;
 
 impl<S: EffectSink> Term<S> {
@@ -65,7 +65,7 @@ impl<S: EffectSink> Term<S> {
                     return;
                 }
             };
-        let (rgba_data, decoded_w, decoded_h) = match kitty_decode_pixels(
+        let (rgba_data, decoded_w, decoded_h) = match Self::kitty_decode_pixels(
             payload,
             merged.format,
             merged.source_width,
@@ -146,7 +146,7 @@ fn build_request(
 }
 
 /// Map `put_frame` errors to kitty reply codes.
-fn emit_error_reply<S: EffectSink>(term: &mut Term<S>, ctx: KittyReplyContext, err: &ImageError) {
+fn emit_error_reply<S: EffectSink>(term: &Term<S>, ctx: KittyReplyContext, err: &ImageError) {
     match err {
         // ENOENT per kitty graphics.c:2233-2235; preserve `,r=` omission so
         // existing `kitty_frame_reply_r_qualifier_omitted_on_missing_image_enoent`

@@ -8,7 +8,7 @@ use super::KittyReplyContext;
 
 impl<S: EffectSink> Term<S> {
     /// Query: send OK response without modifying state.
-    pub(super) fn kitty_query(&mut self, cmd: &KittyCommand) {
+    pub(super) fn kitty_query(&self, cmd: &KittyCommand) {
         // `kitty_respond` echoes whichever identifier(s) the sender
         // provided (`i=`, `I=`, or both); when neither is present it
         // falls back to the `i=0` sentinel — ori_term deviation from

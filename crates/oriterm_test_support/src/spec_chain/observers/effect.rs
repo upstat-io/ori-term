@@ -58,7 +58,6 @@ fn effect_names(eff: &Effect) -> (&'static str, &'static str) {
         Effect::HostRequest(_) => ("HostRequest", ""),
         Effect::Ui(_) => ("Ui", ""),
         Effect::Presentation(_) => ("Presentation", ""),
-        Effect::ImageDecode(_) => ("ImageDecode", ""),
     }
 }
 

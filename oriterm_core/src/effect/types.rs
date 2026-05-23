@@ -1,7 +1,6 @@
 //! Top-level effect family enum.
 
 use super::families::{HostEffect, HostRequest, PresentationEffect, PtyEffect, UiEffect};
-use crate::image::worker_pipeline::ImageDecodeRequest;
 
 /// Top-level effect family routed via the [`EffectSink`](super::EffectSink).
 ///
@@ -27,12 +26,4 @@ pub enum Effect {
     Ui(UiEffect),
     /// Sync output gates (Mode 2026 begin/commit/abort).
     Presentation(PresentationEffect),
-    /// Off-IO-thread image decode request. Consumed by
-    /// `oriterm_mux::pane::io_thread::image_worker::ImageWorker::enqueue`;
-    /// worker thread calls `oriterm_core::image::worker_pipeline::run_image_decode`,
-    /// pushes the result to the result channel; IO thread drains and calls
-    /// `Term::apply_decoded_image` to land the decoded RGBA + emit the kitty
-    /// reply in sequencer order.
-    /// See: bug-tracker/plans/BUG-06-088/
-    ImageDecode(ImageDecodeRequest),
 }

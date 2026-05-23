@@ -101,7 +101,7 @@ impl<S: EffectSink> Term<S> {
 /// Documented divergence preferred over closure-parameterized consolidation
 /// that would obscure the spec mapping.
 fn emit_compose_error_reply<S: EffectSink>(
-    term: &mut Term<S>,
+    term: &Term<S>,
     ctx: KittyReplyContext,
     err: &ImageError,
 ) {

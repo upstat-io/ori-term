@@ -12,7 +12,6 @@ mod frame_load;
 pub mod iterm2;
 pub mod kitty;
 pub mod sixel;
-pub mod worker_pipeline;
 
 use std::sync::Arc;
 use std::time::Duration;

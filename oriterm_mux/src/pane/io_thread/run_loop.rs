@@ -111,11 +111,6 @@ impl<S: EffectSink> PaneIoThread<S> {
             recv(self.byte_rx) -> msg => if self.handle_byte_arm(msg) { return; },
             recv(self.child_exit_rx) -> status => self.handle_child_exit_arm(status),
             recv(self.io_wake_rx) -> msg => self.handle_io_wake_arm(msg),
-            recv(self.image_worker.result_rx()) -> _ => {
-                // Worker result available — drain it via process_pending_bytes
-                // (which calls drain_worker_results at function entry).
-                // No-op here; the next iteration handles the drain.
-            },
             default(timeout) => self.handle_timeout_arm(sync_deadline),
             }
         }
