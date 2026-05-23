@@ -176,6 +176,15 @@ pub struct PaneIoThread<S: EffectSink + 'static> {
     /// spent outside `handle_bytes` (channel recv, loop overhead, Vec
     /// drop, etc.).
     drain_chunked_ns: u64,
+    /// Accumulator for the raw VTE pre-parse (`raw_parser.advance` —
+    /// shell-integration OSC interceptor). Runs over EVERY byte BEFORE
+    /// the high-level VTE handler; pure parser cost with no semantic
+    /// work for graphics streams.
+    drain_raw_ns: u64,
+    /// Accumulator for `post_parse_housekeeping` time per drain cycle.
+    drain_housekeeping_ns: u64,
+    /// Accumulator for `drain_effects_into_mux_events` time per drain.
+    drain_effects_ns: u64,
     /// Persistent buffered handle for the `ORITERM_PERF_TAP` byte stream.
     /// `None` until the first PTY byte arrives with the env var set;
     /// subsequent writes reuse the handle so the perf-tap costs ~ns per
@@ -317,6 +326,9 @@ impl<S: EffectSink> PaneIoThread<S> {
         self.drain_handle_bytes_ns = 0;
         self.drain_kitty_ns = 0;
         self.drain_chunked_ns = 0;
+        self.drain_raw_ns = 0;
+        self.drain_housekeeping_ns = 0;
+        self.drain_effects_ns = 0;
         while let Ok(bytes) = self.byte_rx.try_recv() {
             messages_drained += 1;
             bytes_drained += bytes.len();
@@ -348,12 +360,16 @@ impl<S: EffectSink> PaneIoThread<S> {
              duration_ms={drain_ms} \
              drain_cmds_ms={} snapshot_ms={} \
              chunked_ms={} handle_bytes_ms={} kitty_ms={} \
+             raw_us={} hk_us={} effects_us={} \
              img_count={} placement_count={} mem_used={}",
             drain_cmds_total.as_millis(),
             snapshot_total.as_millis(),
             self.drain_chunked_ns / 1_000_000,
             self.drain_handle_bytes_ns / 1_000_000,
             self.drain_kitty_ns / 1_000_000,
+            self.drain_raw_ns / 1_000,
+            self.drain_housekeeping_ns / 1_000,
+            self.drain_effects_ns / 1_000,
             cache.image_count(),
             cache.placement_count(),
             cache.memory_used()
@@ -428,6 +444,9 @@ impl<S: EffectSink> PaneIoThread<S> {
         let chunk_total_ns = chunk_start.elapsed().as_nanos() as u64;
         self.drain_handle_bytes_ns = self.drain_handle_bytes_ns.saturating_add(chunk_total_ns);
         self.drain_kitty_ns = self.drain_kitty_ns.saturating_add(kitty_stats.total_ns);
+        self.drain_raw_ns = self.drain_raw_ns.saturating_add(raw_dur.as_nanos() as u64);
+        self.drain_housekeeping_ns = self.drain_housekeeping_ns.saturating_add(hk_dur.as_nanos() as u64);
+        self.drain_effects_ns = self.drain_effects_ns.saturating_add(drain_dur.as_nanos() as u64);
 
         // Per-chunk SLOW log — surfaces which sub-phase dominates when
         // chunk processing exceeds 8 ms (a single 60 FPS budget).

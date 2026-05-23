@@ -463,6 +463,49 @@ fn xray_drain_chunk_timing() {
     eprintln!();
 }
 
+/// Measure cost of `vte::Parser::advance` on a chunk that's almost entirely
+/// kitty APC payload bytes. Hypothesis: `advance_apc_string` is called
+/// per-byte (no slice fast-path like `advance_ground`), and the per-byte
+/// trait dispatch via `Perform::apc_put` consumes ~4 ns/byte. For a
+/// 306 KB drain chunk that's ~1.2 ms of pure per-byte VTE traversal,
+/// scaling to ~6 ms across a full drain.
+///
+/// This is the **last** dominant cost contributor inside `handle_bytes`
+/// after the perf-tap I/O was eliminated. Goal: identify whether a
+/// memchr-based ApcString fast-path could collapse this cost.
+#[test]
+#[ignore]
+fn xray_drain_chunk_vte_per_byte_cost() {
+    let mut term = setup_term_with_drain_images();
+    let mut proc: Processor = Processor::new();
+
+    for _ in 0..3 {
+        proc.advance(&mut term, XRAY_DRAIN_CHUNK);
+    }
+
+    const N: u32 = 10;
+    let bytes_per_iter = XRAY_DRAIN_CHUNK.len();
+    let start = Instant::now();
+    for _ in 0..N {
+        proc.advance(&mut term, XRAY_DRAIN_CHUNK);
+    }
+    let elapsed = start.elapsed();
+
+    let per_iter_ns = elapsed.as_nanos() as u64 / u64::from(N);
+    let per_byte_ns = per_iter_ns as f64 / bytes_per_iter as f64;
+
+    eprintln!();
+    eprintln!("=== VTE per-byte cost ({N} iter × {bytes_per_iter}B) ===");
+    eprintln!("total wall:        {elapsed:?}");
+    eprintln!("per iter:          {per_iter_ns} ns ({:.2} ms)", per_iter_ns as f64 / 1e6);
+    eprintln!("per byte:          {per_byte_ns:.2} ns");
+    eprintln!();
+    eprintln!("hypothesis: ApcString state's per-byte dispatch (advance_apc_string");
+    eprintln!("→ change_state → performer.apc_put) costs ~4 ns/byte without a memchr");
+    eprintln!("fast-path like advance_ground. For a 1.5 MB drain that's ~6 ms.");
+    eprintln!();
+}
+
 #[test]
 fn xray_af_fixture_round_trip_smoke() {
     // Smoke test: confirm setup + parse + dispatch path doesn't panic.
