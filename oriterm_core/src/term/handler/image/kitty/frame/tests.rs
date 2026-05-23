@@ -506,6 +506,83 @@ fn xray_drain_chunk_vte_per_byte_cost() {
     eprintln!();
 }
 
+/// Capture what ori_term emits BACK to notcurses (via Effect::Pty) when
+/// replaying the captured 306 KB drain chunk. If we're sending bytes
+/// back that notcurses doesn't expect, notcurses must consume them on
+/// its STDIN read path — adding per-frame latency that surfaces as
+/// dropped frames.
+///
+/// Expected (per kitty graphics protocol with q=2): zero PTY-write
+/// effects from kitty handlers. Other VTE handlers should also be
+/// silent during xray steady state (no DA/DSR queries from notcurses).
+#[test]
+#[ignore]
+fn xray_drain_chunk_effects_emitted() {
+    use crate::effect::{Effect, EffectSink};
+    let mut term = setup_term_with_drain_images();
+    let mut proc: Processor = Processor::new();
+
+    // Warm up so any startup effects are captured separately.
+    proc.advance(&mut term, XRAY_DRAIN_CHUNK);
+    let mut warmup_effects = Vec::new();
+    term.effect_sink().drain_into(&mut warmup_effects);
+    eprintln!();
+    eprintln!("=== effects emitted during warmup chunk ({} effects) ===", warmup_effects.len());
+    let mut count_pty_write = 0;
+    let mut count_other = 0;
+    let mut total_pty_bytes = 0;
+    for e in &warmup_effects {
+        match e {
+            Effect::Pty(crate::effect::PtyEffect::Write { bytes, kind: _ }) => {
+                count_pty_write += 1;
+                total_pty_bytes += bytes.len();
+            }
+            _ => count_other += 1,
+        }
+    }
+    eprintln!("  warmup: pty_writes={count_pty_write} ({total_pty_bytes}B), other_effects={count_other}");
+
+    // Steady-state: replay 10 more iterations and capture
+    const N: u32 = 10;
+    let mut steady_effects: Vec<Effect> = Vec::new();
+    for _ in 0..N {
+        proc.advance(&mut term, XRAY_DRAIN_CHUNK);
+        term.effect_sink().drain_into(&mut steady_effects);
+    }
+
+    let mut count_pty = 0;
+    let mut total_bytes = 0;
+    let mut other = 0;
+    for e in &steady_effects {
+        match e {
+            Effect::Pty(crate::effect::PtyEffect::Write { bytes, kind: _ }) => {
+                count_pty += 1;
+                total_bytes += bytes.len();
+            }
+            _ => other += 1,
+        }
+    }
+    eprintln!();
+    eprintln!("=== effects emitted during {N} steady-state iterations ===");
+    eprintln!("  pty_writes: {count_pty} (total {total_bytes}B = {} B/iter)",
+        total_bytes / N as usize);
+    eprintln!("  other effects: {other}");
+    eprintln!();
+    if count_pty > 0 {
+        eprintln!("FIRST 3 pty_writes:");
+        let mut shown = 0;
+        for e in &steady_effects {
+            if let Effect::Pty(crate::effect::PtyEffect::Write { bytes, kind }) = e {
+                if shown < 3 {
+                    eprintln!("  kind={kind:?} bytes={:?}", String::from_utf8_lossy(bytes));
+                    shown += 1;
+                }
+            }
+        }
+    }
+    eprintln!();
+}
+
 #[test]
 fn xray_af_fixture_round_trip_smoke() {
     // Smoke test: confirm setup + parse + dispatch path doesn't panic.
