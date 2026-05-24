@@ -10,6 +10,7 @@ mod color_reset;
 mod cursor;
 mod default_colors;
 mod hyperlinks;
+mod iterm2_image;
 mod iterm2_non_image;
 mod missing_rows;
 mod palette;
