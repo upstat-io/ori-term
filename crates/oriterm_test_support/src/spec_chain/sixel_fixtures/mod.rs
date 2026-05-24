@@ -24,9 +24,13 @@ use super::SpecHarness;
 /// DCS prefix `\x1bPq#0;2;100;0;0` (16 bytes) that opens every test
 /// sixel payload in red. Named so the capacity calculations below are
 /// self-auditing.
-const DCS_RED_PREFIX: &[u8] = b"\x1bPq#0;2;100;0;0";
+pub(super) const DCS_RED_PREFIX: &[u8] = b"\x1bPq#0;2;100;0;0";
 /// ST terminator `\x1b\\` (2 bytes) that closes the DCS.
-const DCS_TERMINATOR: &[u8] = b"\x1b\\";
+pub(super) const DCS_TERMINATOR: &[u8] = b"\x1b\\";
+
+/// Sixel band height in pixels per the sixel protocol — one `~` glyph
+/// = 6 vertical pixels.
+pub(super) const PIXELS_PER_BAND: usize = 6;
 
 /// Build a DCS-wrapped sixel body N pixel-bands tall, each band 6 pixels
 /// = one `~` followed by a `-` NL between bands. Color is red
@@ -58,6 +62,42 @@ pub fn dcs_n_cols_wide(cols: usize) -> Vec<u8> {
     buf
 }
 
+/// Build a DCS-wrapped sixel body painting a solid red rectangle of
+/// `width_px` pixels wide × `height_px` pixels tall (rounded up to the
+/// nearest sixel band of `PIXELS_PER_BAND` pixels).
+///
+/// Use this for visual-regression pilots that need a cell-scaled sixel
+/// — compute `width_px = cell_w * N_cells` and `height_px = cell_h`
+/// at the call site from `harness.renderer().cell_metrics()`. PIXEL
+/// parameter names (with `_px` suffix) block cell-vs-pixel confusion.
+///
+/// Uses sixel run-length encoding `!<N>~` so byte count stays bounded
+/// even for 1000+ px widths (≤ 8 bytes per band regardless of width).
+///
+/// Zero-dimension inputs emit a valid empty DCS frame
+/// (`DCS_RED_PREFIX` + `DCS_TERMINATOR`). The sixel parser would
+/// otherwise silently clamp `!0~` to 1 sixel column
+/// (`oriterm_core/src/image/sixel/mod.rs:176`), which would surprise
+/// callers expecting an empty image.
+pub fn dcs_red_pixel_block(width_px: usize, height_px: usize) -> Vec<u8> {
+    use std::io::Write;
+    let mut buf = Vec::new();
+    buf.extend_from_slice(DCS_RED_PREFIX);
+    if width_px == 0 || height_px == 0 {
+        buf.extend_from_slice(DCS_TERMINATOR);
+        return buf;
+    }
+    let bands = height_px.div_ceil(PIXELS_PER_BAND);
+    for i in 0..bands {
+        if i > 0 {
+            buf.push(b'-');
+        }
+        write!(buf, "!{width_px}~").unwrap();
+    }
+    buf.extend_from_slice(DCS_TERMINATOR);
+    buf
+}
+
 /// Count image placements in the harness's renderable snapshot.
 ///
 /// Shared across §12's sibling test files (`state_machine.rs`,
@@ -66,3 +106,6 @@ pub fn dcs_n_cols_wide(cols: usize) -> Vec<u8> {
 pub fn placement_count(harness: &SpecHarness) -> usize {
     harness.term().renderable_content().images.len()
 }
+
+#[cfg(test)]
+mod tests;

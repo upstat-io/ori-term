@@ -123,10 +123,16 @@ impl<S: EffectSink> Term<S> {
 
         let expected_size = expected_decoded_size_for_format(p.format, p.width, p.height);
         let max_bytes = self.image_cache().max_single_image_bytes();
+        let prepare_start = std::time::Instant::now();
         let pixel_data = prepare_image_bytes(pixel_data, p.compression, expected_size, max_bytes)?;
+        let prepare_ns = prepare_start.elapsed().as_nanos().min(u64::MAX as u128) as u64;
+        self.record_kitty_substep_ns(crate::term::KittySubstep::Prepare, prepare_ns);
 
+        let format_start = std::time::Instant::now();
         let (rgba_data, w, h) = Self::kitty_decode_pixels(pixel_data, p.format, p.width, p.height)
             .map_err(KittyStoreError::Reply)?;
+        let format_ns = format_start.elapsed().as_nanos().min(u64::MAX as u128) as u64;
+        self.record_kitty_substep_ns(crate::term::KittySubstep::Format, format_ns);
 
         let img = ImageData {
             id: ImageId(p.image_id),
@@ -140,9 +146,14 @@ impl<S: EffectSink> Term<S> {
             image_number: p.image_number,
         };
 
-        self.image_cache_mut()
+        let store_start = std::time::Instant::now();
+        let store_result = self
+            .image_cache_mut()
             .store(img)
-            .map_err(|e| KittyStoreError::Reply(format!("ENOMEM: {e}")))?;
+            .map_err(|e| KittyStoreError::Reply(format!("ENOMEM: {e}")));
+        let store_ns = store_start.elapsed().as_nanos().min(u64::MAX as u128) as u64;
+        self.record_kitty_substep_ns(crate::term::KittySubstep::Store, store_ns);
+        store_result?;
 
         Ok(())
     }

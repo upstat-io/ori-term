@@ -5,8 +5,13 @@
 //!
 //! Drives a 3-layer composite anchored at row=5, col=10:
 //!   1. Sixel placement at `z = -1` — drawn BELOW text. Paints 30×12
-//!      pixels (≈3 cells wide × 1 cell tall) starting at (col=10,
-//!      row=5) — red fills cells `(10..13, 5)`.
+//!      pixels (sub-cell vertically — only `12 / cell_h_px` ≈ 0.55 cell
+//!      at the typical 22 px metric, NOT a full cell tall as the prior
+//!      wording claimed). The sub-cell vertical extent is INTENTIONAL —
+//!      assertions at `count_at_cell()` (lines 212-263) check per-cell
+//!      pixel color counts with `≥4` thresholds, not full-cell coverage.
+//!      Horizontal extent of 30 px is ≈3 cells wide at 10-px cell width,
+//!      placing red into cells `(10..13, 5)` on the test box.
 //!   2. Text glyph `T` — drawn between image layers. Written outside
 //!      the kitty-covered cell (col=13) so it remains visible in the
 //!      rendered output.
@@ -105,6 +110,11 @@ const SIXEL_RED_WIDE: &[u8] = b"\x1bPq#0;2;100;0;0#0!30~-#0!30~\x1b\\";
 /// Payload `AAD//w==` decodes to `0x00 0x00 0xFF 0xFF` — opaque blue.
 const KITTY_BLUE_Z1: &[u8] = b"\x1b_Gf=32,s=1,v=1,a=T,i=10,z=1,q=2;AAD//w==\x1b\\";
 
+/// Pins z-order composition: sixel z=-1 (cells 10..13) drawn BELOW
+/// text, text glyph 'T' (cell 13) drawn BETWEEN image layers, kitty
+/// z=+1 (cell 10) drawn ABOVE text. Catalog row:
+/// `KG-CROSS-STACK-SIXEL-MIXED-Z-ORDER`. Per-cell pixel-count
+/// assertions via `count_at_cell()` confirm layering correctness.
 #[test]
 fn kitty_and_sixel_render_with_mixed_z_order() {
     let Some(mut harness) = VisualSpecHarness::new() else {

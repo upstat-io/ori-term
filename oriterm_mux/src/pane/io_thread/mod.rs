@@ -26,7 +26,7 @@ use crossbeam_channel::Receiver;
 
 use oriterm_core::effect::sink::EffectSink;
 use oriterm_core::effect::{Effect, PendingResponse};
-use oriterm_core::{RenderableContent, Term, TermMode};
+use oriterm_core::{KittyHandlerStats, RenderableContent, Term, TermMode};
 use vte::ansi::{Handler as _, NamedPrivateMode, PrivateMode};
 
 pub use commands::PaneIoCommand;
@@ -60,6 +60,15 @@ const CHILD_EXIT_WAIT_TIMEOUT: Duration = Duration::from_secs(5);
 /// read is sliced into chunks at this boundary so resize/copy commands stay
 /// responsive under sustained output.
 const MAX_PARSE_CHUNK: usize = 0x1_0000; // 64 KB
+
+/// Minimum interval between snapshot publishes from hot byte-drain paths.
+/// 16 ms ≈ 60 Hz — at or above typical display refresh rate, so the main
+/// thread cannot observe more frequent updates anyway. Batching mutations
+/// across this window collapses N per-chunk Arc clones (kitty animation
+/// canvas, 2.25 MB at 60 fps with 100 a=f/frame) into ~1 clone per frame.
+/// Flush-path publishes (shutdown, sync-timeout, `SnapshotNow`, PTY EOF)
+/// bypass this gate via `publish_pending_snapshot`.
+const SNAPSHOT_INTERVAL: Duration = Duration::from_millis(16);
 
 /// Terminal IO thread — owns `Term<S>` and processes commands + PTY bytes.
 /// Generic over `S: EffectSink` so the IO thread's `Term` can use
@@ -146,6 +155,43 @@ pub struct PaneIoThread<S: EffectSink + 'static> {
     /// [`PaneIoHandle::pending_resize`] in [`new_with_handle`].
     /// Regression:.
     pub(super) pending_resize: Arc<AtomicU64>,
+    /// Time of the most recent `produce_snapshot()` call. Used by
+    /// `maybe_produce_snapshot` to rate-limit hot byte-drain publishes
+    /// to `SNAPSHOT_INTERVAL` (~60 Hz). `None` until the first publish.
+    /// Flush-path callers use `publish_pending_snapshot` to bypass.
+    last_snapshot_publish: Option<Instant>,
+    /// Accumulator for `handle_bytes` wall time across one drain cycle.
+    /// Reset by `process_pending_bytes` at the top of each cycle, summed by
+    /// `handle_bytes` per chunk, logged in the drain-cycle iteration log.
+    drain_handle_bytes_ns: u64,
+    /// Accumulator for `handle_kitty_graphics` total time across one drain
+    /// cycle. Reset by `process_pending_bytes` at the top of each cycle,
+    /// summed from `take_kitty_handler_stats` after each chunk's VTE parse,
+    /// logged in the drain-cycle iteration log so the operator can attribute
+    /// drain time to kitty work vs other VTE handlers.
+    drain_kitty_ns: u64,
+    /// Accumulator for `handle_bytes_chunked` wall time across one drain
+    /// cycle — measures the full chunked-byte processing including channel
+    /// receive overhead. Gap vs `drain_handle_bytes_ns` localizes time
+    /// spent outside `handle_bytes` (channel recv, loop overhead, Vec
+    /// drop, etc.).
+    drain_chunked_ns: u64,
+    /// Accumulator for the raw VTE pre-parse (`raw_parser.advance` —
+    /// shell-integration OSC interceptor). Runs over EVERY byte BEFORE
+    /// the high-level VTE handler; pure parser cost with no semantic
+    /// work for graphics streams.
+    drain_raw_ns: u64,
+    /// Accumulator for `post_parse_housekeeping` time per drain cycle.
+    drain_housekeeping_ns: u64,
+    /// Accumulator for `drain_effects_into_mux_events` time per drain.
+    drain_effects_ns: u64,
+    /// Persistent buffered handle for the `ORITERM_PERF_TAP` byte stream.
+    /// `None` until the first PTY byte arrives with the env var set;
+    /// subsequent writes reuse the handle so the perf-tap costs ~ns per
+    /// byte instead of ~280 us per chunk (the previous open + close on
+    /// each call added ~24 ms per drain under graphics flood — pure
+    /// instrumentation overhead, not a real bottleneck).
+    perf_tap_writer: Option<std::io::BufWriter<std::fs::File>>,
     /// Test-only counter — incremented at the top of
     /// [`Self::maybe_shrink_buffers`]. Pins that the OUTER run loop
     /// (not the `select!` `default(timeout)` arm) is the call path,
@@ -275,10 +321,22 @@ impl<S: EffectSink> PaneIoThread<S> {
         let mut bytes_drained: usize = 0;
         let mut snapshot_total = Duration::ZERO;
         let mut drain_cmds_total = Duration::ZERO;
+        // Reset drain-cycle aggregates so handle_bytes accumulates fresh
+        // per-cycle attribution from this point forward.
+        self.drain_handle_bytes_ns = 0;
+        self.drain_kitty_ns = 0;
+        self.drain_chunked_ns = 0;
+        self.drain_raw_ns = 0;
+        self.drain_housekeeping_ns = 0;
+        self.drain_effects_ns = 0;
         while let Ok(bytes) = self.byte_rx.try_recv() {
             messages_drained += 1;
             bytes_drained += bytes.len();
+            let t = Instant::now();
             let (cmd_dur, snap_dur) = self.handle_bytes_chunked(&bytes);
+            self.drain_chunked_ns = self
+                .drain_chunked_ns
+                .saturating_add(t.elapsed().as_nanos() as u64);
             drain_cmds_total += cmd_dur;
             snapshot_total += snap_dur;
             if self.shutdown.load(Ordering::Acquire) {
@@ -303,9 +361,17 @@ impl<S: EffectSink> PaneIoThread<S> {
             "drain cycle messages={messages_drained} bytes={bytes_drained} \
              duration_ms={drain_ms} \
              drain_cmds_ms={} snapshot_ms={} \
+             chunked_ms={} handle_bytes_ms={} kitty_ms={} \
+             raw_us={} hk_us={} effects_us={} \
              img_count={} placement_count={} mem_used={}",
             drain_cmds_total.as_millis(),
             snapshot_total.as_millis(),
+            self.drain_chunked_ns / 1_000_000,
+            self.drain_handle_bytes_ns / 1_000_000,
+            self.drain_kitty_ns / 1_000_000,
+            self.drain_raw_ns / 1_000,
+            self.drain_housekeeping_ns / 1_000,
+            self.drain_effects_ns / 1_000,
             cache.image_count(),
             cache.placement_count(),
             cache.memory_used()
@@ -318,26 +384,21 @@ impl<S: EffectSink> PaneIoThread<S> {
     /// for shell integration, then the high-level processor, then deferred
     /// prompt marking and marker pruning.
     fn handle_bytes(&mut self, bytes: &[u8]) {
+        let chunk_start = Instant::now();
         // Raw PTY tap — when ORITERM_PERF_TAP is set, append every
-        // byte received from the PTY to the path it specifies.
+        // byte received from the PTY to the buffered file handle.
         // Captures the exact stream notcurses (or any subprocess)
         // wrote so the perf harness can parse notcurses' end-of-demo
-        // table out of the rendered ANSI bytes. NO buffering — the
-        // tap is meant for offline diagnostic use, not perf-critical
-        // workloads.
-        if let Ok(tap_path) = std::env::var("ORITERM_PERF_TAP") {
-            use std::io::Write;
-            if let Ok(mut f) = std::fs::OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(&tap_path)
-            {
-                let _ = f.write_all(bytes);
-            }
-        }
+        // table out of the rendered ANSI bytes. The handle is opened
+        // once on first write and reused — `BufWriter` collapses the
+        // per-byte syscall cost to roughly memcpy speed; the file
+        // flushes on PaneIoThread drop. The previous per-chunk open +
+        // close pattern added ~280 µs per chunk × ~86 chunks per
+        // drain cycle of artificial overhead under WSL→Windows
+        // interop, masquerading as real graphics-flood latency.
+        self.write_perf_tap(bytes);
 
         let evicted_before = self.terminal.grid().total_evicted();
-        let chunk_start = Instant::now();
 
         // 1. Raw interceptor for shell integration (OSC 7, 133, etc.).
         let raw_start = Instant::now();
@@ -351,6 +412,10 @@ impl<S: EffectSink> PaneIoThread<S> {
         let vte_start = Instant::now();
         self.processor.advance(&mut self.terminal, bytes);
         let vte_dur = vte_start.elapsed();
+        // Drain accumulated kitty-handler timing so the SLOW chunk log
+        // attributes vte cost across kitty handler runs vs other VTE
+        // handlers (text, SGR, scroll regions, etc.).
+        let kitty_stats = self.terminal.take_kitty_handler_stats();
 
         // 3b. Set grid_dirty after parsing — the VTE handler does not fire
         // Event::Wakeup itself. The old reader thread did this explicitly
@@ -374,6 +439,21 @@ impl<S: EffectSink> PaneIoThread<S> {
         self.drain_effects_into_mux_events();
         let drain_dur = drain_start.elapsed();
 
+        // Accumulate drain-cycle aggregates so the iteration log can
+        // attribute total drain time to handle_bytes work + kitty work
+        // (drain_handle_bytes_ns and drain_kitty_ns are reset by
+        // process_pending_bytes at the top of each cycle).
+        let chunk_total_ns = chunk_start.elapsed().as_nanos() as u64;
+        self.drain_handle_bytes_ns = self.drain_handle_bytes_ns.saturating_add(chunk_total_ns);
+        self.drain_kitty_ns = self.drain_kitty_ns.saturating_add(kitty_stats.total_ns);
+        self.drain_raw_ns = self.drain_raw_ns.saturating_add(raw_dur.as_nanos() as u64);
+        self.drain_housekeeping_ns = self
+            .drain_housekeeping_ns
+            .saturating_add(hk_dur.as_nanos() as u64);
+        self.drain_effects_ns = self
+            .drain_effects_ns
+            .saturating_add(drain_dur.as_nanos() as u64);
+
         // Per-chunk SLOW log — surfaces which sub-phase dominates when
         // chunk processing exceeds 8 ms (a single 60 FPS budget).
         // Throttled by an internal counter to one log per 32 slow
@@ -384,15 +464,44 @@ impl<S: EffectSink> PaneIoThread<S> {
             static SLOW_COUNTER: AtomicU64 = AtomicU64::new(0);
             let n = SLOW_COUNTER.fetch_add(1, Ordering::Relaxed);
             if n.is_multiple_of(32) {
+                // Build per-action breakdown: include only actions
+                // observed at least once this chunk, in `LABEL=Tms/Ncalls`
+                // form. Empty when no kitty actions hit (all vte cost
+                // would then be in non-kitty VTE handlers).
+                let mut actions_buf = String::new();
+                for i in 0..8 {
+                    if kitty_stats.per_action_calls[i] > 0 {
+                        if !actions_buf.is_empty() {
+                            actions_buf.push(' ');
+                        }
+                        let _ = fmt::Write::write_fmt(
+                            &mut actions_buf,
+                            format_args!(
+                                "{}={:.2?}/{}",
+                                KittyHandlerStats::action_label(i),
+                                Duration::from_nanos(kitty_stats.per_action_ns[i]),
+                                kitty_stats.per_action_calls[i],
+                            ),
+                        );
+                    }
+                }
                 log::info!(
                     target: "oriterm_mux::pane::io_thread::chunk",
                     "SLOW chunk #{} bytes={} total={:.2?} raw={:.2?} vte={:.2?} \
+                     kitty={:.2?}/{}calls [{}] \
+                     substeps[prepare={:.2?} format={:.2?} store={:.2?}] \
                      housekeeping={:.2?} drain={:.2?}",
                     n,
                     bytes.len(),
                     total,
                     raw_dur,
                     vte_dur,
+                    Duration::from_nanos(kitty_stats.total_ns),
+                    kitty_stats.total_calls,
+                    actions_buf,
+                    Duration::from_nanos(kitty_stats.prepare_ns),
+                    Duration::from_nanos(kitty_stats.format_ns),
+                    Duration::from_nanos(kitty_stats.store_ns),
                     hk_dur,
                     drain_dur,
                 );
@@ -431,9 +540,10 @@ impl<S: EffectSink> PaneIoThread<S> {
         self.emit_sync_abort_effect();
 
         // Force snapshot publication — the sync window's accumulated
-        // mutations are now ready to land.
+        // mutations are now ready to land. Bypasses rate-limit because
+        // sync-window close is a deadline-driven flush, not a hot-path tick.
         self.grid_dirty.store(true, Ordering::Release);
-        self.maybe_produce_snapshot();
+        self.publish_pending_snapshot();
     }
 
     /// Emit a `PresentationEffect::Abort` through the terminal's effect sink.
@@ -527,6 +637,67 @@ impl<S: EffectSink> PaneIoThread<S> {
         if !self.grid_dirty.load(Ordering::Acquire) {
             return;
         }
+        if let Some(last) = self.last_snapshot_publish {
+            if last.elapsed() < SNAPSHOT_INTERVAL {
+                return;
+            }
+        }
+        self.produce_snapshot();
+    }
+
+    /// Write `bytes` to the persistent perf-tap buffered file handle if
+    /// `ORITERM_PERF_TAP` is set. Opens the file lazily on first call;
+    /// subsequent calls reuse the buffered writer. Best-effort: file
+    /// open or write failures silently disable the tap for this process.
+    fn write_perf_tap(&mut self, bytes: &[u8]) {
+        use std::io::Write;
+        if self.perf_tap_writer.is_none() {
+            let tap_path = match std::env::var("ORITERM_PERF_TAP") {
+                Ok(p) => p,
+                Err(_) => return,
+            };
+            match std::fs::OpenOptions::new()
+                .create(true)
+                .truncate(true)
+                .write(true)
+                .open(&tap_path)
+            {
+                Ok(f) => {
+                    self.perf_tap_writer = Some(std::io::BufWriter::with_capacity(64 * 1024, f));
+                }
+                Err(_) => return,
+            }
+        }
+        if let Some(w) = self.perf_tap_writer.as_mut() {
+            let _ = w.write_all(bytes);
+        }
+    }
+
+    /// Flush the perf-tap buffered writer if it's open. Called at the
+    /// drain-cycle quiescence point so the tap file reflects the latest
+    /// state even when the process is killed via SIGKILL / `taskkill`
+    /// (where Rust drop handlers do not run). Cheap when nothing's
+    /// buffered.
+    fn flush_perf_tap(&mut self) {
+        use std::io::Write;
+        if let Some(w) = self.perf_tap_writer.as_mut() {
+            let _ = w.flush();
+        }
+    }
+
+    /// Publish a snapshot without rate-limiting — used at flush points
+    /// (shutdown, PTY EOF, sync-timeout, explicit `SnapshotNow`, end of
+    /// each run-loop iteration) where the latest state must reach the
+    /// main thread regardless of how recently the previous publish fired.
+    /// Still respects `TermMode::SYNC_UPDATE` and `grid_dirty` — those are
+    /// correctness gates, not performance gates.
+    fn publish_pending_snapshot(&mut self) {
+        if self.terminal.mode().contains(TermMode::SYNC_UPDATE) {
+            return;
+        }
+        if !self.grid_dirty.load(Ordering::Acquire) {
+            return;
+        }
         self.produce_snapshot();
     }
 
@@ -566,6 +737,7 @@ impl<S: EffectSink> PaneIoThread<S> {
         self.fill_search_snapshot();
         self.terminal.reset_damage();
         self.double_buffer.flip_swap(&mut self.snapshot_buf);
+        self.last_snapshot_publish = Some(Instant::now());
 
         // Clear grid_dirty and fire wakeup so the main thread renders.
         if self.grid_dirty.swap(false, Ordering::AcqRel) {

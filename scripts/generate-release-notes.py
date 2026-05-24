@@ -71,6 +71,102 @@ def gather_pr_bodies(prev_tag):
     )
 
 
+_PREAMBLE_PATTERNS = (
+    "now i ",
+    "let me ",
+    "let's ",
+    "here is",
+    "here are",
+    "here's ",
+    "i'll ",
+    "i will ",
+    "i've ",
+    "i have ",
+    "based on ",
+    "after read",
+    "after review",
+    "ok,",
+    "okay,",
+    "sure,",
+    "alright,",
+    "got it,",
+    "understood,",
+)
+
+_POSTAMBLE_PATTERNS = (
+    "that covers",
+    "that's all",
+    "that is all",
+    "hope this helps",
+    "let me know if",
+    "feel free to",
+    "please let me know",
+)
+
+
+def _looks_like_preamble(line):
+    """Detect AI meta-commentary lines that must not appear in release notes."""
+    lower = line.strip().lower()
+    return any(lower.startswith(p) for p in _PREAMBLE_PATTERNS)
+
+
+def _looks_like_postamble(line):
+    """Detect AI sign-off lines that must not appear in release notes."""
+    lower = line.strip().lower()
+    return any(p in lower for p in _POSTAMBLE_PATTERNS)
+
+
+def strip_ai_meta_commentary(text):
+    """Strip AI preamble / postamble / leading separators from a generated body.
+
+    Defense-in-depth against prompt drift: even with explicit instructions,
+    LLMs occasionally emit "Let me write the release notes" or "Here are the
+    notes" before the actual content. This function is a deterministic
+    safety net.
+    """
+    lines = text.split("\n")
+
+    # Strip leading blank lines, separators, code-fence markers, top-level
+    # titles, and meta-commentary preamble.
+    start = 0
+    while start < len(lines):
+        stripped = lines[start].strip()
+        if not stripped:
+            start += 1
+            continue
+        if stripped in ("---", "***", "___"):
+            start += 1
+            continue
+        if stripped.startswith("```"):
+            start += 1
+            continue
+        # Top-level title (`# oriterm ...`) — release page already supplies one.
+        if stripped.startswith("# ") and not stripped.startswith("## "):
+            start += 1
+            continue
+        if _looks_like_preamble(stripped):
+            start += 1
+            continue
+        break
+
+    # Strip trailing blank lines, closing fences, and meta-commentary postamble.
+    end = len(lines)
+    while end > start:
+        stripped = lines[end - 1].strip()
+        if not stripped:
+            end -= 1
+            continue
+        if stripped.startswith("```"):
+            end -= 1
+            continue
+        if _looks_like_postamble(stripped):
+            end -= 1
+            continue
+        break
+
+    return "\n".join(lines[start:end])
+
+
 def generate_ai_notes(tag, prev_tag, commit_log, pr_bodies):
     """Try AI generation via Copilot SDK. Returns notes or None on failure."""
     if not os.environ.get("COPILOT_GITHUB_TOKEN"):
@@ -78,11 +174,22 @@ def generate_ai_notes(tag, prev_tag, commit_log, pr_bodies):
 
     prompt = f"""You are writing PUBLIC release notes for **oriterm** ({tag}), a GPU-accelerated terminal emulator built in Rust. oriterm is in alpha. The audience is end users and developers who use terminal emulators daily and care about performance, rendering correctness, graphics protocol support, and keyboard-driven workflows. These notes will be published on the GitHub release page and the oriterm.com changelog — they are read by people who have NEVER seen our internal plans, bug tracker, or codebase layout.
 
-Take your time. Read EVERY pull request description and EVERY commit line in full before you write a single bullet. There is no time pressure. Accuracy, completeness, and clarity matter far more than brevity. If you are unsure whether to include a change, include it. Re-read the inputs before finalizing.
+Read EVERY pull request description and EVERY commit line in full before you write a single bullet. Accuracy, completeness, and clarity matter far more than brevity. If you are unsure whether to include a change, include it.
+
+## ABSOLUTE OUTPUT CONSTRAINTS — read these first
+
+Your entire response is published verbatim as the release body. There is no editor between you and the user. Therefore:
+
+1. **NO PREAMBLE.** The very first character of your response is the first character of the release summary paragraph. Do NOT write any of these (non-exhaustive — pattern, not enumeration): "Here are the release notes", "Here is the release", "I'll write the release notes", "Now I have everything I need", "Let me write", "Let me draft", "I've reviewed", "I have reviewed", "Based on the inputs", "After reading all the PRs", "OK", "Okay", "Sure", "Got it", "Alright". Any sentence that talks ABOUT writing release notes (instead of BEING release notes) is banned.
+2. **NO POSTAMBLE.** The final character of your response is the final character of the last bullet (or the closing fence of a code block, etc.). Do NOT write any of these: "That covers the major changes", "That's all", "Hope this helps", "Let me know if you'd like adjustments", "Note that...", any meta-commentary about the release notes themselves.
+3. **NO REASONING / PLANNING / META-COMMENTARY.** Do not narrate your process. Do not explain what you're about to do. Do not summarize what you just did. The release notes ARE the deliverable; no scaffolding around them.
+4. **NO LEADING SEPARATOR.** Do NOT start the response with `---` or any other horizontal rule. The first non-whitespace content must be the summary paragraph.
+5. **NO MARKDOWN FENCES.** Do NOT wrap the response in ```markdown ... ``` fences. Emit clean markdown directly.
+6. **NO TOP-LEVEL TITLE.** Do NOT include a `# oriterm 0.2.0-...` heading — the GitHub release UI supplies one.
+
+These constraints are checked mechanically by a post-process step before publication. Violations are stripped, but the cleaner approach is to never emit them in the first place.
 
 ## Output format
-
-Output clean markdown. Do NOT wrap the response in ```markdown fences. Do NOT include a top-level title — the GitHub release UI supplies one.
 
 Structure the output in this order, omitting any empty sections:
 
@@ -185,7 +292,7 @@ Commit log ({prev_tag or 'beginning'}..{tag}):
 
 {commit_log}
 
-Now write the release notes. Take as long as you need."""
+Emit the release notes now. First character of your response is the first character of the summary paragraph — see ABSOLUTE OUTPUT CONSTRAINTS above."""
 
     try:
         import asyncio
@@ -212,7 +319,15 @@ Now write the release notes. Take as long as you need."""
                 if not text or len(text) < 50:
                     print(f"AI returned suspiciously short response ({text!r}), using fallback", file=sys.stderr)
                     return None
-                return text
+                cleaned = strip_ai_meta_commentary(text)
+                if len(cleaned) < 50:
+                    print(
+                        f"AI response collapsed to <50 chars after stripping meta-commentary "
+                        f"({cleaned!r}); using fallback",
+                        file=sys.stderr,
+                    )
+                    return None
+                return cleaned
             finally:
                 await client.stop()
 

@@ -37,5 +37,13 @@ tempfile = "3"
 name = "oriterm-mux"
 path = "src/bin/oriterm_mux.rs"
 
+# Windows-gated regression test helper for BUG-07-050.
+# See: bug-tracker/plans/BUG-07-050/section-05-implementation.md Step 4.
+[[bin]]
+name = "apc_emitter"
+path = "tests/helpers/apc_emitter.rs"
+test = false
+bench = false
+
 [lints]
 workspace = true

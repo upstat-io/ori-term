@@ -1,41 +1,45 @@
 //! Decode-cost criterion bench for the kitty `o=z` zlib decompression
-//! path — Item 7 follow-on gate.
+//! path.
 //!
-//! See: bug-tracker/plans/BUG-06-086/section-03b-tdd-matrix.md
-//! §"REQUIRED — decode-cost criterion benchmark".
-//!
-//! Phase 3 (TDD-first) ships this skeleton with a placeholder workload so
-//! the bench compiles + runs end-to-end. Phase 4 wires the real cure
-//! surface (the shared `prepare_image_bytes` helper) and replaces the
-//! placeholder with an xray-shape compressed-RGBA workload (~199 KB
-//! compressed → 2.25 MB decoded, mirroring xray's 999×562 per-frame
-//! geometry). The post-Phase-4 bench drives Item 7's
-//! `Vec::with_capacity ≥ 20%` attribution gate per §05b.
+//! Three workloads exercise different size regimes:
+//! - `zlib_decompress_xray_shape_2_25mb` — xray-geometry (999×562 RGBA,
+//!   2.25 MB decoded) gradient payload, representative of notcurses-demo
+//!   xray's per-frame size.
+//! - `zlib_decompress_small_128b` — small-payload startup-cost variant.
+//! - `zlib_decompress_small_4kb` — small-payload tail variant.
 //!
 //! Run via:
 //! ```text
 //! cargo bench -p oriterm_core --bench kitty_decode
 //! ```
 
-use std::io::Write;
-
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
-use flate2::Compression;
-use flate2::write::ZlibEncoder;
 
 /// xray's per-frame geometry: 999×562 RGBA = 2.25 MB raw.
 const XRAY_WIDTH: usize = 999;
 const XRAY_HEIGHT: usize = 562;
 
-/// Build a representative xray-shape compressed payload: solid-color
-/// RGBA at xray's geometry, zlib-encoded. Solid fill compresses well
-/// (~10× ratio) — representative of xray's high inter-pixel correlation.
+/// Default zlib compression level (6) — matches `Compression::default()`
+/// in flate2 and `notcurses`'s zlib invocation per the kitty protocol.
+const ZLIB_LEVEL: u8 = 6;
+
+/// Compress via `miniz_oxide` directly so the bench fixture is
+/// independent of the flate2 backend feature under test. Cross-backend
+/// bench comparison then measures pure decoder cost without
+/// encoder-side variance.
+fn compress_fixture(raw: &[u8]) -> Vec<u8> {
+    miniz_oxide::deflate::compress_to_vec_zlib(raw, ZLIB_LEVEL)
+}
+
+/// Build a representative xray-shape compressed payload: a smoothly
+/// varying RGBA gradient at xray's geometry. Mirror the test corpus
+/// pattern (smooth x/y gradient) so the bench fixture's compression
+/// ratio is realistic — a solid-fill payload compresses pathologically
+/// well, which doesn't exercise the decoder at xray's real per-frame
+/// size.
 fn xray_compressed_payload() -> Vec<u8> {
-    let raw_size = XRAY_WIDTH * XRAY_HEIGHT * 4;
-    let raw = vec![0x80u8; raw_size];
-    let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
-    encoder.write_all(&raw).expect("zlib encode");
-    encoder.finish().expect("zlib finish")
+    let raw = oriterm_test_support::fixtures::xray_gradient_rgba(XRAY_WIDTH, XRAY_HEIGHT);
+    compress_fixture(&raw)
 }
 
 fn bench_zlib_decompress_xray_shape(c: &mut Criterion) {
@@ -45,13 +49,13 @@ fn bench_zlib_decompress_xray_shape(c: &mut Criterion) {
     c.bench_function("zlib_decompress_xray_shape_2_25mb", |b| {
         b.iter(|| {
             // Direct flate2 decode — mirrors what `prepare_image_bytes`
-            // will do internally post-Phase 4. Pre-Phase 4 this measures
-            // the underlying decoder cost so we can compare against the
-            // helper's overhead once it lands.
+            // does internally. Measures the underlying decoder cost
+            // independent of the helper's `Vec::with_capacity` + bounded-
+            // read overhead.
             use flate2::read::ZlibDecoder;
             use std::io::Read;
 
-            let mut decoder = ZlibDecoder::new(black_box(&compressed[..]));
+            let mut decoder = ZlibDecoder::new(black_box(compressed.as_slice()));
             let mut out = Vec::with_capacity(expected_size);
             decoder.read_to_end(&mut out).expect("zlib decode");
             black_box(out);
@@ -59,5 +63,63 @@ fn bench_zlib_decompress_xray_shape(c: &mut Criterion) {
     });
 }
 
-criterion_group!(benches, bench_zlib_decompress_xray_shape);
+/// Small-payload bench variants — SIMD startup-cost regression detection.
+///
+/// SIMD-aware zlib backends have a per-call startup cost; small kitty
+/// transmits (under ~4 KB) may regress vs the scalar fallback. Notcurses
+/// xray uses 2.25 MB frames so the primary workload is in the large
+/// regime, but other workloads with small `o=z` transmits could regress.
+///
+/// 128-byte and 4-KB variants alongside the 2.25 MB bench surface any
+/// startup-cost asymmetry. If >1.5× regression at small sizes lands, the
+/// owning plan scope-expands with a hybrid-backend wrapper item.
+
+fn small_payload(size: usize) -> Vec<u8> {
+    // Synthetic small payload — pseudo-random pattern to avoid trivial
+    // run-length compression. Backend behavior on actual small zlib
+    // payloads matters; using a fixed seed keeps the bench deterministic.
+    let raw: Vec<u8> = (0..size)
+        .map(|i| ((i.wrapping_mul(0x9E3779B9)) & 0xFF) as u8)
+        .collect();
+    compress_fixture(&raw)
+}
+
+fn bench_zlib_decompress_small_128b(c: &mut Criterion) {
+    let compressed = small_payload(128);
+
+    c.bench_function("zlib_decompress_small_128b", |b| {
+        b.iter(|| {
+            use flate2::read::ZlibDecoder;
+            use std::io::Read;
+
+            let mut decoder = ZlibDecoder::new(black_box(compressed.as_slice()));
+            let mut out = Vec::with_capacity(128);
+            decoder.read_to_end(&mut out).expect("zlib decode");
+            black_box(out);
+        });
+    });
+}
+
+fn bench_zlib_decompress_small_4kb(c: &mut Criterion) {
+    let compressed = small_payload(4096);
+
+    c.bench_function("zlib_decompress_small_4kb", |b| {
+        b.iter(|| {
+            use flate2::read::ZlibDecoder;
+            use std::io::Read;
+
+            let mut decoder = ZlibDecoder::new(black_box(compressed.as_slice()));
+            let mut out = Vec::with_capacity(4096);
+            decoder.read_to_end(&mut out).expect("zlib decode");
+            black_box(out);
+        });
+    });
+}
+
+criterion_group!(
+    benches,
+    bench_zlib_decompress_xray_shape,
+    bench_zlib_decompress_small_128b,
+    bench_zlib_decompress_small_4kb
+);
 criterion_main!(benches);

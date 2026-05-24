@@ -8,9 +8,13 @@
 //!
 //! ## Scenario
 //!
-//! Sixel `z = -1` paints a solid-red 30×12-px region spanning cells
-//! `(10..13, 5)` (3 cells horizontally at 10-px cell width). Text and
-//! kitty are then layered on top to exercise the 3-layer composite:
+//! Sixel `z = -1` paints a solid-red 30×12-px region (sub-cell
+//! vertically — `12 / cell_h_px` ≈ 0.55 cell at typical 22 px metric,
+//! NOT a full cell tall; the sub-cell extent is INTENTIONAL — assertions
+//! check per-cell pixel color counts with `≥4` thresholds, not full-cell
+//! coverage). Horizontal extent of 30 px ≈ 3 cells wide at 10-px cell
+//! width, spanning cells `(10..13, 5)` on the test box. Text and kitty
+//! are then layered on top to exercise the 3-layer composite:
 //!
 //! | Cell        | Sixel z=-1 | Text glyph | Kitty z=1 | Renders as       |
 //! |-------------|------------|------------|-----------|------------------|
@@ -99,6 +103,12 @@ const SIXEL_RED_WIDE: &[u8] = b"\x1bPq#0;2;100;0;0#0!30~-#0!30~\x1b\\";
 /// Payload `AAD//w==` decodes to `0x00 0x00 0xFF 0xFF` — opaque blue.
 const KITTY_BLUE_Z1: &[u8] = b"\x1b_Gf=32,s=1,v=1,a=T,i=20,z=1,q=2;AAD//w==\x1b\\";
 
+/// Pins text-interleaved 3-layer composition: sixel z=-1 + text glyphs
+/// ('X' on red, 'Y' on default bg) + kitty z=+1 across cells 10..13.
+/// Catalog row: `KG-CROSS-STACK-SIXEL-MIXED-Z-ORDER` (shared with
+/// `kitty_sixel_mixed_z_order.rs` — this pilot pins the text-on-image
+/// leg, sibling pilot pins same-cell occlusion). Pins that the text
+/// pass runs after `image_quads_below` and before `image_quads_above`.
 #[test]
 fn kitty_sixel_mixed_with_text_renders_three_layer_composition() {
     let Some(mut harness) = VisualSpecHarness::new() else {

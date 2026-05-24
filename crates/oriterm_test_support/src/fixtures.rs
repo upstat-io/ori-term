@@ -23,3 +23,25 @@
 /// `crates/oriterm_test_support/tests/fixtures/fonts/generate_subcell_precedence_test.py`.
 pub const SUBCELL_PRECEDENCE_TEST_FONT: &[u8] =
     include_bytes!("../tests/fixtures/fonts/subcell-precedence-test.ttf");
+
+/// Build a smoothly varying RGBA gradient at `width × height` pixels.
+///
+/// Produces deterministic output for given dimensions: red channel
+/// scales with x, green with y, blue with `x + y`. Alpha is 0xFF. The
+/// pattern represents high inter-pixel correlation, exercising
+/// inflate decoders at realistic compression ratios.
+///
+/// Used by kitty-decode bench fixtures and prepare-helper roundtrip
+/// tests so both sites share one fixture generator.
+pub fn xray_gradient_rgba(width: usize, height: usize) -> Vec<u8> {
+    let mut out = Vec::with_capacity(width * height * 4);
+    for y in 0..height {
+        for x in 0..width {
+            let r = ((x * 256 / width) & 0xFF) as u8;
+            let g = ((y * 256 / height) & 0xFF) as u8;
+            let b = ((x + y) & 0xFF) as u8;
+            out.extend_from_slice(&[r, g, b, 0xFF]);
+        }
+    }
+    out
+}

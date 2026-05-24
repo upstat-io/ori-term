@@ -77,6 +77,12 @@ image = { version = "0.25", default-features = false, features = ["png"] }
 anyhow = "1"
 criterion = "0.5"
 image = { version = "0.25", default-features = false, features = ["png"] }
+# Enable `oriterm_core`'s `test-support` feature so visual_regression
+# pilots (`oriterm/src/gpu/visual_regression/spec_chain/pilots/*.rs`,
+# `#[cfg(test)]`-gated) can call `ImageCache::set_placement_z_index_for_test`
+# per BUG-06-092 §05 cfg-gate cleanup. Production builds (the `[dependencies]`
+# entry at line 9) do NOT pull the feature.
+oriterm_core = { path = "../oriterm_core", features = ["test-support"] }
 oriterm_test_support = { path = "../crates/oriterm_test_support" }
 oriterm_ui = { path = "../oriterm_ui", features = ["testing"] }
 tempfile = "3"

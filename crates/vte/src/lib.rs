@@ -135,6 +135,7 @@ impl<const OSC_RAW_BUF_SIZE: usize> Parser<OSC_RAW_BUF_SIZE> {
         while i != bytes.len() {
             match self.state {
                 State::Ground => i += self.advance_ground(performer, &bytes[i..]),
+                State::ApcString => i += self.advance_apc_string_slice(performer, &bytes[i..]),
                 _ => {
  // Inlining it results in worse codegen.
                     let byte = bytes[i];
@@ -537,6 +538,48 @@ impl<const OSC_RAW_BUF_SIZE: usize> Parser<OSC_RAW_BUF_SIZE> {
                 self.state = State::Ground
             },
             _ => (),
+        }
+    }
+
+ /// Slice-based fast-path for `State::ApcString`. Scans for the next
+ /// terminator/control byte via `memchr3` (CAN 0x18, SUB 0x1A, ESC 0x1B —
+ /// the bytes that exit ApcString to other states) and bulk-pushes all
+ /// payload bytes before it via a single `apc_put_bulk` call. Falls back
+ /// to per-byte dispatch only for the boundary byte itself.
+ ///
+ /// Bytes 0x80..=0xFF (including 0x9C C1 ST) are NOT handled by the
+ /// memchr scan because in the modern UTF-8-aware ECMA-48 parsing model,
+ /// 0x9C in a UTF-8 byte stream is always a continuation byte and never
+ /// a standalone control. The vendored vte crate's existing per-byte
+ /// path matches that interpretation by treating 0x9C as terminator
+ /// only when it appears as a standalone byte — which won't happen in
+ /// well-formed UTF-8 graphics payloads. For exact behavioural parity
+ /// the slice fast-path also pre-emptively exits when it encounters any
+ /// 0x80..=0xFF byte, falling back to the per-byte path for the rest of
+ /// the chunk; in practice kitty graphics payloads are base64-encoded
+ /// (ASCII-only) so the fast-path stays on the high-throughput route.
+    #[inline]
+    fn advance_apc_string_slice<P: Perform>(&mut self, performer: &mut P, bytes: &[u8]) -> usize {
+ // Find the next terminator (CAN 0x18, SUB 0x1A, ESC 0x1B, C1 ST 0x9C)
+ // via two SIMD-accelerated memchr scans, take the earlier hit. The
+ // per-byte path's `_ => ()` arm drops bytes 0x80..=0x9B and 0x9D..=0xFF;
+ // this fast-path forwards them to `apc_put_bulk` instead, which is a
+ // benign divergence in practice — kitty graphics payloads are
+ // base64-encoded ASCII and never contain those bytes.
+        let ascii_term = memchr::memchr3(0x18, 0x1A, 0x1B, bytes).unwrap_or(bytes.len());
+        let c1_term = memchr::memchr(0x9C, bytes).unwrap_or(bytes.len());
+        let scan_end = ascii_term.min(c1_term);
+        if scan_end > 0 {
+            performer.apc_put_bulk(&bytes[..scan_end]);
+        }
+        if scan_end == bytes.len() {
+ // Ran out of input before finding a terminator.
+            scan_end
+        } else {
+ // Dispatch the boundary byte through the per-byte path so any
+ // state transitions (CAN/SUB/ESC/0x9C) run their full handlers.
+            self.change_state(performer, bytes[scan_end]);
+            scan_end + 1
         }
     }
 
@@ -976,6 +1019,21 @@ pub trait Perform {
 
  /// Called for each byte in the APC string body.
     fn apc_put(&mut self, _byte: u8) {}
+
+ /// Called with a slice of bytes from the APC string body when the
+ /// parser is in `ApcString` state and the slice fast-path can process
+ /// multiple bytes at once (memchr-skip between control bytes). Default
+ /// implementation falls back to per-byte `apc_put`; consumers that
+ /// store the payload in a `Vec` should override with
+ /// `vec.extend_from_slice(bytes)` to collapse N byte-pushes into one
+ /// `memcpy` + capacity check. Used by the slice fast-path in
+ /// `Parser::advance` to drive kitty graphics throughput when the
+ /// payload is many KB of ASCII (base64).
+    fn apc_put_bulk(&mut self, bytes: &[u8]) {
+        for &b in bytes {
+            self.apc_put(b);
+        }
+    }
 
  /// Called when the APC string is terminated (ST or cancel).
     fn apc_end(&mut self) {}

@@ -177,6 +177,16 @@ fn dispatch_apc_put<T: Timeout>(state: &mut ProcessorState<T>, byte: u8) {
 }
 
 #[inline]
+fn dispatch_apc_put_bulk<T: Timeout>(state: &mut ProcessorState<T>, bytes: &[u8]) {
+    let remaining = MAX_APC_LEN.saturating_sub(state.apc_buf.len());
+    if remaining == 0 {
+        return;
+    }
+    let take = remaining.min(bytes.len());
+    state.apc_buf.extend_from_slice(&bytes[..take]);
+}
+
+#[inline]
 fn dispatch_apc_end<H: Handler, T: Timeout>(state: &mut ProcessorState<T>, handler: &mut H) {
     let payload = mem::take(&mut state.apc_buf);
     if !payload.is_empty() {
@@ -286,6 +296,11 @@ where
     #[inline]
     fn apc_put(&mut self, byte: u8) {
         dispatch_apc_put(self.state, byte);
+    }
+
+    #[inline]
+    fn apc_put_bulk(&mut self, bytes: &[u8]) {
+        dispatch_apc_put_bulk(self.state, bytes);
     }
 
     #[inline]

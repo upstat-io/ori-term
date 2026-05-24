@@ -52,7 +52,7 @@ impl<S: EffectSink> PaneIoThread<S> {
             self.drain_commands();
             if self.shutdown.load(Ordering::Acquire) {
                 // Flush any parsed-but-unpublished state before exiting.
-                self.maybe_produce_snapshot();
+                self.publish_pending_snapshot();
                 return;
             }
 
@@ -62,11 +62,11 @@ impl<S: EffectSink> PaneIoThread<S> {
                 // Shutdown observed during a chunked-byte drain — `drain_commands`
                 // is called between chunks per `handle_bytes_chunked`, and that
                 // path can set the shutdown flag. Without this check the loop
-                // would fall through to tick_animations + maybe_produce_snapshot
+                // would fall through to tick_animations + publish_pending_snapshot
                 // + maybe_shrink_buffers + select! (timeout up to
                 // IDLE_WAKE_CEILING = 24h), delaying shutdown by an arbitrary
                 // wait. Regression: / tpr-review round 4 F1.
-                self.maybe_produce_snapshot();
+                self.publish_pending_snapshot();
                 return;
             }
 
@@ -77,8 +77,16 @@ impl<S: EffectSink> PaneIoThread<S> {
             // snapshot production (which serialises the post-advance state).
             let animation_deadline = self.tick_animations();
 
-            // 4. Produce snapshot if state changed and sync output allows it.
-            self.maybe_produce_snapshot();
+            // 4. Quiescence-point snapshot — bypasses the rate-limit gate so
+            // accumulated mid-drain mutations always reach the main thread
+            // before the loop blocks in `select!`. Per-message publishes in
+            // `process_pending_bytes` ARE rate-limited via `maybe_produce_snapshot`.
+            self.publish_pending_snapshot();
+
+            // Flush the perf-tap so its on-disk view stays current — needed
+            // when the process is taskkilled before clean shutdown drops the
+            // BufWriter. No-op when the tap is not enabled.
+            self.flush_perf_tap();
 
             // 4b. Quiescence boundary — about to block waiting for work.
             // Runs every loop iteration; cap-gated `maybe_shrink` is
@@ -92,7 +100,7 @@ impl<S: EffectSink> PaneIoThread<S> {
 
             // 4c. Final pre-`select!` shutdown check — defense in depth covering any setter that bypasses the writer-thread `io_wake` path; otherwise the IO thread could block in `select!` until `byte_rx` hangs up.
             if self.shutdown.load(Ordering::Acquire) {
-                self.maybe_produce_snapshot();
+                self.publish_pending_snapshot();
                 return;
             }
 
@@ -126,7 +134,7 @@ impl<S: EffectSink> PaneIoThread<S> {
                 self.apply_pending_resize();
                 if matches!(&cmd, PaneIoCommand::Shutdown) {
                     self.shutdown.store(true, Ordering::Release);
-                    self.maybe_produce_snapshot();
+                    self.publish_pending_snapshot();
                     return true;
                 }
                 self.handle_command(cmd);
@@ -240,7 +248,7 @@ impl<S: EffectSink> PaneIoThread<S> {
 
         // (2) Final snapshot BEFORE `PaneExited` fires.
         self.grid_dirty.store(true, Ordering::Release);
-        self.maybe_produce_snapshot();
+        self.publish_pending_snapshot();
 
         // (3) Determine the exit code.
         let exit_code = if let Some(status) = self.pending_child_exit.take() {
