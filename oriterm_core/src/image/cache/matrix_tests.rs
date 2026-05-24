@@ -1,4 +1,4 @@
-//! Image placement lifecycle matrix — 3 protocols × 2 sizing modes × 7 mutations = 42 scenarios.
+//! Image placement lifecycle matrix — 3 protocols × 2 sizing modes × 8 mutations = 48 scenarios.
 //!
 //! Table-driven regression that exercises every combination of
 //! protocol (Sixel / Kitty / iTerm2), sizing mode (CellCount /
@@ -11,7 +11,7 @@
 //! path with only protocol-tag metadata varying — any asymmetry across
 //! protocols would show up here as a diverging expected/actual result.
 //!
-//! Self-verifies completeness with an explicit `count == 42`
+//! Self-verifies completeness with an explicit `count == 48`
 //! assertion so missing cells surface at test-run time instead of
 //! silently regressing coverage.
 //!
@@ -64,6 +64,10 @@ enum GridMutation {
     AltExit,
     EraseDisplay,
     EraseLine,
+    /// Font-metric change via `Term::set_cell_dimensions` — recomputes
+    /// `FixedPixels` placement cell-coverage cross-protocol (§07.6); leaves
+    /// `CellCount` placements untouched.
+    FontMetricChange,
 }
 
 impl GridMutation {
@@ -76,13 +80,19 @@ impl GridMutation {
             Self::AltExit,
             Self::EraseDisplay,
             Self::EraseLine,
+            Self::FontMetricChange,
         ]
     }
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 enum PlacementState {
-    Survives,
+    /// Placement present at its original row. Carries observed cell-coverage
+    /// `(cols, rows)` so `FontMetricChange` pins the recompute AND the
+    /// `Survives`-returning mutations pin that size does NOT drift. `Removed`
+    /// / `Remapped` stay dimensionless — no matrix mutation expects `Remapped`,
+    /// and a removed placement has no dims.
+    Survives { cols: usize, rows: usize },
     Removed,
     Remapped,
 }
@@ -118,6 +128,9 @@ fn place_for_scenario(
         GridMutation::AltEnter | GridMutation::AltExit => (5, 0),
         GridMutation::EraseDisplay => (5, 0),
         GridMutation::EraseLine => (5, 0),
+        // (5, 0): clear of grid boundaries (deliberately NOT (90, 0) from
+        // Resize) — the post-recompute 1-2 col width fits trivially.
+        GridMutation::FontMetricChange => (5, 0),
     };
 
     let sizing_spec = match sizing {
@@ -126,6 +139,16 @@ fn place_for_scenario(
             width: 16,
             height: 16,
         },
+    };
+
+    // Initial cell-coverage reflects genuine coverage so `FontMetricChange`
+    // recompute is observable. At the setup cell dims `(8, 16)`
+    // a `FixedPixels { width: 16, height: 16 }` placement covers
+    // `(cols=16/8=2, rows=16/16=1)`; `CellCount` carries its explicit
+    // `(2, 2)` cell count (untouched by `update_cell_coverage`).
+    let (init_cols, init_rows) = match sizing {
+        PlacementSizingKind::FixedPixels => (2, 1),
+        PlacementSizingKind::CellCount => (2, 2),
     };
 
     term.image_cache_mut().place(ImagePlacement {
@@ -137,8 +160,8 @@ fn place_for_scenario(
         source_h: 0,
         cell_col: col,
         cell_row: StableRowIndex(row),
-        cols: 2,
-        rows: 2,
+        cols: init_cols,
+        rows: init_rows,
         z_index: 0,
         cell_x_offset: 0,
         cell_y_offset: 0,
@@ -185,6 +208,12 @@ fn apply_mutation_and_observe(
             let mut processor: Processor = Processor::new();
             processor.advance(term, b"\x1b[1;1H\x1b[2K");
         }
+        GridMutation::FontMetricChange => {
+            // Setup cell dims are (8, 16); change to (16, 8) — script-verified
+            // to recompute a FixedPixels 16×16 placement (2,1)→(1,2), clamping
+            // BOTH axes. (12,20) would leave (2,1) unchanged = ghost-pass.
+            term.set_cell_dimensions(16, 8);
+        }
     }
 
     // The placement was made in primary mode (lives in the primary
@@ -203,23 +232,42 @@ fn apply_mutation_and_observe(
         return PlacementState::Removed;
     };
     if p.cell_row == original_row {
-        PlacementState::Survives
+        PlacementState::Survives {
+            cols: p.cols,
+            rows: p.rows,
+        }
     } else {
         PlacementState::Remapped
     }
 }
 
-fn expected(mutation: GridMutation) -> PlacementState {
+fn expected(mutation: GridMutation, sizing: PlacementSizingKind) -> PlacementState {
+    // HARDCODED expected dims (NOT captured from the placement) so a broken
+    // `place_for_scenario` fixture FAILS the baseline mutations instead of
+    // rigging expected==actual (an observed-then-asserted value cannot catch a
+    // wrong fixture). Setup coverage at cell (8,16): FixedPixels 16×16 → (2,1);
+    // CellCount → (2,2).
+    let setup = match sizing {
+        PlacementSizingKind::FixedPixels => (2, 1),
+        PlacementSizingKind::CellCount => (2, 2),
+    };
+    let survives = |(cols, rows): (usize, usize)| PlacementState::Survives { cols, rows };
     match mutation {
         GridMutation::ScrollbackEvict => PlacementState::Removed,
         GridMutation::Resize => PlacementState::Removed,
         // Growing without mid-row wrap: first_output_row[0] = 0 so the
-        // row index does not shift.
-        GridMutation::Reflow => PlacementState::Survives,
-        GridMutation::AltEnter => PlacementState::Survives,
-        GridMutation::AltExit => PlacementState::Survives,
+        // row index does not shift. Size is also preserved.
+        GridMutation::Reflow => survives(setup),
+        GridMutation::AltEnter => survives(setup),
+        GridMutation::AltExit => survives(setup),
         GridMutation::EraseDisplay => PlacementState::Removed,
         GridMutation::EraseLine => PlacementState::Removed,
+        // set_cell_dimensions(16,8): FixedPixels recomputes 16×16 → (1,2)
+        // via update_cell_coverage; CellCount is untouched (stays (2,2)).
+        GridMutation::FontMetricChange => match sizing {
+            PlacementSizingKind::FixedPixels => survives((1, 2)),
+            PlacementSizingKind::CellCount => survives((2, 2)),
+        },
     }
 }
 
@@ -247,7 +295,7 @@ fn image_lifecycle_matrix() {
                 );
 
                 let actual = apply_mutation_and_observe(&mut term, id, mutation, original_row);
-                let want = expected(mutation);
+                let want = expected(mutation, sizing);
 
                 if actual != want {
                     failures.push(format!(
@@ -266,7 +314,7 @@ fn image_lifecycle_matrix() {
         ImageProtocol::all().len() * PlacementSizingKind::all().len() * GridMutation::all().len(),
         "matrix visit count does not match enumerated cells"
     );
-    assert_eq!(scenarios, 42);
+    assert_eq!(scenarios, 48);
 
     assert!(
         failures.is_empty(),

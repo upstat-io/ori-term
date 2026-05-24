@@ -876,6 +876,69 @@ fn osc1337_file_width_px_suffix_is_pixels() {
     assert_eq!(p.cols, 13, "width=200px at cell_w=16 should span 13 cols");
 }
 
+/// §14.5 integration pin (positive): a font-metric change recomputes an
+/// iTerm2-routed `FixedPixels` placement's cell-coverage through the REAL OSC
+/// path (the cross-protocol matrix bypasses OSC, constructing placements
+/// directly). `preserveAspectRatio=0` (stretch) is
+/// required — the spec default `=1` would fit the 1×1 image within the
+/// 32×64 bbox → 32×32, giving (4,2) not the intended exact FixedPixels{32,64}.
+/// At cell (8,16): cols=ceil(32/8)=4, rows=ceil(64/16)=4; after
+/// `set_cell_dimensions(16,8)`: cols=ceil(32/16)=2, rows=ceil(64/8)=8.
+/// Anchor: ITERM2-1337-FILE-INLINE (font-metric-change recompute).
+#[test]
+fn iterm2_font_metric_change_recomputes_fixed_pixel_placement() {
+    let mut harness = SpecHarness::new();
+    harness.term_mut().set_cell_dimensions(8, 16);
+    let png = encode_red_png(1, 1);
+    harness.feed(&osc1337_file_with_args(
+        "preserveAspectRatio=0;width=32px;height=64px",
+        &b64_std(&png),
+    ));
+    {
+        let p = only_placement(&harness);
+        assert_eq!(
+            (p.cols, p.rows),
+            (4, 4),
+            "FixedPixels{{32,64}} at cell (8,16) covers (4,4)"
+        );
+    }
+    harness.term_mut().set_cell_dimensions(16, 8);
+    let p = only_placement(&harness);
+    assert_eq!(
+        (p.cols, p.rows),
+        (2, 8),
+        "set_cell_dimensions(16,8) recomputes the iTerm2 FixedPixels placement to (2,8)"
+    );
+}
+
+/// §14.5 integration pin (negative): a both-cells iTerm2 spec
+/// (`width=3;height=2`) resolves to `CellCount`, which `update_cell_coverage`
+/// leaves UNTOUCHED on a font-metric change — pairs with the positive pin to
+/// prove the recompute is gated to `FixedPixels`.
+/// Anchor: ITERM2-1337-FILE-INLINE (font-metric-change CellCount no-op).
+#[test]
+fn iterm2_font_metric_change_leaves_cell_count_placement_unchanged() {
+    let mut harness = SpecHarness::new();
+    harness.term_mut().set_cell_dimensions(8, 16);
+    let png = encode_red_png(16, 16);
+    harness.feed(&osc1337_file_with_args("width=3;height=2", &b64_std(&png)));
+    {
+        let p = only_placement(&harness);
+        assert_eq!(
+            (p.cols, p.rows),
+            (3, 2),
+            "both-cells spec → CellCount (3,2)"
+        );
+    }
+    harness.term_mut().set_cell_dimensions(16, 8);
+    let p = only_placement(&harness);
+    assert_eq!(
+        (p.cols, p.rows),
+        (3, 2),
+        "CellCount placement is unchanged by set_cell_dimensions"
+    );
+}
+
 /// Pins `SizeSpec::Percent(N)` (N% suffix) on the width axis:
 /// `width=50%` of an 80-col terminal (default) at `cell_pixel_width=8`
 /// means `display_w` = 80*8*50/100 = 320px = 40 cells.
