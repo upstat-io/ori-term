@@ -177,7 +177,7 @@ fn resolve_cap_paths() -> Option<(PathBuf, PathBuf)> {
 }
 
 #[test]
-#[ignore = "(xray-scene lag cure) xray replay diagnostic — full ~312 MB capture; \
+#[ignore = "BUG-06-093: (xray-scene lag cure) xray replay diagnostic — full ~312 MB capture; \
             run via `cargo test -- --ignored xray_replay_golden_snapshots`"]
 fn xray_replay_golden_snapshots_at_5_10_15_sec() {
     let Some((cap_path, timing_path)) = resolve_cap_paths() else {
