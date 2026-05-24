@@ -510,8 +510,7 @@ impl<S: EffectSink> Term<S> {
     /// Internal API used by `handle_kitty_graphics` only.
     pub(crate) fn record_kitty_action_sample(&mut self, action_idx: usize, ns: u64) {
         if action_idx < 8 {
-            self.kitty_action_ns[action_idx] =
-                self.kitty_action_ns[action_idx].saturating_add(ns);
+            self.kitty_action_ns[action_idx] = self.kitty_action_ns[action_idx].saturating_add(ns);
             self.kitty_action_calls[action_idx] =
                 self.kitty_action_calls[action_idx].saturating_add(1);
         }

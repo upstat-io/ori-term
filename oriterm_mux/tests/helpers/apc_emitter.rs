@@ -47,7 +47,9 @@ fn main() {
         Some("--multi") => apc_payload::emit_multi(&mut out),
         None => apc_payload::emit_default(&mut out),
         Some(other) => {
-            eprintln!("apc_emitter: unknown mode {other:?}; expected --large, --multi, or no argument");
+            eprintln!(
+                "apc_emitter: unknown mode {other:?}; expected --large, --multi, or no argument"
+            );
             std::process::exit(2);
         }
     }

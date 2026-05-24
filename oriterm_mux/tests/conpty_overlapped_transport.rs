@@ -64,10 +64,7 @@ fn conpty_apc_byte_sequence_via_rust_helper_emits_image() {
     let mut session = PtySession::spawn(cmd, 80, 24);
 
     let status = session.wait_for_child_exit(5_000);
-    assert!(
-        status.success(),
-        "apc_emitter exited non-zero: {status:?}"
-    );
+    assert!(status.success(), "apc_emitter exited non-zero: {status:?}");
 
     session
         .poll_until_or_fail(
@@ -129,10 +126,7 @@ fn conpty_apc_multiple_frames_burst_emits_all_images() {
     session
         .poll_until_or_fail(
             5_000,
-            |s| {
-                s.term().image_cache().image_count()
-                    == apc_payload::multi_count() as usize
-            },
+            |s| s.term().image_cache().image_count() == apc_payload::multi_count() as usize,
             |s| forbid_token_check(s),
         )
         .expect("multi-frame burst interaction failed");
@@ -195,9 +189,18 @@ fn ssot_forbid_tokens_cover_emit_payloads() {
     // mirror (ID_PREFIX, ACTION_TRANSMIT, FORMAT_RGB, FORMAT_RGBA).
     assert!(tokens.contains(&"Gi="), "forbid_tokens missing Gi= prefix");
     assert!(tokens.contains(&"a=T"), "forbid_tokens missing a=T action");
-    assert!(tokens.contains(&"f=24"), "forbid_tokens missing f=24 format");
-    assert!(tokens.contains(&"f=32"), "forbid_tokens missing f=32 format");
-    assert!(apc_payload::multi_count() > 0, "multi_count must be positive");
+    assert!(
+        tokens.contains(&"f=24"),
+        "forbid_tokens missing f=24 format"
+    );
+    assert!(
+        tokens.contains(&"f=32"),
+        "forbid_tokens missing f=32 format"
+    );
+    assert!(
+        apc_payload::multi_count() > 0,
+        "multi_count must be positive"
+    );
 }
 
 /// Shared early-fail closure for poll_until_or_fail's forbid-output

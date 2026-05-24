@@ -334,7 +334,9 @@ impl<S: EffectSink> PaneIoThread<S> {
             bytes_drained += bytes.len();
             let t = Instant::now();
             let (cmd_dur, snap_dur) = self.handle_bytes_chunked(&bytes);
-            self.drain_chunked_ns = self.drain_chunked_ns.saturating_add(t.elapsed().as_nanos() as u64);
+            self.drain_chunked_ns = self
+                .drain_chunked_ns
+                .saturating_add(t.elapsed().as_nanos() as u64);
             drain_cmds_total += cmd_dur;
             snapshot_total += snap_dur;
             if self.shutdown.load(Ordering::Acquire) {
@@ -445,8 +447,12 @@ impl<S: EffectSink> PaneIoThread<S> {
         self.drain_handle_bytes_ns = self.drain_handle_bytes_ns.saturating_add(chunk_total_ns);
         self.drain_kitty_ns = self.drain_kitty_ns.saturating_add(kitty_stats.total_ns);
         self.drain_raw_ns = self.drain_raw_ns.saturating_add(raw_dur.as_nanos() as u64);
-        self.drain_housekeeping_ns = self.drain_housekeeping_ns.saturating_add(hk_dur.as_nanos() as u64);
-        self.drain_effects_ns = self.drain_effects_ns.saturating_add(drain_dur.as_nanos() as u64);
+        self.drain_housekeeping_ns = self
+            .drain_housekeeping_ns
+            .saturating_add(hk_dur.as_nanos() as u64);
+        self.drain_effects_ns = self
+            .drain_effects_ns
+            .saturating_add(drain_dur.as_nanos() as u64);
 
         // Per-chunk SLOW log — surfaces which sub-phase dominates when
         // chunk processing exceeds 8 ms (a single 60 FPS budget).

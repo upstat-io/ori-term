@@ -213,10 +213,7 @@ impl ImageCache {
     /// scenario where the GPU renderer / snapshot publisher holds canvas
     /// refs concurrent with IO-thread Edits.
     #[cfg(test)]
-    pub(crate) fn animation_frame_arcs_for_test(
-        &self,
-        id: ImageId,
-    ) -> Option<Vec<Arc<Vec<u8>>>> {
+    pub(crate) fn animation_frame_arcs_for_test(&self, id: ImageId) -> Option<Vec<Arc<Vec<u8>>>> {
         let frames = self.animation_frames.get(&id)?;
         Some(
             frames

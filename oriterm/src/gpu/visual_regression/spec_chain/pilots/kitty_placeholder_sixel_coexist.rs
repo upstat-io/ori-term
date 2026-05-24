@@ -106,10 +106,8 @@ fn kitty_placeholder_and_sixel_coexist_at_gpu_apex() {
     //    8 cells horizontally × 1 cell vertically (rounded up to the
     //    next sixel band of 6 px).
     harness.core_mut().feed(CUP_ROW10_COL0);
-    let sixel_bytes = sixel_fixtures::dcs_red_pixel_block(
-        cell_w_px as usize * 8,
-        cell_h_px as usize,
-    );
+    let sixel_bytes =
+        sixel_fixtures::dcs_red_pixel_block(cell_w_px as usize * 8, cell_h_px as usize);
     harness.core_mut().feed(&sixel_bytes);
 
     // 4. Sanity: cache holds the kitty image (anchored, not placed) AND

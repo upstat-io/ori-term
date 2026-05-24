@@ -72,7 +72,10 @@ fn setup_term_with_animation() -> Term<VoidEffectSink> {
 }
 
 /// Run `N` a=f calls + measure timing. Returns (wall_time, kitty_stats).
-fn time_af_calls(term: &mut Term<VoidEffectSink>, n: u32) -> (Duration, crate::term::KittyHandlerStats) {
+fn time_af_calls(
+    term: &mut Term<VoidEffectSink>,
+    n: u32,
+) -> (Duration, crate::term::KittyHandlerStats) {
     let mut proc: Processor = Processor::new();
     // Warm-up
     for _ in 0..10 {
@@ -109,30 +112,52 @@ fn xray_af_timing() {
     eprintln!();
     eprintln!("=== xray a=f timing diagnostic ({N} calls) ===");
     eprintln!("total wall-clock:  {elapsed:?}");
-    eprintln!("per call (wall):   {per_call_ns} ns ({:.2} µs)", per_call_ns as f64 / 1000.0);
+    eprintln!(
+        "per call (wall):   {per_call_ns} ns ({:.2} µs)",
+        per_call_ns as f64 / 1000.0
+    );
     eprintln!();
     eprintln!("--- handle_kitty_graphics total (instrumented) ---");
     eprintln!("total kitty ns:    {} ns", stats.total_ns);
     eprintln!("total calls:       {}", stats.total_calls);
-    eprintln!("per kitty call:    {} ns ({:.2} µs)",
-        if stats.total_calls > 0 { stats.total_ns / u64::from(stats.total_calls) } else { 0 },
+    eprintln!(
+        "per kitty call:    {} ns ({:.2} µs)",
+        if stats.total_calls > 0 {
+            stats.total_ns / u64::from(stats.total_calls)
+        } else {
+            0
+        },
         if stats.total_calls > 0 {
             (stats.total_ns / u64::from(stats.total_calls)) as f64 / 1000.0
-        } else { 0.0 },
+        } else {
+            0.0
+        },
     );
     eprintln!();
     eprintln!("--- per-action Frame (F) bucket ---");
     eprintln!("F calls:           {f_calls}");
     eprintln!("F total ns:        {f_total_ns}");
-    eprintln!("F per-call ns:     {per_call_f_ns} ({:.2} µs)", per_call_f_ns as f64 / 1000.0);
+    eprintln!(
+        "F per-call ns:     {per_call_f_ns} ({:.2} µs)",
+        per_call_f_ns as f64 / 1000.0
+    );
     eprintln!();
     eprintln!("--- substep breakdown (cumulative across {N} F calls) ---");
-    eprintln!("prepare_ns:        {} ({:.2} µs/call)", stats.prepare_ns,
-        stats.prepare_ns as f64 / N as f64 / 1000.0);
-    eprintln!("format_ns:         {} ({:.2} µs/call)", stats.format_ns,
-        stats.format_ns as f64 / N as f64 / 1000.0);
-    eprintln!("store_ns:          {} ({:.2} µs/call)", stats.store_ns,
-        stats.store_ns as f64 / N as f64 / 1000.0);
+    eprintln!(
+        "prepare_ns:        {} ({:.2} µs/call)",
+        stats.prepare_ns,
+        stats.prepare_ns as f64 / N as f64 / 1000.0
+    );
+    eprintln!(
+        "format_ns:         {} ({:.2} µs/call)",
+        stats.format_ns,
+        stats.format_ns as f64 / N as f64 / 1000.0
+    );
+    eprintln!(
+        "store_ns:          {} ({:.2} µs/call)",
+        stats.store_ns,
+        stats.store_ns as f64 / N as f64 / 1000.0
+    );
     eprintln!();
 }
 
@@ -160,7 +185,10 @@ fn xray_af_timing_with_shared_canvas_arc() {
         frames
     };
     eprintln!();
-    eprintln!("outstanding Arc refs to canvas frames: {}", outstanding_refs.len());
+    eprintln!(
+        "outstanding Arc refs to canvas frames: {}",
+        outstanding_refs.len()
+    );
 
     const N: u32 = 1000;
     let (elapsed, stats) = time_af_calls(&mut term, N);
@@ -177,8 +205,14 @@ fn xray_af_timing_with_shared_canvas_arc() {
 
     eprintln!("=== xray a=f WITH shared canvas Arc ({N} calls) ===");
     eprintln!("total wall-clock:   {elapsed:?}");
-    eprintln!("per call (wall):    {per_call_ns} ns ({:.2} µs)", per_call_ns as f64 / 1000.0);
-    eprintln!("F per-call ns:      {per_call_f_ns} ({:.2} µs)", per_call_f_ns as f64 / 1000.0);
+    eprintln!(
+        "per call (wall):    {per_call_ns} ns ({:.2} µs)",
+        per_call_ns as f64 / 1000.0
+    );
+    eprintln!(
+        "F per-call ns:      {per_call_f_ns} ({:.2} µs)",
+        per_call_f_ns as f64 / 1000.0
+    );
     eprintln!();
     eprintln!("hypothesis check: if per-call >> 1µs, Arc::make_mut is cloning");
     eprintln!();
@@ -227,13 +261,21 @@ fn xray_af_timing_append_path() {
     let f_calls = stats.per_action_calls[f_idx];
     let per_call_f_ns = if f_calls > 0 {
         stats.per_action_ns[f_idx] / u64::from(f_calls)
-    } else { 0 };
+    } else {
+        0
+    };
 
     eprintln!();
     eprintln!("=== xray a=f APPEND path timing ({N} calls) ===");
     eprintln!("total wall-clock:   {elapsed:?}");
-    eprintln!("per call (wall):    {per_call_ns} ns ({:.2} µs)", per_call_ns as f64 / 1000.0);
-    eprintln!("F per-call:         {per_call_f_ns} ns ({:.2} µs)", per_call_f_ns as f64 / 1000.0);
+    eprintln!(
+        "per call (wall):    {per_call_ns} ns ({:.2} µs)",
+        per_call_ns as f64 / 1000.0
+    );
+    eprintln!(
+        "F per-call:         {per_call_f_ns} ns ({:.2} µs)",
+        per_call_f_ns as f64 / 1000.0
+    );
     eprintln!();
 }
 
@@ -274,13 +316,21 @@ fn xray_af_timing_with_per_call_snapshot() {
     let f_calls = stats.per_action_calls[f_idx];
     let per_call_f_ns = if f_calls > 0 {
         stats.per_action_ns[f_idx] / u64::from(f_calls)
-    } else { 0 };
+    } else {
+        0
+    };
 
     eprintln!();
     eprintln!("=== xray a=f with per-call snapshot ref ({N} calls) ===");
     eprintln!("total wall-clock:   {elapsed:?}");
-    eprintln!("per call (wall):    {per_call_ns} ns ({:.2} µs)", per_call_ns as f64 / 1000.0);
-    eprintln!("F per-call:         {per_call_f_ns} ns ({:.2} µs)", per_call_f_ns as f64 / 1000.0);
+    eprintln!(
+        "per call (wall):    {per_call_ns} ns ({:.2} µs)",
+        per_call_ns as f64 / 1000.0
+    );
+    eprintln!(
+        "F per-call:         {per_call_f_ns} ns ({:.2} µs)",
+        per_call_f_ns as f64 / 1000.0
+    );
     eprintln!();
 }
 
@@ -325,13 +375,21 @@ fn xray_af_timing_with_rate_limited_snapshot() {
     let f_calls = stats.per_action_calls[f_idx];
     let per_call_f_ns = if f_calls > 0 {
         stats.per_action_ns[f_idx] / u64::from(f_calls)
-    } else { 0 };
+    } else {
+        0
+    };
 
     eprintln!();
     eprintln!("=== xray a=f with rate-limited snapshot batch={BATCH} ({N} calls) ===");
     eprintln!("total wall-clock:   {elapsed:?}");
-    eprintln!("per call (wall):    {per_call_ns} ns ({:.2} µs)", per_call_ns as f64 / 1000.0);
-    eprintln!("F per-call:         {per_call_f_ns} ns ({:.2} µs)", per_call_f_ns as f64 / 1000.0);
+    eprintln!(
+        "per call (wall):    {per_call_ns} ns ({:.2} µs)",
+        per_call_ns as f64 / 1000.0
+    );
+    eprintln!(
+        "F per-call:         {per_call_f_ns} ns ({:.2} µs)",
+        per_call_f_ns as f64 / 1000.0
+    );
     eprintln!("expected: ~(clone_cost/{BATCH}) + fast_path = ~4.5 µs/call");
     eprintln!();
 }
@@ -371,7 +429,11 @@ fn setup_term_with_drain_images() -> Term<QueueingEffectSink> {
             last_accessed: 0,
             image_number: None,
         };
-        let frames = vec![build_canvas_bytes(), build_canvas_bytes(), build_canvas_bytes()];
+        let frames = vec![
+            build_canvas_bytes(),
+            build_canvas_bytes(),
+            build_canvas_bytes(),
+        ];
         let durations = vec![
             Duration::from_millis(33),
             Duration::from_millis(33),
@@ -411,55 +473,92 @@ fn xray_drain_chunk_timing() {
     eprintln!("total wall:        {elapsed:?}");
     eprintln!("per iter wall:     {per_iter_ms:.2} ms");
     eprintln!("xray frame budget: 17.4 ms (57 FPS)");
-    eprintln!("budget headroom:   {:.1}× ({:+.2} ms)",
-        17.4 / per_iter_ms, 17.4 - per_iter_ms);
+    eprintln!(
+        "budget headroom:   {:.1}× ({:+.2} ms)",
+        17.4 / per_iter_ms,
+        17.4 - per_iter_ms
+    );
     eprintln!();
     eprintln!("--- handle_kitty_graphics aggregate ---");
     eprintln!("total kitty calls:  {}", stats.total_calls);
-    eprintln!("total kitty ns:     {} ({:.3} ms total)",
-        stats.total_ns, stats.total_ns as f64 / 1e6);
-    eprintln!("kitty per call:     {} ns ({:.2} µs)",
-        if stats.total_calls > 0 { stats.total_ns / u64::from(stats.total_calls) } else { 0 },
+    eprintln!(
+        "total kitty ns:     {} ({:.3} ms total)",
+        stats.total_ns,
+        stats.total_ns as f64 / 1e6
+    );
+    eprintln!(
+        "kitty per call:     {} ns ({:.2} µs)",
+        if stats.total_calls > 0 {
+            stats.total_ns / u64::from(stats.total_calls)
+        } else {
+            0
+        },
         if stats.total_calls > 0 {
             (stats.total_ns / u64::from(stats.total_calls)) as f64 / 1000.0
-        } else { 0.0 });
+        } else {
+            0.0
+        }
+    );
     eprintln!();
     eprintln!("--- per-action breakdown (cumulative across {N} iterations) ---");
     // Index order from oriterm_core/src/term/handler/image/kitty/mod.rs:135:
     //   0=Query, 1=Transmit, 2=TransmitAndPlace, 3=Place, 4=Delete, 5=Frame, 6=Animate, 7=Compose
-    let labels = ["Query", "Transmit", "TransmitAndPlace", "Place", "Delete", "Frame", "Animate", "Compose"];
+    let labels = [
+        "Query",
+        "Transmit",
+        "TransmitAndPlace",
+        "Place",
+        "Delete",
+        "Frame",
+        "Animate",
+        "Compose",
+    ];
     for (i, label) in labels.iter().enumerate() {
         let calls = stats.per_action_calls[i];
         let ns = stats.per_action_ns[i];
         if calls > 0 {
-            eprintln!("  {label:18} calls={calls:6} total={:.3} ms  per-call={:.2} µs",
+            eprintln!(
+                "  {label:18} calls={calls:6} total={:.3} ms  per-call={:.2} µs",
                 ns as f64 / 1e6,
-                ns as f64 / f64::from(calls) / 1000.0);
+                ns as f64 / f64::from(calls) / 1000.0
+            );
         }
     }
     eprintln!();
     eprintln!("--- substep breakdown (cumulative) ---");
-    eprintln!("  prepare (b64+zlib+fmt): {} ns ({:.3} ms)  per-F-call={:.2} µs",
+    eprintln!(
+        "  prepare (b64+zlib+fmt): {} ns ({:.3} ms)  per-F-call={:.2} µs",
         stats.prepare_ns,
         stats.prepare_ns as f64 / 1e6,
         if stats.per_action_calls[5] > 0 {
             stats.prepare_ns as f64 / f64::from(stats.per_action_calls[5]) / 1000.0
-        } else { 0.0 });
-    eprintln!("  format decode:          {} ns ({:.3} ms)",
+        } else {
+            0.0
+        }
+    );
+    eprintln!(
+        "  format decode:          {} ns ({:.3} ms)",
         stats.format_ns,
-        stats.format_ns as f64 / 1e6);
-    eprintln!("  store/blit:             {} ns ({:.3} ms)",
+        stats.format_ns as f64 / 1e6
+    );
+    eprintln!(
+        "  store/blit:             {} ns ({:.3} ms)",
         stats.store_ns,
-        stats.store_ns as f64 / 1e6);
+        stats.store_ns as f64 / 1e6
+    );
     eprintln!();
     let kitty_ms = stats.total_ns as f64 / 1e6;
     let total_ms = elapsed.as_secs_f64() * 1000.0;
     eprintln!("--- attribution ---");
-    eprintln!("kitty handler total:    {kitty_ms:.3} ms ({:.1}%)",
-        kitty_ms / total_ms * 100.0);
-    eprintln!("vte parser + other:     {:.3} ms ({:.1}%)",
+    eprintln!(
+        "kitty handler total:    {kitty_ms:.3} ms ({:.1}%)",
+        kitty_ms / total_ms * 100.0
+    );
+    eprintln!(
+        "vte parser + other:     {:.3} ms ({:.1}%)",
         total_ms - kitty_ms,
-        (total_ms - kitty_ms) / total_ms * 100.0);
+        (total_ms - kitty_ms) / total_ms * 100.0
+    );
     eprintln!();
 }
 
@@ -497,7 +596,10 @@ fn xray_drain_chunk_vte_per_byte_cost() {
     eprintln!();
     eprintln!("=== VTE per-byte cost ({N} iter × {bytes_per_iter}B) ===");
     eprintln!("total wall:        {elapsed:?}");
-    eprintln!("per iter:          {per_iter_ns} ns ({:.2} ms)", per_iter_ns as f64 / 1e6);
+    eprintln!(
+        "per iter:          {per_iter_ns} ns ({:.2} ms)",
+        per_iter_ns as f64 / 1e6
+    );
     eprintln!("per byte:          {per_byte_ns:.2} ns");
     eprintln!();
     eprintln!("hypothesis: ApcString state's per-byte dispatch (advance_apc_string");
@@ -527,7 +629,10 @@ fn xray_drain_chunk_effects_emitted() {
     let mut warmup_effects = Vec::new();
     term.effect_sink().drain_into(&mut warmup_effects);
     eprintln!();
-    eprintln!("=== effects emitted during warmup chunk ({} effects) ===", warmup_effects.len());
+    eprintln!(
+        "=== effects emitted during warmup chunk ({} effects) ===",
+        warmup_effects.len()
+    );
     let mut count_pty_write = 0;
     let mut count_other = 0;
     let mut total_pty_bytes = 0;
@@ -540,7 +645,9 @@ fn xray_drain_chunk_effects_emitted() {
             _ => count_other += 1,
         }
     }
-    eprintln!("  warmup: pty_writes={count_pty_write} ({total_pty_bytes}B), other_effects={count_other}");
+    eprintln!(
+        "  warmup: pty_writes={count_pty_write} ({total_pty_bytes}B), other_effects={count_other}"
+    );
 
     // Steady-state: replay 10 more iterations and capture
     const N: u32 = 10;
@@ -564,8 +671,10 @@ fn xray_drain_chunk_effects_emitted() {
     }
     eprintln!();
     eprintln!("=== effects emitted during {N} steady-state iterations ===");
-    eprintln!("  pty_writes: {count_pty} (total {total_bytes}B = {} B/iter)",
-        total_bytes / N as usize);
+    eprintln!(
+        "  pty_writes: {count_pty} (total {total_bytes}B = {} B/iter)",
+        total_bytes / N as usize
+    );
     eprintln!("  other effects: {other}");
     eprintln!();
     if count_pty > 0 {
@@ -611,7 +720,11 @@ fn xray_drain_chunk_startup_probe_responses() {
     term.effect_sink().drain_into(&mut effects);
 
     eprintln!();
-    eprintln!("=== startup probe replay: {} bytes → {} effects ===", STARTUP_BYTES.len(), effects.len());
+    eprintln!(
+        "=== startup probe replay: {} bytes → {} effects ===",
+        STARTUP_BYTES.len(),
+        effects.len()
+    );
     let mut pty_writes: Vec<&[u8]> = Vec::new();
     let mut other_count = 0;
     for e in &effects {
@@ -623,7 +736,11 @@ fn xray_drain_chunk_startup_probe_responses() {
         }
     }
     let total_reply_bytes: usize = pty_writes.iter().map(|b| b.len()).sum();
-    eprintln!("  PTY-write effects: {} (total {} bytes)", pty_writes.len(), total_reply_bytes);
+    eprintln!(
+        "  PTY-write effects: {} (total {} bytes)",
+        pty_writes.len(),
+        total_reply_bytes
+    );
     eprintln!("  other effects: {other_count}");
     eprintln!();
 
@@ -636,7 +753,9 @@ fn xray_drain_chunk_startup_probe_responses() {
         if STARTUP_BYTES[i..].starts_with(b"\x1b[6n") {
             *query_counts.entry("CSI 6 n (DSR cursor)").or_insert(0) += 1;
             i += 4;
-        } else if STARTUP_BYTES[i..].starts_with(b"\x1b[c") || STARTUP_BYTES[i..].starts_with(b"\x1b[0c") {
+        } else if STARTUP_BYTES[i..].starts_with(b"\x1b[c")
+            || STARTUP_BYTES[i..].starts_with(b"\x1b[0c")
+        {
             *query_counts.entry("CSI c (DA1)").or_insert(0) += 1;
             i += 3;
         } else if STARTUP_BYTES[i..].starts_with(b"\x1b[>c") {
@@ -652,31 +771,48 @@ fn xray_drain_chunk_startup_probe_responses() {
             *query_counts.entry("XTGETTCAP DCS +q").or_insert(0) += 1;
             i += 4;
         } else if STARTUP_BYTES[i..].starts_with(b"\x1b]4;") {
-            *query_counts.entry("OSC 4 ; N ; ? (palette color)").or_insert(0) += 1;
+            *query_counts
+                .entry("OSC 4 ; N ; ? (palette color)")
+                .or_insert(0) += 1;
             i += 4;
-        } else if STARTUP_BYTES[i..].starts_with(b"\x1b]10;?") || STARTUP_BYTES[i..].starts_with(b"\x1b]11;?") {
+        } else if STARTUP_BYTES[i..].starts_with(b"\x1b]10;?")
+            || STARTUP_BYTES[i..].starts_with(b"\x1b]11;?")
+        {
             *query_counts.entry("OSC 10/11 (fg/bg color)").or_insert(0) += 1;
             i += 6;
         } else if STARTUP_BYTES[i..].starts_with(b"\x1b[?2026$p") {
-            *query_counts.entry("DECRQM ?2026 (sync output)").or_insert(0) += 1;
+            *query_counts
+                .entry("DECRQM ?2026 (sync output)")
+                .or_insert(0) += 1;
             i += 9;
         } else if STARTUP_BYTES[i..].starts_with(b"\x1b[?1016$p") {
-            *query_counts.entry("DECRQM ?1016 (pixel mouse)").or_insert(0) += 1;
+            *query_counts
+                .entry("DECRQM ?1016 (pixel mouse)")
+                .or_insert(0) += 1;
             i += 9;
-        } else if STARTUP_BYTES[i..].starts_with(b"\x1b[?") && STARTUP_BYTES[i..].contains(&b'S') && STARTUP_BYTES[i..6.min(STARTUP_BYTES.len()-i)+i].contains(&b';') {
+        } else if STARTUP_BYTES[i..].starts_with(b"\x1b[?")
+            && STARTUP_BYTES[i..].contains(&b'S')
+            && STARTUP_BYTES[i..6.min(STARTUP_BYTES.len() - i) + i].contains(&b';')
+        {
             *query_counts.entry("XTSMGRAPHICS ?Pi;Pa;Pv S").or_insert(0) += 1;
             i += 1;
         } else if STARTUP_BYTES[i..].starts_with(b"\x1b_Gi=1,a=q") {
             *query_counts.entry("kitty graphics i=1,a=q").or_insert(0) += 1;
             i += 12;
-        } else if STARTUP_BYTES[i..].starts_with(b"\x1b[14t") || STARTUP_BYTES[i..].starts_with(b"\x1b[18t") {
+        } else if STARTUP_BYTES[i..].starts_with(b"\x1b[14t")
+            || STARTUP_BYTES[i..].starts_with(b"\x1b[18t")
+        {
             *query_counts.entry("CSI 14/18 t (window size)").or_insert(0) += 1;
             i += 5;
-        } else if STARTUP_BYTES[i..].starts_with(b"\x1b[>u") || STARTUP_BYTES[i..].starts_with(b"\x1b[?u") {
+        } else if STARTUP_BYTES[i..].starts_with(b"\x1b[>u")
+            || STARTUP_BYTES[i..].starts_with(b"\x1b[?u")
+        {
             *query_counts.entry("kitty keyboard query").or_insert(0) += 1;
             i += 4;
         } else if STARTUP_BYTES[i..].starts_with(b"\x1b[1t") {
-            *query_counts.entry("CSI 1 t (icon-name request)").or_insert(0) += 1;
+            *query_counts
+                .entry("CSI 1 t (icon-name request)")
+                .or_insert(0) += 1;
             i += 4;
         } else {
             i += 1;
@@ -689,9 +825,16 @@ fn xray_drain_chunk_startup_probe_responses() {
     let total_queries: usize = query_counts.values().sum();
     eprintln!("  TOTAL queries: {total_queries}");
     eprintln!();
-    eprintln!("Response coverage: {} responses / {} queries = {:.0}%",
-        pty_writes.len(), total_queries,
-        if total_queries > 0 { 100.0 * pty_writes.len() as f64 / total_queries as f64 } else { 0.0 });
+    eprintln!(
+        "Response coverage: {} responses / {} queries = {:.0}%",
+        pty_writes.len(),
+        total_queries,
+        if total_queries > 0 {
+            100.0 * pty_writes.len() as f64 / total_queries as f64
+        } else {
+            0.0
+        }
+    );
     eprintln!();
 
     // Print the first 10 actual reply bytes so we can see WHAT we send back
@@ -748,7 +891,11 @@ fn xray_frame_burst_e2e_timing() {
                 last_accessed: 0,
                 image_number: None,
             };
-            let frames = vec![build_canvas_bytes(), build_canvas_bytes(), build_canvas_bytes()];
+            let frames = vec![
+                build_canvas_bytes(),
+                build_canvas_bytes(),
+                build_canvas_bytes(),
+            ];
             let durations = vec![
                 Duration::from_millis(33),
                 Duration::from_millis(33),
@@ -779,22 +926,32 @@ fn xray_frame_burst_e2e_timing() {
     let throughput_mb_per_s = (bytes_per_iter as f64 * 1000.0) / (per_iter_ms * 1024.0 * 1024.0);
 
     eprintln!();
-    eprintln!("=== xray frame burst e2e timing ({N} iter × {bytes_per_iter}B = {:.1} KB) ===",
-        bytes_per_iter as f64 / 1024.0);
+    eprintln!(
+        "=== xray frame burst e2e timing ({N} iter × {bytes_per_iter}B = {:.1} KB) ===",
+        bytes_per_iter as f64 / 1024.0
+    );
     eprintln!("total wall:      {elapsed:?}");
     eprintln!("per frame burst: {per_iter_ms:.2} ms  ({per_iter_ns} ns)");
     eprintln!("throughput:      {throughput_mb_per_s:.1} MB/s");
     eprintln!();
     eprintln!("xray budget:     17.4 ms / frame");
-    eprintln!("budget headroom: {:.1}× ({:+.2} ms)",
-        17.4 / per_iter_ms, 17.4 - per_iter_ms);
+    eprintln!(
+        "budget headroom: {:.1}× ({:+.2} ms)",
+        17.4 / per_iter_ms,
+        17.4 - per_iter_ms
+    );
     eprintln!();
     eprintln!("--- attribution ---");
     let kitty_ms = stats.total_ns as f64 / 1e6 / f64::from(N);
-    eprintln!("kitty handler:   {kitty_ms:.2} ms/iter ({:.0}%)",
-        100.0 * kitty_ms / per_iter_ms);
-    eprintln!("non-kitty VTE:   {:.2} ms/iter ({:.0}%)",
-        per_iter_ms - kitty_ms, 100.0 * (per_iter_ms - kitty_ms) / per_iter_ms);
+    eprintln!(
+        "kitty handler:   {kitty_ms:.2} ms/iter ({:.0}%)",
+        100.0 * kitty_ms / per_iter_ms
+    );
+    eprintln!(
+        "non-kitty VTE:   {:.2} ms/iter ({:.0}%)",
+        per_iter_ms - kitty_ms,
+        100.0 * (per_iter_ms - kitty_ms) / per_iter_ms
+    );
     eprintln!();
 }
 
@@ -805,7 +962,13 @@ fn xray_af_fixture_round_trip_smoke() {
     let mut proc: Processor = Processor::new();
     proc.advance(&mut term, XRAY_AF_BYTES);
     let stats = term.take_kitty_handler_stats();
-    assert!(stats.total_calls > 0, "handle_kitty_graphics must be invoked");
+    assert!(
+        stats.total_calls > 0,
+        "handle_kitty_graphics must be invoked"
+    );
     // Index 5 = Frame per action_label mapping.
-    assert!(stats.per_action_calls[5] > 0, "Frame action must be observed");
+    assert!(
+        stats.per_action_calls[5] > 0,
+        "Frame action must be observed"
+    );
 }

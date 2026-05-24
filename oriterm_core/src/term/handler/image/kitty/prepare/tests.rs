@@ -328,9 +328,8 @@ fn prepare_oz_realistic_xray_shape_roundtrip() {
         raw_size,
     );
 
-    let decompressed =
-        prepare_image_bytes(compressed, Some(b'z'), Some(raw_size), TEST_MAX_BYTES)
-            .expect("realistic xray-shape roundtrip must succeed");
+    let decompressed = prepare_image_bytes(compressed, Some(b'z'), Some(raw_size), TEST_MAX_BYTES)
+        .expect("realistic xray-shape roundtrip must succeed");
 
     assert_eq!(
         decompressed.len(),
@@ -375,10 +374,10 @@ fn flate2_backend_is_zlib_rs() {
     // flagged by a different review (clippy/fmt).
     let flate2_line = manifest
         .lines()
-        .find(|line| line.trim_start().starts_with("flate2 ") || line.trim_start().starts_with("flate2="))
-        .unwrap_or_else(|| {
-            panic!("flate2 dependency line not found in oriterm_core/Cargo.toml")
-        });
+        .find(|line| {
+            line.trim_start().starts_with("flate2 ") || line.trim_start().starts_with("flate2=")
+        })
+        .unwrap_or_else(|| panic!("flate2 dependency line not found in oriterm_core/Cargo.toml"));
     assert!(
         flate2_line.contains("features = [\"zlib-rs\"]"),
         "flate2 declared features do NOT include zlib-rs. \

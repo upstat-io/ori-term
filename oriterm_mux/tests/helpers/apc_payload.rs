@@ -53,9 +53,7 @@ pub fn forbid_tokens() -> &'static [&'static str] {
 /// `emit_default` — single small kitty TRANSMIT frame: 1×1 RGB pixel,
 /// base64 `"AAAA"`. Bumps `image_count` from 0 to 1.
 pub fn emit_default(out: &mut impl Write) {
-    let payload = format!(
-        "\x1b_{ID_PREFIX}1,{ACTION_TRANSMIT},{FORMAT_RGB},s=1,v=1;AAAA\x1b\\"
-    );
+    let payload = format!("\x1b_{ID_PREFIX}1,{ACTION_TRANSMIT},{FORMAT_RGB},s=1,v=1;AAAA\x1b\\");
     out.write_all(payload.as_bytes())
         .expect("write default APC frame");
 }
@@ -76,7 +74,8 @@ pub fn emit_large(out: &mut impl Write) {
         "\x1b_{ID_PREFIX}1,{ACTION_TRANSMIT},{FORMAT_RGBA},s={},v={};",
         dims.0, dims.1
     );
-    out.write_all(header.as_bytes()).expect("write large header");
+    out.write_all(header.as_bytes())
+        .expect("write large header");
     out.write_all(b64.as_bytes()).expect("write large payload");
     out.write_all(b"\x1b\\").expect("write large terminator");
 }
@@ -86,9 +85,8 @@ pub fn emit_large(out: &mut impl Write) {
 /// writer load. Bumps `image_count` to EXACTLY `MAX_MULTI_ID`.
 pub fn emit_multi(out: &mut impl Write) {
     for id in 1u32..=MAX_MULTI_ID {
-        let payload = format!(
-            "\x1b_{ID_PREFIX}{id},{ACTION_TRANSMIT},{FORMAT_RGB},s=1,v=1;AAAA\x1b\\"
-        );
+        let payload =
+            format!("\x1b_{ID_PREFIX}{id},{ACTION_TRANSMIT},{FORMAT_RGB},s=1,v=1;AAAA\x1b\\");
         out.write_all(payload.as_bytes())
             .expect("write multi APC frame");
     }

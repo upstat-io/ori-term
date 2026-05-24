@@ -78,8 +78,9 @@ fn small_payload(size: usize) -> Vec<u8> {
     // Synthetic small payload — pseudo-random pattern to avoid trivial
     // run-length compression. Backend behavior on actual small zlib
     // payloads matters; using a fixed seed keeps the bench deterministic.
-    let raw: Vec<u8> =
-        (0..size).map(|i| ((i.wrapping_mul(0x9E3779B9)) & 0xFF) as u8).collect();
+    let raw: Vec<u8> = (0..size)
+        .map(|i| ((i.wrapping_mul(0x9E3779B9)) & 0xFF) as u8)
+        .collect();
     compress_fixture(&raw)
 }
 
