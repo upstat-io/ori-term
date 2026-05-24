@@ -91,6 +91,20 @@ impl ImageCache {
         self.images.contains_key(&id)
     }
 
+    /// Force the auto-id allocator counter. Boundary tests drive it to the
+    /// top of the `u32` range to exercise the Decision 07 wrap-preserves-
+    /// upper-half invariant in [`super::ImageCache::next_image_id`].
+    #[doc(hidden)]
+    pub fn set_next_auto_id_for_test(&mut self, v: u32) {
+        self.next_id = v;
+    }
+
+    /// Allocate the next auto id via the production `next_image_id` path.
+    #[doc(hidden)]
+    pub fn next_auto_id_for_test(&mut self) -> ImageId {
+        self.next_image_id()
+    }
+
     /// Current `pixel_generation` counter of the stored image, or `None`
     /// if `id` is absent. Spec-chain animation tests pin that each
     /// frame transition bumps this counter (the GPU re-upload contract:

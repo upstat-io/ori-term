@@ -71,10 +71,10 @@ use oriterm_test_support::spec_chain::{
 
 use super::super::visual_harness::VisualSpecHarness;
 
-/// Matches `oriterm_core::image::cache::AUTO_ID_START` (private). The
-/// constant is duplicated here only for the mutator call — the live
-/// guard is the bool return value of the mutator.
-const AUTO_ID_START: u32 = 2_147_483_647;
+/// The auto-namespace base imported from its single canonical owner — the
+/// first auto-assigned image ID on a fresh harness. Used for the mutator
+/// call; the live guard is the mutator's bool return value.
+use oriterm_core::image::AUTO_ID_START_FOR_TEST as AUTO_ID_START;
 
 /// CUP `row=5, col=10` (0-based) → `ESC [ 6 ; 11 H` (1-based).
 const CUP_ROW5_COL10: &[u8] = b"\x1b[6;11H";
