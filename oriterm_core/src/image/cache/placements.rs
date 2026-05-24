@@ -1,9 +1,7 @@
 //! Placement management for `ImageCache`.
 //!
 //! Owns the create / mutate / prune / query API for the `placements`
-//! vector. Extracted from `cache/mod.rs` in BUG-06-092 to satisfy the
-//! 500-line file-size cap. All methods preserved verbatim from the
-//! pre-extraction shape; behavior unchanged.
+//! vector.
 //!
 //! SSOT for the LRU-on-place contract: [`ImageCache::place`] bumps
 //! `last_accessed`; `eviction::evict_one` ranks the unplaced pool by
@@ -42,9 +40,7 @@ impl ImageCache {
         //
         // Complexity: O(N) per call over `self.placements`. Acceptable
         // for typical workloads where placements ≤ low double digits
-        // (viewport-visible imagery cap). High-placement scenarios may
-        // benefit from a parallel `(image_id, placement_id) → index`
-        // map for O(1) dedup — see `bug-tracker/section-06-rendering-perf.md`.
+        // (viewport-visible imagery cap).
         self.placements
             .retain(|p| !(p.image_id == image_id && p.placement_id == placement.placement_id));
         self.placements.push(placement);
@@ -69,8 +65,7 @@ impl ImageCache {
     ///
     /// Returns `true` if a matching placement was found and updated.
     ///
-    /// Test-only API per BUG-06-092 §05 cfg-gate cleanup. The `_for_test`
-    /// naming pattern + `#[cfg(any(test, feature = "test-support"))]`
+    /// The `_for_test` suffix + `#[cfg(any(test, feature = "test-support"))]`
     /// gate make the test-only intent enforceable by the compiler.
     /// Consumers in `oriterm/src/gpu/visual_regression/spec_chain/pilots/`
     /// (themselves `#[cfg(test)]`-gated) reach this via `oriterm`'s
