@@ -15,7 +15,8 @@
 //! Catalog rows: ITERM2-1337-FILE-PNG, ITERM2-1337-FILE-JPEG,
 //! ITERM2-1337-FILE-BMP, ITERM2-1337-FILE-ERR-PARSE,
 //! ITERM2-1337-FILE-ERR-DECODE, ITERM2-1337-FILE-ERR-OVERSIZE,
-//! ITERM2-1337-FILE-ERR-STORE.
+//! ITERM2-1337-FILE-ERR-STORE, ITERM2-1337-FILE-INLINE,
+//! ITERM2-1337-FILE-DOWNLOAD.
 
 use std::io::Cursor;
 
@@ -89,6 +90,32 @@ fn b64_std(bytes: &[u8]) -> String {
 fn osc1337_file_inline_payload(b64: &str) -> Vec<u8> {
     let mut out = Vec::with_capacity(b64.len() + 32);
     out.extend_from_slice(b"\x1b]1337;File=inline=1:");
+    out.extend_from_slice(b64.as_bytes());
+    out.extend_from_slice(b"\x1b\\");
+    out
+}
+
+/// Wrap base64-encoded payload as a complete `OSC 1337 ; File=...` ST
+/// sequence with the `inline=` key set to `value`. Used by §14.2 mode
+/// tests to exercise `inline=0` / `inline=yes` (any non-`"1"`) drop
+/// semantics per Decision 06 Option B.
+fn osc1337_file_inline_value_payload(value: &str, b64: &str) -> Vec<u8> {
+    let mut out = Vec::with_capacity(b64.len() + value.len() + 32);
+    out.extend_from_slice(b"\x1b]1337;File=inline=");
+    out.extend_from_slice(value.as_bytes());
+    out.push(b':');
+    out.extend_from_slice(b64.as_bytes());
+    out.extend_from_slice(b"\x1b\\");
+    out
+}
+
+/// Wrap base64-encoded payload as a complete `OSC 1337 ; File=...` ST
+/// sequence with NO `inline=` key. Per `parse_iterm2_file` at
+/// `iterm2/mod.rs:56`, `inline` defaults to `false`; per
+/// `iterm2.rs:46-49`, this routes to the download silent-drop path.
+fn osc1337_file_no_inline_payload(b64: &str) -> Vec<u8> {
+    let mut out = Vec::with_capacity(b64.len() + 32);
+    out.extend_from_slice(b"\x1b]1337;File=:");
     out.extend_from_slice(b64.as_bytes());
     out.extend_from_slice(b"\x1b\\");
     out
@@ -490,4 +517,125 @@ fn osc1337_file_whitespace_in_payload_strips_and_decodes() {
 
     harness.feed(&osc1337_file_inline_payload(&interleaved));
     assert_minimal_image_placed_at_origin(&harness, 1, 1);
+}
+
+// ── §14.2 — inline vs download mode (per Decision 06 Option B) ──────
+//
+// `iterm2.rs:46-49` silent-drops the payload when `image.inline` is
+// false. Per Decision 06 Option B (established 2026-05-24) ori_term
+// does not implement OSC 1337 download mode; the drop IS the conformant
+// state-snapshot. The four tests below pin every shape that routes to
+// the drop branch:
+//
+//   1. explicit `inline=1` (texture-render apex, mirrors §14.1 PNG
+//      with explicit catalog anchor to ITERM2-1337-FILE-INLINE)
+//   2. explicit `inline=0` (state-snapshot apex, silent drop)
+//   3. `inline=` key absent (default `false` per parse_iterm2_file)
+//   4. `inline=<non-"1">` (any non-"1" value per parse_key_value)
+//
+// Cases 2-4 all assert: zero `PtyEffect::Write`, zero image stored,
+// zero placement created.
+
+/// Pins: `OSC 1337 ; File=inline=1:<png-b64> ST` renders at the cursor.
+/// Catalog anchor for `ITERM2-1337-FILE-INLINE` — the mode-row arm
+/// (distinct from format-row PNG anchor in
+/// `osc1337_file_png_renders_at_cursor`). Exercises the same
+/// `iterm2.rs:46-49` decision branch with the explicit `inline=1`
+/// parameter as primary subject so a future regression to the inline
+/// decision short-circuit surfaces against this row's apex
+/// (texture-render) regardless of which PNG/JPEG/BMP format row is
+/// being driven.
+#[test]
+fn osc1337_file_inline_1_renders_at_cursor() {
+    let mut harness = SpecHarness::new();
+    let png = fixtures::minimal_png_bytes();
+    let b64 = b64_std(&png);
+    harness.feed(&osc1337_file_inline_value_payload("1", &b64));
+
+    assert_minimal_image_placed_at_origin(&harness, 1, 1);
+}
+
+/// Pins `iterm2.rs:46-49` download silent-drop per Decision 06 Option B:
+/// `inline=0` causes the handler to early-return WITHOUT touching the
+/// image cache, the placement table, or the PTY. Catalog anchor for
+/// `ITERM2-1337-FILE-DOWNLOAD` (verified-with-deviation — silent drop
+/// is the conformant state-snapshot absent a `HostEffect` variant).
+#[test]
+fn osc1337_file_inline_0_drops_payload_silently() {
+    let mut harness = SpecHarness::new();
+    let before_images = harness.term().image_cache().image_count();
+    let before_placements = harness.term().image_cache().placement_count();
+
+    let png = fixtures::minimal_png_bytes();
+    let b64 = b64_std(&png);
+    harness.feed(&osc1337_file_inline_value_payload("0", &b64));
+
+    assert_no_pty_writes(&harness);
+    assert_eq!(
+        harness.term().image_cache().image_count(),
+        before_images,
+        "inline=0 must NOT store an image (iterm2.rs:46-49 silent drop, Decision 06 Option B)"
+    );
+    assert_eq!(
+        harness.term().image_cache().placement_count(),
+        before_placements,
+        "inline=0 must NOT create a placement"
+    );
+}
+
+/// Pins `parse_iterm2_file` default at `iterm2/mod.rs:56` (`inline:
+/// false`) + `iterm2.rs:47-49` early-return: a `File=` payload with NO
+/// `inline=` key behaves identically to `inline=0`. Spec-default pin
+/// per iTerm2 documentation (`inline` defaults to absent → download).
+#[test]
+fn osc1337_file_inline_absent_defaults_to_download() {
+    let mut harness = SpecHarness::new();
+    let before_images = harness.term().image_cache().image_count();
+    let before_placements = harness.term().image_cache().placement_count();
+
+    let png = fixtures::minimal_png_bytes();
+    let b64 = b64_std(&png);
+    harness.feed(&osc1337_file_no_inline_payload(&b64));
+
+    assert_no_pty_writes(&harness);
+    assert_eq!(
+        harness.term().image_cache().image_count(),
+        before_images,
+        "absent inline= key must default to download (parse_iterm2_file inline:false default)"
+    );
+    assert_eq!(
+        harness.term().image_cache().placement_count(),
+        before_placements,
+        "absent inline= key must NOT create a placement"
+    );
+}
+
+/// Pins `parse_key_value` at `iterm2/mod.rs:136-138` strict-equality
+/// semantics: `image.inline = value == b"1"`. Any non-`"1"` value
+/// (here `"yes"`) routes to the download silent-drop branch. Pins the
+/// canonical drop-to-download behavior so a future loose-equality
+/// "fix" cannot silently widen the inline match without spec-source
+/// amendment. Catalog anchor co-row with `osc1337_file_inline_0_*`
+/// (`ITERM2-1337-FILE-DOWNLOAD`).
+#[test]
+fn osc1337_file_inline_invalid_value_drops_to_download() {
+    let mut harness = SpecHarness::new();
+    let before_images = harness.term().image_cache().image_count();
+    let before_placements = harness.term().image_cache().placement_count();
+
+    let png = fixtures::minimal_png_bytes();
+    let b64 = b64_std(&png);
+    harness.feed(&osc1337_file_inline_value_payload("yes", &b64));
+
+    assert_no_pty_writes(&harness);
+    assert_eq!(
+        harness.term().image_cache().image_count(),
+        before_images,
+        "inline=yes must drop to download (parse_key_value strict equality on b\"1\")"
+    );
+    assert_eq!(
+        harness.term().image_cache().placement_count(),
+        before_placements,
+        "inline=yes must NOT create a placement"
+    );
 }

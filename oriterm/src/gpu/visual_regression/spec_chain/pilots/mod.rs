@@ -5,6 +5,7 @@
 //! `oriterm_core/tests/spec_chain/pilots/` — they don't need GPU access.
 
 pub mod iterm2_image_bmp_at_cursor;
+pub mod iterm2_image_inline_at_cursor;
 pub mod iterm2_image_jpeg_at_cursor;
 pub mod iterm2_image_png_at_cursor;
 pub mod kitty_animation_transition;
