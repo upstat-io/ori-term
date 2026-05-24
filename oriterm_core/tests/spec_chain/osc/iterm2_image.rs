@@ -639,3 +639,331 @@ fn osc1337_file_inline_invalid_value_drops_to_download() {
         "inline=yes must NOT create a placement"
     );
 }
+
+// ── §14.3 — dimension matrix + preserveAspectRatio (Decision 05 dual-gate) ──
+//
+// Pins iterm2 size-spec semantics per iterm2.com/3.4/documentation-images.html
+// §Inline Images. `parse_size_spec` at `iterm2/mod.rs:146-166`:
+//   - empty or `auto` -> SizeSpec::Auto
+//   - `Npx` suffix    -> SizeSpec::Pixels(N)
+//   - `N%` suffix     -> SizeSpec::Percent(N)
+//   - plain integer N -> SizeSpec::Cells(N)
+//   - parse failure   -> SizeSpec::Auto (spec-drift pin for `Nch` etc.)
+//
+// `resolve_display_size` at `iterm2.rs:209-255` combines width + height
+// specs with `preserveAspectRatio`. Each catalog row gets a state-snapshot
+// pin (this file) + GPU pilot (oriterm/src/gpu/visual_regression/spec_chain/
+// pilots/iterm2_image_dim_*.rs) per Decision 05 §Consequences.
+//
+// Catalog rows: ITERM2-1337-FILE-DIM-AUTO, ITERM2-1337-FILE-DIM-CELLS,
+// ITERM2-1337-FILE-DIM-PIXELS, ITERM2-1337-FILE-DIM-PERCENT,
+// ITERM2-1337-FILE-ASPECT-PRESERVE.
+
+/// Encode a solid-red PNG of the given dimensions and return the bytes.
+/// Used by §14.3 dimension tests where the source image size matters
+/// (auto-sizing, native dimensions, aspect-ratio math).
+fn encode_red_png(w: u32, h: u32) -> Vec<u8> {
+    let img: ImageBuffer<Rgba<u8>, Vec<u8>> =
+        ImageBuffer::from_pixel(w, h, Rgba([0xFF, 0x00, 0x00, 0xFF]));
+    let mut buf = Vec::new();
+    img.write_to(&mut Cursor::new(&mut buf), CrateImageFormat::Png)
+        .expect("encode PNG of requested dimensions");
+    buf
+}
+
+/// Build an OSC 1337 File payload with the given key=value args and a
+/// PNG-of-given-dimensions payload. Args appear as additional key=value
+/// pairs between `File=` and the `:` separator. The empty-args form is
+/// equivalent to `osc1337_file_inline_payload`.
+fn osc1337_file_with_args(args: &str, b64: &str) -> Vec<u8> {
+    let mut out = Vec::with_capacity(b64.len() + args.len() + 32);
+    out.extend_from_slice(b"\x1b]1337;File=inline=1");
+    if !args.is_empty() {
+        out.push(b';');
+        out.extend_from_slice(args.as_bytes());
+    }
+    out.push(b':');
+    out.extend_from_slice(b64.as_bytes());
+    out.extend_from_slice(b"\x1b\\");
+    out
+}
+
+/// Returns the single placement created by the most recent successful
+/// File= feed. Panics if zero or more than one placement is present.
+fn only_placement(harness: &SpecHarness) -> oriterm_core::image::ImagePlacement {
+    let placements = harness.term().image_cache().placements_for_test();
+    assert_eq!(
+        placements.len(),
+        1,
+        "expected exactly one placement after dimension test feed"
+    );
+    placements[0].clone()
+}
+
+/// Pins `SizeSpec::Auto` (no `width=` key) on a 32×32 PNG with the
+/// default 8-pixel-wide cell: native pixel width = 32, cols = ceil(32/8)
+/// = 4. Anchor: `ITERM2-1337-FILE-DIM-AUTO` (width axis).
+#[test]
+fn osc1337_file_width_auto_uses_native_size() {
+    let mut harness = SpecHarness::new();
+    // Default harness: cell_pixel_width=8, cell_pixel_height=16.
+    let png = encode_red_png(32, 32);
+    harness.feed(&osc1337_file_with_args("", &b64_std(&png)));
+
+    let p = only_placement(&harness);
+    // Math: ceil(32 native pixels / 8 cell pixel width) = 4.
+    assert_eq!(p.cols, 4, "auto width on 32x32 image at cell_w=8 should span 4 cols");
+}
+
+/// Pins `SizeSpec::Cells(N)` (unitless integer) on the width axis:
+/// `width=10` means 10 terminal cells regardless of image native size.
+/// Anchor: `ITERM2-1337-FILE-DIM-CELLS` (width axis).
+#[test]
+fn osc1337_file_width_unitless_is_cells() {
+    let mut harness = SpecHarness::new();
+    let png = encode_red_png(32, 32);
+    harness.feed(&osc1337_file_with_args("width=10", &b64_std(&png)));
+
+    let p = only_placement(&harness);
+    assert_eq!(p.cols, 10, "width=10 (unitless) must be 10 cells");
+}
+
+/// Pins `SizeSpec::Pixels(N)` (Npx suffix) on the width axis:
+/// `width=200px` with `cell_pixel_width=16` means cols = ceil(200/16) = 13.
+/// Anchor: `ITERM2-1337-FILE-DIM-PIXELS` (width axis).
+#[test]
+fn osc1337_file_width_px_suffix_is_pixels() {
+    let mut harness = SpecHarness::new();
+    // Set cell_pixel_width=16, cell_pixel_height=16 so cols math is clean.
+    harness.term_mut().set_cell_dimensions(16, 16);
+    let png = encode_red_png(32, 32);
+    harness.feed(&osc1337_file_with_args("width=200px", &b64_std(&png)));
+
+    let p = only_placement(&harness);
+    // Math (script-verified): ceil(200/16) = 13.
+    assert_eq!(p.cols, 13, "width=200px at cell_w=16 should span 13 cols");
+}
+
+/// Pins `SizeSpec::Percent(N)` (N% suffix) on the width axis:
+/// `width=50%` of an 80-col terminal (default) at `cell_pixel_width=8`
+/// means `display_w` = 80*8*50/100 = 320px = 40 cells.
+/// Anchor: `ITERM2-1337-FILE-DIM-PERCENT` (width axis).
+#[test]
+fn osc1337_file_width_percent_is_terminal_fraction() {
+    let mut harness = SpecHarness::new();
+    // Default: 80 cols, cell_pixel_width=8 -> term_w = 640px.
+    let png = encode_red_png(32, 32);
+    harness.feed(&osc1337_file_with_args("width=50%", &b64_std(&png)));
+
+    let p = only_placement(&harness);
+    // Math (script-verified): 80*8*50/100 = 320px / 8 = 40 cols.
+    assert_eq!(p.cols, 40, "width=50% of 80-col term at cell_w=8 should span 40 cols");
+}
+
+/// Pins `SizeSpec::Auto` on the height axis: no `height=` on a 32×48
+/// PNG at default `cell_pixel_height=16` yields rows = ceil(48/16) = 3.
+/// Anchor: `ITERM2-1337-FILE-DIM-AUTO` (height axis — pairs with width
+/// pin per /tpr-review §14 R3 codex.F4 dual-axis matrix).
+#[test]
+fn osc1337_file_height_auto_uses_native_size() {
+    let mut harness = SpecHarness::new();
+    let png = encode_red_png(32, 48);
+    harness.feed(&osc1337_file_with_args("", &b64_std(&png)));
+
+    let p = only_placement(&harness);
+    // Math: ceil(48 native pixels / 16 cell pixel height) = 3.
+    assert_eq!(p.rows, 3, "auto height on 32x48 image at cell_h=16 should span 3 rows");
+}
+
+/// Pins `SizeSpec::Cells(N)` on the height axis: `height=5` means 5
+/// rows regardless of image native size.
+/// Anchor: `ITERM2-1337-FILE-DIM-CELLS` (height axis).
+#[test]
+fn osc1337_file_height_unitless_is_cells() {
+    let mut harness = SpecHarness::new();
+    let png = encode_red_png(32, 32);
+    harness.feed(&osc1337_file_with_args("height=5", &b64_std(&png)));
+
+    let p = only_placement(&harness);
+    assert_eq!(p.rows, 5, "height=5 (unitless) must be 5 rows");
+}
+
+/// Pins `SizeSpec::Pixels(N)` on the height axis: `height=100px` at
+/// `cell_pixel_height=20` means rows = ceil(100/20) = 5.
+/// Anchor: `ITERM2-1337-FILE-DIM-PIXELS` (height axis).
+#[test]
+fn osc1337_file_height_px_suffix_is_pixels() {
+    let mut harness = SpecHarness::new();
+    // Set cell_pixel_height=20 so math is clean.
+    harness.term_mut().set_cell_dimensions(8, 20);
+    let png = encode_red_png(32, 32);
+    harness.feed(&osc1337_file_with_args("height=100px", &b64_std(&png)));
+
+    let p = only_placement(&harness);
+    // Math (script-verified): ceil(100/20) = 5.
+    assert_eq!(p.rows, 5, "height=100px at cell_h=20 should span 5 rows");
+}
+
+/// Pins `SizeSpec::Percent(N)` on the height axis: `height=25%` of a
+/// 24-row terminal at `cell_pixel_height=16` means `display_h` =
+/// 24*16*25/100 = 96px = 6 rows.
+/// Anchor: `ITERM2-1337-FILE-DIM-PERCENT` (height axis).
+#[test]
+fn osc1337_file_height_percent_is_terminal_fraction() {
+    let mut harness = SpecHarness::new();
+    // Default: 24 lines, cell_pixel_height=16 -> term_h = 384px.
+    let png = encode_red_png(32, 32);
+    harness.feed(&osc1337_file_with_args("height=25%", &b64_std(&png)));
+
+    let p = only_placement(&harness);
+    // Math (script-verified): 24*16*25/100 = 96px / 16 = 6 rows.
+    assert_eq!(p.rows, 6, "height=25% of 24-row term at cell_h=16 should span 6 rows");
+}
+
+/// Spec-drift pin (width): `parse_size_spec` at `iterm2/mod.rs:156-165`
+/// has NO `ch` suffix arm — `20ch` neither matches `auto`, nor strips
+/// `px` / `%`, nor parses cleanly as a plain integer (`"20ch".parse()`
+/// returns `Err`). Per the final fallback at line 165
+/// (`parse().map_or(Auto, Cells)`), the whole string falls through to
+/// `SizeSpec::Auto`.
+///
+/// This test pins that drop-to-auto behavior so a future "fix" to add
+/// `Nch` parsing cannot silently change semantics without amending the
+/// spec source (iterm2.com/3.4/documentation-images.html). Catalog
+/// anchor: `ITERM2-1337-FILE-DIM-CELLS` (Nch fallback face).
+#[test]
+fn osc1337_file_width_nch_suffix_falls_back_to_auto() {
+    let mut harness = SpecHarness::new();
+    let png = encode_red_png(32, 32);
+    harness.feed(&osc1337_file_with_args("width=20ch", &b64_std(&png)));
+
+    let p = only_placement(&harness);
+    // Auto on width axis with native=32, cell_w=8 -> 4 cols, NOT 20.
+    assert_eq!(
+        p.cols, 4,
+        "width=20ch must fall back to Auto (native 32 px / cell 8 = 4 cols), NOT 20 cells"
+    );
+}
+
+/// Spec-drift pin (height): mirror of width-Nch test. `height=20ch`
+/// falls through to `SizeSpec::Auto` per the same final arm at
+/// `iterm2/mod.rs:165`.
+/// Catalog anchor: `ITERM2-1337-FILE-DIM-CELLS` (Nch fallback face).
+#[test]
+fn osc1337_file_height_nch_suffix_falls_back_to_auto() {
+    let mut harness = SpecHarness::new();
+    let png = encode_red_png(32, 48);
+    harness.feed(&osc1337_file_with_args("height=20ch", &b64_std(&png)));
+
+    let p = only_placement(&harness);
+    // Auto on height axis with native=48, cell_h=16 -> 3 rows, NOT 20.
+    assert_eq!(
+        p.rows, 3,
+        "height=20ch must fall back to Auto (native 48 px / cell 16 = 3 rows), NOT 20 cells"
+    );
+}
+
+// ── preserveAspectRatio 4-case matrix ───────────────────────────────
+//
+// Per `resolve_display_size` at `iterm2.rs:209-255`:
+//   - (auto, auto, preserve=1)        -> native, clamped to term width (line 223-231)
+//   - (explicit_w, auto, preserve=1)  -> width raw; height scaled to ratio (line 232-241)
+//   - (auto, explicit_h, preserve=1)  -> height raw; width scaled to ratio (line 242-251)
+//   - (explicit_w, explicit_h, preserve=1) -> fit-within-bbox (scale-to-fit) (line 252-253)
+//   - (any, any, preserve=0)          -> (raw_w, raw_h) stretch (line 213-215)
+
+/// Pins `(auto, auto, preserve=1)`: a 32×32 image (smaller than the
+/// 640-px-wide terminal) keeps its native size and produces 4 cols x 2
+/// rows (at default cell 8×16).
+/// Catalog anchor: `ITERM2-1337-FILE-ASPECT-PRESERVE` (auto/auto arm).
+#[test]
+fn osc1337_file_aspect_preserve_auto_auto_native_size_clamped_to_terminal() {
+    let mut harness = SpecHarness::new();
+    let png = encode_red_png(32, 32);
+    harness.feed(&osc1337_file_with_args("preserveAspectRatio=1", &b64_std(&png)));
+
+    let p = only_placement(&harness);
+    // preserve=1 with both auto: native 32x32, cell 8x16 -> 4 cols, 2 rows.
+    assert_eq!(p.cols, 4, "(auto,auto,preserve=1): 32 native px / cell 8 = 4 cols");
+    assert_eq!(p.rows, 2, "(auto,auto,preserve=1): 32 native px / cell 16 = 2 rows");
+}
+
+/// Pins `(explicit_w, auto, preserve=1)`: `width=10` cells (80 px at
+/// `cell_w=8`); height auto-scaled by aspect ratio.
+/// Image native 100×50 (2:1), explicit width 80 px -> height scaled to
+/// 100-to-80 ratio: 50 * 80/100 = 40 px -> ceil(40/16) = 3 rows.
+/// Catalog anchor: `ITERM2-1337-FILE-ASPECT-PRESERVE` (explicit/auto arm).
+#[test]
+fn osc1337_file_aspect_preserve_explicit_width_auto_height_scales() {
+    let mut harness = SpecHarness::new();
+    let png = encode_red_png(100, 50);
+    harness.feed(&osc1337_file_with_args("width=10;preserveAspectRatio=1", &b64_std(&png)));
+
+    let p = only_placement(&harness);
+    assert_eq!(p.cols, 10, "explicit width=10 cells");
+    // 50 * 80/100 = 40 px / 16 = 2.5 -> ceil = 3 rows.
+    assert_eq!(p.rows, 3, "(explicit,auto,preserve=1): height scaled by ratio 50*80/100=40 px / cell 16 -> 3 rows");
+}
+
+/// Pins `(auto, explicit_h, preserve=1)`: `height=4` cells (64 px at
+/// `cell_h=16`); width auto-scaled by aspect ratio.
+/// Image native 100×50 (2:1), explicit height 64 px -> width scaled to
+/// 50-to-64 ratio: 100 * 64/50 = 128 px -> ceil(128/8) = 16 cols.
+/// Catalog anchor: `ITERM2-1337-FILE-ASPECT-PRESERVE` (auto/explicit arm).
+#[test]
+fn osc1337_file_aspect_preserve_auto_width_explicit_height_scales() {
+    let mut harness = SpecHarness::new();
+    let png = encode_red_png(100, 50);
+    harness.feed(&osc1337_file_with_args("height=4;preserveAspectRatio=1", &b64_std(&png)));
+
+    let p = only_placement(&harness);
+    assert_eq!(p.rows, 4, "explicit height=4 cells");
+    // 100 * 64/50 = 128 px / cell 8 = 16 cols.
+    assert_eq!(p.cols, 16, "(auto,explicit,preserve=1): width scaled by ratio 100*64/50=128 px / cell 8 -> 16 cols");
+}
+
+/// Pins `(explicit_w, explicit_h, preserve=1)`: spec says
+/// `preserveAspectRatio=1` must FIT WITHIN the W×H bbox (scale-to-fit),
+/// NOT stretch. Image 100×50 with W=80 px, H=80 px bbox:
+///   `scale = min(80/100, 80/50) = min(0.8, 1.6) = 0.8`
+///   `display = (100*0.8, 50*0.8) = (80, 40)` px
+///   -> 80 px / cell 8 = 10 cols
+///   -> `ceil(40 / 16) = 3` rows
+/// Catalog anchor: `ITERM2-1337-FILE-ASPECT-PRESERVE` (explicit/explicit
+/// fit-within-bbox arm — pinned post-fix at `iterm2.rs:252-253`).
+#[test]
+fn osc1337_file_aspect_preserve_explicit_explicit_fits_within_bbox() {
+    let mut harness = SpecHarness::new();
+    let png = encode_red_png(100, 50);
+    harness.feed(&osc1337_file_with_args(
+        "width=10;height=5;preserveAspectRatio=1",
+        &b64_std(&png),
+    ));
+
+    let p = only_placement(&harness);
+    // Math (script-verified): scale = min(80/100, 80/50) = 0.8.
+    //   out_w = 100*0.8 = 80 px -> 10 cols at cell_w=8.
+    //   out_h = 50*0.8 = 40 px -> ceil(40/16) = 3 rows at cell_h=16.
+    assert_eq!(p.cols, 10, "fit-within-bbox: 100*0.8=80 px / cell 8 = 10 cols");
+    assert_eq!(p.rows, 3, "fit-within-bbox: ceil(50*0.8=40 px / cell 16) = 3 rows");
+}
+
+/// Pins `(explicit_w, explicit_h, preserve=0)`: the early-return at
+/// `iterm2.rs:213-215` stretches the image to the exact W×H bbox with
+/// no aspect-ratio preservation. Image 100×50 with W=10 cells (80 px),
+/// H=5 cells (80 px): output is exactly (80, 80) px -> (10 cols, 5 rows).
+/// Catalog anchor: `ITERM2-1337-FILE-ASPECT-PRESERVE` (stretch arm).
+#[test]
+fn osc1337_file_aspect_explicit_explicit_no_preserve_stretches() {
+    let mut harness = SpecHarness::new();
+    let png = encode_red_png(100, 50);
+    harness.feed(&osc1337_file_with_args(
+        "width=10;height=5;preserveAspectRatio=0",
+        &b64_std(&png),
+    ));
+
+    let p = only_placement(&harness);
+    // preserve=0 stretches exactly to the W×H bbox.
+    assert_eq!(p.cols, 10, "stretch (preserve=0): cols = explicit width");
+    assert_eq!(p.rows, 5, "stretch (preserve=0): rows = explicit height");
+}

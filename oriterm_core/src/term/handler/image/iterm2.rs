@@ -249,8 +249,32 @@ fn resolve_display_size(p: &DisplaySizeParams) -> (u32, u32) {
             };
             (w.max(1), h)
         }
-        // Both explicit: use as-is (aspect not preserved when both specified).
-        (false, false) => (raw_w.max(1), raw_h.max(1)),
+        // Both explicit: fit within W×H bbox preserving aspect ratio.
+        // Per iterm2.com/3.4/documentation-images.html §Inline Images,
+        // preserveAspectRatio=1 (the default) means scale-to-fit, NOT
+        // stretch. We compute scale = min(W/img_w, H/img_h) and return
+        // the largest aspect-preserved size that fits in the bbox.
+        (false, false) => {
+            if p.img_w == 0 || p.img_h == 0 {
+                return (raw_w.max(1), raw_h.max(1));
+            }
+            // scale_num/scale_den = min(raw_w / img_w, raw_h / img_h)
+            // computed with integer arithmetic to avoid f32 precision loss.
+            let by_w_num = u64::from(raw_w);
+            let by_w_den = u64::from(p.img_w);
+            let by_h_num = u64::from(raw_h);
+            let by_h_den = u64::from(p.img_h);
+            // Compare by cross-multiplication: (by_w_num * by_h_den) vs (by_h_num * by_w_den).
+            let use_w_scale = by_w_num * by_h_den <= by_h_num * by_w_den;
+            let (scale_num, scale_den) = if use_w_scale {
+                (by_w_num, by_w_den)
+            } else {
+                (by_h_num, by_h_den)
+            };
+            let out_w = (u64::from(p.img_w) * scale_num / scale_den) as u32;
+            let out_h = (u64::from(p.img_h) * scale_num / scale_den) as u32;
+            (out_w.max(1), out_h.max(1))
+        }
     }
 }
 
