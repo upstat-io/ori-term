@@ -148,9 +148,8 @@ impl<S: EffectSink> Term<S> {
             preserve_aspect: image.preserve_aspect_ratio,
         });
 
-        // Clamp to terminal width.
-        let display_w = display_w.min(term_cols as u32 * cell_w);
-
+        // `resolve_display_size` already fit the result within the terminal
+        // bounds (aspect-preserving when requested), so no call-site clamp.
         let cols = display_w.div_ceil(cell_w) as usize;
         let rows = display_h.div_ceil(cell_h) as usize;
 
@@ -208,17 +207,59 @@ impl<S: EffectSink> Term<S> {
 /// `driver_native` is zero (degenerate source dimension).
 fn scale_proportional(other_native: u32, driver: u32, driver_native: u32) -> u32 {
     if driver_native > 0 {
-        (u64::from(other_native) * u64::from(driver) / u64::from(driver_native)) as u32
+        sat_u32(u64::from(other_native) * u64::from(driver) / u64::from(driver_native))
     } else {
         other_native
     }
 }
 
-/// Resolve display pixel size from iTerm2 size specs.
+/// Saturating `u64 -> u32` downcast. SSOT for image-dimension arithmetic so
+/// an attacker-controlled OSC 1337 size value cannot wrap silently on the
+/// downcast; the result is bounded by the terminal in `clamp_to_terminal`
+/// regardless, but saturating keeps the intermediate honest.
+fn sat_u32(v: u64) -> u32 {
+    u32::try_from(v).unwrap_or(u32::MAX)
+}
+
+/// Scale `(w, h)` down to fit within the terminal bounds `(term_w, term_h)`.
+///
+/// SSOT for the terminal-bounds clamp: a size already within bounds is
+/// returned unchanged; when `preserve` is set, both axes scale by the same
+/// factor (the largest that fits, via integer cross-multiplication) so the
+/// aspect ratio survives; otherwise each axis is clamped independently.
+/// Folding this into `resolve_display_size` (rather than clamping width
+/// alone at the call site) keeps an over-wide explicit width aspect-correct
+/// and prevents an over-tall image from scrolling off-screen.
+fn clamp_to_terminal(w: u32, h: u32, term_w: u32, term_h: u32, preserve: bool) -> (u32, u32) {
+    if w <= term_w && h <= term_h {
+        return (w.max(1), h.max(1));
+    }
+    if !preserve || w == 0 || h == 0 {
+        return (w.min(term_w).max(1), h.min(term_h).max(1));
+    }
+    // scale = min(term_w / w, term_h / h), chosen by cross-multiplication
+    // (term_w * h <= term_h * w  <=>  the width bound is the tighter one).
+    let use_w = u64::from(term_w) * u64::from(h) <= u64::from(term_h) * u64::from(w);
+    let (num, den) = if use_w { (term_w, w) } else { (term_h, h) };
+    let out_w = sat_u32(u64::from(w) * u64::from(num) / u64::from(den));
+    let out_h = sat_u32(u64::from(h) * u64::from(num) / u64::from(den));
+    (out_w.max(1), out_h.max(1))
+}
+
+/// Resolve display pixel size from iTerm2 size specs, clamped to the
+/// terminal bounds.
 ///
 /// Handles `Auto`, `Cells`, `Pixels`, and `Percent` modes for both width
-/// and height, with optional aspect ratio preservation.
+/// and height, with optional aspect ratio preservation, then fits the
+/// result within `(term_w, term_h)` via [`clamp_to_terminal`].
 fn resolve_display_size(p: &DisplaySizeParams) -> (u32, u32) {
+    let (w, h) = resolve_display_size_within_spec(p);
+    clamp_to_terminal(w, h, p.term_w, p.term_h, p.preserve_aspect)
+}
+
+/// Resolve display pixel size from the iTerm2 size specs alone, before the
+/// terminal-bounds clamp.
+fn resolve_display_size_within_spec(p: &DisplaySizeParams) -> (u32, u32) {
     let raw_w = resolve_one_dimension(p.w_spec, p.img_w, p.cell_w, p.term_w);
     let raw_h = resolve_one_dimension(p.h_spec, p.img_h, p.cell_h, p.term_h);
 
@@ -231,12 +272,9 @@ fn resolve_display_size(p: &DisplaySizeParams) -> (u32, u32) {
     let h_is_auto = p.h_spec == SizeSpec::Auto;
 
     match (w_is_auto, h_is_auto) {
-        // Both auto: use native size, clamped to terminal width.
-        (true, true) => {
-            let w = p.img_w.min(p.term_w).max(1);
-            let h = scale_proportional(p.img_h, w, p.img_w);
-            (w.max(1), h.max(1))
-        }
+        // Both auto: native size. Terminal fitting is owned solely by
+        // `clamp_to_terminal` (SSOT) — do NOT re-clamp width here.
+        (true, true) => (p.img_w.max(1), p.img_h.max(1)),
         // Width explicit, height auto: scale height to match.
         (false, true) => {
             let w = raw_w.max(1);
@@ -271,19 +309,25 @@ fn resolve_display_size(p: &DisplaySizeParams) -> (u32, u32) {
             } else {
                 (by_h_num, by_h_den)
             };
-            let out_w = (u64::from(p.img_w) * scale_num / scale_den) as u32;
-            let out_h = (u64::from(p.img_h) * scale_num / scale_den) as u32;
+            let out_w = sat_u32(u64::from(p.img_w) * scale_num / scale_den);
+            let out_h = sat_u32(u64::from(p.img_h) * scale_num / scale_den);
             (out_w.max(1), out_h.max(1))
         }
     }
 }
 
 /// Resolve a single dimension from a `SizeSpec`.
+///
+/// `n` / `pct` are attacker-controlled (parsed from the OSC 1337 `File=`
+/// value with no upper bound), so the multiplications use saturating
+/// arithmetic — a crafted `width=4000000000` must not panic in debug or
+/// wrap in release. The result is bounded to the terminal by
+/// `clamp_to_terminal` regardless.
 fn resolve_one_dimension(spec: SizeSpec, native: u32, cell_size: u32, term_size: u32) -> u32 {
     match spec {
         SizeSpec::Auto => native,
-        SizeSpec::Cells(n) => n * cell_size,
+        SizeSpec::Cells(n) => n.saturating_mul(cell_size),
         SizeSpec::Pixels(n) => n,
-        SizeSpec::Percent(pct) => term_size * pct / 100,
+        SizeSpec::Percent(pct) => sat_u32(u64::from(term_size) * u64::from(pct) / 100),
     }
 }

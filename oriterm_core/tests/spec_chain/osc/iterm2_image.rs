@@ -1613,3 +1613,143 @@ fn iterm2_animated_gif_advance_animations_drives_frame_transitions() {
         last_deadline = Some(d);
     }
 }
+
+// §14.5 — iTerm2 + image lifecycle interactions: terminal-bounds clamping
+
+/// Pins that an image taller than the terminal does NOT scroll off the
+/// screen. `width=10;height=100;preserveAspectRatio=0` (stretch to 100
+/// rows) against a 20-row terminal: without the fix the linefeed loop at
+/// `iterm2.rs` scrolls `rows-1` lines and evicts the placement off the
+/// top. With the fix `resolve_display_size` clamps the display height to
+/// the terminal, so `rows <= term_lines` and the image survives.
+/// Anchor: catalog rows ITERM2-1337-FILE-INLINE / ITERM2-1337-FILE-ANIMATED-GIF
+/// (lifecycle survival).
+#[test]
+fn osc1337_image_taller_than_terminal_does_not_scroll_off_screen() {
+    let mut harness = SpecHarness::with_size(20, 80);
+    let png = encode_red_png(32, 32);
+    harness.feed(&osc1337_file_with_args(
+        "width=10;height=100;preserveAspectRatio=0",
+        &b64_std(&png),
+    ));
+
+    let cache = harness.term().image_cache();
+    assert_eq!(
+        cache.image_count(),
+        1,
+        "an over-tall image must survive (not scroll off-screen + evict)"
+    );
+    let p = only_placement(&harness);
+    // Exact independent-clamp result (preserveAspectRatio=0): width
+    // 10*8=80 px <= 640 -> 10 cols (unchanged); height 100*16=1600 px
+    // clamped to 20*16=320 px -> ceil(320/16) = 20 rows == term_lines.
+    assert_eq!(p.cols, 10, "width within terminal: 10 cols unchanged");
+    assert_eq!(
+        p.rows, 20,
+        "over-tall height clamps exactly to term_lines (20), not merely <= 20"
+    );
+}
+
+/// Pins that an explicit width exceeding the terminal width preserves the
+/// source aspect ratio. `width=200;preserveAspectRatio=1` against an
+/// 80-col terminal with a 100×50 (2:1) source: width 200 cells = 1600px
+/// auto-scales height to 800px (2:1), exceeding the terminal (640×384px).
+/// `resolve_display_size` must scale BOTH axes down to fit
+/// (scale=min(640/1600,384/800)=0.4 -> 640×320px -> 80 cols × 20 rows,
+/// still 2:1). The old call-site `display_w.min(term_w)` clamped width to
+/// 640 (80 cols) but left height at 800 (50 rows), breaking the ratio.
+/// Anchor: ITERM2-1337-FILE-ASPECT-PRESERVE (over-wide arm).
+#[test]
+fn osc1337_explicit_width_exceeding_terminal_preserves_aspect() {
+    let mut harness = SpecHarness::new(); // default 80 cols × 24 lines, cell 8×16
+    let png = encode_red_png(100, 50);
+    harness.feed(&osc1337_file_with_args(
+        "width=200;preserveAspectRatio=1",
+        &b64_std(&png),
+    ));
+
+    let p = only_placement(&harness);
+    // Fit-within-terminal preserving 2:1: 640×320 px -> 80 cols, 20 rows.
+    assert_eq!(p.cols, 80, "over-wide width clamps to 80 cols (term width)");
+    assert_eq!(
+        p.rows, 20,
+        "height scales proportionally with the clamped width (2:1 preserved), NOT left at 50"
+    );
+}
+
+/// Pins the (explicit, explicit, preserve=1) fit-within-bbox behavior
+/// through the full placement path (matrix-context confirmation of the
+/// §14.3 unit pin): `width=10;height=5;preserveAspectRatio=1` against a
+/// wide 100×50 source fits within the 10×5-cell bbox preserving aspect.
+/// Anchor: ITERM2-1337-FILE-ASPECT-PRESERVE (bbox arm, lifecycle path).
+#[test]
+fn osc1337_preserve_aspect_bbox_fit_holds_in_placement_path() {
+    let mut harness = SpecHarness::new();
+    let png = encode_red_png(100, 50);
+    harness.feed(&osc1337_file_with_args(
+        "width=10;height=5;preserveAspectRatio=1",
+        &b64_std(&png),
+    ));
+
+    let p = only_placement(&harness);
+    // scale = min(80/100, 80/50) = 0.8 -> (80,40) px -> 10 cols, 3 rows.
+    assert_eq!(p.cols, 10, "bbox fit: 100*0.8=80 px / cell 8 = 10 cols");
+    assert_eq!(p.rows, 3, "bbox fit: ceil(50*0.8=40 px / cell 16) = 3 rows");
+}
+
+/// Pins that an attacker-controlled oversize dimension value does NOT
+/// overflow (debug panic / release wrap). `width=4000000000` (≈4e9 cells)
+/// would overflow `n * cell_size` in u32; `resolve_one_dimension` uses
+/// saturating arithmetic and `clamp_to_terminal` bounds the result, so the
+/// placement is created with cols clamped to the terminal width and no
+/// panic. Guards the untrusted-input arithmetic-safety fix.
+/// Anchor: ITERM2-1337-FILE-DIM-CELLS (overflow-safety face).
+#[test]
+fn osc1337_oversize_dimension_value_does_not_overflow() {
+    let mut harness = SpecHarness::new(); // 80 cols × 24 lines
+    let png = encode_red_png(32, 32);
+    // 4_000_000_000 cells * 8 px/cell overflows u32 without saturation.
+    harness.feed(&osc1337_file_with_args(
+        "width=4000000000;preserveAspectRatio=0",
+        &b64_std(&png),
+    ));
+
+    let p = only_placement(&harness);
+    assert!(
+        p.cols <= 80,
+        "oversize width must clamp to term cols (80), got {}",
+        p.cols
+    );
+    assert!(p.cols >= 1, "placement must keep a non-zero width");
+}
+
+/// Pins the `clamp_to_terminal` preserve-aspect HEIGHT-tighter branch
+/// (the `else { (term_h, h) }` arm): an auto-width image whose explicit
+/// height makes it taller-than-wide and exceeds the terminal must scale
+/// BOTH axes down by the height bound, preserving aspect. `height=100`
+/// (auto width) on a 32×32 source: within-spec (true,false) arm gives
+/// 1600×1600 px (square source); clamp picks height as the tighter bound
+/// (640*1600 > 384*1600) → scale=384/1600 → 384×384 px → 48 cols × 24 rows
+/// (rows == term_lines, anti-scroll invariant holds). Complements the
+/// width-tighter pin `osc1337_explicit_width_exceeding_terminal_preserves_aspect`.
+/// Anchor: ITERM2-1337-FILE-ASPECT-PRESERVE (height-tighter clamp arm).
+#[test]
+fn osc1337_auto_width_over_tall_height_preserves_aspect_via_height_clamp() {
+    let mut harness = SpecHarness::new(); // 80 cols × 24 lines, cell 8×16
+    let png = encode_red_png(32, 32);
+    harness.feed(&osc1337_file_with_args(
+        "height=100;preserveAspectRatio=1",
+        &b64_std(&png),
+    ));
+
+    let p = only_placement(&harness);
+    // within-spec 1600×1600 px; clamp height-tighter -> 384×384 px.
+    assert_eq!(
+        p.cols, 48,
+        "height-tighter clamp: 384 px / cell 8 = 48 cols"
+    );
+    assert_eq!(
+        p.rows, 24,
+        "height-tighter clamp: 384 px / cell 16 = 24 rows (== term_lines)"
+    );
+}
