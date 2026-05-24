@@ -105,6 +105,41 @@ pub fn infocmp_available() -> bool {
     tool_available("infocmp", "-V")
 }
 
+/// Detect whether the sideloaded `ConPTY` runtime is staged.
+///
+/// On Windows, checks that `OpenConsole.exe` and `conpty.dll` are
+/// present next to the current test binary so
+/// `portable_pty::win::psuedocon::load_conpty()`'s preference path
+/// resolves to the post-cure runtime rather than `kernel32`'s built-in.
+///
+/// Returns `false` on non-Windows hosts — the sideload is a Windows-only
+/// concept. Returns `false` on Windows when either binary is missing.
+///
+/// Used by `oriterm_mux/tests/conpty_overlapped_transport.rs` to skip
+/// the APC/ESC-passthrough cure pins on environments where the sideload
+/// has not been staged (e.g., CI windows-2022 runners that do not run
+/// `build-all.sh`'s post-build copy step). `kernel32`'s built-in
+/// `ConPTY` strips ESC bytes from the APC frames the tests assert reach
+/// the VTE parser intact — the tests would time out, not catch a real
+/// regression.
+#[must_use]
+pub fn sideloaded_conpty_available() -> bool {
+    #[cfg(not(target_os = "windows"))]
+    {
+        false
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let Ok(exe) = std::env::current_exe() else {
+            return false;
+        };
+        let Some(dir) = exe.parent() else {
+            return false;
+        };
+        dir.join("conpty.dll").exists() && dir.join("OpenConsole.exe").exists()
+    }
+}
+
 /// Check if `notcurses-info` (notcurses capability dumper) is installed.
 ///
 /// notcurses-info has no `-V`/`--version` flag (its only switch is `-v`

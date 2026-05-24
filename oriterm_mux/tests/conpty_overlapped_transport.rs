@@ -38,8 +38,33 @@
 
 #![cfg(target_os = "windows")]
 
-use oriterm_test_support::PtySession;
+use oriterm_test_support::{PtySession, sideloaded_conpty_available};
 use portable_pty::CommandBuilder;
+
+/// Graceful-skip gate: the 4 cure-verification tests assert post-cure
+/// VT-passthrough behavior, which requires the sideloaded `OpenConsole.exe`
+/// + `conpty.dll` staged next to the test binary. Without the sideload,
+/// `portable_pty::win::psuedocon::load_conpty()` falls back to kernel32's
+/// built-in ConPTY which strips ESC bytes from APC frames — the assertions
+/// time out at 5s rather than catching a real regression.
+///
+/// Staging happens via `build-all.sh`'s post-build step (copies
+/// `tools/conpty/{OpenConsole.exe,conpty.dll}` into
+/// `target/x86_64-pc-windows-gnu/{debug,release}/`). On bare `cargo test`
+/// or CI runners without the staging step, the sideload is absent and
+/// these tests skip cleanly with a `SKIP: ...` diagnostic — the standard
+/// pattern for tests that depend on an out-of-band runtime artifact.
+fn skip_if_no_sideloaded_conpty() -> bool {
+    if !sideloaded_conpty_available() {
+        eprintln!(
+            "SKIP: sideloaded OpenConsole.exe + conpty.dll not staged next \
+             to test binary — run build-all.sh or stage tools/conpty/* into \
+             target/debug/deps/ to verify the post-cure ConPTY/APC transport"
+        );
+        return true;
+    }
+    false
+}
 
 // Shared SSOT for payload bytes + forbid-output tokens.
 // The helper-binary payloads AND the forbid-output token list MUST
@@ -59,6 +84,9 @@ mod apc_payload;
 /// See: bug-tracker/plans/BUG-07-050/00-overview.md
 #[test]
 fn conpty_apc_byte_sequence_via_rust_helper_emits_image() {
+    if skip_if_no_sideloaded_conpty() {
+        return;
+    }
     let helper = env!("CARGO_BIN_EXE_apc_emitter");
     let cmd = CommandBuilder::new(helper);
     let mut session = PtySession::spawn(cmd, 80, 24);
@@ -83,6 +111,9 @@ fn conpty_apc_byte_sequence_via_rust_helper_emits_image() {
 /// Regression: BUG-07-050 TDD-2b.
 #[test]
 fn conpty_apc_large_payload_across_buffer_reads_emits_image() {
+    if skip_if_no_sideloaded_conpty() {
+        return;
+    }
     let helper = env!("CARGO_BIN_EXE_apc_emitter");
     let mut cmd = CommandBuilder::new(helper);
     cmd.arg("--large");
@@ -112,6 +143,9 @@ fn conpty_apc_large_payload_across_buffer_reads_emits_image() {
 /// Regression: BUG-07-050 TDD-2c.
 #[test]
 fn conpty_apc_multiple_frames_burst_emits_all_images() {
+    if skip_if_no_sideloaded_conpty() {
+        return;
+    }
     let helper = env!("CARGO_BIN_EXE_apc_emitter");
     let mut cmd = CommandBuilder::new(helper);
     cmd.arg("--multi");
@@ -147,6 +181,9 @@ fn conpty_apc_multiple_frames_burst_emits_all_images() {
 /// Regression: BUG-07-050 TDD-2d.
 #[test]
 fn conpty_apc_resize_mid_output_preserves_payload() {
+    if skip_if_no_sideloaded_conpty() {
+        return;
+    }
     let helper = env!("CARGO_BIN_EXE_apc_emitter");
     let mut cmd = CommandBuilder::new(helper);
     cmd.arg("--large");
