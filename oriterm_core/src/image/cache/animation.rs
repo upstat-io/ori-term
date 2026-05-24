@@ -207,25 +207,6 @@ impl ImageCache {
         !self.animations.is_empty()
     }
 
-    /// Diagnostic accessor — returns clones of each materialized frame
-    /// Arc for an animated image. Used by kitty animation-frame timing
-    /// harnesses to simulate the production "outstanding Arc strong ref"
-    /// scenario where the GPU renderer / snapshot publisher holds canvas
-    /// refs concurrent with IO-thread Edits.
-    #[cfg(test)]
-    pub(crate) fn animation_frame_arcs_for_test(&self, id: ImageId) -> Option<Vec<Arc<Vec<u8>>>> {
-        let frames = self.animation_frames.get(&id)?;
-        Some(
-            frames
-                .iter()
-                .filter_map(|entry| match entry {
-                    FrameEntry::Materialized { data, .. } => Some(data.clone()),
-                    _ => None,
-                })
-                .collect(),
-        )
-    }
-
     /// Get the animation state for an image (if animated).
     ///
     /// `pub(crate)` — internal callers that need the full state use this.
