@@ -90,4 +90,14 @@ impl ImageCache {
     pub fn contains_image_for_test(&self, id: ImageId) -> bool {
         self.images.contains_key(&id)
     }
+
+    /// Current `pixel_generation` counter of the stored image, or `None`
+    /// if `id` is absent. Spec-chain animation tests pin that each
+    /// frame transition bumps this counter (the GPU re-upload contract:
+    /// the GPU cache's Occupied-arm gate observes the bump and re-uploads
+    /// the texture instead of serving stale pixels).
+    #[doc(hidden)]
+    pub fn image_pixel_generation_for_test(&self, id: ImageId) -> Option<u64> {
+        self.images.get(&id).map(|img| img.pixel_generation)
+    }
 }

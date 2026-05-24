@@ -19,13 +19,14 @@
 //! ITERM2-1337-FILE-DOWNLOAD.
 
 use std::io::Cursor;
+use std::time::{Duration, Instant};
 
 use image::{ImageBuffer, ImageFormat as CrateImageFormat, Rgb, Rgba};
-use oriterm_core::image::ImageFormat;
+use oriterm_core::image::{ImageFormat, decode_gif_frames};
 use oriterm_test_support::spec_chain::{SpecHarness, assert_no_pty_writes};
 
 pub(crate) mod fixtures {
-    use super::{Cursor, CrateImageFormat, ImageBuffer, Rgb, Rgba};
+    use super::{CrateImageFormat, Cursor, ImageBuffer, Rgb, Rgba};
 
     /// Encode a single-pixel RGBA image to `format` and return the bytes.
     ///
@@ -66,15 +67,103 @@ pub(crate) mod fixtures {
 
     /// Minimal valid 1×1 single-frame GIF.
     ///
-    /// §14.4 consumes this for GIF first-frame + animated-GIF tests.
-    /// `#[expect(dead_code, reason = "owned by §14.4 single-frame GIF tests")]`
-    /// because crate-level `dead_code = "deny"` (per `code-hygiene.md`) flags
-    /// the §14.1 baseline use as unused — the §14.4 callers land in a later
-    /// subsection, but the fixture lives in the canonical §14.0 scaffold so
-    /// all subsections share one home for image-format generators.
-    #[expect(dead_code, reason = "owned by §14.4 single-frame GIF tests")]
+    /// `decode_gif_frames` returns `None` for this (frame count ≤ 1), so the
+    /// iterm2 handler routes it through the static `decode_to_rgba` path.
     pub fn minimal_gif_bytes() -> Vec<u8> {
         encode_minimal(CrateImageFormat::Gif)
+    }
+
+    /// Build an `frame_count`-frame animated GIF of `w`×`h` solid frames,
+    /// each with a distinct shade and a `delay_ms` per-frame delay.
+    ///
+    /// `Delay::from_numer_denom_ms(delay_ms, 1)` round-trips through the
+    /// GIF centisecond field: the encoder stores `delay_ms / 10`
+    /// centiseconds and the decoder reconstructs `centiseconds * 10` ms.
+    /// `delay_ms` multiples of 10 round-trip exactly (100 → 10 cs → 100 ms).
+    pub fn animated_gif_bytes(frame_count: u32, w: u32, h: u32, delay_ms: u32) -> Vec<u8> {
+        encode_gif(
+            frame_count,
+            w,
+            h,
+            delay_ms,
+            image::codecs::gif::Repeat::Infinite,
+        )
+    }
+
+    /// Build an `frame_count`-frame GIF with a FINITE NETSCAPE2.0 loop count
+    /// of `loops`. Used to pin that `decode_gif_frames` reads the real loop
+    /// block (vs. the infinite-loop default).
+    pub fn finite_loop_gif_bytes(frame_count: u32, w: u32, h: u32, loops: u16) -> Vec<u8> {
+        encode_gif(
+            frame_count,
+            w,
+            h,
+            100,
+            image::codecs::gif::Repeat::Finite(loops),
+        )
+    }
+
+    fn encode_gif(
+        frame_count: u32,
+        w: u32,
+        h: u32,
+        delay_ms: u32,
+        repeat: image::codecs::gif::Repeat,
+    ) -> Vec<u8> {
+        use image::codecs::gif::GifEncoder;
+        use image::{Delay, Frame};
+
+        let mut buf = Vec::new();
+        {
+            let mut encoder = GifEncoder::new(&mut buf);
+            encoder.set_repeat(repeat).expect("set GIF repeat");
+            for i in 0..frame_count {
+                // Distinct per-frame content so frames differ and the LZW
+                // stream carries real data (truncation lands inside frame
+                // bytes for the corrupt-frame fixture).
+                let shade = ((i * 90) % 256) as u8;
+                let img: ImageBuffer<Rgba<u8>, Vec<u8>> = ImageBuffer::from_fn(w, h, |x, y| {
+                    Rgba([
+                        shade,
+                        (x as u8).wrapping_mul(7),
+                        (y as u8).wrapping_mul(11),
+                        0xFF,
+                    ])
+                });
+                let frame = Frame::from_parts(img, 0, 0, Delay::from_numer_denom_ms(delay_ms, 1));
+                encoder.encode_frame(frame).expect("encode GIF frame");
+            }
+        }
+        buf
+    }
+
+    /// Build a multi-frame GIF whose final frame is truncated mid-data so
+    /// the GIF decoder errors when it reaches that frame (every earlier
+    /// frame decodes cleanly).
+    ///
+    /// The truncation offset is derived from a `(frame_count - 1)`-frame
+    /// GIF: dropping its trailer byte yields the offset where the last
+    /// frame begins in the full stream. The prefix relationship is asserted
+    /// so the fixture fails loudly if the encoder ever stops producing a
+    /// byte-stable frame prefix.
+    pub fn corrupt_last_frame_gif_bytes(
+        frame_count: u32,
+        w: u32,
+        h: u32,
+        delay_ms: u32,
+    ) -> Vec<u8> {
+        assert!(frame_count >= 2, "corrupt-frame fixture needs ≥2 frames");
+        let full = animated_gif_bytes(frame_count, w, h, delay_ms);
+        let prefix = animated_gif_bytes(frame_count - 1, w, h, delay_ms);
+        let prefix_without_trailer = &prefix[..prefix.len() - 1];
+        assert!(
+            full.starts_with(prefix_without_trailer),
+            "GIF encoder must produce a byte-stable frame prefix for the truncation fixture"
+        );
+        // A few bytes into the final frame's descriptor — enough to make
+        // the decoder read a partial frame and error, not stop cleanly.
+        let cut = (prefix.len() - 1 + 4).min(full.len());
+        full[..cut].to_vec()
     }
 }
 
@@ -129,11 +218,7 @@ fn osc1337_file_no_inline_payload(b64: &str) -> Vec<u8> {
 /// Centralizes the §14.1 PNG/JPEG/BMP positive-path assertions: each
 /// per-format test asserts identical post-conditions because the only
 /// thing that varies is the input format. Mirrors §10's `expect_*` helpers.
-fn assert_minimal_image_placed_at_origin(
-    harness: &SpecHarness,
-    expected_w: u32,
-    expected_h: u32,
-) {
+fn assert_minimal_image_placed_at_origin(harness: &SpecHarness, expected_w: u32, expected_h: u32) {
     let cache = harness.term().image_cache();
     assert_eq!(
         cache.image_count(),
@@ -172,7 +257,7 @@ fn assert_minimal_image_placed_at_origin(
     );
 }
 
-// ── Phase 1 / 2 — per-format positive pins ──────────────────────────
+// Phase 1 / 2 — per-format positive pins
 
 /// Pins: `OSC 1337 ; File=inline=1:<png-b64> ST` decodes a 1×1 PNG to RGBA,
 /// stores in the image cache, and creates a placement at the cursor.
@@ -213,7 +298,7 @@ fn osc1337_file_bmp_renders_at_cursor() {
     assert_minimal_image_placed_at_origin(&harness, 1, 1);
 }
 
-// ── Phase 3 — negative pins (error paths) ───────────────────────────
+// Phase 3 — negative pins (error paths)
 
 /// Pins iterm2.rs:96-101 drop-on-decode-error invariant: bytes that
 /// base64-decode successfully but fail `decode_to_rgba` MUST leave the
@@ -272,8 +357,8 @@ fn osc1337_file_parse_failure_emits_no_pty_write() {
 
 /// Pins iterm2.rs:51-58 oversize-rejected-pre-decode invariant: a
 /// base64 payload whose decoded byte length exceeds
-/// `max_single_image_bytes()` MUST be dropped before decode. We lower
-/// the cap on the harness's image cache so the test stays
+/// `max_single_image_bytes()` MUST be dropped before decode. The cap on
+/// the harness's image cache is lowered so the test stays
 /// memory-bounded (vs feeding a true 64 MiB blob).
 /// Anchor: catalog row `ITERM2-1337-FILE-ERR-OVERSIZE`.
 #[test]
@@ -281,14 +366,17 @@ fn osc1337_file_oversize_rejected_pre_decode() {
     let mut harness = SpecHarness::new();
     // Configure a tight cap (256 bytes). Any payload larger than this
     // must be dropped at the `image.data.len() > max_bytes` guard.
-    harness.term_mut().image_cache_mut().set_max_single_image(256);
+    harness
+        .term_mut()
+        .image_cache_mut()
+        .set_max_single_image(256);
 
     let before_images = harness.term().image_cache().image_count();
     let before_placements = harness.term().image_cache().placement_count();
 
-    // Construct a payload whose base64-decoded length exceeds 256 bytes.
-    // We use 1024 bytes of "image header" + filler. The handler's
-    // oversize guard rejects BEFORE decode_to_rgba is called.
+    // Construct a payload whose base64-decoded length exceeds 256 bytes:
+    // 1024 bytes of "image header" + filler. The handler's oversize guard
+    // rejects BEFORE decode_to_rgba is called.
     let payload: Vec<u8> = std::iter::repeat_n(0xAAu8, 1024).collect();
     let b64 = b64_std(&payload);
     harness.feed(&osc1337_file_inline_payload(&b64));
@@ -305,55 +393,63 @@ fn osc1337_file_oversize_rejected_pre_decode() {
     );
 }
 
-/// Pins iterm2.rs:118-121 store-failure invariant: when
-/// `image_cache_mut().store(img_data)` returns `Err` (here:
-/// `OversizedImage` triggered by decoded-RGBA size exceeding
-/// `max_single_image_bytes` while encoded size still passes the
-/// pre-decode guard at `iterm2.rs:51-58`), the placement is NOT
-/// created.
+/// Pins iterm2.rs store-failure invariant: when
+/// `image_cache_mut().store(img_data)` returns `Err`, the placement is
+/// NOT created. Exercises the `MemoryLimitExceeded` store-error path —
+/// the genuine store failure the decode-time bound cannot preempt.
 ///
-/// Mechanism: 16×16 solid-fill PNG compresses tiny (~tens of bytes) but
-/// decodes to 16*16*4 = 1024 RGBA bytes. Setting `max_single_image_bytes`
-/// to 256 lets the encoded payload pass the iterm2 pre-decode guard
-/// (encoded ≤ 256), then `store` rejects with `OversizedImage` because
-/// decoded 1024 > 256. This is the only failure path that exercises
-/// the store-error branch without complex anchored-cache setup.
+/// Mechanism: feed a tiny image A first (stored + placed, so its id is
+/// un-evictable). Then tighten `memory_limit` below `A + B` and feed a
+/// second image B that decodes fine (well under `max_single_image_bytes`)
+/// but cannot be stored — the eviction loop cannot reclaim the placed A,
+/// so `store(B)` returns `MemoryLimitExceeded`. B must add NO image and NO
+/// placement (the cache stays at A's single entry). (Single-image
+/// `OversizedImage` is now rejected earlier at decode via the
+/// `decode_to_rgba` pre-allocation bound — see
+/// `iterm2_decoded_rgba_total_bytes_*`.)
 /// Anchor: catalog row `ITERM2-1337-FILE-ERR-STORE`.
 #[test]
 fn osc1337_file_store_failure_creates_no_placement() {
     let mut harness = SpecHarness::new();
-    // 16×16 solid red — compresses to ≤256 bytes, decodes to 1024.
+
+    // Image A: 1×1 PNG (4 decoded bytes) — stored + placed at the cursor.
+    harness.feed(&osc1337_file_inline_payload(&b64_std(
+        &fixtures::minimal_png_bytes(),
+    )));
+    assert_eq!(
+        harness.term().image_cache().image_count(),
+        1,
+        "image A must store and place"
+    );
+    assert_eq!(harness.term().image_cache().placement_count(), 1);
+
+    // Tighten memory_limit below A(4) + B(1024) so B cannot fit and the
+    // placed A cannot be evicted to make room.
+    harness.term_mut().image_cache_mut().set_memory_limit(500);
+
+    // Image B: 16×16 solid red — decodes to 1024 bytes (under the default
+    // max_single_image_bytes, so decode passes), but store fails with
+    // MemoryLimitExceeded.
     let img: ImageBuffer<Rgba<u8>, Vec<u8>> =
         ImageBuffer::from_pixel(16, 16, Rgba([0xFF, 0x00, 0x00, 0xFF]));
-    let mut png_buf = Vec::new();
-    img.write_to(&mut Cursor::new(&mut png_buf), CrateImageFormat::Png)
+    let mut png_b = Vec::new();
+    img.write_to(&mut Cursor::new(&mut png_b), CrateImageFormat::Png)
         .expect("encode 16x16 PNG");
-    assert!(
-        png_buf.len() <= 256,
-        "16x16 solid-fill PNG must compress under 256 bytes to fit the test cap; got {} bytes",
-        png_buf.len()
-    );
-
-    // Set cap between encoded (≤256) and decoded (1024): iterm2 pre-decode
-    // guard passes, store rejects with OversizedImage.
-    harness.term_mut().image_cache_mut().set_max_single_image(256);
-
-    let b64 = b64_std(&png_buf);
-    harness.feed(&osc1337_file_inline_payload(&b64));
+    harness.feed(&osc1337_file_inline_payload(&b64_std(&png_b)));
 
     assert_eq!(
         harness.term().image_cache().image_count(),
-        0,
-        "store failure must NOT leak an image entry (iterm2.rs:118-121)"
+        1,
+        "store failure (MemoryLimitExceeded) must NOT add image B (cache stays at A)"
     );
     assert_eq!(
         harness.term().image_cache().placement_count(),
-        0,
-        "store failure must NOT create a placement"
+        1,
+        "store failure must NOT create a placement for B"
     );
 }
 
-// ── Phase 4 — custom base64 decoder coverage ────────────────────────
+// Phase 4 — custom base64 decoder coverage
 
 /// Pins the custom base64 decoder at `iterm2/mod.rs:192-229` accepts
 /// the standard alphabet (A-Z/a-z/0-9/+//). Uses a PNG whose base64
@@ -366,8 +462,9 @@ fn osc1337_file_standard_base64_alphabet_decodes_successfully() {
     let b64 = b64_std(&png);
 
     // Sanity: the encoder produces standard-alphabet output.
-    let standard_alpha_only =
-        b64.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'+' || b == b'/' || b == b'=');
+    let standard_alpha_only = b64
+        .bytes()
+        .all(|b| b.is_ascii_alphanumeric() || b == b'+' || b == b'/' || b == b'=');
     assert!(
         standard_alpha_only,
         "fixture PNG b64 must use the standard base64 alphabet; got: {b64}"
@@ -397,7 +494,7 @@ fn osc1337_file_padded_base64_decodes_successfully() {
     assert_minimal_image_placed_at_origin(&harness, 1, 1);
 }
 
-// ── Decoded-RGBA total bound — per-format (matrix variant of ERR-STORE) ──
+// Decoded-RGBA total bound — per-format (matrix variant of ERR-STORE)
 //
 // `iterm2.rs:51-58` oversize guard only checks COMPRESSED bytes; this
 // matrix asserts the decoded RGBA total is also bounded for every
@@ -422,8 +519,9 @@ fn encode_solid_16x16(format: CrateImageFormat) -> Vec<u8> {
 }
 
 /// Pins `iterm2_decoded_rgba_total_bytes_within_alloc_budget_png`:
-/// PNG decoder cannot bypass the per-image decoded-RGBA cap.
-/// Decoded RGBA 1024 bytes > cap 256; store rejects pre-placement.
+/// PNG decoder cannot bypass the per-image decoded-RGBA cap. Decoded RGBA
+/// 1024 bytes > cap 256; the `decode_to_rgba` pre-allocation bound rejects
+/// it at decode time (before any placement), so no orphan image is stored.
 /// Anchor: catalog row `ITERM2-1337-FILE-ERR-STORE` (PNG arm).
 #[test]
 fn iterm2_decoded_rgba_total_bytes_within_alloc_budget_png() {
@@ -433,7 +531,10 @@ fn iterm2_decoded_rgba_total_bytes_within_alloc_budget_png() {
         png.len() <= 256,
         "16x16 solid PNG must encode ≤256 bytes for this pin"
     );
-    harness.term_mut().image_cache_mut().set_max_single_image(256);
+    harness
+        .term_mut()
+        .image_cache_mut()
+        .set_max_single_image(256);
     harness.feed(&osc1337_file_inline_payload(&b64_std(&png)));
 
     assert_eq!(harness.term().image_cache().image_count(), 0);
@@ -443,7 +544,8 @@ fn iterm2_decoded_rgba_total_bytes_within_alloc_budget_png() {
 /// Pins `iterm2_decoded_rgba_total_bytes_within_alloc_budget_jpeg`:
 /// JPEG decoder cannot bypass the per-image decoded-RGBA cap. JPEG
 /// encoding overhead is large for 16×16; this test uses a 64×64 source
-/// so encoded < cap < decoded.
+/// so encoded < cap < decoded. The `decode_to_rgba` pre-allocation bound
+/// rejects the 16384-byte decode against the 4096 cap at decode time.
 /// Anchor: catalog row `ITERM2-1337-FILE-ERR-STORE` (JPEG arm).
 #[test]
 fn iterm2_decoded_rgba_total_bytes_within_alloc_budget_jpeg() {
@@ -461,7 +563,10 @@ fn iterm2_decoded_rgba_total_bytes_within_alloc_budget_jpeg() {
         jpeg.len()
     );
     // Cap between encoded (<4096) and decoded (16384).
-    harness.term_mut().image_cache_mut().set_max_single_image(4096);
+    harness
+        .term_mut()
+        .image_cache_mut()
+        .set_max_single_image(4096);
     harness.feed(&osc1337_file_inline_payload(&b64_std(&jpeg)));
 
     assert_eq!(harness.term().image_cache().image_count(), 0);
@@ -478,10 +583,10 @@ fn iterm2_decoded_rgba_total_bytes_within_alloc_budget_jpeg() {
 fn iterm2_decoded_rgba_total_bytes_within_alloc_budget_bmp() {
     let mut harness = SpecHarness::new();
     // For BMP the encoded ≈ decoded (uncompressed), so we cannot use
-    // the encoded-vs-decoded gap. Instead set the cap below encoded:
-    // both iterm2.rs:51-58 AND store reject; the same observable
-    // outcome (no orphan, no placement) is pinned. Test name still
-    // reflects the decoded-RGBA bound the multi-format matrix targets.
+    // the encoded-vs-decoded gap. Setting the cap below encoded makes the
+    // iterm2.rs compressed-size pre-guard AND the decode pre-allocation
+    // bound both reject; the same observable outcome (no orphan, no
+    // placement) is pinned. Test name reflects the decoded-RGBA bound.
     let bmp = encode_solid_16x16(CrateImageFormat::Bmp);
     harness
         .term_mut()
@@ -491,6 +596,30 @@ fn iterm2_decoded_rgba_total_bytes_within_alloc_budget_bmp() {
 
     assert_eq!(harness.term().image_cache().image_count(), 0);
     assert_eq!(harness.term().image_cache().placement_count(), 0);
+}
+
+/// Pins the `decode_to_rgba` decompression-bomb bound directly: a
+/// solid-fill PNG of large dimensions compresses tiny (passes any
+/// compressed-size pre-guard) but decodes to `w*h*4` bytes. With a budget
+/// below the decoded size, `decode_to_rgba` must reject at DECODE time
+/// (`ImageReader` `max_alloc` limit), not allocate the full buffer first.
+/// 2048×2048 decodes to 16 MiB (script-verified:
+/// `python3 -c "print(2048*2048*4)"` = 16777216); a 1 MiB budget rejects.
+/// Anchor: catalog row `ITERM2-1337-FILE-ERR-STORE` (static decode bound).
+#[test]
+fn decode_to_rgba_rejects_decompression_bomb_at_decode_time() {
+    use oriterm_core::image::decode_to_rgba;
+    // 2048×2048 solid red — compresses small, decodes to 16 MiB.
+    let bomb = encode_red_png(2048, 2048);
+    assert!(
+        decode_to_rgba(&bomb, 1024 * 1024).is_err(),
+        "16 MiB decode against a 1 MiB budget must be rejected at decode time"
+    );
+    // Positive companion: a generous budget decodes the same PNG.
+    let decoded =
+        decode_to_rgba(&bomb, 64 * 1024 * 1024).expect("same PNG decodes under a generous budget");
+    assert_eq!(decoded.1, 2048, "decoded width");
+    assert_eq!(decoded.2, 2048, "decoded height");
 }
 
 /// Pins `iterm2/mod.rs:196-197` whitespace strip-and-decode: ASCII
@@ -519,7 +648,7 @@ fn osc1337_file_whitespace_in_payload_strips_and_decodes() {
     assert_minimal_image_placed_at_origin(&harness, 1, 1);
 }
 
-// ── §14.2 — inline vs download mode (per Decision 06 Option B) ──────
+// §14.2 — inline vs download mode (per Decision 06 Option B)
 //
 // `iterm2.rs:46-49` silent-drops the payload when `image.inline` is
 // false. Per Decision 06 Option B (established 2026-05-24) ori_term
@@ -640,7 +769,7 @@ fn osc1337_file_inline_invalid_value_drops_to_download() {
     );
 }
 
-// ── §14.3 — dimension matrix + preserveAspectRatio (Decision 05 dual-gate) ──
+// §14.3 — dimension matrix + preserveAspectRatio (Decision 05 dual-gate)
 //
 // Pins iterm2 size-spec semantics per iterm2.com/3.4/documentation-images.html
 // §Inline Images. `parse_size_spec` at `iterm2/mod.rs:146-166`:
@@ -712,7 +841,10 @@ fn osc1337_file_width_auto_uses_native_size() {
 
     let p = only_placement(&harness);
     // Math: ceil(32 native pixels / 8 cell pixel width) = 4.
-    assert_eq!(p.cols, 4, "auto width on 32x32 image at cell_w=8 should span 4 cols");
+    assert_eq!(
+        p.cols, 4,
+        "auto width on 32x32 image at cell_w=8 should span 4 cols"
+    );
 }
 
 /// Pins `SizeSpec::Cells(N)` (unitless integer) on the width axis:
@@ -757,13 +889,16 @@ fn osc1337_file_width_percent_is_terminal_fraction() {
 
     let p = only_placement(&harness);
     // Math (script-verified): 80*8*50/100 = 320px / 8 = 40 cols.
-    assert_eq!(p.cols, 40, "width=50% of 80-col term at cell_w=8 should span 40 cols");
+    assert_eq!(
+        p.cols, 40,
+        "width=50% of 80-col term at cell_w=8 should span 40 cols"
+    );
 }
 
 /// Pins `SizeSpec::Auto` on the height axis: no `height=` on a 32×48
 /// PNG at default `cell_pixel_height=16` yields rows = ceil(48/16) = 3.
-/// Anchor: `ITERM2-1337-FILE-DIM-AUTO` (height axis — pairs with width
-/// pin per /tpr-review §14 R3 codex.F4 dual-axis matrix).
+/// Anchor: `ITERM2-1337-FILE-DIM-AUTO` (height axis — pairs with the
+/// width pin for dual-axis dimension coverage).
 #[test]
 fn osc1337_file_height_auto_uses_native_size() {
     let mut harness = SpecHarness::new();
@@ -772,7 +907,10 @@ fn osc1337_file_height_auto_uses_native_size() {
 
     let p = only_placement(&harness);
     // Math: ceil(48 native pixels / 16 cell pixel height) = 3.
-    assert_eq!(p.rows, 3, "auto height on 32x48 image at cell_h=16 should span 3 rows");
+    assert_eq!(
+        p.rows, 3,
+        "auto height on 32x48 image at cell_h=16 should span 3 rows"
+    );
 }
 
 /// Pins `SizeSpec::Cells(N)` on the height axis: `height=5` means 5
@@ -817,7 +955,10 @@ fn osc1337_file_height_percent_is_terminal_fraction() {
 
     let p = only_placement(&harness);
     // Math (script-verified): 24*16*25/100 = 96px / 16 = 6 rows.
-    assert_eq!(p.rows, 6, "height=25% of 24-row term at cell_h=16 should span 6 rows");
+    assert_eq!(
+        p.rows, 6,
+        "height=25% of 24-row term at cell_h=16 should span 6 rows"
+    );
 }
 
 /// Spec-drift pin (width): `parse_size_spec` at `iterm2/mod.rs:156-165`
@@ -863,7 +1004,7 @@ fn osc1337_file_height_nch_suffix_falls_back_to_auto() {
     );
 }
 
-// ── preserveAspectRatio 4-case matrix ───────────────────────────────
+// preserveAspectRatio 4-case matrix
 //
 // Per `resolve_display_size` at `iterm2.rs:209-255`:
 //   - (auto, auto, preserve=1)        -> native, clamped to term width (line 223-231)
@@ -880,12 +1021,21 @@ fn osc1337_file_height_nch_suffix_falls_back_to_auto() {
 fn osc1337_file_aspect_preserve_auto_auto_native_size_clamped_to_terminal() {
     let mut harness = SpecHarness::new();
     let png = encode_red_png(32, 32);
-    harness.feed(&osc1337_file_with_args("preserveAspectRatio=1", &b64_std(&png)));
+    harness.feed(&osc1337_file_with_args(
+        "preserveAspectRatio=1",
+        &b64_std(&png),
+    ));
 
     let p = only_placement(&harness);
     // preserve=1 with both auto: native 32x32, cell 8x16 -> 4 cols, 2 rows.
-    assert_eq!(p.cols, 4, "(auto,auto,preserve=1): 32 native px / cell 8 = 4 cols");
-    assert_eq!(p.rows, 2, "(auto,auto,preserve=1): 32 native px / cell 16 = 2 rows");
+    assert_eq!(
+        p.cols, 4,
+        "(auto,auto,preserve=1): 32 native px / cell 8 = 4 cols"
+    );
+    assert_eq!(
+        p.rows, 2,
+        "(auto,auto,preserve=1): 32 native px / cell 16 = 2 rows"
+    );
 }
 
 /// Pins `(explicit_w, auto, preserve=1)`: `width=10` cells (80 px at
@@ -897,12 +1047,18 @@ fn osc1337_file_aspect_preserve_auto_auto_native_size_clamped_to_terminal() {
 fn osc1337_file_aspect_preserve_explicit_width_auto_height_scales() {
     let mut harness = SpecHarness::new();
     let png = encode_red_png(100, 50);
-    harness.feed(&osc1337_file_with_args("width=10;preserveAspectRatio=1", &b64_std(&png)));
+    harness.feed(&osc1337_file_with_args(
+        "width=10;preserveAspectRatio=1",
+        &b64_std(&png),
+    ));
 
     let p = only_placement(&harness);
     assert_eq!(p.cols, 10, "explicit width=10 cells");
     // 50 * 80/100 = 40 px / 16 = 2.5 -> ceil = 3 rows.
-    assert_eq!(p.rows, 3, "(explicit,auto,preserve=1): height scaled by ratio 50*80/100=40 px / cell 16 -> 3 rows");
+    assert_eq!(
+        p.rows, 3,
+        "(explicit,auto,preserve=1): height scaled by ratio 50*80/100=40 px / cell 16 -> 3 rows"
+    );
 }
 
 /// Pins `(auto, explicit_h, preserve=1)`: `height=4` cells (64 px at
@@ -914,12 +1070,18 @@ fn osc1337_file_aspect_preserve_explicit_width_auto_height_scales() {
 fn osc1337_file_aspect_preserve_auto_width_explicit_height_scales() {
     let mut harness = SpecHarness::new();
     let png = encode_red_png(100, 50);
-    harness.feed(&osc1337_file_with_args("height=4;preserveAspectRatio=1", &b64_std(&png)));
+    harness.feed(&osc1337_file_with_args(
+        "height=4;preserveAspectRatio=1",
+        &b64_std(&png),
+    ));
 
     let p = only_placement(&harness);
     assert_eq!(p.rows, 4, "explicit height=4 cells");
     // 100 * 64/50 = 128 px / cell 8 = 16 cols.
-    assert_eq!(p.cols, 16, "(auto,explicit,preserve=1): width scaled by ratio 100*64/50=128 px / cell 8 -> 16 cols");
+    assert_eq!(
+        p.cols, 16,
+        "(auto,explicit,preserve=1): width scaled by ratio 100*64/50=128 px / cell 8 -> 16 cols"
+    );
 }
 
 /// Pins `(explicit_w, explicit_h, preserve=1)`: spec says
@@ -944,8 +1106,14 @@ fn osc1337_file_aspect_preserve_explicit_explicit_fits_within_bbox() {
     // Math (script-verified): scale = min(80/100, 80/50) = 0.8.
     //   out_w = 100*0.8 = 80 px -> 10 cols at cell_w=8.
     //   out_h = 50*0.8 = 40 px -> ceil(40/16) = 3 rows at cell_h=16.
-    assert_eq!(p.cols, 10, "fit-within-bbox: 100*0.8=80 px / cell 8 = 10 cols");
-    assert_eq!(p.rows, 3, "fit-within-bbox: ceil(50*0.8=40 px / cell 16) = 3 rows");
+    assert_eq!(
+        p.cols, 10,
+        "fit-within-bbox: 100*0.8=80 px / cell 8 = 10 cols"
+    );
+    assert_eq!(
+        p.rows, 3,
+        "fit-within-bbox: ceil(50*0.8=40 px / cell 16) = 3 rows"
+    );
 }
 
 /// Pins `(explicit_w, explicit_h, preserve=0)`: the early-return at
@@ -966,4 +1134,482 @@ fn osc1337_file_aspect_explicit_explicit_no_preserve_stretches() {
     // preserve=0 stretches exactly to the W×H bbox.
     assert_eq!(p.cols, 10, "stretch (preserve=0): cols = explicit width");
     assert_eq!(p.rows, 5, "stretch (preserve=0): rows = explicit height");
+}
+
+// §14.4 — GIF frame extraction + animation
+//
+// Pins multi-frame GIF decoding via `decode_gif_frames` +
+// `ImageCache::store_animated`, and the iterm2 handler's GIF routing at
+// `iterm2.rs:60-92`. Two test layers:
+//
+//   * Direct `decode_gif_frames` unit pins — the decoder's frame-count
+//     gate, corrupt-frame fail-whole-decode contract, decoded-RGBA total
+//     budget bound, and frame-0 canvas SSOT.
+//   * OSC end-to-end pins — single-frame static fallback, multi-frame
+//     animation promotion, corrupt-frame + oversized degradation to the
+//     static first frame, zero-delay no-panic, loop-count deviation, and
+//     the state-level `advance_animations` frame-transition sequence.
+//
+// Catalog rows: ITERM2-1337-FILE-GIF, ITERM2-1337-FILE-ANIMATED-GIF.
+//
+// Plan deviations recorded in §14.4 HISTORY:
+//   * `gif_frame_zero_duration_does_not_div_by_zero` (denom=0): the
+//     image-0.25 GIF decoder always builds `Delay` with denominator 1
+//     (gif.rs:459 `Ratio::new(frame.delay*10, 1)`), so the `checked_div`
+//     denom=0 arm is unreachable via real GIFs. The reachable case is
+//     numerator=0 (zero-centisecond delay) — pinned by
+//     `osc1337_file_gif_zero_delay_frame_decodes_without_panic`.
+//   * `gif_canvas_size_from_frame_zero`: the decoder composites every
+//     frame onto the logical-screen canvas (gif.rs:388-414), so all
+//     `into_frames()` buffers are already canvas-sized and the resize
+//     branch at decode.rs guards the external image-crate contract.
+//     `decode_gif_frames_uses_frame_zero_canvas_size` pins the observable
+//     SSOT (width/height from frame 0; all frames uniformly sized).
+
+/// A generous per-image byte budget for direct `decode_gif_frames` calls
+/// where the budget is not the subject under test.
+const UNBOUNDED_GIF_BUDGET: usize = usize::MAX;
+
+/// Pins `decode.rs` frame-count gate: a single-frame GIF returns `None`
+/// from `decode_gif_frames`, so the iterm2 handler falls through to the
+/// static `decode_to_rgba` path. No animation promotion, exactly one
+/// static image at the cursor.
+/// Anchor: catalog row `ITERM2-1337-FILE-GIF`.
+#[test]
+fn osc1337_file_single_frame_gif_takes_static_path() {
+    let mut harness = SpecHarness::new();
+    let gif = fixtures::minimal_gif_bytes();
+    // Direct pin: single-frame GIF is not animatable.
+    assert!(
+        decode_gif_frames(&gif, UNBOUNDED_GIF_BUDGET).is_none(),
+        "single-frame GIF must return None from decode_gif_frames (frame count ≤ 1)"
+    );
+
+    harness.feed(&osc1337_file_inline_payload(&b64_std(&gif)));
+
+    let cache = harness.term().image_cache();
+    assert_eq!(
+        cache.image_count(),
+        1,
+        "single-frame GIF must store one static image"
+    );
+    assert_eq!(
+        cache.placement_count(),
+        1,
+        "single-frame GIF must create one placement"
+    );
+    let id = cache.placements_for_test()[0].image_id;
+    assert!(
+        !cache.animation_promoted_for_test(id),
+        "single-frame GIF must NOT be promoted to an animation"
+    );
+    assert_eq!(
+        cache.total_frames_for_test(id),
+        1,
+        "single-frame GIF static path stores exactly one frame"
+    );
+}
+
+/// Pins multi-frame GIF promotion: a 3-frame GIF is stored as an
+/// animation via `store_animated` — animation-promoted, 3 frames, 3
+/// per-frame gaps, one placement at the cursor.
+/// Anchor: catalog row `ITERM2-1337-FILE-ANIMATED-GIF`.
+#[test]
+fn osc1337_file_multi_frame_gif_stores_animated() {
+    let mut harness = SpecHarness::new();
+    let gif = fixtures::animated_gif_bytes(3, 2, 2, 100);
+    harness.feed(&osc1337_file_inline_payload(&b64_std(&gif)));
+
+    let cache = harness.term().image_cache();
+    assert_eq!(
+        cache.image_count(),
+        1,
+        "3-frame GIF stores one (animated) image"
+    );
+    assert_eq!(
+        cache.placement_count(),
+        1,
+        "3-frame GIF creates one placement"
+    );
+    let id = cache.placements_for_test()[0].image_id;
+    assert!(
+        cache.animation_promoted_for_test(id),
+        "3-frame GIF must be promoted to an animation"
+    );
+    assert_eq!(
+        cache.total_frames_for_test(id),
+        3,
+        "3-frame GIF retains all 3 frames"
+    );
+
+    let snap = cache
+        .animation_snapshot(id)
+        .expect("animated image must expose an animation snapshot");
+    assert_eq!(
+        snap.total_frames, 3,
+        "snapshot total_frames matches frame count"
+    );
+    assert_eq!(
+        snap.frame_gaps.len(),
+        3,
+        "snapshot carries one gap per frame"
+    );
+    assert!(
+        snap.frame_gaps
+            .iter()
+            .all(|g| *g == Duration::from_millis(100)),
+        "each 100ms-delay frame round-trips to a 100ms gap; got {:?}",
+        snap.frame_gaps
+    );
+}
+
+/// Pins the fail-whole-decode contract (swallowed-error cure at
+/// `decode.rs`): a GIF whose final frame is truncated mid-data makes
+/// `decode_gif_frames` return `None` rather than silently dropping the
+/// bad frame and returning a partial animation. This FAILS if the decoder
+/// reverts to `filter_map(Result::ok)` (which would return `Some` with
+/// the surviving frames), so it doubles as the regression guard against
+/// that revert.
+/// Anchor: catalog row `ITERM2-1337-FILE-ANIMATED-GIF`.
+#[test]
+fn decode_gif_frames_fails_whole_decode_on_corrupt_frame() {
+    let corrupt = fixtures::corrupt_last_frame_gif_bytes(3, 32, 32, 100);
+    assert!(
+        decode_gif_frames(&corrupt, UNBOUNDED_GIF_BUDGET).is_none(),
+        "a corrupt non-first frame must fail the whole decode (no silent truncation)"
+    );
+    // Companion positive: the same shape WITHOUT corruption decodes fully.
+    let intact = fixtures::animated_gif_bytes(3, 32, 32, 100);
+    let frames = decode_gif_frames(&intact, UNBOUNDED_GIF_BUDGET)
+        .expect("an intact 3-frame GIF must decode");
+    assert_eq!(frames.frames.len(), 3, "intact GIF yields all 3 frames");
+}
+
+/// End-to-end pin for the corrupt-frame fallback: feeding a GIF with a
+/// truncated final frame through the OSC path degrades to the static
+/// first frame (via `decode_to_rgba`) — exactly one static image, no
+/// animation promotion.
+/// Anchor: catalog row `ITERM2-1337-FILE-ANIMATED-GIF`.
+#[test]
+fn osc1337_file_gif_with_corrupt_frame_falls_back_to_first_frame() {
+    let mut harness = SpecHarness::new();
+    let corrupt = fixtures::corrupt_last_frame_gif_bytes(3, 32, 32, 100);
+    harness.feed(&osc1337_file_inline_payload(&b64_std(&corrupt)));
+
+    let cache = harness.term().image_cache();
+    assert_eq!(
+        cache.image_count(),
+        1,
+        "corrupt GIF degrades to the static first frame (one image)"
+    );
+    assert_eq!(
+        cache.placement_count(),
+        1,
+        "corrupt-GIF fallback creates one placement"
+    );
+    let id = cache.placements_for_test()[0].image_id;
+    assert!(
+        !cache.animation_promoted_for_test(id),
+        "corrupt GIF must NOT be stored as a (partial) animation"
+    );
+    assert_eq!(
+        cache.total_frames_for_test(id),
+        1,
+        "fallback stores only the static first frame"
+    );
+}
+
+/// Pins the reachable zero-delay path in `decode_gif_frames` (the
+/// `checked_div(denom)` per-frame delay handling): a GIF whose
+/// frames declare a 0-centisecond delay decodes to `Duration::ZERO` gaps
+/// without panicking (the `checked_div` guard yields 0ms, not a div-by-
+/// zero). Replaces the plan's denom=0 framing — the image-0.25 decoder
+/// always sets the `Delay` denominator to 1, so only numerator=0 is
+/// reachable from real GIFs.
+/// Anchor: catalog row `ITERM2-1337-FILE-ANIMATED-GIF`.
+#[test]
+fn osc1337_file_gif_zero_delay_frame_decodes_without_panic() {
+    let mut harness = SpecHarness::new();
+    let gif = fixtures::animated_gif_bytes(3, 2, 2, 0);
+    harness.feed(&osc1337_file_inline_payload(&b64_std(&gif)));
+
+    let cache = harness.term().image_cache();
+    assert_eq!(
+        cache.image_count(),
+        1,
+        "zero-delay GIF still stores one image"
+    );
+    let id = cache.placements_for_test()[0].image_id;
+    assert!(
+        cache.animation_promoted_for_test(id),
+        "a 3-frame zero-delay GIF is still a multi-frame animation"
+    );
+    let snap = cache
+        .animation_snapshot(id)
+        .expect("animated snapshot present");
+    assert!(
+        snap.frame_gaps.iter().all(|g| *g == Duration::ZERO),
+        "0-centisecond delay frames decode to ZERO gaps; got {:?}",
+        snap.frame_gaps
+    );
+}
+
+/// Pins the frame-0 canvas SSOT (the `frames[0].buffer()` width/height
+/// read in `decode_gif_frames`): `decode_gif_frames`
+/// takes width/height from frame 0, and every decoded frame is uniformly
+/// canvas-sized (the image-0.25 decoder composites each frame onto the
+/// logical screen, so all `into_frames()` buffers share frame-0
+/// dimensions).
+/// Anchor: catalog row `ITERM2-1337-FILE-ANIMATED-GIF`.
+#[test]
+fn decode_gif_frames_uses_frame_zero_canvas_size() {
+    let gif = fixtures::animated_gif_bytes(3, 4, 6, 100);
+    let decoded =
+        decode_gif_frames(&gif, UNBOUNDED_GIF_BUDGET).expect("a 3-frame 4x6 GIF must decode");
+    assert_eq!(decoded.width, 4, "canvas width comes from frame 0");
+    assert_eq!(decoded.height, 6, "canvas height comes from frame 0");
+    let canvas_bytes = (4 * 6 * 4) as usize;
+    assert!(
+        decoded.frames.iter().all(|f| f.len() == canvas_bytes),
+        "every frame is canvas-sized (4*6*4 = {canvas_bytes} RGBA bytes)"
+    );
+}
+
+/// Pins that an infinite-loop GIF (NETSCAPE2.0 `Repeat::Infinite`) decodes
+/// to `loop_count == None`. `decode_gif_frames` reads the real loop block
+/// via `GifDecoder::loop_count()`; `LoopCount::Infinite` maps to `None`.
+/// Anchor: catalog row `ITERM2-1337-FILE-ANIMATED-GIF`.
+#[test]
+fn gif_infinite_loop_decodes_to_none_loop_count() {
+    let mut harness = SpecHarness::new();
+    let gif = fixtures::animated_gif_bytes(3, 2, 2, 100);
+    harness.feed(&osc1337_file_inline_payload(&b64_std(&gif)));
+
+    let cache = harness.term().image_cache();
+    let id = cache.placements_for_test()[0].image_id;
+    let snap = cache
+        .animation_snapshot(id)
+        .expect("animated snapshot present");
+    assert_eq!(
+        snap.loop_count, None,
+        "Repeat::Infinite GIF maps to loop_count None"
+    );
+}
+
+/// Pins that a FINITE-loop GIF's NETSCAPE2.0 loop count is read from the
+/// stream, not hardcoded. A `Repeat::Finite(3)` GIF must decode to
+/// `loop_count == Some(3)`. This FAILS if `decode_gif_frames` reverts to
+/// hardcoding `loop_count: None` (the prior false-premise behavior).
+/// Anchor: catalog row `ITERM2-1337-FILE-ANIMATED-GIF`.
+#[test]
+fn gif_finite_loop_count_is_read_from_netscape_block() {
+    let gif = fixtures::finite_loop_gif_bytes(3, 2, 2, 3);
+    let decoded =
+        decode_gif_frames(&gif, UNBOUNDED_GIF_BUDGET).expect("3-frame finite-loop GIF decodes");
+    assert_eq!(
+        decoded.loop_count,
+        Some(3),
+        "finite NETSCAPE2.0 loop count 3 must be read into loop_count Some(3)"
+    );
+}
+
+/// Rejects an over-budget decoded-RGBA total (GIF decompression-bomb
+/// guard): `decode_gif_frames` returns `None` for a multi-frame GIF whose
+/// decoded total exceeds the budget. The `set_limits` pre-allocation bound
+/// and/or the cumulative `running_bytes` guard reject it before a full
+/// animation is materialized. 3-frame 32×32 = 3 × 4096 = 12288 RGBA bytes;
+/// a 5000-byte budget cannot hold it.
+/// Anchor: catalog row `ITERM2-1337-FILE-ANIMATED-GIF`.
+#[test]
+fn decode_gif_frames_bails_when_decoded_total_exceeds_budget() {
+    let gif = fixtures::animated_gif_bytes(3, 32, 32, 100);
+    assert!(
+        decode_gif_frames(&gif, 5000).is_none(),
+        "decoded total 12288 > budget 5000 must bail (decompression-bomb guard)"
+    );
+}
+
+/// Positive companion to the budget guard: the same 3-frame GIF decodes
+/// fully when the budget is generous.
+/// Anchor: catalog row `ITERM2-1337-FILE-ANIMATED-GIF`.
+#[test]
+fn decode_gif_frames_succeeds_within_budget() {
+    let gif = fixtures::animated_gif_bytes(3, 32, 32, 100);
+    let decoded = decode_gif_frames(&gif, UNBOUNDED_GIF_BUDGET)
+        .expect("3-frame GIF decodes under a generous budget");
+    assert_eq!(decoded.frames.len(), 3, "all 3 frames decode within budget");
+}
+
+/// Rejects a frame-count decompression bomb: a GIF whose frame count
+/// exceeds `MAX_GIF_FRAMES` returns `None` even when every frame is tiny
+/// and the cumulative byte total stays under budget. Guards the
+/// frame-count ceiling in `decode_gif_frames`.
+/// Anchor: catalog row `ITERM2-1337-FILE-ANIMATED-GIF`.
+#[test]
+fn decode_gif_frames_bails_when_frame_count_exceeds_cap() {
+    use oriterm_core::image::MAX_GIF_FRAMES;
+    // One past the cap; 1×1 frames keep the byte total trivially small so
+    // ONLY the frame-count ceiling can reject this payload.
+    let gif = fixtures::animated_gif_bytes((MAX_GIF_FRAMES + 1) as u32, 1, 1, 100);
+    assert!(
+        decode_gif_frames(&gif, UNBOUNDED_GIF_BUDGET).is_none(),
+        "frame count > MAX_GIF_FRAMES must bail regardless of byte budget"
+    );
+}
+
+/// End-to-end pin: an animated GIF whose decoded total exceeds the cache's
+/// per-image cap degrades to the static first frame rather than being
+/// stored as an animation. `max_single_image_bytes = 5000` admits the
+/// first frame (4096) but not the 3-frame total (12288), so
+/// `decode_gif_frames` bails and the handler falls back to
+/// `decode_to_rgba`.
+/// Anchor: catalog row `ITERM2-1337-FILE-ANIMATED-GIF`.
+#[test]
+fn osc1337_file_oversized_animation_degrades_to_static_first_frame() {
+    let mut harness = SpecHarness::new();
+    harness
+        .term_mut()
+        .image_cache_mut()
+        .set_max_single_image(5000);
+    let gif = fixtures::animated_gif_bytes(3, 32, 32, 100);
+    harness.feed(&osc1337_file_inline_payload(&b64_std(&gif)));
+
+    let cache = harness.term().image_cache();
+    assert_eq!(
+        cache.image_count(),
+        1,
+        "oversized-total GIF degrades to one static first frame"
+    );
+    let id = cache.placements_for_test()[0].image_id;
+    assert!(
+        !cache.animation_promoted_for_test(id),
+        "oversized-total GIF must NOT be stored as an animation"
+    );
+    assert_eq!(
+        cache.total_frames_for_test(id),
+        1,
+        "fallback stores the static first frame"
+    );
+}
+
+/// Pins the animated-GIF `store_animated` failure branch
+/// (`iterm2.rs:87-90`): when `store_animated` returns `Err`, no image and
+/// no placement are created. Exercises the `MemoryLimitExceeded` path the
+/// decode bound cannot preempt — `decode_gif_frames` succeeds (frames fit
+/// `max_single_image_bytes`) but the inner `store` of frame 0 cannot
+/// reclaim the placed image A to make room. Distinct from
+/// `osc1337_file_oversized_animation_degrades_to_static_first_frame`
+/// (which bails inside `decode_gif_frames` before `store_animated`).
+/// Anchor: catalog row `ITERM2-1337-FILE-ANIMATED-GIF`.
+#[test]
+fn osc1337_animated_gif_store_failure_creates_no_placement() {
+    let mut harness = SpecHarness::new();
+
+    // Image A: 1×1 PNG — stored + placed (un-evictable, reachable).
+    harness.feed(&osc1337_file_inline_payload(&b64_std(
+        &fixtures::minimal_png_bytes(),
+    )));
+    assert_eq!(
+        harness.term().image_cache().image_count(),
+        1,
+        "image A stored"
+    );
+    assert_eq!(harness.term().image_cache().placement_count(), 1);
+
+    // Tighten memory_limit so the animated GIF's first-frame store cannot
+    // make room (A is placed, so eviction cannot reclaim it).
+    harness.term_mut().image_cache_mut().set_memory_limit(100);
+
+    // 3-frame 8×8 GIF: each frame 256 decoded bytes, total 768 — all under
+    // the default max_single_image_bytes, so decode_gif_frames succeeds.
+    // store_animated's inner store(frame0=256) then trips
+    // MemoryLimitExceeded (memory_used 4 + 256 > 100, A un-evictable).
+    let gif = fixtures::animated_gif_bytes(3, 8, 8, 100);
+    harness.feed(&osc1337_file_inline_payload(&b64_std(&gif)));
+
+    let cache = harness.term().image_cache();
+    assert_eq!(
+        cache.image_count(),
+        1,
+        "store_animated MemoryLimitExceeded must NOT add the animated image (cache stays at A)"
+    );
+    assert_eq!(
+        cache.placement_count(),
+        1,
+        "store_animated failure must NOT create a placement for the GIF"
+    );
+    let id = cache.placements_for_test()[0].image_id;
+    assert!(
+        !cache.animation_promoted_for_test(id),
+        "only static image A remains; the failed animated GIF added nothing"
+    );
+}
+
+/// State-level animation-timing pin: drive `Term::advance_animations` at
+/// explicit frame-delay boundaries and assert the stepwise frame
+/// sequence, the
+/// `pixel_generation` GPU-reupload bump on every transition, and
+/// monotonic next-frame deadlines. Clock is injected via the `now`
+/// parameter (no wall-clock dependency per `tests.md §Wall-Clock-Free
+/// Testing`).
+/// Anchor: catalog row `ITERM2-1337-FILE-ANIMATED-GIF`.
+#[test]
+fn iterm2_animated_gif_advance_animations_drives_frame_transitions() {
+    let mut harness = SpecHarness::new();
+    // 3-frame GIF, 100ms per frame, infinite loop (loop_count None).
+    let gif = fixtures::animated_gif_bytes(3, 2, 2, 100);
+    harness.feed(&osc1337_file_inline_payload(&b64_std(&gif)));
+
+    let id = harness.term().image_cache().placements_for_test()[0].image_id;
+    let gen0 = harness
+        .term()
+        .image_cache()
+        .image_pixel_generation_for_test(id)
+        .expect("animated image present");
+
+    let t0 = Instant::now();
+    // Step the call sequence past each 100ms boundary. The first call at
+    // t0 only seeds frame_starts (elapsed 0, no transition); each later
+    // call crosses one 100ms boundary and advances exactly one frame.
+    let offsets_ms = [0u64, 150, 300, 450, 600];
+    let expected_frames = [0usize, 1, 2, 0, 1];
+
+    let mut last_deadline: Option<Instant> = None;
+    let mut last_gen = gen0;
+    let mut last_frame = 0usize;
+
+    for (step, (&off, &want_frame)) in offsets_ms.iter().zip(expected_frames.iter()).enumerate() {
+        let now = t0 + Duration::from_millis(off);
+        let deadline = harness.term_mut().advance_animations(now);
+
+        let cache = harness.term().image_cache();
+        let snap = cache
+            .animation_snapshot(id)
+            .expect("animated snapshot present");
+        assert_eq!(
+            snap.current_frame, want_frame,
+            "step {step} (+{off}ms): current_frame must be {want_frame}"
+        );
+
+        let pixel_gen = cache
+            .image_pixel_generation_for_test(id)
+            .expect("animated image present");
+        if snap.current_frame != last_frame {
+            assert!(
+                pixel_gen > last_gen,
+                "step {step}: pixel_generation must bump on a frame transition ({last_gen} -> {pixel_gen})"
+            );
+        }
+        last_gen = pixel_gen;
+        last_frame = snap.current_frame;
+
+        let d = deadline.expect("an active infinite animation always reports a next deadline");
+        if let Some(prev) = last_deadline {
+            assert!(
+                d > prev,
+                "step {step} (+{off}ms): next deadline must be strictly increasing"
+            );
+        }
+        last_deadline = Some(d);
+    }
 }

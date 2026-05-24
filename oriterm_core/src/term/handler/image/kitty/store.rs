@@ -129,8 +129,9 @@ impl<S: EffectSink> Term<S> {
         self.record_kitty_substep_ns(crate::term::KittySubstep::Prepare, prepare_ns);
 
         let format_start = std::time::Instant::now();
-        let (rgba_data, w, h) = Self::kitty_decode_pixels(pixel_data, p.format, p.width, p.height)
-            .map_err(KittyStoreError::Reply)?;
+        let (rgba_data, w, h) =
+            Self::kitty_decode_pixels(pixel_data, p.format, p.width, p.height, max_bytes)
+                .map_err(KittyStoreError::Reply)?;
         let format_ns = format_start.elapsed().as_nanos().min(u64::MAX as u128) as u64;
         self.record_kitty_substep_ns(crate::term::KittySubstep::Format, format_ns);
 
@@ -171,10 +172,11 @@ impl<S: EffectSink> Term<S> {
         format: u32,
         width: u32,
         height: u32,
+        max_bytes: usize,
     ) -> Result<(Vec<u8>, u32, u32), String> {
         let decode_start = std::time::Instant::now();
         let payload_len = payload.len();
-        let result = Self::kitty_decode_pixels_inner(payload, format, width, height);
+        let result = Self::kitty_decode_pixels_inner(payload, format, width, height, max_bytes);
         let elapsed_us = decode_start.elapsed().as_micros();
         if elapsed_us >= 5_000 {
             log::info!(
@@ -190,14 +192,15 @@ impl<S: EffectSink> Term<S> {
         format: u32,
         width: u32,
         height: u32,
+        max_bytes: usize,
     ) -> Result<(Vec<u8>, u32, u32), String> {
         match format {
             32 => {
                 if width == 0 || height == 0 {
                     return Err("EINVAL: missing s= or v= for raw RGBA".to_string());
                 }
-                // : width/height are u32 from the kitty APC parameter
-                // parser and attacker-controlled. `(w as usize) * (h as usize) * 4`
+                // width/height are u32 from the kitty APC parameter parser
+                // and attacker-controlled. `(w as usize) * (h as usize) * 4`
                 // panics in debug or wraps in release on extreme dimensions.
                 // Reject with EINVAL when the byte count cannot be represented.
                 let expected = (width as usize)
@@ -218,7 +221,7 @@ impl<S: EffectSink> Term<S> {
                 if width == 0 || height == 0 {
                     return Err("EINVAL: missing s= or v= for raw RGB".to_string());
                 }
-                // : same overflow shape — pre-check the RGB byte count
+                // Same overflow shape — pre-check the RGB byte count
                 // before passing the payload to `rgb_to_rgba` so an oversized
                 // `width * height * 3` cannot wrap silently.
                 let _expected = (width as usize)
@@ -231,7 +234,8 @@ impl<S: EffectSink> Term<S> {
                     .map(|rgba| (rgba, width, height))
                     .ok_or_else(|| "EINVAL: RGB payload length not a multiple of 3".to_string())
             }
-            100 => decode_to_rgba(&payload).map_err(|e| format!("EINVAL: PNG decode failed: {e}")),
+            100 => decode_to_rgba(&payload, max_bytes)
+                .map_err(|e| format!("EINVAL: PNG decode failed: {e}")),
             _ => Err(format!("EINVAL: unsupported format f={format}")),
         }
     }
@@ -295,10 +299,10 @@ impl<S: EffectSink> Term<S> {
         let source = ImageSource::File(path.to_path_buf());
 
         let (rgba_data, w, h) = if p.format == 24 || p.format == 32 {
-            Self::kitty_decode_pixels(file_data, p.format, p.width, p.height)
+            Self::kitty_decode_pixels(file_data, p.format, p.width, p.height, max_bytes)
                 .map_err(KittyStoreError::Reply)?
         } else {
-            decode_to_rgba(&file_data)
+            decode_to_rgba(&file_data, max_bytes)
                 .map_err(|e| KittyStoreError::Reply(format!("EINVAL: image decode failed: {e}")))?
         };
 

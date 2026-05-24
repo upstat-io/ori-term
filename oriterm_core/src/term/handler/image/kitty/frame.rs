@@ -70,6 +70,7 @@ impl<S: EffectSink> Term<S> {
             merged.format,
             merged.source_width,
             merged.source_height,
+            max_bytes,
         ) {
             Ok(result) => result,
             Err(msg) => {

@@ -60,7 +60,7 @@ impl<S: EffectSink> Term<S> {
         // Try animated GIF extraction first.
         let is_gif = detect_format(&image.data) == Some(ImageFormat::Gif);
         if is_gif {
-            if let Some(gif) = decode_gif_frames(&image.data) {
+            if let Some(gif) = decode_gif_frames(&image.data, max_bytes) {
                 let id = self.image_cache_mut().next_image_id();
                 let frames: Vec<Arc<Vec<u8>>> = gif.frames.into_iter().map(Arc::new).collect();
                 let img_data = ImageData {
@@ -93,7 +93,7 @@ impl<S: EffectSink> Term<S> {
         }
 
         // Decode image to RGBA pixels (single frame or non-GIF).
-        let (rgba, img_w, img_h) = match decode_to_rgba(&image.data) {
+        let (rgba, img_w, img_h) = match decode_to_rgba(&image.data, max_bytes) {
             Ok(result) => result,
             Err(e) => {
                 warn!("iTerm2 image decode failed: {e}");
@@ -202,6 +202,18 @@ impl<S: EffectSink> Term<S> {
     }
 }
 
+/// Scale `other_native` in proportion to how `driver` relates to
+/// `driver_native`, preserving aspect ratio. Integer arithmetic via `u64`
+/// avoids f32 precision loss. Returns `other_native` unchanged when
+/// `driver_native` is zero (degenerate source dimension).
+fn scale_proportional(other_native: u32, driver: u32, driver_native: u32) -> u32 {
+    if driver_native > 0 {
+        (u64::from(other_native) * u64::from(driver) / u64::from(driver_native)) as u32
+    } else {
+        other_native
+    }
+}
+
 /// Resolve display pixel size from iTerm2 size specs.
 ///
 /// Handles `Auto`, `Cells`, `Pixels`, and `Percent` modes for both width
@@ -222,38 +234,26 @@ fn resolve_display_size(p: &DisplaySizeParams) -> (u32, u32) {
         // Both auto: use native size, clamped to terminal width.
         (true, true) => {
             let w = p.img_w.min(p.term_w).max(1);
-            let h = if p.img_w > 0 {
-                (u64::from(p.img_h) * u64::from(w) / u64::from(p.img_w).max(1)) as u32
-            } else {
-                p.img_h
-            };
+            let h = scale_proportional(p.img_h, w, p.img_w);
             (w.max(1), h.max(1))
         }
         // Width explicit, height auto: scale height to match.
         (false, true) => {
             let w = raw_w.max(1);
-            let h = if p.img_w > 0 {
-                (u64::from(p.img_h) * u64::from(w) / u64::from(p.img_w).max(1)) as u32
-            } else {
-                p.img_h
-            };
+            let h = scale_proportional(p.img_h, w, p.img_w);
             (w, h.max(1))
         }
         // Height explicit, width auto: scale width to match.
         (true, false) => {
             let h = raw_h.max(1);
-            let w = if p.img_h > 0 {
-                (u64::from(p.img_w) * u64::from(h) / u64::from(p.img_h).max(1)) as u32
-            } else {
-                p.img_w
-            };
+            let w = scale_proportional(p.img_w, h, p.img_h);
             (w.max(1), h)
         }
         // Both explicit: fit within W×H bbox preserving aspect ratio.
         // Per iterm2.com/3.4/documentation-images.html §Inline Images,
         // preserveAspectRatio=1 (the default) means scale-to-fit, NOT
-        // stretch. We compute scale = min(W/img_w, H/img_h) and return
-        // the largest aspect-preserved size that fits in the bbox.
+        // stretch. Compute scale = min(W/img_w, H/img_h) and return the
+        // largest aspect-preserved size that fits in the bbox.
         (false, false) => {
             if p.img_w == 0 || p.img_h == 0 {
                 return (raw_w.max(1), raw_h.max(1));

@@ -528,7 +528,7 @@ fn decode_without_feature_returns_error() {
     // This tests the stub when image-protocol feature is not enabled,
     // or the real decode when it is. Either way, calling with garbage
     // data should not panic.
-    let result = super::decode::decode_to_rgba(&[0, 1, 2, 3]);
+    let result = super::decode::decode_to_rgba(&[0, 1, 2, 3], usize::MAX);
     assert!(result.is_err());
 }
 

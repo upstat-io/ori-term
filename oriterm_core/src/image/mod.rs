@@ -19,7 +19,8 @@ use std::time::Duration;
 pub use cache::ImageCache;
 pub use compose::ComposeRequest;
 pub use decode::{
-    GifFrames, ImageFormat, decode_gif_frames, decode_to_rgba, detect_format, rgb_to_rgba,
+    GifFrames, ImageFormat, MAX_GIF_FRAMES, decode_gif_frames, decode_to_rgba, detect_format,
+    rgb_to_rgba,
 };
 pub use frame_load::{BlitRect, CanvasSource, FrameLoadRequest, FrameTarget};
 
