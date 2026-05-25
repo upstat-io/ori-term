@@ -66,9 +66,9 @@
 //! exactly `AUTO_ID_START` — the pilot relies on that determinism when
 //! mutating the sixel placement.
 
-use oriterm_core::image::ImageId;
 /// The auto-namespace base imported from its single canonical owner.
 use oriterm_core::image::AUTO_ID_START_FOR_TEST as AUTO_ID_START;
+use oriterm_core::image::ImageId;
 use oriterm_test_support::spec_chain::{
     FrameInputExpectation, GoldenExpectation, GpuInstanceExpectation, ScenarioExpectations,
     TextureExpectation,

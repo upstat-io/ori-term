@@ -92,7 +92,10 @@ enum PlacementState {
     /// `Survives`-returning mutations pin that size does NOT drift. `Removed`
     /// / `Remapped` stay dimensionless — no matrix mutation expects `Remapped`,
     /// and a removed placement has no dims.
-    Survives { cols: usize, rows: usize },
+    Survives {
+        cols: usize,
+        rows: usize,
+    },
     Removed,
     Remapped,
 }

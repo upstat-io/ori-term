@@ -16,8 +16,8 @@ pub mod sixel;
 use std::sync::Arc;
 use std::time::Duration;
 
-pub use cache::ImageCache;
 pub(crate) use cache::AUTO_ID_START;
+pub use cache::ImageCache;
 
 /// Test-facing mirror of the [`cache::AUTO_ID_START`] namespace boundary
 /// (Decision 07 Option A). Integration tests compile as an external crate and

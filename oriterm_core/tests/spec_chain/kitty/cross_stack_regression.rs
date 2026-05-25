@@ -30,8 +30,8 @@ use std::path::PathBuf;
 use oriterm_core::effect::PtyWriteKind;
 use oriterm_core::image::ImageId;
 use oriterm_test_support::spec_chain::SpecHarness;
-use oriterm_test_support::spec_chain::sixel_fixtures::dcs_n_cols_wide;
 use oriterm_test_support::spec_chain::pty_write_contains;
+use oriterm_test_support::spec_chain::sixel_fixtures::dcs_n_cols_wide;
 
 use super::fixtures::{b64, kitty_apc, rgba_4x4_red};
 
@@ -1313,7 +1313,11 @@ fn resize_reconciles_alt_cache_placeholder_anchors_symmetrically() {
 fn kitty_explicit_id_at_auto_start_minus_one_accepted() {
     let mut h = SpecHarness::new();
     transmit_kitty_unplaced(&mut h, AUTO_ID_START - 1);
-    assert_eq!(h.term().image_cache().image_count(), 1, "i=2^31-1 must store");
+    assert_eq!(
+        h.term().image_cache().image_count(),
+        1,
+        "i=2^31-1 must store"
+    );
     assert!(
         h.term()
             .image_cache()
@@ -1535,7 +1539,11 @@ fn kitty_explicit_iterm2_auto_sixel_auto_interleaved_no_collision_post_id_namesp
         cache.contains_image_for_test(ImageId::from_raw(AUTO_ID_START + 1)),
         "sixel auto 2^31+1 present (disjoint from both)"
     );
-    assert_eq!(cache.image_count(), 3, "all three protocol images coexist, no collision");
+    assert_eq!(
+        cache.image_count(),
+        3,
+        "all three protocol images coexist, no collision"
+    );
 }
 
 /// 3-way global-LRU under cache pressure: placed iTerm2 + sixel images are
@@ -1555,13 +1563,19 @@ fn mixed_kitty_iterm2_sixel_lru_eviction_under_cache_pressure() {
     h.feed(&dcs_n_cols_wide(8)); // placed on row 10
     // Unplaced kitty image (eviction-eligible).
     transmit_kitty_unplaced(&mut h, 42);
-    assert_eq!(h.term().image_cache().image_count(), 3, "three images stored");
+    assert_eq!(
+        h.term().image_cache().image_count(),
+        3,
+        "three images stored"
+    );
 
     // Tighten memory below the total so eviction must reclaim the only
     // un-placed image (the kitty one); the placed iTerm2 + sixel survive.
     let placed_floor = h.term().image_cache().memory_used()
         - (KITTY_IMAGE_BYTES.min(h.term().image_cache().memory_used()));
-    h.term_mut().image_cache_mut().set_memory_limit(placed_floor.max(1));
+    h.term_mut()
+        .image_cache_mut()
+        .set_memory_limit(placed_floor.max(1));
     // Trigger an eviction pass by transmitting one more unplaced image.
     transmit_kitty_unplaced(&mut h, 43);
 

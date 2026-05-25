@@ -31,10 +31,10 @@
 //! visual harness skips that by default. The pilot syncs explicitly so
 //! image placements and text positions agree on pixel coords.
 
-use oriterm_core::image::ImageId;
 /// The auto-namespace base imported from its single canonical owner — on a
 /// fresh harness the first auto-assigned image ID is exactly this value.
 use oriterm_core::image::AUTO_ID_START_FOR_TEST as AUTO_ID_START;
+use oriterm_core::image::ImageId;
 use oriterm_test_support::spec_chain::sixel_fixtures;
 use oriterm_test_support::spec_chain::{
     FrameInputExpectation, GoldenExpectation, GpuInstanceExpectation, ScenarioExpectations,
