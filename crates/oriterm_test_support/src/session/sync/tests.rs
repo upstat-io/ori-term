@@ -303,6 +303,67 @@ fn pty_session_repeated_spawn_drop_cycle_succeeds_on_subsequent_cmd_exe_spawn() 
 }
 
 #[test]
+fn wait_returns_within_ceiling_under_continuous_trickle() {
+    // Regression: PtySession::wait looped forever when a child emitted a
+    // steady sub-`quiet_ms` trickle and never left a `quiet_ms` quiet
+    // window — `tack`'s status-reports submenu sweeping DECRQM/DECRQSS
+    // one query per ~195 ms (vs the 300 ms quiet target) is the
+    // in-the-wild case. The WAIT_SETTLE_CEILING_MS safety valve bounds
+    // the loop. Without the valve this test never returns; with it,
+    // wait() gives up at the ~3 s ceiling while output is still flowing.
+    // The quiesce logic is platform-independent; the continuous-trickle
+    // child is a POSIX sh loop, so the body pins on Unix and skips loud
+    // on other hosts (matching pty_session_drain_writes_osc_responses_back).
+    #[cfg(not(unix))]
+    {
+        eprintln!(
+            "SKIP wait_returns_within_ceiling_under_continuous_trickle: \
+             continuous-trickle child is a POSIX sh loop; wait()'s ceiling \
+             logic is platform-independent and pinned on the Unix arm"
+        );
+    }
+    #[cfg(unix)]
+    {
+        // ~160 dots × 50 ms ≈ 8 s of continuous output — longer than the
+        // 3 s ceiling, so wait() must give up mid-stream rather than wait
+        // the whole thing out.
+        let mut c = CommandBuilder::new("/bin/sh");
+        c.args([
+            "-c",
+            "i=0; while [ $i -lt 160 ]; do printf .; sleep 0.05; i=$((i+1)); done",
+        ]);
+        c.env("TERM", "xterm-256color");
+        let mut session = PtySession::spawn(c, 80, 24);
+        // Confirm the trickle is actively flowing before measuring, so a
+        // child that produced nothing can't false-pass (wait would break
+        // on the first empty drain).
+        assert!(
+            session.drain_blocking(2_000) > 0,
+            "continuous-trickle child produced no output to wait on"
+        );
+        let start = Instant::now();
+        session.wait(300);
+        let elapsed = start.elapsed();
+        // Ceiling honored: output never quiesced, so wait ran to the
+        // ~3 s budget (a regression that quiesced early on a sub-300 ms
+        // trickle would return far sooner).
+        assert!(
+            elapsed >= Duration::from_millis(3_000),
+            "ceiling honored: continuous trickle should make wait run to \
+             the ~3 s ceiling, got {elapsed:?}"
+        );
+        // Bounded: wait gave up at the ceiling instead of hanging for the
+        // full ~8 s stream (the regression this test guards against is an
+        // unbounded loop, which would run past 8 s / never return).
+        assert!(
+            elapsed < Duration::from_millis(6_000),
+            "bounded: wait must give up at the ceiling, not run the full \
+             continuous stream, got {elapsed:?}"
+        );
+    }
+}
+
+#[test]
 fn pty_session_wait_for_any_bounded_poll_invariant() {
     // Bounded-poll Verifies for the third poll_until consumer.
     // Mirror of the wait_for_with_context bounded-poll test — pins

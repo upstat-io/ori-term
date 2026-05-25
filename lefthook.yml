@@ -12,6 +12,7 @@ pre-commit:
       run: cargo build --target x86_64-pc-windows-gnu
     test:
       glob: "*.rs"
+      interactive: true
       run: cargo test
     prose-lint:
       # No glob — prose-lint is a whole-repo scan and MUST run on every
