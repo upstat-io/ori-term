@@ -27,17 +27,39 @@
 
 use std::path::PathBuf;
 
+use oriterm_core::effect::PtyWriteKind;
 use oriterm_core::image::ImageId;
 use oriterm_test_support::spec_chain::SpecHarness;
+use oriterm_test_support::spec_chain::pty_write_contains;
 use oriterm_test_support::spec_chain::sixel_fixtures::dcs_n_cols_wide;
 
 use super::fixtures::{b64, kitty_apc, rgba_4x4_red};
 
-const KITTY_IMAGE_BYTES: usize = 64;
+/// The Decision 07 Option A boundary between kitty explicit `i=` IDs
+/// `[1, 2^31)` and cache auto-allocated IDs `[2^31, 2^32)` — imported from
+/// the single canonical owner so no test re-declares the literal.
+use oriterm_core::image::AUTO_ID_START_FOR_TEST as AUTO_ID_START;
 
-/// Auto-assigned sixel `image_id` base (§12 sixel handler at
-/// `oriterm_core/src/image/cache/mod.rs:24`).
-const SIXEL_AUTO_ID: u32 = 2_147_483_647;
+/// `OSC 1337 ; File=inline=1:<1x1-red-png-b64> ST` — transmit a minimal
+/// inline iTerm2 image (auto-allocated ID) via the real OSC path.
+fn transmit_iterm2_inline(h: &mut SpecHarness) {
+    let mut seq = Vec::new();
+    seq.extend_from_slice(b"\x1b]1337;File=inline=1:");
+    seq.extend_from_slice(b"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAEElEQVR4AQEFAPr/AP8AAP8FAAH/+lyI0QAAAABJRU5ErkJggg==");
+    seq.extend_from_slice(b"\x1b\\");
+    h.feed(&seq);
+}
+
+/// `CUP` to a 1-based (row, col). Placed images occupying the SAME terminal
+/// cell evict each other (`sixel.rs` `remove_by_position` + `prune_if_orphaned`,
+/// `iterm2.rs` placement on the cursor cell); repositioning before a placed
+/// image lands it on a fresh cell so ID-namespace assertions are not
+/// confounded by cell-collision eviction.
+fn move_cursor_to(h: &mut SpecHarness, row: u32, col: u32) {
+    h.feed(format!("\x1b[{row};{col}H").as_bytes());
+}
+
+const KITTY_IMAGE_BYTES: usize = 64;
 
 /// Row-diacritics for the kitty U=1 placeholder protocol: indexed
 /// `[row=0, row=1]`. See `~/projects/reference_repos/console_repos/kitty/docs/graphics-protocol.rst`.
@@ -192,14 +214,11 @@ fn cross_protocol_lru_eviction_drops_oldest_accessed_regardless_of_protocol() {
 /// (kitty-only) above passes.
 #[test]
 fn cross_protocol_lru_mixed_sixel_kitty_drops_oldest_by_last_accessed() {
-    use oriterm_test_support::spec_chain::sixel_fixtures::dcs_n_cols_wide;
-
     let mut h = SpecHarness::new();
 
     // 1. Sixel-A at row 1 — sixel handler stores + places at cursor.
-    //    Auto-assigned ImageId = AUTO_ID_START (private const, value
-    //    2_147_483_647 per oriterm_core/src/image/cache/mod.rs:24).
-    const AUTO_ID_START: u32 = 2_147_483_647;
+    //    Auto-assigned ImageId = AUTO_ID_START (the protocol-agnostic
+    //    auto-namespace base; the sixel handler shares the cache allocator).
     let sixel_a = ImageId::from_raw(AUTO_ID_START);
     h.feed(b"\x1b[1;1H");
     h.feed(&dcs_n_cols_wide(8));
@@ -387,16 +406,19 @@ fn fully_placed_cache_over_budget_raises_memory_limit_exceeded() {
 
 // ── Architectural grep gates ───────────────────────────────────────
 
-/// Architectural pin: kitty's `kitty_create_placement` and sixel's
-/// `sixel_create_placement` both route placement creation through
-/// `ImageCache::place`. Splitting the recency bump across per-protocol
-/// handlers (rejected at §13.6.1 plan-time) would scatter the LRU
-/// contract — when a future protocol lands, the bump is silently absent
-/// and eviction silently regresses to FIFO for that protocol. This grep
-/// gate fires the moment a handler bypasses `ImageCache::place` (e.g.,
-/// constructing `ImagePlacement` and pushing it via a different API).
+/// Architectural pin: kitty's `kitty_create_placement`, sixel's
+/// `sixel_create_placement`, AND iterm2's `iterm2_create_placement` all
+/// route placement creation through `ImageCache::place`. Splitting the
+/// recency bump across per-protocol handlers (rejected at §13.6.1
+/// plan-time) would scatter the LRU contract — when a future protocol
+/// lands, the bump is silently absent and eviction silently regresses to
+/// FIFO for that protocol. This grep gate fires the moment a handler
+/// bypasses `ImageCache::place` (e.g., constructing `ImagePlacement` and
+/// pushing it via a different API). Renamed from
+/// `kitty_and_sixel_create_placement_paths_*` per §14.6 — the gate has
+/// always iterated all three protocols; the name now matches.
 #[test]
-fn kitty_and_sixel_create_placement_paths_route_through_image_cache_place() {
+fn every_image_protocol_handler_routes_through_image_cache_place() {
     let workspace = oriterm_test_support::paths::term_workspace_root();
 
     let kitty_place_rs = workspace.join("oriterm_core/src/term/handler/image/kitty/place.rs");
@@ -665,8 +687,8 @@ fn mixed_protocol_eviction_does_not_cross_pollinate_image_data() {
                 ids.pop().map(ImageId::from_raw)
             })
             .unwrap_or_else(|| {
-                // Auto-assigned starts at AUTO_ID_START = 2_147_483_647.
-                ImageId::from_raw(2_147_483_647)
+                // Auto-assigned ids start at AUTO_ID_START.
+                ImageId::from_raw(AUTO_ID_START)
             })
     };
     assert!(
@@ -1076,8 +1098,8 @@ fn assert_post_resize_primary_matrix(h: &SpecHarness, post_evicted: usize, ids: 
 #[test]
 fn resize_with_mixed_sixel_placement_and_kitty_u1_placeholders_preserves_both() {
     let ids = IntegrationIds {
-        sixel_a: ImageId::from_raw(SIXEL_AUTO_ID),
-        sixel_d: ImageId::from_raw(SIXEL_AUTO_ID + 1),
+        sixel_a: ImageId::from_raw(AUTO_ID_START),
+        sixel_d: ImageId::from_raw(AUTO_ID_START + 1),
         kitty_b: ImageId::from_raw(42),
         kitty_c: ImageId::from_raw(99),
     };
@@ -1190,7 +1212,7 @@ fn resize_with_mixed_sixel_placement_and_kitty_u1_placeholders_preserves_both() 
 /// orphaned in the alt cache while primary cleanup succeeded.
 #[test]
 fn resize_reconciles_alt_cache_placeholder_anchors_symmetrically() {
-    let sixel_a = ImageId::from_raw(SIXEL_AUTO_ID);
+    let sixel_a = ImageId::from_raw(AUTO_ID_START);
     let kitty_b = ImageId::from_raw(42);
     let kitty_c = ImageId::from_raw(99);
     let kitty_b_alt = ImageId::from_raw(142);
@@ -1278,5 +1300,296 @@ fn resize_reconciles_alt_cache_placeholder_anchors_symmetrically() {
         "alt C's grid entry MUST be dropped via paired-retain in \
          reconcile (`image/cache/mod.rs:156-157`). Regression: alt cache \
          grid map drifted from anchor set."
+    );
+}
+
+// §14.6 — ImageCache ID namespace partition (Decision 07 Option A)
+
+/// Kitty explicit `i=AUTO_ID_START-1` (the top of the explicit range
+/// `[1, 2^31)`) is accepted and stored. Boundary pin: the validator must
+/// reject `>= AUTO_ID_START`, NOT `> AUTO_ID_START-1`.
+/// Anchor: ITERM2-1337-FILE-INLINE (cross-protocol ID isolation pin).
+#[test]
+fn kitty_explicit_id_at_auto_start_minus_one_accepted() {
+    let mut h = SpecHarness::new();
+    transmit_kitty_unplaced(&mut h, AUTO_ID_START - 1);
+    assert_eq!(
+        h.term().image_cache().image_count(),
+        1,
+        "i=2^31-1 must store"
+    );
+    assert!(
+        h.term()
+            .image_cache()
+            .contains_image_for_test(ImageId::from_raw(AUTO_ID_START - 1)),
+        "the explicit-max image id 2^31-1 must be present"
+    );
+}
+
+/// Kitty explicit `i=AUTO_ID_START` (the first auto-namespace id) is
+/// REJECTED with EINVAL and stores nothing — an explicit id may not
+/// intrude into `[2^31, 2^32)`. Rejecting-side guard: FAILS if the
+/// validator is removed (the image would store, colliding with the auto
+/// namespace).
+/// Anchor: ITERM2-1337-FILE-INLINE (cross-protocol ID isolation).
+#[test]
+fn kitty_explicit_id_at_auto_start_rejected() {
+    let mut h = SpecHarness::new();
+    transmit_kitty_unplaced(&mut h, AUTO_ID_START);
+    assert_eq!(
+        h.term().image_cache().image_count(),
+        0,
+        "i=2^31 (auto-namespace) must be rejected, not stored"
+    );
+    assert!(
+        pty_write_contains(
+            &h,
+            PtyWriteKind::ImageProtocolReply,
+            b"EINVAL: explicit image id 2147483648 outside allowed range [1, 2^31)"
+        ),
+        "rejection must emit the EINVAL reply so the client can recover"
+    );
+}
+
+/// Explicit `i=0` on a CREATE action is rejected — the kitty graphics
+/// protocol requires image ids to be positive
+/// (`~/projects/reference_repos/console_repos/kitty/docs/graphics-protocol.rst`:
+/// "an arbitrary positive integer up to 4294967295, it must not be zero").
+/// 0 falls below the writable explicit range `[1, 2^31)`, so a transmit
+/// choosing it is EINVAL'd and stores nothing. (An ABSENT `i` still
+/// auto-allocates — only an explicit zero is rejected.)
+/// Anchor: ITERM2-1337-FILE-INLINE (explicit-id lower-bound rejection).
+#[test]
+fn kitty_explicit_id_zero_rejected() {
+    let mut h = SpecHarness::new();
+    transmit_kitty_unplaced(&mut h, 0);
+    assert_eq!(
+        h.term().image_cache().image_count(),
+        0,
+        "explicit i=0 (below the [1, 2^31) explicit range) must be rejected, not stored"
+    );
+    assert!(
+        pty_write_contains(
+            &h,
+            PtyWriteKind::ImageProtocolReply,
+            b"EINVAL: explicit image id 0 outside allowed range [1, 2^31)"
+        ),
+        "i=0 rejection must emit the EINVAL reply so the client can recover"
+    );
+}
+
+/// Kitty ADDRESSING actions (`a=p` / `a=d` / `a=q`) on a terminal-assigned
+/// id `>= AUTO_ID_START` must NOT be namespace-rejected. The terminal
+/// auto-allocates ids in `[2^31, 2^32)` and hands them to kitty clients via
+/// the `I=` request-id flow; the client then addresses that id. Only the
+/// CREATE actions (`a=t` / `a=T`) reject an out-of-range explicit id —
+/// addressing an already-assigned one is the documented reuse path
+/// (`~/projects/reference_repos/console_repos/kitty/docs/graphics-protocol.rst`
+/// "Requesting image ids from the terminal").
+/// Anchor: ITERM2-1337-FILE-INLINE (terminal-assigned-id reuse).
+#[test]
+fn kitty_addressing_action_on_terminal_assigned_auto_id_not_namespace_rejected() {
+    let mut h = SpecHarness::new();
+    transmit_iterm2_inline(&mut h); // auto-allocates AUTO_ID_START at the home cell
+    assert!(
+        h.term()
+            .image_cache()
+            .contains_image_for_test(ImageId::from_raw(AUTO_ID_START)),
+        "iTerm2 auto-allocation seeds an image at the terminal-assigned id"
+    );
+    place_existing_kitty(&mut h, AUTO_ID_START); // a=p,i=2^31 — addressing, not create
+    assert!(
+        !pty_write_contains(&h, PtyWriteKind::ImageProtocolReply, b"allowed range"),
+        "a kitty addressing action on a terminal-assigned auto-range id must not emit a namespace EINVAL"
+    );
+    assert!(
+        h.term()
+            .image_cache()
+            .contains_image_for_test(ImageId::from_raw(AUTO_ID_START)),
+        "the addressed image survives — the place neither failed nor evicted it"
+    );
+}
+
+/// Decision 07 wrap-preserves-upper-half: `next_image_id()` must keep
+/// auto-allocated ids inside `[AUTO_ID_START, 2^32)` even after the counter
+/// exhausts the `u32` range. Driving it to `u32::MAX` then once more must
+/// land back at/above `AUTO_ID_START`, never in the explicit range
+/// `[1, 2^31)` (which would collide with kitty client ids).
+/// Anchor: ITERM2-1337-FILE-INLINE (auto-id wrap stays in upper half).
+#[test]
+fn iterm2_auto_id_wrap_stays_in_upper_half() {
+    let mut h = SpecHarness::new();
+    h.term_mut()
+        .image_cache_mut()
+        .set_next_auto_id_for_test(u32::MAX);
+    let pre_wrap = h.term_mut().image_cache_mut().next_auto_id_for_test();
+    assert_eq!(
+        pre_wrap.as_u32(),
+        u32::MAX,
+        "the allocation at the top of the range is u32::MAX"
+    );
+    let wrapped = h.term_mut().image_cache_mut().next_auto_id_for_test();
+    assert!(
+        wrapped.as_u32() >= AUTO_ID_START,
+        "post-wrap auto id must stay in the upper half [2^31, 2^32), got {}",
+        wrapped.as_u32()
+    );
+}
+
+/// The first cache-auto-allocated id (here an iTerm2 inline image) is
+/// exactly `AUTO_ID_START` (`2^31`) on a fresh cache — the bottom of the
+/// auto namespace, disjoint from the kitty explicit range.
+/// Anchor: ITERM2-1337-FILE-INLINE.
+#[test]
+fn iterm2_first_auto_allocation_is_2_pow_31() {
+    let mut h = SpecHarness::new();
+    transmit_iterm2_inline(&mut h);
+    let placements = h.term().image_cache().placements_for_test();
+    assert_eq!(placements.len(), 1, "iTerm2 inline must place one image");
+    assert_eq!(
+        placements[0].image_id,
+        ImageId::from_raw(AUTO_ID_START),
+        "first auto-allocated id must be 2^31, not 2^31-1"
+    );
+}
+
+/// Cross-protocol no-overwrite: a kitty explicit image at `AUTO_ID_START-1`
+/// (the explicit max) followed by an auto-allocated iTerm2 image (which
+/// gets `AUTO_ID_START`) must NOT collide — both survive. Pre-Decision-07
+/// the iTerm2 auto id was `2^31-1`, overwriting the kitty image; the
+/// disjoint namespaces fix it.
+/// Anchor: ITERM2-1337-FILE-INLINE (cross-protocol ID isolation pin).
+#[test]
+fn cross_protocol_id_collision_kitty_explicit_at_auto_start_iterm2_auto_no_overwrite() {
+    let mut h = SpecHarness::new();
+    transmit_kitty_unplaced(&mut h, AUTO_ID_START - 1);
+    transmit_iterm2_inline(&mut h);
+
+    let cache = h.term().image_cache();
+    assert!(
+        cache.contains_image_for_test(ImageId::from_raw(AUTO_ID_START - 1)),
+        "kitty explicit image at 2^31-1 must survive the iTerm2 auto-allocation"
+    );
+    assert!(
+        cache.contains_image_for_test(ImageId::from_raw(AUTO_ID_START)),
+        "iTerm2 auto image must land at the disjoint 2^31, not overwrite the kitty image"
+    );
+    assert_eq!(cache.image_count(), 2, "both protocol images coexist");
+}
+
+/// Inverse cross-protocol pin: an auto-allocated iTerm2 image (`2^31`)
+/// followed by a kitty explicit `i=2^31` must reject the kitty request
+/// (EINVAL — explicit id in the auto namespace) and leave the iTerm2
+/// image untouched.
+/// Anchor: ITERM2-1337-FILE-INLINE (cross-protocol ID isolation pin).
+#[test]
+fn cross_protocol_id_collision_iterm2_auto_kitty_explicit_no_overwrite() {
+    let mut h = SpecHarness::new();
+    transmit_iterm2_inline(&mut h);
+    assert!(
+        h.term()
+            .image_cache()
+            .contains_image_for_test(ImageId::from_raw(AUTO_ID_START)),
+        "iTerm2 auto image present at 2^31"
+    );
+
+    transmit_kitty_unplaced(&mut h, AUTO_ID_START);
+    assert!(
+        pty_write_contains(
+            &h,
+            PtyWriteKind::ImageProtocolReply,
+            b"EINVAL: explicit image id 2147483648"
+        ),
+        "kitty explicit i=2^31 must be rejected (auto-namespace intrusion)"
+    );
+    assert!(
+        h.term()
+            .image_cache()
+            .contains_image_for_test(ImageId::from_raw(AUTO_ID_START)),
+        "the iTerm2 image must remain untouched by the rejected kitty request"
+    );
+}
+
+/// 3-way interleaved no-collision (post Decision-07): a kitty explicit
+/// image (`i=2^31-1`, top of the explicit range), an auto-allocated
+/// iTerm2 inline image (`2^31`), and an auto-allocated sixel image
+/// (`2^31+1`) transmitted in one session occupy three DISTINCT ids across
+/// the namespace boundary — none overwrites another. The placed images
+/// (iTerm2, sixel) sit on separate cells so cell-collision eviction does
+/// not confound the ID-isolation assertion.
+/// Anchor: ITERM2-1337-FILE-INLINE (cross-stack 3-protocol ID isolation).
+#[test]
+fn kitty_explicit_iterm2_auto_sixel_auto_interleaved_no_collision_post_id_namespace_fix() {
+    let mut h = SpecHarness::new();
+    transmit_kitty_unplaced(&mut h, AUTO_ID_START - 1); // explicit -> 2^31-1 (unplaced)
+    transmit_iterm2_inline(&mut h); // auto -> 2^31, placed on the home cell
+    move_cursor_to(&mut h, 10, 1); // fresh cell so sixel does not evict iTerm2
+    h.feed(&dcs_n_cols_wide(8)); // sixel auto -> 2^31+1, placed on row 10
+
+    let cache = h.term().image_cache();
+    assert!(
+        cache.contains_image_for_test(ImageId::from_raw(AUTO_ID_START - 1)),
+        "kitty explicit 2^31-1 present"
+    );
+    assert!(
+        cache.contains_image_for_test(ImageId::from_raw(AUTO_ID_START)),
+        "iTerm2 auto 2^31 present (disjoint from kitty)"
+    );
+    assert!(
+        cache.contains_image_for_test(ImageId::from_raw(AUTO_ID_START + 1)),
+        "sixel auto 2^31+1 present (disjoint from both)"
+    );
+    assert_eq!(
+        cache.image_count(),
+        3,
+        "all three protocol images coexist, no collision"
+    );
+}
+
+/// 3-way global-LRU under cache pressure: placed iTerm2 + sixel images are
+/// immune to eviction while an unplaced kitty image is the eviction
+/// victim — the global-LRU policy treats all three protocols uniformly
+/// (no protocol-specific carve-out). Mirrors
+/// `cross_protocol_lru_mixed_sixel_kitty_*` extended with iTerm2.
+/// Anchor: ITERM2-1337-FILE-INLINE (3-protocol LRU uniformity).
+#[test]
+fn mixed_kitty_iterm2_sixel_lru_eviction_under_cache_pressure() {
+    let mut h = SpecHarness::new();
+    // Placed images (immune): iTerm2 inline (auto 2^31) + sixel (auto 2^31+1).
+    // Separate cells — placement on the same cell would evict the earlier
+    // image (last-one-wins), which would defeat the "both placed survive" pin.
+    transmit_iterm2_inline(&mut h); // placed on the home cell
+    move_cursor_to(&mut h, 10, 1); // fresh cell so sixel does not evict iTerm2
+    h.feed(&dcs_n_cols_wide(8)); // placed on row 10
+    // Unplaced kitty image (eviction-eligible).
+    transmit_kitty_unplaced(&mut h, 42);
+    assert_eq!(
+        h.term().image_cache().image_count(),
+        3,
+        "three images stored"
+    );
+
+    // Tighten memory below the total so eviction must reclaim the only
+    // un-placed image (the kitty one); the placed iTerm2 + sixel survive.
+    let placed_floor = h.term().image_cache().memory_used()
+        - (KITTY_IMAGE_BYTES.min(h.term().image_cache().memory_used()));
+    h.term_mut()
+        .image_cache_mut()
+        .set_memory_limit(placed_floor.max(1));
+    // Trigger an eviction pass by transmitting one more unplaced image.
+    transmit_kitty_unplaced(&mut h, 43);
+
+    let cache = h.term().image_cache();
+    assert!(
+        cache.contains_image_for_test(ImageId::from_raw(AUTO_ID_START)),
+        "placed iTerm2 image immune to eviction"
+    );
+    assert!(
+        cache.contains_image_for_test(ImageId::from_raw(AUTO_ID_START + 1)),
+        "placed sixel image immune to eviction"
+    );
+    assert!(
+        !cache.contains_image_for_test(ImageId::from_raw(42)),
+        "the oldest unplaced kitty image is the LRU victim, regardless of protocol"
     );
 }

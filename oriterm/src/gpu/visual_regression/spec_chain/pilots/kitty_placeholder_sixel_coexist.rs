@@ -31,6 +31,9 @@
 //! visual harness skips that by default. The pilot syncs explicitly so
 //! image placements and text positions agree on pixel coords.
 
+/// The auto-namespace base imported from its single canonical owner — on a
+/// fresh harness the first auto-assigned image ID is exactly this value.
+use oriterm_core::image::AUTO_ID_START_FOR_TEST as AUTO_ID_START;
 use oriterm_core::image::ImageId;
 use oriterm_test_support::spec_chain::sixel_fixtures;
 use oriterm_test_support::spec_chain::{
@@ -39,11 +42,6 @@ use oriterm_test_support::spec_chain::{
 };
 
 use super::super::visual_harness::VisualSpecHarness;
-
-/// Matches `oriterm_core::image::cache::AUTO_ID_START` (private — sibling
-/// pilots duplicate this constant for the same reason). On a fresh
-/// harness, the first auto-assigned image ID is exactly `AUTO_ID_START`.
-const AUTO_ID_START: u32 = 2_147_483_647;
 
 /// CUP `row=5, col=10` (0-indexed) → `ESC [ 6 ; 11 H` (1-indexed). Park
 /// cursor where the 11 placeholder cells will be written.

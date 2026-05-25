@@ -415,8 +415,8 @@ fn next_image_id_auto_increments() {
     let mut cache = ImageCache::new();
     let id1 = cache.next_image_id();
     let id2 = cache.next_image_id();
-    assert_eq!(id1, ImageId(2_147_483_647));
-    assert_eq!(id2, ImageId(2_147_483_648));
+    assert_eq!(id1, ImageId(super::AUTO_ID_START));
+    assert_eq!(id2, ImageId(super::AUTO_ID_START + 1));
 }
 
 #[test]
@@ -528,7 +528,7 @@ fn decode_without_feature_returns_error() {
     // This tests the stub when image-protocol feature is not enabled,
     // or the real decode when it is. Either way, calling with garbage
     // data should not panic.
-    let result = super::decode::decode_to_rgba(&[0, 1, 2, 3]);
+    let result = super::decode::decode_to_rgba(&[0, 1, 2, 3], usize::MAX);
     assert!(result.is_err());
 }
 
@@ -828,18 +828,24 @@ fn set_current_frame_real_seek_resets_frame_starts() {
 
     let t0 = Instant::now();
     let _ = cache.advance_animations(t0, StableRowIndex(0), StableRowIndex(10));
+
+    // Backdate the seeded frame start so the reset to a fresh `Instant::now()`
+    // is observable deterministically — no wall-clock sleep (tests.md
+    // §Wall-Clock-Free Testing: fixed-sleep-then-assert is a flake-in-waiting;
+    // two `now()` calls can return the same instant on a coarse clock).
+    let stale = t0.checked_sub(Duration::from_secs(60)).unwrap_or(t0);
+    cache.frame_starts.insert(ImageId(1), stale);
     let before = *cache.frame_starts.get(&ImageId(1)).expect("seeded");
 
     // Real seek: jump to a DIFFERENT frame.
     let current = cache.animations.get(&ImageId(1)).unwrap().current_frame;
     let target = (current + 1) % cache.animations.get(&ImageId(1)).unwrap().total_frames;
-    std::thread::sleep(Duration::from_millis(1)); // Ensure now != before.
     cache.set_current_frame(ImageId(1), target);
 
     let after = *cache.frame_starts.get(&ImageId(1)).expect("still seeded");
-    assert_ne!(
-        before, after,
-        "Non-idempotent set_current_frame MUST reset frame_starts to now"
+    assert!(
+        after > before,
+        "Non-idempotent set_current_frame MUST reset frame_starts to a fresh (later) instant"
     );
     assert_eq!(
         cache.animations.get(&ImageId(1)).unwrap().current_frame,

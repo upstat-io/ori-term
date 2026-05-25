@@ -13,10 +13,43 @@
 
 use std::sync::Arc;
 
-use super::super::ImageId;
+use super::super::{ImageId, ImagePlacement};
 use super::ImageCache;
 
 impl ImageCache {
+    /// Snapshot of every active placement, cloned for test inspection.
+    ///
+    /// Spec_chain tests use this to pin per-protocol placement creation
+    /// (e.g. iterm2 §14.1 asserts `OSC 1337;File=` produces a placement
+    /// at the cursor row). Production code reads placements via the
+    /// `pub(crate)` `viewport_placements` zero-allocation path; this
+    /// probe exists so external integration tests can assert without
+    /// widening the production surface.
+    #[doc(hidden)]
+    pub fn placements_for_test(&self) -> Vec<ImagePlacement> {
+        self.placements.clone()
+    }
+
+    /// Pixel width of the stored image, or `None` if `id` is absent.
+    #[doc(hidden)]
+    pub fn image_width_for_test(&self, id: ImageId) -> Option<u32> {
+        self.images.get(&id).map(|img| img.width)
+    }
+
+    /// Pixel height of the stored image, or `None` if `id` is absent.
+    #[doc(hidden)]
+    pub fn image_height_for_test(&self, id: ImageId) -> Option<u32> {
+        self.images.get(&id).map(|img| img.height)
+    }
+
+    /// Decoded format of the stored image, or `None` if `id` is absent.
+    /// Single-frame protocol images store as [`super::super::ImageFormat::Rgba`]
+    /// after decode; spec_chain tests pin this invariant per protocol arm.
+    #[doc(hidden)]
+    pub fn image_format_for_test(&self, id: ImageId) -> Option<super::super::ImageFormat> {
+        self.images.get(&id).map(|img| img.format)
+    }
+
     /// Byte-exact pixel data for the 1-based frame `frame_num`.
     ///
     /// Delegates to [`Self::frame_for_number`]; spec-chain tests use this
@@ -56,5 +89,29 @@ impl ImageCache {
     #[doc(hidden)]
     pub fn contains_image_for_test(&self, id: ImageId) -> bool {
         self.images.contains_key(&id)
+    }
+
+    /// Force the auto-id allocator counter. Boundary tests drive it to the
+    /// top of the `u32` range to exercise the Decision 07 wrap-preserves-
+    /// upper-half invariant in [`super::ImageCache::next_image_id`].
+    #[doc(hidden)]
+    pub fn set_next_auto_id_for_test(&mut self, v: u32) {
+        self.next_id = v;
+    }
+
+    /// Allocate the next auto id via the production `next_image_id` path.
+    #[doc(hidden)]
+    pub fn next_auto_id_for_test(&mut self) -> ImageId {
+        self.next_image_id()
+    }
+
+    /// Current `pixel_generation` counter of the stored image, or `None`
+    /// if `id` is absent. Spec-chain animation tests pin that each
+    /// frame transition bumps this counter (the GPU re-upload contract:
+    /// the GPU cache's Occupied-arm gate observes the bump and re-uploads
+    /// the texture instead of serving stale pixels).
+    #[doc(hidden)]
+    pub fn image_pixel_generation_for_test(&self, id: ImageId) -> Option<u64> {
+        self.images.get(&id).map(|img| img.pixel_generation)
     }
 }

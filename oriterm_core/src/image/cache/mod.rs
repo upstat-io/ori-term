@@ -21,15 +21,21 @@ use std::time::Instant;
 
 use super::{AnimationState, ImageData, ImageError, ImageId, ImagePlacement};
 
-/// Default memory limit for decoded image data (320 MiB, matching Ghostty).
+/// Default memory limit for decoded image data (320 MiB).
 const DEFAULT_MEMORY_LIMIT: usize = 320 * 1024 * 1024;
 
 /// Default maximum size for a single image (64 MiB).
 const DEFAULT_MAX_SINGLE_IMAGE: usize = 64 * 1024 * 1024;
 
-/// Starting ID for auto-assigned images (mid-range u32 to avoid
-/// collisions with client-assigned IDs that start at 1).
-const AUTO_ID_START: u32 = 2_147_483_647;
+/// Starting ID for auto-assigned images: the first u32 with the high bit
+/// set (`1 << 31` = `2_147_483_648`). Per Decision 07 Option A this carves
+/// the u32 ID space into two disjoint namespaces — client-assigned
+/// (kitty explicit `i=`) IDs occupy `[1, 2^31)`, auto-allocated IDs occupy
+/// `[2^31, 2^32)` — so the two can never collide. SSOT for the boundary;
+/// the kitty handler rejects an explicit `i=N >= AUTO_ID_START` on CREATE
+/// actions (`Transmit` / `TransmitAndPlace`) — addressing actions on a
+/// terminal-assigned auto-range id are accepted.
+pub(crate) const AUTO_ID_START: u32 = 1 << 31;
 
 /// In-memory image cache with reference counting, eviction, and
 /// configurable memory limits.
@@ -214,6 +220,22 @@ impl ImageCache {
     pub(crate) fn next_image_id(&mut self) -> ImageId {
         let id = ImageId(self.next_id);
         self.next_id = self.next_id.wrapping_add(1);
+        // Decision 07 Option A: auto-allocated ids stay in `[AUTO_ID_START,
+        // 2^32)`. After exhausting the upper half the `wrapping_add` lands in
+        // `[0, AUTO_ID_START)` — the explicit-client range — which would
+        // collide with kitty client-chosen ids. Recycle to the start of the
+        // upper half instead so the disjoint-namespace invariant holds for
+        // every allocation. The recycle is in-range only, not free-id-seeking
+        // (Decision 07 chose this over saturating-with-exhaustion-error): a
+        // post-wrap allocation could re-issue an id still naming a live auto
+        // image, which `store` would then replace. Reaching the wrap needs
+        // 2^31 live auto-allocated images held simultaneously — physically
+        // unreachable under `memory_limit` (the cache evicts long before),
+        // so the auto-vs-auto reuse never occurs in practice; the auto-vs-
+        // explicit partition the validator guards is unaffected.
+        if self.next_id < AUTO_ID_START {
+            self.next_id = AUTO_ID_START;
+        }
         id
     }
 

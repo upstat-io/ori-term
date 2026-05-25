@@ -354,7 +354,7 @@ fn new_window_pane_cell_metrics_reach_io_thread() {
     // Poll until the IO thread processes SetCellDimensions, sets
     // grid_dirty, and produces a new snapshot. poll_events detects the
     // new snapshot via has_new_snapshot and re-sets snapshot_dirty.
-    let deadline = Instant::now() + Duration::from_secs(5);
+    let deadline = Instant::now() + Duration::from_secs(30);
     let mut io_processed = false;
     while Instant::now() < deadline {
         mux.poll_events();
@@ -393,7 +393,7 @@ fn poll_events_uses_has_new_snapshot() {
     mux.send_input(pane_id, b"echo SNAPSHOT_TEST\n");
 
     // Poll until the IO thread produces a snapshot (max 5 seconds).
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
     let mut saw_dirty = false;
     let mut saw_pane_output = false;
     while std::time::Instant::now() < deadline {
@@ -511,8 +511,13 @@ fn pane_mode_reflects_decbkm_set() {
     // PTY to the IO thread's VTE parser.
     mux.send_input(pane_id, b"printf '\\033[?67h'\n");
 
-    // Wait for the IO thread to process the escape sequence and update mode_cache.
-    let deadline = Instant::now() + Duration::from_secs(5);
+    // Wait for the IO thread to process the escape sequence and update
+    // mode_cache. The 30s deadline is a hang-surfacing safety valve, NOT
+    // the signal (per tests.md §Wall-Clock-Free Testing) — `saw_decbkm`
+    // is the condition that passes the test. A tighter budget (5s) flaked
+    // under the full parallel `cargo test --workspace` when 30+ test
+    // binaries saturate the box and the real shell-PTY round-trip slows.
+    let deadline = Instant::now() + Duration::from_secs(30);
     let mut saw_decbkm = false;
     while Instant::now() < deadline {
         mux.poll_events();
@@ -559,7 +564,7 @@ fn pane_mode_clears_decbkm_on_reset() {
 
     // Set DECBKM first via printf (PTY output -> VTE parser).
     mux.send_input(pane_id, b"printf '\\033[?67h'\n");
-    let deadline = Instant::now() + Duration::from_secs(5);
+    let deadline = Instant::now() + Duration::from_secs(30);
     while Instant::now() < deadline {
         mux.poll_events();
         if let Some(bits) = mux.pane_mode(pane_id) {
@@ -572,7 +577,7 @@ fn pane_mode_clears_decbkm_on_reset() {
 
     // Now reset DECBKM via printf.
     mux.send_input(pane_id, b"printf '\\033[?67l'\n");
-    let deadline = Instant::now() + Duration::from_secs(5);
+    let deadline = Instant::now() + Duration::from_secs(30);
     let mut saw_clear = false;
     while Instant::now() < deadline {
         mux.poll_events();

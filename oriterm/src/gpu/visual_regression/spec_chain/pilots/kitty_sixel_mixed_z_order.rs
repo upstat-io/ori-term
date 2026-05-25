@@ -61,12 +61,13 @@
 //!
 //! ## Auto-assigned sixel image id
 //!
-//! `ImageCache::next_image_id` starts at `AUTO_ID_START =
-//! 2_147_483_647` (`oriterm_core/src/image/cache/mod.rs:24`). On a
-//! fresh harness, the first auto-assigned ID is exactly
-//! `AUTO_ID_START` — the pilot relies on that determinism when
+//! `ImageCache::next_image_id` starts at `AUTO_ID_START` (Decision 07
+//! Option A: `1 << 31`). On a fresh harness, the first auto-assigned ID is
+//! exactly `AUTO_ID_START` — the pilot relies on that determinism when
 //! mutating the sixel placement.
 
+/// The auto-namespace base imported from its single canonical owner.
+use oriterm_core::image::AUTO_ID_START_FOR_TEST as AUTO_ID_START;
 use oriterm_core::image::ImageId;
 use oriterm_test_support::spec_chain::{
     FrameInputExpectation, GoldenExpectation, GpuInstanceExpectation, ScenarioExpectations,
@@ -74,11 +75,6 @@ use oriterm_test_support::spec_chain::{
 };
 
 use super::super::visual_harness::VisualSpecHarness;
-
-/// Matches `oriterm_core::image::cache::AUTO_ID_START` (private). The
-/// constant is duplicated here only for the mutator call — the live
-/// guard is the bool return value of the mutator itself.
-const AUTO_ID_START: u32 = 2_147_483_647;
 
 /// CUP `row=5, col=10` (0-based) → `ESC [ 6 ; 11 H` (1-based).
 const CUP_ROW5_COL10: &[u8] = b"\x1b[6;11H";

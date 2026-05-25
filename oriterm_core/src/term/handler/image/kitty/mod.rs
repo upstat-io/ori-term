@@ -8,6 +8,7 @@
 use log::warn;
 
 use crate::effect::sink::EffectSink;
+use crate::image::AUTO_ID_START;
 use crate::image::kitty::{
     KittyAction, KittyCommand, KittyError, KittyTransmission, LoadingImage,
     parse_kitty_command_into,
@@ -116,6 +117,31 @@ impl<S: EffectSink> Term<S> {
             && let Some(loading) = self.loading_image.as_ref()
         {
             cmd.action = loading.start_cmd.action;
+        }
+
+        // Reject a client CHOOSING an explicit id outside the writable
+        // explicit range `[1, AUTO_ID_START)` on an image-CREATE action
+        // (Decision 07 Option A). Explicit client ids occupy `[1, 2^31)`;
+        // the terminal auto-allocates `[2^31, 2^32)` AND hands those ids back
+        // to clients via the kitty `I=` request-id flow (`transmit.rs` echoes
+        // the allocated id in the OK reply). A client legitimately reuses a
+        // terminal-assigned id (`>= AUTO_ID_START`) on place / delete / query
+        // / animate / compose — so the namespace check fires ONLY on the
+        // CREATE actions (transmit / transmit-and-place), where allowing a
+        // self-chosen auto-range id would collide with anonymous iTerm2 /
+        // sixel allocations. Addressing actions on an unknown id fail
+        // naturally downstream; no namespace EINVAL is owed there.
+        if matches!(
+            cmd.action,
+            KittyAction::Transmit | KittyAction::TransmitAndPlace
+        ) && let Some(id) = cmd.image_id
+            && (id == 0 || id >= AUTO_ID_START)
+        {
+            self.kitty_respond(
+                &KittyReplyContext::from_cmd(&cmd),
+                &format!("EINVAL: explicit image id {id} outside allowed range [1, 2^31)"),
+            );
+            return;
         }
 
         // Per-command trace: high-frequency under chunked kitty transmits

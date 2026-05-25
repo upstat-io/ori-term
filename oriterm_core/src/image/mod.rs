@@ -16,10 +16,22 @@ pub mod sixel;
 use std::sync::Arc;
 use std::time::Duration;
 
+pub(crate) use cache::AUTO_ID_START;
 pub use cache::ImageCache;
+
+/// Test-facing mirror of the [`cache::AUTO_ID_START`] namespace boundary
+/// (Decision 07 Option A). Integration tests compile as an external crate and
+/// cannot reach the `pub(crate)` const; this `#[doc(hidden)]` re-export is the
+/// single canonical value they import (aliased as `AUTO_ID_START`) instead of
+/// duplicating the literal. Gated behind the same `test-support` feature as
+/// the `ImageCache::*_for_test` probes so it never reaches a release build.
+#[cfg(any(test, feature = "test-support"))]
+#[doc(hidden)]
+pub const AUTO_ID_START_FOR_TEST: u32 = AUTO_ID_START;
 pub use compose::ComposeRequest;
 pub use decode::{
-    GifFrames, ImageFormat, decode_gif_frames, decode_to_rgba, detect_format, rgb_to_rgba,
+    GifFrames, ImageFormat, MAX_GIF_FRAMES, decode_gif_frames, decode_to_rgba, detect_format,
+    rgb_to_rgba,
 };
 pub use frame_load::{BlitRect, CanvasSource, FrameLoadRequest, FrameTarget};
 
@@ -34,7 +46,7 @@ pub const KITTY_PLACEHOLDER: char = '\u{10EEEE}';
 
 /// Unique image identifier within a terminal instance.
 ///
-/// IDs start at `2_147_483_647` (mid-range u32) for auto-assigned images
+/// IDs start at `2_147_483_648` (mid-range u32) for auto-assigned images
 /// to avoid collisions with client-assigned IDs that typically start at 1.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ImageId(pub(crate) u32);
@@ -277,7 +289,7 @@ pub enum CompositionMode {
 /// Minimum frame duration for animated images (60fps cap).
 ///
 /// Prevents abusive GIFs with 0ms or 10ms frame durations from burning
-/// CPU/GPU. Matches `WezTerm`'s approach.
+/// CPU/GPU by clamping every frame to a 60fps floor.
 const MIN_FRAME_DURATION: Duration = Duration::from_millis(16);
 
 /// Per-image animation state for multi-frame images (GIF, Kitty animated).
