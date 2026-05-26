@@ -17,6 +17,16 @@ use std::time::{Duration, Instant};
 
 use super::PtySession;
 
+/// Hard ceiling for [`PtySession::wait`]'s quiesce loop. Safety valve
+/// against a child that emits a steady sub-`quiet_ms` trickle and never
+/// settles — the deadline surfaces a non-settling child as a bounded
+/// outcome; it is the escape hatch, not the primary settle signal.
+/// 3000 ms is ~3x any legitimate DA/DSR settle (a real handshake
+/// completes sub-second and a probe response is displayed within ~1 s of
+/// arrival), so a quiescing child never trips it, while a non-quiescing
+/// child is bounded instead of hanging the suite.
+const WAIT_SETTLE_CEILING_MS: u64 = 3000;
+
 /// Outcome of a single [`poll_until`] check pass.
 pub(super) enum PollStep<T> {
     /// Predicate not yet satisfied — keep polling.
@@ -144,14 +154,27 @@ impl PtySession {
         }
     }
 
-    /// Wait until no new PTY output arrives for `quiet_ms`.
+    /// Wait until no new PTY output arrives for `quiet_ms`, OR until the
+    /// hard settle ceiling [`WAIT_SETTLE_CEILING_MS`] elapses.
     ///
     /// Uses blocking recv to avoid missing data that arrives between
     /// drain and sleep — important for multi-step DA/DSR handshakes
     /// where the queryer sends a follow-up after receiving a response.
+    ///
+    /// The ceiling is a safety valve, not the primary signal. Without it,
+    /// a child that emits a steady trickle faster than `quiet_ms` (e.g.
+    /// `tack`'s status-reports submenu sweeping DECRQM/DECRQSS one query
+    /// per ~195 ms, never leaving a 300 ms gap) loops forever. A
+    /// quiescing child returns well under the ceiling; only a child that
+    /// never settles within the budget trips it, and the caller's grid
+    /// assertions then run against whatever has accumulated.
     pub fn wait(&mut self, quiet_ms: u64) {
+        let deadline = Instant::now() + Duration::from_millis(WAIT_SETTLE_CEILING_MS);
         loop {
             if self.drain_blocking(quiet_ms) == 0 {
+                break;
+            }
+            if Instant::now() >= deadline {
                 break;
             }
         }

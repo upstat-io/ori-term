@@ -147,8 +147,8 @@ impl From<vte::ansi::Hyperlink> for Hyperlink {
 
 /// One character position in the terminal grid.
 ///
-/// Target size: 24 bytes. Fields are ordered to minimize padding:
-/// `char(4) + Color(4) + Color(4) + CellFlags(2) + pad(2) + Option<Arc>(8)`.
+/// Target size: 24 bytes, fully packed with no padding:
+/// `char(4) + Color(4) + Color(4) + CellFlags(4) + Option<Arc>(8)`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Cell {
     /// The character stored in this cell.
