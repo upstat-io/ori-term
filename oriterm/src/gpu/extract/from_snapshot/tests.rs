@@ -30,6 +30,9 @@ fn test_snapshot() -> PaneSnapshot {
                     bg: black,
                     flags: 0,
                     underline_color: None,
+                    fg_alpha: 255,
+                    bg_alpha: 255,
+                    underline_alpha: 255,
                     hyperlink_uri: None,
                     zerowidth: vec![],
                 },
@@ -39,6 +42,9 @@ fn test_snapshot() -> PaneSnapshot {
                     bg: black,
                     flags: CellFlags::BOLD.bits(),
                     underline_color: None,
+                    fg_alpha: 255,
+                    bg_alpha: 255,
+                    underline_alpha: 255,
                     hyperlink_uri: None,
                     zerowidth: vec![],
                 },
@@ -50,6 +56,9 @@ fn test_snapshot() -> PaneSnapshot {
                     bg: black,
                     flags: 0,
                     underline_color: None,
+                    fg_alpha: 255,
+                    bg_alpha: 255,
+                    underline_alpha: 255,
                     hyperlink_uri: None,
                     zerowidth: vec![],
                 },
@@ -63,6 +72,9 @@ fn test_snapshot() -> PaneSnapshot {
                         g: 128,
                         b: 255,
                     }),
+                    fg_alpha: 255,
+                    bg_alpha: 255,
+                    underline_alpha: 255,
                     hyperlink_uri: Some("https://test.example".to_string()),
                     zerowidth: vec!['\u{0301}'],
                 },
@@ -411,6 +423,9 @@ fn wide_char_flag_preserved() {
             bg: WireRgb { r: 0, g: 0, b: 0 },
             flags: CellFlags::WIDE_CHAR.bits(),
             underline_color: None,
+            fg_alpha: 255,
+            bg_alpha: 255,
+            underline_alpha: 255,
             hyperlink_uri: None,
             zerowidth: vec![],
         }]],
@@ -558,6 +573,9 @@ fn large_snapshot_through_extract() {
                     bg: black,
                     flags: 0,
                     underline_color: None,
+                    fg_alpha: 255,
+                    bg_alpha: 255,
+                    underline_alpha: 255,
                     hyperlink_uri: None,
                     zerowidth: vec![],
                 })
@@ -1115,5 +1133,129 @@ fn notcurses_info_real_bytes_roundtrip_to_client_extract() {
             img.height,
             expected_min_bytes
         );
+    }
+}
+
+// -- SGR mode-6 per-channel alpha reconstruction (§15.2) --
+
+/// Build a 1×1 wire snapshot whose single cell carries concrete per-channel
+/// alpha and `extra_flags` OR-ed into its flag bits.
+fn alpha_snapshot(
+    fg_alpha: u8,
+    bg_alpha: u8,
+    underline_alpha: u8,
+    extra_flags: u32,
+) -> PaneSnapshot {
+    let mut snap = test_snapshot();
+    snap.cols = 1;
+    let cell = WireCell {
+        ch: 'A',
+        fg: WireRgb {
+            r: 10,
+            g: 20,
+            b: 30,
+        },
+        bg: WireRgb {
+            r: 40,
+            g: 50,
+            b: 60,
+        },
+        flags: extra_flags,
+        underline_color: None,
+        fg_alpha,
+        bg_alpha,
+        underline_alpha,
+        hyperlink_uri: None,
+        zerowidth: vec![],
+    };
+    snap.cells = vec![vec![cell]];
+    snap
+}
+
+/// Concrete per-channel alpha survives reconstruction through BOTH the fresh
+/// (`snapshot_to_renderable`) and refill (`snapshot_to_renderable_into`)
+/// daemon-client paths. Missing either site is the DRIFT defect — alpha works
+/// on first paint but vanishes on refill (or vice versa).
+#[test]
+fn cell_alpha_reconstructed_through_both_client_paths() {
+    let snap = alpha_snapshot(64, 128, 200, 0);
+
+    // FRESH path (`from_snapshot/mod.rs` first `RenderableCell` literal).
+    let fresh = snapshot_to_renderable(&snap, &|_| None);
+    assert_eq!(fresh.cells[0].fg_alpha, 64, "fresh path dropped fg_alpha");
+    assert_eq!(fresh.cells[0].bg_alpha, 128, "fresh path dropped bg_alpha");
+    assert_eq!(
+        fresh.cells[0].underline_alpha, 200,
+        "fresh path dropped underline_alpha"
+    );
+
+    // REFILL path (`from_snapshot/mod.rs` second `RenderableCell` literal).
+    // Seed the buffer with non-opaque garbage to prove the refill overwrites.
+    let mut reused = snapshot_to_renderable(&alpha_snapshot(1, 2, 3, 0), &|_| None);
+    snapshot_to_renderable_into(&snap, &mut reused, &|_| None);
+    assert_eq!(reused.cells[0].fg_alpha, 64, "refill path dropped fg_alpha");
+    assert_eq!(
+        reused.cells[0].bg_alpha, 128,
+        "refill path dropped bg_alpha"
+    );
+    assert_eq!(
+        reused.cells[0].underline_alpha, 200,
+        "refill path dropped underline_alpha"
+    );
+}
+
+/// An opaque wire cell reconstructs opaque on both client paths (guards the
+/// default against a spurious non-opaque reconstruction).
+#[test]
+fn opaque_cell_alpha_reconstructed_opaque_both_paths() {
+    use oriterm_core::cell::OPAQUE_ALPHA;
+
+    let snap = alpha_snapshot(OPAQUE_ALPHA, OPAQUE_ALPHA, OPAQUE_ALPHA, 0);
+
+    let fresh = snapshot_to_renderable(&snap, &|_| None);
+    assert_eq!(fresh.cells[0].fg_alpha, OPAQUE_ALPHA);
+    assert_eq!(fresh.cells[0].bg_alpha, OPAQUE_ALPHA);
+    assert_eq!(fresh.cells[0].underline_alpha, OPAQUE_ALPHA);
+
+    let mut reused = snapshot_to_renderable(&snap, &|_| None);
+    snapshot_to_renderable_into(&snap, &mut reused, &|_| None);
+    assert_eq!(reused.cells[0].fg_alpha, OPAQUE_ALPHA);
+    assert_eq!(reused.cells[0].bg_alpha, OPAQUE_ALPHA);
+    assert_eq!(reused.cells[0].underline_alpha, OPAQUE_ALPHA);
+}
+
+/// Forward-compat lossy-not-corrupt pin: `CellFlags::from_bits_truncate`
+/// (the `:86` + `:207` reconstruction sites) SILENTLY DROPS flag bits the
+/// local `CellFlags` does not define. A newer daemon may set a flag bit this
+/// build does not know; reconstruction must drop it cleanly (lossy) without
+/// panic or corrupting the known flags / cell payload (not corrupt). This
+/// documents the intended behavior so a future "fix" doesn't turn it into a
+/// hard error.
+#[test]
+fn unknown_flag_bits_reconstruct_lossy_not_corrupt() {
+    // `1 << 30` is far above the highest defined CellFlags bit (HAS_ALPHA,
+    // `1 << 21`), so it is guaranteed unknown to this build.
+    const UNKNOWN_FLAG_BIT: u32 = 1 << 30;
+    let known = CellFlags::BOLD | CellFlags::ITALIC;
+    let wire_flags = known.bits() | UNKNOWN_FLAG_BIT;
+
+    let snap = alpha_snapshot(64, 128, 200, wire_flags);
+
+    for content in [snapshot_to_renderable(&snap, &|_| None), {
+        let mut out = snapshot_to_renderable(&snap, &|_| None);
+        snapshot_to_renderable_into(&snap, &mut out, &|_| None);
+        out
+    }] {
+        let cell = &content.cells[0];
+        // Known flags survive; the unknown bit is dropped (lossy).
+        assert_eq!(
+            cell.flags, known,
+            "from_bits_truncate must keep known flags and drop the unknown bit"
+        );
+        // The rest of the cell payload is NOT corrupted by the truncation.
+        assert_eq!(cell.ch, 'A');
+        assert_eq!(cell.fg_alpha, 64);
+        assert_eq!(cell.bg_alpha, 128);
+        assert_eq!(cell.underline_alpha, 200);
     }
 }

@@ -174,7 +174,20 @@ impl<S: EffectSink> Term<S> {
 
             let fg = renderable::resolve_fg(cell.fg, cell.flags, palette, self.bold_is_bright);
             let bg = renderable::resolve_bg(cell.bg, palette);
-            let (fg, bg) = renderable::apply_inverse(fg, bg, cell.flags);
+            let renderable::ChannelColors {
+                fg,
+                bg,
+                fg_alpha,
+                bg_alpha,
+            } = renderable::apply_inverse(
+                renderable::ChannelColors {
+                    fg,
+                    bg,
+                    fg_alpha: cell.fg_alpha(),
+                    bg_alpha: cell.bg_alpha(),
+                },
+                cell.flags,
+            );
 
             let (underline_color_raw, has_hyperlink, hyperlink_uri, zerowidth) =
                 match cell.extra.as_ref() {
@@ -242,6 +255,9 @@ impl<S: EffectSink> Term<S> {
                 bg,
                 flags: cell.flags,
                 underline_color,
+                fg_alpha,
+                bg_alpha,
+                underline_alpha: cell.underline_alpha(),
                 has_hyperlink,
                 hyperlink_uri,
                 zerowidth,

@@ -13,7 +13,7 @@ use oriterm_core::{
     CellFlags, Column, CursorShape, ImageId, RenderableCell, RenderableContent, RenderableCursor,
     RenderableImageData, RenderablePlacement, Rgb, TermMode,
 };
-use oriterm_mux::protocol::snapshot::WirePlacement;
+use oriterm_mux::protocol::snapshot::{WireCell, WirePlacement};
 use oriterm_mux::{PaneSnapshot, WireCursorShape, WireRgb};
 
 use crate::font::CellMetrics;
@@ -77,22 +77,7 @@ fn snapshot_to_renderable(
 
     for (line, row) in snapshot.cells.iter().enumerate() {
         for (col_idx, wire) in row.iter().enumerate() {
-            cells.push(RenderableCell {
-                line,
-                column: Column(col_idx),
-                ch: wire.ch,
-                fg: wire_rgb_to_rgb(wire.fg),
-                bg: wire_rgb_to_rgb(wire.bg),
-                flags: CellFlags::from_bits_truncate(wire.flags),
-                underline_color: wire.underline_color.map(wire_rgb_to_rgb),
-                has_hyperlink: wire.hyperlink_uri.is_some(),
-                hyperlink_uri: None,
-                zerowidth: if wire.zerowidth.is_empty() {
-                    Vec::new()
-                } else {
-                    wire.zerowidth.clone()
-                },
-            });
+            cells.push(wire_cell_to_renderable(line, col_idx, wire));
         }
     }
 
@@ -198,22 +183,7 @@ fn snapshot_to_renderable_into(
 
     for (line, row) in snapshot.cells.iter().enumerate() {
         for (col_idx, wire) in row.iter().enumerate() {
-            out.cells.push(RenderableCell {
-                line,
-                column: Column(col_idx),
-                ch: wire.ch,
-                fg: wire_rgb_to_rgb(wire.fg),
-                bg: wire_rgb_to_rgb(wire.bg),
-                flags: CellFlags::from_bits_truncate(wire.flags),
-                underline_color: wire.underline_color.map(wire_rgb_to_rgb),
-                has_hyperlink: wire.hyperlink_uri.is_some(),
-                hyperlink_uri: None,
-                zerowidth: if wire.zerowidth.is_empty() {
-                    Vec::new()
-                } else {
-                    wire.zerowidth.clone()
-                },
-            });
+            out.cells.push(wire_cell_to_renderable(line, col_idx, wire));
         }
     }
 
@@ -312,6 +282,35 @@ fn wire_rgb_to_rgb(w: WireRgb) -> Rgb {
         r: w.r,
         g: w.g,
         b: w.b,
+    }
+}
+
+/// Build a [`RenderableCell`] from one wire cell at the given grid position.
+///
+/// Single source for the `WireCell` → `RenderableCell` field mapping: BOTH the
+/// fresh ([`snapshot_to_renderable`]) and refill ([`snapshot_to_renderable_into`])
+/// client paths call here, so a new wire field is mapped in exactly ONE place.
+/// `from_bits_truncate` is intentionally lossy — unknown future flag bits drop
+/// to opaque/absent rather than corrupting the cell (forward-compat contract).
+fn wire_cell_to_renderable(line: usize, col_idx: usize, wire: &WireCell) -> RenderableCell {
+    RenderableCell {
+        line,
+        column: Column(col_idx),
+        ch: wire.ch,
+        fg: wire_rgb_to_rgb(wire.fg),
+        bg: wire_rgb_to_rgb(wire.bg),
+        flags: CellFlags::from_bits_truncate(wire.flags),
+        underline_color: wire.underline_color.map(wire_rgb_to_rgb),
+        fg_alpha: wire.fg_alpha,
+        bg_alpha: wire.bg_alpha,
+        underline_alpha: wire.underline_alpha,
+        has_hyperlink: wire.hyperlink_uri.is_some(),
+        hyperlink_uri: None,
+        zerowidth: if wire.zerowidth.is_empty() {
+            Vec::new()
+        } else {
+            wire.zerowidth.clone()
+        },
     }
 }
 

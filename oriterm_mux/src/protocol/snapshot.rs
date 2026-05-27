@@ -42,6 +42,16 @@ pub enum WireColor {
 /// coupling the wire format to the bitflags type.
 pub type WireCellFlags = u32;
 
+/// Fully-opaque per-channel alpha used as the wire default.
+///
+/// Mirrors [`oriterm_core::cell::OPAQUE_ALPHA`]. Used as the `#[serde(default)]`
+/// for the per-channel alpha fields so snapshots predating SGR mode-6 alpha
+/// (and any future producer that omits the fields) decode as fully opaque
+/// rather than transparent (`0`).
+const fn opaque_alpha() -> u8 {
+    oriterm_core::cell::OPAQUE_ALPHA
+}
+
 /// A single terminal cell on the wire.
 /// Colors are pre-resolved RGB values — bold-as-bright, dim, and inverse
 /// have already been applied server-side via `renderable_content()`.
@@ -57,6 +67,16 @@ pub struct WireCell {
     pub flags: WireCellFlags,
     /// Resolved underline color (`None` = use foreground).
     pub underline_color: Option<WireRgb>,
+    /// Concrete foreground alpha (0–255, SGR mode-6). Defaults to opaque
+    /// (255) for snapshots predating per-channel alpha.
+    #[serde(default = "opaque_alpha")]
+    pub fg_alpha: u8,
+    /// Concrete background alpha (0–255, SGR mode-6). Defaults to opaque.
+    #[serde(default = "opaque_alpha")]
+    pub bg_alpha: u8,
+    /// Concrete underline alpha (0–255, SGR mode-6). Defaults to opaque.
+    #[serde(default = "opaque_alpha")]
+    pub underline_alpha: u8,
     /// OSC 8 hyperlink URI (`None` if no hyperlink).
     pub hyperlink_uri: Option<String>,
     /// Combining marks / zero-width characters.

@@ -24,6 +24,9 @@ fn cell(ch: char) -> WireCell {
         bg: WireRgb { r: 0, g: 0, b: 0 },
         flags: 0,
         underline_color: None,
+        fg_alpha: 255,
+        bg_alpha: 255,
+        underline_alpha: 255,
         hyperlink_uri: None,
         zerowidth: Vec::new(),
     }

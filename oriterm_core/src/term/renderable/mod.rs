@@ -4,6 +4,8 @@
 //! `Term`: visible cells with resolved colors, cursor state, and damage info.
 //! Extracted under lock, consumed without lock — no back-references into `Term`.
 
+mod cell;
+
 use std::collections::HashSet;
 use std::sync::Arc;
 
@@ -18,36 +20,7 @@ use crate::index::Column;
 use crate::search::SearchMatch;
 use crate::term::mode::TermMode;
 
-/// A single cell ready for rendering.
-///
-/// Colors are fully resolved (palette lookups, bold-as-bright, dim,
-/// inverse all applied). The renderer never needs the raw `Color` enum.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RenderableCell {
-    /// Line index in the visible viewport (0 = top).
-    pub line: usize,
-    /// Column index (0-based).
-    pub column: Column,
-    /// Display character.
-    pub ch: char,
-    /// Resolved foreground color.
-    pub fg: Rgb,
-    /// Resolved background color.
-    pub bg: Rgb,
-    /// Cell attribute flags.
-    pub flags: CellFlags,
-    /// Resolved underline color (if custom underline color is set).
-    pub underline_color: Option<Rgb>,
-    /// Whether this cell has an OSC 8 hyperlink attached.
-    pub has_hyperlink: bool,
-    /// OSC 8 hyperlink URI, if present.
-    ///
-    /// Populated during `renderable_content_into()` so IO-thread snapshots
-    /// carry the URI without needing Grid access later.
-    pub hyperlink_uri: Option<String>,
-    /// Zero-width combining characters appended to this cell.
-    pub zerowidth: Vec<char>,
-}
+pub use cell::RenderableCell;
 
 /// Cursor state for rendering.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -439,12 +412,32 @@ pub(super) fn resolve_bg(color: Color, palette: &Palette) -> Rgb {
     palette.resolve(color)
 }
 
-/// Apply inverse (swap fg/bg) when the INVERSE flag is set.
-pub(super) fn apply_inverse(fg: Rgb, bg: Rgb, flags: CellFlags) -> (Rgb, Rgb) {
+/// A cell's resolved foreground/background color with their per-channel alpha.
+/// Groups the four values that travel together through inverse resolution so
+/// [`apply_inverse`] takes/returns one named value instead of a 5-arg / 4-tuple
+/// signature.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct ChannelColors {
+    pub fg: Rgb,
+    pub bg: Rgb,
+    pub fg_alpha: u8,
+    pub bg_alpha: u8,
+}
+
+/// Apply inverse (swap fg/bg color AND fg/bg alpha) when the INVERSE flag is
+/// set. The per-channel alpha must swap WITH its color so SGR mode-6 alpha on
+/// an inverted cell stays bound to the displayed channel. Underline color and
+/// alpha are unaffected by INVERSE.
+pub(super) fn apply_inverse(c: ChannelColors, flags: CellFlags) -> ChannelColors {
     if flags.contains(CellFlags::INVERSE) {
-        (bg, fg)
+        ChannelColors {
+            fg: c.bg,
+            bg: c.fg,
+            fg_alpha: c.bg_alpha,
+            bg_alpha: c.fg_alpha,
+        }
     } else {
-        (fg, bg)
+        c
     }
 }
 

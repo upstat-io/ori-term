@@ -16,7 +16,10 @@ use oriterm_core::{Term, Theme};
 use vte::ansi::Processor;
 use vte::ansi::cursor_icon::CursorIcon;
 
-use super::{SnapshotCache, fill_images_from_renderable, fill_wire_metadata_from_renderable};
+use super::{
+    SnapshotCache, fill_images_from_renderable, fill_wire_cells_from_renderable,
+    fill_wire_metadata_from_renderable,
+};
 use crate::PaneSnapshot;
 use crate::image_cache::ImageCache;
 use crate::protocol::encode_cursor_icon;
@@ -513,4 +516,62 @@ fn notcurses_info_image_data_survives_daemon_fold() {
             wp.viewport_y,
         );
     }
+}
+
+/// §15.2 server-fill pin: the `RenderableContent → WireCell` fill path
+/// (`fill_wire_cells_from_renderable`) must copy each cell's concrete
+/// per-channel alpha onto the outgoing `WireCell`. The codec round-trip
+/// tests build a `WireCell` by hand, so without this pin a regression that
+/// reverts the server fill to opaque (255) would ship translucent cells as
+/// opaque over the daemon wire undetected.
+#[test]
+fn server_fill_carries_per_channel_cell_alpha() {
+    let mut term = Term::new(24, 80, 0, Theme::default(), VoidEffectSink);
+    let mut processor: Processor = Processor::new();
+    // fg_alpha=64, bg_alpha=128, underline_alpha=200 on a written cell.
+    processor.advance(
+        &mut term,
+        b"\x1b[38:6::10:20:30:64m\x1b[48:6::40:50:60:128m\x1b[58:6::1:2:3:200mX",
+    );
+
+    let mut render_buf = RenderableContent::default();
+    term.renderable_content_into(&mut render_buf);
+
+    let mut snapshot = PaneSnapshot::default();
+    fill_wire_cells_from_renderable(&render_buf, &mut snapshot);
+
+    let cell = &snapshot.cells[0][0];
+    assert_eq!(cell.ch, 'X', "sanity: first wire cell is the written X");
+    assert_eq!(
+        cell.fg_alpha, 64,
+        "server fill must carry fg alpha to the wire"
+    );
+    assert_eq!(
+        cell.bg_alpha, 128,
+        "server fill must carry bg alpha to the wire"
+    );
+    assert_eq!(
+        cell.underline_alpha, 200,
+        "server fill must carry underline alpha to the wire"
+    );
+}
+
+/// Negative counterpart: an opaque (no mode-6) cell fills as opaque on every
+/// channel — the fill never spuriously emits a non-opaque alpha.
+#[test]
+fn server_fill_opaque_cell_stays_opaque() {
+    let mut term = Term::new(24, 80, 0, Theme::default(), VoidEffectSink);
+    let mut processor: Processor = Processor::new();
+    processor.advance(&mut term, b"X");
+
+    let mut render_buf = RenderableContent::default();
+    term.renderable_content_into(&mut render_buf);
+
+    let mut snapshot = PaneSnapshot::default();
+    fill_wire_cells_from_renderable(&render_buf, &mut snapshot);
+
+    let cell = &snapshot.cells[0][0];
+    assert_eq!(cell.fg_alpha, 255);
+    assert_eq!(cell.bg_alpha, 255);
+    assert_eq!(cell.underline_alpha, 255);
 }

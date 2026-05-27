@@ -243,6 +243,9 @@ fn fill_wire_cells_from_renderable(render_buf: &RenderableContent, out: &mut Pan
             bg: rgb_to_wire(cell.bg),
             flags: cell.flags.bits(),
             underline_color: cell.underline_color.map(rgb_to_wire),
+            fg_alpha: cell.fg_alpha,
+            bg_alpha: cell.bg_alpha,
+            underline_alpha: cell.underline_alpha,
             hyperlink_uri: cell.hyperlink_uri.clone(),
             zerowidth: cell.zerowidth.clone(),
         };
