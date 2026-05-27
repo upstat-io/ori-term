@@ -23,20 +23,6 @@ pub struct WireRgb {
     pub b: u8,
 }
 
-/// Terminal color on the wire (unresolved palette reference).
-/// Reserved for future incremental wire format where cells send only
-/// changed fields and colors may reference palette indices.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[allow(dead_code, reason = "reserved for future incremental wire format")]
-pub enum WireColor {
-    /// Named color (0–15).
-    Named(u8),
-    /// Indexed color (0–255).
-    Indexed(u8),
-    /// 24-bit true color.
-    Rgb(WireRgb),
-}
-
 /// Cell SGR flags as raw bits.
 /// Maps 1:1 to `oriterm_core::CellFlags` bits. Using raw `u32` avoids
 /// coupling the wire format to the bitflags type.

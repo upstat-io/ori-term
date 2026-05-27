@@ -35,9 +35,7 @@ fn host_request_to_pdu_clipboard_packages_token_and_allocates_id() {
         host_request_to_pdu(notif, &mut ctx).expect("clipboard host-request must dispatch");
 
     assert_eq!(dispatch.request_id, HostRequestId::from_raw(1));
-    assert!(
-        matches!(dispatch.target, TargetClients::SinglePaneSubscriber(p, c) if p == pane_id && c == responder)
-    );
+    assert!(matches!(dispatch.target, TargetClients::SinglePaneSubscriber(c) if c == responder));
     assert!(matches!(
         dispatch.pdu,
         MuxPdu::NotifyHostClipboardLoad {

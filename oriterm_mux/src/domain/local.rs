@@ -10,9 +10,8 @@ use oriterm_core::{Term, Theme};
 
 use crate::{DomainId, PaneId};
 
-use super::{Domain, DomainState, SpawnConfig};
+use super::{Domain, DomainState, SpawnConfig, SpawnWiring};
 
-use crate::mux_event::MuxEvent;
 use crate::pane::io_thread;
 use crate::pane::{Pane, PaneNotifier, PaneParts};
 use crate::pty::{PtyConfig, PtyReader, spawn_pty, spawn_pty_writer};
@@ -64,18 +63,14 @@ impl LocalDomain {
     /// a PTY byte reader, and a PTY writer thread. The IO thread handles all
     /// VTE parsing, commands, and snapshot production. The main thread
     /// communicates via channels only — no shared terminal lock.
-    #[allow(
-        clippy::too_many_arguments,
-        reason = "all six parameters are required to assemble a Pane"
-    )]
     pub fn spawn_pane(
         &self,
         pane_id: PaneId,
         config: &SpawnConfig,
         theme: Theme,
-        mux_tx: &mpsc::Sender<MuxEvent>,
-        wakeup: &Arc<dyn Fn() + Send + Sync>,
+        wiring: SpawnWiring<'_>,
     ) -> io::Result<Pane> {
+        let SpawnWiring { mux_tx, wakeup } = wiring;
         // 1. Spawn PTY with the configured shell.
         let pty_config = PtyConfig {
             rows: config.rows,

@@ -16,14 +16,10 @@ pub enum TargetClients {
     /// All clients subscribed to a specific pane.
     PaneSubscribers(PaneId),
     /// One specific subscriber chosen by `select_responder` — used for
-    /// daemon-mode `HostRequest` routing () where a single
-    /// authoritative responder answers. The `PaneId` is structural — kept
-    /// for diagnostic logging / future routing decisions even though the
-    /// dispatch path only reads the `ClientId`.
-    SinglePaneSubscriber(
-        #[allow(dead_code, reason = "structural — read by future routing diagnostics")] PaneId,
-        ClientId,
-    ),
+    /// daemon-mode `HostRequest` routing where a single authoritative
+    /// responder answers. Carries only the responder `ClientId`; the pane
+    /// identity is already carried by the wire PDU and `PendingHostReply`.
+    SinglePaneSubscriber(ClientId),
 }
 
 /// Wire representation of [`ClipboardType`]: 0 = Clipboard, 1 = Selection.

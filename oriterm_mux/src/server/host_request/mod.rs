@@ -93,7 +93,7 @@ pub(crate) fn host_request_to_pdu(
                 terminator,
             };
             Some(HostRequestDispatch {
-                target: TargetClients::SinglePaneSubscriber(pane_id, ctx.responder),
+                target: TargetClients::SinglePaneSubscriber(ctx.responder),
                 pdu,
                 request_id,
                 pending: PendingHostReply {
@@ -129,7 +129,7 @@ pub(crate) fn host_request_to_pdu(
                 terminator,
             };
             Some(HostRequestDispatch {
-                target: TargetClients::SinglePaneSubscriber(pane_id, ctx.responder),
+                target: TargetClients::SinglePaneSubscriber(ctx.responder),
                 pdu,
                 request_id,
                 pending: PendingHostReply {

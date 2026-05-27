@@ -10,7 +10,6 @@ use super::{Domain, DomainState};
 ///
 /// Returns `can_spawn() = false` until the full WSL integration is
 /// implemented (spawning `wsl.exe -d <distro> -- <shell>`).
-#[allow(dead_code, reason = "used when WSL domain spawning is implemented")]
 pub struct WslDomain {
     /// Domain identity.
     id: DomainId,
@@ -18,9 +17,12 @@ pub struct WslDomain {
     distro: String,
 }
 
-#[allow(dead_code, reason = "used when WSL domain spawning is implemented")]
 impl WslDomain {
     /// Create a new WSL domain stub for the given distro.
+    #[allow(
+        dead_code,
+        reason = "scaffold — constructed when WSL domain spawning is wired in Section 35"
+    )]
     pub(crate) fn new(id: DomainId, distro: String) -> Self {
         Self { id, distro }
     }

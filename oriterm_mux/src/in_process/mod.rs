@@ -18,7 +18,7 @@ use oriterm_core::Theme;
 use crate::DomainId;
 use crate::backend::AdoptPaneRequest;
 use crate::domain::handoff::{AdoptConfig, adopt_pane};
-use crate::domain::{Domain, LocalDomain, SpawnConfig};
+use crate::domain::{Domain, LocalDomain, SpawnConfig, SpawnWiring};
 use crate::id::{IdAllocator, PaneId};
 use crate::mux_event::{MuxEvent, MuxNotification};
 use crate::pane::Pane;
@@ -100,9 +100,15 @@ impl InProcessMux {
     ) -> io::Result<(PaneId, Pane)> {
         let pane_id = self.pane_alloc.alloc();
         let domain_id = self.local_domain.id();
-        let pane = self
-            .local_domain
-            .spawn_pane(pane_id, config, theme, &self.event_tx, wakeup)?;
+        let pane = self.local_domain.spawn_pane(
+            pane_id,
+            config,
+            theme,
+            SpawnWiring {
+                mux_tx: &self.event_tx,
+                wakeup,
+            },
+        )?;
 
         self.pane_registry.register(PaneEntry {
             pane: pane_id,

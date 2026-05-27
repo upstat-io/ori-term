@@ -4,7 +4,6 @@
 //! the mio poll loop and mux-event draining.
 
 use std::io::{self, Read};
-use std::time::Instant;
 
 use mio::{Interest, Token};
 
@@ -158,7 +157,6 @@ impl MuxServer {
         );
         let seq = decoded.seq;
         self.scratch_panes.clear();
-        self.scratch_immediate_push.clear();
         let Some(conn) = self.connections.get_mut(&client_id) else {
             return;
         };
@@ -168,7 +166,6 @@ impl MuxServer {
             wakeup: &self.wakeup,
             closed_panes: &mut self.scratch_panes,
             snapshot_cache: &mut self.snapshot_cache,
-            immediate_push: &mut self.scratch_immediate_push,
             pending_host_replies: &mut self.pending_host_replies,
         };
         let result = dispatch::dispatch_request(&mut ctx, conn, decoded.pdu);
@@ -190,24 +187,6 @@ impl MuxServer {
         // Sync subscription tracking (only on subscription changes).
         if result.sub_changed {
             self.sync_subscriptions(client_id);
-        }
-
-        // Immediate push for fire-and-forget mutations that change visible state.
-        if !self.scratch_immediate_push.is_empty() {
-            let now = Instant::now();
-            let mut push_ctx = push::PushContext {
-                last_snapshot_push: &mut self.last_snapshot_push,
-                subscriptions: &self.subscriptions,
-                connections: &mut self.connections,
-                panes: &self.panes,
-                snapshot_cache: &mut self.snapshot_cache,
-                pending_push: &mut self.pending_push,
-                scratch: &mut self.scratch_clients,
-                scratch_panes: &mut self.scratch_panes,
-            };
-            for &push_pane_id in &self.scratch_immediate_push {
-                push::push_or_defer_pane(&mut push_ctx, now, push_pane_id);
-            }
         }
 
         // Prune pending_push on Unsubscribe.

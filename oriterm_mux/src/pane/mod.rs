@@ -107,20 +107,19 @@ pub struct Pane {
     /// Unique pane identifier (from mux allocator).
     id: PaneId,
     /// Which domain spawned this pane.
-    #[allow(dead_code, reason = "read when multi-domain routing is wired to App")]
     domain_id: DomainId,
     /// Sends input/shutdown to the PTY.
     notifier: PaneNotifier,
     /// PTY reader thread join handle (detached on drop).
     #[allow(
         dead_code,
-        reason = "holds JoinHandle for thread lifetime — detached on drop"
+        reason = "RAII ownership — held to keep the reader thread joined to the pane's lifetime; detached on drop, never read"
     )]
     reader_thread: Option<JoinHandle<()>>,
     /// PTY writer thread join handle (detached on drop).
     #[allow(
         dead_code,
-        reason = "holds JoinHandle for thread lifetime — detached on drop"
+        reason = "RAII ownership — held to keep the writer thread joined to the pane's lifetime; detached on drop, never read"
     )]
     writer_thread: Option<JoinHandle<()>>,
     /// Terminal IO thread handle — all terminal access goes through commands.
@@ -226,13 +225,11 @@ impl Pane {
     // -- Identity --
 
     /// Pane identity.
-    #[allow(dead_code, reason = "used when pane CRUD is fully wired to App")]
     pub fn id(&self) -> PaneId {
         self.id
     }
 
     /// Which domain spawned this pane.
-    #[allow(dead_code, reason = "used when multi-domain routing is wired to App")]
     pub fn domain_id(&self) -> DomainId {
         self.domain_id
     }
@@ -243,10 +240,6 @@ impl Pane {
     /// (Section 03.9 Windows handoff), this is the client process ID
     /// reported by the console host. Used for direct signal delivery
     /// when the PTY writer is stalled.
-    #[allow(
-        dead_code,
-        reason = "used when stall-recovery wires direct signal delivery"
-    )]
     pub fn process_id(&self) -> Option<u32> {
         self.child_pid
     }
@@ -364,10 +357,6 @@ impl Pane {
     }
 
     /// Duration of the last completed command.
-    #[allow(
-        dead_code,
-        reason = "read when command notification UI is wired to App"
-    )]
     pub fn last_command_duration(&self) -> Option<std::time::Duration> {
         self.last_command_duration
     }

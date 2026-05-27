@@ -10,8 +10,11 @@ pub(crate) mod local;
 pub(crate) mod wsl;
 
 use std::path::PathBuf;
+use std::sync::Arc;
+use std::sync::mpsc;
 
 use crate::id::DomainId;
+use crate::mux_event::MuxEvent;
 
 #[allow(
     unused_imports,
@@ -66,6 +69,20 @@ impl Default for SpawnConfig {
             shell_integration: true,
         }
     }
+}
+
+/// Event-loop wiring threaded into a pane at spawn time.
+///
+/// Groups the borrowed channel + wakeup callback the IO thread needs so
+/// [`LocalDomain::spawn_pane`](local::LocalDomain::spawn_pane) takes a single
+/// wiring argument rather than separate positional parameters. All fields are
+/// shared references, so the type is `Copy`.
+#[derive(Clone, Copy)]
+pub struct SpawnWiring<'a> {
+    /// Channel the IO thread emits `MuxEvent`s on.
+    pub mux_tx: &'a mpsc::Sender<MuxEvent>,
+    /// Callback fired to wake the main event loop when the pane has new state.
+    pub wakeup: &'a Arc<dyn Fn() + Send + Sync>,
 }
 
 /// A shell-spawning backend.

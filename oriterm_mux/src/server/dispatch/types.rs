@@ -51,11 +51,6 @@ pub(in crate::server) struct DispatchContext<'a> {
     pub wakeup: &'a Arc<dyn Fn() + Send + Sync>,
     pub closed_panes: &'a mut Vec<PaneId>,
     pub snapshot_cache: &'a mut SnapshotCache,
-    #[allow(
-        dead_code,
-        reason = "read by clients.rs; dispatch no longer populates after IO thread migration"
-    )]
-    pub immediate_push: &'a mut Vec<PaneId>,
     /// Pending host-request tokens (). Threaded into dispatch so
     /// the `ReplyHostRequest` arm can fulfill the matching token + the
     /// `Unsubscribe` arm can drop entries the unsubscribing client owned.
