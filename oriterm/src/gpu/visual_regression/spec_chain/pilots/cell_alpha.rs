@@ -25,7 +25,6 @@
 use oriterm_test_support::spec_chain::ScenarioExpectations;
 
 use super::super::visual_harness::VisualSpecHarness;
-use crate::font::GlyphFormat;
 use crate::gpu::visual_regression::GoldenLaneConfig;
 
 /// Sampled cell — row 3, col 4 — chosen away from the home-row cursor so the
@@ -124,12 +123,7 @@ fn flattened_color_blend_matrix_default_lane() {
 /// proving the blend holds regardless of the subpixel-pipeline selection.
 #[test]
 fn flattened_color_blend_matrix_non_dual_lane() {
-    let config = GoldenLaneConfig {
-        glyph_format: GlyphFormat::SubpixelRgb,
-        force_non_dual_subpixel: true,
-        ..GoldenLaneConfig::SPEC_DEFAULT
-    };
-    let Some(harness) = VisualSpecHarness::with_config(config) else {
+    let Some(harness) = VisualSpecHarness::with_config(GoldenLaneConfig::NON_DUAL_DEFAULT) else {
         eprintln!("SKIP: software rasterizer unavailable");
         return;
     };

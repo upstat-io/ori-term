@@ -110,6 +110,21 @@ impl GoldenLaneConfig {
         font_override: None,
     };
 
+    /// Non-dual companion of `SPEC_DEFAULT`: identical except
+    /// `glyph_format: GlyphFormat::SubpixelRgb` + `force_non_dual_subpixel:
+    /// true`. The SSOT for golden tests that exercise the
+    /// non-dual subpixel pipeline branch (the `subpixel_fg.wgsl` known-bg
+    /// translucent-bg path) — pairs with `SPEC_DEFAULT` on dual-source-
+    /// advertising adapters where `SPEC_DEFAULT` always selects the dual
+    /// path. Subpixel-AA-exercising test categories (cell alpha, cursor
+    /// opacity, weight tests, adjacency / raster) should declare paired
+    /// `_non_dual` variants using this constant.
+    pub const NON_DUAL_DEFAULT: Self = Self {
+        glyph_format: GlyphFormat::SubpixelRgb,
+        force_non_dual_subpixel: true,
+        ..Self::SPEC_DEFAULT
+    };
+
     /// Builder: return a config that carries the given `FontSet` as the
     /// harness's primary font, replacing `FontSet::embedded()` in the
     /// deterministic lane. Test-only — consumed by font-precedence tests

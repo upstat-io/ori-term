@@ -22,7 +22,6 @@
 use oriterm_test_support::spec_chain::ScenarioExpectations;
 
 use super::super::visual_harness::VisualSpecHarness;
-use crate::font::GlyphFormat;
 use crate::gpu::visual_regression::GoldenLaneConfig;
 
 /// Sampled cell — row 3, col 4 — chosen away from the home-row cursor so
@@ -188,12 +187,8 @@ fn opaque_glyph_over_translucent_bg_occludes() {
     // hardware over the framebuffer and never reaches the branch the fix
     // touched. SPEC_DEFAULT (Alpha glyphs, dual-source when available) would
     // route through the mono `fg.wgsl` and could not detect a regression here.
-    let config = GoldenLaneConfig {
-        glyph_format: GlyphFormat::SubpixelRgb,
-        force_non_dual_subpixel: true,
-        ..GoldenLaneConfig::SPEC_DEFAULT
-    };
-    let Some(mut harness) = VisualSpecHarness::with_config(config) else {
+    let Some(mut harness) = VisualSpecHarness::with_config(GoldenLaneConfig::NON_DUAL_DEFAULT)
+    else {
         eprintln!("SKIP: software rasterizer unavailable");
         return;
     };
@@ -263,12 +258,8 @@ fn glyph_edge_over_translucent_bg_applies_bg_once() {
     // Same seam as the occlusion pilot: SubpixelRgb glyph + force_non_dual so
     // the shader's explicit bg.a compositing runs (the dual-source path blends
     // per-channel in hardware and never reaches the corrected branch).
-    let config = GoldenLaneConfig {
-        glyph_format: GlyphFormat::SubpixelRgb,
-        force_non_dual_subpixel: true,
-        ..GoldenLaneConfig::SPEC_DEFAULT
-    };
-    let Some(mut harness) = VisualSpecHarness::with_config(config) else {
+    let Some(mut harness) = VisualSpecHarness::with_config(GoldenLaneConfig::NON_DUAL_DEFAULT)
+    else {
         eprintln!("SKIP: software rasterizer unavailable");
         return;
     };
