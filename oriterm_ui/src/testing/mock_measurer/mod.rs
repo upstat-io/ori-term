@@ -30,6 +30,12 @@ impl MockMeasurer {
     }
 }
 
+impl Default for MockMeasurer {
+    fn default() -> Self {
+        Self::STANDARD
+    }
+}
+
 impl TextMeasurer for MockMeasurer {
     fn measure(&self, text: &str, style: &TextStyle, max_width: f32) -> TextMetrics {
         let transformed = style.text_transform.apply(text);

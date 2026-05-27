@@ -120,10 +120,10 @@ fn format_quad(out: &mut String, q: &Quad) {
 fn format_text_run(out: &mut String, t: &TextRun) {
     let _ = write!(out, "({:.1}, {:.1})", t.position.x, t.position.y);
 
-    if !t.shaped.source.is_empty() {
-        let _ = write!(out, " {:?}", t.shaped.source);
-    } else {
+    if t.shaped.source.is_empty() {
         let _ = write!(out, " [{}g]", t.shaped.glyph_count());
+    } else {
+        let _ = write!(out, " {:?}", t.shaped.source);
     }
 
     let _ = write!(
