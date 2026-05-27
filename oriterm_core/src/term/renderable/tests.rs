@@ -118,12 +118,8 @@ fn cursor_hidden_when_show_cursor_off() {
 #[test]
 fn cursor_hidden_when_shape_is_hidden() {
     let mut t = term();
-    // DECSCUSR 0 resets to default, but DECSCUSR with a hidden shape...
-    // Let's use CSI to hide cursor shape. Actually there's no direct CSI
-    // for CursorShape::Hidden. Test the logic by directly checking the
-    // cursor_shape field influence: if cursor_shape is Hidden, visible is false.
-    // Since we can't set Hidden via VTE (it's an internal state), we test
-    // through DECRST 25 which is the standard mechanism.
+    // CursorShape::Hidden is internal state with no direct CSI; exercise the
+    // cursor-not-visible path via DECRST ?25 (hide cursor), the standard mechanism.
     feed(&mut t, b"\x1b[?25l");
     let content = t.renderable_content();
     assert!(!content.cursor.visible);

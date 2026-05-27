@@ -51,3 +51,9 @@ pub struct RenderableCell {
     /// Zero-width combining characters appended to this cell.
     pub zerowidth: Vec<char>,
 }
+
+// `RenderableCell` populates the per-frame `RenderableContent::cells` Vec
+// (`lines * cols` entries, reused each snapshot). Pin its size so an
+// accidental field addition that grows the hot per-cell array is caught at
+// compile time.
+const _: () = assert!(size_of::<RenderableCell>() == 88);

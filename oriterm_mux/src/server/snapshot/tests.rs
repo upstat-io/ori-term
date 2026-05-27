@@ -356,10 +356,9 @@ fn pending_image_mutations_dedupe_by_id() {
 #[test]
 fn pending_image_mutations_apply_to_marks_and_clears() {
     use crate::server::push::PendingImageMutations;
-    // We can't easily construct a real ClientConnection here (requires an
-    // IpcStream), so test the mutation struct's contract via the type's
-    // public Debug shape — and trust the integration tests for the full
-    // mark / clear effect. This pin guards the struct's field set.
+    // A real ClientConnection needs an IpcStream; pin the mutation struct's
+    // contract via its public Debug shape here and leave the full mark / clear
+    // effect to the integration tests. Guards the struct's field set.
     let mutations = PendingImageMutations {
         clear_pane: Some(PaneId::from_raw(7)),
         mark_sent: vec![
