@@ -262,7 +262,6 @@ fn push_overlay_increments_count() {
     let mut mgr = OverlayManager::new(viewport());
     let mut tree = test_tree();
     let mut animator = LayerAnimator::new();
-    let now = Instant::now();
 
     mgr.push_overlay(
         label_widget("A"),
@@ -329,7 +328,6 @@ fn push_modal_sets_has_modal() {
     let mut mgr = OverlayManager::new(viewport());
     let mut tree = test_tree();
     let mut animator = LayerAnimator::new();
-    let now = Instant::now();
 
     mgr.push_modal(
         label_widget("Modal"),
@@ -426,7 +424,6 @@ fn clear_all() {
     let mut mgr = OverlayManager::new(viewport());
     let mut tree = test_tree();
     let mut animator = LayerAnimator::new();
-    let now = Instant::now();
 
     mgr.push_overlay(
         label_widget("A"),
@@ -520,7 +517,6 @@ fn overlay_rect_accessor() {
     let mut mgr = OverlayManager::new(viewport());
     let mut tree = test_tree();
     let mut animator = LayerAnimator::new();
-    let now = Instant::now();
 
     let id = mgr.push_overlay(
         label_widget("Test"),
@@ -560,7 +556,6 @@ fn cursor_icon_at_returns_default_for_non_interactive_overlay() {
     let mut mgr = OverlayManager::new(viewport());
     let mut tree = test_tree();
     let mut animator = LayerAnimator::new();
-    let now = Instant::now();
 
     let id = mgr.push_overlay(
         label_widget("Hello"),
@@ -587,7 +582,6 @@ fn cursor_icon_at_returns_pointer_for_button_overlay() {
     let mut mgr = OverlayManager::new(viewport());
     let mut tree = test_tree();
     let mut animator = LayerAnimator::new();
-    let now = Instant::now();
 
     let id = mgr.push_overlay(
         button_widget("Click me"),
@@ -614,7 +608,6 @@ fn cursor_icon_at_outside_overlay_rect() {
     let mut mgr = OverlayManager::new(viewport());
     let mut tree = test_tree();
     let mut animator = LayerAnimator::new();
-    let now = Instant::now();
 
     mgr.push_overlay(
         button_widget("OK"),
@@ -776,7 +769,6 @@ fn clear_popups_preserves_modal_layers() {
     let mut mgr = OverlayManager::new(viewport());
     let mut tree = test_tree();
     let mut animator = LayerAnimator::new();
-    let now = Instant::now();
 
     mgr.push_modal(
         label_widget("Modal"),
@@ -1106,7 +1098,6 @@ fn hover_inside_overlay_delivers() {
     let mut mgr = OverlayManager::new(viewport());
     let mut tree = test_tree();
     let mut animator = LayerAnimator::new();
-    let now = Instant::now();
 
     let id = mgr.push_overlay(
         button_widget("Btn"),
@@ -1134,7 +1125,6 @@ fn hover_outside_modal_blocks() {
     let mut mgr = OverlayManager::new(viewport());
     let mut tree = test_tree();
     let mut animator = LayerAnimator::new();
-    let now = Instant::now();
 
     mgr.push_modal(
         label_widget("Modal"),
@@ -1161,7 +1151,6 @@ fn hover_outside_non_modal_passes_through() {
     let mut mgr = OverlayManager::new(viewport());
     let mut tree = test_tree();
     let mut animator = LayerAnimator::new();
-    let now = Instant::now();
 
     mgr.push_overlay(
         label_widget("Popup"),
@@ -1190,7 +1179,6 @@ fn hover_transition_sends_leave_to_old_overlay() {
     let mut mgr = OverlayManager::new(viewport());
     let mut tree = test_tree();
     let mut animator = LayerAnimator::new();
-    let now = Instant::now();
 
     let btn_a = button_widget("A");
     let anchor_a = Rect::new(50.0, 50.0, 80.0, 30.0);
@@ -1422,7 +1410,6 @@ fn modal_focus_order_returns_focusable_ids() {
     let mut mgr = OverlayManager::new(viewport());
     let mut tree = test_tree();
     let mut animator = LayerAnimator::new();
-    let now = Instant::now();
 
     let btn = button_widget("Focus Me");
     let btn_id = btn.id();
@@ -1454,7 +1441,6 @@ fn non_modal_overlay_returns_none_focus_order() {
     let mut mgr = OverlayManager::new(viewport());
     let mut tree = test_tree();
     let mut animator = LayerAnimator::new();
-    let now = Instant::now();
 
     mgr.push_overlay(
         button_widget("Btn"),
@@ -1917,7 +1903,6 @@ fn viewport_resize_relayouts_overlays() {
     let mut mgr = OverlayManager::new(viewport());
     let mut tree = test_tree();
     let mut animator = LayerAnimator::new();
-    let now = Instant::now();
 
     let id = mgr.push_overlay(
         label_widget("Popup"),
@@ -2028,7 +2013,6 @@ fn push_after_clear_works() {
     let mut mgr = OverlayManager::new(viewport());
     let mut tree = test_tree();
     let mut animator = LayerAnimator::new();
-    let now = Instant::now();
 
     mgr.push_overlay(
         label_widget("A"),
@@ -2203,7 +2187,6 @@ fn label_not_focusable_in_modal() {
     let mut mgr = OverlayManager::new(viewport());
     let mut tree = test_tree();
     let mut animator = LayerAnimator::new();
-    let now = Instant::now();
 
     mgr.push_modal(
         label_widget("Text Only"),
@@ -2234,7 +2217,6 @@ fn modal_focus_order_traverses_containers() {
     let mut mgr = OverlayManager::new(viewport());
     let mut tree = test_tree();
     let mut animator = LayerAnimator::new();
-    let now = Instant::now();
 
     mgr.push_modal(
         flex,
