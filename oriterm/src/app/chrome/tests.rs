@@ -3,7 +3,7 @@
 use crate::config::{TabBarPosition, TabBarStyle};
 use crate::font::CellMetrics;
 
-use super::{GRID_PADDING, compute_window_layout, grid_origin_y};
+use super::{ChromeLayout, GRID_PADDING, compute_window_layout, grid_origin_y};
 
 // grid_origin_y: integer-pixel guarantee
 
@@ -95,7 +95,18 @@ fn test_cell(width: f32, height: f32) -> CellMetrics {
 fn layout_grid_origin_includes_padding() {
     // 1920×1080 at 1x scale with 8×16 cells.
     let cell = test_cell(8.0, 16.0);
-    let wl = compute_window_layout(1920, 1080, &cell, 1.0, false, 36.0, 0.0, 0.0);
+    let wl = compute_window_layout(
+        1920,
+        1080,
+        &cell,
+        1.0,
+        ChromeLayout {
+            tab_bar_hidden: false,
+            tab_bar_height: 36.0,
+            status_bar_height: 0.0,
+            border_inset: 0.0,
+        },
+    );
 
     // Tab bar is 46px at 1x. Grid origin includes padding offset.
     let pad = (GRID_PADDING * 1.0).round();
@@ -110,7 +121,18 @@ fn layout_padding_reduces_cols_rows() {
     // This matches the WM_SIZING snap formula so the column count is
     // stable during interactive resize.
     let cell = test_cell(8.0, 16.0);
-    let wl = compute_window_layout(1920, 1080, &cell, 1.0, false, 36.0, 0.0, 0.0);
+    let wl = compute_window_layout(
+        1920,
+        1080,
+        &cell,
+        1.0,
+        ChromeLayout {
+            tab_bar_hidden: false,
+            tab_bar_height: 36.0,
+            status_bar_height: 0.0,
+            border_inset: 0.0,
+        },
+    );
 
     let pad = (GRID_PADDING * 1.0).round();
     let chrome_h = grid_origin_y(36.0, 1.0);
@@ -125,7 +147,18 @@ fn layout_cols_rows_match_manual_at_125_scale() {
     // 1920×1080 at 1.25x with 10×20 physical-pixel cells.
     let scale = 1.25;
     let cell = test_cell(10.0, 20.0);
-    let wl = compute_window_layout(1920, 1080, &cell, scale, false, 36.0, 0.0, 0.0);
+    let wl = compute_window_layout(
+        1920,
+        1080,
+        &cell,
+        scale,
+        ChromeLayout {
+            tab_bar_hidden: false,
+            tab_bar_height: 36.0,
+            status_bar_height: 0.0,
+            border_inset: 0.0,
+        },
+    );
 
     // Cols/rows computed from visible grid area after padding.
     let pad = (GRID_PADDING * scale).round();
@@ -141,7 +174,18 @@ fn layout_cols_rows_match_manual_at_125_scale() {
 fn layout_integer_origin_at_fractional_dpi() {
     // 175% DPI — tab bar height produces fractional without rounding.
     let cell = test_cell(14.0, 28.0);
-    let wl = compute_window_layout(2560, 1440, &cell, 1.75, false, 36.0, 0.0, 0.0);
+    let wl = compute_window_layout(
+        2560,
+        1440,
+        &cell,
+        1.75,
+        ChromeLayout {
+            tab_bar_hidden: false,
+            tab_bar_height: 36.0,
+            status_bar_height: 0.0,
+            border_inset: 0.0,
+        },
+    );
 
     assert_eq!(
         wl.grid_rect.y().fract(),
@@ -154,7 +198,18 @@ fn layout_integer_origin_at_fractional_dpi() {
 fn layout_minimum_one_col_one_row() {
     // Tiny viewport — must produce at least 1×1.
     let cell = test_cell(100.0, 100.0);
-    let wl = compute_window_layout(50, 100, &cell, 1.0, false, 36.0, 0.0, 0.0);
+    let wl = compute_window_layout(
+        50,
+        100,
+        &cell,
+        1.0,
+        ChromeLayout {
+            tab_bar_hidden: false,
+            tab_bar_height: 36.0,
+            status_bar_height: 0.0,
+            border_inset: 0.0,
+        },
+    );
 
     assert_eq!(wl.cols, 1);
     assert_eq!(wl.rows, 1);
@@ -165,8 +220,30 @@ fn hidden_tab_bar_suppresses_layout() {
     // With tab_bar_hidden=true, the grid origin should start at padding
     // (no chrome height). The grid gets more rows than the default case.
     let cell = test_cell(8.0, 16.0);
-    let visible = compute_window_layout(1920, 1080, &cell, 1.0, false, 36.0, 0.0, 0.0);
-    let hidden = compute_window_layout(1920, 1080, &cell, 1.0, true, 36.0, 0.0, 0.0);
+    let visible = compute_window_layout(
+        1920,
+        1080,
+        &cell,
+        1.0,
+        ChromeLayout {
+            tab_bar_hidden: false,
+            tab_bar_height: 36.0,
+            status_bar_height: 0.0,
+            border_inset: 0.0,
+        },
+    );
+    let hidden = compute_window_layout(
+        1920,
+        1080,
+        &cell,
+        1.0,
+        ChromeLayout {
+            tab_bar_hidden: true,
+            tab_bar_height: 36.0,
+            status_bar_height: 0.0,
+            border_inset: 0.0,
+        },
+    );
 
     let pad = (GRID_PADDING * 1.0).round();
 
@@ -193,7 +270,18 @@ fn hidden_tab_bar_suppresses_layout() {
 fn hidden_tab_bar_grid_origin_at_fractional_dpi() {
     // Even with hidden tab bar, grid origin must be integer-aligned.
     let cell = test_cell(10.0, 20.0);
-    let wl = compute_window_layout(1920, 1080, &cell, 1.25, true, 36.0, 0.0, 0.0);
+    let wl = compute_window_layout(
+        1920,
+        1080,
+        &cell,
+        1.25,
+        ChromeLayout {
+            tab_bar_hidden: true,
+            tab_bar_height: 36.0,
+            status_bar_height: 0.0,
+            border_inset: 0.0,
+        },
+    );
 
     assert_eq!(
         wl.grid_rect.y().fract(),
@@ -208,8 +296,30 @@ fn compact_tab_bar_shifts_grid_origin() {
     // from default (46px). This validates that `tab_bar_height` param
     // actually drives layout instead of a hardcoded constant.
     let cell = test_cell(8.0, 16.0);
-    let default = compute_window_layout(1920, 1080, &cell, 1.0, false, 36.0, 0.0, 0.0);
-    let compact = compute_window_layout(1920, 1080, &cell, 1.0, false, 34.0, 0.0, 0.0);
+    let default = compute_window_layout(
+        1920,
+        1080,
+        &cell,
+        1.0,
+        ChromeLayout {
+            tab_bar_hidden: false,
+            tab_bar_height: 36.0,
+            status_bar_height: 0.0,
+            border_inset: 0.0,
+        },
+    );
+    let compact = compute_window_layout(
+        1920,
+        1080,
+        &cell,
+        1.0,
+        ChromeLayout {
+            tab_bar_hidden: false,
+            tab_bar_height: 34.0,
+            status_bar_height: 0.0,
+            border_inset: 0.0,
+        },
+    );
 
     assert!(
         compact.grid_rect.y() < default.grid_rect.y(),
@@ -339,8 +449,30 @@ fn config_reload_hidden_publishes_zero_effective_height() {
 #[test]
 fn layout_with_status_bar() {
     let cell = test_cell(8.0, 16.0);
-    let without = compute_window_layout(1920, 1080, &cell, 1.0, false, 36.0, 0.0, 0.0);
-    let with = compute_window_layout(1920, 1080, &cell, 1.0, false, 36.0, 22.0, 0.0);
+    let without = compute_window_layout(
+        1920,
+        1080,
+        &cell,
+        1.0,
+        ChromeLayout {
+            tab_bar_hidden: false,
+            tab_bar_height: 36.0,
+            status_bar_height: 0.0,
+            border_inset: 0.0,
+        },
+    );
+    let with = compute_window_layout(
+        1920,
+        1080,
+        &cell,
+        1.0,
+        ChromeLayout {
+            tab_bar_hidden: false,
+            tab_bar_height: 36.0,
+            status_bar_height: 22.0,
+            border_inset: 0.0,
+        },
+    );
 
     // Grid origin y unchanged (tab bar + padding).
     assert_eq!(with.grid_rect.y(), without.grid_rect.y());
@@ -372,8 +504,30 @@ fn layout_with_status_bar() {
 #[test]
 fn layout_with_border_inset() {
     let cell = test_cell(8.0, 16.0);
-    let no_inset = compute_window_layout(1920, 1080, &cell, 1.0, false, 36.0, 0.0, 0.0);
-    let inset = compute_window_layout(1920, 1080, &cell, 1.0, false, 36.0, 0.0, 2.0);
+    let no_inset = compute_window_layout(
+        1920,
+        1080,
+        &cell,
+        1.0,
+        ChromeLayout {
+            tab_bar_hidden: false,
+            tab_bar_height: 36.0,
+            status_bar_height: 0.0,
+            border_inset: 0.0,
+        },
+    );
+    let inset = compute_window_layout(
+        1920,
+        1080,
+        &cell,
+        1.0,
+        ChromeLayout {
+            tab_bar_hidden: false,
+            tab_bar_height: 36.0,
+            status_bar_height: 0.0,
+            border_inset: 2.0,
+        },
+    );
 
     let inset_px = (2.0_f32 * 1.0).round();
 
@@ -397,8 +551,30 @@ fn layout_with_border_inset() {
 #[test]
 fn layout_status_bar_hidden() {
     let cell = test_cell(8.0, 16.0);
-    let with = compute_window_layout(1920, 1080, &cell, 1.0, false, 36.0, 0.0, 0.0);
-    let without = compute_window_layout(1920, 1080, &cell, 1.0, false, 36.0, 0.0, 0.0);
+    let with = compute_window_layout(
+        1920,
+        1080,
+        &cell,
+        1.0,
+        ChromeLayout {
+            tab_bar_hidden: false,
+            tab_bar_height: 36.0,
+            status_bar_height: 0.0,
+            border_inset: 0.0,
+        },
+    );
+    let without = compute_window_layout(
+        1920,
+        1080,
+        &cell,
+        1.0,
+        ChromeLayout {
+            tab_bar_hidden: false,
+            tab_bar_height: 36.0,
+            status_bar_height: 0.0,
+            border_inset: 0.0,
+        },
+    );
 
     // Identical when status bar height is 0.0.
     assert_eq!(with.cols, without.cols);
@@ -409,7 +585,18 @@ fn layout_status_bar_hidden() {
 #[test]
 fn layout_border_inset_zero_when_maximized() {
     let cell = test_cell(8.0, 16.0);
-    let wl = compute_window_layout(1920, 1080, &cell, 1.0, false, 36.0, 0.0, 0.0);
+    let wl = compute_window_layout(
+        1920,
+        1080,
+        &cell,
+        1.0,
+        ChromeLayout {
+            tab_bar_hidden: false,
+            tab_bar_height: 36.0,
+            status_bar_height: 0.0,
+            border_inset: 0.0,
+        },
+    );
     let pad = (GRID_PADDING * 1.0).round();
     let chrome_h = grid_origin_y(36.0, 1.0);
 
@@ -421,8 +608,30 @@ fn layout_border_inset_zero_when_maximized() {
 #[test]
 fn layout_status_bar_plus_border_inset() {
     let cell = test_cell(8.0, 16.0);
-    let base = compute_window_layout(1920, 1080, &cell, 1.0, false, 36.0, 0.0, 0.0);
-    let both = compute_window_layout(1920, 1080, &cell, 1.0, false, 36.0, 22.0, 2.0);
+    let base = compute_window_layout(
+        1920,
+        1080,
+        &cell,
+        1.0,
+        ChromeLayout {
+            tab_bar_hidden: false,
+            tab_bar_height: 36.0,
+            status_bar_height: 0.0,
+            border_inset: 0.0,
+        },
+    );
+    let both = compute_window_layout(
+        1920,
+        1080,
+        &cell,
+        1.0,
+        ChromeLayout {
+            tab_bar_hidden: false,
+            tab_bar_height: 36.0,
+            status_bar_height: 22.0,
+            border_inset: 2.0,
+        },
+    );
 
     // Fewer rows and cols with both active.
     assert!(both.rows < base.rows);
@@ -445,7 +654,18 @@ fn layout_status_bar_plus_border_inset() {
 fn layout_status_bar_integer_origin() {
     // Fractional DPI (1.25x) with 22px status bar.
     let cell = test_cell(10.0, 20.0);
-    let wl = compute_window_layout(1920, 1080, &cell, 1.25, false, 36.0, 22.0, 0.0);
+    let wl = compute_window_layout(
+        1920,
+        1080,
+        &cell,
+        1.25,
+        ChromeLayout {
+            tab_bar_hidden: false,
+            tab_bar_height: 36.0,
+            status_bar_height: 22.0,
+            border_inset: 0.0,
+        },
+    );
 
     assert_eq!(
         wl.status_bar_rect.y().fract(),
@@ -464,7 +684,18 @@ fn chrome_layout_fractional_dpi_with_status_bar() {
     // 1.25x DPI with both status bar and border inset active.
     // All physical pixel values must have zero fractional part.
     let cell = test_cell(10.0, 20.0);
-    let wl = compute_window_layout(1920, 1080, &cell, 1.25, false, 36.0, 22.0, 2.0);
+    let wl = compute_window_layout(
+        1920,
+        1080,
+        &cell,
+        1.25,
+        ChromeLayout {
+            tab_bar_hidden: false,
+            tab_bar_height: 36.0,
+            status_bar_height: 22.0,
+            border_inset: 2.0,
+        },
+    );
 
     let check = |label: &str, val: f32| {
         assert_eq!(

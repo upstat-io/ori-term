@@ -697,7 +697,18 @@ fn xray_gpu_upload_bandwidth_ceiling() {
         let image_id = oriterm_core::image::ImageId::from_raw(1000 + i);
         cache.begin_frame();
         let _ = cache.ensure_uploaded(
-            device, queue, &layout, image_id, 0u64, &payload, WIDTH, HEIGHT,
+            device,
+            queue,
+            &layout,
+            crate::gpu::image_render::ImageUpload {
+                id: image_id,
+                pixels: crate::gpu::image_render::ImagePixels {
+                    data: &payload,
+                    width: WIDTH,
+                    height: HEIGHT,
+                    pixel_generation: 0u64,
+                },
+            },
         );
     }
     let _ = device.poll(wgpu::PollType::wait_indefinitely());

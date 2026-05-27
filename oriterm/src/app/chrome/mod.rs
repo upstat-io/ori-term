@@ -106,6 +106,20 @@ pub(crate) struct WindowLayout {
     pub rows: usize,
 }
 
+/// Chrome dimensions for [`compute_window_layout`]: tab bar visibility and
+/// height, status bar height, and window border inset (all logical pixels).
+#[derive(Clone, Copy)]
+pub(crate) struct ChromeLayout {
+    /// When true, the tab bar height is forced to zero.
+    pub tab_bar_hidden: bool,
+    /// Tab bar height in logical pixels (ignored when hidden).
+    pub tab_bar_height: f32,
+    /// Status bar height in logical pixels (0.0 reserves no space).
+    pub status_bar_height: f32,
+    /// Window border inset in logical pixels (> 0.0 insets the layout).
+    pub border_inset: f32,
+}
+
 /// Compute the top-level window layout via the layout engine.
 ///
 /// Builds a `Column { TabBar(fixed), Grid(fill), StatusBar(fixed) }` descriptor
@@ -120,21 +134,21 @@ pub(crate) struct WindowLayout {
 ///
 /// All coordinates are in physical pixels — consistent with cell metrics,
 /// GPU renderer, and the winit viewport.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "window layout: viewport size, cell metrics, scale, tab bar visibility + height, status bar height, border inset"
-)]
 pub(crate) fn compute_window_layout(
     viewport_w: u32,
     viewport_h: u32,
     cell: &crate::font::CellMetrics,
     scale: f32,
-    tab_bar_hidden: bool,
-    tab_bar_height: f32,
-    status_bar_height: f32,
-    border_inset: f32,
+    chrome: ChromeLayout,
 ) -> WindowLayout {
     use oriterm_ui::layout::{Direction, LayoutBox, SizeSpec, compute_layout};
+
+    let ChromeLayout {
+        tab_bar_hidden,
+        tab_bar_height,
+        status_bar_height,
+        border_inset,
+    } = chrome;
 
     let tab_bar_h_px = if tab_bar_hidden {
         0.0

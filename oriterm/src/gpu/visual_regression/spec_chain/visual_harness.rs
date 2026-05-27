@@ -206,8 +206,16 @@ impl VisualSpecHarness {
                     "GpuInstance rung requires FrameInput rung to have run first \
                      (rung chain ordering guarantees this)",
                 );
-                self.renderer
-                    .prepare(input, &self.gpu, &self.pipelines, (0.0, 0.0), 1.0, true);
+                self.renderer.prepare(
+                    input,
+                    &self.gpu,
+                    &self.pipelines,
+                    crate::gpu::PrepareRequest {
+                        origin: (0.0, 0.0),
+                        cursor_opacity: 1.0,
+                        content_changed: true,
+                    },
+                );
                 match &expectations.gpu_instance {
                     Some(e) => observers::observe_gpu_instance(&self.renderer.prepared, e),
                     None => RungResult::pass(rung),

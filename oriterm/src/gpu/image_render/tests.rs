@@ -5,7 +5,7 @@
 
 use oriterm_core::image::ImageId;
 
-use super::ImageTextureCache;
+use super::{ImagePixels, ImageTextureCache, ImageUpload};
 use crate::gpu::pipelines::GpuPipelines;
 use crate::gpu::state::GpuState;
 
@@ -37,11 +37,15 @@ fn ensure_uploaded_creates_texture_and_returns_bind_group() {
         &gpu.device,
         &gpu.queue,
         &pipelines.image_texture_layout,
-        ImageId::from_raw(1),
-        0u64,
-        &data,
-        4,
-        4,
+        ImageUpload {
+            id: ImageId::from_raw(1),
+            pixels: ImagePixels {
+                data: &data,
+                width: 4,
+                height: 4,
+                pixel_generation: 0u64,
+            },
+        },
     );
 
     assert_eq!(cache.texture_count(), 1);
@@ -64,21 +68,29 @@ fn ensure_uploaded_deduplicates_same_id() {
         &gpu.device,
         &gpu.queue,
         layout,
-        ImageId::from_raw(1),
-        0u64,
-        &data,
-        4,
-        4,
+        ImageUpload {
+            id: ImageId::from_raw(1),
+            pixels: ImagePixels {
+                data: &data,
+                width: 4,
+                height: 4,
+                pixel_generation: 0u64,
+            },
+        },
     );
     cache.ensure_uploaded(
         &gpu.device,
         &gpu.queue,
         layout,
-        ImageId::from_raw(1),
-        0u64,
-        &data,
-        4,
-        4,
+        ImageUpload {
+            id: ImageId::from_raw(1),
+            pixels: ImagePixels {
+                data: &data,
+                width: 4,
+                height: 4,
+                pixel_generation: 0u64,
+            },
+        },
     );
 
     // Second call is a no-op — only one texture, counted once.
@@ -103,11 +115,15 @@ fn evict_unused_removes_old_textures() {
         &gpu.device,
         &gpu.queue,
         layout,
-        ImageId::from_raw(1),
-        0u64,
-        &data,
-        2,
-        2,
+        ImageUpload {
+            id: ImageId::from_raw(1),
+            pixels: ImagePixels {
+                data: &data,
+                width: 2,
+                height: 2,
+                pixel_generation: 0u64,
+            },
+        },
     );
 
     // Frame 2: upload image 2, don't touch image 1.
@@ -116,11 +132,15 @@ fn evict_unused_removes_old_textures() {
         &gpu.device,
         &gpu.queue,
         layout,
-        ImageId::from_raw(2),
-        0u64,
-        &data,
-        2,
-        2,
+        ImageUpload {
+            id: ImageId::from_raw(2),
+            pixels: ImagePixels {
+                data: &data,
+                width: 2,
+                height: 2,
+                pixel_generation: 0u64,
+            },
+        },
     );
 
     // Frame 3: advance without touching either.
@@ -151,21 +171,29 @@ fn evict_unused_keeps_recently_used() {
         &gpu.device,
         &gpu.queue,
         layout,
-        ImageId::from_raw(1),
-        0u64,
-        &data,
-        2,
-        2,
+        ImageUpload {
+            id: ImageId::from_raw(1),
+            pixels: ImagePixels {
+                data: &data,
+                width: 2,
+                height: 2,
+                pixel_generation: 0u64,
+            },
+        },
     );
     cache.ensure_uploaded(
         &gpu.device,
         &gpu.queue,
         layout,
-        ImageId::from_raw(2),
-        0u64,
-        &data,
-        2,
-        2,
+        ImageUpload {
+            id: ImageId::from_raw(2),
+            pixels: ImagePixels {
+                data: &data,
+                width: 2,
+                height: 2,
+                pixel_generation: 0u64,
+            },
+        },
     );
 
     // Frame 2: touch both images again (last_frame = 2 for both).
@@ -174,21 +202,29 @@ fn evict_unused_keeps_recently_used() {
         &gpu.device,
         &gpu.queue,
         layout,
-        ImageId::from_raw(1),
-        0u64,
-        &data,
-        2,
-        2,
+        ImageUpload {
+            id: ImageId::from_raw(1),
+            pixels: ImagePixels {
+                data: &data,
+                width: 2,
+                height: 2,
+                pixel_generation: 0u64,
+            },
+        },
     );
     cache.ensure_uploaded(
         &gpu.device,
         &gpu.queue,
         layout,
-        ImageId::from_raw(2),
-        0u64,
-        &data,
-        2,
-        2,
+        ImageUpload {
+            id: ImageId::from_raw(2),
+            pixels: ImagePixels {
+                data: &data,
+                width: 2,
+                height: 2,
+                pixel_generation: 0u64,
+            },
+        },
     );
 
     // Evict with threshold=1 (cutoff = 2 - 1 = 1).
@@ -215,11 +251,15 @@ fn evict_over_limit_removes_lru() {
         &gpu.device,
         &gpu.queue,
         layout,
-        ImageId::from_raw(1),
-        0u64,
-        &fake_rgba(8, 8),
-        8,
-        8,
+        ImageUpload {
+            id: ImageId::from_raw(1),
+            pixels: ImagePixels {
+                data: &fake_rgba(8, 8),
+                width: 8,
+                height: 8,
+                pixel_generation: 0u64,
+            },
+        },
     );
 
     cache.begin_frame();
@@ -227,11 +267,15 @@ fn evict_over_limit_removes_lru() {
         &gpu.device,
         &gpu.queue,
         layout,
-        ImageId::from_raw(2),
-        0u64,
-        &fake_rgba(8, 8),
-        8,
-        8,
+        ImageUpload {
+            id: ImageId::from_raw(2),
+            pixels: ImagePixels {
+                data: &fake_rgba(8, 8),
+                width: 8,
+                height: 8,
+                pixel_generation: 0u64,
+            },
+        },
     );
 
     // Over limit: 512 > 300. Evict the oldest (image 1).
@@ -256,22 +300,30 @@ fn set_gpu_memory_limit_triggers_eviction() {
         &gpu.device,
         &gpu.queue,
         layout,
-        ImageId::from_raw(1),
-        0u64,
-        &fake_rgba(8, 8),
-        8,
-        8,
+        ImageUpload {
+            id: ImageId::from_raw(1),
+            pixels: ImagePixels {
+                data: &fake_rgba(8, 8),
+                width: 8,
+                height: 8,
+                pixel_generation: 0u64,
+            },
+        },
     );
     cache.begin_frame();
     cache.ensure_uploaded(
         &gpu.device,
         &gpu.queue,
         layout,
-        ImageId::from_raw(2),
-        0u64,
-        &fake_rgba(8, 8),
-        8,
-        8,
+        ImageUpload {
+            id: ImageId::from_raw(2),
+            pixels: ImagePixels {
+                data: &fake_rgba(8, 8),
+                width: 8,
+                height: 8,
+                pixel_generation: 0u64,
+            },
+        },
     );
     assert_eq!(cache.gpu_memory_used(), 512);
 
@@ -297,11 +349,15 @@ fn gpu_memory_tracks_uploads_and_removals() {
         &gpu.device,
         &gpu.queue,
         layout,
-        ImageId::from_raw(1),
-        0u64,
-        &fake_rgba(4, 4),
-        4,
-        4,
+        ImageUpload {
+            id: ImageId::from_raw(1),
+            pixels: ImagePixels {
+                data: &fake_rgba(4, 4),
+                width: 4,
+                height: 4,
+                pixel_generation: 0u64,
+            },
+        },
     );
     assert_eq!(cache.gpu_memory_used(), 64); // 4*4*4
 
@@ -309,11 +365,15 @@ fn gpu_memory_tracks_uploads_and_removals() {
         &gpu.device,
         &gpu.queue,
         layout,
-        ImageId::from_raw(2),
-        0u64,
-        &fake_rgba(8, 8),
-        8,
-        8,
+        ImageUpload {
+            id: ImageId::from_raw(2),
+            pixels: ImagePixels {
+                data: &fake_rgba(8, 8),
+                width: 8,
+                height: 8,
+                pixel_generation: 0u64,
+            },
+        },
     );
     assert_eq!(cache.gpu_memory_used(), 64 + 256); // 320
 
@@ -354,11 +414,15 @@ fn touch_image_stamps_last_frame_for_occupied_entry() {
         &gpu.device,
         &gpu.queue,
         &pipelines.image_texture_layout,
-        id,
-        0u64,
-        &fake_rgba(4, 4),
-        4,
-        4,
+        ImageUpload {
+            id: id,
+            pixels: ImagePixels {
+                data: &fake_rgba(4, 4),
+                width: 4,
+                height: 4,
+                pixel_generation: 0u64,
+            },
+        },
     );
 
     // Advance to a later frame; touch should stamp the new value.
@@ -423,11 +487,15 @@ fn touch_image_returns_true_for_occupied_entry() {
         &gpu.device,
         &gpu.queue,
         &pipelines.image_texture_layout,
-        id,
-        0u64,
-        &fake_rgba(4, 4),
-        4,
-        4,
+        ImageUpload {
+            id: id,
+            pixels: ImagePixels {
+                data: &fake_rgba(4, 4),
+                width: 4,
+                height: 4,
+                pixel_generation: 0u64,
+            },
+        },
     );
 
     assert!(cache.touch_image(id), "touch on Occupied must return true");
@@ -465,17 +533,30 @@ fn gpu_texture_serves_fresh_pixels_after_generation_advance() {
     let data_b = vec![0xBBu8; 16]; // 2×2 RGBA all-0xBB
 
     cache.begin_frame();
-    cache.ensure_uploaded(&gpu.device, &gpu.queue, layout, id, 0u64, &data_a, 2, 2);
+    cache.ensure_uploaded(
+        &gpu.device,
+        &gpu.queue,
+        layout,
+        ImageUpload {
+            id: id,
+            pixels: ImagePixels {
+                data: &data_a,
+                width: 2,
+                height: 2,
+                pixel_generation: 0u64,
+            },
+        },
+    );
     cache.begin_frame();
     cache.ensure_uploaded(
         &gpu.device,
         &gpu.queue,
         layout,
-        id,
-        1u64, // ← generation advanced
-        &data_b,
-        2,
-        2,
+        ImageUpload {
+            id: id,
+            pixels: ImagePixels { data: // ← generation advanced
+        &data_b, width: 2, height: 2, pixel_generation: 1u64 },
+        },
     );
 
     let pixels = cache
@@ -510,10 +591,36 @@ fn ensure_uploaded_returns_cached_when_generation_unchanged() {
     let data_b = vec![0xBBu8; 16];
 
     cache.begin_frame();
-    cache.ensure_uploaded(&gpu.device, &gpu.queue, layout, id, 0u64, &data_a, 2, 2);
+    cache.ensure_uploaded(
+        &gpu.device,
+        &gpu.queue,
+        layout,
+        ImageUpload {
+            id: id,
+            pixels: ImagePixels {
+                data: &data_a,
+                width: 2,
+                height: 2,
+                pixel_generation: 0u64,
+            },
+        },
+    );
     cache.begin_frame();
     // Second call: SAME generation (0), DIFFERENT data — must NOT re-upload.
-    cache.ensure_uploaded(&gpu.device, &gpu.queue, layout, id, 0u64, &data_b, 2, 2);
+    cache.ensure_uploaded(
+        &gpu.device,
+        &gpu.queue,
+        layout,
+        ImageUpload {
+            id: id,
+            pixels: ImagePixels {
+                data: &data_b,
+                width: 2,
+                height: 2,
+                pixel_generation: 0u64,
+            },
+        },
+    );
 
     let pixels = cache
         .read_texture_for_test(id, &gpu.device, &gpu.queue)
@@ -551,15 +658,54 @@ fn pixel_generation_full_wrap_to_seeded_value_forces_reupload() {
 
     // Seed: gen=0, data_A.
     cache.begin_frame();
-    cache.ensure_uploaded(&gpu.device, &gpu.queue, layout, id, 0u64, &data_a, 2, 2);
+    cache.ensure_uploaded(
+        &gpu.device,
+        &gpu.queue,
+        layout,
+        ImageUpload {
+            id: id,
+            pixels: ImagePixels {
+                data: &data_a,
+                width: 2,
+                height: 2,
+                pixel_generation: 0u64,
+            },
+        },
+    );
     // Simulate one full wrap-cycle by jumping to gen=u64::MAX then back to 0.
     // Both calls use the SAME id; the second call (gen=u64::MAX) advances
     // the cache's recorded generation off zero; the third call (gen=0)
     // would-be "cycled back to zero" with different data.
     cache.begin_frame();
-    cache.ensure_uploaded(&gpu.device, &gpu.queue, layout, id, u64::MAX, &data_a, 2, 2);
+    cache.ensure_uploaded(
+        &gpu.device,
+        &gpu.queue,
+        layout,
+        ImageUpload {
+            id: id,
+            pixels: ImagePixels {
+                data: &data_a,
+                width: 2,
+                height: 2,
+                pixel_generation: u64::MAX,
+            },
+        },
+    );
     cache.begin_frame();
-    cache.ensure_uploaded(&gpu.device, &gpu.queue, layout, id, 0u64, &data_b, 2, 2);
+    cache.ensure_uploaded(
+        &gpu.device,
+        &gpu.queue,
+        layout,
+        ImageUpload {
+            id: id,
+            pixels: ImagePixels {
+                data: &data_b,
+                width: 2,
+                height: 2,
+                pixel_generation: 0u64,
+            },
+        },
+    );
 
     let pixels = cache
         .read_texture_for_test(id, &gpu.device, &gpu.queue)
@@ -606,11 +752,15 @@ fn pixel_generation_propagates_through_snapshot_to_frame_input() {
         &gpu.device,
         &gpu.queue,
         layout,
-        img.id,
-        img.pixel_generation,
-        &img.data,
-        img.width,
-        img.height,
+        ImageUpload {
+            id: img.id,
+            pixels: ImagePixels {
+                data: &img.data,
+                width: img.width,
+                height: img.height,
+                pixel_generation: img.pixel_generation,
+            },
+        },
     );
 
     // Structural assertion: upload succeeded, texture present.

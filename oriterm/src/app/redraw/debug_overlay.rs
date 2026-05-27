@@ -6,14 +6,12 @@
 
 use std::fmt::Write as _;
 
-use oriterm_ui::draw::Scene;
 use oriterm_ui::geometry::Point;
 use oriterm_ui::widgets::status_badge::StatusBadge;
 
 use super::App;
-use crate::font::{CachedTextMeasurer, TextShapeCache};
-use crate::gpu::WindowRenderer;
-use crate::gpu::state::GpuState;
+use super::OverlayBadgeDraw;
+use crate::font::CachedTextMeasurer;
 
 /// Collected stats for the current frame.
 pub(in crate::app) struct DebugStats {
@@ -37,21 +35,20 @@ pub(in crate::app) struct DebugStats {
 
 impl App {
     /// Draw the debug performance overlay in the bottom-left corner.
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "debug overlay drawing: stats, renderer, scene, buffer, viewport, scale, GPU, cache"
-    )]
     pub(in crate::app::redraw) fn draw_debug_overlay(
         stats: &DebugStats,
-        renderer: &mut WindowRenderer,
-        scene: &mut Scene,
-        buf: &mut String,
         logical_w: f32,
         logical_h: f32,
-        scale: f32,
-        gpu: &GpuState,
-        text_cache: &TextShapeCache,
+        draw: OverlayBadgeDraw<'_>,
     ) {
+        let OverlayBadgeDraw {
+            renderer,
+            scene,
+            buf,
+            gpu,
+            text_cache,
+            scale,
+        } = draw;
         buf.clear();
         let dirty_pct = if stats.total_rows > 0 {
             (stats.dirty_rows as f32 / stats.total_rows as f32) * 100.0

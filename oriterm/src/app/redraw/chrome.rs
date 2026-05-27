@@ -160,14 +160,16 @@ pub(in crate::app::redraw) fn render_chrome(
         };
         App::draw_search_bar(
             search,
-            renderer,
-            &mut ctx.chrome_scene,
-            &mut ctx.search_bar_buf,
             logical_w as f32,
             chrome_h,
-            scale,
-            gpu,
-            &ctx.text_cache,
+            super::OverlayBadgeDraw {
+                renderer,
+                scene: &mut ctx.chrome_scene,
+                buf: &mut ctx.search_bar_buf,
+                gpu,
+                text_cache: &ctx.text_cache,
+                scale,
+            },
         );
     }
 

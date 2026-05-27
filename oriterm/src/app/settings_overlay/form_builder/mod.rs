@@ -89,23 +89,37 @@ pub(crate) struct SettingsIds {
     pub gpu_backend_dropdown: WidgetId,
 }
 
+/// Per-open parameters for [`build_settings_dialog`]: initial page, display
+/// scale + opacity (font Advanced section Auto labels), and optional
+/// update-available banner `(label, tooltip, url)`.
+#[derive(Clone, Copy)]
+pub(in crate::app) struct SettingsDialogParams<'a> {
+    /// Initial page (0 for first open, or preserved page on rebuild).
+    pub active_page: usize,
+    /// Display scale factor.
+    pub scale_factor: f64,
+    /// Window opacity.
+    pub opacity: f64,
+    /// Update-available banner: `(label, tooltip, url)`.
+    pub update_info: Option<(&'a str, &'a str, &'a str)>,
+}
+
 /// Builds the settings dialog with sidebar navigation and 8 pages.
 ///
 /// Returns the content widget (sidebar + pages in a horizontal row) and the
 /// ID map for action dispatch. `active_page` sets the initial page (use 0
 /// for first open, or preserve the current page across rebuilds like reset).
-#[expect(
-    clippy::too_many_arguments,
-    reason = "scale_factor + opacity needed for font Advanced section Auto labels"
-)]
 pub(in crate::app) fn build_settings_dialog(
     config: &Config,
     theme: &UiTheme,
-    active_page: usize,
-    scale_factor: f64,
-    opacity: f64,
-    update_info: Option<(&str, &str, &str)>,
+    params: SettingsDialogParams<'_>,
 ) -> (Box<dyn Widget>, SettingsIds, (WidgetId, WidgetId, WidgetId)) {
+    let SettingsDialogParams {
+        active_page,
+        scale_factor,
+        opacity,
+        update_info,
+    } = params;
     // Initialize IDs with placeholders; page builders overwrite their fields.
     let mut ids = SettingsIds::placeholder();
 

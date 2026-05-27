@@ -11,6 +11,16 @@ use crate::config::Config;
 
 use super::super::{App, context_menu};
 
+/// Dropdown-popup parameters forwarded from `WidgetAction::OpenDropdown`
+/// (excluding the dropdown widget id, which is tracked separately).
+pub(in crate::app) struct OpenDropdownParams {
+    pub options: Vec<String>,
+    pub selected: usize,
+    pub anchor: Rect,
+    pub searchable: bool,
+    pub initial_highlight: Option<usize>,
+}
+
 impl App {
     /// Clear all transient popup overlays in a terminal window.
     pub(in crate::app) fn clear_window_popups(&mut self, window_id: winit::window::WindowId) {
@@ -69,11 +79,13 @@ impl App {
                     } => {
                         self.open_dropdown_popup(
                             id,
-                            options,
-                            selected,
-                            anchor,
-                            searchable,
-                            initial_highlight,
+                            OpenDropdownParams {
+                                options,
+                                selected,
+                                anchor,
+                                searchable,
+                                initial_highlight,
+                            },
                         );
                     }
                     WidgetAction::Selected { index, .. } if self.pending_dropdown_id.is_some() => {
@@ -241,19 +253,14 @@ impl App {
     /// filter state). `initial_highlight` overrides the first highlighted
     /// entry (used when the trigger was opened via `ArrowDown`); ignored
     /// when `searchable = false`.
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "fields forwarded from WidgetAction::OpenDropdown destructuring"
-    )]
-    fn open_dropdown_popup(
-        &mut self,
-        dropdown_id: WidgetId,
-        options: Vec<String>,
-        selected: usize,
-        anchor: Rect,
-        searchable: bool,
-        initial_highlight: Option<usize>,
-    ) {
+    fn open_dropdown_popup(&mut self, dropdown_id: WidgetId, params: OpenDropdownParams) {
+        let OpenDropdownParams {
+            options,
+            selected,
+            anchor,
+            searchable,
+            initial_highlight,
+        } = params;
         let widget = crate::app::dropdown_popup::build_dropdown_menu_widget(
             crate::app::dropdown_popup::DropdownPopupConfig {
                 options,

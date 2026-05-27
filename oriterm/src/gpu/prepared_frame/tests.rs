@@ -5,6 +5,7 @@ use oriterm_core::Rgb;
 use super::{OverlayDrawRange, PreparedFrame};
 use crate::gpu::frame_input::ViewportSize;
 use crate::gpu::instance_writer::{GlyphInstance, ScreenRect};
+use crate::gpu::ui_rect_writer::UiRectBorder;
 
 const BLACK: Rgb = Rgb { r: 0, g: 0, b: 0 };
 const WHITE: Rgb = Rgb {
@@ -199,9 +200,11 @@ fn push_dummy_overlay_rect(frame: &mut PreparedFrame) {
     frame.overlay_rects.push_ui_rect(
         r,
         [1.0, 0.0, 0.0, 1.0],
-        [0.0; 4],
-        [0.0; 4],
-        [[0.0; 4]; 4],
+        UiRectBorder {
+            widths: [0.0; 4],
+            corner_radii: [0.0; 4],
+            colors: [[0.0; 4]; 4],
+        },
         [0.0, 0.0, 640.0, 480.0],
     );
 }

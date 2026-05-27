@@ -19,6 +19,19 @@ use super::{EMPTY_KEYS_CAP, WindowRenderer};
 /// fixed wall-clock budget).
 const IMAGE_TEXTURE_EVICT_FRAME_THRESHOLD: u64 = 60;
 
+/// Per-frame prepare request for [`WindowRenderer::prepare`]: layout origin
+/// offset, cursor blink opacity, and whether terminal content changed since
+/// the last frame (gates the cursor-blink-only fast path).
+#[derive(Clone, Copy)]
+pub(crate) struct PrepareRequest {
+    /// Layout origin offset `(x, y)` in physical pixels.
+    pub origin: (f32, f32),
+    /// Cursor blink opacity (0.0 suppresses cursor emission).
+    pub cursor_opacity: f32,
+    /// Whether terminal content changed (false reuses cached shaping).
+    pub content_changed: bool,
+}
+
 impl WindowRenderer {
     /// Whether any frame-level dispatch-fingerprint input changed since
     /// the last frame. Single SSOT consumer of the dispatch fingerprint
@@ -67,19 +80,18 @@ impl WindowRenderer {
     /// 1. **Shape** — segment rows into runs and shape via rustybuzz.
     /// 2. **Cache** — rasterize and upload any missing shaped glyphs.
     /// 3. **Prepare** — emit GPU instances from shaped glyph positions.
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "origin + cursor opacity + content_changed are pipeline context"
-    )]
     pub fn prepare(
         &mut self,
         input: &FrameInput,
         gpu: &GpuState,
         pipelines: &GpuPipelines,
-        origin: (f32, f32),
-        cursor_opacity: f32,
-        content_changed: bool,
+        request: PrepareRequest,
     ) {
+        let PrepareRequest {
+            origin,
+            cursor_opacity,
+            content_changed,
+        } = request;
         // INVARIANT: cursor-blink-only fast path runs only when content +
         // dispatch fingerprint + row-state are all unchanged.
         let cols = input.columns();
@@ -133,8 +145,10 @@ impl WindowRenderer {
             &bridge,
             &self.shaping.frame,
             &mut self.prepared,
-            origin,
-            cursor_opacity,
+            prepare::ScenePlacement {
+                origin,
+                cursor_opacity,
+            },
         );
 
         // Phase D: Ensure image textures uploaded.
@@ -227,11 +241,15 @@ impl WindowRenderer {
                 &gpu.device,
                 &gpu.queue,
                 &pipelines.image_texture_layout,
-                img_data.id,
-                img_data.pixel_generation,
-                &img_data.data,
-                img_data.width,
-                img_data.height,
+                crate::gpu::image_render::ImageUpload {
+                    id: img_data.id,
+                    pixels: crate::gpu::image_render::ImagePixels {
+                        data: &img_data.data,
+                        width: img_data.width,
+                        height: img_data.height,
+                        pixel_generation: img_data.pixel_generation,
+                    },
+                },
             );
         }
     }

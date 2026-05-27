@@ -9,7 +9,7 @@ use oriterm_ui::draw::Scene;
 
 use crate::font::ui_font_sizes::PRELOAD_SIZES;
 use crate::font::ui_font_sizes::UiFontSizes;
-use crate::font::{FontSet, GlyphFormat, HintingMode};
+use crate::font::{FontRasterConfig, FontSet, GlyphFormat, HintingMode};
 use crate::gpu::pipelines::GpuPipelines;
 use crate::gpu::state::GpuState;
 use crate::gpu::window_renderer::WindowRenderer;

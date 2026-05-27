@@ -7,7 +7,7 @@
 
 mod chrome;
 #[cfg(all(test, feature = "gpu-tests"))]
-pub(crate) use chrome::compute_window_layout;
+pub(crate) use chrome::{ChromeLayout, compute_window_layout};
 mod cell_metrics;
 mod clipboard_ops;
 pub(crate) mod config_reload;

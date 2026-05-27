@@ -50,28 +50,42 @@ fn headless_composed_env_192dpi() -> Option<(GpuState, GpuPipelines, WindowRende
     })
 }
 
-/// Render a composed main window frame: tab bar + grid + status bar + border.
-///
-/// Returns RGBA pixel buffer at the given width and height.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "composed rendering: GPU, pipelines, renderer, tabs, status, grid text, size, scale, options"
-)]
-fn render_main_window(
-    gpu: &GpuState,
-    pipelines: &GpuPipelines,
-    renderer: &mut WindowRenderer,
-    tabs: &[TabEntry],
+/// Composed-frame scene description for [`render_main_window`]: tab/status
+/// content, grid text, viewport dimensions, scale, and chrome visibility.
+struct MainWindowScene<'a> {
+    tabs: &'a [TabEntry],
     active_tab: usize,
     status_data: StatusBarData,
-    grid_text: &str,
+    grid_text: &'a str,
     width: u32,
     height: u32,
     scale: f32,
     show_status_bar: bool,
     show_tab_bar: bool,
     show_border: bool,
+}
+
+/// Render a composed main window frame: tab bar + grid + status bar + border.
+///
+/// Returns RGBA pixel buffer at the given width and height.
+fn render_main_window(
+    gpu: &GpuState,
+    pipelines: &GpuPipelines,
+    renderer: &mut WindowRenderer,
+    scene: MainWindowScene<'_>,
 ) -> Vec<u8> {
+    let MainWindowScene {
+        tabs,
+        active_tab,
+        status_data,
+        grid_text,
+        width,
+        height,
+        scale,
+        show_status_bar,
+        show_tab_bar,
+        show_border,
+    } = scene;
     let theme = UiTheme::dark();
     let cell = renderer.cell_metrics();
     let tab_bar_h = if show_tab_bar { 36.0 } else { 0.0 };
@@ -87,10 +101,12 @@ fn render_main_window(
         height,
         &cell,
         scale,
-        !show_tab_bar,
-        tab_bar_h,
-        sb_h,
-        border_inset,
+        crate::app::ChromeLayout {
+            tab_bar_hidden: !show_tab_bar,
+            tab_bar_height: tab_bar_h,
+            status_bar_height: sb_h,
+            border_inset,
+        },
     );
 
     // Build grid content.
@@ -101,7 +117,16 @@ fn render_main_window(
 
     // Prepare grid (fills instance buffers, clears, begins atlas frame).
     let origin = (wl.grid_rect.x(), wl.grid_rect.y());
-    renderer.prepare(&input, gpu, pipelines, origin, 1.0, true);
+    renderer.prepare(
+        &input,
+        gpu,
+        pipelines,
+        crate::gpu::PrepareRequest {
+            origin: origin,
+            cursor_opacity: 1.0,
+            content_changed: true,
+        },
+    );
 
     let text_cache = TextShapeCache::new();
 
@@ -218,16 +243,18 @@ fn main_window_single_pane_96dpi() {
         &gpu,
         &pipelines,
         &mut renderer,
-        &tabs,
-        0,
-        test_status_data(),
-        &text,
-        width,
-        height,
-        1.0,
-        true,
-        true,
-        true,
+        MainWindowScene {
+            tabs: &tabs,
+            active_tab: 0,
+            status_data: test_status_data(),
+            grid_text: &text,
+            width,
+            height,
+            scale: 1.0,
+            show_status_bar: true,
+            show_tab_bar: true,
+            show_border: true,
+        },
     );
 
     if let Err(msg) =
@@ -257,22 +284,24 @@ fn main_window_3tabs_96dpi() {
         &gpu,
         &pipelines,
         &mut renderer,
-        &tabs,
-        0,
-        StatusBarData {
-            shell_name: "zsh".into(),
-            pane_count: "3 panes".into(),
-            grid_size: "80\u{00d7}24".into(),
-            encoding: "UTF-8".into(),
-            term_type: "xterm-256color".into(),
+        MainWindowScene {
+            tabs: &tabs,
+            active_tab: 0,
+            status_data: StatusBarData {
+                shell_name: "zsh".into(),
+                pane_count: "3 panes".into(),
+                grid_size: "80\u{00d7}24".into(),
+                encoding: "UTF-8".into(),
+                term_type: "xterm-256color".into(),
+            },
+            grid_text: &text,
+            width,
+            height,
+            scale: 1.0,
+            show_status_bar: true,
+            show_tab_bar: true,
+            show_border: true,
         },
-        &text,
-        width,
-        height,
-        1.0,
-        true,
-        true,
-        true,
     );
 
     if let Err(msg) = compare_with_reference("main_window_3tabs_96dpi", &pixels, width, height) {
@@ -296,16 +325,18 @@ fn main_window_192dpi() {
         &gpu,
         &pipelines,
         &mut renderer,
-        &tabs,
-        0,
-        test_status_data(),
-        &text,
-        width,
-        height,
-        2.0,
-        true,
-        true,
-        true,
+        MainWindowScene {
+            tabs: &tabs,
+            active_tab: 0,
+            status_data: test_status_data(),
+            grid_text: &text,
+            width,
+            height,
+            scale: 2.0,
+            show_status_bar: true,
+            show_tab_bar: true,
+            show_border: true,
+        },
     );
 
     if let Err(msg) = compare_with_reference("main_window_192dpi", &pixels, width, height) {
@@ -329,16 +360,18 @@ fn main_window_no_status_bar_96dpi() {
         &gpu,
         &pipelines,
         &mut renderer,
-        &tabs,
-        0,
-        StatusBarData::default(),
-        &text,
-        width,
-        height,
-        1.0,
-        false,
-        true,
-        true,
+        MainWindowScene {
+            tabs: &tabs,
+            active_tab: 0,
+            status_data: StatusBarData::default(),
+            grid_text: &text,
+            width,
+            height,
+            scale: 1.0,
+            show_status_bar: false,
+            show_tab_bar: true,
+            show_border: true,
+        },
     );
 
     if let Err(msg) =
@@ -363,16 +396,18 @@ fn main_window_hidden_tab_bar_96dpi() {
         &gpu,
         &pipelines,
         &mut renderer,
-        &[],
-        0,
-        test_status_data(),
-        &text,
-        width,
-        height,
-        1.0,
-        true,
-        false,
-        true,
+        MainWindowScene {
+            tabs: &[],
+            active_tab: 0,
+            status_data: test_status_data(),
+            grid_text: &text,
+            width,
+            height,
+            scale: 1.0,
+            show_status_bar: true,
+            show_tab_bar: false,
+            show_border: true,
+        },
     );
 
     if let Err(msg) =

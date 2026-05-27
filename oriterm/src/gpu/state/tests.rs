@@ -5,7 +5,8 @@ use wgpu::{CompositeAlphaMode, SurfaceCapabilities, TextureFormat, TextureUsages
 use wgpu::PresentMode;
 
 use super::helpers::{
-    build_surface_config, select_alpha_mode, select_formats, select_present_mode,
+    SurfaceFormatParams, build_surface_config, select_alpha_mode, select_formats,
+    select_present_mode,
 };
 
 fn caps_with_formats(formats: Vec<TextureFormat>) -> SurfaceCapabilities {
@@ -193,11 +194,13 @@ fn select_alpha_empty_defaults_to_opaque() {
 #[test]
 fn build_surface_config_sets_view_formats_when_needed() {
     let config = build_surface_config(
-        TextureFormat::Bgra8Unorm,
-        TextureFormat::Bgra8UnormSrgb,
-        CompositeAlphaMode::Opaque,
-        true,
-        PresentMode::Fifo,
+        SurfaceFormatParams {
+            surface_format: TextureFormat::Bgra8Unorm,
+            render_format: TextureFormat::Bgra8UnormSrgb,
+            alpha_mode: CompositeAlphaMode::Opaque,
+            supports_view_formats: true,
+            present_mode: PresentMode::Fifo,
+        },
         800,
         600,
     );
@@ -211,11 +214,13 @@ fn build_surface_config_sets_view_formats_when_needed() {
 #[test]
 fn build_surface_config_skips_view_formats_when_unsupported() {
     let config = build_surface_config(
-        TextureFormat::Bgra8Unorm,
-        TextureFormat::Bgra8UnormSrgb,
-        CompositeAlphaMode::Opaque,
-        false,
-        PresentMode::Fifo,
+        SurfaceFormatParams {
+            surface_format: TextureFormat::Bgra8Unorm,
+            render_format: TextureFormat::Bgra8UnormSrgb,
+            alpha_mode: CompositeAlphaMode::Opaque,
+            supports_view_formats: false,
+            present_mode: PresentMode::Fifo,
+        },
         800,
         600,
     );
@@ -226,11 +231,13 @@ fn build_surface_config_skips_view_formats_when_unsupported() {
 #[test]
 fn build_surface_config_no_view_formats_when_formats_match() {
     let config = build_surface_config(
-        TextureFormat::Bgra8UnormSrgb,
-        TextureFormat::Bgra8UnormSrgb,
-        CompositeAlphaMode::PreMultiplied,
-        true,
-        PresentMode::Fifo,
+        SurfaceFormatParams {
+            surface_format: TextureFormat::Bgra8UnormSrgb,
+            render_format: TextureFormat::Bgra8UnormSrgb,
+            alpha_mode: CompositeAlphaMode::PreMultiplied,
+            supports_view_formats: true,
+            present_mode: PresentMode::Fifo,
+        },
         1920,
         1080,
     );
@@ -242,11 +249,13 @@ fn build_surface_config_no_view_formats_when_formats_match() {
 #[test]
 fn build_surface_config_clamps_zero_dimensions() {
     let config = build_surface_config(
-        TextureFormat::Bgra8UnormSrgb,
-        TextureFormat::Bgra8UnormSrgb,
-        CompositeAlphaMode::Opaque,
-        false,
-        PresentMode::Fifo,
+        SurfaceFormatParams {
+            surface_format: TextureFormat::Bgra8UnormSrgb,
+            render_format: TextureFormat::Bgra8UnormSrgb,
+            alpha_mode: CompositeAlphaMode::Opaque,
+            supports_view_formats: false,
+            present_mode: PresentMode::Fifo,
+        },
         0,
         0,
     );

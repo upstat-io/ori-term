@@ -4,21 +4,39 @@ use std::collections::HashSet;
 
 use oriterm_ui::theme::UiTheme;
 
-use super::{SettingsIds, build_settings_dialog};
+use super::{SettingsDialogParams, SettingsIds, build_settings_dialog};
 use crate::config::Config;
 
 #[test]
 fn dialog_builds_without_panic() {
     let config = Config::default();
     let theme = UiTheme::default();
-    let (_content, _ids, _footer_ids) = build_settings_dialog(&config, &theme, 0, 1.0, 1.0, None);
+    let (_content, _ids, _footer_ids) = build_settings_dialog(
+        &config,
+        &theme,
+        SettingsDialogParams {
+            active_page: 0,
+            scale_factor: 1.0,
+            opacity: 1.0,
+            update_info: None,
+        },
+    );
 }
 
 #[test]
 fn settings_ids_all_distinct() {
     let config = Config::default();
     let theme = UiTheme::default();
-    let (_content, ids, _footer_ids) = build_settings_dialog(&config, &theme, 0, 1.0, 1.0, None);
+    let (_content, ids, _footer_ids) = build_settings_dialog(
+        &config,
+        &theme,
+        SettingsDialogParams {
+            active_page: 0,
+            scale_factor: 1.0,
+            opacity: 1.0,
+            update_info: None,
+        },
+    );
     let all = collect_ids(&ids);
     // 31 fixed control IDs (30 controls + sidebar) + N scheme card IDs.
     let expected = 31 + ids.scheme_card_ids.len();
@@ -29,7 +47,16 @@ fn settings_ids_all_distinct() {
 fn content_widget_has_valid_id() {
     let config = Config::default();
     let theme = UiTheme::default();
-    let (content, _ids, _footer_ids) = build_settings_dialog(&config, &theme, 0, 1.0, 1.0, None);
+    let (content, _ids, _footer_ids) = build_settings_dialog(
+        &config,
+        &theme,
+        SettingsDialogParams {
+            active_page: 0,
+            scale_factor: 1.0,
+            opacity: 1.0,
+            update_info: None,
+        },
+    );
     assert_ne!(content.id().raw(), 0);
 }
 
@@ -37,7 +64,16 @@ fn content_widget_has_valid_id() {
 fn all_page_ids_are_set() {
     let config = Config::default();
     let theme = UiTheme::default();
-    let (_content, ids, _footer_ids) = build_settings_dialog(&config, &theme, 0, 1.0, 1.0, None);
+    let (_content, ids, _footer_ids) = build_settings_dialog(
+        &config,
+        &theme,
+        SettingsDialogParams {
+            active_page: 0,
+            scale_factor: 1.0,
+            opacity: 1.0,
+            update_info: None,
+        },
+    );
     let all = collect_ids(&ids);
     // Every ID must be non-placeholder.
     assert!(
@@ -50,7 +86,16 @@ fn all_page_ids_are_set() {
 fn scheme_card_ids_captured() {
     let config = Config::default();
     let theme = UiTheme::default();
-    let (_content, ids, _footer_ids) = build_settings_dialog(&config, &theme, 0, 1.0, 1.0, None);
+    let (_content, ids, _footer_ids) = build_settings_dialog(
+        &config,
+        &theme,
+        SettingsDialogParams {
+            active_page: 0,
+            scale_factor: 1.0,
+            opacity: 1.0,
+            update_info: None,
+        },
+    );
     // Scheme cards are captured during colors page building.
     assert!(
         !ids.scheme_card_ids.is_empty(),
@@ -64,7 +109,16 @@ fn scheme_card_ids_captured() {
 fn sidebar_id_captured() {
     let config = Config::default();
     let theme = UiTheme::default();
-    let (_content, ids, _footer_ids) = build_settings_dialog(&config, &theme, 0, 1.0, 1.0, None);
+    let (_content, ids, _footer_ids) = build_settings_dialog(
+        &config,
+        &theme,
+        SettingsDialogParams {
+            active_page: 0,
+            scale_factor: 1.0,
+            opacity: 1.0,
+            update_info: None,
+        },
+    );
     assert_ne!(
         ids.sidebar_id,
         oriterm_ui::widget_id::WidgetId::placeholder(),
@@ -87,7 +141,16 @@ fn dialog_builds_with_update_info() {
         "v2.0.0 ready",
         "https://example.com/update",
     ));
-    let (content, ids, _footer_ids) = build_settings_dialog(&config, &theme, 0, 1.0, 1.0, info);
+    let (content, ids, _footer_ids) = build_settings_dialog(
+        &config,
+        &theme,
+        SettingsDialogParams {
+            active_page: 0,
+            scale_factor: 1.0,
+            opacity: 1.0,
+            update_info: info,
+        },
+    );
     // Sidebar must still be captured.
     assert_ne!(
         ids.sidebar_id,
@@ -106,7 +169,16 @@ fn footer_buttons_reachable_through_widget_tree() {
 
     let config = Config::default();
     let theme = UiTheme::default();
-    let (content, _ids, footer_ids) = build_settings_dialog(&config, &theme, 0, 1.0, 1.0, None);
+    let (content, _ids, footer_ids) = build_settings_dialog(
+        &config,
+        &theme,
+        SettingsDialogParams {
+            active_page: 0,
+            scale_factor: 1.0,
+            opacity: 1.0,
+            update_info: None,
+        },
+    );
     let panel = SettingsPanel::embedded(content, footer_ids);
     let focusable = panel.focusable_children();
 
@@ -130,7 +202,16 @@ fn accept_unsaved_reaches_footer() {
 
     let config = Config::default();
     let theme = UiTheme::default();
-    let (content, _ids, footer_ids) = build_settings_dialog(&config, &theme, 0, 1.0, 1.0, None);
+    let (content, _ids, footer_ids) = build_settings_dialog(
+        &config,
+        &theme,
+        SettingsDialogParams {
+            active_page: 0,
+            scale_factor: 1.0,
+            opacity: 1.0,
+            update_info: None,
+        },
+    );
     let mut panel = SettingsPanel::embedded(content, footer_ids);
 
     let handled = panel.accept_action(&WidgetAction::SettingsUnsaved(true));
@@ -149,7 +230,16 @@ fn footer_buttons_have_correct_height() {
 
     let config = Config::default();
     let theme = UiTheme::default();
-    let (content, _ids, footer_ids) = build_settings_dialog(&config, &theme, 0, 1.0, 1.0, None);
+    let (content, _ids, footer_ids) = build_settings_dialog(
+        &config,
+        &theme,
+        SettingsDialogParams {
+            active_page: 0,
+            scale_factor: 1.0,
+            opacity: 1.0,
+            update_info: None,
+        },
+    );
     let panel = SettingsPanel::embedded(content, footer_ids);
 
     // Simulate dialog dimensions (860×620 at logical pixels).
@@ -253,7 +343,16 @@ fn font_family_dropdown_prepends_configured_uninstalled_family() {
     let bogus = "ZZZ_NotInstalled_Family_For_Testing";
     config.font.family = Some(bogus.to_owned());
     let theme = UiTheme::default();
-    let (_content, ids, _footer) = build_settings_dialog(&config, &theme, 0, 1.0, 1.0, None);
+    let (_content, ids, _footer) = build_settings_dialog(
+        &config,
+        &theme,
+        SettingsDialogParams {
+            active_page: 0,
+            scale_factor: 1.0,
+            opacity: 1.0,
+            update_info: None,
+        },
+    );
 
     assert!(
         ids.font_family_items.len() >= 2,
@@ -293,7 +392,16 @@ fn font_family_dropdown_skips_prepend_when_family_is_enumerated() {
     let mut config = Config::default();
     config.font.family = Some(installed.clone());
     let theme = UiTheme::default();
-    let (_content, ids, _footer) = build_settings_dialog(&config, &theme, 0, 1.0, 1.0, None);
+    let (_content, ids, _footer) = build_settings_dialog(
+        &config,
+        &theme,
+        SettingsDialogParams {
+            active_page: 0,
+            scale_factor: 1.0,
+            opacity: 1.0,
+            update_info: None,
+        },
+    );
 
     let count = ids
         .font_family_items

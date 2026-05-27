@@ -4,13 +4,24 @@ use oriterm_ui::widget_id::WidgetId;
 use oriterm_ui::widgets::WidgetAction;
 
 use super::handle_settings_action;
-use crate::app::settings_overlay::form_builder::{SettingsIds, build_settings_dialog};
+use crate::app::settings_overlay::form_builder::{
+    SettingsDialogParams, SettingsIds, build_settings_dialog,
+};
 use crate::config::Config;
 
 fn default_ids() -> (Config, SettingsIds) {
     let config = Config::default();
     let theme = oriterm_ui::theme::UiTheme::default();
-    let (_content, ids, _footer_ids) = build_settings_dialog(&config, &theme, 0, 1.0, 1.0, None);
+    let (_content, ids, _footer_ids) = build_settings_dialog(
+        &config,
+        &theme,
+        SettingsDialogParams {
+            active_page: 0,
+            scale_factor: 1.0,
+            opacity: 1.0,
+            update_info: None,
+        },
+    );
     (config, ids)
 }
 

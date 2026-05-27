@@ -28,22 +28,24 @@ pub(crate) use extract::{
 };
 pub use frame_input::{FrameInput, FramePalette, ViewportSize};
 pub(crate) use frame_input::{FrameSearch, FrameSelection, MarkCursorOverride};
-pub(crate) use pane_cache::PaneRenderCache;
+pub(crate) use pane_cache::{PaneCacheKey, PaneRenderCache};
 pub(crate) use pipelines::GpuPipelines;
 pub(crate) use state::GpuState;
 pub(crate) use transparency::apply_transparency;
-pub(crate) use window_renderer::{SurfaceError, WindowRenderer};
+pub(crate) use window_renderer::{PanePrepare, PrepareRequest, SurfaceError, WindowRenderer};
 
 // Benchmark-facing re-exports: types needed by criterion benchmarks in
 // `oriterm/benches/`. Kept as `pub` so the benchmark binary (a separate
 // compilation unit) can access them through `oriterm::gpu::`.
 pub use atlas::{AtlasEntry, AtlasKind};
 pub use instance_writer::{INSTANCE_SIZE, InstanceWriter};
-pub use prepare::{AtlasLookup, ShapedFrame, prepare_frame_shaped_into};
+pub use prepare::{AtlasLookup, ScenePlacement, ShapedFrame, prepare_frame_shaped_into};
 pub use prepared_frame::PreparedFrame;
 
 // Font types needed by benchmarks and `AtlasLookup` implementors.
-pub use crate::font::{CellMetrics, FaceIdx, FontRealm, GlyphStyle, RasterKey, SyntheticFlags};
+pub use crate::font::{
+    CellMetrics, FaceIdx, FontRealm, GlyphStyle, RasterKey, StrokeMetrics, SyntheticFlags,
+};
 
 /// Decode a single sRGB byte (0–255) to a linear-light `f32` (0.0–1.0).
 ///

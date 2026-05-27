@@ -196,23 +196,33 @@ pub(super) fn select_present_mode(caps: &wgpu::SurfaceCapabilities) -> wgpu::Pre
     wgpu::PresentMode::Fifo
 }
 
+/// Resolved surface format parameters for [`build_surface_config`]: surface
+/// and render formats, alpha mode, view-format support, and present mode.
+#[derive(Clone, Copy)]
+pub(super) struct SurfaceFormatParams {
+    pub surface_format: wgpu::TextureFormat,
+    pub render_format: wgpu::TextureFormat,
+    pub alpha_mode: wgpu::CompositeAlphaMode,
+    pub supports_view_formats: bool,
+    pub present_mode: wgpu::PresentMode,
+}
+
 /// Build a [`wgpu::SurfaceConfiguration`] from the resolved GPU parameters.
 ///
 /// Single source of truth for surface config — called from both `try_init()`
 /// (initial probe) and `create_surface()` (per-window).
-#[expect(
-    clippy::too_many_arguments,
-    reason = "wgpu SurfaceConfiguration: format, alpha mode, present mode, viewport dimensions"
-)]
 pub(super) fn build_surface_config(
-    surface_format: wgpu::TextureFormat,
-    render_format: wgpu::TextureFormat,
-    alpha_mode: wgpu::CompositeAlphaMode,
-    supports_view_formats: bool,
-    present_mode: wgpu::PresentMode,
+    params: SurfaceFormatParams,
     width: u32,
     height: u32,
 ) -> wgpu::SurfaceConfiguration {
+    let SurfaceFormatParams {
+        surface_format,
+        render_format,
+        alpha_mode,
+        supports_view_formats,
+        present_mode,
+    } = params;
     let needs_view_format = render_format != surface_format;
     let view_formats = if needs_view_format && supports_view_formats {
         vec![render_format]

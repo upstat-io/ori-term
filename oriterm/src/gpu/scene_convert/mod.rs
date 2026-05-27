@@ -23,7 +23,7 @@ use oriterm_ui::geometry::{Point, Rect};
 use super::instance_writer::{InstanceWriter, ScreenRect};
 use super::prepare::AtlasLookup;
 use super::srgb_f32_to_linear;
-use super::ui_rect_writer::UiRectWriter;
+use super::ui_rect_writer::{UiRectBorder, UiRectWriter};
 
 /// Per-primitive paint parameters: scale, opacity, and clip rect.
 ///
@@ -212,9 +212,7 @@ fn convert_rect_clipped(
         writer.push_ui_rect(
             shadow_rect.scaled(scale),
             color_to_linear_with_opacity(shadow.color, opacity),
-            [0.0; 4],
-            shadow_radii,
-            [[0.0; 4]; 4],
+            UiRectBorder::rounded(shadow_radii),
             clip,
         );
     }
@@ -252,9 +250,11 @@ fn convert_rect_clipped(
     writer.push_ui_rect(
         screen,
         fill_linear,
-        border_widths,
-        corner_radii,
-        border_colors,
+        UiRectBorder {
+            widths: border_widths,
+            corner_radii,
+            colors: border_colors,
+        },
         clip,
     );
 }
@@ -287,11 +287,6 @@ fn convert_line_clipped(spec: LineSpec, writer: &mut UiRectWriter, paint: PaintP
     let fill = color_to_linear_with_opacity(color, opacity);
     let hw = width * 0.5;
 
-    // Lines have no border — zero widths and transparent colors.
-    let no_bw = [0.0; 4];
-    let no_cr = [0.0; 4];
-    let no_bc = [[0.0; 4]; 4];
-
     // Axis-aligned fast paths: single rect.
     if dx.abs() < f32::EPSILON {
         // Vertical line.
@@ -307,7 +302,7 @@ fn convert_line_clipped(spec: LineSpec, writer: &mut UiRectWriter, paint: PaintP
             h: max_y - min_y,
         }
         .scaled(scale);
-        writer.push_ui_rect(rect, fill, no_bw, no_cr, no_bc, clip);
+        writer.push_ui_rect(rect, fill, UiRectBorder::NONE, clip);
         return;
     }
     if dy.abs() < f32::EPSILON {
@@ -324,7 +319,7 @@ fn convert_line_clipped(spec: LineSpec, writer: &mut UiRectWriter, paint: PaintP
             h: width,
         }
         .scaled(scale);
-        writer.push_ui_rect(rect, fill, no_bw, no_cr, no_bc, clip);
+        writer.push_ui_rect(rect, fill, UiRectBorder::NONE, clip);
         return;
     }
 
@@ -346,7 +341,7 @@ fn convert_line_clipped(spec: LineSpec, writer: &mut UiRectWriter, paint: PaintP
             h: width,
         }
         .scaled(scale);
-        writer.push_ui_rect(rect, fill, no_bw, no_cr, no_bc, clip);
+        writer.push_ui_rect(rect, fill, UiRectBorder::NONE, clip);
     }
 }
 

@@ -335,10 +335,12 @@ impl App {
                         mux.as_mut(),
                         &mut ctx.frame,
                         pane_id,
-                        pane_viewport,
-                        cell,
-                        content_refreshed,
-                        reextract_gate,
+                        super::draw_helpers::PaneContentRequest {
+                            viewport: pane_viewport,
+                            cell,
+                            swap_gate: content_refreshed,
+                            reextract_gate,
+                        },
                     );
                     let Some(outcome) = outcome else {
                         log::warn!("multi-pane: no snapshot for pane {pane_id:?}");
@@ -466,17 +468,21 @@ impl App {
                     };
 
                     let cached = ctx.pane_cache.get_or_prepare(
-                        pane_id,
-                        layout,
-                        true,
-                        damage_key,
+                        crate::gpu::PaneCacheKey {
+                            pane_id,
+                            layout,
+                            dirty: true,
+                            damage_key,
+                        },
                         |target| {
                             renderer.prepare_pane_into(
                                 frame,
-                                gpu,
-                                pipelines,
-                                origin,
-                                pane_cursor_opacity,
+                                crate::gpu::PanePrepare {
+                                    gpu,
+                                    pipelines,
+                                    origin,
+                                    cursor_opacity: pane_cursor_opacity,
+                                },
                                 target,
                             );
                         },

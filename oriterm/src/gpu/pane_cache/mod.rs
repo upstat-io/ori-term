@@ -26,6 +26,16 @@ struct CachedPaneFrame {
     damage_key: u64,
 }
 
+/// Cache lookup key for [`PaneRenderCache::get_or_prepare`]: pane identity,
+/// layout, the content-dirty gate, and the composite damage key.
+#[derive(Clone, Copy)]
+pub(crate) struct PaneCacheKey<'a> {
+    pub pane_id: PaneId,
+    pub layout: &'a PaneLayout,
+    pub dirty: bool,
+    pub damage_key: u64,
+}
+
 /// Per-pane render cache.
 ///
 /// Stores one [`PreparedFrame`] per pane. On each frame, callers check
@@ -59,18 +69,17 @@ impl PaneRenderCache {
     ///
     /// On miss, calls `prepare_fn` (which receives a cleared `PreparedFrame`
     /// for in-place fill) and stores the new `(layout, damage_key)` pair.
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "per-pane cache key requires layout + dirty gate + damage_key + prepare closure — each is a distinct concern; struct grouping would obscure the call sites in multi_pane/mod.rs"
-    )]
     pub(crate) fn get_or_prepare(
         &mut self,
-        pane_id: PaneId,
-        layout: &PaneLayout,
-        dirty: bool,
-        damage_key: u64,
+        key: PaneCacheKey<'_>,
         prepare_fn: impl FnOnce(&mut PreparedFrame),
     ) -> &PreparedFrame {
+        let PaneCacheKey {
+            pane_id,
+            layout,
+            dirty,
+            damage_key,
+        } = key;
         let entry = self.entries.entry(pane_id);
 
         match entry {

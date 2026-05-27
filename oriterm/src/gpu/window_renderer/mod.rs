@@ -17,6 +17,8 @@ mod scene_append;
 mod ui_only;
 
 pub use error::SurfaceError;
+pub(crate) use frame_prep::PrepareRequest;
+pub(crate) use multi_pane::PanePrepare;
 pub use ui_only::RendererMode;
 
 use std::collections::HashSet;

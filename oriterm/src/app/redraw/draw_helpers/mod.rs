@@ -44,6 +44,20 @@ pub(super) enum PaneExtractOutcome {
     Reused,
 }
 
+/// Per-call inputs for [`try_swap_or_extract_pane_content`]: frame geometry
+/// (viewport + cell metrics) and the two refresh gates.
+#[derive(Clone, Copy)]
+pub(super) struct PaneContentRequest {
+    /// Target viewport size for the refreshed frame.
+    pub viewport: ViewportSize,
+    /// Cell metrics for the refreshed frame.
+    pub cell: CellMetrics,
+    /// When true, attempt the zero-copy swap fast path.
+    pub swap_gate: bool,
+    /// When true, fall through to full extract-or-replace.
+    pub reextract_gate: bool,
+}
+
 /// Try the zero-copy swap fast path, fall through to extract, then clear
 /// the snapshot dirty bit. SSOT for the pane-content refresh skeleton
 /// shared by single-pane and multi-pane redraw paths.
@@ -71,19 +85,18 @@ pub(super) enum PaneExtractOutcome {
 /// multi-pane). Steps 1 (content-changed detection) and 2 (initial
 /// refresh decision) remain caller responsibilities because the
 /// predicate inputs differ materially across the two paths.
-#[allow(
-    clippy::too_many_arguments,
-    reason = "pane-content refresh helper threads mux + frame + pane id + viewport + metrics + two gates — each is a distinct caller-side input"
-)]
 pub(super) fn try_swap_or_extract_pane_content(
     mux: &mut dyn MuxBackend,
     ctx_frame: &mut Option<FrameInput>,
     pane_id: PaneId,
-    viewport: ViewportSize,
-    cell: CellMetrics,
-    swap_gate: bool,
-    reextract_gate: bool,
+    request: PaneContentRequest,
 ) -> Option<PaneExtractOutcome> {
+    let PaneContentRequest {
+        viewport,
+        cell,
+        swap_gate,
+        reextract_gate,
+    } = request;
     let swapped = swap_gate
         && ctx_frame
             .as_mut()

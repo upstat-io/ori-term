@@ -16,7 +16,7 @@ use crate::gpu::prepared_frame::PreparedFrame;
 
 use super::AtlasLookup;
 use super::decorations::{CellDecoration, DecorationContext};
-use super::emit::GlyphEmitter;
+use super::emit::{EmitPlacement, GlyphEmitter, ShapedSpan};
 use super::resolve::{CellColorContext, resolve_cell_colors};
 use super::shaped_frame::ShapedFrame;
 use super::super_sub_glyph_offset;
@@ -165,14 +165,18 @@ fn emit_cell_glyphs(cell: &RenderableCell, state: &CellEmitState, ctx: &mut Emit
                 frame: ctx.frame,
             }
             .emit(
-                row_glyphs,
-                row_col_starts,
-                start_idx,
-                state.col,
-                state.x,
-                state.glyph_y,
-                state.fg,
-                state.bg,
+                ShapedSpan {
+                    row_glyphs,
+                    col_starts: row_col_starts,
+                    start_idx,
+                },
+                EmitPlacement {
+                    col: state.col,
+                    x: state.x,
+                    y: state.glyph_y,
+                    fg: state.fg,
+                    bg: state.bg,
+                },
             );
         }
     } else {

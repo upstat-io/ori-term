@@ -226,23 +226,31 @@ pub(crate) fn pixel_to_side(pos: PhysicalPosition<f64>, ctx: &GridCtx<'_>) -> Si
     }
 }
 
+/// Per-press input for [`handle_press`]: pointer position, held modifiers,
+/// and the existing selection mode (if any).
+#[derive(Clone, Copy)]
+pub(crate) struct PressEvent {
+    pub pos: PhysicalPosition<f64>,
+    pub modifiers: ModifiersState,
+    pub existing_mode: Option<SelectionMode>,
+}
+
 /// Handle a left mouse button press in the grid area.
 ///
 /// Creates or extends a selection based on click count and modifiers.
 /// Returns `Some(PressAction)` if the press was handled, or `None` if the
 /// click was outside the grid. The caller applies the action to App state.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "selection press: mouse state, grid data, layout, position, modifiers, existing mode"
-)]
 pub(crate) fn handle_press(
     mouse: &mut MouseState,
     grid: &SnapshotGrid<'_>,
     ctx: &GridCtx<'_>,
-    pos: PhysicalPosition<f64>,
-    modifiers: ModifiersState,
-    existing_mode: Option<SelectionMode>,
+    event: PressEvent,
 ) -> Option<PressAction> {
+    let PressEvent {
+        pos,
+        modifiers,
+        existing_mode,
+    } = event;
     let (col, line) = pixel_to_cell(pos, ctx)?;
     let side = pixel_to_side(pos, ctx);
 
@@ -455,9 +463,12 @@ pub(crate) fn handle_drag(
     // Try to convert pixel to cell within the grid area.
     if let Some((col, line)) = pixel_to_cell(pos, ctx) {
         let side = pixel_to_side(pos, ctx);
-        if let Some(endpoint) =
-            helpers::compute_drag_endpoint(grid, selection, col, line, side, ctx.word_delimiters)
-        {
+        if let Some(endpoint) = helpers::compute_drag_endpoint(
+            grid,
+            selection,
+            helpers::DragCell { col, line, side },
+            ctx.word_delimiters,
+        ) {
             return DragResult::Updated(endpoint);
         }
         return DragResult::None;

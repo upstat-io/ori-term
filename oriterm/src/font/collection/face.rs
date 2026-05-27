@@ -166,22 +166,36 @@ pub(super) fn glyph_id(fd: &FaceData, ch: char) -> u16 {
 /// `variations` is a slice of `(tag, value)` pairs to set on the font's
 /// variable axes (e.g. `[("wght", 700.0), ("slnt", -12.0)]`). Pass an
 /// empty slice for non-variable fonts or faces with no axis overrides.
-#[allow(
-    clippy::too_many_arguments,
-    reason = "rasterization requires all these parameters"
-)]
+/// Rasterization spec for [`rasterize_from_face`]: glyph id, pixel size,
+/// variable-axis settings, synthetic flags, target cell height, output
+/// format, hinting, and horizontal subpixel offset.
+#[derive(Clone, Copy)]
+pub(super) struct RasterSpec<'a> {
+    pub glyph_id: u16,
+    pub size_px: f32,
+    pub variations: &'a [(&'a str, f32)],
+    pub synthetic: SyntheticFlags,
+    pub cell_height: f32,
+    pub format: GlyphFormat,
+    pub hinted: bool,
+    pub subpx_x_offset: f32,
+}
+
 pub(super) fn rasterize_from_face(
     fd: &FaceData,
-    glyph_id: u16,
-    size_px: f32,
-    variations: &[(&str, f32)],
-    synthetic: SyntheticFlags,
-    cell_height: f32,
-    format: GlyphFormat,
-    hinted: bool,
-    subpx_x_offset: f32,
+    spec: RasterSpec<'_>,
     ctx: &mut ScaleContext,
 ) -> Option<RasterizedGlyph> {
+    let RasterSpec {
+        glyph_id,
+        size_px,
+        variations,
+        synthetic,
+        cell_height,
+        format,
+        hinted,
+        subpx_x_offset,
+    } = spec;
     let fr = font_ref(fd);
     let coords = normalize_coords(&fr, variations);
     let advance = fr

@@ -19,6 +19,15 @@ use super::App;
 use super::widget_pipeline::{prepaint_widget_tree, prepare_widget_tree};
 use crate::font::CachedTextMeasurer;
 
+/// Dialog viewport dimensions for content composition: scale factor and
+/// logical width/height (physical pixels divided by scale).
+#[derive(Clone, Copy)]
+struct DialogDimensions {
+    scale: f32,
+    logical_w: f32,
+    logical_h: f32,
+}
+
 impl App {
     /// Render a dialog window's content to its GPU surface.
     pub(super) fn render_dialog(&mut self, winit_id: WindowId) {
@@ -64,7 +73,16 @@ impl App {
         let logical_w = w as f32 / scale;
         let logical_h = h as f32 / scale;
 
-        Self::compose_dialog_widgets(ctx, &ui_theme, scale, logical_w, logical_h, gpu);
+        Self::compose_dialog_widgets(
+            ctx,
+            &ui_theme,
+            DialogDimensions {
+                scale,
+                logical_w,
+                logical_h,
+            },
+            gpu,
+        );
 
         // Draw overlay popups (dropdown lists) on top.
         // Re-borrow renderer inside the helper to avoid split-borrow conflict.
@@ -124,18 +142,17 @@ impl App {
     /// Delivers lifecycle events, updates visual state animators, then
     /// draws content widgets to the draw list. The dialog is fully frameless
     /// — content fills the entire window with no chrome title bar.
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "extracted helper: ctx, theme, scale, dimensions, gpu"
-    )]
     fn compose_dialog_widgets(
         ctx: &mut super::dialog_context::DialogWindowContext,
         ui_theme: &oriterm_ui::theme::UiTheme,
-        scale: f32,
-        logical_w: f32,
-        logical_h: f32,
+        dims: DialogDimensions,
         gpu: &crate::gpu::state::GpuState,
     ) {
+        let DialogDimensions {
+            scale,
+            logical_w,
+            logical_h,
+        } = dims;
         let renderer = ctx.renderer.as_mut().expect("caller checked renderer");
         ctx.scene.clear();
         let measurer = CachedTextMeasurer::new(renderer.ui_measurer(scale), &ctx.text_cache, scale);

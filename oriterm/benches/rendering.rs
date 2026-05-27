@@ -24,8 +24,8 @@ use oriterm_core::{
 
 use oriterm::gpu::{
     AtlasEntry, AtlasKind, AtlasLookup, CellMetrics, FaceIdx, FontRealm, FrameInput, FramePalette,
-    GlyphStyle, PreparedFrame, RasterKey, ShapedFrame, SyntheticFlags, ViewportSize,
-    prepare_frame_shaped_into,
+    GlyphStyle, PreparedFrame, RasterKey, ScenePlacement, ShapedFrame, StrokeMetrics,
+    SyntheticFlags, ViewportSize, prepare_frame_shaped_into,
 };
 use oriterm_ui::text::ShapedGlyph;
 
@@ -111,7 +111,7 @@ fn build_frame_input(cols: usize, rows: usize, cells: Vec<RenderableCell>) -> Fr
     FrameInput {
         content,
         viewport: ViewportSize::new(cols as u32 * 8, rows as u32 * 16),
-        cell_size: CellMetrics::new(8.0, 16.0, 12.0, 2.0, 1.0, 4.0),
+        cell_size: CellMetrics::new(8.0, 16.0, 12.0, StrokeMetrics::new(2.0, 1.0, 4.0)),
         content_cols: cols,
         content_rows: rows,
         palette: FramePalette {
@@ -303,8 +303,10 @@ fn bench_prepare_plain(c: &mut Criterion) {
                     black_box(*atlas as &dyn AtlasLookup),
                     black_box(shaped),
                     black_box(&mut frame),
-                    (0.0, 0.0),
-                    1.0,
+                    ScenePlacement {
+                        origin: (0.0, 0.0),
+                        cursor_opacity: 1.0,
+                    },
                 );
             });
         },
@@ -331,8 +333,10 @@ fn bench_prepare_colored(c: &mut Criterion) {
                     black_box(*atlas as &dyn AtlasLookup),
                     black_box(shaped),
                     black_box(&mut frame),
-                    (0.0, 0.0),
-                    1.0,
+                    ScenePlacement {
+                        origin: (0.0, 0.0),
+                        cursor_opacity: 1.0,
+                    },
                 );
             });
         },
@@ -359,8 +363,10 @@ fn bench_prepare_large(c: &mut Criterion) {
                     black_box(*atlas as &dyn AtlasLookup),
                     black_box(shaped),
                     black_box(&mut frame),
-                    (0.0, 0.0),
-                    1.0,
+                    ScenePlacement {
+                        origin: (0.0, 0.0),
+                        cursor_opacity: 1.0,
+                    },
                 );
             });
         },

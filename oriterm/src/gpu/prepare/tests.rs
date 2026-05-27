@@ -5,8 +5,8 @@ use std::collections::HashMap;
 use oriterm_core::{CellFlags, Column, CursorShape, Rgb, Selection, Side, StableRowIndex};
 
 use super::{
-    AtlasLookup, ShapedFrame, prepare_frame, prepare_frame_into, prepare_frame_shaped,
-    prepare_frame_shaped_into,
+    AtlasLookup, ScenePlacement, ShapedFrame, prepare_frame, prepare_frame_into,
+    prepare_frame_shaped, prepare_frame_shaped_into,
 };
 use crate::font::{
     CellMetrics, FaceIdx, FontRealm, GlyphStyle, RasterKey, StrokeMetrics, SyntheticFlags,
@@ -16,6 +16,7 @@ use crate::gpu::frame_input::{FrameInput, FrameSelection, ViewportSize};
 use crate::gpu::instance_writer::INSTANCE_SIZE;
 use crate::gpu::prepared_frame::PreparedFrame;
 use crate::gpu::srgb_to_linear;
+use crate::gpu::ui_rect_writer::UiRectBorder;
 use oriterm_ui::text::ShapedGlyph;
 
 // ── Test atlas ──
@@ -1416,7 +1417,16 @@ fn shaped_into_matches_shaped() {
     let fresh = prepare_frame_shaped(&input, &atlas, &shaped, (0.0, 0.0));
 
     let mut reused = PreparedFrame::new(ViewportSize::new(1, 1), Rgb { r: 0, g: 0, b: 0 }, 1.0);
-    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut reused, (0.0, 0.0), 1.0);
+    prepare_frame_shaped_into(
+        &input,
+        &atlas,
+        &shaped,
+        &mut reused,
+        ScenePlacement {
+            origin: (0.0, 0.0),
+            cursor_opacity: 1.0,
+        },
+    );
 
     assert_eq!(fresh.backgrounds.as_bytes(), reused.backgrounds.as_bytes());
     assert_eq!(fresh.glyphs.as_bytes(), reused.glyphs.as_bytes());
@@ -1472,7 +1482,16 @@ fn shaped_into_reuses_allocation() {
     }];
     let small_col_starts = vec![0];
     let small_shaped = shaped_one_row(2, &small_glyphs, &small_col_starts, size_q6);
-    prepare_frame_shaped_into(&small, &atlas, &small_shaped, &mut frame, (0.0, 0.0), 1.0);
+    prepare_frame_shaped_into(
+        &small,
+        &atlas,
+        &small_shaped,
+        &mut frame,
+        ScenePlacement {
+            origin: (0.0, 0.0),
+            cursor_opacity: 1.0,
+        },
+    );
 
     assert_eq!(frame.backgrounds.len(), 2);
     assert!(first_bg > frame.backgrounds.len());
@@ -2078,7 +2097,16 @@ fn incremental_dirty_row_with_superscript_shifts_glyph_y() {
 
     // First pass: populate row_ranges via full rebuild (all_dirty true by default).
     let mut frame = PreparedFrame::new(ViewportSize::new(1, 1), Rgb { r: 0, g: 0, b: 0 }, 1.0);
-    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+    prepare_frame_shaped_into(
+        &input,
+        &atlas,
+        &shaped,
+        &mut frame,
+        ScenePlacement {
+            origin: (0.0, 0.0),
+            cursor_opacity: 1.0,
+        },
+    );
 
     // Second pass: mark row 0 as dirty so the incremental path regenerates it.
     input.content.all_dirty = false;
@@ -2087,7 +2115,16 @@ fn incremental_dirty_row_with_superscript_shifts_glyph_y() {
         left: Column(0),
         right: Column(0),
     });
-    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+    prepare_frame_shaped_into(
+        &input,
+        &atlas,
+        &shaped,
+        &mut frame,
+        ScenePlacement {
+            origin: (0.0, 0.0),
+            cursor_opacity: 1.0,
+        },
+    );
 
     // Even after the incremental rebuild, the SUPERSCRIPT cell's glyph y
     // must be shifted. Find the glyph instance in the (post-incremental) frame.
@@ -2168,7 +2205,16 @@ fn incremental_dirty_row_with_overline_emits_top_rect() {
 
     // First pass: full rebuild to populate row_ranges.
     let mut frame = PreparedFrame::new(ViewportSize::new(1, 1), Rgb { r: 0, g: 0, b: 0 }, 1.0);
-    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+    prepare_frame_shaped_into(
+        &input,
+        &atlas,
+        &shaped,
+        &mut frame,
+        ScenePlacement {
+            origin: (0.0, 0.0),
+            cursor_opacity: 1.0,
+        },
+    );
 
     // Second pass: dirty-mark row 0 so the incremental path regenerates it.
     input.content.all_dirty = false;
@@ -2177,7 +2223,16 @@ fn incremental_dirty_row_with_overline_emits_top_rect() {
         left: Column(0),
         right: Column(0),
     });
-    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+    prepare_frame_shaped_into(
+        &input,
+        &atlas,
+        &shaped,
+        &mut frame,
+        ScenePlacement {
+            origin: (0.0, 0.0),
+            cursor_opacity: 1.0,
+        },
+    );
 
     // Even after the incremental rebuild, the OVERLINE rect must be present.
     // 1 base bg + 1 overline rect (cursor is in cursors buffer, not backgrounds).
@@ -3630,11 +3685,29 @@ fn fill_frame_shaped_accumulates_without_clearing() {
     let mut frame = PreparedFrame::new(ViewportSize::new(32, 16), Rgb { r: 0, g: 0, b: 0 }, 1.0);
 
     // First fill: pane A at origin (0,0).
-    fill_frame_shaped(&input_a, &atlas, &shaped_a, &mut frame, (0.0, 0.0), 1.0);
+    fill_frame_shaped(
+        &input_a,
+        &atlas,
+        &shaped_a,
+        &mut frame,
+        ScenePlacement {
+            origin: (0.0, 0.0),
+            cursor_opacity: 1.0,
+        },
+    );
     let count_after_a = frame.backgrounds.len();
 
     // Second fill: pane B at origin (16,0) — appends, does NOT clear.
-    fill_frame_shaped(&input_b, &atlas, &shaped_b, &mut frame, (16.0, 0.0), 0.0);
+    fill_frame_shaped(
+        &input_b,
+        &atlas,
+        &shaped_b,
+        &mut frame,
+        ScenePlacement {
+            origin: (16.0, 0.0),
+            cursor_opacity: 0.0,
+        },
+    );
     let count_after_b = frame.backgrounds.len();
 
     assert_eq!(count_after_a, 2, "pane A should produce 2 bg instances");
@@ -3656,9 +3729,27 @@ fn two_panes_at_correct_offsets() {
     let mut frame = PreparedFrame::new(ViewportSize::new(16, 16), Rgb { r: 0, g: 0, b: 0 }, 1.0);
 
     // Pane A at (0, 0).
-    fill_frame_shaped(&input_a, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+    fill_frame_shaped(
+        &input_a,
+        &atlas,
+        &shaped,
+        &mut frame,
+        ScenePlacement {
+            origin: (0.0, 0.0),
+            cursor_opacity: 1.0,
+        },
+    );
     // Pane B at (400, 0).
-    fill_frame_shaped(&input_b, &atlas, &shaped, &mut frame, (400.0, 0.0), 0.0);
+    fill_frame_shaped(
+        &input_b,
+        &atlas,
+        &shaped,
+        &mut frame,
+        ScenePlacement {
+            origin: (400.0, 0.0),
+            cursor_opacity: 0.0,
+        },
+    );
 
     // Pane A background at x=0.
     let bg_a = nth_instance(frame.backgrounds.as_bytes(), 0);
@@ -3694,7 +3785,16 @@ fn lower_pane_origin_is_not_culled_by_local_pane_height() {
 
     // Simulate a lower split pane: pane-local viewport is one row tall,
     // but the pane origin is well below that in window coordinates.
-    fill_frame_shaped(&input, &atlas, &shaped, &mut frame, (0.0, 200.0), 0.0);
+    fill_frame_shaped(
+        &input,
+        &atlas,
+        &shaped,
+        &mut frame,
+        ScenePlacement {
+            origin: (0.0, 200.0),
+            cursor_opacity: 0.0,
+        },
+    );
 
     assert_eq!(
         frame.glyphs.len(),
@@ -3719,7 +3819,16 @@ fn cursor_only_in_focused_pane() {
     let mut frame = PreparedFrame::new(ViewportSize::new(16, 16), Rgb { r: 0, g: 0, b: 0 }, 1.0);
 
     // Focused pane: cursor_opacity = 1.0 (fully visible).
-    fill_frame_shaped(&input_focused, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+    fill_frame_shaped(
+        &input_focused,
+        &atlas,
+        &shaped,
+        &mut frame,
+        ScenePlacement {
+            origin: (0.0, 0.0),
+            cursor_opacity: 1.0,
+        },
+    );
     let cursor_after_focused = frame.cursors.len();
 
     // Unfocused pane: cursor_opacity = 0.0 (hidden).
@@ -3728,8 +3837,10 @@ fn cursor_only_in_focused_pane() {
         &atlas,
         &shaped,
         &mut frame,
-        (100.0, 0.0),
-        0.0,
+        ScenePlacement {
+            origin: (100.0, 0.0),
+            cursor_opacity: 0.0,
+        },
     );
     let cursor_after_unfocused = frame.cursors.len();
 
@@ -4505,7 +4616,16 @@ fn incremental_all_dirty_matches_full_rebuild() {
     // Frame 0: full rebuild — production save_terminal_tier publishes
     // empty tier into saved_tier (no-op the first time).
     let mut frame = PreparedFrame::new(ViewportSize::new(1, 1), Rgb { r: 0, g: 0, b: 0 }, 1.0);
-    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+    prepare_frame_shaped_into(
+        &input,
+        &atlas,
+        &shaped,
+        &mut frame,
+        ScenePlacement {
+            origin: (0.0, 0.0),
+            cursor_opacity: 1.0,
+        },
+    );
     assert!(
         !frame.was_incremental,
         "Frame 0 always full-rebuild (saved_tier empty before first prepare)"
@@ -4517,7 +4637,16 @@ fn incremental_all_dirty_matches_full_rebuild() {
     input.content.all_dirty = false;
     input.content.cursor.visible = false;
     input.content.damage.clear();
-    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+    prepare_frame_shaped_into(
+        &input,
+        &atlas,
+        &shaped,
+        &mut frame,
+        ScenePlacement {
+            origin: (0.0, 0.0),
+            cursor_opacity: 1.0,
+        },
+    );
     assert!(
         frame.was_incremental,
         "Frame 1 must dispatch to incremental (proves production fix populated saved_tier)"
@@ -4530,7 +4659,16 @@ fn incremental_all_dirty_matches_full_rebuild() {
     // Frame 2: all_dirty=true must dispatch back to full-rebuild EVEN
     // THOUGH saved_tier is populated.
     input.content.all_dirty = true;
-    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+    prepare_frame_shaped_into(
+        &input,
+        &atlas,
+        &shaped,
+        &mut frame,
+        ScenePlacement {
+            origin: (0.0, 0.0),
+            cursor_opacity: 1.0,
+        },
+    );
     assert!(
         !frame.was_incremental,
         "all_dirty=true must dispatch to full-rebuild even when saved_tier is populated \
@@ -4567,7 +4705,16 @@ fn incremental_no_dirty_rows_matches_cached() {
 
     // First pass: full rebuild populates row_ranges.
     let mut frame = PreparedFrame::new(ViewportSize::new(1, 1), Rgb { r: 0, g: 0, b: 0 }, 1.0);
-    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+    prepare_frame_shaped_into(
+        &input,
+        &atlas,
+        &shaped,
+        &mut frame,
+        ScenePlacement {
+            origin: (0.0, 0.0),
+            cursor_opacity: 1.0,
+        },
+    );
 
     // Capture the full rebuild output.
     let full_bg = frame.backgrounds.as_bytes().to_vec();
@@ -4577,7 +4724,16 @@ fn incremental_no_dirty_rows_matches_cached() {
     input.content.all_dirty = false;
     input.content.cursor.visible = false;
     input.content.damage.clear();
-    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+    prepare_frame_shaped_into(
+        &input,
+        &atlas,
+        &shaped,
+        &mut frame,
+        ScenePlacement {
+            origin: (0.0, 0.0),
+            cursor_opacity: 1.0,
+        },
+    );
 
     // Regression anchor: second prepare must hit the incremental path.
     // Without the unconditional pre-dispatch save_terminal_tier,
@@ -4625,9 +4781,11 @@ fn populate_test_chrome_and_overlay_buffers(frame: &mut PreparedFrame) {
     frame.ui_rects.push_ui_rect(
         rect,
         [1.0; 4],
-        [0.0; 4],
-        [0.0; 4],
-        [[0.0; 4]; 4],
+        UiRectBorder {
+            widths: [0.0; 4],
+            corner_radii: [0.0; 4],
+            colors: [[0.0; 4]; 4],
+        },
         [0.0, 0.0, 100.0, 100.0],
     );
     frame.ui_glyphs.push_rect(rect, bg, 1.0);
@@ -4636,9 +4794,11 @@ fn populate_test_chrome_and_overlay_buffers(frame: &mut PreparedFrame) {
     frame.overlay_rects.push_ui_rect(
         rect,
         [1.0; 4],
-        [0.0; 4],
-        [0.0; 4],
-        [[0.0; 4]; 4],
+        UiRectBorder {
+            widths: [0.0; 4],
+            corner_radii: [0.0; 4],
+            colors: [[0.0; 4]; 4],
+        },
         [0.0, 0.0, 100.0, 100.0],
     );
     frame.overlay_glyphs.push_rect(rect, bg, 1.0);
@@ -4713,7 +4873,16 @@ fn prepare_frame_incremental_with_stale_chrome_clears_ephemeral_tiers() {
 
     // Frame N: full rebuild populates row_ranges so Frame N+1 sees
     // populated saved_tier and dispatches to the incremental path.
-    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+    prepare_frame_shaped_into(
+        &input,
+        &atlas,
+        &shaped,
+        &mut frame,
+        ScenePlacement {
+            origin: (0.0, 0.0),
+            cursor_opacity: 1.0,
+        },
+    );
 
     // Simulate post-prepare chrome + overlay rendering.
     populate_test_chrome_and_overlay_buffers(&mut frame);
@@ -4735,7 +4904,16 @@ fn prepare_frame_incremental_with_stale_chrome_clears_ephemeral_tiers() {
         left: Column(0),
         right: Column(cols - 1),
     });
-    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+    prepare_frame_shaped_into(
+        &input,
+        &atlas,
+        &shaped,
+        &mut frame,
+        ScenePlacement {
+            origin: (0.0, 0.0),
+            cursor_opacity: 1.0,
+        },
+    );
 
     assert!(
         frame.was_incremental,
@@ -4777,7 +4955,16 @@ fn full_and_incremental_paths_both_clear_chrome_buffers() {
     let mut frame_full = PreparedFrame::new(ViewportSize::new(1, 1), Rgb { r: 0, g: 0, b: 0 }, 1.0);
     frame_full.ui_glyphs.push_rect(rect, bg, 1.0);
     frame_full.overlay_glyphs.push_rect(rect, bg, 1.0);
-    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame_full, (0.0, 0.0), 1.0);
+    prepare_frame_shaped_into(
+        &input,
+        &atlas,
+        &shaped,
+        &mut frame_full,
+        ScenePlacement {
+            origin: (0.0, 0.0),
+            cursor_opacity: 1.0,
+        },
+    );
     assert!(
         !frame_full.was_incremental,
         "first prepare without saved_tier MUST take the full-rebuild path"
@@ -4790,13 +4977,31 @@ fn full_and_incremental_paths_both_clear_chrome_buffers() {
     // Path B: incremental — Frame N seeds, the production fix's
     // pre-dispatch save_terminal_tier publishes saved_tier on Frame N+1.
     let mut frame_inc = PreparedFrame::new(ViewportSize::new(1, 1), Rgb { r: 0, g: 0, b: 0 }, 1.0);
-    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame_inc, (0.0, 0.0), 1.0);
+    prepare_frame_shaped_into(
+        &input,
+        &atlas,
+        &shaped,
+        &mut frame_inc,
+        ScenePlacement {
+            origin: (0.0, 0.0),
+            cursor_opacity: 1.0,
+        },
+    );
     frame_inc.ui_glyphs.push_rect(rect, bg, 1.0);
     frame_inc.overlay_glyphs.push_rect(rect, bg, 1.0);
     input.content.all_dirty = false;
     input.content.cursor.visible = false;
     input.content.damage.clear();
-    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame_inc, (0.0, 0.0), 1.0);
+    prepare_frame_shaped_into(
+        &input,
+        &atlas,
+        &shaped,
+        &mut frame_inc,
+        ScenePlacement {
+            origin: (0.0, 0.0),
+            cursor_opacity: 1.0,
+        },
+    );
     assert!(
         frame_inc.was_incremental,
         "second prepare with saved_tier MUST take the incremental path"
@@ -4821,7 +5026,16 @@ fn prepare_frame0_steady(
     let (shaped, ids) = shaped_multi_row(cols, rows, 10, size_q6);
     let atlas = key_atlas_with(&ids, size_q6);
     let mut frame = PreparedFrame::new(ViewportSize::new(1, 1), Rgb { r: 0, g: 0, b: 0 }, 1.0);
-    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+    prepare_frame_shaped_into(
+        &input,
+        &atlas,
+        &shaped,
+        &mut frame,
+        ScenePlacement {
+            origin: (0.0, 0.0),
+            cursor_opacity: 1.0,
+        },
+    );
     (frame, input, shaped, atlas)
 }
 
@@ -4845,7 +5059,16 @@ fn incremental_second_frame_after_full_rebuild_dispatches_incremental() {
     input.content.all_dirty = false;
     input.content.cursor.visible = false;
     input.content.damage.clear();
-    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+    prepare_frame_shaped_into(
+        &input,
+        &atlas,
+        &shaped,
+        &mut frame,
+        ScenePlacement {
+            origin: (0.0, 0.0),
+            cursor_opacity: 1.0,
+        },
+    );
 
     assert!(
         frame.was_incremental,
@@ -4872,10 +5095,28 @@ fn incremental_chained_frames_remain_incremental() {
     input.content.cursor.visible = false;
     input.content.damage.clear();
 
-    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+    prepare_frame_shaped_into(
+        &input,
+        &atlas,
+        &shaped,
+        &mut frame,
+        ScenePlacement {
+            origin: (0.0, 0.0),
+            cursor_opacity: 1.0,
+        },
+    );
     assert!(frame.was_incremental, "Frame 1 incremental");
 
-    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+    prepare_frame_shaped_into(
+        &input,
+        &atlas,
+        &shaped,
+        &mut frame,
+        ScenePlacement {
+            origin: (0.0, 0.0),
+            cursor_opacity: 1.0,
+        },
+    );
     assert!(frame.was_incremental, "Frame 2 incremental");
 }
 
@@ -4893,15 +5134,42 @@ fn incremental_all_dirty_recovery_resumes_incremental() {
     input.content.all_dirty = false;
     input.content.cursor.visible = false;
     input.content.damage.clear();
-    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+    prepare_frame_shaped_into(
+        &input,
+        &atlas,
+        &shaped,
+        &mut frame,
+        ScenePlacement {
+            origin: (0.0, 0.0),
+            cursor_opacity: 1.0,
+        },
+    );
     assert!(frame.was_incremental, "Frame 1 incremental");
 
     input.content.all_dirty = true;
-    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+    prepare_frame_shaped_into(
+        &input,
+        &atlas,
+        &shaped,
+        &mut frame,
+        ScenePlacement {
+            origin: (0.0, 0.0),
+            cursor_opacity: 1.0,
+        },
+    );
     assert!(!frame.was_incremental, "Frame 2 forced full-rebuild");
 
     input.content.all_dirty = false;
-    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+    prepare_frame_shaped_into(
+        &input,
+        &atlas,
+        &shaped,
+        &mut frame,
+        ScenePlacement {
+            origin: (0.0, 0.0),
+            cursor_opacity: 1.0,
+        },
+    );
     assert!(
         frame.was_incremental,
         "Frame 3 must re-enter incremental — all_dirty interruption is not sticky"
@@ -4939,12 +5207,30 @@ fn incremental_replay_clean_rows_matches_fresh_rebuild_output_across_all_buffers
     );
 
     let mut frame = PreparedFrame::new(ViewportSize::new(1, 1), Rgb { r: 0, g: 0, b: 0 }, 1.0);
-    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+    prepare_frame_shaped_into(
+        &input,
+        &atlas,
+        &shaped,
+        &mut frame,
+        ScenePlacement {
+            origin: (0.0, 0.0),
+            cursor_opacity: 1.0,
+        },
+    );
 
     input.content.all_dirty = false;
     input.content.cursor.visible = false;
     input.content.damage.clear();
-    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+    prepare_frame_shaped_into(
+        &input,
+        &atlas,
+        &shaped,
+        &mut frame,
+        ScenePlacement {
+            origin: (0.0, 0.0),
+            cursor_opacity: 1.0,
+        },
+    );
 
     assert!(
         frame.was_incremental,
@@ -4990,17 +5276,44 @@ fn incremental_dispatch_falls_back_on_viewport_change() {
 
     let mut frame = PreparedFrame::new(ViewportSize::new(32, 48), Rgb { r: 0, g: 0, b: 0 }, 1.0);
     input.viewport = ViewportSize::new(32, 48);
-    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+    prepare_frame_shaped_into(
+        &input,
+        &atlas,
+        &shaped,
+        &mut frame,
+        ScenePlacement {
+            origin: (0.0, 0.0),
+            cursor_opacity: 1.0,
+        },
+    );
     assert!(!frame.was_incremental, "Frame 0 full rebuild");
 
     input.content.all_dirty = false;
     input.content.cursor.visible = false;
     input.content.damage.clear();
-    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+    prepare_frame_shaped_into(
+        &input,
+        &atlas,
+        &shaped,
+        &mut frame,
+        ScenePlacement {
+            origin: (0.0, 0.0),
+            cursor_opacity: 1.0,
+        },
+    );
     assert!(frame.was_incremental, "Frame 1 reaches incremental path");
 
     input.viewport = ViewportSize::new(64, 48);
-    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+    prepare_frame_shaped_into(
+        &input,
+        &atlas,
+        &shaped,
+        &mut frame,
+        ScenePlacement {
+            origin: (0.0, 0.0),
+            cursor_opacity: 1.0,
+        },
+    );
     assert!(
         !frame.was_incremental,
         "Frame 2 viewport change must dispatch full-rebuild"
@@ -5051,13 +5364,31 @@ fn incremental_dispatch_falls_back_on_content_grid_change() {
     let atlas = key_atlas_with(&ids, size_q6);
 
     let mut frame = PreparedFrame::new(ViewportSize::new(1, 1), Rgb { r: 0, g: 0, b: 0 }, 1.0);
-    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+    prepare_frame_shaped_into(
+        &input,
+        &atlas,
+        &shaped,
+        &mut frame,
+        ScenePlacement {
+            origin: (0.0, 0.0),
+            cursor_opacity: 1.0,
+        },
+    );
     assert!(!frame.was_incremental, "Frame 0 full rebuild");
 
     input.content.all_dirty = false;
     input.content.cursor.visible = false;
     input.content.damage.clear();
-    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+    prepare_frame_shaped_into(
+        &input,
+        &atlas,
+        &shaped,
+        &mut frame,
+        ScenePlacement {
+            origin: (0.0, 0.0),
+            cursor_opacity: 1.0,
+        },
+    );
     assert!(frame.was_incremental, "Frame 1 incremental reachable");
 
     // Bump content_cols WITHOUT changing the pixel viewport. The
@@ -5066,7 +5397,16 @@ fn incremental_dispatch_falls_back_on_content_grid_change() {
     let prev_viewport = input.viewport;
     input.content_cols = cols + 1;
     assert_eq!(input.viewport, prev_viewport, "viewport unchanged");
-    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+    prepare_frame_shaped_into(
+        &input,
+        &atlas,
+        &shaped,
+        &mut frame,
+        ScenePlacement {
+            origin: (0.0, 0.0),
+            cursor_opacity: 1.0,
+        },
+    );
     assert!(
         !frame.was_incremental,
         "content_cols change must dispatch full-rebuild even when pixel viewport is unchanged"
@@ -5098,13 +5438,31 @@ fn incremental_dispatch_falls_back_on_cell_size_change() {
             strikeout_offset: 4.0,
         },
     );
-    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+    prepare_frame_shaped_into(
+        &input,
+        &atlas,
+        &shaped,
+        &mut frame,
+        ScenePlacement {
+            origin: (0.0, 0.0),
+            cursor_opacity: 1.0,
+        },
+    );
     assert!(!frame.was_incremental, "Frame 0 full rebuild");
 
     input.content.all_dirty = false;
     input.content.cursor.visible = false;
     input.content.damage.clear();
-    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+    prepare_frame_shaped_into(
+        &input,
+        &atlas,
+        &shaped,
+        &mut frame,
+        ScenePlacement {
+            origin: (0.0, 0.0),
+            cursor_opacity: 1.0,
+        },
+    );
     assert!(frame.was_incremental, "Frame 1 incremental reachable");
 
     input.cell_size = CellMetrics::new(
@@ -5117,7 +5475,16 @@ fn incremental_dispatch_falls_back_on_cell_size_change() {
             strikeout_offset: 8.0,
         },
     );
-    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+    prepare_frame_shaped_into(
+        &input,
+        &atlas,
+        &shaped,
+        &mut frame,
+        ScenePlacement {
+            origin: (0.0, 0.0),
+            cursor_opacity: 1.0,
+        },
+    );
     assert!(
         !frame.was_incremental,
         "cell_size change must dispatch full-rebuild (saved_tier rows are pixel-positioned for old metrics)"
@@ -5150,7 +5517,16 @@ fn incremental_dispatch_with_partial_damage_replays_clean_rows_across_all_buffer
     );
 
     let mut frame = PreparedFrame::new(ViewportSize::new(1, 1), Rgb { r: 0, g: 0, b: 0 }, 1.0);
-    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+    prepare_frame_shaped_into(
+        &input,
+        &atlas,
+        &shaped,
+        &mut frame,
+        ScenePlacement {
+            origin: (0.0, 0.0),
+            cursor_opacity: 1.0,
+        },
+    );
 
     input.content.all_dirty = false;
     input.content.cursor.visible = false;
@@ -5160,7 +5536,16 @@ fn incremental_dispatch_with_partial_damage_replays_clean_rows_across_all_buffer
         left: Column(0),
         right: Column(cols - 1),
     });
-    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+    prepare_frame_shaped_into(
+        &input,
+        &atlas,
+        &shaped,
+        &mut frame,
+        ScenePlacement {
+            origin: (0.0, 0.0),
+            cursor_opacity: 1.0,
+        },
+    );
 
     assert!(
         frame.was_incremental,
@@ -5203,12 +5588,30 @@ fn incremental_dispatch_invalidates_on_scrollback_shift() {
     input.content.all_dirty = false;
     input.content.cursor.visible = false;
     input.content.damage.clear();
-    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+    prepare_frame_shaped_into(
+        &input,
+        &atlas,
+        &shaped,
+        &mut frame,
+        ScenePlacement {
+            origin: (0.0, 0.0),
+            cursor_opacity: 1.0,
+        },
+    );
     assert!(frame.was_incremental, "Frame 1 incremental");
 
     // Caller signals scrollback shift via all_dirty=true.
     input.content.all_dirty = true;
-    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+    prepare_frame_shaped_into(
+        &input,
+        &atlas,
+        &shaped,
+        &mut frame,
+        ScenePlacement {
+            origin: (0.0, 0.0),
+            cursor_opacity: 1.0,
+        },
+    );
     assert!(
         !frame.was_incremental,
         "scrollback shift (all_dirty=true) dispatches full-rebuild"
@@ -5236,7 +5639,16 @@ fn incremental_dispatch_with_cursor_move_dirties_current_and_previous_cursor_row
     input.content.cursor.line = 0;
     input.content.cursor.column = Column(0);
     let mut frame = PreparedFrame::new(ViewportSize::new(1, 1), Rgb { r: 0, g: 0, b: 0 }, 1.0);
-    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+    prepare_frame_shaped_into(
+        &input,
+        &atlas,
+        &shaped,
+        &mut frame,
+        ScenePlacement {
+            origin: (0.0, 0.0),
+            cursor_opacity: 1.0,
+        },
+    );
     assert!(!frame.was_incremental, "Frame 0 full rebuild");
 
     // Frame 1: cursor moved to row 1 — both row 0 (prev) and row 1
@@ -5245,7 +5657,16 @@ fn incremental_dispatch_with_cursor_move_dirties_current_and_previous_cursor_row
     input.content.all_dirty = false;
     input.content.cursor.line = 1;
     input.content.damage.clear();
-    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+    prepare_frame_shaped_into(
+        &input,
+        &atlas,
+        &shaped,
+        &mut frame,
+        ScenePlacement {
+            origin: (0.0, 0.0),
+            cursor_opacity: 1.0,
+        },
+    );
     assert!(
         frame.was_incremental,
         "Frame 1 cursor move dispatches incremental"
@@ -5276,11 +5697,29 @@ fn incremental_dispatch_falls_back_on_fg_dim_change() {
     input.content.all_dirty = false;
     input.content.cursor.visible = false;
     input.content.damage.clear();
-    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+    prepare_frame_shaped_into(
+        &input,
+        &atlas,
+        &shaped,
+        &mut frame,
+        ScenePlacement {
+            origin: (0.0, 0.0),
+            cursor_opacity: 1.0,
+        },
+    );
     assert!(frame.was_incremental, "Frame 1 incremental reachable");
 
     input.fg_dim = 0.5;
-    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+    prepare_frame_shaped_into(
+        &input,
+        &atlas,
+        &shaped,
+        &mut frame,
+        ScenePlacement {
+            origin: (0.0, 0.0),
+            cursor_opacity: 1.0,
+        },
+    );
     assert!(
         !frame.was_incremental,
         "fg_dim change must dispatch full-rebuild"
@@ -5301,13 +5740,31 @@ fn incremental_dispatch_with_hover_change_stays_incremental_and_dirties_affected
     input.content.cursor.visible = false;
     input.content.damage.clear();
     input.hovered_cell = Some((0, 1));
-    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+    prepare_frame_shaped_into(
+        &input,
+        &atlas,
+        &shaped,
+        &mut frame,
+        ScenePlacement {
+            origin: (0.0, 0.0),
+            cursor_opacity: 1.0,
+        },
+    );
     assert!(frame.was_incremental, "Frame 1 incremental");
 
     // Move hover from row 0 to row 2. Must stay on incremental path,
     // must dirty rows 0 and 2 only.
     input.hovered_cell = Some((2, 1));
-    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+    prepare_frame_shaped_into(
+        &input,
+        &atlas,
+        &shaped,
+        &mut frame,
+        ScenePlacement {
+            origin: (0.0, 0.0),
+            cursor_opacity: 1.0,
+        },
+    );
     assert!(
         frame.was_incremental,
         "hover change must NOT trigger full-rebuild"
@@ -5330,11 +5787,29 @@ fn incremental_dispatch_falls_back_on_subpixel_positioning_toggle() {
     input.content.all_dirty = false;
     input.content.cursor.visible = false;
     input.content.damage.clear();
-    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+    prepare_frame_shaped_into(
+        &input,
+        &atlas,
+        &shaped,
+        &mut frame,
+        ScenePlacement {
+            origin: (0.0, 0.0),
+            cursor_opacity: 1.0,
+        },
+    );
     assert!(frame.was_incremental, "Frame 1 incremental");
 
     input.subpixel_positioning = !input.subpixel_positioning;
-    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+    prepare_frame_shaped_into(
+        &input,
+        &atlas,
+        &shaped,
+        &mut frame,
+        ScenePlacement {
+            origin: (0.0, 0.0),
+            cursor_opacity: 1.0,
+        },
+    );
     assert!(
         !frame.was_incremental,
         "subpixel_positioning toggle must dispatch full-rebuild"
@@ -5357,7 +5832,16 @@ fn incremental_dispatch_falls_back_on_search_state_change() {
     input.content.all_dirty = false;
     input.content.cursor.visible = false;
     input.content.damage.clear();
-    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+    prepare_frame_shaped_into(
+        &input,
+        &atlas,
+        &shaped,
+        &mut frame,
+        ScenePlacement {
+            origin: (0.0, 0.0),
+            cursor_opacity: 1.0,
+        },
+    );
     assert!(frame.was_incremental, "Frame 1 incremental");
 
     // Activate search with one match — different fingerprint from None.
@@ -5371,7 +5855,16 @@ fn incremental_dispatch_falls_back_on_search_state_change() {
         0,
         0,
     ));
-    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+    prepare_frame_shaped_into(
+        &input,
+        &atlas,
+        &shaped,
+        &mut frame,
+        ScenePlacement {
+            origin: (0.0, 0.0),
+            cursor_opacity: 1.0,
+        },
+    );
     assert!(
         !frame.was_incremental,
         "search activation must dispatch full-rebuild"
@@ -5391,11 +5884,29 @@ fn incremental_dispatch_falls_back_on_text_blink_opacity_change() {
     input.content.all_dirty = false;
     input.content.cursor.visible = false;
     input.content.damage.clear();
-    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+    prepare_frame_shaped_into(
+        &input,
+        &atlas,
+        &shaped,
+        &mut frame,
+        ScenePlacement {
+            origin: (0.0, 0.0),
+            cursor_opacity: 1.0,
+        },
+    );
     assert!(frame.was_incremental, "Frame 1 incremental reachable");
 
     input.text_blink_opacity = 0.5;
-    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+    prepare_frame_shaped_into(
+        &input,
+        &atlas,
+        &shaped,
+        &mut frame,
+        ScenePlacement {
+            origin: (0.0, 0.0),
+            cursor_opacity: 1.0,
+        },
+    );
     assert!(
         !frame.was_incremental,
         "text_blink_opacity change must dispatch full-rebuild"
@@ -5414,10 +5925,28 @@ fn incremental_dispatch_falls_back_on_origin_change() {
     input.content.all_dirty = false;
     input.content.cursor.visible = false;
     input.content.damage.clear();
-    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+    prepare_frame_shaped_into(
+        &input,
+        &atlas,
+        &shaped,
+        &mut frame,
+        ScenePlacement {
+            origin: (0.0, 0.0),
+            cursor_opacity: 1.0,
+        },
+    );
     assert!(frame.was_incremental, "Frame 1 incremental reachable");
 
-    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, -10.0), 1.0);
+    prepare_frame_shaped_into(
+        &input,
+        &atlas,
+        &shaped,
+        &mut frame,
+        ScenePlacement {
+            origin: (0.0, -10.0),
+            cursor_opacity: 1.0,
+        },
+    );
     assert!(
         !frame.was_incremental,
         "origin change must dispatch full-rebuild (saved_tier cells are pixel-positioned for prev origin)"
@@ -5627,8 +6156,8 @@ mod dirty_skip_traces {
     use oriterm_core::Column;
 
     use super::{
-        FrameInput, PreparedFrame, ViewportSize, key_atlas_with, prepare_frame_shaped_into,
-        shaped_multi_row,
+        FrameInput, PreparedFrame, ScenePlacement, ViewportSize, key_atlas_with,
+        prepare_frame_shaped_into, shaped_multi_row,
     };
     use oriterm_test_support::log_capture::{CapturedRecord, with_capture};
 
@@ -5664,7 +6193,16 @@ mod dirty_skip_traces {
         // `saved_tier` on the next prepare call, so callers using this
         // helper produce a frame whose Frame N+1 prepare automatically
         // takes the incremental path.
-        prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+        prepare_frame_shaped_into(
+            &input,
+            &atlas,
+            &shaped,
+            &mut frame,
+            ScenePlacement {
+                origin: (0.0, 0.0),
+                cursor_opacity: 1.0,
+            },
+        );
         (frame, input)
     }
 
@@ -5686,7 +6224,16 @@ mod dirty_skip_traces {
             });
             let (shaped, ids) = shaped_multi_row(cols, rows, 10, 768);
             let atlas = key_atlas_with(&ids, 768);
-            prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+            prepare_frame_shaped_into(
+                &input,
+                &atlas,
+                &shaped,
+                &mut frame,
+                ScenePlacement {
+                    origin: (0.0, 0.0),
+                    cursor_opacity: 1.0,
+                },
+            );
             assert!(frame.was_incremental, "second prepare must be incremental");
 
             let recs = matching_substr(&sink.records(), "build_dirty_set all_dirty=false");
@@ -5718,7 +6265,16 @@ mod dirty_skip_traces {
             input.content.all_dirty = true;
             let (shaped, ids) = shaped_multi_row(cols, rows, 10, 768);
             let atlas = key_atlas_with(&ids, 768);
-            prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+            prepare_frame_shaped_into(
+                &input,
+                &atlas,
+                &shaped,
+                &mut frame,
+                ScenePlacement {
+                    origin: (0.0, 0.0),
+                    cursor_opacity: 1.0,
+                },
+            );
             assert!(
                 !frame.was_incremental,
                 "all_dirty=true must take the full-rebuild path"
@@ -5749,7 +6305,16 @@ mod dirty_skip_traces {
             });
             let (shaped, ids) = shaped_multi_row(cols, rows, 10, 768);
             let atlas = key_atlas_with(&ids, 768);
-            prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+            prepare_frame_shaped_into(
+                &input,
+                &atlas,
+                &shaped,
+                &mut frame,
+                ScenePlacement {
+                    origin: (0.0, 0.0),
+                    cursor_opacity: 1.0,
+                },
+            );
             assert!(frame.was_incremental);
 
             let recs = matching_substr(&sink.records(), "process_incremental_cells");
@@ -5778,7 +6343,16 @@ mod dirty_skip_traces {
                 1.0,
             );
             // First prepare with no saved_tier → can_incremental=false → full rebuild.
-            prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
+            prepare_frame_shaped_into(
+                &input,
+                &atlas,
+                &shaped,
+                &mut frame,
+                ScenePlacement {
+                    origin: (0.0, 0.0),
+                    cursor_opacity: 1.0,
+                },
+            );
             assert!(
                 !frame.was_incremental,
                 "first prepare must take the full-rebuild path"

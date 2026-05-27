@@ -221,9 +221,11 @@ impl App {
             &mut self.mouse,
             &grid,
             &ctx,
-            pos,
-            self.modifiers,
-            existing_mode,
+            mouse_selection::PressEvent {
+                pos,
+                modifiers: self.modifiers,
+                existing_mode,
+            },
         ) else {
             return;
         };

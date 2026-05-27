@@ -16,7 +16,9 @@ use oriterm_ui::widgets::tab_bar::constants::TAB_BAR_HEIGHT;
 use oriterm_ui::widgets::tab_bar::widget::{TabEntry, TabIcon};
 
 use crate::font::shaper::CachedTextMeasurer;
-use crate::font::{FontCollection, FontSet, GlyphFormat, GlyphStyle, HintingMode, TextShapeCache};
+use crate::font::{
+    FontCollection, FontRasterConfig, FontSet, GlyphFormat, GlyphStyle, HintingMode, TextShapeCache,
+};
 use crate::gpu::pipelines::GpuPipelines;
 use crate::gpu::state::GpuState;
 use crate::gpu::window_renderer::WindowRenderer;

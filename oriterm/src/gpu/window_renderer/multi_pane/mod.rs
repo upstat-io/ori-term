@@ -13,6 +13,7 @@ use crate::gpu::pipelines::GpuPipelines;
 use crate::gpu::prepare;
 use crate::gpu::prepared_frame::PreparedFrame;
 use crate::gpu::state::GpuState;
+use crate::gpu::ui_rect_writer::UiRectBorder;
 use crate::session::{DividerLayout, Rect};
 
 use super::helpers::shape_frame;
@@ -23,6 +24,16 @@ const FLOATING_SHADOW_EXPAND_PX: f32 = 4.0;
 const FLOATING_SHADOW_ALPHA: f32 = 0.3;
 const FLOATING_BORDER_WIDTH_PX: f32 = 1.0;
 const FLOATING_BORDER_RADIUS_PX: f32 = 2.0;
+
+/// Per-pane prepare context for [`WindowRenderer::prepare_pane_into`]: GPU
+/// handles plus the pane's pixel origin and cursor opacity.
+#[derive(Clone, Copy)]
+pub(crate) struct PanePrepare<'a> {
+    pub gpu: &'a GpuState,
+    pub pipelines: &'a GpuPipelines,
+    pub origin: (f32, f32),
+    pub cursor_opacity: f32,
+}
 
 impl WindowRenderer {
     /// Begin a multi-pane frame: reset atlases, clear instance buffers, set viewport.
@@ -74,19 +85,18 @@ impl WindowRenderer {
     /// The caller merges cached frames into `self.prepared` after all panes are
     /// prepared. The `origin` offset positions this pane's cells at its
     /// layout-computed pixel rect.
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "pane prepare: input, GPU state, pipelines (image-texture layout for Phase D), origin, cursor opacity, target frame"
-    )]
     pub(crate) fn prepare_pane_into(
         &mut self,
         input: &FrameInput,
-        gpu: &GpuState,
-        pipelines: &GpuPipelines,
-        origin: (f32, f32),
-        cursor_opacity: f32,
+        prep: PanePrepare<'_>,
         target: &mut PreparedFrame,
     ) {
+        let PanePrepare {
+            gpu,
+            pipelines,
+            origin,
+            cursor_opacity,
+        } = prep;
         // Off-screen culling in the prepare phase uses the target frame's
         // viewport, so multi-pane cached frames must inherit the full window
         // viewport rather than the pane-local extraction viewport.
@@ -109,8 +119,10 @@ impl WindowRenderer {
             &bridge,
             &self.shaping.frame,
             target,
-            origin,
-            cursor_opacity,
+            prepare::ScenePlacement {
+                origin,
+                cursor_opacity,
+            },
         );
 
         // Phase D: Ensure image textures for this pane uploaded. Per-frame
@@ -183,10 +195,12 @@ impl WindowRenderer {
                 w: rect.width,
                 h: rect.height,
             },
-            [0.0, 0.0, 0.0, 0.0],           // transparent fill
-            [FLOATING_BORDER_WIDTH_PX; 4],  // uniform border width
-            [FLOATING_BORDER_RADIUS_PX; 4], // uniform corner radius
-            [border_color; 4],              // same color all sides
+            [0.0, 0.0, 0.0, 0.0], // transparent fill
+            UiRectBorder {
+                widths: [FLOATING_BORDER_WIDTH_PX; 4],
+                corner_radii: [FLOATING_BORDER_RADIUS_PX; 4],
+                colors: [border_color; 4],
+            },
             CLIP_UNCLIPPED,
         );
     }

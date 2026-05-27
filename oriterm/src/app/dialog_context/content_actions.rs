@@ -129,10 +129,12 @@ impl App {
                 settings_overlay::form_builder::build_settings_dialog(
                     pending_config,
                     &ui_theme,
-                    *active_page,
-                    ctx.scale_factor.factor(),
-                    f64::from(pending_config.window.effective_opacity()),
-                    None,
+                    settings_overlay::form_builder::SettingsDialogParams {
+                        active_page: *active_page,
+                        scale_factor: ctx.scale_factor.factor(),
+                        opacity: f64::from(pending_config.window.effective_opacity()),
+                        update_info: None,
+                    },
                 );
             crate::app::widget_pipeline::deregister_widget_tree(
                 &mut **panel,

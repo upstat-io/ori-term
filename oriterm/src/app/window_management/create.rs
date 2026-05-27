@@ -49,7 +49,16 @@ impl App {
                 0.0
             };
             let wl = super::super::chrome::compute_window_layout(
-                w, h, &cell, scale, hidden, tb_h, sb_h, 0.0,
+                w,
+                h,
+                &cell,
+                scale,
+                super::super::chrome::ChromeLayout {
+                    tab_bar_hidden: hidden,
+                    tab_bar_height: tb_h,
+                    status_bar_height: sb_h,
+                    border_inset: 0.0,
+                },
             );
             let cell_w = cell.width.round().max(1.0) as u16;
             let cell_h = cell.height.round().max(1.0) as u16;
@@ -202,7 +211,16 @@ impl App {
             0.0
         };
         let wl = super::super::chrome::compute_window_layout(
-            w, h, &cell, scale, hidden, tb_h, sb_h, 0.0,
+            w,
+            h,
+            &cell,
+            scale,
+            super::super::chrome::ChromeLayout {
+                tab_bar_hidden: hidden,
+                tab_bar_height: tb_h,
+                status_bar_height: sb_h,
+                border_inset: 0.0,
+            },
         );
 
         // Terminal grid widget.

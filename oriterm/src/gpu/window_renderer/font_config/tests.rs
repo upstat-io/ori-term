@@ -5,7 +5,7 @@
 use super::WindowRenderer;
 use crate::font::collection::{FontCollection, FontSet};
 use crate::font::ui_font_sizes::{self, UiFontSizes};
-use crate::font::{GlyphFormat, HintingMode};
+use crate::font::{FontRasterConfig, GlyphFormat, HintingMode};
 use crate::gpu::GpuPipelines;
 use crate::gpu::state::GpuState;
 use crate::gpu::visual_regression::{HeadlessEnvConfig, UiFontConfig, headless_env_with};

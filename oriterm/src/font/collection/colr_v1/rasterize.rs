@@ -153,9 +153,11 @@ pub(crate) fn try_rasterize_colr_v1(
     // Composite paint commands via tiny-skia.
     super::compose::composite_commands(
         &colr.commands,
-        &mut bitmap,
-        width,
-        height,
+        super::compose::Canvas {
+            bitmap: &mut bitmap,
+            width,
+            height,
+        },
         clip,
         fd,
         size_px,

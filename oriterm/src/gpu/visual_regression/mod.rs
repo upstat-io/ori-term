@@ -52,7 +52,7 @@ use super::pipelines::GpuPipelines;
 use super::state::{AdapterPreference, GpuState};
 use super::window_renderer::WindowRenderer;
 use crate::font::ui_font_sizes::{PRELOAD_SIZES, UiFontSizes};
-use crate::font::{FontCollection, FontSet, GlyphFormat, HintingMode};
+use crate::font::{FontCollection, FontRasterConfig, FontSet, GlyphFormat, HintingMode};
 
 /// Per-channel tolerance for pixel comparison. Accounts for anti-aliasing
 /// differences and minor rasterization variance across GPU drivers.
@@ -293,7 +293,16 @@ pub(super) fn render_to_pixels_with_origin(
     let w = input.viewport.width;
     let h = input.viewport.height;
     let target = gpu.create_render_target(w, h);
-    renderer.prepare(input, gpu, pipelines, origin, 1.0, true);
+    renderer.prepare(
+        input,
+        gpu,
+        pipelines,
+        crate::gpu::PrepareRequest {
+            origin: origin,
+            cursor_opacity: 1.0,
+            content_changed: true,
+        },
+    );
     renderer.render_frame(gpu, pipelines, target.view());
     gpu.read_render_target(&target)
         .expect("pixel readback should succeed")
@@ -314,7 +323,16 @@ pub(super) fn render_to_pixels_with_opacity(
     let w = input.viewport.width;
     let h = input.viewport.height;
     let target = gpu.create_render_target(w, h);
-    renderer.prepare(input, gpu, pipelines, (0.0, 0.0), cursor_opacity, true);
+    renderer.prepare(
+        input,
+        gpu,
+        pipelines,
+        crate::gpu::PrepareRequest {
+            origin: (0.0, 0.0),
+            cursor_opacity: cursor_opacity,
+            content_changed: true,
+        },
+    );
     renderer.render_frame(gpu, pipelines, target.view());
     gpu.read_render_target(&target)
         .expect("pixel readback should succeed")
