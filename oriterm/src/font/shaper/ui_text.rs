@@ -7,7 +7,7 @@
 
 use std::borrow::Cow;
 
-use oriterm_ui::text::{ShapedGlyph, ShapedText, TextOverflow, TextStyle};
+use oriterm_ui::text::{ShapedGlyph, ShapedMetrics, ShapedText, TextOverflow, TextStyle};
 
 use super::ShapeFaces;
 use crate::font::collection::FontCollection;
@@ -247,9 +247,11 @@ fn shape_to_shaped_text(
 
     ShapedText::new(
         glyphs,
-        width,
-        metrics.height,
-        metrics.baseline,
+        ShapedMetrics {
+            width,
+            height: metrics.height,
+            baseline: metrics.baseline,
+        },
         size_q6,
         requested_weight,
     )

@@ -11,10 +11,11 @@ mod mouse;
 use std::time::Instant;
 
 use oriterm_ui::geometry::{Point, Rect};
-use oriterm_ui::input::dispatch::tree::deliver_event_to_tree;
+use oriterm_ui::input::dispatch::tree::{TreeDispatchCtx, deliver_event_to_tree};
 use oriterm_ui::input::{InputEvent, MouseEvent, MouseEventKind};
 use oriterm_ui::overlay::OverlayEventResult;
 use oriterm_ui::widgets::WidgetAction;
+use oriterm_ui::window_root::OverlayEventCtx;
 use winit::event::{ElementState, WindowEvent};
 use winit::keyboard::{Key, NamedKey};
 use winit::window::WindowId;
@@ -212,9 +213,15 @@ impl App {
             modifiers: winit_mods_to_ui(self.modifiers),
         };
         let now = Instant::now();
-        let result = ctx
-            .root
-            .process_overlay_key_event(ui_event, &measurer, &ui_theme, None, now);
+        let result = ctx.root.process_overlay_key_event(
+            ui_event,
+            OverlayEventCtx {
+                measurer: &measurer,
+                theme: &ui_theme,
+                focused_widget: None,
+                now,
+            },
+        );
         match &result {
             OverlayEventResult::Delivered { .. } | OverlayEventResult::Dismissed(_) => {
                 ctx.request_urgent_redraw();
@@ -334,18 +341,21 @@ impl App {
         let input_event = InputEvent::from_mouse_event(&move_event);
         let active = ctx.root.interaction().active_widget();
         let now = Instant::now();
+        #[cfg(debug_assertions)]
+        let dispatch_layout_ids = Some(&layout_ids);
+        #[cfg(not(debug_assertions))]
+        let dispatch_layout_ids = None;
         let result = deliver_event_to_tree(
             ctx.content.content_widget_mut(),
             &input_event,
-            content_bounds,
-            Some(&layout_node),
-            active,
-            &[],
-            now,
-            #[cfg(debug_assertions)]
-            Some(&layout_ids),
-            #[cfg(not(debug_assertions))]
-            None,
+            TreeDispatchCtx {
+                bounds: content_bounds,
+                layout_node: Some(&layout_node),
+                active_widget: active,
+                focus_path: &[],
+                now,
+                layout_ids: dispatch_layout_ids,
+            },
         );
         // Apply interaction state changes (active capture for scrub drag) and mark dirty.
         let changed = {

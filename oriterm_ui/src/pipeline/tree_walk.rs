@@ -24,6 +24,65 @@ use crate::widget_id::WidgetId;
 use crate::widgets::Widget;
 use crate::widgets::contexts::{AnimCtx, LifecycleCtx, PrepaintCtx};
 
+/// Mutable per-frame context for the pre-paint mutation walk.
+///
+/// Bundles the shared state threaded through [`prepare_widget_tree`] and
+/// [`prepare_widget_frame`]: interaction state, the optional invalidation
+/// tracker, pending lifecycle/animation events, frame-request flags, and the
+/// frame timestamp. Reborrow with [`PrepareCtx::reborrow`] before recursion.
+pub struct PrepareCtx<'a, 'e> {
+    /// Per-widget interaction state (mutated as lifecycle events deliver).
+    pub interaction: &'a mut InteractionManager,
+    /// Optional dirty tracker; `Some` enables selective subtree skipping.
+    pub tracker: Option<&'a mut InvalidationTracker>,
+    /// Lifecycle events to deliver to matching widgets this frame.
+    pub lifecycle_events: &'e [LifecycleEvent],
+    /// Animation frame event, delivered to widgets that requested one.
+    pub anim_event: Option<&'e AnimFrameEvent>,
+    /// Frame-request flags set when widgets need another animation frame.
+    pub frame_requests: Option<&'e FrameRequestFlags>,
+    /// Current frame timestamp.
+    pub now: Instant,
+}
+
+impl<'e> PrepareCtx<'_, 'e> {
+    /// Reborrows the mutable members for a nested (recursive) walk.
+    ///
+    /// Produces a fresh context whose `interaction`/`tracker` borrows live
+    /// only for the duration of the child call, leaving `self` usable after.
+    pub fn reborrow(&mut self) -> PrepareCtx<'_, 'e> {
+        PrepareCtx {
+            interaction: self.interaction,
+            tracker: self.tracker.as_deref_mut(),
+            lifecycle_events: self.lifecycle_events,
+            anim_event: self.anim_event,
+            frame_requests: self.frame_requests,
+            now: self.now,
+        }
+    }
+}
+
+/// Immutable per-frame context for the prepaint walk.
+///
+/// Bundles the post-layout read-only state threaded through
+/// [`prepaint_widget_tree`]: resolved per-widget bounds, interaction state,
+/// theme, frame-request flags, the optional dirty tracker, and the timestamp.
+#[derive(Clone, Copy)]
+pub struct PrepaintWalkCtx<'a> {
+    /// Resolved `widget_id -> rect` map from layout.
+    pub bounds_map: &'a HashMap<WidgetId, Rect>,
+    /// Optional interaction state for visual-state resolution.
+    pub interaction: Option<&'a InteractionManager>,
+    /// Active UI theme.
+    pub theme: &'a UiTheme,
+    /// Frame-request flags set when widgets need another animation frame.
+    pub frame_requests: Option<&'a FrameRequestFlags>,
+    /// Optional dirty tracker; `Some` enables selective subtree skipping.
+    pub tracker: Option<&'a InvalidationTracker>,
+    /// Current frame timestamp.
+    pub now: Instant,
+}
+
 /// Runs the pre-paint mutation phase for a widget and all its descendants.
 ///
 /// Walks the widget tree depth-first via `Widget::for_each_child_mut`,
@@ -33,25 +92,13 @@ use crate::widgets::contexts::{AnimCtx, LifecycleCtx, PrepaintCtx};
 /// When `tracker` is `Some`, animating widgets are marked `Prepaint`-dirty
 /// for the next frame. The tracker is also used by selective walks (Step 5)
 /// to skip clean subtrees.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "app-facing pre-paint pipeline entry — signature fixed by oriterm callers (dialog_rendering, redraw draw_helpers)"
-)]
-pub fn prepare_widget_tree(
-    widget: &mut dyn Widget,
-    interaction: &mut InteractionManager,
-    mut tracker: Option<&mut InvalidationTracker>,
-    lifecycle_events: &[LifecycleEvent],
-    anim_event: Option<&AnimFrameEvent>,
-    frame_requests: Option<&FrameRequestFlags>,
-    now: Instant,
-) {
+pub fn prepare_widget_tree(widget: &mut dyn Widget, mut ctx: PrepareCtx<'_, '_>) {
     // Pre-mark lifecycle event targets so selective walks visit them.
     // Idempotent: re-marking on recursive calls is a no-op (early-stop).
-    if let Some(ref mut trk) = tracker {
-        if !trk.needs_full_rebuild() && !lifecycle_events.is_empty() {
-            let parent_map = interaction.parent_map_ref();
-            for event in lifecycle_events {
+    if let Some(ref mut trk) = ctx.tracker {
+        if !trk.needs_full_rebuild() && !ctx.lifecycle_events.is_empty() {
+            let parent_map = ctx.interaction.parent_map_ref();
+            for event in ctx.lifecycle_events {
                 trk.mark(event.widget_id(), DirtyKind::Prepaint, parent_map);
             }
         }
@@ -59,15 +106,7 @@ pub fn prepare_widget_tree(
 
     #[cfg(debug_assertions)]
     let id = widget.id();
-    prepare_widget_frame(
-        widget,
-        interaction,
-        tracker.as_deref_mut(),
-        lifecycle_events,
-        anim_event,
-        frame_requests,
-        now,
-    );
+    prepare_widget_frame(widget, ctx.reborrow());
     #[cfg(debug_assertions)]
     let mut visited = HashSet::new();
     widget.for_each_child_mut(&mut |child| {
@@ -85,7 +124,7 @@ pub fn prepare_widget_tree(
         // Selective walk: skip children whose subtrees are all clean.
         // When tracker is Some and full_invalidation is false, check if
         // this child or any descendant is dirty. If not, skip entirely.
-        let skip = if let Some(ref trk) = tracker {
+        let skip = if let Some(ref trk) = ctx.tracker {
             !trk.needs_full_rebuild() && !trk.has_dirty_descendant(child.id())
         } else {
             false
@@ -94,15 +133,7 @@ pub fn prepare_widget_tree(
             return;
         }
 
-        prepare_widget_tree(
-            child,
-            interaction,
-            tracker.as_deref_mut(),
-            lifecycle_events,
-            anim_event,
-            frame_requests,
-            now,
-        );
+        prepare_widget_tree(child, ctx.reborrow());
     });
 }
 
@@ -117,19 +148,15 @@ pub fn prepare_widget_tree(
 /// 2. Deliver animation frame event if the widget requested one.
 /// 3. Update visual state animator from interaction state. If the animator
 ///    is still animating, mark the widget `Prepaint`-dirty for the next frame.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "app-facing pre-paint pipeline entry — signature fixed by oriterm callers (widget_pipeline)"
-)]
-pub fn prepare_widget_frame(
-    widget: &mut dyn Widget,
-    interaction: &mut InteractionManager,
-    mut tracker: Option<&mut InvalidationTracker>,
-    lifecycle_events: &[LifecycleEvent],
-    anim_event: Option<&AnimFrameEvent>,
-    frame_requests: Option<&FrameRequestFlags>,
-    now: Instant,
-) {
+pub fn prepare_widget_frame(widget: &mut dyn Widget, ctx: PrepareCtx<'_, '_>) {
+    let PrepareCtx {
+        interaction,
+        mut tracker,
+        lifecycle_events,
+        anim_event,
+        frame_requests,
+        now,
+    } = ctx;
     let id = widget.id();
 
     // Pre-scan: mark WidgetAdded delivery before assertions run, so that
@@ -211,38 +238,22 @@ pub fn prepare_widget_frame(
 /// calling `widget.prepaint()` on each node with the resolved bounds from
 /// the layout map. Must be called AFTER `prepare_widget_tree` and layout,
 /// BEFORE `build_scene` (paint).
-#[expect(
-    clippy::too_many_arguments,
-    reason = "app-facing prepaint pipeline entry — signature fixed by oriterm callers (dialog_rendering, redraw draw_helpers)"
-)]
-#[expect(
-    clippy::implicit_hasher,
-    reason = "always default hasher, matches collect_layout_widget_ids pattern"
-)]
-pub fn prepaint_widget_tree(
-    widget: &mut dyn Widget,
-    bounds_map: &HashMap<WidgetId, Rect>,
-    interaction: Option<&InteractionManager>,
-    theme: &UiTheme,
-    now: Instant,
-    frame_requests: Option<&FrameRequestFlags>,
-    tracker: Option<&InvalidationTracker>,
-) {
+pub fn prepaint_widget_tree(widget: &mut dyn Widget, ctx: PrepaintWalkCtx<'_>) {
     let id = widget.id();
-    let bounds = bounds_map.get(&id).copied().unwrap_or_default();
-    let mut ctx = PrepaintCtx {
+    let bounds = ctx.bounds_map.get(&id).copied().unwrap_or_default();
+    let mut pctx = PrepaintCtx {
         widget_id: id,
         bounds,
-        interaction,
-        theme,
-        now,
-        frame_requests,
+        interaction: ctx.interaction,
+        theme: ctx.theme,
+        now: ctx.now,
+        frame_requests: ctx.frame_requests,
     };
-    widget.prepaint(&mut ctx);
+    widget.prepaint(&mut pctx);
 
     widget.for_each_child_mut(&mut |child| {
         // Selective walk: skip children whose subtrees have no prepaint-dirty widgets.
-        let skip = if let Some(trk) = tracker {
+        let skip = if let Some(trk) = ctx.tracker {
             !trk.needs_full_rebuild() && !trk.has_dirty_descendant(child.id())
         } else {
             false
@@ -251,15 +262,7 @@ pub fn prepaint_widget_tree(
             return;
         }
 
-        prepaint_widget_tree(
-            child,
-            bounds_map,
-            interaction,
-            theme,
-            now,
-            frame_requests,
-            tracker,
-        );
+        prepaint_widget_tree(child, ctx);
     });
 }
 

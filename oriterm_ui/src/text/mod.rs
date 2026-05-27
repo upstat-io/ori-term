@@ -262,6 +262,20 @@ pub struct ShapedGlyph {
     pub y_offset: f32,
 }
 
+/// Layout metrics for a shaped text block.
+///
+/// Groups the geometric dimensions passed to [`ShapedText::new`]: advance
+/// width, line height, and baseline offset (all in pixels).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ShapedMetrics {
+    /// Total advance width in pixels.
+    pub width: f32,
+    /// Line height in pixels.
+    pub height: f32,
+    /// Baseline offset from the top of the text block in pixels.
+    pub baseline: f32,
+}
+
 /// Pre-shaped text block ready for rendering.
 ///
 /// Contains the shaped glyph sequence and layout metrics. Produced by the
@@ -306,23 +320,17 @@ pub struct ShapedText {
 
 impl ShapedText {
     /// Create a shaped text block from pre-computed data.
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "data constructor: params map 1:1 to public fields; signature consumed by oriterm font shaper + scene_convert (out-of-crate callers)"
-    )]
     pub fn new(
         glyphs: Vec<ShapedGlyph>,
-        width: f32,
-        height: f32,
-        baseline: f32,
+        metrics: ShapedMetrics,
         size_q6: u32,
         weight: u16,
     ) -> Self {
         Self {
             glyphs,
-            width,
-            height,
-            baseline,
+            width: metrics.width,
+            height: metrics.height,
+            baseline: metrics.baseline,
             size_q6,
             weight,
             font_source: FontSource::Ui,

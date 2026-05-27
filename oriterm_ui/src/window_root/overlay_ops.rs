@@ -10,10 +10,29 @@ use crate::animation::Easing;
 use crate::color::Color;
 use crate::geometry::Rect;
 use crate::overlay::{CompositorHandles, FlashSpec, OverlayId, Placement};
+use crate::theme::UiTheme;
 use crate::widget_id::WidgetId;
-use crate::widgets::{LayoutCtx, Widget};
+use crate::widgets::{LayoutCtx, TextMeasurer, Widget};
 
 use super::WindowRoot;
+
+/// Per-event environment for overlay mouse/key routing.
+///
+/// Bundles the shared context threaded through
+/// [`WindowRoot::process_overlay_mouse_event`] and
+/// [`WindowRoot::process_overlay_key_event`]: the text measurer, the active
+/// theme, the currently focused widget, and the frame timestamp.
+#[derive(Clone, Copy)]
+pub struct OverlayEventCtx<'a> {
+    /// Text measurer for overlay layout during dispatch.
+    pub measurer: &'a dyn TextMeasurer,
+    /// Active UI theme.
+    pub theme: &'a UiTheme,
+    /// Currently focused widget, if any.
+    pub focused_widget: Option<WidgetId>,
+    /// Current frame timestamp.
+    pub now: Instant,
+}
 
 impl WindowRoot {
     /// Pushes a popup overlay at the given anchor with the specified placement.
@@ -130,26 +149,22 @@ impl WindowRoot {
     /// Routes a mouse event through the overlay manager.
     ///
     /// Returns `PassThrough` if no overlay consumed the event.
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "app-facing overlay entry point — signature fixed by oriterm callers (mouse_input, dialog_context)"
-    )]
     pub fn process_overlay_mouse_event(
         &mut self,
         event: &crate::input::MouseEvent,
-        measurer: &dyn crate::widgets::TextMeasurer,
-        theme: &crate::theme::UiTheme,
-        _focused_widget: Option<WidgetId>,
-        now: Instant,
+        ctx: OverlayEventCtx<'_>,
     ) -> crate::overlay::OverlayEventResult {
         self.overlays.process_mouse_event(
             event,
-            &LayoutCtx { measurer, theme },
+            &LayoutCtx {
+                measurer: ctx.measurer,
+                theme: ctx.theme,
+            },
             &mut CompositorHandles {
                 tree: &mut self.layer_tree,
                 animator: &mut self.layer_animator,
             },
-            now,
+            ctx.now,
         )
     }
 
@@ -161,17 +176,10 @@ impl WindowRoot {
     /// binding matches. Falls through to the legacy `on_input` pipeline +
     /// inline-Escape backstop on a keymap miss. Returns `PassThrough` if
     /// no overlay consumed the event.
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "app-facing overlay entry point — signature fixed by oriterm callers (keyboard_input, dialog_context)"
-    )]
     pub fn process_overlay_key_event(
         &mut self,
         event: crate::input::KeyEvent,
-        _measurer: &dyn crate::widgets::TextMeasurer,
-        _theme: &crate::theme::UiTheme,
-        _focused_widget: Option<WidgetId>,
-        now: Instant,
+        ctx: OverlayEventCtx<'_>,
     ) -> crate::overlay::OverlayEventResult {
         self.overlays.process_key_event_with_keymap(
             event,
@@ -180,7 +188,7 @@ impl WindowRoot {
                 tree: &mut self.layer_tree,
                 animator: &mut self.layer_animator,
             },
-            now,
+            ctx.now,
         )
     }
 
@@ -190,11 +198,7 @@ impl WindowRoot {
     }
 
     /// Computes layout for all overlay widgets.
-    pub fn layout_overlays(
-        &mut self,
-        measurer: &dyn crate::widgets::TextMeasurer,
-        theme: &crate::theme::UiTheme,
-    ) {
+    pub fn layout_overlays(&mut self, measurer: &dyn TextMeasurer, theme: &UiTheme) {
         self.overlays.layout_overlays(measurer, theme);
     }
 

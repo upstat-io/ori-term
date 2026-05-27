@@ -16,7 +16,9 @@ use oriterm_ui::pipeline::collect_layout_bounds;
 use oriterm_ui::widgets::{DrawCtx, LayoutCtx, Widget};
 
 use super::App;
-use super::widget_pipeline::{prepaint_widget_tree, prepare_widget_tree};
+use super::widget_pipeline::{
+    PrepaintWalkCtx, PrepareCtx, prepaint_widget_tree, prepare_widget_tree,
+};
 use crate::font::CachedTextMeasurer;
 
 /// Dialog viewport dimensions for content composition: scale factor and
@@ -184,12 +186,14 @@ impl App {
                 };
                 prepare_widget_tree(
                     ctx.content.content_widget_mut(),
-                    interaction,
-                    tracker_content,
-                    &lifecycle_events,
-                    None,
-                    Some(flags),
-                    now,
+                    PrepareCtx {
+                        interaction,
+                        tracker: tracker_content,
+                        lifecycle_events: &lifecycle_events,
+                        anim_event: None,
+                        frame_requests: Some(flags),
+                        now,
+                    },
                 );
             }
             // Prepaint: resolve visual state into widget fields.
@@ -213,12 +217,14 @@ impl App {
             };
             prepaint_widget_tree(
                 ctx.content.content_widget_mut(),
-                &prepaint_bounds,
-                Some(interaction),
-                ui_theme,
-                now,
-                Some(flags),
-                invalidation_tracker,
+                PrepaintWalkCtx {
+                    bounds_map: &prepaint_bounds,
+                    interaction: Some(interaction),
+                    theme: ui_theme,
+                    frame_requests: Some(flags),
+                    tracker: invalidation_tracker,
+                    now,
+                },
             );
         }
 

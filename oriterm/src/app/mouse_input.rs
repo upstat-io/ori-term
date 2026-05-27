@@ -11,6 +11,7 @@ use winit::window::WindowId;
 use oriterm_ui::geometry::{Point, Rect};
 use oriterm_ui::overlay::Placement;
 use oriterm_ui::widgets::menu::{MenuStyle, MenuWidget};
+use oriterm_ui::window_root::OverlayEventCtx;
 
 use super::{App, context_menu, mouse_report, mouse_selection};
 use crate::gpu::WindowRenderer;
@@ -66,8 +67,15 @@ impl App {
                 scale,
             );
             let measurer: &dyn oriterm_ui::widgets::TextMeasurer = &measurer;
-            ctx.root
-                .process_overlay_mouse_event(ui_event, measurer, &self.ui_theme, None, now)
+            ctx.root.process_overlay_mouse_event(
+                ui_event,
+                OverlayEventCtx {
+                    measurer,
+                    theme: &self.ui_theme,
+                    focused_widget: None,
+                    now,
+                },
+            )
         };
         self.handle_overlay_result(result);
     }

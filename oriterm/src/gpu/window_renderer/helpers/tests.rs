@@ -76,7 +76,7 @@ fn grid_raster_keys_enabled_subpx_nonzero() {
 fn scene_raster_keys_disabled_subpx_all_zero() {
     use oriterm_ui::draw::Scene;
     use oriterm_ui::geometry::Point;
-    use oriterm_ui::text::ShapedText;
+    use oriterm_ui::text::{ShapedMetrics, ShapedText};
 
     let mut scene = Scene::new();
     let glyphs = vec![
@@ -98,7 +98,16 @@ fn scene_raster_keys_disabled_subpx_all_zero() {
         },
     ];
     let width: f32 = glyphs.iter().map(|g| g.x_advance).sum();
-    let st = ShapedText::new(glyphs, width, 14.0, 12.0, 768, 400);
+    let st = ShapedText::new(
+        glyphs,
+        ShapedMetrics {
+            width,
+            height: 14.0,
+            baseline: 12.0,
+        },
+        768,
+        400,
+    );
     scene.push_text(Point::new(10.0, 20.0), st, oriterm_ui::color::Color::WHITE);
 
     let mut keys = Vec::new();

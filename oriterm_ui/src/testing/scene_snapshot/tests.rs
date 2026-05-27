@@ -4,7 +4,7 @@ use crate::color::Color;
 use crate::draw::scene::ContentMask;
 use crate::draw::{BorderSides, LinePrimitive, Quad, RectStyle, Scene, TextRun};
 use crate::geometry::Point;
-use crate::text::ShapedText;
+use crate::text::{ShapedMetrics, ShapedText};
 
 use super::{color_hex, scene_to_snapshot};
 
@@ -102,7 +102,17 @@ fn quad_with_border() {
 #[test]
 fn text_run_with_source() {
     let mut scene = Scene::new();
-    let shaped = ShapedText::new(Vec::new(), 40.0, 16.0, 12.0, 0, 400).with_source("Tab 1");
+    let shaped = ShapedText::new(
+        Vec::new(),
+        ShapedMetrics {
+            width: 40.0,
+            height: 16.0,
+            baseline: 12.0,
+        },
+        0,
+        400,
+    )
+    .with_source("Tab 1");
     scene.text_runs.push(TextRun {
         position: Point::new(14.0, 10.0),
         shaped,
@@ -127,9 +137,11 @@ fn text_run_without_source_shows_glyph_count() {
             x_offset: 0.0,
             y_offset: 0.0,
         }],
-        8.0,
-        16.0,
-        12.0,
+        ShapedMetrics {
+            width: 8.0,
+            height: 16.0,
+            baseline: 12.0,
+        },
         0,
         400,
     );
@@ -148,7 +160,17 @@ fn text_run_without_source_shows_glyph_count() {
 #[test]
 fn text_run_bold_shows_weight() {
     let mut scene = Scene::new();
-    let shaped = ShapedText::new(Vec::new(), 40.0, 16.0, 12.0, 0, 700).with_source("Bold");
+    let shaped = ShapedText::new(
+        Vec::new(),
+        ShapedMetrics {
+            width: 40.0,
+            height: 16.0,
+            baseline: 12.0,
+        },
+        0,
+        700,
+    )
+    .with_source("Bold");
     scene.text_runs.push(TextRun {
         position: Point::new(0.0, 0.0),
         shaped,

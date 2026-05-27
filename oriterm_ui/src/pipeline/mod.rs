@@ -71,32 +71,39 @@ impl DispatchResult {
     }
 }
 
+/// Inputs for a single delivery-loop step.
+///
+/// Bundles the per-step dispatch context threaded through [`dispatch_step`]:
+/// the input event, the delivery action (widget ID, phase, bounds), the
+/// per-widget interaction state, and the frame timestamp.
+#[derive(Clone, Copy)]
+pub struct DispatchStepCtx<'a> {
+    /// The input event being delivered.
+    pub event: &'a InputEvent,
+    /// The delivery action (widget ID, phase, bounds).
+    pub action: &'a DeliveryAction,
+    /// Per-widget interaction state from `InteractionManager`.
+    pub interaction: &'a InteractionState,
+    /// Current frame timestamp.
+    pub now: Instant,
+}
+
 /// Runs one step of the delivery loop for a single widget.
 ///
 /// Dispatches the event to the widget's controllers at the given phase,
 /// merges the output into `result`, and returns `true` if the event is
 /// now handled (caller should stop iterating).
-///
-/// # Arguments
-///
-/// - `result` — accumulator for the full delivery loop.
-/// - `event` — the input event being delivered.
-/// - `action` — the delivery action (widget ID, phase, bounds).
-/// - `widget` — the target widget (provides controllers).
-/// - `interaction` — per-widget interaction state from `InteractionManager`.
-/// - `now` — current frame timestamp.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "app-facing delivery primitive — signature fixed by oriterm widget_pipeline callers"
-)]
 pub fn dispatch_step(
     result: &mut DispatchResult,
-    event: &InputEvent,
-    action: &DeliveryAction,
     widget: &mut dyn Widget,
-    interaction: &InteractionState,
-    now: Instant,
+    ctx: DispatchStepCtx<'_>,
 ) -> bool {
+    let DispatchStepCtx {
+        event,
+        action,
+        interaction,
+        now,
+    } = ctx;
     let args = ControllerCtxArgs {
         widget_id: action.widget_id,
         bounds: action.bounds,

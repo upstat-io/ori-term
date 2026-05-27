@@ -4,7 +4,7 @@
 //! line height is `line_height` pixels, baseline at 80% of line height.
 //! No Unicode width handling — all characters are treated as single-width.
 
-use crate::text::{ShapedGlyph, ShapedText, TextMetrics, TextStyle};
+use crate::text::{ShapedGlyph, ShapedMetrics, ShapedText, TextMetrics, TextStyle};
 use crate::widgets::text_measurer::TextMeasurer;
 
 /// Deterministic text measurer for widget tests.
@@ -77,8 +77,17 @@ impl TextMeasurer for MockMeasurer {
             }
             None => (self.line_height, self.line_height * 0.8),
         };
-        ShapedText::new(glyphs, width, height, baseline, 0, style.weight.value())
-            .with_source(transformed)
+        ShapedText::new(
+            glyphs,
+            ShapedMetrics {
+                width,
+                height,
+                baseline,
+            },
+            0,
+            style.weight.value(),
+        )
+        .with_source(transformed)
     }
 }
 

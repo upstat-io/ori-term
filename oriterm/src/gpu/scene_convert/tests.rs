@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use oriterm_ui::color::Color;
 use oriterm_ui::draw::{RectStyle, Scene, Shadow};
 use oriterm_ui::geometry::Logical;
-use oriterm_ui::text::{ShapedGlyph, ShapedText};
+use oriterm_ui::text::{ShapedGlyph, ShapedMetrics, ShapedText};
 
 use crate::font::{FaceIdx, FontRealm, GlyphStyle, RasterKey, SyntheticFlags};
 use crate::gpu::atlas::{AtlasEntry, AtlasKind};
@@ -266,7 +266,16 @@ fn text_atlas_with(glyph_ids: &[u16]) -> KeyTestAtlas {
 /// Build a ShapedText with the given glyphs and a 14px line height / 12px baseline.
 fn shaped_text(glyphs: Vec<ShapedGlyph>) -> ShapedText {
     let width: f32 = glyphs.iter().map(|g| g.x_advance).sum();
-    ShapedText::new(glyphs, width, 14.0, 12.0, TEST_SIZE_Q6, 400)
+    ShapedText::new(
+        glyphs,
+        ShapedMetrics {
+            width,
+            height: 14.0,
+            baseline: 12.0,
+        },
+        TEST_SIZE_Q6,
+        400,
+    )
 }
 
 #[test]
@@ -464,7 +473,16 @@ fn text_empty_shaped_produces_nothing() {
     let mut subpx = InstanceWriter::new();
     let mut color_w = InstanceWriter::new();
 
-    let st = ShapedText::new(Vec::new(), 0.0, 14.0, 12.0, TEST_SIZE_Q6, 400);
+    let st = ShapedText::new(
+        Vec::new(),
+        ShapedMetrics {
+            width: 0.0,
+            height: 14.0,
+            baseline: 12.0,
+        },
+        TEST_SIZE_Q6,
+        400,
+    );
 
     let mut scene = Scene::new();
     scene.push_text(Point::new(0.0, 0.0), st, Color::WHITE);
@@ -1861,10 +1879,28 @@ fn mixed_size_text_runs_produce_different_raster_key_size_q6() {
         x_offset: 0.0,
         y_offset: 0.0,
     };
-    let small_text = ShapedText::new(vec![small_glyph], 7.0, 10.0, 8.0, SMALL_SIZE_Q6, 400);
+    let small_text = ShapedText::new(
+        vec![small_glyph],
+        ShapedMetrics {
+            width: 7.0,
+            height: 10.0,
+            baseline: 8.0,
+        },
+        SMALL_SIZE_Q6,
+        400,
+    );
 
     // Large text run.
-    let large_text = ShapedText::new(vec![small_glyph], 7.0, 18.0, 14.0, LARGE_SIZE_Q6, 400);
+    let large_text = ShapedText::new(
+        vec![small_glyph],
+        ShapedMetrics {
+            width: 7.0,
+            height: 18.0,
+            baseline: 14.0,
+        },
+        LARGE_SIZE_Q6,
+        400,
+    );
 
     let mut scene = Scene::new();
     scene.push_text(Point::new(0.0, 0.0), small_text, Color::WHITE);
@@ -1934,8 +1970,26 @@ fn different_weights_produce_different_raster_keys() {
         x_offset: 0.0,
         y_offset: 0.0,
     };
-    let normal_text = ShapedText::new(vec![glyph], 7.0, 14.0, 12.0, TEST_SIZE_Q6, 400);
-    let bold_text = ShapedText::new(vec![glyph], 7.0, 14.0, 12.0, TEST_SIZE_Q6, 700);
+    let normal_text = ShapedText::new(
+        vec![glyph],
+        ShapedMetrics {
+            width: 7.0,
+            height: 14.0,
+            baseline: 12.0,
+        },
+        TEST_SIZE_Q6,
+        400,
+    );
+    let bold_text = ShapedText::new(
+        vec![glyph],
+        ShapedMetrics {
+            width: 7.0,
+            height: 14.0,
+            baseline: 12.0,
+        },
+        TEST_SIZE_Q6,
+        700,
+    );
 
     let mut scene = Scene::new();
     scene.push_text(Point::new(0.0, 0.0), normal_text, Color::WHITE);

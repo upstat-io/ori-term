@@ -9,7 +9,9 @@ use oriterm_ui::action::{Keystroke, build_context_stack};
 use oriterm_ui::controllers::ControllerRequests;
 use oriterm_ui::geometry::Rect;
 use oriterm_ui::input::InputEvent;
-use oriterm_ui::input::dispatch::tree::{TreeDispatchResult, deliver_event_to_tree};
+use oriterm_ui::input::dispatch::tree::{
+    TreeDispatchCtx, TreeDispatchResult, deliver_event_to_tree,
+};
 use oriterm_ui::pipeline::dispatch_keymap_action;
 
 /// Tree-dispatch context for [`dispatch_dialog_key_event`], mirroring the
@@ -79,17 +81,20 @@ pub(super) fn dispatch_dialog_key_event(
         }
     }
 
+    #[cfg(debug_assertions)]
+    let dispatch_layout_ids = Some(layout_ids);
+    #[cfg(not(debug_assertions))]
+    let dispatch_layout_ids = None;
     deliver_event_to_tree(
         ctx.content.content_widget_mut(),
         input_event,
-        content_bounds,
-        Some(layout_node),
-        active,
-        focus_path,
-        now,
-        #[cfg(debug_assertions)]
-        Some(layout_ids),
-        #[cfg(not(debug_assertions))]
-        None,
+        TreeDispatchCtx {
+            bounds: content_bounds,
+            layout_node: Some(layout_node),
+            active_widget: active,
+            focus_path,
+            now,
+            layout_ids: dispatch_layout_ids,
+        },
     )
 }

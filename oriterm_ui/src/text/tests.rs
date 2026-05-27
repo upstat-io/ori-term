@@ -3,8 +3,8 @@
 use crate::color::Color;
 
 use super::{
-    FontWeight, ShapedGlyph, ShapedText, TextAlign, TextMetrics, TextOverflow, TextStyle,
-    TextTransform,
+    FontWeight, ShapedGlyph, ShapedMetrics, ShapedText, TextAlign, TextMetrics, TextOverflow,
+    TextStyle, TextTransform,
 };
 
 // TextStyle
@@ -65,7 +65,16 @@ fn shaped_glyph_construction() {
 
 #[test]
 fn shaped_text_empty() {
-    let t = ShapedText::new(Vec::new(), 0.0, 0.0, 0.0, 0, 400);
+    let t = ShapedText::new(
+        Vec::new(),
+        ShapedMetrics {
+            width: 0.0,
+            height: 0.0,
+            baseline: 0.0,
+        },
+        0,
+        400,
+    );
     assert!(t.is_empty());
     assert_eq!(t.glyph_count(), 0);
     assert_eq!(t.width, 0.0);
@@ -91,7 +100,16 @@ fn shaped_text_with_glyphs() {
             y_offset: 0.0,
         },
     ];
-    let t = ShapedText::new(glyphs, 16.0, 20.0, 14.0, 0, 400);
+    let t = ShapedText::new(
+        glyphs,
+        ShapedMetrics {
+            width: 16.0,
+            height: 20.0,
+            baseline: 14.0,
+        },
+        0,
+        400,
+    );
     assert!(!t.is_empty());
     assert_eq!(t.glyph_count(), 2);
     assert_eq!(t.width, 16.0);
@@ -209,7 +227,16 @@ fn text_overflow_default_is_clip() {
 #[test]
 fn shaped_text_negative_baseline() {
     // Negative baseline should be stored as-is (no clamping).
-    let t = ShapedText::new(Vec::new(), 0.0, 14.0, -5.0, 0, 400);
+    let t = ShapedText::new(
+        Vec::new(),
+        ShapedMetrics {
+            width: 0.0,
+            height: 14.0,
+            baseline: -5.0,
+        },
+        0,
+        400,
+    );
     assert_eq!(t.baseline, -5.0);
     assert!(t.is_empty());
 }
@@ -234,20 +261,47 @@ fn shaped_glyph_zero_advance() {
 
 #[test]
 fn shaped_text_new_stores_size_q6() {
-    let t = ShapedText::new(Vec::new(), 0.0, 14.0, 12.0, 850, 400);
+    let t = ShapedText::new(
+        Vec::new(),
+        ShapedMetrics {
+            width: 0.0,
+            height: 14.0,
+            baseline: 12.0,
+        },
+        850,
+        400,
+    );
     assert_eq!(t.size_q6, 850);
 }
 
 #[test]
 fn shaped_text_zero_size_q6_is_valid() {
     // Test/mock code passes 0; must not panic or assert.
-    let t = ShapedText::new(Vec::new(), 0.0, 14.0, 12.0, 0, 400);
+    let t = ShapedText::new(
+        Vec::new(),
+        ShapedMetrics {
+            width: 0.0,
+            height: 14.0,
+            baseline: 12.0,
+        },
+        0,
+        400,
+    );
     assert_eq!(t.size_q6, 0);
 }
 
 #[test]
 fn shaped_text_new_stores_weight() {
-    let t = ShapedText::new(Vec::new(), 0.0, 14.0, 12.0, 0, 500);
+    let t = ShapedText::new(
+        Vec::new(),
+        ShapedMetrics {
+            width: 0.0,
+            height: 14.0,
+            baseline: 12.0,
+        },
+        0,
+        500,
+    );
     assert_eq!(t.weight, 500);
 }
 

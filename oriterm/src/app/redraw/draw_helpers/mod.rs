@@ -227,12 +227,14 @@ pub(super) fn phase_gate_widgets(
             root.interaction_invalidation_and_frame_requests_mut();
         widget_pipeline::prepare_widget_tree(
             tab_bar,
-            interaction,
-            Some(invalidation),
-            &lifecycle_events,
-            None,
-            Some(flags),
-            now,
+            widget_pipeline::PrepareCtx {
+                interaction,
+                tracker: Some(invalidation),
+                lifecycle_events: &lifecycle_events,
+                anim_event: None,
+                frame_requests: Some(flags),
+                now,
+            },
         );
         root.prepare_overlay_widgets(&lifecycle_events, now);
 
@@ -247,12 +249,14 @@ pub(super) fn phase_gate_widgets(
         let invalidation = root.invalidation();
         widget_pipeline::prepaint_widget_tree(
             tab_bar,
-            &prepaint_bounds,
-            Some(interaction),
-            ui_theme,
-            now,
-            Some(flags),
-            Some(invalidation),
+            widget_pipeline::PrepaintWalkCtx {
+                bounds_map: &prepaint_bounds,
+                interaction: Some(interaction),
+                theme: ui_theme,
+                frame_requests: Some(flags),
+                tracker: Some(invalidation),
+                now,
+            },
         );
         root.prepaint_overlay_widgets(&prepaint_bounds, ui_theme, now);
     }

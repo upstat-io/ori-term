@@ -12,6 +12,7 @@ use winit::event::ElementState;
 use winit::keyboard::SmolStr;
 
 use oriterm_ui::input::Key;
+use oriterm_ui::window_root::OverlayEventCtx;
 
 use super::{App, mark_mode};
 use crate::key_encoding::{self, KeyEventType, KeyInput};
@@ -164,8 +165,15 @@ impl App {
                 &ctx.text_cache,
                 scale,
             );
-            ctx.root
-                .process_overlay_key_event(ui_event, &measurer, &self.ui_theme, None, now)
+            ctx.root.process_overlay_key_event(
+                ui_event,
+                OverlayEventCtx {
+                    measurer: &measurer,
+                    theme: &self.ui_theme,
+                    focused_widget: None,
+                    now,
+                },
+            )
         };
         self.handle_overlay_result(result);
         true

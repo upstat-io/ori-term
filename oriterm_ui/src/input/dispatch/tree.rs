@@ -75,6 +75,27 @@ pub struct DispatchInputs<'a> {
     pub now: Instant,
 }
 
+/// Routing context for [`deliver_event_to_tree`].
+///
+/// Bundles the hit-test / propagation inputs threaded through the high-level
+/// delivery entry: root bounds, the layout tree, the captured widget, the
+/// keyboard focus path, the frame timestamp, and the debug layout-ID set.
+#[derive(Clone, Copy)]
+pub struct TreeDispatchCtx<'a> {
+    /// Screen-space bounds of the root widget (for coordinate mapping).
+    pub bounds: Rect,
+    /// Layout tree for hit testing; `None` skips hit test (deliver to root).
+    pub layout_node: Option<&'a LayoutNode>,
+    /// Currently captured widget (for drag/press continuation).
+    pub active_widget: Option<WidgetId>,
+    /// Root-to-leaf ancestor chain for keyboard routing.
+    pub focus_path: &'a [WidgetId],
+    /// Current frame timestamp.
+    pub now: Instant,
+    /// Layout widget IDs for the debug cross-phase consistency check.
+    pub layout_ids: Option<&'a HashSet<WidgetId>>,
+}
+
 /// Walks a widget tree, dispatching delivery actions to controllers of
 /// widgets whose ID matches a delivery action target.
 ///
@@ -280,21 +301,19 @@ fn offset_hit_path(
 /// - `active_widget` — currently captured widget (for drag/press continuation).
 /// - `focus_path` — root-to-leaf ancestor chain for keyboard routing.
 /// - `now` — current frame timestamp.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "app-facing pipeline entry — signature fixed by oriterm dialog_context callers (event_handling, keymap_dispatch)"
-)]
-#[expect(clippy::implicit_hasher, reason = "always used with default hasher")]
 pub fn deliver_event_to_tree(
     widget: &mut dyn Widget,
     event: &InputEvent,
-    bounds: Rect,
-    layout_node: Option<&LayoutNode>,
-    active_widget: Option<WidgetId>,
-    focus_path: &[WidgetId],
-    now: Instant,
-    layout_ids: Option<&HashSet<WidgetId>>,
+    ctx: TreeDispatchCtx<'_>,
 ) -> TreeDispatchResult {
+    let TreeDispatchCtx {
+        bounds,
+        layout_node,
+        active_widget,
+        focus_path,
+        now,
+        layout_ids,
+    } = ctx;
     let _ = &layout_ids; // used only in debug_assertions
 
     // Build the hit path.
