@@ -3,7 +3,7 @@
 //! Each braille character is a bitmask over an 8-dot grid (2 columns × 4 rows).
 //! The character value encodes which dots are active.
 
-use super::Canvas;
+use super::{Canvas, RectF};
 
 /// Standard braille dot positions: `(column, row, bit_index)`.
 ///
@@ -39,7 +39,7 @@ pub(super) fn draw_braille(canvas: &mut Canvas, ch: char) -> bool {
         if bits & (1 << bit) != 0 {
             let dx = w * (0.25 + col as f32 * 0.5) - dot_w / 2.0;
             let dy = h * ((row as f32 + 0.5) / 4.0) - dot_h / 2.0;
-            canvas.fill_rect(dx, dy, dot_w, dot_h, 255);
+            canvas.fill_rect(RectF::new(dx, dy, dot_w, dot_h), 255);
         }
     }
 

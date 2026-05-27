@@ -9,7 +9,7 @@
 //! Empirical measurement of monospace fonts shows normal shapes at ~0.92
 //! of cell width; small variants at ~0.50.
 
-use super::Canvas;
+use super::{Canvas, LineF, RectF};
 
 /// Square bounding box for centered shapes, derived from cell dimensions.
 ///
@@ -127,16 +127,16 @@ fn thick(w: f32) -> f32 {
 
 fn sq_fill(canvas: &mut Canvas, b: &SqBox, frac: f32, alpha: u8) {
     let (x, y, sz) = b.inset(frac);
-    canvas.fill_rect(x, y, sz, sz, alpha);
+    canvas.fill_rect(RectF::new(x, y, sz, sz), alpha);
 }
 
 fn sq_outline(canvas: &mut Canvas, b: &SqBox, frac: f32) {
     let t = thick(b.w);
     let (x, y, sz) = b.inset(frac);
-    canvas.fill_rect(x, y, sz, t, 255);
-    canvas.fill_rect(x, y + sz - t, sz, t, 255);
-    canvas.fill_rect(x, y, t, sz, 255);
-    canvas.fill_rect(x + sz - t, y, t, sz, 255);
+    canvas.fill_rect(RectF::new(x, y, sz, t), 255);
+    canvas.fill_rect(RectF::new(x, y + sz - t, sz, t), 255);
+    canvas.fill_rect(RectF::new(x, y, t, sz), 255);
+    canvas.fill_rect(RectF::new(x + sz - t, y, t, sz), 255);
 }
 
 // -- Triangles --
@@ -158,25 +158,25 @@ fn tri_fill(canvas: &mut Canvas, b: &SqBox, frac: f32, dir: Dir4, alpha: u8) {
         match dir {
             Dir4::Up => {
                 canvas.fill_rect(
-                    ox + (sz - span) / 2.0,
-                    oy + sz - i as f32 - 1.0,
-                    span,
-                    1.0,
+                    RectF::new(ox + (sz - span) / 2.0, oy + sz - i as f32 - 1.0, span, 1.0),
                     alpha,
                 );
             }
             Dir4::Down => {
-                canvas.fill_rect(ox + (sz - span) / 2.0, oy + i as f32, span, 1.0, alpha);
+                canvas.fill_rect(
+                    RectF::new(ox + (sz - span) / 2.0, oy + i as f32, span, 1.0),
+                    alpha,
+                );
             }
             Dir4::Right => {
-                canvas.fill_rect(ox + i as f32, oy + (sz - span) / 2.0, 1.0, span, alpha);
+                canvas.fill_rect(
+                    RectF::new(ox + i as f32, oy + (sz - span) / 2.0, 1.0, span),
+                    alpha,
+                );
             }
             Dir4::Left => {
                 canvas.fill_rect(
-                    ox + sz - i as f32 - 1.0,
-                    oy + (sz - span) / 2.0,
-                    1.0,
-                    span,
+                    RectF::new(ox + sz - i as f32 - 1.0, oy + (sz - span) / 2.0, 1.0, span),
                     alpha,
                 );
             }
@@ -191,24 +191,24 @@ fn tri_outline(canvas: &mut Canvas, b: &SqBox, frac: f32, dir: Dir4) {
     let cy = oy + sz / 2.0;
     match dir {
         Dir4::Up => {
-            canvas.fill_line(cx, oy, ox, oy + sz, t);
-            canvas.fill_line(cx, oy, ox + sz, oy + sz, t);
-            canvas.fill_rect(ox, oy + sz - t, sz, t, 255);
+            canvas.fill_line(LineF::new(cx, oy, ox, oy + sz), t);
+            canvas.fill_line(LineF::new(cx, oy, ox + sz, oy + sz), t);
+            canvas.fill_rect(RectF::new(ox, oy + sz - t, sz, t), 255);
         }
         Dir4::Down => {
-            canvas.fill_rect(ox, oy, sz, t, 255);
-            canvas.fill_line(ox, oy, cx, oy + sz, t);
-            canvas.fill_line(ox + sz, oy, cx, oy + sz, t);
+            canvas.fill_rect(RectF::new(ox, oy, sz, t), 255);
+            canvas.fill_line(LineF::new(ox, oy, cx, oy + sz), t);
+            canvas.fill_line(LineF::new(ox + sz, oy, cx, oy + sz), t);
         }
         Dir4::Right => {
-            canvas.fill_rect(ox, oy, t, sz, 255);
-            canvas.fill_line(ox, oy, ox + sz, cy, t);
-            canvas.fill_line(ox, oy + sz, ox + sz, cy, t);
+            canvas.fill_rect(RectF::new(ox, oy, t, sz), 255);
+            canvas.fill_line(LineF::new(ox, oy, ox + sz, cy), t);
+            canvas.fill_line(LineF::new(ox, oy + sz, ox + sz, cy), t);
         }
         Dir4::Left => {
-            canvas.fill_rect(ox + sz - t, oy, t, sz, 255);
-            canvas.fill_line(ox + sz, oy, ox, cy, t);
-            canvas.fill_line(ox + sz, oy + sz, ox, cy, t);
+            canvas.fill_rect(RectF::new(ox + sz - t, oy, t, sz), 255);
+            canvas.fill_line(LineF::new(ox + sz, oy, ox, cy), t);
+            canvas.fill_line(LineF::new(ox + sz, oy + sz, ox, cy), t);
         }
     }
 }
@@ -225,7 +225,10 @@ fn diamond_fill(canvas: &mut Canvas, b: &SqBox, frac: f32, alpha: u8) {
         } else {
             (sz * (1.0 - progress) * 2.0).round()
         };
-        canvas.fill_rect(ox + (sz - rw) / 2.0, oy + r as f32, rw, 1.0, alpha);
+        canvas.fill_rect(
+            RectF::new(ox + (sz - rw) / 2.0, oy + r as f32, rw, 1.0),
+            alpha,
+        );
     }
 }
 
@@ -234,10 +237,10 @@ fn diamond_outline(canvas: &mut Canvas, b: &SqBox, frac: f32) {
     let cx = b.w / 2.0;
     let cy = b.oy + b.s / 2.0;
     let hs = (b.s * frac / 2.0).round();
-    canvas.fill_line(cx, cy - hs, cx + hs, cy, t);
-    canvas.fill_line(cx + hs, cy, cx, cy + hs, t);
-    canvas.fill_line(cx, cy + hs, cx - hs, cy, t);
-    canvas.fill_line(cx - hs, cy, cx, cy - hs, t);
+    canvas.fill_line(LineF::new(cx, cy - hs, cx + hs, cy), t);
+    canvas.fill_line(LineF::new(cx + hs, cy, cx, cy + hs), t);
+    canvas.fill_line(LineF::new(cx, cy + hs, cx - hs, cy), t);
+    canvas.fill_line(LineF::new(cx - hs, cy, cx, cy - hs), t);
 }
 
 // -- Circles --
@@ -333,11 +336,16 @@ fn corner_tri(canvas: &mut Canvas, b: &SqBox, c: Corner, alpha: u8) {
         let f = (r as f32 + 0.5) / sz;
         let rw = (sz * f).round();
         match c {
-            Corner::BL => canvas.fill_rect(ox, oy + r as f32, rw, 1.0, alpha),
-            Corner::BR => canvas.fill_rect(ox + sz - rw, oy + r as f32, rw, 1.0, alpha),
-            Corner::TL => canvas.fill_rect(ox, oy + sz - r as f32 - 1.0, rw, 1.0, alpha),
+            Corner::BL => canvas.fill_rect(RectF::new(ox, oy + r as f32, rw, 1.0), alpha),
+            Corner::BR => canvas.fill_rect(RectF::new(ox + sz - rw, oy + r as f32, rw, 1.0), alpha),
+            Corner::TL => {
+                canvas.fill_rect(RectF::new(ox, oy + sz - r as f32 - 1.0, rw, 1.0), alpha);
+            }
             Corner::TR => {
-                canvas.fill_rect(ox + sz - rw, oy + sz - r as f32 - 1.0, rw, 1.0, alpha);
+                canvas.fill_rect(
+                    RectF::new(ox + sz - rw, oy + sz - r as f32 - 1.0, rw, 1.0),
+                    alpha,
+                );
             }
         }
     }
@@ -350,24 +358,24 @@ fn corner_tri_outline(canvas: &mut Canvas, b: &SqBox, c: Corner) {
     let y1 = oy + sz;
     match c {
         Corner::TL => {
-            canvas.fill_line(ox, oy, ox, y1, t);
-            canvas.fill_line(ox, oy, x1, oy, t);
-            canvas.fill_line(ox, y1, x1, oy, t);
+            canvas.fill_line(LineF::new(ox, oy, ox, y1), t);
+            canvas.fill_line(LineF::new(ox, oy, x1, oy), t);
+            canvas.fill_line(LineF::new(ox, y1, x1, oy), t);
         }
         Corner::TR => {
-            canvas.fill_line(ox, oy, x1, oy, t);
-            canvas.fill_line(x1, oy, x1, y1, t);
-            canvas.fill_line(ox, oy, x1, y1, t);
+            canvas.fill_line(LineF::new(ox, oy, x1, oy), t);
+            canvas.fill_line(LineF::new(x1, oy, x1, y1), t);
+            canvas.fill_line(LineF::new(ox, oy, x1, y1), t);
         }
         Corner::BL => {
-            canvas.fill_line(ox, oy, ox, y1, t);
-            canvas.fill_line(ox, y1, x1, y1, t);
-            canvas.fill_line(ox, oy, x1, y1, t);
+            canvas.fill_line(LineF::new(ox, oy, ox, y1), t);
+            canvas.fill_line(LineF::new(ox, y1, x1, y1), t);
+            canvas.fill_line(LineF::new(ox, oy, x1, y1), t);
         }
         Corner::BR => {
-            canvas.fill_line(ox, y1, x1, y1, t);
-            canvas.fill_line(x1, oy, x1, y1, t);
-            canvas.fill_line(ox, y1, x1, oy, t);
+            canvas.fill_line(LineF::new(ox, y1, x1, y1), t);
+            canvas.fill_line(LineF::new(x1, oy, x1, y1), t);
+            canvas.fill_line(LineF::new(ox, y1, x1, oy), t);
         }
     }
 }

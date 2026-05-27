@@ -16,7 +16,7 @@ use crate::font::CellMetrics;
 use crate::gpu::builtin_glyphs::decorations::{
     CURLY_GLYPH_ID, DASHED_GLYPH_ID, DOTTED_GLYPH_ID, curly_amplitude, decoration_key,
 };
-use crate::gpu::instance_writer::{CLIP_UNCLIPPED, InstanceWriter, ScreenRect};
+use crate::gpu::instance_writer::{CLIP_UNCLIPPED, GlyphInstance, InstanceWriter, ScreenRect};
 
 use super::AtlasLookup;
 
@@ -38,6 +38,50 @@ pub(super) struct DecorationContext<'a> {
     pub(super) alpha: f32,
 }
 
+/// Per-cell decoration parameters for [`DecorationContext::draw`].
+///
+/// Bundles the cell's decoration flags, colors, position, width, and
+/// hyperlink state — everything that varies cell-to-cell within a frame.
+#[derive(Clone, Copy)]
+pub(super) struct CellDecoration {
+    /// Cell decoration flags (underlines, strikethrough, overline).
+    pub(super) flags: CellFlags,
+    /// Explicit SGR underline color, if any. Falls back to `fg`.
+    pub(super) underline_color: Option<Rgb>,
+    /// Foreground color (decoration color when no explicit underline color).
+    pub(super) fg: Rgb,
+    /// Cell origin x in pixels.
+    pub(super) x: f32,
+    /// Cell origin y in pixels (cell-top edge).
+    pub(super) y: f32,
+    /// Cell width in pixels.
+    pub(super) cell_width: f32,
+    /// Whether the cell carries an OSC 8 hyperlink.
+    pub(super) has_hyperlink: bool,
+    /// Whether the hyperlink is currently hovered.
+    pub(super) is_hovered: bool,
+}
+
+/// Stroke geometry + color for a single decoration line.
+///
+/// Shared by [`DecorationContext::draw_underline`] and the rect-based
+/// fallbacks. All fields are `Copy`.
+#[derive(Clone, Copy)]
+struct StrokeSpec {
+    /// Stroke color.
+    color: Rgb,
+    /// Stroke origin x in pixels.
+    x: f32,
+    /// Stroke baseline y in pixels.
+    y: f32,
+    /// Stroke width in pixels.
+    w: f32,
+    /// Stroke thickness in pixels.
+    t: f32,
+    /// Alpha multiplier.
+    alpha: f32,
+}
+
 impl DecorationContext<'_> {
     /// Emit underline and strikethrough decorations for a single cell.
     ///
@@ -51,21 +95,17 @@ impl DecorationContext<'_> {
     /// Patterned underlines (curly, dotted, dashed) are emitted as glyph
     /// instances from the atlas. If the atlas entry is missing (e.g. in tests),
     /// falls back to per-pixel rect emission.
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "per-cell decoration params: flags, colors, position, cell width, hyperlink state"
-    )]
-    pub(super) fn draw(
-        &mut self,
-        flags: CellFlags,
-        underline_color: Option<Rgb>,
-        fg: Rgb,
-        x: f32,
-        y: f32,
-        cell_width: f32,
-        has_hyperlink: bool,
-        is_hovered: bool,
-    ) {
+    pub(super) fn draw(&mut self, cell: CellDecoration) {
+        let CellDecoration {
+            flags,
+            underline_color,
+            fg,
+            x,
+            y,
+            cell_width,
+            has_hyperlink,
+            is_hovered,
+        } = cell;
         let has_explicit_underline = flags.intersects(CellFlags::ALL_UNDERLINES);
         let has_strikethrough = flags.contains(CellFlags::STRIKETHROUGH);
         let has_overline = flags.contains(CellFlags::OVERLINE);
@@ -96,12 +136,14 @@ impl DecorationContext<'_> {
                 if !self.try_atlas_decoration(DOTTED_GLYPH_ID, fg, x, underline_y) {
                     draw_dotted_underline_rects(
                         self.backgrounds,
-                        fg,
-                        x,
-                        underline_y,
-                        cell_width,
-                        t,
-                        self.alpha,
+                        StrokeSpec {
+                            color: fg,
+                            x,
+                            y: underline_y,
+                            w: cell_width,
+                            t,
+                            alpha: self.alpha,
+                        },
                     );
                 }
             }
@@ -109,7 +151,17 @@ impl DecorationContext<'_> {
 
         if has_explicit_underline {
             let color = underline_color.unwrap_or(fg);
-            self.draw_underline(flags, color, x, underline_y, cell_width, t);
+            self.draw_underline(
+                flags,
+                StrokeSpec {
+                    color,
+                    x,
+                    y: underline_y,
+                    w: cell_width,
+                    t,
+                    alpha: self.alpha,
+                },
+            );
         }
 
         if has_strikethrough {
@@ -140,25 +192,28 @@ impl DecorationContext<'_> {
     /// Dispatch to the appropriate underline style.
     ///
     /// Priority: curly > double > dotted > dashed > single.
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "underline dispatch: flags, color, and position/dimensions"
-    )]
-    fn draw_underline(&mut self, flags: CellFlags, color: Rgb, x: f32, y: f32, w: f32, t: f32) {
-        let alpha = self.alpha;
+    fn draw_underline(&mut self, flags: CellFlags, stroke: StrokeSpec) {
+        let StrokeSpec {
+            color,
+            x,
+            y,
+            w,
+            t,
+            alpha,
+        } = stroke;
         if flags.contains(CellFlags::CURLY_UNDERLINE) {
             if !self.try_atlas_decoration(CURLY_GLYPH_ID, color, x, y) {
-                draw_curly_underline_rects(self.backgrounds, color, x, y, w, t, alpha);
+                draw_curly_underline_rects(self.backgrounds, stroke);
             }
         } else if flags.contains(CellFlags::DOUBLE_UNDERLINE) {
-            draw_double_underline(self.backgrounds, color, x, y, w, t, alpha);
+            draw_double_underline(self.backgrounds, stroke);
         } else if flags.contains(CellFlags::DOTTED_UNDERLINE) {
             if !self.try_atlas_decoration(DOTTED_GLYPH_ID, color, x, y) {
-                draw_dotted_underline_rects(self.backgrounds, color, x, y, w, t, alpha);
+                draw_dotted_underline_rects(self.backgrounds, stroke);
             }
         } else if flags.contains(CellFlags::DASHED_UNDERLINE) {
             if !self.try_atlas_decoration(DASHED_GLYPH_ID, color, x, y) {
-                draw_dashed_underline_rects(self.backgrounds, color, x, y, w, t, alpha);
+                draw_dashed_underline_rects(self.backgrounds, stroke);
             }
         } else {
             // Single underline (plain UNDERLINE flag).
@@ -188,8 +243,16 @@ impl DecorationContext<'_> {
                 w: entry.width as f32,
                 h: entry.height as f32,
             };
-            self.glyphs
-                .push_glyph(rect, uv, color, self.alpha, entry.page, CLIP_UNCLIPPED);
+            self.glyphs.push_glyph(
+                rect,
+                GlyphInstance {
+                    uv,
+                    fg: color,
+                    alpha: self.alpha,
+                    atlas_page: entry.page,
+                    clip: CLIP_UNCLIPPED,
+                },
+            );
             true
         } else {
             false
@@ -200,19 +263,15 @@ impl DecorationContext<'_> {
 // ── Rect-based fallbacks (used when atlas entries are unavailable) ──
 
 /// Curly underline fallback: per-pixel sine wave rects.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "rect fallback: renderer, color, geometry"
-)]
-fn draw_curly_underline_rects(
-    bg: &mut InstanceWriter,
-    color: Rgb,
-    x: f32,
-    y: f32,
-    w: f32,
-    t: f32,
-    alpha: f32,
-) {
+fn draw_curly_underline_rects(bg: &mut InstanceWriter, stroke: StrokeSpec) {
+    let StrokeSpec {
+        color,
+        x,
+        y,
+        w,
+        t,
+        alpha,
+    } = stroke;
     let amplitude = curly_amplitude(t);
     let steps = w as usize;
     for dx in 0..steps {
@@ -229,19 +288,15 @@ fn draw_curly_underline_rects(
 }
 
 /// Double underline: two lines separated by a gap that scales with thickness.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "rect fallback: renderer, color, geometry"
-)]
-fn draw_double_underline(
-    bg: &mut InstanceWriter,
-    color: Rgb,
-    x: f32,
-    y: f32,
-    w: f32,
-    t: f32,
-    alpha: f32,
-) {
+fn draw_double_underline(bg: &mut InstanceWriter, stroke: StrokeSpec) {
+    let StrokeSpec {
+        color,
+        x,
+        y,
+        w,
+        t,
+        alpha,
+    } = stroke;
     let gap = (t + 1.0).ceil();
     bg.push_rect(ScreenRect { x, y, w, h: t }, color, alpha);
     bg.push_rect(
@@ -257,19 +312,15 @@ fn draw_double_underline(
 }
 
 /// Dotted underline fallback: per-pixel alternating rects.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "rect fallback: renderer, color, geometry"
-)]
-fn draw_dotted_underline_rects(
-    bg: &mut InstanceWriter,
-    color: Rgb,
-    x: f32,
-    y: f32,
-    w: f32,
-    t: f32,
-    alpha: f32,
-) {
+fn draw_dotted_underline_rects(bg: &mut InstanceWriter, stroke: StrokeSpec) {
+    let StrokeSpec {
+        color,
+        x,
+        y,
+        w,
+        t,
+        alpha,
+    } = stroke;
     let steps = w as usize;
     for dx in (0..steps).step_by(2) {
         let rect = ScreenRect {
@@ -283,19 +334,15 @@ fn draw_dotted_underline_rects(
 }
 
 /// Dashed underline fallback: per-pixel 3-on-2-off rects.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "rect fallback: renderer, color, geometry"
-)]
-fn draw_dashed_underline_rects(
-    bg: &mut InstanceWriter,
-    color: Rgb,
-    x: f32,
-    y: f32,
-    w: f32,
-    t: f32,
-    alpha: f32,
-) {
+fn draw_dashed_underline_rects(bg: &mut InstanceWriter, stroke: StrokeSpec) {
+    let StrokeSpec {
+        color,
+        x,
+        y,
+        w,
+        t,
+        alpha,
+    } = stroke;
     let steps = w as usize;
     for dx in 0..steps {
         if dx % 5 < 3 {

@@ -5,7 +5,7 @@
 //! Rounded corners fall back to right-angle segments; diagonals use anti-aliased
 //! line rendering via the canvas SDF path.
 
-use super::Canvas;
+use super::{Canvas, LineF, RectF};
 
 /// Segment weight for box drawing lines.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -58,28 +58,82 @@ pub(super) fn draw_box(canvas: &mut Canvas, ch: char) -> bool {
     let thin = 1.0f32.max((w / 8.0).round());
     let thick = (thin * 3.0).min(w / 2.0);
 
-    draw_h_segment(canvas, left, cx, 0.0, cy, thin, thick);
-    draw_h_segment(canvas, right, w, cx, cy, thin, thick);
-    draw_v_segment(canvas, up, cy, 0.0, cx, thin, thick);
-    draw_v_segment(canvas, down, h, cy, cx, thin, thick);
+    draw_h_segment(
+        canvas,
+        left,
+        SegmentSpec {
+            to: cx,
+            from: 0.0,
+            center: cy,
+            thin,
+            thick,
+        },
+    );
+    draw_h_segment(
+        canvas,
+        right,
+        SegmentSpec {
+            to: w,
+            from: cx,
+            center: cy,
+            thin,
+            thick,
+        },
+    );
+    draw_v_segment(
+        canvas,
+        up,
+        SegmentSpec {
+            to: cy,
+            from: 0.0,
+            center: cx,
+            thin,
+            thick,
+        },
+    );
+    draw_v_segment(
+        canvas,
+        down,
+        SegmentSpec {
+            to: h,
+            from: cy,
+            center: cx,
+            thin,
+            thick,
+        },
+    );
 
     true
 }
 
-/// Draw a horizontal segment from `from_x` to `to_x` at vertical center `cy`.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "line drawing primitives: canvas, weight, endpoints, thickness"
-)]
-fn draw_h_segment(
-    canvas: &mut Canvas,
-    weight: Weight,
-    to_x: f32,
-    from_x: f32,
-    cy: f32,
+/// Geometry + stroke weights for one box-drawing segment.
+///
+/// `from`/`to` are the segment endpoints along its axis (x for horizontal,
+/// y for vertical); `center` is the cross-axis center (cy for horizontal,
+/// cx for vertical). `thin`/`thick` are the light/heavy stroke widths.
+#[derive(Clone, Copy)]
+struct SegmentSpec {
+    /// Segment end coordinate along its axis.
+    to: f32,
+    /// Segment start coordinate along its axis.
+    from: f32,
+    /// Cross-axis center coordinate.
+    center: f32,
+    /// Light stroke width.
     thin: f32,
+    /// Heavy stroke width.
     thick: f32,
-) {
+}
+
+/// Draw a horizontal segment from `from` to `to` at vertical center.
+fn draw_h_segment(canvas: &mut Canvas, weight: Weight, spec: SegmentSpec) {
+    let SegmentSpec {
+        to: to_x,
+        from: from_x,
+        center: cy,
+        thin,
+        thick,
+    } = spec;
     let lx = from_x.min(to_x);
     let rx = from_x.max(to_x);
     let seg_w = rx - lx;
@@ -89,33 +143,34 @@ fn draw_h_segment(
     match weight {
         Weight::None => {}
         Weight::Light => {
-            canvas.fill_rect(lx, cy - (thin / 2.0).floor(), seg_w, thin, 255);
+            canvas.fill_rect(RectF::new(lx, cy - (thin / 2.0).floor(), seg_w, thin), 255);
         }
         Weight::Heavy => {
-            canvas.fill_rect(lx, cy - (thick / 2.0).floor(), seg_w, thick, 255);
+            canvas.fill_rect(
+                RectF::new(lx, cy - (thick / 2.0).floor(), seg_w, thick),
+                255,
+            );
         }
         Weight::Double => {
             let gap = (thin * 2.0).max(2.0);
-            canvas.fill_rect(lx, cy - (gap / 2.0).floor() - thin, seg_w, thin, 255);
-            canvas.fill_rect(lx, cy + (gap / 2.0).ceil(), seg_w, thin, 255);
+            canvas.fill_rect(
+                RectF::new(lx, cy - (gap / 2.0).floor() - thin, seg_w, thin),
+                255,
+            );
+            canvas.fill_rect(RectF::new(lx, cy + (gap / 2.0).ceil(), seg_w, thin), 255);
         }
     }
 }
 
-/// Draw a vertical segment from `from_y` to `to_y` at horizontal center `cx`.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "line drawing primitives: canvas, weight, endpoints, thickness"
-)]
-fn draw_v_segment(
-    canvas: &mut Canvas,
-    weight: Weight,
-    to_y: f32,
-    from_y: f32,
-    cx: f32,
-    thin: f32,
-    thick: f32,
-) {
+/// Draw a vertical segment from `from` to `to` at horizontal center.
+fn draw_v_segment(canvas: &mut Canvas, weight: Weight, spec: SegmentSpec) {
+    let SegmentSpec {
+        to: to_y,
+        from: from_y,
+        center: cx,
+        thin,
+        thick,
+    } = spec;
     let ty = from_y.min(to_y);
     let by = from_y.max(to_y);
     let seg_h = by - ty;
@@ -125,15 +180,21 @@ fn draw_v_segment(
     match weight {
         Weight::None => {}
         Weight::Light => {
-            canvas.fill_rect(cx - (thin / 2.0).floor(), ty, thin, seg_h, 255);
+            canvas.fill_rect(RectF::new(cx - (thin / 2.0).floor(), ty, thin, seg_h), 255);
         }
         Weight::Heavy => {
-            canvas.fill_rect(cx - (thick / 2.0).floor(), ty, thick, seg_h, 255);
+            canvas.fill_rect(
+                RectF::new(cx - (thick / 2.0).floor(), ty, thick, seg_h),
+                255,
+            );
         }
         Weight::Double => {
             let gap = (thin * 2.0).max(2.0);
-            canvas.fill_rect(cx - (gap / 2.0).floor() - thin, ty, thin, seg_h, 255);
-            canvas.fill_rect(cx + (gap / 2.0).ceil(), ty, thin, seg_h, 255);
+            canvas.fill_rect(
+                RectF::new(cx - (gap / 2.0).floor() - thin, ty, thin, seg_h),
+                255,
+            );
+            canvas.fill_rect(RectF::new(cx + (gap / 2.0).ceil(), ty, thin, seg_h), 255);
         }
     }
 }
@@ -162,22 +223,51 @@ fn draw_rounded_corner(canvas: &mut Canvas, ch: char) -> bool {
     let cx = (w / 2.0).floor();
     let cy = (h / 2.0).floor();
 
+    let h_to_right = SegmentSpec {
+        to: w,
+        from: cx,
+        center: cy,
+        thin,
+        thick,
+    };
+    let h_to_left = SegmentSpec {
+        to: cx,
+        from: 0.0,
+        center: cy,
+        thin,
+        thick,
+    };
+    let v_to_bottom = SegmentSpec {
+        to: h,
+        from: cy,
+        center: cx,
+        thin,
+        thick,
+    };
+    let v_to_top = SegmentSpec {
+        to: cy,
+        from: 0.0,
+        center: cx,
+        thin,
+        thick,
+    };
+
     match ch {
         '\u{256D}' => {
-            draw_h_segment(canvas, Weight::Light, w, cx, cy, thin, thick);
-            draw_v_segment(canvas, Weight::Light, h, cy, cx, thin, thick);
+            draw_h_segment(canvas, Weight::Light, h_to_right);
+            draw_v_segment(canvas, Weight::Light, v_to_bottom);
         }
         '\u{256E}' => {
-            draw_h_segment(canvas, Weight::Light, cx, 0.0, cy, thin, thick);
-            draw_v_segment(canvas, Weight::Light, h, cy, cx, thin, thick);
+            draw_h_segment(canvas, Weight::Light, h_to_left);
+            draw_v_segment(canvas, Weight::Light, v_to_bottom);
         }
         '\u{256F}' => {
-            draw_h_segment(canvas, Weight::Light, cx, 0.0, cy, thin, thick);
-            draw_v_segment(canvas, Weight::Light, cy, 0.0, cx, thin, thick);
+            draw_h_segment(canvas, Weight::Light, h_to_left);
+            draw_v_segment(canvas, Weight::Light, v_to_top);
         }
         '\u{2570}' => {
-            draw_h_segment(canvas, Weight::Light, w, cx, cy, thin, thick);
-            draw_v_segment(canvas, Weight::Light, cy, 0.0, cx, thin, thick);
+            draw_h_segment(canvas, Weight::Light, h_to_right);
+            draw_v_segment(canvas, Weight::Light, v_to_top);
         }
         _ => return false,
     }
@@ -193,16 +283,16 @@ fn draw_diagonal(canvas: &mut Canvas, ch: char) -> bool {
     match ch {
         '\u{2571}' => {
             // ╱ upper right to lower left.
-            canvas.fill_line(w, 0.0, 0.0, h, thin);
+            canvas.fill_line(LineF::new(w, 0.0, 0.0, h), thin);
         }
         '\u{2572}' => {
             // ╲ upper left to lower right.
-            canvas.fill_line(0.0, 0.0, w, h, thin);
+            canvas.fill_line(LineF::new(0.0, 0.0, w, h), thin);
         }
         '\u{2573}' => {
             // ╳ diagonal cross (both diagonals).
-            canvas.fill_line(w, 0.0, 0.0, h, thin);
-            canvas.fill_line(0.0, 0.0, w, h, thin);
+            canvas.fill_line(LineF::new(w, 0.0, 0.0, h), thin);
+            canvas.fill_line(LineF::new(0.0, 0.0, w, h), thin);
         }
         _ => return false,
     }

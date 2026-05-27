@@ -2,16 +2,16 @@
 //!
 //! Extracted from [`render.rs`] to keep each file under the 500-line limit.
 //! All methods here are private helpers on [`WindowRenderer`], called by the
-//! entry-point render methods in [`render.rs`].
+//! entry-point render methods in [`render.rs`]. Draw-pass recording lives in
+//! the [`record_passes`] submodule.
+
+mod record_passes;
 
 use std::time::Instant;
 
-use wgpu::RenderPass;
-
 use super::super::pipeline::IMAGE_INSTANCE_STRIDE;
 use super::WindowRenderer;
-use super::helpers::{record_draw, record_draw_range, upload_buffer, upload_buffer_partial};
-use crate::gpu::pipelines::GpuPipelines;
+use super::helpers::{PartialUpload, upload_buffer, upload_buffer_partial};
 
 impl WindowRenderer {
     // Buffer uploads
@@ -37,7 +37,16 @@ impl WindowRenderer {
                 ($buf:ident, $writer:ident, $offset:expr, $label:literal) => {
                     let data = self.prepared.$writer.as_bytes();
                     total_bytes += data.len() - $offset;
-                    upload_buffer_partial(device, queue, &mut self.$buf, data, $offset, $label);
+                    upload_buffer_partial(
+                        device,
+                        queue,
+                        &mut self.$buf,
+                        data,
+                        PartialUpload {
+                            offset: $offset,
+                            label: $label,
+                        },
+                    );
                 };
             }
             upload_partial!(bg_buffer, backgrounds, bg_off, "bg_instance_buffer");
@@ -244,218 +253,6 @@ impl WindowRenderer {
             &self.image_instance_data,
             "image_instance_buffer",
         );
-    }
-
-    // Draw pass recording
-
-    /// Record cached-content draw passes.
-    ///
-    /// Two tiers in painter's order:
-    /// - Terminal: cell backgrounds, images below text, glyphs, images above
-    /// - Chrome: UI rects + chrome text (tab bar, search bar)
-    pub(super) fn record_cached_content_passes<'a>(
-        pipelines: &'a GpuPipelines,
-        renderer: &'a Self,
-        pass: &mut RenderPass<'a>,
-    ) {
-        let bg = renderer.uniform_buffer.bind_group();
-        let mono = Some(renderer.atlas_bind_group.bind_group());
-        let sub = Some(renderer.subpixel_atlas_bind_group.bind_group());
-        let color = Some(renderer.color_atlas_bind_group.bind_group());
-        let p = &renderer.prepared;
-
-        // Terminal tier: backgrounds.
-        record_draw(
-            pass,
-            &pipelines.bg_pipeline,
-            bg,
-            None,
-            renderer.bg_buffer.as_ref(),
-            p.backgrounds.len() as u32,
-        );
-
-        // Images below text (z_index < 0).
-        Self::record_image_draws(
-            pipelines,
-            renderer,
-            pass,
-            &p.image_quads_below,
-            0, // buffer offset: below quads come first
-        );
-
-        // Terminal tier: text glyphs.
-        record_draw(
-            pass,
-            &pipelines.fg_pipeline,
-            bg,
-            mono,
-            renderer.fg_buffer.as_ref(),
-            p.glyphs.len() as u32,
-        );
-        record_draw(
-            pass,
-            &pipelines.subpixel_fg_pipeline,
-            bg,
-            sub,
-            renderer.subpixel_fg_buffer.as_ref(),
-            p.subpixel_glyphs.len() as u32,
-        );
-        record_draw(
-            pass,
-            &pipelines.color_fg_pipeline,
-            bg,
-            color,
-            renderer.color_fg_buffer.as_ref(),
-            p.color_glyphs.len() as u32,
-        );
-
-        // Images above text (z_index >= 0).
-        Self::record_image_draws(
-            pipelines,
-            renderer,
-            pass,
-            &p.image_quads_above,
-            p.image_quads_below.len(), // buffer offset: above quads start after below
-        );
-
-        // Chrome tier — per-instance clip rects handle clipping in the shader.
-        record_draw(
-            pass,
-            &pipelines.ui_rect_pipeline,
-            bg,
-            None,
-            renderer.ui_rect_buffer.as_ref(),
-            p.ui_rects.len() as u32,
-        );
-        record_draw(
-            pass,
-            &pipelines.fg_pipeline,
-            bg,
-            mono,
-            renderer.ui_fg_buffer.as_ref(),
-            p.ui_glyphs.len() as u32,
-        );
-        record_draw(
-            pass,
-            &pipelines.subpixel_fg_pipeline,
-            bg,
-            sub,
-            renderer.ui_subpixel_fg_buffer.as_ref(),
-            p.ui_subpixel_glyphs.len() as u32,
-        );
-        record_draw(
-            pass,
-            &pipelines.color_fg_pipeline,
-            bg,
-            color,
-            renderer.ui_color_fg_buffer.as_ref(),
-            p.ui_color_glyphs.len() as u32,
-        );
-    }
-
-    /// Record overlay draw passes only.
-    pub(super) fn record_overlay_pass<'a>(
-        pipelines: &'a GpuPipelines,
-        renderer: &'a Self,
-        pass: &mut RenderPass<'a>,
-    ) {
-        let bg = renderer.uniform_buffer.bind_group();
-        let mono = Some(renderer.atlas_bind_group.bind_group());
-        let sub = Some(renderer.subpixel_atlas_bind_group.bind_group());
-        let color = Some(renderer.color_atlas_bind_group.bind_group());
-        let p = &renderer.prepared;
-
-        for range in &p.overlay_draw_ranges {
-            record_draw_range(
-                pass,
-                &pipelines.ui_rect_pipeline,
-                bg,
-                None,
-                renderer.overlay_rect_buffer.as_ref(),
-                range.rects.0,
-                range.rects.1,
-            );
-            record_draw_range(
-                pass,
-                &pipelines.fg_pipeline,
-                bg,
-                mono,
-                renderer.overlay_fg_buffer.as_ref(),
-                range.mono.0,
-                range.mono.1,
-            );
-            record_draw_range(
-                pass,
-                &pipelines.subpixel_fg_pipeline,
-                bg,
-                sub,
-                renderer.overlay_subpixel_fg_buffer.as_ref(),
-                range.subpixel.0,
-                range.subpixel.1,
-            );
-            record_draw_range(
-                pass,
-                &pipelines.color_fg_pipeline,
-                bg,
-                color,
-                renderer.overlay_color_fg_buffer.as_ref(),
-                range.color.0,
-                range.color.1,
-            );
-        }
-    }
-
-    /// Record cursor draw pass only.
-    pub(super) fn record_cursor_pass<'a>(
-        pipelines: &'a GpuPipelines,
-        renderer: &'a Self,
-        pass: &mut RenderPass<'a>,
-    ) {
-        record_draw(
-            pass,
-            &pipelines.bg_pipeline,
-            renderer.uniform_buffer.bind_group(),
-            None,
-            renderer.cursor_buffer.as_ref(),
-            renderer.prepared.cursors.len() as u32,
-        );
-    }
-
-    /// Record per-image draw calls for a set of image quads.
-    ///
-    /// Each image requires its own draw call because each has a unique
-    /// texture bind group. `buffer_offset` is the starting index into the
-    /// shared image instance buffer.
-    fn record_image_draws<'a>(
-        pipelines: &'a GpuPipelines,
-        renderer: &'a Self,
-        pass: &mut RenderPass<'a>,
-        quads: &[super::super::prepared_frame::ImageQuad],
-        buffer_offset: usize,
-    ) {
-        if quads.is_empty() {
-            return;
-        }
-        let Some(buf) = renderer.image_instance_buffer.as_ref() else {
-            return;
-        };
-
-        let stride = IMAGE_INSTANCE_STRIDE;
-
-        pass.set_pipeline(&pipelines.image_pipeline);
-        pass.set_bind_group(0, renderer.uniform_buffer.bind_group(), &[]);
-
-        for (i, quad) in quads.iter().enumerate() {
-            let Some(bind_group) = renderer.image_texture_cache.get_bind_group(quad.image_id)
-            else {
-                continue;
-            };
-
-            let byte_offset = ((buffer_offset + i) as u64) * stride;
-            pass.set_bind_group(1, bind_group, &[]);
-            pass.set_vertex_buffer(0, buf.slice(byte_offset..byte_offset + stride));
-            pass.draw(0..4, 0..1);
-        }
     }
 
     /// Resolved clear color from the prepared frame.

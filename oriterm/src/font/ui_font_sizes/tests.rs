@@ -4,7 +4,7 @@ use super::*;
 use crate::font::collection::loading::{FontBytes, FontData};
 use crate::font::collection::{FontSet, size_key};
 use crate::font::discovery::TEST_EMOJI_DATA;
-use crate::font::{FaceIdx, GlyphFormat, HintingMode, parse_features};
+use crate::font::{FaceIdx, FontRasterConfig, GlyphFormat, HintingMode, parse_features};
 
 /// Helper: build a `UiFontSizes` from the embedded font with default settings.
 fn test_registry() -> UiFontSizes {
@@ -12,10 +12,12 @@ fn test_registry() -> UiFontSizes {
     UiFontSizes::new(
         font_set,
         96.0,
-        GlyphFormat::Alpha,
-        HintingMode::Full,
-        400,
-        550,
+        FontRasterConfig {
+            format: GlyphFormat::Alpha,
+            weight: 400,
+            bold_weight: 550,
+            hinting: HintingMode::Full,
+        },
         PRELOAD_SIZES,
     )
     .expect("registry must build")
@@ -32,11 +34,12 @@ fn ui_test_registry() -> UiFontSizes {
     UiFontSizes::new(
         font_set,
         96.0,
-        GlyphFormat::Alpha,
-        HintingMode::None,
-        400,
-        700,
-        // Two sizes so tests can iterate across multiple collections.
+        FontRasterConfig {
+            format: GlyphFormat::Alpha,
+            weight: 400,
+            bold_weight: 700,
+            hinting: HintingMode::None,
+        }, // Two sizes so tests can iterate across multiple collections.
         &[13.0, 16.0],
     )
     .expect("ui registry must build")

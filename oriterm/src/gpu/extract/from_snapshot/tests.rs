@@ -3,7 +3,7 @@
 use oriterm_core::{CellFlags, Column, CursorShape, Rgb, TermMode};
 use oriterm_mux::{PaneSnapshot, WireCell, WireCursor, WireCursorShape, WireRgb};
 
-use crate::font::CellMetrics;
+use crate::font::{CellMetrics, StrokeMetrics};
 use crate::gpu::frame_input::ViewportSize;
 
 use super::{
@@ -109,7 +109,16 @@ fn test_snapshot() -> PaneSnapshot {
 }
 
 fn test_cell_metrics() -> CellMetrics {
-    CellMetrics::new(8.0, 16.0, 12.0, 2.0, 1.0, 5.0)
+    CellMetrics::new(
+        8.0,
+        16.0,
+        12.0,
+        StrokeMetrics {
+            underline_offset: 2.0,
+            stroke_size: 1.0,
+            strikeout_offset: 5.0,
+        },
+    )
 }
 
 #[test]

@@ -15,14 +15,25 @@ use super::{FontCollection, FontSet};
 use crate::config::FontConfig;
 use crate::font::discovery::EMBEDDED_FONT_DATA;
 use crate::font::{
-    FaceIdx, FontRealm, GlyphFormat, GlyphStyle, HintingMode, RasterKey, SyntheticFlags,
+    FaceIdx, FontRasterConfig, FontRealm, GlyphFormat, GlyphStyle, HintingMode, RasterKey,
+    SyntheticFlags,
 };
 
 /// Helper: build a FontCollection from system discovery with default settings.
 fn system_collection(format: GlyphFormat) -> FontCollection {
     let font_set = FontSet::load(None, 400).expect("font must load");
-    FontCollection::new(font_set, 12.0, 96.0, format, 400, 550, HintingMode::Full)
-        .expect("collection must build")
+    FontCollection::new(
+        font_set,
+        12.0,
+        96.0,
+        FontRasterConfig {
+            format: format,
+            weight: 400,
+            bold_weight: 550,
+            hinting: HintingMode::Full,
+        },
+    )
+    .expect("collection must build")
 }
 
 /// Helper: build a FontCollection from ONLY the embedded Regular font.
@@ -33,10 +44,12 @@ fn embedded_only_collection(format: GlyphFormat) -> FontCollection {
         FontSet::embedded(),
         12.0,
         96.0,
-        format,
-        400,
-        550,
-        HintingMode::Full,
+        FontRasterConfig {
+            format: format,
+            weight: 400,
+            bold_weight: 550,
+            hinting: HintingMode::Full,
+        },
     )
     .expect("collection must build")
 }
@@ -114,10 +127,12 @@ fn from_test_bytes_accepts_subcell_precedence_fixture() {
         fs,
         12.0,
         96.0,
-        GlyphFormat::Alpha,
-        400,
-        550,
-        HintingMode::None,
+        FontRasterConfig {
+            format: GlyphFormat::Alpha,
+            weight: 400,
+            bold_weight: 550,
+            hinting: HintingMode::None,
+        },
     );
     assert!(
         fc.is_ok(),
@@ -576,10 +591,14 @@ fn rasterize_ligature_glyph_id_produces_bitmap() {
     let mut col_starts = Vec::new();
     crate::font::shaper::shape_prepared_runs(
         &runs,
-        &faces,
-        &fc,
-        &mut glyphs,
-        &mut col_starts,
+        crate::font::shaper::ShapeFaces {
+            faces: &faces,
+            collection: &fc,
+        },
+        &mut crate::font::shaper::ShapeSink {
+            output: &mut glyphs,
+            col_starts: &mut col_starts,
+        },
         &mut None,
     );
 
@@ -1375,10 +1394,12 @@ fn set_size_metrics_scale_proportionally() {
         font_set,
         24.0,
         96.0,
-        GlyphFormat::Alpha,
-        400,
-        550,
-        HintingMode::Full,
+        FontRasterConfig {
+            format: GlyphFormat::Alpha,
+            weight: 400,
+            bold_weight: 550,
+            hinting: HintingMode::Full,
+        },
     )
     .expect("collection must build");
     let large = fc_large.cell_metrics();
@@ -2221,10 +2242,12 @@ fn ui_embedded_collection_has_medium() {
         fs,
         13.0,
         96.0,
-        GlyphFormat::Alpha,
-        400,
-        550,
-        HintingMode::None,
+        FontRasterConfig {
+            format: GlyphFormat::Alpha,
+            weight: 400,
+            bold_weight: 550,
+            hinting: HintingMode::None,
+        },
     )
     .expect("UI embedded collection should build");
     assert!(
@@ -2338,10 +2361,12 @@ fn alpha_correction_applied_to_rasterized_glyph() {
         font_set,
         12.0,
         96.0,
-        GlyphFormat::Alpha,
-        400,
-        550,
-        HintingMode::Full,
+        FontRasterConfig {
+            format: GlyphFormat::Alpha,
+            weight: 400,
+            bold_weight: 550,
+            hinting: HintingMode::Full,
+        },
     )
     .expect("collection should build");
 
@@ -2447,10 +2472,12 @@ fn bold_glyph_heavier_than_regular() {
         font_set,
         14.0,
         96.0,
-        GlyphFormat::Alpha,
-        400,
-        550,
-        HintingMode::Full,
+        FontRasterConfig {
+            format: GlyphFormat::Alpha,
+            weight: 400,
+            bold_weight: 550,
+            hinting: HintingMode::Full,
+        },
     )
     .expect("collection should build");
 

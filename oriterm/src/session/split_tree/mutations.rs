@@ -372,7 +372,6 @@ impl SplitTree {
         }
     }
 
-    #[allow(dead_code, reason = "called by swap()")]
     fn swap_inner(&self, a: PaneId, b: PaneId) -> Self {
         match self {
             Self::Leaf(id) if *id == a => Self::Leaf(b),

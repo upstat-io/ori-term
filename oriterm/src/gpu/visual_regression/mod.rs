@@ -116,10 +116,12 @@ pub(crate) fn headless_env_with(
         config.terminal_font_set.clone(),
         config.size_pt,
         config.dpi,
-        config.format,
-        TEST_FONT_WEIGHT,
-        550,
-        config.terminal_hinting,
+        FontRasterConfig {
+            format: config.format,
+            weight: TEST_FONT_WEIGHT,
+            bold_weight: 550,
+            hinting: config.terminal_hinting,
+        },
     )
     .ok()?;
     let ui_font_sizes = match &config.ui {
@@ -127,10 +129,12 @@ pub(crate) fn headless_env_with(
             UiFontSizes::new(
                 ui.font_set.clone(),
                 config.dpi,
-                config.format,
-                ui.hinting,
-                TEST_FONT_WEIGHT,
-                550,
+                FontRasterConfig {
+                    format: config.format,
+                    weight: TEST_FONT_WEIGHT,
+                    bold_weight: 550,
+                    hinting: ui.hinting,
+                },
                 &PRELOAD_SIZES,
             )
             .ok()?,
@@ -253,10 +257,12 @@ pub(crate) fn headless_env_with_pinned_software_rasterizer(
         font_set,
         config.font_size_pt,
         config.dpi,
-        config.glyph_format,
-        TEST_FONT_WEIGHT,
-        550,
-        config.hinting_mode,
+        FontRasterConfig {
+            format: config.glyph_format,
+            weight: TEST_FONT_WEIGHT,
+            bold_weight: 550,
+            hinting: config.hinting_mode,
+        },
     )
     .ok()?;
     let mut renderer = WindowRenderer::new(&gpu, &pipelines, font_collection, None);

@@ -103,10 +103,12 @@ fn embedded_font_resolves_emoji_glyph() {
         font_set_with_best_emoji(),
         14.0,
         96.0,
-        GlyphFormat::Alpha,
-        400,
-        550,
-        HintingMode::Full,
+        FontRasterConfig {
+            format: GlyphFormat::Alpha,
+            weight: 400,
+            bold_weight: 550,
+            hinting: HintingMode::Full,
+        },
     )
     .expect("collection should build");
     let resolved = fc.resolve_prefer_emoji('😀', GlyphStyle::Regular);

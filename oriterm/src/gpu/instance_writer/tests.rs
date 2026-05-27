@@ -2,7 +2,10 @@
 
 use oriterm_core::Rgb;
 
-use super::{CLIP_UNCLIPPED, INSTANCE_SIZE, InstanceKind, InstanceWriter, ScreenRect};
+use super::{
+    CLIP_UNCLIPPED, GlyphInstance, GlyphInstanceBg, INSTANCE_SIZE, InstanceKind, InstanceWriter,
+    ScreenRect,
+};
 use crate::gpu::srgb_to_linear;
 
 /// Read a little-endian `f32` from the given byte offset.
@@ -110,11 +113,13 @@ fn push_glyph_field_offsets() {
             w: 8.0,
             h: 16.0,
         },
-        uv,
-        WHITE,
-        1.0,
-        0,
-        CLIP_UNCLIPPED,
+        GlyphInstance {
+            uv,
+            fg: WHITE,
+            alpha: 1.0,
+            atlas_page: 0,
+            clip: CLIP_UNCLIPPED,
+        },
     );
 
     let rec = w.as_bytes();
@@ -191,12 +196,9 @@ fn push_glyph_with_bg_field_offsets() {
             w: 8.0,
             h: 16.0,
         },
-        uv,
-        WHITE, // fg
-        RED,   // bg
-        0.9,
-        3,
-        CLIP_UNCLIPPED,
+        GlyphInstanceBg { uv, fg: WHITE, bg: // fg
+        RED, alpha: // bg
+        0.9, atlas_page: 3, clip: CLIP_UNCLIPPED },
     );
 
     let rec = w.as_bytes();
@@ -335,11 +337,13 @@ fn multiple_pushes_accumulate() {
             w: 8.0,
             h: 16.0,
         },
-        [0.0; 4],
-        WHITE,
-        1.0,
-        0,
-        CLIP_UNCLIPPED,
+        GlyphInstance {
+            uv: [0.0; 4],
+            fg: WHITE,
+            alpha: 1.0,
+            atlas_page: 0,
+            clip: CLIP_UNCLIPPED,
+        },
     );
     w.push_cursor(
         ScreenRect {
@@ -409,11 +413,13 @@ fn clear_and_reuse() {
             w: 8.0,
             h: 16.0,
         },
-        [0.1, 0.2, 0.3, 0.4],
-        WHITE,
-        1.0,
-        0,
-        CLIP_UNCLIPPED,
+        GlyphInstance {
+            uv: [0.1, 0.2, 0.3, 0.4],
+            fg: WHITE,
+            alpha: 1.0,
+            atlas_page: 0,
+            clip: CLIP_UNCLIPPED,
+        },
     );
 
     assert_eq!(w.len(), 1);

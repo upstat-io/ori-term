@@ -7,7 +7,7 @@
 
 use crate::font::{CellMetrics, FaceIdx, FontRealm, RasterKey, RasterizedGlyph, SyntheticFlags};
 
-use super::Canvas;
+use super::{Canvas, RectF};
 
 /// Synthetic glyph ID for curly underline pattern.
 pub(crate) const CURLY_GLYPH_ID: u16 = 0xFFF0;
@@ -66,7 +66,7 @@ pub(crate) fn rasterize_curly(metrics: &CellMetrics) -> Option<RasterizedGlyph> 
         let phase = (dx as f32 / w as f32) * std::f32::consts::TAU;
         let offset = (phase.sin() * amplitude).round();
         let py = center_y + offset;
-        canvas.fill_rect(dx as f32, py, 1.0, t, 255);
+        canvas.fill_rect(RectF::new(dx as f32, py, 1.0, t), 255);
     }
 
     Some(canvas.into_rasterized_glyph())
@@ -84,7 +84,7 @@ pub(crate) fn rasterize_dotted(metrics: &CellMetrics) -> Option<RasterizedGlyph>
     let mut canvas = Canvas::new(w, h);
     let steps = w as usize;
     for dx in (0..steps).step_by(2) {
-        canvas.fill_rect(dx as f32, 0.0, 1.0, t, 255);
+        canvas.fill_rect(RectF::new(dx as f32, 0.0, 1.0, t), 255);
     }
 
     Some(canvas.into_rasterized_glyph())
@@ -103,7 +103,7 @@ pub(crate) fn rasterize_dashed(metrics: &CellMetrics) -> Option<RasterizedGlyph>
     let steps = w as usize;
     for dx in 0..steps {
         if dx % 5 < 3 {
-            canvas.fill_rect(dx as f32, 0.0, 1.0, t, 255);
+            canvas.fill_rect(RectF::new(dx as f32, 0.0, 1.0, t), 255);
         }
     }
 

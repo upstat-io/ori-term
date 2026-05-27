@@ -415,6 +415,8 @@ impl FrameInput {
     pub fn test_grid(cols: usize, rows: usize, text: &str) -> Self {
         use oriterm_core::{CellFlags, Column, RenderableCell, RenderableContent, TermMode};
 
+        use crate::font::StrokeMetrics;
+
         let fg = Rgb {
             r: 211,
             g: 215,
@@ -463,7 +465,7 @@ impl FrameInput {
         Self {
             content,
             viewport: ViewportSize::new(cols as u32 * 8, rows as u32 * 16),
-            cell_size: CellMetrics::new(8.0, 16.0, 12.0, 2.0, 1.0, 4.0),
+            cell_size: CellMetrics::new(8.0, 16.0, 12.0, StrokeMetrics::new(2.0, 1.0, 4.0)),
             content_cols: cols,
             content_rows: rows,
             palette: FramePalette {

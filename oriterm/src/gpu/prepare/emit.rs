@@ -10,7 +10,7 @@ use super::super::frame_input::FrameInput;
 use super::super::prepared_frame::PreparedFrame;
 use super::{AtlasLookup, resolve_cursor_state};
 use crate::font::{FaceIdx, FontRealm, RasterKey, SyntheticFlags, subpx_bin, subpx_offset};
-use crate::gpu::instance_writer::{CLIP_UNCLIPPED, ScreenRect};
+use crate::gpu::instance_writer::{CLIP_UNCLIPPED, GlyphInstance, GlyphInstanceBg, ScreenRect};
 use oriterm_ui::text::ShapedGlyph;
 
 /// Prompt marker bar color: subtle blue accent.
@@ -111,18 +111,29 @@ impl GlyphEmitter<'_> {
                     AtlasKind::Subpixel => {
                         self.frame.subpixel_glyphs.push_glyph_with_bg(
                             rect,
-                            uv,
-                            fg,
-                            bg,
-                            self.fg_dim,
-                            entry.page,
-                            CLIP_UNCLIPPED,
+                            GlyphInstanceBg {
+                                uv,
+                                fg,
+                                bg,
+                                alpha: self.fg_dim,
+                                atlas_page: entry.page,
+                                clip: CLIP_UNCLIPPED,
+                            },
                         );
                         continue;
                     }
                     AtlasKind::Mono => &mut self.frame.glyphs,
                 };
-                writer.push_glyph(rect, uv, fg, self.fg_dim, entry.page, CLIP_UNCLIPPED);
+                writer.push_glyph(
+                    rect,
+                    GlyphInstance {
+                        uv,
+                        fg,
+                        alpha: self.fg_dim,
+                        atlas_page: entry.page,
+                        clip: CLIP_UNCLIPPED,
+                    },
+                );
             }
         }
     }

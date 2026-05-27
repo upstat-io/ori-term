@@ -3,8 +3,8 @@
 
 use crate::config::FontConfig;
 use crate::font::{
-    FaceIdx, FontCollection, FontSet, HintingMode, SubpixelMode, UiFontSizes, parse_features,
-    parse_hex_range, ui_font_sizes,
+    FaceIdx, FontCollection, FontRasterConfig, FontSet, HintingMode, SubpixelMode, UiFontSizes,
+    parse_features, parse_hex_range, ui_font_sizes,
 };
 
 /// Apply all font configuration settings to a collection after creation.
@@ -174,27 +174,21 @@ pub(crate) fn apply_font_config_to_ui_sizes(
 /// and applies user font config (features, fallback metadata, codepoint
 /// mappings) to every collection. The caller must follow with
 /// [`replace_font_collection`] to clear and re-prewarm atlases.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "passes through font config params"
-)]
 pub(super) fn rebuild_ui_font_sizes(
     renderer: &mut crate::gpu::WindowRenderer,
-    _font_set: &FontSet,
     dpi: f32,
-    _format: crate::font::GlyphFormat,
-    _hinting: HintingMode,
-    _weight: u16,
     font_config: &FontConfig,
     fallback_map: &[usize],
 ) {
     match UiFontSizes::new(
         FontSet::ui_embedded(),
         dpi,
-        crate::font::GlyphFormat::Alpha,
-        HintingMode::None,
-        400,
-        550,
+        FontRasterConfig {
+            format: crate::font::GlyphFormat::Alpha,
+            weight: 400,
+            bold_weight: 550,
+            hinting: HintingMode::None,
+        },
         ui_font_sizes::PRELOAD_SIZES,
     ) {
         Ok(mut ui_sizes) => {

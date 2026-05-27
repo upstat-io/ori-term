@@ -54,33 +54,45 @@ impl AtlasLookup for CombinedAtlasLookup<'_> {
 /// glyphs. A glyph that fails rasterization produces no bitmap regardless
 /// of target atlas, so this set is shared across all three.
 ///
+/// Mono/subpixel/color atlases + empty-key set + GPU handles for glyph routing.
+///
+/// Bundles the three format-specific atlases, the shared zero-size-glyph key
+/// set, and the GPU device/queue needed to insert rasterized bitmaps.
+pub(super) struct MultiAtlasSink<'a> {
+    /// Monochrome (alpha) atlas.
+    pub mono: &'a mut GlyphAtlas,
+    /// Subpixel atlas.
+    pub subpixel: &'a mut GlyphAtlas,
+    /// Color (emoji/bitmap) atlas.
+    pub color: &'a mut GlyphAtlas,
+    /// Cross-atlas set of keys known to produce zero-size glyphs.
+    pub empty_keys: &'a mut HashSet<RasterKey>,
+    /// GPU device for texture allocation.
+    pub device: &'a Device,
+    /// GPU queue for texture upload.
+    pub queue: &'a Queue,
+}
+
+/// Ensure all glyphs from the given keys are cached in the appropriate atlas.
+///
 /// Callers build [`RasterKey`] iterators from their specific context:
 /// - Grid caller: iterates `ShapedFrame::all_glyphs()`, builds keys with
 ///   [`FontRealm::Terminal`] and `subpx_bin(glyph.x_offset)`.
 /// - UI caller: iterates Scene text runs, builds keys with
 ///   [`FontRealm::Ui`] and `subpx_bin(cursor_x + glyph.x_offset)`.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "three atlases + empty set + fonts + device + queue for glyph routing"
-)]
 pub(super) fn ensure_glyphs_cached(
     keys: impl Iterator<Item = RasterKey>,
-    mono_atlas: &mut GlyphAtlas,
-    subpixel_atlas: &mut GlyphAtlas,
-    color_atlas: &mut GlyphAtlas,
-    empty_keys: &mut HashSet<RasterKey>,
+    sink: &mut MultiAtlasSink<'_>,
     fonts: &mut FontCollection,
-    device: &Device,
-    queue: &Queue,
 ) {
     for key in keys {
-        if mono_atlas.lookup_touch(key).is_some()
-            || subpixel_atlas.lookup_touch(key).is_some()
-            || color_atlas.lookup_touch(key).is_some()
+        if sink.mono.lookup_touch(key).is_some()
+            || sink.subpixel.lookup_touch(key).is_some()
+            || sink.color.lookup_touch(key).is_some()
         {
             continue;
         }
-        if empty_keys.contains(&key) {
+        if sink.empty_keys.contains(&key) {
             continue;
         }
         let rasterized = if key.font_realm == FontRealm::Ui {
@@ -91,17 +103,18 @@ pub(super) fn ensure_glyphs_cached(
         if let Some(rasterized) = rasterized {
             match rasterized.format {
                 GlyphFormat::Color => {
-                    color_atlas.insert(key, rasterized, device, queue);
+                    sink.color.insert(key, rasterized, sink.device, sink.queue);
                 }
                 GlyphFormat::SubpixelRgb | GlyphFormat::SubpixelBgr => {
-                    subpixel_atlas.insert(key, rasterized, device, queue);
+                    sink.subpixel
+                        .insert(key, rasterized, sink.device, sink.queue);
                 }
                 GlyphFormat::Alpha => {
-                    mono_atlas.insert(key, rasterized, device, queue);
+                    sink.mono.insert(key, rasterized, sink.device, sink.queue);
                 }
             }
         } else {
-            empty_keys.insert(key);
+            sink.empty_keys.insert(key);
         }
     }
 }
@@ -228,21 +241,17 @@ pub(super) fn upload_buffer(
 ///
 /// Used by the partial upload path to skip re-uploading clean rows whose
 /// instance data is already present in the GPU buffer from the previous frame.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "mirrors upload_buffer signature plus offset parameter"
-)]
 pub(super) fn upload_buffer_partial(
     device: &Device,
     queue: &Queue,
     slot: &mut Option<Buffer>,
     data: &[u8],
-    offset: usize,
-    label: &'static str,
+    range: PartialUpload,
 ) {
     if data.is_empty() {
         return;
     }
+    let PartialUpload { offset, label } = range;
 
     let needed = data.len() as u64;
     let can_partial = match slot {
@@ -261,31 +270,38 @@ pub(super) fn upload_buffer_partial(
     }
 }
 
+/// Partial-upload parameters: byte offset + debug label.
+#[derive(Clone, Copy)]
+pub(super) struct PartialUpload {
+    /// Byte offset into the GPU buffer to begin writing.
+    pub offset: usize,
+    /// Debug label for buffer (re)creation on the full-upload fallback.
+    pub label: &'static str,
+}
+
+/// GPU resources for an instanced draw call: pipeline, bind groups, buffer.
+#[derive(Clone, Copy)]
+pub(super) struct DrawResources<'a> {
+    /// Render pipeline.
+    pub pipeline: &'a RenderPipeline,
+    /// Uniform bind group (group 0).
+    pub uniform_bg: &'a BindGroup,
+    /// Optional atlas bind group (group 1).
+    pub atlas_bg: Option<&'a BindGroup>,
+    /// Optional instance vertex buffer.
+    pub buffer: Option<&'a Buffer>,
+}
+
 /// Record a single instanced draw call into the render pass.
 ///
 /// Shim over [`record_draw_range`]: equivalent to drawing the
 /// `0..instance_count` range. No-ops when `instance_count == 0`.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "GPU render pass recording: pipeline, bind groups, buffer, count — shim signature mirrors record_draw_range"
-)]
 pub(super) fn record_draw(
     pass: &mut RenderPass<'_>,
-    pipeline: &RenderPipeline,
-    uniform_bg: &BindGroup,
-    atlas_bg: Option<&BindGroup>,
-    buffer: Option<&Buffer>,
+    resources: DrawResources<'_>,
     instance_count: u32,
 ) {
-    record_draw_range(
-        pass,
-        pipeline,
-        uniform_bg,
-        atlas_bg,
-        buffer,
-        0,
-        instance_count,
-    );
+    record_draw_range(pass, resources, 0, instance_count);
 }
 
 /// Record an instanced draw call for a sub-range `[start..end)`.
@@ -293,22 +309,21 @@ pub(super) fn record_draw(
 /// Like [`record_draw`] but draws only instances in `[start..end)`.
 /// Used for overlay draw ranges where each overlay occupies a contiguous
 /// sub-range of the shared buffer.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "GPU render pass + range: pipeline, bind groups, buffer, range"
-)]
 pub(super) fn record_draw_range(
     pass: &mut RenderPass<'_>,
-    pipeline: &RenderPipeline,
-    uniform_bg: &BindGroup,
-    atlas_bg: Option<&BindGroup>,
-    buffer: Option<&Buffer>,
+    resources: DrawResources<'_>,
     start: u32,
     end: u32,
 ) {
     if start >= end {
         return;
     }
+    let DrawResources {
+        pipeline,
+        uniform_bg,
+        atlas_bg,
+        buffer,
+    } = resources;
     let Some(buf) = buffer else { return };
     pass.set_pipeline(pipeline);
     pass.set_bind_group(0, uniform_bg, &[]);

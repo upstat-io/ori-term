@@ -7,7 +7,9 @@ use super::super::frame_input::FrameInput;
 use super::super::pipelines::GpuPipelines;
 use super::super::prepare;
 use super::super::state::GpuState;
-use super::helpers::{CombinedAtlasLookup, ensure_glyphs_cached, grid_raster_keys, shape_frame};
+use super::helpers::{
+    CombinedAtlasLookup, MultiAtlasSink, ensure_glyphs_cached, grid_raster_keys, shape_frame,
+};
 use super::{EMPTY_KEYS_CAP, WindowRenderer};
 
 /// Number of frames an image texture may go unused before eviction.
@@ -160,29 +162,31 @@ impl WindowRenderer {
     /// `self.shaping.frame` for the current frame.
     pub(super) fn cache_glyphs_and_builtins(&mut self, input: &FrameInput, gpu: &GpuState) {
         // Phase B: shaped glyphs.
+        let hinted = self.font_collection.hinting_mode().hint_flag();
+        let keys = grid_raster_keys(&self.shaping.frame, hinted, self.subpixel_positioning);
         ensure_glyphs_cached(
-            grid_raster_keys(
-                &self.shaping.frame,
-                self.font_collection.hinting_mode().hint_flag(),
-                self.subpixel_positioning,
-            ),
-            &mut self.atlas,
-            &mut self.subpixel_atlas,
-            &mut self.color_atlas,
-            &mut self.empty_keys,
+            keys,
+            &mut MultiAtlasSink {
+                mono: &mut self.atlas,
+                subpixel: &mut self.subpixel_atlas,
+                color: &mut self.color_atlas,
+                empty_keys: &mut self.empty_keys,
+                device: &gpu.device,
+                queue: &gpu.queue,
+            },
             &mut self.font_collection,
-            &gpu.device,
-            &gpu.queue,
         );
 
         // Phase B2: builtin geometric glyphs + decoration patterns.
         super::super::builtin_glyphs::ensure_builtins_cached(
             input,
             self.shaping.frame.size_q6(),
-            &mut self.atlas,
-            &mut self.empty_keys,
-            &gpu.device,
-            &gpu.queue,
+            &mut super::super::builtin_glyphs::GlyphCacheSink {
+                atlas: &mut self.atlas,
+                empty_keys: &mut self.empty_keys,
+                device: &gpu.device,
+                queue: &gpu.queue,
+            },
         );
     }
 

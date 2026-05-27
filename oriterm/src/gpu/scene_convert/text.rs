@@ -8,9 +8,61 @@ use oriterm_ui::text::ShapedText;
 
 use crate::font::{FaceIdx, FontRealm, RasterKey, SyntheticFlags, subpx_bin, subpx_offset};
 use crate::gpu::atlas::{AtlasEntry, AtlasKind};
-use crate::gpu::instance_writer::ScreenRect;
+use crate::gpu::instance_writer::{GlyphInstance, GlyphInstanceBg, ScreenRect};
 
-use super::TextContext;
+use super::{PaintParams, TextContext};
+
+/// Text payload for [`convert_text`]: position, shaped run, and colors.
+#[derive(Clone, Copy)]
+pub(super) struct TextDraw<'a> {
+    /// Text anchor position in logical pixels (from widget layout).
+    pub position: Point,
+    /// Shaped glyph run.
+    pub shaped: &'a ShapedText,
+    /// Foreground color.
+    pub color: Color,
+    /// Optional background hint for subpixel compositing.
+    pub bg_hint: Option<Color>,
+}
+
+/// Icon payload for [`convert_icon`]: rect, atlas page, uv, and color.
+#[derive(Clone, Copy)]
+pub(super) struct IconDraw {
+    /// Icon rect in logical pixels.
+    pub rect: Rect,
+    /// Mono atlas page index.
+    pub atlas_page: u32,
+    /// Atlas UV coordinates `[x, y, w, h]`.
+    pub uv: [f32; 4],
+    /// Tint color.
+    pub color: Color,
+}
+
+/// Glyph placement (physical-pixel cursor + baseline + subpixel bin).
+#[derive(Clone, Copy)]
+struct GlyphPlacement {
+    /// Pen x position in physical pixels.
+    cursor_x: f32,
+    /// Baseline-origin y in physical pixels.
+    base_y: f32,
+    /// Font baseline offset.
+    baseline: f32,
+    /// Subpixel bin index.
+    subpx: u8,
+}
+
+/// Glyph paint: foreground, optional subpixel background, alpha, clip.
+#[derive(Clone, Copy)]
+struct GlyphPaint {
+    /// Foreground color.
+    fg: oriterm_core::Rgb,
+    /// Subpixel-compositing background, if known.
+    subpixel_bg: Option<oriterm_core::Rgb>,
+    /// Combined alpha.
+    alpha: f32,
+    /// Physical-pixel clip rect.
+    clip: [f32; 4],
+}
 
 /// Convert a text draw command into glyph instances.
 ///
@@ -19,20 +71,18 @@ use super::TextContext;
 /// (from the font collection loaded at physical DPI). We scale the position
 /// to physical at the start, then work entirely in physical pixel space —
 /// no scaling of glyph bitmap dimensions, which would cause blurriness.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "text conversion: position, shaped, color, bg_hint, text context, scale, opacity, clip"
-)]
-pub(super) fn convert_text(
-    position: Point,
-    shaped: &ShapedText,
-    color: Color,
-    bg_hint: Option<Color>,
-    ctx: &mut TextContext<'_>,
-    scale: f32,
-    opacity: f32,
-    clip: [f32; 4],
-) {
+pub(super) fn convert_text(draw: TextDraw<'_>, ctx: &mut TextContext<'_>, paint: PaintParams) {
+    let TextDraw {
+        position,
+        shaped,
+        color,
+        bg_hint,
+    } = draw;
+    let PaintParams {
+        scale,
+        opacity,
+        clip,
+    } = paint;
     let fg = color_to_rgb(color);
     let subpixel_bg = bg_hint.map(color_to_rgb);
     let alpha = color.a * opacity;
@@ -86,17 +136,21 @@ pub(super) fn convert_text(
 
         if let Some(entry) = ctx.atlas.lookup_key(key) {
             emit_text_glyph(
-                cursor_x,
-                base_y,
-                baseline,
+                GlyphPlacement {
+                    cursor_x,
+                    base_y,
+                    baseline,
+                    subpx,
+                },
                 glyph,
                 entry,
-                fg,
-                subpixel_bg,
-                alpha,
-                subpx,
+                GlyphPaint {
+                    fg,
+                    subpixel_bg,
+                    alpha,
+                    clip,
+                },
                 ctx,
-                clip,
             );
         }
 
@@ -109,23 +163,25 @@ pub(super) fn convert_text(
 /// All coordinates are in physical pixels — no scale factor needed. The
 /// glyph bitmap dimensions come directly from the atlas entry (rasterized
 /// at the font's physical pixel size).
-#[expect(
-    clippy::too_many_arguments,
-    reason = "text glyph instance: position, glyph data, atlas entry, color, bg, clip"
-)]
 fn emit_text_glyph(
-    cursor_x: f32,
-    base_y: f32,
-    baseline: f32,
+    placement: GlyphPlacement,
     glyph: &oriterm_ui::text::ShapedGlyph,
     entry: &AtlasEntry,
-    fg: oriterm_core::Rgb,
-    subpixel_bg: Option<oriterm_core::Rgb>,
-    alpha: f32,
-    subpx: u8,
+    paint: GlyphPaint,
     ctx: &mut TextContext<'_>,
-    clip: [f32; 4],
 ) {
+    let GlyphPlacement {
+        cursor_x,
+        base_y,
+        baseline,
+        subpx,
+    } = placement;
+    let GlyphPaint {
+        fg,
+        subpixel_bg,
+        alpha,
+        clip,
+    } = paint;
     let absorbed = subpx_offset(subpx);
     let gx = cursor_x + glyph.x_offset - absorbed + entry.bearing_x as f32;
     let gy = base_y + baseline - entry.bearing_y as f32 - glyph.y_offset;
@@ -142,21 +198,54 @@ fn emit_text_glyph(
         AtlasKind::Subpixel => {
             if let Some(bg) = subpixel_bg {
                 // Known background — per-channel compositing in the shader.
-                ctx.subpixel_writer
-                    .push_glyph_with_bg(rect, uv, fg, bg, alpha, entry.page, clip);
+                ctx.subpixel_writer.push_glyph_with_bg(
+                    rect,
+                    GlyphInstanceBg {
+                        uv,
+                        fg,
+                        bg,
+                        alpha,
+                        atlas_page: entry.page,
+                        clip,
+                    },
+                );
             } else {
                 // No background hint — fall back to alpha blending.
-                ctx.subpixel_writer
-                    .push_glyph(rect, uv, fg, alpha, entry.page, clip);
+                ctx.subpixel_writer.push_glyph(
+                    rect,
+                    GlyphInstance {
+                        uv,
+                        fg,
+                        alpha,
+                        atlas_page: entry.page,
+                        clip,
+                    },
+                );
             }
         }
         AtlasKind::Mono => {
-            ctx.mono_writer
-                .push_glyph(rect, uv, fg, alpha, entry.page, clip);
+            ctx.mono_writer.push_glyph(
+                rect,
+                GlyphInstance {
+                    uv,
+                    fg,
+                    alpha,
+                    atlas_page: entry.page,
+                    clip,
+                },
+            );
         }
         AtlasKind::Color => {
-            ctx.color_writer
-                .push_glyph(rect, uv, fg, alpha, entry.page, clip);
+            ctx.color_writer.push_glyph(
+                rect,
+                GlyphInstance {
+                    uv,
+                    fg,
+                    alpha,
+                    atlas_page: entry.page,
+                    clip,
+                },
+            );
         }
     }
 }
@@ -165,20 +254,18 @@ fn emit_text_glyph(
 ///
 /// The icon bitmap lives in the mono atlas and is tinted to `color`
 /// by the `fg.wgsl` shader (same as monochrome text glyphs).
-#[expect(
-    clippy::too_many_arguments,
-    reason = "icon conversion: rect, atlas_page, uv, color, text context, scale, opacity, clip"
-)]
-pub(super) fn convert_icon(
-    rect: Rect,
-    atlas_page: u32,
-    uv: [f32; 4],
-    color: Color,
-    ctx: &mut TextContext<'_>,
-    scale: f32,
-    opacity: f32,
-    clip: [f32; 4],
-) {
+pub(super) fn convert_icon(draw: IconDraw, ctx: &mut TextContext<'_>, paint: PaintParams) {
+    let IconDraw {
+        rect,
+        atlas_page,
+        uv,
+        color,
+    } = draw;
+    let PaintParams {
+        scale,
+        opacity,
+        clip,
+    } = paint;
     let fg = color_to_rgb(color);
     let alpha = color.a * opacity;
 
@@ -189,8 +276,16 @@ pub(super) fn convert_icon(
     let w = (rect.width() * scale).round();
     let h = (rect.height() * scale).round();
     let screen = ScreenRect { x, y, w, h };
-    ctx.mono_writer
-        .push_glyph(screen, uv, fg, alpha, atlas_page, clip);
+    ctx.mono_writer.push_glyph(
+        screen,
+        GlyphInstance {
+            uv,
+            fg,
+            alpha,
+            atlas_page,
+            clip,
+        },
+    );
 }
 
 /// Convert an [`oriterm_ui::color::Color`] (f32 RGBA) to [`oriterm_core::Rgb`] (u8 RGB).

@@ -16,7 +16,7 @@ use oriterm_ui::widgets::dialog::{DialogButton, DialogButtons, DialogWidget};
 use oriterm_ui::widgets::settings_panel::SettingsPanel;
 
 use super::App;
-use super::dialog_context::{DialogContent, DialogWindowContext};
+use super::dialog_context::{DialogContent, DialogSurface, DialogWindowContext};
 use super::settings_overlay::form_builder;
 
 /// Caption height for the drag region at the top of the settings dialog.
@@ -180,9 +180,11 @@ impl App {
         let scale_factor = ScaleFactor::new(parts.window.scale_factor());
         let ctx = DialogWindowContext::new(
             parts.window.clone(),
-            parts.surface,
-            parts.surface_config,
-            parts.renderer,
+            DialogSurface {
+                surface: parts.surface,
+                surface_config: parts.surface_config,
+                renderer: parts.renderer,
+            },
             kind,
             content,
             scale_factor,
@@ -369,10 +371,12 @@ impl App {
         let ui_sizes = crate::font::UiFontSizes::new(
             crate::font::FontSet::ui_embedded(),
             physical_dpi,
-            crate::font::GlyphFormat::Alpha,
-            crate::font::HintingMode::None,
-            400,
-            600,
+            crate::font::FontRasterConfig {
+                format: crate::font::GlyphFormat::Alpha,
+                weight: 400,
+                bold_weight: 600,
+                hinting: crate::font::HintingMode::None,
+            },
             crate::font::ui_font_sizes::PRELOAD_SIZES,
         )
         .ok()

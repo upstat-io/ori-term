@@ -194,10 +194,12 @@ fn build_terminal_fc() -> FontCollection {
         FontSet::embedded(),
         TEST_FONT_SIZE_PT,
         TEST_DPI,
-        GlyphFormat::Alpha,
-        TEST_FONT_WEIGHT,
-        550,
-        HintingMode::Full,
+        FontRasterConfig {
+            format: GlyphFormat::Alpha,
+            weight: TEST_FONT_WEIGHT,
+            bold_weight: 550,
+            hinting: HintingMode::Full,
+        },
     )
     .expect("terminal FontCollection must build")
 }
@@ -207,10 +209,12 @@ fn fresh_empty_ui_sizes() -> UiFontSizes {
     UiFontSizes::new(
         FontSet::ui_embedded(),
         TEST_DPI,
-        GlyphFormat::Alpha,
-        HintingMode::None,
-        TEST_FONT_WEIGHT,
-        550,
+        FontRasterConfig {
+            format: GlyphFormat::Alpha,
+            weight: TEST_FONT_WEIGHT,
+            bold_weight: 550,
+            hinting: HintingMode::None,
+        },
         ui_font_sizes::PRELOAD_SIZES,
     )
     .expect("fresh UiFontSizes must build")

@@ -21,7 +21,7 @@ use std::sync::atomic::Ordering;
 use super::event_loop_helpers::resolve_ui_theme_with;
 use super::{App, DEFAULT_DPI};
 use crate::config::{Config, FontConfig};
-use crate::font::{FontByteCache, FontCollection, FontSet};
+use crate::font::{FontByteCache, FontCollection, FontRasterConfig, FontSet};
 use crate::keybindings;
 
 /// Minimum font size in points.
@@ -159,10 +159,12 @@ impl App {
                 font_set.clone(),
                 new.font.size,
                 physical_dpi,
-                format,
-                weight,
-                bold_weight,
-                hinting,
+                FontRasterConfig {
+                    format,
+                    weight,
+                    bold_weight,
+                    hinting,
+                },
             ) {
                 Ok(mut fc) => {
                     apply_font_config(&mut fc, &new.font, &fallback_map);
@@ -185,16 +187,7 @@ impl App {
             // UI registry always uses base weight 400 (Regular) — individual
             // UI text elements drive their weight via TextStyle.weight through
             // resolve_ui_weight(), not through the collection-level weight.
-            rebuild_ui_font_sizes(
-                renderer,
-                &font_set,
-                physical_dpi,
-                format,
-                hinting,
-                400,
-                &new.font,
-                &fallback_map,
-            );
+            rebuild_ui_font_sizes(renderer, physical_dpi, &new.font, &fallback_map);
             renderer.replace_font_collection(fc, gpu);
             renderer.set_subpixel_positioning(resolve_subpixel_positioning(&new.font, scale));
             let af = resolve_atlas_filtering(&new.font, scale);

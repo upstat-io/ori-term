@@ -534,7 +534,7 @@ fn canvas_dimensions() {
 fn canvas_fill_rect_clips() {
     let mut canvas = Canvas::new(8, 8);
     // This should not panic even with out-of-bounds coordinates.
-    canvas.fill_rect(-2.0, -2.0, 12.0, 12.0, 255);
+    canvas.fill_rect(RectF::new(-2.0, -2.0, 12.0, 12.0), 255);
     assert!(canvas.data.iter().all(|&b| b == 255));
 }
 
@@ -560,7 +560,7 @@ fn canvas_blend_pixel_out_of_bounds() {
 #[test]
 fn canvas_fill_line_produces_antialiased_output() {
     let mut canvas = Canvas::new(16, 32);
-    canvas.fill_line(0.0, 0.0, 16.0, 32.0, 2.0);
+    canvas.fill_line(LineF::new(0.0, 0.0, 16.0, 32.0), 2.0);
     let has_full = canvas.data.iter().any(|&b| b == 255);
     let has_partial = canvas.data.iter().any(|&b| b > 0 && b < 255);
     assert!(
@@ -588,11 +588,20 @@ fn canvas_into_rasterized_glyph_format() {
 // ── Decoration rasterization tests ──
 
 use super::decorations;
-use crate::font::CellMetrics;
+use crate::font::{CellMetrics, StrokeMetrics};
 
 /// Standard test metrics: 8x16 cell, 1px stroke.
 fn test_metrics() -> CellMetrics {
-    CellMetrics::new(8.0, 16.0, 12.0, 2.0, 1.0, 4.0)
+    CellMetrics::new(
+        8.0,
+        16.0,
+        12.0,
+        StrokeMetrics {
+            underline_offset: 2.0,
+            stroke_size: 1.0,
+            strikeout_offset: 4.0,
+        },
+    )
 }
 
 #[test]
@@ -679,7 +688,16 @@ fn rasterize_dashed_produces_bitmap() {
 
 #[test]
 fn rasterize_zero_width_returns_none() {
-    let m = CellMetrics::new(0.1, 16.0, 12.0, 2.0, 1.0, 4.0);
+    let m = CellMetrics::new(
+        0.1,
+        16.0,
+        12.0,
+        StrokeMetrics {
+            underline_offset: 2.0,
+            stroke_size: 1.0,
+            strikeout_offset: 4.0,
+        },
+    );
     // 0.1 rounds to 0 → should return None.
     assert!(decorations::rasterize_curly(&m).is_none());
     assert!(decorations::rasterize_dotted(&m).is_none());
@@ -688,8 +706,26 @@ fn rasterize_zero_width_returns_none() {
 
 #[test]
 fn rasterize_thick_stroke_produces_taller_curly() {
-    let thin = CellMetrics::new(8.0, 16.0, 12.0, 2.0, 1.0, 4.0);
-    let thick = CellMetrics::new(8.0, 16.0, 12.0, 2.0, 3.0, 4.0);
+    let thin = CellMetrics::new(
+        8.0,
+        16.0,
+        12.0,
+        StrokeMetrics {
+            underline_offset: 2.0,
+            stroke_size: 1.0,
+            strikeout_offset: 4.0,
+        },
+    );
+    let thick = CellMetrics::new(
+        8.0,
+        16.0,
+        12.0,
+        StrokeMetrics {
+            underline_offset: 2.0,
+            stroke_size: 3.0,
+            strikeout_offset: 4.0,
+        },
+    );
     let g_thin = decorations::rasterize_curly(&thin).unwrap();
     let g_thick = decorations::rasterize_curly(&thick).unwrap();
     assert!(

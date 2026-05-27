@@ -4,7 +4,7 @@
 //! diagonal fills. Each pattern is a hand-authored lookup table entry
 //! matching the Unicode chart shapes.
 
-use super::super::Canvas;
+use super::super::{Canvas, RectF};
 
 /// Draw a smooth mosaic character using the lookup table.
 pub(super) fn draw(canvas: &mut Canvas, ch: char) {
@@ -27,7 +27,7 @@ pub(super) fn draw(canvas: &mut Canvas, ch: char) {
 
             match fill {
                 F::E => {}
-                F::X => canvas.fill_rect(x, y, cell_w, row_h, 255),
+                F::X => canvas.fill_rect(RectF::new(x, y, cell_w, row_h), 255),
                 F::BL => fill_triangle_bl(canvas, x, y, cell_w, row_h),
                 F::TR => fill_triangle_tr(canvas, x, y, cell_w, row_h),
                 F::TL => fill_triangle_tl(canvas, x, y, cell_w, row_h),
@@ -157,7 +157,7 @@ fn fill_triangle_bl(canvas: &mut Canvas, x: f32, y: f32, w: f32, h: f32) {
     for r in 0..rows {
         let frac = (r as f32 + 0.5) / h;
         let fill_w = (w * frac).round();
-        canvas.fill_rect(x, y + h - r as f32 - 1.0, fill_w, 1.0, 255);
+        canvas.fill_rect(RectF::new(x, y + h - r as f32 - 1.0, fill_w, 1.0), 255);
     }
 }
 
@@ -167,7 +167,7 @@ fn fill_triangle_tr(canvas: &mut Canvas, x: f32, y: f32, w: f32, h: f32) {
     for r in 0..rows {
         let frac = (r as f32 + 0.5) / h;
         let fill_w = (w * frac).round();
-        canvas.fill_rect(x + w - fill_w, y + r as f32, fill_w, 1.0, 255);
+        canvas.fill_rect(RectF::new(x + w - fill_w, y + r as f32, fill_w, 1.0), 255);
     }
 }
 
@@ -177,7 +177,7 @@ fn fill_triangle_tl(canvas: &mut Canvas, x: f32, y: f32, w: f32, h: f32) {
     for r in 0..rows {
         let frac = (r as f32 + 0.5) / h;
         let fill_w = (w * frac).round();
-        canvas.fill_rect(x, y + r as f32, fill_w, 1.0, 255);
+        canvas.fill_rect(RectF::new(x, y + r as f32, fill_w, 1.0), 255);
     }
 }
 
@@ -187,6 +187,9 @@ fn fill_triangle_br(canvas: &mut Canvas, x: f32, y: f32, w: f32, h: f32) {
     for r in 0..rows {
         let frac = (r as f32 + 0.5) / h;
         let fill_w = (w * frac).round();
-        canvas.fill_rect(x + w - fill_w, y + h - r as f32 - 1.0, fill_w, 1.0, 255);
+        canvas.fill_rect(
+            RectF::new(x + w - fill_w, y + h - r as f32 - 1.0, fill_w, 1.0),
+            255,
+        );
     }
 }

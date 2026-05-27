@@ -8,7 +8,9 @@ use super::{
     AtlasLookup, ShapedFrame, prepare_frame, prepare_frame_into, prepare_frame_shaped,
     prepare_frame_shaped_into,
 };
-use crate::font::{CellMetrics, FaceIdx, FontRealm, GlyphStyle, RasterKey, SyntheticFlags};
+use crate::font::{
+    CellMetrics, FaceIdx, FontRealm, GlyphStyle, RasterKey, StrokeMetrics, SyntheticFlags,
+};
 use crate::gpu::atlas::{AtlasEntry, AtlasKind};
 use crate::gpu::frame_input::{FrameInput, FrameSelection, ViewportSize};
 use crate::gpu::instance_writer::INSTANCE_SIZE;
@@ -5086,7 +5088,16 @@ fn incremental_dispatch_falls_back_on_cell_size_change() {
     let atlas = key_atlas_with(&ids, size_q6);
 
     let mut frame = PreparedFrame::new(ViewportSize::new(1, 1), Rgb { r: 0, g: 0, b: 0 }, 1.0);
-    input.cell_size = CellMetrics::new(10.0, 20.0, 14.0, 2.0, 1.0, 4.0);
+    input.cell_size = CellMetrics::new(
+        10.0,
+        20.0,
+        14.0,
+        StrokeMetrics {
+            underline_offset: 2.0,
+            stroke_size: 1.0,
+            strikeout_offset: 4.0,
+        },
+    );
     prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
     assert!(!frame.was_incremental, "Frame 0 full rebuild");
 
@@ -5096,7 +5107,16 @@ fn incremental_dispatch_falls_back_on_cell_size_change() {
     prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
     assert!(frame.was_incremental, "Frame 1 incremental reachable");
 
-    input.cell_size = CellMetrics::new(20.0, 40.0, 28.0, 4.0, 1.0, 8.0);
+    input.cell_size = CellMetrics::new(
+        20.0,
+        40.0,
+        28.0,
+        StrokeMetrics {
+            underline_offset: 4.0,
+            stroke_size: 1.0,
+            strikeout_offset: 8.0,
+        },
+    );
     prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
     assert!(
         !frame.was_incremental,
@@ -5412,7 +5432,16 @@ fn incremental_dispatch_falls_back_on_origin_change() {
 fn grid_y_positions_integer_at_fractional_scale() {
     let mut input = FrameInput::test_grid(5, 4, "ABCDEFGHIJKLMNOPQRST");
     // Simulate 1.25x: fractional cell height and origin.
-    input.cell_size = CellMetrics::new(10.0, 18.75, 14.0, 2.0, 1.0, 4.0);
+    input.cell_size = CellMetrics::new(
+        10.0,
+        18.75,
+        14.0,
+        StrokeMetrics {
+            underline_offset: 2.0,
+            stroke_size: 1.0,
+            strikeout_offset: 4.0,
+        },
+    );
     input.viewport = ViewportSize::new(200, 200);
     let atlas = atlas_with(&[
         'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R',
@@ -5453,7 +5482,16 @@ fn grid_y_positions_integer_at_integer_scale() {
 #[test]
 fn cursor_y_position_integer_at_fractional_scale() {
     let mut input = FrameInput::test_grid(10, 5, "");
-    input.cell_size = CellMetrics::new(10.0, 18.75, 14.0, 2.0, 1.0, 4.0);
+    input.cell_size = CellMetrics::new(
+        10.0,
+        18.75,
+        14.0,
+        StrokeMetrics {
+            underline_offset: 2.0,
+            stroke_size: 1.0,
+            strikeout_offset: 4.0,
+        },
+    );
     input.viewport = ViewportSize::new(200, 200);
     input.content.cursor.column = Column(2);
     input.content.cursor.line = 3;
@@ -5473,7 +5511,16 @@ fn cursor_y_position_integer_at_fractional_scale() {
 #[test]
 fn prompt_marker_y_integer_at_fractional_scale() {
     let mut input = FrameInput::test_grid(10, 5, "");
-    input.cell_size = CellMetrics::new(10.0, 18.75, 14.0, 2.0, 1.0, 4.0);
+    input.cell_size = CellMetrics::new(
+        10.0,
+        18.75,
+        14.0,
+        StrokeMetrics {
+            underline_offset: 2.0,
+            stroke_size: 1.0,
+            strikeout_offset: 4.0,
+        },
+    );
     input.viewport = ViewportSize::new(200, 200);
     input.prompt_marker_rows = vec![0, 2, 4];
     let atlas = empty_atlas();
@@ -5496,7 +5543,16 @@ fn prompt_marker_y_integer_at_fractional_scale() {
 #[test]
 fn url_underline_y_base_integer_at_fractional_scale() {
     let mut input = FrameInput::test_grid(10, 3, "");
-    input.cell_size = CellMetrics::new(10.0, 18.75, 14.0, 2.0, 1.0, 4.0);
+    input.cell_size = CellMetrics::new(
+        10.0,
+        18.75,
+        14.0,
+        StrokeMetrics {
+            underline_offset: 2.0,
+            stroke_size: 1.0,
+            strikeout_offset: 4.0,
+        },
+    );
     input.viewport = ViewportSize::new(200, 200);
     input.hovered_url_segments = vec![(1, 2, 5)]; // row 1, cols 2..5
     let atlas = empty_atlas();
@@ -6056,7 +6112,6 @@ mod dispatch_fingerprint {
 /// Returns the configured `FrameInput`. Caller chooses whether to run via
 /// `prepare_frame` (unshaped) or `prepare_frame_shaped` / `prepare_frame_shaped_into`
 /// (shaped/incremental production paths) to exercise both EmitCtx build sites.
-#[allow(clippy::needless_pass_by_value, reason = "test fixture builder")]
 fn focus_cursor_selection_input(shape: CursorShape, window_focused: bool) -> FrameInput {
     use oriterm_core::RenderableCell;
 
@@ -6694,7 +6749,16 @@ mod pane_damage_key {
     fn baseline_dispatch() -> DispatchFingerprintInputs {
         DispatchFingerprintInputs {
             viewport: ViewportSize::new(640, 480),
-            cell_size: CellMetrics::new(8.0, 16.0, 12.0, 2.0, 1.0, 4.0),
+            cell_size: CellMetrics::new(
+                8.0,
+                16.0,
+                12.0,
+                StrokeMetrics {
+                    underline_offset: 2.0,
+                    stroke_size: 1.0,
+                    strikeout_offset: 4.0,
+                },
+            ),
             content_cols: 80,
             content_rows: 24,
             origin: (0.0, 0.0),
@@ -6788,37 +6852,91 @@ mod pane_damage_key {
     #[test]
     fn cell_size_width() {
         assert_changes("cell_size.width", |d, _| {
-            d.cell_size = CellMetrics::new(9.0, 16.0, 12.0, 2.0, 1.0, 4.0)
+            d.cell_size = CellMetrics::new(
+                9.0,
+                16.0,
+                12.0,
+                StrokeMetrics {
+                    underline_offset: 2.0,
+                    stroke_size: 1.0,
+                    strikeout_offset: 4.0,
+                },
+            )
         });
     }
     #[test]
     fn cell_size_height() {
         assert_changes("cell_size.height", |d, _| {
-            d.cell_size = CellMetrics::new(8.0, 17.0, 12.0, 2.0, 1.0, 4.0)
+            d.cell_size = CellMetrics::new(
+                8.0,
+                17.0,
+                12.0,
+                StrokeMetrics {
+                    underline_offset: 2.0,
+                    stroke_size: 1.0,
+                    strikeout_offset: 4.0,
+                },
+            )
         });
     }
     #[test]
     fn cell_size_baseline() {
         assert_changes("cell_size.baseline", |d, _| {
-            d.cell_size = CellMetrics::new(8.0, 16.0, 13.0, 2.0, 1.0, 4.0)
+            d.cell_size = CellMetrics::new(
+                8.0,
+                16.0,
+                13.0,
+                StrokeMetrics {
+                    underline_offset: 2.0,
+                    stroke_size: 1.0,
+                    strikeout_offset: 4.0,
+                },
+            )
         });
     }
     #[test]
     fn cell_size_underline_offset() {
         assert_changes("cell_size.underline_offset", |d, _| {
-            d.cell_size = CellMetrics::new(8.0, 16.0, 12.0, 3.0, 1.0, 4.0)
+            d.cell_size = CellMetrics::new(
+                8.0,
+                16.0,
+                12.0,
+                StrokeMetrics {
+                    underline_offset: 3.0,
+                    stroke_size: 1.0,
+                    strikeout_offset: 4.0,
+                },
+            )
         });
     }
     #[test]
     fn cell_size_stroke_size() {
         assert_changes("cell_size.stroke_size", |d, _| {
-            d.cell_size = CellMetrics::new(8.0, 16.0, 12.0, 2.0, 2.0, 4.0)
+            d.cell_size = CellMetrics::new(
+                8.0,
+                16.0,
+                12.0,
+                StrokeMetrics {
+                    underline_offset: 2.0,
+                    stroke_size: 2.0,
+                    strikeout_offset: 4.0,
+                },
+            )
         });
     }
     #[test]
     fn cell_size_strikeout_offset() {
         assert_changes("cell_size.strikeout_offset", |d, _| {
-            d.cell_size = CellMetrics::new(8.0, 16.0, 12.0, 2.0, 1.0, 5.0)
+            d.cell_size = CellMetrics::new(
+                8.0,
+                16.0,
+                12.0,
+                StrokeMetrics {
+                    underline_offset: 2.0,
+                    stroke_size: 1.0,
+                    strikeout_offset: 5.0,
+                },
+            )
         });
     }
     #[test]

@@ -168,10 +168,12 @@ impl App {
         let ui_sizes = crate::font::UiFontSizes::new(
             ui_font_set,
             physical_dpi,
-            GlyphFormat::Alpha,
-            HintingMode::None,
-            400,
-            600,
+            crate::font::FontRasterConfig {
+                format: GlyphFormat::Alpha,
+                weight: 400,
+                bold_weight: 600,
+                hinting: HintingMode::None,
+            },
             crate::font::ui_font_sizes::PRELOAD_SIZES,
         )
         .ok()

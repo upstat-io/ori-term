@@ -44,12 +44,14 @@ impl App {
             } => {
                 self.open_dialog_dropdown(
                     window_id,
-                    id,
-                    options,
-                    selected,
-                    anchor,
-                    searchable,
-                    initial_highlight,
+                    super::overlay_actions::DialogDropdown {
+                        dropdown_id: id,
+                        options,
+                        selected,
+                        anchor,
+                        searchable,
+                        initial_highlight,
+                    },
                 );
             }
             WidgetAction::Toggled { .. }
@@ -141,12 +143,14 @@ impl App {
             super::rebuild_dialog_page_state(
                 &mut ctx.root,
                 &mut **panel,
-                ctx.renderer.as_ref(),
-                ctx.scale_factor,
-                &ctx.text_cache,
-                &ctx.surface_config,
                 ctx.last_cursor_pos,
-                &ui_theme,
+                super::DialogLayout {
+                    renderer: ctx.renderer.as_ref(),
+                    scale: ctx.scale_factor.factor() as f32,
+                    text_cache: &ctx.text_cache,
+                    surface_config: &ctx.surface_config,
+                    ui_theme: &ui_theme,
+                },
             );
             ctx.cached_layout = None;
 
@@ -267,12 +271,14 @@ impl App {
                     super::rebuild_dialog_page_state(
                         &mut ctx.root,
                         &mut **panel,
-                        ctx.renderer.as_ref(),
-                        ctx.scale_factor,
-                        &ctx.text_cache,
-                        &ctx.surface_config,
                         ctx.last_cursor_pos,
-                        &ui_theme,
+                        super::DialogLayout {
+                            renderer: ctx.renderer.as_ref(),
+                            scale: ctx.scale_factor.factor() as f32,
+                            text_cache: &ctx.text_cache,
+                            surface_config: &ctx.surface_config,
+                            ui_theme: &ui_theme,
+                        },
                     );
                 }
             }

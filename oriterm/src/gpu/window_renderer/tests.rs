@@ -94,10 +94,12 @@ fn new_ui_only_constructor_initializes_cache_invalidated_to_false() {
     let Some(ui_sizes) = crate::font::ui_font_sizes::UiFontSizes::new(
         font_set,
         96.0,
-        crate::font::GlyphFormat::Alpha,
-        crate::font::HintingMode::None,
-        400,
-        550,
+        crate::font::FontRasterConfig {
+            format: crate::font::GlyphFormat::Alpha,
+            weight: 400,
+            bold_weight: 550,
+            hinting: crate::font::HintingMode::None,
+        },
         crate::font::ui_font_sizes::PRELOAD_SIZES,
     )
     .ok() else {

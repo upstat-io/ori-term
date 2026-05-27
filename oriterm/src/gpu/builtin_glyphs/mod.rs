@@ -77,26 +77,33 @@ pub(crate) fn rasterize(ch: char, cell_w: u32, cell_h: u32) -> Option<Rasterized
     }
 }
 
+/// GPU-backed glyph cache sink: atlas + empty-key set + device + queue.
+///
+/// Bundles the four handles needed to insert a rasterized glyph (or record a
+/// zero-size miss) into the shared atlas. `empty_keys` is the cross-atlas set
+/// of keys known to produce zero-size glyphs, shared with the shaped-glyph
+/// caching path.
+pub(crate) struct GlyphCacheSink<'a> {
+    /// Glyph atlas to insert rasterized bitmaps into.
+    pub(crate) atlas: &'a mut GlyphAtlas,
+    /// Set of keys known to produce zero-size glyphs.
+    pub(crate) empty_keys: &'a mut HashSet<RasterKey>,
+    /// GPU device for texture allocation.
+    pub(crate) device: &'a Device,
+    /// GPU queue for texture upload.
+    pub(crate) queue: &'a Queue,
+}
+
 /// Rasterize and cache all built-in glyphs and decoration patterns in the frame.
 ///
 /// Single-pass scan: checks each cell for built-in characters (box drawing,
 /// block elements, braille, powerline) and patterned underline flags (curly,
 /// dotted, dashed). Built-in glyphs are rasterized individually on cache miss;
 /// decoration patterns are collected as flags and rasterized once after the scan.
-///
-/// `empty_keys` is the cross-atlas set of keys known to produce zero-size
-/// glyphs, shared with the shaped-glyph caching path.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "input + cache key + atlas + empty set + device + queue for builtin glyph caching"
-)]
 pub(crate) fn ensure_builtins_cached(
     input: &FrameInput,
     size_q6: u32,
-    atlas: &mut GlyphAtlas,
-    empty_keys: &mut HashSet<RasterKey>,
-    device: &Device,
-    queue: &Queue,
+    sink: &mut GlyphCacheSink<'_>,
 ) {
     let cell_w = input.cell_size.width.round() as u32;
     let cell_h = input.cell_size.height.round() as u32;
@@ -110,11 +117,11 @@ pub(crate) fn ensure_builtins_cached(
         // Built-in geometric glyphs.
         if is_builtin(cell.ch) {
             let key = raster_key(cell.ch, size_q6);
-            if atlas.lookup_touch(key).is_none() && !empty_keys.contains(&key) {
+            if sink.atlas.lookup_touch(key).is_none() && !sink.empty_keys.contains(&key) {
                 if let Some(glyph) = rasterize(cell.ch, cell_w, cell_h) {
-                    atlas.insert(key, &glyph, device, queue);
+                    sink.atlas.insert(key, &glyph, sink.device, sink.queue);
                 } else {
-                    empty_keys.insert(key);
+                    sink.empty_keys.insert(key);
                 }
             }
         }
@@ -132,10 +139,7 @@ pub(crate) fn ensure_builtins_cached(
             decorations::CURLY_GLYPH_ID,
             size_q6,
             metrics,
-            atlas,
-            empty_keys,
-            device,
-            queue,
+            sink,
             decorations::rasterize_curly,
         );
     }
@@ -144,10 +148,7 @@ pub(crate) fn ensure_builtins_cached(
             decorations::DOTTED_GLYPH_ID,
             size_q6,
             metrics,
-            atlas,
-            empty_keys,
-            device,
-            queue,
+            sink,
             decorations::rasterize_dotted,
         );
     }
@@ -156,42 +157,72 @@ pub(crate) fn ensure_builtins_cached(
             decorations::DASHED_GLYPH_ID,
             size_q6,
             metrics,
-            atlas,
-            empty_keys,
-            device,
-            queue,
+            sink,
             decorations::rasterize_dashed,
         );
     }
 }
 
 /// Cache a single decoration pattern if not already present.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "cache key, cell metrics, atlas + empty set, device + queue, and rasterize fn"
-)]
 fn cache_decoration(
     glyph_id: u16,
     size_q6: u32,
     metrics: &CellMetrics,
-    atlas: &mut GlyphAtlas,
-    empty_keys: &mut HashSet<RasterKey>,
-    device: &Device,
-    queue: &Queue,
+    sink: &mut GlyphCacheSink<'_>,
     rasterize_fn: fn(&CellMetrics) -> Option<RasterizedGlyph>,
 ) {
     let key = decorations::decoration_key(glyph_id, size_q6);
-    if atlas.lookup_touch(key).is_some() || empty_keys.contains(&key) {
+    if sink.atlas.lookup_touch(key).is_some() || sink.empty_keys.contains(&key) {
         return;
     }
     if let Some(glyph) = rasterize_fn(metrics) {
-        atlas.insert(key, &glyph, device, queue);
+        sink.atlas.insert(key, &glyph, sink.device, sink.queue);
     } else {
-        empty_keys.insert(key);
+        sink.empty_keys.insert(key);
     }
 }
 
 // ── Canvas ──
+
+/// Axis-aligned rectangle in canvas pixel space.
+#[derive(Clone, Copy)]
+pub(super) struct RectF {
+    /// Left edge x.
+    pub x: f32,
+    /// Top edge y.
+    pub y: f32,
+    /// Width.
+    pub w: f32,
+    /// Height.
+    pub h: f32,
+}
+
+impl RectF {
+    /// Construct a rectangle from origin + size.
+    pub(super) fn new(x: f32, y: f32, w: f32, h: f32) -> Self {
+        Self { x, y, w, h }
+    }
+}
+
+/// Line segment in canvas pixel space (anti-aliased SDF stroke).
+#[derive(Clone, Copy)]
+pub(super) struct LineF {
+    /// Start x.
+    pub x0: f32,
+    /// Start y.
+    pub y0: f32,
+    /// End x.
+    pub x1: f32,
+    /// End y.
+    pub y1: f32,
+}
+
+impl LineF {
+    /// Construct a line segment from two endpoints.
+    pub(super) fn new(x0: f32, y0: f32, x1: f32, y1: f32) -> Self {
+        Self { x0, y0, x1, y1 }
+    }
+}
 
 /// Simple alpha bitmap for rasterizing built-in glyphs.
 ///
@@ -228,11 +259,8 @@ impl Canvas {
     /// Uses `floor()` for the start edge and `ceil()` for the end edge to
     /// ensure complete coverage of the specified area. Out-of-bounds regions
     /// are clipped.
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "canvas rasterization: spatial coordinates and alpha"
-    )]
-    pub fn fill_rect(&mut self, x: f32, y: f32, w: f32, h: f32, alpha: u8) {
+    pub fn fill_rect(&mut self, rect: RectF, alpha: u8) {
+        let RectF { x, y, w, h } = rect;
         let x0 = (x.floor() as i32).max(0) as u32;
         let y0 = (y.floor() as i32).max(0) as u32;
         let x1 = ((x + w).ceil() as u32).min(self.width);
@@ -261,11 +289,8 @@ impl Canvas {
     /// Uses signed-distance-field evaluation: each pixel's alpha is determined
     /// by its perpendicular distance to the line segment, with a 1px anti-alias
     /// transition zone at the edges.
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "canvas rasterization: endpoints and thickness"
-    )]
-    pub fn fill_line(&mut self, x0: f32, y0: f32, x1: f32, y1: f32, thickness: f32) {
+    pub fn fill_line(&mut self, line: LineF, thickness: f32) {
+        let LineF { x0, y0, x1, y1 } = line;
         let dx = x1 - x0;
         let dy = y1 - y0;
         let len = dx.hypot(dy);

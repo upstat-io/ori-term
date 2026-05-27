@@ -12,6 +12,7 @@ mod cell_metrics;
 mod clipboard_ops;
 pub(crate) mod config_reload;
 mod constructors;
+pub(crate) use constructors::DaemonSession;
 mod context_menu;
 mod cursor_hover;
 pub(crate) mod dialog_context;

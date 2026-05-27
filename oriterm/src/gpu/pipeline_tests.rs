@@ -40,10 +40,12 @@ fn headless_env_with_format(
         font_set,
         TEST_FONT_SIZE_PT,
         TEST_DPI,
-        format,
-        TEST_FONT_WEIGHT,
-        550,
-        HintingMode::Full,
+        FontRasterConfig {
+            format: format,
+            weight: TEST_FONT_WEIGHT,
+            bold_weight: 550,
+            hinting: HintingMode::Full,
+        },
     )
     .ok()?;
     let renderer = WindowRenderer::new(&gpu, &pipelines, font_collection, None);

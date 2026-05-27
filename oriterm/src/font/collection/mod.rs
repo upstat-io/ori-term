@@ -26,8 +26,8 @@ use std::sync::Arc;
 use swash::scale::ScaleContext;
 
 use super::{
-    CellMetrics, FaceIdx, FontError, GlyphFormat, GlyphStyle, HintingMode, RasterKey,
-    ResolvedGlyph, SyntheticFlags,
+    CellMetrics, FaceIdx, FontError, FontRasterConfig, GlyphFormat, GlyphStyle, HintingMode,
+    RasterKey, ResolvedGlyph, StrokeMetrics, SyntheticFlags,
 };
 use codepoint_map::CodepointMap;
 pub(crate) use codepoint_map::parse_hex_range;
@@ -133,19 +133,18 @@ impl FontCollection {
     /// Validates all faces and computes cell metrics from the Regular font.
     /// ASCII glyphs are not pre-cached here — the GPU renderer's
     /// `pre_cache_atlas()` fills both the `HashMap` and the atlas in one pass.
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "font collection requires all parameters: font data, sizing, format, weight, hinting"
-    )]
     pub fn new(
         font_set: FontSet,
         size_pt: f32,
         dpi: f32,
-        format: GlyphFormat,
-        weight: u16,
-        bold_weight: u16,
-        hinting: HintingMode,
+        config: FontRasterConfig,
     ) -> Result<Self, FontError> {
+        let FontRasterConfig {
+            format,
+            weight,
+            bold_weight,
+            hinting,
+        } = config;
         let size_px = (size_pt * dpi / 72.0).clamp(MIN_FONT_SIZE, MAX_FONT_SIZE);
 
         // Validate Regular (required).
@@ -213,9 +212,11 @@ impl FontCollection {
             font_metrics.cell_width,
             font_metrics.cell_height,
             font_metrics.baseline,
-            font_metrics.underline_offset,
-            font_metrics.stroke_size,
-            font_metrics.strikeout_offset,
+            StrokeMetrics {
+                underline_offset: font_metrics.underline_offset,
+                stroke_size: font_metrics.stroke_size,
+                strikeout_offset: font_metrics.strikeout_offset,
+            },
         );
 
         let collection = Self {

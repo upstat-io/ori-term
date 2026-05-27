@@ -41,10 +41,12 @@ pub(super) fn headless_dialog_env_with_dpi(
     let ui_font_sizes = UiFontSizes::new(
         FontSet::ui_embedded(),
         dpi,
-        GlyphFormat::Alpha,
-        HintingMode::Full,
-        UI_FONT_WEIGHT,
-        550,
+        FontRasterConfig {
+            format: GlyphFormat::Alpha,
+            weight: UI_FONT_WEIGHT,
+            bold_weight: 550,
+            hinting: HintingMode::Full,
+        },
         PRELOAD_SIZES,
     )
     .ok()?;

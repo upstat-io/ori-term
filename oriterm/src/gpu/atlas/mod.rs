@@ -417,7 +417,7 @@ impl GlyphAtlas {
     }
 
     /// Current frame counter value.
-    #[allow(dead_code, reason = "used in tests and diagnostics")]
+    #[cfg(test)]
     pub fn frame_counter(&self) -> u64 {
         self.frame_counter
     }
@@ -445,7 +445,7 @@ impl GlyphAtlas {
     }
 
     /// Whether this atlas is in lazy mode (1×1 placeholder).
-    #[allow(dead_code, reason = "used in tests and diagnostics")]
+    #[cfg(test)]
     pub fn is_lazy(&self) -> bool {
         self.lazy
     }

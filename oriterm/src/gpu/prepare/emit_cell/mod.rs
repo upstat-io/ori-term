@@ -11,11 +11,11 @@ use oriterm_core::{CellFlags, RenderableCell, Rgb};
 
 use crate::font::{CellMetrics, GlyphStyle};
 use crate::gpu::builtin_glyphs;
-use crate::gpu::instance_writer::{CLIP_UNCLIPPED, ScreenRect};
+use crate::gpu::instance_writer::{CLIP_UNCLIPPED, GlyphInstance, ScreenRect};
 use crate::gpu::prepared_frame::PreparedFrame;
 
 use super::AtlasLookup;
-use super::decorations::DecorationContext;
+use super::decorations::{CellDecoration, DecorationContext};
 use super::emit::GlyphEmitter;
 use super::resolve::{CellColorContext, resolve_cell_colors};
 use super::shaped_frame::ShapedFrame;
@@ -106,16 +106,16 @@ fn emit_cell_decorations(cell: &RenderableCell, state: &CellEmitState, ctx: &mut
         metrics: ctx.cell_size,
         alpha: state.deco_alpha,
     }
-    .draw(
-        cell.flags,
-        cell.underline_color,
-        state.fg,
-        state.x,
-        state.y,
-        state.bg_w,
-        cell.has_hyperlink,
-        state.is_hovered,
-    );
+    .draw(CellDecoration {
+        flags: cell.flags,
+        underline_color: cell.underline_color,
+        fg: state.fg,
+        x: state.x,
+        y: state.y,
+        cell_width: state.bg_w,
+        has_hyperlink: cell.has_hyperlink,
+        is_hovered: state.is_hovered,
+    });
 }
 
 /// Emit glyph instances for a cell — dispatches shaped vs. unshaped path.
@@ -137,11 +137,13 @@ fn emit_cell_glyphs(cell: &RenderableCell, state: &CellEmitState, ctx: &mut Emit
                 };
                 ctx.frame.glyphs.push_glyph(
                     rect,
-                    uv,
-                    state.fg,
-                    state.cell_dim,
-                    entry.page,
-                    CLIP_UNCLIPPED,
+                    GlyphInstance {
+                        uv,
+                        fg: state.fg,
+                        alpha: state.cell_dim,
+                        atlas_page: entry.page,
+                        clip: CLIP_UNCLIPPED,
+                    },
                 );
             }
             return;
@@ -191,11 +193,13 @@ fn emit_cell_glyphs(cell: &RenderableCell, state: &CellEmitState, ctx: &mut Emit
             };
             ctx.frame.glyphs.push_glyph(
                 rect,
-                uv,
-                state.fg,
-                state.cell_dim,
-                entry.page,
-                CLIP_UNCLIPPED,
+                GlyphInstance {
+                    uv,
+                    fg: state.fg,
+                    alpha: state.cell_dim,
+                    atlas_page: entry.page,
+                    clip: CLIP_UNCLIPPED,
+                },
             );
         }
     }

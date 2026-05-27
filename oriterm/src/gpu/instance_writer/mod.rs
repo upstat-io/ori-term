@@ -92,6 +92,59 @@ pub enum InstanceKind {
     Cursor = 2,
 }
 
+/// Fully-resolved fields for one 96-byte GPU instance record.
+///
+/// Passed to [`InstanceWriter::push_instance`] — bundles position, UV,
+/// foreground/background colors (linear-light RGBA), kind, and atlas page.
+#[derive(Clone, Copy)]
+struct RawInstance {
+    /// Screen-space rectangle.
+    rect: ScreenRect,
+    /// Atlas UV `[u_left, v_top, u_width, v_height]` (0 for non-glyph).
+    uv: [f32; 4],
+    /// Foreground RGBA (linear-light).
+    fg: [f32; 4],
+    /// Background RGBA (linear-light).
+    bg: [f32; 4],
+    /// Instance kind (rect / glyph / cursor).
+    kind: InstanceKind,
+    /// Atlas texture-array layer.
+    atlas_page: u32,
+}
+
+/// Glyph appearance for [`InstanceWriter::push_glyph`].
+#[derive(Clone, Copy)]
+pub struct GlyphInstance {
+    /// Atlas UV `[u_left, v_top, u_width, v_height]`.
+    pub uv: [f32; 4],
+    /// Foreground color.
+    pub fg: Rgb,
+    /// Alpha multiplier.
+    pub alpha: f32,
+    /// Atlas texture-array layer.
+    pub atlas_page: u32,
+    /// Per-fragment clip rect `[x, y, w, h]` in physical pixels.
+    pub clip: [f32; 4],
+}
+
+/// Glyph appearance with background color for
+/// [`InstanceWriter::push_glyph_with_bg`].
+#[derive(Clone, Copy)]
+pub struct GlyphInstanceBg {
+    /// Atlas UV `[u_left, v_top, u_width, v_height]`.
+    pub uv: [f32; 4],
+    /// Foreground color.
+    pub fg: Rgb,
+    /// Background color (subpixel per-channel blend).
+    pub bg: Rgb,
+    /// Alpha multiplier.
+    pub alpha: f32,
+    /// Atlas texture-array layer.
+    pub atlas_page: u32,
+    /// Per-fragment clip rect `[x, y, w, h]` in physical pixels.
+    pub clip: [f32; 4],
+}
+
 /// CPU-side accumulator for GPU instance records.
 ///
 /// Maintains a `Vec<u8>` that grows as instances are pushed. The buffer
@@ -182,17 +235,14 @@ impl InstanceWriter {
     ///
     /// UV coordinates are zeroed (no texture sampling for rects).
     pub fn push_rect(&mut self, rect: ScreenRect, bg: Rgb, alpha: f32) {
-        self.push_instance(
-            rect.x,
-            rect.y,
-            rect.w,
-            rect.h,
-            [0.0, 0.0, 0.0, 0.0],
-            [0.0, 0.0, 0.0, 0.0],
-            rgb_to_floats(bg, alpha),
-            InstanceKind::Rect,
-            0,
-        );
+        self.push_instance(RawInstance {
+            rect,
+            uv: [0.0, 0.0, 0.0, 0.0],
+            fg: [0.0, 0.0, 0.0, 0.0],
+            bg: rgb_to_floats(bg, alpha),
+            kind: InstanceKind::Rect,
+            atlas_page: 0,
+        });
     }
 
     /// Push a texture-sampled glyph instance.
@@ -200,30 +250,22 @@ impl InstanceWriter {
     /// `uv` is `[u_left, v_top, u_width, v_height]` in atlas texture
     /// coordinates (0..1). `atlas_page` selects the texture array layer.
     /// `clip` is `[x, y, w, h]` in physical pixels for per-fragment clipping.
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "glyph instance: screen rect, UV coords, color, atlas page, clip"
-    )]
-    pub fn push_glyph(
-        &mut self,
-        rect: ScreenRect,
-        uv: [f32; 4],
-        fg: Rgb,
-        alpha: f32,
-        atlas_page: u32,
-        clip: [f32; 4],
-    ) {
-        self.push_instance(
-            rect.x,
-            rect.y,
-            rect.w,
-            rect.h,
+    pub fn push_glyph(&mut self, rect: ScreenRect, glyph: GlyphInstance) {
+        let GlyphInstance {
             uv,
-            rgb_to_floats(fg, alpha),
-            [0.0, 0.0, 0.0, 0.0],
-            InstanceKind::Glyph,
+            fg,
+            alpha,
             atlas_page,
-        );
+            clip,
+        } = glyph;
+        self.push_instance(RawInstance {
+            rect,
+            uv,
+            fg: rgb_to_floats(fg, alpha),
+            bg: [0.0, 0.0, 0.0, 0.0],
+            kind: InstanceKind::Glyph,
+            atlas_page,
+        });
         // Overwrite the default unclipped values with the provided clip.
         let start = self.buf.len() - INSTANCE_SIZE;
         let rec = &mut self.buf[start..];
@@ -240,31 +282,23 @@ impl InstanceWriter {
     /// fragment shader reads `bg_color` for per-channel `mix()` blending.
     /// Mono and color pipelines ignore the `bg_color` field.
     /// `clip` is `[x, y, w, h]` in physical pixels for per-fragment clipping.
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "glyph instance: screen rect, UV coords, fg/bg colors, atlas page, clip"
-    )]
-    pub fn push_glyph_with_bg(
-        &mut self,
-        rect: ScreenRect,
-        uv: [f32; 4],
-        fg: Rgb,
-        bg: Rgb,
-        alpha: f32,
-        atlas_page: u32,
-        clip: [f32; 4],
-    ) {
-        self.push_instance(
-            rect.x,
-            rect.y,
-            rect.w,
-            rect.h,
+    pub fn push_glyph_with_bg(&mut self, rect: ScreenRect, glyph: GlyphInstanceBg) {
+        let GlyphInstanceBg {
             uv,
-            rgb_to_floats(fg, alpha),
-            rgb_to_floats(bg, 1.0),
-            InstanceKind::Glyph,
+            fg,
+            bg,
+            alpha,
             atlas_page,
-        );
+            clip,
+        } = glyph;
+        self.push_instance(RawInstance {
+            rect,
+            uv,
+            fg: rgb_to_floats(fg, alpha),
+            bg: rgb_to_floats(bg, 1.0),
+            kind: InstanceKind::Glyph,
+            atlas_page,
+        });
         // Overwrite the default unclipped values with the provided clip.
         let start = self.buf.len() - INSTANCE_SIZE;
         let rec = &mut self.buf[start..];
@@ -279,17 +313,14 @@ impl InstanceWriter {
     /// Color is written to the `bg_color` field (same as rects) so cursors
     /// render correctly with the background pipeline (solid-fill shader).
     pub fn push_cursor(&mut self, rect: ScreenRect, color: Rgb, alpha: f32) {
-        self.push_instance(
-            rect.x,
-            rect.y,
-            rect.w,
-            rect.h,
-            [0.0, 0.0, 0.0, 0.0],
-            [0.0, 0.0, 0.0, 0.0],
-            rgb_to_floats(color, alpha),
-            InstanceKind::Cursor,
-            0,
-        );
+        self.push_instance(RawInstance {
+            rect,
+            uv: [0.0, 0.0, 0.0, 0.0],
+            fg: [0.0, 0.0, 0.0, 0.0],
+            bg: rgb_to_floats(color, alpha),
+            kind: InstanceKind::Cursor,
+            atlas_page: 0,
+        });
     }
 
     /// Push a raw pre-encoded instance record.
@@ -297,7 +328,7 @@ impl InstanceWriter {
     /// # Panics
     ///
     /// Panics if `bytes.len() != INSTANCE_SIZE`.
-    #[allow(dead_code, reason = "instance writer methods for later sections")]
+    #[cfg(test)]
     pub fn push_raw(&mut self, bytes: &[u8]) {
         assert_eq!(
             bytes.len(),
@@ -308,30 +339,23 @@ impl InstanceWriter {
     }
 
     /// Encode and append one 96-byte instance record.
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "private 96-byte GPU record encoder: position, UV, colors, kind, page"
-    )]
-    fn push_instance(
-        &mut self,
-        x: f32,
-        y: f32,
-        w: f32,
-        h: f32,
-        uv: [f32; 4],
-        fg: [f32; 4],
-        bg: [f32; 4],
-        kind: InstanceKind,
-        atlas_page: u32,
-    ) {
+    fn push_instance(&mut self, instance: RawInstance) {
+        let RawInstance {
+            rect,
+            uv,
+            fg,
+            bg,
+            kind,
+            atlas_page,
+        } = instance;
         let start = self.buf.len();
         self.buf.resize(start + INSTANCE_SIZE, 0);
         let rec = &mut self.buf[start..];
 
-        write_f32(rec, OFF_POS_X, x);
-        write_f32(rec, OFF_POS_Y, y);
-        write_f32(rec, OFF_SIZE_W, w);
-        write_f32(rec, OFF_SIZE_H, h);
+        write_f32(rec, OFF_POS_X, rect.x);
+        write_f32(rec, OFF_POS_Y, rect.y);
+        write_f32(rec, OFF_SIZE_W, rect.w);
+        write_f32(rec, OFF_SIZE_H, rect.h);
 
         write_f32(rec, OFF_UV_X, uv[0]);
         write_f32(rec, OFF_UV_Y, uv[1]);
