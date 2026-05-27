@@ -28,7 +28,8 @@ pub use spec_chain::TempDirGuard;
 
 pub use session::{
     PtyResponder, PtySession, infocmp_available, notcurses_info_available,
-    sideloaded_conpty_available, tack_available, tic_available, tool_available, vttest_available,
+    notcurses_info_e2e_enabled, sideloaded_conpty_available, tack_available, tic_available,
+    tool_available, vttest_available,
 };
 pub use tack_framework::{
     LiveSession, MenuStep, PhaseSpec, ScenarioOutcome, ScenarioRunner, ScenarioSpec, ScreenFacts,

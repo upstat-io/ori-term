@@ -19,7 +19,7 @@
 
 use oriterm_core::RenderableContent;
 use oriterm_test_support::spec_chain::SpecHarness;
-use oriterm_test_support::{PtySession, notcurses_info_available, tool_available};
+use oriterm_test_support::{PtySession, notcurses_info_e2e_enabled, tool_available};
 use portable_pty::CommandBuilder;
 
 /// Spawn `notcurses-info` under PtySession, drain its full output, then
@@ -31,8 +31,14 @@ use portable_pty::CommandBuilder;
 /// placement APC preserves the protocol-level pin without depending on
 /// post-eviction behavior.
 fn capture_and_replay_truncated() -> Option<RenderableContent> {
-    if !notcurses_info_available() {
-        eprintln!("SKIP: notcurses-info not installed");
+    // Real-process e2e — opt-in via ORITERM_E2E_PTY (see
+    // `notcurses_info_e2e_enabled`). MUST skip in the pre-commit hook, where
+    // lefthook's interactive PTY drives notcurses-info into the live-spawn
+    // path and the handshake deadlocks (60s+ hang via blocked PtySession
+    // teardown). The byte-level protocol pins in `notcurses_info_handshake.rs`
+    // cover the contract unconditionally.
+    if !notcurses_info_e2e_enabled() {
+        eprintln!("SKIP: notcurses-info PTY e2e (set ORITERM_E2E_PTY=1 to run)");
         return None;
     }
     if !tool_available("infocmp", "-V") {

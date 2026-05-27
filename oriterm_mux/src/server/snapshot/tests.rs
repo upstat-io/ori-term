@@ -402,13 +402,16 @@ fn cached_pane_snapshot_helper_carries_only_placements() {
 #[cfg(unix)]
 #[test]
 fn notcurses_info_image_data_survives_daemon_fold() {
-    use oriterm_test_support::{PtySession, notcurses_info_available, tool_available};
+    use oriterm_test_support::{PtySession, notcurses_info_e2e_enabled, tool_available};
     use portable_pty::CommandBuilder;
 
     use super::fold_image_data_store;
 
-    if !notcurses_info_available() {
-        eprintln!("SKIP: notcurses-info not installed");
+    // Real-process e2e — opt-in via ORITERM_E2E_PTY. Skips in the pre-commit
+    // hook, where lefthook's interactive PTY makes the live notcurses-info
+    // handshake deadlock (60s+ hang). See `notcurses_info_e2e_enabled`.
+    if !notcurses_info_e2e_enabled() {
+        eprintln!("SKIP: notcurses-info PTY e2e (set ORITERM_E2E_PTY=1 to run)");
         return;
     }
     if !tool_available("infocmp", "-V") {

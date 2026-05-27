@@ -159,5 +159,26 @@ pub fn notcurses_info_available() -> bool {
         .is_ok_and(|status| status.success())
 }
 
+/// Opt-in gate for real-process `notcurses-info` PTY end-to-end tests.
+///
+/// These tests spawn the real `notcurses-info` binary over a live
+/// [`PtySession`](crate::PtySession) and depend on a multi-second
+/// capability handshake — slow, environment-dependent, and prone to
+/// deadlock. They MUST NOT run in the pre-commit hook's `cargo test`:
+/// lefthook's `interactive: true` test step gives `cargo test` a
+/// controlling PTY, which both flips [`notcurses_info_available`] to true
+/// AND drives notcurses-info into the live-spawn path where the handshake
+/// deadlocks and `PtySession` teardown blocks the reader thread (60s+ hang).
+///
+/// Returns true only when `ORITERM_E2E_PTY` is set in the environment AND
+/// notcurses-info is installed. Dedicated e2e / CI runs set the var; the
+/// pre-commit hook and default `cargo test` leave it unset, so every gated
+/// test skips fast. The byte-level protocol contract is covered
+/// unconditionally by the capture-replay pins in `notcurses_info_handshake.rs`.
+#[must_use]
+pub fn notcurses_info_e2e_enabled() -> bool {
+    std::env::var_os("ORITERM_E2E_PTY").is_some() && notcurses_info_available()
+}
+
 #[cfg(test)]
 mod tests;

@@ -892,11 +892,14 @@ fn daemon_pane_snapshot_resolves_placement_via_image_lookup() {
 fn notcurses_info_real_bytes_roundtrip_to_client_extract() {
     use oriterm_core::RenderableContent;
     use oriterm_mux::protocol::snapshot::{WireImageData, WirePlacement};
-    use oriterm_test_support::{PtySession, notcurses_info_available, tool_available};
+    use oriterm_test_support::{PtySession, notcurses_info_e2e_enabled, tool_available};
     use portable_pty::CommandBuilder;
 
-    if !notcurses_info_available() {
-        eprintln!("SKIP: notcurses-info not installed");
+    // Real-process e2e — opt-in via ORITERM_E2E_PTY. Skips in the pre-commit
+    // hook, where lefthook's interactive PTY makes the live notcurses-info
+    // handshake deadlock (60s+ hang). See `notcurses_info_e2e_enabled`.
+    if !notcurses_info_e2e_enabled() {
+        eprintln!("SKIP: notcurses-info PTY e2e (set ORITERM_E2E_PTY=1 to run)");
         return;
     }
     if !tool_available("infocmp", "-V") {
