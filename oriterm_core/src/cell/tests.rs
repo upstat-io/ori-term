@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use vte::ansi::{Color, NamedColor};
 
-use super::{Cell, CellExtra, CellFlags, Hyperlink};
+use super::{Cell, CellExtra, CellFlags, Hyperlink, OPAQUE_ALPHA};
 
 #[test]
 fn size_assertion() {
@@ -178,6 +178,7 @@ fn extra_created_for_underline_color() {
         underline_color: Some(Color::Spec(vte::ansi::Rgb { r: 255, g: 0, b: 0 })),
         hyperlink: None,
         zerowidth: Vec::new(),
+        ..Default::default()
     }));
     assert!(cell.extra.is_some());
     assert_eq!(
@@ -196,6 +197,7 @@ fn extra_created_for_hyperlink() {
             uri: "https://example.com".to_string(),
         }),
         zerowidth: Vec::new(),
+        ..Default::default()
     }));
     assert!(cell.extra.is_some());
 }
@@ -367,6 +369,7 @@ fn reset_copies_template_extra() {
         underline_color: Some(Color::Spec(vte::ansi::Rgb { r: 0, g: 255, b: 0 })),
         hyperlink: None,
         zerowidth: Vec::new(),
+        ..Default::default()
     }));
     cell.reset(&template);
     assert!(cell.extra.is_some());
@@ -392,4 +395,152 @@ fn hyperlink_display() {
         uri: "https://example.com".to_string(),
     };
     assert_eq!(format!("{link}"), "https://example.com");
+}
+
+// --- SGR mode-6 concrete per-channel alpha (Decision 08 Option C) ---
+
+/// A pristine cell is fully opaque on every channel and carries NO sidecar
+/// and NO `HAS_ALPHA` bit — opaque cells must never allocate.
+#[test]
+fn default_cell_alpha_channels_opaque() {
+    let cell = Cell::default();
+    assert_eq!(cell.fg_alpha(), OPAQUE_ALPHA);
+    assert_eq!(cell.bg_alpha(), OPAQUE_ALPHA);
+    assert_eq!(cell.underline_alpha(), OPAQUE_ALPHA);
+    assert!(
+        cell.extra.is_none(),
+        "opaque cell must not allocate a sidecar"
+    );
+    assert!(!cell.flags.contains(CellFlags::HAS_ALPHA));
+}
+
+/// Setting a channel below 255 stores the concrete byte, allocates the
+/// sidecar, and raises the `HAS_ALPHA` fast-skip bit; the stored 128
+/// round-trips back out through the sidecar accessor.
+#[test]
+fn set_bg_alpha_translucent_stores_and_flags() {
+    let mut cell = Cell::default();
+    cell.set_bg_alpha(128);
+    assert_eq!(cell.bg_alpha(), 128);
+    assert!(cell.extra.is_some(), "translucent cell allocates a sidecar");
+    assert!(cell.flags.contains(CellFlags::HAS_ALPHA));
+    // Other channels stay opaque.
+    assert_eq!(cell.fg_alpha(), OPAQUE_ALPHA);
+    assert_eq!(cell.underline_alpha(), OPAQUE_ALPHA);
+}
+
+/// Setting an already-opaque channel to 255 on a clean cell is a no-op:
+/// never allocates, never raises `HAS_ALPHA`.
+#[test]
+fn set_opaque_alpha_on_clean_cell_is_noop() {
+    let mut cell = Cell::default();
+    cell.set_fg_alpha(OPAQUE_ALPHA);
+    cell.set_bg_alpha(OPAQUE_ALPHA);
+    cell.set_underline_alpha(OPAQUE_ALPHA);
+    assert!(cell.extra.is_none(), "opaque set must not allocate");
+    assert!(!cell.flags.contains(CellFlags::HAS_ALPHA));
+}
+
+/// Round-trip: translucent → opaque drops the sidecar AND clears the
+/// `HAS_ALPHA` bit when nothing else lives in the sidecar — guards
+/// against a stale flag/sidecar after the channel returns to opaque.
+#[test]
+fn set_alpha_back_to_opaque_drops_sidecar_and_flag() {
+    let mut cell = Cell::default();
+    cell.set_bg_alpha(64);
+    assert!(cell.flags.contains(CellFlags::HAS_ALPHA));
+    cell.set_bg_alpha(OPAQUE_ALPHA);
+    assert_eq!(cell.bg_alpha(), OPAQUE_ALPHA);
+    assert!(
+        cell.extra.is_none(),
+        "sidecar must drop when all channels return to opaque and nothing else lives in it"
+    );
+    assert!(!cell.flags.contains(CellFlags::HAS_ALPHA));
+}
+
+/// When the sidecar carries other data (underline color), returning alpha
+/// to opaque keeps the sidecar but still clears `HAS_ALPHA`.
+#[test]
+fn opaque_alpha_keeps_sidecar_when_other_data_present() {
+    let mut cell = Cell::default();
+    cell.set_underline_color(Some(Color::Spec(vte::ansi::Rgb { r: 1, g: 2, b: 3 })));
+    cell.set_fg_alpha(200);
+    assert!(cell.flags.contains(CellFlags::HAS_ALPHA));
+    cell.set_fg_alpha(OPAQUE_ALPHA);
+    assert!(
+        cell.extra.is_some(),
+        "sidecar must survive while underline color is present"
+    );
+    assert!(!cell.flags.contains(CellFlags::HAS_ALPHA));
+    assert_eq!(cell.fg_alpha(), OPAQUE_ALPHA);
+}
+
+/// `HAS_ALPHA` reflects "any channel non-opaque" across all three channels.
+#[test]
+fn has_alpha_reflects_any_channel() {
+    let channels: [fn(&mut Cell, u8); 3] = [
+        Cell::set_fg_alpha,
+        Cell::set_bg_alpha,
+        Cell::set_underline_alpha,
+    ];
+    let mut count = 0;
+    for set in channels {
+        let mut cell = Cell::default();
+        set(&mut cell, 100);
+        assert!(
+            cell.flags.contains(CellFlags::HAS_ALPHA),
+            "any single non-opaque channel must raise HAS_ALPHA"
+        );
+        set(&mut cell, OPAQUE_ALPHA);
+        assert!(
+            !cell.flags.contains(CellFlags::HAS_ALPHA),
+            "returning the channel to opaque must clear HAS_ALPHA"
+        );
+        count += 1;
+    }
+    assert_eq!(count, 3, "every alpha channel must be exercised");
+}
+
+/// `CellExtra::is_default()` pins the exact droppable condition: the SSOT
+/// every sidecar mutator consults.
+#[test]
+fn cell_extra_is_default_membership() {
+    assert!(CellExtra::new().is_default());
+
+    let mut e = CellExtra::new();
+    e.fg_alpha = 200;
+    assert!(!e.is_default(), "non-opaque fg alpha is not default");
+
+    let mut e = CellExtra::new();
+    e.underline_color = Some(Color::Spec(vte::ansi::Rgb { r: 1, g: 2, b: 3 }));
+    assert!(!e.is_default(), "underline color is not default");
+
+    let mut e = CellExtra::new();
+    e.zerowidth.push('\u{0301}');
+    assert!(!e.is_default(), "combining mark is not default");
+}
+
+/// Alpha mutation on a shared `Arc` triggers copy-on-write — the clone
+/// keeps the prior alpha.
+#[test]
+fn set_alpha_cow_on_shared_arc() {
+    let mut cell = Cell::default();
+    cell.set_bg_alpha(128);
+    let original = cell.clone();
+    cell.set_bg_alpha(64);
+    assert_eq!(original.bg_alpha(), 128);
+    assert_eq!(cell.bg_alpha(), 64);
+}
+
+/// The `size_of::<Cell>() <= 24` invariant survives alpha storage:
+/// Decision 08 Option C puts concrete alpha in the heap `CellExtra`,
+/// adding ZERO bytes to `Cell`. Reverting to a `Cell`-resident alpha
+/// field (Option A) would fail this and the top-level `size_assertion`.
+#[test]
+fn cell_size_survives_alpha_addition() {
+    assert!(
+        size_of::<Cell>() <= 24,
+        "Cell is {} bytes — alpha must live in CellExtra, not Cell",
+        size_of::<Cell>()
+    );
 }

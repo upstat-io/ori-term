@@ -12,6 +12,10 @@ use bitflags::bitflags;
 use unicode_width::UnicodeWidthChar;
 use vte::ansi::Color;
 
+/// Fully-opaque per-channel alpha. Every cell defaults to this on all
+/// channels; only SGR mode-6 (`38:6`/`48:6`/`58:6`) sets a lower value.
+pub const OPAQUE_ALPHA: u8 = 255;
+
 bitflags! {
  /// Per-cell attribute flags (SGR and internal).
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -61,6 +65,16 @@ bitflags! {
  /// without violating the cursor-template invariant.
         const PROTECTED         = 1 << 20;
 
+ /// Cell carries non-opaque per-channel alpha (SGR mode-6 RGBA).
+ ///
+ /// Fast-skip bit: when clear, all channels are opaque and the GPU emit
+ /// path skips the `CellExtra` alpha deref. The concrete 0-255 per-channel
+ /// bytes live in `CellExtra` (`fg_alpha`/`bg_alpha`/`underline_alpha`) per
+ /// Decision 08 (Option C); this bit mirrors "any channel < 255". A
+ /// template-legal SGR attribute (rides the cursor template like fg/bg) —
+ /// does NOT join `INTERNAL_CELL_STATE`.
+        const HAS_ALPHA         = 1 << 21;
+
  /// Union of all underline variants for mutual exclusion.
         const ALL_UNDERLINES = Self::UNDERLINE.bits()
             | Self::DOUBLE_UNDERLINE.bits()
@@ -93,7 +107,8 @@ impl Default for CellFlags {
 /// Heap-allocated optional data for cells that need it.
 ///
 /// Only allocated when a cell has combining marks, a colored underline,
-/// or a hyperlink. Normal cells keep `extra: None` (zero overhead).
+/// a hyperlink, or non-opaque per-channel alpha. Normal cells keep
+/// `extra: None` (zero overhead).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CellExtra {
     /// Colored underline (SGR 58).
@@ -102,16 +117,40 @@ pub struct CellExtra {
     pub hyperlink: Option<Hyperlink>,
     /// Combining marks and zero-width characters appended to this cell.
     pub zerowidth: Vec<char>,
+    /// Concrete foreground alpha (SGR mode-6 `38:6`), 0-255. 255 = opaque.
+    pub fg_alpha: u8,
+    /// Concrete background alpha (SGR mode-6 `48:6`), 0-255. 255 = opaque.
+    pub bg_alpha: u8,
+    /// Concrete underline alpha (SGR mode-6 `58:6`), 0-255. 255 = opaque.
+    pub underline_alpha: u8,
 }
 
 impl CellExtra {
-    /// Create an empty extra with all fields at their defaults.
+    /// Create an empty extra with all fields at their defaults (all alpha
+    /// channels fully opaque).
     pub fn new() -> Self {
         Self {
             underline_color: None,
             hyperlink: None,
             zerowidth: Vec::new(),
+            fg_alpha: OPAQUE_ALPHA,
+            bg_alpha: OPAQUE_ALPHA,
+            underline_alpha: OPAQUE_ALPHA,
         }
+    }
+
+    /// Returns `true` when this extra carries nothing — no underline color,
+    /// no hyperlink, no combining marks, and all alpha channels opaque.
+    ///
+    /// SSOT for "the sidecar is droppable": every mutator that can empty a
+    /// `CellExtra` checks this to decide whether to set `Cell::extra = None`.
+    pub fn is_default(&self) -> bool {
+        self.underline_color.is_none()
+            && self.hyperlink.is_none()
+            && self.zerowidth.is_empty()
+            && self.fg_alpha == OPAQUE_ALPHA
+            && self.bg_alpha == OPAQUE_ALPHA
+            && self.underline_alpha == OPAQUE_ALPHA
     }
 }
 
@@ -273,7 +312,7 @@ impl Cell {
             None => {
                 if let Some(extra) = &mut self.extra {
                     Arc::make_mut(extra).underline_color = None;
-                    if extra.zerowidth.is_empty() && extra.hyperlink.is_none() {
+                    if extra.is_default() {
                         self.extra = None;
                     }
                 }
@@ -294,7 +333,7 @@ impl Cell {
             None => {
                 if let Some(extra) = &mut self.extra {
                     Arc::make_mut(extra).hyperlink = None;
-                    if extra.zerowidth.is_empty() && extra.underline_color.is_none() {
+                    if extra.is_default() {
                         self.extra = None;
                     }
                 }
@@ -314,6 +353,75 @@ impl Cell {
     pub fn push_zerowidth(&mut self, ch: char) {
         let extra = self.extra.get_or_insert_with(Default::default);
         Arc::make_mut(extra).zerowidth.push(ch);
+    }
+
+    /// Foreground alpha (SGR mode-6 `38:6`). 255 (opaque) when the cell
+    /// has no sidecar.
+    pub fn fg_alpha(&self) -> u8 {
+        self.extra.as_ref().map_or(OPAQUE_ALPHA, |e| e.fg_alpha)
+    }
+
+    /// Background alpha (SGR mode-6 `48:6`). 255 (opaque) when the cell
+    /// has no sidecar.
+    pub fn bg_alpha(&self) -> u8 {
+        self.extra.as_ref().map_or(OPAQUE_ALPHA, |e| e.bg_alpha)
+    }
+
+    /// Underline alpha (SGR mode-6 `58:6`). 255 (opaque) when the cell
+    /// has no sidecar.
+    pub fn underline_alpha(&self) -> u8 {
+        self.extra
+            .as_ref()
+            .map_or(OPAQUE_ALPHA, |e| e.underline_alpha)
+    }
+
+    /// Set the foreground alpha (SGR mode-6 `38:6`). 255 = opaque.
+    ///
+    /// Lazily allocates `CellExtra` only when `alpha < 255`; setting an
+    /// already-opaque channel to 255 is a no-op that never allocates.
+    pub fn set_fg_alpha(&mut self, alpha: u8) {
+        self.set_channel_alpha(alpha, |extra| extra.fg_alpha = alpha);
+    }
+
+    /// Set the background alpha (SGR mode-6 `48:6`). 255 = opaque.
+    pub fn set_bg_alpha(&mut self, alpha: u8) {
+        self.set_channel_alpha(alpha, |extra| extra.bg_alpha = alpha);
+    }
+
+    /// Set the underline alpha (SGR mode-6 `58:6`). 255 = opaque.
+    pub fn set_underline_alpha(&mut self, alpha: u8) {
+        self.set_channel_alpha(alpha, |extra| extra.underline_alpha = alpha);
+    }
+
+    /// Shared per-channel alpha mutator: opaque-on-clean fast-skip (no
+    /// sidecar alloc), `Arc::make_mut` COW allocation, `assign` the channel
+    /// byte, then `refresh_alpha_state`. The three public setters delegate
+    /// here with a per-channel field assignment (SSOT for the alpha-set path).
+    fn set_channel_alpha(&mut self, alpha: u8, assign: impl FnOnce(&mut CellExtra)) {
+        if alpha == OPAQUE_ALPHA && self.extra.is_none() {
+            return;
+        }
+        assign(Arc::make_mut(
+            self.extra.get_or_insert_with(Default::default),
+        ));
+        self.refresh_alpha_state();
+    }
+
+    /// Drop the sidecar if it became default, then re-sync the
+    /// `CellFlags::HAS_ALPHA` fast-skip bit to "any channel non-opaque".
+    ///
+    /// SSOT for the flag↔sidecar invariant: `HAS_ALPHA` is set iff the
+    /// sidecar exists with at least one channel below `OPAQUE_ALPHA`.
+    fn refresh_alpha_state(&mut self) {
+        if self.extra.as_ref().is_some_and(|e| e.is_default()) {
+            self.extra = None;
+        }
+        let has_alpha = self.extra.as_ref().is_some_and(|e| {
+            e.fg_alpha != OPAQUE_ALPHA
+                || e.bg_alpha != OPAQUE_ALPHA
+                || e.underline_alpha != OPAQUE_ALPHA
+        });
+        self.flags.set(CellFlags::HAS_ALPHA, has_alpha);
     }
 }
 

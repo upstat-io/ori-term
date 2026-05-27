@@ -108,6 +108,7 @@ fn prepare_line_combining_mark() {
         underline_color: None,
         hyperlink: None,
         zerowidth: vec!['\u{0301}'],
+        ..Default::default()
     }));
 
     let mut runs = Vec::new();
@@ -202,6 +203,7 @@ fn prepare_line_vs16_in_zerowidth() {
                 underline_color: None,
                 hyperlink: None,
                 zerowidth: vec!['\u{FE0F}'], // VS16
+                ..Default::default()
             })),
             ..Cell::default()
         },
@@ -235,6 +237,7 @@ fn prepare_line_vs16_may_use_different_face() {
             underline_color: None,
             hyperlink: None,
             zerowidth: vec!['\u{FE0F}'],
+            ..Default::default()
         })),
         ..Cell::default()
     }];
@@ -249,21 +252,28 @@ fn prepare_line_vs16_may_use_different_face() {
     let mut runs_plain = Vec::new();
     prepare_line(&without_vs16, without_vs16.len(), &fc, &mut runs_plain);
 
-    // Both should produce runs (the character exists in some font).
-    // The face_idx may differ if emoji fallback is available.
-    // Key invariant: no panics, valid runs produced.
-    if !runs_vs16.is_empty() && !runs_plain.is_empty() {
-        // If a color emoji font is in the fallback chain, VS16 version
-        // should use a fallback face (emoji font) while plain may use
-        // the primary font.
-        // This is a soft check — depends on system fonts.
-        let vs16_face = runs_vs16[0].face_idx;
-        let plain_face = runs_plain[0].face_idx;
-        // Log for diagnostic visibility; both outcomes are valid.
-        if vs16_face != plain_face {
-            // VS16 triggered emoji fallback — expected behavior.
-        }
-    }
+    // Deterministic invariant (independent of which fallback fonts the test
+    // collection carries): the heart resolves to at least one run on BOTH the
+    // VS16 and the plain path — prepare_line never drops the base character.
+    assert!(
+        !runs_vs16.is_empty(),
+        "VS16 heart must resolve to at least one run"
+    );
+    assert!(
+        !runs_plain.is_empty(),
+        "plain heart must resolve to at least one run"
+    );
+    // The base heart codepoint must survive into the first run on BOTH paths
+    // — prepare_line must not drop it whether or not VS16 is present. (Which
+    // face VS16 selects is system-font dependent and intentionally NOT pinned.)
+    assert!(
+        runs_vs16[0].text.contains('\u{2764}'),
+        "VS16 run must preserve the heart codepoint"
+    );
+    assert!(
+        runs_plain[0].text.contains('\u{2764}'),
+        "plain run must preserve the heart codepoint"
+    );
 }
 
 // ── Phase 2: Shaping ──
@@ -1414,6 +1424,7 @@ fn prepare_line_vs15_in_zerowidth() {
                 underline_color: None,
                 hyperlink: None,
                 zerowidth: vec!['\u{FE0E}'], // VS15 — text presentation
+                ..Default::default()
             })),
             ..Cell::default()
         },
@@ -1501,6 +1512,7 @@ fn shape_zwj_skin_tone_collapses() {
                 underline_color: None,
                 hyperlink: None,
                 zerowidth: vec!['\u{1F3FD}'],
+                ..Default::default()
             })),
             ..Cell::default()
         },
@@ -1544,6 +1556,7 @@ fn prepare_line_vs16_on_copyright_symbol() {
                 underline_color: None,
                 hyperlink: None,
                 zerowidth: vec!['\u{FE0F}'], // VS16
+                ..Default::default()
             })),
             ..Cell::default()
         },

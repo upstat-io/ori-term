@@ -80,6 +80,7 @@ fn extract_combining_marks_share_column() {
         zerowidth: vec!['\u{0301}'], // combining acute accent
         underline_color: None,
         hyperlink: None,
+        ..Default::default()
     }));
     row[Column(1)].ch = 'x';
     let (text, col_map) = extract_row_text(&row);
