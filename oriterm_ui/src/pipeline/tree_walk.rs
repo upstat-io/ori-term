@@ -35,7 +35,7 @@ use crate::widgets::contexts::{AnimCtx, LifecycleCtx, PrepaintCtx};
 /// to skip clean subtrees.
 #[expect(
     clippy::too_many_arguments,
-    reason = "pre-paint pipeline: widget, interaction, tracker, lifecycle events, anim event, frame flags, timestamp"
+    reason = "app-facing pre-paint pipeline entry — signature fixed by oriterm callers (dialog_rendering, redraw draw_helpers)"
 )]
 pub fn prepare_widget_tree(
     widget: &mut dyn Widget,
@@ -119,7 +119,7 @@ pub fn prepare_widget_tree(
 ///    is still animating, mark the widget `Prepaint`-dirty for the next frame.
 #[expect(
     clippy::too_many_arguments,
-    reason = "pre-paint pipeline: widget, interaction, tracker, lifecycle events, anim event, frame flags, timestamp"
+    reason = "app-facing pre-paint pipeline entry — signature fixed by oriterm callers (widget_pipeline)"
 )]
 pub fn prepare_widget_frame(
     widget: &mut dyn Widget,
@@ -213,7 +213,7 @@ pub fn prepare_widget_frame(
 /// BEFORE `build_scene` (paint).
 #[expect(
     clippy::too_many_arguments,
-    reason = "prepaint pipeline: widget, bounds map, interaction, theme, timestamp, frame flags"
+    reason = "app-facing prepaint pipeline entry — signature fixed by oriterm callers (dialog_rendering, redraw draw_helpers)"
 )]
 #[expect(
     clippy::implicit_hasher,

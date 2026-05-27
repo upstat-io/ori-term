@@ -26,18 +26,15 @@
 use std::time::Instant;
 
 use crate::action::{Keymap, Keystroke};
-use crate::compositor::layer_animator::LayerAnimator;
-use crate::compositor::layer_tree::LayerTree;
 use crate::geometry::Rect;
 use crate::input::{InputEvent, Key, KeyEvent};
 use crate::pipeline::dispatch_keymap_action;
-use crate::theme::UiTheme;
 use crate::widget_id::WidgetId;
 
 use crate::overlay::overlay_id::OverlayId;
 
-use super::event_routing::deliver_via_pipeline;
-use super::{OverlayEventResult, OverlayKind, OverlayManager, OverlayResponse};
+use super::event_routing::{PipelineCtx, deliver_via_pipeline};
+use super::{CompositorHandles, OverlayEventResult, OverlayKind, OverlayManager, OverlayResponse};
 
 impl OverlayManager {
     /// Routes a key event through the overlay stack via the legacy `on_input`
@@ -50,18 +47,10 @@ impl OverlayManager {
     /// [`OverlayManager::process_key_event_with_keymap`]; direct callers
     /// (legacy paths that don't supply a keymap) still get the same behavior
     /// they did before the keymap-first dispatch landed.
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "event routing: event, measurer, theme, focus, tree, animator, now"
-    )]
     pub fn process_key_event(
         &mut self,
         event: KeyEvent,
-        _measurer: &dyn crate::widgets::TextMeasurer,
-        _theme: &UiTheme,
-        _focused_widget: Option<WidgetId>,
-        tree: &mut LayerTree,
-        animator: &mut LayerAnimator,
+        compositor: &mut CompositorHandles<'_>,
         now: Instant,
     ) -> OverlayEventResult {
         if self.overlays.is_empty() {
@@ -74,7 +63,7 @@ impl OverlayManager {
         // is called).
         if event.key == Key::Escape {
             let id = self
-                .begin_dismiss_topmost(tree, animator, now)
+                .begin_dismiss_topmost(compositor.tree, compositor.animator, now)
                 .expect("checked non-empty above");
             return OverlayEventResult::Dismissed(id);
         }
@@ -85,11 +74,13 @@ impl OverlayManager {
         let input_event = InputEvent::from_key_event(event);
         let pipeline_result = deliver_via_pipeline(
             topmost.widget.as_mut(),
-            &input_event,
-            topmost.computed_rect,
-            topmost.layout_node.as_ref(),
-            false,
-            now,
+            PipelineCtx {
+                event: &input_event,
+                overlay_rect: topmost.computed_rect,
+                layout_node: topmost.layout_node.as_ref(),
+                captured: false,
+                now,
+            },
         );
 
         let (is_handled, response) = match pipeline_result {
@@ -139,19 +130,11 @@ impl OverlayManager {
     ///   currently have a focused-child model; future work to plumb a real
     ///   overlay focus path would update this method along with
     ///   `event_routing::deliver_via_pipeline`.
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "event routing: event, keymap, measurer, theme, focus, tree, animator, now"
-    )]
     pub fn process_key_event_with_keymap(
         &mut self,
         event: KeyEvent,
         keymap: &Keymap,
-        measurer: &dyn crate::widgets::TextMeasurer,
-        theme: &UiTheme,
-        focused_widget: Option<WidgetId>,
-        tree: &mut LayerTree,
-        animator: &mut LayerAnimator,
+        compositor: &mut CompositorHandles<'_>,
         now: Instant,
     ) -> OverlayEventResult {
         if self.overlays.is_empty() {
@@ -186,15 +169,7 @@ impl OverlayManager {
                 // No keymap match — fall through to legacy on_input pipeline
                 // (which also handles the inline Escape backstop for
                 // unbound contexts).
-                return self.process_key_event(
-                    event,
-                    measurer,
-                    theme,
-                    focused_widget,
-                    tree,
-                    animator,
-                    now,
-                );
+                return self.process_key_event(event, compositor, now);
             }
         };
 
@@ -212,15 +187,7 @@ impl OverlayManager {
         // receive Tab events. Future work: plumb a per-overlay focus
         // model through and dispatch FocusNext/FocusPrev natively here.
         if matches!(action.name(), "widget::FocusNext" | "widget::FocusPrev") {
-            return self.process_key_event(
-                event,
-                measurer,
-                theme,
-                focused_widget,
-                tree,
-                animator,
-                now,
-            );
+            return self.process_key_event(event, compositor, now);
         }
 
         // Phase 3b: Dismiss is a manager-level concern (touches the overlay
@@ -231,7 +198,7 @@ impl OverlayManager {
         // translation a `Dismiss` match would emit no widget action and
         // the popup would stay mounted on dialog windows.
         if action.name() == "widget::Dismiss" {
-            self.begin_dismiss_topmost(tree, animator, now)
+            self.begin_dismiss_topmost(compositor.tree, compositor.animator, now)
                 .expect("checked non-empty above");
             return OverlayEventResult::Dismissed(id);
         }

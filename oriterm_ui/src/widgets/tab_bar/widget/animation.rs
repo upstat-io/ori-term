@@ -9,7 +9,7 @@ use std::time::Instant;
 use crate::animation::AnimProperty;
 
 use super::super::hit::TabBarHit;
-use super::super::layout::TabBarLayout;
+use super::super::layout::{TabBarLayout, TabLayoutInputs};
 use super::TabBarWidget;
 
 impl TabBarWidget {
@@ -173,10 +173,12 @@ impl TabBarWidget {
     /// passes current multiplier values to the layout computation.
     pub(super) fn recompute_layout(&mut self) {
         self.layout = TabBarLayout::compute(
-            self.tabs.len(),
-            self.window_width,
-            self.tab_width_lock,
-            self.left_inset,
+            TabLayoutInputs {
+                tab_count: self.tabs.len(),
+                window_width: self.window_width,
+                tab_width_lock: self.tab_width_lock,
+                left_inset: self.left_inset,
+            },
             &self.metrics,
         );
     }
@@ -192,10 +194,12 @@ impl TabBarWidget {
             .map(AnimProperty::get)
             .collect();
         self.layout = TabBarLayout::compute_with_multipliers(
-            self.tabs.len(),
-            self.window_width,
-            self.tab_width_lock,
-            self.left_inset,
+            TabLayoutInputs {
+                tab_count: self.tabs.len(),
+                window_width: self.window_width,
+                tab_width_lock: self.tab_width_lock,
+                left_inset: self.left_inset,
+            },
             Some(&multipliers),
             &self.metrics,
         );

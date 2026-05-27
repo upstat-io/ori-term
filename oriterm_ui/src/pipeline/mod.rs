@@ -87,7 +87,7 @@ impl DispatchResult {
 /// - `now` — current frame timestamp.
 #[expect(
     clippy::too_many_arguments,
-    reason = "delivery step: result accumulator, event, action, widget, interaction state, timestamp"
+    reason = "app-facing delivery primitive — signature fixed by oriterm widget_pipeline callers"
 )]
 pub fn dispatch_step(
     result: &mut DispatchResult,

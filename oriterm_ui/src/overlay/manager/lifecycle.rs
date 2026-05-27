@@ -13,29 +13,38 @@ use crate::compositor::layer_animator::{AnimationParams, LayerAnimator};
 use crate::compositor::layer_tree::LayerTree;
 use crate::geometry::{Point, Rect};
 
-use super::{FADE_DURATION, MODAL_DIM_COLOR, Overlay, OverlayId, OverlayKind, OverlayManager};
+use super::{
+    CompositorHandles, FADE_DURATION, MODAL_DIM_COLOR, Overlay, OverlayId, OverlayKind,
+    OverlayManager,
+};
 use crate::overlay::flash_widget::FlashWidget;
 use crate::overlay::placement::Placement;
 use crate::widgets::Widget;
+
+/// Visual-bell flash parameters: fill color, fade-out duration, and easing.
+#[derive(Debug, Clone, Copy)]
+pub struct FlashSpec {
+    /// Fill color of the full-viewport flash.
+    pub color: Color,
+    /// Fade-out tween duration.
+    pub duration: Duration,
+    /// Fade-out easing curve.
+    pub easing: Easing,
+}
 
 impl OverlayManager {
     /// Pushes a non-modal overlay that dismisses on click-outside.
     ///
     /// Creates a `Textured` compositor layer at full opacity (no fade-in).
     /// Popups like dropdown menus and context menus should appear instantly.
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "lifecycle: widget, anchor, placement, tree, animator, now"
-    )]
     pub fn push_overlay(
         &mut self,
         widget: Box<dyn Widget>,
         anchor: Rect,
         placement: Placement,
-        tree: &mut LayerTree,
-        _animator: &mut LayerAnimator,
-        _now: Instant,
+        compositor: &mut CompositorHandles<'_>,
     ) -> OverlayId {
+        let tree = &mut *compositor.tree;
         let id = OverlayId::next();
         let root = tree.root();
 
@@ -68,40 +77,29 @@ impl OverlayManager {
     /// Preserves modal overlays beneath the popup stack. This is the correct
     /// entry point for transient UI like context menus and dropdown popups,
     /// where duplicate stacked popups would leave stale interaction state.
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "lifecycle: widget, anchor, placement, tree, animator, now"
-    )]
     pub fn replace_popup(
         &mut self,
         widget: Box<dyn Widget>,
         anchor: Rect,
         placement: Placement,
-        tree: &mut LayerTree,
-        animator: &mut LayerAnimator,
-        now: Instant,
+        compositor: &mut CompositorHandles<'_>,
     ) -> OverlayId {
-        self.clear_popups(tree, animator);
-        self.push_overlay(widget, anchor, placement, tree, animator, now)
+        self.clear_popups(compositor.tree, compositor.animator);
+        self.push_overlay(widget, anchor, placement, compositor)
     }
 
     /// Pushes a modal overlay (blocks interaction below, no click-outside dismiss).
     ///
     /// Creates a `SolidColor` dim layer and a `Textured` content layer,
     /// both with fade-in animations (opacity `0→1`, 150ms `EaseOut`).
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "lifecycle: widget, anchor, placement, tree, animator, now"
-    )]
     pub fn push_modal(
         &mut self,
         widget: Box<dyn Widget>,
         anchor: Rect,
         placement: Placement,
-        tree: &mut LayerTree,
-        _animator: &mut LayerAnimator,
-        _now: Instant,
+        compositor: &mut CompositorHandles<'_>,
     ) -> OverlayId {
+        let tree = &mut *compositor.tree;
         let id = OverlayId::next();
         let root = tree.root();
 
@@ -160,19 +158,19 @@ impl OverlayManager {
     /// [`OverlayManager::draw_overlay_at`](super::OverlayManager::draw_overlay_at)
     /// using `self.viewport` and the layer's animated opacity. The widget
     /// body is a no-op `FlashWidget` placeholder.
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "lifecycle: color, duration, easing, tree, animator, now — all distinct concerns"
-    )]
     pub fn push_flash(
         &mut self,
-        color: Color,
-        duration: Duration,
-        easing: Easing,
-        tree: &mut LayerTree,
-        animator: &mut LayerAnimator,
+        spec: FlashSpec,
+        compositor: &mut CompositorHandles<'_>,
         now: Instant,
     ) -> OverlayId {
+        let FlashSpec {
+            color,
+            duration,
+            easing,
+        } = spec;
+        let tree = &mut *compositor.tree;
+        let animator = &mut *compositor.animator;
         // Single-flash invariant: cancel and remove any in-flight flash.
         self.dismissing.retain(|overlay| {
             if overlay.kind == OverlayKind::Flash {

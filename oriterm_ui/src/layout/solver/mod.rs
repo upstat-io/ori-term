@@ -5,10 +5,13 @@
 //! to `Fill`/`FillPortion` children proportionally. Pass 2 arranges children
 //! at computed positions with justification and cross-axis alignment.
 
+mod arrange;
+
 use crate::geometry::Rect;
 
+use self::arrange::{ArrangeCtx, ContainerMetrics, arrange_children};
 use super::constraints::LayoutConstraints;
-use super::flex::{Align, Direction, Justify};
+use super::flex::{Direction, FlexSpec};
 use super::grid_solver;
 use super::layout_box::{BoxContent, LayoutBox};
 use super::layout_node::LayoutNode;
@@ -70,12 +73,13 @@ pub(super) fn solve(
         } => solve_flex(
             layout_box,
             &constrained,
-            mx,
-            my,
-            *direction,
-            *align,
-            *justify,
-            *gap,
+            (mx, my),
+            FlexSpec {
+                dir: *direction,
+                align: *align,
+                justify: *justify,
+                gap: *gap,
+            },
             children,
         ),
         BoxContent::Grid {
@@ -85,13 +89,14 @@ pub(super) fn solve(
             children,
         } => grid_solver::solve_grid(
             layout_box,
-            columns,
-            *row_gap,
-            *column_gap,
+            grid_solver::GridSpec {
+                columns,
+                row_gap: *row_gap,
+                column_gap: *column_gap,
+            },
             children,
             constrained,
-            mx,
-            my,
+            (mx, my),
         ),
     }
 }
@@ -165,18 +170,15 @@ fn main_axis_spec(layout_box: &LayoutBox, dir: Direction) -> SizeSpec {
 }
 
 /// Solves a flex container using a two-pass algorithm.
-#[expect(clippy::too_many_arguments, reason = "extracted flex params from enum")]
 fn solve_flex(
     layout_box: &LayoutBox,
     constraints: &LayoutConstraints,
-    pos_x: f32,
-    pos_y: f32,
-    dir: Direction,
-    align: Align,
-    justify: Justify,
-    gap: f32,
+    pos: (f32, f32),
+    spec: FlexSpec,
     children: &[LayoutBox],
 ) -> LayoutNode {
+    let (pos_x, pos_y) = pos;
+    let FlexSpec { dir, gap, .. } = spec;
     if children.is_empty() {
         return solve_empty(layout_box, constraints, pos_x, pos_y);
     }
@@ -218,22 +220,20 @@ fn solve_flex(
         resolve_container_cross(layout_box, dir, constraints, measured.max_cross + pad_cross);
 
     // Pass 2: Position children.
-    arrange_children(
+    arrange_children(ArrangeCtx {
         layout_box,
-        pos_x,
-        pos_y,
-        dir,
-        align,
-        justify,
-        gap,
+        pos,
+        spec,
         children,
-        &measured.child_mains,
-        measured.children_main,
-        container_main,
-        container_cross,
-        pad_main,
-        pad_cross,
-    )
+        child_mains: &measured.child_mains,
+        children_main: measured.children_main,
+        metrics: ContainerMetrics {
+            main: container_main,
+            cross: container_cross,
+            pad_main,
+            pad_cross,
+        },
+    })
 }
 
 /// Results from the measurement pass.
@@ -310,79 +310,6 @@ fn measure_children(
     }
 }
 
-/// Pass 2: Positions children with justification and alignment.
-#[expect(clippy::too_many_arguments, reason = "pass-2 needs all layout context")]
-fn arrange_children(
-    layout_box: &LayoutBox,
-    pos_x: f32,
-    pos_y: f32,
-    dir: Direction,
-    align: Align,
-    justify: Justify,
-    gap: f32,
-    children: &[LayoutBox],
-    child_mains: &[f32],
-    children_main: f32,
-    container_main: f32,
-    container_cross: f32,
-    pad_main: f32,
-    pad_cross: f32,
-) -> LayoutNode {
-    let (start_offset, between) = compute_justification(
-        justify,
-        container_main - pad_main,
-        children_main,
-        children.len(),
-    );
-
-    let pad_main_start = dir.main_start(layout_box.padding);
-    let pad_cross_start = dir.cross_start(layout_box.padding);
-    let mut cursor = pad_main_start + start_offset;
-    let child_cross_avail = container_cross - pad_cross;
-
-    let mut child_nodes = Vec::with_capacity(children.len());
-
-    for (idx, child) in children.iter().enumerate() {
-        let child_main = child_mains[idx];
-
-        // Solve child at cross-axis start position.
-        let (cw, ch) = dir.compose(child_main, child_cross_avail);
-        let child_constraints = LayoutConstraints::loose(cw, ch);
-        let (cx, cy) = dir.compose(cursor, pad_cross_start);
-        let mut node = solve(child, child_constraints, pos_x + cx, pos_y + cy);
-
-        // Compute alignment offset using actual solved dimensions.
-        let actual_cross = dir.cross(node.rect.width(), node.rect.height());
-        let cross_offset = match align {
-            Align::Start | Align::Stretch => 0.0,
-            Align::Center => (child_cross_avail - actual_cross) / 2.0,
-            Align::End => child_cross_avail - actual_cross,
-        };
-        if cross_offset.abs() > f32::EPSILON {
-            offset_node_cross(&mut node, dir, cross_offset);
-        }
-
-        child_nodes.push(node);
-
-        cursor += child_main + gap + between;
-    }
-
-    let (width, height) = dir.compose(container_main, container_cross);
-    let rect = Rect::new(pos_x, pos_y, width, height);
-    let content_rect = rect.inset(layout_box.padding);
-    let mut node = LayoutNode::new(rect, content_rect).with_children(child_nodes);
-    node.widget_id = layout_box.widget_id;
-    node.sense = layout_box.sense;
-    node.hit_test_behavior = layout_box.hit_test_behavior;
-    node.clip = layout_box.clip;
-    node.disabled = layout_box.disabled;
-    node.interact_radius = layout_box.interact_radius;
-    node.content_offset = layout_box.content_offset;
-    node.pointer_events = layout_box.pointer_events;
-    node.cursor_icon = layout_box.cursor_icon;
-    node
-}
-
 /// Solves an empty flex container.
 fn solve_empty(
     layout_box: &LayoutBox,
@@ -449,43 +376,5 @@ fn resolve_container_cross(
     match dir {
         Direction::Row => constraints.constrain_height(raw),
         Direction::Column => constraints.constrain_width(raw),
-    }
-}
-
-/// Computes start offset and extra between-child spacing for justification.
-fn compute_justification(justify: Justify, available: f32, used: f32, count: usize) -> (f32, f32) {
-    let free = (available - used).max(0.0);
-    match justify {
-        Justify::Start => (0.0, 0.0),
-        Justify::Center => (free / 2.0, 0.0),
-        Justify::End => (free, 0.0),
-        Justify::SpaceBetween => {
-            if count <= 1 {
-                (0.0, 0.0)
-            } else {
-                (0.0, free / (count - 1) as f32)
-            }
-        }
-        Justify::SpaceAround => {
-            if count == 0 {
-                (0.0, 0.0)
-            } else {
-                let per = free / count as f32;
-                (per / 2.0, per)
-            }
-        }
-    }
-}
-
-/// Offsets a solved node and all descendants along the cross axis.
-fn offset_node_cross(node: &mut LayoutNode, dir: Direction, delta: f32) {
-    let (dx, dy) = match dir {
-        Direction::Row => (0.0, delta),
-        Direction::Column => (delta, 0.0),
-    };
-    node.rect = node.rect.offset(dx, dy);
-    node.content_rect = node.content_rect.offset(dx, dy);
-    for child in &mut node.children {
-        offset_node_cross(child, dir, delta);
     }
 }

@@ -9,9 +9,9 @@ use std::time::{Duration, Instant};
 use crate::animation::Easing;
 use crate::color::Color;
 use crate::geometry::Rect;
-use crate::overlay::{OverlayId, Placement};
+use crate::overlay::{CompositorHandles, FlashSpec, OverlayId, Placement};
 use crate::widget_id::WidgetId;
-use crate::widgets::Widget;
+use crate::widgets::{LayoutCtx, Widget};
 
 use super::WindowRoot;
 
@@ -22,15 +22,16 @@ impl WindowRoot {
         widget: Box<dyn Widget>,
         anchor: Rect,
         placement: Placement,
-        now: Instant,
+        _now: Instant,
     ) -> OverlayId {
         self.overlays.push_overlay(
             widget,
             anchor,
             placement,
-            &mut self.layer_tree,
-            &mut self.layer_animator,
-            now,
+            &mut CompositorHandles {
+                tree: &mut self.layer_tree,
+                animator: &mut self.layer_animator,
+            },
         )
     }
 
@@ -40,15 +41,16 @@ impl WindowRoot {
         widget: Box<dyn Widget>,
         anchor: Rect,
         placement: Placement,
-        now: Instant,
+        _now: Instant,
     ) -> OverlayId {
         self.overlays.push_modal(
             widget,
             anchor,
             placement,
-            &mut self.layer_tree,
-            &mut self.layer_animator,
-            now,
+            &mut CompositorHandles {
+                tree: &mut self.layer_tree,
+                animator: &mut self.layer_animator,
+            },
         )
     }
 
@@ -58,15 +60,16 @@ impl WindowRoot {
         widget: Box<dyn Widget>,
         anchor: Rect,
         placement: Placement,
-        now: Instant,
+        _now: Instant,
     ) -> OverlayId {
         self.overlays.replace_popup(
             widget,
             anchor,
             placement,
-            &mut self.layer_tree,
-            &mut self.layer_animator,
-            now,
+            &mut CompositorHandles {
+                tree: &mut self.layer_tree,
+                animator: &mut self.layer_animator,
+            },
         )
     }
 
@@ -93,11 +96,15 @@ impl WindowRoot {
         }
         let duration = Duration::from_millis(u64::from(duration_ms));
         self.overlays.push_flash(
-            color,
-            duration,
-            easing,
-            &mut self.layer_tree,
-            &mut self.layer_animator,
+            FlashSpec {
+                color,
+                duration,
+                easing,
+            },
+            &mut CompositorHandles {
+                tree: &mut self.layer_tree,
+                animator: &mut self.layer_animator,
+            },
             now,
         );
         self.mark_dirty();
@@ -125,23 +132,23 @@ impl WindowRoot {
     /// Returns `PassThrough` if no overlay consumed the event.
     #[expect(
         clippy::too_many_arguments,
-        reason = "forwarding overlay manager params with borrow splitting"
+        reason = "app-facing overlay entry point — signature fixed by oriterm callers (mouse_input, dialog_context)"
     )]
     pub fn process_overlay_mouse_event(
         &mut self,
         event: &crate::input::MouseEvent,
         measurer: &dyn crate::widgets::TextMeasurer,
         theme: &crate::theme::UiTheme,
-        focused_widget: Option<WidgetId>,
+        _focused_widget: Option<WidgetId>,
         now: Instant,
     ) -> crate::overlay::OverlayEventResult {
         self.overlays.process_mouse_event(
             event,
-            measurer,
-            theme,
-            focused_widget,
-            &mut self.layer_tree,
-            &mut self.layer_animator,
+            &LayoutCtx { measurer, theme },
+            &mut CompositorHandles {
+                tree: &mut self.layer_tree,
+                animator: &mut self.layer_animator,
+            },
             now,
         )
     }
@@ -156,24 +163,23 @@ impl WindowRoot {
     /// no overlay consumed the event.
     #[expect(
         clippy::too_many_arguments,
-        reason = "forwarding overlay manager params with borrow splitting"
+        reason = "app-facing overlay entry point — signature fixed by oriterm callers (keyboard_input, dialog_context)"
     )]
     pub fn process_overlay_key_event(
         &mut self,
         event: crate::input::KeyEvent,
-        measurer: &dyn crate::widgets::TextMeasurer,
-        theme: &crate::theme::UiTheme,
-        focused_widget: Option<WidgetId>,
+        _measurer: &dyn crate::widgets::TextMeasurer,
+        _theme: &crate::theme::UiTheme,
+        _focused_widget: Option<WidgetId>,
         now: Instant,
     ) -> crate::overlay::OverlayEventResult {
         self.overlays.process_key_event_with_keymap(
             event,
             &self.keymap,
-            measurer,
-            theme,
-            focused_widget,
-            &mut self.layer_tree,
-            &mut self.layer_animator,
+            &mut CompositorHandles {
+                tree: &mut self.layer_tree,
+                animator: &mut self.layer_animator,
+            },
             now,
         )
     }

@@ -4,24 +4,39 @@ use std::f32::consts::PI;
 
 use crate::icons::PathCommand;
 
+/// An SVG elliptical-arc command (`A`/`a`) in absolute endpoint form.
+///
+/// Bundles the SVG arc parameters: start/end endpoints, ellipse radii,
+/// x-axis rotation (degrees), and the large-arc / sweep flags.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ArcRequest {
+    /// Start endpoint `(x1, y1)`.
+    pub start: (f32, f32),
+    /// End endpoint `(x2, y2)`.
+    pub end: (f32, f32),
+    /// Ellipse radii `(rx, ry)`.
+    pub radii: (f32, f32),
+    /// X-axis rotation in degrees.
+    pub x_rotation_deg: f32,
+    /// Large-arc flag.
+    pub large_arc: bool,
+    /// Sweep (clockwise) flag.
+    pub sweep: bool,
+}
+
 /// Convert an SVG arc to cubic Bézier segments.
 ///
 /// Uses the endpoint-to-center parameterization from SVG spec Appendix F,
 /// then subdivides into ≤90° segments approximated as cubics.
-#[expect(clippy::too_many_arguments, reason = "SVG arc has 7 parameters")]
-pub fn arc_to_cubics(
-    x1: f32,
-    y1: f32,
-    mut rx: f32,
-    mut ry: f32,
-    x_rotation_deg: f32,
-    large_arc: bool,
-    sweep: bool,
-    x2: f32,
-    y2: f32,
-    vb: f32,
-    cmds: &mut Vec<PathCommand>,
-) {
+pub fn arc_to_cubics(req: ArcRequest, vb: f32, cmds: &mut Vec<PathCommand>) {
+    let ArcRequest {
+        start: (x1, y1),
+        end: (x2, y2),
+        radii: (mut rx, mut ry),
+        x_rotation_deg,
+        large_arc,
+        sweep,
+    } = req;
     // Degenerate: same start/end.
     if (x1 - x2).abs() < 1e-6 && (y1 - y2).abs() < 1e-6 {
         return;
@@ -102,24 +117,48 @@ pub fn arc_to_cubics(
     for seg in 0..n_segs {
         let t1 = theta1 + seg as f32 * seg_angle;
         let t2 = t1 + seg_angle;
-        emit_segment(ccx, ccy, rx, ry, cos_phi, sin_phi, t1, t2, vb, cmds);
+        emit_segment(
+            ArcSegment {
+                center: (ccx, ccy),
+                radii: (rx, ry),
+                cos_phi,
+                sin_phi,
+                t1,
+                t2,
+            },
+            vb,
+            cmds,
+        );
     }
 }
 
-/// Emit one cubic Bézier for an arc segment from angle `t1` to `t2`.
-#[expect(clippy::too_many_arguments, reason = "arc segment geometry")]
-fn emit_segment(
-    cx: f32,
-    cy: f32,
-    rx: f32,
-    ry: f32,
+/// One ≤90° arc segment in center-parameterized form, ready to emit as a cubic.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct ArcSegment {
+    /// Ellipse center `(cx, cy)`.
+    center: (f32, f32),
+    /// Ellipse radii `(rx, ry)`.
+    radii: (f32, f32),
+    /// Cosine of the x-axis rotation.
     cos_phi: f32,
+    /// Sine of the x-axis rotation.
     sin_phi: f32,
+    /// Start angle (radians).
     t1: f32,
+    /// End angle (radians).
     t2: f32,
-    vb: f32,
-    cmds: &mut Vec<PathCommand>,
-) {
+}
+
+/// Emit one cubic Bézier for an arc segment from angle `t1` to `t2`.
+fn emit_segment(seg: ArcSegment, vb: f32, cmds: &mut Vec<PathCommand>) {
+    let ArcSegment {
+        center: (cx, cy),
+        radii: (rx, ry),
+        cos_phi,
+        sin_phi,
+        t1,
+        t2,
+    } = seg;
     let alpha = 4.0 / 3.0 * ((t2 - t1) / 4.0).tan();
 
     let cos_t1 = t1.cos();

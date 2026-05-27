@@ -64,24 +64,34 @@ impl Default for TreeDispatchResult {
     }
 }
 
+/// Read-only inputs for one widget-tree dispatch walk.
+#[derive(Clone, Copy)]
+pub struct DispatchInputs<'a> {
+    /// The input event being delivered.
+    pub event: &'a InputEvent,
+    /// Pre-planned delivery actions (Capture → Target → Bubble).
+    pub actions: &'a [DeliveryAction],
+    /// Current frame timestamp.
+    pub now: Instant,
+}
+
 /// Walks a widget tree, dispatching delivery actions to controllers of
 /// widgets whose ID matches a delivery action target.
 ///
 /// Recurses depth-first via `Widget::for_each_child_mut`. Stops early
 /// if any controller marks the event as handled.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "dispatch: widget, event, actions, now, result, dispatch_ids for cross-phase tracking"
-)]
 #[expect(clippy::implicit_hasher, reason = "always used with default hasher")]
 pub fn dispatch_to_widget_tree(
     widget: &mut dyn Widget,
-    event: &InputEvent,
-    actions: &[DeliveryAction],
-    now: Instant,
+    inputs: DispatchInputs<'_>,
     result: &mut TreeDispatchResult,
     mut dispatch_ids: Option<&mut HashSet<WidgetId>>,
 ) {
+    let DispatchInputs {
+        event,
+        actions,
+        now,
+    } = inputs;
     if result.handled {
         return;
     }
@@ -162,77 +172,33 @@ pub fn dispatch_to_widget_tree(
                 id, child_id
             );
         }
-        dispatch_to_widget_tree(
-            child,
-            event,
-            actions,
-            now,
-            result,
-            dispatch_ids.as_deref_mut(),
-        );
+        dispatch_to_widget_tree(child, inputs, result, dispatch_ids.as_deref_mut());
     });
 }
 
-/// Delivers an input event through a widget tree using the full pipeline.
+/// Builds the screen-space hit path for one event delivery.
 ///
-/// Combines hit testing, propagation planning, and controller dispatch.
-/// For mouse events, hit-tests the layout tree under `bounds` to find the
-/// target widget, then plans Capture → Target → Bubble delivery.
-/// For keyboard events, routes through `focus_path`.
-///
-/// # Arguments
-///
-/// - `widget` — root widget of the tree.
-/// - `event` — the input event to deliver.
-/// - `bounds` — screen-space bounds of the root widget (for coordinate mapping).
-/// - `layout_node` — layout tree for hit testing (pass `None` to skip hit test
-///   and deliver to root widget directly).
-/// - `active_widget` — currently captured widget (for drag/press continuation).
-/// - `focus_path` — root-to-leaf ancestor chain for keyboard routing.
-/// - `now` — current frame timestamp.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "pipeline dispatch: widget, event, bounds, layout, active, focus, timestamp, layout_ids"
-)]
-#[expect(clippy::implicit_hasher, reason = "always used with default hasher")]
-pub fn deliver_event_to_tree(
-    widget: &mut dyn Widget,
+/// Keyboard events have an empty path (routing uses `focus_path`). Mouse
+/// events hit-test `layout_node` under `bounds`; during capture the active
+/// widget is guaranteed an entry with its true layout bounds. With no
+/// layout tree, the event is delivered directly to the root widget.
+fn build_dispatch_hit_path(
+    widget: &dyn Widget,
     event: &InputEvent,
     bounds: Rect,
     layout_node: Option<&LayoutNode>,
     active_widget: Option<WidgetId>,
-    focus_path: &[WidgetId],
-    now: Instant,
-    layout_ids: Option<&HashSet<WidgetId>>,
-) -> TreeDispatchResult {
-    let _ = &layout_ids; // used only in debug_assertions
-    let root_id = widget.id();
-    let root_sense = widget.sense();
-
-    // Build the hit path.
-    let hit_result = if event.is_keyboard() {
-        WidgetHitTestResult { path: Vec::new() }
-    } else if let Some(active_id) = active_widget {
+) -> WidgetHitTestResult {
+    if event.is_keyboard() {
+        return WidgetHitTestResult { path: Vec::new() };
+    }
+    if let Some(active_id) = active_widget {
         // During capture, the active widget needs its true layout bounds
         // even when the cursor is outside it. Try hit testing first; if
         // the active widget isn't in the result, look it up from the
         // layout tree directly so `plan_captured_mouse` gets correct
         // bounds for the captured drag.
-        let mut result = if let (Some(node), Some(pos)) = (layout_node, event.pos()) {
-            let local = Point::new(pos.x - bounds.x(), pos.y - bounds.y());
-            let mut r = layout_hit_test_path(node, local);
-            for entry in &mut r.path {
-                entry.bounds = Rect::new(
-                    entry.bounds.x() + bounds.x(),
-                    entry.bounds.y() + bounds.y(),
-                    entry.bounds.width(),
-                    entry.bounds.height(),
-                );
-            }
-            r
-        } else {
-            WidgetHitTestResult { path: Vec::new() }
-        };
+        let mut result = offset_hit_path(event, bounds, layout_node);
 
         // Ensure the active widget has an entry with its layout bounds.
         let has_active = result.path.iter().any(|e| e.widget_id == active_id);
@@ -258,34 +224,81 @@ pub fn deliver_event_to_tree(
             });
         }
         result
-    } else if let Some(node) = layout_node {
-        if let Some(pos) = event.pos() {
-            let local = Point::new(pos.x - bounds.x(), pos.y - bounds.y());
-            let mut result = layout_hit_test_path(node, local);
-            // Offset local-space bounds to screen-space.
-            for entry in &mut result.path {
-                entry.bounds = Rect::new(
-                    entry.bounds.x() + bounds.x(),
-                    entry.bounds.y() + bounds.y(),
-                    entry.bounds.width(),
-                    entry.bounds.height(),
-                );
-            }
-            result
-        } else {
-            WidgetHitTestResult { path: Vec::new() }
-        }
+    } else if layout_node.is_some() {
+        offset_hit_path(event, bounds, layout_node)
     } else {
         // No layout — deliver directly to root widget.
         WidgetHitTestResult {
             path: vec![HitEntry {
-                widget_id: root_id,
+                widget_id: widget.id(),
                 bounds,
-                sense: root_sense,
+                sense: widget.sense(),
                 cursor_icon: CursorIcon::Default,
             }],
         }
+    }
+}
+
+/// Hit-tests `layout_node` under `bounds`, offsetting local-space entry
+/// bounds into screen space. Empty path when there is no layout or no
+/// cursor position.
+fn offset_hit_path(
+    event: &InputEvent,
+    bounds: Rect,
+    layout_node: Option<&LayoutNode>,
+) -> WidgetHitTestResult {
+    let (Some(node), Some(pos)) = (layout_node, event.pos()) else {
+        return WidgetHitTestResult { path: Vec::new() };
     };
+    let local = Point::new(pos.x - bounds.x(), pos.y - bounds.y());
+    let mut result = layout_hit_test_path(node, local);
+    for entry in &mut result.path {
+        entry.bounds = Rect::new(
+            entry.bounds.x() + bounds.x(),
+            entry.bounds.y() + bounds.y(),
+            entry.bounds.width(),
+            entry.bounds.height(),
+        );
+    }
+    result
+}
+
+/// Delivers an input event through a widget tree using the full pipeline.
+///
+/// Combines hit testing, propagation planning, and controller dispatch.
+/// For mouse events, hit-tests the layout tree under `bounds` to find the
+/// target widget, then plans Capture → Target → Bubble delivery.
+/// For keyboard events, routes through `focus_path`.
+///
+/// # Arguments
+///
+/// - `widget` — root widget of the tree.
+/// - `event` — the input event to deliver.
+/// - `bounds` — screen-space bounds of the root widget (for coordinate mapping).
+/// - `layout_node` — layout tree for hit testing (pass `None` to skip hit test
+///   and deliver to root widget directly).
+/// - `active_widget` — currently captured widget (for drag/press continuation).
+/// - `focus_path` — root-to-leaf ancestor chain for keyboard routing.
+/// - `now` — current frame timestamp.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "app-facing pipeline entry — signature fixed by oriterm dialog_context callers (event_handling, keymap_dispatch)"
+)]
+#[expect(clippy::implicit_hasher, reason = "always used with default hasher")]
+pub fn deliver_event_to_tree(
+    widget: &mut dyn Widget,
+    event: &InputEvent,
+    bounds: Rect,
+    layout_node: Option<&LayoutNode>,
+    active_widget: Option<WidgetId>,
+    focus_path: &[WidgetId],
+    now: Instant,
+    layout_ids: Option<&HashSet<WidgetId>>,
+) -> TreeDispatchResult {
+    let _ = &layout_ids; // used only in debug_assertions
+
+    // Build the hit path.
+    let hit_result = build_dispatch_hit_path(widget, event, bounds, layout_node, active_widget);
 
     // Plan propagation.
     let mut delivery_actions = Vec::new();
@@ -309,9 +322,11 @@ pub fn deliver_event_to_tree(
 
     dispatch_to_widget_tree(
         widget,
-        event,
-        &delivery_actions,
-        now,
+        DispatchInputs {
+            event,
+            actions: &delivery_actions,
+            now,
+        },
         &mut result,
         dispatch_ids_param,
     );

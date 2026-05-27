@@ -308,7 +308,7 @@ impl ShapedText {
     /// Create a shaped text block from pre-computed data.
     #[expect(
         clippy::too_many_arguments,
-        reason = "weight parameter added for CSS font-weight threading; grouping into a struct would obscure a simple data constructor"
+        reason = "data constructor: params map 1:1 to public fields; signature consumed by oriterm font shaper + scene_convert (out-of-crate callers)"
     )]
     pub fn new(
         glyphs: Vec<ShapedGlyph>,

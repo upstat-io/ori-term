@@ -42,6 +42,22 @@ pub enum Justify {
     SpaceAround,
 }
 
+/// The four flex-layout knobs that travel together through the solver.
+///
+/// Mirrors the `BoxContent::Flex` enum payload: main-axis direction,
+/// cross-axis alignment, main-axis justification, and inter-child gap.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FlexSpec {
+    /// Main-axis direction.
+    pub dir: Direction,
+    /// Cross-axis alignment.
+    pub align: Align,
+    /// Main-axis distribution.
+    pub justify: Justify,
+    /// Gap between adjacent children (pre-scaled, main-axis units).
+    pub gap: f32,
+}
+
 impl Direction {
     /// Extracts the main-axis dimension from `(width, height)`.
     pub fn main(self, width: f32, height: f32) -> f32 {

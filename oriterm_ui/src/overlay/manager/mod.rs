@@ -8,6 +8,8 @@ pub(in crate::overlay) mod event_routing;
 pub(in crate::overlay) mod key_dispatch;
 mod lifecycle;
 
+pub use lifecycle::FlashSpec;
+
 use std::time::Duration;
 
 use winit::window::CursorIcon;
@@ -15,6 +17,7 @@ use winit::window::CursorIcon;
 use crate::action::WidgetAction;
 use crate::color::Color;
 use crate::compositor::layer::LayerType;
+use crate::compositor::layer_animator::LayerAnimator;
 use crate::compositor::layer_tree::LayerTree;
 use crate::draw::RectStyle;
 use crate::geometry::LayerId;
@@ -104,6 +107,19 @@ pub enum OverlayEventResult {
     Blocked,
     /// No overlay intercepted the event — deliver to the main widget tree.
     PassThrough,
+}
+
+/// Mutable handles to the compositor state an overlay operation may touch.
+///
+/// The layer tree and its animator always travel together for every push,
+/// dismiss, and routing operation that allocates or fades compositor layers.
+/// Bundling them keeps the lifecycle/routing entry points to a small,
+/// semantic argument set.
+pub struct CompositorHandles<'a> {
+    /// The window's compositor layer tree.
+    pub tree: &'a mut LayerTree,
+    /// Animator driving layer opacity tweens (fade-in / fade-out).
+    pub animator: &'a mut LayerAnimator,
 }
 
 /// Manages a stack of floating overlays above the main widget tree.

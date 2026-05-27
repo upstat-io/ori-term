@@ -18,7 +18,7 @@ use crate::input::layout_hit_test_path;
 use crate::interaction::build_parent_map;
 use crate::interaction::lifecycle::LifecycleEvent;
 use crate::layout::compute_layout;
-use crate::overlay::OverlayEventResult;
+use crate::overlay::{CompositorHandles, OverlayEventResult};
 use crate::pipeline::{
     apply_dispatch_requests, collect_all_widget_ids, collect_focusable_ids, collect_layout_bounds,
     dispatch_keymap_action, prepaint_widget_tree, prepare_widget_tree, register_widget_tree,
@@ -97,14 +97,13 @@ impl WindowRoot {
         // widget tree's hot path is cleared (not updated) so background widgets
         // don't animate hover state underneath the overlay.
         let overlay_consumed = if let Some(mouse_event) = (*event).to_mouse_event() {
-            let focused = self.focus.focused();
             let result = self.overlays.process_mouse_event(
                 &mouse_event,
-                measurer,
-                theme,
-                focused,
-                &mut self.layer_tree,
-                &mut self.layer_animator,
+                &LayoutCtx { measurer, theme },
+                &mut CompositorHandles {
+                    tree: &mut self.layer_tree,
+                    animator: &mut self.layer_animator,
+                },
                 now,
             );
             !matches!(result, OverlayEventResult::PassThrough)

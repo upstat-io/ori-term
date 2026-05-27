@@ -45,6 +45,16 @@ pub(super) struct TabStrip {
     pub(super) text_color: Color,
 }
 
+/// Strip geometry plus the current tab's left X — the position pair every
+/// per-tab draw helper threads together.
+#[derive(Clone, Copy)]
+pub(super) struct TabPaint<'a> {
+    /// Tab strip geometry and per-tab draw state.
+    pub(super) strip: &'a TabStrip,
+    /// Left X coordinate of the tab being drawn (animated / drag-adjusted).
+    pub(super) x: f32,
+}
+
 // Drawing helpers
 
 impl TabBarWidget {
@@ -97,7 +107,12 @@ impl TabBarWidget {
 
         // Only draw content when somewhat visible.
         if content_opacity > 0.01 {
-            self.draw_tab_label(ctx, tab, x, strip, self.editing_index == Some(index));
+            self.draw_tab_label(
+                ctx,
+                tab,
+                TabPaint { strip, x },
+                self.editing_index == Some(index),
+            );
 
             let hovered = self.is_tab_hovered(index);
 
@@ -119,7 +134,7 @@ impl TabBarWidget {
             } else if strip.active {
                 // Active tab: close at 0.6 opacity (1.0 when hovered).
                 let base = if hovered { 1.0 } else { 0.6 };
-                self.draw_close_button(ctx, index, x, strip, base * content_opacity);
+                self.draw_close_button(ctx, index, TabPaint { strip, x }, base * content_opacity);
             } else {
                 // Inactive tab: animated fade (modified dot replaced by close on hover).
                 let opacity = self
@@ -128,7 +143,7 @@ impl TabBarWidget {
                     .map_or(0.0, AnimProperty::get);
                 let opacity = opacity * content_opacity;
                 if opacity > 0.01 {
-                    self.draw_close_button(ctx, index, x, strip, opacity);
+                    self.draw_close_button(ctx, index, TabPaint { strip, x }, opacity);
                 }
             }
         }
@@ -159,18 +174,14 @@ impl TabBarWidget {
     /// When `editing` is true, uses the editing buffer text instead of the
     /// tab title and draws cursor + selection highlight. Icon rendering is
     /// always the same regardless of editing state.
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "tab label draw: self + ctx + tab + x + strip + editing"
-    )]
     pub(super) fn draw_tab_label(
         &self,
         ctx: &mut DrawCtx<'_>,
         tab: &TabEntry,
-        x: f32,
-        strip: &TabStrip,
+        paint: TabPaint<'_>,
         editing: bool,
     ) {
+        let TabPaint { strip, x } = paint;
         let color = strip.text_color;
 
         // Left-of-title icon: emoji `TabIcon` only. The bell alert glyph is
@@ -287,18 +298,14 @@ impl TabBarWidget {
     }
 
     /// Draws the close (×) button for a tab with the given opacity.
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "close button draw: self + ctx + index + tab_x + strip + opacity"
-    )]
     fn draw_close_button(
         &self,
         ctx: &mut DrawCtx<'_>,
         index: usize,
-        tab_x: f32,
-        strip: &TabStrip,
+        paint: TabPaint<'_>,
         opacity: f32,
     ) {
+        let TabPaint { strip, x: tab_x } = paint;
         let cx =
             tab_x + self.layout.tab_width_at(index) - CLOSE_BUTTON_RIGHT_PAD - CLOSE_BUTTON_WIDTH;
         let cy = strip.y + (strip.h - CLOSE_BUTTON_WIDTH) / 2.0;
