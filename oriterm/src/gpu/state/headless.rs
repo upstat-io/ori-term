@@ -93,6 +93,17 @@ impl GpuState {
             .ok_or(GpuInitError)
     }
 
+    /// Force the dual-source-blending capability flag for a headless test.
+    ///
+    /// Must be called BEFORE `GpuPipelines::new`, which reads the flag to pick
+    /// the subpixel pipeline. Setting `false` selects the non-dual
+    /// `subpixel_fg.wgsl` pipeline so the known-bg Porter-Duff branch is
+    /// exercised even on a dual-source-capable rasterizer.
+    #[cfg(all(test, feature = "gpu-tests"))]
+    pub(crate) fn set_dual_source_blending_for_test(&mut self, enabled: bool) {
+        self.dual_source_blending = enabled;
+    }
+
     /// Adapter metadata retained from initialization.
     ///
     /// Contains name, backend, and device type — used for diagnostics

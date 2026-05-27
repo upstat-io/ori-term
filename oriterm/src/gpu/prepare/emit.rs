@@ -32,7 +32,11 @@ pub(super) struct GlyphEmitter<'a> {
     pub baseline: f32,
     pub size_q6: u32,
     pub hinted: bool,
+    /// Foreground alpha multiplier: pane dim × blink × SGR mode-6 fg alpha.
     pub fg_dim: f32,
+    /// Background alpha (SGR mode-6 bg alpha, 0..1) for the subpixel-with-bg
+    /// path. `1.0` for opaque cells — the shader then composites opaquely.
+    pub bg_alpha: f32,
     pub subpixel_positioning: bool,
     pub atlas: &'a dyn AtlasLookup,
     pub frame: &'a mut PreparedFrame,
@@ -128,6 +132,7 @@ impl GlyphEmitter<'_> {
                                 fg,
                                 bg,
                                 alpha: self.fg_dim,
+                                bg_alpha: self.bg_alpha,
                                 atlas_page: entry.page,
                                 clip: CLIP_UNCLIPPED,
                             },

@@ -70,19 +70,30 @@ struct CellEmitState {
     bg_w: f32,
     fg: Rgb,
     bg: Rgb,
+    /// Foreground/glyph alpha: pane dim × blink × SGR mode-6 fg alpha.
     cell_dim: f32,
+    /// Background alpha (SGR mode-6 bg alpha, 0..1). `1.0` for opaque cells.
+    bg_alpha: f32,
+    /// Decoration alpha: blink × SGR mode-6 underline alpha.
     deco_alpha: f32,
     /// Cell-top y + SGR 73/74 super/sub offset — glyph only, not bg or deco.
     glyph_y: f32,
     is_hovered: bool,
 }
 
-/// Push the cell background rectangle if the cell's bg differs from the palette default.
+/// Fully-opaque cell-alpha sentinel (SGR mode-6 alpha 255/255 → 1.0).
+const OPAQUE_ALPHA: f32 = 1.0;
+
+/// Push the cell background rectangle when the cell carries a non-default bg
+/// color OR an explicit translucent bg alpha.
 ///
-/// The palette background is skipped so the window clear color (carrying theme
-/// opacity for glass/acrylic) shows through for default-bg cells.
+/// The palette background at full opacity is skipped so the window clear color
+/// (carrying theme opacity for glass/acrylic) shows through for default-bg
+/// cells. A default-COLORED cell with explicit SGR mode-6 `bg_alpha < 1.0`
+/// still emits its bg quad — otherwise its translucent alpha would be dropped
+/// and the cell would fall back to the opaque clear color.
 fn emit_cell_bg(state: &CellEmitState, ctx: &mut EmitCtx<'_>) {
-    if state.bg != ctx.color_ctx.palette.background {
+    if state.bg != ctx.color_ctx.palette.background || state.bg_alpha < OPAQUE_ALPHA {
         ctx.frame.backgrounds.push_rect(
             ScreenRect {
                 x: state.x,
@@ -91,7 +102,7 @@ fn emit_cell_bg(state: &CellEmitState, ctx: &mut EmitCtx<'_>) {
                 h: ctx.cell_size.height,
             },
             state.bg,
-            1.0,
+            state.bg_alpha,
         );
     }
 }
@@ -160,6 +171,7 @@ fn emit_cell_glyphs(cell: &RenderableCell, state: &CellEmitState, ctx: &mut Emit
                 size_q6: ctx.size_q6,
                 hinted,
                 fg_dim: state.cell_dim,
+                bg_alpha: state.bg_alpha,
                 subpixel_positioning: ctx.subpixel_positioning,
                 atlas: ctx.atlas,
                 frame: ctx.frame,
@@ -226,11 +238,17 @@ pub(super) fn emit_cell(cell: &RenderableCell, x: f32, y: f32, ctx: &mut EmitCtx
         ctx.cell_size.width
     };
     let is_blink = cell.flags.contains(CellFlags::BLINK);
-    let cell_dim = if is_blink {
-        ctx.fg_dim * ctx.text_blink_opacity
+    // Blink × cell-alpha compose by MULTIPLY (Decision 09): blink attenuation
+    // and SGR mode-6 per-channel alpha are independent factors; neither
+    // clobbers the other.
+    let blink_mul = if is_blink {
+        ctx.text_blink_opacity
     } else {
-        ctx.fg_dim
+        1.0
     };
+    let fg_alpha = f32::from(cell.fg_alpha) / 255.0;
+    let bg_alpha = f32::from(cell.bg_alpha) / 255.0;
+    let underline_alpha = f32::from(cell.underline_alpha) / 255.0;
     let state = CellEmitState {
         col,
         row,
@@ -239,12 +257,9 @@ pub(super) fn emit_cell(cell: &RenderableCell, x: f32, y: f32, ctx: &mut EmitCtx
         bg_w,
         fg,
         bg,
-        cell_dim,
-        deco_alpha: if is_blink {
-            ctx.text_blink_opacity
-        } else {
-            1.0
-        },
+        cell_dim: ctx.fg_dim * blink_mul * fg_alpha,
+        bg_alpha,
+        deco_alpha: blink_mul * underline_alpha,
         glyph_y: y + super_sub_glyph_offset(cell.flags, ctx.cell_size.height),
         is_hovered: ctx.hovered_cell == Some((row, col)),
     };

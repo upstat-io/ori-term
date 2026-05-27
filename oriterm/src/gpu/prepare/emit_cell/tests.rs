@@ -252,7 +252,8 @@ fn emit_cell_uses_bg_w_for_wide_char() {
 }
 
 #[test]
-/// BLINK reduces glyph alpha (cell_dim) but DOES NOT affect bg alpha (always 1.0).
+/// BLINK reduces glyph alpha (cell_dim) but does NOT affect bg alpha — an
+/// opaque cell (bg_alpha=255) keeps bg alpha at 1.0 regardless of blink.
 fn emit_cell_applies_blink_alpha_to_bg() {
     let mut input = single_cell_input();
     input.text_blink_opacity = 0.5;
@@ -276,14 +277,178 @@ fn emit_cell_applies_blink_alpha_to_bg() {
         "BLINK glyph alpha should be 0.5 (fg_dim * text_blink_opacity), got {glyph_alpha}"
     );
 
-    // Regression guard: bg must stay at alpha=1.0 regardless of blink state.
-    // push_rect writes the color into the bg slot (offset 60), fg slot is zeroed.
+    // Regression guard: an OPAQUE cell's bg stays at alpha=1.0 regardless of
+    // blink state. push_rect writes the color into the bg slot (offset 60).
     assert_eq!(bg_count(&frame), 1, "bg pushed even when blink=0.5");
     let b = frame.backgrounds.as_bytes();
     let bg_alpha = instance_rect_alpha(b, 0);
     assert!(
         (bg_alpha - 1.0).abs() < 0.01,
-        "bg alpha must remain 1.0 even for BLINK cells, got {bg_alpha}"
+        "opaque cell bg alpha must remain 1.0 even for BLINK cells, got {bg_alpha}"
+    );
+}
+
+#[test]
+/// A translucent cell (SGR mode-6 bg_alpha=128) emits its bg quad at the
+/// resolved alpha (128/255 ≈ 0.502), NOT a hardcoded 1.0. Blink composes by
+/// multiply and must not clobber the cell alpha.
+fn emit_cell_threads_translucent_bg_alpha_to_rect() {
+    let input = single_cell_input();
+    let atlas = TestAtlas;
+    let mut frame = new_frame(&input);
+
+    let mut c = cell('A', CellFlags::empty());
+    c.bg_alpha = 128;
+    let mut ctx = unshaped_ctx(&input, &atlas, &mut frame);
+    emit_cell(&c, 0.0, 0.0, &mut ctx);
+
+    assert_eq!(bg_count(&frame), 1, "translucent cell still emits bg quad");
+    let b = frame.backgrounds.as_bytes();
+    let bg_alpha = instance_rect_alpha(b, 0);
+    assert!(
+        (bg_alpha - 128.0 / 255.0).abs() < 0.01,
+        "bg alpha must be 128/255 ≈ 0.502, got {bg_alpha}"
+    );
+    // Negative: must NOT be the pre-fix hardcoded opaque 1.0.
+    assert!(
+        (bg_alpha - 1.0).abs() > 0.05,
+        "translucent bg alpha must NOT be hardcoded 1.0 (pre-fix bug)"
+    );
+}
+
+#[test]
+/// F3 regression: a cell with the DEFAULT bg color (== palette.background) but
+/// an explicit SGR mode-6 translucent `bg_alpha < 1.0` MUST still emit its bg
+/// quad at the resolved alpha. The pre-fix gate only checked
+/// `bg != palette.background`, so a default-colored translucent cell got NO bg
+/// quad and its alpha was silently dropped.
+fn emit_cell_emits_bg_quad_for_default_color_translucent_cell() {
+    use oriterm_core::Rgb;
+
+    let input = single_cell_input();
+    let atlas = TestAtlas;
+    let mut frame = new_frame(&input);
+
+    // test_grid palette background is (0,0,0). Build a cell whose bg matches
+    // it exactly but carries a translucent SGR mode-6 alpha.
+    let palette_bg = input.palette.background;
+    assert_eq!(
+        palette_bg,
+        Rgb { r: 0, g: 0, b: 0 },
+        "test fixture invariant"
+    );
+    let mut c = cell('A', CellFlags::empty());
+    c.bg = palette_bg;
+    c.bg_alpha = 128;
+
+    let mut ctx = unshaped_ctx(&input, &atlas, &mut frame);
+    emit_cell(&c, 0.0, 0.0, &mut ctx);
+
+    assert_eq!(
+        bg_count(&frame),
+        1,
+        "default-colored translucent cell must still emit its bg quad"
+    );
+    let b = frame.backgrounds.as_bytes();
+    let bg_alpha = instance_rect_alpha(b, 0);
+    assert!(
+        (bg_alpha - 128.0 / 255.0).abs() < 0.01,
+        "default-colored translucent cell bg alpha must be 128/255 ≈ 0.502, got {bg_alpha}"
+    );
+}
+
+#[test]
+/// F3 boundary: a default-colored, fully-OPAQUE cell (bg ==
+/// palette.background, bg_alpha=255) emits NO bg quad — the window clear color
+/// (theme opacity for glass/acrylic) shows through. The F3 gate widening must
+/// not start emitting quads for ordinary default-bg opaque cells.
+fn emit_cell_skips_bg_quad_for_default_color_opaque_cell() {
+    let input = single_cell_input();
+    let atlas = TestAtlas;
+    let mut frame = new_frame(&input);
+
+    let mut c = cell('A', CellFlags::empty());
+    c.bg = input.palette.background;
+    c.bg_alpha = 255;
+
+    let mut ctx = unshaped_ctx(&input, &atlas, &mut frame);
+    emit_cell(&c, 0.0, 0.0, &mut ctx);
+
+    assert_eq!(
+        bg_count(&frame),
+        0,
+        "default-colored OPAQUE cell must emit no bg quad (clear color shows through)"
+    );
+}
+
+#[test]
+/// A fully-transparent cell bg (bg_alpha=0) emits a bg quad at alpha 0.0 —
+/// the underlying surface shows through.
+fn emit_cell_threads_zero_bg_alpha_to_rect() {
+    let input = single_cell_input();
+    let atlas = TestAtlas;
+    let mut frame = new_frame(&input);
+
+    let mut c = cell('A', CellFlags::empty());
+    c.bg_alpha = 0;
+    let mut ctx = unshaped_ctx(&input, &atlas, &mut frame);
+    emit_cell(&c, 0.0, 0.0, &mut ctx);
+
+    let b = frame.backgrounds.as_bytes();
+    let bg_alpha = instance_rect_alpha(b, 0);
+    assert!(
+        bg_alpha.abs() < 0.01,
+        "fully-transparent bg alpha must be 0.0, got {bg_alpha}"
+    );
+}
+
+#[test]
+/// SGR mode-6 fg alpha multiplies the glyph alpha. At fg_alpha=128 (≈0.502)
+/// with no blink/dim, the glyph alpha is ≈0.502.
+fn emit_cell_threads_fg_alpha_to_glyph() {
+    let input = single_cell_input();
+    let atlas = TestAtlas;
+    let mut frame = new_frame(&input);
+
+    let mut c = cell('A', CellFlags::empty());
+    c.fg_alpha = 128;
+    let mut ctx = unshaped_ctx(&input, &atlas, &mut frame);
+    emit_cell(&c, 0.0, 0.0, &mut ctx);
+
+    assert_eq!(glyph_count(&frame), 1, "glyph emitted");
+    let g = frame.glyphs.as_bytes();
+    let glyph_alpha = instance_glyph_alpha(g, 0);
+    assert!(
+        (glyph_alpha - 128.0 / 255.0).abs() < 0.01,
+        "glyph alpha must be cell_dim(1.0) * fg_alpha(128/255) ≈ 0.502, got {glyph_alpha}"
+    );
+}
+
+#[test]
+/// Blink × fg alpha compose by MULTIPLY. A BLINK cell
+/// (text_blink_opacity=0.5) with fg_alpha=128 → 0.5 * 0.502 ≈ 0.251.
+fn emit_cell_composes_blink_and_fg_alpha_by_multiply() {
+    let mut input = single_cell_input();
+    input.text_blink_opacity = 0.5;
+    let atlas = TestAtlas;
+    let mut frame = new_frame(&input);
+
+    let mut c = cell('A', CellFlags::BLINK);
+    c.fg_alpha = 128;
+    let mut ctx = unshaped_ctx(&input, &atlas, &mut frame);
+    emit_cell(&c, 0.0, 0.0, &mut ctx);
+
+    let g = frame.glyphs.as_bytes();
+    let glyph_alpha = instance_glyph_alpha(g, 0);
+    let expected = 0.5 * (128.0 / 255.0);
+    assert!(
+        (glyph_alpha - expected).abs() < 0.01,
+        "blink×fg_alpha must multiply: 0.5 * 128/255 ≈ {expected}, got {glyph_alpha}"
+    );
+    // Negative: must NOT be min(0.5, 0.502)=0.5 (multiply, not min).
+    assert!(
+        (glyph_alpha - 0.5).abs() > 0.05,
+        "must compose by multiply, not min(blink, fg_alpha)"
     );
 }
 
@@ -405,13 +570,43 @@ fn emit_cell_applies_blink_alpha_to_decoration() {
         "BLINK deco_alpha must equal text_blink_opacity=0.5, got {deco_alpha}"
     );
 
-    // Regression guard: bg quad must NOT be dimmed by BLINK (bg alpha always 1.0).
+    // Regression guard: an OPAQUE cell's bg quad must NOT be dimmed by BLINK
+    // (opaque bg_alpha=255 → 1.0).
     let bg_idx = (0..n)
         .find(|&i| (instance_y(b, i) - 0.0_f32).abs() < 0.1)
         .expect("bg rect at y=0 must exist");
     let bg_alpha = instance_rect_alpha(b, bg_idx);
     assert!(
         (bg_alpha - 1.0).abs() < 0.01,
-        "bg alpha must be 1.0 even when BLINK, got {bg_alpha}"
+        "opaque cell bg alpha must be 1.0 even when BLINK, got {bg_alpha}"
+    );
+}
+
+#[test]
+/// SGR mode-6 underline alpha multiplies the decoration alpha.
+/// underline_alpha=128 (≈0.502) with no blink → deco alpha ≈ 0.502.
+fn emit_cell_threads_underline_alpha_to_decoration() {
+    let input = single_cell_input();
+    let atlas = TestAtlas;
+    let mut frame = new_frame(&input);
+
+    let mut c = cell('A', CellFlags::UNDERLINE);
+    c.underline_alpha = 128;
+    let mut ctx = unshaped_ctx(&input, &atlas, &mut frame);
+    emit_cell(&c, 0.0, 0.0, &mut ctx);
+
+    let b = frame.backgrounds.as_bytes();
+    let n = bg_count(&frame);
+    let underline_idx = (0..n)
+        .find(|&i| (instance_y(b, i) - 14.0_f32).abs() < 0.1)
+        .expect("UNDERLINE must emit underline rect at y=14.0");
+    let deco_alpha = instance_rect_alpha(b, underline_idx);
+    assert!(
+        (deco_alpha - 128.0 / 255.0).abs() < 0.01,
+        "deco alpha must be 1.0 * underline_alpha(128/255) ≈ 0.502, got {deco_alpha}"
+    );
+    assert!(
+        (deco_alpha - 1.0).abs() > 0.05,
+        "translucent underline alpha must NOT be hardcoded 1.0"
     );
 }

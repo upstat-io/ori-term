@@ -205,6 +205,9 @@ fn emit_text_glyph(
                         fg,
                         bg,
                         alpha,
+                        // UI text has an opaque known background; no SGR
+                        // mode-6 per-channel alpha applies here.
+                        bg_alpha: 1.0,
                         atlas_page: entry.page,
                         clip,
                     },

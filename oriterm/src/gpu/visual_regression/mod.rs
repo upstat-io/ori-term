@@ -238,7 +238,17 @@ pub(super) fn headless_env_with_hinting(
 pub(crate) fn headless_env_with_pinned_software_rasterizer(
     config: &GoldenLaneConfig,
 ) -> Option<(GpuState, GpuPipelines, WindowRenderer)> {
-    let gpu = GpuState::new_headless_with_preference(AdapterPreference::SoftwareRasterizer).ok()?;
+    let mut gpu =
+        GpuState::new_headless_with_preference(AdapterPreference::SoftwareRasterizer).ok()?;
+
+    if config.force_non_dual_subpixel {
+        // Force the NON-dual subpixel pipeline so the `subpixel_fg.wgsl`
+        // known-bg branch (the F2 Porter-Duff "glyph over translucent bg"
+        // path) is exercised. On a dual-source-capable rasterizer the
+        // production selection picks the dual shader, which composites over
+        // the framebuffer in hardware and never reaches that branch.
+        gpu.set_dual_source_blending_for_test(false);
+    }
 
     let info = gpu.adapter_info();
     log::info!(

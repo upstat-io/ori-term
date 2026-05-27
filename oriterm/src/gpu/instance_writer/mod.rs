@@ -137,8 +137,12 @@ pub struct GlyphInstanceBg {
     pub fg: Rgb,
     /// Background color (subpixel per-channel blend).
     pub bg: Rgb,
-    /// Alpha multiplier.
+    /// Foreground alpha multiplier (dim × blink × SGR mode-6 fg alpha).
     pub alpha: f32,
+    /// Background alpha multiplier (SGR mode-6 bg alpha). `1.0` for opaque
+    /// cells. The subpixel shader reads it as `bg_color.a` to composite the
+    /// glyph over a translucent/inherited background (Decision 09).
+    pub bg_alpha: f32,
     /// Atlas texture-array layer.
     pub atlas_page: u32,
     /// Per-fragment clip rect `[x, y, w, h]` in physical pixels.
@@ -288,6 +292,7 @@ impl InstanceWriter {
             fg,
             bg,
             alpha,
+            bg_alpha,
             atlas_page,
             clip,
         } = glyph;
@@ -295,7 +300,7 @@ impl InstanceWriter {
             rect,
             uv,
             fg: rgb_to_floats(fg, alpha),
-            bg: rgb_to_floats(bg, 1.0),
+            bg: rgb_to_floats(bg, bg_alpha),
             kind: InstanceKind::Glyph,
             atlas_page,
         });
@@ -389,10 +394,19 @@ impl Default for InstanceWriter {
     }
 }
 
-/// Convert `Rgb` + alpha to linear-light `[f32; 4]` for the GPU.
+/// Convert `Rgb` + alpha to STRAIGHT linear-light `[f32; 4]` for the GPU.
 ///
-/// Each sRGB byte is decoded via [`srgb_to_linear`] so the values are
-/// truly linear when sent to the `*Srgb` render target.
+/// Each sRGB byte is decoded via [`srgb_to_linear`] so the values are truly
+/// linear when sent to the `*Srgb` render target. The color is emitted
+/// STRAIGHT (un-premultiplied) with straight alpha in the `a` slot.
+///
+/// The fragment shaders own the single premultiply step: `bg.wgsl`
+/// (`vec4(c.rgb * c.a, c.a)`), `fg.wgsl`, and `subpixel_fg.wgsl` all multiply
+/// the color by alpha in-shader before it enters `PREMUL_ALPHA_BLEND`
+/// (`src*1 + dst*(1-src_alpha)`). Premultiplying here too would double-multiply
+/// and composite `a<1.0` colors too dark, so `rgb_to_floats` MUST emit straight
+/// color + straight alpha. At `a = 1.0` straight == premultiplied, so opaque
+/// colors are byte-identical regardless.
 fn rgb_to_floats(c: Rgb, a: f32) -> [f32; 4] {
     [
         srgb_to_linear(c.r),
