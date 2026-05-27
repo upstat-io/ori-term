@@ -19,6 +19,24 @@ use crate::index::Column;
 
 use super::super::Grid;
 
+/// Geometry of a single-row column shift within a DECLRMM band.
+///
+/// Bundles the per-row parameters the [`Grid::row_insert_columns`] /
+/// [`Grid::row_delete_columns`] primitives need: the target `line`, the
+/// `at_col` shift origin, the `count` of columns moved, and the
+/// exclusive right band edge `col_end_excl`. All values are 0-based.
+#[derive(Debug, Clone, Copy)]
+struct ColumnShift {
+    /// Row index to shift.
+    line: usize,
+    /// 0-based column where the shift originates.
+    at_col: usize,
+    /// Number of columns inserted / deleted.
+    count: usize,
+    /// Exclusive right edge of the DECLRMM band.
+    col_end_excl: usize,
+}
+
 impl Grid {
     /// DECIC primitive: insert `count` blank columns at `at_col` on
     /// every row in the active scroll region.
@@ -45,7 +63,15 @@ impl Grid {
         let count = count.min(col_end_excl - at_col);
 
         for line in row_start..row_end_excl {
-            self.row_insert_columns(line, at_col, count, col_end_excl, &template);
+            self.row_insert_columns(
+                ColumnShift {
+                    line,
+                    at_col,
+                    count,
+                    col_end_excl,
+                },
+                &template,
+            );
             // Cells shifted right; mark everything from at_col to the
             // right edge of the band dirty.
             self.dirty
@@ -78,7 +104,15 @@ impl Grid {
         let cols = self.cols;
 
         for line in row_start..row_end_excl {
-            self.row_delete_columns(line, at_col, count, col_end_excl, &template);
+            self.row_delete_columns(
+                ColumnShift {
+                    line,
+                    at_col,
+                    count,
+                    col_end_excl,
+                },
+                &template,
+            );
             self.dirty
                 .mark_cols(line, at_col, col_end_excl.saturating_sub(1));
             if !template.is_empty() {
@@ -129,18 +163,13 @@ impl Grid {
     /// of `insert_blank` but operates on an arbitrary line (not the
     /// cursor line) and skips the cursor-based no-op guards because
     /// the caller has already clamped.
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "per-row op needs line + at_col + count + right-band end + BCE template — five independent inputs"
-    )]
-    fn row_insert_columns(
-        &mut self,
-        line: usize,
-        at_col: usize,
-        count: usize,
-        col_end_excl: usize,
-        template: &Cell,
-    ) {
+    fn row_insert_columns(&mut self, shift: ColumnShift, template: &Cell) {
+        let ColumnShift {
+            line,
+            at_col,
+            count,
+            col_end_excl,
+        } = shift;
         let cols = self.cols;
         // Clean the partner of any wide-char pair at the insertion
         // point, then strip the cell's own wide flag so the shifted
@@ -180,18 +209,13 @@ impl Grid {
     /// Shift a single row left by `count` starting at `at_col`, within
     /// the DECLRMM band `[col_start, col_end_excl)`. Mirrors the body
     /// of `delete_chars`.
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "per-row op needs line + at_col + count + right-band end + BCE template — five independent inputs"
-    )]
-    fn row_delete_columns(
-        &mut self,
-        line: usize,
-        at_col: usize,
-        count: usize,
-        col_end_excl: usize,
-        template: &Cell,
-    ) {
+    fn row_delete_columns(&mut self, shift: ColumnShift, template: &Cell) {
+        let ColumnShift {
+            line,
+            at_col,
+            count,
+            col_end_excl,
+        } = shift;
         // Clean wide-char pair at `at_col` so stale flags don't
         // persist.
         self.clear_wide_char_at(line, at_col);

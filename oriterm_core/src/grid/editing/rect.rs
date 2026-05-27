@@ -19,6 +19,25 @@ use crate::term::AceMode;
 
 use super::super::Grid;
 
+/// A 0-based, inclusive-on-every-edge rectangle of grid cells.
+///
+/// Bundles the four DEC rectangular-area coordinates (`top`, `left`,
+/// `bot`, `right`) that the §09A.6 rect primitives operate on. Callers
+/// are responsible for clamping / DECLRMM-awareness before constructing
+/// one — the grid layer trusts its input and asserts bounds via
+/// `debug_assert!`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RectArea {
+    /// Topmost row (0-based, inclusive).
+    pub top: usize,
+    /// Leftmost column (0-based, inclusive).
+    pub left: usize,
+    /// Bottommost row (0-based, inclusive).
+    pub bot: usize,
+    /// Rightmost column (0-based, inclusive).
+    pub right: usize,
+}
+
 /// DECCARA (Ps=0) resets these SGR flags to off; every other DECCARA
 /// param individually sets or clears a matching bit.
 ///
@@ -100,18 +119,13 @@ impl Grid {
     /// per ) and marked dirty. Preserves grid invariants via
     /// `Grid::clear_wide_char_at` for wide-char spacer cleanup along
     /// the left/right edges.
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "rectangle bounds (top/left/bot/right) map 1:1 to DEC spec params — collapsing loses direct param-to-spec mapping"
-    )]
-    pub fn fill_rect(
-        &mut self,
-        top: usize,
-        left: usize,
-        bot: usize,
-        right: usize,
-        template: &Cell,
-    ) {
+    pub fn fill_rect(&mut self, area: RectArea, template: &Cell) {
+        let RectArea {
+            top,
+            left,
+            bot,
+            right,
+        } = area;
         debug_assert!(top <= bot && bot < self.lines);
         debug_assert!(left <= right && right < self.cols);
 
@@ -141,31 +155,22 @@ impl Grid {
     /// Writes a default-background cell (space + BCE bg + DRAWN) to
     /// every cell in the rectangle, IGNORING `CellFlags::PROTECTED`.
     /// DECERA is the unconditional-erase counterpart to DECSERA.
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "rectangle bounds (top/left/bot/right) + BCE bg map 1:1 to DEC spec params"
-    )]
-    pub fn erase_rect_all(&mut self, top: usize, left: usize, bot: usize, right: usize, bg: Color) {
+    pub fn erase_rect_all(&mut self, area: RectArea, bg: Color) {
         let template = Cell::from(bg);
-        self.fill_rect(top, left, bot, right, &template);
+        self.fill_rect(area, &template);
     }
 
     /// DECSERA primitive: erase unprotected cells in the rectangle.
     ///
     /// Cells with `CellFlags::PROTECTED` (set by DECSCA Ps=1) survive
     /// the erase. Everything else matches [`Self::erase_rect_all`].
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "rectangle bounds (top/left/bot/right) + BCE bg map 1:1 to DEC spec params"
-    )]
-    pub fn erase_rect_unprotected(
-        &mut self,
-        top: usize,
-        left: usize,
-        bot: usize,
-        right: usize,
-        bg: Color,
-    ) {
+    pub fn erase_rect_unprotected(&mut self, area: RectArea, bg: Color) {
+        let RectArea {
+            top,
+            left,
+            bot,
+            right,
+        } = area;
         debug_assert!(top <= bot && bot < self.lines);
         debug_assert!(left <= right && right < self.cols);
 
@@ -213,19 +218,13 @@ impl Grid {
     /// SGR 8 (HIDDEN) extension are honored; unknown params are
     /// silently ignored per xterm (`screen.c:3040`). Colors are NOT
     /// applied — DECCARA spec omits them.
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "rectangle bounds + SGR params + DECSACE mode map 1:1 to DEC spec inputs"
-    )]
-    pub fn apply_sgr_rect(
-        &mut self,
-        top: usize,
-        left: usize,
-        bot: usize,
-        right: usize,
-        params: &[u16],
-        ace_mode: AceMode,
-    ) {
+    pub fn apply_sgr_rect(&mut self, area: RectArea, params: &[u16], ace_mode: AceMode) {
+        let RectArea {
+            top,
+            left,
+            bot,
+            right,
+        } = area;
         debug_assert!(top <= bot && bot < self.lines);
         debug_assert!(left <= right && right < self.cols);
 
@@ -236,8 +235,7 @@ impl Grid {
 
         let cols = self.cols;
         for line in top..=bot {
-            let (row_left, row_right) =
-                Self::line_extent(line, top, bot, left, right, cols, ace_mode);
+            let (row_left, row_right) = Self::line_extent(line, area, cols, ace_mode);
             let row = &mut self.rows[line];
             for col in row_left..=row_right {
                 let cell = &mut row[Column(col)];
@@ -253,19 +251,13 @@ impl Grid {
     /// Ps=0 toggles every reversible bit (BOLD | UNDERLINE | BLINK |
     /// INVERSE | HIDDEN); Ps=N toggles only the matching bit. Matches the
     /// behavior in xterm `screen.c:2984-3004`.
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "rectangle bounds + SGR params + DECSACE mode map 1:1 to DEC spec inputs"
-    )]
-    pub fn reverse_sgr_rect(
-        &mut self,
-        top: usize,
-        left: usize,
-        bot: usize,
-        right: usize,
-        params: &[u16],
-        ace_mode: AceMode,
-    ) {
+    pub fn reverse_sgr_rect(&mut self, area: RectArea, params: &[u16], ace_mode: AceMode) {
+        let RectArea {
+            top,
+            left,
+            bot,
+            right,
+        } = area;
         debug_assert!(top <= bot && bot < self.lines);
         debug_assert!(left <= right && right < self.cols);
 
@@ -276,8 +268,7 @@ impl Grid {
 
         let cols = self.cols;
         for line in top..=bot {
-            let (row_left, row_right) =
-                Self::line_extent(line, top, bot, left, right, cols, ace_mode);
+            let (row_left, row_right) = Self::line_extent(line, area, cols, ace_mode);
             let row = &mut self.rows[line];
             for col in row_left..=row_right {
                 let cell = &mut row[Column(col)];
@@ -295,19 +286,13 @@ impl Grid {
     /// Destination cells are clipped to the grid; cells whose source
     /// coordinate would fall outside the source rectangle are left
     /// untouched (matches xterm `ScrnCopyRectangle`).
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "DECCRA encodes src rect (4 coords) + dst top-left (2 coords) as 6 distinct spec params"
-    )]
-    pub fn copy_rect(
-        &mut self,
-        src_top: usize,
-        src_left: usize,
-        src_bot: usize,
-        src_right: usize,
-        dst_top: usize,
-        dst_left: usize,
-    ) {
+    pub fn copy_rect(&mut self, src: RectArea, dst_top: usize, dst_left: usize) {
+        let RectArea {
+            top: src_top,
+            left: src_left,
+            bot: src_bot,
+            right: src_right,
+        } = src;
         debug_assert!(src_top <= src_bot && src_bot < self.lines);
         debug_assert!(src_left <= src_right && src_right < self.cols);
         debug_assert!(dst_top < self.lines);
@@ -366,25 +351,13 @@ impl Grid {
     /// In `Rectangle` mode every row is clipped to `[left, right]`.
     /// In `Stream` mode, only the first row's left and the last row's
     /// right clamp the span; intermediate rows span the full width.
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "per-line extent computation needs line + rect bounds + cols + mode — all independent inputs"
-    )]
-    fn line_extent(
-        line: usize,
-        top: usize,
-        bot: usize,
-        left: usize,
-        right: usize,
-        cols: usize,
-        mode: AceMode,
-    ) -> (usize, usize) {
+    fn line_extent(line: usize, area: RectArea, cols: usize, mode: AceMode) -> (usize, usize) {
         match mode {
-            AceMode::Rectangle => (left, right),
+            AceMode::Rectangle => (area.left, area.right),
             AceMode::Stream => {
-                let l = if line == top { left } else { 0 };
-                let r = if line == bot {
-                    right
+                let l = if line == area.top { area.left } else { 0 };
+                let r = if line == area.bot {
+                    area.right
                 } else {
                     cols.saturating_sub(1)
                 };

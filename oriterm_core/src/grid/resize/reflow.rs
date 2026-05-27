@@ -11,26 +11,89 @@ use crate::index::Column;
 
 use super::super::row::Row;
 
-/// Reflow all rows from old column width to new column width.
+/// Pre-reflow column dimensions, cursor position, and history boundary.
 ///
-/// Returns (reflowed rows, new cursor abs, new cursor col, new history
-/// boundary, `first_output_row`). `history_boundary` is the source row
-/// index where real scrollback history ends. `first_output_row[i]` is
-/// the output row index where source row `i`'s first cell landed —
-/// always populated with one entry per source row for use by
-/// `ReflowMapping`.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "reflow state: source rows, dimensions, cursor position, history boundary"
-)]
-pub(super) fn reflow_cells(
-    all_rows: &[Row],
-    old_cols: usize,
+/// Bundles the scalar inputs [`reflow_cells`] needs alongside the source
+/// rows: the `old_cols` / `new_cols` widths, the cursor's absolute row +
+/// column, and the `history_boundary` (source row index where real
+/// scrollback history ends).
+#[derive(Debug, Clone, Copy)]
+pub(super) struct ReflowParams {
+    /// Column width before reflow.
+    pub old_cols: usize,
+    /// Column width after reflow.
+    pub new_cols: usize,
+    /// Cursor absolute row index (scrollback-relative) before reflow.
+    pub cursor_abs: usize,
+    /// Cursor column before reflow.
+    pub cursor_col: usize,
+    /// Source row index where real scrollback history ends.
+    pub history_boundary: usize,
+}
+
+/// Reflow outcome: post-reflow cursor position, history boundary, and
+/// the per-source-row first-landing map.
+///
+/// `first_output_row[i]` is the output row index where source row `i`'s
+/// first cell landed — always populated with one entry per source row
+/// for use by `ReflowMapping`.
+#[derive(Debug)]
+pub(super) struct ReflowOutcome {
+    /// Reflowed rows (scrollback + visible, undistributed).
+    pub rows: Vec<Row>,
+    /// Cursor absolute row index after reflow.
+    pub new_cursor_abs: usize,
+    /// Cursor column after reflow.
+    pub new_cursor_col: usize,
+    /// Output row index where real scrollback history ends.
+    pub new_history_boundary: usize,
+    /// Per source row: output row index where its first cell landed.
+    pub first_output_row: Vec<usize>,
+}
+
+/// Read-only inputs for reflowing a single source row.
+#[derive(Clone, Copy)]
+struct RowReflowInput<'a> {
+    /// The source row being reflowed.
+    src_row: &'a Row,
+    /// Index of `src_row` within the full row list.
+    src_idx: usize,
+    /// Number of content cells to copy from `src_row`.
+    content_len: usize,
+    /// Column width after reflow.
     new_cols: usize,
+    /// Cursor absolute row index (scrollback-relative) before reflow.
     cursor_abs: usize,
+    /// Cursor column before reflow.
     cursor_col: usize,
-    history_boundary: usize,
-) -> (Vec<Row>, usize, usize, usize, Vec<usize>) {
+}
+
+/// Mutable output sinks updated while reflowing a single source row.
+///
+/// Each field borrows a distinct local in [`reflow_cells`], so the
+/// disjoint `&mut` borrows are valid at the call site.
+struct RowReflowSink<'a> {
+    /// Finalized output rows accumulated so far.
+    result: &'a mut Vec<Row>,
+    /// The in-progress output row being filled.
+    out_row: &'a mut Row,
+    /// Current write column within `out_row`.
+    out_col: &'a mut usize,
+    /// Tracked cursor absolute row index in the output.
+    new_cursor_abs: &'a mut usize,
+    /// Tracked cursor column in the output.
+    new_cursor_col: &'a mut usize,
+}
+
+/// Reflow all rows from old column width to new column width.
+pub(super) fn reflow_cells(all_rows: &[Row], params: ReflowParams) -> ReflowOutcome {
+    let ReflowParams {
+        old_cols,
+        new_cols,
+        cursor_abs,
+        cursor_col,
+        history_boundary,
+    } = params;
     let mut new_cursor_abs = 0usize;
     let mut new_cursor_col = 0usize;
     let mut new_history_boundary = 0usize;
@@ -76,17 +139,21 @@ pub(super) fn reflow_cells(
         first_output_row.push(first_row);
 
         reflow_row_cells(
-            src_row,
-            src_idx,
-            content_len,
-            new_cols,
-            cursor_abs,
-            cursor_col,
-            &mut result,
-            &mut out_row,
-            &mut out_col,
-            &mut new_cursor_abs,
-            &mut new_cursor_col,
+            RowReflowInput {
+                src_row,
+                src_idx,
+                content_len,
+                new_cols,
+                cursor_abs,
+                cursor_col,
+            },
+            RowReflowSink {
+                result: &mut result,
+                out_row: &mut out_row,
+                out_col: &mut out_col,
+                new_cursor_abs: &mut new_cursor_abs,
+                new_cursor_col: &mut new_cursor_col,
+            },
         );
 
         // Track cursor when it's past content on this source row.
@@ -116,33 +183,32 @@ pub(super) fn reflow_cells(
         result.push(out_row);
     }
 
-    (
-        result,
+    ReflowOutcome {
+        rows: result,
         new_cursor_abs,
         new_cursor_col,
         new_history_boundary,
         first_output_row,
-    )
+    }
 }
 
 /// Reflow cells from a single source row into the output.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "cell-by-cell reflow: source context, output state, cursor tracking"
-)]
-fn reflow_row_cells(
-    src_row: &Row,
-    src_idx: usize,
-    content_len: usize,
-    new_cols: usize,
-    cursor_abs: usize,
-    cursor_col: usize,
-    result: &mut Vec<Row>,
-    out_row: &mut Row,
-    out_col: &mut usize,
-    new_cursor_abs: &mut usize,
-    new_cursor_col: &mut usize,
-) {
+fn reflow_row_cells(input: RowReflowInput<'_>, sink: RowReflowSink<'_>) {
+    let RowReflowInput {
+        src_row,
+        src_idx,
+        content_len,
+        new_cols,
+        cursor_abs,
+        cursor_col,
+    } = input;
+    let RowReflowSink {
+        result,
+        out_row,
+        out_col,
+        new_cursor_abs,
+        new_cursor_col,
+    } = sink;
     for src_col in 0..content_len {
         let cell = &src_row[Column(src_col)];
 

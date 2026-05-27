@@ -117,7 +117,7 @@ pub const KEYBOARD_MODE_STACK_MAX_DEPTH: usize = 4096;
 /// `S: EffectSink` so tests can use `VoidEffectSink` while the real app
 /// routes effects through a legacy adapter or queuing sink.
 #[derive(Debug)]
-#[allow(
+#[expect(
     clippy::struct_excessive_bools,
     reason = "terminal state naturally has independent boolean flags \
               (selection_dirty, has_explicit_title, title_dirty)"

@@ -30,11 +30,7 @@ impl<S: EffectSink> Term<S> {
     /// streams terminated by ST. Mode 1 is a `verified-with-deviation`
     /// stub (cursor-state serialization is complex — see §09A.8); mode
     /// 2 serializes the real tab-stop vector.
-    #[expect(
-        clippy::needless_pass_by_ref_mut,
-        reason = "receiver stays `&mut self` so the method matches the `delegate_osc!` shape; `effect_sink.push(&self)` is interior-mutability"
-    )]
-    pub(super) fn decrqpsr_impl(&mut self, mode: u16) {
+    pub(super) fn decrqpsr_impl(&self, mode: u16) {
         let bytes = match mode {
             1 => {
                 // Cursor information report — stub. Serialize just the
@@ -78,11 +74,7 @@ impl<S: EffectSink> Term<S> {
     /// Constant reply identifying ISO Latin-1 as the user-preferred
     /// supplemental set. NRCS charset selection is not implemented;
     /// marked `verified-with-deviation` in the catalog.
-    #[expect(
-        clippy::needless_pass_by_ref_mut,
-        reason = "receiver stays `&mut self` so the method matches the `delegate_osc!` shape; `effect_sink.push(&self)` is interior-mutability"
-    )]
-    pub(super) fn decrqupss_impl(&mut self) {
+    pub(super) fn decrqupss_impl(&self) {
         // DCS 1 ! u %5 ST — `%5` is the DEC designator for ISO Latin-1.
         let bytes = b"\x1bP1!u%5\x1b\\".to_vec();
         self.effect_sink.push(Effect::Pty(PtyEffect::Write {
@@ -98,11 +90,7 @@ impl<S: EffectSink> Term<S> {
     /// visible width, Pml = left margin, Pmt = top margin (both 1),
     /// Pmp = page number (1). `ori_term` has no multi-page support, so
     /// margin + page values are constant.
-    #[expect(
-        clippy::needless_pass_by_ref_mut,
-        reason = "receiver stays `&mut self` so the method matches the `delegate_osc!` shape; `effect_sink.push(&self)` is interior-mutability"
-    )]
-    pub(super) fn decrqde_impl(&mut self) {
+    pub(super) fn decrqde_impl(&self) {
         let rows = self.grid().lines();
         let cols = self.grid().cols();
         let reply = format!("\x1b[{rows};{cols};1;1;1\"w");

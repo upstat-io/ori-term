@@ -9,6 +9,8 @@ mod erase;
 pub mod rect;
 mod wide_char;
 
+pub use rect::RectArea;
+
 use unicode_width::UnicodeWidthChar;
 
 use crate::cell::{Cell, CellFlags};

@@ -59,10 +59,6 @@
 //! See `plans/completed/teseq-conformance/section-07-verification.md` for full gap
 //! analysis.
 
-// Harness utilities are built in Section 01 and consumed by Sections 02-07.
-// Suppress dead_code warnings for the incrementally-built test harness.
-#![allow(dead_code)]
-
 mod harness;
 
 // Family modules (Section 02).

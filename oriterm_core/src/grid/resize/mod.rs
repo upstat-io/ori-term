@@ -15,7 +15,7 @@ use crate::index::Column;
 use super::Grid;
 use super::row::Row;
 
-use reflow::reflow_cells;
+use reflow::{ReflowOutcome, ReflowParams, reflow_cells};
 
 /// Maps old absolute row indices to result row indices after reflow.
 ///
@@ -263,24 +263,19 @@ impl Grid {
         let history_boundary = visible_start.saturating_sub(self.resize_pushed);
 
         // Reflow cells into new-width rows.
-        let (result, new_cursor_abs, new_cursor_col, new_history_boundary, first_output_row) =
-            reflow_cells(
-                &all_rows,
+        let outcome = reflow_cells(
+            &all_rows,
+            ReflowParams {
                 old_cols,
                 new_cols,
                 cursor_abs,
                 cursor_col,
                 history_boundary,
-            );
+            },
+        );
 
         // Distribute into scrollback + visible, update cursor.
-        self.apply_reflow_result(
-            result,
-            new_cols,
-            new_cursor_abs,
-            new_cursor_col,
-            new_history_boundary,
-        );
+        let first_output_row = self.apply_reflow_result(outcome, new_cols);
 
         Some(ReflowMapping {
             first_output_row,
@@ -298,21 +293,18 @@ impl Grid {
 
     /// Apply reflow result: split into scrollback + visible, update cursor.
     ///
-    /// `new_history_boundary` is the output row index where real scrollback
-    /// history ends. Rows beyond that in the scrollback portion are reflow
-    /// overflow (stale copies of visible content that wrapped).
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "reflow result distribution: rows, dimensions, cursor, history boundary"
-    )]
-    fn apply_reflow_result(
-        &mut self,
-        mut result: Vec<Row>,
-        new_cols: usize,
-        new_cursor_abs: usize,
-        new_cursor_col: usize,
-        new_history_boundary: usize,
-    ) {
+    /// `outcome.new_history_boundary` is the output row index where real
+    /// scrollback history ends. Rows beyond that in the scrollback portion
+    /// are reflow overflow (stale copies of visible content that wrapped).
+    /// Returns `outcome.first_output_row` for `ReflowMapping` construction.
+    fn apply_reflow_result(&mut self, outcome: ReflowOutcome, new_cols: usize) -> Vec<usize> {
+        let ReflowOutcome {
+            rows: mut result,
+            new_cursor_abs,
+            new_cursor_col,
+            new_history_boundary,
+            first_output_row,
+        } = outcome;
         // All rows in `result` are already `new_cols` wide (created by
         // `Row::new(new_cols)` in `reflow_cells`), so no resize needed.
         if result.is_empty() {
@@ -361,6 +353,7 @@ impl Grid {
         });
         self.cursor
             .set_col(Column(new_cursor_col.min(new_cols.saturating_sub(1))));
+        first_output_row
     }
 }
 

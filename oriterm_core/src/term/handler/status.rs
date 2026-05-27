@@ -102,13 +102,9 @@ fn push_color_params(params: &mut Vec<String>, color: Color, is_fg: bool) {
     }
 }
 
-#[expect(
-    clippy::needless_pass_by_ref_mut,
-    reason = "Handler trait requires &mut self"
-)]
 impl<S: EffectSink> Term<S> {
     /// DECRQM: report ANSI mode status.
-    pub(super) fn status_report_mode(&mut self, mode: Mode) {
+    pub(super) fn status_report_mode(&self, mode: Mode) {
         let (num, value) = match mode {
             Mode::Named(NamedMode::Insert) => (
                 4u16,
@@ -128,7 +124,7 @@ impl<S: EffectSink> Term<S> {
     }
 
     /// DECRQM: report DEC private mode status.
-    pub(super) fn status_report_private_mode(&mut self, mode: PrivateMode) {
+    pub(super) fn status_report_private_mode(&self, mode: PrivateMode) {
         let (num, value) = match mode {
             PrivateMode::Named(named) => {
                 let num = named as u16;
@@ -155,7 +151,7 @@ impl<S: EffectSink> Term<S> {
     /// (`crates/vte/src/ansi/dispatch/csi/mod.rs`) per xterm
     /// `charproc.c::CASE_REPORT_VERSION` semantics; this handler runs
     /// only for default/zero Ps and emits the constant reply.
-    pub(super) fn status_xtversion(&mut self) {
+    pub(super) fn status_xtversion(&self) {
         self.effect_sink.push(Effect::Pty(PtyEffect::Write {
             bytes: XTVERSION_REPLY.to_vec(),
             kind: PtyWriteKind::DeviceAttribute,
@@ -163,7 +159,7 @@ impl<S: EffectSink> Term<S> {
     }
 
     /// DA: device attributes response.
-    pub(super) fn status_identify_terminal(&mut self, intermediate: Option<char>) {
+    pub(super) fn status_identify_terminal(&self, intermediate: Option<char>) {
         match intermediate {
             None => {
                 // DA1: report VT420-class terminal with ANSI color + sixel.
@@ -202,7 +198,7 @@ impl<S: EffectSink> Term<S> {
     }
 
     /// DSR: device status report.
-    pub(super) fn status_device_status(&mut self, arg: usize) {
+    pub(super) fn status_device_status(&self, arg: usize) {
         match arg {
             5 => {
                 self.effect_sink.push(Effect::Pty(PtyEffect::Write {
@@ -231,7 +227,7 @@ impl<S: EffectSink> Term<S> {
     }
 
     /// CSI 18 t: report text area size in characters.
-    pub(super) fn status_text_area_size_chars(&mut self) {
+    pub(super) fn status_text_area_size_chars(&self) {
         let lines = self.grid().lines();
         let cols = self.grid().cols();
         let response = format!("\x1b[8;{lines};{cols}t");
@@ -358,7 +354,7 @@ impl<S: EffectSink> Term<S> {
     /// Responds to DCS $ q... ST queries. Each query type requests the
     /// current setting of a specific terminal feature. Valid responses
     /// use `DCS 1 $ r <value> ST`; invalid queries get `DCS 0 $ r ST`.
-    pub(super) fn status_decrqss(&mut self, query: &[u8]) {
+    pub(super) fn status_decrqss(&self, query: &[u8]) {
         let response = match query {
             // DECSCL: conformance level. Report VT400 level, 7-bit controls.
             b"\"p" => "\x1bP1$r64;1\"p\x1b\\".to_string(),
@@ -415,7 +411,7 @@ impl<S: EffectSink> Term<S> {
     /// configured answerback bytes to the PTY only when non-empty (matches
     /// `WezTerm` `term/src/terminalstate/performer.rs:473-479` exactly —
     /// empty answerback is a no-op, no `Effect::Pty` emitted).
-    pub(super) fn status_enquiry(&mut self) {
+    pub(super) fn status_enquiry(&self) {
         if self.answerback.is_empty() {
             return;
         }
@@ -435,9 +431,9 @@ impl<S: EffectSink> Term<S> {
     /// DECRSPS has no acknowledgement per the xterm spec.
     #[expect(
         clippy::unused_self,
-        reason = "stub — will mutate presentation state when Ps=1/Ps=2 restoration lands"
+        reason = "stub — self holds presentation state consumed once Ps=1/Ps=2 restoration lands"
     )]
-    pub(super) fn status_decrsps(&mut self, ps: u16, pt: &[u8]) {
+    pub(super) fn status_decrsps(&self, ps: u16, pt: &[u8]) {
         info!(
             "DECRSPS stub: Ps={ps}, Pt bytes={} (state restoration not implemented)",
             pt.len()

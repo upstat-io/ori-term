@@ -12,6 +12,7 @@ use vte::ansi::{
 
 use crate::effect::sink::EffectSink;
 
+use self::rect_ops::DecRect;
 use super::{Term, TermMode};
 
 mod control;
@@ -417,17 +418,88 @@ impl<S: EffectSink> Handler for Term<S> {
     // real semantics land in §09A.5 (DECRQCRA), §09A.6 (rect mutation),
     // §09A.7 (column + index), §09A.8 (CSI-path presentation queries)).
     delegate_osc!(decsace(mode: u16) => decsace_impl);
-    delegate_osc!(deccara(top: u16, left: u16, bot: u16, right: u16, attrs: &[u16]) => deccara_impl);
-    delegate_osc!(decrara(top: u16, left: u16, bot: u16, right: u16, attrs: &[u16]) => decrara_impl);
-    fn deccra(&mut self, st: u16, sl: u16, sb: u16, sr: u16, sp: u16, dt: u16, dl: u16, dp: u16) {
-        self.deccra_impl(st, sl, sb, sr, sp, dt, dl, dp);
+    fn deccara(&mut self, top: u16, left: u16, bot: u16, right: u16, attrs: &[u16]) {
+        self.deccara_impl(
+            DecRect {
+                top,
+                left,
+                bot,
+                right,
+            },
+            attrs,
+        );
     }
-    delegate_osc!(decfra(ch: u16, top: u16, left: u16, bot: u16, right: u16) => decfra_impl);
+    fn decrara(&mut self, top: u16, left: u16, bot: u16, right: u16, attrs: &[u16]) {
+        self.decrara_impl(
+            DecRect {
+                top,
+                left,
+                bot,
+                right,
+            },
+            attrs,
+        );
+    }
+    fn deccra(&mut self, st: u16, sl: u16, sb: u16, sr: u16, _sp: u16, dt: u16, dl: u16, _dp: u16) {
+        self.deccra_impl(
+            DecRect {
+                top: st,
+                left: sl,
+                bot: sb,
+                right: sr,
+            },
+            dt,
+            dl,
+        );
+    }
+    fn decfra(&mut self, ch: u16, top: u16, left: u16, bot: u16, right: u16) {
+        self.decfra_impl(
+            ch,
+            DecRect {
+                top,
+                left,
+                bot,
+                right,
+            },
+        );
+    }
     delegate_osc!(xtchecksum(flags: u16) => xtchecksum_impl);
-    delegate_osc!(decrqcra(id: u16, page: u16, top: u16, left: u16, bot: u16, right: u16) => decrqcra_impl);
-    delegate_osc!(decera(top: u16, left: u16, bot: u16, right: u16) => decera_impl);
-    delegate_osc!(decsera(top: u16, left: u16, bot: u16, right: u16) => decsera_impl);
-    delegate_osc!(xtreportsgr(top: u16, left: u16, bot: u16, right: u16) => xtreportsgr_impl);
+    fn decrqcra(&mut self, id: u16, page: u16, top: u16, left: u16, bot: u16, right: u16) {
+        self.decrqcra_impl(
+            id,
+            page,
+            DecRect {
+                top,
+                left,
+                bot,
+                right,
+            },
+        );
+    }
+    fn decera(&mut self, top: u16, left: u16, bot: u16, right: u16) {
+        self.decera_impl(DecRect {
+            top,
+            left,
+            bot,
+            right,
+        });
+    }
+    fn decsera(&mut self, top: u16, left: u16, bot: u16, right: u16) {
+        self.decsera_impl(DecRect {
+            top,
+            left,
+            bot,
+            right,
+        });
+    }
+    fn xtreportsgr(&mut self, top: u16, left: u16, bot: u16, right: u16) {
+        self.xtreportsgr_impl(DecRect {
+            top,
+            left,
+            bot,
+            right,
+        });
+    }
     delegate_osc!(decrqpsr(mode: u16) => decrqpsr_impl);
     delegate_osc!(decrqupss() => decrqupss_impl);
     delegate_osc!(decrqde() => decrqde_impl);

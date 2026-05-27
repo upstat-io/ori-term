@@ -28,8 +28,6 @@ pub struct ScenarioOutcome {
     pub events: Vec<super::events::RecordedEvent>,
     /// Terminal column count at snapshot time.
     pub cols: usize,
-    /// Terminal row count at snapshot time.
-    pub rows: usize,
     /// Number of scrollback rows above the viewport.
     pub scrollback_len: usize,
     /// Terminal mode flags at snapshot time.
@@ -116,7 +114,6 @@ impl TeseqHarness {
             cursor_line: content.cursor.line,
             events: self.listener.events(),
             cols: content.cols,
-            rows: content.lines,
             scrollback_len: content.scrollback_len,
             mode: content.mode,
         }

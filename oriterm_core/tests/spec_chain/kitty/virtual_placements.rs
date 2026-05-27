@@ -357,7 +357,7 @@ const PLACEHOLDER_MUTATION_SITES: &[(&str, &str)] = &[
     // rect_ops/mod.rs — DECCRA copy, DECFRA fill, DECERA erase,
     // DECSERA selective erase. DECCRA was added 2026-05-20 after the
     // inventory test surfaced the missing reconcile.
-    ("src/term/handler/rect_ops/mod.rs", ".copy_rect(src.top"),
+    ("src/term/handler/rect_ops/mod.rs", ".copy_rect(src_area"),
     ("src/term/handler/rect_ops/mod.rs", "grid.fill_rect("),
     ("src/term/handler/rect_ops/mod.rs", ".erase_rect_all("),
     (

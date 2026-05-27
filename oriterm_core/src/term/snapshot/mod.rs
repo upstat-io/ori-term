@@ -20,6 +20,44 @@ use super::renderable::{
     RenderablePlaceholderCell, RenderablePlacement, TermDamage,
 };
 
+/// Per-row inputs for [`Term::fill_row_cells`].
+#[derive(Clone, Copy)]
+struct RowFill<'a> {
+    /// The grid row whose cells are being snapshotted.
+    row: &'a crate::grid::Row,
+    /// Viewport line index this row maps to.
+    vis_line: usize,
+    /// Number of columns to walk.
+    cols: usize,
+    /// Palette used to resolve indexed colors.
+    palette: &'a Palette,
+}
+
+/// Read-only inputs for [`Term::extract_images`].
+#[derive(Clone, Copy)]
+struct ImageExtractCtx<'a> {
+    /// Image cache to read placements + pixel data from.
+    cache: &'a crate::image::ImageCache,
+    /// Stable row index of the viewport's top row.
+    stable_row_base: u64,
+    /// Number of viewport lines visible.
+    viewport_lines: usize,
+    /// Cell pixel width.
+    cell_w: u16,
+    /// Cell pixel height.
+    cell_h: u16,
+}
+
+/// Mutable output sinks for [`Term::extract_images`].
+struct ImageExtractSink<'a> {
+    /// Collected viewport placements.
+    images: &'a mut Vec<RenderablePlacement>,
+    /// Decoded RGBA data for referenced images.
+    image_data: &'a mut Vec<RenderableImageData>,
+    /// Set of image ids referenced this frame.
+    seen_ids: &'a mut HashSet<ImageId>,
+}
+
 impl<S: EffectSink> Term<S> {
     /// Extract a complete rendering snapshot.
     ///
@@ -123,7 +161,15 @@ impl<S: EffectSink> Term<S> {
                 &grid[crate::index::Line(grid_line as i32)]
             };
 
-            self.fill_row_cells(out, row, vis_line, cols, palette);
+            self.fill_row_cells(
+                out,
+                RowFill {
+                    row,
+                    vis_line,
+                    cols,
+                    palette,
+                },
+            );
         }
 
         // Cursor is visible when SHOW_CURSOR is set and we're at the live view.
@@ -157,15 +203,13 @@ impl<S: EffectSink> Term<S> {
     /// for one grid row. Continuation state for unicode placeholders is
     /// scoped to a single row, so callers re-seed `prev_placeholder` per
     /// invocation (this method owns that local state).
-    #[expect(clippy::too_many_arguments, reason = "per-row cell-fill parameters")]
-    fn fill_row_cells(
-        &self,
-        out: &mut RenderableContent,
-        row: &crate::grid::Row,
-        vis_line: usize,
-        cols: usize,
-        palette: &Palette,
-    ) {
+    fn fill_row_cells(&self, out: &mut RenderableContent, ctx: RowFill<'_>) {
+        let RowFill {
+            row,
+            vis_line,
+            cols,
+            palette,
+        } = ctx;
         let mut prev_placeholder: Option<ResolvedPlaceholder> = None;
 
         for col_idx in 0..cols {
@@ -279,14 +323,18 @@ impl<S: EffectSink> Term<S> {
     /// Extract image placements visible in the viewport and propagate dirty.
     fn fill_image_snapshot(&self, out: &mut RenderableContent) {
         Self::extract_images(
-            self.image_cache(),
-            out.stable_row_base,
-            out.lines,
-            self.cell_pixel_width,
-            self.cell_pixel_height,
-            &mut out.images,
-            &mut out.image_data,
-            &mut out.seen_image_ids,
+            ImageExtractCtx {
+                cache: self.image_cache(),
+                stable_row_base: out.stable_row_base,
+                viewport_lines: out.lines,
+                cell_w: self.cell_pixel_width,
+                cell_h: self.cell_pixel_height,
+            },
+            ImageExtractSink {
+                images: &mut out.images,
+                image_data: &mut out.image_data,
+                seen_ids: &mut out.seen_image_ids,
+            },
         );
 
         // Propagate image dirty flag. When images changed, force a full
@@ -325,17 +373,19 @@ impl<S: EffectSink> Term<S> {
     ///
     /// Converts `ImagePlacement` cell coordinates to viewport pixel positions
     /// and collects the decoded RGBA data for GPU texture upload.
-    #[expect(clippy::too_many_arguments, reason = "image extraction parameters")]
-    fn extract_images(
-        cache: &crate::image::ImageCache,
-        stable_row_base: u64,
-        viewport_lines: usize,
-        cell_w: u16,
-        cell_h: u16,
-        images: &mut Vec<RenderablePlacement>,
-        image_data: &mut Vec<RenderableImageData>,
-        seen_ids: &mut HashSet<ImageId>,
-    ) {
+    fn extract_images(ctx: ImageExtractCtx<'_>, sink: ImageExtractSink<'_>) {
+        let ImageExtractCtx {
+            cache,
+            stable_row_base,
+            viewport_lines,
+            cell_w,
+            cell_h,
+        } = ctx;
+        let ImageExtractSink {
+            images,
+            image_data,
+            seen_ids,
+        } = sink;
         images.clear();
         image_data.clear();
         seen_ids.clear();

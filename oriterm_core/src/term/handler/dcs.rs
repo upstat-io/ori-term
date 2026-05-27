@@ -97,11 +97,7 @@ impl<S: EffectSink> Term<S> {
     /// do NOT enter the stack — deriving the reply from
     /// stack top would report `0` while the bits are actually live,
     /// leaving shells unable to detect their own set-only kitty state.
-    #[expect(
-        clippy::needless_pass_by_ref_mut,
-        reason = "Handler trait requires &mut self"
-    )]
-    pub(super) fn dcs_report_keyboard_mode(&mut self) {
+    pub(super) fn dcs_report_keyboard_mode(&self) {
         let bits = KeyboardModes::from(self.mode).bits();
         let response = format!("\x1b[?{bits}u");
         self.effect_sink.push(Effect::Pty(PtyEffect::Write {
@@ -112,20 +108,15 @@ impl<S: EffectSink> Term<S> {
 
     /// `XTerm` `modifyOtherKeys`: stub implementation.
     #[expect(
-        clippy::needless_pass_by_ref_mut,
-        reason = "Handler trait requires &mut self"
+        clippy::unused_self,
+        reason = "stub — modifyOtherKeys state will live on self once implemented"
     )]
-    #[expect(clippy::unused_self, reason = "stub — will use self when implemented")]
-    pub(super) fn dcs_set_modify_other_keys(&mut self, mode: ModifyOtherKeys) {
+    pub(super) fn dcs_set_modify_other_keys(&self, mode: ModifyOtherKeys) {
         debug!("Ignoring modifyOtherKeys: {mode:?}");
     }
 
     /// `XTerm` `modifyOtherKeys` report: stub implementation.
-    #[expect(
-        clippy::needless_pass_by_ref_mut,
-        reason = "Handler trait requires &mut self"
-    )]
-    pub(super) fn dcs_report_modify_other_keys(&mut self) {
+    pub(super) fn dcs_report_modify_other_keys(&self) {
         // Report mode 0 (disabled) since we don't implement modifyOtherKeys.
         let response = "\x1b[>4;0m";
         self.effect_sink.push(Effect::Pty(PtyEffect::Write {
@@ -139,11 +130,7 @@ impl<S: EffectSink> Term<S> {
     /// Computes pixel dimensions from grid size and cell dimensions.
     /// Before `set_cell_dimensions` is called, reports the default cell
     /// size (8x16), which is reasonable for early queries.
-    #[expect(
-        clippy::needless_pass_by_ref_mut,
-        reason = "Handler trait requires &mut self"
-    )]
-    pub(super) fn dcs_text_area_size_pixels(&mut self) {
+    pub(super) fn dcs_text_area_size_pixels(&self) {
         let grid = self.grid();
         let height = grid.lines() as u32 * u32::from(self.cell_pixel_height);
         let width = grid.cols() as u32 * u32::from(self.cell_pixel_width);

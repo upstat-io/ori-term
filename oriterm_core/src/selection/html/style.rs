@@ -18,7 +18,7 @@ use super::HtmlCtx;
 /// Bools map directly to CSS properties (bold, italic, strikethrough, dim,
 /// overline). [`UnderlineKind`] and [`VerticalAlign`] each carry a single
 /// CSS-axis value because their variants are mutually exclusive.
-#[allow(
+#[expect(
     clippy::struct_excessive_bools,
     reason = "1:1 mapping to CSS properties"
 )]

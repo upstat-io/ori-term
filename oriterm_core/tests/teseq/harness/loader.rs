@@ -117,23 +117,3 @@ impl ScenarioSpec {
         }
     }
 }
-
-/// Discover all `.teseq` scenario files in a directory.
-///
-/// Non-recursive scan, sorted deterministically by filename.
-pub fn discover_scenarios(family_dir: &Path) -> Vec<std::path::PathBuf> {
-    let mut scenarios: Vec<_> = std::fs::read_dir(family_dir)
-        .unwrap_or_else(|e| panic!("failed to read {}: {e}", family_dir.display()))
-        .filter_map(|entry| {
-            let entry = entry.ok()?;
-            let path = entry.path();
-            if path.extension().and_then(|e| e.to_str()) == Some("teseq") {
-                Some(path)
-            } else {
-                None
-            }
-        })
-        .collect();
-    scenarios.sort();
-    scenarios
-}
