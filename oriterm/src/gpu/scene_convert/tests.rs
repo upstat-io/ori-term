@@ -2322,3 +2322,76 @@ fn convert_text_disabled_subpx_forces_zero() {
         mono.len()
     );
 }
+
+#[test]
+/// Regression: BUG-06-105 — UI subpixel text over a TRANSLUCENT layer bg must
+/// thread the layer's real alpha into GlyphInstanceBg.bg_alpha. Pre-fix:
+/// `scene_convert/text.rs` hardcodes `bg_alpha: 1.0`, dropping the translucent
+/// layer's alpha so the subpixel known-bg shader branch takes the opaque
+/// composite-and-overwrite path — wrong brightness on translucent overlays.
+/// Cite this comment if the rule fires.
+fn translucent_layer_bg_threads_real_alpha_to_subpixel_glyph_bg() {
+    // Subpixel-kind atlas entry (the bug surface is the AtlasKind::Subpixel arm).
+    let mut map = HashMap::new();
+    let key = RasterKey {
+        glyph_id: 42,
+        face_idx: FaceIdx::REGULAR,
+        weight: 400,
+        size_q6: TEST_SIZE_Q6,
+        synthetic: SyntheticFlags::NONE,
+        hinted: true,
+        subpx_x: 0,
+        font_realm: FontRealm::Ui,
+    };
+    map.insert(
+        key,
+        AtlasEntry {
+            kind: AtlasKind::Subpixel,
+            ..text_entry(42)
+        },
+    );
+    let atlas = KeyTestAtlas(map);
+
+    let mut mono = InstanceWriter::new();
+    let mut subpx = InstanceWriter::new();
+    let mut color_w = InstanceWriter::new();
+
+    let st = shaped_text(vec![ShapedGlyph {
+        glyph_id: 42,
+        face_index: 0,
+        synthetic: 0,
+        x_advance: 7.0,
+        x_offset: 0.0,
+        y_offset: 0.0,
+    }]);
+
+    let mut scene = Scene::new();
+    scene.push_layer_bg(Color::rgba(0.2, 0.2, 0.2, 0.5)); // a=0.5 translucent
+    scene.push_text(Point::new(0.0, 0.0), st, Color::WHITE);
+    scene.pop_layer_bg();
+
+    let mut ui = UiRectWriter::new();
+    let mut ctx = TextContext {
+        atlas: &atlas,
+        mono_writer: &mut mono,
+        subpixel_writer: &mut subpx,
+        color_writer: &mut color_w,
+        hinted: true,
+        subpixel_positioning: true,
+    };
+    convert_scene(&scene, &mut ui, Some(&mut ctx), 1.0, 1.0);
+
+    assert_eq!(subpx.len(), 1, "should route to subpixel writer");
+    let rec = subpx.as_bytes();
+    // bg_alpha is at byte offset 60 in GlyphInstanceBg per
+    // instance_writer/tests.rs `push_glyph_with_bg_threads_translucent_bg_alpha`.
+    let bg_alpha = read_f32(rec, 60);
+    // Expected: bg_alpha = bg_hint.a * opacity = 0.5 * 1.0 = 0.5.
+    // Pre-fix HEAD: bg_alpha = 1.0 (hardcoded — the bug).
+    assert!(
+        (bg_alpha - 0.5).abs() < f32::EPSILON,
+        "translucent layer bg_hint must thread real alpha (0.5) to subpixel \
+         GlyphInstanceBg.bg_alpha; got {bg_alpha}. A value of 1.0 means \
+         scene_convert/text.rs is dropping bg_hint alpha and hardcoding bg_alpha = 1.0"
+    );
+}

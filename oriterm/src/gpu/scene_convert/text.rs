@@ -58,6 +58,10 @@ struct GlyphPaint {
     fg: oriterm_core::Rgb,
     /// Subpixel-compositing background, if known.
     subpixel_bg: Option<oriterm_core::Rgb>,
+    /// Subpixel-compositing background alpha (layer alpha × opacity). `Some`
+    /// iff `subpixel_bg` is `Some`; threaded so a translucent layer composites
+    /// correctly via the known-bg shader branch.
+    subpixel_bg_alpha: Option<f32>,
     /// Combined alpha.
     alpha: f32,
     /// Physical-pixel clip rect.
@@ -85,6 +89,11 @@ pub(super) fn convert_text(draw: TextDraw<'_>, ctx: &mut TextContext<'_>, paint:
     } = paint;
     let fg = color_to_rgb(color);
     let subpixel_bg = bg_hint.map(color_to_rgb);
+    // bg_hint carries layer-level alpha; thread it (× layer opacity) to the
+    // subpixel known-bg shader so a translucent layer composites correctly
+    // (mirrors the terminal emit path's per-cell bg-alpha threading from
+    // §15.3 — Decision 09 sub-question 2).
+    let subpixel_bg_alpha = bg_hint.map(|c| c.a * opacity);
     let alpha = color.a * opacity;
     let baseline = shaped.baseline;
 
@@ -147,6 +156,7 @@ pub(super) fn convert_text(draw: TextDraw<'_>, ctx: &mut TextContext<'_>, paint:
                 GlyphPaint {
                     fg,
                     subpixel_bg,
+                    subpixel_bg_alpha,
                     alpha,
                     clip,
                 },
@@ -179,6 +189,7 @@ fn emit_text_glyph(
     let GlyphPaint {
         fg,
         subpixel_bg,
+        subpixel_bg_alpha,
         alpha,
         clip,
     } = paint;
@@ -205,9 +216,11 @@ fn emit_text_glyph(
                         fg,
                         bg,
                         alpha,
-                        // UI text has an opaque known background; no SGR
-                        // mode-6 per-channel alpha applies here.
-                        bg_alpha: 1.0,
+                        // Thread the layer-bg alpha so translucent overlays
+                        // composite via the known-bg branch's translucent path
+                        // (subpixel_fg.wgsl §15.3 split). subpixel_bg_alpha is
+                        // Some here because subpixel_bg was Some.
+                        bg_alpha: subpixel_bg_alpha.unwrap_or(1.0),
                         atlas_page: entry.page,
                         clip,
                     },
