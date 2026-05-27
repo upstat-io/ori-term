@@ -610,3 +610,43 @@ fn emit_cell_threads_underline_alpha_to_decoration() {
         "translucent underline alpha must NOT be hardcoded 1.0"
     );
 }
+
+#[test]
+/// Regression: BUG-06-106 — `emit_cell::deco_alpha` must include the `ctx.fg_dim`
+/// factor so decorations (underline/strikethrough/overline) dim with pane focus
+/// alongside glyphs. HEAD's `deco_alpha = blink_mul * underline_alpha` omits
+/// `fg_dim`, leaving decorations full-bright on an unfocused pane while glyphs
+/// (`cell_dim = ctx.fg_dim * blink_mul * fg_alpha`) correctly dim — a visual
+/// consistency defect this test pins. Cite this comment if the rule fires.
+fn unfocused_pane_dims_underline_decoration_alongside_glyph() {
+    let mut input = single_cell_input();
+    input.fg_dim = 0.6; // unfocused pane
+
+    let atlas = TestAtlas;
+    let mut frame = new_frame(&input);
+    let underlined = cell('A', CellFlags::UNDERLINE);
+    let mut ctx = unshaped_ctx(&input, &atlas, &mut frame);
+    emit_cell(&underlined, 0.0, 0.0, &mut ctx);
+
+    // Locate the underline rect in backgrounds. From the existing
+    // `emit_cell_anchors_decoration_to_cell_top_y` precedent: underline_y =
+    // cell_top_y + baseline + underline_offset = 0 + 12.0 + 2.0 = 14.0
+    // (test_grid metrics). bg_count = 2: cell-bg rect (y=0) + underline rect (y=14).
+    let expected_underline_y = 14.0_f32;
+    let b = frame.backgrounds.as_bytes();
+    let n = bg_count(&frame);
+    let underline_idx = (0..n)
+        .find(|&i| (instance_y(b, i) - expected_underline_y).abs() < 0.1)
+        .expect("underline rect must be emitted at y=14.0");
+
+    let underline_alpha = instance_rect_alpha(b, underline_idx);
+    // Expected: deco_alpha = fg_dim * blink_mul * underline_alpha
+    //                     = 0.6 * 1.0  * 1.0             = 0.6.
+    // Pre-fix HEAD: deco_alpha = blink_mul * underline_alpha = 1.0 (the bug).
+    assert!(
+        (underline_alpha - 0.6).abs() < 0.01,
+        "unfocused-pane underline alpha must be fg_dim*blink_mul*underline_alpha = 0.6; \
+         got {underline_alpha}. A value of 1.0 means deco_alpha is missing the \
+         ctx.fg_dim factor (see test doc comment)"
+    );
+}

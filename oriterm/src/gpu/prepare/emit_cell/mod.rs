@@ -259,7 +259,7 @@ pub(super) fn emit_cell(cell: &RenderableCell, x: f32, y: f32, ctx: &mut EmitCtx
         bg,
         cell_dim: ctx.fg_dim * blink_mul * fg_alpha,
         bg_alpha,
-        deco_alpha: blink_mul * underline_alpha,
+        deco_alpha: ctx.fg_dim * blink_mul * underline_alpha,
         glyph_y: y + super_sub_glyph_offset(cell.flags, ctx.cell_size.height),
         is_hovered: ctx.hovered_cell == Some((row, col)),
     };
