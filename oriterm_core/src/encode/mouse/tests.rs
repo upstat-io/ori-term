@@ -1,7 +1,11 @@
 //! Tests for the mouse-event encoder.
 //!
-//! Catalog rows: MOUSE-SGR-PIXEL (SGR-Pixel mode 1016 encoder + apex
-//! pin under `term_apex::handle_mouse_input_sgr_pixel_mode_*`).
+//! Catalog rows: MOUSE-X10, MOUSE-VT200, MOUSE-BTN-EVENT, MOUSE-ANY-EVENT,
+//! MOUSE-SGR, MOUSE-URXVT, MOUSE-UTF8, MOUSE-SGR-PIXEL. All routed through
+//! `encode_mouse_event` dispatch + `Term::handle_mouse_input` apex per
+//! Decision 10 Option A; pin tests under `term_apex` cover the kind=MouseEvent
+//! preservation across the Effect → mux → pump → pane.write_input boundary
+//! chain for every encoder branch.
 
 use crate::TermMode;
 
