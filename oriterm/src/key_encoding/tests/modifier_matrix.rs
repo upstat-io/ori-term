@@ -363,37 +363,38 @@ fn ctrl_8() {
 
 #[test]
 fn from_modifiers_state_empty() {
-    let m: Modifiers = ModifiersState::empty().into();
+    let m: Modifiers = crate::key_encoding::modifiers_from_state(ModifiersState::empty());
     assert_eq!(m, Modifiers::empty());
 }
 
 #[test]
 fn from_modifiers_state_shift() {
-    let m: Modifiers = ModifiersState::SHIFT.into();
+    let m: Modifiers = crate::key_encoding::modifiers_from_state(ModifiersState::SHIFT);
     assert_eq!(m, Modifiers::SHIFT);
 }
 
 #[test]
 fn from_modifiers_state_alt() {
-    let m: Modifiers = ModifiersState::ALT.into();
+    let m: Modifiers = crate::key_encoding::modifiers_from_state(ModifiersState::ALT);
     assert_eq!(m, Modifiers::ALT);
 }
 
 #[test]
 fn from_modifiers_state_control() {
-    let m: Modifiers = ModifiersState::CONTROL.into();
+    let m: Modifiers = crate::key_encoding::modifiers_from_state(ModifiersState::CONTROL);
     assert_eq!(m, Modifiers::CONTROL);
 }
 
 #[test]
 fn from_modifiers_state_super() {
-    let m: Modifiers = ModifiersState::SUPER.into();
+    let m: Modifiers = crate::key_encoding::modifiers_from_state(ModifiersState::SUPER);
     assert_eq!(m, Modifiers::SUPER);
 }
 
 #[test]
 fn from_modifiers_state_ctrl_shift() {
-    let m: Modifiers = (ModifiersState::CONTROL | ModifiersState::SHIFT).into();
+    let m: Modifiers =
+        crate::key_encoding::modifiers_from_state(ModifiersState::CONTROL | ModifiersState::SHIFT);
     assert_eq!(m, Modifiers::CONTROL | Modifiers::SHIFT);
 }
 
@@ -403,7 +404,7 @@ fn from_modifiers_state_all() {
         | ModifiersState::ALT
         | ModifiersState::CONTROL
         | ModifiersState::SUPER;
-    let m: Modifiers = winit_all.into();
+    let m: Modifiers = crate::key_encoding::modifiers_from_state(winit_all);
     assert_eq!(
         m,
         Modifiers::SHIFT | Modifiers::ALT | Modifiers::CONTROL | Modifiers::SUPER,

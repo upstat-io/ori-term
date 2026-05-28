@@ -14,6 +14,7 @@
 use std::io::{Cursor, Write};
 
 use crate::TermMode;
+use crate::input::Modifiers;
 
 /// Mouse button for reporting.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -43,11 +44,12 @@ pub enum MouseEventKind {
     Motion,
 }
 
-/// Modifier state for mouse reports.
+/// Boundary type for mouse-event callers (bool-field shape).
 ///
-/// Intermediate type during the §16.2.0 migration; §16.3 cure replaces
-/// with the canonical `Modifiers` SSOT (currently at
-/// `oriterm/src/key_encoding/mod.rs`).
+/// Converts to the canonical [`Modifiers`] via
+/// `From<MouseModifiers> for Modifiers`. App-side construction sites
+/// (and test fixtures) write the bool-field form; the encoder runs
+/// on `Modifiers` internally per §16.3 algorithmic SSOT.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct MouseModifiers {
     /// Shift key held.
@@ -56,6 +58,22 @@ pub struct MouseModifiers {
     pub alt: bool,
     /// Ctrl key held.
     pub ctrl: bool,
+}
+
+impl From<MouseModifiers> for Modifiers {
+    fn from(m: MouseModifiers) -> Self {
+        Self::from_shift_alt_ctrl(m.shift, m.alt, m.ctrl)
+    }
+}
+
+impl From<Modifiers> for MouseModifiers {
+    fn from(m: Modifiers) -> Self {
+        Self {
+            shift: m.contains(Modifiers::SHIFT),
+            alt: m.contains(Modifiers::ALT),
+            ctrl: m.contains(Modifiers::CONTROL),
+        }
+    }
 }
 
 /// Stack-allocated buffer for encoded mouse report (max 32 bytes).
@@ -102,21 +120,33 @@ pub fn button_code(button: MouseButton, kind: MouseEventKind) -> u8 {
     }
 }
 
-/// Apply modifier bits to a button code.
+/// Compute the mouse-Cb additive modifier bits per xterm spec.
 ///
-/// Shift=+4, Alt=+8, Ctrl=+16.
-pub fn apply_modifiers(code: u8, mods: MouseModifiers) -> u8 {
-    let mut result = code;
-    if mods.shift {
+/// Shift=+4, Alt=+8, Ctrl=+16. Structurally distinct from xterm
+/// keyboard CSI Pm `1 + bits` returned by `Modifiers::xterm_param()`.
+/// §17 keyboard encoder uses `xterm_param`; mouse uses this helper.
+/// Super is intentionally ignored — xterm mouse Cb has no Super bit.
+pub fn mouse_cb_modifier_bits(mods: Modifiers) -> u8 {
+    let mut result = 0u8;
+    if mods.contains(Modifiers::SHIFT) {
         result += 4;
     }
-    if mods.alt {
+    if mods.contains(Modifiers::ALT) {
         result += 8;
     }
-    if mods.ctrl {
+    if mods.contains(Modifiers::CONTROL) {
         result += 16;
     }
     result
+}
+
+/// Apply modifier bits to a button code (boundary helper).
+///
+/// Takes `MouseModifiers` (bool-field boundary type) + converts to
+/// `Modifiers` + dispatches to `mouse_cb_modifier_bits` per §16.3
+/// algorithmic SSOT.
+pub fn apply_modifiers(code: u8, mods: MouseModifiers) -> u8 {
+    code + mouse_cb_modifier_bits(mods.into())
 }
 
 /// Encode a mouse event in SGR format.

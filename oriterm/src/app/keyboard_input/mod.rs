@@ -110,7 +110,7 @@ impl App {
 
         // Keybinding dispatch: look up the key+modifiers in the binding table.
         if event.state == ElementState::Pressed {
-            let mods = self.modifiers.into();
+            let mods = key_encoding::modifiers_from_state(self.modifiers);
             if let Some(binding_key) = keybindings::key_to_binding_key(&event.logical_key) {
                 if let Some(action) = keybindings::find_binding(&self.bindings, &binding_key, mods)
                 {
@@ -229,7 +229,7 @@ impl App {
             key_encoding::physical_key_to_us_codepoint(event.physical_key, &event.logical_key);
         let bytes = key_encoding::encode_key(&KeyInput {
             key: &event.logical_key,
-            mods: self.modifiers.into(),
+            mods: key_encoding::modifiers_from_state(self.modifiers),
             mode,
             text: event.text.as_ref().map(SmolStr::as_str),
             location: event.location,

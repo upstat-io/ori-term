@@ -16,7 +16,6 @@ mod legacy;
 )]
 mod win32;
 
-use bitflags::bitflags;
 use winit::keyboard::{Key, KeyCode, KeyLocation, ModifiersState, PhysicalKey};
 
 use oriterm_core::TermMode;
@@ -35,43 +34,22 @@ pub enum KeyEventType {
     Release,
 }
 
-bitflags! {
- /// Keyboard modifiers for key events.
- ///
- /// Bit layout matches the xterm modifier parameter encoding:
- /// Shift=1, Alt=2, Ctrl=4, Super=8. The parameter sent to the terminal
- /// is `1 + bits` (so Ctrl+Shift = 1 + 1 + 4 = 6).
-    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-    pub struct Modifiers: u8 {
- /// Shift key held.
-        const SHIFT   = 0b0001;
- /// Alt (Meta/Option) key held.
-        const ALT     = 0b0010;
- /// Control key held.
-        const CONTROL = 0b0100;
- /// Super (Windows/Command) key held.
-        const SUPER   = 0b1000;
-    }
-}
+/// Re-export of the canonical `Modifiers` type. Lives in
+/// `oriterm_core::input::Modifiers` per §16.3 SSOT cure (encoder home
+/// moved to core in §16.2.0.A; its modifier-state input type moved
+/// alongside it). App layer keeps `From<winit::ModifiersState>` impl
+/// below (winit dep stays App-side).
+pub use oriterm_core::input::Modifiers;
 
-impl Modifiers {
-    /// Encode as xterm modifier parameter (`1 + bitmask`).
-    ///
-    /// Returns 0 when no modifiers are active (caller should omit the parameter).
-    pub(crate) fn xterm_param(self) -> u8 {
-        if self.is_empty() { 0 } else { self.bits() + 1 }
-    }
-}
-
-impl From<ModifiersState> for Modifiers {
-    fn from(m: ModifiersState) -> Self {
-        let mut mods = Self::empty();
-        mods.set(Self::SHIFT, m.shift_key());
-        mods.set(Self::ALT, m.alt_key());
-        mods.set(Self::CONTROL, m.control_key());
-        mods.set(Self::SUPER, m.super_key());
-        mods
-    }
+/// Convert winit's `ModifiersState` to the canonical `Modifiers`.
+/// Lives App-side because `winit` is an App-layer dependency.
+pub fn modifiers_from_state(m: ModifiersState) -> Modifiers {
+    let mut mods = Modifiers::empty();
+    mods.set(Modifiers::SHIFT, m.shift_key());
+    mods.set(Modifiers::ALT, m.alt_key());
+    mods.set(Modifiers::CONTROL, m.control_key());
+    mods.set(Modifiers::SUPER, m.super_key());
+    mods
 }
 
 /// Bundled key event for encoding.
