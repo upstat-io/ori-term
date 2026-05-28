@@ -217,6 +217,176 @@ fn encode_mouse_event_sgr_takes_precedence_over_urxvt() {
     assert!(report.as_bytes().starts_with(b"\x1b[<"));
 }
 
+// --- §16.6 modifier matrix (protocols × modifier-sets) ---
+
+/// Parameterized 64-pilot matrix: 8 protocols × 8 modifier-sets.
+/// Asserts the encoded button Cb byte matches base_code + mouse-Cb
+/// additive bits (Shift=+4, Alt=+8, Ctrl=+16) for every cell. X10
+/// (mode 9) is the negative-pin row: modifiers MUST be stripped.
+///
+/// Self-verifying matrix completeness pin: count assertion asserts
+/// 8 × 8 = 64 cells visited so a future regression that silently
+/// drops a row/column fires immediately.
+#[test]
+fn modifier_matrix_64_cells_protocols_x_modifier_sets() {
+    let modifier_sets: [(MouseModifiers, u8); 8] = [
+        (
+            MouseModifiers {
+                shift: false,
+                alt: false,
+                ctrl: false,
+            },
+            0,
+        ),
+        (
+            MouseModifiers {
+                shift: true,
+                alt: false,
+                ctrl: false,
+            },
+            4,
+        ),
+        (
+            MouseModifiers {
+                shift: false,
+                alt: true,
+                ctrl: false,
+            },
+            8,
+        ),
+        (
+            MouseModifiers {
+                shift: false,
+                alt: false,
+                ctrl: true,
+            },
+            16,
+        ),
+        (
+            MouseModifiers {
+                shift: true,
+                alt: true,
+                ctrl: false,
+            },
+            12,
+        ),
+        (
+            MouseModifiers {
+                shift: true,
+                alt: false,
+                ctrl: true,
+            },
+            20,
+        ),
+        (
+            MouseModifiers {
+                shift: false,
+                alt: true,
+                ctrl: true,
+            },
+            24,
+        ),
+        (
+            MouseModifiers {
+                shift: true,
+                alt: true,
+                ctrl: true,
+            },
+            28,
+        ),
+    ];
+
+    let protocols: [(TermMode, &'static str); 8] = [
+        (TermMode::MOUSE_X10, "X10"),
+        (TermMode::MOUSE_REPORT_CLICK, "Normal/1000"),
+        (TermMode::MOUSE_DRAG, "BtnEvent/1002"),
+        (TermMode::MOUSE_MOTION, "AnyEvent/1003"),
+        (
+            TermMode::MOUSE_REPORT_CLICK | TermMode::MOUSE_UTF8,
+            "UTF-8/1005",
+        ),
+        (
+            TermMode::MOUSE_REPORT_CLICK | TermMode::MOUSE_SGR,
+            "SGR/1006",
+        ),
+        (
+            TermMode::MOUSE_REPORT_CLICK | TermMode::MOUSE_URXVT,
+            "URXVT/1015",
+        ),
+        (
+            TermMode::MOUSE_REPORT_CLICK | TermMode::MOUSE_SGR | TermMode::MOUSE_SGR_PIXEL,
+            "SGR-Pixel/1016",
+        ),
+    ];
+
+    let mut cells_visited = 0;
+    for (proto_mode, proto_name) in protocols {
+        for (mods, expected_modifier_bits) in modifier_sets {
+            let mut ev = event(MouseButton::Left, MouseEventKind::Press, 5, 5);
+            ev.mods = mods;
+            // SGR-Pixel needs px/py populated to route through SGR-Pixel branch.
+            if proto_mode.contains(TermMode::MOUSE_SGR_PIXEL) {
+                ev.px = Some(80);
+                ev.py = Some(160);
+            }
+            let report = encode_mouse_event(&ev, proto_mode);
+            let bytes = report.as_bytes();
+
+            // X10 strips modifiers AND is press-only (release would be 0 bytes).
+            // For Press events X10 emits Normal-format byte stream but with
+            // modifier bits stripped to 0.
+            let effective_mod_bits = if proto_mode.contains(TermMode::MOUSE_X10) {
+                0
+            } else {
+                expected_modifier_bits
+            };
+
+            assert!(
+                !bytes.is_empty(),
+                "{proto_name} mods={mods:?}: empty buffer (encoder failed)"
+            );
+
+            // Extract the Cb byte per protocol's wire shape:
+            // - SGR/SGR-Pixel: parse the decimal after CSI <
+            // - URXVT: parse decimal after CSI
+            // - UTF-8 / Normal / X10: byte 4 (after \x1b[M is byte 3, btn is byte 4 = 32+Cb)
+            let cb = extract_cb(bytes, proto_mode);
+            let expected_cb = effective_mod_bits; // base_code = 0 for Left button + Press
+            assert_eq!(
+                cb, expected_cb,
+                "{proto_name} mods={mods:?}: Cb={cb}, expected {expected_cb}"
+            );
+
+            cells_visited += 1;
+        }
+    }
+    assert_eq!(
+        cells_visited, 64,
+        "matrix completeness — all 64 cells visited"
+    );
+}
+
+/// Extract the Cb byte (button code with modifier bits) from an
+/// encoded mouse-event byte stream per the protocol's wire shape.
+fn extract_cb(bytes: &[u8], mode: TermMode) -> u8 {
+    let s = std::str::from_utf8(bytes).expect("ASCII bytes");
+    if mode.contains(TermMode::MOUSE_SGR_PIXEL) || mode.contains(TermMode::MOUSE_SGR) {
+        // \x1b[<{code};...
+        let rest = s.strip_prefix("\x1b[<").expect("SGR prefix");
+        let semi = rest.find(';').expect("SGR semicolon");
+        rest[..semi].parse().expect("SGR code")
+    } else if mode.contains(TermMode::MOUSE_URXVT) {
+        // \x1b[{cb};... where cb = 32 + code
+        let rest = s.strip_prefix("\x1b[").expect("URXVT prefix");
+        let semi = rest.find(';').expect("URXVT semicolon");
+        let cb_plus_32: u8 = rest[..semi].parse().expect("URXVT cb");
+        cb_plus_32 - 32
+    } else {
+        // UTF-8 / Normal / X10: \x1b[M{btn}{col}{line} where btn = 32 + code
+        bytes[3] - 32
+    }
+}
+
 // --- Term::handle_mouse_input apex tests (Decision 10 Option A §16.2.0.B) ---
 
 mod term_apex {
