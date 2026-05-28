@@ -369,15 +369,25 @@ impl App {
     /// to the grid origin, for SGR-Pixel (DEC mode 1016) encoding.
     ///
     /// Per xterm `charproc.c` + kitty `mouse.c`: SGR-Pixel coordinates
-    /// are in **logical** pixels (CSS pixels) not physical. The cursor
-    /// position from winit is in physical pixels; divide by the
-    /// window's `scale_factor()` to convert. Coordinates are zero-based
-    /// relative to the terminal grid's top-left corner; the encoder
-    /// adds the +1 1-indexing per spec.
+    /// are in **logical** pixels (CSS pixels) not physical. Cursor
+    /// position from winit is physical pixels; divide by `scale_factor()`.
     ///
-    /// Returns `(None, None)` when no focused window context, no
-    /// renderer (= no cell metrics), or cursor is outside the grid.
-    /// Returns `Some` for both when the cursor is inside the grid.
+    /// Returns `(Some, Some)` for every event where the surface checks
+    /// pass (focused context + grid bounds + positive scale). Cursor
+    /// positions outside the grid widget's bounds are clamped to the
+    /// nearest valid logical pixel via [`clamp_mouse_pixel_coords`] —
+    /// mirroring [`mouse_cell_clamped`](Self::mouse_cell_clamped). Returns
+    /// `(None, None)` ONLY when there is no usable surface. Callers that
+    /// need an in-grid surface predicate (rather than a clamped pixel
+    /// pair) should use [`mouse_cell`](Self::mouse_cell) or
+    /// [`pixel_to_cell`](Self::pixel_to_cell) — those return
+    /// `Option<(usize, usize)>` and signal in-grid vs out-of-grid via
+    /// `Some` vs `None`. The encoder treats `None` pixel coords under
+    /// `MOUSE_SGR_PIXEL` as an upstream invariant violation, not a drop
+    /// signal — this clamping is what prevents the violation for
+    /// legitimate clicks.
+    ///
+    /// See: bug-tracker/plans/completed/BUG-08-057/
     fn mouse_pixel_coords(&self) -> (Option<u32>, Option<u32>) {
         let Some(wctx) = self.focused_ctx() else {
             return (None, None);
@@ -385,24 +395,46 @@ impl App {
         let Some(bounds) = wctx.terminal_grid.bounds() else {
             return (None, None);
         };
-        let pos = self.mouse.cursor_pos();
-        let rel_x = pos.x - f64::from(bounds.x());
-        let rel_y = pos.y - f64::from(bounds.y());
-        if rel_x < 0.0
-            || rel_y < 0.0
-            || rel_x >= f64::from(bounds.width())
-            || rel_y >= f64::from(bounds.height())
-        {
-            return (None, None);
-        }
         let scale = wctx.window.scale_factor().factor();
-        if scale <= 0.0 {
-            return (None, None);
-        }
-        let logical_x = (rel_x / scale) as u32;
-        let logical_y = (rel_y / scale) as u32;
-        (Some(logical_x), Some(logical_y))
+        clamp_mouse_pixel_coords(
+            self.mouse.cursor_pos(),
+            (f64::from(bounds.x()), f64::from(bounds.y())),
+            (f64::from(bounds.width()), f64::from(bounds.height())),
+            scale,
+        )
     }
+}
+
+/// Pure clamping helper for [`App::mouse_pixel_coords`] — the pixel-
+/// coordinate surface predicate factored out so it can be tested
+/// headlessly without constructing `App` / `TermWindow` / `wgpu::Surface`.
+/// Mirrors the clamping shape of `mouse_selection::pixel_to_cell` for
+/// cell coords.
+///
+/// Returns `(Some, Some)` for every position when the surface inputs are
+/// valid (`scale > 0`, both `bounds_size` dimensions positive). Cursor
+/// positions outside `[origin, origin + size)` clamp to the nearest valid
+/// logical pixel. Returns `(None, None)` ONLY for the legitimate "no usable
+/// surface" cases — zero-width or zero-height bounds, or non-positive
+/// scale. Extracted from `App::mouse_pixel_coords` so it is testable
+/// without constructing `App` / `TermWindow` / `wgpu::Surface`, mirroring
+/// the existing `RecordingSink` / `WheelDispatch` headless-seam pattern.
+///
+/// See: bug-tracker/plans/completed/BUG-08-057/
+pub(crate) fn clamp_mouse_pixel_coords(
+    pos: PhysicalPosition<f64>,
+    bounds_origin: (f64, f64),
+    bounds_size: (f64, f64),
+    scale: f64,
+) -> (Option<u32>, Option<u32>) {
+    if scale <= 0.0 || bounds_size.0 <= 0.0 || bounds_size.1 <= 0.0 {
+        return (None, None);
+    }
+    let rel_x = (pos.x - bounds_origin.0).clamp(0.0, bounds_size.0 - 1.0);
+    let rel_y = (pos.y - bounds_origin.1).clamp(0.0, bounds_size.1 - 1.0);
+    let logical_x = (rel_x / scale) as u32;
+    let logical_y = (rel_y / scale) as u32;
+    (Some(logical_x), Some(logical_y))
 }
 
 /// Parse a mouse wheel delta into `(line_count, scroll_up)`.

@@ -308,15 +308,28 @@ pub fn encode_mouse_event(event: &MouseEvent, mode: TermMode) -> MouseReportBuf 
         return buf;
     }
 
-    // SGR-Pixel (mode 1016) takes precedence over SGR (mode 1006)
-    // per xterm spec when both are set, but only if pixel coords are
-    // present (the App caller did not populate them on cursor-outside-
-    // grid or pre-§16.2.B legacy callers). Falls through to SGR/etc.
-    // when px/py are None.
-    buf.len = if mode.contains(TermMode::MOUSE_SGR_PIXEL)
-        && let (Some(px), Some(py)) = (event.px, event.py)
-    {
-        encode_sgr_pixel(&mut buf.data, code, px, py, pressed)
+    // SGR-Pixel (DEC mode 1016) shares the SGR (1006) wire envelope
+    // `\x1b[<{code};{c1};{c2}{M|m}` but the numeric fields ARE pixel
+    // coordinates per xterm spec — 1016-aware clients (notcurses
+    // `pixelmouse_click`, kitty `SGR_PIXEL_PROTOCOL`) UNCONDITIONALLY
+    // divide the parsed values by cell_pixel dimensions when 1016 is
+    // active. Substituting cell coordinates inside the 1016 branch
+    // would silently corrupt the client-side cell mapping (cite:
+    // notcurses/src/lib/in.c:556-586 pixelmouse_click). When 1016 is
+    // active and the App caller did not supply pixel coords, the
+    // encoder emits NO bytes — the App-side clamping at
+    // App::mouse_pixel_coords guarantees Some pixel coords for every
+    // in-grid event so this branch is unreachable in production for
+    // legitimate clicks. The encoder is a total function: if-let-else
+    // produces 0 for the None case, no panic path. The X10 fallthrough
+    // in the final `else` arm is reachable ONLY when no extended-
+    // encoding flag is set (legitimate legacy clients).
+    buf.len = if mode.contains(TermMode::MOUSE_SGR_PIXEL) {
+        if let (Some(px), Some(py)) = (event.px, event.py) {
+            encode_sgr_pixel(&mut buf.data, code, px, py, pressed)
+        } else {
+            0
+        }
     } else if mode.contains(TermMode::MOUSE_SGR) {
         encode_sgr(&mut buf.data, code, event.col, event.line, pressed)
     } else if mode.contains(TermMode::MOUSE_URXVT) {
