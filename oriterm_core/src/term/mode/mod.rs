@@ -99,6 +99,24 @@ bitflags! {
  /// reversed per xterm semantics.
  const DECBKM = 1 << 34;
 
+ /// VT200 highlight mouse tracking (mode 1001 — xterm `SET_VT200_HIGHLIGHT_MOUSE`).
+ ///
+ /// When set, the host program can request highlight tracking via the
+ /// `CSI Ps;Ps;Ps;Ps;Ps T` (XTHIMOUSE) host-initiated sequence. NOT
+ /// a member of `ANY_MOUSE` — highlight tracking is a separate
+ /// supplement to a base tracking mode (1000/1002/1003) per xterm spec
+ /// `ctlseqs.txt:~3038-3047`. NOT the DEC Locator (which is
+ /// independently activated by DECELR `CSI Ps;Pu ' z`).
+ const MOUSE_HIGHLIGHT = 1 << 35;
+
+ /// SGR-Pixel mouse encoding (mode 1016).
+ ///
+ /// When set, mouse events encode pixel coordinates instead of cell
+ /// coordinates in the SGR format `CSI < Cb;Px;Py M|m`. Member of
+ /// `ANY_MOUSE_ENCODING` — mutually exclusive with `MOUSE_SGR`,
+ /// `MOUSE_UTF8`, and `MOUSE_URXVT` per the encoding-precedence rule.
+ const MOUSE_SGR_PIXEL = 1 << 36;
+
  /// Computed: any mouse reporting mode is active.
  const ANY_MOUSE = Self::MOUSE_REPORT_CLICK.bits()
  | Self::MOUSE_DRAG.bits()
@@ -107,7 +125,8 @@ bitflags! {
  /// Computed: any mouse encoding mode is active.
  const ANY_MOUSE_ENCODING = Self::MOUSE_SGR.bits()
  | Self::MOUSE_UTF8.bits()
- | Self::MOUSE_URXVT.bits();
+ | Self::MOUSE_URXVT.bits()
+ | Self::MOUSE_SGR_PIXEL.bits();
  /// Computed: all Kitty keyboard protocol flags.
  const KITTY_KEYBOARD_PROTOCOL = Self::DISAMBIGUATE_ESC_CODES.bits()
  | Self::REPORT_EVENT_TYPES.bits()

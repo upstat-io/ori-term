@@ -1,5 +1,6 @@
 //! Catalog rows: DEC-X10-MOUSE, DEC-MOUSE-CLICKS, DEC-MOUSE-DRAG, DEC-MOUSE-MOTION,
-//! DEC-UTF8-MOUSE, DEC-SGR-MOUSE, DEC-URXVT-MOUSE
+//! DEC-UTF8-MOUSE, DEC-SGR-MOUSE, DEC-URXVT-MOUSE, DEC-VT200-HIGHLIGHT-MOUSE,
+//! DEC-SGR-PIXEL-MOUSE
 
 use crate::term::{Term, TermMode};
 use crate::theme::Theme;
@@ -63,6 +64,123 @@ fn mouse_encoding_1015_clears_1005_and_1006() {
     assert!(t.mode().contains(TermMode::MOUSE_URXVT));
     assert!(!t.mode().contains(TermMode::MOUSE_SGR));
     assert!(!t.mode().contains(TermMode::MOUSE_UTF8));
+}
+
+// --- Mode 1001 (VT200 highlight mouse tracking) ---
+
+/// DECSET ?1001h sets MOUSE_HIGHLIGHT; DECRST ?1001l clears it.
+///
+/// Mode 1001 is highlight tracking (SET_VT200_HIGHLIGHT_MOUSE). NOT the DEC
+/// Locator subsystem — DEC Locator is independently activated by DECELR
+/// (`CSI Ps;Pu ' z`), no DECSET dependency. NOT a base tracking mode;
+/// supplements an active 1000/1002/1003 base mode.
+#[test]
+fn mouse_mode_1001_highlight_tracking_toggle() {
+    let mut t = term();
+    assert!(!t.mode().contains(TermMode::MOUSE_HIGHLIGHT));
+
+    feed(&mut t, b"\x1b[?1001h");
+    assert!(t.mode().contains(TermMode::MOUSE_HIGHLIGHT));
+
+    feed(&mut t, b"\x1b[?1001l");
+    assert!(!t.mode().contains(TermMode::MOUSE_HIGHLIGHT));
+}
+
+/// Mode 1001 does NOT participate in ANY_MOUSE mutual exclusion — it is a
+/// supplement to base tracking, not a base tracking mode itself.
+#[test]
+fn mouse_mode_1001_does_not_clear_base_tracking() {
+    let mut t = term();
+    // Set base tracking mode 1000.
+    feed(&mut t, b"\x1b[?1000h");
+    assert!(t.mode().contains(TermMode::MOUSE_REPORT_CLICK));
+
+    // Set highlight tracking 1001 — should NOT clear base tracking.
+    feed(&mut t, b"\x1b[?1001h");
+    assert!(t.mode().contains(TermMode::MOUSE_HIGHLIGHT));
+    assert!(
+        t.mode().contains(TermMode::MOUSE_REPORT_CLICK),
+        "mode 1001 must not clear ANY_MOUSE base tracking — it supplements it"
+    );
+}
+
+/// Mode 1001 is NOT a member of ANY_MOUSE_ENCODING — it is independent of
+/// the encoding-format mutual-exclusion group (1005/1006/1015/1016).
+#[test]
+fn mouse_mode_1001_not_in_any_mouse_encoding_union() {
+    assert!(
+        !TermMode::ANY_MOUSE_ENCODING.contains(TermMode::MOUSE_HIGHLIGHT),
+        "MOUSE_HIGHLIGHT is highlight tracking, not an encoding format"
+    );
+    assert!(
+        !TermMode::ANY_MOUSE.contains(TermMode::MOUSE_HIGHLIGHT),
+        "MOUSE_HIGHLIGHT supplements base tracking, not a base tracking mode"
+    );
+}
+
+// --- Mode 1016 (SGR-Pixel mouse encoding) ---
+
+/// DECSET ?1016h sets MOUSE_SGR_PIXEL; DECRST ?1016l clears it.
+#[test]
+fn mouse_encoding_1016_sgr_pixel_toggle() {
+    let mut t = term();
+    assert!(!t.mode().contains(TermMode::MOUSE_SGR_PIXEL));
+
+    feed(&mut t, b"\x1b[?1016h");
+    assert!(t.mode().contains(TermMode::MOUSE_SGR_PIXEL));
+
+    feed(&mut t, b"\x1b[?1016l");
+    assert!(!t.mode().contains(TermMode::MOUSE_SGR_PIXEL));
+}
+
+/// Mode 1016 participates in ANY_MOUSE_ENCODING mutual exclusion — setting
+/// it clears 1005/1006/1015 per the encoding-format precedence rule.
+#[test]
+fn mouse_encoding_1016_clears_1005_and_1006_and_1015() {
+    let mut t = term();
+    feed(&mut t, b"\x1b[?1005h");
+    assert!(t.mode().contains(TermMode::MOUSE_UTF8));
+
+    feed(&mut t, b"\x1b[?1006h");
+    assert!(t.mode().contains(TermMode::MOUSE_SGR));
+    assert!(!t.mode().contains(TermMode::MOUSE_UTF8));
+
+    feed(&mut t, b"\x1b[?1015h");
+    assert!(t.mode().contains(TermMode::MOUSE_URXVT));
+    assert!(!t.mode().contains(TermMode::MOUSE_SGR));
+
+    // Now SGR-Pixel — clears URXVT.
+    feed(&mut t, b"\x1b[?1016h");
+    assert!(t.mode().contains(TermMode::MOUSE_SGR_PIXEL));
+    assert!(!t.mode().contains(TermMode::MOUSE_URXVT));
+    assert!(!t.mode().contains(TermMode::MOUSE_SGR));
+    assert!(!t.mode().contains(TermMode::MOUSE_UTF8));
+}
+
+/// Setting 1006 after 1016 clears 1016 — the mutual exclusion is symmetric.
+#[test]
+fn mouse_encoding_1006_clears_1016() {
+    let mut t = term();
+    feed(&mut t, b"\x1b[?1016h");
+    assert!(t.mode().contains(TermMode::MOUSE_SGR_PIXEL));
+
+    feed(&mut t, b"\x1b[?1006h");
+    assert!(t.mode().contains(TermMode::MOUSE_SGR));
+    assert!(!t.mode().contains(TermMode::MOUSE_SGR_PIXEL));
+}
+
+/// Mode 1016 is NOT a member of ANY_MOUSE — it is an encoding format, not a
+/// base tracking mode. Setting 1016 alone does NOT enable mouse reporting.
+#[test]
+fn mouse_encoding_1016_not_in_any_mouse_union() {
+    assert!(
+        !TermMode::ANY_MOUSE.contains(TermMode::MOUSE_SGR_PIXEL),
+        "MOUSE_SGR_PIXEL is an encoding format, not a base tracking mode"
+    );
+    assert!(
+        TermMode::ANY_MOUSE_ENCODING.contains(TermMode::MOUSE_SGR_PIXEL),
+        "MOUSE_SGR_PIXEL must be in ANY_MOUSE_ENCODING for mutual exclusion"
+    );
 }
 
 // --- DECRST mouse tracking does not reactivate previous mode ---

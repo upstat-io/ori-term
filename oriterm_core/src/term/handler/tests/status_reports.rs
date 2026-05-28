@@ -385,6 +385,30 @@ fn decrqm_urxvt_mouse_after_set() {
     assert_decrqm_private(b"\x1b[?1015h", 1015, 1);
 }
 
+// Mode 1001 — VT200 highlight mouse tracking.
+
+#[test]
+fn decrqm_highlight_mouse_default_reset() {
+    assert_decrqm_private(b"", 1001, 2);
+}
+
+#[test]
+fn decrqm_highlight_mouse_after_set() {
+    assert_decrqm_private(b"\x1b[?1001h", 1001, 1);
+}
+
+// Mode 1016 — SGR-Pixel mouse encoding.
+
+#[test]
+fn decrqm_sgr_pixel_mouse_default_reset() {
+    assert_decrqm_private(b"", 1016, 2);
+}
+
+#[test]
+fn decrqm_sgr_pixel_mouse_after_set() {
+    assert_decrqm_private(b"\x1b[?1016h", 1016, 1);
+}
+
 // Mode 1042 — urgency hints.
 
 #[test]

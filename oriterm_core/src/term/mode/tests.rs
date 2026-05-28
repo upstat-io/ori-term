@@ -145,7 +145,10 @@ fn keyboard_modes_no_mode_converts_to_empty() {
 
 #[test]
 fn any_mouse_encoding_is_union_of_encoding_modes() {
-    let expected = TermMode::MOUSE_SGR | TermMode::MOUSE_UTF8 | TermMode::MOUSE_URXVT;
+    let expected = TermMode::MOUSE_SGR
+        | TermMode::MOUSE_UTF8
+        | TermMode::MOUSE_URXVT
+        | TermMode::MOUSE_SGR_PIXEL;
     assert_eq!(TermMode::ANY_MOUSE_ENCODING, expected);
 }
 

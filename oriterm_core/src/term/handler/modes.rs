@@ -14,6 +14,23 @@ use crate::term::{Term, TermMode};
 use super::helpers::named_private_mode_flag;
 
 impl<S: EffectSink> Term<S> {
+    /// Set a mouse-tracking mode: clear all `ANY_MOUSE` base flags, install
+    /// the requested flag, signal cursor-icon recompute.
+    fn set_mouse_tracking(&mut self, flag: TermMode) {
+        self.mode.remove(TermMode::ANY_MOUSE);
+        self.mode.insert(flag);
+        self.effect_sink
+            .push(Effect::Ui(UiEffect::MouseCursorDirty));
+    }
+
+    /// Set a mouse-encoding mode: clear all `ANY_MOUSE_ENCODING` flags,
+    /// install the requested flag. No cursor-icon recompute (encoding does
+    /// not affect cursor shape).
+    fn set_mouse_encoding(&mut self, flag: TermMode) {
+        self.mode.remove(TermMode::ANY_MOUSE_ENCODING);
+        self.mode.insert(flag);
+    }
+
     /// Apply DECSET (set private mode).
     pub(super) fn apply_decset(&mut self, named: NamedPrivateMode) {
         match named {
@@ -29,42 +46,27 @@ impl<S: EffectSink> Term<S> {
                     .push(Effect::Ui(UiEffect::CursorBlinkChanged { enabled: true }));
             }
             NamedPrivateMode::ShowCursor => self.mode.insert(TermMode::SHOW_CURSOR),
-            NamedPrivateMode::X10Mouse => {
-                self.mode.remove(TermMode::ANY_MOUSE);
-                self.mode.insert(TermMode::MOUSE_X10);
-                self.effect_sink
-                    .push(Effect::Ui(UiEffect::MouseCursorDirty));
-            }
+            NamedPrivateMode::X10Mouse => self.set_mouse_tracking(TermMode::MOUSE_X10),
             NamedPrivateMode::ReportMouseClicks => {
-                self.mode.remove(TermMode::ANY_MOUSE);
-                self.mode.insert(TermMode::MOUSE_REPORT_CLICK);
-                self.effect_sink
-                    .push(Effect::Ui(UiEffect::MouseCursorDirty));
+                self.set_mouse_tracking(TermMode::MOUSE_REPORT_CLICK);
             }
             NamedPrivateMode::ReportCellMouseMotion => {
-                self.mode.remove(TermMode::ANY_MOUSE);
-                self.mode.insert(TermMode::MOUSE_DRAG);
-                self.effect_sink
-                    .push(Effect::Ui(UiEffect::MouseCursorDirty));
+                self.set_mouse_tracking(TermMode::MOUSE_DRAG);
             }
             NamedPrivateMode::ReportAllMouseMotion => {
-                self.mode.remove(TermMode::ANY_MOUSE);
-                self.mode.insert(TermMode::MOUSE_MOTION);
-                self.effect_sink
-                    .push(Effect::Ui(UiEffect::MouseCursorDirty));
+                self.set_mouse_tracking(TermMode::MOUSE_MOTION);
             }
             NamedPrivateMode::ReportFocusInOut => self.mode.insert(TermMode::FOCUS_IN_OUT),
-            NamedPrivateMode::Utf8Mouse => {
-                self.mode.remove(TermMode::ANY_MOUSE_ENCODING);
-                self.mode.insert(TermMode::MOUSE_UTF8);
+            NamedPrivateMode::Utf8Mouse => self.set_mouse_encoding(TermMode::MOUSE_UTF8),
+            NamedPrivateMode::SgrMouse => self.set_mouse_encoding(TermMode::MOUSE_SGR),
+            NamedPrivateMode::UrxvtMouse => self.set_mouse_encoding(TermMode::MOUSE_URXVT),
+            NamedPrivateMode::SgrPixelMouse => {
+                self.set_mouse_encoding(TermMode::MOUSE_SGR_PIXEL);
             }
-            NamedPrivateMode::SgrMouse => {
-                self.mode.remove(TermMode::ANY_MOUSE_ENCODING);
-                self.mode.insert(TermMode::MOUSE_SGR);
-            }
-            NamedPrivateMode::UrxvtMouse => {
-                self.mode.remove(TermMode::ANY_MOUSE_ENCODING);
-                self.mode.insert(TermMode::MOUSE_URXVT);
+            NamedPrivateMode::HighlightMouse => {
+                // VT200 highlight tracking — supplements an active
+                // 1000/1002/1003 base mode, NOT a base mode itself.
+                self.mode.insert(TermMode::MOUSE_HIGHLIGHT);
             }
             NamedPrivateMode::UrgencyHints => self.mode.insert(TermMode::URGENCY_HINTS),
             NamedPrivateMode::ReverseWraparound => {
@@ -155,6 +157,8 @@ impl<S: EffectSink> Term<S> {
             NamedPrivateMode::Utf8Mouse => self.mode.remove(TermMode::MOUSE_UTF8),
             NamedPrivateMode::SgrMouse => self.mode.remove(TermMode::MOUSE_SGR),
             NamedPrivateMode::UrxvtMouse => self.mode.remove(TermMode::MOUSE_URXVT),
+            NamedPrivateMode::SgrPixelMouse => self.mode.remove(TermMode::MOUSE_SGR_PIXEL),
+            NamedPrivateMode::HighlightMouse => self.mode.remove(TermMode::MOUSE_HIGHLIGHT),
             NamedPrivateMode::UrgencyHints => self.mode.remove(TermMode::URGENCY_HINTS),
             NamedPrivateMode::ReverseWraparound => {
                 self.mode.remove(TermMode::REVERSE_WRAP);

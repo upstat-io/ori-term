@@ -32,6 +32,7 @@ pub(super) fn named_private_mode_flag(mode: NamedPrivateMode) -> Option<TermMode
         | NamedPrivateMode::AltScreenOpt
         | NamedPrivateMode::SwapScreenAndSetRestoreCursor => Some(TermMode::ALT_SCREEN),
         NamedPrivateMode::X10Mouse => Some(TermMode::MOUSE_X10),
+        NamedPrivateMode::HighlightMouse => Some(TermMode::MOUSE_HIGHLIGHT),
         NamedPrivateMode::ReportMouseClicks => Some(TermMode::MOUSE_REPORT_CLICK),
         NamedPrivateMode::ReportCellMouseMotion => Some(TermMode::MOUSE_DRAG),
         NamedPrivateMode::ReportAllMouseMotion => Some(TermMode::MOUSE_MOTION),
@@ -39,6 +40,7 @@ pub(super) fn named_private_mode_flag(mode: NamedPrivateMode) -> Option<TermMode
         NamedPrivateMode::Utf8Mouse => Some(TermMode::MOUSE_UTF8),
         NamedPrivateMode::SgrMouse => Some(TermMode::MOUSE_SGR),
         NamedPrivateMode::UrxvtMouse => Some(TermMode::MOUSE_URXVT),
+        NamedPrivateMode::SgrPixelMouse => Some(TermMode::MOUSE_SGR_PIXEL),
         NamedPrivateMode::UrgencyHints => Some(TermMode::URGENCY_HINTS),
         NamedPrivateMode::BracketedPaste => Some(TermMode::BRACKETED_PASTE),
         NamedPrivateMode::SyncUpdate => Some(TermMode::SYNC_UPDATE),
