@@ -1,11 +1,10 @@
 //! Tests for the mouse-event encoder.
 //!
 //! Catalog rows: MOUSE-X10, MOUSE-VT200, MOUSE-BTN-EVENT, MOUSE-ANY-EVENT,
-//! MOUSE-SGR, MOUSE-URXVT, MOUSE-UTF8, MOUSE-SGR-PIXEL. All routed through
-//! `encode_mouse_event` dispatch + `Term::handle_mouse_input` apex per
-//! Decision 10 Option A; pin tests under `term_apex` cover the kind=MouseEvent
-//! preservation across the Effect → mux → pump → pane.write_input boundary
-//! chain for every encoder branch.
+//! MOUSE-SGR, MOUSE-URXVT, MOUSE-UTF8, MOUSE-SGR-PIXEL, MOUSE-FOCUS. All
+//! routed through Decision 10 Option A apex (`Term::handle_mouse_input` or
+//! `Term::handle_focus_event` → `Effect::Pty(PtyEffect::Write { kind, .. })`
+//! → effect_router → MuxEvent::PtyWrite → pump → pane.write_input).
 
 use crate::TermMode;
 
