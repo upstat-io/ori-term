@@ -184,7 +184,7 @@ fn write_utf8_coord(cursor: &mut Cursor<&mut [u8]>, pos: usize) -> bool {
 ///
 /// Format: `\x1b[M` + button byte + col byte(s) + line byte(s).
 /// Coordinates use a custom 2-byte encoding for values >= 95.
-/// Returns 0 if coordinates are out of range (> 2015).
+/// Returns 0 if coordinates are out of range (> 2014; UTF-8 byte limit val > 0x7FF).
 pub fn encode_utf8(buf: &mut [u8], code: u8, col: usize, line: usize) -> usize {
     let mut cursor = Cursor::new(buf);
     let Ok(()) = cursor.write_all(b"\x1b[M") else {
