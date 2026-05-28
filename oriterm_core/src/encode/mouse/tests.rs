@@ -589,6 +589,117 @@ mod term_apex {
         );
     }
 
+    // --- §16.8 mode-interaction pilots ---
+
+    /// Pilot (a): focus + mouse interaction. Enable 1004 + 1006
+    /// simultaneously; emit focus-in then click. Apex captures BOTH
+    /// `\x1b[I` AND SGR click bytes, each with its own kind
+    /// discriminator (FocusEvent + MouseEvent respectively).
+    #[test]
+    fn focus_plus_sgr_mouse_both_emit_via_apex_with_distinct_kinds() {
+        let (mut term, recorder) = term_with_recorder();
+        // DECSET 1000 (mouse click) + 1006 (SGR) + 1004 (focus).
+        apply_decset(&mut term, b"\x1b[?1000h\x1b[?1006h\x1b[?1004h");
+        term.handle_focus_event(true);
+        let click = MouseEvent {
+            button: MouseButton::Left,
+            kind: MouseEventKind::Press,
+            col: 5,
+            line: 5,
+            mods: MouseModifiers::default(),
+            px: None,
+            py: None,
+        };
+        term.handle_mouse_input(&click);
+        let emissions = recorder.emissions();
+        assert_eq!(emissions.len(), 2, "two emissions expected (focus + click)");
+        assert_eq!(emissions[0].0, PtyWriteKind::FocusEvent);
+        assert_eq!(emissions[0].1, b"\x1b[I");
+        assert_eq!(emissions[1].0, PtyWriteKind::MouseEvent);
+        assert_eq!(emissions[1].1, b"\x1b[<0;6;6M");
+    }
+
+    /// Pilot (c): encoding-precedence. With 1006 + 1015 + 1016 all
+    /// enabled and px/py present, SGR-Pixel wins (highest priority).
+    /// Lower-priority encoders MUST NOT also emit (single emission).
+    /// Pin per `encode_mouse_event` dispatch order in `mod.rs`.
+    #[test]
+    fn encoding_precedence_sgr_pixel_wins_over_sgr_and_urxvt() {
+        let (mut term, recorder) = term_with_recorder();
+        // DECSET 1000 + 1006 + 1015 + 1016 — all four encoding modes.
+        apply_decset(&mut term, b"\x1b[?1000h\x1b[?1006h\x1b[?1015h\x1b[?1016h");
+        let click = MouseEvent {
+            button: MouseButton::Left,
+            kind: MouseEventKind::Press,
+            col: 5,
+            line: 10,
+            mods: MouseModifiers::default(),
+            px: Some(80),
+            py: Some(160),
+        };
+        term.handle_mouse_input(&click);
+        let emissions = recorder.emissions();
+        assert_eq!(emissions.len(), 1, "single emission — SGR-Pixel wins");
+        // SGR-Pixel format: pixel coords (81, 161), NOT cell coords.
+        assert_eq!(emissions[0].1, b"\x1b[<0;81;161M");
+    }
+
+    /// Pilot (b): sync output (mode 2026) × mouse orthogonality. Enable
+    /// 2026 BSU + 1000 + 1006; emit click; assert mouse byte stream
+    /// fires in-line (NOT deferred until ESU). Sync gates renderable
+    /// output (frame publication), not PTY input (mouse encoding) —
+    /// the two subsystems are orthogonal per §06 design.
+    #[test]
+    fn sync_output_does_not_defer_mouse_emission() {
+        let (mut term, recorder) = term_with_recorder();
+        // DECSET 2026 (sync output BSU) + 1000 + 1006.
+        apply_decset(&mut term, b"\x1b[?2026h\x1b[?1000h\x1b[?1006h");
+        let click = MouseEvent {
+            button: MouseButton::Left,
+            kind: MouseEventKind::Press,
+            col: 5,
+            line: 5,
+            mods: MouseModifiers::default(),
+            px: None,
+            py: None,
+        };
+        term.handle_mouse_input(&click);
+        let emissions = recorder.emissions();
+        assert_eq!(
+            emissions.len(),
+            1,
+            "mouse emission fires DURING sync — not deferred until ESU"
+        );
+        assert_eq!(emissions[0].0, PtyWriteKind::MouseEvent);
+        assert_eq!(emissions[0].1, b"\x1b[<0;6;6M");
+    }
+
+    /// Mouse-encoding modes (1005/1006/1015/1016) are mutually
+    /// exclusive per xterm spec — `set_mouse_encoding` clears the
+    /// others on DECSET. Pin: enabling 1006 then 1015 leaves only
+    /// URXVT active; the URXVT byte stream wins.
+    #[test]
+    fn mouse_encoding_modes_are_mutually_exclusive_last_wins() {
+        let (mut term, recorder) = term_with_recorder();
+        // DECSET 1000 (click reporting) + 1006 (SGR) + 1015 (URXVT).
+        // 1015 setting clears 1006 per mutual-exclusion contract.
+        apply_decset(&mut term, b"\x1b[?1000h\x1b[?1006h\x1b[?1015h");
+        let click = MouseEvent {
+            button: MouseButton::Left,
+            kind: MouseEventKind::Press,
+            col: 5,
+            line: 10,
+            mods: MouseModifiers::default(),
+            px: None,
+            py: None,
+        };
+        term.handle_mouse_input(&click);
+        let emissions = recorder.emissions();
+        assert_eq!(emissions.len(), 1, "single emission — URXVT wins");
+        // URXVT: \x1b[{32+0};{5+1};{10+1}M = \x1b[32;6;11M
+        assert_eq!(emissions[0].1, b"\x1b[32;6;11M");
+    }
+
     /// X10 mode + Release event encodes to empty buffer (X10 reports
     /// presses only). Term::handle_mouse_input must suppress the
     /// Effect push, not emit an empty PtyEffect::Write.
