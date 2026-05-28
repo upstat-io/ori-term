@@ -306,6 +306,12 @@ impl MuxBackend for EmbeddedMux {
         }
     }
 
+    fn send_focus_event(&mut self, pane_id: PaneId, focused: bool) {
+        if let Some(pane) = self.panes.get(&pane_id) {
+            pane.send_io_command(PaneIoCommand::HandleFocusEvent(focused));
+        }
+    }
+
     fn is_write_stalled(&mut self, pane_id: PaneId) -> bool {
         self.panes.get(&pane_id).is_some_and(Pane::is_write_stalled)
     }

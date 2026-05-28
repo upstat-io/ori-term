@@ -171,6 +171,13 @@ impl<S: EffectSink + 'static> PaneIoThread<S> {
                 // marking dirty per call would defeat the §05 render budget).
                 self.terminal.handle_mouse_input(&event);
             }
+            PaneIoCommand::HandleFocusEvent(focused) => {
+                // Term::handle_focus_event reads TermMode::FOCUS_IN_OUT,
+                // emits Effect::Pty(Write { kind: PtyWriteKind::FocusEvent,
+                // .. }) per Decision 10 Option A apex. Same hot-path-safe
+                // no-grid_dirty contract as HandleMouseInput.
+                self.terminal.handle_focus_event(focused);
+            }
             PaneIoCommand::SetAnswerback(bytes) => {
                 // Intentionally NO grid_dirty: answerback affects only the
                 // ENQ outbound write, no visible state change. Matches the

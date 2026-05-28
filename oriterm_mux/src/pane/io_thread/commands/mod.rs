@@ -105,6 +105,13 @@ pub enum PaneIoCommand {
     /// `encode_mouse_event + write_pane_input` direct path so the kind
     /// discriminator survives the boundary.
     HandleMouseInput(MouseEvent),
+    /// Dispatch a semantic focus change to the IO thread's `Term` so
+    /// emission flows through the Decision-10-Option-A apex
+    /// (`Term::handle_focus_event` reads `TermMode::FOCUS_IN_OUT`,
+    /// emits `Effect::Pty(PtyEffect::Write { kind:
+    /// PtyWriteKind::FocusEvent, .. })` via `effect_sink`).
+    /// `focused: true` → focus-in (CSI I); `false` → focus-out (CSI O).
+    HandleFocusEvent(bool),
     /// Update the ENQ answerback string on the IO thread's `Term`.
     ///
     /// Empty (default) suppresses emission per ECMA-48 §8.3.40 + `WezTerm`
@@ -179,6 +186,9 @@ impl fmt::Debug for PaneIoCommand {
                 .field("col", &event.col)
                 .field("line", &event.line)
                 .finish(),
+            Self::HandleFocusEvent(focused) => {
+                write!(f, "HandleFocusEvent({focused})")
+            }
             Self::SetAnswerback(bytes) => write!(f, "SetAnswerback({} bytes)", bytes.len()),
         }
     }

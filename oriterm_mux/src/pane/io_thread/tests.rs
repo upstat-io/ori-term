@@ -3831,7 +3831,8 @@ fn is_reply_bearing_predicate_matches_reply_field_presence() {
             | PaneIoCommand::Reset
             | PaneIoCommand::Shutdown
             | PaneIoCommand::SetAnswerback(_)
-            | PaneIoCommand::HandleMouseInput(_) => false,
+            | PaneIoCommand::HandleMouseInput(_)
+            | PaneIoCommand::HandleFocusEvent(_) => false,
         }
     }
 

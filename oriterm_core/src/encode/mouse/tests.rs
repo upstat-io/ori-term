@@ -384,6 +384,42 @@ mod term_apex {
         assert_eq!(bytes.as_slice(), b"\x1b[<0;81;161M", "SGR-Pixel bytes");
     }
 
+    // --- Focus event apex tests (§16.7) ---
+
+    /// Pin: Term::handle_focus_event emits Effect::Pty(Write {
+    /// kind: PtyWriteKind::FocusEvent, bytes: b"\x1b[I" | b"\x1b[O" })
+    /// when FOCUS_IN_OUT mode is active. Same Decision 10 Option A
+    /// apex contract as mouse events.
+    #[test]
+    fn handle_focus_event_emits_effect_pty_with_focus_event_kind() {
+        let (mut term, recorder) = term_with_recorder();
+        apply_decset(&mut term, b"\x1b[?1004h"); // DECSET 1004 = FOCUS_IN_OUT
+        term.handle_focus_event(true);
+        term.handle_focus_event(false);
+        let emissions = recorder.emissions();
+        assert_eq!(emissions.len(), 2, "two PTY emissions expected");
+        assert_eq!(emissions[0].0, PtyWriteKind::FocusEvent, "focus-in kind");
+        assert_eq!(emissions[0].1, b"\x1b[I", "focus-in bytes");
+        assert_eq!(emissions[1].0, PtyWriteKind::FocusEvent, "focus-out kind");
+        assert_eq!(emissions[1].1, b"\x1b[O", "focus-out bytes");
+    }
+
+    /// Defense-in-depth gate: when FOCUS_IN_OUT not enabled, no
+    /// emission. Catches a regression where the apex push fires
+    /// unconditionally.
+    #[test]
+    fn handle_focus_event_with_mode_disabled_emits_nothing() {
+        let (term, recorder) = term_with_recorder();
+        // Default mode lacks FOCUS_IN_OUT.
+        assert!(!term.mode().contains(TermMode::FOCUS_IN_OUT));
+        term.handle_focus_event(true);
+        term.handle_focus_event(false);
+        assert!(
+            recorder.emissions().is_empty(),
+            "no FOCUS_IN_OUT must not emit"
+        );
+    }
+
     /// X10 mode + Release event encodes to empty buffer (X10 reports
     /// presses only). Term::handle_mouse_input must suppress the
     /// Effect push, not emit an empty PtyEffect::Write.

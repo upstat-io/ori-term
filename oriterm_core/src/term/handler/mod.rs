@@ -82,6 +82,32 @@ impl<S: EffectSink> Term<S> {
     ///
     /// Decision 10 Option A apex per `plans/spec-conformance/decisions/10-mouse-verification-apex-effect-vs-app-capture.md`
     /// and §16.2.0.
+    /// Handle a semantic focus change from the UI layer (winit
+    /// `WindowEvent::Focused(focused)`).
+    ///
+    /// When `TermMode::FOCUS_IN_OUT` (DECSET 1004) is active, emits
+    /// `Effect::Pty(PtyEffect::Write { kind: PtyWriteKind::FocusEvent,
+    /// bytes: b"\x1b[I" | b"\x1b[O" })` via `effect_sink`. App's
+    /// effect-drain loop carries the bytes to the PTY exactly as
+    /// §16.1.C's DECLRP + §16.2.0.B's mouse-event paths do.
+    ///
+    /// Defense-in-depth: silent no-op when 1004 not enabled. App-side
+    /// `should_emit_focus` predicate already gates; double-gating
+    /// here keeps the apex safe.
+    ///
+    /// Decision 10 Option A apex per `plans/spec-conformance/decisions/10-mouse-verification-apex-effect-vs-app-capture.md`
+    /// + §16.7.
+    pub fn handle_focus_event(&self, focused: bool) {
+        if !self.mode.contains(TermMode::FOCUS_IN_OUT) {
+            return;
+        }
+        let bytes: &[u8] = if focused { b"\x1b[I" } else { b"\x1b[O" };
+        self.effect_sink.push(Effect::Pty(PtyEffect::Write {
+            bytes: bytes.to_vec(),
+            kind: PtyWriteKind::FocusEvent,
+        }));
+    }
+
     pub fn handle_mouse_input(&self, event: &MouseEvent) {
         // Defense-in-depth gate: no-op when no mouse-reporting mode is
         // active. The App layer's `should_report_mouse` predicate also

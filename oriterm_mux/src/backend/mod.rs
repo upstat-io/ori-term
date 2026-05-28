@@ -221,6 +221,25 @@ pub trait MuxBackend {
         }
     }
 
+    /// Dispatch a semantic focus change. Routes through the
+    /// Decision-10-Option-A apex when the backend supports it
+    /// (embedded mode pipes via `PaneIoCommand::HandleFocusEvent` →
+    /// `Term::handle_focus_event` → `Effect::Pty(PtyEffect::Write {
+    /// kind: PtyWriteKind::FocusEvent, .. })`). Default impl falls
+    /// back to encoding-then-`send_input` for non-overriding backends
+    /// (kind discriminator lost on that path).
+    fn send_focus_event(&mut self, pane_id: PaneId, focused: bool) {
+        let Some(mode) = self.pane_mode(pane_id) else {
+            return;
+        };
+        let mode = oriterm_core::TermMode::from_bits_truncate(mode);
+        if !mode.contains(oriterm_core::TermMode::FOCUS_IN_OUT) {
+            return;
+        }
+        let bytes: &[u8] = if focused { b"\x1b[I" } else { b"\x1b[O" };
+        self.send_input(pane_id, bytes);
+    }
+
     /// Whether the PTY writer thread for a pane is blocked on a write.
     /// When `true`, the kernel PTY buffer is full and keyboard input
     /// queued via [`send_input`](Self::send_input) won't reach the child.
