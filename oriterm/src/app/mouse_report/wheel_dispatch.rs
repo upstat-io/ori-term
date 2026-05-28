@@ -65,6 +65,11 @@ pub(super) struct WheelDispatch {
     pub shift_held: bool,
     pub pane_id: Option<PaneId>,
     pub mods: MouseModifiers,
+    /// Logical-pixel cursor coordinates for SGR-Pixel mode 1016
+    /// encoding. `(None, None)` when SGR-Pixel is not active or the
+    /// cursor is outside the grid; the cell encoders ignore them.
+    pub px: Option<u32>,
+    pub py: Option<u32>,
 }
 
 /// Wire a wheel event through the 3-tier dispatcher to the side-effect
@@ -112,6 +117,8 @@ pub(super) fn dispatch_wheel<S: WheelSink>(input: WheelDispatch, sink: &mut S) {
                 col,
                 line,
                 mods: input.mods,
+                px: input.px,
+                py: input.py,
             };
             for _ in 0..lines {
                 sink.write_pane_mouse_input(pane_id, &event);

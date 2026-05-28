@@ -178,6 +178,25 @@ pub fn encode_utf8(buf: &mut [u8], code: u8, col: usize, line: usize) -> usize {
     cursor.position() as usize
 }
 
+/// Encode a mouse event in SGR-Pixel format (DEC private mode 1016).
+///
+/// Format: `\x1b[<{code};{px};{py}{M|m}` — same wire shape as SGR
+/// but coordinates are logical pixels (1-indexed per xterm spec)
+/// rather than cell coords. Returns the number of bytes written.
+///
+/// Per xterm `charproc.c` `kitty mouse.c` reference: SGR-Pixel adds
+/// `1` to the pixel coordinate (Px+1, Py+1) just like SGR adds 1 to
+/// cell coords. Pixel coordinates flow from the App layer with the
+/// `Window::scale_factor()` already applied (logical, not physical).
+pub fn encode_sgr_pixel(buf: &mut [u8], code: u8, px: u32, py: u32, pressed: bool) -> usize {
+    let suffix = if pressed { 'M' } else { 'm' };
+    let mut cursor = Cursor::new(buf);
+    let Ok(()) = write!(cursor, "\x1b[<{code};{};{}{suffix}", px + 1, py + 1) else {
+        return 0;
+    };
+    cursor.position() as usize
+}
+
 /// Encode a mouse event in URXVT format.
 ///
 /// Format: `\x1b[Cb;Cx;CyM` where Cb = 32 + button code,
@@ -227,6 +246,16 @@ pub struct MouseEvent {
     pub line: usize,
     /// Modifier keys held during the event.
     pub mods: MouseModifiers,
+    /// Logical-pixel x coordinate for SGR-Pixel (mode 1016) encoding.
+    /// `None` for non-pixel encoders (the cell encoders ignore the
+    /// field). Pre-computed by the App caller from pinned cell metrics
+    /// (`FontCollection::cell_metrics()` per §05 Golden Lane SSOT) +
+    /// sub-cell offset. Per xterm `charproc.c` SGR-Pixel reports use
+    /// logical (CSS) pixels, NOT physical pixels — App applies
+    /// `Window::scale_factor()` division before populating.
+    pub px: Option<u32>,
+    /// Logical-pixel y coordinate for SGR-Pixel encoding. See `px`.
+    pub py: Option<u32>,
 }
 
 /// Encode a mouse event, selecting the format based on terminal mode.
@@ -249,7 +278,16 @@ pub fn encode_mouse_event(event: &MouseEvent, mode: TermMode) -> MouseReportBuf 
         return buf;
     }
 
-    buf.len = if mode.contains(TermMode::MOUSE_SGR) {
+    // SGR-Pixel (mode 1016) takes precedence over SGR (mode 1006)
+    // per xterm spec when both are set, but only if pixel coords are
+    // present (the App caller did not populate them on cursor-outside-
+    // grid or pre-§16.2.B legacy callers). Falls through to SGR/etc.
+    // when px/py are None.
+    buf.len = if mode.contains(TermMode::MOUSE_SGR_PIXEL)
+        && let (Some(px), Some(py)) = (event.px, event.py)
+    {
+        encode_sgr_pixel(&mut buf.data, code, px, py, pressed)
+    } else if mode.contains(TermMode::MOUSE_SGR) {
         encode_sgr(&mut buf.data, code, event.col, event.line, pressed)
     } else if mode.contains(TermMode::MOUSE_URXVT) {
         encode_urxvt(&mut buf.data, code, event.col, event.line)

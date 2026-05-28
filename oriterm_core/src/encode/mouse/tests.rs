@@ -1,10 +1,13 @@
 //! Tests for the mouse-event encoder.
+//!
+//! Catalog rows: MOUSE-SGR-PIXEL (SGR-Pixel mode 1016 encoder + apex
+//! pin under `term_apex::handle_mouse_input_sgr_pixel_mode_*`).
 
 use crate::TermMode;
 
 use super::{
     MouseButton, MouseEvent, MouseEventKind, MouseModifiers, apply_modifiers, button_code,
-    encode_mouse_event, encode_normal, encode_sgr, encode_utf8,
+    encode_mouse_event, encode_normal, encode_sgr, encode_sgr_pixel, encode_utf8,
 };
 
 fn event(button: MouseButton, kind: MouseEventKind, col: usize, line: usize) -> MouseEvent {
@@ -14,6 +17,8 @@ fn event(button: MouseButton, kind: MouseEventKind, col: usize, line: usize) -> 
         col,
         line,
         mods: MouseModifiers::default(),
+        px: None,
+        py: None,
     }
 }
 
@@ -130,6 +135,77 @@ fn encode_mouse_event_normal_release_uses_code_3() {
     assert_eq!(report.as_bytes(), expected);
 }
 
+// --- SGR-Pixel (mode 1016) encoder tests (§16.2.C) ---
+
+#[test]
+fn encode_sgr_pixel_press_emits_uppercase_m_suffix() {
+    let mut buf = [0u8; 32];
+    let n = encode_sgr_pixel(&mut buf, 0, 320, 480, true);
+    // px+1, py+1 → 321, 481 per xterm 1-indexing.
+    assert_eq!(&buf[..n], b"\x1b[<0;321;481M");
+}
+
+#[test]
+fn encode_sgr_pixel_release_emits_lowercase_m_suffix() {
+    let mut buf = [0u8; 32];
+    let n = encode_sgr_pixel(&mut buf, 0, 320, 480, false);
+    assert_eq!(&buf[..n], b"\x1b[<0;321;481m");
+}
+
+#[test]
+fn encode_sgr_pixel_zero_coords_emit_1_1() {
+    let mut buf = [0u8; 32];
+    let n = encode_sgr_pixel(&mut buf, 0, 0, 0, true);
+    assert_eq!(&buf[..n], b"\x1b[<0;1;1M");
+}
+
+#[test]
+fn encode_mouse_event_sgr_pixel_mode_routes_through_sgr_pixel_when_coords_present() {
+    let ev = MouseEvent {
+        button: MouseButton::Left,
+        kind: MouseEventKind::Press,
+        col: 5,
+        line: 10,
+        mods: MouseModifiers::default(),
+        px: Some(80),
+        py: Some(160),
+    };
+    let mode = TermMode::MOUSE_REPORT_CLICK | TermMode::MOUSE_SGR | TermMode::MOUSE_SGR_PIXEL;
+    let report = encode_mouse_event(&ev, mode);
+    // SGR-Pixel takes precedence over SGR per xterm: pixel coords, not cell.
+    assert_eq!(report.as_bytes(), b"\x1b[<0;81;161M");
+}
+
+#[test]
+fn encode_mouse_event_sgr_pixel_mode_falls_back_to_sgr_when_coords_missing() {
+    // Pre-§16.2.B callers or cursor-outside-grid: px/py are None.
+    // Even with MOUSE_SGR_PIXEL active, the encoder falls through to
+    // SGR (cell coords) so wiring breakage degrades gracefully.
+    let ev = event(MouseButton::Left, MouseEventKind::Press, 5, 10);
+    let mode = TermMode::MOUSE_REPORT_CLICK | TermMode::MOUSE_SGR | TermMode::MOUSE_SGR_PIXEL;
+    let report = encode_mouse_event(&ev, mode);
+    // SGR cell encoding (col+1=6, line+1=11), NOT pixel.
+    assert_eq!(report.as_bytes(), b"\x1b[<0;6;11M");
+}
+
+#[test]
+fn encode_mouse_event_sgr_pixel_alone_works_without_sgr() {
+    // MOUSE_SGR_PIXEL active without MOUSE_SGR: still routes via
+    // SGR-Pixel path (xterm allows mode 1016 standalone).
+    let ev = MouseEvent {
+        button: MouseButton::Left,
+        kind: MouseEventKind::Press,
+        col: 5,
+        line: 10,
+        mods: MouseModifiers::default(),
+        px: Some(80),
+        py: Some(160),
+    };
+    let mode = TermMode::MOUSE_REPORT_CLICK | TermMode::MOUSE_SGR_PIXEL;
+    let report = encode_mouse_event(&ev, mode);
+    assert_eq!(report.as_bytes(), b"\x1b[<0;81;161M");
+}
+
 #[test]
 fn encode_mouse_event_sgr_takes_precedence_over_urxvt() {
     let ev = event(MouseButton::Left, MouseEventKind::Press, 10, 20);
@@ -205,6 +281,8 @@ mod term_apex {
             col,
             line,
             mods: MouseModifiers::default(),
+            px: None,
+            py: None,
         }
     }
 
@@ -273,6 +351,33 @@ mod term_apex {
             recorder.emissions().is_empty(),
             "no-mode-active must not emit"
         );
+    }
+
+    /// Pin: SGR-Pixel mode 1016 + pixel coords present → apex emits
+    /// pixel-encoded bytes through the Decision 10 Effect path.
+    /// Confirms the §16.2.C encoder migration + §16.2.B cell-metric
+    /// plumbing land together correctly.
+    #[test]
+    fn handle_mouse_input_sgr_pixel_mode_emits_pixel_bytes_via_apex() {
+        let (mut term, recorder) = term_with_recorder();
+        // DECSET 1000 (MOUSE_REPORT_CLICK) + DECSET 1016 (MOUSE_SGR_PIXEL).
+        apply_decset(&mut term, b"\x1b[?1000h\x1b[?1016h");
+        let event = MouseEvent {
+            button: MouseButton::Left,
+            kind: MouseEventKind::Press,
+            col: 5,
+            line: 10,
+            mods: MouseModifiers::default(),
+            px: Some(80),
+            py: Some(160),
+        };
+        term.handle_mouse_input(&event);
+        let emissions = recorder.emissions();
+        assert_eq!(emissions.len(), 1, "exactly one PTY emission");
+        let (kind, bytes) = &emissions[0];
+        assert_eq!(*kind, PtyWriteKind::MouseEvent, "kind discriminator");
+        // px+1=81, py+1=161 per xterm 1-indexed pixel coords.
+        assert_eq!(bytes.as_slice(), b"\x1b[<0;81;161M", "SGR-Pixel bytes");
     }
 
     /// X10 mode + Release event encodes to empty buffer (X10 reports

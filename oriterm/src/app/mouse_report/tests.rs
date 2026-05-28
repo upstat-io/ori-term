@@ -385,6 +385,8 @@ fn event(button: MouseButton, kind: MouseEventKind, col: usize, line: usize) -> 
         col,
         line,
         mods: MouseModifiers::default(),
+        px: None,
+        py: None,
     }
 }
 
@@ -401,6 +403,8 @@ fn event_with_mods(
         col,
         line,
         mods,
+        px: None,
+        py: None,
     }
 }
 
@@ -1033,6 +1037,8 @@ fn urxvt_with_shift_modifier() {
             alt: false,
             ctrl: false,
         },
+        px: None,
+        py: None,
     };
     let bytes = encode_mouse_event(&e, mode).as_bytes().to_vec();
     // Button code = 32 + 0 + 4 (shift) = 36, col = 6, line = 4.
@@ -1052,6 +1058,8 @@ fn urxvt_with_ctrl_modifier() {
             alt: false,
             ctrl: true,
         },
+        px: None,
+        py: None,
     };
     let bytes = encode_mouse_event(&e, mode).as_bytes().to_vec();
     // Button code = 32 + 0 + 16 (ctrl) = 48.
@@ -1967,6 +1975,8 @@ fn dispatch_with(
             alt: false,
             ctrl: false,
         },
+        px: None,
+        py: None,
     }
 }
 
@@ -2033,6 +2043,8 @@ fn dispatch_wheel_mouse_report_carries_scroll_up_bytes() {
         col: 7,
         line: 3,
         mods: MouseModifiers::default(),
+        px: None,
+        py: None,
     };
     let expected = encode_mouse_event(&event, mode);
     assert_eq!(sink.writes.len(), 1);
@@ -2053,6 +2065,8 @@ fn dispatch_wheel_mouse_report_carries_scroll_down_bytes() {
         col: 7,
         line: 3,
         mods: MouseModifiers::default(),
+        px: None,
+        py: None,
     };
     let expected = encode_mouse_event(&event, mode);
     assert_eq!(sink.writes[0].1, expected.as_bytes().to_vec());
@@ -2334,6 +2348,8 @@ fn dispatch_wheel_mouse_report_propagates_alt_ctrl_modifiers_to_encoded_bytes() 
         shift_held: false,
         pane_id: Some(pane()),
         mods,
+        px: None,
+        py: None,
     };
     dispatch_wheel(input, &mut sink);
     let event = MouseEvent {
@@ -2342,6 +2358,8 @@ fn dispatch_wheel_mouse_report_propagates_alt_ctrl_modifiers_to_encoded_bytes() 
         col: 11,
         line: 7,
         mods,
+        px: None,
+        py: None,
     };
     let expected = encode_mouse_event(&event, mode);
     assert_eq!(sink.writes.len(), 1);
@@ -2352,6 +2370,8 @@ fn dispatch_wheel_mouse_report_propagates_alt_ctrl_modifiers_to_encoded_bytes() 
         col: 11,
         line: 7,
         mods: MouseModifiers::default(),
+        px: None,
+        py: None,
     };
     let no_mods_expected = encode_mouse_event(&no_mods_event, mode);
     assert_ne!(
@@ -2381,6 +2401,8 @@ fn dispatch_wheel_mouse_report_empty_bytes_skips_writes_but_marks_dirty() {
         shift_held: false,
         pane_id: Some(pane()),
         mods: MouseModifiers::default(),
+        px: None,
+        py: None,
     };
     dispatch_wheel(input, &mut sink);
     assert!(

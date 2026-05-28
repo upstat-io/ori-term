@@ -183,12 +183,15 @@ impl App {
         let Some(pane_id) = self.active_pane_id() else {
             return;
         };
+        let (px, py) = self.mouse_pixel_coords();
         let event = MouseEvent {
             button,
             kind,
             col,
             line,
             mods: self.mouse_modifiers(),
+            px,
+            py,
         };
         self.write_pane_mouse_input(pane_id, &event);
     }
@@ -241,12 +244,15 @@ impl App {
         } else {
             MouseButton::None
         };
+        let (px, py) = self.mouse_pixel_coords();
         let event = MouseEvent {
             button,
             kind: MouseEventKind::Motion,
             col,
             line,
             mods: self.mouse_modifiers(),
+            px,
+            py,
         };
         if let Some(pane_id) = self.active_pane_id() {
             self.write_pane_mouse_input(pane_id, &event);
@@ -273,6 +279,7 @@ impl App {
         let pane_id = self.active_pane_id();
         let mods = self.mouse_modifiers();
         let shift_held = self.modifiers.shift_key();
+        let (px, py) = self.mouse_pixel_coords();
         dispatch_wheel(
             WheelDispatch {
                 delta,
@@ -281,6 +288,8 @@ impl App {
                 shift_held,
                 pane_id,
                 mods,
+                px,
+                py,
             },
             self,
         );
@@ -354,6 +363,45 @@ impl App {
             alt: self.modifiers.alt_key(),
             ctrl: self.modifiers.control_key(),
         }
+    }
+
+    /// Compute logical-pixel coordinates of the current cursor relative
+    /// to the grid origin, for SGR-Pixel (DEC mode 1016) encoding.
+    ///
+    /// Per xterm `charproc.c` + kitty `mouse.c`: SGR-Pixel coordinates
+    /// are in **logical** pixels (CSS pixels) not physical. The cursor
+    /// position from winit is in physical pixels; divide by the
+    /// window's `scale_factor()` to convert. Coordinates are zero-based
+    /// relative to the terminal grid's top-left corner; the encoder
+    /// adds the +1 1-indexing per spec.
+    ///
+    /// Returns `(None, None)` when no focused window context, no
+    /// renderer (= no cell metrics), or cursor is outside the grid.
+    /// Returns `Some` for both when the cursor is inside the grid.
+    fn mouse_pixel_coords(&self) -> (Option<u32>, Option<u32>) {
+        let Some(wctx) = self.focused_ctx() else {
+            return (None, None);
+        };
+        let Some(bounds) = wctx.terminal_grid.bounds() else {
+            return (None, None);
+        };
+        let pos = self.mouse.cursor_pos();
+        let rel_x = pos.x - f64::from(bounds.x());
+        let rel_y = pos.y - f64::from(bounds.y());
+        if rel_x < 0.0
+            || rel_y < 0.0
+            || rel_x >= f64::from(bounds.width())
+            || rel_y >= f64::from(bounds.height())
+        {
+            return (None, None);
+        }
+        let scale = wctx.window.scale_factor().factor();
+        if scale <= 0.0 {
+            return (None, None);
+        }
+        let logical_x = (rel_x / scale) as u32;
+        let logical_y = (rel_y / scale) as u32;
+        (Some(logical_x), Some(logical_y))
     }
 }
 

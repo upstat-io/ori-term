@@ -831,6 +831,8 @@ fn sgr_origin_release_exact_output() {
     // Left click release at origin (0,0) — no modifiers.
     let mode = TermMode::MOUSE_REPORT_CLICK | TermMode::MOUSE_SGR;
     let e = MouseEvent {
+        px: None,
+        py: None,
         button: MouseButton::Left,
         kind: MouseEventKind::Release,
         col: 0,
@@ -854,6 +856,8 @@ fn normal_origin_release_exact_output() {
     // Left click release at origin (0,0).
     let mode = TermMode::MOUSE_REPORT_CLICK;
     let e = MouseEvent {
+        px: None,
+        py: None,
         button: MouseButton::Left,
         kind: MouseEventKind::Release,
         col: 0,
