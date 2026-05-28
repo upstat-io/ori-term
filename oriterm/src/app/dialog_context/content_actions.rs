@@ -44,12 +44,14 @@ impl App {
             } => {
                 self.open_dialog_dropdown(
                     window_id,
-                    id,
-                    options,
-                    selected,
-                    anchor,
-                    searchable,
-                    initial_highlight,
+                    super::overlay_actions::DialogDropdown {
+                        dropdown_id: id,
+                        options,
+                        selected,
+                        anchor,
+                        searchable,
+                        initial_highlight,
+                    },
                 );
             }
             WidgetAction::Toggled { .. }
@@ -127,10 +129,12 @@ impl App {
                 settings_overlay::form_builder::build_settings_dialog(
                     pending_config,
                     &ui_theme,
-                    *active_page,
-                    ctx.scale_factor.factor(),
-                    f64::from(pending_config.window.effective_opacity()),
-                    None,
+                    settings_overlay::form_builder::SettingsDialogParams {
+                        active_page: *active_page,
+                        scale_factor: ctx.scale_factor.factor(),
+                        opacity: f64::from(pending_config.window.effective_opacity()),
+                        update_info: None,
+                    },
                 );
             crate::app::widget_pipeline::deregister_widget_tree(
                 &mut **panel,
@@ -141,12 +145,14 @@ impl App {
             super::rebuild_dialog_page_state(
                 &mut ctx.root,
                 &mut **panel,
-                ctx.renderer.as_ref(),
-                ctx.scale_factor,
-                &ctx.text_cache,
-                &ctx.surface_config,
                 ctx.last_cursor_pos,
-                &ui_theme,
+                super::DialogLayout {
+                    renderer: ctx.renderer.as_ref(),
+                    scale: ctx.scale_factor.factor() as f32,
+                    text_cache: &ctx.text_cache,
+                    surface_config: &ctx.surface_config,
+                    ui_theme: &ui_theme,
+                },
             );
             ctx.cached_layout = None;
 
@@ -267,12 +273,14 @@ impl App {
                     super::rebuild_dialog_page_state(
                         &mut ctx.root,
                         &mut **panel,
-                        ctx.renderer.as_ref(),
-                        ctx.scale_factor,
-                        &ctx.text_cache,
-                        &ctx.surface_config,
                         ctx.last_cursor_pos,
-                        &ui_theme,
+                        super::DialogLayout {
+                            renderer: ctx.renderer.as_ref(),
+                            scale: ctx.scale_factor.factor() as f32,
+                            text_cache: &ctx.text_cache,
+                            surface_config: &ctx.surface_config,
+                            ui_theme: &ui_theme,
+                        },
                     );
                 }
             }

@@ -18,10 +18,6 @@ use crate::pane::MarkCursor;
 /// Commands are processed in FIFO order. Variants with a `reply` field use a
 /// oneshot-style channel for request-response patterns (the IO thread sends
 /// the result back via the provided `Sender`).
-#[allow(
-    dead_code,
-    reason = "variants used incrementally as sections 02-06 are implemented"
-)]
 pub enum PaneIoCommand {
     /// Change viewport scroll offset by `delta` lines.
     ScrollDisplay(isize),

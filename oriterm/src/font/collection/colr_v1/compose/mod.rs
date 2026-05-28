@@ -46,28 +46,35 @@ impl ComposeCtx<'_> {
     }
 }
 
+/// Output RGBA canvas for [`composite_commands`]: the premultiplied byte
+/// buffer plus its dimensions.
+pub(super) struct Canvas<'a> {
+    pub bitmap: &'a mut [u8],
+    pub width: u32,
+    pub height: u32,
+}
+
 /// Composite all paint commands onto the RGBA bitmap using tiny-skia.
 ///
 /// Commands are replayed in order with proper transform stack, clip mask
 /// management via [`tiny_skia::Mask`], and layer compositing via separate
 /// pixmaps.
 #[expect(
-    clippy::too_many_arguments,
-    reason = "module entry point — all parameters are required by the compositor"
-)]
-#[expect(
     clippy::too_many_lines,
     reason = "linear command dispatch — splitting would obscure the sequential flow"
 )]
 pub(super) fn composite_commands(
     commands: &[PaintCommand],
-    bitmap: &mut [u8],
-    width: u32,
-    height: u32,
+    canvas: Canvas<'_>,
     clip: ClipBox,
     fd: &FaceData,
     size_px: f32,
 ) {
+    let Canvas {
+        bitmap,
+        width,
+        height,
+    } = canvas;
     let Some(mut pixmap) = tiny_skia::Pixmap::new(width, height) else {
         return;
     };

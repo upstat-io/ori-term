@@ -17,7 +17,7 @@ pub use cached_measurer::{CachedTextMeasurer, TextShapeCache};
 pub use ui_measurer::UiFontMeasurer;
 // Re-export UI text functions for sibling tests (accessed via super::).
 #[cfg(test)]
-use ui_text::{measure_text, shape_text_string, truncate_with_ellipsis};
+use ui_text::{UiTextSpec, measure_text, shape_text_string, truncate_with_ellipsis};
 
 use oriterm_core::{Cell, CellFlags, RenderableCell};
 use oriterm_ui::text::ShapedGlyph;
@@ -88,6 +88,27 @@ pub struct ShapingRun {
     ///
     /// Critical for mapping rustybuzz cluster indices back to grid positions.
     pub(super) byte_to_col: Vec<usize>,
+}
+
+/// Per-frame rustybuzz faces + the owning font collection.
+///
+/// Bundles the two read-only inputs every shaping helper needs: the
+/// pre-created faces (one per `FaceIdx`) and the collection that owns
+/// features, effective size, and cmap fallback.
+#[derive(Clone, Copy)]
+pub struct ShapeFaces<'a> {
+    /// Pre-created rustybuzz faces, indexed by `FaceIdx`.
+    pub faces: &'a [Option<rustybuzz::Face<'a>>],
+    /// Owning font collection (features, sizes, cmap fallback).
+    pub collection: &'a FontCollection,
+}
+
+/// Output sinks for grid shaping: glyphs + parallel per-glyph column starts.
+pub struct ShapeSink<'a> {
+    /// Appended shaped glyphs.
+    pub output: &'a mut Vec<ShapedGlyph>,
+    /// Parallel array mapping each glyph to its starting grid column.
+    pub col_starts: &'a mut Vec<usize>,
 }
 
 /// Variation Selector 16: forces emoji presentation (U+FE0F).
@@ -235,23 +256,17 @@ fn append_cell_to_run<C: ShapableCell>(run: &mut ShapingRun, cell: &C, col: usiz
 /// allocation. The buffer is returned from each `GlyphBuffer::clear()`.
 /// Pass `buffer_slot` to persist the buffer across frames — the first call
 /// allocates, subsequent calls reuse the existing capacity.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "parallel col_starts output added for unified ShapedGlyph"
-)]
 pub fn shape_prepared_runs(
     runs: &[ShapingRun],
-    faces: &[Option<rustybuzz::Face<'_>>],
-    collection: &FontCollection,
-    output: &mut Vec<ShapedGlyph>,
-    col_starts: &mut Vec<usize>,
+    faces: ShapeFaces<'_>,
+    sink: &mut ShapeSink<'_>,
     buffer_slot: &mut Option<rustybuzz::UnicodeBuffer>,
 ) {
-    output.clear();
-    col_starts.clear();
+    sink.output.clear();
+    sink.col_starts.clear();
     let mut buffer = buffer_slot.take().unwrap_or_default();
     for run in runs {
-        buffer = shape_run(run, faces, collection, output, col_starts, buffer);
+        buffer = shape_run(run, faces, sink, buffer);
     }
     *buffer_slot = Some(buffer);
 }
@@ -260,21 +275,16 @@ pub fn shape_prepared_runs(
 ///
 /// Returns the `UnicodeBuffer` for reuse by the next run. When a face is
 /// missing, the buffer is returned unchanged (unshaped fallback path).
-#[expect(
-    clippy::too_many_arguments,
-    reason = "parallel col_starts output added for unified ShapedGlyph"
-)]
 fn shape_run(
     run: &ShapingRun,
-    faces: &[Option<rustybuzz::Face<'_>>],
-    collection: &FontCollection,
-    output: &mut Vec<ShapedGlyph>,
-    col_starts: &mut Vec<usize>,
+    faces: ShapeFaces<'_>,
+    sink: &mut ShapeSink<'_>,
     mut buffer: rustybuzz::UnicodeBuffer,
 ) -> rustybuzz::UnicodeBuffer {
+    let ShapeFaces { faces, collection } = faces;
     let face_i = run.face_idx.as_usize();
     let Some(face) = faces.get(face_i).and_then(|f| f.as_ref()) else {
-        emit_unshaped_fallback(run, output, col_starts);
+        emit_unshaped_fallback(run, sink.output, sink.col_starts);
         return buffer;
     };
 
@@ -304,7 +314,7 @@ fn shape_run(
         let x_offset = pos.x_offset as f32 * scale;
         let y_offset = pos.y_offset as f32 * scale;
 
-        output.push(ShapedGlyph {
+        sink.output.push(ShapedGlyph {
             glyph_id: info.glyph_id as u16,
             face_index: run.face_idx.0,
             synthetic: run.synthetic.bits(),
@@ -312,7 +322,7 @@ fn shape_run(
             x_offset,
             y_offset,
         });
-        col_starts.push(col);
+        sink.col_starts.push(col);
     }
 
     // Return the cleared buffer for reuse by the next run.

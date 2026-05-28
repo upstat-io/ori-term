@@ -36,7 +36,7 @@ fn harness_wraps_window_root() {
 
 // Event propagation through WindowRoot
 
-/// Events propagate through WindowRoot -> container -> button.
+/// Events propagate through `WindowRoot` -> container -> button.
 #[test]
 fn event_propagation_through_window_root() {
     let button = ButtonWidget::new("nested");

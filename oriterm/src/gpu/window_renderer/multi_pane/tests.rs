@@ -191,7 +191,16 @@ fn multi_pane_prepare_uploads_image_textures() {
 
     renderer.begin_multi_pane_frame(ViewportSize::new(800, 600), bg, 1.0);
     let mut target = PreparedFrame::new(ViewportSize::new(800, 600), bg, 1.0);
-    renderer.prepare_pane_into(&input, &gpu, &pipelines, (0.0, 0.0), 1.0, &mut target);
+    renderer.prepare_pane_into(
+        &input,
+        crate::gpu::PanePrepare {
+            gpu: &gpu,
+            pipelines: &pipelines,
+            origin: (0.0, 0.0),
+            cursor_opacity: 1.0,
+        },
+        &mut target,
+    );
     renderer.finish_multi_pane_frame();
 
     assert!(
@@ -218,7 +227,16 @@ fn multi_pane_frame_counter_advances_once_per_frame_regardless_of_panes() {
     for i in 0..3 {
         let mut target = PreparedFrame::new(ViewportSize::new(800, 600), bg, 1.0);
         let input = input_with_image(ImageId::from_raw(10 + i));
-        renderer.prepare_pane_into(&input, &gpu, &pipelines, (0.0, 0.0), 1.0, &mut target);
+        renderer.prepare_pane_into(
+            &input,
+            crate::gpu::PanePrepare {
+                gpu: &gpu,
+                pipelines: &pipelines,
+                origin: (0.0, 0.0),
+                cursor_opacity: 1.0,
+            },
+            &mut target,
+        );
     }
     renderer.finish_multi_pane_frame();
     let after = renderer.image_texture_cache_for_test().frame_counter();
@@ -250,10 +268,12 @@ fn touch_cached_pane_images_refreshes_last_frame() {
     let mut cached_target = PreparedFrame::new(ViewportSize::new(800, 600), bg, 1.0);
     renderer.prepare_pane_into(
         &input,
-        &gpu,
-        &pipelines,
-        (0.0, 0.0),
-        1.0,
+        crate::gpu::PanePrepare {
+            gpu: &gpu,
+            pipelines: &pipelines,
+            origin: (0.0, 0.0),
+            cursor_opacity: 1.0,
+        },
         &mut cached_target,
     );
     renderer.finish_multi_pane_frame();
@@ -353,10 +373,12 @@ fn touch_cached_pane_images_returns_true_when_all_present() {
     let mut cached_target = PreparedFrame::new(ViewportSize::new(800, 600), bg, 1.0);
     renderer.prepare_pane_into(
         &input,
-        &gpu,
-        &pipelines,
-        (0.0, 0.0),
-        1.0,
+        crate::gpu::PanePrepare {
+            gpu: &gpu,
+            pipelines: &pipelines,
+            origin: (0.0, 0.0),
+            cursor_opacity: 1.0,
+        },
         &mut cached_target,
     );
     cached_target.image_quads_above.push(ImageQuad {
@@ -397,10 +419,12 @@ fn touch_cached_pane_images_negative_pin_eviction_without_touch() {
     let mut cached_target = PreparedFrame::new(ViewportSize::new(800, 600), bg, 1.0);
     renderer.prepare_pane_into(
         &input,
-        &gpu,
-        &pipelines,
-        (0.0, 0.0),
-        1.0,
+        crate::gpu::PanePrepare {
+            gpu: &gpu,
+            pipelines: &pipelines,
+            origin: (0.0, 0.0),
+            cursor_opacity: 1.0,
+        },
         &mut cached_target,
     );
     renderer.finish_multi_pane_frame();

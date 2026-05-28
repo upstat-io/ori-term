@@ -12,11 +12,9 @@ use std::time::Instant;
 
 use winit::window::CursorIcon;
 
-use crate::compositor::layer_animator::LayerAnimator;
-use crate::compositor::layer_tree::LayerTree;
 use crate::controllers::{ControllerRequests, DispatchOutput};
 use crate::geometry::{Point, Rect};
-use crate::input::dispatch::tree::{TreeDispatchResult, dispatch_to_widget_tree};
+use crate::input::dispatch::tree::{DispatchInputs, TreeDispatchResult, dispatch_to_widget_tree};
 use crate::input::{
     HitEntry, InputEvent, MouseEvent, MouseEventKind, WidgetHitTestResult, layout_hit_test_path,
     plan_propagation,
@@ -24,9 +22,24 @@ use crate::input::{
 use crate::layout::LayoutNode;
 use crate::theme::UiTheme;
 use crate::widget_id::WidgetId;
-use crate::widgets::Widget;
+use crate::widgets::{LayoutCtx, Widget};
 
-use super::{OverlayEventResult, OverlayKind, OverlayManager, OverlayResponse};
+use super::{CompositorHandles, OverlayEventResult, OverlayKind, OverlayManager, OverlayResponse};
+
+/// Read-only context for one overlay propagation-pipeline dispatch.
+#[derive(Clone, Copy)]
+pub(in crate::overlay::manager) struct PipelineCtx<'a> {
+    /// The input event being delivered.
+    pub event: &'a InputEvent,
+    /// Screen-space rectangle of the overlay.
+    pub overlay_rect: Rect,
+    /// The overlay's laid-out widget tree, if a layout pass has run.
+    pub layout_node: Option<&'a LayoutNode>,
+    /// Whether the overlay currently holds mouse capture.
+    pub captured: bool,
+    /// Current frame timestamp.
+    pub now: Instant,
+}
 
 /// Runs the propagation pipeline for an overlay widget tree.
 ///
@@ -36,18 +49,17 @@ use super::{OverlayEventResult, OverlayKind, OverlayManager, OverlayResponse};
 ///
 /// Returns `Some((output, source))` if any controller handled the event.
 /// Returns `None` if no widget in the hit path has controllers or none handled.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "pipeline dispatch: widget, event, rect, layout, captured, now"
-)]
 pub(in crate::overlay::manager) fn deliver_via_pipeline(
     widget: &mut dyn Widget,
-    event: &InputEvent,
-    overlay_rect: Rect,
-    layout_node: Option<&LayoutNode>,
-    captured: bool,
-    now: Instant,
+    ctx: PipelineCtx<'_>,
 ) -> Option<(DispatchOutput, WidgetId)> {
+    let PipelineCtx {
+        event,
+        overlay_rect,
+        layout_node,
+        captured,
+        now,
+    } = ctx;
     let root_id = widget.id();
     let root_sense = widget.sense();
 
@@ -114,7 +126,16 @@ pub(in crate::overlay::manager) fn deliver_via_pipeline(
 
     // Walk the widget tree and dispatch to controllers of matching widgets.
     let mut result = TreeDispatchResult::new();
-    dispatch_to_widget_tree(widget, event, &delivery_actions, now, &mut result, None);
+    dispatch_to_widget_tree(
+        widget,
+        DispatchInputs {
+            event,
+            actions: &delivery_actions,
+            now,
+        },
+        &mut result,
+        None,
+    );
 
     if result.handled || !result.actions.is_empty() {
         let output = DispatchOutput {
@@ -131,23 +152,15 @@ pub(in crate::overlay::manager) fn deliver_via_pipeline(
 impl OverlayManager {
     /// Routes a mouse event through the overlay stack.
     ///
-    /// Hit-tests overlays back-to-front (topmost first). The `focused_widget`
-    /// parameter indicates which widget currently has keyboard focus (from the
-    /// app layer's `FocusManager`). See [`OverlayEventResult`] for routing rules.
+    /// Hit-tests overlays back-to-front (topmost first). See
+    /// [`OverlayEventResult`] for routing rules.
     ///
     /// Click-outside dismissals start a fade-out animation via the compositor.
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "event routing: event, measurer, theme, focus, tree, animator, now"
-    )]
     pub fn process_mouse_event(
         &mut self,
         event: &MouseEvent,
-        measurer: &dyn crate::widgets::TextMeasurer,
-        theme: &UiTheme,
-        focused_widget: Option<WidgetId>,
-        tree: &mut LayerTree,
-        animator: &mut LayerAnimator,
+        layout: &LayoutCtx<'_>,
+        compositor: &mut CompositorHandles<'_>,
         now: Instant,
     ) -> OverlayEventResult {
         if self.overlays.is_empty() {
@@ -156,7 +169,7 @@ impl OverlayManager {
 
         // Newly pushed overlays may receive input before the next redraw.
         // Ensure placement is current so hit-testing works immediately.
-        self.layout_overlays(measurer, theme);
+        self.layout_overlays(layout.measurer, layout.theme);
 
         // During capture, route all events to the captured overlay.
         if let Some(cap_idx) = self.captured_overlay {
@@ -165,11 +178,13 @@ impl OverlayManager {
                 let input_event = InputEvent::from_mouse_event(event);
                 let pipeline_result = deliver_via_pipeline(
                     overlay.widget.as_mut(),
-                    &input_event,
-                    overlay.computed_rect,
-                    overlay.layout_node.as_ref(),
-                    true,
-                    now,
+                    PipelineCtx {
+                        event: &input_event,
+                        overlay_rect: overlay.computed_rect,
+                        layout_node: overlay.layout_node.as_ref(),
+                        captured: true,
+                        now,
+                    },
                 );
                 let response = if let Some((output, _source)) = pipeline_result {
                     // Release capture on explicit CLEAR_ACTIVE or implicit mouse-up.
@@ -209,7 +224,7 @@ impl OverlayManager {
                 if topmost.kind == OverlayKind::Popup && !topmost.computed_rect.contains(event.pos)
                 {
                     let topmost_id = topmost.id;
-                    self.begin_dismiss_topmost(tree, animator, now);
+                    self.begin_dismiss_topmost(compositor.tree, compositor.animator, now);
                     return OverlayEventResult::Dismissed(topmost_id);
                 }
             }
@@ -220,9 +235,7 @@ impl OverlayManager {
         // scroll widget from stealing wheel events intended for the popup
         // (e.g. a scrollable dropdown list over the settings panel).
         if matches!(event.kind, MouseEventKind::Scroll(_)) {
-            if let Some(result) =
-                self.route_scroll_to_popup(event, measurer, focused_widget, theme, now)
-            {
+            if let Some(result) = self.route_scroll_to_popup(event, now) {
                 return result;
             }
             // No popup — fall through to normal hit-test for modals.
@@ -231,8 +244,7 @@ impl OverlayManager {
         // Hit test from topmost to bottom.
         for i in (0..self.overlays.len()).rev() {
             if self.overlays[i].computed_rect.contains(event.pos) {
-                let result =
-                    self.deliver_to_overlay(i, event, measurer, focused_widget, theme, now);
+                let result = self.deliver_to_overlay(i, event, now);
                 return result;
             }
         }
@@ -246,7 +258,7 @@ impl OverlayManager {
             OverlayKind::Popup => {
                 // Only dismiss on actual clicks (Down), not moves/scrolls.
                 if matches!(event.kind, MouseEventKind::Down(_)) {
-                    self.begin_dismiss_topmost(tree, animator, now);
+                    self.begin_dismiss_topmost(compositor.tree, compositor.animator, now);
                     OverlayEventResult::Dismissed(topmost_id)
                 } else {
                     OverlayEventResult::PassThrough
@@ -271,40 +283,26 @@ impl OverlayManager {
     /// Returns `Some(result)` if a popup was found and the event was
     /// delivered. Returns `None` if no popup exists (caller should fall
     /// through to normal hit-test routing).
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "internal helper, params mirror caller + now for controller dispatch"
-    )]
     fn route_scroll_to_popup(
         &mut self,
         event: &MouseEvent,
-        measurer: &dyn crate::widgets::TextMeasurer,
-        focused_widget: Option<WidgetId>,
-        theme: &UiTheme,
         now: Instant,
     ) -> Option<OverlayEventResult> {
         let idx = self
             .overlays
             .iter()
             .rposition(|o| o.kind == OverlayKind::Popup)?;
-        Some(self.deliver_to_overlay(idx, event, measurer, focused_widget, theme, now))
+        Some(self.deliver_to_overlay(idx, event, now))
     }
 
     /// Delivers a mouse event to a specific overlay by index.
     ///
     /// Runs the propagation pipeline through the overlay's widget tree.
     /// Handles capture acquisition from controller requests internally.
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "internal helper, params mirror caller"
-    )]
     fn deliver_to_overlay(
         &mut self,
         idx: usize,
         event: &MouseEvent,
-        _measurer: &dyn crate::widgets::TextMeasurer,
-        _focused_widget: Option<WidgetId>,
-        _theme: &UiTheme,
         now: Instant,
     ) -> OverlayEventResult {
         let overlay = &mut self.overlays[idx];
@@ -312,11 +310,13 @@ impl OverlayManager {
         let input_event = InputEvent::from_mouse_event(event);
         let pipeline_result = deliver_via_pipeline(
             overlay.widget.as_mut(),
-            &input_event,
-            overlay.computed_rect,
-            overlay.layout_node.as_ref(),
-            false,
-            now,
+            PipelineCtx {
+                event: &input_event,
+                overlay_rect: overlay.computed_rect,
+                layout_node: overlay.layout_node.as_ref(),
+                captured: false,
+                now,
+            },
         );
         let response = match pipeline_result {
             Some((output, _source)) => {

@@ -9,7 +9,7 @@
 //! reaches full cell width at the center rows. Anti-aliased sub-pixel
 //! rendering on diagonal edges eliminates visible stagger.
 
-use super::Canvas;
+use super::{Canvas, RectF};
 
 /// Draw a powerline symbol onto the canvas. Returns `true` if handled.
 pub(super) fn draw_powerline(canvas: &mut Canvas, ch: char) -> bool {
@@ -111,7 +111,7 @@ fn draw_triangle_left_thin(canvas: &mut Canvas) {
 fn fill_aa_span_right(canvas: &mut Canvas, iy: u32, edge: f32) {
     let full = edge as u32; // floor
     if full > 0 {
-        canvas.fill_rect(0.0, iy as f32, full as f32, 1.0, 255);
+        canvas.fill_rect(RectF::new(0.0, iy as f32, full as f32, 1.0), 255);
     }
     let frac = edge - full as f32;
     if frac > 0.0 {
@@ -127,7 +127,7 @@ fn fill_aa_span_left(canvas: &mut Canvas, iy: u32, w: u32, edge: f32) {
     let full = edge as u32; // floor
     let start = w - full;
     if full > 0 {
-        canvas.fill_rect(start as f32, iy as f32, full as f32, 1.0, 255);
+        canvas.fill_rect(RectF::new(start as f32, iy as f32, full as f32, 1.0), 255);
     }
     let frac = edge - full as f32;
     if frac > 0.0 {
@@ -148,10 +148,12 @@ fn fill_aa_band(canvas: &mut Canvas, iy: u32, start: f32, end: f32) {
     let interior_start = start.ceil() as u32;
     if interior_start < e_floor {
         canvas.fill_rect(
-            interior_start as f32,
-            iy as f32,
-            (e_floor - interior_start) as f32,
-            1.0,
+            RectF::new(
+                interior_start as f32,
+                iy as f32,
+                (e_floor - interior_start) as f32,
+                1.0,
+            ),
             255,
         );
     }

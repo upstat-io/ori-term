@@ -2,8 +2,8 @@
 
 use vte::ansi::{Color, NamedColor, Processor};
 
-use super::{apply_inverse, resolve_bg, resolve_fg};
-use crate::cell::CellFlags;
+use super::{ChannelColors, apply_inverse, resolve_bg, resolve_fg};
+use crate::cell::{CellFlags, OPAQUE_ALPHA};
 use crate::color::{Palette, Rgb};
 use crate::effect::VoidEffectSink;
 use crate::grid::CursorShape;
@@ -118,12 +118,8 @@ fn cursor_hidden_when_show_cursor_off() {
 #[test]
 fn cursor_hidden_when_shape_is_hidden() {
     let mut t = term();
-    // DECSCUSR 0 resets to default, but DECSCUSR with a hidden shape...
-    // Let's use CSI to hide cursor shape. Actually there's no direct CSI
-    // for CursorShape::Hidden. Test the logic by directly checking the
-    // cursor_shape field influence: if cursor_shape is Hidden, visible is false.
-    // Since we can't set Hidden via VTE (it's an internal state), we test
-    // through DECRST 25 which is the standard mechanism.
+    // CursorShape::Hidden is internal state with no direct CSI; exercise the
+    // cursor-not-visible path via DECRST ?25 (hide cursor), the standard mechanism.
     feed(&mut t, b"\x1b[?25l");
     let content = t.renderable_content();
     assert!(!content.cursor.visible);
@@ -354,18 +350,65 @@ fn apply_inverse_swaps_defaults() {
     let palette = Palette::default();
     let fg = palette.foreground();
     let bg = palette.background();
-    let (inv_fg, inv_bg) = apply_inverse(fg, bg, CellFlags::INVERSE);
-    assert_eq!(inv_fg, palette.background()); // fg now shows the old bg
-    assert_eq!(inv_bg, palette.foreground()); // bg now shows the old fg
+    let r = apply_inverse(
+        ChannelColors {
+            fg,
+            bg,
+            fg_alpha: 255,
+            bg_alpha: 255,
+        },
+        CellFlags::INVERSE,
+    );
+    assert_eq!(r.fg, palette.background()); // fg now shows the old bg
+    assert_eq!(r.bg, palette.foreground()); // bg now shows the old fg
 }
 
 #[test]
 fn apply_inverse_noop_without_flag() {
     let fg = Rgb { r: 1, g: 2, b: 3 };
     let bg = Rgb { r: 4, g: 5, b: 6 };
-    let (res_fg, res_bg) = apply_inverse(fg, bg, CellFlags::empty());
-    assert_eq!(res_fg, fg);
-    assert_eq!(res_bg, bg);
+    let r = apply_inverse(
+        ChannelColors {
+            fg,
+            bg,
+            fg_alpha: 64,
+            bg_alpha: 128,
+        },
+        CellFlags::empty(),
+    );
+    assert_eq!(r.fg, fg);
+    assert_eq!(r.bg, bg);
+    assert_eq!(r.fg_alpha, 64);
+    assert_eq!(r.bg_alpha, 128);
+}
+
+/// INVERSE swaps the per-channel alpha alongside the color so SGR mode-6
+/// alpha stays bound to its displayed channel. Reverting the alpha swap in
+/// `apply_inverse` leaves fg_alpha=64/bg_alpha=128 (bound to the wrong
+/// channel after the color swap).
+#[test]
+fn apply_inverse_swaps_per_channel_alpha() {
+    let fg = Rgb { r: 1, g: 2, b: 3 };
+    let bg = Rgb { r: 4, g: 5, b: 6 };
+    let r = apply_inverse(
+        ChannelColors {
+            fg,
+            bg,
+            fg_alpha: 64,
+            bg_alpha: 128,
+        },
+        CellFlags::INVERSE,
+    );
+    assert_eq!(r.fg, bg);
+    assert_eq!(r.bg, fg);
+    assert_eq!(
+        r.fg_alpha, 128,
+        "displayed fg alpha is the cell's bg alpha under INVERSE"
+    );
+    assert_eq!(
+        r.bg_alpha, 64,
+        "displayed bg alpha is the cell's fg alpha under INVERSE"
+    );
 }
 
 // --- Mode snapshot ---
@@ -1750,4 +1793,145 @@ fn decscnm_palette_snapshot_has_swapped_entries() {
         reversed.palette_snapshot[bg_idx], normal_fg,
         "palette bg entry should be original fg"
     );
+}
+
+// --- SGR mode-6 per-channel alpha propagation (§15.2) ---
+
+#[test]
+fn default_cell_alpha_is_opaque_in_renderable() {
+    // Negative/default pin: a cell written without SGR mode-6 alpha must
+    // carry fully-opaque alpha (255) on every channel through extraction.
+    let mut t = term();
+    feed(&mut t, b"X");
+
+    let content = t.renderable_content();
+    let cell = &content.cells[0];
+    assert_eq!(cell.ch, 'X');
+    assert_eq!(cell.fg_alpha, OPAQUE_ALPHA);
+    assert_eq!(cell.bg_alpha, OPAQUE_ALPHA);
+    assert_eq!(cell.underline_alpha, OPAQUE_ALPHA);
+}
+
+#[test]
+fn empty_cells_have_opaque_alpha_in_renderable() {
+    // Every pristine cell defaults to opaque on all channels.
+    let t = term();
+    let content = t.renderable_content();
+    for cell in &content.cells {
+        assert_eq!(cell.fg_alpha, OPAQUE_ALPHA);
+        assert_eq!(cell.bg_alpha, OPAQUE_ALPHA);
+        assert_eq!(cell.underline_alpha, OPAQUE_ALPHA);
+    }
+}
+
+#[test]
+fn sgr_mode6_bg_alpha_preserved_in_renderable() {
+    // Positive pin: SGR 48:6::r:g:b:128 sets bg_alpha=128; the extraction
+    // path must carry it into the RenderableCell. Reverting the snapshot
+    // copy (leaving the default 255) fails this assertion.
+    let mut t = term();
+    feed(&mut t, b"\x1b[48:6::10:20:30:128mX");
+
+    let content = t.renderable_content();
+    let cell = &content.cells[0];
+    assert_eq!(cell.ch, 'X');
+    assert_eq!(
+        cell.bg_alpha, 128,
+        "bg_alpha must survive snapshot extraction"
+    );
+    // The other channels stay opaque — mode-6 only touched the bg channel.
+    assert_eq!(cell.fg_alpha, OPAQUE_ALPHA);
+    assert_eq!(cell.underline_alpha, OPAQUE_ALPHA);
+}
+
+/// INVERSE (SGR 7) swaps fg/bg color at snapshot time; the per-channel alpha
+/// must swap with it. A cell with fg_alpha=64 + bg_alpha=128 + INVERSE yields
+/// a RenderableCell whose displayed fg_alpha=128 (the cell's bg) and bg_alpha=64
+/// (the cell's fg). Reverting the alpha swap in `apply_inverse` leaves the
+/// alpha bound to the pre-swap channel and fails this.
+#[test]
+fn sgr_mode6_inverse_swaps_alpha_with_color_in_renderable() {
+    let mut t = term();
+    // fg = (10,20,30) alpha 64; bg = (40,50,60) alpha 128; then INVERSE.
+    feed(
+        &mut t,
+        b"\x1b[38:6::10:20:30:64m\x1b[48:6::40:50:60:128m\x1b[7mX",
+    );
+
+    let content = t.renderable_content();
+    let cell = &content.cells[0];
+    assert_eq!(cell.ch, 'X');
+    assert_eq!(
+        cell.fg,
+        Rgb {
+            r: 40,
+            g: 50,
+            b: 60
+        },
+        "displayed fg is the cell's bg color"
+    );
+    assert_eq!(
+        cell.bg,
+        Rgb {
+            r: 10,
+            g: 20,
+            b: 30
+        },
+        "displayed bg is the cell's fg color"
+    );
+    assert_eq!(
+        cell.fg_alpha, 128,
+        "displayed fg alpha is the cell's bg alpha"
+    );
+    assert_eq!(
+        cell.bg_alpha, 64,
+        "displayed bg alpha is the cell's fg alpha"
+    );
+}
+
+#[test]
+fn sgr_mode6_fg_alpha_preserved_in_renderable() {
+    let mut t = term();
+    feed(&mut t, b"\x1b[38:6::10:20:30:64mX");
+
+    let content = t.renderable_content();
+    let cell = &content.cells[0];
+    assert_eq!(
+        cell.fg_alpha, 64,
+        "fg_alpha must survive snapshot extraction"
+    );
+    assert_eq!(cell.bg_alpha, OPAQUE_ALPHA);
+    assert_eq!(cell.underline_alpha, OPAQUE_ALPHA);
+}
+
+#[test]
+fn sgr_mode6_underline_alpha_preserved_in_renderable() {
+    let mut t = term();
+    // SGR 4 = underline, then 58:6 underline RGBA with alpha=200.
+    feed(&mut t, b"\x1b[4;58:6::10:20:30:200mX");
+
+    let content = t.renderable_content();
+    let cell = &content.cells[0];
+    assert_eq!(
+        cell.underline_alpha, 200,
+        "underline_alpha must survive snapshot extraction"
+    );
+    assert_eq!(cell.fg_alpha, OPAQUE_ALPHA);
+    assert_eq!(cell.bg_alpha, OPAQUE_ALPHA);
+}
+
+#[test]
+fn sgr_mode6_all_channels_alpha_preserved_in_renderable() {
+    // Matrix: all three channels carry distinct concrete alpha simultaneously.
+    let mut t = term();
+    feed(
+        &mut t,
+        b"\x1b[4;38:6::1:2:3:64;48:6::4:5:6:128;58:6::7:8:9:200mX",
+    );
+
+    let content = t.renderable_content();
+    let cell = &content.cells[0];
+    assert_eq!(cell.fg_alpha, 64);
+    assert_eq!(cell.bg_alpha, 128);
+    assert_eq!(cell.underline_alpha, 200);
 }

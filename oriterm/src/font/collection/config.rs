@@ -7,7 +7,9 @@
 use super::FontCollection;
 use super::face::compute_metrics;
 use super::metadata::{MAX_FONT_SIZE, MIN_FONT_SIZE, face_variations};
-use crate::font::{CellMetrics, FaceIdx, FontError, GlyphFormat, HintingMode, SyntheticFlags};
+use crate::font::{
+    CellMetrics, FaceIdx, FontError, GlyphFormat, HintingMode, StrokeMetrics, SyntheticFlags,
+};
 
 impl FontCollection {
     // ── Configuration setters ──
@@ -101,9 +103,11 @@ impl FontCollection {
             fm.cell_width,
             fm.cell_height,
             fm.baseline,
-            fm.underline_offset,
-            fm.stroke_size,
-            fm.strikeout_offset,
+            StrokeMetrics {
+                underline_offset: fm.underline_offset,
+                stroke_size: fm.stroke_size,
+                strikeout_offset: fm.strikeout_offset,
+            },
         );
         self.cap_height_px = primary_cap;
         self.cache_clear();

@@ -20,10 +20,6 @@ fn pty_err(e: impl std::fmt::Display) -> io::Error {
 /// Wraps the underlying PTY library's exit status so callers don't depend
 /// on `portable_pty` types directly.
 #[derive(Debug, Clone)]
-#[allow(
-    dead_code,
-    reason = "fields read by methods; methods used when UI reports exit status"
-)]
 pub struct ExitStatus {
     /// Process exit code.
     code: u32,
@@ -31,7 +27,6 @@ pub struct ExitStatus {
     signal: Option<String>,
 }
 
-#[allow(dead_code, reason = "used when UI reports exit status")]
 impl ExitStatus {
     /// Returns `true` if the process exited successfully (code 0, no signal).
     pub fn success(&self) -> bool {
@@ -183,10 +178,6 @@ impl PtyHandle {
     }
 
     /// Resize the PTY to new dimensions.
-    #[allow(
-        dead_code,
-        reason = "used for direct resize before control handle is taken"
-    )]
     pub fn resize(&self, rows: u16, cols: u16) -> io::Result<()> {
         let ctl = self
             .control
@@ -210,7 +201,7 @@ impl PtyHandle {
     /// Waits on `exit_notifier` until the watcher populates
     /// `exit_result`. Re-hydrates the stored `Result<_, String>` back
     /// into `io::Result<ExitStatus>`.
-    #[allow(
+    #[expect(
         clippy::needless_pass_by_ref_mut,
         reason = "signature matches PtyLifecycle trait method which takes &mut self"
     )]
@@ -226,8 +217,7 @@ impl PtyHandle {
     }
 
     /// Non-blocking check for child exit.
-    #[allow(dead_code, reason = "used when pane reports child exit to UI")]
-    #[allow(
+    #[expect(
         clippy::needless_pass_by_ref_mut,
         reason = "signature matches PtyLifecycle trait method which takes &mut self"
     )]

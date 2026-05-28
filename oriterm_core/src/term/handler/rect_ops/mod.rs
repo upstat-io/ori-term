@@ -18,19 +18,29 @@ use log::debug;
 
 use crate::cell::CellFlags;
 use crate::effect::sink::EffectSink;
+use crate::grid::RectArea;
 use crate::term::AceMode;
 
 use super::super::Term;
 
 mod checksum;
 
-/// 0-based inclusive rectangle produced by [`Term::clamp_rect`].
+/// Raw, 1-based DEC rectangle parameters as parsed off the wire.
+///
+/// Bundles the four `Pt;Pl;Pb;Pr` coordinates the rectangular-area
+/// handlers receive before [`Term::clamp_rect`] resolves defaults and
+/// clamps them into the active grid extent (producing a 0-based
+/// [`RectArea`]).
 #[derive(Debug, Clone, Copy)]
-struct ClampedRect {
-    top: usize,
-    left: usize,
-    bot: usize,
-    right: usize,
+pub(in crate::term) struct DecRect {
+    /// Top row (1-based; `0` means "default" → row 1).
+    pub top: u16,
+    /// Left column (1-based; `0` means "default" → column 1).
+    pub left: u16,
+    /// Bottom row (1-based; `0` means "default" → last row).
+    pub bot: u16,
+    /// Right column (1-based; `0` means "default" → last column).
+    pub right: u16,
 }
 
 impl<S: EffectSink> Term<S> {
@@ -51,72 +61,35 @@ impl<S: EffectSink> Term<S> {
 
     /// DECCARA (CSI Pt;Pl;Pb;Pr;Pm $ r) — Change Attributes in
     /// Rectangular Area.
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "DECCARA spec: top/left/bot/right + SGR attrs slice — collapsing loses direct param-to-spec mapping"
-    )]
-    pub(super) fn deccara_impl(
-        &mut self,
-        top: u16,
-        left: u16,
-        bot: u16,
-        right: u16,
-        attrs: &[u16],
-    ) {
-        let Some(rect) = self.clamp_rect(top, left, bot, right) else {
+    pub(super) fn deccara_impl(&mut self, rect: DecRect, attrs: &[u16]) {
+        let Some(area) = self.clamp_rect(rect) else {
             return;
         };
         self.selection_dirty = true;
         let mode = self.ace_mode;
-        self.grid_mut()
-            .apply_sgr_rect(rect.top, rect.left, rect.bot, rect.right, attrs, mode);
+        self.grid_mut().apply_sgr_rect(area, attrs, mode);
     }
 
     /// DECRARA (CSI Pt;Pl;Pb;Pr;Pm $ t) — Reverse Attributes in
     /// Rectangular Area.
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "DECRARA spec: top/left/bot/right + SGR attrs slice — collapsing loses direct param-to-spec mapping"
-    )]
-    pub(super) fn decrara_impl(
-        &mut self,
-        top: u16,
-        left: u16,
-        bot: u16,
-        right: u16,
-        attrs: &[u16],
-    ) {
-        let Some(rect) = self.clamp_rect(top, left, bot, right) else {
+    pub(super) fn decrara_impl(&mut self, rect: DecRect, attrs: &[u16]) {
+        let Some(area) = self.clamp_rect(rect) else {
             return;
         };
         self.selection_dirty = true;
         let mode = self.ace_mode;
-        self.grid_mut()
-            .reverse_sgr_rect(rect.top, rect.left, rect.bot, rect.right, attrs, mode);
+        self.grid_mut().reverse_sgr_rect(area, attrs, mode);
     }
 
     /// DECCRA (CSI Pts;Pls;Pbs;Prs;Pps;Ptd;Pld;Ppd $ v) — Copy
     /// Rectangular Area.
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "DECCRA spec encodes 8 distinct coordinates — collapsing loses direct param-to-spec mapping"
-    )]
-    pub(super) fn deccra_impl(
-        &mut self,
-        src_top: u16,
-        src_left: u16,
-        src_bot: u16,
-        src_right: u16,
-        _src_page: u16,
-        dst_top: u16,
-        dst_left: u16,
-        _dst_page: u16,
-    ) {
-        // `ori_term` is single-page (DA1 declares page=1); src/dst
-        // page parameters other than 0/1 are accepted but ignored,
-        // matching xterm `screen.c:2785` (`ParamPair` clamps page
-        // into `[0, 1]`).
-        let Some(src) = self.clamp_rect(src_top, src_left, src_bot, src_right) else {
+    ///
+    /// `ori_term` is single-page (DA1 declares page=1); the trait-level
+    /// `deccra` delegate drops src/dst page parameters before calling
+    /// here, matching xterm `screen.c:2785` (`ParamPair` clamps page
+    /// into `[0, 1]`).
+    pub(super) fn deccra_impl(&mut self, src: DecRect, dst_top: u16, dst_left: u16) {
+        let Some(src_area) = self.clamp_rect(src) else {
             return;
         };
         let dst_top_u = dst_top.max(1) as usize - 1;
@@ -127,8 +100,7 @@ impl<S: EffectSink> Term<S> {
             return;
         }
         self.selection_dirty = true;
-        self.grid_mut()
-            .copy_rect(src.top, src.left, src.bot, src.right, dst_top_u, dst_left_u);
+        self.grid_mut().copy_rect(src_area, dst_top_u, dst_left_u);
         // DECCRA overwrites the destination rectangle with source
         // cells; any placeholder cells in the destination are gone.
         // Reconcile mirrors DECERA/DECFRA/DECSERA below — same pattern
@@ -144,18 +116,14 @@ impl<S: EffectSink> Term<S> {
     /// (e.g. 0x01–0x1F or 0x7F–0x9F) are silently ignored. The fill
     /// cell inherits the cursor's current SGR template plus `DRAWN`
     /// ().
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "DECFRA spec: char + top/left/bot/right — 5 coords + char = 6 distinct param slots"
-    )]
-    pub(super) fn decfra_impl(&mut self, ch: u16, top: u16, left: u16, bot: u16, right: u16) {
+    pub(super) fn decfra_impl(&mut self, ch: u16, rect: DecRect) {
         // Pc=0 falls back to space per xterm's `use_default_value`.
         let fill_code = if ch == 0 { 0x20 } else { ch };
         let valid = (0x20..=0x7E).contains(&fill_code) || (0xA0..=0xFF).contains(&fill_code);
         if !valid {
             return;
         }
-        let Some(rect) = self.clamp_rect(top, left, bot, right) else {
+        let Some(area) = self.clamp_rect(rect) else {
             return;
         };
         self.selection_dirty = true;
@@ -172,7 +140,7 @@ impl<S: EffectSink> Term<S> {
             "cursor template must not carry INTERNAL_CELL_STATE bits at DECFRA dispatch"
         );
         template.ch = char::from_u32(u32::from(fill_code)).unwrap_or(' ');
-        grid.fill_rect(rect.top, rect.left, rect.bot, rect.right, &template);
+        grid.fill_rect(area, &template);
         // Fill replaces every cell in the rectangle; placeholder cells
         // there are gone — reconcile the anchor set.
         self.reconcile_placeholder_anchors_from_grid();
@@ -192,14 +160,13 @@ impl<S: EffectSink> Term<S> {
     /// space, ignoring `CellFlags::PROTECTED` (DECSCA). The BCE bg
     /// source is the cursor template's current background — matching
     /// how `erase_line` / `erase_chars` already behave.
-    pub(super) fn decera_impl(&mut self, top: u16, left: u16, bot: u16, right: u16) {
-        let Some(rect) = self.clamp_rect(top, left, bot, right) else {
+    pub(super) fn decera_impl(&mut self, rect: DecRect) {
+        let Some(area) = self.clamp_rect(rect) else {
             return;
         };
         self.selection_dirty = true;
         let bg = self.grid().cursor().template.bg;
-        self.grid_mut()
-            .erase_rect_all(rect.top, rect.left, rect.bot, rect.right, bg);
+        self.grid_mut().erase_rect_all(area, bg);
         // Erase drops placeholder cells in the rectangle — reconcile.
         self.reconcile_placeholder_anchors_from_grid();
     }
@@ -208,14 +175,13 @@ impl<S: EffectSink> Term<S> {
     ///
     /// Same as DECERA except cells carrying `CellFlags::PROTECTED`
     /// (set by DECSCA Ps=1) are preserved.
-    pub(super) fn decsera_impl(&mut self, top: u16, left: u16, bot: u16, right: u16) {
-        let Some(rect) = self.clamp_rect(top, left, bot, right) else {
+    pub(super) fn decsera_impl(&mut self, rect: DecRect) {
+        let Some(area) = self.clamp_rect(rect) else {
             return;
         };
         self.selection_dirty = true;
         let bg = self.grid().cursor().template.bg;
-        self.grid_mut()
-            .erase_rect_unprotected(rect.top, rect.left, rect.bot, rect.right, bg);
+        self.grid_mut().erase_rect_unprotected(area, bg);
         // Selective erase drops any non-protected placeholder cells —
         // reconcile. Protected placeholder cells survive; their anchors
         // are kept by the reconcile walk.
@@ -228,15 +194,16 @@ impl<S: EffectSink> Term<S> {
     /// Stays a debug-traced stub per the §09A plan scope ("XTREPORTSGR
     /// stays `missing` per plan — it's not in 09A.6 scope"). The DCS
     /// reply format is pinned against xterm patch-336 once implemented
-    /// in a follow-up section. `&mut self` is preserved so the handler
-    /// signature stays stable when the real impl lands.
+    /// in a follow-up section.
     #[expect(
         clippy::unused_self,
-        clippy::needless_pass_by_ref_mut,
-        reason = "stub receiver held stable for the real impl in a follow-up section"
+        reason = "stub — SGR-rect read will consume self once XTREPORTSGR is implemented"
     )]
-    pub(super) fn xtreportsgr_impl(&mut self, top: u16, left: u16, bot: u16, right: u16) {
-        debug!("XTREPORTSGR: rect=({top},{left})-({bot},{right}) (stub — out of §09A.6 scope)");
+    pub(super) fn xtreportsgr_impl(&self, rect: DecRect) {
+        debug!(
+            "XTREPORTSGR: rect=({},{})-({},{}) (stub — out of §09A.6 scope)",
+            rect.top, rect.left, rect.bot, rect.right
+        );
     }
 
     /// Clamp a 1-based DEC rectangle to the active grid extent.
@@ -246,7 +213,7 @@ impl<S: EffectSink> Term<S> {
     /// columns are additionally clamped to `[margin_left, margin_right]`
     /// per xterm `screen.c:3162 validRect`. The clamped result uses
     /// 0-based inclusive coordinates suitable for the grid primitives.
-    fn clamp_rect(&self, top: u16, left: u16, bot: u16, right: u16) -> Option<ClampedRect> {
+    fn clamp_rect(&self, rect: DecRect) -> Option<RectArea> {
         let grid = self.grid();
         let lines = grid.lines();
         let cols = grid.cols();
@@ -256,10 +223,18 @@ impl<S: EffectSink> Term<S> {
 
         // DEC params are 1-based; `0` means "default" which per xterm
         // falls back to 1 for top/left and last row/col for bot/right.
-        let top_1 = if top == 0 { 1 } else { top };
-        let left_1 = if left == 0 { 1 } else { left };
-        let bot_1 = if bot == 0 { lines as u16 } else { bot };
-        let right_1 = if right == 0 { cols as u16 } else { right };
+        let top_1 = if rect.top == 0 { 1 } else { rect.top };
+        let left_1 = if rect.left == 0 { 1 } else { rect.left };
+        let bot_1 = if rect.bot == 0 {
+            lines as u16
+        } else {
+            rect.bot
+        };
+        let right_1 = if rect.right == 0 {
+            cols as u16
+        } else {
+            rect.right
+        };
 
         let top0 = (top_1.min(lines as u16) as usize) - 1;
         let bot0 = (bot_1.min(lines as u16) as usize) - 1;
@@ -276,7 +251,7 @@ impl<S: EffectSink> Term<S> {
         if top0 > bot0 || left0 > right0 {
             return None;
         }
-        Some(ClampedRect {
+        Some(RectArea {
             top: top0,
             left: left0,
             bot: bot0,

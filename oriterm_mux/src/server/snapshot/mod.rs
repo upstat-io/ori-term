@@ -12,7 +12,7 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-use oriterm_core::{CursorShape, ImageId, RenderableContent, RenderableImageData, Rgb};
+use oriterm_core::{ImageId, RenderableContent, RenderableImageData, Rgb};
 
 use crate::image_cache::ImageCache;
 use crate::pane::Pane;
@@ -243,6 +243,9 @@ fn fill_wire_cells_from_renderable(render_buf: &RenderableContent, out: &mut Pan
             bg: rgb_to_wire(cell.bg),
             flags: cell.flags.bits(),
             underline_color: cell.underline_color.map(rgb_to_wire),
+            fg_alpha: cell.fg_alpha,
+            bg_alpha: cell.bg_alpha,
+            underline_alpha: cell.underline_alpha,
             hyperlink_uri: cell.hyperlink_uri.clone(),
             zerowidth: cell.zerowidth.clone(),
         };
@@ -299,7 +302,7 @@ pub(crate) fn fill_wire_metadata_from_renderable(
     out.cursor = WireCursor {
         col: u16::try_from(render_buf.cursor.column.0).unwrap_or(u16::MAX),
         row: u16::try_from(render_buf.cursor.line).unwrap_or(u16::MAX),
-        shape: cursor_shape_to_wire(render_buf.cursor.shape),
+        shape: WireCursorShape::from(render_buf.cursor.shape),
         visible: render_buf.cursor.visible,
     };
 
@@ -367,11 +370,6 @@ fn rgb_to_wire(rgb: Rgb) -> WireRgb {
         g: rgb.g,
         b: rgb.b,
     }
-}
-
-/// Map [`CursorShape`] enum to [`WireCursorShape`].
-fn cursor_shape_to_wire(shape: CursorShape) -> WireCursorShape {
-    WireCursorShape::from(shape)
 }
 
 #[cfg(test)]

@@ -16,9 +16,9 @@ use crate::widget_id::WidgetId;
 use crate::widgets::Widget;
 use crate::widgets::contexts::{DrawCtx, LayoutCtx};
 
+use super::{PrepaintWalkCtx, PrepareCtx, prepare_widget_frame, prepare_widget_tree};
 #[cfg(debug_assertions)]
 use super::{check_cross_phase_consistency, collect_layout_widget_ids};
-use super::{prepare_widget_frame, prepare_widget_tree};
 
 // -- Test helpers --
 
@@ -101,12 +101,14 @@ fn double_visit_in_prepare_widget_tree_panics() {
 
     prepare_widget_tree(
         &mut container,
-        &mut interaction,
-        None,
-        &events,
-        None,
-        None,
-        Instant::now(),
+        PrepareCtx {
+            interaction: &mut interaction,
+            tracker: None,
+            lifecycle_events: &events,
+            anim_event: None,
+            frame_requests: None,
+            now: Instant::now(),
+        },
     );
 }
 
@@ -130,12 +132,14 @@ fn lifecycle_before_widget_added_panics() {
     }];
     prepare_widget_frame(
         &mut widget,
-        &mut interaction,
-        None,
-        &events,
-        None,
-        None,
-        Instant::now(),
+        PrepareCtx {
+            interaction: &mut interaction,
+            tracker: None,
+            lifecycle_events: &events,
+            anim_event: None,
+            frame_requests: None,
+            now: Instant::now(),
+        },
     );
 }
 
@@ -167,12 +171,14 @@ fn register_without_drain_delivers_widget_added_on_next_frame() {
     // before HotChanged by the pre-scan in prepare_widget_frame.
     prepare_widget_frame(
         &mut widget,
-        &mut interaction,
-        None,
-        &events,
-        None,
-        None,
-        Instant::now(),
+        PrepareCtx {
+            interaction: &mut interaction,
+            tracker: None,
+            lifecycle_events: &events,
+            anim_event: None,
+            frame_requests: None,
+            now: Instant::now(),
+        },
     );
 }
 
@@ -193,12 +199,14 @@ fn lifecycle_to_unregistered_widget_panics() {
     }];
     prepare_widget_frame(
         &mut widget,
-        &mut interaction,
-        None,
-        &events,
-        None,
-        None,
-        Instant::now(),
+        PrepareCtx {
+            interaction: &mut interaction,
+            tracker: None,
+            lifecycle_events: &events,
+            anim_event: None,
+            frame_requests: None,
+            now: Instant::now(),
+        },
     );
 }
 
@@ -400,12 +408,14 @@ fn prepaint_widget_tree_calls_prepaint() {
 
     prepaint_widget_tree(
         &mut widget,
-        &bounds_map,
-        None,
-        &theme,
-        Instant::now(),
-        None,
-        None,
+        PrepaintWalkCtx {
+            bounds_map: &bounds_map,
+            interaction: None,
+            theme: &theme,
+            frame_requests: None,
+            tracker: None,
+            now: Instant::now(),
+        },
     );
 
     assert!(widget.prepainted);
@@ -455,12 +465,14 @@ fn prepaint_widget_tree_traverses_children() {
 
     prepaint_widget_tree(
         &mut container,
-        &bounds_map,
-        None,
-        &theme,
-        Instant::now(),
-        None,
-        None,
+        PrepaintWalkCtx {
+            bounds_map: &bounds_map,
+            interaction: None,
+            theme: &theme,
+            frame_requests: None,
+            tracker: None,
+            now: Instant::now(),
+        },
     );
 
     assert!(container.child.prepainted);
@@ -512,12 +524,14 @@ fn prepaint_widget_tree_passes_correct_bounds() {
 
     prepaint_widget_tree(
         &mut widget,
-        &bounds_map,
-        None,
-        &theme,
-        Instant::now(),
-        None,
-        None,
+        PrepaintWalkCtx {
+            bounds_map: &bounds_map,
+            interaction: None,
+            theme: &theme,
+            frame_requests: None,
+            tracker: None,
+            now: Instant::now(),
+        },
     );
 
     assert_eq!(widget.captured_bounds, Some(expected));
@@ -759,12 +773,14 @@ fn selective_prepare_skips_clean_subtree() {
     // Run prepare with selective walks enabled.
     prepare_widget_tree(
         &mut container,
-        &mut interaction,
-        Some(&mut tracker),
-        &[],
-        None,
-        None,
-        Instant::now(),
+        PrepareCtx {
+            interaction: &mut interaction,
+            tracker: Some(&mut tracker),
+            lifecycle_events: &[],
+            anim_event: None,
+            frame_requests: None,
+            now: Instant::now(),
+        },
     );
 
     // Run prepaint with selective walks enabled.
@@ -772,12 +788,14 @@ fn selective_prepare_skips_clean_subtree() {
     let theme = crate::theme::UiTheme::dark();
     super::prepaint_widget_tree(
         &mut container,
-        &bounds,
-        None,
-        &theme,
-        Instant::now(),
-        None,
-        Some(&tracker),
+        PrepaintWalkCtx {
+            bounds_map: &bounds,
+            interaction: None,
+            theme: &theme,
+            frame_requests: None,
+            tracker: Some(&tracker),
+            now: Instant::now(),
+        },
     );
 
     // Child A should have been visited (its subtree is dirty).
@@ -885,24 +903,28 @@ fn full_invalidation_visits_all_widgets() {
 
     prepare_widget_tree(
         &mut container,
-        &mut interaction,
-        Some(&mut tracker),
-        &[],
-        None,
-        None,
-        Instant::now(),
+        PrepareCtx {
+            interaction: &mut interaction,
+            tracker: Some(&mut tracker),
+            lifecycle_events: &[],
+            anim_event: None,
+            frame_requests: None,
+            now: Instant::now(),
+        },
     );
 
     let bounds = HashMap::new();
     let theme = crate::theme::UiTheme::dark();
     super::prepaint_widget_tree(
         &mut container,
-        &bounds,
-        None,
-        &theme,
-        Instant::now(),
-        None,
-        Some(&tracker),
+        PrepaintWalkCtx {
+            bounds_map: &bounds,
+            interaction: None,
+            theme: &theme,
+            frame_requests: None,
+            tracker: Some(&tracker),
+            now: Instant::now(),
+        },
     );
 
     // Both widgets should be visited despite only A being marked.
@@ -1005,12 +1027,14 @@ fn selective_walk_delivers_lifecycle_events_to_clean_subtree() {
     let added_events = interaction.drain_events();
     prepare_widget_tree(
         &mut container,
-        &mut interaction,
-        None,
-        &added_events,
-        None,
-        None,
-        Instant::now(),
+        PrepareCtx {
+            interaction: &mut interaction,
+            tracker: None,
+            lifecycle_events: &added_events,
+            anim_event: None,
+            frame_requests: None,
+            now: Instant::now(),
+        },
     );
 
     let mut parent_map = HashMap::new();
@@ -1034,12 +1058,14 @@ fn selective_walk_delivers_lifecycle_events_to_clean_subtree() {
     // event targeting it), so B's subtree is visited despite being "clean".
     prepare_widget_tree(
         &mut container,
-        &mut interaction,
-        Some(&mut tracker),
-        &lifecycle_events,
-        None,
-        None,
-        Instant::now(),
+        PrepareCtx {
+            interaction: &mut interaction,
+            tracker: Some(&mut tracker),
+            lifecycle_events: &lifecycle_events,
+            anim_event: None,
+            frame_requests: None,
+            now: Instant::now(),
+        },
     );
 
     assert!(
@@ -1111,7 +1137,17 @@ fn selective_prepare_identical_to_full_for_dirty_widgets() {
 
         // Deliver WidgetAdded events so debug assertions pass.
         let added = int.drain_events();
-        prepare_widget_tree(tree, int, None, &added, None, None, Instant::now());
+        prepare_widget_tree(
+            tree,
+            PrepareCtx {
+                interaction: int,
+                tracker: None,
+                lifecycle_events: &added,
+                anim_event: None,
+                frame_requests: None,
+                now: Instant::now(),
+            },
+        );
 
         let mut parent_map = HashMap::new();
         parent_map.insert(aid, cid);
@@ -1134,12 +1170,14 @@ fn selective_prepare_identical_to_full_for_dirty_widgets() {
 
     prepare_widget_tree(
         &mut tree1,
-        &mut int1,
-        Some(&mut tracker),
-        &events1,
-        None,
-        None,
-        Instant::now(),
+        PrepareCtx {
+            interaction: &mut int1,
+            tracker: Some(&mut tracker),
+            lifecycle_events: &events1,
+            anim_event: None,
+            frame_requests: None,
+            now: Instant::now(),
+        },
     );
 
     // Setup 2: full prepare (no tracker).
@@ -1150,12 +1188,14 @@ fn selective_prepare_identical_to_full_for_dirty_widgets() {
     let events2 = int2.drain_events();
     prepare_widget_tree(
         &mut tree2,
-        &mut int2,
-        None,
-        &events2,
-        None,
-        None,
-        Instant::now(),
+        PrepareCtx {
+            interaction: &mut int2,
+            tracker: None,
+            lifecycle_events: &events2,
+            anim_event: None,
+            frame_requests: None,
+            now: Instant::now(),
+        },
     );
 
     // The dirty widget (A) should have identical interaction state in both.

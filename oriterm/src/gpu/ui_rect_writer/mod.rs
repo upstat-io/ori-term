@@ -28,6 +28,36 @@ const OFF_BORDER_LEFT: usize = 128; //  vec4<f32> — left border RGBA linear
 // Compile-time check: last field end == declared size.
 const _: () = assert!(OFF_BORDER_LEFT + 16 == UI_RECT_INSTANCE_SIZE);
 
+/// Per-side border styling for a UI rect instance.
+///
+/// `widths` is `[top, right, bottom, left]` and `colors` is `[top, right,
+/// bottom, left]` (each `[r, g, b, a]` linear), both in physical pixels.
+/// `corner_radii` is `[tl, tr, br, bl]` in physical pixels.
+#[derive(Clone, Copy)]
+pub struct UiRectBorder {
+    pub widths: [f32; 4],
+    pub corner_radii: [f32; 4],
+    pub colors: [[f32; 4]; 4],
+}
+
+impl UiRectBorder {
+    /// No border: zero widths, zero radii, transparent colors.
+    pub const NONE: Self = Self {
+        widths: [0.0; 4],
+        corner_radii: [0.0; 4],
+        colors: [[0.0; 4]; 4],
+    };
+
+    /// Border with no edges but the given corner radii (rounded fill).
+    pub const fn rounded(corner_radii: [f32; 4]) -> Self {
+        Self {
+            widths: [0.0; 4],
+            corner_radii,
+            colors: [[0.0; 4]; 4],
+        }
+    }
+}
+
 /// CPU-side accumulator for UI rect GPU instance records.
 ///
 /// Maintains a `Vec<u8>` that grows as instances are pushed. [`clear`](Self::clear)
@@ -84,23 +114,20 @@ impl UiRectWriter {
 
     /// Push a UI rect instance with full per-side border data.
     ///
-    /// `border_widths` is `[top, right, bottom, left]` in physical pixels.
-    /// `corner_radii` is `[tl, tr, br, bl]` in physical pixels.
-    /// `border_colors` is `[top, right, bottom, left]` each as `[r, g, b, a]` linear.
-    /// `clip` is `[x, y, w, h]` in physical pixels.
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "UI rect instance: rect, fill, border widths, corner radii, border colors, clip"
-    )]
+    /// `clip` is `[x, y, w, h]` in physical pixels. Border widths, corner
+    /// radii, and per-side colors are carried by [`UiRectBorder`].
     pub fn push_ui_rect(
         &mut self,
         rect: ScreenRect,
         fill: [f32; 4],
-        border_widths: [f32; 4],
-        corner_radii: [f32; 4],
-        border_colors: [[f32; 4]; 4],
+        border: UiRectBorder,
         clip: [f32; 4],
     ) {
+        let UiRectBorder {
+            widths: border_widths,
+            corner_radii,
+            colors: border_colors,
+        } = border;
         let start = self.buf.len();
         self.buf.resize(start + UI_RECT_INSTANCE_SIZE, 0);
         let rec = &mut self.buf[start..];

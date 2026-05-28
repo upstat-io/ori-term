@@ -2,14 +2,13 @@
 
 use std::fmt::Write as _;
 
-use oriterm_ui::draw::Scene;
 use oriterm_ui::geometry::Point;
 use oriterm_ui::widgets::status_badge::StatusBadge;
 
 use super::App;
-use crate::font::{CachedTextMeasurer, TextShapeCache};
+use super::OverlayBadgeDraw;
+use crate::font::CachedTextMeasurer;
 use crate::gpu::FrameSearch;
-use crate::gpu::state::GpuState;
 
 impl App {
     /// Draw the search bar overlay above the grid area.
@@ -17,21 +16,20 @@ impl App {
     /// Shows the current query and match count ("N of M") as a floating
     /// [`StatusBadge`]. Coordinates are in logical pixels; `scale` converts
     /// to physical pixels for the GPU pipeline.
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "search bar drawing: search state, renderer, scene, buffer, viewport, caption, scale, GPU, cache"
-    )]
     pub(in crate::app::redraw) fn draw_search_bar(
         search: &FrameSearch,
-        renderer: &mut crate::gpu::WindowRenderer,
-        scene: &mut Scene,
-        buf: &mut String,
         logical_width: f32,
         caption_h: f32,
-        scale: f32,
-        gpu: &GpuState,
-        text_cache: &TextShapeCache,
+        draw: OverlayBadgeDraw<'_>,
     ) {
+        let OverlayBadgeDraw {
+            renderer,
+            scene,
+            buf,
+            gpu,
+            text_cache,
+            scale,
+        } = draw;
         buf.clear();
         let query = search.query();
         if query.is_empty() {

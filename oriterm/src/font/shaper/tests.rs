@@ -4,10 +4,13 @@ use std::sync::Arc;
 
 use oriterm_core::{Cell, CellExtra, CellFlags};
 
-use super::{build_col_glyph_map, prepare_line, shape_prepared_runs};
+use super::{
+    ShapeFaces, ShapeSink, UiTextSpec, build_col_glyph_map, prepare_line, shape_prepared_runs,
+};
 use crate::font::collection::FontCollection;
 use crate::font::{
-    FaceIdx, FontSet, GlyphFormat, GlyphStyle, HintingMode, SyntheticFlags, subpx_bin,
+    FaceIdx, FontRasterConfig, FontSet, GlyphFormat, GlyphStyle, HintingMode, SyntheticFlags,
+    subpx_bin,
 };
 
 // ── Helpers ──
@@ -29,10 +32,12 @@ fn test_collection() -> FontCollection {
         font_set,
         12.0,
         96.0,
-        GlyphFormat::Alpha,
-        400,
-        550,
-        HintingMode::Full,
+        FontRasterConfig {
+            format: GlyphFormat::Alpha,
+            weight: 400,
+            bold_weight: 550,
+            hinting: HintingMode::Full,
+        },
     )
     .expect("collection must build")
 }
@@ -108,6 +113,7 @@ fn prepare_line_combining_mark() {
         underline_color: None,
         hyperlink: None,
         zerowidth: vec!['\u{0301}'],
+        ..Default::default()
     }));
 
     let mut runs = Vec::new();
@@ -202,6 +208,7 @@ fn prepare_line_vs16_in_zerowidth() {
                 underline_color: None,
                 hyperlink: None,
                 zerowidth: vec!['\u{FE0F}'], // VS16
+                ..Default::default()
             })),
             ..Cell::default()
         },
@@ -235,6 +242,7 @@ fn prepare_line_vs16_may_use_different_face() {
             underline_color: None,
             hyperlink: None,
             zerowidth: vec!['\u{FE0F}'],
+            ..Default::default()
         })),
         ..Cell::default()
     }];
@@ -249,21 +257,28 @@ fn prepare_line_vs16_may_use_different_face() {
     let mut runs_plain = Vec::new();
     prepare_line(&without_vs16, without_vs16.len(), &fc, &mut runs_plain);
 
-    // Both should produce runs (the character exists in some font).
-    // The face_idx may differ if emoji fallback is available.
-    // Key invariant: no panics, valid runs produced.
-    if !runs_vs16.is_empty() && !runs_plain.is_empty() {
-        // If a color emoji font is in the fallback chain, VS16 version
-        // should use a fallback face (emoji font) while plain may use
-        // the primary font.
-        // This is a soft check — depends on system fonts.
-        let vs16_face = runs_vs16[0].face_idx;
-        let plain_face = runs_plain[0].face_idx;
-        // Log for diagnostic visibility; both outcomes are valid.
-        if vs16_face != plain_face {
-            // VS16 triggered emoji fallback — expected behavior.
-        }
-    }
+    // Deterministic invariant (independent of which fallback fonts the test
+    // collection carries): the heart resolves to at least one run on BOTH the
+    // VS16 and the plain path — prepare_line never drops the base character.
+    assert!(
+        !runs_vs16.is_empty(),
+        "VS16 heart must resolve to at least one run"
+    );
+    assert!(
+        !runs_plain.is_empty(),
+        "plain heart must resolve to at least one run"
+    );
+    // The base heart codepoint must survive into the first run on BOTH paths
+    // — prepare_line must not drop it whether or not VS16 is present. (Which
+    // face VS16 selects is system-font dependent and intentionally NOT pinned.)
+    assert!(
+        runs_vs16[0].text.contains('\u{2764}'),
+        "VS16 run must preserve the heart codepoint"
+    );
+    assert!(
+        runs_plain[0].text.contains('\u{2764}'),
+        "plain run must preserve the heart codepoint"
+    );
 }
 
 // ── Phase 2: Shaping ──
@@ -278,7 +293,18 @@ fn shape_hello_produces_five_glyphs() {
     let faces = fc.create_shaping_faces();
     let mut output = Vec::new();
     let mut col_starts = Vec::new();
-    shape_prepared_runs(&runs, &faces, &fc, &mut output, &mut col_starts, &mut None);
+    shape_prepared_runs(
+        &runs,
+        ShapeFaces {
+            faces: &faces,
+            collection: &fc,
+        },
+        &mut ShapeSink {
+            output: &mut output,
+            col_starts: &mut col_starts,
+        },
+        &mut None,
+    );
 
     assert_eq!(output.len(), 5, "5 glyphs for 'Hello'");
     for g in &output {
@@ -296,7 +322,18 @@ fn shape_preserves_column_positions() {
     let faces = fc.create_shaping_faces();
     let mut output = Vec::new();
     let mut col_starts = Vec::new();
-    shape_prepared_runs(&runs, &faces, &fc, &mut output, &mut col_starts, &mut None);
+    shape_prepared_runs(
+        &runs,
+        ShapeFaces {
+            faces: &faces,
+            collection: &fc,
+        },
+        &mut ShapeSink {
+            output: &mut output,
+            col_starts: &mut col_starts,
+        },
+        &mut None,
+    );
 
     // "A" and "B" merge into one run "AB" with byte_to_col=[0, 2].
     assert_eq!(output.len(), 2);
@@ -310,7 +347,18 @@ fn shape_empty_runs_produces_no_output() {
     let faces = fc.create_shaping_faces();
     let mut output = Vec::new();
     let mut col_starts = Vec::new();
-    shape_prepared_runs(&[], &faces, &fc, &mut output, &mut col_starts, &mut None);
+    shape_prepared_runs(
+        &[],
+        ShapeFaces {
+            faces: &faces,
+            collection: &fc,
+        },
+        &mut ShapeSink {
+            output: &mut output,
+            col_starts: &mut col_starts,
+        },
+        &mut None,
+    );
 
     assert!(output.is_empty());
 }
@@ -325,13 +373,35 @@ fn shape_reuses_scratch_buffer() {
 
     let cells = make_cells("AB");
     prepare_line(&cells, cells.len(), &fc, &mut runs);
-    shape_prepared_runs(&runs, &faces, &fc, &mut output, &mut col_starts, &mut None);
+    shape_prepared_runs(
+        &runs,
+        ShapeFaces {
+            faces: &faces,
+            collection: &fc,
+        },
+        &mut ShapeSink {
+            output: &mut output,
+            col_starts: &mut col_starts,
+        },
+        &mut None,
+    );
     assert_eq!(output.len(), 2);
 
     // Re-shape a different line — output should be replaced.
     let cells2 = make_cells("X");
     prepare_line(&cells2, cells2.len(), &fc, &mut runs);
-    shape_prepared_runs(&runs, &faces, &fc, &mut output, &mut col_starts, &mut None);
+    shape_prepared_runs(
+        &runs,
+        ShapeFaces {
+            faces: &faces,
+            collection: &fc,
+        },
+        &mut ShapeSink {
+            output: &mut output,
+            col_starts: &mut col_starts,
+        },
+        &mut None,
+    );
     assert_eq!(output.len(), 1, "output should be cleared on re-shape");
 }
 
@@ -360,7 +430,18 @@ fn shape_wide_char_col_span_two() {
     let faces = fc.create_shaping_faces();
     let mut output = Vec::new();
     let mut col_starts = Vec::new();
-    shape_prepared_runs(&runs, &faces, &fc, &mut output, &mut col_starts, &mut None);
+    shape_prepared_runs(
+        &runs,
+        ShapeFaces {
+            faces: &faces,
+            collection: &fc,
+        },
+        &mut ShapeSink {
+            output: &mut output,
+            col_starts: &mut col_starts,
+        },
+        &mut None,
+    );
 
     // Should produce exactly 1 glyph for the wide character.
     assert_eq!(output.len(), 1, "wide char should produce 1 glyph");
@@ -398,7 +479,18 @@ fn shape_cjk_uses_fallback_face() {
     let faces = fc.create_shaping_faces();
     let mut output = Vec::new();
     let mut col_starts = Vec::new();
-    shape_prepared_runs(&runs, &faces, &fc, &mut output, &mut col_starts, &mut None);
+    shape_prepared_runs(
+        &runs,
+        ShapeFaces {
+            faces: &faces,
+            collection: &fc,
+        },
+        &mut ShapeSink {
+            output: &mut output,
+            col_starts: &mut col_starts,
+        },
+        &mut None,
+    );
 
     assert_eq!(output.len(), 1);
 
@@ -444,7 +536,18 @@ fn shape_ascii_cjk_ascii_column_positions() {
     let faces = fc.create_shaping_faces();
     let mut output = Vec::new();
     let mut col_starts = Vec::new();
-    shape_prepared_runs(&runs, &faces, &fc, &mut output, &mut col_starts, &mut None);
+    shape_prepared_runs(
+        &runs,
+        ShapeFaces {
+            faces: &faces,
+            collection: &fc,
+        },
+        &mut ShapeSink {
+            output: &mut output,
+            col_starts: &mut col_starts,
+        },
+        &mut None,
+    );
 
     assert_eq!(output.len(), 3, "'A好B' should produce 3 glyphs");
     assert_eq!(col_starts[0], 0, "'A' at column 0");
@@ -498,7 +601,18 @@ fn shape_consecutive_cjk_column_positions() {
     let faces = fc.create_shaping_faces();
     let mut output = Vec::new();
     let mut col_starts = Vec::new();
-    shape_prepared_runs(&runs, &faces, &fc, &mut output, &mut col_starts, &mut None);
+    shape_prepared_runs(
+        &runs,
+        ShapeFaces {
+            faces: &faces,
+            collection: &fc,
+        },
+        &mut ShapeSink {
+            output: &mut output,
+            col_starts: &mut col_starts,
+        },
+        &mut None,
+    );
 
     assert_eq!(output.len(), 2, "two CJK chars should produce 2 glyphs");
     assert_eq!(col_starts[0], 0, "first CJK at col 0");
@@ -540,7 +654,18 @@ fn shape_ideographic_space_wide() {
     let faces = fc.create_shaping_faces();
     let mut output = Vec::new();
     let mut col_starts = Vec::new();
-    shape_prepared_runs(&runs, &faces, &fc, &mut output, &mut col_starts, &mut None);
+    shape_prepared_runs(
+        &runs,
+        ShapeFaces {
+            faces: &faces,
+            collection: &fc,
+        },
+        &mut ShapeSink {
+            output: &mut output,
+            col_starts: &mut col_starts,
+        },
+        &mut None,
+    );
 
     assert_eq!(output.len(), 1, "ideographic space should produce 1 glyph");
 }
@@ -569,7 +694,18 @@ fn shape_wide_char_notdef_graceful() {
     let faces = fc.create_shaping_faces();
     let mut output = Vec::new();
     let mut col_starts = Vec::new();
-    shape_prepared_runs(&runs, &faces, &fc, &mut output, &mut col_starts, &mut None);
+    shape_prepared_runs(
+        &runs,
+        ShapeFaces {
+            faces: &faces,
+            collection: &fc,
+        },
+        &mut ShapeSink {
+            output: &mut output,
+            col_starts: &mut col_starts,
+        },
+        &mut None,
+    );
 
     // Regardless of font coverage: valid output, no panic.
     assert_eq!(output.len(), 1, "should produce exactly 1 glyph");
@@ -604,7 +740,18 @@ fn col_glyph_map_wide_char_pipeline() {
     let faces = fc.create_shaping_faces();
     let mut output = Vec::new();
     let mut col_starts = Vec::new();
-    shape_prepared_runs(&runs, &faces, &fc, &mut output, &mut col_starts, &mut None);
+    shape_prepared_runs(
+        &runs,
+        ShapeFaces {
+            faces: &faces,
+            collection: &fc,
+        },
+        &mut ShapeSink {
+            output: &mut output,
+            col_starts: &mut col_starts,
+        },
+        &mut None,
+    );
 
     let mut map = Vec::new();
     build_col_glyph_map(&col_starts, cells.len(), &mut map);
@@ -630,7 +777,18 @@ fn col_glyph_map_simple_ascii() {
     let faces = fc.create_shaping_faces();
     let mut output = Vec::new();
     let mut col_starts = Vec::new();
-    shape_prepared_runs(&runs, &faces, &fc, &mut output, &mut col_starts, &mut None);
+    shape_prepared_runs(
+        &runs,
+        ShapeFaces {
+            faces: &faces,
+            collection: &fc,
+        },
+        &mut ShapeSink {
+            output: &mut output,
+            col_starts: &mut col_starts,
+        },
+        &mut None,
+    );
 
     let mut map = Vec::new();
     build_col_glyph_map(&col_starts, cells.len(), &mut map);
@@ -652,7 +810,18 @@ fn col_glyph_map_with_spaces() {
     let faces = fc.create_shaping_faces();
     let mut output = Vec::new();
     let mut col_starts = Vec::new();
-    shape_prepared_runs(&runs, &faces, &fc, &mut output, &mut col_starts, &mut None);
+    shape_prepared_runs(
+        &runs,
+        ShapeFaces {
+            faces: &faces,
+            collection: &fc,
+        },
+        &mut ShapeSink {
+            output: &mut output,
+            col_starts: &mut col_starts,
+        },
+        &mut None,
+    );
 
     let mut map = Vec::new();
     build_col_glyph_map(&col_starts, cells.len(), &mut map);
@@ -729,11 +898,15 @@ fn ui_shape_hello_produces_five_glyphs() {
     let mut output = Vec::new();
     super::shape_text_string(
         "Hello",
-        GlyphStyle::Regular,
-        SyntheticFlags::NONE,
-        400,
-        &faces,
-        &fc,
+        UiTextSpec {
+            glyph_style: GlyphStyle::Regular,
+            synthetic: SyntheticFlags::NONE,
+            requested_weight: 400,
+        },
+        ShapeFaces {
+            faces: &faces,
+            collection: &fc,
+        },
         &mut output,
         &mut None,
     );
@@ -751,11 +924,15 @@ fn ui_shape_sequential_advances() {
     let mut output = Vec::new();
     super::shape_text_string(
         "Hello",
-        GlyphStyle::Regular,
-        SyntheticFlags::NONE,
-        400,
-        &faces,
-        &fc,
+        UiTextSpec {
+            glyph_style: GlyphStyle::Regular,
+            synthetic: SyntheticFlags::NONE,
+            requested_weight: 400,
+        },
+        ShapeFaces {
+            faces: &faces,
+            collection: &fc,
+        },
         &mut output,
         &mut None,
     );
@@ -778,11 +955,15 @@ fn ui_shape_space_has_positive_advance() {
     let mut output = Vec::new();
     super::shape_text_string(
         "A B",
-        GlyphStyle::Regular,
-        SyntheticFlags::NONE,
-        400,
-        &faces,
-        &fc,
+        UiTextSpec {
+            glyph_style: GlyphStyle::Regular,
+            synthetic: SyntheticFlags::NONE,
+            requested_weight: 400,
+        },
+        ShapeFaces {
+            faces: &faces,
+            collection: &fc,
+        },
         &mut output,
         &mut None,
     );
@@ -803,11 +984,15 @@ fn ui_shape_empty_string() {
     let mut output = Vec::new();
     super::shape_text_string(
         "",
-        GlyphStyle::Regular,
-        SyntheticFlags::NONE,
-        400,
-        &faces,
-        &fc,
+        UiTextSpec {
+            glyph_style: GlyphStyle::Regular,
+            synthetic: SyntheticFlags::NONE,
+            requested_weight: 400,
+        },
+        ShapeFaces {
+            faces: &faces,
+            collection: &fc,
+        },
         &mut output,
         &mut None,
     );
@@ -1074,7 +1259,18 @@ fn shape_arrow_ligature_col_span_two() {
     let faces = fc.create_shaping_faces();
     let mut output = Vec::new();
     let mut col_starts = Vec::new();
-    shape_prepared_runs(&runs, &faces, &fc, &mut output, &mut col_starts, &mut None);
+    shape_prepared_runs(
+        &runs,
+        ShapeFaces {
+            faces: &faces,
+            collection: &fc,
+        },
+        &mut ShapeSink {
+            output: &mut output,
+            col_starts: &mut col_starts,
+        },
+        &mut None,
+    );
 
     // Whether "=>" produces a ligature depends on the font. If the font
     // has a `calt` substitution for "=>", we get 1 glyph with col_span=2.
@@ -1101,7 +1297,18 @@ fn shape_fi_ligature_col_span_two() {
     let faces = fc.create_shaping_faces();
     let mut output = Vec::new();
     let mut col_starts = Vec::new();
-    shape_prepared_runs(&runs, &faces, &fc, &mut output, &mut col_starts, &mut None);
+    shape_prepared_runs(
+        &runs,
+        ShapeFaces {
+            faces: &faces,
+            collection: &fc,
+        },
+        &mut ShapeSink {
+            output: &mut output,
+            col_starts: &mut col_starts,
+        },
+        &mut None,
+    );
 
     // "fi" ligature via `liga` feature: 1 glyph if the font supports it,
     // otherwise 2 separate glyphs.
@@ -1133,11 +1340,15 @@ fn ui_text_mixed_subpixel_phases() {
     let text = "The quick brown fox jumps over the lazy dog";
     super::shape_text_string(
         text,
-        GlyphStyle::Regular,
-        SyntheticFlags::NONE,
-        400,
-        &faces,
-        &fc,
+        UiTextSpec {
+            glyph_style: GlyphStyle::Regular,
+            synthetic: SyntheticFlags::NONE,
+            requested_weight: 400,
+        },
+        ShapeFaces {
+            faces: &faces,
+            collection: &fc,
+        },
         &mut output,
         &mut None,
     );
@@ -1257,11 +1468,15 @@ fn shape_text_string_bold_weight_sets_synthetic_on_static_font() {
     let mut output = Vec::new();
     super::shape_text_string(
         "AB",
-        GlyphStyle::Regular,
-        SyntheticFlags::NONE,
-        700,
-        &faces,
-        &fc,
+        UiTextSpec {
+            glyph_style: GlyphStyle::Regular,
+            synthetic: SyntheticFlags::NONE,
+            requested_weight: 700,
+        },
+        ShapeFaces {
+            faces: &faces,
+            collection: &fc,
+        },
         &mut output,
         &mut None,
     );
@@ -1414,6 +1629,7 @@ fn prepare_line_vs15_in_zerowidth() {
                 underline_color: None,
                 hyperlink: None,
                 zerowidth: vec!['\u{FE0E}'], // VS15 — text presentation
+                ..Default::default()
             })),
             ..Cell::default()
         },
@@ -1501,6 +1717,7 @@ fn shape_zwj_skin_tone_collapses() {
                 underline_color: None,
                 hyperlink: None,
                 zerowidth: vec!['\u{1F3FD}'],
+                ..Default::default()
             })),
             ..Cell::default()
         },
@@ -1516,7 +1733,18 @@ fn shape_zwj_skin_tone_collapses() {
     let faces = fc.create_shaping_faces();
     let mut output = Vec::new();
     let mut col_starts = Vec::new();
-    shape_prepared_runs(&runs, &faces, &fc, &mut output, &mut col_starts, &mut None);
+    shape_prepared_runs(
+        &runs,
+        ShapeFaces {
+            faces: &faces,
+            collection: &fc,
+        },
+        &mut ShapeSink {
+            output: &mut output,
+            col_starts: &mut col_starts,
+        },
+        &mut None,
+    );
 
     // Should produce at least 1 glyph, no panics.
     assert!(!output.is_empty(), "should produce at least 1 glyph");
@@ -1544,6 +1772,7 @@ fn prepare_line_vs16_on_copyright_symbol() {
                 underline_color: None,
                 hyperlink: None,
                 zerowidth: vec!['\u{FE0F}'], // VS16
+                ..Default::default()
             })),
             ..Cell::default()
         },
@@ -1655,10 +1884,12 @@ fn test_ui_measurer() -> (crate::font::ui_font_sizes::UiFontSizes, FontCollectio
     let sizes = crate::font::ui_font_sizes::UiFontSizes::new(
         font_set.clone(),
         96.0,
-        GlyphFormat::Alpha,
-        HintingMode::Full,
-        400,
-        550,
+        FontRasterConfig {
+            format: GlyphFormat::Alpha,
+            weight: 400,
+            bold_weight: 550,
+            hinting: HintingMode::Full,
+        },
         crate::font::ui_font_sizes::PRELOAD_SIZES,
     )
     .expect("registry must build");
@@ -1666,10 +1897,12 @@ fn test_ui_measurer() -> (crate::font::ui_font_sizes::UiFontSizes, FontCollectio
         font_set,
         12.0,
         96.0,
-        GlyphFormat::Alpha,
-        400,
-        550,
-        HintingMode::Full,
+        FontRasterConfig {
+            format: GlyphFormat::Alpha,
+            weight: 400,
+            bold_weight: 550,
+            hinting: HintingMode::Full,
+        },
     )
     .expect("fallback must build");
     (sizes, fallback)
@@ -2150,10 +2383,12 @@ fn embedded_collection() -> FontCollection {
         font_set,
         12.0,
         96.0,
-        GlyphFormat::Alpha,
-        400,
-        550,
-        HintingMode::Full,
+        FontRasterConfig {
+            format: GlyphFormat::Alpha,
+            weight: 400,
+            bold_weight: 550,
+            hinting: HintingMode::Full,
+        },
     )
     .expect("collection must build")
 }
@@ -2168,7 +2403,18 @@ fn shape_cells(
     let faces = fc.create_shaping_faces();
     let mut output = Vec::new();
     let mut col_starts = Vec::new();
-    shape_prepared_runs(&runs, &faces, fc, &mut output, &mut col_starts, &mut None);
+    shape_prepared_runs(
+        &runs,
+        ShapeFaces {
+            faces: &faces,
+            collection: fc,
+        },
+        &mut ShapeSink {
+            output: &mut output,
+            col_starts: &mut col_starts,
+        },
+        &mut None,
+    );
     (output, col_starts)
 }
 

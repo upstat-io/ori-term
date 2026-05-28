@@ -11,6 +11,7 @@ use crate::effect::{Effect, PtyEffect, PtyWriteKind};
 use crate::index::{Column, Line};
 
 use super::super::super::Term;
+use super::DecRect;
 
 /// XTCHECKSUM bitmask constants (xterm patch-336; `screen.c:3149`).
 ///
@@ -42,24 +43,8 @@ impl<S: EffectSink> Term<S> {
     /// checksum (xterm sum-then-negate), and emits the DCS reply
     /// `DCS Pi ! ~ XXXX ST` via `PtyEffect::Write`. `page` is ignored
     /// because `ori_term` only supports a single page.
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "DECRQCRA spec: id + page + top/left/bot/right — 6 distinct param slots (id, page, 4 rect coords)"
-    )]
-    #[expect(
-        clippy::needless_pass_by_ref_mut,
-        reason = "receiver stays `&mut self` so the method matches the other rect-ops delegates; `effect_sink.push(&self)` is interior-mutability"
-    )]
-    pub(in crate::term) fn decrqcra_impl(
-        &mut self,
-        id: u16,
-        _page: u16,
-        top: u16,
-        left: u16,
-        bot: u16,
-        right: u16,
-    ) {
-        let checksum = self.compute_rect_checksum(top, left, bot, right);
+    pub(in crate::term) fn decrqcra_impl(&self, id: u16, _page: u16, rect: DecRect) {
+        let checksum = self.compute_rect_checksum(rect.top, rect.left, rect.bot, rect.right);
         let response = format!("\x1bP{id}!~{checksum:04X}\x1b\\");
         self.effect_sink.push(Effect::Pty(PtyEffect::Write {
             bytes: response.into_bytes(),

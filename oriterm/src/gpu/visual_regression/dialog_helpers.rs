@@ -9,7 +9,7 @@ use oriterm_ui::draw::Scene;
 
 use crate::font::ui_font_sizes::PRELOAD_SIZES;
 use crate::font::ui_font_sizes::UiFontSizes;
-use crate::font::{FontSet, GlyphFormat, HintingMode};
+use crate::font::{FontRasterConfig, FontSet, GlyphFormat, HintingMode};
 use crate::gpu::pipelines::GpuPipelines;
 use crate::gpu::state::GpuState;
 use crate::gpu::window_renderer::WindowRenderer;
@@ -41,10 +41,12 @@ pub(super) fn headless_dialog_env_with_dpi(
     let ui_font_sizes = UiFontSizes::new(
         FontSet::ui_embedded(),
         dpi,
-        GlyphFormat::Alpha,
-        HintingMode::Full,
-        UI_FONT_WEIGHT,
-        550,
+        FontRasterConfig {
+            format: GlyphFormat::Alpha,
+            weight: UI_FONT_WEIGHT,
+            bold_weight: 550,
+            hinting: HintingMode::Full,
+        },
         PRELOAD_SIZES,
     )
     .ok()?;

@@ -5,7 +5,9 @@
 //! `App::try_init` orchestrator.
 
 use crate::app::App;
-use crate::font::{FontByteCache, FontCollection, FontSet, GlyphFormat, HintingMode};
+use crate::font::{
+    FontByteCache, FontCollection, FontRasterConfig, FontSet, GlyphFormat, HintingMode,
+};
 use crate::window::TermWindow;
 
 use super::DEFAULT_DPI;
@@ -72,10 +74,12 @@ impl App {
                     font_set,
                     font_size_pt,
                     font_dpi,
-                    GlyphFormat::Alpha,
-                    font_weight,
-                    font_bold_weight,
-                    HintingMode::Full,
+                    FontRasterConfig {
+                        format: GlyphFormat::Alpha,
+                        weight: font_weight,
+                        bold_weight: font_bold_weight,
+                        hinting: HintingMode::Full,
+                    },
                 )?;
                 Ok((fc, cached_set, cache, fallback_map, t0.elapsed()))
             })

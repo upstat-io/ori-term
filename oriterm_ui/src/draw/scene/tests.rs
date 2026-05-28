@@ -3,7 +3,7 @@
 use crate::color::Color;
 use crate::draw::RectStyle;
 use crate::geometry::{Point, Rect};
-use crate::text::ShapedText;
+use crate::text::{ShapedMetrics, ShapedText};
 use crate::widget_id::WidgetId;
 
 use super::Scene;
@@ -11,7 +11,16 @@ use super::content_mask::ContentMask;
 
 /// Empty shaped text for tests that need a `ShapedText` value.
 fn empty_shaped() -> ShapedText {
-    ShapedText::new(Vec::new(), 0.0, 0.0, 0.0, 0, 400)
+    ShapedText::new(
+        Vec::new(),
+        ShapedMetrics {
+            width: 0.0,
+            height: 0.0,
+            baseline: 0.0,
+        },
+        0,
+        400,
+    )
 }
 
 #[test]

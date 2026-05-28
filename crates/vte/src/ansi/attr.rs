@@ -196,6 +196,17 @@ pub enum Attr {
     Background(Color),
  /// Underline color.
     UnderlineColor(Option<Color>),
+ /// Set foreground to a direct RGB color with a per-channel alpha byte
+ /// (the wezterm-invented SGR `38:6::r:g:b:a` "mode 6" form). The alpha
+ /// is carried separately from [`Color`] so the RGB rides the existing
+ /// `Color::Spec` storage while the consumer stores the alpha out-of-band.
+    ForegroundRgba(Rgb, u8),
+ /// Set background to a direct RGB color with a per-channel alpha byte
+ /// (SGR `48:6::r:g:b:a`).
+    BackgroundRgba(Rgb, u8),
+ /// Set underline to a direct RGB color with a per-channel alpha byte
+ /// (SGR `58:6::r:g:b:a`).
+    UnderlineColorRgba(Rgb, u8),
 }
 
 /// Identifiers which can be assigned to a graphic character set.

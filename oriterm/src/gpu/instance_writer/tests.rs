@@ -2,7 +2,10 @@
 
 use oriterm_core::Rgb;
 
-use super::{CLIP_UNCLIPPED, INSTANCE_SIZE, InstanceKind, InstanceWriter, ScreenRect};
+use super::{
+    CLIP_UNCLIPPED, GlyphInstance, GlyphInstanceBg, INSTANCE_SIZE, InstanceKind, InstanceWriter,
+    ScreenRect,
+};
 use crate::gpu::srgb_to_linear;
 
 /// Read a little-endian `f32` from the given byte offset.
@@ -84,11 +87,12 @@ fn push_rect_field_offsets() {
     assert_eq!(read_f32(rec, 40), 0.0);
     assert_eq!(read_f32(rec, 44), 0.0);
 
-    // BG = RED at alpha 0.5.
-    assert_eq!(read_f32(rec, 48), 1.0); // R
+    // BG = RED at alpha 0.5, STRAIGHT (color un-premultiplied; the shader
+    // premultiplies). RED linear R == 1.0, so straight R = 1.0; alpha = 0.5.
+    assert_eq!(read_f32(rec, 48), 1.0); // R straight
     assert_eq!(read_f32(rec, 52), 0.0); // G
     assert_eq!(read_f32(rec, 56), 0.0); // B
-    assert_eq!(read_f32(rec, 60), 0.5); // A
+    assert_eq!(read_f32(rec, 60), 0.5); // A straight
 
     // Kind = Rect (0).
     assert_eq!(read_u32(rec, 64), 0);
@@ -110,11 +114,13 @@ fn push_glyph_field_offsets() {
             w: 8.0,
             h: 16.0,
         },
-        uv,
-        WHITE,
-        1.0,
-        0,
-        CLIP_UNCLIPPED,
+        GlyphInstance {
+            uv,
+            fg: WHITE,
+            alpha: 1.0,
+            atlas_page: 0,
+            clip: CLIP_UNCLIPPED,
+        },
     );
 
     let rec = w.as_bytes();
@@ -168,7 +174,8 @@ fn push_cursor_field_offsets() {
     assert_eq!(read_f32(rec, 40), 0.0);
     assert_eq!(read_f32(rec, 44), 0.0);
 
-    // BG = green at alpha 0.75 (sRGB→linear).
+    // BG = green at alpha 0.75 (sRGB→linear), STRAIGHT color + straight alpha
+    // (the shader premultiplies).
     assert_eq!(read_f32(rec, 48), 0.0);
     assert!((read_f32(rec, 52) - srgb_to_linear(128)).abs() < 1e-6);
     assert_eq!(read_f32(rec, 56), 0.0);
@@ -191,12 +198,15 @@ fn push_glyph_with_bg_field_offsets() {
             w: 8.0,
             h: 16.0,
         },
-        uv,
-        WHITE, // fg
-        RED,   // bg
-        0.9,
-        3,
-        CLIP_UNCLIPPED,
+        GlyphInstanceBg {
+            uv,
+            fg: WHITE,
+            bg: RED,
+            alpha: 0.9,    // fg alpha
+            bg_alpha: 1.0, // opaque bg
+            atlas_page: 3,
+            clip: CLIP_UNCLIPPED,
+        },
     );
 
     let rec = w.as_bytes();
@@ -213,13 +223,16 @@ fn push_glyph_with_bg_field_offsets() {
     assert!((read_f32(rec, 24) - 0.3).abs() < 1e-6);
     assert!((read_f32(rec, 28) - 0.4).abs() < 1e-6);
 
-    // FG = WHITE at alpha 0.9.
+    // FG = WHITE STRAIGHT (1.0 per channel); alpha 0.9 in the alpha slot only
+    // (the shader premultiplies color by alpha). srgb_to_linear(255) == 1.0
+    // exactly, so the colour channels are pinned with exact equality; alpha 0.9
+    // is not f32-exact, so it keeps a tolerance.
     assert_eq!(read_f32(rec, 32), 1.0);
     assert_eq!(read_f32(rec, 36), 1.0);
     assert_eq!(read_f32(rec, 40), 1.0);
     assert!((read_f32(rec, 44) - 0.9).abs() < 1e-6);
 
-    // BG = RED at alpha 1.0 (push_glyph_with_bg always writes bg at alpha 1.0).
+    // BG = RED at opaque bg_alpha=1.0 (straight == premul at 1.0).
     assert_eq!(read_f32(rec, 48), 1.0); // R
     assert_eq!(read_f32(rec, 52), 0.0); // G
     assert_eq!(read_f32(rec, 56), 0.0); // B
@@ -230,6 +243,64 @@ fn push_glyph_with_bg_field_offsets() {
 
     // Atlas page = 3.
     assert_eq!(read_u32(rec, 68), 3);
+}
+
+/// A translucent bg riding the subpixel‑with‑bg path threads the resolved
+/// bg_alpha into the bg alpha slot (the genuine 15.3 deliverable) while
+/// writing STRAIGHT bg color (the shader premultiplies). The bg alpha is
+/// independent of the fg alpha field.
+#[test]
+fn push_glyph_with_bg_threads_translucent_bg_alpha() {
+    let mut w = InstanceWriter::new();
+    let mid = Rgb {
+        r: 200,
+        g: 100,
+        b: 50,
+    };
+    w.push_glyph_with_bg(
+        ScreenRect {
+            x: 0.0,
+            y: 0.0,
+            w: 8.0,
+            h: 16.0,
+        },
+        GlyphInstanceBg {
+            uv: [0.0; 4],
+            fg: WHITE,
+            bg: mid,
+            alpha: 1.0,    // fg fully opaque
+            bg_alpha: 0.5, // translucent bg
+            atlas_page: 0,
+            clip: CLIP_UNCLIPPED,
+        },
+    );
+
+    let rec = w.as_bytes();
+    // BG STRAIGHT: srgb_to_linear(c) on each channel, un‑premultiplied.
+    assert!(
+        (read_f32(rec, 48) - srgb_to_linear(200)).abs() < 1e-6,
+        "bg R straight (not premultiplied by bg_alpha)"
+    );
+    assert!(
+        (read_f32(rec, 52) - srgb_to_linear(100)).abs() < 1e-6,
+        "bg G straight (not premultiplied by bg_alpha)"
+    );
+    assert!(
+        (read_f32(rec, 56) - srgb_to_linear(50)).abs() < 1e-6,
+        "bg B straight (not premultiplied by bg_alpha)"
+    );
+    assert!((read_f32(rec, 60) - 0.5).abs() < 1e-6, "bg A carries 0.5");
+    // Negative: bg alpha must NOT be hardcoded opaque 1.0 (the §15.3 deliverable
+    // threads the real bg_alpha; the pre‑§15.3 path hardcoded 1.0).
+    assert!(
+        (read_f32(rec, 60) - 1.0).abs() > 1e-3,
+        "bg alpha must thread the real bg_alpha, NOT a hardcoded 1.0"
+    );
+    // Negative: bg color must NOT be premultiplied (double‑premul bug).
+    assert!(
+        (read_f32(rec, 48) - srgb_to_linear(200) * 0.5).abs() > 1e-3,
+        "bg R must NOT be premultiplied (the shader owns the single premultiply)"
+    );
 }
 
 // --- Color conversion ---
@@ -297,6 +368,106 @@ fn rgb_mid_value_conversion() {
     assert!((read_f32(rec, 56) - srgb_to_linear(192)).abs() < 1e-6);
 }
 
+/// `rgb_to_floats` must emit STRAIGHT linear color + straight alpha. The
+/// fragment shaders own the single premultiply step (`bg.wgsl` does
+/// `vec4(c.rgb*c.a, c.a)`), so at a<1.0 the color channels are the
+/// un-multiplied `srgb_to_linear(c)`, NOT `srgb_to_linear(c) * a`.
+/// Premultiplying here too would double-multiply and composite too dark.
+#[test]
+fn rgb_to_floats_emits_straight_color_with_straight_alpha() {
+    let mid = Rgb {
+        r: 128,
+        g: 64,
+        b: 192,
+    };
+    let mut w = InstanceWriter::new();
+    w.push_rect(
+        ScreenRect {
+            x: 0.0,
+            y: 0.0,
+            w: 1.0,
+            h: 1.0,
+        },
+        mid,
+        0.5,
+    );
+
+    let rec = w.as_bytes();
+    assert!(
+        (read_f32(rec, 48) - srgb_to_linear(128)).abs() < 1e-6,
+        "R must be straight: srgb_to_linear(128), NOT premultiplied by alpha"
+    );
+    assert!(
+        (read_f32(rec, 52) - srgb_to_linear(64)).abs() < 1e-6,
+        "G must be straight: srgb_to_linear(64), NOT premultiplied by alpha"
+    );
+    assert!(
+        (read_f32(rec, 56) - srgb_to_linear(192)).abs() < 1e-6,
+        "B must be straight: srgb_to_linear(192), NOT premultiplied by alpha"
+    );
+    assert!(
+        (read_f32(rec, 60) - 0.5).abs() < 1e-6,
+        "A carries straight 0.5"
+    );
+}
+
+/// Rejection guard: reject the double-premultiply behavior. At a<1.0 the
+/// color channels must NOT equal `srgb_to_linear(c) * a` — premultiplying in
+/// `rgb_to_floats` on top of the shader's own premultiply double-multiplies
+/// and composites the color too dark.
+#[test]
+fn rgb_to_floats_rejects_premultiplied_color_at_partial_alpha() {
+    let mid = Rgb {
+        r: 200,
+        g: 100,
+        b: 50,
+    };
+    let mut w = InstanceWriter::new();
+    w.push_rect(
+        ScreenRect {
+            x: 0.0,
+            y: 0.0,
+            w: 1.0,
+            h: 1.0,
+        },
+        mid,
+        0.5,
+    );
+
+    let rec = w.as_bytes();
+    assert!(
+        (read_f32(rec, 48) - srgb_to_linear(200) * 0.5).abs() > 1e-3,
+        "R must NOT be premultiplied srgb_to_linear(200) * 0.5 (double-premul bug)"
+    );
+}
+
+/// Opaque (a=1.0) is byte-identical to the straight color: at a=1.0 straight
+/// and premultiplied coincide, so opaque cells never regress.
+#[test]
+fn rgb_to_floats_opaque_color_unchanged() {
+    let mid = Rgb {
+        r: 128,
+        g: 64,
+        b: 192,
+    };
+    let mut w = InstanceWriter::new();
+    w.push_rect(
+        ScreenRect {
+            x: 0.0,
+            y: 0.0,
+            w: 1.0,
+            h: 1.0,
+        },
+        mid,
+        1.0,
+    );
+    let rec = w.as_bytes();
+    assert_eq!(read_f32(rec, 48), srgb_to_linear(128), "opaque R unchanged");
+    assert_eq!(read_f32(rec, 52), srgb_to_linear(64), "opaque G unchanged");
+    assert_eq!(read_f32(rec, 56), srgb_to_linear(192), "opaque B unchanged");
+    assert_eq!(read_f32(rec, 60), 1.0, "opaque A unchanged");
+}
+
 // --- Lifecycle ---
 
 #[test]
@@ -335,11 +506,13 @@ fn multiple_pushes_accumulate() {
             w: 8.0,
             h: 16.0,
         },
-        [0.0; 4],
-        WHITE,
-        1.0,
-        0,
-        CLIP_UNCLIPPED,
+        GlyphInstance {
+            uv: [0.0; 4],
+            fg: WHITE,
+            alpha: 1.0,
+            atlas_page: 0,
+            clip: CLIP_UNCLIPPED,
+        },
     );
     w.push_cursor(
         ScreenRect {
@@ -409,11 +582,13 @@ fn clear_and_reuse() {
             w: 8.0,
             h: 16.0,
         },
-        [0.1, 0.2, 0.3, 0.4],
-        WHITE,
-        1.0,
-        0,
-        CLIP_UNCLIPPED,
+        GlyphInstance {
+            uv: [0.1, 0.2, 0.3, 0.4],
+            fg: WHITE,
+            alpha: 1.0,
+            atlas_page: 0,
+            clip: CLIP_UNCLIPPED,
+        },
     );
 
     assert_eq!(w.len(), 1);

@@ -90,10 +90,12 @@ impl App {
             viewport_h,
             &cell,
             scale,
-            hidden,
-            tb_h,
-            sb_h,
-            border_inset,
+            super::ChromeLayout {
+                tab_bar_hidden: hidden,
+                tab_bar_height: tb_h,
+                status_bar_height: sb_h,
+                border_inset,
+            },
         );
 
         // Capture cell metrics for post-layout mux broadcast. Must

@@ -23,7 +23,7 @@ use crate::index::Line;
 
 pub use cursor::{Cursor, CursorShape};
 pub use dirty::{DirtyIter, DirtyLine, DirtyTracker};
-pub use editing::{DisplayEraseMode, LineEraseMode};
+pub use editing::{DisplayEraseMode, LineEraseMode, RectArea};
 pub use navigation::TabClearMode;
 pub use resize::ReflowMapping;
 pub use ring::ScrollbackBuffer;

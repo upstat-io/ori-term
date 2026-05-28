@@ -52,7 +52,7 @@ use super::pipelines::GpuPipelines;
 use super::state::{AdapterPreference, GpuState};
 use super::window_renderer::WindowRenderer;
 use crate::font::ui_font_sizes::{PRELOAD_SIZES, UiFontSizes};
-use crate::font::{FontCollection, FontSet, GlyphFormat, HintingMode};
+use crate::font::{FontCollection, FontRasterConfig, FontSet, GlyphFormat, HintingMode};
 
 /// Per-channel tolerance for pixel comparison. Accounts for anti-aliasing
 /// differences and minor rasterization variance across GPU drivers.
@@ -116,10 +116,12 @@ pub(crate) fn headless_env_with(
         config.terminal_font_set.clone(),
         config.size_pt,
         config.dpi,
-        config.format,
-        TEST_FONT_WEIGHT,
-        550,
-        config.terminal_hinting,
+        FontRasterConfig {
+            format: config.format,
+            weight: TEST_FONT_WEIGHT,
+            bold_weight: 550,
+            hinting: config.terminal_hinting,
+        },
     )
     .ok()?;
     let ui_font_sizes = match &config.ui {
@@ -127,10 +129,12 @@ pub(crate) fn headless_env_with(
             UiFontSizes::new(
                 ui.font_set.clone(),
                 config.dpi,
-                config.format,
-                ui.hinting,
-                TEST_FONT_WEIGHT,
-                550,
+                FontRasterConfig {
+                    format: config.format,
+                    weight: TEST_FONT_WEIGHT,
+                    bold_weight: 550,
+                    hinting: ui.hinting,
+                },
                 &PRELOAD_SIZES,
             )
             .ok()?,
@@ -234,7 +238,17 @@ pub(super) fn headless_env_with_hinting(
 pub(crate) fn headless_env_with_pinned_software_rasterizer(
     config: &GoldenLaneConfig,
 ) -> Option<(GpuState, GpuPipelines, WindowRenderer)> {
-    let gpu = GpuState::new_headless_with_preference(AdapterPreference::SoftwareRasterizer).ok()?;
+    let mut gpu =
+        GpuState::new_headless_with_preference(AdapterPreference::SoftwareRasterizer).ok()?;
+
+    if config.force_non_dual_subpixel {
+        // Force the NON-dual subpixel pipeline so the `subpixel_fg.wgsl`
+        // known-bg branch (the F2 Porter-Duff "glyph over translucent bg"
+        // path) is exercised. On a dual-source-capable rasterizer the
+        // production selection picks the dual shader, which composites over
+        // the framebuffer in hardware and never reaches that branch.
+        gpu.set_dual_source_blending_for_test(false);
+    }
 
     let info = gpu.adapter_info();
     log::info!(
@@ -253,10 +267,12 @@ pub(crate) fn headless_env_with_pinned_software_rasterizer(
         font_set,
         config.font_size_pt,
         config.dpi,
-        config.glyph_format,
-        TEST_FONT_WEIGHT,
-        550,
-        config.hinting_mode,
+        FontRasterConfig {
+            format: config.glyph_format,
+            weight: TEST_FONT_WEIGHT,
+            bold_weight: 550,
+            hinting: config.hinting_mode,
+        },
     )
     .ok()?;
     let mut renderer = WindowRenderer::new(&gpu, &pipelines, font_collection, None);
@@ -287,7 +303,16 @@ pub(super) fn render_to_pixels_with_origin(
     let w = input.viewport.width;
     let h = input.viewport.height;
     let target = gpu.create_render_target(w, h);
-    renderer.prepare(input, gpu, pipelines, origin, 1.0, true);
+    renderer.prepare(
+        input,
+        gpu,
+        pipelines,
+        crate::gpu::PrepareRequest {
+            origin: origin,
+            cursor_opacity: 1.0,
+            content_changed: true,
+        },
+    );
     renderer.render_frame(gpu, pipelines, target.view());
     gpu.read_render_target(&target)
         .expect("pixel readback should succeed")
@@ -308,7 +333,16 @@ pub(super) fn render_to_pixels_with_opacity(
     let w = input.viewport.width;
     let h = input.viewport.height;
     let target = gpu.create_render_target(w, h);
-    renderer.prepare(input, gpu, pipelines, (0.0, 0.0), cursor_opacity, true);
+    renderer.prepare(
+        input,
+        gpu,
+        pipelines,
+        crate::gpu::PrepareRequest {
+            origin: (0.0, 0.0),
+            cursor_opacity: cursor_opacity,
+            content_changed: true,
+        },
+    );
     renderer.render_frame(gpu, pipelines, target.view());
     gpu.read_render_target(&target)
         .expect("pixel readback should succeed")

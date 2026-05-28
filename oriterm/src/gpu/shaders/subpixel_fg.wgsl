@@ -97,21 +97,50 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     // all mask channels become 0, the zero-coverage guard fires, and the
     // pixel passes through transparent — fully dimmed text is invisible.
     //
-    // BlendState is PREMUL_ALPHA_BLEND: src*1 + dst*(1-src_alpha).
-    // - Opaque output vec4(r,g,b,1.0): src_alpha=1 -> dst*(1-1)=0, dst
-    //   fully replaced. Correct: shader already composited fg over bg.
-    // - Transparent output vec4(0,0,0,0): src_alpha=0 -> dst preserved.
-    //   Correct: zero-coverage pixel passes through to framebuffer.
+    // BlendState is PREMUL_ALPHA_BLEND: src*1 + dst*(1-src_alpha). The cell
+    // bg is drawn FIRST as a separate bg quad (record_passes.rs), so the
+    // framebuffer already holds bg-over-dest BEFORE this glyph draw. The
+    // branch therefore splits on bg.a to avoid double-applying that bg:
+    //
+    // - OPAQUE bg (bg.a >= 0.999): composite glyph over bg and OVERWRITE
+    //   (out_a=1.0). The opaque result REPLACES the framebuffer, so the bg
+    //   quad already underneath is harmlessly overwritten — true per-channel
+    //   LCD AA, no double-apply. At bg.a=1.0 this is byte-identical to
+    //   mix(bg,fg,cov) with alpha 1.0.
+    // - TRANSLUCENT bg (0.001 < bg.a < 0.999): emit GLYPH-ONLY premultiplied
+    //   — do NOT re-include bg, because the bg is ALREADY in the framebuffer
+    //   via the bg quad. Blending glyph-only over that framebuffer yields
+    //   glyph-over-bg-over-dest at the correct brightness. Tradeoff: a single
+    //   premultiplied draw carries only a SCALAR src_alpha through
+    //   PREMUL_ALPHA_BLEND, so per-channel LCD coverage cannot survive the
+    //   blend — subpixel AA degrades toward grayscale-equivalent on
+    //   translucent cells on this non-dual path. True per-channel AA over a
+    //   translucent bg requires DUAL-SOURCE blending (subpixel_fg_dual.wgsl,
+    //   used on dual-source-capable hardware — final = src0*src1 +
+    //   dst*(1-src1), per-channel; alacritty's SRC1_COLOR approach).
+    //   (Decision 09 sub-question 2.)
     if bg.a > 0.001 {
         let dim = fg.a;
-        let r = mix(bg.r, fg.r, mask.r * dim);
-        let g = mix(bg.g, fg.g, mask.g * dim);
-        let b = mix(bg.b, fg.b, mask.b * dim);
-        let coverage = max(mask.r, max(mask.g, mask.b)) * dim;
+        let cov_r = mask.r * dim;
+        let cov_g = mask.g * dim;
+        let cov_b = mask.b * dim;
+        let coverage = max(cov_r, max(cov_g, cov_b));
         if coverage < 0.001 {
             return vec4<f32>(0.0, 0.0, 0.0, 0.0);
         }
-        return vec4<f32>(r, g, b, 1.0);
+        if bg.a >= 0.999 {
+            // Opaque bg: composite-and-overwrite (true per-channel LCD AA).
+            let out_r = fg.r * cov_r + bg.r * (1.0 - cov_r);
+            let out_g = fg.g * cov_g + bg.g * (1.0 - cov_g);
+            let out_b = fg.b * cov_b + bg.b * (1.0 - cov_b);
+            return vec4<f32>(out_r, out_g, out_b, 1.0);
+        }
+        // Translucent bg: glyph-only premultiplied (bg comes from the bg quad
+        // already in the framebuffer; AA degrades to grayscale-equivalent).
+        let out_r = fg.r * cov_r;
+        let out_g = fg.g * cov_g;
+        let out_b = fg.b * cov_b;
+        return vec4<f32>(out_r, out_g, out_b, coverage);
     }
 
     // Unknown background — grayscale alpha fallback.

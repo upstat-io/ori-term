@@ -741,3 +741,221 @@ fn sgr_colon_and_semicolon_equivalent_truecolor() {
         colon.grid().cursor().template.fg,
     );
 }
+
+// --- SGR mode-6 RGBA (`38:6`/`48:6`/`58:6` : : r:g:b:a) ---
+
+/// `ESC[48:6::10:20:30:128m` — background RGBA. The RGB sets `bg` and the
+/// alpha byte round-trips through `bg_alpha()` with `HAS_ALPHA` raised.
+#[test]
+fn sgr_mode6_bg_rgba_stores_color_and_alpha() {
+    let mut t = term();
+    feed(&mut t, b"\x1b[48:6::10:20:30:128m");
+
+    let template = &t.grid().cursor().template;
+    assert_eq!(
+        template.bg,
+        vte::ansi::Color::Spec(vte::ansi::Rgb {
+            r: 10,
+            g: 20,
+            b: 30
+        })
+    );
+    assert_eq!(template.bg_alpha(), 128);
+    assert!(template.flags.contains(crate::cell::CellFlags::HAS_ALPHA));
+}
+
+/// `ESC[38:6::10:20:30:64m` — foreground RGBA.
+#[test]
+fn sgr_mode6_fg_rgba_stores_color_and_alpha() {
+    let mut t = term();
+    feed(&mut t, b"\x1b[38:6::10:20:30:64m");
+
+    let template = &t.grid().cursor().template;
+    assert_eq!(
+        template.fg,
+        vte::ansi::Color::Spec(vte::ansi::Rgb {
+            r: 10,
+            g: 20,
+            b: 30
+        })
+    );
+    assert_eq!(template.fg_alpha(), 64);
+    assert!(template.flags.contains(crate::cell::CellFlags::HAS_ALPHA));
+}
+
+/// `ESC[58:6::10:20:30:200m` — underline RGBA: RGB to the underline color
+/// sidecar, alpha to `underline_alpha()`.
+#[test]
+fn sgr_mode6_underline_rgba_stores_color_and_alpha() {
+    let mut t = term();
+    feed(&mut t, b"\x1b[58:6::10:20:30:200m");
+
+    let template = &t.grid().cursor().template;
+    assert_eq!(
+        template.extra.as_ref().unwrap().underline_color,
+        Some(vte::ansi::Color::Spec(vte::ansi::Rgb {
+            r: 10,
+            g: 20,
+            b: 30
+        }))
+    );
+    assert_eq!(template.underline_alpha(), 200);
+    assert!(template.flags.contains(crate::cell::CellFlags::HAS_ALPHA));
+}
+
+/// Plain mode-2 truecolor must leave alpha fully opaque and raise NO
+/// `HAS_ALPHA` bit — proves the mode-6 path is distinct from the mode-2
+/// path, not a side effect of any RGB color set.
+#[test]
+fn sgr_mode2_truecolor_leaves_alpha_opaque() {
+    let mut t = term();
+    feed(&mut t, b"\x1b[48:2::10:20:30m");
+
+    let template = &t.grid().cursor().template;
+    assert_eq!(template.bg_alpha(), crate::cell::OPAQUE_ALPHA);
+    assert!(!template.flags.contains(crate::cell::CellFlags::HAS_ALPHA));
+    assert!(
+        template.extra.is_none(),
+        "opaque mode-2 truecolor must not allocate an alpha sidecar"
+    );
+}
+
+/// Mode-6 with `a=255` is opaque: the RGB still lands in `bg`, but no
+/// sidecar is allocated and `HAS_ALPHA` stays clear (opaque set is a no-op
+/// on a clean cell).
+#[test]
+fn sgr_mode6_fully_opaque_alpha_stays_clean() {
+    let mut t = term();
+    feed(&mut t, b"\x1b[48:6::10:20:30:255m");
+
+    let template = &t.grid().cursor().template;
+    assert_eq!(
+        template.bg,
+        vte::ansi::Color::Spec(vte::ansi::Rgb {
+            r: 10,
+            g: 20,
+            b: 30
+        })
+    );
+    assert_eq!(template.bg_alpha(), crate::cell::OPAQUE_ALPHA);
+    assert!(!template.flags.contains(crate::cell::CellFlags::HAS_ALPHA));
+    assert!(template.extra.is_none());
+}
+
+/// SGR 0 (Reset) returns mode-6 alpha to opaque — alpha is an SGR
+/// attribute, so a translucent alpha must NOT survive a reset.
+#[test]
+fn sgr_reset_clears_mode6_alpha() {
+    let mut t = term();
+    feed(&mut t, b"\x1b[48:6::10:20:30:128m");
+    assert_eq!(t.grid().cursor().template.bg_alpha(), 128);
+
+    feed(&mut t, b"\x1b[0m");
+    let template = &t.grid().cursor().template;
+    assert_eq!(template.bg_alpha(), crate::cell::OPAQUE_ALPHA);
+    assert!(!template.flags.contains(crate::cell::CellFlags::HAS_ALPHA));
+}
+
+/// Colon and semicolon mode-6 forms parse identically (color AND alpha).
+#[test]
+fn sgr_mode6_colon_semicolon_equivalent() {
+    let mut colon = term();
+    feed(&mut colon, b"\x1b[38:6::10:20:30:40m");
+
+    let mut semi = term();
+    feed(&mut semi, b"\x1b[38;6;10;20;30;40m");
+
+    assert_eq!(
+        colon.grid().cursor().template.fg,
+        semi.grid().cursor().template.fg
+    );
+    assert_eq!(
+        colon.grid().cursor().template.fg_alpha(),
+        semi.grid().cursor().template.fg_alpha()
+    );
+    assert_eq!(colon.grid().cursor().template.fg_alpha(), 40);
+}
+
+/// A plain (mode-2) bg color set after a mode-6 RGBA bg returns the channel
+/// to opaque — the sticky cursor template must NOT carry stale translucent
+/// alpha into a subsequently-set opaque color. Reverting the alpha-reset in
+/// the plain-color arm leaves bg_alpha at 128 (over-translucent bg).
+#[test]
+fn sgr_plain_bg_after_mode6_resets_alpha_to_opaque() {
+    let mut t = term();
+    feed(&mut t, b"\x1b[48:6::10:20:30:128m");
+    assert_eq!(t.grid().cursor().template.bg_alpha(), 128);
+
+    feed(&mut t, b"\x1b[48;2;40;50;60m");
+    let template = &t.grid().cursor().template;
+    assert_eq!(template.bg_alpha(), crate::cell::OPAQUE_ALPHA);
+    assert!(!template.flags.contains(crate::cell::CellFlags::HAS_ALPHA));
+    assert_eq!(
+        template.bg,
+        vte::ansi::Color::Spec(vte::ansi::Rgb {
+            r: 40,
+            g: 50,
+            b: 60
+        })
+    );
+}
+
+/// SGR 49 (default background) after a mode-6 RGBA set returns bg alpha to
+/// opaque — the named-default reset path also clears stale alpha.
+#[test]
+fn sgr_default_bg_after_mode6_resets_alpha() {
+    let mut t = term();
+    feed(&mut t, b"\x1b[48:6::10:20:30:64m");
+    feed(&mut t, b"\x1b[49m");
+    let template = &t.grid().cursor().template;
+    assert_eq!(template.bg_alpha(), crate::cell::OPAQUE_ALPHA);
+    assert!(!template.flags.contains(crate::cell::CellFlags::HAS_ALPHA));
+}
+
+/// Foreground parallel: a plain ANSI fg after a mode-6 fg returns fg alpha
+/// to opaque.
+#[test]
+fn sgr_plain_fg_after_mode6_resets_alpha() {
+    let mut t = term();
+    feed(&mut t, b"\x1b[38:6::10:20:30:128m");
+    feed(&mut t, b"\x1b[31m");
+    assert_eq!(
+        t.grid().cursor().template.fg_alpha(),
+        crate::cell::OPAQUE_ALPHA
+    );
+}
+
+/// Underline parallel (SGR 59 clear path): clearing the underline color after
+/// a mode-6 underline RGBA returns underline alpha to opaque and clears
+/// HAS_ALPHA — symmetric with the fg/bg plain-after-mode6 resets.
+#[test]
+fn sgr_clear_underline_after_mode6_resets_alpha() {
+    let mut t = term();
+    feed(&mut t, b"\x1b[58:6::10:20:30:128m");
+    assert_eq!(t.grid().cursor().template.underline_alpha(), 128);
+
+    feed(&mut t, b"\x1b[59m");
+    let template = &t.grid().cursor().template;
+    assert_eq!(template.underline_alpha(), crate::cell::OPAQUE_ALPHA);
+    assert!(!template.flags.contains(crate::cell::CellFlags::HAS_ALPHA));
+}
+
+/// Underline parallel (plain-color overwrite path): a plain mode-2 underline
+/// color after a mode-6 underline RGBA returns underline alpha to opaque.
+#[test]
+fn sgr_plain_underline_after_mode6_resets_alpha() {
+    let mut t = term();
+    feed(&mut t, b"\x1b[58:6::10:20:30:128m");
+    feed(&mut t, b"\x1b[58:2::40:50:60m");
+    let template = &t.grid().cursor().template;
+    assert_eq!(template.underline_alpha(), crate::cell::OPAQUE_ALPHA);
+    assert!(!template.flags.contains(crate::cell::CellFlags::HAS_ALPHA));
+    assert_eq!(
+        template.extra.as_ref().unwrap().underline_color,
+        Some(vte::ansi::Color::Spec(vte::ansi::Rgb {
+            r: 40,
+            g: 50,
+            b: 60
+        }))
+    );
+}

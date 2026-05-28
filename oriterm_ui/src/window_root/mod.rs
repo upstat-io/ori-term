@@ -18,6 +18,8 @@ mod borrow_split;
 mod overlay_ops;
 mod pipeline;
 
+pub use overlay_ops::OverlayEventCtx;
+
 use std::collections::HashMap;
 
 use crate::action::{Keymap, WidgetAction};

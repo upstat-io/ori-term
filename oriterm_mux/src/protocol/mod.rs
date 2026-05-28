@@ -73,6 +73,10 @@ pub const FRAME_MAGIC: u16 = 0x4F54;
 /// `Eq` derive dropped from `PaneSnapshot` and `MuxPdu` because `WirePlacement` carries
 /// f32 fields (f32 implements `PartialEq` only). `MAX_PAYLOAD` raised from 16 MiB to
 /// 80 MiB to ship kitty/sixel/iTerm2 pixel data over the wire.
+/// v4 — bumped when `WireCell` gained `fg_alpha`/`bg_alpha`/`underline_alpha` (u8 each,
+/// SGR mode-6 concrete per-channel alpha). bincode is positional, so the three appended
+/// fields shift the `WireCell` byte layout; `#[serde(default)]` does NOT help a v3 peer
+/// (positional format has no field names), so the version MUST bump.
 /// vN → vN+1 is a hard break in bincode-encoded `PaneSnapshot` / `MuxPdu` layout; a
 /// mismatched peer would silently misdecode every snapshot frame. The Hello handshake
 /// rejects any non-equal version pair so the mismatch surfaces as a connection error
@@ -83,7 +87,7 @@ pub const FRAME_MAGIC: u16 = 0x4F54;
 /// other would otherwise produce a frame-header version that
 /// disagrees with the Hello payload — caught at compile-time now
 /// because the alias propagates the bump automatically.
-pub const PROTOCOL_VERSION: u8 = 3;
+pub const PROTOCOL_VERSION: u8 = 4;
 
 /// Flag: payload is zstd-compressed.
 pub const FLAG_COMPRESSED: u8 = 0x01;

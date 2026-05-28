@@ -23,6 +23,18 @@ use crate::gpu::{FrameSearch, FrameSelection, MarkCursorOverride, ViewportSize};
 use oriterm_core::{Column, CursorShape, TermMode};
 use oriterm_mux::PaneId;
 
+/// Shared GPU draw sink for floating overlay badges (search bar, debug
+/// overlay): renderer, output scene, scratch text buffer, GPU handle,
+/// shaped-text cache, and scale factor.
+pub(in crate::app::redraw) struct OverlayBadgeDraw<'a> {
+    pub renderer: &'a mut crate::gpu::WindowRenderer,
+    pub scene: &'a mut oriterm_ui::draw::Scene,
+    pub buf: &'a mut String,
+    pub gpu: &'a GpuState,
+    pub text_cache: &'a crate::font::TextShapeCache,
+    pub scale: f32,
+}
+
 impl App {
     /// Mark all windows as needing a redraw.
     ///
@@ -200,10 +212,12 @@ impl App {
                 mux.as_mut(),
                 &mut ctx.frame,
                 pane_id,
-                viewport,
-                cell,
-                snapshot_changed,
-                reextract_gate,
+                draw_helpers::PaneContentRequest {
+                    viewport,
+                    cell,
+                    swap_gate: snapshot_changed,
+                    reextract_gate,
+                },
             );
             if outcome.is_none() {
                 log::warn!("redraw: no snapshot for pane {pane_id:?}");
@@ -314,9 +328,11 @@ impl App {
                 frame,
                 gpu,
                 pipelines,
-                origin,
-                cursor_opacity,
-                content_changed,
+                crate::gpu::PrepareRequest {
+                    origin,
+                    cursor_opacity,
+                    content_changed,
+                },
             );
 
             // Scale factor for logical→physical coordinate conversion.
@@ -465,13 +481,15 @@ fn draw_debug_overlay_if_enabled(
     let lh = ph as f32 / scale;
     App::draw_debug_overlay(
         &stats,
-        renderer,
-        &mut ctx.chrome_scene,
-        &mut ctx.debug_overlay_buf,
         lw,
         lh,
-        scale,
-        gpu,
-        &ctx.text_cache,
+        OverlayBadgeDraw {
+            renderer,
+            scene: &mut ctx.chrome_scene,
+            buf: &mut ctx.debug_overlay_buf,
+            gpu,
+            text_cache: &ctx.text_cache,
+            scale,
+        },
     );
 }

@@ -22,7 +22,7 @@
 //! rasterizer. `GlyphFormat::Color` is never boosted (premultiplied RGBA).
 
 use super::colr_v1::rasterize::try_rasterize_colr_v1;
-use super::face::rasterize_from_face;
+use super::face::{RasterSpec, rasterize_from_face};
 use super::metadata::{effective_size_for, face_variations, face_variations_for_ui_weight};
 use super::{FontCollection, GlyphFormat, RasterizedGlyph};
 use crate::font::{FaceIdx, RasterKey};
@@ -158,14 +158,16 @@ impl FontCollection {
         let glyph = try_rasterize_colr_v1(fd, gid_u16, size).or_else(|| {
             rasterize_from_face(
                 fd,
-                gid_u16,
-                size,
-                &face_vars.settings,
-                effective_synthetic,
-                self.metrics.height,
-                self.format,
-                self.hinting.hint_flag(),
-                subpx_x_offset,
+                RasterSpec {
+                    glyph_id: gid_u16,
+                    size_px: size,
+                    variations: &face_vars.settings,
+                    synthetic: effective_synthetic,
+                    cell_height: self.metrics.height,
+                    format: self.format,
+                    hinted: self.hinting.hint_flag(),
+                    subpx_x_offset,
+                },
                 &mut self.scale_context,
             )
         })?;
@@ -212,14 +214,16 @@ impl FontCollection {
         let glyph = try_rasterize_colr_v1(fd, gid_u16, size).or_else(|| {
             rasterize_from_face(
                 fd,
-                gid_u16,
-                size,
-                &face_vars.settings,
-                effective_synthetic,
-                self.metrics.height,
-                self.format,
-                self.hinting.hint_flag(),
-                subpx_x_offset,
+                RasterSpec {
+                    glyph_id: gid_u16,
+                    size_px: size,
+                    variations: &face_vars.settings,
+                    synthetic: effective_synthetic,
+                    cell_height: self.metrics.height,
+                    format: self.format,
+                    hinted: self.hinting.hint_flag(),
+                    subpx_x_offset,
+                },
                 &mut self.scale_context,
             )
         })?;

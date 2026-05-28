@@ -36,9 +36,9 @@ const SEND_RECV_TIMEOUT: Duration = Duration::from_millis(100);
 /// `outstanding_ping_seq` uses `0` as the "no pending ping" sentinel; the
 /// reader thread clears it on `PingAck`. Ping seq numbers count down from
 /// `u32::MAX` and skip `0` to avoid colliding with the notification sentinel.
-#[allow(
+#[expect(
     clippy::needless_pass_by_value,
-    reason = "ownership required — values are moved into the spawned thread"
+    reason = "ownership required — all params are moved into the spawned writer thread and live for its lifetime"
 )]
 pub(super) fn writer_loop(
     mut write_stream: ClientStream,

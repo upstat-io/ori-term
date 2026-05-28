@@ -10,6 +10,15 @@ use oriterm_mux::domain::SpawnConfig;
 use crate::app::App;
 use crate::app::config_reload;
 
+/// Grid and cell dimensions for initial-tab creation.
+#[derive(Clone, Copy)]
+pub(in crate::app) struct InitialTabGeometry {
+    pub rows: u16,
+    pub cols: u16,
+    pub cell_w: u16,
+    pub cell_h: u16,
+}
+
 impl App {
     /// Create the initial tab from a Windows console handoff payload.
     ///
@@ -110,18 +119,17 @@ impl App {
     ///
     /// The mux backend and window must already exist. The pane is stored
     /// inside the backend.
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "init-time wiring: session id + grid dims + cell dims — grouping into a struct would require a struct purely for this internal helper, with no other callers"
-    )]
     pub(in crate::app) fn create_initial_tab(
         &mut self,
         session_wid: crate::session::WindowId,
-        rows: u16,
-        cols: u16,
-        cell_w: u16,
-        cell_h: u16,
+        geom: InitialTabGeometry,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        let InitialTabGeometry {
+            rows,
+            cols,
+            cell_w,
+            cell_h,
+        } = geom;
         let theme = self
             .config
             .colors

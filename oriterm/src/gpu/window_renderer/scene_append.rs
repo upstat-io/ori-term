@@ -6,7 +6,7 @@ use super::super::prepared_frame::OverlayDrawRange;
 use super::super::state::GpuState;
 use super::{CombinedAtlasLookup, WindowRenderer};
 
-use super::helpers::{ensure_glyphs_cached, scene_raster_keys};
+use super::helpers::{MultiAtlasSink, ensure_glyphs_cached, scene_raster_keys};
 
 impl WindowRenderer {
     /// Append Scene primitives **with text** to the chrome tier (draws 6-9).
@@ -143,13 +143,15 @@ impl WindowRenderer {
         if terminal_end > 0 {
             ensure_glyphs_cached(
                 self.ui_raster_keys[..terminal_end].iter().copied(),
-                &mut self.atlas,
-                &mut self.subpixel_atlas,
-                &mut self.color_atlas,
-                &mut self.empty_keys,
+                &mut MultiAtlasSink {
+                    mono: &mut self.atlas,
+                    subpixel: &mut self.subpixel_atlas,
+                    color: &mut self.color_atlas,
+                    empty_keys: &mut self.empty_keys,
+                    device: &gpu.device,
+                    queue: &gpu.queue,
+                },
                 &mut self.font_collection,
-                &gpu.device,
-                &gpu.queue,
             );
         }
 
@@ -181,13 +183,15 @@ impl WindowRenderer {
             };
             ensure_glyphs_cached(
                 ui_keys[start..end].iter().copied(),
-                &mut self.atlas,
-                &mut self.subpixel_atlas,
-                &mut self.color_atlas,
-                &mut self.empty_keys,
+                &mut MultiAtlasSink {
+                    mono: &mut self.atlas,
+                    subpixel: &mut self.subpixel_atlas,
+                    color: &mut self.color_atlas,
+                    empty_keys: &mut self.empty_keys,
+                    device: &gpu.device,
+                    queue: &gpu.queue,
+                },
                 ui_fc,
-                &gpu.device,
-                &gpu.queue,
             );
             start = end;
         }

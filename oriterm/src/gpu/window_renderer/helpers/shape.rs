@@ -3,7 +3,8 @@
 //! Extracted from `helpers/mod.rs` to keep the file under 500 lines.
 
 use crate::font::{
-    FontCollection, build_col_glyph_map, prepare_line, shape_prepared_runs, size_key,
+    FontCollection, ShapeFaces, ShapeSink, build_col_glyph_map, prepare_line, shape_prepared_runs,
+    size_key,
 };
 use crate::gpu::frame_input::FrameInput;
 use crate::gpu::maybe_shrink_vec;
@@ -77,10 +78,14 @@ pub(crate) fn shape_frame(
         prepare_line(row_cells, cols, fonts, &mut scratch.runs);
         shape_prepared_runs(
             &scratch.runs,
-            &scratch.faces_buf,
-            fonts,
-            &mut scratch.glyphs,
-            &mut scratch.col_starts,
+            ShapeFaces {
+                faces: &scratch.faces_buf,
+                collection: fonts,
+            },
+            &mut ShapeSink {
+                output: &mut scratch.glyphs,
+                col_starts: &mut scratch.col_starts,
+            },
             &mut scratch.unicode_buffer,
         );
         build_col_glyph_map(&scratch.col_starts, cols, &mut scratch.col_map);

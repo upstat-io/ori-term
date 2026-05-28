@@ -49,7 +49,16 @@ impl App {
                 0.0
             };
             let wl = super::super::chrome::compute_window_layout(
-                w, h, &cell, scale, hidden, tb_h, sb_h, 0.0,
+                w,
+                h,
+                &cell,
+                scale,
+                super::super::chrome::ChromeLayout {
+                    tab_bar_hidden: hidden,
+                    tab_bar_height: tb_h,
+                    status_bar_height: sb_h,
+                    border_inset: 0.0,
+                },
             );
             let cell_w = cell.width.round().max(1.0) as u16;
             let cell_h = cell.height.round().max(1.0) as u16;
@@ -202,7 +211,16 @@ impl App {
             0.0
         };
         let wl = super::super::chrome::compute_window_layout(
-            w, h, &cell, scale, hidden, tb_h, sb_h, 0.0,
+            w,
+            h,
+            &cell,
+            scale,
+            super::super::chrome::ChromeLayout {
+                tab_bar_hidden: hidden,
+                tab_bar_height: tb_h,
+                status_bar_height: sb_h,
+                border_inset: 0.0,
+            },
         );
 
         // Terminal grid widget.
@@ -259,10 +277,12 @@ impl App {
             font_set,
             self.config.font.size,
             physical_dpi,
-            format,
-            weight,
-            bold_weight,
-            hinting,
+            crate::font::FontRasterConfig {
+                format,
+                weight,
+                bold_weight,
+                hinting,
+            },
         ) {
             Ok(fc) => fc,
             Err(e) => {
@@ -280,10 +300,12 @@ impl App {
         let ui_sizes = crate::font::UiFontSizes::new(
             crate::font::FontSet::ui_embedded(),
             physical_dpi,
-            crate::font::GlyphFormat::Alpha,
-            crate::font::HintingMode::None,
-            400,
-            600,
+            crate::font::FontRasterConfig {
+                format: crate::font::GlyphFormat::Alpha,
+                weight: 400,
+                bold_weight: 600,
+                hinting: crate::font::HintingMode::None,
+            },
             crate::font::ui_font_sizes::PRELOAD_SIZES,
         )
         .ok()

@@ -31,7 +31,7 @@ use crate::font::shaper::TextShapeCache;
 use crate::gpu::window_renderer::WindowRenderer;
 
 #[cfg(feature = "gpu-tests")]
-use super::settings_overlay::form_builder::build_settings_dialog;
+use super::settings_overlay::form_builder::{SettingsDialogParams, build_settings_dialog};
 
 /// Build the settings dialog for a given page, run layout + paint, return the Scene.
 ///
@@ -49,8 +49,16 @@ pub(crate) fn build_dialog_scene(
 ) -> Scene {
     let theme = UiTheme::dark();
     let config = Config::default();
-    let (content_widget, _ids, footer_ids) =
-        build_settings_dialog(&config, &theme, page, 1.0, 1.0, None);
+    let (content_widget, _ids, footer_ids) = build_settings_dialog(
+        &config,
+        &theme,
+        SettingsDialogParams {
+            active_page: page,
+            scale_factor: 1.0,
+            opacity: 1.0,
+            update_info: None,
+        },
+    );
 
     // Wrap content in SettingsPanel (the real dialog does this).
     let mut panel =

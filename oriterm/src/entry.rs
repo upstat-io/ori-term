@@ -77,10 +77,12 @@ pub fn run() {
         crate::app::App::new_daemon(
             proxy,
             config,
-            socket,
-            args.window,
-            args.tabs_json.clone(),
-            args.position.as_deref(),
+            crate::app::DaemonSession {
+                socket_path: socket,
+                window_id: args.window,
+                tabs_json: args.tabs_json.clone(),
+                position: args.position.as_deref(),
+            },
             profiling,
             latency_log,
         )
@@ -93,10 +95,12 @@ pub fn run() {
             Ok(socket_path) => crate::app::App::new_daemon(
                 proxy,
                 config,
-                &socket_path,
-                None,
-                None,
-                None,
+                crate::app::DaemonSession {
+                    socket_path: &socket_path,
+                    window_id: None,
+                    tabs_json: None,
+                    position: None,
+                },
                 profiling,
                 latency_log,
             ),

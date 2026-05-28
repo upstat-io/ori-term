@@ -168,10 +168,12 @@ impl App {
         let ui_sizes = crate::font::UiFontSizes::new(
             ui_font_set,
             physical_dpi,
-            GlyphFormat::Alpha,
-            HintingMode::None,
-            400,
-            600,
+            crate::font::FontRasterConfig {
+                format: GlyphFormat::Alpha,
+                weight: 400,
+                bold_weight: 600,
+                hinting: HintingMode::None,
+            },
             crate::font::ui_font_sizes::PRELOAD_SIZES,
         )
         .ok()
@@ -206,7 +208,18 @@ impl App {
         } else {
             0.0
         };
-        let wl = super::chrome::compute_window_layout(w, h, &cell, scale, hidden, tb_h, sb_h, 0.0);
+        let wl = super::chrome::compute_window_layout(
+            w,
+            h,
+            &cell,
+            scale,
+            super::chrome::ChromeLayout {
+                tab_bar_hidden: hidden,
+                tab_bar_height: tb_h,
+                status_bar_height: sb_h,
+                border_inset: 0.0,
+            },
+        );
 
         // 10. Create grid widget with cell metrics and layout-computed size.
         let grid_widget = TerminalGridWidget::new(cell.width, cell.height, wl.cols, wl.rows);
@@ -263,10 +276,12 @@ impl App {
         } else if !is_claimed && !used_handoff {
             self.create_initial_tab(
                 session_wid,
-                wl.rows as u16,
-                wl.cols as u16,
-                cell_w_u16,
-                cell_h_u16,
+                tab_creation::InitialTabGeometry {
+                    rows: wl.rows as u16,
+                    cols: wl.cols as u16,
+                    cell_w: cell_w_u16,
+                    cell_h: cell_h_u16,
+                },
             )?;
         } else {
             // Daemon mode with a claimed window or handoff already populated

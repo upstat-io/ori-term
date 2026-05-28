@@ -12,18 +12,33 @@ use super::layout_node::LayoutNode;
 use super::size_spec::SizeSpec;
 use super::solver;
 
+/// The grid-layout knobs that travel together: column rule + row/column gaps.
+///
+/// Mirrors the `BoxContent::Grid` enum payload.
+#[derive(Debug, Clone, Copy)]
+pub(super) struct GridSpec<'a> {
+    /// Column count rule (fixed or auto-fill).
+    pub columns: &'a GridColumns,
+    /// Vertical gap between rows.
+    pub row_gap: f32,
+    /// Horizontal gap between columns.
+    pub column_gap: f32,
+}
+
 /// Solves a grid container, returning a `LayoutNode` with positioned children.
-#[expect(clippy::too_many_arguments, reason = "extracted grid params from enum")]
 pub(super) fn solve_grid(
     layout_box: &LayoutBox,
-    columns: &GridColumns,
-    row_gap: f32,
-    column_gap: f32,
+    spec: GridSpec<'_>,
     children: &[LayoutBox],
     constraints: LayoutConstraints,
-    pos_x: f32,
-    pos_y: f32,
+    pos: (f32, f32),
 ) -> LayoutNode {
+    let GridSpec {
+        columns,
+        row_gap,
+        column_gap,
+    } = spec;
+    let (pos_x, pos_y) = pos;
     if children.is_empty() {
         return solve_empty_grid(layout_box, &constraints, pos_x, pos_y);
     }

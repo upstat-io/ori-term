@@ -10,7 +10,7 @@ use std::sync::Arc;
 
 use super::collection::loading::FontData;
 use super::collection::{FontCollection, FontSet, size_key};
-use super::{FontError, GlyphFormat, HintingMode};
+use super::{FontError, FontRasterConfig, GlyphFormat, HintingMode};
 
 /// Default logical pixel size for body text (CSS `font-size: 13px`).
 const DEFAULT_LOGICAL_SIZE: f32 = 13.0;
@@ -72,34 +72,25 @@ impl UiFontSizes {
     /// `dpi` is the physical DPI (encodes scale factor: e.g. 192 at 2×).
     /// Each logical size is converted to `size_pt = logical × 72 / 96` and
     /// passed to [`FontCollection::new`] with the given `dpi`.
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "font registry requires all parameters: font data, DPI, format, hinting, weight, bold_weight, sizes"
-    )]
     pub(crate) fn new(
         font_set: FontSet,
         dpi: f32,
-        format: GlyphFormat,
-        hinting: HintingMode,
-        weight: u16,
-        bold_weight: u16,
+        config: FontRasterConfig,
         preload_logical_sizes: &[f32],
     ) -> Result<Self, FontError> {
+        let FontRasterConfig {
+            format,
+            weight,
+            bold_weight,
+            hinting,
+        } = config;
         let mut collections = BTreeMap::new();
         let mut logical_sizes = Vec::with_capacity(preload_logical_sizes.len());
         let mut default_q6 = 0;
 
         for &logical_px in preload_logical_sizes {
             let size_pt = logical_to_pt(logical_px);
-            let fc = FontCollection::new(
-                font_set.clone(),
-                size_pt,
-                dpi,
-                format,
-                weight,
-                bold_weight,
-                hinting,
-            )?;
+            let fc = FontCollection::new(font_set.clone(), size_pt, dpi, config)?;
             let q6 = size_key(fc.size_px());
             if (logical_px - DEFAULT_LOGICAL_SIZE).abs() < 0.01 {
                 default_q6 = q6;
@@ -111,15 +102,7 @@ impl UiFontSizes {
         // If the default wasn't in the preload list, create it now.
         if default_q6 == 0 {
             let size_pt = logical_to_pt(DEFAULT_LOGICAL_SIZE);
-            let fc = FontCollection::new(
-                font_set.clone(),
-                size_pt,
-                dpi,
-                format,
-                weight,
-                bold_weight,
-                hinting,
-            )?;
+            let fc = FontCollection::new(font_set.clone(), size_pt, dpi, config)?;
             default_q6 = size_key(fc.size_px());
             collections.insert(default_q6, fc);
             logical_sizes.push(DEFAULT_LOGICAL_SIZE);
@@ -276,15 +259,8 @@ impl UiFontSizes {
         let q6 = size_key(physical_px);
         if !self.collections.contains_key(&q6) {
             let size_pt = logical_to_pt(logical_size);
-            let mut fc = FontCollection::new(
-                self.font_set.clone(),
-                size_pt,
-                self.dpi,
-                self.format,
-                self.weight,
-                self.bold_weight,
-                self.hinting,
-            )?;
+            let mut fc =
+                FontCollection::new(self.font_set.clone(), size_pt, self.dpi, self.font_config())?;
             self.finalize_collection(&mut fc);
             self.collections.insert(q6, fc);
             self.logical_sizes.push(logical_size);
@@ -323,17 +299,20 @@ impl UiFontSizes {
     /// hook so the returned collection has font config applied.
     pub(crate) fn create_default_collection(&self) -> Result<FontCollection, FontError> {
         let size_pt = logical_to_pt(DEFAULT_LOGICAL_SIZE);
-        let mut fc = FontCollection::new(
-            self.font_set.clone(),
-            size_pt,
-            self.dpi,
-            self.format,
-            self.weight,
-            self.bold_weight,
-            self.hinting,
-        )?;
+        let mut fc =
+            FontCollection::new(self.font_set.clone(), size_pt, self.dpi, self.font_config())?;
         self.finalize_collection(&mut fc);
         Ok(fc)
+    }
+
+    /// Build the [`FontRasterConfig`] from the registry's stored rasterization fields.
+    fn font_config(&self) -> FontRasterConfig {
+        FontRasterConfig {
+            format: self.format,
+            weight: self.weight,
+            bold_weight: self.bold_weight,
+            hinting: self.hinting,
+        }
     }
 
     // Internals
@@ -348,15 +327,8 @@ impl UiFontSizes {
 
         for &logical_px in &logical_sizes {
             let size_pt = logical_to_pt(logical_px);
-            let mut fc = FontCollection::new(
-                self.font_set.clone(),
-                size_pt,
-                self.dpi,
-                self.format,
-                self.weight,
-                self.bold_weight,
-                self.hinting,
-            )?;
+            let mut fc =
+                FontCollection::new(self.font_set.clone(), size_pt, self.dpi, self.font_config())?;
             self.finalize_collection(&mut fc);
             let q6 = size_key(fc.size_px());
             if (logical_px - DEFAULT_LOGICAL_SIZE).abs() < 0.01 {

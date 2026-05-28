@@ -2246,8 +2246,17 @@ fn signal_child_after_is_write_stalled_kills_writer_via_daemon() {
     client.close_pane(pane_id);
 }
 
-/// Returns true iff `notcurses-info` is installed and runnable.
-fn notcurses_info_available() -> bool {
+/// Opt-in gate for the real-process `notcurses-info` PTY e2e tests below.
+///
+/// Returns true only when `ORITERM_E2E_PTY` is set AND notcurses-info is
+/// installed. These tests spawn the real binary over a live PTY and the
+/// handshake deadlocks in the pre-commit hook's interactive-PTY context
+/// (60s+ hang via blocked PtySession teardown), so they MUST stay opt-in.
+/// Dedicated e2e / CI runs set the var; the pre-commit hook leaves it unset.
+fn notcurses_info_e2e_enabled() -> bool {
+    if std::env::var_os("ORITERM_E2E_PTY").is_none() {
+        return false;
+    }
     std::process::Command::new("notcurses-info")
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
@@ -2280,8 +2289,8 @@ fn notcurses_info_available() -> bool {
 /// assertion passes.
 #[test]
 fn notcurses_info_user_repro_e2e_full_stack() {
-    if !notcurses_info_available() {
-        eprintln!("SKIP: notcurses-info not installed");
+    if !notcurses_info_e2e_enabled() {
+        eprintln!("SKIP: notcurses-info PTY e2e (set ORITERM_E2E_PTY=1 to run)");
         return;
     }
 
@@ -2404,8 +2413,8 @@ fn notcurses_info_user_repro_e2e_full_stack() {
 /// AND a different code path zeroes the Term's defaults).
 #[test]
 fn notcurses_info_zero_cell_dims_disables_canpixel() {
-    if !notcurses_info_available() {
-        eprintln!("SKIP: notcurses-info not installed");
+    if !notcurses_info_e2e_enabled() {
+        eprintln!("SKIP: notcurses-info PTY e2e (set ORITERM_E2E_PTY=1 to run)");
         return;
     }
 
@@ -2497,8 +2506,8 @@ fn notcurses_info_zero_cell_dims_disables_canpixel() {
 /// (width / height / data.len all > 0 and consistent).
 #[test]
 fn notcurses_info_daemon_e2e_image_data_reaches_client() {
-    if !notcurses_info_available() {
-        eprintln!("SKIP: notcurses-info not installed");
+    if !notcurses_info_e2e_enabled() {
+        eprintln!("SKIP: notcurses-info PTY e2e (set ORITERM_E2E_PTY=1 to run)");
         return;
     }
 

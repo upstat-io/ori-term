@@ -9,7 +9,7 @@ use crate::geometry::Rect;
 use crate::icons::IconId;
 
 use super::TabBarWidget;
-use super::draw::{CLOSE_ICON_INSET, TabStrip};
+use super::draw::{CLOSE_ICON_INSET, TabPaint, TabStrip};
 
 use super::super::constants::{CLOSE_BUTTON_RIGHT_PAD, CLOSE_BUTTON_WIDTH};
 use crate::widgets::DrawCtx;
@@ -44,7 +44,7 @@ impl TabBarWidget {
         ctx.scene.push_layer_bg(self.colors.active_bg);
         ctx.scene.push_quad(tab_rect, style);
 
-        self.draw_tab_label(ctx, tab, visual_x, strip, false);
+        self.draw_tab_label(ctx, tab, TabPaint { strip, x: visual_x }, false);
 
         // Close button (always visible on dragged tab).
         self.draw_close_icon(ctx, index, visual_x, strip);

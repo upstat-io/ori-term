@@ -484,7 +484,7 @@ fn color_change_on_zero_width_border_produces_no_damage() {
 
 /// Creates a scene with one text run for the given widget.
 fn scene_with_text(id: WidgetId, pos: crate::geometry::Point, size_q6: u32, weight: u16) -> Scene {
-    use crate::text::{ShapedGlyph, ShapedText};
+    use crate::text::{ShapedGlyph, ShapedMetrics, ShapedText};
 
     let shaped = ShapedText::new(
         vec![ShapedGlyph {
@@ -495,9 +495,11 @@ fn scene_with_text(id: WidgetId, pos: crate::geometry::Point, size_q6: u32, weig
             x_offset: 0.0,
             y_offset: 0.0,
         }],
-        8.0,
-        16.0,
-        12.0,
+        ShapedMetrics {
+            width: 8.0,
+            height: 16.0,
+            baseline: 12.0,
+        },
         size_q6,
         weight,
     );

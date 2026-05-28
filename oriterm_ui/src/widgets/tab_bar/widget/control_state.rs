@@ -168,9 +168,9 @@ impl TabBarWidget {
 
 impl TabBarWidget {
     /// Sets the active/focused state (affects caption background).
-    #[allow(
+    #[expect(
         clippy::unused_self,
-        reason = "preserved for API compatibility — state not yet used"
+        reason = "API method called by oriterm event_loop; body is a no-op since vector icons removed the caption-bg occlusion trick"
     )]
     pub fn set_active(&self, _active: bool) {
         // No-op: caption_bg was previously forwarded to control buttons

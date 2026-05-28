@@ -2,7 +2,7 @@
 
 use std::time::{Duration, Instant};
 
-use super::WindowRoot;
+use super::{OverlayEventCtx, WindowRoot};
 
 use crate::animation::Easing;
 use crate::color::Color;
@@ -1144,10 +1144,12 @@ fn arrow_down_on_menu_overlay_advances_hover_via_keymap() {
     for label in ["first ArrowDown", "second ArrowDown"] {
         let down_result = root.process_overlay_key_event(
             key_event(Key::ArrowDown),
-            &measurer(),
-            &theme(),
-            None,
-            now,
+            OverlayEventCtx {
+                measurer: &measurer(),
+                theme: &theme(),
+                focused_widget: None,
+                now,
+            },
         );
         match down_result {
             OverlayEventResult::Delivered { response, .. } => {
@@ -1167,8 +1169,15 @@ fn arrow_down_on_menu_overlay_advances_hover_via_keymap() {
     // Confirm the advanced entry. After two ArrowDowns the menu's
     // internal hovered MUST be index 1 (advanced from None → 0 → 1);
     // Enter triggers Confirm → try_select_hovered → emits Selected{1}.
-    let enter_result =
-        root.process_overlay_key_event(key_event(Key::Enter), &measurer(), &theme(), None, now);
+    let enter_result = root.process_overlay_key_event(
+        key_event(Key::Enter),
+        OverlayEventCtx {
+            measurer: &measurer(),
+            theme: &theme(),
+            focused_widget: None,
+            now,
+        },
+    );
     match enter_result {
         OverlayEventResult::Delivered { response, .. } => match response.action {
             Some(crate::action::WidgetAction::Selected { index, .. }) => {
@@ -1213,8 +1222,15 @@ fn space_on_searchable_menu_overlay_does_not_confirm() {
     let anchor = Rect::new(100.0, 100.0, 200.0, 120.0);
     root.push_overlay(Box::new(menu), anchor, Placement::Below, now);
 
-    let result =
-        root.process_overlay_key_event(key_event(Key::Space), &measurer(), &theme(), None, now);
+    let result = root.process_overlay_key_event(
+        key_event(Key::Space),
+        OverlayEventCtx {
+            measurer: &measurer(),
+            theme: &theme(),
+            focused_widget: None,
+            now,
+        },
+    );
 
     // Space must reach on_input (filter character handling), NOT keymap-resolve
     // to Confirm. The searchable MenuWidget's on_input handles Space by
@@ -1284,10 +1300,12 @@ fn dialog_escape_dismisses_via_keymap_translation() {
 
     let result = root.process_overlay_key_event(
         key_event(Key::Character('q')),
-        &measurer(),
-        &theme(),
-        None,
-        now,
+        OverlayEventCtx {
+            measurer: &measurer(),
+            theme: &theme(),
+            focused_widget: None,
+            now,
+        },
     );
 
     // The result MUST be Dismissed(id) via the keymap translation path.
@@ -1334,8 +1352,15 @@ fn enter_on_dialog_with_focused_button_does_not_activate_via_keymap() {
         now,
     );
 
-    let result =
-        root.process_overlay_key_event(key_event(Key::Enter), &measurer(), &theme(), None, now);
+    let result = root.process_overlay_key_event(
+        key_event(Key::Enter),
+        OverlayEventCtx {
+            measurer: &measurer(),
+            theme: &theme(),
+            focused_widget: None,
+            now,
+        },
+    );
 
     // The default keymap binds Enter→Activate ONLY for "Button" context.
     // With ctx_stack=["Dialog"], lookup returns None → falls through to

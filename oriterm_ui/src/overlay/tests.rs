@@ -15,11 +15,11 @@ use crate::widgets::button::ButtonWidget;
 use crate::widgets::container::ContainerWidget;
 use crate::widgets::label::LabelWidget;
 use crate::widgets::tests::MockMeasurer;
-use crate::widgets::{DrawCtx, Widget, WidgetAction};
+use crate::widgets::{DrawCtx, LayoutCtx, Widget, WidgetAction};
 
-use super::OverlayManager;
 use super::manager::OverlayEventResult;
 use super::overlay_id::OverlayId;
+use super::{CompositorHandles, OverlayManager};
 
 const TEST_THEME: UiTheme = UiTheme::dark();
 use super::placement::{Placement, compute_overlay_rect};
@@ -262,15 +262,15 @@ fn push_overlay_increments_count() {
     let mut mgr = OverlayManager::new(viewport());
     let mut tree = test_tree();
     let mut animator = LayerAnimator::new();
-    let now = Instant::now();
 
     mgr.push_overlay(
         label_widget("A"),
         anchor(),
         Placement::Below,
-        &mut tree,
-        &mut animator,
-        now,
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
     );
     assert_eq!(mgr.count(), 1);
     assert!(!mgr.is_empty());
@@ -287,25 +287,28 @@ fn replace_popup_keeps_only_latest_popup() {
         label_widget("Modal"),
         anchor(),
         Placement::Center,
-        &mut tree,
-        &mut animator,
-        now,
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
     );
     let first_popup = mgr.push_overlay(
         label_widget("First"),
         anchor(),
         Placement::Below,
-        &mut tree,
-        &mut animator,
-        now,
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
     );
     let second_popup = mgr.replace_popup(
         label_widget("Second"),
         anchor(),
         Placement::Below,
-        &mut tree,
-        &mut animator,
-        now,
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
     );
 
     assert_eq!(mgr.count(), 2, "modal + latest popup should remain");
@@ -325,15 +328,15 @@ fn push_modal_sets_has_modal() {
     let mut mgr = OverlayManager::new(viewport());
     let mut tree = test_tree();
     let mut animator = LayerAnimator::new();
-    let now = Instant::now();
 
     mgr.push_modal(
         label_widget("Modal"),
         anchor(),
         Placement::Center,
-        &mut tree,
-        &mut animator,
-        now,
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
     );
     assert!(mgr.has_modal());
 }
@@ -349,17 +352,19 @@ fn dismiss_overlay_by_id() {
         label_widget("A"),
         anchor(),
         Placement::Below,
-        &mut tree,
-        &mut animator,
-        now,
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
     );
     let _id2 = mgr.push_overlay(
         label_widget("B"),
         anchor(),
         Placement::Below,
-        &mut tree,
-        &mut animator,
-        now,
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
     );
 
     assert!(mgr.begin_dismiss(id1, &mut tree, &mut animator, now));
@@ -379,17 +384,19 @@ fn dismiss_topmost() {
         label_widget("A"),
         anchor(),
         Placement::Below,
-        &mut tree,
-        &mut animator,
-        now,
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
     );
     let id2 = mgr.push_overlay(
         label_widget("B"),
         anchor(),
         Placement::Below,
-        &mut tree,
-        &mut animator,
-        now,
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
     );
 
     assert_eq!(
@@ -417,31 +424,33 @@ fn clear_all() {
     let mut mgr = OverlayManager::new(viewport());
     let mut tree = test_tree();
     let mut animator = LayerAnimator::new();
-    let now = Instant::now();
 
     mgr.push_overlay(
         label_widget("A"),
         anchor(),
         Placement::Below,
-        &mut tree,
-        &mut animator,
-        now,
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
     );
     mgr.push_overlay(
         label_widget("B"),
         anchor(),
         Placement::Below,
-        &mut tree,
-        &mut animator,
-        now,
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
     );
     mgr.push_modal(
         label_widget("C"),
         anchor(),
         Placement::Center,
-        &mut tree,
-        &mut animator,
-        now,
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
     );
 
     mgr.clear_all(&mut tree, &mut animator);
@@ -471,25 +480,28 @@ fn multiple_overlays_ordering() {
         label_widget("A"),
         anchor(),
         Placement::Below,
-        &mut tree,
-        &mut animator,
-        now,
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
     );
     let _id2 = mgr.push_overlay(
         label_widget("B"),
         anchor(),
         Placement::Below,
-        &mut tree,
-        &mut animator,
-        now,
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
     );
     let id3 = mgr.push_overlay(
         label_widget("C"),
         anchor(),
         Placement::Below,
-        &mut tree,
-        &mut animator,
-        now,
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
     );
 
     // Topmost is the last pushed.
@@ -505,15 +517,15 @@ fn overlay_rect_accessor() {
     let mut mgr = OverlayManager::new(viewport());
     let mut tree = test_tree();
     let mut animator = LayerAnimator::new();
-    let now = Instant::now();
 
     let id = mgr.push_overlay(
         label_widget("Test"),
         anchor(),
         Placement::Below,
-        &mut tree,
-        &mut animator,
-        now,
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
     );
     mgr.layout_overlays(&MockMeasurer::STANDARD, &TEST_THEME);
 
@@ -544,15 +556,15 @@ fn cursor_icon_at_returns_default_for_non_interactive_overlay() {
     let mut mgr = OverlayManager::new(viewport());
     let mut tree = test_tree();
     let mut animator = LayerAnimator::new();
-    let now = Instant::now();
 
     let id = mgr.push_overlay(
         label_widget("Hello"),
         anchor(),
         Placement::Below,
-        &mut tree,
-        &mut animator,
-        now,
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
     );
     mgr.layout_overlays(&MockMeasurer::STANDARD, &TEST_THEME);
 
@@ -570,15 +582,15 @@ fn cursor_icon_at_returns_pointer_for_button_overlay() {
     let mut mgr = OverlayManager::new(viewport());
     let mut tree = test_tree();
     let mut animator = LayerAnimator::new();
-    let now = Instant::now();
 
     let id = mgr.push_overlay(
         button_widget("Click me"),
         anchor(),
         Placement::Below,
-        &mut tree,
-        &mut animator,
-        now,
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
     );
     mgr.layout_overlays(&MockMeasurer::STANDARD, &TEST_THEME);
 
@@ -596,15 +608,15 @@ fn cursor_icon_at_outside_overlay_rect() {
     let mut mgr = OverlayManager::new(viewport());
     let mut tree = test_tree();
     let mut animator = LayerAnimator::new();
-    let now = Instant::now();
 
     mgr.push_overlay(
         button_widget("OK"),
         anchor(),
         Placement::Below,
-        &mut tree,
-        &mut animator,
-        now,
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
     );
     mgr.layout_overlays(&MockMeasurer::STANDARD, &TEST_THEME);
 
@@ -625,11 +637,14 @@ fn mouse_pass_through_when_empty() {
     let event = mouse_down(50.0, 50.0);
     let result = mgr.process_mouse_event(
         &event,
-        &MockMeasurer::STANDARD,
-        &TEST_THEME,
-        None,
-        &mut tree,
-        &mut animator,
+        &LayoutCtx {
+            measurer: &MockMeasurer::STANDARD,
+            theme: &TEST_THEME,
+        },
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
         now,
     );
     assert!(matches!(result, OverlayEventResult::PassThrough));
@@ -646,9 +661,10 @@ fn mouse_click_inside_overlay_delivers() {
         button_widget("Click"),
         anchor(),
         Placement::Below,
-        &mut tree,
-        &mut animator,
-        now,
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
     );
     mgr.layout_overlays(&MockMeasurer::STANDARD, &TEST_THEME);
 
@@ -656,11 +672,14 @@ fn mouse_click_inside_overlay_delivers() {
     let event = mouse_down(rect.x() + 5.0, rect.y() + 5.0);
     let result = mgr.process_mouse_event(
         &event,
-        &MockMeasurer::STANDARD,
-        &TEST_THEME,
-        None,
-        &mut tree,
-        &mut animator,
+        &LayoutCtx {
+            measurer: &MockMeasurer::STANDARD,
+            theme: &TEST_THEME,
+        },
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
         now,
     );
     assert!(matches!(result, OverlayEventResult::Delivered { .. }));
@@ -677,19 +696,23 @@ fn mouse_click_inside_new_overlay_delivers_without_prior_layout_pass() {
         button_widget("Click"),
         Rect::default(),
         Placement::AtPoint(Point::new(40.0, 50.0)),
-        &mut tree,
-        &mut animator,
-        now,
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
     );
 
     let event = mouse_down(45.0, 55.0);
     let result = mgr.process_mouse_event(
         &event,
-        &MockMeasurer::STANDARD,
-        &TEST_THEME,
-        None,
-        &mut tree,
-        &mut animator,
+        &LayoutCtx {
+            measurer: &MockMeasurer::STANDARD,
+            theme: &TEST_THEME,
+        },
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
         now,
     );
 
@@ -710,9 +733,10 @@ fn mouse_click_outside_dismisses() {
         label_widget("Popup"),
         anchor(),
         Placement::Below,
-        &mut tree,
-        &mut animator,
-        now,
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
     );
     mgr.layout_overlays(&MockMeasurer::STANDARD, &TEST_THEME);
 
@@ -720,11 +744,14 @@ fn mouse_click_outside_dismisses() {
     let event = mouse_down(1.0, 1.0);
     let result = mgr.process_mouse_event(
         &event,
-        &MockMeasurer::STANDARD,
-        &TEST_THEME,
-        None,
-        &mut tree,
-        &mut animator,
+        &LayoutCtx {
+            measurer: &MockMeasurer::STANDARD,
+            theme: &TEST_THEME,
+        },
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
         now,
     );
 
@@ -742,31 +769,33 @@ fn clear_popups_preserves_modal_layers() {
     let mut mgr = OverlayManager::new(viewport());
     let mut tree = test_tree();
     let mut animator = LayerAnimator::new();
-    let now = Instant::now();
 
     mgr.push_modal(
         label_widget("Modal"),
         anchor(),
         Placement::Center,
-        &mut tree,
-        &mut animator,
-        now,
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
     );
     mgr.push_overlay(
         label_widget("Popup A"),
         anchor(),
         Placement::Below,
-        &mut tree,
-        &mut animator,
-        now,
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
     );
     mgr.push_overlay(
         label_widget("Popup B"),
         anchor(),
         Placement::Below,
-        &mut tree,
-        &mut animator,
-        now,
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
     );
 
     assert_eq!(mgr.clear_popups(&mut tree, &mut animator), 2);
@@ -785,9 +814,10 @@ fn mouse_move_outside_does_not_dismiss() {
         label_widget("Popup"),
         anchor(),
         Placement::Below,
-        &mut tree,
-        &mut animator,
-        now,
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
     );
     mgr.layout_overlays(&MockMeasurer::STANDARD, &TEST_THEME);
 
@@ -795,11 +825,14 @@ fn mouse_move_outside_does_not_dismiss() {
     let event = mouse_move(1.0, 1.0);
     let result = mgr.process_mouse_event(
         &event,
-        &MockMeasurer::STANDARD,
-        &TEST_THEME,
-        None,
-        &mut tree,
-        &mut animator,
+        &LayoutCtx {
+            measurer: &MockMeasurer::STANDARD,
+            theme: &TEST_THEME,
+        },
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
         now,
     );
     assert!(matches!(result, OverlayEventResult::PassThrough));
@@ -817,20 +850,24 @@ fn mouse_click_outside_modal_blocks() {
         label_widget("Modal"),
         anchor(),
         Placement::Center,
-        &mut tree,
-        &mut animator,
-        now,
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
     );
     mgr.layout_overlays(&MockMeasurer::STANDARD, &TEST_THEME);
 
     let event = mouse_down(1.0, 1.0);
     let result = mgr.process_mouse_event(
         &event,
-        &MockMeasurer::STANDARD,
-        &TEST_THEME,
-        None,
-        &mut tree,
-        &mut animator,
+        &LayoutCtx {
+            measurer: &MockMeasurer::STANDARD,
+            theme: &TEST_THEME,
+        },
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
         now,
     );
     assert!(matches!(result, OverlayEventResult::Blocked));
@@ -850,17 +887,19 @@ fn mouse_topmost_overlay_wins() {
         button_widget("Back"),
         anchor(),
         Placement::Below,
-        &mut tree,
-        &mut animator,
-        now,
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
     );
     let id2 = mgr.push_overlay(
         button_widget("Front"),
         anchor(),
         Placement::Below,
-        &mut tree,
-        &mut animator,
-        now,
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
     );
     mgr.layout_overlays(&MockMeasurer::STANDARD, &TEST_THEME);
 
@@ -868,11 +907,14 @@ fn mouse_topmost_overlay_wins() {
     let event = mouse_down(rect.x() + 5.0, rect.y() + 5.0);
     let result = mgr.process_mouse_event(
         &event,
-        &MockMeasurer::STANDARD,
-        &TEST_THEME,
-        None,
-        &mut tree,
-        &mut animator,
+        &LayoutCtx {
+            measurer: &MockMeasurer::STANDARD,
+            theme: &TEST_THEME,
+        },
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
         now,
     );
 
@@ -893,11 +935,10 @@ fn key_pass_through_when_empty() {
 
     let result = mgr.process_key_event(
         key_event(Key::Enter),
-        &MockMeasurer::STANDARD,
-        &TEST_THEME,
-        None,
-        &mut tree,
-        &mut animator,
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
         now,
     );
     assert!(matches!(result, OverlayEventResult::PassThrough));
@@ -914,27 +955,28 @@ fn escape_dismisses_topmost() {
         label_widget("A"),
         anchor(),
         Placement::Below,
-        &mut tree,
-        &mut animator,
-        now,
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
     );
     let id2 = mgr.push_overlay(
         label_widget("B"),
         anchor(),
         Placement::Below,
-        &mut tree,
-        &mut animator,
-        now,
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
     );
     mgr.layout_overlays(&MockMeasurer::STANDARD, &TEST_THEME);
 
     let result = mgr.process_key_event(
         key_event(Key::Escape),
-        &MockMeasurer::STANDARD,
-        &TEST_THEME,
-        None,
-        &mut tree,
-        &mut animator,
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
         now,
     );
     match result {
@@ -955,19 +997,19 @@ fn escape_dismisses_modal() {
         label_widget("Modal"),
         anchor(),
         Placement::Center,
-        &mut tree,
-        &mut animator,
-        now,
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
     );
     mgr.layout_overlays(&MockMeasurer::STANDARD, &TEST_THEME);
 
     let result = mgr.process_key_event(
         key_event(Key::Escape),
-        &MockMeasurer::STANDARD,
-        &TEST_THEME,
-        None,
-        &mut tree,
-        &mut animator,
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
         now,
     );
     match result {
@@ -987,20 +1029,20 @@ fn modal_never_passes_key_through() {
         label_widget("Modal"),
         anchor(),
         Placement::Center,
-        &mut tree,
-        &mut animator,
-        now,
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
     );
     mgr.layout_overlays(&MockMeasurer::STANDARD, &TEST_THEME);
 
     // A random key that the label won't handle.
     let result = mgr.process_key_event(
         key_event(Key::ArrowDown),
-        &MockMeasurer::STANDARD,
-        &TEST_THEME,
-        None,
-        &mut tree,
-        &mut animator,
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
         now,
     );
     // Modal should deliver (even if Ignored by widget), never PassThrough.
@@ -1018,20 +1060,20 @@ fn non_modal_key_can_pass_through() {
         label_widget("Popup"),
         anchor(),
         Placement::Below,
-        &mut tree,
-        &mut animator,
-        now,
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
     );
     mgr.layout_overlays(&MockMeasurer::STANDARD, &TEST_THEME);
 
     // Labels don't handle key events → should pass through.
     let result = mgr.process_key_event(
         key_event(Key::ArrowDown),
-        &MockMeasurer::STANDARD,
-        &TEST_THEME,
-        None,
-        &mut tree,
-        &mut animator,
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
         now,
     );
     assert!(matches!(result, OverlayEventResult::PassThrough));
@@ -1056,15 +1098,15 @@ fn hover_inside_overlay_delivers() {
     let mut mgr = OverlayManager::new(viewport());
     let mut tree = test_tree();
     let mut animator = LayerAnimator::new();
-    let now = Instant::now();
 
     let id = mgr.push_overlay(
         button_widget("Btn"),
         anchor(),
         Placement::Below,
-        &mut tree,
-        &mut animator,
-        now,
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
     );
     mgr.layout_overlays(&MockMeasurer::STANDARD, &TEST_THEME);
 
@@ -1083,15 +1125,15 @@ fn hover_outside_modal_blocks() {
     let mut mgr = OverlayManager::new(viewport());
     let mut tree = test_tree();
     let mut animator = LayerAnimator::new();
-    let now = Instant::now();
 
     mgr.push_modal(
         label_widget("Modal"),
         anchor(),
         Placement::Center,
-        &mut tree,
-        &mut animator,
-        now,
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
     );
     mgr.layout_overlays(&MockMeasurer::STANDARD, &TEST_THEME);
 
@@ -1109,15 +1151,15 @@ fn hover_outside_non_modal_passes_through() {
     let mut mgr = OverlayManager::new(viewport());
     let mut tree = test_tree();
     let mut animator = LayerAnimator::new();
-    let now = Instant::now();
 
     mgr.push_overlay(
         label_widget("Popup"),
         anchor(),
         Placement::Below,
-        &mut tree,
-        &mut animator,
-        now,
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
     );
     mgr.layout_overlays(&MockMeasurer::STANDARD, &TEST_THEME);
 
@@ -1137,7 +1179,6 @@ fn hover_transition_sends_leave_to_old_overlay() {
     let mut mgr = OverlayManager::new(viewport());
     let mut tree = test_tree();
     let mut animator = LayerAnimator::new();
-    let now = Instant::now();
 
     let btn_a = button_widget("A");
     let anchor_a = Rect::new(50.0, 50.0, 80.0, 30.0);
@@ -1145,9 +1186,10 @@ fn hover_transition_sends_leave_to_old_overlay() {
         btn_a,
         anchor_a,
         Placement::Below,
-        &mut tree,
-        &mut animator,
-        now,
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
     );
 
     let btn_b = button_widget("B");
@@ -1156,9 +1198,10 @@ fn hover_transition_sends_leave_to_old_overlay() {
         btn_b,
         anchor_b,
         Placement::Below,
-        &mut tree,
-        &mut animator,
-        now,
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
     );
 
     mgr.layout_overlays(&MockMeasurer::STANDARD, &TEST_THEME);
@@ -1225,9 +1268,10 @@ fn draw_non_modal_no_dimming() {
         label_widget("A"),
         anchor(),
         Placement::Below,
-        &mut tree,
-        &mut animator,
-        now,
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
     );
     mgr.layout_overlays(&MockMeasurer::STANDARD, &TEST_THEME);
 
@@ -1266,9 +1310,10 @@ fn draw_modal_emits_dimming_rect() {
         label_widget("Modal"),
         anchor(),
         Placement::Center,
-        &mut tree,
-        &mut animator,
-        now,
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
     );
     mgr.layout_overlays(&MockMeasurer::STANDARD, &TEST_THEME);
 
@@ -1314,17 +1359,19 @@ fn draw_overlays_in_painter_order() {
         label_widget("AB"),
         anchor(),
         Placement::Below,
-        &mut tree,
-        &mut animator,
-        now,
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
     );
     mgr.push_overlay(
         label_widget("ABCDE"),
         anchor(),
         Placement::Below,
-        &mut tree,
-        &mut animator,
-        now,
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
     );
     mgr.layout_overlays(&MockMeasurer::STANDARD, &TEST_THEME);
 
@@ -1363,7 +1410,6 @@ fn modal_focus_order_returns_focusable_ids() {
     let mut mgr = OverlayManager::new(viewport());
     let mut tree = test_tree();
     let mut animator = LayerAnimator::new();
-    let now = Instant::now();
 
     let btn = button_widget("Focus Me");
     let btn_id = btn.id();
@@ -1371,9 +1417,10 @@ fn modal_focus_order_returns_focusable_ids() {
         btn,
         anchor(),
         Placement::Center,
-        &mut tree,
-        &mut animator,
-        now,
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
     );
     mgr.layout_overlays(&MockMeasurer::STANDARD, &TEST_THEME);
 
@@ -1394,15 +1441,15 @@ fn non_modal_overlay_returns_none_focus_order() {
     let mut mgr = OverlayManager::new(viewport());
     let mut tree = test_tree();
     let mut animator = LayerAnimator::new();
-    let now = Instant::now();
 
     mgr.push_overlay(
         button_widget("Btn"),
         anchor(),
         Placement::Below,
-        &mut tree,
-        &mut animator,
-        now,
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
     );
     assert!(mgr.modal_focus_order().is_none());
 }
@@ -1432,9 +1479,10 @@ fn button_in_overlay_receives_click_action() {
         btn,
         anchor(),
         Placement::Below,
-        &mut tree,
-        &mut animator,
-        now,
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
     );
     mgr.layout_overlays(&MockMeasurer::STANDARD, &TEST_THEME);
 
@@ -1444,11 +1492,14 @@ fn button_in_overlay_receives_click_action() {
     let down = mouse_down(rect.x() + 5.0, rect.y() + 5.0);
     mgr.process_mouse_event(
         &down,
-        &MockMeasurer::STANDARD,
-        &TEST_THEME,
-        None,
-        &mut tree,
-        &mut animator,
+        &LayoutCtx {
+            measurer: &MockMeasurer::STANDARD,
+            theme: &TEST_THEME,
+        },
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
         now,
     );
 
@@ -1459,11 +1510,14 @@ fn button_in_overlay_receives_click_action() {
     };
     let result = mgr.process_mouse_event(
         &up,
-        &MockMeasurer::STANDARD,
-        &TEST_THEME,
-        None,
-        &mut tree,
-        &mut animator,
+        &LayoutCtx {
+            measurer: &MockMeasurer::STANDARD,
+            theme: &TEST_THEME,
+        },
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
         now,
     );
 
@@ -1489,17 +1543,19 @@ fn stacked_modals_inner_dismiss_restores_outer() {
         label_widget("Outer"),
         anchor(),
         Placement::Center,
-        &mut tree,
-        &mut animator,
-        now,
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
     );
     let id2 = mgr.push_modal(
         label_widget("Inner"),
         anchor(),
         Placement::Center,
-        &mut tree,
-        &mut animator,
-        now,
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
     );
     assert_eq!(mgr.count(), 2);
     assert!(mgr.has_modal());
@@ -1507,11 +1563,10 @@ fn stacked_modals_inner_dismiss_restores_outer() {
     // Escape dismisses inner modal.
     let result = mgr.process_key_event(
         key_event(Key::Escape),
-        &MockMeasurer::STANDARD,
-        &TEST_THEME,
-        None,
-        &mut tree,
-        &mut animator,
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
         now,
     );
     match result {
@@ -1527,11 +1582,14 @@ fn stacked_modals_inner_dismiss_restores_outer() {
     let event = mouse_down(1.0, 1.0);
     let result = mgr.process_mouse_event(
         &event,
-        &MockMeasurer::STANDARD,
-        &TEST_THEME,
-        None,
-        &mut tree,
-        &mut animator,
+        &LayoutCtx {
+            measurer: &MockMeasurer::STANDARD,
+            theme: &TEST_THEME,
+        },
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
         now,
     );
     assert!(matches!(result, OverlayEventResult::Blocked));
@@ -1539,11 +1597,10 @@ fn stacked_modals_inner_dismiss_restores_outer() {
     // Second escape dismisses outer.
     let result = mgr.process_key_event(
         key_event(Key::Escape),
-        &MockMeasurer::STANDARD,
-        &TEST_THEME,
-        None,
-        &mut tree,
-        &mut animator,
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
         now,
     );
     match result {
@@ -1566,36 +1623,38 @@ fn multiple_escapes_dismiss_stack_one_at_a_time() {
         label_widget("A"),
         anchor(),
         Placement::Below,
-        &mut tree,
-        &mut animator,
-        now,
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
     );
     let id2 = mgr.push_overlay(
         label_widget("B"),
         anchor(),
         Placement::Below,
-        &mut tree,
-        &mut animator,
-        now,
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
     );
     let id3 = mgr.push_overlay(
         label_widget("C"),
         anchor(),
         Placement::Below,
-        &mut tree,
-        &mut animator,
-        now,
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
     );
     mgr.layout_overlays(&MockMeasurer::STANDARD, &TEST_THEME);
 
     // Three escapes should dismiss C, B, A in order.
     let r = mgr.process_key_event(
         key_event(Key::Escape),
-        &MockMeasurer::STANDARD,
-        &TEST_THEME,
-        None,
-        &mut tree,
-        &mut animator,
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
         now,
     );
     assert!(matches!(r, OverlayEventResult::Dismissed(id) if id == id3));
@@ -1603,11 +1662,10 @@ fn multiple_escapes_dismiss_stack_one_at_a_time() {
 
     let r = mgr.process_key_event(
         key_event(Key::Escape),
-        &MockMeasurer::STANDARD,
-        &TEST_THEME,
-        None,
-        &mut tree,
-        &mut animator,
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
         now,
     );
     assert!(matches!(r, OverlayEventResult::Dismissed(id) if id == id2));
@@ -1615,11 +1673,10 @@ fn multiple_escapes_dismiss_stack_one_at_a_time() {
 
     let r = mgr.process_key_event(
         key_event(Key::Escape),
-        &MockMeasurer::STANDARD,
-        &TEST_THEME,
-        None,
-        &mut tree,
-        &mut animator,
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
         now,
     );
     assert!(matches!(r, OverlayEventResult::Dismissed(id) if id == id1));
@@ -1630,11 +1687,10 @@ fn multiple_escapes_dismiss_stack_one_at_a_time() {
     // Fourth escape passes through (stack empty).
     let r = mgr.process_key_event(
         key_event(Key::Escape),
-        &MockMeasurer::STANDARD,
-        &TEST_THEME,
-        None,
-        &mut tree,
-        &mut animator,
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
         now,
     );
     assert!(matches!(r, OverlayEventResult::PassThrough));
@@ -1654,9 +1710,10 @@ fn scroll_outside_overlay_does_not_dismiss() {
         label_widget("Menu"),
         anchor(),
         Placement::Below,
-        &mut tree,
-        &mut animator,
-        now,
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
     );
     mgr.layout_overlays(&MockMeasurer::STANDARD, &TEST_THEME);
 
@@ -1667,11 +1724,14 @@ fn scroll_outside_overlay_does_not_dismiss() {
     };
     let result = mgr.process_mouse_event(
         &scroll,
-        &MockMeasurer::STANDARD,
-        &TEST_THEME,
-        None,
-        &mut tree,
-        &mut animator,
+        &LayoutCtx {
+            measurer: &MockMeasurer::STANDARD,
+            theme: &TEST_THEME,
+        },
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
         now,
     );
     // Scroll is delivered to the popup (not PassThrough) so dropdown menus
@@ -1692,9 +1752,10 @@ fn right_click_outside_also_dismisses() {
         label_widget("Context"),
         anchor(),
         Placement::Below,
-        &mut tree,
-        &mut animator,
-        now,
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
     );
     mgr.layout_overlays(&MockMeasurer::STANDARD, &TEST_THEME);
 
@@ -1705,11 +1766,14 @@ fn right_click_outside_also_dismisses() {
     };
     let result = mgr.process_mouse_event(
         &right_click,
-        &MockMeasurer::STANDARD,
-        &TEST_THEME,
-        None,
-        &mut tree,
-        &mut animator,
+        &LayoutCtx {
+            measurer: &MockMeasurer::STANDARD,
+            theme: &TEST_THEME,
+        },
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
         now,
     );
     match result {
@@ -1730,25 +1794,28 @@ fn dismiss_middle_overlay_preserves_stack() {
         label_widget("A"),
         anchor(),
         Placement::Below,
-        &mut tree,
-        &mut animator,
-        now,
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
     );
     let id2 = mgr.push_overlay(
         label_widget("B"),
         anchor(),
         Placement::Below,
-        &mut tree,
-        &mut animator,
-        now,
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
     );
     let id3 = mgr.push_overlay(
         label_widget("C"),
         anchor(),
         Placement::Below,
-        &mut tree,
-        &mut animator,
-        now,
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
     );
 
     // Remove middle overlay.
@@ -1782,28 +1849,29 @@ fn dismiss_topmost_reveals_overlay_below() {
         button_widget("Lower"),
         anchor(),
         Placement::Below,
-        &mut tree,
-        &mut animator,
-        now,
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
     );
     let _id2 = mgr.push_overlay(
         label_widget("Upper"),
         anchor(),
         Placement::Below,
-        &mut tree,
-        &mut animator,
-        now,
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
     );
     mgr.layout_overlays(&MockMeasurer::STANDARD, &TEST_THEME);
 
     // Escape removes Upper.
     mgr.process_key_event(
         key_event(Key::Escape),
-        &MockMeasurer::STANDARD,
-        &TEST_THEME,
-        None,
-        &mut tree,
-        &mut animator,
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
         now,
     );
     assert_eq!(mgr.count(), 1);
@@ -1813,11 +1881,14 @@ fn dismiss_topmost_reveals_overlay_below() {
     let event = mouse_down(rect.x() + 5.0, rect.y() + 5.0);
     let result = mgr.process_mouse_event(
         &event,
-        &MockMeasurer::STANDARD,
-        &TEST_THEME,
-        None,
-        &mut tree,
-        &mut animator,
+        &LayoutCtx {
+            measurer: &MockMeasurer::STANDARD,
+            theme: &TEST_THEME,
+        },
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
         now,
     );
     match result {
@@ -1832,15 +1903,15 @@ fn viewport_resize_relayouts_overlays() {
     let mut mgr = OverlayManager::new(viewport());
     let mut tree = test_tree();
     let mut animator = LayerAnimator::new();
-    let now = Instant::now();
 
     let id = mgr.push_overlay(
         label_widget("Popup"),
         anchor(),
         Placement::Center,
-        &mut tree,
-        &mut animator,
-        now,
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
     );
     mgr.layout_overlays(&MockMeasurer::STANDARD, &TEST_THEME);
 
@@ -1883,17 +1954,19 @@ fn non_modal_over_modal_blocks_correctly() {
         label_widget("Modal Base"),
         anchor(),
         Placement::Center,
-        &mut tree,
-        &mut animator,
-        now,
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
     );
     mgr.push_overlay(
         label_widget("Popup"),
         anchor(),
         Placement::Below,
-        &mut tree,
-        &mut animator,
-        now,
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
     );
     mgr.layout_overlays(&MockMeasurer::STANDARD, &TEST_THEME);
 
@@ -1904,11 +1977,14 @@ fn non_modal_over_modal_blocks_correctly() {
     let event = mouse_down(1.0, 1.0);
     let result = mgr.process_mouse_event(
         &event,
-        &MockMeasurer::STANDARD,
-        &TEST_THEME,
-        None,
-        &mut tree,
-        &mut animator,
+        &LayoutCtx {
+            measurer: &MockMeasurer::STANDARD,
+            theme: &TEST_THEME,
+        },
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
         now,
     );
     // Should dismiss the non-modal popup.
@@ -1918,11 +1994,14 @@ fn non_modal_over_modal_blocks_correctly() {
     // Now topmost is modal — click outside is blocked.
     let result = mgr.process_mouse_event(
         &event,
-        &MockMeasurer::STANDARD,
-        &TEST_THEME,
-        None,
-        &mut tree,
-        &mut animator,
+        &LayoutCtx {
+            measurer: &MockMeasurer::STANDARD,
+            theme: &TEST_THEME,
+        },
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
         now,
     );
     assert!(matches!(result, OverlayEventResult::Blocked));
@@ -1934,23 +2013,24 @@ fn push_after_clear_works() {
     let mut mgr = OverlayManager::new(viewport());
     let mut tree = test_tree();
     let mut animator = LayerAnimator::new();
-    let now = Instant::now();
 
     mgr.push_overlay(
         label_widget("A"),
         anchor(),
         Placement::Below,
-        &mut tree,
-        &mut animator,
-        now,
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
     );
     mgr.push_modal(
         label_widget("B"),
         anchor(),
         Placement::Center,
-        &mut tree,
-        &mut animator,
-        now,
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
     );
     mgr.clear_all(&mut tree, &mut animator);
 
@@ -1958,9 +2038,10 @@ fn push_after_clear_works() {
         label_widget("Fresh"),
         anchor(),
         Placement::Below,
-        &mut tree,
-        &mut animator,
-        now,
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
     );
     mgr.layout_overlays(&MockMeasurer::STANDARD, &TEST_THEME);
 
@@ -1981,9 +2062,10 @@ fn mouse_up_outside_does_not_dismiss() {
         label_widget("Popup"),
         anchor(),
         Placement::Below,
-        &mut tree,
-        &mut animator,
-        now,
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
     );
     mgr.layout_overlays(&MockMeasurer::STANDARD, &TEST_THEME);
 
@@ -1994,11 +2076,14 @@ fn mouse_up_outside_does_not_dismiss() {
     };
     let result = mgr.process_mouse_event(
         &up,
-        &MockMeasurer::STANDARD,
-        &TEST_THEME,
-        None,
-        &mut tree,
-        &mut animator,
+        &LayoutCtx {
+            measurer: &MockMeasurer::STANDARD,
+            theme: &TEST_THEME,
+        },
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
         now,
     );
     assert!(matches!(result, OverlayEventResult::PassThrough));
@@ -2017,19 +2102,19 @@ fn modal_key_delivery_reports_correct_overlay_id() {
         label_widget("Dialog"),
         anchor(),
         Placement::Center,
-        &mut tree,
-        &mut animator,
-        now,
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
     );
     mgr.layout_overlays(&MockMeasurer::STANDARD, &TEST_THEME);
 
     let result = mgr.process_key_event(
         key_event(Key::ArrowDown),
-        &MockMeasurer::STANDARD,
-        &TEST_THEME,
-        None,
-        &mut tree,
-        &mut animator,
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
         now,
     );
     match result {
@@ -2050,17 +2135,19 @@ fn draw_stacked_modals_emits_two_dim_rects() {
         label_widget("Outer"),
         anchor(),
         Placement::Center,
-        &mut tree,
-        &mut animator,
-        now,
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
     );
     mgr.push_modal(
         label_widget("Inner"),
         anchor(),
         Placement::Center,
-        &mut tree,
-        &mut animator,
-        now,
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
     );
     mgr.layout_overlays(&MockMeasurer::STANDARD, &TEST_THEME);
 
@@ -2100,15 +2187,15 @@ fn label_not_focusable_in_modal() {
     let mut mgr = OverlayManager::new(viewport());
     let mut tree = test_tree();
     let mut animator = LayerAnimator::new();
-    let now = Instant::now();
 
     mgr.push_modal(
         label_widget("Text Only"),
         anchor(),
         Placement::Center,
-        &mut tree,
-        &mut animator,
-        now,
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
     );
     mgr.layout_overlays(&MockMeasurer::STANDARD, &TEST_THEME);
 
@@ -2130,15 +2217,15 @@ fn modal_focus_order_traverses_containers() {
     let mut mgr = OverlayManager::new(viewport());
     let mut tree = test_tree();
     let mut animator = LayerAnimator::new();
-    let now = Instant::now();
 
     mgr.push_modal(
         flex,
         anchor(),
         Placement::Center,
-        &mut tree,
-        &mut animator,
-        now,
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
     );
     mgr.layout_overlays(&MockMeasurer::STANDARD, &TEST_THEME);
 
@@ -2163,9 +2250,10 @@ fn dismiss_during_fade_in_starts_fade_out() {
         label_widget("Quick"),
         anchor(),
         Placement::Below,
-        &mut tree,
-        &mut animator,
-        now,
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
     );
 
     // Don't tick — the fade-in has not started yet.
@@ -2190,9 +2278,10 @@ fn double_dismiss_is_noop() {
         label_widget("A"),
         anchor(),
         Placement::Below,
-        &mut tree,
-        &mut animator,
-        now,
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
     );
 
     assert!(mgr.begin_dismiss(id, &mut tree, &mut animator, now));
@@ -2214,9 +2303,10 @@ fn popup_starts_at_full_opacity() {
         label_widget("Popup"),
         anchor(),
         Placement::Below,
-        &mut tree,
-        &mut animator,
-        now,
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
     );
     mgr.layout_overlays(&MockMeasurer::STANDARD, &TEST_THEME);
 
@@ -2253,9 +2343,10 @@ fn modal_fades_in_from_zero() {
         label_widget("Modal"),
         anchor(),
         Placement::Center,
-        &mut tree,
-        &mut animator,
-        now,
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
     );
     mgr.layout_overlays(&MockMeasurer::STANDARD, &TEST_THEME);
 
@@ -2293,9 +2384,10 @@ fn modal_dim_rect_opacity_tracks_dim_layer() {
         label_widget("Modal"),
         anchor(),
         Placement::Center,
-        &mut tree,
-        &mut animator,
-        now,
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
     );
     mgr.layout_overlays(&MockMeasurer::STANDARD, &TEST_THEME);
 
@@ -2357,9 +2449,10 @@ fn tab_on_overlay_falls_through_to_on_input_via_focus_gate() {
         Box::new(probe),
         anchor(),
         Placement::Center,
-        &mut tree,
-        &mut animator,
-        now,
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
     );
     mgr.layout_overlays(&MockMeasurer::STANDARD, &TEST_THEME);
 
@@ -2370,11 +2463,10 @@ fn tab_on_overlay_falls_through_to_on_input_via_focus_gate() {
     let result = mgr.process_key_event_with_keymap(
         key_event(Key::Tab),
         &keymap,
-        &MockMeasurer::STANDARD,
-        &TEST_THEME,
-        None,
-        &mut tree,
-        &mut animator,
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
         now,
     );
 
@@ -2408,9 +2500,10 @@ fn shift_tab_on_overlay_falls_through_to_on_input_via_focus_gate() {
         Box::new(probe),
         anchor(),
         Placement::Center,
-        &mut tree,
-        &mut animator,
-        now,
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
     );
     mgr.layout_overlays(&MockMeasurer::STANDARD, &TEST_THEME);
 
@@ -2425,11 +2518,10 @@ fn shift_tab_on_overlay_falls_through_to_on_input_via_focus_gate() {
     let result = mgr.process_key_event_with_keymap(
         event,
         &keymap,
-        &MockMeasurer::STANDARD,
-        &TEST_THEME,
-        None,
-        &mut tree,
-        &mut animator,
+        &mut CompositorHandles {
+            tree: &mut tree,
+            animator: &mut animator,
+        },
         now,
     );
 

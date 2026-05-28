@@ -87,10 +87,12 @@ pub(in crate::app::redraw) fn render_chrome(
         &mut ctx.root,
         &mut ctx.tab_bar,
         ctx.tab_bar_phys_rect,
-        renderer,
-        &ctx.text_cache,
-        ui_theme,
-        scale,
+        &draw_helpers::LayoutChrome {
+            renderer,
+            text_cache: &ctx.text_cache,
+            theme: ui_theme,
+            scale,
+        },
         ctx.ui_stale,
     );
 
@@ -108,13 +110,15 @@ pub(in crate::app::redraw) fn render_chrome(
     );
     let tab_bar_animating = App::draw_tab_bar(
         tab_bar_ref,
-        renderer,
-        &mut ctx.chrome_scene,
-        tab_bar_bounds,
-        scale,
-        gpu,
-        ui_theme,
-        &ctx.text_cache,
+        draw_helpers::ChromeDraw {
+            renderer,
+            scene: &mut ctx.chrome_scene,
+            gpu,
+            theme: ui_theme,
+            text_cache: &ctx.text_cache,
+            scale,
+            bounds: tab_bar_bounds,
+        },
         interaction,
         flags,
         damage,
@@ -124,20 +128,22 @@ pub(in crate::app::redraw) fn render_chrome(
     }
 
     // Draw overlays with per-overlay compositor opacity.
-    let logical_size = (logical_w as f32, h as f32 / scale);
+    let overlay_bounds = Rect::new(0.0, 0.0, logical_w as f32, h as f32 / scale);
     let (overlays, layer_tree, interaction, flags) = ctx
         .root
         .overlays_layer_tree_interaction_and_frame_requests();
     let overlays_animating = App::draw_overlays(
         overlays,
-        renderer,
-        &mut ctx.chrome_scene,
-        logical_size,
-        scale,
-        gpu,
+        draw_helpers::ChromeDraw {
+            renderer,
+            scene: &mut ctx.chrome_scene,
+            gpu,
+            theme: ui_theme,
+            text_cache: &ctx.text_cache,
+            scale,
+            bounds: overlay_bounds,
+        },
         layer_tree,
-        ui_theme,
-        &ctx.text_cache,
         interaction,
         flags,
     );
@@ -154,14 +160,16 @@ pub(in crate::app::redraw) fn render_chrome(
         };
         App::draw_search_bar(
             search,
-            renderer,
-            &mut ctx.chrome_scene,
-            &mut ctx.search_bar_buf,
             logical_w as f32,
             chrome_h,
-            scale,
-            gpu,
-            &ctx.text_cache,
+            super::OverlayBadgeDraw {
+                renderer,
+                scene: &mut ctx.chrome_scene,
+                buf: &mut ctx.search_bar_buf,
+                gpu,
+                text_cache: &ctx.text_cache,
+                scale,
+            },
         );
     }
 
@@ -181,13 +189,15 @@ pub(in crate::app::redraw) fn render_chrome(
         );
         App::draw_status_bar(
             &ctx.status_bar,
-            renderer,
-            &mut ctx.chrome_scene,
-            sb_bounds,
-            scale,
-            gpu,
-            ui_theme,
-            &ctx.text_cache,
+            draw_helpers::ChromeDraw {
+                renderer,
+                scene: &mut ctx.chrome_scene,
+                gpu,
+                theme: ui_theme,
+                text_cache: &ctx.text_cache,
+                scale,
+                bounds: sb_bounds,
+            },
         );
     }
 

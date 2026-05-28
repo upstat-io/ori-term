@@ -12,7 +12,10 @@ use oriterm_ui::widget_id::WidgetId;
 use oriterm_ui::widgets::Widget;
 use oriterm_ui::widgets::contexts::{DrawCtx, LayoutCtx};
 
-use super::{DispatchResult, dispatch_step, prepare_widget_frame, prepare_widget_tree};
+use super::{
+    DispatchResult, DispatchStepCtx, PrepareCtx, dispatch_step, prepare_widget_frame,
+    prepare_widget_tree,
+};
 
 // -- Test helpers --
 
@@ -140,11 +143,13 @@ fn dispatch_step_routes_to_controller() {
 
     let handled = dispatch_step(
         &mut result,
-        &event,
-        &action,
         &mut widget,
-        state,
-        Instant::now(),
+        DispatchStepCtx {
+            event: &event,
+            action: &action,
+            interaction: state,
+            now: Instant::now(),
+        },
     );
 
     assert!(handled);
@@ -166,11 +171,13 @@ fn dispatch_step_unhandled_does_not_stop() {
 
     let handled = dispatch_step(
         &mut result,
-        &event,
-        &action,
         &mut widget,
-        &interaction,
-        Instant::now(),
+        DispatchStepCtx {
+            event: &event,
+            action: &action,
+            interaction: &interaction,
+            now: Instant::now(),
+        },
     );
 
     assert!(!handled);
@@ -190,11 +197,13 @@ fn dispatch_step_accumulates_requests() {
 
     dispatch_step(
         &mut result,
-        &event,
-        &action,
         &mut widget,
-        &interaction,
-        Instant::now(),
+        DispatchStepCtx {
+            event: &event,
+            action: &action,
+            interaction: &interaction,
+            now: Instant::now(),
+        },
     );
 
     assert!(result.requests.contains(ControllerRequests::SET_ACTIVE));
@@ -218,11 +227,13 @@ fn multi_step_delivery_stops_on_handled() {
     // Widget A handles it — loop stops before B.
     let stop_a = dispatch_step(
         &mut result,
-        &event,
-        &actions[0],
         &mut widget_a,
-        &state,
-        Instant::now(),
+        DispatchStepCtx {
+            event: &event,
+            action: &actions[0],
+            interaction: &state,
+            now: Instant::now(),
+        },
     );
     assert!(stop_a);
 
@@ -233,11 +244,13 @@ fn multi_step_delivery_stops_on_handled() {
     // Demonstrate that if we DID call B, it would add another action.
     let stop_b = dispatch_step(
         &mut result,
-        &event,
-        &actions[1],
         &mut widget_b,
-        &state,
-        Instant::now(),
+        DispatchStepCtx {
+            event: &event,
+            action: &actions[1],
+            interaction: &state,
+            now: Instant::now(),
+        },
     );
     assert!(stop_b);
     assert_eq!(result.actions.len(), 2);
@@ -256,12 +269,14 @@ fn prepare_widget_frame_delivers_lifecycle() {
     let added = interaction.drain_events();
     prepare_widget_frame(
         &mut widget,
-        &mut interaction,
-        None,
-        &added,
-        None,
-        None,
-        Instant::now(),
+        PrepareCtx {
+            interaction: &mut interaction,
+            tracker: None,
+            lifecycle_events: &added,
+            anim_event: None,
+            frame_requests: None,
+            now: Instant::now(),
+        },
     );
     widget.lifecycle_calls.clear();
 
@@ -273,12 +288,14 @@ fn prepare_widget_frame_delivers_lifecycle() {
 
     prepare_widget_frame(
         &mut widget,
-        &mut interaction,
-        None,
-        &events,
-        None,
-        None,
-        Instant::now(),
+        PrepareCtx {
+            interaction: &mut interaction,
+            tracker: None,
+            lifecycle_events: &events,
+            anim_event: None,
+            frame_requests: None,
+            now: Instant::now(),
+        },
     );
 
     assert_eq!(widget.lifecycle_calls.len(), 1);
@@ -303,12 +320,14 @@ fn prepare_widget_frame_skips_other_widget_events() {
     let added = interaction.drain_events();
     prepare_widget_frame(
         &mut widget,
-        &mut interaction,
-        None,
-        &added,
-        None,
-        None,
-        Instant::now(),
+        PrepareCtx {
+            interaction: &mut interaction,
+            tracker: None,
+            lifecycle_events: &added,
+            anim_event: None,
+            frame_requests: None,
+            now: Instant::now(),
+        },
     );
     widget.lifecycle_calls.clear();
 
@@ -320,12 +339,14 @@ fn prepare_widget_frame_skips_other_widget_events() {
 
     prepare_widget_frame(
         &mut widget,
-        &mut interaction,
-        None,
-        &events,
-        None,
-        None,
-        Instant::now(),
+        PrepareCtx {
+            interaction: &mut interaction,
+            tracker: None,
+            lifecycle_events: &events,
+            anim_event: None,
+            frame_requests: None,
+            now: Instant::now(),
+        },
     );
 
     assert!(widget.lifecycle_calls.is_empty());
@@ -415,12 +436,14 @@ fn prepare_widget_tree_delivers_to_children() {
     let added_events = interaction.drain_events();
     prepare_widget_tree(
         &mut parent,
-        &mut interaction,
-        None,
-        &added_events,
-        None,
-        None,
-        Instant::now(),
+        PrepareCtx {
+            interaction: &mut interaction,
+            tracker: None,
+            lifecycle_events: &added_events,
+            anim_event: None,
+            frame_requests: None,
+            now: Instant::now(),
+        },
     );
     for child in &mut parent.children {
         child.lifecycle_calls.clear();
@@ -439,12 +462,14 @@ fn prepare_widget_tree_delivers_to_children() {
 
     prepare_widget_tree(
         &mut parent,
-        &mut interaction,
-        None,
-        &events,
-        None,
-        None,
-        Instant::now(),
+        PrepareCtx {
+            interaction: &mut interaction,
+            tracker: None,
+            lifecycle_events: &events,
+            anim_event: None,
+            frame_requests: None,
+            now: Instant::now(),
+        },
     );
 
     // Child A received its HotChanged event.
@@ -548,19 +573,31 @@ fn prepare_widget_tree_processes_visual_states() {
     let now = Instant::now();
     prepare_widget_tree(
         &mut parent,
-        &mut interaction,
-        None,
-        &added_events,
-        None,
-        None,
-        now,
+        PrepareCtx {
+            interaction: &mut interaction,
+            tracker: None,
+            lifecycle_events: &added_events,
+            anim_event: None,
+            frame_requests: None,
+            now,
+        },
     );
 
     // Make child hot so the animator has state to process.
     interaction.update_hot_path(&[child_id]);
     let _ = interaction.drain_events();
 
-    prepare_widget_tree(&mut parent, &mut interaction, None, &[], None, None, now);
+    prepare_widget_tree(
+        &mut parent,
+        PrepareCtx {
+            interaction: &mut interaction,
+            tracker: None,
+            lifecycle_events: &[],
+            anim_event: None,
+            frame_requests: None,
+            now,
+        },
+    );
 
     // The child's animator was updated (it called update+tick).
     // We can't easily inspect internal state, but the fact that it

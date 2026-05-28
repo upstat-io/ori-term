@@ -66,13 +66,15 @@ impl App {
         let result = super::keymap_dispatch::dispatch_dialog_key_event(
             &input_event,
             ctx,
-            &focus_path,
-            active,
-            content_bounds,
-            &layout_node,
-            now,
-            #[cfg(debug_assertions)]
-            &layout_ids,
+            super::keymap_dispatch::DialogKeyDispatch {
+                focus_path: &focus_path,
+                active,
+                content_bounds,
+                layout_node: &layout_node,
+                now,
+                #[cfg(debug_assertions)]
+                layout_ids: &layout_ids,
+            },
         );
 
         // Apply interaction state changes (focus cycling, active) and mark dirty.

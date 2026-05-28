@@ -4,7 +4,7 @@
 //! horizontal/vertical lines, corner arcs, fading lines, and branch node
 //! circles with directional connectors.
 
-use super::Canvas;
+use super::{Canvas, LineF, RectF};
 
 /// Bundled cell geometry for branch drawing.
 struct Ctx {
@@ -56,13 +56,13 @@ enum Corner {
 /// Horizontal line through center.
 fn hline(canvas: &mut Canvas, g: &Ctx) {
     let ht = g.thick / 2.0;
-    canvas.fill_rect(0.0, g.cy - ht, g.w, g.thick, 255);
+    canvas.fill_rect(RectF::new(0.0, g.cy - ht, g.w, g.thick), 255);
 }
 
 /// Vertical line through center.
 fn vline(canvas: &mut Canvas, g: &Ctx) {
     let ht = g.thick / 2.0;
-    canvas.fill_rect(g.cx - ht, 0.0, g.thick, g.h, 255);
+    canvas.fill_rect(RectF::new(g.cx - ht, 0.0, g.thick, g.h), 255);
 }
 
 /// Draw fading line characters (U+F5D2–F5D5).
@@ -90,7 +90,7 @@ fn draw_fading(canvas: &mut Canvas, g: &Ctx, ch: char) {
             } else {
                 (g.cx - len * frac1, g.cx - len * frac0)
             };
-            canvas.fill_rect(x0, g.cy - ht, x1 - x0, g.thick, alpha);
+            canvas.fill_rect(RectF::new(x0, g.cy - ht, x1 - x0, g.thick), alpha);
         } else {
             let len = if positive { g.h - g.cy } else { g.cy };
             let (y0, y1) = if positive {
@@ -98,7 +98,7 @@ fn draw_fading(canvas: &mut Canvas, g: &Ctx, ch: char) {
             } else {
                 (g.cy - len * frac1, g.cy - len * frac0)
             };
-            canvas.fill_rect(g.cx - ht, y0, g.thick, y1 - y0, alpha);
+            canvas.fill_rect(RectF::new(g.cx - ht, y0, g.thick, y1 - y0), alpha);
         }
     }
 }
@@ -238,7 +238,7 @@ fn arc(canvas: &mut Canvas, g: &Ctx, corner: Corner) {
         let x1 = g.cx + sx * rx * t1.sin();
         let y1 = g.cy + sy * ry * (1.0 - t1.cos());
 
-        canvas.fill_line(x0, y0, x1, y1, g.thick);
+        canvas.fill_line(LineF::new(x0, y0, x1, y1), g.thick);
     }
 }
 
@@ -252,16 +252,22 @@ fn draw_branch_node(canvas: &mut Canvas, g: &Ctx, ch: char) {
     let ht = g.thick / 2.0;
 
     if up {
-        canvas.fill_rect(g.cx - ht, 0.0, g.thick, g.cy - radius, 255);
+        canvas.fill_rect(RectF::new(g.cx - ht, 0.0, g.thick, g.cy - radius), 255);
     }
     if down {
-        canvas.fill_rect(g.cx - ht, g.cy + radius, g.thick, g.h - g.cy - radius, 255);
+        canvas.fill_rect(
+            RectF::new(g.cx - ht, g.cy + radius, g.thick, g.h - g.cy - radius),
+            255,
+        );
     }
     if left {
-        canvas.fill_rect(0.0, g.cy - ht, g.cx - radius, g.thick, 255);
+        canvas.fill_rect(RectF::new(0.0, g.cy - ht, g.cx - radius, g.thick), 255);
     }
     if right {
-        canvas.fill_rect(g.cx + radius, g.cy - ht, g.w - g.cx - radius, g.thick, 255);
+        canvas.fill_rect(
+            RectF::new(g.cx + radius, g.cy - ht, g.w - g.cx - radius, g.thick),
+            255,
+        );
     }
 
     if filled {

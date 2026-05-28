@@ -2,9 +2,15 @@
 //!
 //! Extracted from `term/mod.rs` to keep the main file under the 500-line
 //! limit. These methods build `RenderableContent` and manage damage state.
+//! Image placement + pixel-data extraction lives in the `images` submodule.
+
+mod images;
 
 use std::collections::HashSet;
 
+use vte::ansi::Color;
+
+use crate::cell::Cell;
 use crate::color::palette::Palette;
 use crate::effect::sink::EffectSink;
 use crate::grid::CursorShape;
@@ -16,9 +22,37 @@ use super::handler::image::kitty::placeholder::{IncompletePlacement, ResolvedPla
 use super::Term;
 use super::mode::TermMode;
 use super::renderable::{
-    self, RenderableCell, RenderableContent, RenderableCursor, RenderableImageData,
-    RenderablePlaceholderCell, RenderablePlacement, TermDamage,
+    self, RenderableCell, RenderableContent, RenderableCursor, RenderablePlaceholderCell,
+    TermDamage,
 };
+
+/// Per-row inputs for [`Term::fill_row_cells`].
+#[derive(Clone, Copy)]
+struct RowFill<'a> {
+    /// The grid row whose cells are being snapshotted.
+    row: &'a crate::grid::Row,
+    /// Viewport line index this row maps to.
+    vis_line: usize,
+    /// Number of columns to walk.
+    cols: usize,
+    /// Palette used to resolve indexed colors.
+    palette: &'a Palette,
+}
+
+/// Read-only inputs for [`Term::resolve_placeholder_cell`].
+#[derive(Clone, Copy)]
+struct PlaceholderInput<'a> {
+    /// The cell being snapshotted (provides `ch` + `fg`).
+    cell: &'a Cell,
+    /// Viewport line index this cell maps to.
+    vis_line: usize,
+    /// Column index of the cell.
+    col: Column,
+    /// Combining-mark / zero-width chars carrying the placeholder diacritics.
+    zerowidth: &'a [char],
+    /// Raw underline color (kitty placement-id source), pre-palette resolution.
+    underline_color_raw: Option<Color>,
+}
 
 impl<S: EffectSink> Term<S> {
     /// Extract a complete rendering snapshot.
@@ -123,7 +157,15 @@ impl<S: EffectSink> Term<S> {
                 &grid[crate::index::Line(grid_line as i32)]
             };
 
-            self.fill_row_cells(out, row, vis_line, cols, palette);
+            self.fill_row_cells(
+                out,
+                RowFill {
+                    row,
+                    vis_line,
+                    cols,
+                    palette,
+                },
+            );
         }
 
         // Cursor is visible when SHOW_CURSOR is set and we're at the live view.
@@ -157,15 +199,13 @@ impl<S: EffectSink> Term<S> {
     /// for one grid row. Continuation state for unicode placeholders is
     /// scoped to a single row, so callers re-seed `prev_placeholder` per
     /// invocation (this method owns that local state).
-    #[expect(clippy::too_many_arguments, reason = "per-row cell-fill parameters")]
-    fn fill_row_cells(
-        &self,
-        out: &mut RenderableContent,
-        row: &crate::grid::Row,
-        vis_line: usize,
-        cols: usize,
-        palette: &Palette,
-    ) {
+    fn fill_row_cells(&self, out: &mut RenderableContent, ctx: RowFill<'_>) {
+        let RowFill {
+            row,
+            vis_line,
+            cols,
+            palette,
+        } = ctx;
         let mut prev_placeholder: Option<ResolvedPlaceholder> = None;
 
         for col_idx in 0..cols {
@@ -174,7 +214,20 @@ impl<S: EffectSink> Term<S> {
 
             let fg = renderable::resolve_fg(cell.fg, cell.flags, palette, self.bold_is_bright);
             let bg = renderable::resolve_bg(cell.bg, palette);
-            let (fg, bg) = renderable::apply_inverse(fg, bg, cell.flags);
+            let renderable::ChannelColors {
+                fg,
+                bg,
+                fg_alpha,
+                bg_alpha,
+            } = renderable::apply_inverse(
+                renderable::ChannelColors {
+                    fg,
+                    bg,
+                    fg_alpha: cell.fg_alpha(),
+                    bg_alpha: cell.bg_alpha(),
+                },
+                cell.flags,
+            );
 
             let (underline_color_raw, has_hyperlink, hyperlink_uri, zerowidth) =
                 match cell.extra.as_ref() {
@@ -189,50 +242,21 @@ impl<S: EffectSink> Term<S> {
 
             let underline_color = underline_color_raw.map(|c| palette.resolve(c));
 
-            // Double-exposure clamp: when we emit a placeholder image
-            // quad for this cell, we MUST NOT also leave U+10EEEE in
-            // the cells snapshot — that would render the fallback glyph
-            // on top of the image. Substitute a space instead so bg /
-            // flags / selection coverage stays intact and only the
-            // glyph render is suppressed.
-            let mut suppress_glyph = false;
-            if cell.ch == KITTY_PLACEHOLDER {
-                let incomplete =
-                    IncompletePlacement::decode(&zerowidth, cell.fg, underline_color_raw);
-                let resolved = incomplete.resolve_with_continuation(prev_placeholder.as_ref());
-                // Only emit when the resolved image_id is non-zero AND the
-                // image is still cached. A bare U+10EEEE with no fg + no
-                // diacritic must render as a glyph, not as an image quad.
-                if resolved.image_id != 0
-                    && self
-                        .image_cache()
-                        .get_no_touch(ImageId::from_raw(resolved.image_id))
-                        .is_some()
-                {
-                    let image_id = ImageId::from_raw(resolved.image_id);
-                    // (1, 1) is the implicit default — single-cell placement
-                    // renders the full image. A recorded multi-cell grid
-                    // tells the GPU emit path to slice the source.
-                    let (placement_cols, placement_rows) = self
-                        .image_cache()
-                        .placeholder_anchor_grid_for(image_id)
-                        .unwrap_or((1, 1));
-                    out.placeholder_cells.push(RenderablePlaceholderCell {
-                        line: vis_line,
-                        column: col,
-                        image_id,
-                        image_row: resolved.image_row,
-                        image_col: resolved.image_col,
-                        placement_id: resolved.placement_id,
-                        placement_cols,
-                        placement_rows,
-                    });
-                    suppress_glyph = true;
-                }
-                prev_placeholder = Some(resolved);
-            } else {
-                prev_placeholder = None;
-            }
+            // Double-exposure clamp: a placeholder image quad suppresses the
+            // U+10EEEE glyph (a space is substituted) so the fallback glyph
+            // does not render on top of the image, while bg / flags / selection
+            // coverage stay intact.
+            let suppress_glyph = self.resolve_placeholder_cell(
+                PlaceholderInput {
+                    cell,
+                    vis_line,
+                    col,
+                    zerowidth: &zerowidth,
+                    underline_color_raw,
+                },
+                &mut prev_placeholder,
+                out,
+            );
 
             out.cells.push(RenderableCell {
                 line: vis_line,
@@ -242,11 +266,76 @@ impl<S: EffectSink> Term<S> {
                 bg,
                 flags: cell.flags,
                 underline_color,
+                fg_alpha,
+                bg_alpha,
+                underline_alpha: cell.underline_alpha(),
                 has_hyperlink,
                 hyperlink_uri,
                 zerowidth,
             });
         }
+    }
+
+    /// Resolve a kitty unicode-placeholder cell (`U+10EEEE`) into an image-quad
+    /// placement appended to `out.placeholder_cells`. Returns `true` when the
+    /// cell's glyph must be suppressed (an image quad took its place).
+    ///
+    /// `prev_placeholder` carries row-scoped continuation state across cells so
+    /// a multi-cell placeholder run resolves against its anchor.
+    fn resolve_placeholder_cell(
+        &self,
+        input: PlaceholderInput<'_>,
+        prev_placeholder: &mut Option<ResolvedPlaceholder>,
+        out: &mut RenderableContent,
+    ) -> bool {
+        let PlaceholderInput {
+            cell,
+            vis_line,
+            col,
+            zerowidth,
+            underline_color_raw,
+        } = input;
+
+        if cell.ch != KITTY_PLACEHOLDER {
+            *prev_placeholder = None;
+            return false;
+        }
+
+        let incomplete = IncompletePlacement::decode(zerowidth, cell.fg, underline_color_raw);
+        let resolved = incomplete.resolve_with_continuation(prev_placeholder.as_ref());
+        // Only emit when the resolved image_id is non-zero AND the image is
+        // still cached. A bare U+10EEEE with no fg + no diacritic must render as
+        // a glyph, not an image quad.
+        let suppress_glyph = if resolved.image_id != 0
+            && self
+                .image_cache()
+                .get_no_touch(ImageId::from_raw(resolved.image_id))
+                .is_some()
+        {
+            let image_id = ImageId::from_raw(resolved.image_id);
+            // (1, 1) is the implicit default — single-cell placement renders the
+            // full image. A recorded multi-cell grid tells the GPU emit path to
+            // slice the source.
+            let (placement_cols, placement_rows) = self
+                .image_cache()
+                .placeholder_anchor_grid_for(image_id)
+                .unwrap_or((1, 1));
+            out.placeholder_cells.push(RenderablePlaceholderCell {
+                line: vis_line,
+                column: col,
+                image_id,
+                image_row: resolved.image_row,
+                image_col: resolved.image_col,
+                placement_id: resolved.placement_id,
+                placement_cols,
+                placement_rows,
+            });
+            true
+        } else {
+            false
+        };
+        *prev_placeholder = Some(resolved);
+        suppress_glyph
     }
 
     /// Write 270 pre-resolved RGB entries from the palette into the snapshot.
@@ -257,28 +346,6 @@ impl<S: EffectSink> Term<S> {
         for i in 0..270 {
             let rgb = palette.color(i);
             out.palette_snapshot.push([rgb.r, rgb.g, rgb.b]);
-        }
-    }
-
-    /// Extract image placements visible in the viewport and propagate dirty.
-    fn fill_image_snapshot(&self, out: &mut RenderableContent) {
-        Self::extract_images(
-            self.image_cache(),
-            out.stable_row_base,
-            out.lines,
-            self.cell_pixel_width,
-            self.cell_pixel_height,
-            &mut out.images,
-            &mut out.image_data,
-            &mut out.seen_image_ids,
-        );
-
-        // Propagate image dirty flag. When images changed, force a full
-        // viewport repaint since image mutations don't set per-line grid
-        // dirty flags. The dirty flag is cleared by `reset_damage()`.
-        out.images_dirty = self.image_cache().is_dirty();
-        if out.images_dirty {
-            out.all_dirty = true;
         }
     }
 
@@ -303,132 +370,6 @@ impl<S: EffectSink> Term<S> {
     pub fn reset_damage(&mut self) {
         self.grid_mut().dirty_mut().drain().for_each(drop);
         self.image_cache_mut().take_dirty();
-    }
-
-    /// Extract visible image placements and their pixel data.
-    ///
-    /// Converts `ImagePlacement` cell coordinates to viewport pixel positions
-    /// and collects the decoded RGBA data for GPU texture upload.
-    #[expect(clippy::too_many_arguments, reason = "image extraction parameters")]
-    fn extract_images(
-        cache: &crate::image::ImageCache,
-        stable_row_base: u64,
-        viewport_lines: usize,
-        cell_w: u16,
-        cell_h: u16,
-        images: &mut Vec<RenderablePlacement>,
-        image_data: &mut Vec<RenderableImageData>,
-        seen_ids: &mut HashSet<ImageId>,
-    ) {
-        images.clear();
-        image_data.clear();
-        seen_ids.clear();
-
-        if cache.placement_count() == 0 {
-            return;
-        }
-
-        let top = crate::grid::StableRowIndex(stable_row_base);
-        let bottom =
-            crate::grid::StableRowIndex(stable_row_base + viewport_lines.saturating_sub(1) as u64);
-
-        let cw = f32::from(cell_w);
-        let ch = f32::from(cell_h);
-
-        for p in cache.viewport_placements(top, bottom) {
-            // Signed offset: images starting above the viewport have negative Y,
-            // so their visible bottom portion renders correctly. The GPU clips
-            // fragments outside the framebuffer (implicit viewport scissor).
-            let row_offset = p.cell_row.0 as i64 - stable_row_base as i64;
-            let vp_x = p.cell_col as f32 * cw + f32::from(p.cell_x_offset);
-            let vp_y = row_offset as f32 * ch + f32::from(p.cell_y_offset);
-
-            let (disp_w, disp_h) = match p.sizing {
-                crate::image::PlacementSizing::CellCount => {
-                    (p.cols as f32 * cw, p.rows as f32 * ch)
-                }
-                crate::image::PlacementSizing::FixedPixels { width, height } => {
-                    (width as f32, height as f32)
-                }
-            };
-
-            // Compute UV source rect (normalized 0..1 within the image).
-            let (src_x, src_y, src_w, src_h) = if let Some(img) = cache.get_no_touch(p.image_id) {
-                let iw = img.width as f32;
-                let ih = img.height as f32;
-                if iw > 0.0 && ih > 0.0 {
-                    let sx = p.source_x as f32 / iw;
-                    let sy = p.source_y as f32 / ih;
-                    let sw = if p.source_w > 0 {
-                        p.source_w as f32 / iw
-                    } else {
-                        1.0 - sx
-                    };
-                    let sh = if p.source_h > 0 {
-                        p.source_h as f32 / ih
-                    } else {
-                        1.0 - sy
-                    };
-                    (sx, sy, sw, sh)
-                } else {
-                    (0.0, 0.0, 1.0, 1.0)
-                }
-            } else {
-                // Image data missing — skip this placement.
-                continue;
-            };
-
-            images.push(RenderablePlacement {
-                image_id: p.image_id,
-                viewport_x: vp_x,
-                viewport_y: vp_y,
-                display_width: disp_w,
-                display_height: disp_h,
-                source_x: src_x,
-                source_y: src_y,
-                source_w: src_w,
-                source_h: src_h,
-                z_index: p.z_index,
-                opacity: 1.0,
-            });
-
-            seen_ids.insert(p.image_id);
-        }
-
-        // Collect pixel data for referenced images.
-        for &id in seen_ids.iter() {
-            if let Some(img) = cache.get_no_touch(id) {
-                image_data.push(RenderableImageData {
-                    id,
-                    data: img.data.clone(),
-                    width: img.width,
-                    height: img.height,
-                    pixel_generation: img.pixel_generation,
-                });
-            }
-        }
-    }
-
-    /// Append image data for any placeholder-cell `image_id` not already
-    /// covered by [`extract_images`]. Called after the cell walk so the
-    /// GPU can sample the texture for kitty unicode-placeholder cells.
-    fn fill_placeholder_image_data(&self, out: &mut RenderableContent) {
-        let cache = self.image_cache();
-        for pc in &out.placeholder_cells {
-            if out.seen_image_ids.contains(&pc.image_id) {
-                continue;
-            }
-            if let Some(img) = cache.get_no_touch(pc.image_id) {
-                out.image_data.push(RenderableImageData {
-                    id: pc.image_id,
-                    data: img.data.clone(),
-                    width: img.width,
-                    height: img.height,
-                    pixel_generation: img.pixel_generation,
-                });
-                out.seen_image_ids.insert(pc.image_id);
-            }
-        }
     }
 }
 

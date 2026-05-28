@@ -8,6 +8,7 @@ use oriterm_ui::geometry::{Point, Rect};
 use oriterm_ui::input::{MouseEvent, MouseEventKind, layout_hit_test_disabled_at};
 use oriterm_ui::overlay::OverlayEventResult;
 use oriterm_ui::widgets::LayoutCtx;
+use oriterm_ui::window_root::OverlayEventCtx;
 use winit::window::CursorIcon;
 
 use crate::app::App;
@@ -37,10 +38,12 @@ impl App {
         };
         let result = ctx.root.process_overlay_mouse_event(
             &move_event,
-            &measurer,
-            theme,
-            None,
-            Instant::now(),
+            OverlayEventCtx {
+                measurer: &measurer,
+                theme,
+                focused_widget: None,
+                now: Instant::now(),
+            },
         );
         if matches!(result, OverlayEventResult::Delivered { .. }) {
             let hot_ids = ctx.root.interaction_mut().update_hot_path(&[]);

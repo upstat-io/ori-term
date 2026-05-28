@@ -24,26 +24,41 @@ use crate::session::SessionRegistry;
 use crate::window_manager::WindowManager;
 use oriterm_ui::animation::CursorBlink;
 
+/// Daemon-mode session startup parameters for [`App::new_daemon`].
+///
+/// Bundles the daemon socket and the claimed-window startup state (window id,
+/// tabs JSON, initial position) — distinct from the event proxy, config, and
+/// debug flags.
+pub(crate) struct DaemonSession<'a> {
+    /// Path to the running `oriterm-mux` daemon socket.
+    pub socket_path: &'a std::path::Path,
+    /// Existing mux window id to claim, if any.
+    pub window_id: Option<u64>,
+    /// Serialized tab state to restore on the claimed window.
+    pub tabs_json: Option<String>,
+    /// Initial window position spec (e.g. `"x,y"`).
+    pub position: Option<&'a str>,
+}
+
 impl App {
     /// Create a new application instance in daemon mode.
     ///
     /// Instead of an embedded mux, connects to a running `oriterm-mux`
     /// daemon at `socket_path`. If `window_id` is provided, claims an
     /// existing mux window; otherwise creates a new one during init.
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "daemon constructor: event proxy, config, socket, window ID, tabs JSON, position, profiling, latency"
-    )]
     pub(crate) fn new_daemon(
         event_proxy: EventLoopProxy<TermEvent>,
         config: Config,
-        socket_path: &std::path::Path,
-        window_id: Option<u64>,
-        tabs_json: Option<String>,
-        position: Option<&str>,
+        session: DaemonSession<'_>,
         profiling: bool,
         latency_log: bool,
     ) -> Self {
+        let DaemonSession {
+            socket_path,
+            window_id,
+            tabs_json,
+            position,
+        } = session;
         let mux_wakeup = make_mux_wakeup(&event_proxy);
 
         let mux: Option<Box<dyn MuxBackend>> =

@@ -8,9 +8,9 @@
 use winit::keyboard::{Key, NamedKey};
 
 /// Inputs for the cursor-hide decision.
-#[allow(
+#[expect(
     clippy::struct_excessive_bools,
-    reason = "state flags are naturally boolean"
+    reason = "decision inputs: each bool is an orthogonal cursor-hide condition, not control flow"
 )]
 pub struct HideContext<'a> {
     /// Whether `hide_mouse_when_typing` is enabled in config.

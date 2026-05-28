@@ -10,9 +10,9 @@
 
 use std::collections::HashMap;
 use std::io;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::Ordering;
 use std::sync::mpsc;
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Mutex, PoisonError};
 
 #[cfg(unix)]
 use std::os::fd::{AsRawFd, RawFd};
@@ -26,6 +26,7 @@ use crate::protocol::{DecodedFrame, MuxPdu, ProtocolCodec};
 use crate::{PaneId, PaneSnapshot};
 
 use super::super::notification::pdu_to_notification;
+use super::types::ReaderThreadState;
 use super::{PendingClientReply, READ_POLL_INTERVAL};
 
 /// Dispatch a received notification PDU.
@@ -235,34 +236,27 @@ fn wait_for_readable(stream: &ClientStream, wake_read: RawFd, timeout_ms: i32) -
 /// `outstanding_ping_seq` is shared with the writer thread: writer sets
 /// it on Ping send, reader clears it on `PingAck`. `0` is the "no
 /// outstanding ping" sentinel.
-#[allow(
+#[expect(
     clippy::needless_pass_by_value,
-    clippy::too_many_arguments,
-    reason = "ownership required — values are moved into the spawned thread"
+    reason = "ownership required — `stream` + `state` move into the spawned reader thread and live for its lifetime"
 )]
 pub(super) fn reader_loop(
     mut stream: ClientStream,
-    notif_tx: mpsc::Sender<MuxNotification>,
-    wakeup: Arc<dyn Fn() + Send + Sync>,
-    alive: Arc<AtomicBool>,
-    pushed_snapshots: Arc<Mutex<HashMap<PaneId, PaneSnapshot>>>,
-    pending_replies: Arc<Mutex<HashMap<ResponseTokenId, PendingClientReply>>>,
-    pending: Arc<Mutex<HashMap<u32, mpsc::Sender<MuxPdu>>>>,
-    outstanding_ping_seq: Arc<AtomicU64>,
+    state: ReaderThreadState,
     #[cfg(unix)] wake_read: RawFd,
 ) {
     // Set a short read timeout as a safety net for edge cases where poll(2)
     // says readable but the full frame hasn't arrived yet.
     if let Err(e) = stream.set_read_timeout(Some(READ_POLL_INTERVAL)) {
         log::error!("mux-client-reader: failed to set read timeout: {e}");
-        alive.store(false, Ordering::Release);
+        state.alive.store(false, Ordering::Release);
         return;
     }
 
     let mut codec = ProtocolCodec::new();
 
     loop {
-        if !alive.load(Ordering::Acquire) {
+        if !state.alive.load(Ordering::Acquire) {
             return;
         }
 
@@ -285,17 +279,8 @@ pub(super) fn reader_loop(
         }
 
         // 2. Read and dispatch all available frames.
-        if !read_and_dispatch_frames(
-            &mut stream,
-            &mut codec,
-            &pending,
-            &outstanding_ping_seq,
-            &pushed_snapshots,
-            &pending_replies,
-            &notif_tx,
-            &*wakeup,
-        ) {
-            alive.store(false, Ordering::Release);
+        if !read_and_dispatch_frames(&mut stream, &mut codec, &state) {
+            state.alive.store(false, Ordering::Release);
             return;
         }
     }
@@ -306,26 +291,17 @@ pub(super) fn reader_loop(
 /// After each successful decode, checks socket readability via `poll(0)` to
 /// avoid the expensive blocking `decode_frame` retry (1ms+ due to kernel
 /// timer granularity on WSL2). Returns `false` if the connection is dead.
-#[allow(
-    clippy::too_many_arguments,
-    reason = "reader thread state — grouping would add indirection"
-)]
 fn read_and_dispatch_frames(
     stream: &mut ClientStream,
     codec: &mut ProtocolCodec,
-    pending: &Mutex<HashMap<u32, mpsc::Sender<MuxPdu>>>,
-    outstanding_ping_seq: &AtomicU64,
-    pushed_snapshots: &Mutex<HashMap<PaneId, PaneSnapshot>>,
-    pending_replies: &Mutex<HashMap<ResponseTokenId, PendingClientReply>>,
-    notif_tx: &mpsc::Sender<MuxNotification>,
-    wakeup: &dyn Fn(),
+    state: &ReaderThreadState,
 ) -> bool {
     loop {
         match codec.decode_frame(stream) {
             Ok(DecodedFrame { seq, pdu }) => {
-                let expected_ping = outstanding_ping_seq.load(Ordering::Acquire);
+                let expected_ping = state.outstanding_ping_seq.load(Ordering::Acquire);
                 if expected_ping != 0 && expected_ping == u64::from(seq) && pdu == MuxPdu::PingAck {
-                    outstanding_ping_seq.store(0, Ordering::Release);
+                    state.outstanding_ping_seq.store(0, Ordering::Release);
                     #[cfg(unix)]
                     if !codec.has_buffered_data() && !socket_has_data(stream) {
                         break;
@@ -334,9 +310,16 @@ fn read_and_dispatch_frames(
                 }
 
                 if seq == 0 || pdu.is_notification() {
-                    dispatch_notification(pdu, pushed_snapshots, pending_replies, notif_tx, wakeup);
+                    dispatch_notification(
+                        pdu,
+                        &state.pushed_snapshots,
+                        &state.pending_replies,
+                        &state.notif_tx,
+                        &*state.wakeup,
+                    );
                 } else {
-                    let entry = pending
+                    let entry = state
+                        .pending
                         .lock()
                         .unwrap_or_else(PoisonError::into_inner)
                         .remove(&seq);

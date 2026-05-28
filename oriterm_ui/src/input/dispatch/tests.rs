@@ -484,7 +484,7 @@ impl crate::widgets::Widget for DoubleVisitDispatchContainer {
 fn double_visit_in_dispatch_to_widget_tree_panics() {
     use std::time::Instant;
 
-    use super::tree::{TreeDispatchResult, dispatch_to_widget_tree};
+    use super::tree::{DispatchInputs, TreeDispatchResult, dispatch_to_widget_tree};
 
     let parent_id = WidgetId::next();
     let child_id = WidgetId::next();
@@ -500,9 +500,11 @@ fn double_visit_in_dispatch_to_widget_tree_panics() {
     let mut result = TreeDispatchResult::new();
     dispatch_to_widget_tree(
         &mut container,
-        &event,
-        &[],
-        Instant::now(),
+        DispatchInputs {
+            event: &event,
+            actions: &[],
+            now: Instant::now(),
+        },
         &mut result,
         None,
     );

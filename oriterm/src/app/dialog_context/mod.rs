@@ -146,21 +146,33 @@ impl DialogContent {
     }
 }
 
+/// GPU surface bundle for [`DialogWindowContext::new`].
+///
+/// Groups the wgpu surface, its configuration, and the optional per-window
+/// renderer — the three handles produced together by dialog window creation.
+pub(crate) struct DialogSurface {
+    /// wgpu rendering surface.
+    pub surface: wgpu::Surface<'static>,
+    /// Surface configuration (format, size, present mode).
+    pub surface_config: wgpu::SurfaceConfiguration,
+    /// Per-window renderer (None until the renderer is built).
+    pub renderer: Option<WindowRenderer>,
+}
+
 impl DialogWindowContext {
     /// Create a new dialog window context.
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "constructor wiring: window + surface + renderer + content + scale"
-    )]
     pub(crate) fn new(
         window: Arc<Window>,
-        surface: wgpu::Surface<'static>,
-        surface_config: wgpu::SurfaceConfiguration,
-        renderer: Option<WindowRenderer>,
+        gpu_surface: DialogSurface,
         kind: DialogKind,
         content: DialogContent,
         scale_factor: ScaleFactor,
     ) -> Self {
+        let DialogSurface {
+            surface,
+            surface_config,
+            renderer,
+        } = gpu_surface;
         let (w, h) = (surface_config.width, surface_config.height);
         let scale = scale_factor.factor() as f32;
         let logical_w = w as f32 / scale;
@@ -226,6 +238,27 @@ impl DialogWindowContext {
     }
 }
 
+/// Decomposed `DialogWindowContext` fields needed for dialog layout/hit-test.
+///
+/// Bundles the renderer, scale, text cache, surface config, and theme — the
+/// invariant set threaded through [`rebuild_dialog_page_state`],
+/// [`content_parent_map`], and [`recompute_dialog_hot_path`]. Passed by value
+/// (all fields are cheap refs / `f32`) so callers that destructure
+/// `ctx.content` can still hand over the remaining `ctx.*` fields.
+#[derive(Clone, Copy)]
+pub(super) struct DialogLayout<'a> {
+    /// Per-window renderer (None before the surface is created).
+    pub renderer: Option<&'a WindowRenderer>,
+    /// Logical-to-physical scale factor.
+    pub scale: f32,
+    /// Shaped-text cache.
+    pub text_cache: &'a TextShapeCache,
+    /// Surface configuration (provides viewport dimensions).
+    pub surface_config: &'a wgpu::SurfaceConfiguration,
+    /// UI theme.
+    pub ui_theme: &'a oriterm_ui::theme::UiTheme,
+}
+
 /// Returns `true` when a dialog content event requires an immediate redraw.
 ///
 /// This decision combines three signals from the event dispatch result:
@@ -251,19 +284,11 @@ pub(super) fn needs_content_redraw(
 ///
 /// Takes split borrows from `DialogWindowContext` to avoid conflicting
 /// with the caller's borrow on `panel` (which lives inside `ctx.content`).
-#[expect(
-    clippy::too_many_arguments,
-    reason = "borrow-split fields from DialogWindowContext"
-)]
 pub(super) fn rebuild_dialog_page_state(
     root: &mut oriterm_ui::window_root::WindowRoot,
     panel: &mut dyn Widget,
-    renderer: Option<&WindowRenderer>,
-    scale_factor: ScaleFactor,
-    text_cache: &TextShapeCache,
-    surface_config: &wgpu::SurfaceConfiguration,
     last_cursor_pos: oriterm_ui::geometry::Point,
-    ui_theme: &oriterm_ui::theme::UiTheme,
+    layout: DialogLayout<'_>,
 ) {
     crate::app::widget_pipeline::register_widget_tree(panel, root.interaction_mut());
     let root_id = root.widget().id();
@@ -279,41 +304,33 @@ pub(super) fn rebuild_dialog_page_state(
     crate::app::widget_pipeline::collect_focusable_ids(panel, &mut focusable);
     root.sync_focus_order(focusable);
 
-    if let Some(r) = renderer {
-        let s = scale_factor.factor() as f32;
-        let pm = content_parent_map(panel, r, s, text_cache, surface_config, ui_theme);
+    if layout.renderer.is_some() {
+        let pm = content_parent_map(panel, layout);
         root.interaction_mut().set_parent_map(pm);
     }
 
-    recompute_dialog_hot_path(
-        root,
-        panel,
-        last_cursor_pos,
-        renderer,
-        scale_factor.factor() as f32,
-        text_cache,
-        surface_config,
-        ui_theme,
-    );
+    recompute_dialog_hot_path(root, panel, last_cursor_pos, layout);
 }
 
-#[expect(
-    clippy::too_many_arguments,
-    reason = "borrow-split fields from DialogWindowContext"
-)]
 pub(super) fn content_parent_map(
     panel: &dyn Widget,
-    renderer: &WindowRenderer,
-    scale: f32,
-    text_cache: &TextShapeCache,
-    surface_config: &wgpu::SurfaceConfiguration,
-    ui_theme: &oriterm_ui::theme::UiTheme,
+    layout: DialogLayout<'_>,
 ) -> std::collections::HashMap<oriterm_ui::widget_id::WidgetId, oriterm_ui::widget_id::WidgetId> {
     use crate::font::CachedTextMeasurer;
     use oriterm_ui::interaction::build_parent_map;
     use oriterm_ui::layout::compute_layout;
     use oriterm_ui::widgets::LayoutCtx;
 
+    let DialogLayout {
+        renderer,
+        scale,
+        text_cache,
+        surface_config,
+        ui_theme,
+    } = layout;
+    let Some(renderer) = renderer else {
+        return std::collections::HashMap::new();
+    };
     let m = CachedTextMeasurer::new(renderer.ui_measurer(scale), text_cache, scale);
     let lctx = LayoutCtx {
         measurer: &m,
@@ -337,25 +354,24 @@ pub(super) fn content_parent_map(
 ///
 /// Takes decomposed fields because call sites destructure `ctx.content`
 /// (for panel/config access), preventing `&mut DialogWindowContext`.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "borrow-split fields from DialogWindowContext"
-)]
 pub(super) fn recompute_dialog_hot_path(
     root: &mut oriterm_ui::window_root::WindowRoot,
     content_widget: &dyn Widget,
     cursor_pos: oriterm_ui::geometry::Point,
-    renderer: Option<&WindowRenderer>,
-    scale: f32,
-    text_cache: &TextShapeCache,
-    surface_config: &wgpu::SurfaceConfiguration,
-    ui_theme: &oriterm_ui::theme::UiTheme,
+    layout: DialogLayout<'_>,
 ) {
     use crate::font::CachedTextMeasurer;
     use oriterm_ui::input::layout_hit_test_path;
     use oriterm_ui::layout::compute_layout;
     use oriterm_ui::widgets::LayoutCtx;
 
+    let DialogLayout {
+        renderer,
+        scale,
+        text_cache,
+        surface_config,
+        ui_theme,
+    } = layout;
     let Some(renderer) = renderer else {
         root.clear_hot_path();
         return;

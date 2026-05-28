@@ -1,7 +1,7 @@
 //! Tests for `CachedTextMeasurer` and `TextShapeCache`.
 
 use oriterm_ui::text::{
-    FontWeight, ShapedText, TextMetrics, TextOverflow, TextStyle, TextTransform,
+    FontWeight, ShapedMetrics, ShapedText, TextMetrics, TextOverflow, TextStyle, TextTransform,
 };
 use oriterm_ui::widgets::TextMeasurer;
 
@@ -20,7 +20,16 @@ impl TextMeasurer for DummyMeasurer {
     }
 
     fn shape(&self, text: &str, _style: &TextStyle, _max_width: f32) -> ShapedText {
-        ShapedText::new(vec![], text.len() as f32 * 8.0, 16.0, 12.0, 0, 400)
+        ShapedText::new(
+            vec![],
+            ShapedMetrics {
+                width: text.len() as f32 * 8.0,
+                height: 16.0,
+                baseline: 12.0,
+            },
+            0,
+            400,
+        )
     }
 }
 

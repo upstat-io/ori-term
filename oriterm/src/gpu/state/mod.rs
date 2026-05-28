@@ -14,8 +14,8 @@ mod pipeline_cache;
 pub(crate) use helpers::AdapterPreference;
 
 use helpers::{
-    build_surface_config, pick_adapter, request_device, select_alpha_mode, select_formats,
-    select_present_mode,
+    SurfaceFormatParams, build_surface_config, pick_adapter, request_device, select_alpha_mode,
+    select_formats, select_present_mode,
 };
 
 use std::fmt;
@@ -198,11 +198,13 @@ impl GpuState {
         let surface = self.instance.create_surface(window.clone())?;
         let size = window.inner_size();
         let config = build_surface_config(
-            self.surface_format,
-            self.render_format,
-            self.surface_alpha_mode,
-            self.supports_view_formats,
-            self.present_mode,
+            SurfaceFormatParams {
+                surface_format: self.surface_format,
+                render_format: self.render_format,
+                alpha_mode: self.surface_alpha_mode,
+                supports_view_formats: self.supports_view_formats,
+                present_mode: self.present_mode,
+            },
             size.width,
             size.height,
         );
@@ -382,11 +384,13 @@ impl GpuState {
         // Configure the initial surface.
         let size = window.inner_size();
         let config = build_surface_config(
-            surface_format,
-            render_format,
-            surface_alpha_mode,
-            supports_view_formats,
-            present_mode,
+            SurfaceFormatParams {
+                surface_format,
+                render_format,
+                alpha_mode: surface_alpha_mode,
+                supports_view_formats,
+                present_mode,
+            },
             size.width,
             size.height,
         );

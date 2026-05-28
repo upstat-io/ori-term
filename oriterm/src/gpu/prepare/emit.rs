@@ -10,7 +10,7 @@ use super::super::frame_input::FrameInput;
 use super::super::prepared_frame::PreparedFrame;
 use super::{AtlasLookup, resolve_cursor_state};
 use crate::font::{FaceIdx, FontRealm, RasterKey, SyntheticFlags, subpx_bin, subpx_offset};
-use crate::gpu::instance_writer::{CLIP_UNCLIPPED, ScreenRect};
+use crate::gpu::instance_writer::{CLIP_UNCLIPPED, GlyphInstance, GlyphInstanceBg, ScreenRect};
 use oriterm_ui::text::ShapedGlyph;
 
 /// Prompt marker bar color: subtle blue accent.
@@ -32,10 +32,34 @@ pub(super) struct GlyphEmitter<'a> {
     pub baseline: f32,
     pub size_q6: u32,
     pub hinted: bool,
+    /// Foreground alpha multiplier: pane dim × blink × SGR mode-6 fg alpha.
     pub fg_dim: f32,
+    /// Background alpha (SGR mode-6 bg alpha, 0..1) for the subpixel-with-bg
+    /// path. `1.0` for opaque cells — the shader then composites opaquely.
+    pub bg_alpha: f32,
     pub subpixel_positioning: bool,
     pub atlas: &'a dyn AtlasLookup,
     pub frame: &'a mut PreparedFrame,
+}
+
+/// Shaped-glyph source span for [`GlyphEmitter::emit`]: the row's glyph slice,
+/// matching column starts, and the base-glyph start index from the col map.
+#[derive(Clone, Copy)]
+pub(super) struct ShapedSpan<'a> {
+    pub row_glyphs: &'a [ShapedGlyph],
+    pub col_starts: &'a [usize],
+    pub start_idx: usize,
+}
+
+/// Per-cell placement for [`GlyphEmitter::emit`]: grid column, screen
+/// position, and foreground/background colors.
+#[derive(Clone, Copy)]
+pub(super) struct EmitPlacement {
+    pub col: usize,
+    pub x: f32,
+    pub y: f32,
+    pub fg: Rgb,
+    pub bg: Rgb,
 }
 
 impl GlyphEmitter<'_> {
@@ -49,21 +73,13 @@ impl GlyphEmitter<'_> {
     /// - `Mono` → `frame.glyphs` (R8 atlas, tinted by `fg_color`).
     /// - `Subpixel` → `frame.subpixel_glyphs` (RGBA atlas, per-channel blend).
     /// - `Color` → `frame.color_glyphs` (RGBA atlas, rendered as-is).
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "per-cell shaped glyph params: glyph source, col_starts, grid column, screen position, color"
-    )]
-    pub fn emit(
-        &mut self,
-        row_glyphs: &[ShapedGlyph],
-        col_starts: &[usize],
-        start_idx: usize,
-        col: usize,
-        x: f32,
-        y: f32,
-        fg: Rgb,
-        bg: Rgb,
-    ) {
+    pub fn emit(&mut self, span: ShapedSpan<'_>, placement: EmitPlacement) {
+        let ShapedSpan {
+            row_glyphs,
+            col_starts,
+            start_idx,
+        } = span;
+        let EmitPlacement { col, x, y, fg, bg } = placement;
         let mut is_first = true;
         for (sg, &cs) in row_glyphs[start_idx..].iter().zip(&col_starts[start_idx..]) {
             // Stop at the first glyph in a different column (combining marks are contiguous).
@@ -111,18 +127,30 @@ impl GlyphEmitter<'_> {
                     AtlasKind::Subpixel => {
                         self.frame.subpixel_glyphs.push_glyph_with_bg(
                             rect,
-                            uv,
-                            fg,
-                            bg,
-                            self.fg_dim,
-                            entry.page,
-                            CLIP_UNCLIPPED,
+                            GlyphInstanceBg {
+                                uv,
+                                fg,
+                                bg,
+                                alpha: self.fg_dim,
+                                bg_alpha: self.bg_alpha,
+                                atlas_page: entry.page,
+                                clip: CLIP_UNCLIPPED,
+                            },
                         );
                         continue;
                     }
                     AtlasKind::Mono => &mut self.frame.glyphs,
                 };
-                writer.push_glyph(rect, uv, fg, self.fg_dim, entry.page, CLIP_UNCLIPPED);
+                writer.push_glyph(
+                    rect,
+                    GlyphInstance {
+                        uv,
+                        fg,
+                        alpha: self.fg_dim,
+                        atlas_page: entry.page,
+                        clip: CLIP_UNCLIPPED,
+                    },
+                );
             }
         }
     }
@@ -183,12 +211,14 @@ pub(super) fn emit_cursor_for_frame(
     build_cursor(
         frame,
         shape,
-        cursor.column.0,
-        cursor.line,
-        cw,
-        ch,
-        ox,
-        oy,
+        CursorGeometry {
+            col: cursor.column.0,
+            row: cursor.line,
+            cw,
+            ch,
+            ox,
+            oy,
+        },
         input.palette.cursor_color,
         cursor_opacity,
     );
@@ -203,25 +233,36 @@ pub(super) fn emit_cursor_for_frame(
 /// - `HollowBlock` — 4 thin outline rectangles (top, bottom, left, right).
 /// - `Hidden` — no instances.
 ///
+/// Cursor cell geometry for [`build_cursor`]: grid position, cell size, and
+/// origin offset (all physical pixels).
+#[derive(Clone, Copy)]
+pub(super) struct CursorGeometry {
+    pub col: usize,
+    pub row: usize,
+    pub cw: f32,
+    pub ch: f32,
+    pub ox: f32,
+    pub oy: f32,
+}
+
 /// Most callers should use [`emit_cursor_for_frame`] instead. This is
 /// the lower-level shape-dispatch primitive; `emit_cursor_for_frame` owns
 /// the visibility / opacity / focus-effective-shape policy.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "cursor geometry: frame, shape, grid position, cell size, origin offset, color, opacity"
-)]
 pub(super) fn build_cursor(
     frame: &mut PreparedFrame,
     shape: CursorShape,
-    col: usize,
-    row: usize,
-    cw: f32,
-    ch: f32,
-    ox: f32,
-    oy: f32,
+    geom: CursorGeometry,
     color: Rgb,
     opacity: f32,
 ) {
+    let CursorGeometry {
+        col,
+        row,
+        cw,
+        ch,
+        ox,
+        oy,
+    } = geom;
     let x = ox + col as f32 * cw;
     let y = super::snapped_row_y(oy, row, ch);
     let t = 2.0_f32;

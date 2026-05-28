@@ -7,7 +7,9 @@ use super::super::frame_input::FrameInput;
 use super::super::pipelines::GpuPipelines;
 use super::super::prepare;
 use super::super::state::GpuState;
-use super::helpers::{CombinedAtlasLookup, ensure_glyphs_cached, grid_raster_keys, shape_frame};
+use super::helpers::{
+    CombinedAtlasLookup, MultiAtlasSink, ensure_glyphs_cached, grid_raster_keys, shape_frame,
+};
 use super::{EMPTY_KEYS_CAP, WindowRenderer};
 
 /// Number of frames an image texture may go unused before eviction.
@@ -16,6 +18,19 @@ use super::{EMPTY_KEYS_CAP, WindowRenderer};
 /// retention policy (the goal is "evict if not actively used", not a
 /// fixed wall-clock budget).
 const IMAGE_TEXTURE_EVICT_FRAME_THRESHOLD: u64 = 60;
+
+/// Per-frame prepare request for [`WindowRenderer::prepare`]: layout origin
+/// offset, cursor blink opacity, and whether terminal content changed since
+/// the last frame (gates the cursor-blink-only fast path).
+#[derive(Clone, Copy)]
+pub(crate) struct PrepareRequest {
+    /// Layout origin offset `(x, y)` in physical pixels.
+    pub origin: (f32, f32),
+    /// Cursor blink opacity (0.0 suppresses cursor emission).
+    pub cursor_opacity: f32,
+    /// Whether terminal content changed (false reuses cached shaping).
+    pub content_changed: bool,
+}
 
 impl WindowRenderer {
     /// Whether any frame-level dispatch-fingerprint input changed since
@@ -65,19 +80,18 @@ impl WindowRenderer {
     /// 1. **Shape** — segment rows into runs and shape via rustybuzz.
     /// 2. **Cache** — rasterize and upload any missing shaped glyphs.
     /// 3. **Prepare** — emit GPU instances from shaped glyph positions.
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "origin + cursor opacity + content_changed are pipeline context"
-    )]
     pub fn prepare(
         &mut self,
         input: &FrameInput,
         gpu: &GpuState,
         pipelines: &GpuPipelines,
-        origin: (f32, f32),
-        cursor_opacity: f32,
-        content_changed: bool,
+        request: PrepareRequest,
     ) {
+        let PrepareRequest {
+            origin,
+            cursor_opacity,
+            content_changed,
+        } = request;
         // INVARIANT: cursor-blink-only fast path runs only when content +
         // dispatch fingerprint + row-state are all unchanged.
         let cols = input.columns();
@@ -131,8 +145,10 @@ impl WindowRenderer {
             &bridge,
             &self.shaping.frame,
             &mut self.prepared,
-            origin,
-            cursor_opacity,
+            prepare::ScenePlacement {
+                origin,
+                cursor_opacity,
+            },
         );
 
         // Phase D: Ensure image textures uploaded.
@@ -160,29 +176,31 @@ impl WindowRenderer {
     /// `self.shaping.frame` for the current frame.
     pub(super) fn cache_glyphs_and_builtins(&mut self, input: &FrameInput, gpu: &GpuState) {
         // Phase B: shaped glyphs.
+        let hinted = self.font_collection.hinting_mode().hint_flag();
+        let keys = grid_raster_keys(&self.shaping.frame, hinted, self.subpixel_positioning);
         ensure_glyphs_cached(
-            grid_raster_keys(
-                &self.shaping.frame,
-                self.font_collection.hinting_mode().hint_flag(),
-                self.subpixel_positioning,
-            ),
-            &mut self.atlas,
-            &mut self.subpixel_atlas,
-            &mut self.color_atlas,
-            &mut self.empty_keys,
+            keys,
+            &mut MultiAtlasSink {
+                mono: &mut self.atlas,
+                subpixel: &mut self.subpixel_atlas,
+                color: &mut self.color_atlas,
+                empty_keys: &mut self.empty_keys,
+                device: &gpu.device,
+                queue: &gpu.queue,
+            },
             &mut self.font_collection,
-            &gpu.device,
-            &gpu.queue,
         );
 
         // Phase B2: builtin geometric glyphs + decoration patterns.
         super::super::builtin_glyphs::ensure_builtins_cached(
             input,
             self.shaping.frame.size_q6(),
-            &mut self.atlas,
-            &mut self.empty_keys,
-            &gpu.device,
-            &gpu.queue,
+            &mut super::super::builtin_glyphs::GlyphCacheSink {
+                atlas: &mut self.atlas,
+                empty_keys: &mut self.empty_keys,
+                device: &gpu.device,
+                queue: &gpu.queue,
+            },
         );
     }
 
@@ -223,11 +241,15 @@ impl WindowRenderer {
                 &gpu.device,
                 &gpu.queue,
                 &pipelines.image_texture_layout,
-                img_data.id,
-                img_data.pixel_generation,
-                &img_data.data,
-                img_data.width,
-                img_data.height,
+                crate::gpu::image_render::ImageUpload {
+                    id: img_data.id,
+                    pixels: crate::gpu::image_render::ImagePixels {
+                        data: &img_data.data,
+                        width: img_data.width,
+                        height: img_data.height,
+                        pixel_generation: img_data.pixel_generation,
+                    },
+                },
             );
         }
     }

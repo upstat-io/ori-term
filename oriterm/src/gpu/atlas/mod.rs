@@ -32,7 +32,7 @@ use std::collections::HashMap;
 use wgpu::{Device, Queue, Texture, TextureFormat, TextureView};
 
 use self::rect_packer::RectPacker;
-use self::texture::{create_texture_array, upload_glyph};
+use self::texture::{GlyphSlot, GutterPadding, create_texture_array, upload_glyph};
 use crate::font::{GlyphFormat, RasterKey, RasterizedGlyph};
 
 /// Atlas page dimension (width = height).
@@ -308,12 +308,12 @@ impl GlyphAtlas {
         upload_glyph(
             queue,
             &self.texture,
-            page_idx,
-            x,
-            y,
+            GlyphSlot { page_idx, x, y },
             glyph,
-            GLYPH_PADDING,
-            &self.padding_zeros,
+            GutterPadding {
+                padding: GLYPH_PADDING,
+                zeros: &self.padding_zeros,
+            },
         );
 
         let page = &mut self.pages[page_idx as usize];
@@ -417,7 +417,7 @@ impl GlyphAtlas {
     }
 
     /// Current frame counter value.
-    #[allow(dead_code, reason = "used in tests and diagnostics")]
+    #[cfg(test)]
     pub fn frame_counter(&self) -> u64 {
         self.frame_counter
     }
@@ -445,7 +445,7 @@ impl GlyphAtlas {
     }
 
     /// Whether this atlas is in lazy mode (1×1 placeholder).
-    #[allow(dead_code, reason = "used in tests and diagnostics")]
+    #[cfg(test)]
     pub fn is_lazy(&self) -> bool {
         self.lazy
     }

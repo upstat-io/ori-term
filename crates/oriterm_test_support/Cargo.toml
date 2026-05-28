@@ -27,5 +27,9 @@ path = "src/bin/catalog_coverage_check.rs"
 name = "spec-coverage-report"
 path = "src/bin/spec_coverage_report.rs"
 
+[[bin]]
+name = "type-sizes"
+path = "src/bin/type_sizes.rs"
+
 [lints]
 workspace = true

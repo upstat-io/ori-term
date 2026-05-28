@@ -28,9 +28,11 @@ impl WindowRenderer {
                 id,
                 physical_size,
                 scale,
-                &mut self.atlas,
-                &gpu.device,
-                &gpu.queue,
+                crate::gpu::icon_rasterizer::IconUploadTarget {
+                    atlas: &mut self.atlas,
+                    device: &gpu.device,
+                    queue: &gpu.queue,
+                },
             ) {
                 self.resolved_icons.insert(
                     id,

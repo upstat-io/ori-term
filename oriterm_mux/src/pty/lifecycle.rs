@@ -42,7 +42,6 @@ pub trait PtyLifecycle: Send {
     ///
     /// Returns `Ok(Some(status))` if the child has exited, `Ok(None)` if
     /// still running, or `Err` on failure.
-    #[allow(dead_code, reason = "used when pane reports child exit to UI")]
     fn try_wait(&mut self) -> io::Result<Option<ExitStatus>>;
 
     /// Get the child process ID, if available.

@@ -9,7 +9,9 @@ mod manager;
 mod overlay_id;
 mod placement;
 
-pub use manager::{OverlayEventResult, OverlayManager, OverlayResponse};
+pub use manager::{
+    CompositorHandles, FlashSpec, OverlayEventResult, OverlayManager, OverlayResponse,
+};
 pub use overlay_id::OverlayId;
 pub use placement::Placement;
 

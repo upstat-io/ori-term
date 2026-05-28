@@ -186,7 +186,18 @@ pub(super) fn parse_path_data(d: &str, vb: f32, cmds: &mut Vec<PathCommand>) {
                 let sweep = arc_flag(&mut tokens, &mut i);
                 let x = num(&tokens, &mut i);
                 let y = num(&tokens, &mut i);
-                arc::arc_to_cubics(cx, cy, rx, ry, rotation, large_arc, sweep, x, y, vb, cmds);
+                arc::arc_to_cubics(
+                    arc::ArcRequest {
+                        start: (cx, cy),
+                        end: (x, y),
+                        radii: (rx, ry),
+                        x_rotation_deg: rotation,
+                        large_arc,
+                        sweep,
+                    },
+                    vb,
+                    cmds,
+                );
                 cx = x;
                 cy = y;
                 last_cp2_x = cx;
@@ -202,7 +213,18 @@ pub(super) fn parse_path_data(d: &str, vb: f32, cmds: &mut Vec<PathCommand>) {
                 let dy = num(&tokens, &mut i);
                 let x = cx + dx;
                 let y = cy + dy;
-                arc::arc_to_cubics(cx, cy, rx, ry, rotation, large_arc, sweep, x, y, vb, cmds);
+                arc::arc_to_cubics(
+                    arc::ArcRequest {
+                        start: (cx, cy),
+                        end: (x, y),
+                        radii: (rx, ry),
+                        x_rotation_deg: rotation,
+                        large_arc,
+                        sweep,
+                    },
+                    vb,
+                    cmds,
+                );
                 cx = x;
                 cy = y;
                 last_cp2_x = cx;

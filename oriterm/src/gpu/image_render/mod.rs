@@ -57,6 +57,34 @@ pub(crate) struct GpuImageTexture {
     height: u32,
 }
 
+/// Image pixel payload: raw RGBA bytes, dimensions, and the source
+/// `pixel_generation` (re-upload gate key).
+#[derive(Clone, Copy)]
+pub(crate) struct ImagePixels<'a> {
+    pub data: &'a [u8],
+    pub width: u32,
+    pub height: u32,
+    pub pixel_generation: u64,
+}
+
+/// Upload request for [`ImageTextureCache::ensure_uploaded`]: target image id
+/// plus its pixel payload.
+#[derive(Clone, Copy)]
+pub(crate) struct ImageUpload<'a> {
+    pub id: ImageId,
+    pub pixels: ImagePixels<'a>,
+}
+
+/// GPU resources for [`create_texture_entry`]: device, queue, bind-group
+/// layout, and sampler.
+#[derive(Clone, Copy)]
+struct GpuTextureCtx<'a> {
+    device: &'a Device,
+    queue: &'a Queue,
+    layout: &'a BindGroupLayout,
+    sampler: &'a wgpu::Sampler,
+}
+
 /// GPU-side image texture cache.
 ///
 /// Manages per-image `wgpu::Texture` resources. Uploads are lazy (on first
@@ -152,21 +180,23 @@ impl ImageTextureCache {
     /// recorded generation against the incoming value; if they differ,
     /// re-upload `data` (recreating texture when dimensions changed) and
     /// stamp the new generation.
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "GPU upload needs device, queue, layout, id, generation, data, and dimensions"
-    )]
     pub(crate) fn ensure_uploaded(
         &mut self,
         device: &Device,
         queue: &Queue,
         layout: &BindGroupLayout,
-        id: ImageId,
-        pixel_generation: u64,
-        data: &[u8],
-        width: u32,
-        height: u32,
+        upload: ImageUpload<'_>,
     ) -> &BindGroup {
+        let ImageUpload {
+            id,
+            pixels:
+                ImagePixels {
+                    data,
+                    width,
+                    height,
+                    pixel_generation,
+                },
+        } = upload;
         let frame = self.frame_counter;
 
         match self.textures.entry(id) {
@@ -200,15 +230,19 @@ impl ImageTextureCache {
                         self.gpu_memory_used =
                             self.gpu_memory_used.saturating_sub(entry.size_bytes);
                         let new_entry = create_texture_entry(
-                            device,
-                            queue,
-                            layout,
-                            &self.sampler,
-                            data,
-                            width,
-                            height,
+                            GpuTextureCtx {
+                                device,
+                                queue,
+                                layout,
+                                sampler: &self.sampler,
+                            },
+                            ImagePixels {
+                                data,
+                                width,
+                                height,
+                                pixel_generation,
+                            },
                             frame,
-                            pixel_generation,
                         );
                         self.gpu_memory_used += new_entry.size_bytes;
                         *entry = new_entry;
@@ -221,15 +255,19 @@ impl ImageTextureCache {
             Entry::Vacant(e) => {
                 let t = std::time::Instant::now();
                 let new_entry = create_texture_entry(
-                    device,
-                    queue,
-                    layout,
-                    &self.sampler,
-                    data,
-                    width,
-                    height,
+                    GpuTextureCtx {
+                        device,
+                        queue,
+                        layout,
+                        sampler: &self.sampler,
+                    },
+                    ImagePixels {
+                        data,
+                        width,
+                        height,
+                        pixel_generation,
+                    },
                     frame,
-                    pixel_generation,
                 );
                 self.upload_count += 1;
                 self.upload_bytes += data.len() as u64;
@@ -506,21 +544,23 @@ fn perform_texture_upload(
 /// Vacant arm of `ensure_uploaded` and the dim-change branch of the
 /// Occupied arm (when the texture must be recreated rather than
 /// re-uploaded into).
-#[expect(
-    clippy::too_many_arguments,
-    reason = "texture creation needs device, queue, layout, sampler, data + dims + frame + generation"
-)]
 fn create_texture_entry(
-    device: &Device,
-    queue: &Queue,
-    layout: &BindGroupLayout,
-    sampler: &wgpu::Sampler,
-    data: &[u8],
-    width: u32,
-    height: u32,
+    gpu: GpuTextureCtx<'_>,
+    pixels: ImagePixels<'_>,
     frame: u64,
-    pixel_generation: u64,
 ) -> GpuImageTexture {
+    let GpuTextureCtx {
+        device,
+        queue,
+        layout,
+        sampler,
+    } = gpu;
+    let ImagePixels {
+        data,
+        width,
+        height,
+        pixel_generation,
+    } = pixels;
     let size = Extent3d {
         width,
         height,

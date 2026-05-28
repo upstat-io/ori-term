@@ -116,7 +116,10 @@ impl IDefaultTerminalMarker_Impl for HandoffServer_Impl {}
 /// `reference`, `server`, `client` must be valid Windows handles owned
 /// by the COM caller; `startup_info` must point to a valid struct or
 /// be null.
-#[allow(clippy::too_many_arguments, reason = "matches the COM ABI signature")]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "mirrors the ITerminalHandoff::EstablishPtyHandoff COM ABI method signature — param count fixed by the interface, not reducible"
+)]
 unsafe fn establish_handoff(
     server_impl: &HandoffServer_Impl,
     in_handle: *mut HANDLE,

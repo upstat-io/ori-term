@@ -42,7 +42,16 @@ fn incremental_dispatch_cached_render_path_matches_fresh_rebuild() {
 
     // Frame 0: full-rebuild. content_changed=true populates terminal tier
     // for the next frame's dispatch.
-    renderer.prepare(&input, &gpu, &pipelines, (0.0, 0.0), 1.0, true);
+    renderer.prepare(
+        &input,
+        &gpu,
+        &pipelines,
+        crate::gpu::PrepareRequest {
+            origin: (0.0, 0.0),
+            cursor_opacity: 1.0,
+            content_changed: true,
+        },
+    );
     assert!(
         !renderer.prepared.was_incremental,
         "Frame 0 must be full-rebuild (saved_tier empty before first prepare)"
@@ -59,7 +68,16 @@ fn incremental_dispatch_cached_render_path_matches_fresh_rebuild() {
     // takes the incremental branch.
     input.content.all_dirty = false;
     input.content.damage.clear();
-    renderer.prepare(&input, &gpu, &pipelines, (0.0, 0.0), 1.0, true);
+    renderer.prepare(
+        &input,
+        &gpu,
+        &pipelines,
+        crate::gpu::PrepareRequest {
+            origin: (0.0, 0.0),
+            cursor_opacity: 1.0,
+            content_changed: true,
+        },
+    );
     assert!(
         renderer.prepared.was_incremental,
         "Frame 1 must dispatch incremental — production fix's pre-dispatch \

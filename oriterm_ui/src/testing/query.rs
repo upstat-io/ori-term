@@ -12,17 +12,6 @@ use crate::widget_id::WidgetId;
 use super::harness::WidgetTestHarness;
 
 impl WidgetTestHarness {
-    /// Finds the first widget whose debug name contains the given substring.
-    ///
-    /// Searches the layout tree for widget IDs, then matches against the
-    /// widget's `Debug` output. Returns the first match.
-    pub fn find_by_name(&self, _name: &str) -> Option<WidgetId> {
-        // Widget Debug names require &dyn Widget access which needs &mut self
-        // for tree traversal. For now, return None — tests should use widget
-        // IDs directly. Full name-based lookup requires Widget::for_each_child.
-        None
-    }
-
     /// Returns all widgets with the given sense flags.
     ///
     /// Searches the layout tree and returns widgets whose sense includes

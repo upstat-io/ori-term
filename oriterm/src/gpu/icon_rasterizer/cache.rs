@@ -26,6 +26,14 @@ struct CacheKey {
     size_px: u32,
 }
 
+/// Atlas upload target for [`IconCache::get_or_insert`]: the mono glyph
+/// atlas plus the GPU handles needed to upload a freshly rasterized icon.
+pub(crate) struct IconUploadTarget<'a> {
+    pub atlas: &'a mut GlyphAtlas,
+    pub device: &'a Device,
+    pub queue: &'a Queue,
+}
+
 /// Caches rasterized icon bitmaps in the monochrome glyph atlas.
 ///
 /// Each icon is rasterized at a specific pixel size (determined by DPI)
@@ -50,19 +58,18 @@ impl IconCache {
     ///
     /// Returns `None` if the atlas cannot accommodate the icon (extremely
     /// unlikely for small icon bitmaps).
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "icon cache lookup: id, size, scale, atlas, queue are all required context"
-    )]
     pub(crate) fn get_or_insert(
         &mut self,
         id: IconId,
         size_px: u32,
         scale: f32,
-        atlas: &mut GlyphAtlas,
-        device: &Device,
-        queue: &Queue,
+        target: IconUploadTarget<'_>,
     ) -> Option<AtlasEntry> {
+        let IconUploadTarget {
+            atlas,
+            device,
+            queue,
+        } = target;
         let key = CacheKey { id, size_px };
 
         if let Some(&entry) = self.entries.get(&key) {

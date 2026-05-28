@@ -294,7 +294,16 @@ fn text_blink_fast_path_with_timer() {
     let w = input1.viewport.width;
     let h = input1.viewport.height;
     let t1 = gpu.create_render_target(w, h);
-    renderer.prepare(&input1, &gpu, &pipelines, (0.0, 0.0), 1.0, true);
+    renderer.prepare(
+        &input1,
+        &gpu,
+        &pipelines,
+        crate::gpu::PrepareRequest {
+            origin: (0.0, 0.0),
+            cursor_opacity: 1.0,
+            content_changed: true,
+        },
+    );
     renderer.render_frame(&gpu, &pipelines, t1.view());
     let px1 = gpu.read_render_target(&t1).expect("readback");
 
@@ -303,7 +312,16 @@ fn text_blink_fast_path_with_timer() {
     timer_hid.backdate(Duration::from_millis(600));
     let input2 = blink_input(cell, timer_hid.intensity());
     let t2 = gpu.create_render_target(w, h);
-    renderer.prepare(&input2, &gpu, &pipelines, (0.0, 0.0), 1.0, false);
+    renderer.prepare(
+        &input2,
+        &gpu,
+        &pipelines,
+        crate::gpu::PrepareRequest {
+            origin: (0.0, 0.0),
+            cursor_opacity: 1.0,
+            content_changed: false,
+        },
+    );
     renderer.render_frame(&gpu, &pipelines, t2.view());
     let px2 = gpu.read_render_target(&t2).expect("readback");
 

@@ -4,7 +4,8 @@ use oriterm_core::Rgb;
 
 use super::{OverlayDrawRange, PreparedFrame};
 use crate::gpu::frame_input::ViewportSize;
-use crate::gpu::instance_writer::ScreenRect;
+use crate::gpu::instance_writer::{GlyphInstance, ScreenRect};
+use crate::gpu::ui_rect_writer::UiRectBorder;
 
 const BLACK: Rgb = Rgb { r: 0, g: 0, b: 0 };
 const WHITE: Rgb = Rgb {
@@ -93,11 +94,13 @@ fn populate_and_count() {
     frame.backgrounds.push_rect(r2, BLACK, 1.0);
     frame.glyphs.push_glyph(
         r1,
-        [0.0; 4],
-        WHITE,
-        1.0,
-        0,
-        crate::gpu::instance_writer::CLIP_UNCLIPPED,
+        GlyphInstance {
+            uv: [0.0; 4],
+            fg: WHITE,
+            alpha: 1.0,
+            atlas_page: 0,
+            clip: crate::gpu::instance_writer::CLIP_UNCLIPPED,
+        },
     );
     frame.cursors.push_cursor(r1, WHITE, 1.0);
 
@@ -120,11 +123,13 @@ fn clear_resets_all_buffers() {
     frame.backgrounds.push_rect(r, BLACK, 1.0);
     frame.glyphs.push_glyph(
         r,
-        [0.0; 4],
-        WHITE,
-        1.0,
-        0,
-        crate::gpu::instance_writer::CLIP_UNCLIPPED,
+        GlyphInstance {
+            uv: [0.0; 4],
+            fg: WHITE,
+            alpha: 1.0,
+            atlas_page: 0,
+            clip: crate::gpu::instance_writer::CLIP_UNCLIPPED,
+        },
     );
     frame.cursors.push_cursor(r, WHITE, 1.0);
 
@@ -155,11 +160,13 @@ fn clear_and_reuse() {
     // Second frame.
     frame.glyphs.push_glyph(
         r,
-        [0.0; 4],
-        WHITE,
-        1.0,
-        0,
-        crate::gpu::instance_writer::CLIP_UNCLIPPED,
+        GlyphInstance {
+            uv: [0.0; 4],
+            fg: WHITE,
+            alpha: 1.0,
+            atlas_page: 0,
+            clip: crate::gpu::instance_writer::CLIP_UNCLIPPED,
+        },
     );
     let r2 = ScreenRect {
         x: 8.0,
@@ -169,11 +176,13 @@ fn clear_and_reuse() {
     };
     frame.glyphs.push_glyph(
         r2,
-        [0.0; 4],
-        WHITE,
-        1.0,
-        0,
-        crate::gpu::instance_writer::CLIP_UNCLIPPED,
+        GlyphInstance {
+            uv: [0.0; 4],
+            fg: WHITE,
+            alpha: 1.0,
+            atlas_page: 0,
+            clip: crate::gpu::instance_writer::CLIP_UNCLIPPED,
+        },
     );
     assert_eq!(frame.total_instances(), 2);
 }
@@ -191,9 +200,11 @@ fn push_dummy_overlay_rect(frame: &mut PreparedFrame) {
     frame.overlay_rects.push_ui_rect(
         r,
         [1.0, 0.0, 0.0, 1.0],
-        [0.0; 4],
-        [0.0; 4],
-        [[0.0; 4]; 4],
+        UiRectBorder {
+            widths: [0.0; 4],
+            corner_radii: [0.0; 4],
+            colors: [[0.0; 4]; 4],
+        },
         [0.0, 0.0, 640.0, 480.0],
     );
 }

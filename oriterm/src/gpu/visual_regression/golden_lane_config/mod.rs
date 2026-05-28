@@ -48,6 +48,16 @@ pub struct GoldenLaneConfig {
     /// Maximum percentage of pixels allowed to differ (0.0 = zero mismatches).
     pub max_diff_percent: f64,
 
+    // Subpixel pipeline selection (test-only).
+    /// Force the NON-dual subpixel pipeline even when the device advertises
+    /// `DUAL_SOURCE_BLENDING`. `false` (the `SPEC_DEFAULT` value) keeps the
+    /// production selection (dual-source when available). `true` flips
+    /// `GpuState::dual_source_blending` to `false` before pipeline creation so
+    /// the `subpixel_fg.wgsl` known-bg branch (the F2 Porter-Duff "glyph over
+    /// translucent bg" path) is exercised — the dual-source path composites
+    /// over the framebuffer in hardware and never reaches that branch.
+    pub force_non_dual_subpixel: bool,
+
     // Harness font override (test-only).
     /// Optional test-only `FontSet` override for the deterministic lane.
     /// `None` (the `SPEC_DEFAULT` value) keeps `FontSet::embedded()` — the
@@ -71,6 +81,7 @@ impl std::fmt::Debug for GoldenLaneConfig {
             .field("subpixel_positioning", &self.subpixel_positioning)
             .field("pixel_tolerance", &self.pixel_tolerance)
             .field("max_diff_percent", &self.max_diff_percent)
+            .field("force_non_dual_subpixel", &self.force_non_dual_subpixel)
             .field("font_override", &self.font_override.is_some())
             .finish()
     }
@@ -95,7 +106,23 @@ impl GoldenLaneConfig {
         subpixel_positioning: false,
         pixel_tolerance: 0,
         max_diff_percent: 0.0,
+        force_non_dual_subpixel: false,
         font_override: None,
+    };
+
+    /// Non-dual companion of `SPEC_DEFAULT`: identical except
+    /// `glyph_format: GlyphFormat::SubpixelRgb` + `force_non_dual_subpixel:
+    /// true`. The SSOT for golden tests that exercise the
+    /// non-dual subpixel pipeline branch (the `subpixel_fg.wgsl` known-bg
+    /// translucent-bg path) — pairs with `SPEC_DEFAULT` on dual-source-
+    /// advertising adapters where `SPEC_DEFAULT` always selects the dual
+    /// path. Subpixel-AA-exercising test categories (cell alpha, cursor
+    /// opacity, weight tests, adjacency / raster) should declare paired
+    /// `_non_dual` variants using this constant.
+    pub const NON_DUAL_DEFAULT: Self = Self {
+        glyph_format: GlyphFormat::SubpixelRgb,
+        force_non_dual_subpixel: true,
+        ..Self::SPEC_DEFAULT
     };
 
     /// Builder: return a config that carries the given `FontSet` as the

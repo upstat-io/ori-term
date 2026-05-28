@@ -77,7 +77,15 @@ fn parse_element(tag: &str, vb: f32, cmds: &mut Vec<PathCommand>) {
             let w = attr_f32(tag, "width").unwrap_or(0.0);
             let h = attr_f32(tag, "height").unwrap_or(0.0);
             let rx = attr_f32(tag, "rx").unwrap_or(0.0);
-            rect_to_commands(x, y, w, h, rx, vb, cmds);
+            rect_to_commands(
+                RectGeom {
+                    origin: (x, y),
+                    size: (w, h),
+                    corner_radius: rx,
+                },
+                vb,
+                cmds,
+            );
         }
         "line" => {
             let x1 = attr_f32(tag, "x1").unwrap_or(0.0);
@@ -180,16 +188,28 @@ fn circle_to_cubics(cx: f32, cy: f32, r: f32, vb: f32, cmds: &mut Vec<PathComman
     cmds.push(PathCommand::Close);
 }
 
+/// An SVG `<rect>` geometry (optionally rounded).
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct RectGeom {
+    /// Top-left origin `(x, y)`.
+    origin: (f32, f32),
+    /// Rectangle size `(width, height)`.
+    size: (f32, f32),
+    /// Uniform corner radius (0 = square corners).
+    corner_radius: f32,
+}
+
 /// Convert a rect (optionally rounded) to path commands.
 #[expect(
-    clippy::too_many_arguments,
-    reason = "SVG rect naturally has x, y, w, h, rx, vb"
-)]
-#[expect(
     clippy::many_single_char_names,
-    reason = "x, y, w, h, k are standard geometry names"
+    reason = "x, y, w, h, k are standard rect/bezier geometry names"
 )]
-fn rect_to_commands(x: f32, y: f32, w: f32, h: f32, rx: f32, vb: f32, cmds: &mut Vec<PathCommand>) {
+fn rect_to_commands(rect: RectGeom, vb: f32, cmds: &mut Vec<PathCommand>) {
+    let RectGeom {
+        origin: (x, y),
+        size: (w, h),
+        corner_radius: rx,
+    } = rect;
     let n = |v: f32| v / vb;
 
     if rx <= 0.0 {

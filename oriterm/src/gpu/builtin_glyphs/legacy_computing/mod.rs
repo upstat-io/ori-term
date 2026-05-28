@@ -12,7 +12,7 @@ mod octants;
 mod smooth_mosaics;
 mod triangles;
 
-use super::Canvas;
+use super::{Canvas, LineF, RectF};
 
 /// Draw a Symbols for Legacy Computing character. Returns `true` if handled.
 pub(in crate::gpu::builtin_glyphs) fn draw(canvas: &mut Canvas, ch: char) -> bool {
@@ -54,22 +54,22 @@ fn draw_sextant(canvas: &mut Canvas, ch: char) {
 
     // bit 0 = tl, bit 1 = tr, bit 2 = ml, bit 3 = mr, bit 4 = bl, bit 5 = br
     if bits & 0b00_0001 != 0 {
-        canvas.fill_rect(0.0, 0.0, hw, th, 255);
+        canvas.fill_rect(RectF::new(0.0, 0.0, hw, th), 255);
     }
     if bits & 0b00_0010 != 0 {
-        canvas.fill_rect(hw, 0.0, w - hw, th, 255);
+        canvas.fill_rect(RectF::new(hw, 0.0, w - hw, th), 255);
     }
     if bits & 0b00_0100 != 0 {
-        canvas.fill_rect(0.0, th, hw, th2 - th, 255);
+        canvas.fill_rect(RectF::new(0.0, th, hw, th2 - th), 255);
     }
     if bits & 0b00_1000 != 0 {
-        canvas.fill_rect(hw, th, w - hw, th2 - th, 255);
+        canvas.fill_rect(RectF::new(hw, th, w - hw, th2 - th), 255);
     }
     if bits & 0b01_0000 != 0 {
-        canvas.fill_rect(0.0, th2, hw, h - th2, 255);
+        canvas.fill_rect(RectF::new(0.0, th2, hw, h - th2), 255);
     }
     if bits & 0b10_0000 != 0 {
-        canvas.fill_rect(hw, th2, w - hw, h - th2, 255);
+        canvas.fill_rect(RectF::new(hw, th2, w - hw, h - th2), 255);
     }
 }
 
@@ -82,7 +82,7 @@ fn draw_vertical_eighth(canvas: &mut Canvas, ch: char) {
     let n = (ch as u32 - 0x1FB70 + 1) as f32;
     let x = (w * n / 8.0).round();
     let x1 = (w * (n + 1.0) / 8.0).round();
-    canvas.fill_rect(x, 0.0, x1 - x, h, 255);
+    canvas.fill_rect(RectF::new(x, 0.0, x1 - x, h), 255);
 }
 
 // -- Horizontal one-eighth blocks (U+1FB76–U+1FB7B) --
@@ -94,7 +94,7 @@ fn draw_horizontal_eighth(canvas: &mut Canvas, ch: char) {
     let n = (ch as u32 - 0x1FB76 + 1) as f32;
     let y = (h * n / 8.0).round();
     let y1 = (h * (n + 1.0) / 8.0).round();
-    canvas.fill_rect(0.0, y, w, y1 - y, 255);
+    canvas.fill_rect(RectF::new(0.0, y, w, y1 - y), 255);
 }
 
 // -- Corner one-eighth blocks (U+1FB7C–U+1FB7F) --
@@ -108,20 +108,20 @@ fn draw_corner_eighth(canvas: &mut Canvas, ch: char) {
 
     match ch {
         '\u{1FB7C}' => {
-            canvas.fill_rect(0.0, 0.0, ew, h, 255);
-            canvas.fill_rect(0.0, h - eh, w, eh, 255);
+            canvas.fill_rect(RectF::new(0.0, 0.0, ew, h), 255);
+            canvas.fill_rect(RectF::new(0.0, h - eh, w, eh), 255);
         }
         '\u{1FB7D}' => {
-            canvas.fill_rect(0.0, 0.0, ew, h, 255);
-            canvas.fill_rect(0.0, 0.0, w, eh, 255);
+            canvas.fill_rect(RectF::new(0.0, 0.0, ew, h), 255);
+            canvas.fill_rect(RectF::new(0.0, 0.0, w, eh), 255);
         }
         '\u{1FB7E}' => {
-            canvas.fill_rect(w - ew, 0.0, ew, h, 255);
-            canvas.fill_rect(0.0, 0.0, w, eh, 255);
+            canvas.fill_rect(RectF::new(w - ew, 0.0, ew, h), 255);
+            canvas.fill_rect(RectF::new(0.0, 0.0, w, eh), 255);
         }
         '\u{1FB7F}' => {
-            canvas.fill_rect(w - ew, 0.0, ew, h, 255);
-            canvas.fill_rect(0.0, h - eh, w, eh, 255);
+            canvas.fill_rect(RectF::new(w - ew, 0.0, ew, h), 255);
+            canvas.fill_rect(RectF::new(0.0, h - eh, w, eh), 255);
         }
         _ => {}
     }
@@ -138,15 +138,15 @@ fn draw_compound_eighth(canvas: &mut Canvas, ch: char) {
     match ch {
         // Upper and lower one-eighth block.
         '\u{1FB80}' => {
-            canvas.fill_rect(0.0, 0.0, w, eh, 255);
-            canvas.fill_rect(0.0, h - eh, w, eh, 255);
+            canvas.fill_rect(RectF::new(0.0, 0.0, w, eh), 255);
+            canvas.fill_rect(RectF::new(0.0, h - eh, w, eh), 255);
         }
         // Horizontal one-eighth blocks 1-3-5-8.
         '\u{1FB81}' => {
             for n in [0.0, 2.0, 4.0, 7.0] {
                 let y = (h * n / 8.0).round();
                 let y1 = (h * (n + 1.0) / 8.0).round();
-                canvas.fill_rect(0.0, y, w, y1 - y, 255);
+                canvas.fill_rect(RectF::new(0.0, y, w, y1 - y), 255);
             }
         }
         _ => {}
@@ -167,7 +167,7 @@ fn draw_upper_block(canvas: &mut Canvas, ch: char) {
         '\u{1FB86}' => 0.875,
         _ => return,
     };
-    canvas.fill_rect(0.0, 0.0, w, (h * frac).round(), 255);
+    canvas.fill_rect(RectF::new(0.0, 0.0, w, (h * frac).round()), 255);
 }
 
 // -- Right fractional blocks (U+1FB87–U+1FB8B) --
@@ -185,7 +185,7 @@ fn draw_right_block(canvas: &mut Canvas, ch: char) {
         _ => return,
     };
     let bw = (w * frac).round();
-    canvas.fill_rect(w - bw, 0.0, bw, h, 255);
+    canvas.fill_rect(RectF::new(w - bw, 0.0, bw, h), 255);
 }
 
 // -- Shade blocks (U+1FB8C–U+1FB94) --
@@ -198,23 +198,23 @@ fn draw_shade_block(canvas: &mut Canvas, ch: char) {
     let hh = (h / 2.0).round();
 
     match ch {
-        '\u{1FB8C}' => canvas.fill_rect(0.0, 0.0, hw, h, 128),
-        '\u{1FB8D}' => canvas.fill_rect(hw, 0.0, w - hw, h, 128),
-        '\u{1FB8E}' => canvas.fill_rect(0.0, 0.0, w, hh, 128),
-        '\u{1FB8F}' => canvas.fill_rect(0.0, hh, w, h - hh, 128),
-        '\u{1FB90}' => canvas.fill_rect(0.0, 0.0, w, h, 128),
+        '\u{1FB8C}' => canvas.fill_rect(RectF::new(0.0, 0.0, hw, h), 128),
+        '\u{1FB8D}' => canvas.fill_rect(RectF::new(hw, 0.0, w - hw, h), 128),
+        '\u{1FB8E}' => canvas.fill_rect(RectF::new(0.0, 0.0, w, hh), 128),
+        '\u{1FB8F}' => canvas.fill_rect(RectF::new(0.0, hh, w, h - hh), 128),
+        '\u{1FB90}' => canvas.fill_rect(RectF::new(0.0, 0.0, w, h), 128),
         '\u{1FB91}' => {
-            canvas.fill_rect(0.0, 0.0, w, h, 128);
-            canvas.fill_rect(0.0, 0.0, w, hh, 255);
+            canvas.fill_rect(RectF::new(0.0, 0.0, w, h), 128);
+            canvas.fill_rect(RectF::new(0.0, 0.0, w, hh), 255);
         }
         '\u{1FB92}' => {
-            canvas.fill_rect(0.0, 0.0, w, h, 128);
-            canvas.fill_rect(0.0, hh, w, h - hh, 255);
+            canvas.fill_rect(RectF::new(0.0, 0.0, w, h), 128);
+            canvas.fill_rect(RectF::new(0.0, hh, w, h - hh), 255);
         }
         // U+1FB93 is unallocated (Unicode hole) — falls through to no-op.
         '\u{1FB94}' => {
-            canvas.fill_rect(0.0, 0.0, w, h, 128);
-            canvas.fill_rect(hw, 0.0, w - hw, h, 255);
+            canvas.fill_rect(RectF::new(0.0, 0.0, w, h), 128);
+            canvas.fill_rect(RectF::new(hw, 0.0, w - hw, h), 255);
         }
         _ => {}
     }
@@ -236,7 +236,7 @@ fn draw_checkerboard(canvas: &mut Canvas, ch: char) {
                 return;
             }
             for row_start in (0..h).step_by((bar * 2) as usize) {
-                canvas.fill_rect(0.0, row_start as f32, w as f32, bar as f32, 255);
+                canvas.fill_rect(RectF::new(0.0, row_start as f32, w as f32, bar as f32), 255);
             }
         }
         _ => {}
@@ -267,8 +267,8 @@ fn draw_diagonal_fill(canvas: &mut Canvas, ch: char) {
     for i in -count..=count * 2 {
         let offset = i as f32 * 2.0 * thickness;
         match ch {
-            '\u{1FB98}' => canvas.fill_line(offset, 0.0, w + offset, h, thickness),
-            '\u{1FB99}' => canvas.fill_line(w - offset, 0.0, -offset, h, thickness),
+            '\u{1FB98}' => canvas.fill_line(LineF::new(offset, 0.0, w + offset, h), thickness),
+            '\u{1FB99}' => canvas.fill_line(LineF::new(w - offset, 0.0, -offset, h), thickness),
             _ => {}
         }
     }

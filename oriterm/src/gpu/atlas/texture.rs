@@ -43,6 +43,23 @@ pub(super) fn create_texture_array(
     (texture, view)
 }
 
+/// Destination slot for a glyph upload: texture-array layer and top-left
+/// pixel coordinates.
+#[derive(Clone, Copy)]
+pub(super) struct GlyphSlot {
+    pub page_idx: u32,
+    pub x: u32,
+    pub y: u32,
+}
+
+/// Gutter padding for a glyph upload: padding width plus the pre-allocated
+/// zero buffer sliced for each strip.
+#[derive(Clone, Copy)]
+pub(super) struct GutterPadding<'a> {
+    pub padding: u32,
+    pub zeros: &'a [u8],
+}
+
 /// Upload a glyph bitmap to a position on a texture array layer, zeroing
 /// the `GLYPH_PADDING` gutter on the right and bottom edges.
 ///
@@ -51,22 +68,18 @@ pub(super) fn create_texture_array(
 /// `(x + w, y)` → `(x + w + padding, y + h)` and the bottom strip
 /// `(x, y + h)` → `(x + w + padding, y + h + padding)`.  This prevents
 /// the bilinear sampler from interpolating stale texels into glyph edges.
-///
-/// `padding_zeros` is a pre-allocated zero buffer sliced for each strip.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "GPU texture upload: resource refs, destination coords, glyph data, padding"
-)]
 pub(super) fn upload_glyph(
     queue: &Queue,
     texture: &Texture,
-    page_idx: u32,
-    x: u32,
-    y: u32,
+    slot: GlyphSlot,
     glyph: &RasterizedGlyph,
-    padding: u32,
-    padding_zeros: &[u8],
+    gutter: GutterPadding<'_>,
 ) {
+    let GlyphSlot { page_idx, x, y } = slot;
+    let GutterPadding {
+        padding,
+        zeros: padding_zeros,
+    } = gutter;
     let bpp = glyph.format.bytes_per_pixel();
 
     // Upload the glyph body.

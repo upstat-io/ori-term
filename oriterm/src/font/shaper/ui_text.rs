@@ -7,8 +7,9 @@
 
 use std::borrow::Cow;
 
-use oriterm_ui::text::{ShapedGlyph, ShapedText, TextOverflow, TextStyle};
+use oriterm_ui::text::{ShapedGlyph, ShapedMetrics, ShapedText, TextOverflow, TextStyle};
 
+use super::ShapeFaces;
 use crate::font::collection::FontCollection;
 use crate::font::{FaceIdx, GlyphStyle, SyntheticFlags};
 
@@ -20,24 +21,34 @@ use crate::font::{FaceIdx, GlyphStyle, SyntheticFlags};
 ///
 /// `glyph_style` selects the font weight (Regular, Bold, etc.).
 /// Pass `buffer_slot` to persist the rustybuzz buffer across frames.
+/// Style inputs for [`shape_text_string`]: glyph style, synthesis, weight.
+#[derive(Clone, Copy)]
+pub struct UiTextSpec {
+    /// Glyph style (Regular / Bold / Italic).
+    pub glyph_style: GlyphStyle,
+    /// Synthetic transformations requested for the run.
+    pub synthetic: SyntheticFlags,
+    /// Requested font weight for variable / weight-aware faces.
+    pub requested_weight: u16,
+}
+
 #[expect(
     clippy::string_slice,
     reason = "byte indices from char_indices() are always valid char boundaries"
 )]
-#[expect(
-    clippy::too_many_arguments,
-    reason = "glyph_style added for font weight selection; grouping into a struct would obscure the API"
-)]
 pub fn shape_text_string(
     text: &str,
-    glyph_style: GlyphStyle,
-    synthetic: SyntheticFlags,
-    requested_weight: u16,
-    faces: &[Option<rustybuzz::Face<'_>>],
-    collection: &FontCollection,
+    spec: UiTextSpec,
+    faces: ShapeFaces<'_>,
     output: &mut Vec<ShapedGlyph>,
     buffer_slot: &mut Option<rustybuzz::UnicodeBuffer>,
 ) {
+    let UiTextSpec {
+        glyph_style,
+        synthetic,
+        requested_weight,
+    } = spec;
+    let ShapeFaces { faces, collection } = faces;
     output.clear();
     if text.is_empty() {
         return;
@@ -65,11 +76,12 @@ pub fn shape_text_string(
                 // Face changed — flush current run.
                 let run_syn = per_face_synthetic(synthetic, requested_weight, run_face, collection);
                 buffer = shape_ui_run(
-                    &text[start..byte_idx],
-                    run_face,
-                    run_syn,
-                    faces,
-                    collection,
+                    UiRun {
+                        text: &text[start..byte_idx],
+                        face_idx: run_face,
+                        synthetic: run_syn,
+                    },
+                    ShapeFaces { faces, collection },
                     output,
                     buffer,
                 );
@@ -86,11 +98,12 @@ pub fn shape_text_string(
     if let Some(start) = run_start {
         let run_syn = per_face_synthetic(synthetic, requested_weight, run_face, collection);
         buffer = shape_ui_run(
-            &text[start..],
-            run_face,
-            run_syn,
-            faces,
-            collection,
+            UiRun {
+                text: &text[start..],
+                face_idx: run_face,
+                synthetic: run_syn,
+            },
+            ShapeFaces { faces, collection },
             output,
             buffer,
         );
@@ -215,11 +228,15 @@ fn shape_to_shaped_text(
     let mut buffer_slot = None;
     shape_text_string(
         text,
-        glyph_style,
-        synthetic,
-        requested_weight,
-        &faces,
-        collection,
+        UiTextSpec {
+            glyph_style,
+            synthetic,
+            requested_weight,
+        },
+        ShapeFaces {
+            faces: &faces,
+            collection,
+        },
         &mut glyphs,
         &mut buffer_slot,
     );
@@ -230,9 +247,11 @@ fn shape_to_shaped_text(
 
     ShapedText::new(
         glyphs,
-        width,
-        metrics.height,
-        metrics.baseline,
+        ShapedMetrics {
+            width,
+            height: metrics.height,
+            baseline: metrics.baseline,
+        },
         size_q6,
         requested_weight,
     )
@@ -317,19 +336,29 @@ pub fn truncate_with_ellipsis<'a>(
 ///
 /// Returns the cleared `UnicodeBuffer` for reuse by the next run. When no
 /// face is available, emits advance-only glyphs based on unicode width.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "mirrors grid shape_run with separate text+face_idx instead of ShapingRun"
-)]
-fn shape_ui_run(
-    text: &str,
+/// One UI text run: a slice of text plus its resolved face and synthesis.
+#[derive(Clone, Copy)]
+struct UiRun<'a> {
+    /// Text slice for this run.
+    text: &'a str,
+    /// Resolved font face index.
     face_idx: FaceIdx,
+    /// Synthetic transformations for this run.
     synthetic: SyntheticFlags,
-    faces: &[Option<rustybuzz::Face<'_>>],
-    collection: &FontCollection,
+}
+
+fn shape_ui_run(
+    run: UiRun<'_>,
+    faces: ShapeFaces<'_>,
     output: &mut Vec<ShapedGlyph>,
     mut buffer: rustybuzz::UnicodeBuffer,
 ) -> rustybuzz::UnicodeBuffer {
+    let UiRun {
+        text,
+        face_idx,
+        synthetic,
+    } = run;
+    let ShapeFaces { faces, collection } = faces;
     let syn_bits = synthetic.bits();
     let Some(face) = faces.get(face_idx.as_usize()).and_then(|f| f.as_ref()) else {
         // No rustybuzz face — try cmap + font metrics for each character.

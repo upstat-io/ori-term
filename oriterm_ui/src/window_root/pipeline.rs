@@ -13,15 +13,16 @@ use crate::controllers::ControllerRequests;
 use crate::draw::Scene;
 use crate::geometry::Rect;
 use crate::input::InputEvent;
-use crate::input::dispatch::tree::{TreeDispatchResult, deliver_event_to_tree};
+use crate::input::dispatch::tree::{TreeDispatchCtx, TreeDispatchResult, deliver_event_to_tree};
 use crate::input::layout_hit_test_path;
 use crate::interaction::build_parent_map;
 use crate::interaction::lifecycle::LifecycleEvent;
 use crate::layout::compute_layout;
-use crate::overlay::OverlayEventResult;
+use crate::overlay::{CompositorHandles, OverlayEventResult};
 use crate::pipeline::{
-    apply_dispatch_requests, collect_all_widget_ids, collect_focusable_ids, collect_layout_bounds,
-    dispatch_keymap_action, prepaint_widget_tree, prepare_widget_tree, register_widget_tree,
+    PrepaintWalkCtx, PrepareCtx, apply_dispatch_requests, collect_all_widget_ids,
+    collect_focusable_ids, collect_layout_bounds, dispatch_keymap_action, prepaint_widget_tree,
+    prepare_widget_tree, register_widget_tree,
 };
 use crate::theme::UiTheme;
 use crate::widget_id::WidgetId;
@@ -97,14 +98,13 @@ impl WindowRoot {
         // widget tree's hot path is cleared (not updated) so background widgets
         // don't animate hover state underneath the overlay.
         let overlay_consumed = if let Some(mouse_event) = (*event).to_mouse_event() {
-            let focused = self.focus.focused();
             let result = self.overlays.process_mouse_event(
                 &mouse_event,
-                measurer,
-                theme,
-                focused,
-                &mut self.layer_tree,
-                &mut self.layer_animator,
+                &LayoutCtx { measurer, theme },
+                &mut CompositorHandles {
+                    tree: &mut self.layer_tree,
+                    animator: &mut self.layer_animator,
+                },
                 now,
             );
             !matches!(result, OverlayEventResult::PassThrough)
@@ -178,12 +178,14 @@ impl WindowRoot {
         if !events.is_empty() {
             prepare_widget_tree(
                 &mut *self.widget,
-                &mut self.interaction,
-                Some(&mut self.invalidation),
-                &events,
-                None,
-                Some(&self.frame_requests),
-                now,
+                PrepareCtx {
+                    interaction: &mut self.interaction,
+                    tracker: Some(&mut self.invalidation),
+                    lifecycle_events: &events,
+                    anim_event: None,
+                    frame_requests: Some(&self.frame_requests),
+                    now,
+                },
             );
         }
         self.run_prepaint(now, theme, true);
@@ -220,12 +222,14 @@ impl WindowRoot {
         // animating widgets would be skipped by selective walks.
         prepare_widget_tree(
             &mut *self.widget,
-            &mut self.interaction,
-            None,
-            &[],
-            Some(&anim_event),
-            Some(&self.frame_requests),
-            now,
+            PrepareCtx {
+                interaction: &mut self.interaction,
+                tracker: None,
+                lifecycle_events: &[],
+                anim_event: Some(&anim_event),
+                frame_requests: Some(&self.frame_requests),
+                now,
+            },
         );
         // Full prepaint walk (selective: false) because the prepare step above
         // passed None for the tracker, so it couldn't mark animating widgets
@@ -350,12 +354,14 @@ impl WindowRoot {
                     deliver_event_to_tree(
                         &mut *self.widget,
                         event,
-                        self.viewport,
-                        Some(&self.layout),
-                        self.interaction.active_widget(),
-                        &focus_path,
-                        now,
-                        None,
+                        TreeDispatchCtx {
+                            bounds: self.viewport,
+                            layout_node: Some(&self.layout),
+                            active_widget: self.interaction.active_widget(),
+                            focus_path: &focus_path,
+                            now,
+                            layout_ids: None,
+                        },
                     )
                 }
             }
@@ -366,12 +372,14 @@ impl WindowRoot {
             _ => deliver_event_to_tree(
                 &mut *self.widget,
                 event,
-                self.viewport,
-                Some(&self.layout),
-                self.interaction.active_widget(),
-                &focus_path,
-                now,
-                None,
+                TreeDispatchCtx {
+                    bounds: self.viewport,
+                    layout_node: Some(&self.layout),
+                    active_widget: self.interaction.active_widget(),
+                    focus_path: &focus_path,
+                    now,
+                    layout_ids: None,
+                },
             ),
         }
     }
@@ -389,12 +397,14 @@ impl WindowRoot {
         }
         prepare_widget_tree(
             &mut *self.widget,
-            &mut self.interaction,
-            Some(&mut self.invalidation),
-            &events,
-            None,
-            Some(&self.frame_requests),
-            now,
+            PrepareCtx {
+                interaction: &mut self.interaction,
+                tracker: Some(&mut self.invalidation),
+                lifecycle_events: &events,
+                anim_event: None,
+                frame_requests: Some(&self.frame_requests),
+                now,
+            },
         );
         self.run_prepaint(now, theme, true);
         self.flush_frame_requests();
@@ -416,12 +426,14 @@ impl WindowRoot {
         };
         prepaint_widget_tree(
             &mut *self.widget,
-            &bounds_map,
-            Some(&self.interaction),
-            theme,
-            now,
-            Some(&self.frame_requests),
-            tracker,
+            PrepaintWalkCtx {
+                bounds_map: &bounds_map,
+                interaction: Some(&self.interaction),
+                theme,
+                frame_requests: Some(&self.frame_requests),
+                tracker,
+                now,
+            },
         );
     }
 
@@ -441,12 +453,14 @@ impl WindowRoot {
         self.overlays.for_each_widget_mut(|widget| {
             prepare_widget_tree(
                 widget,
-                interaction,
-                None,
-                lifecycle_events,
-                None,
-                Some(flags),
-                now,
+                PrepareCtx {
+                    interaction: &mut *interaction,
+                    tracker: None,
+                    lifecycle_events,
+                    anim_event: None,
+                    frame_requests: Some(flags),
+                    now,
+                },
             );
         });
     }
@@ -468,16 +482,16 @@ impl WindowRoot {
     ) {
         let interaction = &self.interaction;
         let flags = &self.frame_requests;
+        let ctx = PrepaintWalkCtx {
+            bounds_map,
+            interaction: Some(interaction),
+            theme,
+            frame_requests: Some(flags),
+            tracker: None,
+            now,
+        };
         self.overlays.for_each_widget_mut(|widget| {
-            prepaint_widget_tree(
-                widget,
-                bounds_map,
-                Some(interaction),
-                theme,
-                now,
-                Some(flags),
-                None,
-            );
+            prepaint_widget_tree(widget, ctx);
         });
     }
 

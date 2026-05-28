@@ -16,7 +16,7 @@ use super::emit::{draw_prompt_markers, draw_url_hover_underline};
 use super::emit_cell::EmitCtx;
 use super::resolve::CellColorContext;
 use super::shaped_frame::ShapedFrame;
-use super::{AtlasLookup, FrameInput};
+use super::{AtlasLookup, FrameInput, ScenePlacement};
 use crate::gpu::prepared_frame::PreparedFrame;
 
 pub use selection_damage::build_dirty_set;
@@ -265,18 +265,17 @@ fn process_incremental_cells(
 ///
 /// Cursor, URL hover, prompt markers, and images are always regenerated since
 /// they depend on frame-level state (blink, hover, search) not just cell content.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "origin + cursor blink are pipeline context passed from renderer"
-)]
 pub(crate) fn fill_frame_incremental(
     input: &FrameInput,
     atlas: &dyn AtlasLookup,
     shaped: &ShapedFrame,
     frame: &mut PreparedFrame,
-    origin: (f32, f32),
-    cursor_opacity: f32,
+    placement: ScenePlacement,
 ) {
+    let ScenePlacement {
+        origin,
+        cursor_opacity,
+    } = placement;
     let (ox, oy) = origin;
 
     // Setup that must read frame fields before frame is moved into ctx.

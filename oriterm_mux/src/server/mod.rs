@@ -101,8 +101,6 @@ pub struct MuxServer {
     scratch_clients: Vec<ClientId>,
     /// Reusable scratch buffer for collecting pane IDs during dispatch.
     scratch_panes: Vec<PaneId>,
-    /// Reusable scratch buffer for panes needing immediate snapshot push.
-    scratch_immediate_push: Vec<PaneId>,
     /// Reusable scratch buffer for closed-pane IDs collected during the
     /// `drain_mux_events` cleanup pass — preserves capacity across cycles
     scratch_pane_closed: Vec<PaneId>,
@@ -169,7 +167,6 @@ impl MuxServer {
             notification_buf: Vec::new(),
             scratch_clients: Vec::new(),
             scratch_panes: Vec::new(),
-            scratch_immediate_push: Vec::new(),
             scratch_pane_closed: Vec::new(),
             last_snapshot_push: HashMap::new(),
             pending_push: HashMap::new(),
@@ -348,7 +345,7 @@ impl MuxServer {
                         }
                     }
                 }
-                TargetClients::SinglePaneSubscriber(_, cid) => {
+                TargetClients::SinglePaneSubscriber(cid) => {
                     let _ = self.try_queue_to_responder(cid, &pdu, "single-responder notification");
                 }
             }
@@ -459,7 +456,7 @@ impl MuxServer {
         // Single-responder routing — `host_request_to_pdu` always emits
         // `SinglePaneSubscriber`, but the destructuring is lifted via if-let
         // for clippy.
-        let TargetClients::SinglePaneSubscriber(_, cid) = target else {
+        let TargetClients::SinglePaneSubscriber(cid) = target else {
             return;
         };
         if self.try_queue_to_responder(cid, &pdu, "HostRequest") {

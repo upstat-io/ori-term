@@ -11,22 +11,25 @@ use oriterm_core::{Selection, SelectionMode, SelectionPoint, Side};
 use super::{GridCtx, pixel_to_side};
 use crate::app::snapshot_grid::SnapshotGrid;
 
+/// Grid-resolved cell hit for a drag motion: column, viewport line, and side.
+#[derive(Clone, Copy)]
+pub(super) struct DragCell {
+    pub col: usize,
+    pub line: usize,
+    pub side: Side,
+}
+
 /// Compute the selection endpoint during drag, respecting mode-aware snapping.
 ///
 /// Returns `Some(endpoint)` if the selection has a mode, `None` otherwise.
 /// The caller applies the endpoint to App selection state.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "drag endpoint: grid, selection, col, line, side, delimiters"
-)]
 pub(super) fn compute_drag_endpoint(
     grid: &SnapshotGrid<'_>,
     selection: Option<&Selection>,
-    col: usize,
-    line: usize,
-    side: Side,
+    cell: DragCell,
     word_delimiters: &str,
 ) -> Option<SelectionPoint> {
+    let DragCell { col, line, side } = cell;
     let (sel_mode, sel_anchor) = match selection {
         Some(s) => (Some(s.mode), Some(s.anchor)),
         None => return None,

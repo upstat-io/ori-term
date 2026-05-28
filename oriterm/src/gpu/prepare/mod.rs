@@ -43,6 +43,19 @@ pub use shaped_frame::ShapedFrame;
 #[cfg(test)]
 pub(crate) use unshaped::{prepare_frame, prepare_frame_into};
 
+/// Pipeline placement context for the shaped-frame fill chain.
+///
+/// Bundles the layout `origin` offset and the application-level
+/// `cursor_opacity` (blink gate). Distinct from `FrameInput` (terminal
+/// content) concerns.
+#[derive(Clone, Copy)]
+pub struct ScenePlacement {
+    /// Layout origin offset `(x, y)` in physical pixels.
+    pub origin: (f32, f32),
+    /// Cursor blink opacity (0.0 suppresses cursor emission).
+    pub cursor_opacity: f32,
+}
+
 /// Resolve the cursor row-state SSOT for the cursor-only fast-path predicate
 /// AND the per-frame `prev_resolved_cursor` snapshot.
 ///
@@ -174,7 +187,16 @@ pub fn prepare_frame_shaped(
         input.palette.background,
         opacity,
     );
-    fill_frame_shaped(input, atlas, shaped, &mut frame, origin, 1.0);
+    fill_frame_shaped(
+        input,
+        atlas,
+        shaped,
+        &mut frame,
+        ScenePlacement {
+            origin,
+            cursor_opacity: 1.0,
+        },
+    );
     frame
 }
 
@@ -189,18 +211,17 @@ pub fn prepare_frame_shaped(
 /// When the previous frame's row ranges are available and not all rows are
 /// dirty, uses the incremental path: saves the old terminal-tier instances,
 /// copies clean rows from the cache, and only regenerates dirty rows.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "origin + cursor opacity are pipeline context, not FrameInput concerns"
-)]
 pub fn prepare_frame_shaped_into(
     input: &FrameInput,
     atlas: &dyn AtlasLookup,
     shaped: &ShapedFrame,
     out: &mut PreparedFrame,
-    origin: (f32, f32),
-    cursor_opacity: f32,
+    placement: ScenePlacement,
 ) {
+    let ScenePlacement {
+        origin,
+        cursor_opacity,
+    } = placement;
     // INVARIANT: save_terminal_tier MUST run first — without it the incremental
     // path is unreachable and saved_tier never populates.
     out.save_terminal_tier();
@@ -226,7 +247,7 @@ pub fn prepare_frame_shaped_into(
         out.viewport = input.viewport;
         out.set_clear_color(input.palette.background, f64::from(input.palette.opacity));
         out.was_incremental = true;
-        fill_frame_incremental(input, atlas, shaped, out, origin, cursor_opacity);
+        fill_frame_incremental(input, atlas, shaped, out, placement);
     } else {
         // Terminal-tier double-clear (save_terminal_tier + clear()) is
         // intentional — a clear_non_terminal() helper would create a second
@@ -235,7 +256,7 @@ pub fn prepare_frame_shaped_into(
         out.clear();
         out.viewport = input.viewport;
         out.set_clear_color(input.palette.background, f64::from(input.palette.opacity));
-        fill_frame_shaped(input, atlas, shaped, out, origin, cursor_opacity);
+        fill_frame_shaped(input, atlas, shaped, out, placement);
     }
 
     finalize_frame_prepare(out, input, fingerprint, cursor_opacity);
@@ -379,18 +400,17 @@ fn emit_row_tracked_cells(
 /// Backgrounds and cursors use the same per-cell logic as the unshaped path.
 /// Glyphs are driven by the [`ShapedFrame`] col-to-glyph map instead of
 /// per-cell character lookups, enabling ligatures and combining marks.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "origin + cursor opacity are pipeline context passed from renderer"
-)]
 pub(crate) fn fill_frame_shaped(
     input: &FrameInput,
     atlas: &dyn AtlasLookup,
     shaped: &ShapedFrame,
     frame: &mut PreparedFrame,
-    origin: (f32, f32),
-    cursor_opacity: f32,
+    placement: ScenePlacement,
 ) {
+    let ScenePlacement {
+        origin,
+        cursor_opacity,
+    } = placement;
     let (ox, oy) = origin;
 
     let mut ctx = EmitCtx {

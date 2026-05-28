@@ -14,9 +14,18 @@
 
 #![cfg(all(test, feature = "gpu-tests"))]
 
-use crate::app::compute_window_layout;
+use crate::app::{ChromeLayout, compute_window_layout};
 use crate::gpu::frame_input::{FrameInput, ViewportSize};
 use crate::gpu::visual_regression::headless_env;
+
+/// Chrome layout with no tab bar, status bar, or border inset — the common
+/// shape for resize-stress fixtures that exercise the grid in isolation.
+const HIDDEN_CHROME: ChromeLayout = ChromeLayout {
+    tab_bar_hidden: true,
+    tab_bar_height: 0.0,
+    status_bar_height: 0.0,
+    border_inset: 0.0,
+};
 
 /// Render a frame at the given viewport size, returning the pixel buffer.
 /// Uses `compute_window_layout` to derive grid cols/rows from viewport
@@ -31,7 +40,7 @@ fn render_at_size(
 ) -> Vec<u8> {
     let cell = renderer.cell_metrics();
     let scale = 1.0;
-    let wl = compute_window_layout(width, height, &cell, scale, true, 0.0, 0.0, 0.0);
+    let wl = compute_window_layout(width, height, &cell, scale, HIDDEN_CHROME);
 
     let mut input = FrameInput::test_grid(wl.cols, wl.rows, text);
     input.viewport = ViewportSize::new(width, height);
@@ -39,7 +48,16 @@ fn render_at_size(
     input.content.cursor.visible = false;
 
     let origin = (wl.grid_rect.x(), wl.grid_rect.y());
-    renderer.prepare(&input, gpu, pipelines, origin, 1.0, true);
+    renderer.prepare(
+        &input,
+        gpu,
+        pipelines,
+        crate::gpu::PrepareRequest {
+            origin: origin,
+            cursor_opacity: 1.0,
+            content_changed: true,
+        },
+    );
 
     let target = gpu.create_render_target(width, height);
     renderer.render_frame(gpu, pipelines, target.view());
@@ -59,18 +77,17 @@ fn render_at_size_with_chrome(
 ) -> Vec<u8> {
     let cell = renderer.cell_metrics();
     let scale = 1.0;
-    let tab_bar_h = 36.0;
-    let status_bar_h = 22.0;
-    let border_inset = 2.0;
     let wl = compute_window_layout(
         width,
         height,
         &cell,
         scale,
-        false,
-        tab_bar_h,
-        status_bar_h,
-        border_inset,
+        ChromeLayout {
+            tab_bar_hidden: false,
+            tab_bar_height: 36.0,
+            status_bar_height: 22.0,
+            border_inset: 2.0,
+        },
     );
 
     let mut input = FrameInput::test_grid(wl.cols, wl.rows, text);
@@ -79,7 +96,16 @@ fn render_at_size_with_chrome(
     input.content.cursor.visible = false;
 
     let origin = (wl.grid_rect.x(), wl.grid_rect.y());
-    renderer.prepare(&input, gpu, pipelines, origin, 1.0, true);
+    renderer.prepare(
+        &input,
+        gpu,
+        pipelines,
+        crate::gpu::PrepareRequest {
+            origin: origin,
+            cursor_opacity: 1.0,
+            content_changed: true,
+        },
+    );
 
     let target = gpu.create_render_target(width, height);
     renderer.render_frame(gpu, pipelines, target.view());
@@ -252,7 +278,7 @@ fn cached_path_vertical_shrink_during_render() {
     let target_h = 955u32;
 
     let cell = renderer.cell_metrics();
-    let wl = compute_window_layout(prep_w, prep_h, &cell, 1.0, true, 0.0, 0.0, 0.0);
+    let wl = compute_window_layout(prep_w, prep_h, &cell, 1.0, HIDDEN_CHROME);
 
     let mut input = FrameInput::test_grid(wl.cols, wl.rows, "test content");
     input.viewport = ViewportSize::new(prep_w, prep_h);
@@ -260,7 +286,16 @@ fn cached_path_vertical_shrink_during_render() {
     input.content.cursor.visible = false;
 
     let origin = (wl.grid_rect.x(), wl.grid_rect.y());
-    renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, true);
+    renderer.prepare(
+        &input,
+        &gpu,
+        &pipelines,
+        crate::gpu::PrepareRequest {
+            origin: origin,
+            cursor_opacity: 1.0,
+            content_changed: true,
+        },
+    );
 
     // Render cached to a SMALLER target — this is the crash.
     renderer.render_frame_cached(&gpu, &pipelines, prep_w, target_h, true);
@@ -275,7 +310,7 @@ fn cached_path_vertical_shrink_20px() {
     };
 
     let cell = renderer.cell_metrics();
-    let wl = compute_window_layout(800, 600, &cell, 1.0, true, 0.0, 0.0, 0.0);
+    let wl = compute_window_layout(800, 600, &cell, 1.0, HIDDEN_CHROME);
 
     let mut input = FrameInput::test_grid(wl.cols, wl.rows, "content");
     input.viewport = ViewportSize::new(800, 600);
@@ -286,9 +321,11 @@ fn cached_path_vertical_shrink_20px() {
         &input,
         &gpu,
         &pipelines,
-        (wl.grid_rect.x(), wl.grid_rect.y()),
-        1.0,
-        true,
+        crate::gpu::PrepareRequest {
+            origin: (wl.grid_rect.x(), wl.grid_rect.y()),
+            cursor_opacity: 1.0,
+            content_changed: true,
+        },
     );
     renderer.render_frame_cached(&gpu, &pipelines, 800, 580, true);
 }
@@ -301,28 +338,38 @@ fn cached_path_vertical_shrink_20px() {
 // then exposes uninitialized memory along the new edge. Fix: pre-clear
 // the destination to `clear_color()` when `dst > vp` on either axis.
 
-/// Shared helper: prepare + render through `render_frame_cached` with a
-/// caller-controlled palette background + opacity, then read back pixels.
-/// Returns `(pixels, target_w)` for `pixel_rgba_at(...)` lookups.
-#[allow(
-    clippy::too_many_arguments,
-    reason = "test matrix helper — each parameter is a deliberate axis the \
- cached_path_* tests vary independently (viewport/target dimensions, palette \
- background, opacity); collapsing into a struct would obscure the matrix shape"
-)]
-fn prepare_and_render_cached_with_clear(
-    gpu: &crate::gpu::state::GpuState,
-    pipelines: &crate::gpu::pipelines::GpuPipelines,
-    renderer: &mut crate::gpu::window_renderer::WindowRenderer,
+/// Matrix axes for [`prepare_and_render_cached_with_clear`]: prepared and
+/// target dimensions, palette background, and opacity — varied independently
+/// by the `cached_path_*` tests.
+#[derive(Clone, Copy)]
+struct ClearTestParams {
     prep_w: u32,
     prep_h: u32,
     target_w: u32,
     target_h: u32,
     palette_bg: oriterm_core::Rgb,
     opacity: f32,
+}
+
+/// Shared helper: prepare + render through `render_frame_cached` with a
+/// caller-controlled palette background + opacity, then read back pixels.
+/// Returns `(pixels, target_w)` for `pixel_rgba_at(...)` lookups.
+fn prepare_and_render_cached_with_clear(
+    gpu: &crate::gpu::state::GpuState,
+    pipelines: &crate::gpu::pipelines::GpuPipelines,
+    renderer: &mut crate::gpu::window_renderer::WindowRenderer,
+    params: ClearTestParams,
 ) -> (Vec<u8>, u32) {
+    let ClearTestParams {
+        prep_w,
+        prep_h,
+        target_w,
+        target_h,
+        palette_bg,
+        opacity,
+    } = params;
     let cell = renderer.cell_metrics();
-    let wl = compute_window_layout(prep_w, prep_h, &cell, 1.0, true, 0.0, 0.0, 0.0);
+    let wl = compute_window_layout(prep_w, prep_h, &cell, 1.0, HIDDEN_CHROME);
     let mut input = FrameInput::test_grid(wl.cols, wl.rows, "test");
     input.viewport = ViewportSize::new(prep_w, prep_h);
     input.cell_size = cell;
@@ -331,7 +378,16 @@ fn prepare_and_render_cached_with_clear(
     input.palette.opacity = opacity;
 
     let origin = (wl.grid_rect.x(), wl.grid_rect.y());
-    renderer.prepare(&input, gpu, pipelines, origin, 1.0, true);
+    renderer.prepare(
+        &input,
+        gpu,
+        pipelines,
+        crate::gpu::PrepareRequest {
+            origin: origin,
+            cursor_opacity: 1.0,
+            content_changed: true,
+        },
+    );
     let target = renderer.render_frame_cached(gpu, pipelines, target_w, target_h, true);
     let pixels = gpu
         .read_render_target(&target)
@@ -373,12 +429,14 @@ fn cached_path_grow_both_axes_clears_uncovered_to_clear_color() {
         &gpu,
         &pipelines,
         &mut renderer,
-        800,
-        600,
-        1200,
-        800,
-        bg,
-        1.0,
+        ClearTestParams {
+            prep_w: 800,
+            prep_h: 600,
+            target_w: 1200,
+            target_h: 800,
+            palette_bg: bg,
+            opacity: 1.0,
+        },
     );
     let outside = pixel_rgba_at(&pixels, 1100, 700, w);
     assert!(
@@ -404,12 +462,14 @@ fn cached_path_grow_horizontal_only_clears_uncovered_strip() {
         &gpu,
         &pipelines,
         &mut renderer,
-        800,
-        600,
-        1200,
-        600,
-        bg,
-        1.0,
+        ClearTestParams {
+            prep_w: 800,
+            prep_h: 600,
+            target_w: 1200,
+            target_h: 600,
+            palette_bg: bg,
+            opacity: 1.0,
+        },
     );
     let outside = pixel_rgba_at(&pixels, 1100, 300, w);
     assert!(
@@ -434,12 +494,14 @@ fn cached_path_grow_vertical_only_clears_uncovered_strip() {
         &gpu,
         &pipelines,
         &mut renderer,
-        800,
-        600,
-        800,
-        800,
-        bg,
-        1.0,
+        ClearTestParams {
+            prep_w: 800,
+            prep_h: 600,
+            target_w: 800,
+            target_h: 800,
+            palette_bg: bg,
+            opacity: 1.0,
+        },
     );
     let outside = pixel_rgba_at(&pixels, 400, 700, w);
     assert!(
@@ -465,12 +527,14 @@ fn cached_path_grow_h_shrink_v_clears_horizontal_grow_region() {
         &gpu,
         &pipelines,
         &mut renderer,
-        800,
-        600,
-        1200,
-        400,
-        bg,
-        1.0,
+        ClearTestParams {
+            prep_w: 800,
+            prep_h: 600,
+            target_w: 1200,
+            target_h: 400,
+            palette_bg: bg,
+            opacity: 1.0,
+        },
     );
     let outside = pixel_rgba_at(&pixels, 1100, 200, w);
     assert!(
@@ -496,12 +560,14 @@ fn cached_path_shrink_h_grow_v_clears_vertical_grow_region() {
         &gpu,
         &pipelines,
         &mut renderer,
-        800,
-        600,
-        600,
-        800,
-        bg,
-        1.0,
+        ClearTestParams {
+            prep_w: 800,
+            prep_h: 600,
+            target_w: 600,
+            target_h: 800,
+            palette_bg: bg,
+            opacity: 1.0,
+        },
     );
     let outside = pixel_rgba_at(&pixels, 400, 700, w);
     assert!(
@@ -529,12 +595,14 @@ fn cached_path_dst_eq_vp_no_extra_clear() {
         &gpu,
         &pipelines,
         &mut renderer,
-        800,
-        600,
-        800,
-        600,
-        bg,
-        1.0,
+        ClearTestParams {
+            prep_w: 800,
+            prep_h: 600,
+            target_w: 800,
+            target_h: 600,
+            palette_bg: bg,
+            opacity: 1.0,
+        },
     );
     assert_eq!(pixels.len(), (800 * 600 * 4) as usize);
     assert!(
@@ -563,12 +631,14 @@ fn cached_path_grow_clears_with_semi_transparent_clear() {
         &gpu,
         &pipelines,
         &mut renderer,
-        800,
-        600,
-        1200,
-        800,
-        bg,
-        0.5,
+        ClearTestParams {
+            prep_w: 800,
+            prep_h: 600,
+            target_w: 1200,
+            target_h: 800,
+            palette_bg: bg,
+            opacity: 0.5,
+        },
     );
     let outside = pixel_rgba_at(&pixels, 1100, 700, w);
     // Premultiplied: linear-space r/b ≈ 0.5, sRGB-encoded back to ≈188 for
@@ -611,12 +681,14 @@ fn cached_path_grow_uncovered_region_takes_current_clear_not_zero_init() {
         &gpu,
         &pipelines,
         &mut renderer,
-        800,
-        600,
-        800,
-        600,
-        green,
-        1.0,
+        ClearTestParams {
+            prep_w: 800,
+            prep_h: 600,
+            target_w: 800,
+            target_h: 600,
+            palette_bg: green,
+            opacity: 1.0,
+        },
     );
 
     // Frame 2: larger render with red clear color. The uncovered region
@@ -625,12 +697,14 @@ fn cached_path_grow_uncovered_region_takes_current_clear_not_zero_init() {
         &gpu,
         &pipelines,
         &mut renderer,
-        800,
-        600,
-        1200,
-        800,
-        red,
-        1.0,
+        ClearTestParams {
+            prep_w: 800,
+            prep_h: 600,
+            target_w: 1200,
+            target_h: 800,
+            palette_bg: red,
+            opacity: 1.0,
+        },
     );
     let outside = pixel_rgba_at(&pixels, 1100, 700, w);
     assert!(
@@ -661,7 +735,7 @@ fn cached_path_grow_with_cache_reuse_clears_uncovered_region() {
     };
     // Frame 1: full render at dst == vp populates the cache.
     let cell = renderer.cell_metrics();
-    let wl = compute_window_layout(800, 600, &cell, 1.0, true, 0.0, 0.0, 0.0);
+    let wl = compute_window_layout(800, 600, &cell, 1.0, HIDDEN_CHROME);
     let mut input = FrameInput::test_grid(wl.cols, wl.rows, "frame1");
     input.viewport = ViewportSize::new(800, 600);
     input.cell_size = cell;
@@ -669,7 +743,16 @@ fn cached_path_grow_with_cache_reuse_clears_uncovered_region() {
     input.palette.background = bg;
     input.palette.opacity = 1.0;
     let origin = (wl.grid_rect.x(), wl.grid_rect.y());
-    renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, true);
+    renderer.prepare(
+        &input,
+        &gpu,
+        &pipelines,
+        crate::gpu::PrepareRequest {
+            origin: origin,
+            cursor_opacity: 1.0,
+            content_changed: true,
+        },
+    );
     let _ = renderer.render_frame_cached(&gpu, &pipelines, 800, 600, true);
 
     // Frame 2: cache-reuse path at dst > vp. The partial-copy + clear
@@ -709,12 +792,14 @@ fn cached_path_shrink_to_1x1_does_not_panic_and_writes_pixel() {
         &gpu,
         &pipelines,
         &mut renderer,
-        800,
-        600,
-        1,
-        1,
-        bg,
-        1.0,
+        ClearTestParams {
+            prep_w: 800,
+            prep_h: 600,
+            target_w: 1,
+            target_h: 1,
+            palette_bg: bg,
+            opacity: 1.0,
+        },
     );
     assert_eq!(pixels.len(), 4, "1x1 readback must be exactly 4 bytes");
     // The single pixel must be non-zero — proves the cache actually
@@ -746,12 +831,14 @@ fn cached_path_rapid_grow_shrink_alternation_clears_each_grow_frame() {
             &gpu,
             &pipelines,
             &mut renderer,
-            800,
-            600,
-            target_w,
-            target_h,
-            bg,
-            1.0,
+            ClearTestParams {
+                prep_w: 800,
+                prep_h: 600,
+                target_w: target_w,
+                target_h: target_h,
+                palette_bg: bg,
+                opacity: 1.0,
+            },
         );
         if target_w > 800 && target_h > 600 {
             let outside = pixel_rgba_at(&pixels, 1100, 700, w);
@@ -778,7 +865,7 @@ fn cached_path_rapid_vertical_resize() {
     // prepares at one height and renders to a slightly different height
     // (as happens when WM_SIZING and surface reconfigure race).
     for prep_h in (400u32..=960).step_by(5) {
-        let wl = compute_window_layout(w, prep_h, &cell, 1.0, true, 0.0, 0.0, 0.0);
+        let wl = compute_window_layout(w, prep_h, &cell, 1.0, HIDDEN_CHROME);
         let mut input = FrameInput::test_grid(wl.cols, wl.rows, "resize");
         input.viewport = ViewportSize::new(w, prep_h);
         input.cell_size = cell;
@@ -787,9 +874,11 @@ fn cached_path_rapid_vertical_resize() {
             &input,
             &gpu,
             &pipelines,
-            (wl.grid_rect.x(), wl.grid_rect.y()),
-            1.0,
-            true,
+            crate::gpu::PrepareRequest {
+                origin: (wl.grid_rect.x(), wl.grid_rect.y()),
+                cursor_opacity: 1.0,
+                content_changed: true,
+            },
         );
 
         // Target is a few pixels shorter — the race condition.

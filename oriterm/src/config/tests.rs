@@ -1854,7 +1854,7 @@ fn resolve_atlas_filtering_invalid_falls_back() {
 #[test]
 fn apply_font_config_sets_custom_features() {
     use crate::font::collection::FontSet;
-    use crate::font::{FontCollection, GlyphFormat, HintingMode};
+    use crate::font::{FontCollection, FontRasterConfig, GlyphFormat, HintingMode};
 
     let mut cfg = FontConfig::default();
     cfg.features = vec!["dlig".into(), "-liga".into()];
@@ -1864,10 +1864,12 @@ fn apply_font_config_sets_custom_features() {
         font_set,
         12.0,
         96.0,
-        GlyphFormat::Alpha,
-        400,
-        550,
-        HintingMode::Full,
+        FontRasterConfig {
+            format: GlyphFormat::Alpha,
+            weight: 400,
+            bold_weight: 550,
+            hinting: HintingMode::Full,
+        },
     )
     .expect("collection must build");
 
@@ -1892,7 +1894,7 @@ fn apply_font_config_sets_custom_features() {
 #[test]
 fn apply_font_config_empty_features_clears_defaults() {
     use crate::font::collection::FontSet;
-    use crate::font::{FontCollection, GlyphFormat, HintingMode};
+    use crate::font::{FontCollection, FontRasterConfig, GlyphFormat, HintingMode};
 
     let mut cfg = FontConfig::default();
     cfg.features = Vec::new(); // No features.
@@ -1902,10 +1904,12 @@ fn apply_font_config_empty_features_clears_defaults() {
         font_set,
         12.0,
         96.0,
-        GlyphFormat::Alpha,
-        400,
-        550,
-        HintingMode::Full,
+        FontRasterConfig {
+            format: GlyphFormat::Alpha,
+            weight: 400,
+            bold_weight: 550,
+            hinting: HintingMode::Full,
+        },
     )
     .expect("collection must build");
 
@@ -1921,7 +1925,7 @@ fn apply_font_config_empty_features_clears_defaults() {
 #[test]
 fn apply_font_config_codepoint_map_invalid_range_skipped() {
     use crate::font::collection::FontSet;
-    use crate::font::{FontCollection, GlyphFormat, HintingMode};
+    use crate::font::{FontCollection, FontRasterConfig, GlyphFormat, HintingMode};
 
     let mut cfg = FontConfig::default();
     cfg.fallback.push(FallbackFontConfig {
@@ -1939,10 +1943,12 @@ fn apply_font_config_codepoint_map_invalid_range_skipped() {
         font_set,
         12.0,
         96.0,
-        GlyphFormat::Alpha,
-        400,
-        550,
-        HintingMode::Full,
+        FontRasterConfig {
+            format: GlyphFormat::Alpha,
+            weight: 400,
+            bold_weight: 550,
+            hinting: HintingMode::Full,
+        },
     )
     .expect("collection must build");
 
@@ -1956,7 +1962,7 @@ fn apply_font_config_codepoint_map_invalid_range_skipped() {
 #[test]
 fn apply_font_config_codepoint_map_missing_family_skipped() {
     use crate::font::collection::FontSet;
-    use crate::font::{FontCollection, GlyphFormat, HintingMode};
+    use crate::font::{FontCollection, FontRasterConfig, GlyphFormat, HintingMode};
 
     let mut cfg = FontConfig::default();
     // No fallbacks configured, but codepoint_map references a family.
@@ -1970,10 +1976,12 @@ fn apply_font_config_codepoint_map_missing_family_skipped() {
         font_set,
         12.0,
         96.0,
-        GlyphFormat::Alpha,
-        400,
-        550,
-        HintingMode::Full,
+        FontRasterConfig {
+            format: GlyphFormat::Alpha,
+            weight: 400,
+            bold_weight: 550,
+            hinting: HintingMode::Full,
+        },
     )
     .expect("collection must build");
 
@@ -1987,7 +1995,7 @@ fn apply_font_config_codepoint_map_missing_family_skipped() {
 #[test]
 fn apply_font_config_with_no_user_fallbacks() {
     use crate::font::collection::FontSet;
-    use crate::font::{FontCollection, GlyphFormat, HintingMode};
+    use crate::font::{FontCollection, FontRasterConfig, GlyphFormat, HintingMode};
 
     let cfg = FontConfig::default(); // No fallbacks, no codepoint_map.
 
@@ -1996,10 +2004,12 @@ fn apply_font_config_with_no_user_fallbacks() {
         font_set,
         12.0,
         96.0,
-        GlyphFormat::Alpha,
-        400,
-        550,
-        HintingMode::Full,
+        FontRasterConfig {
+            format: GlyphFormat::Alpha,
+            weight: 400,
+            bold_weight: 550,
+            hinting: HintingMode::Full,
+        },
     )
     .expect("collection must build");
 
@@ -2018,7 +2028,7 @@ fn apply_font_config_with_no_user_fallbacks() {
 #[test]
 fn apply_font_config_skipped_fallback_metadata_uses_correct_config_entry() {
     use crate::font::collection::FontSet;
-    use crate::font::{FaceIdx, FontCollection, GlyphFormat, HintingMode};
+    use crate::font::{FaceIdx, FontCollection, FontRasterConfig, GlyphFormat, HintingMode};
 
     let mut cfg = FontConfig::default();
     // Config entry 0: size_offset = -5.0 (this one "failed to load").
@@ -2039,10 +2049,12 @@ fn apply_font_config_skipped_fallback_metadata_uses_correct_config_entry() {
         font_set,
         12.0,
         96.0,
-        GlyphFormat::Alpha,
-        400,
-        550,
-        HintingMode::Full,
+        FontRasterConfig {
+            format: GlyphFormat::Alpha,
+            weight: 400,
+            bold_weight: 550,
+            hinting: HintingMode::Full,
+        },
     )
     .expect("collection must build");
 
@@ -2075,7 +2087,7 @@ fn apply_font_config_skipped_fallback_metadata_uses_correct_config_entry() {
 #[test]
 fn apply_font_config_codepoint_map_skipped_fallback_resolves_correct_loaded_index() {
     use crate::font::collection::FontSet;
-    use crate::font::{FontCollection, GlyphFormat, HintingMode};
+    use crate::font::{FontCollection, FontRasterConfig, GlyphFormat, HintingMode};
 
     let mut cfg = FontConfig::default();
     // Config entry 0: missing font (skipped during loading).
@@ -2101,10 +2113,12 @@ fn apply_font_config_codepoint_map_skipped_fallback_resolves_correct_loaded_inde
         font_set,
         12.0,
         96.0,
-        GlyphFormat::Alpha,
-        400,
-        550,
-        HintingMode::Full,
+        FontRasterConfig {
+            format: GlyphFormat::Alpha,
+            weight: 400,
+            bold_weight: 550,
+            hinting: HintingMode::Full,
+        },
     )
     .expect("collection must build");
 
@@ -2123,7 +2137,7 @@ fn apply_font_config_codepoint_map_skipped_fallback_resolves_correct_loaded_inde
 #[test]
 fn apply_font_config_codepoint_map_unloaded_family_skipped() {
     use crate::font::collection::FontSet;
-    use crate::font::{FontCollection, GlyphFormat, HintingMode};
+    use crate::font::{FontCollection, FontRasterConfig, GlyphFormat, HintingMode};
 
     let mut cfg = FontConfig::default();
     // Config entry 0: "MissingFont" — failed to load.
@@ -2149,10 +2163,12 @@ fn apply_font_config_codepoint_map_unloaded_family_skipped() {
         font_set,
         12.0,
         96.0,
-        GlyphFormat::Alpha,
-        400,
-        550,
-        HintingMode::Full,
+        FontRasterConfig {
+            format: GlyphFormat::Alpha,
+            weight: 400,
+            bold_weight: 550,
+            hinting: HintingMode::Full,
+        },
     )
     .expect("collection must build");
 

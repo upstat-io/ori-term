@@ -66,7 +66,16 @@ fn ui_rect_writer_push_writes_correct_offsets() {
         [0.5, 0.5, 0.0, 1.0],
     ];
     let clip = [0.0, 0.0, 800.0, 600.0];
-    w.push_ui_rect(rect, fill, bw, cr, bc, clip);
+    w.push_ui_rect(
+        rect,
+        fill,
+        UiRectBorder {
+            widths: bw,
+            corner_radii: cr,
+            colors: bc,
+        },
+        clip,
+    );
 
     let buf = w.as_bytes();
 
@@ -123,9 +132,11 @@ fn ui_rect_writer_push_uniform_border_writes_equal_sides() {
             h: 10.0,
         },
         [0.0; 4],
-        [2.0; 4],
-        [0.0; 4],
-        bc,
+        UiRectBorder {
+            widths: [2.0; 4],
+            corner_radii: [0.0; 4],
+            colors: bc,
+        },
         [0.0, 0.0, 100.0, 100.0],
     );
     let buf = w.as_bytes();
@@ -152,9 +163,11 @@ fn ui_rect_writer_push_zero_border_all_transparent() {
             h: 10.0,
         },
         [1.0, 1.0, 1.0, 1.0],
-        [0.0; 4],
-        [0.0; 4],
-        [[0.0; 4]; 4],
+        UiRectBorder {
+            widths: [0.0; 4],
+            corner_radii: [0.0; 4],
+            colors: [[0.0; 4]; 4],
+        },
         [0.0, 0.0, 100.0, 100.0],
     );
     let buf = w.as_bytes();
@@ -189,9 +202,11 @@ fn push_test_rect(w: &mut UiRectWriter) {
             h: 10.0,
         },
         [0.0; 4],
-        [0.0; 4],
-        [0.0; 4],
-        [[0.0; 4]; 4],
+        UiRectBorder {
+            widths: [0.0; 4],
+            corner_radii: [0.0; 4],
+            colors: [[0.0; 4]; 4],
+        },
         [0.0, 0.0, 100.0, 100.0],
     );
 }

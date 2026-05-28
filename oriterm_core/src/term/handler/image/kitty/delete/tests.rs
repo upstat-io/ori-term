@@ -25,6 +25,10 @@ use crate::theme::Theme;
 const LINES: usize = 24;
 const COLS: usize = 80;
 
+/// One case-pair row: `(lowercase, uppercase, setup)` where `setup`
+/// configures the `KittyCommand` fixture before each arm runs.
+type DeleteCasePair = (u8, u8, Box<dyn Fn(&mut KittyCommand)>);
+
 fn term() -> Term<VoidEffectSink> {
     Term::new(LINES, COLS, 0, Theme::default(), VoidEffectSink)
 }
@@ -717,8 +721,7 @@ fn delete_case_pair_contract_lowercase_keeps_data_uppercase_frees() {
     // Specifiers where our stage helper can construct a single-placement fixture
     // that each arm fully removes via the same (image_id=1, col=0, row=0, z=0)
     // state. Each entry is a (lower, upper, setup) triple.
-    #[allow(clippy::type_complexity)]
-    let cases: &[(u8, u8, Box<dyn Fn(&mut KittyCommand)>)] = &[
+    let cases: &[DeleteCasePair] = &[
         (b'i', b'I', Box::new(|c| c.image_id = Some(1))),
         (
             b'p',

@@ -13,6 +13,25 @@ use winit::window::WindowId;
 
 use crate::app::App;
 
+/// Dropdown-open request forwarded from a `WidgetAction::OpenDropdown`.
+///
+/// Bundles the dropdown widget id, option list, selection, anchor rect,
+/// searchable flag, and initial highlight override.
+pub(in crate::app) struct DialogDropdown {
+    /// Trigger widget id (selection is routed back to it).
+    pub dropdown_id: oriterm_ui::widget_id::WidgetId,
+    /// Menu option labels.
+    pub options: Vec<String>,
+    /// Currently-selected option index.
+    pub selected: usize,
+    /// Trigger anchor rect the popup mounts against.
+    pub anchor: Rect,
+    /// Whether the menu runs in filterable (search) mode.
+    pub searchable: bool,
+    /// First-highlight override (for ArrowDown-from-trigger).
+    pub initial_highlight: Option<usize>,
+}
+
 impl App {
     /// Open a dropdown popup within a dialog window's overlay manager.
     ///
@@ -21,21 +40,21 @@ impl App {
     /// state); `initial_highlight` overrides the popup's first highlighted
     /// entry (used for the `ArrowDown`-from-trigger case where the user
     /// expects the first item highlighted regardless of `selected`).
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "forwarding OpenDropdown fields + window ID"
-    )]
     pub(in crate::app) fn open_dialog_dropdown(
         &mut self,
         window_id: WindowId,
-        dropdown_id: oriterm_ui::widget_id::WidgetId,
-        options: Vec<String>,
-        selected: usize,
-        anchor: Rect,
-        searchable: bool,
-        initial_highlight: Option<usize>,
+        dropdown: DialogDropdown,
     ) {
         use oriterm_ui::overlay::Placement;
+
+        let DialogDropdown {
+            dropdown_id,
+            options,
+            selected,
+            anchor,
+            searchable,
+            initial_highlight,
+        } = dropdown;
 
         let widget = crate::app::dropdown_popup::build_dropdown_menu_widget(
             crate::app::dropdown_popup::DropdownPopupConfig {

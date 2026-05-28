@@ -16,6 +16,20 @@ use super::constants::{
     DROPDOWN_BUTTON_WIDTH, NEW_TAB_BUTTON_WIDTH, TAB_LEFT_MARGIN, TabBarMetrics,
 };
 
+/// Geometry inputs for a tab bar layout computation.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TabLayoutInputs {
+    /// Number of tabs to lay out.
+    pub tab_count: usize,
+    /// Available window width in logical pixels.
+    pub window_width: f32,
+    /// If `Some(w)`, tabs are locked to width `w` (prevents reflow during
+    /// rapid close clicks or drag).
+    pub tab_width_lock: Option<f32>,
+    /// Extra left margin reserved for platform chrome (macOS traffic lights).
+    pub left_inset: f32,
+}
+
 /// Computed tab bar layout geometry.
 ///
 /// Produced by [`TabBarLayout::compute`]. All dimensions are in logical pixels
@@ -48,39 +62,25 @@ impl TabBarLayout {
     /// chrome (macOS traffic lights = 76px; Windows/Linux = 0). If
     /// `tab_width_lock` is `Some(w)`, that width is used directly — prevents
     /// tab widths from shifting during rapid close clicks or drag.
-    pub fn compute(
-        tab_count: usize,
-        window_width: f32,
-        tab_width_lock: Option<f32>,
-        left_inset: f32,
-        metrics: &TabBarMetrics,
-    ) -> Self {
-        Self::compute_with_multipliers(
-            tab_count,
-            window_width,
-            tab_width_lock,
-            left_inset,
-            None,
-            metrics,
-        )
+    pub fn compute(inputs: TabLayoutInputs, metrics: &TabBarMetrics) -> Self {
+        Self::compute_with_multipliers(inputs, None, metrics)
     }
 
     /// Compute layout with optional per-tab width multipliers.
     ///
     /// `width_multipliers` provides per-tab width scaling (0.0 = collapsed,
     /// 1.0 = full width). When `None`, all tabs use uniform width.
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "layout needs: tab_count, width, lock, inset, multipliers, metrics"
-    )]
     pub fn compute_with_multipliers(
-        tab_count: usize,
-        window_width: f32,
-        tab_width_lock: Option<f32>,
-        left_inset: f32,
+        inputs: TabLayoutInputs,
         width_multipliers: Option<&[f32]>,
         metrics: &TabBarMetrics,
     ) -> Self {
+        let TabLayoutInputs {
+            tab_count,
+            window_width,
+            tab_width_lock,
+            left_inset,
+        } = inputs;
         let base_width = if let Some(locked) = tab_width_lock {
             locked
         } else {

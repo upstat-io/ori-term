@@ -8,7 +8,7 @@ mod cache;
 
 use oriterm_ui::icons::{IconPath, IconStyle, PathCommand};
 
-pub(crate) use cache::IconCache;
+pub(crate) use cache::{IconCache, IconUploadTarget};
 
 /// Rasterize an icon path into an alpha-only bitmap.
 ///

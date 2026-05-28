@@ -94,10 +94,12 @@ fn new_ui_only_constructor_initializes_cache_invalidated_to_false() {
     let Some(ui_sizes) = crate::font::ui_font_sizes::UiFontSizes::new(
         font_set,
         96.0,
-        crate::font::GlyphFormat::Alpha,
-        crate::font::HintingMode::None,
-        400,
-        550,
+        crate::font::FontRasterConfig {
+            format: crate::font::GlyphFormat::Alpha,
+            weight: 400,
+            bold_weight: 550,
+            hinting: crate::font::HintingMode::None,
+        },
         crate::font::ui_font_sizes::PRELOAD_SIZES,
     )
     .ok() else {
@@ -157,7 +159,16 @@ fn fast_path_skipped_when_selection_changes() {
     // Frame 1: baseline prepare with no selection. Establishes prev_*
     // state on the renderer's PreparedFrame so the fast-path predicate
     // has a meaningful prior to compare against.
-    renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, true);
+    renderer.prepare(
+        &input,
+        &gpu,
+        &pipelines,
+        crate::gpu::PrepareRequest {
+            origin: origin,
+            cursor_opacity: 1.0,
+            content_changed: true,
+        },
+    );
 
     // Frame 2: same content, no content change — would normally take
     // the cursor-only fast path. Add a selection: the row-state change
@@ -169,7 +180,16 @@ fn fast_path_skipped_when_selection_changes() {
         side: Side::Right,
     };
     input.selection = Some(crate::gpu::frame_input::FrameSelection::new(&sel, 0));
-    renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, false);
+    renderer.prepare(
+        &input,
+        &gpu,
+        &pipelines,
+        crate::gpu::PrepareRequest {
+            origin: origin,
+            cursor_opacity: 1.0,
+            content_changed: false,
+        },
+    );
     assert!(
         renderer.cache_invalidated_this_frame(),
         "selection change MUST force full prepare; fast path with stale selection \
@@ -190,10 +210,28 @@ fn fast_path_skipped_when_hovered_cell_changes() {
     input.selection = None;
     input.hovered_cell = None;
 
-    renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, true);
+    renderer.prepare(
+        &input,
+        &gpu,
+        &pipelines,
+        crate::gpu::PrepareRequest {
+            origin: origin,
+            cursor_opacity: 1.0,
+            content_changed: true,
+        },
+    );
 
     input.hovered_cell = Some((1, 2));
-    renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, false);
+    renderer.prepare(
+        &input,
+        &gpu,
+        &pipelines,
+        crate::gpu::PrepareRequest {
+            origin: origin,
+            cursor_opacity: 1.0,
+            content_changed: false,
+        },
+    );
     assert!(
         renderer.cache_invalidated_this_frame(),
         "hovered_cell change MUST force full prepare; fast path with stale hover \
@@ -216,9 +254,27 @@ fn fast_path_taken_when_selection_unchanged() {
     input.selection = None;
     input.hovered_cell = None;
 
-    renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, true);
+    renderer.prepare(
+        &input,
+        &gpu,
+        &pipelines,
+        crate::gpu::PrepareRequest {
+            origin: origin,
+            cursor_opacity: 1.0,
+            content_changed: true,
+        },
+    );
     // Frame 2: same input, content_changed=false — fast path eligible.
-    renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, false);
+    renderer.prepare(
+        &input,
+        &gpu,
+        &pipelines,
+        crate::gpu::PrepareRequest {
+            origin: origin,
+            cursor_opacity: 1.0,
+            content_changed: false,
+        },
+    );
     assert!(
         !renderer.cache_invalidated_this_frame(),
         "identical state across two frames must allow the cursor-only fast path"
@@ -239,9 +295,27 @@ fn fast_path_taken_when_hovered_cell_unchanged() {
     input.selection = None;
     input.hovered_cell = Some((2, 3));
 
-    renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, true);
+    renderer.prepare(
+        &input,
+        &gpu,
+        &pipelines,
+        crate::gpu::PrepareRequest {
+            origin: origin,
+            cursor_opacity: 1.0,
+            content_changed: true,
+        },
+    );
     // Frame 2: same hovered_cell.
-    renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, false);
+    renderer.prepare(
+        &input,
+        &gpu,
+        &pipelines,
+        crate::gpu::PrepareRequest {
+            origin: origin,
+            cursor_opacity: 1.0,
+            content_changed: false,
+        },
+    );
     assert!(
         !renderer.cache_invalidated_this_frame(),
         "identical hovered_cell across two frames must allow the cursor-only fast path"
@@ -290,9 +364,27 @@ fn fast_path_skipped_when_cursor_column_changes() {
     input.hovered_cell = None;
     set_cursor(&mut input, 0, 2, CursorShape::Block, true);
 
-    renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, true);
+    renderer.prepare(
+        &input,
+        &gpu,
+        &pipelines,
+        crate::gpu::PrepareRequest {
+            origin: origin,
+            cursor_opacity: 1.0,
+            content_changed: true,
+        },
+    );
     set_cursor(&mut input, 0, 5, CursorShape::Block, true);
-    renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, false);
+    renderer.prepare(
+        &input,
+        &gpu,
+        &pipelines,
+        crate::gpu::PrepareRequest {
+            origin: origin,
+            cursor_opacity: 1.0,
+            content_changed: false,
+        },
+    );
     assert!(
         renderer.cache_invalidated_this_frame(),
         "cursor column change MUST force full prepare; fast path with stale cursor \
@@ -314,9 +406,27 @@ fn fast_path_skipped_when_cursor_line_changes() {
     input.hovered_cell = None;
     set_cursor(&mut input, 0, 3, CursorShape::Block, true);
 
-    renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, true);
+    renderer.prepare(
+        &input,
+        &gpu,
+        &pipelines,
+        crate::gpu::PrepareRequest {
+            origin: origin,
+            cursor_opacity: 1.0,
+            content_changed: true,
+        },
+    );
     set_cursor(&mut input, 2, 3, CursorShape::Block, true);
-    renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, false);
+    renderer.prepare(
+        &input,
+        &gpu,
+        &pipelines,
+        crate::gpu::PrepareRequest {
+            origin: origin,
+            cursor_opacity: 1.0,
+            content_changed: false,
+        },
+    );
     assert!(
         renderer.cache_invalidated_this_frame(),
         "cursor line change MUST force full prepare"
@@ -337,9 +447,27 @@ fn fast_path_skipped_when_cursor_line_and_column_change() {
     input.hovered_cell = None;
     set_cursor(&mut input, 1, 4, CursorShape::Block, true);
 
-    renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, true);
+    renderer.prepare(
+        &input,
+        &gpu,
+        &pipelines,
+        crate::gpu::PrepareRequest {
+            origin: origin,
+            cursor_opacity: 1.0,
+            content_changed: true,
+        },
+    );
     set_cursor(&mut input, 3, 7, CursorShape::Block, true);
-    renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, false);
+    renderer.prepare(
+        &input,
+        &gpu,
+        &pipelines,
+        crate::gpu::PrepareRequest {
+            origin: origin,
+            cursor_opacity: 1.0,
+            content_changed: false,
+        },
+    );
     assert!(
         renderer.cache_invalidated_this_frame(),
         "cursor line+column change MUST force full prepare"
@@ -362,9 +490,27 @@ fn fast_path_skipped_when_cursor_shape_changes() {
     input.hovered_cell = None;
     set_cursor(&mut input, 2, 4, CursorShape::Block, true);
 
-    renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, true);
+    renderer.prepare(
+        &input,
+        &gpu,
+        &pipelines,
+        crate::gpu::PrepareRequest {
+            origin: origin,
+            cursor_opacity: 1.0,
+            content_changed: true,
+        },
+    );
     set_cursor(&mut input, 2, 4, CursorShape::Underline, true);
-    renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, false);
+    renderer.prepare(
+        &input,
+        &gpu,
+        &pipelines,
+        crate::gpu::PrepareRequest {
+            origin: origin,
+            cursor_opacity: 1.0,
+            content_changed: false,
+        },
+    );
     assert!(
         renderer.cache_invalidated_this_frame(),
         "cursor shape change at same position MUST force full prepare; \
@@ -387,9 +533,27 @@ fn fast_path_skipped_when_cursor_visibility_flips_to_hidden() {
     input.hovered_cell = None;
     set_cursor(&mut input, 1, 2, CursorShape::Block, true);
 
-    renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, true);
+    renderer.prepare(
+        &input,
+        &gpu,
+        &pipelines,
+        crate::gpu::PrepareRequest {
+            origin: origin,
+            cursor_opacity: 1.0,
+            content_changed: true,
+        },
+    );
     set_cursor(&mut input, 1, 2, CursorShape::Block, false);
-    renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, false);
+    renderer.prepare(
+        &input,
+        &gpu,
+        &pipelines,
+        crate::gpu::PrepareRequest {
+            origin: origin,
+            cursor_opacity: 1.0,
+            content_changed: false,
+        },
+    );
     assert!(
         renderer.cache_invalidated_this_frame(),
         "cursor visibility flip (visible→invisible) MUST force full prepare"
@@ -410,9 +574,27 @@ fn fast_path_skipped_when_cursor_visibility_flips_to_visible() {
     input.hovered_cell = None;
     set_cursor(&mut input, 1, 2, CursorShape::Block, false);
 
-    renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, true);
+    renderer.prepare(
+        &input,
+        &gpu,
+        &pipelines,
+        crate::gpu::PrepareRequest {
+            origin: origin,
+            cursor_opacity: 1.0,
+            content_changed: true,
+        },
+    );
     set_cursor(&mut input, 1, 2, CursorShape::Block, true);
-    renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, false);
+    renderer.prepare(
+        &input,
+        &gpu,
+        &pipelines,
+        crate::gpu::PrepareRequest {
+            origin: origin,
+            cursor_opacity: 1.0,
+            content_changed: false,
+        },
+    );
     assert!(
         renderer.cache_invalidated_this_frame(),
         "cursor visibility flip (invisible→visible) MUST force full prepare"
@@ -436,13 +618,31 @@ fn fast_path_skipped_when_mark_cursor_appears() {
     set_cursor(&mut input, 0, 0, CursorShape::Block, true);
     input.mark_cursor = None;
 
-    renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, true);
+    renderer.prepare(
+        &input,
+        &gpu,
+        &pipelines,
+        crate::gpu::PrepareRequest {
+            origin: origin,
+            cursor_opacity: 1.0,
+            content_changed: true,
+        },
+    );
     input.mark_cursor = Some(crate::gpu::frame_input::MarkCursorOverride {
         line: 2,
         column: Column(5),
         shape: CursorShape::Block,
     });
-    renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, false);
+    renderer.prepare(
+        &input,
+        &gpu,
+        &pipelines,
+        crate::gpu::PrepareRequest {
+            origin: origin,
+            cursor_opacity: 1.0,
+            content_changed: false,
+        },
+    );
     assert!(
         renderer.cache_invalidated_this_frame(),
         "mark_cursor None→Some MUST force full prepare (resolved cursor jumps positions)"
@@ -468,9 +668,27 @@ fn fast_path_skipped_when_mark_cursor_disappears() {
         shape: CursorShape::Block,
     });
 
-    renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, true);
+    renderer.prepare(
+        &input,
+        &gpu,
+        &pipelines,
+        crate::gpu::PrepareRequest {
+            origin: origin,
+            cursor_opacity: 1.0,
+            content_changed: true,
+        },
+    );
     input.mark_cursor = None;
-    renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, false);
+    renderer.prepare(
+        &input,
+        &gpu,
+        &pipelines,
+        crate::gpu::PrepareRequest {
+            origin: origin,
+            cursor_opacity: 1.0,
+            content_changed: false,
+        },
+    );
     assert!(
         renderer.cache_invalidated_this_frame(),
         "mark_cursor Some→None MUST force full prepare"
@@ -496,13 +714,31 @@ fn fast_path_skipped_when_mark_cursor_override_moves() {
         shape: CursorShape::Block,
     });
 
-    renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, true);
+    renderer.prepare(
+        &input,
+        &gpu,
+        &pipelines,
+        crate::gpu::PrepareRequest {
+            origin: origin,
+            cursor_opacity: 1.0,
+            content_changed: true,
+        },
+    );
     input.mark_cursor = Some(crate::gpu::frame_input::MarkCursorOverride {
         line: 2,
         column: Column(8),
         shape: CursorShape::Block,
     });
-    renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, false);
+    renderer.prepare(
+        &input,
+        &gpu,
+        &pipelines,
+        crate::gpu::PrepareRequest {
+            origin: origin,
+            cursor_opacity: 1.0,
+            content_changed: false,
+        },
+    );
     assert!(
         renderer.cache_invalidated_this_frame(),
         "mark_cursor override move MUST force full prepare"
@@ -543,9 +779,27 @@ fn fast_path_skipped_when_cursor_moves_off_cjk_wide_cell() {
     }
     set_cursor(&mut input, 1, 2, CursorShape::Block, true);
 
-    renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, true);
+    renderer.prepare(
+        &input,
+        &gpu,
+        &pipelines,
+        crate::gpu::PrepareRequest {
+            origin: origin,
+            cursor_opacity: 1.0,
+            content_changed: true,
+        },
+    );
     set_cursor(&mut input, 1, 4, CursorShape::Block, true);
-    renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, false);
+    renderer.prepare(
+        &input,
+        &gpu,
+        &pipelines,
+        crate::gpu::PrepareRequest {
+            origin: origin,
+            cursor_opacity: 1.0,
+            content_changed: false,
+        },
+    );
     assert!(
         renderer.cache_invalidated_this_frame(),
         "cursor move off CJK base cell MUST force full prepare; \
@@ -567,8 +821,26 @@ fn fast_path_taken_when_cursor_unchanged() {
     input.hovered_cell = None;
     set_cursor(&mut input, 2, 4, CursorShape::Block, true);
 
-    renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, true);
-    renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, false);
+    renderer.prepare(
+        &input,
+        &gpu,
+        &pipelines,
+        crate::gpu::PrepareRequest {
+            origin: origin,
+            cursor_opacity: 1.0,
+            content_changed: true,
+        },
+    );
+    renderer.prepare(
+        &input,
+        &gpu,
+        &pipelines,
+        crate::gpu::PrepareRequest {
+            origin: origin,
+            cursor_opacity: 1.0,
+            content_changed: false,
+        },
+    );
     assert!(
         !renderer.cache_invalidated_this_frame(),
         "identical cursor state across two frames MUST keep the cursor-only fast path"
@@ -598,8 +870,26 @@ fn fast_path_taken_when_selection_and_cursor_both_unchanged() {
     };
     input.selection = Some(crate::gpu::frame_input::FrameSelection::new(&sel, 0));
 
-    renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, true);
-    renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, false);
+    renderer.prepare(
+        &input,
+        &gpu,
+        &pipelines,
+        crate::gpu::PrepareRequest {
+            origin: origin,
+            cursor_opacity: 1.0,
+            content_changed: true,
+        },
+    );
+    renderer.prepare(
+        &input,
+        &gpu,
+        &pipelines,
+        crate::gpu::PrepareRequest {
+            origin: origin,
+            cursor_opacity: 1.0,
+            content_changed: false,
+        },
+    );
     assert!(
         !renderer.cache_invalidated_this_frame(),
         "identical selection+cursor across two frames MUST keep the cursor-only fast path"
@@ -623,9 +913,27 @@ fn fast_path_taken_when_invisible_cursor_moves() {
     input.hovered_cell = None;
     set_cursor(&mut input, 1, 2, CursorShape::Block, false);
 
-    renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, true);
+    renderer.prepare(
+        &input,
+        &gpu,
+        &pipelines,
+        crate::gpu::PrepareRequest {
+            origin: origin,
+            cursor_opacity: 1.0,
+            content_changed: true,
+        },
+    );
     set_cursor(&mut input, 3, 8, CursorShape::Block, false);
-    renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, false);
+    renderer.prepare(
+        &input,
+        &gpu,
+        &pipelines,
+        crate::gpu::PrepareRequest {
+            origin: origin,
+            cursor_opacity: 1.0,
+            content_changed: false,
+        },
+    );
     assert!(
         !renderer.cache_invalidated_this_frame(),
         "invisible cursor 'move' MUST NOT invalidate the fast path; \
@@ -655,10 +963,28 @@ fn fast_path_taken_when_mark_cursor_active_and_terminal_cursor_moves() {
         shape: CursorShape::Block,
     });
 
-    renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, true);
+    renderer.prepare(
+        &input,
+        &gpu,
+        &pipelines,
+        crate::gpu::PrepareRequest {
+            origin: origin,
+            cursor_opacity: 1.0,
+            content_changed: true,
+        },
+    );
     // Move terminal cursor; mark override unchanged; resolved cursor stays at (2,5).
     set_cursor(&mut input, 0, 4, CursorShape::Block, true);
-    renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, false);
+    renderer.prepare(
+        &input,
+        &gpu,
+        &pipelines,
+        crate::gpu::PrepareRequest {
+            origin: origin,
+            cursor_opacity: 1.0,
+            content_changed: false,
+        },
+    );
     assert!(
         !renderer.cache_invalidated_this_frame(),
         "mark_cursor masks terminal cursor; terminal cursor moves under an active \
@@ -737,13 +1063,31 @@ fn cell_colors_correct_after_cursor_moves_within_selection() {
     };
     input.selection = Some(crate::gpu::frame_input::FrameSelection::new(&sel, 0));
 
-    renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, true);
+    renderer.prepare(
+        &input,
+        &gpu,
+        &pipelines,
+        crate::gpu::PrepareRequest {
+            origin: origin,
+            cursor_opacity: 1.0,
+            content_changed: true,
+        },
+    );
     let frame1_bg_bytes = renderer.prepared.backgrounds.byte_len();
     assert!(frame1_bg_bytes > 0, "frame 1 must emit instances");
 
     // Frame 2: cursor moves within the selection.
     set_cursor(&mut input, 1, 7, CursorShape::Block, true);
-    renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, false);
+    renderer.prepare(
+        &input,
+        &gpu,
+        &pipelines,
+        crate::gpu::PrepareRequest {
+            origin: origin,
+            cursor_opacity: 1.0,
+            content_changed: false,
+        },
+    );
 
     assert!(
         renderer.cache_invalidated_this_frame(),
@@ -817,13 +1161,31 @@ fn cell_colors_correct_after_cursor_moves_within_search_match() {
         0,
     ));
 
-    renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, true);
+    renderer.prepare(
+        &input,
+        &gpu,
+        &pipelines,
+        crate::gpu::PrepareRequest {
+            origin: origin,
+            cursor_opacity: 1.0,
+            content_changed: true,
+        },
+    );
     let frame1_bg_bytes = renderer.prepared.backgrounds.byte_len();
     assert!(frame1_bg_bytes > 0, "frame 1 must emit instances");
 
     // Frame 2: cursor moves to (2, 4); content + search unchanged.
     set_cursor(&mut input, 2, 4, CursorShape::Block, true);
-    renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, false);
+    renderer.prepare(
+        &input,
+        &gpu,
+        &pipelines,
+        crate::gpu::PrepareRequest {
+            origin: origin,
+            cursor_opacity: 1.0,
+            content_changed: false,
+        },
+    );
 
     assert!(
         renderer.cache_invalidated_this_frame(),
@@ -883,15 +1245,42 @@ where
     setup(&mut input);
     let mut origin = (0.0_f32, 0.0_f32);
 
-    renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, true);
-    renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, false);
+    renderer.prepare(
+        &input,
+        &gpu,
+        &pipelines,
+        crate::gpu::PrepareRequest {
+            origin: origin,
+            cursor_opacity: 1.0,
+            content_changed: true,
+        },
+    );
+    renderer.prepare(
+        &input,
+        &gpu,
+        &pipelines,
+        crate::gpu::PrepareRequest {
+            origin: origin,
+            cursor_opacity: 1.0,
+            content_changed: false,
+        },
+    );
     assert!(
         !renderer.cache_invalidated_this_frame(),
         "{label}: identical baseline (with setup) must NOT invalidate cache"
     );
 
     mutate(&mut input, &mut origin);
-    renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, false);
+    renderer.prepare(
+        &input,
+        &gpu,
+        &pipelines,
+        crate::gpu::PrepareRequest {
+            origin: origin,
+            cursor_opacity: 1.0,
+            content_changed: false,
+        },
+    );
     assert!(
         renderer.cache_invalidated_this_frame(),
         "{label}: mutation must invalidate cache via cache_invalidated_this_frame() SSOT"
@@ -1417,9 +1806,27 @@ fn content_changed_true_invalidates_cache() {
     };
     let input = crate::gpu::frame_input::FrameInput::test_grid(10, 10, "");
     let origin = (0.0_f32, 0.0_f32);
-    renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, true);
+    renderer.prepare(
+        &input,
+        &gpu,
+        &pipelines,
+        crate::gpu::PrepareRequest {
+            origin: origin,
+            cursor_opacity: 1.0,
+            content_changed: true,
+        },
+    );
     // Frame 2: content_changed=true forces full prepare even with identical input.
-    renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, true);
+    renderer.prepare(
+        &input,
+        &gpu,
+        &pipelines,
+        crate::gpu::PrepareRequest {
+            origin: origin,
+            cursor_opacity: 1.0,
+            content_changed: true,
+        },
+    );
     assert!(
         renderer.cache_invalidated_this_frame(),
         "content_changed=true MUST invalidate cache (top-level predicate clause)"
@@ -1439,9 +1846,27 @@ fn cached_invalid_invalidates_cache() {
     let origin = (0.0_f32, 0.0_f32);
 
     // Frame 1: full prepare populates shaping cache, prev_dispatch_fingerprint, prev row state, terminal data.
-    renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, true);
+    renderer.prepare(
+        &input,
+        &gpu,
+        &pipelines,
+        crate::gpu::PrepareRequest {
+            origin: origin,
+            cursor_opacity: 1.0,
+            content_changed: true,
+        },
+    );
     // Frame 2: identical input + content_changed=false → steady state, cache reusable.
-    renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, false);
+    renderer.prepare(
+        &input,
+        &gpu,
+        &pipelines,
+        crate::gpu::PrepareRequest {
+            origin: origin,
+            cursor_opacity: 1.0,
+            content_changed: false,
+        },
+    );
     assert!(
         !renderer.cache_invalidated_this_frame(),
         "baseline frame must reuse cache (sanity check)"
@@ -1454,7 +1879,16 @@ fn cached_invalid_invalidates_cache() {
 
     // Frame 3: identical input but cached_valid=false (rows() == 0). SSOT predicate must fire
     // via the cached_valid clause alone (content_changed/dispatch/row_state all unchanged).
-    renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, false);
+    renderer.prepare(
+        &input,
+        &gpu,
+        &pipelines,
+        crate::gpu::PrepareRequest {
+            origin: origin,
+            cursor_opacity: 1.0,
+            content_changed: false,
+        },
+    );
     assert!(
         renderer.cache_invalidated_this_frame(),
         "!cached_valid (shaping.frame.rows() == 0) MUST invalidate cache via cache_invalidated_this_frame() SSOT"
@@ -1474,11 +1908,29 @@ fn no_terminal_data_invalidates_cache() {
     let input = crate::gpu::frame_input::FrameInput::test_grid(10, 10, "");
     let origin = (0.0_f32, 0.0_f32);
     // Frame 1: full prepare establishes terminal data + shaping cache.
-    renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, true);
+    renderer.prepare(
+        &input,
+        &gpu,
+        &pipelines,
+        crate::gpu::PrepareRequest {
+            origin: origin,
+            cursor_opacity: 1.0,
+            content_changed: true,
+        },
+    );
     // Force prepared frame to drop terminal data, then call prepare again.
     // The has_terminal_data() check should see false → invalidate.
     renderer.prepared.clear();
-    renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, false);
+    renderer.prepare(
+        &input,
+        &gpu,
+        &pipelines,
+        crate::gpu::PrepareRequest {
+            origin: origin,
+            cursor_opacity: 1.0,
+            content_changed: false,
+        },
+    );
     assert!(
         renderer.cache_invalidated_this_frame(),
         "!has_terminal_data MUST invalidate cache (top-level predicate clause)"
@@ -1502,9 +1954,27 @@ fn row_state_change_invalidates_cache() {
     let origin = (0.0_f32, 0.0_f32);
 
     // Frame 1: full prepare populates baseline (shaping cache, prev_dispatch_fingerprint, prev_resolved_cursor, terminal data).
-    renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, true);
+    renderer.prepare(
+        &input,
+        &gpu,
+        &pipelines,
+        crate::gpu::PrepareRequest {
+            origin: origin,
+            cursor_opacity: 1.0,
+            content_changed: true,
+        },
+    );
     // Frame 2: identical input + content_changed=false → steady state, cache reusable.
-    renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, false);
+    renderer.prepare(
+        &input,
+        &gpu,
+        &pipelines,
+        crate::gpu::PrepareRequest {
+            origin: origin,
+            cursor_opacity: 1.0,
+            content_changed: false,
+        },
+    );
     assert!(
         !renderer.cache_invalidated_this_frame(),
         "baseline frame must reuse cache (sanity check)"
@@ -1512,7 +1982,16 @@ fn row_state_change_invalidates_cache() {
 
     // Mutate hovered_cell — flips row_state_changed clause.
     input.hovered_cell = Some((1, 1));
-    renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, false);
+    renderer.prepare(
+        &input,
+        &gpu,
+        &pipelines,
+        crate::gpu::PrepareRequest {
+            origin: origin,
+            cursor_opacity: 1.0,
+            content_changed: false,
+        },
+    );
     assert!(
         renderer.cache_invalidated_this_frame(),
         "row_state_changed (hovered_cell mutation) MUST invalidate cache via cache_invalidated_this_frame() SSOT"
@@ -1537,9 +2016,27 @@ fn prompt_marker_rows_change_does_not_invalidate_cache() {
     let origin = (0.0_f32, 0.0_f32);
 
     // Frame 1: full prepare populates baseline state.
-    renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, true);
+    renderer.prepare(
+        &input,
+        &gpu,
+        &pipelines,
+        crate::gpu::PrepareRequest {
+            origin: origin,
+            cursor_opacity: 1.0,
+            content_changed: true,
+        },
+    );
     // Frame 2: identical input + content_changed=false → steady state, cache reusable.
-    renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, false);
+    renderer.prepare(
+        &input,
+        &gpu,
+        &pipelines,
+        crate::gpu::PrepareRequest {
+            origin: origin,
+            cursor_opacity: 1.0,
+            content_changed: false,
+        },
+    );
     assert!(
         !renderer.cache_invalidated_this_frame(),
         "baseline must reuse cache (sanity check)"
@@ -1548,7 +2045,16 @@ fn prompt_marker_rows_change_does_not_invalidate_cache() {
     // Mutate prompt_marker_rows — NOT in compute_dispatch_fingerprint, NOT in row_state inputs.
     // Frame 3: cache MUST stay reusable via cache_invalidated_this_frame() SSOT.
     input.prompt_marker_rows = vec![0, 1, 2];
-    renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, false);
+    renderer.prepare(
+        &input,
+        &gpu,
+        &pipelines,
+        crate::gpu::PrepareRequest {
+            origin: origin,
+            cursor_opacity: 1.0,
+            content_changed: false,
+        },
+    );
     assert!(
         !renderer.cache_invalidated_this_frame(),
         "prompt_marker_rows mutation must NOT invalidate cache (field outside dispatch fingerprint and row_state)"

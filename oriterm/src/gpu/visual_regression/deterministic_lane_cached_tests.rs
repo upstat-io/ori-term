@@ -46,7 +46,16 @@ fn cached_render_produces_identical_output_across_runs() {
     input.content.cursor.visible = false;
 
     // First render via cached path.
-    renderer.prepare(&input, &gpu, &pipelines, (0.0, 0.0), 1.0, true);
+    renderer.prepare(
+        &input,
+        &gpu,
+        &pipelines,
+        crate::gpu::PrepareRequest {
+            origin: (0.0, 0.0),
+            cursor_opacity: 1.0,
+            content_changed: true,
+        },
+    );
     let target1 = renderer.render_frame_cached(&gpu, &pipelines, w, h, true);
     let pixels_1 = gpu
         .read_render_target(&target1)
@@ -54,7 +63,16 @@ fn cached_render_produces_identical_output_across_runs() {
 
     // Second render via cached path (same input, content_changed=true to
     // force full re-render rather than hitting the cache-reuse path).
-    renderer.prepare(&input, &gpu, &pipelines, (0.0, 0.0), 1.0, true);
+    renderer.prepare(
+        &input,
+        &gpu,
+        &pipelines,
+        crate::gpu::PrepareRequest {
+            origin: (0.0, 0.0),
+            cursor_opacity: 1.0,
+            content_changed: true,
+        },
+    );
     let target2 = renderer.render_frame_cached(&gpu, &pipelines, w, h, true);
     let pixels_2 = gpu
         .read_render_target(&target2)
@@ -103,7 +121,16 @@ fn content_unchanged_path_produces_correct_output() {
     input.content.cursor.visible = false;
 
     // First render: full content upload (content_changed=true).
-    renderer.prepare(&input, &gpu, &pipelines, (0.0, 0.0), 1.0, true);
+    renderer.prepare(
+        &input,
+        &gpu,
+        &pipelines,
+        crate::gpu::PrepareRequest {
+            origin: (0.0, 0.0),
+            cursor_opacity: 1.0,
+            content_changed: true,
+        },
+    );
     let target_full = renderer.render_frame_cached(&gpu, &pipelines, w, h, true);
     let pixels_full = gpu
         .read_render_target(&target_full)
@@ -111,7 +138,16 @@ fn content_unchanged_path_produces_correct_output() {
 
     // Second render: cache reuse (content_changed=false) — the steady-state
     // blink-only path. Skips content uploads, reuses the cached texture.
-    renderer.prepare(&input, &gpu, &pipelines, (0.0, 0.0), 1.0, false);
+    renderer.prepare(
+        &input,
+        &gpu,
+        &pipelines,
+        crate::gpu::PrepareRequest {
+            origin: (0.0, 0.0),
+            cursor_opacity: 1.0,
+            content_changed: false,
+        },
+    );
     let target_reuse = renderer.render_frame_cached(&gpu, &pipelines, w, h, false);
     let pixels_reuse = gpu
         .read_render_target(&target_reuse)
@@ -207,7 +243,16 @@ fn cached_render_produces_non_blank_output() {
     input.subpixel_positioning = config.subpixel_positioning;
     input.content.cursor.visible = false;
 
-    renderer.prepare(&input, &gpu, &pipelines, (0.0, 0.0), 1.0, true);
+    renderer.prepare(
+        &input,
+        &gpu,
+        &pipelines,
+        crate::gpu::PrepareRequest {
+            origin: (0.0, 0.0),
+            cursor_opacity: 1.0,
+            content_changed: true,
+        },
+    );
     let target = renderer.render_frame_cached(&gpu, &pipelines, w, h, true);
     let pixels = gpu
         .read_render_target(&target)

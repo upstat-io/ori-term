@@ -13,7 +13,7 @@ use super::frame_input::{FrameInput, ViewportSize};
 use super::pipelines::GpuPipelines;
 use super::state::GpuState;
 use super::window_renderer::WindowRenderer;
-use crate::font::{FontCollection, FontSet, GlyphFormat, HintingMode};
+use crate::font::{FontCollection, FontRasterConfig, FontSet, GlyphFormat, HintingMode};
 
 /// Default font weight for tests.
 const TEST_FONT_WEIGHT: u16 = 400;
@@ -40,10 +40,12 @@ fn headless_env_with_format(
         font_set,
         TEST_FONT_SIZE_PT,
         TEST_DPI,
-        format,
-        TEST_FONT_WEIGHT,
-        550,
-        HintingMode::Full,
+        FontRasterConfig {
+            format: format,
+            weight: TEST_FONT_WEIGHT,
+            bold_weight: 550,
+            hinting: HintingMode::Full,
+        },
     )
     .ok()?;
     let renderer = WindowRenderer::new(&gpu, &pipelines, font_collection, None);
@@ -93,7 +95,16 @@ fn frame_renders_without_errors() {
     let target = gpu.create_render_target(640, 384);
     let input = FrameInput::test_grid(80, 24, "Hello, World!");
 
-    renderer.prepare(&input, &gpu, &pipelines, (0.0, 0.0), 1.0, true);
+    renderer.prepare(
+        &input,
+        &gpu,
+        &pipelines,
+        crate::gpu::PrepareRequest {
+            origin: (0.0, 0.0),
+            cursor_opacity: 1.0,
+            content_changed: true,
+        },
+    );
     renderer.render_frame(&gpu, &pipelines, target.view());
 
     // No panic or GPU validation error = success.
@@ -113,7 +124,16 @@ fn wgpu_validation_layer_enabled_in_tests() {
     let target = gpu.create_render_target(64, 64);
     let input = FrameInput::test_grid(8, 4, "test");
 
-    renderer.prepare(&input, &gpu, &pipelines, (0.0, 0.0), 1.0, true);
+    renderer.prepare(
+        &input,
+        &gpu,
+        &pipelines,
+        crate::gpu::PrepareRequest {
+            origin: (0.0, 0.0),
+            cursor_opacity: 1.0,
+            content_changed: true,
+        },
+    );
     renderer.render_frame(&gpu, &pipelines, target.view());
 
     // wgpu validation errors cause panics in debug mode, so reaching
@@ -144,7 +164,16 @@ fn render_colored_cell_correct_bg_color() {
     input.cell_size = cell_metrics;
 
     let target = gpu.create_render_target(cw, ch);
-    renderer.prepare(&input, &gpu, &pipelines, (0.0, 0.0), 1.0, true);
+    renderer.prepare(
+        &input,
+        &gpu,
+        &pipelines,
+        crate::gpu::PrepareRequest {
+            origin: (0.0, 0.0),
+            cursor_opacity: 1.0,
+            content_changed: true,
+        },
+    );
     renderer.render_frame(&gpu, &pipelines, target.view());
 
     let pixels = gpu
@@ -197,7 +226,16 @@ fn render_text_produces_nonzero_alpha_in_glyph_region() {
     input.palette.background = Rgb { r: 0, g: 0, b: 0 };
 
     let target = gpu.create_render_target(w, h);
-    renderer.prepare(&input, &gpu, &pipelines, (0.0, 0.0), 1.0, true);
+    renderer.prepare(
+        &input,
+        &gpu,
+        &pipelines,
+        crate::gpu::PrepareRequest {
+            origin: (0.0, 0.0),
+            cursor_opacity: 1.0,
+            content_changed: true,
+        },
+    );
     renderer.render_frame(&gpu, &pipelines, target.view());
 
     let pixels = gpu
@@ -256,7 +294,16 @@ fn render_cursor_pixels_at_expected_position() {
     }
 
     let target = gpu.create_render_target(w, h);
-    renderer.prepare(&input, &gpu, &pipelines, (0.0, 0.0), 1.0, true);
+    renderer.prepare(
+        &input,
+        &gpu,
+        &pipelines,
+        crate::gpu::PrepareRequest {
+            origin: (0.0, 0.0),
+            cursor_opacity: 1.0,
+            content_changed: true,
+        },
+    );
     renderer.render_frame(&gpu, &pipelines, target.view());
 
     let pixels = gpu
@@ -315,7 +362,16 @@ fn full_pipeline_extract_prepare_render_readback() {
     let target = gpu.create_render_target(w, h);
 
     // Run the full pipeline via WindowRenderer (ensure_glyphs_cached + prepare + render).
-    renderer.prepare(&input, &gpu, &pipelines, (0.0, 0.0), 1.0, true);
+    renderer.prepare(
+        &input,
+        &gpu,
+        &pipelines,
+        crate::gpu::PrepareRequest {
+            origin: (0.0, 0.0),
+            cursor_opacity: 1.0,
+            content_changed: true,
+        },
+    );
     renderer.render_frame(&gpu, &pipelines, target.view());
 
     // Readback and verify basic sanity.
@@ -383,7 +439,16 @@ fn subpixel_zero_coverage_pixel_equals_background() {
     }
 
     let target = gpu.create_render_target(w, h);
-    renderer.prepare(&input, &gpu, &pipelines, (0.0, 0.0), 1.0, true);
+    renderer.prepare(
+        &input,
+        &gpu,
+        &pipelines,
+        crate::gpu::PrepareRequest {
+            origin: (0.0, 0.0),
+            cursor_opacity: 1.0,
+            content_changed: true,
+        },
+    );
     renderer.render_frame(&gpu, &pipelines, target.view());
 
     let pixels = gpu

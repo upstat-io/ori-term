@@ -491,6 +491,9 @@ fn sample_snapshot() -> PaneSnapshot {
                     bg: WireRgb { r: 0, g: 0, b: 0 },
                     flags: 0,
                     underline_color: None,
+                    fg_alpha: 255,
+                    bg_alpha: 255,
+                    underline_alpha: 255,
                     hyperlink_uri: None,
                     zerowidth: vec![],
                 },
@@ -508,6 +511,9 @@ fn sample_snapshot() -> PaneSnapshot {
                     },
                     flags: 0x0100, // WIDE_CHAR
                     underline_color: None,
+                    fg_alpha: 255,
+                    bg_alpha: 255,
+                    underline_alpha: 255,
                     hyperlink_uri: None,
                     zerowidth: vec![],
                 },
@@ -522,6 +528,9 @@ fn sample_snapshot() -> PaneSnapshot {
                 bg: WireRgb { r: 0, g: 0, b: 0 },
                 flags: 0x0001 | 0x0004, // BOLD | ITALIC
                 underline_color: None,
+                fg_alpha: 255,
+                bg_alpha: 255,
+                underline_alpha: 255,
                 hyperlink_uri: None,
                 zerowidth: vec!['\u{0301}'], // combining acute accent
             }],
@@ -586,6 +595,9 @@ fn snapshot_with_cjk_emoji_combining() {
                 bg: WireRgb { r: 0, g: 0, b: 0 },
                 flags: 0x0100,
                 underline_color: None,
+                fg_alpha: 255,
+                bg_alpha: 255,
+                underline_alpha: 255,
                 hyperlink_uri: None,
                 zerowidth: vec![],
             },
@@ -600,6 +612,9 @@ fn snapshot_with_cjk_emoji_combining() {
                 bg: WireRgb { r: 0, g: 0, b: 0 },
                 flags: 0x0100,
                 underline_color: None,
+                fg_alpha: 255,
+                bg_alpha: 255,
+                underline_alpha: 255,
                 hyperlink_uri: None,
                 zerowidth: vec![],
             },
@@ -614,6 +629,9 @@ fn snapshot_with_cjk_emoji_combining() {
                 bg: WireRgb { r: 0, g: 0, b: 0 },
                 flags: 0,
                 underline_color: None,
+                fg_alpha: 255,
+                bg_alpha: 255,
+                underline_alpha: 255,
                 hyperlink_uri: None,
                 zerowidth: vec!['\u{0301}', '\u{0303}'],
             },
@@ -1109,6 +1127,9 @@ fn roundtrip_large_pane_snapshot() {
                 bg: WireRgb { r: 0, g: 0, b: 0 },
                 flags: if c % 10 == 0 { 0x0001 } else { 0 }, // every 10th cell bold
                 underline_color: None,
+                fg_alpha: 255,
+                bg_alpha: 255,
+                underline_alpha: 255,
                 hyperlink_uri: None,
                 zerowidth: vec![],
             });
@@ -1649,14 +1670,21 @@ fn set_answerback_bincode_discriminant_appended_after_write_stalled_status() {
     );
 }
 
-/// `PROTOCOL_VERSION` is at v3 — guards against a silent revert of the
-/// wire-schema extension that ships daemon-mode image data.
+/// `PROTOCOL_VERSION` is pinned at v4 (WireCell per-channel alpha; retains the
+/// v3 daemon-mode image fields) — guards against a silent revert of any
+/// wire-schema layout change without a deliberate version bump.
 #[test]
-fn protocol_version_pinned_at_v3_for_image_schema() {
+fn protocol_version_pinned_for_wire_schema() {
+    // Tripwire: any change to the bincode `WireCell` / `PaneSnapshot` layout
+    // MUST bump PROTOCOL_VERSION (bincode is positional — a mismatched peer
+    // silently misdecodes every frame). v3 added the image fields; v4 added
+    // WireCell per-channel alpha (fg/bg/underline). Bump this pin in lockstep
+    // with `PROTOCOL_VERSION` whenever the wire layout changes.
     assert_eq!(
-        PROTOCOL_VERSION, 3,
-        "PaneSnapshot image fields require PROTOCOL_VERSION >= 3; reverting it \
- silently misdecodes every image-carrying frame on peer pairs that disagree"
+        PROTOCOL_VERSION, 4,
+        "WireCell per-channel alpha (v4) + PaneSnapshot image fields (v3) \
+ require PROTOCOL_VERSION == 4; a layout change without a version bump \
+ silently misdecodes every frame on peer pairs that disagree"
     );
 }
 
@@ -1759,4 +1787,99 @@ fn roundtrip_pane_snapshot_with_no_images_stays_empty() {
     assert!(snapshot.images.is_empty());
     assert!(snapshot.image_data.is_empty());
     assert!(!snapshot.images_dirty);
+}
+
+// -- SGR mode-6 per-channel alpha on the wire (§15.2) --
+
+/// Build a 1×1 `PaneSnapshot` whose single cell carries concrete per-channel
+/// alpha (fg/bg/underline). Used by the alpha round-trip pins.
+fn snapshot_with_alpha(fg_alpha: u8, bg_alpha: u8, underline_alpha: u8) -> PaneSnapshot {
+    PaneSnapshot {
+        cells: vec![vec![WireCell {
+            ch: 'A',
+            fg: WireRgb {
+                r: 10,
+                g: 20,
+                b: 30,
+            },
+            bg: WireRgb {
+                r: 40,
+                g: 50,
+                b: 60,
+            },
+            flags: 0,
+            underline_color: Some(WireRgb {
+                r: 70,
+                g: 80,
+                b: 90,
+            }),
+            fg_alpha,
+            bg_alpha,
+            underline_alpha,
+            hyperlink_uri: None,
+            zerowidth: vec![],
+        }]],
+        cursor: WireCursor {
+            col: 0,
+            row: 0,
+            shape: WireCursorShape::Block,
+            visible: true,
+        },
+        palette: (0..270).map(|i| [(i % 256) as u8, 0, 0]).collect(),
+        title: String::new(),
+        icon_name: None,
+        cwd: None,
+        modes: 0,
+        scrollback_len: 0,
+        display_offset: 0,
+        stable_row_base: 0,
+        cols: 1,
+        search_active: false,
+        search_query: String::new(),
+        search_matches: Vec::new(),
+        search_focused: None,
+        search_total_matches: 0,
+        has_unseen_output: false,
+        mouse_cursor_icon: None,
+        images: Vec::new(),
+        image_data: Vec::new(),
+        images_dirty: false,
+    }
+}
+
+/// Concrete per-channel alpha (e.g. SGR `48:6::r:g:b:128`) survives the full
+/// codec round-trip. Reverting the `WireCell` alpha fields (or the server
+/// fill site) drops the alpha back to opaque and fails this pin — the
+/// embedded-vs-daemon DRIFT guard.
+#[test]
+fn roundtrip_pane_snapshot_preserves_cell_alpha() {
+    let snap = snapshot_with_alpha(64, 128, 200);
+    let decoded = roundtrip(101, MuxPdu::PaneSnapshotResp { snapshot: snap });
+    let MuxPdu::PaneSnapshotResp { snapshot } = decoded.pdu else {
+        panic!("unexpected PDU variant after decode")
+    };
+    let cell = &snapshot.cells[0][0];
+    assert_eq!(cell.fg_alpha, 64, "fg_alpha must survive the wire");
+    assert_eq!(cell.bg_alpha, 128, "bg_alpha must survive the wire");
+    assert_eq!(
+        cell.underline_alpha, 200,
+        "underline_alpha must survive the wire"
+    );
+}
+
+/// An opaque cell round-trips as opaque on every channel (guards against the
+/// codec defaulting a non-opaque alpha on the wire).
+#[test]
+fn roundtrip_pane_snapshot_opaque_cell_stays_opaque() {
+    use oriterm_core::cell::OPAQUE_ALPHA;
+
+    let snap = snapshot_with_alpha(OPAQUE_ALPHA, OPAQUE_ALPHA, OPAQUE_ALPHA);
+    let decoded = roundtrip(102, MuxPdu::PaneSnapshotResp { snapshot: snap });
+    let MuxPdu::PaneSnapshotResp { snapshot } = decoded.pdu else {
+        panic!("unexpected PDU variant after decode")
+    };
+    let cell = &snapshot.cells[0][0];
+    assert_eq!(cell.fg_alpha, OPAQUE_ALPHA);
+    assert_eq!(cell.bg_alpha, OPAQUE_ALPHA);
+    assert_eq!(cell.underline_alpha, OPAQUE_ALPHA);
 }

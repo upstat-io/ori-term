@@ -16,6 +16,23 @@ use super::super::frame_entry::{
 };
 use super::ImageCache;
 
+/// A Δ frame to append, bundling its chain-base metadata with the
+/// sub-rect payload that [`ImageCache::push_delta_frame`] stores.
+struct DeltaFrameSpec {
+    /// `FrameId` of the base frame this Δ references.
+    base: FrameId,
+    /// Δ-chain depth (0 = first hop off a Materialized base).
+    depth: u8,
+    /// Cumulative drawn area across the chain up to and including this Δ.
+    cumulative_drawn_area: u32,
+    /// Sub-rect this Δ paints relative to the canvas.
+    sub_rect: crate::image::BlitRect,
+    /// Sub-rect RGBA bytes (Δ payload, not the full canvas).
+    payload: Arc<Vec<u8>>,
+    /// Composition mode applied when materializing the canvas.
+    compose_mode: crate::image::CompositionMode,
+}
+
 impl ImageCache {
     /// Auto-promote a static image's root frame into `animation_frames`.
     ///
@@ -80,21 +97,20 @@ impl ImageCache {
     /// Caller is responsible for ensuring guards (depth + cumulative
     /// area) permit Δ storage; this helper assumes the decision is
     /// already made.
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "Δ storage needs base+sub_rect+payload+mode+depth+area+gap to construct the entry"
-    )]
     fn push_delta_frame(
         &mut self,
         image_id: ImageId,
-        base: FrameId,
-        depth: u8,
-        cumulative_drawn_area: u32,
-        sub_rect: crate::image::BlitRect,
-        payload: Arc<Vec<u8>>,
-        mode: crate::image::CompositionMode,
+        spec: DeltaFrameSpec,
         gap: Duration,
     ) -> Result<u32, ImageError> {
+        let DeltaFrameSpec {
+            base,
+            depth,
+            cumulative_drawn_area,
+            sub_rect,
+            payload,
+            compose_mode,
+        } = spec;
         let payload_len = payload.len();
 
         // Eviction loop — same shape as push_composed_frame, just with
@@ -121,7 +137,7 @@ impl ImageCache {
             base,
             sub_rect,
             payload,
-            compose_mode: mode,
+            compose_mode,
             depth,
             cumulative_drawn_area,
         });
@@ -199,12 +215,14 @@ impl ImageCache {
 
         Ok(Some(self.push_delta_frame(
             req.image_id,
-            base_id,
-            new_depth,
-            new_cumulative as u32,
-            req.blit,
-            req.frame_data.clone(),
-            req.composition_mode,
+            DeltaFrameSpec {
+                base: base_id,
+                depth: new_depth,
+                cumulative_drawn_area: new_cumulative as u32,
+                sub_rect: req.blit,
+                payload: req.frame_data.clone(),
+                compose_mode: req.composition_mode,
+            },
             *gap,
         )))
     }

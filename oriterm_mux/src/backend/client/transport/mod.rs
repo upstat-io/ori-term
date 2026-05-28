@@ -14,7 +14,7 @@ mod wake_pipe;
 mod writer;
 
 use self::spawn::{spawn_reader_thread, spawn_writer_thread};
-use self::types::{PendingClientReply, SendRequest};
+use self::types::{PendingClientReply, ReaderThreadState, SendRequest};
 
 use std::collections::HashMap;
 use std::io;
@@ -175,13 +175,15 @@ impl ClientTransport {
         )?;
         let reader_handle = spawn_reader_thread(
             read_stream,
-            notif_tx,
-            guarded_wakeup,
-            alive_reader,
-            pushed_snapshots_reader,
-            pending_replies_reader,
-            pending_reader,
-            outstanding_ping_seq_reader,
+            ReaderThreadState {
+                notif_tx,
+                wakeup: guarded_wakeup,
+                alive: alive_reader,
+                pushed_snapshots: pushed_snapshots_reader,
+                pending_replies: pending_replies_reader,
+                pending: pending_reader,
+                outstanding_ping_seq: outstanding_ping_seq_reader,
+            },
             #[cfg(unix)]
             wake_read,
         )?;

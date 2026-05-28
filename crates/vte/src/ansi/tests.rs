@@ -205,6 +205,111 @@ fn parse_truecolor_attr() {
  assert_eq!(handler.attr, Some(Attr::Foreground(Color::Spec(spec))));
 }
 
+#[test]
+fn parse_mode6_rgba_fg_attr() {
+ let mut parser = Processor::<TestSyncHandler>::new();
+ let mut handler = MockHandler::default();
+
+ // CSI 38:6::10:20:30:40 m — wezterm mode-6 RGBA foreground.
+ parser.advance(&mut handler, b"\x1b[38:6::10:20:30:40m");
+
+ assert_eq!(
+ handler.attr,
+ Some(Attr::ForegroundRgba(Rgb { r: 10, g: 20, b: 30 }, 40))
+ );
+}
+
+#[test]
+fn parse_mode6_rgba_bg_attr() {
+ let mut parser = Processor::<TestSyncHandler>::new();
+ let mut handler = MockHandler::default();
+
+ parser.advance(&mut handler, b"\x1b[48:6::1:2:3:200m");
+
+ assert_eq!(
+ handler.attr,
+ Some(Attr::BackgroundRgba(Rgb { r: 1, g: 2, b: 3 }, 200))
+ );
+}
+
+#[test]
+fn parse_mode6_rgba_underline_attr() {
+ let mut parser = Processor::<TestSyncHandler>::new();
+ let mut handler = MockHandler::default();
+
+ parser.advance(&mut handler, b"\x1b[58:6::4:5:6:7m");
+
+ assert_eq!(
+ handler.attr,
+ Some(Attr::UnderlineColorRgba(Rgb { r: 4, g: 5, b: 6 }, 7))
+ );
+}
+
+/// Mode-6 RGBA WITHOUT the optional color-space slot (`38:6:r:g:b:a`) parses
+/// identically to the canonical `38:6::r:g:b:a` form — the color-space-id
+/// slot is optional, symmetric with mode 2. Reverting the mode-aware offset
+/// to a fixed `len > 4` threshold silently drops this form (returns None).
+#[test]
+fn parse_mode6_rgba_no_color_space() {
+ let mut parser = Processor::<TestSyncHandler>::new();
+ let mut handler = MockHandler::default();
+
+ parser.advance(&mut handler, b"\x1b[38:6:10:20:30:40m");
+
+ assert_eq!(
+ handler.attr,
+ Some(Attr::ForegroundRgba(Rgb { r: 10, g: 20, b: 30 }, 40))
+ );
+}
+
+/// Trailing subparameters after the color (ISO 8613-6 tolerance params,
+/// `38:2::r:g:b:tol:tol-cs`) are ignored — the read window is anchored at the
+/// FRONT. A back-anchored offset would shift rightward and misparse RGB as the
+/// trailing values; this pins the front-anchored behavior.
+#[test]
+fn parse_mode2_rgb_ignores_trailing_subparams() {
+ let mut parser = Processor::<TestSyncHandler>::new();
+ let mut handler = MockHandler::default();
+
+ parser.advance(&mut handler, b"\x1b[38:2::10:20:30:5:5m");
+
+ assert_eq!(
+ handler.attr,
+ Some(Attr::Foreground(Color::Spec(Rgb { r: 10, g: 20, b: 30 })))
+ );
+}
+
+/// Clamp: mode-2 WITHOUT the color-space slot (`38:2:r:g:b`) still parses to
+/// the plain `Foreground` — the mode-aware offset must not regress the
+/// pre-existing no-color-space mode-2 path.
+#[test]
+fn parse_mode2_rgb_no_color_space() {
+ let mut parser = Processor::<TestSyncHandler>::new();
+ let mut handler = MockHandler::default();
+
+ parser.advance(&mut handler, b"\x1b[38:2:10:20:30m");
+
+ assert_eq!(
+ handler.attr,
+ Some(Attr::Foreground(Color::Spec(Rgb { r: 10, g: 20, b: 30 })))
+ );
+}
+
+/// Mode-2 (no alpha) still parses to the plain `Foreground` attribute,
+/// NOT the RGBA variant — the mode discriminator is honored.
+#[test]
+fn parse_mode2_stays_plain_foreground() {
+ let mut parser = Processor::<TestSyncHandler>::new();
+ let mut handler = MockHandler::default();
+
+ parser.advance(&mut handler, b"\x1b[38:2::10:20:30m");
+
+ assert_eq!(
+ handler.attr,
+ Some(Attr::Foreground(Color::Spec(Rgb { r: 10, g: 20, b: 30 })))
+ );
+}
+
 /// No exactly a test; useful for debugging.
 #[test]
 fn parse_zsh_startup() {

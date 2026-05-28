@@ -13,7 +13,7 @@ mod text;
 
 #[cfg(not(target_os = "macos"))]
 pub(crate) use text::color_to_rgb;
-use text::{convert_icon, convert_text};
+use text::{IconDraw, TextDraw, convert_icon, convert_text};
 
 use oriterm_ui::color::Color;
 use oriterm_ui::draw::scene::{ContentMask, IconPrimitive, LinePrimitive, Quad, TextRun};
@@ -23,7 +23,35 @@ use oriterm_ui::geometry::{Point, Rect};
 use super::instance_writer::{InstanceWriter, ScreenRect};
 use super::prepare::AtlasLookup;
 use super::srgb_f32_to_linear;
-use super::ui_rect_writer::UiRectWriter;
+use super::ui_rect_writer::{UiRectBorder, UiRectWriter};
+
+/// Per-primitive paint parameters: scale, opacity, and clip rect.
+///
+/// Threaded through every `convert_*` helper. `scale` and `opacity` come
+/// from the compositor; `clip` is the physical-pixel clip rect resolved
+/// from the primitive's `ContentMask` via [`clip_from_mask`].
+#[derive(Clone, Copy)]
+pub struct PaintParams {
+    /// Logical-to-physical pixel scale factor.
+    pub scale: f32,
+    /// Effective opacity (compositor opacity x mask opacity).
+    pub opacity: f32,
+    /// Physical-pixel clip rect `[x, y, w, h]`.
+    pub clip: [f32; 4],
+}
+
+/// Line segment geometry + color for [`convert_line_clipped`].
+#[derive(Clone, Copy)]
+struct LineSpec {
+    /// Start point (logical pixels).
+    from: Point,
+    /// End point (logical pixels).
+    to: Point,
+    /// Line thickness (logical pixels).
+    width: f32,
+    /// Line color.
+    color: Color,
+}
 
 /// Context for converting text primitives into glyph instances.
 ///
@@ -63,26 +91,32 @@ pub fn convert_scene(
     opacity: f32,
 ) {
     for quad in scene.quads() {
-        let clip = clip_from_mask(&quad.content_mask, scale);
-        let eff = opacity * quad.content_mask.opacity;
-        convert_quad(quad, ui_writer, scale, eff, clip);
+        let paint = paint_for(&quad.content_mask, scale, opacity);
+        convert_quad(quad, ui_writer, paint);
     }
     for line in scene.lines() {
-        let clip = clip_from_mask(&line.content_mask, scale);
-        let eff = opacity * line.content_mask.opacity;
-        convert_scene_line(line, ui_writer, scale, eff, clip);
+        let paint = paint_for(&line.content_mask, scale, opacity);
+        convert_scene_line(line, ui_writer, paint);
     }
     if let Some(ctx) = text_ctx {
         for text in scene.text_runs() {
-            let clip = clip_from_mask(&text.content_mask, scale);
-            let eff = opacity * text.content_mask.opacity;
-            convert_scene_text(text, ctx, scale, eff, clip);
+            let paint = paint_for(&text.content_mask, scale, opacity);
+            convert_scene_text(text, ctx, paint);
         }
         for icon in scene.icons() {
-            let clip = clip_from_mask(&icon.content_mask, scale);
-            let eff = opacity * icon.content_mask.opacity;
-            convert_scene_icon(icon, ctx, scale, eff, clip);
+            let paint = paint_for(&icon.content_mask, scale, opacity);
+            convert_scene_icon(icon, ctx, paint);
         }
+    }
+}
+
+/// Build [`PaintParams`] for a primitive: resolve its clip rect and combine
+/// the compositor opacity with the mask opacity.
+fn paint_for(cm: &ContentMask, scale: f32, opacity: f32) -> PaintParams {
+    PaintParams {
+        scale,
+        opacity: opacity * cm.opacity,
+        clip: clip_from_mask(cm, scale),
     }
 }
 
@@ -100,78 +134,57 @@ fn clip_from_mask(cm: &ContentMask, scale: f32) -> [f32; 4] {
 ///
 /// Positions are in logical pixels (already offset-resolved by Scene).
 /// The `clip` array is in physical pixels (pre-scaled by `clip_from_mask`).
-fn convert_quad(quad: &Quad, writer: &mut UiRectWriter, scale: f32, opacity: f32, clip: [f32; 4]) {
-    convert_rect_clipped(quad.bounds, &quad.style, writer, scale, opacity, clip);
+fn convert_quad(quad: &Quad, writer: &mut UiRectWriter, paint: PaintParams) {
+    convert_rect_clipped(quad.bounds, &quad.style, writer, paint);
 }
 
 /// Convert a Scene [`LinePrimitive`] to GPU rect instances with clip.
-fn convert_scene_line(
-    line: &LinePrimitive,
-    writer: &mut UiRectWriter,
-    scale: f32,
-    opacity: f32,
-    clip: [f32; 4],
-) {
-    convert_line_clipped(
-        line.from, line.to, line.width, line.color, writer, scale, opacity, clip,
-    );
+fn convert_scene_line(line: &LinePrimitive, writer: &mut UiRectWriter, paint: PaintParams) {
+    let spec = LineSpec {
+        from: line.from,
+        to: line.to,
+        width: line.width,
+        color: line.color,
+    };
+    convert_line_clipped(spec, writer, paint);
 }
 
 /// Convert a Scene [`TextRun`] to glyph instances with clip.
-fn convert_scene_text(
-    text: &TextRun,
-    ctx: &mut TextContext<'_>,
-    scale: f32,
-    opacity: f32,
-    clip: [f32; 4],
-) {
-    convert_text(
-        text.position,
-        &text.shaped,
-        text.color,
-        text.bg_hint,
-        ctx,
-        scale,
-        opacity,
-        clip,
-    );
+fn convert_scene_text(text: &TextRun, ctx: &mut TextContext<'_>, paint: PaintParams) {
+    let draw = TextDraw {
+        position: text.position,
+        shaped: &text.shaped,
+        color: text.color,
+        bg_hint: text.bg_hint,
+    };
+    convert_text(draw, ctx, paint);
 }
 
 /// Convert a Scene [`IconPrimitive`] to a glyph instance with clip.
-fn convert_scene_icon(
-    icon: &IconPrimitive,
-    ctx: &mut TextContext<'_>,
-    scale: f32,
-    opacity: f32,
-    clip: [f32; 4],
-) {
-    convert_icon(
-        icon.rect,
-        icon.atlas_page,
-        icon.uv,
-        icon.color,
-        ctx,
-        scale,
-        opacity,
-        clip,
-    );
+fn convert_scene_icon(icon: &IconPrimitive, ctx: &mut TextContext<'_>, paint: PaintParams) {
+    let draw = IconDraw {
+        rect: icon.rect,
+        atlas_page: icon.atlas_page,
+        uv: icon.uv,
+        color: icon.color,
+    };
+    convert_icon(draw, ctx, paint);
 }
 
 /// Convert a styled rect to one or two UI rect instances with a per-instance clip.
 ///
 /// Populates the full 144-byte per-side border format.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "rect conversion: bounds, style, output, scale, opacity, clip"
-)]
 fn convert_rect_clipped(
     rect: Rect,
     style: &RectStyle,
     writer: &mut UiRectWriter,
-    scale: f32,
-    opacity: f32,
-    clip: [f32; 4],
+    paint: PaintParams,
 ) {
+    let PaintParams {
+        scale,
+        opacity,
+        clip,
+    } = paint;
     // Resolve fill color: prefer gradient first stop, then solid fill.
     let fill = style
         .gradient
@@ -199,9 +212,7 @@ fn convert_rect_clipped(
         writer.push_ui_rect(
             shadow_rect.scaled(scale),
             color_to_linear_with_opacity(shadow.color, opacity),
-            [0.0; 4],
-            shadow_radii,
-            [[0.0; 4]; 4],
+            UiRectBorder::rounded(shadow_radii),
             clip,
         );
     }
@@ -239,9 +250,11 @@ fn convert_rect_clipped(
     writer.push_ui_rect(
         screen,
         fill_linear,
-        border_widths,
-        corner_radii,
-        border_colors,
+        UiRectBorder {
+            widths: border_widths,
+            corner_radii,
+            colors: border_colors,
+        },
         clip,
     );
 }
@@ -252,20 +265,18 @@ fn convert_rect_clipped(
 /// Diagonal lines are decomposed into pixel-stepping rects along the major
 /// axis — one `width x width` rect per step — to avoid the AABB problem
 /// where a single bounding box fills a solid square for 45-degree lines.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "line conversion: endpoints, thickness, color, output, scale, opacity, clip"
-)]
-fn convert_line_clipped(
-    from: Point,
-    to: Point,
-    width: f32,
-    color: Color,
-    writer: &mut UiRectWriter,
-    scale: f32,
-    opacity: f32,
-    clip: [f32; 4],
-) {
+fn convert_line_clipped(spec: LineSpec, writer: &mut UiRectWriter, paint: PaintParams) {
+    let LineSpec {
+        from,
+        to,
+        width,
+        color,
+    } = spec;
+    let PaintParams {
+        scale,
+        opacity,
+        clip,
+    } = paint;
     let dx = to.x - from.x;
     let dy = to.y - from.y;
     let len = dx.hypot(dy);
@@ -275,11 +286,6 @@ fn convert_line_clipped(
 
     let fill = color_to_linear_with_opacity(color, opacity);
     let hw = width * 0.5;
-
-    // Lines have no border — zero widths and transparent colors.
-    let no_bw = [0.0; 4];
-    let no_cr = [0.0; 4];
-    let no_bc = [[0.0; 4]; 4];
 
     // Axis-aligned fast paths: single rect.
     if dx.abs() < f32::EPSILON {
@@ -296,7 +302,7 @@ fn convert_line_clipped(
             h: max_y - min_y,
         }
         .scaled(scale);
-        writer.push_ui_rect(rect, fill, no_bw, no_cr, no_bc, clip);
+        writer.push_ui_rect(rect, fill, UiRectBorder::NONE, clip);
         return;
     }
     if dy.abs() < f32::EPSILON {
@@ -313,7 +319,7 @@ fn convert_line_clipped(
             h: width,
         }
         .scaled(scale);
-        writer.push_ui_rect(rect, fill, no_bw, no_cr, no_bc, clip);
+        writer.push_ui_rect(rect, fill, UiRectBorder::NONE, clip);
         return;
     }
 
@@ -335,7 +341,7 @@ fn convert_line_clipped(
             h: width,
         }
         .scaled(scale);
-        writer.push_ui_rect(rect, fill, no_bw, no_cr, no_bc, clip);
+        writer.push_ui_rect(rect, fill, UiRectBorder::NONE, clip);
     }
 }
 

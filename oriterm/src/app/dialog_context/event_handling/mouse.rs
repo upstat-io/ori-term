@@ -3,11 +3,12 @@
 use std::time::Instant;
 
 use oriterm_ui::geometry::Rect;
-use oriterm_ui::input::dispatch::tree::deliver_event_to_tree;
+use oriterm_ui::input::dispatch::tree::{TreeDispatchCtx, deliver_event_to_tree};
 use oriterm_ui::input::{InputEvent, MouseButton, MouseEvent, MouseEventKind, ScrollDelta};
 use oriterm_ui::layout::compute_layout;
 use oriterm_ui::overlay::OverlayEventResult;
 use oriterm_ui::widgets::{LayoutCtx, WidgetAction};
+use oriterm_ui::window_root::OverlayEventCtx;
 use winit::window::WindowId;
 
 use crate::app::App;
@@ -137,10 +138,12 @@ impl App {
         };
         let result = ctx.root.process_overlay_mouse_event(
             &mouse_event,
-            &measurer,
-            &ui_theme,
-            None,
-            Instant::now(),
+            OverlayEventCtx {
+                measurer: &measurer,
+                theme: &ui_theme,
+                focused_widget: None,
+                now: Instant::now(),
+            },
         );
         match &result {
             OverlayEventResult::Delivered { .. } | OverlayEventResult::Dismissed(_) => {
@@ -194,18 +197,21 @@ impl App {
         };
         let input_event = InputEvent::from_mouse_event(mouse_event);
         let active = ctx.root.interaction().active_widget();
+        #[cfg(debug_assertions)]
+        let dispatch_layout_ids = Some(&layout_ids);
+        #[cfg(not(debug_assertions))]
+        let dispatch_layout_ids = None;
         let result = deliver_event_to_tree(
             ctx.content.content_widget_mut(),
             &input_event,
-            content_bounds,
-            Some(&layout_node),
-            active,
-            &[],
-            now,
-            #[cfg(debug_assertions)]
-            Some(&layout_ids),
-            #[cfg(not(debug_assertions))]
-            None,
+            TreeDispatchCtx {
+                bounds: content_bounds,
+                layout_node: Some(&layout_node),
+                active_widget: active,
+                focus_path: &[],
+                now,
+                layout_ids: dispatch_layout_ids,
+            },
         );
 
         // Apply interaction state changes and mark dirty.
@@ -297,18 +303,21 @@ impl App {
         let input_event = InputEvent::from_mouse_event(&mouse_event);
         let now = Instant::now();
         let active = ctx.root.interaction().active_widget();
+        #[cfg(debug_assertions)]
+        let dispatch_layout_ids = Some(&layout_ids);
+        #[cfg(not(debug_assertions))]
+        let dispatch_layout_ids = None;
         let result = deliver_event_to_tree(
             ctx.content.content_widget_mut(),
             &input_event,
-            content_bounds,
-            Some(&layout_node),
-            active,
-            &[],
-            now,
-            #[cfg(debug_assertions)]
-            Some(&layout_ids),
-            #[cfg(not(debug_assertions))]
-            None,
+            TreeDispatchCtx {
+                bounds: content_bounds,
+                layout_node: Some(&layout_node),
+                active_widget: active,
+                focus_path: &[],
+                now,
+                layout_ids: dispatch_layout_ids,
+            },
         );
         let changed = {
             let (interaction, focus) = ctx.root.interaction_and_focus_mut();

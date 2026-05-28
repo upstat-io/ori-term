@@ -24,7 +24,7 @@
 //! are skipped because they match pre-existing half-block / sextant
 //! glyphs in `U+2580..=U+259F` and `U+1FB00..=U+1FB3B`.
 
-use super::Canvas;
+use super::{Canvas, RectF};
 
 /// First octant codepoint (inclusive).
 pub(super) const OCTANT_START: char = '\u{1CD00}';
@@ -86,27 +86,27 @@ pub(super) fn draw(canvas: &mut Canvas, ch: char) {
     let q3 = (h * 3.0 / 4.0).round();
 
     if bits & 0x01 != 0 {
-        canvas.fill_rect(0.0, 0.0, hw, q1, 255);
+        canvas.fill_rect(RectF::new(0.0, 0.0, hw, q1), 255);
     }
     if bits & 0x02 != 0 {
-        canvas.fill_rect(hw, 0.0, w - hw, q1, 255);
+        canvas.fill_rect(RectF::new(hw, 0.0, w - hw, q1), 255);
     }
     if bits & 0x04 != 0 {
-        canvas.fill_rect(0.0, q1, hw, q2 - q1, 255);
+        canvas.fill_rect(RectF::new(0.0, q1, hw, q2 - q1), 255);
     }
     if bits & 0x08 != 0 {
-        canvas.fill_rect(hw, q1, w - hw, q2 - q1, 255);
+        canvas.fill_rect(RectF::new(hw, q1, w - hw, q2 - q1), 255);
     }
     if bits & 0x10 != 0 {
-        canvas.fill_rect(0.0, q2, hw, q3 - q2, 255);
+        canvas.fill_rect(RectF::new(0.0, q2, hw, q3 - q2), 255);
     }
     if bits & 0x20 != 0 {
-        canvas.fill_rect(hw, q2, w - hw, q3 - q2, 255);
+        canvas.fill_rect(RectF::new(hw, q2, w - hw, q3 - q2), 255);
     }
     if bits & 0x40 != 0 {
-        canvas.fill_rect(0.0, q3, hw, h - q3, 255);
+        canvas.fill_rect(RectF::new(0.0, q3, hw, h - q3), 255);
     }
     if bits & 0x80 != 0 {
-        canvas.fill_rect(hw, q3, w - hw, h - q3, 255);
+        canvas.fill_rect(RectF::new(hw, q3, w - hw, h - q3), 255);
     }
 }
