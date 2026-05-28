@@ -720,7 +720,7 @@ mod term_apex {
 /// payload by cell_pixel dimensions, so any other byte shape would
 /// silently corrupt the client-side cell mapping.
 ///
-/// See: bug-tracker/plans/completed/BUG-08-057/
+/// See: bug-tracker/plans/BUG-08-057/
 #[cfg(test)]
 mod sgr_pixel_drop {
     use crate::TermMode;

@@ -2532,7 +2532,7 @@ mod cross_site_convergence {
 /// ONLY for the "no usable surface" cases (zero-size bounds, non-positive
 /// scale).
 ///
-/// See: bug-tracker/plans/completed/BUG-08-057/
+/// See: bug-tracker/plans/BUG-08-057/
 #[cfg(test)]
 mod clamp_mouse_pixel_coords_matrix {
     use winit::dpi::PhysicalPosition;
@@ -2645,16 +2645,71 @@ mod clamp_mouse_pixel_coords_matrix {
         assert_eq!(result, (Some(0), Some(0)));
     }
 
-    /// Self-verifying matrix completeness: 11 cells.
+    // -- subpixel + non-finite input guards --
+
+    /// Sub-pixel positive bounds (width 0.5) → `(None, None)`. Without
+    /// the `< 1.0` guard, `f64::clamp(0.0, -0.5)` would panic per Rust
+    /// std docs ("Panics if min > max").
     #[test]
-    fn t38_app_matrix_count_assertion() {
-        // count of unique test functions in this module (t27–t37 = 11)
-        const EXPECTED_CELL_COUNT: usize = 11;
-        const ACTUAL_CELL_COUNT: usize = 11;
+    fn t39_clamp_subpixel_width_returns_none() {
+        let result = clamp_mouse_pixel_coords(pos(0.25, 0.0), (0.0, 0.0), (0.5, 200.0), 1.0);
+        assert_eq!(result, (None, None));
+    }
+
+    /// Sub-pixel positive bounds (height 0.5) → `(None, None)`.
+    #[test]
+    fn t40_clamp_subpixel_height_returns_none() {
+        let result = clamp_mouse_pixel_coords(pos(0.0, 0.25), (0.0, 0.0), (200.0, 0.5), 1.0);
+        assert_eq!(result, (None, None));
+    }
+
+    /// NaN cursor position → `(None, None)`. Without the finite guard,
+    /// `(NaN).clamp(0.0, 199.0)` would return NaN and `(NaN as u32)` is
+    /// platform-defined, silently fabricating origin coords.
+    #[test]
+    fn t41_clamp_nan_position_returns_none() {
+        let result =
+            clamp_mouse_pixel_coords(pos(f64::NAN, 100.0), (0.0, 0.0), (200.0, 200.0), 1.0);
+        assert_eq!(result, (None, None));
+    }
+
+    /// Infinity cursor position → `(None, None)`. Companion to t41 —
+    /// non-finite inputs of any flavor reject up front.
+    #[test]
+    fn t42_clamp_infinite_position_returns_none() {
+        let result =
+            clamp_mouse_pixel_coords(pos(f64::INFINITY, 100.0), (0.0, 0.0), (200.0, 200.0), 1.0);
+        assert_eq!(result, (None, None));
+    }
+
+    /// Self-verifying matrix completeness via an enumerated function-pointer
+    /// table. The assertion now depends on the actual test-function list:
+    /// adding a test without registering it here trips the assertion. Replaces
+    /// the prior hardcoded `11 == 11` tautology per Code TPR R0 finding.
+    #[test]
+    fn t43_app_matrix_completeness() {
+        const CELLS: &[fn()] = &[
+            t27_clamp_in_grid_returns_some_some,
+            t28_clamp_at_right_edge_clamps_to_width_minus_one,
+            t29_clamp_at_bottom_edge_clamps_to_height_minus_one,
+            t30_clamp_outside_top_left_clamps_to_origin,
+            t31_clamp_with_scale_2_divides_logical_pixels,
+            t32_clamp_returns_none_for_zero_width_bounds,
+            t33_clamp_returns_none_for_zero_height_bounds,
+            t34_clamp_returns_none_for_non_positive_scale,
+            t35_clamp_pure_helper_does_not_require_app_construction,
+            t36_clamp_respects_non_zero_bounds_origin,
+            t37_clamp_at_bounds_origin_returns_origin,
+            t39_clamp_subpixel_width_returns_none,
+            t40_clamp_subpixel_height_returns_none,
+            t41_clamp_nan_position_returns_none,
+            t42_clamp_infinite_position_returns_none,
+        ];
         assert_eq!(
-            ACTUAL_CELL_COUNT, EXPECTED_CELL_COUNT,
-            "this module enumerates t27–t37 = 11 cells; \
-             if a cell is added, this assertion AND the constant must update"
+            CELLS.len(),
+            15,
+            "expected 15 clamp_mouse_pixel_coords test cells (t27–t37 + t39–t42); \
+             a missing entry here means a test was added without registering it"
         );
     }
 }

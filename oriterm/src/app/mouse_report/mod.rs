@@ -387,7 +387,7 @@ impl App {
     /// signal — this clamping is what prevents the violation for
     /// legitimate clicks.
     ///
-    /// See: bug-tracker/plans/completed/BUG-08-057/
+    /// See: bug-tracker/plans/BUG-08-057/
     fn mouse_pixel_coords(&self) -> (Option<u32>, Option<u32>) {
         let Some(wctx) = self.focused_ctx() else {
             return (None, None);
@@ -412,22 +412,43 @@ impl App {
 /// cell coords.
 ///
 /// Returns `(Some, Some)` for every position when the surface inputs are
-/// valid (`scale > 0`, both `bounds_size` dimensions positive). Cursor
-/// positions outside `[origin, origin + size)` clamp to the nearest valid
-/// logical pixel. Returns `(None, None)` ONLY for the legitimate "no usable
-/// surface" cases — zero-width or zero-height bounds, or non-positive
-/// scale. Extracted from `App::mouse_pixel_coords` so it is testable
-/// without constructing `App` / `TermWindow` / `wgpu::Surface`, mirroring
-/// the existing `RecordingSink` / `WheelDispatch` headless-seam pattern.
+/// valid (`scale > 0`, both `bounds_size` dimensions ≥ 1.0, all inputs
+/// finite). Cursor positions outside `[origin, origin + size)` clamp to
+/// the nearest valid logical pixel. Returns `(None, None)` for the "no
+/// usable surface" cases — sub-pixel or zero bounds, non-positive scale,
+/// or any non-finite input (NaN / infinity). Extracted from
+/// `App::mouse_pixel_coords` so it is testable without constructing
+/// `App` / `TermWindow` / `wgpu::Surface`, mirroring the existing
+/// `RecordingSink` / `WheelDispatch` headless-seam pattern.
 ///
-/// See: bug-tracker/plans/completed/BUG-08-057/
+/// The `bounds_size < 1.0` reject is load-bearing: `f64::clamp(min, max)`
+/// panics when `min > max`, so a bounds width of `0.5` would compute
+/// `max = bounds_size.0 - 1.0 = -0.5` and trip the panic. Sub-pixel
+/// bounds are never a usable surface; reject them before the clamp.
+///
+/// See: bug-tracker/plans/BUG-08-057/
 pub(crate) fn clamp_mouse_pixel_coords(
     pos: PhysicalPosition<f64>,
     bounds_origin: (f64, f64),
     bounds_size: (f64, f64),
     scale: f64,
 ) -> (Option<u32>, Option<u32>) {
-    if scale <= 0.0 || bounds_size.0 <= 0.0 || bounds_size.1 <= 0.0 {
+    // Reject non-finite inputs before any arithmetic — propagating NaN
+    // through clamp + `as u32` would fabricate origin coords silently.
+    if !pos.x.is_finite()
+        || !pos.y.is_finite()
+        || !bounds_origin.0.is_finite()
+        || !bounds_origin.1.is_finite()
+        || !bounds_size.0.is_finite()
+        || !bounds_size.1.is_finite()
+        || !scale.is_finite()
+    {
+        return (None, None);
+    }
+    // Reject sub-pixel / non-positive bounds. The < 1.0 reject avoids the
+    // `f64::clamp(0.0, bounds_size.0 - 1.0)` panic when `bounds_size.0`
+    // is between 0.0 (exclusive) and 1.0 (exclusive).
+    if scale <= 0.0 || bounds_size.0 < 1.0 || bounds_size.1 < 1.0 {
         return (None, None);
     }
     let rel_x = (pos.x - bounds_origin.0).clamp(0.0, bounds_size.0 - 1.0);
