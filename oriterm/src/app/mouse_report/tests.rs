@@ -1892,11 +1892,30 @@ struct RecordingSink {
     mark_dirty_calls: usize,
     cell_for_report_value: Option<(usize, usize)>,
     cell_for_report_calls: usize,
+    /// Set by fixtures before dispatch_wheel calls so the post-§16.2.0.B
+    /// `write_pane_mouse_input` trait method can encode locally. In
+    /// production this state lives on `Term` (read by `Term::handle_mouse_input`);
+    /// for tests the sink stores it.
+    recorded_mode: TermMode,
 }
 
 impl WheelSink for RecordingSink {
     fn write_pane_input(&mut self, pane_id: PaneId, bytes: &[u8]) {
         self.writes.push((pane_id, bytes.to_vec()));
+    }
+    fn write_pane_mouse_input(&mut self, pane_id: PaneId, event: &MouseEvent) {
+        // Test seam: encode locally so existing `writes` assertions
+        // keep working post-§16.2.0.B migration. Production path (App
+        // impl) routes through mux.send_mouse_input → PaneIoCommand
+        // pipe → Term::handle_mouse_input encoder.
+        let report = encode_mouse_event(event, self.recorded_mode);
+        let bytes = report.as_bytes();
+        if !bytes.is_empty() {
+            self.writes.push((pane_id, bytes.to_vec()));
+        }
+    }
+    fn set_recorded_mode(&mut self, mode: TermMode) {
+        self.recorded_mode = mode;
     }
     fn scroll_pane(&mut self, pane_id: PaneId, lines: isize) {
         self.scrolls.push((pane_id, lines));

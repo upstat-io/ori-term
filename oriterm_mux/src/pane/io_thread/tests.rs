@@ -3830,7 +3830,8 @@ fn is_reply_bearing_predicate_matches_reply_field_presence() {
             | PaneIoCommand::SearchPrevMatch
             | PaneIoCommand::Reset
             | PaneIoCommand::Shutdown
-            | PaneIoCommand::SetAnswerback(_) => false,
+            | PaneIoCommand::SetAnswerback(_)
+            | PaneIoCommand::HandleMouseInput(_) => false,
         }
     }
 

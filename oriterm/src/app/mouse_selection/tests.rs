@@ -824,7 +824,7 @@ fn handle_release_clears_last_reported_cell() {
 fn sgr_origin_release_exact_output() {
     use oriterm_core::TermMode;
 
-    use super::super::mouse_report::{
+    use oriterm_core::encode::mouse::{
         MouseButton, MouseEvent, MouseEventKind, MouseModifiers, encode_mouse_event,
     };
 
@@ -847,7 +847,7 @@ fn sgr_origin_release_exact_output() {
 fn normal_origin_release_exact_output() {
     use oriterm_core::TermMode;
 
-    use super::super::mouse_report::{
+    use oriterm_core::encode::mouse::{
         MouseButton, MouseEvent, MouseEventKind, MouseModifiers, encode_mouse_event,
     };
 

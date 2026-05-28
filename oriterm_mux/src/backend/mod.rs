@@ -17,6 +17,7 @@ use std::io;
 use std::sync::mpsc;
 
 use oriterm_core::Theme;
+use oriterm_core::encode::mouse::MouseEvent;
 use oriterm_core::selection::Selection;
 
 use crate::PaneSnapshot;
@@ -198,6 +199,27 @@ pub trait MuxBackend {
     /// In embedded mode, delegates to [`Pane::write_input`].
     /// In daemon mode, sends a fire-and-forget `Input` PDU to the daemon.
     fn send_input(&mut self, pane_id: PaneId, data: &[u8]);
+
+    /// Dispatch a semantic mouse input. Routes through the
+    /// Decision-10-Option-A apex when the backend supports it (embedded
+    /// mode pipes the `MouseEvent` into the pane's IO thread, where
+    /// `Term::handle_mouse_input` encodes + emits via Effect → mux
+    /// → `MuxEvent::PtyWrite { kind: PtyWriteKind::MouseEvent, .. }`).
+    /// Default impl encodes locally + falls back to [`send_input`](Self::send_input)
+    /// — kind discriminator lost on that fallback path (daemon mode +
+    /// any non-overriding backend). Future daemon-PDU work removes the
+    /// fallback for daemon-mode mouse-event preservation across IPC.
+    fn send_mouse_input(&mut self, pane_id: PaneId, event: &MouseEvent) {
+        let Some(mode) = self.pane_mode(pane_id) else {
+            return;
+        };
+        let mode = oriterm_core::TermMode::from_bits_truncate(mode);
+        let report = oriterm_core::encode::mouse::encode_mouse_event(event, mode);
+        let bytes = report.as_bytes();
+        if !bytes.is_empty() {
+            self.send_input(pane_id, bytes);
+        }
+    }
 
     /// Whether the PTY writer thread for a pane is blocked on a write.
     /// When `true`, the kernel PTY buffer is full and keyboard input

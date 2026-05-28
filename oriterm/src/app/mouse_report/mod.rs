@@ -12,7 +12,7 @@ use winit::event::MouseScrollDelta;
 
 use oriterm_core::TermMode;
 pub(crate) use oriterm_core::encode::mouse::{
-    MouseButton, MouseEvent, MouseEventKind, MouseModifiers, encode_mouse_event,
+    MouseButton, MouseEvent, MouseEventKind, MouseModifiers,
 };
 
 use crate::key_encoding::cursor_keys::{CursorKey, cursor_key_bytes};
@@ -163,13 +163,18 @@ impl App {
 
     /// Encode and send a mouse button event to the PTY.
     ///
-    /// Encodes the event using the provided terminal mode, then writes to
-    /// the PTY. No-op if the cursor is outside the grid.
+    /// Builds the semantic [`MouseEvent`] from winit state + cell
+    /// coordinates and dispatches via [`App::write_pane_mouse_input`]
+    /// which routes through the Decision 10 Option A apex (mode 1016
+    /// pixel coords + `Effect::Pty` + `PtyWriteKind::MouseEvent`).
+    /// `mode` parameter retained for caller-side gating (e.g.
+    /// `should_report_mouse` check); the encoder reads `Term::mode`
+    /// directly on the IO thread.
     pub(super) fn report_mouse_button(
         &mut self,
         button: MouseButton,
         kind: MouseEventKind,
-        mode: TermMode,
+        _mode: TermMode,
     ) {
         let Some((col, line)) = self.mouse_cell() else {
             return;
@@ -185,11 +190,7 @@ impl App {
             line,
             mods: self.mouse_modifiers(),
         };
-        let report = encode_mouse_event(&event, mode);
-        let bytes = report.as_bytes();
-        if !bytes.is_empty() {
-            self.write_pane_input(pane_id, bytes);
-        }
+        self.write_pane_mouse_input(pane_id, &event);
     }
 
     /// Report mouse motion to the PTY when tracking mode is active.
@@ -247,13 +248,9 @@ impl App {
             line,
             mods: self.mouse_modifiers(),
         };
-        let report = encode_mouse_event(&event, mode);
-        let bytes = report.as_bytes();
-        if !bytes.is_empty() {
-            if let Some(pane_id) = self.active_pane_id() {
-                self.write_pane_input(pane_id, bytes);
-                self.mouse.set_last_reported_cell(Some((col, line)));
-            }
+        if let Some(pane_id) = self.active_pane_id() {
+            self.write_pane_mouse_input(pane_id, &event);
+            self.mouse.set_last_reported_cell(Some((col, line)));
         }
         true
     }

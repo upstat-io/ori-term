@@ -16,7 +16,7 @@ use oriterm_mux::PaneId;
 use super::App;
 use super::{
     MouseButton, MouseEvent, MouseEventKind, MouseModifiers, ScrollDirection, WheelTier,
-    classify_wheel_event, encode_mouse_event, parse_wheel_delta, tier2_alt_scroll_payload,
+    classify_wheel_event, parse_wheel_delta, tier2_alt_scroll_payload,
 };
 
 /// Side-effect surface consumed by [`dispatch_wheel`].
@@ -29,6 +29,17 @@ use super::{
 pub(super) trait WheelSink {
     /// Write `bytes` to the PTY of `pane_id`.
     fn write_pane_input(&mut self, pane_id: PaneId, bytes: &[u8]);
+    /// Dispatch a semantic mouse input to `pane_id` (Decision 10 apex —
+    /// see [`App::write_pane_mouse_input`] for routing). Used by the
+    /// Tier-1 wheel arm so wheel emissions land at the same
+    /// `MuxEvent::PtyWrite { kind: PtyWriteKind::MouseEvent, .. }` apex
+    /// as button/motion events.
+    fn write_pane_mouse_input(&mut self, pane_id: PaneId, event: &MouseEvent);
+    /// Optional: pre-set the encoding mode for sinks that encode
+    /// locally (test fixtures). Production `App` impl reads the mode
+    /// from `Term` on the IO thread and ignores this hook; default
+    /// impl is a no-op.
+    fn set_recorded_mode(&mut self, _mode: TermMode) {}
     /// Scroll the viewport of `pane_id` by `lines` (positive = up).
     fn scroll_pane(&mut self, pane_id: PaneId, lines: isize);
     /// Mark the focused window as needing a redraw.
@@ -85,6 +96,7 @@ pub(super) fn dispatch_wheel<S: WheelSink>(input: WheelDispatch, sink: &mut S) {
         ScrollDirection::Down
     };
 
+    sink.set_recorded_mode(input.mode);
     match classify_wheel_event(input.mode, input.shift_held) {
         WheelTier::MouseReport => {
             let button = match direction {
@@ -101,12 +113,8 @@ pub(super) fn dispatch_wheel<S: WheelSink>(input: WheelDispatch, sink: &mut S) {
                 line,
                 mods: input.mods,
             };
-            let report = encode_mouse_event(&event, input.mode);
-            let bytes = report.as_bytes();
-            if !bytes.is_empty() {
-                for _ in 0..lines {
-                    sink.write_pane_input(pane_id, bytes);
-                }
+            for _ in 0..lines {
+                sink.write_pane_mouse_input(pane_id, &event);
             }
         }
         WheelTier::AltScroll => {
@@ -144,6 +152,11 @@ impl WheelSink for App {
         // updating this call site would silently route through the
         // trait and recurse.
         Self::write_pane_input(self, pane_id, bytes);
+    }
+    fn write_pane_mouse_input(&mut self, pane_id: PaneId, event: &MouseEvent) {
+        // Same UFCS contract as write_pane_input: resolve to the
+        // inherent `App::write_pane_mouse_input` (pane_accessors.rs).
+        Self::write_pane_mouse_input(self, pane_id, event);
     }
     fn scroll_pane(&mut self, pane_id: PaneId, lines: isize) {
         if let Some(mux) = self.mux.as_mut() {

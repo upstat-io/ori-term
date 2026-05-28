@@ -48,7 +48,7 @@ pub enum MouseEventKind {
 /// Intermediate type during the §16.2.0 migration; §16.3 cure replaces
 /// with the canonical `Modifiers` SSOT (currently at
 /// `oriterm/src/key_encoding/mod.rs`).
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct MouseModifiers {
     /// Shift key held.
     pub shift: bool,
@@ -215,6 +215,7 @@ pub fn encode_normal(buf: &mut [u8], code: u8, col: usize, line: usize) -> usize
 }
 
 /// Input parameters for [`encode_mouse_event`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MouseEvent {
     /// Which button (or scroll direction).
     pub button: MouseButton,

@@ -168,6 +168,24 @@ impl App {
         }
     }
 
+    /// Dispatch a semantic mouse input to a pane.
+    ///
+    /// Routes through [`MuxBackend::send_mouse_input`] per Decision 10
+    /// Option A apex. The embedded backend pipes the event into the
+    /// pane's IO thread so `Term::handle_mouse_input` encodes + emits
+    /// via `Effect::Pty(PtyEffect::Write { kind: PtyWriteKind::MouseEvent,
+    /// .. })`; the daemon backend's default impl currently encodes
+    /// locally + falls back to `send_input` (kindless on the IPC wire).
+    pub(super) fn write_pane_mouse_input(
+        &mut self,
+        pane_id: PaneId,
+        event: &oriterm_core::encode::mouse::MouseEvent,
+    ) {
+        if let Some(mux) = self.mux.as_mut() {
+            mux.send_mouse_input(pane_id, event);
+        }
+    }
+
     /// If `winit_id` was the focused window, transfer focus to the next available.
     ///
     /// Updates both `focused_window_id` (winit) and `active_window` (mux).

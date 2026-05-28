@@ -296,6 +296,16 @@ impl MuxBackend for EmbeddedMux {
         }
     }
 
+    fn send_mouse_input(
+        &mut self,
+        pane_id: PaneId,
+        event: &oriterm_core::encode::mouse::MouseEvent,
+    ) {
+        if let Some(pane) = self.panes.get(&pane_id) {
+            pane.send_io_command(PaneIoCommand::HandleMouseInput(*event));
+        }
+    }
+
     fn is_write_stalled(&mut self, pane_id: PaneId) -> bool {
         self.panes.get(&pane_id).is_some_and(Pane::is_write_stalled)
     }
