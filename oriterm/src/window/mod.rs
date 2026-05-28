@@ -245,17 +245,21 @@ impl TermWindow {
     /// Apply a pending surface reconfigure (DXGI `ResizeBuffers`).
     ///
     /// Must be called before acquiring a surface texture for rendering.
-    /// Returns `true` if the surface was reconfigured. Returns `false` AND
-    /// leaves `surface_stale = true` when configure panics (caught) — the
-    /// caller MUST skip surface acquisition this frame; the next frame's
-    /// `apply_pending_surface_resize` call retries, and if it keeps failing
-    /// the renderer's `SurfaceError::Outdated` path drives surface
-    /// recreation.
+    /// Returns one of:
+    /// - [`ResizeStatus::Reconfigured`] — surface was stale and reconfigure
+    ///   succeeded; the caller can safely acquire a surface texture.
+    /// - [`ResizeStatus::NotStale`] — surface did not need reconfigure; the
+    ///   caller can safely acquire a surface texture.
+    /// - [`ResizeStatus::ConfigurePanicked`] — the underlying configure
+    ///   panicked (caught) and `surface_stale = true` was left set so the
+    ///   next frame retries. The caller MUST skip surface acquisition this
+    ///   frame; rendering against the partially-reconfigured surface would
+    ///   produce undefined behaviour.
     ///
     /// See: bug-tracker/plans/completed/BUG-06-108/
-    pub(crate) fn apply_pending_surface_resize(&mut self, gpu: &GpuState) -> bool {
+    pub(crate) fn apply_pending_surface_resize(&mut self, gpu: &GpuState) -> ResizeStatus {
         if !self.surface_stale {
-            return false;
+            return ResizeStatus::NotStale;
         }
         if gpu
             .configure_surface(&self.surface, &self.surface_config)
@@ -265,10 +269,10 @@ impl TermWindow {
                 "surface reconfigure panicked during resize — leaving surface_stale=true; \
                  renderer will retry next frame or fall back via SurfaceError::Outdated"
             );
-            return false;
+            return ResizeStatus::ConfigurePanicked;
         }
         self.surface_stale = false;
-        true
+        ResizeStatus::Reconfigured
     }
 
     /// Update the DPI scale factor (e.g. when the window moves between monitors).
@@ -319,6 +323,31 @@ impl TermWindow {
     /// a white flash on window creation.
     pub(crate) fn set_visible(&self, visible: bool) {
         self.window.set_visible(visible);
+    }
+}
+
+/// Outcome of [`TermWindow::apply_pending_surface_resize`].
+///
+/// See: bug-tracker/plans/completed/BUG-06-108/
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ResizeStatus {
+    /// Surface was stale and reconfigure succeeded.
+    Reconfigured,
+    /// Surface did not need reconfigure.
+    NotStale,
+    /// Underlying configure panicked (caught); surface remains marked stale
+    /// so the next frame retries. Callers MUST skip surface acquisition
+    /// this frame.
+    ConfigurePanicked,
+}
+
+impl ResizeStatus {
+    /// Whether the surface is safe to acquire for rendering this frame.
+    ///
+    /// Returns `true` for [`Self::Reconfigured`] and [`Self::NotStale`];
+    /// `false` for [`Self::ConfigurePanicked`].
+    pub(crate) fn surface_ready(self) -> bool {
+        !matches!(self, Self::ConfigurePanicked)
     }
 }
 

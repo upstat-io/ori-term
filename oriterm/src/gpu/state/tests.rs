@@ -851,35 +851,62 @@ fn wgpu_hal_dxgi_swap_chain_creation_when_scanned_uses_per_target_scaling() {
         src.contains("let scaling = match self.target {"),
         "vendored wgpu-hal dx12/mod.rs must use per-target scaling dispatch"
     );
-    // Each SurfaceTarget arm must map to the correct scaling value.
-    assert!(
-        src.contains("SurfaceTarget::WndHandle(_) => Dxgi::DXGI_SCALING_NONE"),
-        "WndHandle arm must map to DXGI_SCALING_NONE (preserves c80fa26e resize-jitter fix)"
-    );
-    // The composition-class arms share a single branch returning STRETCH;
-    // assert the arm pattern includes each variant name AND maps to STRETCH.
-    let stretch_arm = src
-        .lines()
-        .skip_while(|l| !l.contains("let scaling = match self.target {"))
-        .take_while(|l| !l.trim_start().starts_with("};"))
-        .collect::<Vec<_>>()
-        .join("\n");
-    for variant in [
-        "SurfaceTarget::Visual(_)",
-        "SurfaceTarget::VisualFromWndHandle",
-        "SurfaceTarget::SurfaceHandle(_)",
-        "SurfaceTarget::SwapChainPanel(_)",
-    ] {
+
+    // Extract the scaling-match body (everything from `match self.target {`
+    // through the matching `};`).
+    let match_start = src
+        .find("let scaling = match self.target {")
+        .expect("scaling match present");
+    let after_match_kw = &src[match_start..];
+    let body_end_offset = after_match_kw
+        .find("};")
+        .expect("scaling match must terminate with `};`");
+    let match_body = &after_match_kw[..body_end_offset];
+
+    // Each SurfaceTarget pattern must be paired with the correct scaling
+    // constant within the match body. A regression that swapped a variant
+    // to the wrong scaling value would fail per-variant.
+    let target_scaling_pairs: &[(&str, &str)] = &[
+        // WndHandle -> NONE preserves the c80fa26e resize-jitter fix.
+        ("SurfaceTarget::WndHandle(_)", "DXGI_SCALING_NONE"),
+        // All composition-class targets must use STRETCH per Microsoft
+        // CreateSwapChainForComposition docs.
+        ("SurfaceTarget::Visual(_)", "DXGI_SCALING_STRETCH"),
+        ("SurfaceTarget::VisualFromWndHandle", "DXGI_SCALING_STRETCH"),
+        ("SurfaceTarget::SurfaceHandle(_)", "DXGI_SCALING_STRETCH"),
+        ("SurfaceTarget::SwapChainPanel(_)", "DXGI_SCALING_STRETCH"),
+    ];
+
+    for (variant, expected_scaling) in target_scaling_pairs {
+        // Find the variant pattern within the match body.
+        let variant_pos = match_body.find(variant).unwrap_or_else(|| {
+            panic!(
+                "composition arm must include `{variant}` in scaling match — \
+                 Microsoft CreateSwapChainForComposition requires \
+                 DXGI_SCALING_STRETCH for composition-class targets"
+            );
+        });
+
+        // Walk forward from the variant pattern to the next `=>` (which
+        // ends the LHS — could be after an or-pattern chain `| Other |
+        // Another =>`) and then to the next `,` or arm terminator. The
+        // expected scaling constant must appear between `=>` and that
+        // terminator. This pairs each variant with its RHS value even
+        // when multiple variants share a single or-pattern arm.
+        let after_variant = &match_body[variant_pos..];
+        let arrow_pos = after_variant
+            .find("=>")
+            .expect("each match arm must have a `=>` after its pattern");
+        let after_arrow = &after_variant[arrow_pos + 2..];
+        let rhs_end = after_arrow.find(',').unwrap_or(after_arrow.len().min(200));
+        let arm_rhs = &after_arrow[..rhs_end];
+
         assert!(
-            stretch_arm.contains(variant),
-            "composition arm must include {variant} — Microsoft \
-             CreateSwapChainForComposition requires DXGI_SCALING_STRETCH"
+            arm_rhs.contains(expected_scaling),
+            "match arm reached from `{variant}` must map to `{expected_scaling}` — \
+             found RHS: {arm_rhs:?}"
         );
     }
-    assert!(
-        stretch_arm.contains("Dxgi::DXGI_SCALING_STRETCH"),
-        "composition arm must map to DXGI_SCALING_STRETCH"
-    );
 }
 
 /// Regression: BUG-06-108 — the vendored wgpu-hal DXGI patch must cite the

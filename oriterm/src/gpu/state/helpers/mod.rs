@@ -304,16 +304,14 @@ pub(crate) fn catch_panic<F: FnOnce() + std::panic::UnwindSafe>(
 /// the panic and returns `Err(ConfigurePanicked)` so the GPU init fallback
 /// chain advances to the next backend instead of aborting the process.
 ///
-/// Silences the global panic hook (installed at
-/// `term_repo/oriterm/src/entry.rs:232-244`) for the duration of the
-/// configure call. Without the silencing, the global hook fires `log::error!`
-/// for every caught panic during fallback, producing scary log lines for
-/// what is now normal behaviour.
-///
-/// Concurrency caveat: `std::panic::take_hook` / `set_hook` mutate global
-/// state. All three call sites (`try_init`, `create_surface`,
-/// `configure_surface`) run on the main thread per the project's
-/// winit/wgpu single-threaded GPU contract — concurrent calls do not occur.
+/// Does NOT touch the global panic hook — earlier iterations of this
+/// helper swapped to a no-op hook for the duration of the `catch_unwind`
+/// block to suppress the scary `[ERROR] PANIC: ...` line emitted by the
+/// project's panic hook during normal fallback. That approach was
+/// abandoned because the font-discovery thread runs concurrently with
+/// GPU init, and a global hook swap would silently swallow any unrelated
+/// panic that fired in that window. The panic-hook noise is a UX concern
+/// tracked separately in the bug-tracker.
 ///
 /// See: bug-tracker/plans/completed/BUG-06-108/
 pub(crate) fn try_configure_surface(
@@ -322,10 +320,7 @@ pub(crate) fn try_configure_surface(
     config: &wgpu::SurfaceConfiguration,
 ) -> Result<(), ConfigurePanicked> {
     use std::panic::AssertUnwindSafe;
-    let prior_hook = std::panic::take_hook();
-    std::panic::set_hook(Box::new(|_info| { /* swallow during catch_unwind */ }));
     let result = catch_panic(AssertUnwindSafe(|| surface.configure(device, config)));
-    std::panic::set_hook(prior_hook);
     if result.is_err() {
         log::warn!("wgpu::Surface::configure panicked — caught for fallback handling");
     }

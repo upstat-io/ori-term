@@ -396,9 +396,12 @@ impl App {
             // when render_chrome returned via NLL).
             let renderer = ctx.renderer.as_mut().expect("renderer checked");
 
-            // Apply deferred DXGI ResizeBuffers before surface acquisition
-            // (minimizes the DWM stale-content window during resize).
-            ctx.window.apply_pending_surface_resize(gpu);
+            // Apply deferred DXGI ResizeBuffers before surface acquisition.
+            // On caught configure panic, skip the frame; the renderer's
+            // SurfaceError::Outdated recovery drives the next attempt.
+            if !ctx.window.apply_pending_surface_resize(gpu).surface_ready() {
+                return phases;
+            }
 
             let gpu_start = Instant::now();
             let result =
