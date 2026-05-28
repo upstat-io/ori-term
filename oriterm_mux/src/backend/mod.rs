@@ -226,9 +226,22 @@ pub trait MuxBackend {
         }
         let report = oriterm_core::encode::mouse::encode_mouse_event(event, mode);
         let bytes = report.as_bytes();
-        if !bytes.is_empty() {
-            self.send_input(pane_id, bytes);
+        if bytes.is_empty() {
+            // Diagnostic breadcrumb: under MOUSE_SGR_PIXEL the encoder
+            // returns an empty buffer when pixel coords are missing.
+            // In embedded mode, App-side clamping makes this unreachable
+            // for in-grid clicks. In daemon mode, a caller without a
+            // pixel-coord helper would silently drop events; surface
+            // the drop in the log so the diagnosis is one grep away.
+            if mode.contains(oriterm_core::TermMode::MOUSE_SGR_PIXEL) {
+                log::debug!(
+                    "send_mouse_input dropped 1016 event for pane {pane_id}: \
+                     pixel coords missing"
+                );
+            }
+            return;
         }
+        self.send_input(pane_id, bytes);
     }
 
     /// Dispatch a semantic focus change. Routes through the

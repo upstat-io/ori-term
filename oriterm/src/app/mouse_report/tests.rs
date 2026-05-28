@@ -2682,10 +2682,13 @@ mod clamp_mouse_pixel_coords_matrix {
         assert_eq!(result, (None, None));
     }
 
-    /// Self-verifying matrix completeness via an enumerated function-pointer
-    /// table. The assertion now depends on the actual test-function list:
-    /// adding a test without registering it here trips the assertion. Replaces
-    /// the prior hardcoded `11 == 11` tautology per Code TPR R0 finding.
+    /// Test-cell inventory for the `clamp_mouse_pixel_coords` matrix.
+    /// Removing or renaming a referenced test fires a compile error
+    /// (dangling fn pointer). The `CELLS.len()` assertion documents the
+    /// expected size but does NOT auto-detect a new test added to this
+    /// module without being registered in `CELLS` — that case is bounded
+    /// by code-review convention. When adding a new clamp test (t44, t45,
+    /// ...), register it in `CELLS` below alongside `assert_eq!`.
     #[test]
     fn t43_app_matrix_completeness() {
         const CELLS: &[fn()] = &[
