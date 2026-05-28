@@ -234,7 +234,7 @@ pub trait MuxBackend {
             // pixel-coord helper would silently drop events; surface
             // the drop in the log so the diagnosis is one grep away.
             if mode.contains(oriterm_core::TermMode::MOUSE_SGR_PIXEL) {
-                log::debug!(
+                log::info!(
                     "send_mouse_input dropped 1016 event for pane {pane_id}: \
                      pixel coords missing"
                 );
