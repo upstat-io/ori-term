@@ -1,16 +1,14 @@
 //! End-to-end DEC Locator pin tests — byte stream → vte parser →
-//! Handler trait → DecLocatorState mutation.
+//! Handler trait → DecLocatorState mutation + DECLRP apex emission.
 //!
-//! Catalog rows: MOUSE-DECEFR, MOUSE-DECELR, MOUSE-DECSLE, MOUSE-DECRQLP.
-//! State-rung pin tests; apex-emission (MOUSE-DECLRP-REPLY +
-//! MOUSE-XTHIMOUSE-INIT) tests await mux-routing PtyWriteKind work
-//! tracked in bug-tracker §11.
+//! Catalog rows: MOUSE-DECEFR, MOUSE-DECELR, MOUSE-DECSLE, MOUSE-DECRQLP,
+//! MOUSE-DECLRP-REPLY. State-rung + apex-emission pin tests.
 
 use crate::term::Term;
 use crate::term::dec_locator::{LocatorEventMask, LocatorRect, LocatorReportingMode};
 use crate::theme::Theme;
 
-use super::super::test_helpers::feed;
+use super::super::test_helpers::{feed, term_with_recorder};
 
 fn term() -> Term<crate::effect::VoidEffectSink> {
     Term::new(24, 80, 0, Theme::default(), crate::effect::VoidEffectSink)
@@ -124,6 +122,95 @@ fn decrqlp_in_continuous_does_not_clear_via_csi() {
 }
 
 // ── Cross-state independence (independent of DECSET 1001) ───────────
+
+// ── DECLRP apex-emission pin tests (§16.1.C item 1) ─────────────────
+
+/// DECRQLP when locator is disabled (default) emits DECLRP with Pe=0
+/// ("locator unavailable") + placeholder coords via Effect::Pty with
+/// kind = PtyWriteKind::MouseEvent.
+#[test]
+fn decrqlp_disabled_emits_declrp_pe0_via_effect_pty_mouse_event() {
+    let (mut t, listener) = term_with_recorder();
+    feed(&mut t, b"\x1b[1'|"); // DECRQLP Ps=1
+    let events = listener.events();
+    let expected = "PtyWrite(\x1b[0;0;1;1;1&w)".to_string();
+    assert!(
+        events.iter().any(|e| *e == expected),
+        "expected DECLRP Pe=0 reply, got events: {events:?}"
+    );
+}
+
+/// DECRQLP when locator is Continuous-enabled emits DECLRP with Pe=1
+/// ("request response") + placeholder coords. Locator stays Continuous
+/// (no auto-clear).
+#[test]
+fn decrqlp_continuous_emits_declrp_pe1_no_auto_clear() {
+    let (mut t, listener) = term_with_recorder();
+    feed(&mut t, b"\x1b[1;0'z"); // DECELR Ps=1 (continuous)
+    feed(&mut t, b"\x1b[1'|"); // DECRQLP
+    let events = listener.events();
+    let expected = "PtyWrite(\x1b[1;0;1;1;1&w)".to_string();
+    assert!(
+        events.iter().any(|e| *e == expected),
+        "expected DECLRP Pe=1 reply, got events: {events:?}"
+    );
+    assert_eq!(
+        t.dec_locator().reporting(),
+        Some(LocatorReportingMode::Continuous),
+        "Continuous reporting persists across DECRQLP per xterm spec"
+    );
+}
+
+/// DECRQLP when locator is OneShot-enabled emits DECLRP with Pe=1 AND
+/// auto-clears reporting → None per xterm spec.
+#[test]
+fn decrqlp_oneshot_emits_declrp_pe1_and_auto_clears() {
+    let (mut t, listener) = term_with_recorder();
+    feed(&mut t, b"\x1b[2;0'z"); // DECELR Ps=2 (one-shot)
+    feed(&mut t, b"\x1b[1'|"); // DECRQLP
+    let events = listener.events();
+    let expected = "PtyWrite(\x1b[1;0;1;1;1&w)".to_string();
+    assert!(
+        events.iter().any(|e| *e == expected),
+        "expected DECLRP Pe=1 reply, got events: {events:?}"
+    );
+    assert_eq!(
+        t.dec_locator().reporting(),
+        None,
+        "OneShot reporting must auto-clear to None after DECRQLP reply"
+    );
+}
+
+/// Second DECRQLP after OneShot auto-clear emits Pe=0 (locator now
+/// disabled by the auto-clear) — pins the OneShot semantic end-to-end.
+#[test]
+fn second_decrqlp_after_oneshot_clear_emits_pe0() {
+    let (mut t, listener) = term_with_recorder();
+    feed(&mut t, b"\x1b[2;0'z"); // OneShot
+    feed(&mut t, b"\x1b[1'|"); // DECRQLP (auto-clears)
+    feed(&mut t, b"\x1b[1'|"); // DECRQLP again
+    let events = listener.events();
+    let pe1 = "PtyWrite(\x1b[1;0;1;1;1&w)".to_string();
+    let pe0 = "PtyWrite(\x1b[0;0;1;1;1&w)".to_string();
+    let pe1_count = events.iter().filter(|e| **e == pe1).count();
+    let pe0_count = events.iter().filter(|e| **e == pe0).count();
+    assert_eq!(pe1_count, 1, "exactly one Pe=1 reply (the OneShot)");
+    assert_eq!(pe0_count, 1, "second DECRQLP emits Pe=0 (locator cleared)");
+}
+
+/// DECRQLP with Ps other than 0/1 is silently dropped per xterm spec.
+#[test]
+fn decrqlp_invalid_ps_emits_nothing() {
+    let (mut t, listener) = term_with_recorder();
+    feed(&mut t, b"\x1b[1;0'z"); // enable continuous
+    feed(&mut t, b"\x1b[99'|"); // invalid Ps=99
+    let events = listener.events();
+    let declrp_emitted = events.iter().any(|e| e.contains("&w"));
+    assert!(
+        !declrp_emitted,
+        "DECRQLP with Ps != 0|1 must emit no reply, got: {events:?}"
+    );
+}
 
 #[test]
 fn dec_locator_independent_of_mode_1001() {

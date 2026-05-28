@@ -11,6 +11,7 @@ use vte::ansi::{
 };
 
 use crate::effect::sink::EffectSink;
+use crate::effect::{Effect, PtyEffect, PtyWriteKind};
 
 use self::rect_ops::DecRect;
 use super::{Term, TermMode};
@@ -37,6 +38,34 @@ macro_rules! delegate_osc {
     ($method:ident($($arg:ident : $ty:ty),*) => $helper:ident) => {
         fn $method(&mut self, $($arg: $ty),*) { self.$helper($($arg),*); }
     };
+}
+
+impl<S: EffectSink> Term<S> {
+    /// Compose the DECLRP reply per xterm spec:
+    /// `CSI Pe ; Pm ; Pr ; Pc ; Pp & w`
+    ///
+    /// When locator reporting is disabled (`Term::dec_locator.reporting()
+    /// == None`), emits Pe=0 ("locator unavailable") with zero
+    /// coordinates. When enabled, emits Pe=1 ("request response") with
+    /// the current locator position. Pp=1 always (`ori_term` has no
+    /// page memory).
+    ///
+    /// Current locator coordinates (row, column, button mask) live in
+    /// App-layer winit state today — `TermHandler` does not have access
+    /// to them. Placeholder coords (row=1, col=1, Pm=0) are emitted
+    /// here as the foundation; the App-to-Term coordinate-push wiring
+    /// is spec-conformance §16.4 / §16.5 verification-pilot scope (the
+    /// pilots set the position via a test seam before driving DECRQLP).
+    fn compose_declrp_reply(&self) -> Vec<u8> {
+        let pe: u16 = u16::from(self.dec_locator.reporting().is_some());
+        // Placeholder coords + button mask — overridden by App-layer
+        // wiring per §16.4 / §16.5 (see method rustdoc).
+        let pm: u16 = 0;
+        let pr: u16 = 1;
+        let pc: u16 = 1;
+        let pp: u16 = 1;
+        format!("\x1b[{pe};{pm};{pr};{pc};{pp}&w").into_bytes()
+    }
 }
 
 impl<S: EffectSink> Handler for Term<S> {
@@ -526,10 +555,29 @@ impl<S: EffectSink> Handler for Term<S> {
     fn decsle(&mut self, events: &[u16]) {
         self.dec_locator.apply_decsle(events);
     }
-    fn decrqlp(&mut self, _ps: u16) {
-        // §16.1.C DECLRP reply emission deferred per the comment above.
-        // The state-side commitment (OneShot auto-clear) fires here so
-        // tests can pin the auto-clear semantics independent of emission.
+    fn decrqlp(&mut self, ps: u16) {
+        // DECRQLP — Request Locator Position. Ps=0|1|omitted = transmit
+        // single DECLRP reply. Format per xterm spec:
+        //   CSI Pe ; Pm ; Pr ; Pc ; Pp & w
+        // - Pe = event code (0=unavail, 1=request response, 2-9=button,
+        //   10=outside-filter-rect)
+        // - Pm = button bitmask
+        // - Pr = row (1-based)
+        // - Pc = col (1-based)
+        // - Pp = page (always 1 for ori_term — no page memory)
+        //
+        // Ps values other than 0/1 are silently dropped per xterm spec.
+        if ps != 0 && ps != 1 {
+            return;
+        }
+        let reply = self.compose_declrp_reply();
+        self.effect_sink.push(Effect::Pty(PtyEffect::Write {
+            bytes: reply,
+            kind: PtyWriteKind::MouseEvent,
+        }));
+        // Per xterm spec, OneShot reporting auto-clears after the reply
+        // fires. on_decrqlp_acknowledged() flips reporting → None iff
+        // it was Some(OneShot).
         self.dec_locator.on_decrqlp_acknowledged();
     }
 }
