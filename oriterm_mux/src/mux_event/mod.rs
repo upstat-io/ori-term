@@ -12,7 +12,7 @@ use std::fmt;
 
 use oriterm_core::ClipboardType;
 use oriterm_core::color::Rgb;
-use oriterm_core::effect::{ClipboardSelection, NotificationSource, ResponseToken};
+use oriterm_core::effect::{ClipboardSelection, NotificationSource, PtyWriteKind, ResponseToken};
 
 use crate::PaneId;
 
@@ -83,6 +83,13 @@ pub enum MuxEvent {
     PtyWrite {
         /// Target pane.
         pane_id: PaneId,
+        /// Discriminator describing the kind of write (DA response, mouse
+        /// event, image-protocol reply, etc.). Preserved from
+        /// `PtyEffect::Write.kind` per spec-conformance Decision 10
+        /// (Option A, established 2026-05-27) so Effect-apex pins can
+        /// assert on the discriminator. Supersedes the prior Decision 02
+        /// "drop discriminator at boundary" architecture.
+        kind: PtyWriteKind,
         /// Bytes to write.
         data: Vec<u8>,
     },
@@ -195,8 +202,12 @@ impl fmt::Debug for MuxEvent {
             }
             Self::PaneBell(id) => write!(f, "PaneBell({id})"),
             Self::PaneUrgencyHint(id) => write!(f, "PaneUrgencyHint({id})"),
-            Self::PtyWrite { pane_id, data } => {
-                write!(f, "PtyWrite({pane_id}, {} bytes)", data.len())
+            Self::PtyWrite {
+                pane_id,
+                kind,
+                data,
+            } => {
+                write!(f, "PtyWrite({pane_id}, {kind:?}, {} bytes)", data.len())
             }
             Self::ClipboardStore {
                 pane_id,

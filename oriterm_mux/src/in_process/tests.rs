@@ -4,6 +4,8 @@
 //! spawning real PTYs. We construct the mux, then manually register panes
 //! to test close_pane and event pump behaviour in isolation.
 
+use oriterm_core::effect::PtyWriteKind;
+
 use crate::PaneId;
 
 use super::{ClosePaneResult, InProcessMux, MuxNotification};
@@ -267,6 +269,7 @@ fn poll_events_pty_write_missing_pane_no_panic() {
 
     tx.send(MuxEvent::PtyWrite {
         pane_id: PaneId::from_raw(999),
+        kind: PtyWriteKind::Other,
         data: b"hello".to_vec(),
     })
     .unwrap();

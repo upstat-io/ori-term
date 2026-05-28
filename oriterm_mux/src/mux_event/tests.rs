@@ -4,6 +4,8 @@
 //! via `effect_router`; this file covers `MuxEvent` / `MuxNotification`
 //! enum surface (Debug, variant exhaustiveness) only.
 
+use oriterm_core::effect::PtyWriteKind;
+
 use crate::PaneId;
 
 use super::MuxEvent;
@@ -66,9 +68,10 @@ fn mux_event_debug_all_variants() {
         (
             MuxEvent::PtyWrite {
                 pane_id: id,
+                kind: PtyWriteKind::Other,
                 data: b"abc".to_vec(),
             },
-            "PtyWrite(Pane(1), 3 bytes)",
+            "PtyWrite(Pane(1), Other, 3 bytes)",
         ),
     ];
 

@@ -84,9 +84,14 @@ impl<S: EffectSink> PaneIoThread<S> {
         )]
         for (idx, effect) in effects.drain(..).enumerate() {
             match effect {
-                Effect::Pty(PtyEffect::Write { bytes, .. }) => {
+                Effect::Pty(PtyEffect::Write { bytes, kind }) => {
+                    // Preserve PtyWriteKind end-to-end through the mux
+                    // channel per spec-conformance Decision 10
+                    // (Option A, established 2026-05-27). Supersedes
+                    // Decision 02 "drop discriminator at boundary".
                     self.send_mux_event(MuxEvent::PtyWrite {
                         pane_id: self.pane_id,
+                        kind,
                         data: bytes,
                     });
                 }
