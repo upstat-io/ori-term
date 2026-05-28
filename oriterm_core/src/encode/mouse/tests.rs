@@ -137,3 +137,154 @@ fn encode_mouse_event_sgr_takes_precedence_over_urxvt() {
     let report = encode_mouse_event(&ev, mode);
     assert!(report.as_bytes().starts_with(b"\x1b[<"));
 }
+
+// --- Term::handle_mouse_input apex tests (Decision 10 Option A §16.2.0.B) ---
+
+mod term_apex {
+    use std::sync::{Arc, Mutex};
+
+    use vte::ansi::Processor;
+
+    use crate::TermMode;
+    use crate::effect::sink::EffectSink;
+    use crate::effect::{Effect, PtyEffect, PtyWriteKind};
+    use crate::term::Term;
+    use crate::theme::Theme;
+
+    use super::*;
+
+    /// Records every Effect::Pty payload with its kind for apex
+    /// verification of Term::handle_mouse_input.
+    #[derive(Clone, Default)]
+    struct PtyRecorder {
+        emissions: Arc<Mutex<Vec<(PtyWriteKind, Vec<u8>)>>>,
+    }
+
+    impl PtyRecorder {
+        fn new() -> Self {
+            Self::default()
+        }
+
+        fn emissions(&self) -> Vec<(PtyWriteKind, Vec<u8>)> {
+            self.emissions.lock().expect("lock poisoned").clone()
+        }
+    }
+
+    impl EffectSink for PtyRecorder {
+        fn push(&self, effect: Effect) {
+            if let Effect::Pty(PtyEffect::Write { bytes, kind }) = effect {
+                self.emissions
+                    .lock()
+                    .expect("lock poisoned")
+                    .push((kind, bytes));
+            }
+        }
+
+        fn drain_into(&self, _out: &mut Vec<Effect>) {}
+    }
+
+    fn term_with_recorder() -> (Term<PtyRecorder>, PtyRecorder) {
+        let recorder = PtyRecorder::new();
+        let term = Term::new(24, 80, 100, Theme::default(), recorder.clone());
+        (term, recorder)
+    }
+
+    /// Drive mode flags onto a fresh `Term` via VTE-fed DECSET bytes.
+    /// Production `Term::mode` mutation routes through the VTE handler
+    /// — tests exercise the same path so no private setter shortcut is
+    /// needed.
+    fn apply_decset(term: &mut Term<PtyRecorder>, bytes: &[u8]) {
+        let mut proc: Processor = Processor::new();
+        proc.advance(term, bytes);
+    }
+
+    fn ev(button: MouseButton, kind: MouseEventKind, col: usize, line: usize) -> MouseEvent {
+        MouseEvent {
+            button,
+            kind,
+            col,
+            line,
+            mods: MouseModifiers::default(),
+        }
+    }
+
+    /// Pin: Term::handle_mouse_input emits Effect::Pty(Write { kind:
+    /// PtyWriteKind::MouseEvent, .. }) with bytes equal to
+    /// encode_mouse_event(&event, term.mode). Decision 10 Option A
+    /// apex contract — kind discriminator survives Effect → mux →
+    /// pump → pane.write_input boundary chain.
+    #[test]
+    fn handle_mouse_input_emits_effect_pty_with_mouse_event_kind_for_sgr_mode() {
+        let (mut term, recorder) = term_with_recorder();
+        // DECSET 1000 (MOUSE_REPORT_CLICK) + DECSET 1006 (MOUSE_SGR).
+        apply_decset(&mut term, b"\x1b[?1000h\x1b[?1006h");
+        let event = ev(MouseButton::Left, MouseEventKind::Press, 10, 20);
+        term.handle_mouse_input(&event);
+
+        let emissions = recorder.emissions();
+        assert_eq!(emissions.len(), 1, "exactly one PTY emission expected");
+        let (kind, bytes) = &emissions[0];
+        assert_eq!(*kind, PtyWriteKind::MouseEvent, "kind discriminator");
+        let expected = encode_mouse_event(&event, term.mode());
+        assert_eq!(bytes.as_slice(), expected.as_bytes(), "byte content");
+    }
+
+    /// Pin: matrix over four mouse-encoding modes (SGR / URXVT / UTF-8 /
+    /// Normal) confirms every encoder path emits via the same apex with
+    /// kind == MouseEvent. Catches a future regression where one of the
+    /// encoder branches is migrated to a different apex (or loses the
+    /// kind discriminator).
+    #[test]
+    fn handle_mouse_input_carries_mouse_event_kind_across_every_encoder() {
+        let setups: [&[u8]; 4] = [
+            b"\x1b[?1000h\x1b[?1006h", // SGR
+            b"\x1b[?1000h\x1b[?1015h", // URXVT
+            b"\x1b[?1000h\x1b[?1005h", // UTF-8
+            b"\x1b[?1000h",            // Normal (X10-like, click reporting)
+        ];
+        let event = ev(MouseButton::Right, MouseEventKind::Press, 5, 5);
+        for setup in setups {
+            let (mut term, recorder) = term_with_recorder();
+            apply_decset(&mut term, setup);
+            term.handle_mouse_input(&event);
+            let emissions = recorder.emissions();
+            assert_eq!(emissions.len(), 1, "setup {setup:?} emission count");
+            assert_eq!(
+                emissions[0].0,
+                PtyWriteKind::MouseEvent,
+                "setup {setup:?} kind"
+            );
+        }
+    }
+
+    /// When no mouse-encoding mode is active, Term::handle_mouse_input
+    /// must be a no-op. Catches a regression where the apex push fires
+    /// unconditionally (downstream observers would have to filter
+    /// empty PTY writes — defeating the early-exit guard).
+    #[test]
+    fn handle_mouse_input_with_no_encoding_mode_emits_nothing() {
+        let (term, recorder) = term_with_recorder();
+        // Default mode has no MOUSE_REPORT_* flags — Term's
+        // defense-in-depth gate suppresses the push.
+        assert!(!term.mode().intersects(TermMode::ANY_MOUSE));
+        let event = ev(MouseButton::Left, MouseEventKind::Press, 1, 1);
+        term.handle_mouse_input(&event);
+        assert!(
+            recorder.emissions().is_empty(),
+            "no-mode-active must not emit"
+        );
+    }
+
+    /// X10 mode + Release event encodes to empty buffer (X10 reports
+    /// presses only). Term::handle_mouse_input must suppress the
+    /// Effect push, not emit an empty PtyEffect::Write.
+    #[test]
+    fn handle_mouse_input_x10_release_suppresses_emission() {
+        let (mut term, recorder) = term_with_recorder();
+        // DECSET 9 (MOUSE_X10).
+        apply_decset(&mut term, b"\x1b[?9h");
+        let event = ev(MouseButton::Left, MouseEventKind::Release, 1, 1);
+        term.handle_mouse_input(&event);
+        assert!(recorder.emissions().is_empty(), "X10 release must not emit");
+    }
+}

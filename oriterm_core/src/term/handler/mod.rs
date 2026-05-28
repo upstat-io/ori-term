@@ -83,6 +83,14 @@ impl<S: EffectSink> Term<S> {
     /// Decision 10 Option A apex per `plans/spec-conformance/decisions/10-mouse-verification-apex-effect-vs-app-capture.md`
     /// and §16.2.0.
     pub fn handle_mouse_input(&self, event: &MouseEvent) {
+        // Defense-in-depth gate: no-op when no mouse-reporting mode is
+        // active. The App layer's `should_report_mouse` predicate also
+        // gates before dispatching; double-gating here keeps the apex
+        // contract safe against future callers (or daemon-mode wire-PDU
+        // arrivals) that skip the App-side check.
+        if !self.mode.intersects(TermMode::ANY_MOUSE) {
+            return;
+        }
         let report = encode_mouse_event(event, self.mode);
         let bytes = report.as_bytes();
         if bytes.is_empty() {
