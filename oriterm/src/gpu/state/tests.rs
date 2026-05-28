@@ -700,3 +700,207 @@ fn both_headless_entrypoints_unset_display_env() {
         "sanitize_headless_env must clear DISPLAY via either entrypoint",
     );
 }
+
+// --- Regression pins for the panic-safe configure helper ---
+//
+// Provenance documented in per-test `/// Regression:` doc comments.
+
+/// Regression: BUG-06-108 — bare surface.configure calls crashed process on
+/// validation panic. All call sites in state/mod.rs MUST route through
+/// the try_configure_surface helper.
+#[test]
+fn state_mod_when_scanned_contains_no_unwrapped_surface_configure() {
+    let src = include_str!("mod.rs");
+    let mut bare_matches: Vec<(usize, &str)> = Vec::new();
+    for (i, line) in src.lines().enumerate() {
+        let trimmed = line.trim_start();
+        // Skip comments + docs.
+        if trimmed.starts_with("//") {
+            continue;
+        }
+        // Skip the helper-call lines themselves.
+        if line.contains("try_configure_surface(") {
+            continue;
+        }
+        // A bare configure call looks like `surface.configure(&device, ...)`
+        // or `surface.configure(device, ...)` — pattern: `.configure(` with
+        // a `&device` or `device` argument nearby on the same line.
+        if line.contains(".configure(")
+            && (line.contains("device") || line.contains("&self.device"))
+        {
+            bare_matches.push((i + 1, line));
+        }
+    }
+    assert!(
+        bare_matches.is_empty(),
+        "Bare surface.configure calls found outside try_configure_surface helper:\n{}\n\
+         All configure call sites in state/mod.rs must route through helpers::try_configure_surface \
+         to preserve the panic-safe contract that the GpuState::new fallback chain depends on.",
+        bare_matches
+            .iter()
+            .map(|(n, l)| format!("  line {n}: {l}"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    );
+}
+
+/// Regression: BUG-06-108 — try_init must route configure through the
+/// panic-safe helper.
+#[test]
+fn try_init_when_scanned_uses_configure_helper() {
+    let src = include_str!("mod.rs");
+    let fn_start = src
+        .find("fn try_init(")
+        .expect("try_init function present in state/mod.rs");
+    // Scope: from fn declaration to the next top-level fn (heuristic: next
+    // `\n    fn ` or `\nimpl ` or `\nfn `). Helper-call must appear in
+    // this scope.
+    let scope_end_candidates = ["\n    fn ", "\nimpl ", "\nfn ", "\n}\n\n"];
+    let scope_end = scope_end_candidates
+        .iter()
+        .filter_map(|marker| src[fn_start + "fn try_init(".len()..].find(marker))
+        .min()
+        .unwrap_or(src.len() - fn_start);
+    let body = &src[fn_start..fn_start + "fn try_init(".len() + scope_end];
+    assert!(
+        body.contains("try_configure_surface("),
+        "try_init body must call try_configure_surface (panic-safe helper)"
+    );
+}
+
+/// Regression: BUG-06-108 — create_surface must route configure through the
+/// panic-safe helper.
+#[test]
+fn create_surface_when_scanned_uses_configure_helper() {
+    let src = include_str!("mod.rs");
+    let fn_start = src
+        .find("pub fn create_surface(")
+        .expect("create_surface function present in state/mod.rs");
+    let scope_end_candidates = ["\n    fn ", "\n    pub fn ", "\nimpl ", "\nfn ", "\n}\n\n"];
+    let scope_end = scope_end_candidates
+        .iter()
+        .filter_map(|marker| src[fn_start + "pub fn create_surface(".len()..].find(marker))
+        .min()
+        .unwrap_or(src.len() - fn_start);
+    let body = &src[fn_start..fn_start + "pub fn create_surface(".len() + scope_end];
+    assert!(
+        body.contains("try_configure_surface("),
+        "create_surface body must call try_configure_surface (panic-safe helper)"
+    );
+}
+
+/// Regression: BUG-06-108 — configure_surface must route through the
+/// panic-safe helper.
+#[test]
+fn configure_surface_when_scanned_uses_configure_helper() {
+    let src = include_str!("mod.rs");
+    let fn_start = src
+        .find("pub fn configure_surface(")
+        .expect("configure_surface function present in state/mod.rs");
+    let scope_end_candidates = ["\n    fn ", "\n    pub fn ", "\nimpl ", "\nfn ", "\n}\n\n"];
+    let scope_end = scope_end_candidates
+        .iter()
+        .filter_map(|marker| src[fn_start + "pub fn configure_surface(".len()..].find(marker))
+        .min()
+        .unwrap_or(src.len() - fn_start);
+    let body = &src[fn_start..fn_start + "pub fn configure_surface(".len() + scope_end];
+    assert!(
+        body.contains("try_configure_surface("),
+        "configure_surface body must call try_configure_surface (panic-safe helper)"
+    );
+}
+
+/// Regression: BUG-06-108 — SurfaceInitError must have ConfigurePanicked
+/// variant so callers can distinguish wgpu instance refusal from a caught
+/// configure panic.
+#[test]
+fn surface_init_error_when_constructed_with_configure_panicked_variant_compiles() {
+    let _ = super::SurfaceInitError::ConfigurePanicked;
+}
+
+/// Regression: BUG-06-108 — SurfaceInitError must preserve the existing
+/// `From<wgpu::CreateSurfaceError>` conversion path so callers using `?`
+/// on `instance.create_surface(...)` continue to compile unchanged.
+#[test]
+fn surface_init_error_when_used_as_into_target_for_create_surface_error_compiles() {
+    fn _assert_into<T: Into<super::SurfaceInitError>>() {}
+    _assert_into::<wgpu::CreateSurfaceError>();
+}
+
+/// Regression: BUG-06-108 — the vendored wgpu-hal DXGI patch must use
+/// per-target scaling: DXGI_SCALING_NONE for WndHandle (composition-class
+/// targets reject NONE per Microsoft docs) and DXGI_SCALING_STRETCH for
+/// all composition-class targets.
+#[test]
+fn wgpu_hal_dxgi_swap_chain_creation_when_scanned_uses_per_target_scaling() {
+    use oriterm_test_support::paths;
+
+    let path = paths::term_workspace_root().join("crates/wgpu-hal/src/dx12/mod.rs");
+    if !path.exists() {
+        eprintln!(
+            "SKIP: wgpu_hal_dxgi_swap_chain_creation_when_scanned_uses_per_target_scaling — \
+             vendored wgpu-hal not present at {}",
+            path.display()
+        );
+        return;
+    }
+    let src = std::fs::read_to_string(&path).expect("read vendored wgpu-hal dx12/mod.rs");
+
+    // Per-target match dispatch must be present.
+    assert!(
+        src.contains("let scaling = match self.target {"),
+        "vendored wgpu-hal dx12/mod.rs must use per-target scaling dispatch"
+    );
+    // Each SurfaceTarget arm must map to the correct scaling value.
+    assert!(
+        src.contains("SurfaceTarget::WndHandle(_) => Dxgi::DXGI_SCALING_NONE"),
+        "WndHandle arm must map to DXGI_SCALING_NONE (preserves c80fa26e resize-jitter fix)"
+    );
+    // The composition-class arms share a single branch returning STRETCH;
+    // assert the arm pattern includes each variant name AND maps to STRETCH.
+    let stretch_arm = src
+        .lines()
+        .skip_while(|l| !l.contains("let scaling = match self.target {"))
+        .take_while(|l| !l.trim_start().starts_with("};"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    for variant in [
+        "SurfaceTarget::Visual(_)",
+        "SurfaceTarget::VisualFromWndHandle",
+        "SurfaceTarget::SurfaceHandle(_)",
+        "SurfaceTarget::SwapChainPanel(_)",
+    ] {
+        assert!(
+            stretch_arm.contains(variant),
+            "composition arm must include {variant} — Microsoft \
+             CreateSwapChainForComposition requires DXGI_SCALING_STRETCH"
+        );
+    }
+    assert!(
+        stretch_arm.contains("Dxgi::DXGI_SCALING_STRETCH"),
+        "composition arm must map to DXGI_SCALING_STRETCH"
+    );
+}
+
+/// Regression: BUG-06-108 — the vendored wgpu-hal DXGI patch must cite the
+/// patch source ("ori_term patch") so future readers can trace why the
+/// vendored crate diverges from upstream wgpu-hal.
+#[test]
+fn wgpu_hal_dxgi_patch_when_scanned_cites_patch_provenance() {
+    use oriterm_test_support::paths;
+
+    let path = paths::term_workspace_root().join("crates/wgpu-hal/src/dx12/mod.rs");
+    if !path.exists() {
+        eprintln!(
+            "SKIP: wgpu_hal_dxgi_patch_when_scanned_cites_patch_provenance — \
+             vendored wgpu-hal not present"
+        );
+        return;
+    }
+    let src = std::fs::read_to_string(&path).expect("read vendored wgpu-hal dx12/mod.rs");
+    assert!(
+        src.contains("ori_term patch"),
+        "vendored wgpu-hal dx12/mod.rs must carry an `ori_term patch` comment so \
+         future readers can trace the patch provenance back to the vendored crate's README"
+    );
+}
