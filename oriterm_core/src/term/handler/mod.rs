@@ -12,7 +12,7 @@ use vte::ansi::{
 
 use crate::effect::sink::EffectSink;
 use crate::effect::{Effect, PtyEffect, PtyWriteKind};
-use crate::encode::mouse::{MouseEvent, encode_mouse_event};
+use crate::encode::mouse::{MouseEvent, encode_mouse_event, should_handle_mouse_input};
 
 use self::rect_ops::DecRect;
 use super::{Term, TermMode};
@@ -109,12 +109,12 @@ impl<S: EffectSink> Term<S> {
     }
 
     pub fn handle_mouse_input(&self, event: &MouseEvent) {
-        // Defense-in-depth gate: no-op when no mouse-reporting mode is
-        // active. The App layer's `should_report_mouse` predicate also
+        // Defense-in-depth gate via the encode::mouse SSOT predicate so the
+        // apex and the daemon-default backend agree on which modes enable
+        // emission. The App layer's `should_report_mouse` predicate also
         // gates before dispatching; double-gating here keeps the apex
-        // contract safe against future callers (or daemon-mode wire-PDU
-        // arrivals) that skip the App-side check.
-        if !self.mode.intersects(TermMode::ANY_MOUSE) {
+        // contract safe against future callers that skip the App check.
+        if !should_handle_mouse_input(self.mode) {
             return;
         }
         let report = encode_mouse_event(event, self.mode);

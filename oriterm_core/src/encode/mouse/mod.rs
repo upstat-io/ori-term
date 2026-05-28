@@ -288,6 +288,18 @@ pub struct MouseEvent {
     pub py: Option<u32>,
 }
 
+/// Mouse-dispatch gate: true iff `mode` has any ANY_MOUSE-family flag.
+///
+/// SSOT for the ANY_MOUSE-family predicate so `Term::handle_mouse_input`
+/// and `MuxBackend::send_mouse_input`'s default impl share one definition
+/// rather than each re-implementing the intersection check. Keeping the
+/// predicate here prevents the gate from drifting between callers.
+#[must_use]
+#[inline]
+pub fn should_handle_mouse_input(mode: TermMode) -> bool {
+    mode.intersects(TermMode::ANY_MOUSE)
+}
+
 /// Encode a mouse event, selecting the format based on terminal mode.
 ///
 /// Priority: SGR > URXVT > UTF-8 > Normal. Returns the encoded bytes in

@@ -214,14 +214,8 @@ pub trait MuxBackend {
             return;
         };
         let mode = oriterm_core::TermMode::from_bits_truncate(mode);
-        // Mirror the apex `Term::handle_mouse_input` ANY_MOUSE gate so the
-        // default backend impl and the apex agree on which mode bits enable
-        // mouse-event emission. A pane with only an encoding flag set (e.g.
-        // MOUSE_SGR_PIXEL without a base tracking mode) must not emit bytes
-        // — the apex returns before encoding for that case; the default
-        // backend MUST match. Divergent gating between the two implementations
-        // of the same predicate is an algorithmic-duplication defect.
-        if !mode.intersects(oriterm_core::TermMode::ANY_MOUSE) {
+        // Same SSOT predicate as the apex `Term::handle_mouse_input` gate.
+        if !oriterm_core::encode::mouse::should_handle_mouse_input(mode) {
             return;
         }
         let report = oriterm_core::encode::mouse::encode_mouse_event(event, mode);

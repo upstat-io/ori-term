@@ -2547,7 +2547,7 @@ mod clamp_mouse_pixel_coords_matrix {
 
     /// In-grid cursor → `(Some(rel_x), Some(rel_y))`. Baseline.
     #[test]
-    fn t27_clamp_in_grid_returns_some_some() {
+    fn clamp_in_grid_returns_some_some() {
         let result = clamp_mouse_pixel_coords(pos(50.0, 100.0), (0.0, 0.0), (200.0, 200.0), 1.0);
         assert_eq!(result, (Some(50), Some(100)));
     }
@@ -2555,14 +2555,14 @@ mod clamp_mouse_pixel_coords_matrix {
     /// Cursor exactly at `bounds.right()` (off-by-one from in-bounds):
     /// clamp to `width - 1`. Pre-fix returned `(None, None)`.
     #[test]
-    fn t28_clamp_at_right_edge_clamps_to_width_minus_one() {
+    fn clamp_at_right_edge_clamps_to_width_minus_one() {
         let result = clamp_mouse_pixel_coords(pos(200.0, 100.0), (0.0, 0.0), (200.0, 200.0), 1.0);
         assert_eq!(result, (Some(199), Some(100)));
     }
 
     /// Cursor at `bounds.bottom()` → clamp to `height - 1`. Mirror.
     #[test]
-    fn t29_clamp_at_bottom_edge_clamps_to_height_minus_one() {
+    fn clamp_at_bottom_edge_clamps_to_height_minus_one() {
         let result = clamp_mouse_pixel_coords(pos(50.0, 200.0), (0.0, 0.0), (200.0, 200.0), 1.0);
         assert_eq!(result, (Some(50), Some(199)));
     }
@@ -2570,7 +2570,7 @@ mod clamp_mouse_pixel_coords_matrix {
     /// Cursor outside top-left → clamp to `(0, 0)`. Pre-fix returned
     /// `(None, None)`.
     #[test]
-    fn t30_clamp_outside_top_left_clamps_to_origin() {
+    fn clamp_outside_top_left_clamps_to_origin() {
         let result = clamp_mouse_pixel_coords(pos(-10.0, -5.0), (0.0, 0.0), (200.0, 200.0), 1.0);
         assert_eq!(result, (Some(0), Some(0)));
     }
@@ -2578,7 +2578,7 @@ mod clamp_mouse_pixel_coords_matrix {
     /// Scale 2.0 divides physical pixels into logical pixels per
     /// xterm spec.
     #[test]
-    fn t31_clamp_with_scale_2_divides_logical_pixels() {
+    fn clamp_with_scale_2_divides_logical_pixels() {
         let result = clamp_mouse_pixel_coords(pos(100.0, 200.0), (0.0, 0.0), (400.0, 400.0), 2.0);
         assert_eq!(result, (Some(50), Some(100)));
     }
@@ -2587,21 +2587,21 @@ mod clamp_mouse_pixel_coords_matrix {
 
     /// Zero-width bounds → `(None, None)`.
     #[test]
-    fn t32_clamp_returns_none_for_zero_width_bounds() {
+    fn clamp_returns_none_for_zero_width_bounds() {
         let result = clamp_mouse_pixel_coords(pos(50.0, 100.0), (0.0, 0.0), (0.0, 200.0), 1.0);
         assert_eq!(result, (None, None));
     }
 
     /// Zero-height bounds → `(None, None)`.
     #[test]
-    fn t33_clamp_returns_none_for_zero_height_bounds() {
+    fn clamp_returns_none_for_zero_height_bounds() {
         let result = clamp_mouse_pixel_coords(pos(50.0, 100.0), (0.0, 0.0), (200.0, 0.0), 1.0);
         assert_eq!(result, (None, None));
     }
 
     /// Non-positive scale → `(None, None)`. Two sub-cases.
     #[test]
-    fn t34_clamp_returns_none_for_non_positive_scale() {
+    fn clamp_returns_none_for_non_positive_scale() {
         let result_zero =
             clamp_mouse_pixel_coords(pos(50.0, 100.0), (0.0, 0.0), (200.0, 200.0), 0.0);
         let result_neg =
@@ -2614,7 +2614,7 @@ mod clamp_mouse_pixel_coords_matrix {
     /// dependencies. Reviewers grep this to confirm the headless
     /// contract holds.
     #[test]
-    fn t35_clamp_pure_helper_does_not_require_app_construction() {
+    fn clamp_pure_helper_does_not_require_app_construction() {
         // If the helper signature ever takes `&App` / `&TermWindow` /
         // `&wgpu::Device`, this test will not compile.
         let _: fn(
@@ -2632,7 +2632,7 @@ mod clamp_mouse_pixel_coords_matrix {
     /// inset). Cursor at `(208, 100)` is past `right` by 0.5 px →
     /// clamps to `width - 1 = 199` logical pixel.
     #[test]
-    fn t36_clamp_respects_non_zero_bounds_origin() {
+    fn clamp_respects_non_zero_bounds_origin() {
         let result = clamp_mouse_pixel_coords(pos(208.0, 100.0), (8.0, 36.0), (200.0, 200.0), 1.0);
         assert_eq!(result, (Some(199), Some(64)));
     }
@@ -2640,7 +2640,7 @@ mod clamp_mouse_pixel_coords_matrix {
     /// Cursor at the bounds origin → `(Some(0), Some(0))` after the
     /// origin subtraction.
     #[test]
-    fn t37_clamp_at_bounds_origin_returns_origin() {
+    fn clamp_at_bounds_origin_returns_origin() {
         let result = clamp_mouse_pixel_coords(pos(8.0, 36.0), (8.0, 36.0), (200.0, 200.0), 1.0);
         assert_eq!(result, (Some(0), Some(0)));
     }
@@ -2651,14 +2651,14 @@ mod clamp_mouse_pixel_coords_matrix {
     /// the `< 1.0` guard, `f64::clamp(0.0, -0.5)` would panic per Rust
     /// std docs ("Panics if min > max").
     #[test]
-    fn t39_clamp_subpixel_width_returns_none() {
+    fn clamp_subpixel_width_returns_none() {
         let result = clamp_mouse_pixel_coords(pos(0.25, 0.0), (0.0, 0.0), (0.5, 200.0), 1.0);
         assert_eq!(result, (None, None));
     }
 
     /// Sub-pixel positive bounds (height 0.5) → `(None, None)`.
     #[test]
-    fn t40_clamp_subpixel_height_returns_none() {
+    fn clamp_subpixel_height_returns_none() {
         let result = clamp_mouse_pixel_coords(pos(0.0, 0.25), (0.0, 0.0), (200.0, 0.5), 1.0);
         assert_eq!(result, (None, None));
     }
@@ -2667,7 +2667,7 @@ mod clamp_mouse_pixel_coords_matrix {
     /// `(NaN).clamp(0.0, 199.0)` would return NaN and `(NaN as u32)` is
     /// platform-defined, silently fabricating origin coords.
     #[test]
-    fn t41_clamp_nan_position_returns_none() {
+    fn clamp_nan_position_returns_none() {
         let result =
             clamp_mouse_pixel_coords(pos(f64::NAN, 100.0), (0.0, 0.0), (200.0, 200.0), 1.0);
         assert_eq!(result, (None, None));
@@ -2676,7 +2676,7 @@ mod clamp_mouse_pixel_coords_matrix {
     /// Infinity cursor position → `(None, None)`. Companion to t41 —
     /// non-finite inputs of any flavor reject up front.
     #[test]
-    fn t42_clamp_infinite_position_returns_none() {
+    fn clamp_infinite_position_returns_none() {
         let result =
             clamp_mouse_pixel_coords(pos(f64::INFINITY, 100.0), (0.0, 0.0), (200.0, 200.0), 1.0);
         assert_eq!(result, (None, None));
@@ -2690,23 +2690,23 @@ mod clamp_mouse_pixel_coords_matrix {
     /// by code-review convention. When adding a new clamp test (t44, t45,
     /// ...), register it in `CELLS` below alongside `assert_eq!`.
     #[test]
-    fn t43_app_matrix_completeness() {
+    fn app_matrix_completeness() {
         const CELLS: &[fn()] = &[
-            t27_clamp_in_grid_returns_some_some,
-            t28_clamp_at_right_edge_clamps_to_width_minus_one,
-            t29_clamp_at_bottom_edge_clamps_to_height_minus_one,
-            t30_clamp_outside_top_left_clamps_to_origin,
-            t31_clamp_with_scale_2_divides_logical_pixels,
-            t32_clamp_returns_none_for_zero_width_bounds,
-            t33_clamp_returns_none_for_zero_height_bounds,
-            t34_clamp_returns_none_for_non_positive_scale,
-            t35_clamp_pure_helper_does_not_require_app_construction,
-            t36_clamp_respects_non_zero_bounds_origin,
-            t37_clamp_at_bounds_origin_returns_origin,
-            t39_clamp_subpixel_width_returns_none,
-            t40_clamp_subpixel_height_returns_none,
-            t41_clamp_nan_position_returns_none,
-            t42_clamp_infinite_position_returns_none,
+            clamp_in_grid_returns_some_some,
+            clamp_at_right_edge_clamps_to_width_minus_one,
+            clamp_at_bottom_edge_clamps_to_height_minus_one,
+            clamp_outside_top_left_clamps_to_origin,
+            clamp_with_scale_2_divides_logical_pixels,
+            clamp_returns_none_for_zero_width_bounds,
+            clamp_returns_none_for_zero_height_bounds,
+            clamp_returns_none_for_non_positive_scale,
+            clamp_pure_helper_does_not_require_app_construction,
+            clamp_respects_non_zero_bounds_origin,
+            clamp_at_bounds_origin_returns_origin,
+            clamp_subpixel_width_returns_none,
+            clamp_subpixel_height_returns_none,
+            clamp_nan_position_returns_none,
+            clamp_infinite_position_returns_none,
         ];
         assert_eq!(
             CELLS.len(),

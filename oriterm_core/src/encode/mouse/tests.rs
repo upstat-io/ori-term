@@ -756,7 +756,7 @@ mod sgr_pixel_drop {
     /// 1016 active + Press Left + px/py = None → emit empty buffer
     /// (drop the event). Pre-fix emitted X10 `\x1b[M ` bytes.
     #[test]
-    fn t01_sgr_pixel_only_without_pixel_coords_drops_event() {
+    fn sgr_pixel_only_without_pixel_coords_drops_event() {
         let mode = TermMode::MOUSE_DRAG | TermMode::MOUSE_SGR_PIXEL;
         let report = encode_mouse_event(
             &ev_no_pixels(MouseButton::Left, MouseEventKind::Press),
@@ -773,7 +773,7 @@ mod sgr_pixel_drop {
     /// 1016 active + Press Left + Some pixel coords → SGR-Pixel bytes
     /// (regression guard for existing happy path).
     #[test]
-    fn t02_sgr_pixel_with_pixel_coords_still_emits_sgr_pixel() {
+    fn sgr_pixel_with_pixel_coords_still_emits_sgr_pixel() {
         let mode = TermMode::MOUSE_DRAG | TermMode::MOUSE_SGR_PIXEL;
         let report = encode_mouse_event(
             &ev_with_pixels(MouseButton::Left, MouseEventKind::Press),
@@ -785,7 +785,7 @@ mod sgr_pixel_drop {
     /// 1016 active + Release Left + px/py = None → drop (lowercase m
     /// would be the SGR-Pixel release suffix, but no bytes emit).
     #[test]
-    fn t03_sgr_pixel_only_release_without_pixel_coords_drops_event() {
+    fn sgr_pixel_only_release_without_pixel_coords_drops_event() {
         let mode = TermMode::MOUSE_DRAG | TermMode::MOUSE_SGR_PIXEL;
         let report = encode_mouse_event(
             &ev_no_pixels(MouseButton::Left, MouseEventKind::Release),
@@ -796,7 +796,7 @@ mod sgr_pixel_drop {
 
     /// 1016 active + Motion + px/py = None → drop. Mode 1003 path.
     #[test]
-    fn t04_sgr_pixel_motion_without_pixel_coords_drops_event() {
+    fn sgr_pixel_motion_without_pixel_coords_drops_event() {
         let mode = TermMode::MOUSE_MOTION | TermMode::MOUSE_SGR_PIXEL;
         let report = encode_mouse_event(
             &ev_no_pixels(MouseButton::None, MouseEventKind::Motion),
@@ -808,7 +808,7 @@ mod sgr_pixel_drop {
     /// 1016 active + Drag Motion (button held) + px/py = None → drop.
     /// Mode 1002 path.
     #[test]
-    fn t05_sgr_pixel_drag_motion_without_pixel_coords_drops_event() {
+    fn sgr_pixel_drag_motion_without_pixel_coords_drops_event() {
         let mode = TermMode::MOUSE_DRAG | TermMode::MOUSE_SGR_PIXEL;
         let report = encode_mouse_event(
             &ev_no_pixels(MouseButton::Left, MouseEventKind::Motion),
@@ -823,7 +823,7 @@ mod sgr_pixel_drop {
     /// future regression where one of the two coords being present is
     /// accidentally treated as "valid enough."
     #[test]
-    fn t06_sgr_pixel_with_only_px_some_drops_event() {
+    fn sgr_pixel_with_only_px_some_drops_event() {
         let mut ev = ev_no_pixels(MouseButton::Left, MouseEventKind::Press);
         ev.px = Some(80);
         ev.py = None;
@@ -834,7 +834,7 @@ mod sgr_pixel_drop {
 
     /// 1016 active + only py Some, px None → drop. Mirror of t06.
     #[test]
-    fn t07_sgr_pixel_with_only_py_some_drops_event() {
+    fn sgr_pixel_with_only_py_some_drops_event() {
         let mut ev = ev_no_pixels(MouseButton::Left, MouseEventKind::Press);
         ev.px = None;
         ev.py = Some(160);
@@ -848,7 +848,7 @@ mod sgr_pixel_drop {
     /// 1016 active + ScrollUp + px/py = None → drop. The wheel-Tier-1
     /// path was the most likely real-world trigger of the bug per §01.
     #[test]
-    fn t08_sgr_pixel_scrollup_without_pixel_coords_drops_event() {
+    fn sgr_pixel_scrollup_without_pixel_coords_drops_event() {
         let mode = TermMode::MOUSE_DRAG | TermMode::MOUSE_SGR_PIXEL;
         let report = encode_mouse_event(
             &ev_no_pixels(MouseButton::ScrollUp, MouseEventKind::Press),
@@ -859,7 +859,7 @@ mod sgr_pixel_drop {
 
     /// 1016 active + ScrollDown + px/py = None → drop. Mirror of t08.
     #[test]
-    fn t09_sgr_pixel_scrolldown_without_pixel_coords_drops_event() {
+    fn sgr_pixel_scrolldown_without_pixel_coords_drops_event() {
         let mode = TermMode::MOUSE_DRAG | TermMode::MOUSE_SGR_PIXEL;
         let report = encode_mouse_event(
             &ev_no_pixels(MouseButton::ScrollDown, MouseEventKind::Press),
@@ -874,7 +874,7 @@ mod sgr_pixel_drop {
     /// `0 + 4 + 16 = 20` in the SGR-Pixel envelope. Regression guard:
     /// modifier propagation not perturbed by the new branch.
     #[test]
-    fn t10_sgr_pixel_drop_carries_through_modifiers_with_present_coords() {
+    fn sgr_pixel_drop_carries_through_modifiers_with_present_coords() {
         let mut ev = ev_with_pixels(MouseButton::Left, MouseEventKind::Press);
         ev.mods = MouseModifiers {
             shift: true,
@@ -889,7 +889,7 @@ mod sgr_pixel_drop {
     /// 1016 active + Shift|Ctrl + None pixel coords → drop (modifiers
     /// don't rescue missing pixel coords).
     #[test]
-    fn t11_sgr_pixel_drop_with_modifiers_without_pixel_coords_drops_event() {
+    fn sgr_pixel_drop_with_modifiers_without_pixel_coords_drops_event() {
         let mut ev = ev_no_pixels(MouseButton::Left, MouseEventKind::Press);
         ev.mods = MouseModifiers {
             shift: true,
@@ -905,7 +905,7 @@ mod sgr_pixel_drop {
 
     /// SGR (1006) + drag is unchanged by the fix.
     #[test]
-    fn t12_sgr_with_drag_present_unchanged() {
+    fn sgr_with_drag_present_unchanged() {
         let ev = ev_no_pixels(MouseButton::Left, MouseEventKind::Press);
         let mode = TermMode::MOUSE_DRAG | TermMode::MOUSE_SGR;
         let report = encode_mouse_event(&ev, mode);
@@ -914,7 +914,7 @@ mod sgr_pixel_drop {
 
     /// URXVT (1015) + drag is unchanged.
     #[test]
-    fn t15_urxvt_unchanged() {
+    fn urxvt_unchanged() {
         let ev = ev_no_pixels(MouseButton::Left, MouseEventKind::Press);
         let mode = TermMode::MOUSE_DRAG | TermMode::MOUSE_URXVT;
         let report = encode_mouse_event(&ev, mode);
@@ -923,7 +923,7 @@ mod sgr_pixel_drop {
 
     /// UTF-8 (1005) + drag is unchanged.
     #[test]
-    fn t16_utf8_unchanged() {
+    fn utf8_unchanged() {
         let ev = ev_no_pixels(MouseButton::Left, MouseEventKind::Press);
         let mode = TermMode::MOUSE_DRAG | TermMode::MOUSE_UTF8;
         let report = encode_mouse_event(&ev, mode);
@@ -934,7 +934,7 @@ mod sgr_pixel_drop {
     /// 1002 alone (no extended encoding flag) → X10 envelope is the
     /// LEGITIMATE legacy path. Fix must NOT change this.
     #[test]
-    fn t17_no_extended_encoding_uses_x10_unchanged() {
+    fn no_extended_encoding_uses_x10_unchanged() {
         let ev = ev_no_pixels(MouseButton::Left, MouseEventKind::Press);
         let mode = TermMode::MOUSE_DRAG;
         let report = encode_mouse_event(&ev, mode);
@@ -945,7 +945,7 @@ mod sgr_pixel_drop {
 
     /// Press then Release distinction preserved through the 1016 branch.
     #[test]
-    fn t19_sgr_pixel_press_release_distinction_preserved() {
+    fn sgr_pixel_press_release_distinction_preserved() {
         let mode = TermMode::MOUSE_DRAG | TermMode::MOUSE_SGR_PIXEL;
         let press = encode_mouse_event(
             &ev_with_pixels(MouseButton::Left, MouseEventKind::Press),
@@ -962,7 +962,7 @@ mod sgr_pixel_drop {
     /// SGR (1006) mode ignores px/py (cell coords always). Regression
     /// guard: fix must not accidentally make 1006 consume px/py.
     #[test]
-    fn t20_sgr_only_mode_ignores_px_py_when_present() {
+    fn sgr_only_mode_ignores_px_py_when_present() {
         let ev = ev_with_pixels(MouseButton::Left, MouseEventKind::Press);
         let mode = TermMode::MOUSE_DRAG | TermMode::MOUSE_SGR;
         let report = encode_mouse_event(&ev, mode);
@@ -971,7 +971,7 @@ mod sgr_pixel_drop {
 
     /// 1016 + Some(0), Some(0) → `1;1` (1-indexed origin).
     #[test]
-    fn t21_sgr_pixel_at_origin_emits_origin_pixels() {
+    fn sgr_pixel_at_origin_emits_origin_pixels() {
         let mut ev = ev_with_pixels(MouseButton::Left, MouseEventKind::Press);
         ev.px = Some(0);
         ev.py = Some(0);
@@ -983,7 +983,7 @@ mod sgr_pixel_drop {
     /// 1016 + large logical-pixel values (HD-class display) emits
     /// correct offset without overflow.
     #[test]
-    fn t22_sgr_pixel_at_large_coords_emits_correct_offset() {
+    fn sgr_pixel_at_large_coords_emits_correct_offset() {
         let mut ev = ev_with_pixels(MouseButton::Left, MouseEventKind::Press);
         ev.px = Some(1920);
         ev.py = Some(1080);
@@ -999,7 +999,7 @@ mod sgr_pixel_drop {
     /// → emissions empty. The `count` assertion proves no cell was
     /// silently skipped by the loop body.
     #[test]
-    fn t25_pin_sgr_pixel_active_with_none_coords_never_emits_any_bytes() {
+    fn pin_sgr_pixel_active_with_none_coords_never_emits_any_bytes() {
         let buttons = [
             MouseButton::Left,
             MouseButton::Middle,
@@ -1105,7 +1105,7 @@ mod sgr_pixel_drop {
     /// envelope bytes (`\x1b[M`) NOR SGR cell-coord bytes
     /// masquerading as pixels.
     #[test]
-    fn t26_negative_pin_sgr_pixel_active_x10_envelope_banned() {
+    fn negative_pin_sgr_pixel_active_x10_envelope_banned() {
         let ev = ev_no_pixels(MouseButton::Left, MouseEventKind::Press);
         let mode = TermMode::MOUSE_DRAG | TermMode::MOUSE_SGR_PIXEL;
         let report = encode_mouse_event(&ev, mode);
