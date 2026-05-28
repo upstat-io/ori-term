@@ -245,13 +245,29 @@ impl TermWindow {
     /// Apply a pending surface reconfigure (DXGI `ResizeBuffers`).
     ///
     /// Must be called before acquiring a surface texture for rendering.
-    /// Returns `true` if the surface was reconfigured.
+    /// Returns `true` if the surface was reconfigured. Returns `false` AND
+    /// leaves `surface_stale = true` when configure panics (caught) — the
+    /// caller MUST skip surface acquisition this frame; the next frame's
+    /// `apply_pending_surface_resize` call retries, and if it keeps failing
+    /// the renderer's `SurfaceError::Outdated` path drives surface
+    /// recreation.
+    ///
+    /// See: bug-tracker/plans/completed/BUG-06-108/
     pub(crate) fn apply_pending_surface_resize(&mut self, gpu: &GpuState) -> bool {
         if !self.surface_stale {
             return false;
         }
+        if gpu
+            .configure_surface(&self.surface, &self.surface_config)
+            .is_err()
+        {
+            log::warn!(
+                "surface reconfigure panicked during resize — leaving surface_stale=true; \
+                 renderer will retry next frame or fall back via SurfaceError::Outdated"
+            );
+            return false;
+        }
         self.surface_stale = false;
-        gpu.configure_surface(&self.surface, &self.surface_config);
         true
     }
 
@@ -313,6 +329,10 @@ pub(crate) enum WindowCreateError {
     Window(oriterm_ui::window::WindowError),
     /// GPU surface creation failed.
     Surface(wgpu::CreateSurfaceError),
+    /// GPU surface configuration panicked and was caught.
+    ///
+    /// See: bug-tracker/plans/completed/BUG-06-108/
+    SurfaceConfigurePanicked,
 }
 
 impl fmt::Display for WindowCreateError {
@@ -320,6 +340,9 @@ impl fmt::Display for WindowCreateError {
         match self {
             Self::Window(e) => write!(f, "{e}"),
             Self::Surface(e) => write!(f, "failed to create GPU surface for window: {e}"),
+            Self::SurfaceConfigurePanicked => {
+                f.write_str("GPU surface configuration panicked during window creation")
+            }
         }
     }
 }
@@ -329,6 +352,7 @@ impl std::error::Error for WindowCreateError {
         match self {
             Self::Window(e) => Some(e),
             Self::Surface(e) => Some(e),
+            Self::SurfaceConfigurePanicked => None,
         }
     }
 }
@@ -342,5 +366,16 @@ impl From<oriterm_ui::window::WindowError> for WindowCreateError {
 impl From<wgpu::CreateSurfaceError> for WindowCreateError {
     fn from(e: wgpu::CreateSurfaceError) -> Self {
         Self::Surface(e)
+    }
+}
+
+impl From<crate::gpu::state::SurfaceInitError> for WindowCreateError {
+    fn from(e: crate::gpu::state::SurfaceInitError) -> Self {
+        match e {
+            crate::gpu::state::SurfaceInitError::Create(e) => Self::from(e),
+            crate::gpu::state::SurfaceInitError::ConfigurePanicked => {
+                Self::SurfaceConfigurePanicked
+            }
+        }
     }
 }

@@ -1307,6 +1307,29 @@ impl crate::Surface for Surface {
                 raw
             }
             None => {
+ // ori_term patch: DXGI scaling is per-target.
+ // - CreateSwapChainForHwnd supports DXGI_SCALING_NONE
+ //   (eliminates DWM stretch artifact during drag-resize —
+ //   DXGI_SCALING_STRETCH, the wgpu default, causes visible
+ //   text jitter on every WM_SIZE until the app presents the
+ //   next frame).
+ // - CreateSwapChainForComposition MUST use DXGI_SCALING_STRETCH
+ //   per Microsoft docs:
+ //   https://learn.microsoft.com/en-us/windows/win32/api/dxgi1_2/nf-dxgi1_2-idxgifactory2-createswapchainforcomposition
+ //   ("You must also specify the DXGI_SCALING_STRETCH value in
+ //   the Scaling member of DXGI_SWAP_CHAIN_DESC1."). Setting
+ //   NONE on the composition path returns E_INVALIDARG, surfacing
+ //   as an Invalid-surface panic at Surface::configure on Windows
+ //   when window.opacity < 1.0 triggers the DComp path.
+ // Full patch rationale lives in this crate's README.md
+ // under "ori_term local patches".
+                let scaling = match self.target {
+                    SurfaceTarget::WndHandle(_) => Dxgi::DXGI_SCALING_NONE,
+                    SurfaceTarget::Visual(_)
+                    | SurfaceTarget::VisualFromWndHandle { .. }
+                    | SurfaceTarget::SurfaceHandle(_)
+                    | SurfaceTarget::SwapChainPanel(_) => Dxgi::DXGI_SCALING_STRETCH,
+                };
                 let desc = Dxgi::DXGI_SWAP_CHAIN_DESC1 {
                     AlphaMode: auxil::dxgi::conv::map_acomposite_alpha_mode(
                         config.composite_alpha_mode,
@@ -1321,13 +1344,7 @@ impl crate::Surface for Surface {
                     },
                     BufferUsage: Dxgi::DXGI_USAGE_RENDER_TARGET_OUTPUT,
                     BufferCount: swap_chain_buffer,
- // ori_term patch: use DXGI_SCALING_NONE to prevent the DWM
- // compositor from stretching the old frame to the new window
- // size during drag resize. With STRETCH (wgpu default), every
- // WM_SIZE causes visible text jitter until the app presents a
- // new frame. NONE leaves the content at its rendered size,
- // showing empty space at the edges until the next present.
-                    Scaling: Dxgi::DXGI_SCALING_NONE,
+                    Scaling: scaling,
                     SwapEffect: Dxgi::DXGI_SWAP_EFFECT_FLIP_DISCARD,
                     Flags: flags.0 as u32,
                 };

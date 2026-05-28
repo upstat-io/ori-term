@@ -14,8 +14,8 @@ mod pipeline_cache;
 pub(crate) use helpers::AdapterPreference;
 
 use helpers::{
-    SurfaceFormatParams, build_surface_config, pick_adapter, request_device, select_alpha_mode,
-    select_formats, select_present_mode,
+    ConfigurePanicked, SurfaceFormatParams, build_surface_config, pick_adapter, request_device,
+    select_alpha_mode, select_formats, select_present_mode, try_configure_surface,
 };
 
 use std::fmt;
@@ -35,6 +35,48 @@ impl fmt::Display for GpuInitError {
 }
 
 impl std::error::Error for GpuInitError {}
+
+/// Error returned by [`GpuState::create_surface`].
+///
+/// `create_surface` can fail in two ways:
+/// - The wgpu instance refuses the window handle (existing path) →
+///   [`SurfaceInitError::Create`] wrapping the wgpu error.
+/// - `wgpu::Surface::configure` panicked during the per-window configure
+///   (caught by [`try_configure_surface`]) →
+///   [`SurfaceInitError::ConfigurePanicked`]. Kept distinct so callers can
+///   distinguish "instance refused this window" from "configure panicked
+///   mid-flight."
+///
+/// See: bug-tracker/plans/completed/BUG-06-108/
+#[derive(Debug)]
+pub enum SurfaceInitError {
+    Create(wgpu::CreateSurfaceError),
+    ConfigurePanicked,
+}
+
+impl fmt::Display for SurfaceInitError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Create(e) => write!(f, "surface creation failed: {e}"),
+            Self::ConfigurePanicked => f.write_str("surface configure panicked"),
+        }
+    }
+}
+
+impl std::error::Error for SurfaceInitError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Create(e) => Some(e),
+            Self::ConfigurePanicked => None,
+        }
+    }
+}
+
+impl From<wgpu::CreateSurfaceError> for SurfaceInitError {
+    fn from(e: wgpu::CreateSurfaceError) -> Self {
+        Self::Create(e)
+    }
+}
 
 /// GPU state shared across all windows.
 pub struct GpuState {
@@ -190,11 +232,15 @@ impl GpuState {
     }
 
     /// Create and configure a new surface for a window.
+    ///
+    /// Returns [`SurfaceInitError`] so the caller can distinguish wgpu
+    /// instance refusal from a caught configure panic.
+    ///
+    /// See: bug-tracker/plans/completed/BUG-06-108/
     pub fn create_surface(
         &self,
         window: &Arc<Window>,
-    ) -> Result<(wgpu::Surface<'static>, wgpu::SurfaceConfiguration), wgpu::CreateSurfaceError>
-    {
+    ) -> Result<(wgpu::Surface<'static>, wgpu::SurfaceConfiguration), SurfaceInitError> {
         let surface = self.instance.create_surface(window.clone())?;
         let size = window.inner_size();
         let config = build_surface_config(
@@ -208,19 +254,25 @@ impl GpuState {
             size.width,
             size.height,
         );
-        surface.configure(&self.device, &config);
+        try_configure_surface(&surface, &self.device, &config)
+            .map_err(|_marker| SurfaceInitError::ConfigurePanicked)?;
         Ok((surface, config))
     }
 
     /// Reconfigure an existing surface (e.g. after a window resize).
     ///
     /// Encapsulates device access so callers don't need the raw wgpu `Device`.
+    ///
+    /// Returns `Result` so callers can detect a caught configure panic
+    /// and skip the failing frame instead of acquiring a stale surface.
+    ///
+    /// See: bug-tracker/plans/completed/BUG-06-108/
     pub fn configure_surface(
         &self,
         surface: &wgpu::Surface<'_>,
         config: &wgpu::SurfaceConfiguration,
-    ) {
-        surface.configure(&self.device, config);
+    ) -> Result<(), ConfigurePanicked> {
+        try_configure_surface(surface, &self.device, config)
     }
 
     /// Render a single clear frame to a surface.
@@ -394,7 +446,13 @@ impl GpuState {
             size.width,
             size.height,
         );
-        surface.configure(&device, &config);
+        if try_configure_surface(&surface, &device, &config).is_err() {
+            log::warn!(
+                "Surface::configure panicked on backends={backends:?} dcomp={dcomp} \
+                 transparent={transparent} — treating as init failure to invoke fallback"
+            );
+            return None;
+        }
         drop(config);
         let t_configure = t0.elapsed();
 
