@@ -511,6 +511,27 @@ impl<S: EffectSink> Handler for Term<S> {
     delegate_osc!(decdc(count: u16) => decdc_impl);
     delegate_osc!(decbi() => decbi_impl);
     delegate_osc!(decfi() => decfi_impl);
+
+    // DEC Locator subsystem (CSI ' w/z/{/|). Independent of DECSET 1001
+    // (highlight tracking — separate protocol per F1 cure). Apex emission
+    // for DECRQLP → DECLRP reply is gated on mux-routing work tracked in
+    // bug-tracker §11 (PtyWriteKind end-to-end preservation); state
+    // mutation is wired now, emission is a state-only no-op until unblocked.
+    fn decefr(&mut self, pt: u16, pl: u16, pb: u16, pr: u16) {
+        self.dec_locator.apply_decefr(pt, pl, pb, pr);
+    }
+    fn decelr(&mut self, ps: u16, pu: u16) {
+        self.dec_locator.apply_decelr(ps, pu);
+    }
+    fn decsle(&mut self, events: &[u16]) {
+        self.dec_locator.apply_decsle(events);
+    }
+    fn decrqlp(&mut self, _ps: u16) {
+        // §16.1.C DECLRP reply emission deferred per the comment above.
+        // The state-side commitment (OneShot auto-clear) fires here so
+        // tests can pin the auto-clear semantics independent of emission.
+        self.dec_locator.on_decrqlp_acknowledged();
+    }
 }
 
 #[cfg(test)]
