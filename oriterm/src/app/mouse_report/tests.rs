@@ -1,8 +1,7 @@
 //! Tests for mouse event encoding.
 
 use oriterm_core::TermMode;
-
-use super::encode::{
+use oriterm_core::encode::mouse::{
     MouseButton, MouseEvent, MouseEventKind, MouseModifiers, apply_modifiers, button_code,
     encode_mouse_event, encode_normal, encode_sgr, encode_utf8,
 };

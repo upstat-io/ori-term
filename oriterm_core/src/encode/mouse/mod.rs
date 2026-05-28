@@ -2,14 +2,22 @@
 //!
 //! Pure functions that encode mouse events as escape sequences. Zero-allocation:
 //! all output is written into a stack-allocated [`MouseReportBuf`].
+//!
+//! Per Decision 10 Option A (`plans/spec-conformance/decisions/10-mouse-verification-apex-effect-vs-app-capture.md`)
+//! and §16.2.0, the encoder body lives in `oriterm_core` so that emission
+//! flows through `Effect::Pty(PtyEffect::Write { kind: PtyWriteKind::MouseEvent, bytes })`
+//! via [`Term::handle_mouse_input`](crate::term::Term::handle_mouse_input).
+//! The App layer constructs semantic [`MouseEvent`] values from winit input
+//! and dispatches them; the encoder reads `TermMode` and emits through the
+//! existing Effect sink — the same apex pattern §16.1.C established for DECLRP.
 
 use std::io::{Cursor, Write};
 
-use oriterm_core::TermMode;
+use crate::TermMode;
 
 /// Mouse button for reporting.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum MouseButton {
+pub enum MouseButton {
     /// Left button (code 0).
     Left,
     /// Middle button (code 1).
@@ -26,7 +34,7 @@ pub(crate) enum MouseButton {
 
 /// Mouse event kind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum MouseEventKind {
+pub enum MouseEventKind {
     /// Button pressed.
     Press,
     /// Button released.
@@ -36,8 +44,12 @@ pub(crate) enum MouseEventKind {
 }
 
 /// Modifier state for mouse reports.
+///
+/// Intermediate type during the §16.2.0 migration; §16.3 cure replaces
+/// with the canonical `Modifiers` SSOT (currently at
+/// `oriterm/src/key_encoding/mod.rs`).
 #[derive(Debug, Clone, Copy, Default)]
-pub(crate) struct MouseModifiers {
+pub struct MouseModifiers {
     /// Shift key held.
     pub shift: bool,
     /// Alt/Meta key held.
@@ -50,7 +62,7 @@ pub(crate) struct MouseModifiers {
 ///
 /// Avoids heap allocation in the hot path. All encoding functions
 /// write into this buffer via `std::io::Cursor`.
-pub(crate) struct MouseReportBuf {
+pub struct MouseReportBuf {
     data: [u8; 32],
     len: usize,
 }
@@ -65,7 +77,7 @@ impl MouseReportBuf {
     }
 
     /// The encoded bytes, or empty if encoding failed.
-    pub(crate) fn as_bytes(&self) -> &[u8] {
+    pub fn as_bytes(&self) -> &[u8] {
         &self.data[..self.len]
     }
 }
@@ -74,7 +86,7 @@ impl MouseReportBuf {
 ///
 /// Left=0, Middle=1, Right=2, ScrollUp=64, ScrollDown=65.
 /// Motion adds 32 to the base code.
-pub(super) fn button_code(button: MouseButton, kind: MouseEventKind) -> u8 {
+pub fn button_code(button: MouseButton, kind: MouseEventKind) -> u8 {
     let base = match button {
         MouseButton::Left => 0,
         MouseButton::Middle => 1,
@@ -93,7 +105,7 @@ pub(super) fn button_code(button: MouseButton, kind: MouseEventKind) -> u8 {
 /// Apply modifier bits to a button code.
 ///
 /// Shift=+4, Alt=+8, Ctrl=+16.
-pub(super) fn apply_modifiers(code: u8, mods: MouseModifiers) -> u8 {
+pub fn apply_modifiers(code: u8, mods: MouseModifiers) -> u8 {
     let mut result = code;
     if mods.shift {
         result += 4;
@@ -112,16 +124,9 @@ pub(super) fn apply_modifiers(code: u8, mods: MouseModifiers) -> u8 {
 /// Format: `\x1b[<code;col+1;line+1{M|m}`
 /// Uses `M` for press/motion, `m` for release. Coordinates are 1-indexed.
 /// Returns the number of bytes written.
-pub(super) fn encode_sgr(
-    buf: &mut [u8],
-    code: u8,
-    col: usize,
-    line: usize,
-    pressed: bool,
-) -> usize {
+pub fn encode_sgr(buf: &mut [u8], code: u8, col: usize, line: usize, pressed: bool) -> usize {
     let suffix = if pressed { 'M' } else { 'm' };
     let mut cursor = Cursor::new(buf);
-    // write! on Cursor<&mut [u8]> returns io::Error on overflow — treat as 0.
     let Ok(()) = write!(cursor, "\x1b[<{code};{};{}{suffix}", col + 1, line + 1) else {
         return 0;
     };
@@ -150,13 +155,12 @@ fn write_utf8_coord(cursor: &mut Cursor<&mut [u8]>, pos: usize) -> bool {
 /// Format: `\x1b[M` + button byte + col byte(s) + line byte(s).
 /// Coordinates use a custom 2-byte encoding for values >= 95.
 /// Returns 0 if coordinates are out of range (> 2015).
-pub(super) fn encode_utf8(buf: &mut [u8], code: u8, col: usize, line: usize) -> usize {
+pub fn encode_utf8(buf: &mut [u8], code: u8, col: usize, line: usize) -> usize {
     let mut cursor = Cursor::new(buf);
     let Ok(()) = cursor.write_all(b"\x1b[M") else {
         return 0;
     };
 
-    // Button byte: always 32 + code (single byte).
     let btn = 32u32 + u32::from(code);
     if btn > 127 {
         return 0;
@@ -165,7 +169,6 @@ pub(super) fn encode_utf8(buf: &mut [u8], code: u8, col: usize, line: usize) -> 
         return 0;
     };
 
-    // Encode each coordinate.
     for pos in [col, line] {
         if !write_utf8_coord(&mut cursor, pos) {
             return 0;
@@ -195,7 +198,7 @@ fn encode_urxvt(buf: &mut [u8], code: u8, col: usize, line: usize) -> usize {
 /// Returns 0 (drops the event) if either coordinate exceeds 222,
 /// since 32 + 1 + 222 = 255 is the max encodable `u8` value.
 /// Sending a clamped coordinate would report a wrong position.
-pub(super) fn encode_normal(buf: &mut [u8], code: u8, col: usize, line: usize) -> usize {
+pub fn encode_normal(buf: &mut [u8], code: u8, col: usize, line: usize) -> usize {
     if col > 222 || line > 222 {
         return 0;
     }
@@ -212,7 +215,7 @@ pub(super) fn encode_normal(buf: &mut [u8], code: u8, col: usize, line: usize) -
 }
 
 /// Input parameters for [`encode_mouse_event`].
-pub(crate) struct MouseEvent {
+pub struct MouseEvent {
     /// Which button (or scroll direction).
     pub button: MouseButton,
     /// Press, release, or motion.
@@ -230,11 +233,10 @@ pub(crate) struct MouseEvent {
 /// Priority: SGR > URXVT > UTF-8 > Normal. Returns the encoded bytes in
 /// the buffer. For X10 mode (mode 9), modifiers are stripped and only
 /// presses are encoded (releases return an empty buffer).
-pub(crate) fn encode_mouse_event(event: &MouseEvent, mode: TermMode) -> MouseReportBuf {
+pub fn encode_mouse_event(event: &MouseEvent, mode: TermMode) -> MouseReportBuf {
     let mut buf = MouseReportBuf::new();
     let x10 = mode.contains(TermMode::MOUSE_X10);
 
-    // X10 mode: no modifiers in the button code.
     let code = if x10 {
         button_code(event.button, event.kind)
     } else {
@@ -242,7 +244,6 @@ pub(crate) fn encode_mouse_event(event: &MouseEvent, mode: TermMode) -> MouseRep
     };
     let pressed = event.kind != MouseEventKind::Release;
 
-    // X10 mode: only report button presses, not releases or motion.
     if x10 && !pressed {
         return buf;
     }
@@ -254,7 +255,6 @@ pub(crate) fn encode_mouse_event(event: &MouseEvent, mode: TermMode) -> MouseRep
     } else if mode.contains(TermMode::MOUSE_UTF8) {
         encode_utf8(&mut buf.data, code, event.col, event.line)
     } else {
-        // Normal (X10) format: release uses code 3 (+ modifiers).
         let code = if event.kind == MouseEventKind::Release {
             apply_modifiers(3, event.mods)
         } else {
@@ -265,3 +265,6 @@ pub(crate) fn encode_mouse_event(event: &MouseEvent, mode: TermMode) -> MouseRep
 
     buf
 }
+
+#[cfg(test)]
+mod tests;

@@ -5,22 +5,21 @@
 //! Also handles alternate scroll (sending arrow keys in alt screen) and
 //! motion deduplication.
 
-mod encode;
 mod wheel_dispatch;
 
 use winit::dpi::PhysicalPosition;
 use winit::event::MouseScrollDelta;
 
 use oriterm_core::TermMode;
+pub(crate) use oriterm_core::encode::mouse::{
+    MouseButton, MouseEvent, MouseEventKind, MouseModifiers, encode_mouse_event,
+};
 
 use crate::key_encoding::cursor_keys::{CursorKey, cursor_key_bytes};
 
 use super::App;
 use super::mouse_selection::{self, GridCtx};
 
-pub(crate) use encode::{
-    MouseButton, MouseEvent, MouseEventKind, MouseModifiers, encode_mouse_event,
-};
 use wheel_dispatch::{WheelDispatch, dispatch_wheel};
 
 /// Direction of a mouse wheel event after `parse_wheel_delta` normalization.

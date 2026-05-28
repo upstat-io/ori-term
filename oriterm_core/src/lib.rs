@@ -10,6 +10,7 @@
 pub mod cell;
 pub mod color;
 pub mod effect;
+pub mod encode;
 pub mod event;
 pub mod grid;
 pub mod image;

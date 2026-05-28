@@ -14,9 +14,9 @@ use oriterm_core::TermMode;
 use oriterm_mux::PaneId;
 
 use super::App;
-use super::encode::{MouseButton, MouseEvent, MouseEventKind, MouseModifiers, encode_mouse_event};
 use super::{
-    ScrollDirection, WheelTier, classify_wheel_event, parse_wheel_delta, tier2_alt_scroll_payload,
+    MouseButton, MouseEvent, MouseEventKind, MouseModifiers, ScrollDirection, WheelTier,
+    classify_wheel_event, encode_mouse_event, parse_wheel_delta, tier2_alt_scroll_payload,
 };
 
 /// Side-effect surface consumed by [`dispatch_wheel`].

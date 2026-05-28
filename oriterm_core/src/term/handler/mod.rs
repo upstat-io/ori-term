@@ -12,6 +12,7 @@ use vte::ansi::{
 
 use crate::effect::sink::EffectSink;
 use crate::effect::{Effect, PtyEffect, PtyWriteKind};
+use crate::encode::mouse::{MouseEvent, encode_mouse_event};
 
 use self::rect_ops::DecRect;
 use super::{Term, TermMode};
@@ -65,6 +66,32 @@ impl<S: EffectSink> Term<S> {
         let pc: u16 = 1;
         let pp: u16 = 1;
         format!("\x1b[{pe};{pm};{pr};{pc};{pp}&w").into_bytes()
+    }
+
+    /// Handle a semantic mouse input from the UI layer.
+    ///
+    /// Reads `TermMode`, encodes per protocol selection (SGR / URXVT /
+    /// UTF-8 / Normal / X10), and emits `Effect::Pty(PtyEffect::Write
+    /// { kind: PtyWriteKind::MouseEvent, bytes })`. App's effect-drain
+    /// loop carries the emission to the PTY.
+    ///
+    /// No-op when (a) the encoder returns an empty buffer (X10 release,
+    /// coordinate overflow) OR (b) no mouse-encoding mode is active —
+    /// avoids pushing an empty `PtyEffect::Write` that downstream
+    /// observers would have to filter.
+    ///
+    /// Decision 10 Option A apex per `plans/spec-conformance/decisions/10-mouse-verification-apex-effect-vs-app-capture.md`
+    /// and §16.2.0.
+    pub fn handle_mouse_input(&self, event: &MouseEvent) {
+        let report = encode_mouse_event(event, self.mode);
+        let bytes = report.as_bytes();
+        if bytes.is_empty() {
+            return;
+        }
+        self.effect_sink.push(Effect::Pty(PtyEffect::Write {
+            bytes: bytes.to_vec(),
+            kind: PtyWriteKind::MouseEvent,
+        }));
     }
 }
 
