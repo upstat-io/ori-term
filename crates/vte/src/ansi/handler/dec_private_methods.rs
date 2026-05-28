@@ -100,6 +100,26 @@ macro_rules! handler_dec_private_methods {
         /// DECDC — Delete Column (CSI Ps ' ~).
         fn decdc(&mut self, _count: u16) {}
 
+        /// DECEFR — Enable Filter Rectangle (CSI Pt;Pl;Pb;Pr ' w).
+        /// Defines the coordinates of a filter rectangle for the DEC
+        /// Locator subsystem. NOT gated by DECSET 1001 (which is highlight
+        /// tracking, a separate protocol per the F1 cure); the DEC Locator
+        /// is independently activated by DECELR.
+        fn decefr(&mut self, _pt: u16, _pl: u16, _pb: u16, _pr: u16) {}
+
+        /// DECELR — Enable Locator Reporting (CSI Ps;Pu ' z).
+        /// Ps: 0 = disabled, 1 = continuous, 2 = one-report-then-disabled.
+        /// Pu: 0 or 2 = character cells, 1 = pixels.
+        fn decelr(&mut self, _ps: u16, _pu: u16) {}
+
+        /// DECSLE — Select Locator Events (CSI Pm ' {).
+        /// Pm: bitmask of event classes the locator should report.
+        fn decsle(&mut self, _events: &[u16]) {}
+
+        /// DECRQLP — Request Locator Position (CSI Ps ' |).
+        /// Ps: 0, 1, or omitted = transmit a single DECLRP locator report.
+        fn decrqlp(&mut self, _ps: u16) {}
+
         /// DECBI — Back Index (ESC 6). VT420 and up.
         fn decbi(&mut self) {}
 

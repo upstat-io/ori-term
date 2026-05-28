@@ -467,6 +467,36 @@ pub(super) fn dispatch<H: Handler, T: Timeout>(
         ('}', [b'\'']) => handler.decic(next_param_or(1)),
         ('~', [b'$']) => handler.decssdt(next_param_or(0)),
         ('~', [b'\'']) => handler.decdc(next_param_or(1)),
+        ('w', [b'\'']) => {
+            // DECEFR — Enable Filter Rectangle (CSI Pt;Pl;Pb;Pr ' w).
+            // DEC Locator subsystem (independent of DECSET 1001).
+            let pt = next_param_or(0);
+            let pl = next_param_or(0);
+            let pb = next_param_or(0);
+            let pr = next_param_or(0);
+            handler.decefr(pt, pl, pb, pr);
+        },
+        ('z', [b'\'']) => {
+            // DECELR — Enable Locator Reporting (CSI Ps;Pu ' z).
+            // Ps: 0=disabled, 1=continuous, 2=one-report-then-disabled.
+            // Pu: 0|2=character cells, 1=pixels.
+            let ps = next_param_or(0);
+            let pu = next_param_or(0);
+            handler.decelr(ps, pu);
+        },
+        ('{', [b'\'']) => {
+            // DECSLE — Select Locator Events (CSI Pm ' {).
+            // Pm = bitmask of event classes to report.
+            let events: Vec<u16> = std::iter::once(next_param_or(0))
+                .chain(params_iter.map(|p| p[0]))
+                .collect();
+            handler.decsle(&events);
+        },
+        ('|', [b'\'']) => {
+            // DECRQLP — Request Locator Position (CSI Ps ' |).
+            // Ps: 0|1|omitted = transmit a single DECLRP locator report.
+            handler.decrqlp(next_param_or(0));
+        },
         _ => unhandled!(),
     }
 }
