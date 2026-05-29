@@ -173,7 +173,7 @@ pub(super) fn dispatch_wheel<S: WheelSink>(input: WheelDispatch, sink: &mut S) -
 
 impl WheelSink for App {
     fn write_pane_input(&mut self, pane_id: PaneId, bytes: &[u8]) {
-        // SAFETY: `Self::write_pane_input` resolves to the inherent
+        // INVARIANT: `Self::write_pane_input` resolves to the inherent
         // `App::write_pane_input` (pane_accessors.rs), not the trait
         // method — Rust's UFCS prefers inherent methods when both exist
         // with the same name. Renaming the inherent method without

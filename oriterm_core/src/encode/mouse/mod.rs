@@ -1,4 +1,4 @@
-//! Mouse event encoding: SGR-Pixel, SGR, UTF-8, URXVT, and Normal (X10) formats.
+//! Mouse event encoding: SGR-Pixel, SGR, URXVT, UTF-8, and Normal (X10) formats.
 //!
 //! Pure functions that encode mouse events as escape sequences. Zero-allocation:
 //! all output is written into a stack-allocated [`MouseReportBuf`].
@@ -155,9 +155,25 @@ pub fn apply_modifiers(code: u8, mods: MouseModifiers) -> u8 {
 /// Uses `M` for press/motion, `m` for release. Coordinates are 1-indexed.
 /// Returns the number of bytes written.
 pub fn encode_sgr(buf: &mut [u8], code: u8, col: usize, line: usize, pressed: bool) -> usize {
+    write_sgr_envelope(buf, code, col + 1, line + 1, pressed)
+}
+
+/// Write the shared SGR / SGR-Pixel wire envelope `\x1b[<{code};{c1};{c2}{M|m}`.
+///
+/// `c1`/`c2` are already-1-indexed coordinates — cell col/line for SGR
+/// (mode 1006), device px/py for SGR-Pixel (mode 1016). `M` = press/motion,
+/// `m` = release. Returns bytes written, 0 when `buf` is too small. Single
+/// source for the envelope so 1006 and 1016 cannot drift apart.
+fn write_sgr_envelope<T: core::fmt::Display>(
+    buf: &mut [u8],
+    code: u8,
+    c1: T,
+    c2: T,
+    pressed: bool,
+) -> usize {
     let suffix = if pressed { 'M' } else { 'm' };
     let mut cursor = Cursor::new(buf);
-    let Ok(()) = write!(cursor, "\x1b[<{code};{};{}{suffix}", col + 1, line + 1) else {
+    let Ok(()) = write!(cursor, "\x1b[<{code};{c1};{c2}{suffix}") else {
         return 0;
     };
     cursor.position() as usize
@@ -221,12 +237,7 @@ pub fn encode_utf8(buf: &mut [u8], code: u8, col: usize, line: usize) -> usize {
 /// 1016-aware clients (notcurses) decode the correct cell at every DPI
 /// scale. The App does NOT divide by `Window::scale_factor()`.
 pub fn encode_sgr_pixel(buf: &mut [u8], code: u8, px: u32, py: u32, pressed: bool) -> usize {
-    let suffix = if pressed { 'M' } else { 'm' };
-    let mut cursor = Cursor::new(buf);
-    let Ok(()) = write!(cursor, "\x1b[<{code};{};{}{suffix}", px + 1, py + 1) else {
-        return 0;
-    };
-    cursor.position() as usize
+    write_sgr_envelope(buf, code, px + 1, py + 1, pressed)
 }
 
 /// Encode a mouse event in URXVT format.
