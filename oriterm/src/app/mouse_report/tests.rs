@@ -1067,6 +1067,68 @@ fn urxvt_release_uses_m_suffix() {
     );
 }
 
+/// Regression: UTF-8 (mode 1005) reports a button RELEASE with X10 button
+/// code 3 (low-bits), NOT the real button code — 1005 changes only the
+/// coordinate transport, the Cb encoding is X10 (xterm ctlseqs). Left
+/// release → 32 + 3 = byte 35.
+#[test]
+fn utf8_release_encodes_button_code_3() {
+    let mode = TermMode::MOUSE_REPORT_CLICK | TermMode::MOUSE_UTF8;
+    let e = event(MouseButton::Left, MouseEventKind::Release, 5, 3);
+    let bytes = encode_mouse_event(&e, mode).as_bytes().to_vec();
+    // \x1b[M {32+code} {32+col+1} {32+line+1}; byte[3] is Cb.
+    assert_eq!(
+        bytes[3],
+        32 + 3,
+        "UTF-8 release Cb must be X10 code 3 (byte 35), not the real button"
+    );
+}
+
+/// URXVT (mode 1015) "uses the same button encoding as X10" (xterm ctlseqs)
+/// — a release reports decimal Cb = 35 (32 + 3), not the real button.
+#[test]
+fn urxvt_release_encodes_button_code_3() {
+    let mode = TermMode::MOUSE_REPORT_CLICK | TermMode::MOUSE_URXVT;
+    let e = event(MouseButton::Left, MouseEventKind::Release, 5, 3);
+    let bytes = encode_mouse_event(&e, mode).as_bytes().to_vec();
+    assert_eq!(
+        bytes, b"\x1b[35;6;4M",
+        "URXVT release decimal Cb must be X10 code 3 (35)"
+    );
+}
+
+/// Release code 3 still carries modifier bits (xterm: +4 shift / +8 alt /
+/// +16 ctrl). Left+shift release under UTF-8 → 3 + 4 = byte 39.
+#[test]
+fn utf8_release_code_3_carries_modifier_bits() {
+    let mode = TermMode::MOUSE_REPORT_CLICK | TermMode::MOUSE_UTF8;
+    let mut e = event(MouseButton::Left, MouseEventKind::Release, 5, 3);
+    e.mods = MouseModifiers {
+        shift: true,
+        alt: false,
+        ctrl: false,
+    };
+    let bytes = encode_mouse_event(&e, mode).as_bytes().to_vec();
+    assert_eq!(
+        bytes[3],
+        32 + 3 + 4,
+        "UTF-8 release Cb = code 3 + shift(4) = byte 39"
+    );
+}
+
+/// Companion rejecting the pre-fix behavior: UTF-8 release must NOT carry the
+/// real Left button code (0 → byte 32).
+#[test]
+fn utf8_release_rejects_real_button_code() {
+    let mode = TermMode::MOUSE_REPORT_CLICK | TermMode::MOUSE_UTF8;
+    let e = event(MouseButton::Left, MouseEventKind::Release, 5, 3);
+    let bytes = encode_mouse_event(&e, mode).as_bytes().to_vec();
+    assert_ne!(
+        bytes[3], 32,
+        "release must not encode the real Left button code (byte 32)"
+    );
+}
+
 // --- X10 mode (mode 9) tests ---
 
 #[test]

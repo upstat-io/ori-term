@@ -438,8 +438,8 @@ impl App {
         // The clamp extent is the padding-INCLUSIVE widget bounds, which
         // overshoots the CSI 14t text area (cols*cell_w × rows*cell_h) by the
         // grid padding: a padding-band click reports a pixel a 1016-aware
-        // client decodes past the last cell. Text-area-extent fix tracked in
-        // this method's doc comment.
+        // client decodes past the last cell. The text-area-extent fix is a
+        // filed, tracked bug — see this method's doc-comment `See:` reference.
         clamp_mouse_pixel_coords(
             self.mouse.cursor_pos(),
             (f64::from(bounds.x()), f64::from(bounds.y())),

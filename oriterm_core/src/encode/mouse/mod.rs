@@ -405,6 +405,19 @@ pub fn encode_mouse_event(event: &MouseEvent, mode: TermMode) -> MouseReportBuf 
     // produces 0 for the None case, no panic path. The X10 fallthrough
     // in the final `else` arm is reachable ONLY when no extended-
     // encoding flag is set (legitimate legacy clients).
+    // Legacy encodings (X10 / UTF-8 mode 1005 / URXVT mode 1015 / Normal) all
+    // report a button RELEASE with X10 button code 3 (low-bits), still carrying
+    // modifier bits, per xterm ctlseqs (1005/1015 change only the coordinate
+    // transport, not the Cb encoding). SGR (1006) / SGR-Pixel (1016) instead
+    // keep the real button code and disambiguate release via the `m` suffix, so
+    // they use `code` unchanged. X10 is press-only (returned early above), so
+    // this substitution only reaches UTF-8 / URXVT / Normal.
+    let legacy_code = if event.kind == MouseEventKind::Release {
+        apply_modifiers(3, event.mods)
+    } else {
+        code
+    };
+
     buf.len = if mode.contains(TermMode::MOUSE_SGR_PIXEL) {
         if let (Some(px), Some(py)) = (event.px, event.py) {
             encode_sgr_pixel(&mut buf.data, code, px, py, pressed)
@@ -414,16 +427,11 @@ pub fn encode_mouse_event(event: &MouseEvent, mode: TermMode) -> MouseReportBuf 
     } else if mode.contains(TermMode::MOUSE_SGR) {
         encode_sgr(&mut buf.data, code, event.col, event.line, pressed)
     } else if mode.contains(TermMode::MOUSE_URXVT) {
-        encode_urxvt(&mut buf.data, code, event.col, event.line)
+        encode_urxvt(&mut buf.data, legacy_code, event.col, event.line)
     } else if mode.contains(TermMode::MOUSE_UTF8) {
-        encode_utf8(&mut buf.data, code, event.col, event.line)
+        encode_utf8(&mut buf.data, legacy_code, event.col, event.line)
     } else {
-        let code = if event.kind == MouseEventKind::Release {
-            apply_modifiers(3, event.mods)
-        } else {
-            code
-        };
-        encode_normal(&mut buf.data, code, event.col, event.line)
+        encode_normal(&mut buf.data, legacy_code, event.col, event.line)
     };
 
     buf
