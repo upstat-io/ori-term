@@ -254,7 +254,7 @@ impl App {
 
         // Drag (button held) uses the actual button code; mode 1003 motion
         // without a button uses None (code 3+32 = 35).
-        // Priority: left > middle > right (matches Alacritty).
+        // Priority: left > middle > right.
         let button = if self.mouse.left_down() {
             MouseButton::Left
         } else if self.mouse.middle_down() {
@@ -426,6 +426,8 @@ impl App {
     /// violation for legitimate clicks.
     ///
     /// See: bug-tracker/plans/BUG-08-057/
+    /// See: bug-tracker/plans/BUG-08-064/ — the clamp extent below is the
+    /// padding-inclusive widget bounds, not the CSI 14t text area.
     pub(super) fn clamped_cursor_px(&self) -> (Option<u32>, Option<u32>) {
         let Some(wctx) = self.focused_ctx() else {
             return (None, None);
@@ -433,6 +435,11 @@ impl App {
         let Some(bounds) = wctx.terminal_grid.bounds() else {
             return (None, None);
         };
+        // The clamp extent is the padding-INCLUSIVE widget bounds, which
+        // overshoots the CSI 14t text area (cols*cell_w × rows*cell_h) by the
+        // grid padding: a padding-band click reports a pixel a 1016-aware
+        // client decodes past the last cell. Text-area-extent fix tracked in
+        // this method's doc comment.
         clamp_mouse_pixel_coords(
             self.mouse.cursor_pos(),
             (f64::from(bounds.x()), f64::from(bounds.y())),

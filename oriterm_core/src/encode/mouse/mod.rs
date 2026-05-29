@@ -214,8 +214,8 @@ pub fn encode_utf8(buf: &mut [u8], code: u8, col: usize, line: usize) -> usize {
 /// but coordinates are PHYSICAL (device) pixels (1-indexed per xterm
 /// spec) rather than cell coords. Returns the number of bytes written.
 ///
-/// Per xterm `charproc.c` `kitty mouse.c` reference: SGR-Pixel adds
-/// `1` to the pixel coordinate (Px+1, Py+1) just like SGR adds 1 to
+/// Per the DEC mode 1016 SGR-Pixel protocol, the encoder adds `1` to
+/// each pixel coordinate (Px+1, Py+1) just as SGR (mode 1006) adds 1 to
 /// cell coords. Pixel coordinates flow from the App layer as PHYSICAL
 /// (device) pixels — the SAME unit as the CSI 14t cell-pixel report, so
 /// 1016-aware clients (notcurses) decode the correct cell at every DPI
@@ -399,7 +399,7 @@ pub fn encode_mouse_event(event: &MouseEvent, mode: TermMode) -> MouseReportBuf 
     // notcurses/src/lib/in.c:556-586 pixelmouse_click). When 1016 is
     // active and the App caller did not supply pixel coords, the
     // encoder emits NO bytes — the App-side clamping at
-    // App::mouse_pixel_coords guarantees Some pixel coords for every
+    // App::clamped_cursor_px guarantees Some pixel coords for every
     // in-grid event so this branch is unreachable in production for
     // legitimate clicks. The encoder is a total function: if-let-else
     // produces 0 for the None case, no panic path. The X10 fallthrough

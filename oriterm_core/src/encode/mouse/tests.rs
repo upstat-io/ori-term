@@ -232,7 +232,7 @@ fn encode_mouse_event_sgr_pixel_mode_routes_through_sgr_pixel_when_coords_presen
 // 1016 is active; cell coords substituted into the SGR envelope would land
 // at cell `(col/cellpxx, line/cellpxy)` instead of `(col, line)`). The
 // drop-on-None semantic in `encode_mouse_event` + App-side clamping in
-// `mouse_pixel_coords` replaces the fallback. Coverage now lives in the
+// `clamped_cursor_px` replaces the fallback. Coverage now lives in the
 // sgr_pixel_drop module below.
 
 #[test]
