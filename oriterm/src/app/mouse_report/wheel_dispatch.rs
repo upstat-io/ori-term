@@ -64,9 +64,10 @@ pub(super) struct WheelDispatch {
     pub pane_id: Option<PaneId>,
     pub mods: MouseModifiers,
     /// PHYSICAL (device) cursor pixel coordinates for SGR-Pixel mode 1016
-    /// encoding. `(None,
-    /// None)` when SGR-Pixel is not active or the cursor is outside the
-    /// grid; the cell encoders ignore them.
+    /// encoding. Computed unconditionally from `clamped_cursor_px` (no mode
+    /// gate); `(None, None)` only when there is no usable surface (no focused
+    /// context or grid bounds). The cell encoders ignore them when SGR-Pixel
+    /// is inactive.
     pub px: Option<u32>,
     pub py: Option<u32>,
     /// DEVICE physical-pixel cursor coordinates for DEC Locator Pu=1

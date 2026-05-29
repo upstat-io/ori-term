@@ -82,7 +82,12 @@ struct AltScrollPayload {
 /// free function directly.
 #[must_use]
 pub(super) fn should_report_mouse(mode: TermMode, shift_held: bool) -> bool {
-    !shift_held && mode.intersects(TermMode::ANY_MOUSE)
+    // The ANY_MOUSE-family membership is owned by the core SSOT
+    // `should_handle_mouse_input` (encode/mouse/mod.rs); compose with it
+    // rather than re-encoding `intersects(ANY_MOUSE)` so the gate cannot drift
+    // between the App and core callers. `!shift_held` is App-layer policy
+    // (shift bypasses tracking to allow text selection).
+    !shift_held && oriterm_core::encode::mouse::should_handle_mouse_input(mode)
 }
 
 /// Pure decision function: should a mouse wheel event be translated to

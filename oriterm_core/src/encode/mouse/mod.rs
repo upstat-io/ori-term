@@ -1,4 +1,4 @@
-//! Mouse event encoding: SGR, UTF-8, URXVT, and Normal (X10) formats.
+//! Mouse event encoding: SGR-Pixel, SGR, UTF-8, URXVT, and Normal (X10) formats.
 //!
 //! Pure functions that encode mouse events as escape sequences. Zero-allocation:
 //! all output is written into a stack-allocated [`MouseReportBuf`].
@@ -367,9 +367,9 @@ pub fn should_handle_mouse_input(mode: TermMode) -> bool {
 
 /// Encode a mouse event, selecting the format based on terminal mode.
 ///
-/// Priority: SGR > URXVT > UTF-8 > Normal. Returns the encoded bytes in
-/// the buffer. For X10 mode (mode 9), modifiers are stripped and only
-/// presses are encoded (releases return an empty buffer).
+/// Priority: SGR-Pixel > SGR > URXVT > UTF-8 > Normal. Returns the encoded
+/// bytes in the buffer. For X10 mode (mode 9), modifiers are stripped and
+/// only presses are encoded (releases return an empty buffer).
 pub fn encode_mouse_event(event: &MouseEvent, mode: TermMode) -> MouseReportBuf {
     let mut buf = MouseReportBuf::new();
     let x10 = mode.contains(TermMode::MOUSE_X10);
