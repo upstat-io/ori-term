@@ -193,8 +193,10 @@ impl App {
         let Some(pane_id) = self.active_pane_id() else {
             return false;
         };
-        let (px, py) = self.mouse_pixel_coords();
-        let physical_px = self.mouse_physical_px_opt();
+        // Read the shared physical-pixel source ONCE; the DEC Locator Pu=1
+        // `physical_px` is the same pair zipped (one grid-bounds clamp).
+        let (px, py) = self.clamped_cursor_px();
+        let physical_px = px.zip(py);
         let event = MouseEvent {
             button,
             kind,
@@ -262,8 +264,10 @@ impl App {
         } else {
             MouseButton::None
         };
-        let (px, py) = self.mouse_pixel_coords();
-        let physical_px = self.mouse_physical_px_opt();
+        // Read the shared physical-pixel source ONCE; the DEC Locator Pu=1
+        // `physical_px` is the same pair zipped (one grid-bounds clamp).
+        let (px, py) = self.clamped_cursor_px();
+        let physical_px = px.zip(py);
         let event = MouseEvent {
             button,
             kind: MouseEventKind::Motion,
@@ -303,8 +307,10 @@ impl App {
         let pane_id = self.active_pane_id();
         let mods = self.mouse_modifiers();
         let shift_held = self.modifiers.shift_key();
-        let (px, py) = self.mouse_pixel_coords();
-        let physical_px = self.mouse_physical_px_opt();
+        // Read the shared physical-pixel source ONCE; the DEC Locator Pu=1
+        // `physical_px` is the same pair zipped (one grid-bounds clamp).
+        let (px, py) = self.clamped_cursor_px();
+        let physical_px = px.zip(py);
         let encoder_dispatched = dispatch_wheel(
             WheelDispatch {
                 delta,
@@ -397,43 +403,29 @@ impl App {
         }
     }
 
-    /// Compute PHYSICAL (device) pixel coordinates of the current cursor
-    /// relative to the grid origin, for SGR-Pixel (DEC mode 1016) encoding.
+    /// PHYSICAL (device) cursor pixels relative to the grid origin, clamped
+    /// to grid bounds — the single physical-pixel source shared by the
+    /// SGR-Pixel (DEC mode 1016) encoder and DEC Locator Pu=1 observation.
+    /// Per-event dispatch reads it once via `clamped_cursor_px()` and derives
+    /// the `physical_px` shape with `px.zip(py)`; the locator path reads
+    /// [`mouse_physical_px_opt`](Self::mouse_physical_px_opt).
     ///
-    /// SGR-Pixel coordinates are PHYSICAL (device) pixels — the SAME unit as
-    /// the CSI 14t cell-pixel report, so 1016-aware clients (notcurses)
-    /// decode the correct cell at every DPI scale. Dividing by
-    /// `scale_factor()` (logical/CSS pixels) was the unit mismatch that broke
-    /// notcurses' `cellpxy` decode at scale > 1.0.
+    /// SGR-Pixel and CSI 14t both report PHYSICAL (device) pixels, so
+    /// 1016-aware clients (notcurses) decode the correct cell at every DPI
+    /// scale. Dividing by `scale_factor()` (logical/CSS pixels) was the unit
+    /// mismatch that broke notcurses' `cellpxy` decode at scale > 1.0.
     ///
     /// Returns `(Some, Some)` for every event where the surface checks pass
     /// (focused context + grid bounds). Cursor positions outside the grid
     /// widget's bounds are clamped to the nearest valid device pixel via
     /// [`clamp_mouse_pixel_coords`] — mirroring
     /// [`mouse_cell_clamped`](Self::mouse_cell_clamped). Returns
-    /// `(None, None)` ONLY when there is no usable surface. Callers that need
-    /// an in-grid surface predicate (rather than a clamped pixel pair) should
-    /// use [`mouse_cell`](Self::mouse_cell) or
-    /// [`pixel_to_cell`](Self::pixel_to_cell) — those return
-    /// `Option<(usize, usize)>` and signal in-grid vs out-of-grid via `Some`
-    /// vs `None`. The encoder treats `None` pixel coords under
-    /// `MOUSE_SGR_PIXEL` as an upstream invariant violation, not a drop
-    /// signal — this clamping is what prevents the violation for legitimate
-    /// clicks.
+    /// `(None, None)` ONLY when there is no usable surface. The encoder treats
+    /// `None` pixel coords under `MOUSE_SGR_PIXEL` as an upstream invariant
+    /// violation, not a drop signal — this clamping is what prevents the
+    /// violation for legitimate clicks.
     ///
     /// See: bug-tracker/plans/BUG-08-057/
-    fn mouse_pixel_coords(&self) -> (Option<u32>, Option<u32>) {
-        // SGR-Pixel (mode 1016) coords are PHYSICAL (device) pixels per
-        // identical to the DEC Locator physical-px source.
-        self.clamped_cursor_px()
-    }
-
-    /// PHYSICAL (device) cursor pixels relative to the grid origin, clamped
-    /// to grid bounds. The single physical-pixel source shared by the
-    /// SGR-Pixel encoder ([`mouse_pixel_coords`]) and DEC Locator Pu=1
-    /// observation ([`mouse_physical_px_opt`](App::mouse_physical_px_opt)) —
-    /// both report physical pixels (CSI 14t convention).
-    /// Returns `(None, None)` when there is no usable surface.
     pub(super) fn clamped_cursor_px(&self) -> (Option<u32>, Option<u32>) {
         let Some(wctx) = self.focused_ctx() else {
             return (None, None);
@@ -449,7 +441,7 @@ impl App {
     }
 }
 
-/// Pure clamping helper for [`App::mouse_pixel_coords`] — the pixel-
+/// Pure clamping helper for [`App::clamped_cursor_px`] — the pixel-
 /// coordinate surface predicate factored out so it can be tested
 /// headlessly without constructing `App` / `TermWindow` / `wgpu::Surface`.
 /// Mirrors the clamping shape of `mouse_selection::pixel_to_cell` for
@@ -461,7 +453,7 @@ impl App {
 /// PHYSICAL (device) pixel. Returns `(None, None)` for the "no usable
 /// surface" cases — sub-pixel or zero bounds, or any non-finite input
 /// (NaN / infinity). Extracted from
-/// `App::mouse_pixel_coords` so it is testable without constructing
+/// `App::clamped_cursor_px` so it is testable without constructing
 /// `App` / `TermWindow` / `wgpu::Surface`, mirroring the existing
 /// `RecordingSink` / `WheelDispatch` headless-seam pattern.
 ///

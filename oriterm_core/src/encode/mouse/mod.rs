@@ -284,8 +284,8 @@ pub struct MouseEvent {
     /// (`FontCollection::cell_metrics()` per §05 Golden Lane SSOT) +
     /// sub-cell offset. SGR-Pixel reports use PHYSICAL (device) pixels —
     /// the SAME unit as the CSI 14t cell-pixel report, so 1016-aware
-    /// clients (notcurses) decode the correct cell at every DPI scale
-    ///. The App does NOT divide by `Window::scale_factor()`.
+    /// clients (notcurses) decode the correct cell at every DPI scale. The
+    /// App does NOT divide by `Window::scale_factor()`.
     pub px: Option<u32>,
     /// PHYSICAL (device) pixel y coordinate for SGR-Pixel encoding. See `px`.
     pub py: Option<u32>,

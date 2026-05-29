@@ -1792,7 +1792,7 @@ fn classify_wheel_event_empty_mode_with_shift_held_returns_viewport_scroll() {
     );
 }
 
-// --- ANY_MOUSE_ENCODING isolation negative pins ---
+// --- ANY_MOUSE_ENCODING isolation rejection tests ---
 
 /// Catalog row: DEC-ALT-SCROLL
 /// Regression guard: MOUSE_SGR is in ANY_MOUSE_ENCODING (encoding format),

@@ -111,14 +111,13 @@ impl App {
     /// → `Some((x, y))`, otherwise `None`.
     ///
     /// Per xterm `button.c:785-807`, DECELR Pu=1 reports raw DEVICE pixels.
-    /// The SGR-Pixel encoder px/py is now ALSO physical, so this
-    /// and `mouse_pixel_coords` are the SAME grid-relative device coordinate
-    /// — both read the single shared [`clamped_cursor_px`](App::clamped_cursor_px)
-    /// source (no parallel physical-pixel computation).
+    /// The SGR-Pixel encoder px/py is also physical, so this and the
+    /// SGR-Pixel `px.zip(py)` are the SAME grid-relative device coordinate —
+    /// both read the single shared
+    /// [`clamped_cursor_px`](App::clamped_cursor_px) source (no parallel
+    /// physical-pixel computation).
     pub(super) fn mouse_physical_px_opt(&self) -> Option<(u32, u32)> {
-        match self.clamped_cursor_px() {
-            (Some(x), Some(y)) => Some((x, y)),
-            _ => None,
-        }
+        let (x, y) = self.clamped_cursor_px();
+        x.zip(y)
     }
 }
