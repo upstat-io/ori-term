@@ -73,6 +73,13 @@ impl MuxBackend for MuxClient {
         self.pane_snapshots.get(&pane_id).map(|s| s.modes)
     }
 
+    /// See: bug-tracker/section-11-mux.md (BUG-11-067) — daemon DEC Locator
+    /// wire propagation. Until that lands, daemon mode reports the locator
+    /// inactive; embedded mode (the default) reads the real lock-free cache.
+    fn pane_dec_locator_active(&self, _pane_id: PaneId) -> bool {
+        false
+    }
+
     fn set_pane_theme(&mut self, pane_id: PaneId, theme: Theme, palette: oriterm_core::Palette) {
         let theme_str = theme_to_wire(theme).unwrap_or("dark").to_owned();
         let palette_rgb: Vec<[u8; 3]> = (0..270)

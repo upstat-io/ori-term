@@ -14,15 +14,7 @@ use super::{
 };
 
 fn event(button: MouseButton, kind: MouseEventKind, col: usize, line: usize) -> MouseEvent {
-    MouseEvent {
-        button,
-        kind,
-        col,
-        line,
-        mods: MouseModifiers::default(),
-        px: None,
-        py: None,
-    }
+    MouseEvent::cell(button, kind, col, line, MouseModifiers::default())
 }
 
 #[test]
@@ -99,6 +91,43 @@ fn encode_utf8_basic_press() {
     assert_eq!(&buf[..n], &[0x1b, b'[', b'M', 32, 32 + 1 + 10, 32 + 1 + 20]);
 }
 
+// UTF-8 extended-coordinate boundary. `write_utf8_coord`
+// accepts `val = 33 + pos <= 0x7FF` (2-byte encoding), rejects above.
+// pos=2014 → val=0x7FF (accepted, 2 bytes); pos=2015 → val=0x800
+// (rejected → whole encode returns 0). Byte count: ESC `[` `M` (3) +
+// button (1) + col-coord + line-coord.
+
+#[test]
+fn encode_utf8_boundary_at_col_2014_succeeds() {
+    let mut buf = [0u8; 32];
+    // col=2014 → 2-byte coord; line=0 → 1-byte coord; total = 3+1+2+1 = 7.
+    let n = encode_utf8(&mut buf, 0, 2014, 0);
+    assert_eq!(n, 7, "col=2014 (val 0x7FF) encodes in 7 bytes");
+}
+
+#[test]
+fn encode_utf8_boundary_at_col_2015_drops() {
+    let mut buf = [0u8; 32];
+    // col=2015 → val 0x800 > 0x7FF → encoder returns 0 (coordinate dropped).
+    let n = encode_utf8(&mut buf, 0, 2015, 0);
+    assert_eq!(n, 0, "col=2015 (val 0x800) is out of range");
+}
+
+#[test]
+fn encode_utf8_boundary_at_line_2014_succeeds() {
+    let mut buf = [0u8; 32];
+    // Symmetric on the line axis: col=0 → 1 byte; line=2014 → 2 bytes; total 7.
+    let n = encode_utf8(&mut buf, 0, 0, 2014);
+    assert_eq!(n, 7, "line=2014 (val 0x7FF) encodes in 7 bytes");
+}
+
+#[test]
+fn encode_utf8_boundary_at_line_2015_drops() {
+    let mut buf = [0u8; 32];
+    let n = encode_utf8(&mut buf, 0, 0, 2015);
+    assert_eq!(n, 0, "line=2015 (val 0x800) is out of range");
+}
+
 #[test]
 fn encode_mouse_event_sgr_mode_routes_through_sgr() {
     let ev = event(MouseButton::Left, MouseEventKind::Press, 10, 20);
@@ -172,6 +201,8 @@ fn encode_mouse_event_sgr_pixel_mode_routes_through_sgr_pixel_when_coords_presen
         mods: MouseModifiers::default(),
         px: Some(80),
         py: Some(160),
+        physical_px: None,
+        in_grid: true,
     };
     let mode = TermMode::MOUSE_REPORT_CLICK | TermMode::MOUSE_SGR | TermMode::MOUSE_SGR_PIXEL;
     let report = encode_mouse_event(&ev, mode);
@@ -201,6 +232,8 @@ fn encode_mouse_event_sgr_pixel_alone_works_without_sgr() {
         mods: MouseModifiers::default(),
         px: Some(80),
         py: Some(160),
+        physical_px: None,
+        in_grid: true,
     };
     let mode = TermMode::MOUSE_REPORT_CLICK | TermMode::MOUSE_SGR_PIXEL;
     let report = encode_mouse_event(&ev, mode);
@@ -446,15 +479,7 @@ mod term_apex {
     }
 
     fn ev(button: MouseButton, kind: MouseEventKind, col: usize, line: usize) -> MouseEvent {
-        MouseEvent {
-            button,
-            kind,
-            col,
-            line,
-            mods: MouseModifiers::default(),
-            px: None,
-            py: None,
-        }
+        MouseEvent::cell(button, kind, col, line, MouseModifiers::default())
     }
 
     /// Pin: Term::handle_mouse_input emits Effect::Pty(Write { kind:
@@ -512,7 +537,7 @@ mod term_apex {
     /// empty PTY writes — defeating the early-exit guard).
     #[test]
     fn handle_mouse_input_with_no_encoding_mode_emits_nothing() {
-        let (term, recorder) = term_with_recorder();
+        let (mut term, recorder) = term_with_recorder();
         // Default mode has no MOUSE_REPORT_* flags — Term's
         // defense-in-depth gate suppresses the push.
         assert!(!term.mode().intersects(TermMode::ANY_MOUSE));
@@ -541,6 +566,8 @@ mod term_apex {
             mods: MouseModifiers::default(),
             px: Some(80),
             py: Some(160),
+            physical_px: None,
+            in_grid: true,
         };
         term.handle_mouse_input(&event);
         let emissions = recorder.emissions();
@@ -607,6 +634,8 @@ mod term_apex {
             mods: MouseModifiers::default(),
             px: None,
             py: None,
+            physical_px: None,
+            in_grid: true,
         };
         term.handle_mouse_input(&click);
         let emissions = recorder.emissions();
@@ -634,6 +663,8 @@ mod term_apex {
             mods: MouseModifiers::default(),
             px: Some(80),
             py: Some(160),
+            physical_px: None,
+            in_grid: true,
         };
         term.handle_mouse_input(&click);
         let emissions = recorder.emissions();
@@ -660,6 +691,8 @@ mod term_apex {
             mods: MouseModifiers::default(),
             px: None,
             py: None,
+            physical_px: None,
+            in_grid: true,
         };
         term.handle_mouse_input(&click);
         let emissions = recorder.emissions();
@@ -690,6 +723,8 @@ mod term_apex {
             mods: MouseModifiers::default(),
             px: None,
             py: None,
+            physical_px: None,
+            in_grid: true,
         };
         term.handle_mouse_input(&click);
         let emissions = recorder.emissions();
@@ -728,15 +763,7 @@ mod sgr_pixel_drop {
     use super::{MouseButton, MouseEvent, MouseEventKind, MouseModifiers, encode_mouse_event};
 
     fn ev_no_pixels(button: MouseButton, kind: MouseEventKind) -> MouseEvent {
-        MouseEvent {
-            button,
-            kind,
-            col: 10,
-            line: 20,
-            mods: MouseModifiers::default(),
-            px: None,
-            py: None,
-        }
+        MouseEvent::cell(button, kind, 10, 20, MouseModifiers::default())
     }
 
     fn ev_with_pixels(button: MouseButton, kind: MouseEventKind) -> MouseEvent {
@@ -748,6 +775,8 @@ mod sgr_pixel_drop {
             mods: MouseModifiers::default(),
             px: Some(80),
             py: Some(160),
+            physical_px: None,
+            in_grid: true,
         }
     }
 

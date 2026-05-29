@@ -67,12 +67,41 @@ pub struct LocatorRect {
     pub right: u16,
 }
 
+/// Last-observed locator position for DECLRP reply composition.
+///
+/// `Unavailable` is the default (no observation yet) AND the
+/// cursor-out-of-range state — both emit DECLRP Pe=0 with one
+/// parameter per xterm `button.c:857-861`. `Known` carries cell
+/// coords (Pu=0 reports `cell + 1`), DEVICE PHYSICAL pixel coords
+/// (Pu=1 reports `pixel + 1` — distinct from SGR-Pixel logical px),
+/// and the Pm button bitmask (`4*left + 2*middle + 1*right` per the
+/// `button.c:944-948` Button1/Button3 swap).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum LocatorPosition {
+    /// No observation yet OR cursor out of locator range → DECLRP Pe=0.
+    #[default]
+    Unavailable,
+    /// Observed locator position; DECRQLP reads this for the reply.
+    Known {
+        /// `(col, line)` cell coords, 0-indexed; DECLRP Pu=0 reports `cell + 1`.
+        cell: (u32, u32),
+        /// `(px, py)` DEVICE physical pixels; DECLRP Pu=1 reports `pixel + 1`.
+        pixel: (u32, u32),
+        /// Pm button bitmask: `4*left + 2*middle + 1*right` (button.c:944-948 swap).
+        buttons: u16,
+    },
+}
+
 /// DEC Locator subsystem state.
 #[derive(Debug, Default)]
 pub struct DecLocatorState {
     /// Current reporting mode. `None` when DECELR Ps=0 (default,
     /// disabled) OR after a `OneShot` reply auto-clears.
     pub(crate) reporting: Option<LocatorReportingMode>,
+    /// Last-observed locator position (cell + pixel coords + button
+    /// mask). `Unavailable` until `handle_mouse_input` observes an
+    /// event while reporting is active.
+    pub(crate) position: LocatorPosition,
     /// Event-class bitmask set by DECSLE. Defaults to `EXPLICIT_ONLY`.
     pub(crate) event_mask: LocatorEventMask,
     /// Optional filter rectangle set by DECEFR. `None` when no
@@ -110,6 +139,49 @@ impl DecLocatorState {
         self.filter_rect
     }
 
+    /// Last-observed locator position. `Unavailable` until an event is
+    /// observed while reporting is active.
+    pub fn position(&self) -> LocatorPosition {
+        self.position
+    }
+
+    /// Pm button bitmask of the last-observed position (0 when `Unavailable`).
+    pub fn buttons(&self) -> u16 {
+        match self.position {
+            LocatorPosition::Known { buttons, .. } => buttons,
+            LocatorPosition::Unavailable => 0,
+        }
+    }
+
+    /// Record an observed locator position — cell coords, physical pixel
+    /// coords, and the Pm button mask. Called by
+    /// `Term::handle_mouse_input` Step A when `reporting().is_some()`.
+    ///
+    /// Stored as `Unavailable` (→ DECRQLP Pe=0) when EITHER:
+    /// - `cell` is `None` — cursor out of grid range, OR
+    /// - `pixel_unit` (DECELR Pu=1) is active AND `pixel` is `None` —
+    ///   fabricating `(0, 0)` would misreport a valid origin coordinate
+    ///   per xterm `button.c:857-861` (locator-unavailable, not origin).
+    ///
+    /// In Pu=0 (cell) mode an absent `pixel` is harmless — the pixel
+    /// field is never read by `compose_declrp_reply` — so it stores
+    /// `Known` with a `(0, 0)` placeholder pixel.
+    pub(crate) fn observe(
+        &mut self,
+        cell: Option<(u32, u32)>,
+        pixel: Option<(u32, u32)>,
+        buttons: u16,
+    ) {
+        self.position = match (cell, self.pixel_unit, pixel) {
+            (None, _, _) | (_, true, None) => LocatorPosition::Unavailable,
+            (Some(cell), _, pixel) => LocatorPosition::Known {
+                cell,
+                pixel: pixel.unwrap_or((0, 0)),
+                buttons,
+            },
+        };
+    }
+
     /// Apply DECELR — Enable Locator Reporting.
     ///
     /// Ps=0 → disabled (clears `reporting` to `None`). Ps=1 → Continuous.
@@ -122,6 +194,12 @@ impl DecLocatorState {
             _ => None,
         };
         self.pixel_unit = pu == 1;
+        // Reset the observed position on any DECELR: re-enabling after a
+        // disable, or switching coordinate unit, invalidates the prior
+        // observation (its coords were captured under the old reporting /
+        // unit state). A DECRQLP before a fresh event then emits Pe=0
+        // rather than reporting a stale position.
+        self.position = LocatorPosition::Unavailable;
     }
 
     /// Apply DECEFR — Enable Filter Rectangle.

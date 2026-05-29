@@ -171,6 +171,14 @@ impl<S: EffectSink + 'static> PaneIoThread<S> {
                 // marking dirty per call would defeat the §05 render budget).
                 self.terminal.handle_mouse_input(&event);
             }
+            PaneIoCommand::ObserveLocatorInput(event) => {
+                // Observation-only (Step A): records DEC Locator position
+                // without encoding a mouse report. Routed by the App's
+                // locator-only dispatch so the encoder cannot fire on a
+                // shift-bypass / non-tracking path. Same hot-path-safe
+                // no-grid_dirty contract as HandleMouseInput.
+                self.terminal.observe_locator_input(&event);
+            }
             PaneIoCommand::HandleFocusEvent(focused) => {
                 // Term::handle_focus_event reads TermMode::FOCUS_IN_OUT,
                 // emits Effect::Pty(Write { kind: PtyWriteKind::FocusEvent,

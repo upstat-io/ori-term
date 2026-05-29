@@ -379,15 +379,7 @@ fn utf8_max_button_code_with_all_modifiers_in_range() {
 // -- encode_mouse_event dispatch tests --
 
 fn event(button: MouseButton, kind: MouseEventKind, col: usize, line: usize) -> MouseEvent {
-    MouseEvent {
-        button,
-        kind,
-        col,
-        line,
-        mods: MouseModifiers::default(),
-        px: None,
-        py: None,
-    }
+    MouseEvent::cell(button, kind, col, line, MouseModifiers::default())
 }
 
 fn event_with_mods(
@@ -397,15 +389,7 @@ fn event_with_mods(
     line: usize,
     mods: MouseModifiers,
 ) -> MouseEvent {
-    MouseEvent {
-        button,
-        kind,
-        col,
-        line,
-        mods,
-        px: None,
-        py: None,
-    }
+    MouseEvent::cell(button, kind, col, line, mods)
 }
 
 #[test]
@@ -1039,6 +1023,8 @@ fn urxvt_with_shift_modifier() {
         },
         px: None,
         py: None,
+        physical_px: None,
+        in_grid: true,
     };
     let bytes = encode_mouse_event(&e, mode).as_bytes().to_vec();
     // Button code = 32 + 0 + 4 (shift) = 36, col = 6, line = 4.
@@ -1060,6 +1046,8 @@ fn urxvt_with_ctrl_modifier() {
         },
         px: None,
         py: None,
+        physical_px: None,
+        in_grid: true,
     };
     let bytes = encode_mouse_event(&e, mode).as_bytes().to_vec();
     // Button code = 32 + 0 + 16 (ctrl) = 48.
@@ -1977,6 +1965,7 @@ fn dispatch_with(
         },
         px: None,
         py: None,
+        physical_px: None,
     }
 }
 
@@ -2045,6 +2034,8 @@ fn dispatch_wheel_mouse_report_carries_scroll_up_bytes() {
         mods: MouseModifiers::default(),
         px: None,
         py: None,
+        physical_px: None,
+        in_grid: true,
     };
     let expected = encode_mouse_event(&event, mode);
     assert_eq!(sink.writes.len(), 1);
@@ -2067,6 +2058,8 @@ fn dispatch_wheel_mouse_report_carries_scroll_down_bytes() {
         mods: MouseModifiers::default(),
         px: None,
         py: None,
+        physical_px: None,
+        in_grid: true,
     };
     let expected = encode_mouse_event(&event, mode);
     assert_eq!(sink.writes[0].1, expected.as_bytes().to_vec());
@@ -2350,6 +2343,7 @@ fn dispatch_wheel_mouse_report_propagates_alt_ctrl_modifiers_to_encoded_bytes() 
         mods,
         px: None,
         py: None,
+        physical_px: None,
     };
     dispatch_wheel(input, &mut sink);
     let event = MouseEvent {
@@ -2360,6 +2354,8 @@ fn dispatch_wheel_mouse_report_propagates_alt_ctrl_modifiers_to_encoded_bytes() 
         mods,
         px: None,
         py: None,
+        physical_px: None,
+        in_grid: true,
     };
     let expected = encode_mouse_event(&event, mode);
     assert_eq!(sink.writes.len(), 1);
@@ -2372,6 +2368,8 @@ fn dispatch_wheel_mouse_report_propagates_alt_ctrl_modifiers_to_encoded_bytes() 
         mods: MouseModifiers::default(),
         px: None,
         py: None,
+        physical_px: None,
+        in_grid: true,
     };
     let no_mods_expected = encode_mouse_event(&no_mods_event, mode);
     assert_ne!(
@@ -2403,6 +2401,7 @@ fn dispatch_wheel_mouse_report_empty_bytes_skips_writes_but_marks_dirty() {
         mods: MouseModifiers::default(),
         px: None,
         py: None,
+        physical_px: None,
     };
     dispatch_wheel(input, &mut sink);
     assert!(
@@ -2715,4 +2714,29 @@ mod clamp_mouse_pixel_coords_matrix {
              a missing entry here means a test was added without registering it"
         );
     }
+}
+
+/// Pin: winit→semantic button mapping for DEC Locator observation
+/// dispatch. Left/Middle/Right map to their semantic counterparts;
+/// Back/Forward (and any other) map to None (DEC Locator reports only
+/// the three primary buttons per xterm button.c:944-948).
+#[test]
+fn locator_semantic_button_maps_primary_buttons_only() {
+    use winit::event::MouseButton as WB;
+
+    assert_eq!(
+        super::locator_semantic_button(WB::Left),
+        Some(MouseButton::Left)
+    );
+    assert_eq!(
+        super::locator_semantic_button(WB::Middle),
+        Some(MouseButton::Middle)
+    );
+    assert_eq!(
+        super::locator_semantic_button(WB::Right),
+        Some(MouseButton::Right)
+    );
+    assert_eq!(super::locator_semantic_button(WB::Back), None);
+    assert_eq!(super::locator_semantic_button(WB::Forward), None);
+    assert_eq!(super::locator_semantic_button(WB::Other(7)), None);
 }

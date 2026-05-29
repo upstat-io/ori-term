@@ -3,10 +3,11 @@
 //! State-rung pin tests per spec-conformance §16.1.B item 7:
 //! DECELR Ps mapping (0/1/2) round-trip + one-shot auto-clear after
 //! DECRQLP-acknowledged + DECSLE mask round-trip + DECEFR rect
-//! round-trip. End-to-end emission tests (§16.1.C) wait on the
-//! mux-routing PtyWriteKind preservation work tracked in bug-tracker §11.
+//! round-trip + `observe` position-state transitions.
 
-use super::{DecLocatorState, LocatorEventMask, LocatorRect, LocatorReportingMode};
+use super::{
+    DecLocatorState, LocatorEventMask, LocatorPosition, LocatorRect, LocatorReportingMode,
+};
 
 // ── DECELR (Ps;Pu ' z) ──────────────────────────────────────────────
 
@@ -209,4 +210,105 @@ fn decefr_does_not_affect_reporting_or_mask() {
     assert_eq!(s.reporting, Some(LocatorReportingMode::OneShot));
     assert!(s.pixel_unit);
     assert_eq!(s.event_mask, LocatorEventMask::BUTTON_DOWN);
+}
+
+// ── observe() position-state transitions ──────────────────────────
+
+#[test]
+fn position_default_is_unavailable() {
+    assert_eq!(
+        DecLocatorState::new().position(),
+        LocatorPosition::Unavailable
+    );
+}
+
+#[test]
+fn observe_in_grid_stores_known() {
+    let mut s = DecLocatorState::new();
+    s.observe(Some((5, 7)), Some((100, 200)), 4);
+    assert_eq!(
+        s.position(),
+        LocatorPosition::Known {
+            cell: (5, 7),
+            pixel: (100, 200),
+            buttons: 4,
+        },
+    );
+}
+
+#[test]
+fn observe_out_of_grid_stores_unavailable() {
+    let mut s = DecLocatorState::new();
+    s.observe(None, Some((100, 200)), 4); // cell None → out of grid
+    assert_eq!(s.position(), LocatorPosition::Unavailable);
+}
+
+#[test]
+fn observe_pu1_without_pixels_stores_unavailable() {
+    let mut s = DecLocatorState::new();
+    s.apply_decelr(1, 1); // Pu=1 (pixel unit) active
+    // No physical pixels: storing Known with (0,0) would misreport a
+    // valid origin per xterm button.c:857-861 → store Unavailable instead.
+    s.observe(Some((5, 7)), None, 4);
+    assert_eq!(s.position(), LocatorPosition::Unavailable);
+}
+
+#[test]
+fn observe_pu0_without_pixels_stores_known_with_zero_pixel() {
+    let mut s = DecLocatorState::new();
+    s.apply_decelr(1, 0); // Pu=0 (cells); pixel field is never reported
+    s.observe(Some((5, 7)), None, 2);
+    assert_eq!(
+        s.position(),
+        LocatorPosition::Known {
+            cell: (5, 7),
+            pixel: (0, 0),
+            buttons: 2,
+        },
+    );
+}
+
+#[test]
+fn buttons_accessor_returns_zero_when_unavailable() {
+    assert_eq!(DecLocatorState::new().buttons(), 0);
+}
+
+#[test]
+fn buttons_accessor_returns_mask_when_known() {
+    let mut s = DecLocatorState::new();
+    s.observe(Some((1, 1)), Some((0, 0)), 5); // left|right
+    assert_eq!(s.buttons(), 5);
+}
+
+#[test]
+fn apply_decelr_resets_position_to_unavailable() {
+    let mut s = DecLocatorState::new();
+    s.apply_decelr(1, 0);
+    s.observe(Some((5, 7)), Some((10, 10)), 4);
+    assert!(matches!(s.position(), LocatorPosition::Known { .. }));
+    // Re-applying DECELR (disable then re-enable, or unit change) clears
+    // the stale observation — a fresh event must occur before Pe=1.
+    s.apply_decelr(0, 0); // disable
+    assert_eq!(s.position(), LocatorPosition::Unavailable);
+    s.apply_decelr(1, 0); // re-enable
+    assert_eq!(
+        s.position(),
+        LocatorPosition::Unavailable,
+        "re-enable must not resurrect the pre-disable position"
+    );
+}
+
+#[test]
+fn observe_overwrites_prior_position() {
+    let mut s = DecLocatorState::new();
+    s.observe(Some((1, 1)), Some((10, 10)), 4);
+    s.observe(Some((9, 9)), Some((90, 90)), 1);
+    assert_eq!(
+        s.position(),
+        LocatorPosition::Known {
+            cell: (9, 9),
+            pixel: (90, 90),
+            buttons: 1,
+        },
+    );
 }

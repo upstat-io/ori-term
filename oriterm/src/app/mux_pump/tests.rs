@@ -557,6 +557,11 @@ impl MuxBackend for RecordingMuxBackend {
     fn pane_mode(&self, _: PaneId) -> Option<u64> {
         unimplemented!("RecordingMuxBackend: pump_mux_events_core does not call pane_mode")
     }
+    fn pane_dec_locator_active(&self, _: PaneId) -> bool {
+        unimplemented!(
+            "RecordingMuxBackend: pump_mux_events_core does not call pane_dec_locator_active"
+        )
+    }
     fn set_pane_theme(&mut self, _: PaneId, _: CoreTheme, _: Palette) {
         unimplemented!("RecordingMuxBackend: pump_mux_events_core does not call set_pane_theme")
     }

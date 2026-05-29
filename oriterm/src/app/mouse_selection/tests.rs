@@ -833,6 +833,8 @@ fn sgr_origin_release_exact_output() {
     let e = MouseEvent {
         px: None,
         py: None,
+        physical_px: None,
+        in_grid: true,
         button: MouseButton::Left,
         kind: MouseEventKind::Release,
         col: 0,
@@ -858,6 +860,8 @@ fn normal_origin_release_exact_output() {
     let e = MouseEvent {
         px: None,
         py: None,
+        physical_px: None,
+        in_grid: true,
         button: MouseButton::Left,
         kind: MouseEventKind::Release,
         col: 0,

@@ -105,6 +105,12 @@ pub enum PaneIoCommand {
     /// `encode_mouse_event + write_pane_input` direct path so the kind
     /// discriminator survives the boundary.
     HandleMouseInput(MouseEvent),
+    /// Dispatch a semantic mouse input for DEC Locator observation ONLY.
+    /// `Term::observe_locator_input` records the position (Step A) and
+    /// NEVER encodes a mouse report — routed by the App's locator-only
+    /// dispatch path (no mouse-tracking encoder, or the shift-bypass) so
+    /// the encoder cannot fire spuriously.
+    ObserveLocatorInput(MouseEvent),
     /// Dispatch a semantic focus change to the IO thread's `Term` so
     /// emission flows through the Decision-10-Option-A apex
     /// (`Term::handle_focus_event` reads `TermMode::FOCUS_IN_OUT`,
@@ -181,6 +187,13 @@ impl fmt::Debug for PaneIoCommand {
             Self::Shutdown => write!(f, "Shutdown"),
             Self::HandleMouseInput(event) => f
                 .debug_struct("HandleMouseInput")
+                .field("button", &event.button)
+                .field("kind", &event.kind)
+                .field("col", &event.col)
+                .field("line", &event.line)
+                .finish(),
+            Self::ObserveLocatorInput(event) => f
+                .debug_struct("ObserveLocatorInput")
                 .field("button", &event.button)
                 .field("kind", &event.kind)
                 .field("col", &event.col)

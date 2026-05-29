@@ -109,6 +109,14 @@ pub trait MuxBackend {
     /// DECLRMM (mode 69 = bit 32).
     fn pane_mode(&self, pane_id: PaneId) -> Option<u64>;
 
+    /// Whether DEC Locator reporting (DECELR Ps=1/Ps=2) is active on a
+    /// pane. The App dispatch gate reads this to forward mouse events for
+    /// locator observation even when no mouse-tracking mode is active.
+    /// Independent of `pane_mode` — DEC Locator state is not part of
+    /// `TermMode`. In embedded mode reads the lock-free cache; in
+    /// daemon mode returns `false` until the wire carries it.
+    fn pane_dec_locator_active(&self, pane_id: PaneId) -> bool;
+
     // Theme + palette + cursor operations
 
     /// Apply a theme and palette to a pane's terminal.
@@ -237,6 +245,18 @@ pub trait MuxBackend {
         }
         self.send_input(pane_id, bytes);
     }
+
+    /// Dispatch a semantic mouse input for DEC Locator observation ONLY —
+    /// records the pane's locator position via `Term::observe_locator_input`
+    /// (Step A) WITHOUT encoding a mouse report. The App routes here on the
+    /// locator-only path (no mouse-tracking encoder active, or the
+    /// shift-to-select bypass) so the encoder cannot fire spuriously.
+    /// Default impl is a no-op: non-embedded backends do not yet carry
+    /// locator observation across the wire (daemon-mode wire propagation is
+    /// a separate deliverable). Embedded mode overrides this.
+    /// See: bug-tracker/section-11-mux.md (BUG-11-067) — daemon DEC Locator
+    /// wire propagation.
+    fn observe_pane_locator_input(&mut self, _pane_id: PaneId, _event: &MouseEvent) {}
 
     /// Dispatch a semantic focus change. Routes through the
     /// Decision-10-Option-A apex when the backend supports it

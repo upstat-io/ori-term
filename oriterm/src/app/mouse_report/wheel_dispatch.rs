@@ -5,8 +5,7 @@
 //!
 //! Production: `impl WheelSink for App` delegates to `&mut self` methods.
 //! Tests: `RecordingSink` in `tests.rs` records every call without
-//! constructing `App`. Per & External Resource
-//! Abstraction.
+//! constructing `App`.
 
 use winit::event::MouseScrollDelta;
 
@@ -23,8 +22,7 @@ use super::{
 ///
 /// Extracted so the wheel-event wiring can be matrix-tested headlessly
 /// (a `RecordingSink` impl in `tests.rs` records calls; production uses
-/// `impl WheelSink for App`). Per & External
-/// Resource Abstraction — the logic layer must not embed concrete
+/// `impl WheelSink for App`). The logic layer must not embed concrete
 /// runtime resources, so the side effects flow through this trait.
 pub(super) trait WheelSink {
     /// Write `bytes` to the PTY of `pane_id`.
@@ -70,11 +68,16 @@ pub(super) struct WheelDispatch {
     /// cursor is outside the grid; the cell encoders ignore them.
     pub px: Option<u32>,
     pub py: Option<u32>,
+    /// DEVICE physical-pixel cursor coordinates for DEC Locator Pu=1
+    /// observation (distinct from the scale-divided logical `px`/`py`).
+    /// `None` when no usable surface. Read by `Term` Step A so a wheel
+    /// dispatched while mouse-tracking + locator-Pu=1 are both active
+    /// observes real pixels instead of clobbering the position.
+    pub physical_px: Option<(u32, u32)>,
 }
 
 /// Wire a wheel event through the 3-tier dispatcher to the side-effect
-/// sink. Generic over the sink type for static dispatch per
-/// Choice.
+/// sink. Generic over the sink type for static dispatch.
 ///
 /// The dispatcher exits early (without firing `mark_dirty`) on three
 /// conditions:
@@ -88,12 +91,12 @@ pub(super) struct WheelDispatch {
 /// `sink.write_pane_input` `lines` (or `payload.repeat`) times when the
 /// resulting bytes are nonempty; Tier-3 issues a single `sink.scroll_pane`
 /// with the signed `lines` count.
-pub(super) fn dispatch_wheel<S: WheelSink>(input: WheelDispatch, sink: &mut S) {
+pub(super) fn dispatch_wheel<S: WheelSink>(input: WheelDispatch, sink: &mut S) -> bool {
     let Some((lines, scroll_up)) = parse_wheel_delta(input.delta, input.cell_height) else {
-        return;
+        return false;
     };
     let Some(pane_id) = input.pane_id else {
-        return;
+        return false;
     };
     let direction = if scroll_up {
         ScrollDirection::Up
@@ -102,14 +105,21 @@ pub(super) fn dispatch_wheel<S: WheelSink>(input: WheelDispatch, sink: &mut S) {
     };
 
     sink.set_recorded_mode(input.mode);
-    match classify_wheel_event(input.mode, input.shift_held) {
+    // `dispatched` records whether the Tier-1 mouse-report encoder actually
+    // sent the event to Term (which also runs Step A locator observation).
+    // The caller observes the DEC Locator position via the observe-only path
+    // when this returns false (no Tier-1, or out-of-grid Tier-1 drop).
+    let dispatched = match classify_wheel_event(input.mode, input.shift_held) {
         WheelTier::MouseReport => {
             let button = match direction {
                 ScrollDirection::Up => MouseButton::ScrollUp,
                 ScrollDirection::Down => MouseButton::ScrollDown,
             };
             let Some((col, line)) = sink.cell_for_report() else {
-                return;
+                // Out-of-grid Tier-1 drop: no dispatch, no mark_dirty (per
+                // the early-exit contract). Caller's observe-only path
+                // records Unavailable.
+                return false;
             };
             let event = MouseEvent {
                 button,
@@ -119,10 +129,16 @@ pub(super) fn dispatch_wheel<S: WheelSink>(input: WheelDispatch, sink: &mut S) {
                 mods: input.mods,
                 px: input.px,
                 py: input.py,
+                // In-grid (guarded by `cell_for_report()` Some above).
+                // physical_px carries DEVICE pixels for combined tracking +
+                // DEC-Locator-Pu=1 observation on this dispatch.
+                physical_px: input.physical_px,
+                in_grid: true,
             };
             for _ in 0..lines {
                 sink.write_pane_mouse_input(pane_id, &event);
             }
+            true
         }
         WheelTier::AltScroll => {
             // tier2_alt_scroll_payload re-checks should_translate_wheel_to_arrows
@@ -137,6 +153,7 @@ pub(super) fn dispatch_wheel<S: WheelSink>(input: WheelDispatch, sink: &mut S) {
                     sink.write_pane_input(pane_id, payload.bytes);
                 }
             }
+            false
         }
         WheelTier::ViewportScroll => {
             let scroll_lines = match direction {
@@ -144,10 +161,12 @@ pub(super) fn dispatch_wheel<S: WheelSink>(input: WheelDispatch, sink: &mut S) {
                 ScrollDirection::Down => -(lines as isize),
             };
             sink.scroll_pane(pane_id, scroll_lines);
+            false
         }
-    }
+    };
 
     sink.mark_dirty();
+    dispatched
 }
 
 impl WheelSink for App {

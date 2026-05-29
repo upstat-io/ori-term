@@ -286,6 +286,68 @@ pub struct MouseEvent {
     pub px: Option<u32>,
     /// Logical-pixel y coordinate for SGR-Pixel encoding. See `px`.
     pub py: Option<u32>,
+    /// DEVICE physical pixel coords `(px, py)` for DEC Locator Pu=1
+    /// reporting. Distinct from `px`/`py` (SGR-Pixel LOGICAL pixels):
+    /// DECLRP Pu=1 reports raw device pixels per xterm `button.c:785-807`,
+    /// so the App populates this WITHOUT the `Window::scale_factor()`
+    /// division it applies to `px`/`py`. `None` when DEC Locator is not
+    /// pixel-unit OR the App did not compute it.
+    pub physical_px: Option<(u32, u32)>,
+    /// Whether the cursor was inside the grid when the event fired.
+    /// DEC Locator observation stores `LocatorPosition::Unavailable`
+    /// (→ DECLRP Pe=0 per xterm `button.c:857-861`) when `false`; the
+    /// mouse-tracking encoder uses clamped `col`/`line` regardless.
+    pub in_grid: bool,
+}
+
+impl MouseEvent {
+    /// Construct a cell-coordinate mouse event: pixel fields `None`,
+    /// `in_grid = true`. The forward-compatible factory for the common
+    /// cell-encoder construction site — keeps callers stable across
+    /// future `MouseEvent` field additions. SGR-Pixel / out-of-grid
+    /// callers build the struct literal explicitly.
+    #[must_use]
+    pub fn cell(
+        button: MouseButton,
+        kind: MouseEventKind,
+        col: usize,
+        line: usize,
+        mods: MouseModifiers,
+    ) -> Self {
+        Self {
+            button,
+            kind,
+            col,
+            line,
+            mods,
+            px: None,
+            py: None,
+            physical_px: None,
+            in_grid: true,
+        }
+    }
+}
+
+/// Compute the xterm DECLRP Pm button bitmask for a mouse event,
+/// folded onto a prior mask.
+///
+/// Bit assignment per xterm `button.c:944-948` (Button1/Button3 swapped
+/// relative to X): bit 0 (value 1) = right, bit 1 (value 2) = middle,
+/// bit 2 (value 4) = left. Press sets the bit; Release clears it;
+/// Motion / Wheel / None leave the mask unchanged.
+#[must_use]
+pub fn button_mask_for_event(prior: u16, event: &MouseEvent) -> u16 {
+    let bit: u16 = match event.button {
+        MouseButton::Left => 4,
+        MouseButton::Middle => 2,
+        MouseButton::Right => 1,
+        _ => return prior, // wheel + None do not change Pm
+    };
+    match event.kind {
+        MouseEventKind::Press => prior | bit,
+        MouseEventKind::Release => prior & !bit,
+        MouseEventKind::Motion => prior,
+    }
 }
 
 /// Mouse-dispatch gate: true iff `mode` has any ANY_MOUSE-family flag.

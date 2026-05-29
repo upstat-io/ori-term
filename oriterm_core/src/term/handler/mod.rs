@@ -12,7 +12,10 @@ use vte::ansi::{
 
 use crate::effect::sink::EffectSink;
 use crate::effect::{Effect, PtyEffect, PtyWriteKind};
-use crate::encode::mouse::{MouseEvent, encode_mouse_event, should_handle_mouse_input};
+use crate::encode::mouse::{
+    MouseEvent, button_mask_for_event, encode_mouse_event, should_handle_mouse_input,
+};
+use crate::term::dec_locator::LocatorPosition;
 
 use self::rect_ops::DecRect;
 use super::{Term, TermMode};
@@ -42,30 +45,41 @@ macro_rules! delegate_osc {
 }
 
 impl<S: EffectSink> Term<S> {
-    /// Compose the DECLRP reply per xterm spec:
-    /// `CSI Pe ; Pm ; Pr ; Pc ; Pp & w`
+    /// Compose the DECLRP reply per xterm spec (`CSI Pe ; Pm ; Pr ; Pc ; Pp & w`).
     ///
-    /// When locator reporting is disabled (`Term::dec_locator.reporting()
-    /// == None`), emits Pe=0 ("locator unavailable") with zero
-    /// coordinates. When enabled, emits Pe=1 ("request response") with
-    /// the current locator position. Pp=1 always (`ori_term` has no
-    /// page memory).
-    ///
-    /// Current locator coordinates (row, column, button mask) live in
-    /// App-layer winit state today — `TermHandler` does not have access
-    /// to them. Placeholder coords (row=1, col=1, Pm=0) are emitted
-    /// here as the foundation; the App-to-Term coordinate-push wiring
-    /// is spec-conformance §16.4 / §16.5 verification-pilot scope (the
-    /// pilots set the position via a test seam before driving DECRQLP).
+    /// Reads the last-observed locator position from
+    /// `self.dec_locator.position()` (written by `handle_mouse_input`
+    /// Step A while reporting is active). Emits the locator-unavailable
+    /// reply `CSI 0 & w` (ONE parameter, `a_nparam = 1` per xterm
+    /// `button.c:857-861`) when reporting is disabled OR no position has
+    /// been observed. When a position is known, emits Pe=1 ("request
+    /// response"), the Pm button mask, the 1-indexed Pr/Pc coords, and
+    /// Pp=1 (`ori_term` has no page memory). The coordinate unit follows
+    /// DECELR Pu — character cells when Pu=0, DEVICE physical pixels when
+    /// Pu=1.
     fn compose_declrp_reply(&self) -> Vec<u8> {
-        let pe: u16 = u16::from(self.dec_locator.reporting().is_some());
-        // Placeholder coords + button mask — overridden by App-layer
-        // wiring per §16.4 / §16.5 (see method rustdoc).
-        let pm: u16 = 0;
-        let pr: u16 = 1;
-        let pc: u16 = 1;
-        let pp: u16 = 1;
-        format!("\x1b[{pe};{pm};{pr};{pc};{pp}&w").into_bytes()
+        match (self.dec_locator.reporting(), self.dec_locator.position()) {
+            (None, _) | (_, LocatorPosition::Unavailable) => {
+                // Pe=0 locator-unavailable — one parameter per button.c:857-861.
+                b"\x1b[0&w".to_vec()
+            }
+            (
+                Some(_),
+                LocatorPosition::Known {
+                    cell,
+                    pixel,
+                    buttons,
+                },
+            ) => {
+                let (pc, pr): (u32, u32) = if self.dec_locator.pixel_unit() {
+                    (pixel.0 + 1, pixel.1 + 1) // Pu=1 — device pixels, 1-indexed
+                } else {
+                    (cell.0 + 1, cell.1 + 1) // Pu=0 — cells, 1-indexed
+                };
+                // Wire order: Pe ; Pm ; Pr(row) ; Pc(col) ; Pp.
+                format!("\x1b[1;{buttons};{pr};{pc};1&w").into_bytes()
+            }
+        }
     }
 
     /// Handle a semantic mouse input from the UI layer.
@@ -108,12 +122,49 @@ impl<S: EffectSink> Term<S> {
         }));
     }
 
-    pub fn handle_mouse_input(&self, event: &MouseEvent) {
-        // Defense-in-depth gate via the encode::mouse SSOT predicate so the
-        // apex and the daemon-default backend agree on which modes enable
-        // emission. The App layer's `should_report_mouse` predicate also
-        // gates before dispatching; double-gating here keeps the apex
-        // contract safe against future callers that skip the App check.
+    /// Observe a mouse event for DEC Locator position tracking — Step A
+    /// ONLY, never encodes a mouse report.
+    ///
+    /// Records the position when locator reporting is active (DECELR
+    /// Ps=1/Ps=2), INDEPENDENT of the mouse-tracking encoder gate: DEC
+    /// Locator (DECELR-activated) and mouse tracking (DECSET 1000/1002/1003)
+    /// are orthogonal subsystems per xterm. A subsequent DECRQLP reads this
+    /// state. Out-of-grid cursor (`!event.in_grid`) → `Unavailable` so
+    /// DECRQLP emits Pe=0 per xterm button.c:857-861.
+    ///
+    /// The App dispatches HERE (not `handle_mouse_input`) for locator-only
+    /// observation — on the shift-bypass / no-tracking path — so the
+    /// encoder (Step B) cannot fire. `handle_mouse_input` calls this for
+    /// the combined observe+encode path. Continuous/OneShot DECLRP
+    /// push-emission on DECSLE-filtered events is a separate deliverable.
+    /// See: bug-tracker/section-08-core-terminal.md (BUG-08-063) — DECSLE
+    /// push-emission path.
+    pub fn observe_locator_input(&mut self, event: &MouseEvent) {
+        if self.dec_locator.reporting().is_some() {
+            // `in_grid` is the unclamped grid-membership flag (App sets it
+            // from `mouse_cell()`, distinct from the clamped col/line the
+            // encoder consumes). Out-of-grid → `cell` None → `Unavailable`.
+            // `physical_px` stays `Option`: `observe` stores `Unavailable`
+            // for Pu=1-without-pixels rather than fabricating `(0, 0)`.
+            let cell = event
+                .in_grid
+                .then_some((event.col as u32, event.line as u32));
+            let buttons = button_mask_for_event(self.dec_locator.buttons(), event);
+            self.dec_locator.observe(cell, event.physical_px, buttons);
+        }
+    }
+
+    pub fn handle_mouse_input(&mut self, event: &MouseEvent) {
+        // STEP A — DEC Locator observation (shared with the App's
+        // observe-only `observe_locator_input` entry point).
+        self.observe_locator_input(event);
+
+        // STEP B — mouse-tracking encoder emission. Gated on the
+        // `should_handle_mouse_input` SSOT predicate (NOT raw
+        // `intersects` — keeps the gate single-sourced with the
+        // daemon-default backend). The App layer's `should_report_mouse`
+        // predicate also gates before dispatching; double-gating here
+        // keeps the apex contract safe against callers that skip it.
         if !should_handle_mouse_input(self.mode) {
             return;
         }
@@ -603,10 +654,11 @@ impl<S: EffectSink> Handler for Term<S> {
     delegate_osc!(decfi() => decfi_impl);
 
     // DEC Locator subsystem (CSI ' w/z/{/|). Independent of DECSET 1001
-    // (highlight tracking — separate protocol per F1 cure). Apex emission
-    // for DECRQLP → DECLRP reply is gated on mux-routing work tracked in
-    // bug-tracker §11 (PtyWriteKind end-to-end preservation); state
-    // mutation is wired now, emission is a state-only no-op until unblocked.
+    // (highlight tracking — separate protocol per F1 cure). DECRQLP emits
+    // the DECLRP reply (real observed coords via `compose_declrp_reply`)
+    // through `effect_sink`; `handle_mouse_input` Step A feeds the observed
+    // position. Continuous/OneShot push-emission (DECSLE-filtered events)
+    // and daemon-mode wire propagation are separate deliverables.
     fn decefr(&mut self, pt: u16, pl: u16, pb: u16, pr: u16) {
         self.dec_locator.apply_decefr(pt, pl, pb, pr);
     }
