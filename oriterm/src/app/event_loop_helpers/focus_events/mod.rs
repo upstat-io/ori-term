@@ -65,8 +65,14 @@ impl App {
         let Some(mode) = self.pane_mode(pane_id) else {
             return;
         };
-        if let Some(seq) = focus_event_seq_for_mode(mode, focused) {
-            self.write_pane_input(pane_id, seq);
+        // Gate at the App layer so the IO-thread pipe stays cold when
+        // FOCUS_IN_OUT is off. Defense-in-depth gate inside
+        // Term::handle_focus_event covers the case where this is bypassed.
+        if focus_event_seq_for_mode(mode, focused).is_none() {
+            return;
+        }
+        if let Some(mux) = self.mux.as_mut() {
+            mux.send_focus_event(pane_id, focused);
         }
     }
 

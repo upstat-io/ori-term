@@ -127,6 +127,10 @@ impl MuxBackend for MockMuxBackend {
     fn pane_mode(&self, _: PaneId) -> Option<u64> {
         unimplemented!("MockMuxBackend: App dispatch does not call pane_mode")
     }
+    fn pane_dec_locator_active(&self, _: PaneId) -> bool {
+        // App dispatch queries this on every mouse event; default: inactive.
+        false
+    }
     fn set_pane_theme(&mut self, _: PaneId, _: Theme, _: oriterm_core::Palette) {
         unimplemented!("MockMuxBackend: App dispatch does not call set_pane_theme")
     }

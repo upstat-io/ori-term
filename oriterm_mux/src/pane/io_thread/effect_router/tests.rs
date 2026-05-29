@@ -82,6 +82,7 @@ fn make_router_harness() -> (
         effects_buf: Vec::new(),
         last_animation_deadline: None,
         pending_resize: Arc::new(AtomicU64::new(PENDING_RESIZE_NONE)),
+        dec_locator_active_cache: Arc::new(AtomicBool::new(false)),
         last_snapshot_publish: None,
         drain_handle_bytes_ns: 0,
         drain_kitty_ns: 0,
@@ -109,7 +110,11 @@ fn pty_write_preserves_non_utf8_bytes() {
     t.drain_effects_into_mux_events();
 
     match mux_rx.recv().expect("expected PtyWrite event") {
-        MuxEvent::PtyWrite { data, pane_id } => {
+        MuxEvent::PtyWrite {
+            data,
+            pane_id,
+            kind: _,
+        } => {
             assert_eq!(pane_id, PaneId::from_raw(7));
             assert_eq!(
                 data, bytes,
@@ -1028,13 +1033,15 @@ fn enq_byte_through_router_emits_pty_write_with_answerback_bytes() {
 // §13.5 routing pin — kitty image-protocol reply at the mux boundary
 // =====================================================================
 
-/// §13.5 Routing pin (mux-boundary half): an `Effect::Pty(PtyEffect::Write
-/// { kind: ImageProtocolReply, .. })` pushed onto the terminal's effect
-/// sink MUST flow out as a `MuxEvent::PtyWrite { pane_id, data }` with the
-/// bytes byte-exact. Companion to the Term-side half in
+/// §13.5 Routing pin (mux-boundary half) — POST-Decision-10 (Option A): an
+/// `Effect::Pty(PtyEffect::Write { kind: ImageProtocolReply, .. })` pushed
+/// onto the terminal's effect sink MUST flow out as a
+/// `MuxEvent::PtyWrite { pane_id, kind: ImageProtocolReply, data }` with
+/// the bytes byte-exact AND the kind discriminator preserved. Companion to
+/// the Term-side half in
 /// `oriterm_core/tests/spec_chain/kitty/replies.rs::reply_flows_via_effect_pty_write_not_host_request`.
 #[test]
-fn pty_write_kind_image_protocol_reply_lands_as_byte_stream_in_mux_event_pty_write() {
+fn pty_write_kind_image_protocol_reply_preserved_in_mux_event_pty_write() {
     let (mut t, mux_rx, _wake) = make_router_harness();
     // Exact kitty OK reply framing per kitty graphics-protocol.rst.
     let reply_bytes = b"\x1b_Gi=1;OK\x1b\\".to_vec();
@@ -1048,31 +1055,41 @@ fn pty_write_kind_image_protocol_reply_lands_as_byte_stream_in_mux_event_pty_wri
         .recv_timeout(Duration::from_millis(100))
         .expect("expected MuxEvent::PtyWrite for kitty image-protocol reply");
     match event {
-        MuxEvent::PtyWrite { data, pane_id } => {
+        MuxEvent::PtyWrite {
+            data,
+            pane_id,
+            kind,
+        } => {
             assert_eq!(
                 pane_id,
                 PaneId::from_raw(7),
                 "kitty reply must carry the originating pane_id"
             );
             assert_eq!(
+                kind,
+                PtyWriteKind::ImageProtocolReply,
+                "kitty image-protocol reply must be tagged ImageProtocolReply per Decision 10"
+            );
+            assert_eq!(
                 data, reply_bytes,
-                "kitty image-protocol reply bytes MUST flow byte-exact through \
- the mux boundary — the kind discriminator is dropped per §13.5 \
- but the bytes survive"
+                "kitty image-protocol reply bytes flow byte-exact AND the \
+ kind discriminator survives the mux boundary per Decision 10 Option A"
             );
         }
         other => panic!("expected PtyWrite, got {other:?}"),
     }
 }
 
-/// §13.5 NOTE pin: `MuxEvent::PtyWrite` does NOT carry the `PtyWriteKind`
-/// discriminator. The kind is dropped at the crate boundary per the
-/// intentional discard at `effect_router/mod.rs:88-93`. This test pins the
+/// §13.5 NOTE pin INVERTED per Decision 10 (Option A, established
+/// 2026-05-27): `MuxEvent::PtyWrite` DOES carry the `PtyWriteKind`
+/// discriminator. The forward at `effect_router/mod.rs:87-96` preserves it
+/// from `Effect::Pty(PtyEffect::Write { kind, bytes })`. This test pins the
 /// field set of `MuxEvent::PtyWrite` via an exhaustive-match clamp — if a
-/// future refactor adds a `kind` field back to the variant, this test
-/// stops compiling and forces a conscious design decision + plan update.
+/// future refactor REMOVES the `kind` field, this test stops compiling and
+/// forces a conscious design decision + plan update. Supersedes the prior
+/// Decision 02 "drop discriminator at boundary" pin.
 #[test]
-fn pty_write_kind_discriminator_dropped_at_mux_boundary() {
+fn pty_write_kind_discriminator_preserved_at_mux_boundary() {
     let (mut t, mux_rx, _wake) = make_router_harness();
     t.terminal.effect_sink().push(Effect::Pty(PtyEffect::Write {
         bytes: b"x".to_vec(),
@@ -1084,17 +1101,96 @@ fn pty_write_kind_discriminator_dropped_at_mux_boundary() {
         .expect("expected MuxEvent::PtyWrite");
 
     // Exhaustive-match clamp on `MuxEvent::PtyWrite`'s field set. Drop
-    // the `_` rest pattern so a new field (e.g., `kind`) added to the
-    // variant fails the match destructure at compile time.
+    // the `_` rest pattern so a removal of `kind` (or addition of another
+    // field) fails the match destructure at compile time.
     match event {
-        MuxEvent::PtyWrite { pane_id, data } => {
+        MuxEvent::PtyWrite {
+            pane_id,
+            kind,
+            data,
+        } => {
             assert_eq!(pane_id, PaneId::from_raw(7));
             assert_eq!(
-                data, b"x",
-                "MuxEvent::PtyWrite carries bytes only; if a future refactor \
- adds a kind field back, update this test consciously"
+                kind,
+                PtyWriteKind::ImageProtocolReply,
+                "MuxEvent::PtyWrite carries kind per Decision 10; if a future \
+ refactor removes the kind field, update this test consciously"
             );
+            assert_eq!(data, b"x", "bytes flow byte-exact alongside kind");
         }
         other => panic!("expected PtyWrite, got {other:?}"),
     }
+}
+
+/// Asserts every `PtyWriteKind` variant from the SSOT iterator
+/// `PtyWriteKind::all()` survives the effect_router forward in order,
+/// with bytes intact. Iterates all 13 variants.
+#[test]
+fn pty_write_kind_preserved_for_all_variants() {
+    let (mut t, mux_rx, _wake) = make_router_harness();
+    for &kind in PtyWriteKind::all() {
+        t.terminal.effect_sink().push(Effect::Pty(PtyEffect::Write {
+            bytes: b"x".to_vec(),
+            kind,
+        }));
+    }
+    t.drain_effects_into_mux_events();
+    let mut observed_kinds: Vec<PtyWriteKind> = Vec::new();
+    let mut observed_bytes: Vec<Vec<u8>> = Vec::new();
+    while let Ok(event) = mux_rx.try_recv() {
+        if let MuxEvent::PtyWrite { kind, data, .. } = event {
+            observed_kinds.push(kind);
+            observed_bytes.push(data);
+        }
+    }
+    assert_eq!(
+        observed_kinds.len(),
+        PtyWriteKind::all().len(),
+        "every variant must produce one MuxEvent::PtyWrite"
+    );
+    assert_eq!(
+        observed_kinds,
+        PtyWriteKind::all(),
+        "kind survives forward in order"
+    );
+    for bytes in &observed_bytes {
+        assert_eq!(bytes, b"x", "bytes survive forward intact alongside kind");
+    }
+}
+
+/// Asserts that 3 distinct kinds pushed in a row survive in order with
+/// no scrambling and no default-or-mapping shortcut substituting `Other`.
+/// Rejects a buggy implementation that "preserves" kind via hardcoded
+/// stub return.
+#[test]
+fn pty_write_kind_routing_does_not_mix_kinds() {
+    let (mut t, mux_rx, _wake) = make_router_harness();
+    let kinds_in = [
+        PtyWriteKind::DeviceAttribute,
+        PtyWriteKind::MouseEvent,
+        PtyWriteKind::FocusEvent,
+    ];
+    for &k in &kinds_in {
+        t.terminal.effect_sink().push(Effect::Pty(PtyEffect::Write {
+            bytes: b"x".to_vec(),
+            kind: k,
+        }));
+    }
+    t.drain_effects_into_mux_events();
+    let observed: Vec<_> = (0..3)
+        .map(|_| {
+            match mux_rx
+                .recv_timeout(Duration::from_millis(100))
+                .expect("expected MuxEvent::PtyWrite")
+            {
+                MuxEvent::PtyWrite { kind, .. } => kind,
+                other => panic!("expected PtyWrite, got {other:?}"),
+            }
+        })
+        .collect();
+    assert_eq!(
+        observed,
+        kinds_in.to_vec(),
+        "distinct kinds survive in order — no scrambling, no default-mapping"
+    );
 }

@@ -11,6 +11,11 @@ use vte::ansi::{
 };
 
 use crate::effect::sink::EffectSink;
+use crate::effect::{Effect, PtyEffect, PtyWriteKind};
+use crate::encode::mouse::{
+    MouseEvent, button_mask_for_event, encode_mouse_event, should_handle_mouse_input,
+};
+use crate::term::dec_locator::LocatorPosition;
 
 use self::rect_ops::DecRect;
 use super::{Term, TermMode};
@@ -37,6 +42,142 @@ macro_rules! delegate_osc {
     ($method:ident($($arg:ident : $ty:ty),*) => $helper:ident) => {
         fn $method(&mut self, $($arg: $ty),*) { self.$helper($($arg),*); }
     };
+}
+
+impl<S: EffectSink> Term<S> {
+    /// Compose the DECLRP reply per xterm spec (`CSI Pe ; Pm ; Pr ; Pc ; Pp & w`).
+    ///
+    /// Reads the last-observed locator position from
+    /// `self.dec_locator.position()` (written by `handle_mouse_input`
+    /// Step A while reporting is active). Emits the locator-unavailable
+    /// reply `CSI 0 & w` (ONE parameter, `a_nparam = 1` per xterm
+    /// `button.c:857-861`) when reporting is disabled OR no position has
+    /// been observed. When a position is known, emits Pe=1 ("request
+    /// response"), the Pm button mask, the 1-indexed Pr/Pc coords, and
+    /// Pp=1 (`ori_term` has no page memory). The coordinate unit follows
+    /// DECELR Pu — character cells when Pu=0, DEVICE physical pixels when
+    /// Pu=1.
+    fn compose_declrp_reply(&self) -> Vec<u8> {
+        match (self.dec_locator.reporting(), self.dec_locator.position()) {
+            (None, _) | (_, LocatorPosition::Unavailable) => {
+                // Pe=0 locator-unavailable — one parameter per button.c:857-861.
+                b"\x1b[0&w".to_vec()
+            }
+            (
+                Some(_),
+                LocatorPosition::Known {
+                    cell,
+                    pixel,
+                    buttons,
+                },
+            ) => {
+                let (pc, pr): (u32, u32) = if self.dec_locator.pixel_unit() {
+                    (pixel.0 + 1, pixel.1 + 1) // Pu=1 — device pixels, 1-indexed
+                } else {
+                    (cell.0 + 1, cell.1 + 1) // Pu=0 — cells, 1-indexed
+                };
+                // Wire order: Pe ; Pm ; Pr(row) ; Pc(col) ; Pp.
+                format!("\x1b[1;{buttons};{pr};{pc};1&w").into_bytes()
+            }
+        }
+    }
+
+    /// Handle a semantic mouse input from the UI layer.
+    ///
+    /// Reads `TermMode`, encodes per protocol selection (SGR / URXVT /
+    /// UTF-8 / Normal / X10), and emits `Effect::Pty(PtyEffect::Write
+    /// { kind: PtyWriteKind::MouseEvent, bytes })`. App's effect-drain
+    /// loop carries the emission to the PTY.
+    ///
+    /// No-op when (a) the encoder returns an empty buffer (X10 release,
+    /// coordinate overflow) OR (b) no mouse-encoding mode is active —
+    /// avoids pushing an empty `PtyEffect::Write` that downstream
+    /// observers would have to filter.
+    ///
+    /// Decision 10 Option A apex per `plans/spec-conformance/decisions/10-mouse-verification-apex-effect-vs-app-capture.md`
+    /// and §16.2.0.
+    /// Handle a semantic focus change from the UI layer (winit
+    /// `WindowEvent::Focused(focused)`).
+    ///
+    /// When `TermMode::FOCUS_IN_OUT` (DECSET 1004) is active, emits
+    /// `Effect::Pty(PtyEffect::Write { kind: PtyWriteKind::FocusEvent,
+    /// bytes: b"\x1b[I" | b"\x1b[O" })` via `effect_sink`. App's
+    /// effect-drain loop carries the bytes to the PTY exactly as
+    /// §16.1.C's DECLRP + §16.2.0.B's mouse-event paths do.
+    ///
+    /// Defense-in-depth: silent no-op when 1004 not enabled. App-side
+    /// `should_emit_focus` predicate already gates; double-gating
+    /// here keeps the apex safe.
+    ///
+    /// Decision 10 Option A apex per `plans/spec-conformance/decisions/10-mouse-verification-apex-effect-vs-app-capture.md`
+    /// + §16.7.
+    pub fn handle_focus_event(&self, focused: bool) {
+        if !self.mode.contains(TermMode::FOCUS_IN_OUT) {
+            return;
+        }
+        let bytes: &[u8] = if focused { b"\x1b[I" } else { b"\x1b[O" };
+        self.effect_sink.push(Effect::Pty(PtyEffect::Write {
+            bytes: bytes.to_vec(),
+            kind: PtyWriteKind::FocusEvent,
+        }));
+    }
+
+    /// Observe a mouse event for DEC Locator position tracking — Step A
+    /// ONLY, never encodes a mouse report.
+    ///
+    /// Records the position when locator reporting is active (DECELR
+    /// Ps=1/Ps=2), INDEPENDENT of the mouse-tracking encoder gate: DEC
+    /// Locator (DECELR-activated) and mouse tracking (DECSET 1000/1002/1003)
+    /// are orthogonal subsystems per xterm. A subsequent DECRQLP reads this
+    /// state. Out-of-grid cursor (`!event.in_grid`) → `Unavailable` so
+    /// DECRQLP emits Pe=0 per xterm button.c:857-861.
+    ///
+    /// The App dispatches HERE (not `handle_mouse_input`) for locator-only
+    /// observation — on the shift-bypass / no-tracking path — so the
+    /// encoder (Step B) cannot fire. `handle_mouse_input` calls this for
+    /// the combined observe+encode path. Continuous/OneShot DECLRP
+    /// push-emission on DECSLE-filtered events is a separate deliverable.
+    /// See: bug-tracker/section-08-core-terminal.md (BUG-08-063) — DECSLE
+    /// push-emission path.
+    pub fn observe_locator_input(&mut self, event: &MouseEvent) {
+        if self.dec_locator.reporting().is_some() {
+            // `in_grid` is the unclamped grid-membership flag (App sets it
+            // from `mouse_cell()`, distinct from the clamped col/line the
+            // encoder consumes). Out-of-grid → `cell` None → `Unavailable`.
+            // `physical_px` stays `Option`: `observe` stores `Unavailable`
+            // for Pu=1-without-pixels rather than fabricating `(0, 0)`.
+            let cell = event
+                .in_grid
+                .then_some((event.col as u32, event.line as u32));
+            let buttons = button_mask_for_event(self.dec_locator.buttons(), event);
+            self.dec_locator.observe(cell, event.physical_px, buttons);
+        }
+    }
+
+    pub fn handle_mouse_input(&mut self, event: &MouseEvent) {
+        // STEP A — DEC Locator observation (shared with the App's
+        // observe-only `observe_locator_input` entry point).
+        self.observe_locator_input(event);
+
+        // STEP B — mouse-tracking encoder emission. Gated on the
+        // `should_handle_mouse_input` SSOT predicate (NOT raw
+        // `intersects` — keeps the gate single-sourced with the
+        // daemon-default backend). The App layer's `should_report_mouse`
+        // predicate also gates before dispatching; double-gating here
+        // keeps the apex contract safe against callers that skip it.
+        if !should_handle_mouse_input(self.mode) {
+            return;
+        }
+        let report = encode_mouse_event(event, self.mode);
+        let bytes = report.as_bytes();
+        if bytes.is_empty() {
+            return;
+        }
+        self.effect_sink.push(Effect::Pty(PtyEffect::Write {
+            bytes: bytes.to_vec(),
+            kind: PtyWriteKind::MouseEvent,
+        }));
+    }
 }
 
 impl<S: EffectSink> Handler for Term<S> {
@@ -511,6 +652,47 @@ impl<S: EffectSink> Handler for Term<S> {
     delegate_osc!(decdc(count: u16) => decdc_impl);
     delegate_osc!(decbi() => decbi_impl);
     delegate_osc!(decfi() => decfi_impl);
+
+    // DEC Locator subsystem (CSI ' w/z/{/|). Independent of DECSET 1001
+    // (highlight tracking — separate protocol per F1 cure). DECRQLP emits
+    // the DECLRP reply (real observed coords via `compose_declrp_reply`)
+    // through `effect_sink`; `handle_mouse_input` Step A feeds the observed
+    // position. Continuous/OneShot push-emission (DECSLE-filtered events)
+    // and daemon-mode wire propagation are separate deliverables.
+    fn decefr(&mut self, pt: u16, pl: u16, pb: u16, pr: u16) {
+        self.dec_locator.apply_decefr(pt, pl, pb, pr);
+    }
+    fn decelr(&mut self, ps: u16, pu: u16) {
+        self.dec_locator.apply_decelr(ps, pu);
+    }
+    fn decsle(&mut self, events: &[u16]) {
+        self.dec_locator.apply_decsle(events);
+    }
+    fn decrqlp(&mut self, ps: u16) {
+        // DECRQLP — Request Locator Position. Ps=0|1|omitted = transmit
+        // single DECLRP reply. Format per xterm spec:
+        //   CSI Pe ; Pm ; Pr ; Pc ; Pp & w
+        // - Pe = event code (0=unavail, 1=request response, 2-9=button,
+        //   10=outside-filter-rect)
+        // - Pm = button bitmask
+        // - Pr = row (1-based)
+        // - Pc = col (1-based)
+        // - Pp = page (always 1 for ori_term — no page memory)
+        //
+        // Ps values other than 0/1 are silently dropped per xterm spec.
+        if ps != 0 && ps != 1 {
+            return;
+        }
+        let reply = self.compose_declrp_reply();
+        self.effect_sink.push(Effect::Pty(PtyEffect::Write {
+            bytes: reply,
+            kind: PtyWriteKind::MouseEvent,
+        }));
+        // Per xterm spec, OneShot reporting auto-clears after the reply
+        // fires. on_decrqlp_acknowledged() flips reporting → None iff
+        // it was Some(OneShot).
+        self.dec_locator.on_decrqlp_acknowledged();
+    }
 }
 
 #[cfg(test)]

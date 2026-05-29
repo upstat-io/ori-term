@@ -254,6 +254,14 @@ impl Pane {
         self.mode_cache.load(Ordering::Acquire)
     }
 
+    /// Whether DEC Locator reporting (DECELR Ps=1/Ps=2) is active on the
+    /// pane's terminal. Lock-free read of the IO-thread-maintained cache
+    /// (shared via the handle). DEC Locator state is independent of
+    /// `TermMode`, so it has its own cache.
+    pub fn dec_locator_active(&self) -> bool {
+        self.io_handle.dec_locator_active()
+    }
+
     /// Whether the IO thread's terminal has flagged selection-dirty.
     pub fn is_io_selection_dirty(&self) -> bool {
         self.io_selection_dirty.load(Ordering::Acquire)

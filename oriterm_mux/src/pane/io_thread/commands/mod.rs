@@ -8,6 +8,7 @@ use std::fmt;
 
 use crossbeam_channel::Sender;
 
+use oriterm_core::encode::mouse::MouseEvent;
 use oriterm_core::{CursorShape, Palette, Selection, Theme};
 
 use crate::backend::ImageConfig;
@@ -94,6 +95,29 @@ pub enum PaneIoCommand {
     SelectCommandInput { reply: Sender<Option<Selection>> },
     /// Shut down the IO thread (sent during pane close).
     Shutdown,
+    /// Dispatch a semantic mouse input to the IO thread's `Term` so
+    /// encoding + emission flow through the Decision-10-Option-A apex
+    /// (`Term::handle_mouse_input` reads `TermMode`, encodes, pushes
+    /// `Effect::Pty(PtyEffect::Write { kind: PtyWriteKind::MouseEvent,
+    /// .. })` via `effect_sink`; the `effect_router` lands the bytes at
+    /// `MuxEvent::PtyWrite { kind, .. }`; the in-process pump carries
+    /// them to `pane.write_input`). Replaces the historical App-side
+    /// `encode_mouse_event + write_pane_input` direct path so the kind
+    /// discriminator survives the boundary.
+    HandleMouseInput(MouseEvent),
+    /// Dispatch a semantic mouse input for DEC Locator observation ONLY.
+    /// `Term::observe_locator_input` records the position (Step A) and
+    /// NEVER encodes a mouse report — routed by the App's locator-only
+    /// dispatch path (no mouse-tracking encoder, or the shift-bypass) so
+    /// the encoder cannot fire spuriously.
+    ObserveLocatorInput(MouseEvent),
+    /// Dispatch a semantic focus change to the IO thread's `Term` so
+    /// emission flows through the Decision-10-Option-A apex
+    /// (`Term::handle_focus_event` reads `TermMode::FOCUS_IN_OUT`,
+    /// emits `Effect::Pty(PtyEffect::Write { kind:
+    /// PtyWriteKind::FocusEvent, .. })` via `effect_sink`).
+    /// `focused: true` → focus-in (CSI I); `false` → focus-out (CSI O).
+    HandleFocusEvent(bool),
     /// Update the ENQ answerback string on the IO thread's `Term`.
     ///
     /// Empty (default) suppresses emission per ECMA-48 §8.3.40 + `WezTerm`
@@ -161,6 +185,23 @@ impl fmt::Debug for PaneIoCommand {
             Self::SelectCommandOutput { .. } => write!(f, "SelectCommandOutput {{ .. }}"),
             Self::SelectCommandInput { .. } => write!(f, "SelectCommandInput {{ .. }}"),
             Self::Shutdown => write!(f, "Shutdown"),
+            Self::HandleMouseInput(event) => f
+                .debug_struct("HandleMouseInput")
+                .field("button", &event.button)
+                .field("kind", &event.kind)
+                .field("col", &event.col)
+                .field("line", &event.line)
+                .finish(),
+            Self::ObserveLocatorInput(event) => f
+                .debug_struct("ObserveLocatorInput")
+                .field("button", &event.button)
+                .field("kind", &event.kind)
+                .field("col", &event.col)
+                .field("line", &event.line)
+                .finish(),
+            Self::HandleFocusEvent(focused) => {
+                write!(f, "HandleFocusEvent({focused})")
+            }
             Self::SetAnswerback(bytes) => write!(f, "SetAnswerback({} bytes)", bytes.len()),
         }
     }

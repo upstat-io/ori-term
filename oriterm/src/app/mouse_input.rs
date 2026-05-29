@@ -374,19 +374,23 @@ impl App {
         let report_mode = self
             .terminal_mode()
             .filter(|&m| self.should_report_mouse(m));
+        let kind = mouse_report::element_state_to_kind(state);
 
+        // `encoded` tracks whether the mouse-tracking encoder actually
+        // dispatched this event to Term (which also runs Step A locator
+        // observation). When it did NOT — no tracking mode, the
+        // shift-to-select bypass, or an out-of-grid click the encoder
+        // dropped — the DEC Locator observe-only path below records the
+        // position (Unavailable when out-of-grid) instead.
+        let mut encoded = false;
         match button {
             MouseButton::Left => {
-                // Ctrl+click opens hovered URL (overrides both reporting and selection).
+                // Ctrl+click opens hovered URL (overrides reporting and selection).
                 if state == ElementState::Pressed && self.try_open_hovered_url() {
                     return;
                 }
-                if let Some(mode) = report_mode {
-                    let kind = match state {
-                        ElementState::Pressed => mouse_report::MouseEventKind::Press,
-                        ElementState::Released => mouse_report::MouseEventKind::Release,
-                    };
-                    self.report_mouse_button(mouse_report::MouseButton::Left, kind, mode);
+                if report_mode.is_some() {
+                    encoded = self.report_mouse_button(mouse_report::MouseButton::Left, kind);
                 } else {
                     match state {
                         ElementState::Pressed => self.handle_mouse_press(),
@@ -395,12 +399,8 @@ impl App {
                 }
             }
             MouseButton::Middle => {
-                if let Some(mode) = report_mode {
-                    let kind = match state {
-                        ElementState::Pressed => mouse_report::MouseEventKind::Press,
-                        ElementState::Released => mouse_report::MouseEventKind::Release,
-                    };
-                    self.report_mouse_button(mouse_report::MouseButton::Middle, kind, mode);
+                if report_mode.is_some() {
+                    encoded = self.report_mouse_button(mouse_report::MouseButton::Middle, kind);
                 } else if state == ElementState::Pressed {
                     self.paste_from_primary();
                     if let Some(ctx) = self.focused_ctx_mut() {
@@ -411,12 +411,8 @@ impl App {
                 }
             }
             MouseButton::Right => {
-                if let Some(mode) = report_mode {
-                    let kind = match state {
-                        ElementState::Pressed => mouse_report::MouseEventKind::Press,
-                        ElementState::Released => mouse_report::MouseEventKind::Release,
-                    };
-                    self.report_mouse_button(mouse_report::MouseButton::Right, kind, mode);
+                if report_mode.is_some() {
+                    encoded = self.report_mouse_button(mouse_report::MouseButton::Right, kind);
                 } else if state == ElementState::Pressed {
                     self.open_grid_context_menu();
                 } else {
@@ -424,6 +420,18 @@ impl App {
                 }
             }
             _ => {}
+        }
+
+        // Additive DEC Locator observation (observe-only, NEVER encodes).
+        // Runs when the encoder did NOT dispatch — no tracking mode, the
+        // shift-bypass path (ANY_MOUSE set but suppressed), or an out-of-grid
+        // click the encoder dropped — so the position (Unavailable when
+        // out-of-grid) is recorded for a subsequent DECRQLP. When the encoder
+        // DID dispatch, Term observed via Step A in that same call.
+        if !encoded && self.dec_locator_active() {
+            if let Some(sem_button) = mouse_report::locator_semantic_button(button) {
+                self.report_locator_observation(sem_button, kind);
+            }
         }
     }
 

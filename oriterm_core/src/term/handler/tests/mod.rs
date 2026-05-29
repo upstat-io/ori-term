@@ -15,6 +15,7 @@
 
 mod core;
 mod dcs;
+mod dec_locator;
 mod esc;
 mod image;
 mod modes;

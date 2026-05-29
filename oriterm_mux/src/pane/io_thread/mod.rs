@@ -134,6 +134,11 @@ pub struct PaneIoThread<S: EffectSink + 'static> {
     search: Option<oriterm_core::SearchState>,
     /// Shared selection-dirty flag.
     selection_dirty: Arc<AtomicBool>,
+    /// Lock-free DEC Locator reporting-active cache (shared with the
+    /// handle). Refreshed in `post_parse_housekeeping` alongside
+    /// `mode_cache` so the main thread can dispatch mouse events for
+    /// locator observation even with no mouse-tracking mode.
+    dec_locator_active_cache: Arc<AtomicBool>,
     /// Pending host-request responses awaiting fulfillment.
     pub(crate) pending_responses: Vec<PendingResponse>,
     /// Reusable scratch vector for `drain_effects_into_mux_events()`.
@@ -584,6 +589,15 @@ impl<S: EffectSink> PaneIoThread<S> {
         // Update mode cache for lock-free queries from main thread.
         self.mode_cache
             .store(self.terminal.mode().bits(), Ordering::Release);
+
+        // Refresh the DEC Locator reporting-active cache so the main
+        // thread can dispatch mouse events for locator observation even
+        // when no mouse-tracking mode is active. DEC Locator
+        // state is NOT part of `TermMode`, so it needs its own cache.
+        self.dec_locator_active_cache.store(
+            self.terminal.dec_locator().reporting().is_some(),
+            Ordering::Release,
+        );
 
         // Propagate selection-dirty flag for lock-free main-thread reads.
         if self.terminal.is_selection_dirty() {

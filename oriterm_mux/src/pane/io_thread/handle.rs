@@ -106,8 +106,14 @@ pub struct PaneIoHandle {
     /// Encoded via [`pack_pending_resize`]. Stored by
     /// [`Self::send_resize`], swapped out by the IO thread's
     /// `apply_pending_resize` helper. Replaces routing Resize through
-    /// `cmd_tx` (which broke under saturation: see ).
+    /// `cmd_tx` (which broke under saturation).
     pub(crate) pending_resize: Arc<AtomicU64>,
+    /// Lock-free DEC Locator reporting-active flag — set by the IO thread
+    /// after each VTE parse (mirrors `Term::dec_locator().reporting().is_some()`),
+    /// read by the main thread to dispatch mouse events for locator
+    /// observation even when no mouse-tracking mode is active.
+    /// Shares the same `Arc` as `PaneIoThread::dec_locator_active_cache`.
+    pub(crate) dec_locator_active: Arc<AtomicBool>,
     /// Durable shutdown flag, shared with the IO thread.
     /// Cloned from [`IoThreadConfig::shutdown`] in [`new_with_handle`].
     /// [`Self::shutdown`] and the [`Self::send_command`] Shutdown
@@ -161,6 +167,13 @@ impl PaneIoHandle {
         // iteration. Bounded(1) — `try_send` coalesces N stores between
         // wakes into a single signal.
         let _ = self.io_wake_tx.try_send(());
+    }
+
+    /// Whether DEC Locator reporting (DECELR Ps=1/Ps=2) is active on the
+    /// pane's terminal. Lock-free `Acquire` read of the cache the IO
+    /// thread refreshes after each VTE parse.
+    pub fn dec_locator_active(&self) -> bool {
+        self.dec_locator_active.load(Ordering::Acquire)
     }
 
     /// Clone the byte sender for the PTY reader thread.
@@ -331,6 +344,10 @@ pub fn new_with_handle<S: EffectSink + 'static>(
     // any other shared-state signal).
     let (io_wake_tx, io_wake_rx) = crossbeam_channel::bounded::<()>(1);
     let pending_resize = Arc::new(AtomicU64::new(PENDING_RESIZE_NONE));
+    // DEC Locator reporting-active cache — created here (io-thread/handle
+    // internal, like `pending_resize`) and shared with the handle so the
+    // main thread can query locator state lock-free.
+    let dec_locator_active = Arc::new(AtomicBool::new(false));
     let shutdown_flag = Arc::clone(&config.shutdown);
     let double_buffer = SnapshotDoubleBuffer::new();
     let thread = PaneIoThread {
@@ -359,6 +376,7 @@ pub fn new_with_handle<S: EffectSink + 'static>(
         effects_buf: Vec::new(),
         last_animation_deadline: None,
         pending_resize: Arc::clone(&pending_resize),
+        dec_locator_active_cache: Arc::clone(&dec_locator_active),
         last_snapshot_publish: None,
         drain_handle_bytes_ns: 0,
         drain_kitty_ns: 0,
@@ -379,6 +397,7 @@ pub fn new_with_handle<S: EffectSink + 'static>(
         double_buffer,
         io_wake_tx,
         pending_resize,
+        dec_locator_active,
         shutdown_flag,
         #[cfg(test)]
         drop_counter: None,

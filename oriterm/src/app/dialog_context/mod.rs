@@ -208,7 +208,18 @@ impl DialogWindowContext {
         let h = height.max(1);
         self.surface_config.width = w;
         self.surface_config.height = h;
-        gpu.configure_surface(&self.surface, &self.surface_config);
+        if gpu
+            .configure_surface(&self.surface, &self.surface_config)
+            .is_err()
+        {
+            log::warn!(
+                "dialog surface reconfigure panicked during resize — renderer will retry next frame"
+            );
+            // Fall through: layout still updates so the next frame sees the
+            // new viewport. The panic-caught configure leaves the surface
+            // in its previous state; SurfaceError::Outdated will drive
+            // recovery on the next get_current_texture call.
+        }
         let scale = self.scale_factor.factor() as f32;
         let logical_w = w as f32 / scale;
         let logical_h = h as f32 / scale;

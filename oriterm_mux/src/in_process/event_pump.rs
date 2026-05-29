@@ -72,7 +72,9 @@ impl InProcessMux {
                     self.notifications
                         .push(MuxNotification::PaneUrgencyHint(id));
                 }
-                MuxEvent::PtyWrite { pane_id, data } => {
+                MuxEvent::PtyWrite { pane_id, data, .. } => {
+                    // `kind` not consumed at this site — bytes flow to the PTY
+                    // uniformly regardless of write-kind discriminator.
                     if let Some(pane) = panes.get(&pane_id) {
                         pane.write_input(&data);
                     }

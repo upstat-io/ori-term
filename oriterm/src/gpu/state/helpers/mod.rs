@@ -274,3 +274,58 @@ pub fn validate_gpu() -> usize {
 
     adapters.len()
 }
+
+/// Marker returned when `wgpu::Surface::configure` panicked and was caught.
+///
+/// `wgpu::Surface::configure` returns `()` and panics on validation errors.
+/// Callers wrap the call in [`try_configure_surface`] so the panic becomes
+/// a `Result` the fallback chain in `GpuState::new` can route around
+/// instead of aborting the process.
+///
+/// See: bug-tracker/plans/completed/BUG-06-108/
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ConfigurePanicked;
+
+/// Run `f` under `std::panic::catch_unwind`, returning [`ConfigurePanicked`]
+/// on caught panic.
+///
+/// Factored out of [`try_configure_surface`] so the panic-catch contract can
+/// be unit-tested without needing a real GPU surface.
+pub(crate) fn catch_panic<F: FnOnce() + std::panic::UnwindSafe>(
+    f: F,
+) -> Result<(), ConfigurePanicked> {
+    std::panic::catch_unwind(f).map_err(|_payload| ConfigurePanicked)
+}
+
+/// Panic-safe wrapper around `wgpu::Surface::configure`.
+///
+/// `wgpu::Surface::configure` is one of the few wgpu APIs that panics on
+/// validation errors instead of returning `Result`. This wrapper catches
+/// the panic and returns `Err(ConfigurePanicked)` so the GPU init fallback
+/// chain advances to the next backend instead of aborting the process.
+///
+/// Does NOT touch the global panic hook — earlier iterations of this
+/// helper swapped to a no-op hook for the duration of the `catch_unwind`
+/// block to suppress the scary `[ERROR] PANIC: ...` line emitted by the
+/// project's panic hook during normal fallback. That approach was
+/// abandoned because the font-discovery thread runs concurrently with
+/// GPU init, and a global hook swap would silently swallow any unrelated
+/// panic that fired in that window. The panic-hook noise is a UX concern
+/// tracked separately in the bug-tracker.
+///
+/// See: bug-tracker/plans/completed/BUG-06-108/
+pub(crate) fn try_configure_surface(
+    surface: &wgpu::Surface<'_>,
+    device: &wgpu::Device,
+    config: &wgpu::SurfaceConfiguration,
+) -> Result<(), ConfigurePanicked> {
+    use std::panic::AssertUnwindSafe;
+    let result = catch_panic(AssertUnwindSafe(|| surface.configure(device, config)));
+    if result.is_err() {
+        log::warn!("wgpu::Surface::configure panicked — caught for fallback handling");
+    }
+    result
+}
+
+#[cfg(test)]
+mod tests;

@@ -17,6 +17,7 @@ use std::io;
 use std::sync::mpsc;
 
 use oriterm_core::Theme;
+use oriterm_core::encode::mouse::MouseEvent;
 use oriterm_core::selection::Selection;
 
 use crate::PaneSnapshot;
@@ -108,6 +109,14 @@ pub trait MuxBackend {
     /// DECLRMM (mode 69 = bit 32).
     fn pane_mode(&self, pane_id: PaneId) -> Option<u64>;
 
+    /// Whether DEC Locator reporting (DECELR Ps=1/Ps=2) is active on a
+    /// pane. The App dispatch gate reads this to forward mouse events for
+    /// locator observation even when no mouse-tracking mode is active.
+    /// Independent of `pane_mode` — DEC Locator state is not part of
+    /// `TermMode`. In embedded mode reads the lock-free cache; in
+    /// daemon mode returns `false` until the wire carries it.
+    fn pane_dec_locator_active(&self, pane_id: PaneId) -> bool;
+
     // Theme + palette + cursor operations
 
     /// Apply a theme and palette to a pane's terminal.
@@ -198,6 +207,75 @@ pub trait MuxBackend {
     /// In embedded mode, delegates to [`Pane::write_input`].
     /// In daemon mode, sends a fire-and-forget `Input` PDU to the daemon.
     fn send_input(&mut self, pane_id: PaneId, data: &[u8]);
+
+    /// Dispatch a semantic mouse input. Routes through the
+    /// Decision-10-Option-A apex when the backend supports it (embedded
+    /// mode pipes the `MouseEvent` into the pane's IO thread, where
+    /// `Term::handle_mouse_input` encodes + emits via Effect → mux
+    /// → `MuxEvent::PtyWrite { kind: PtyWriteKind::MouseEvent, .. }`).
+    /// Default impl encodes locally + falls back to [`send_input`](Self::send_input)
+    /// — kind discriminator lost on that fallback path (daemon mode +
+    /// any non-overriding backend). Future daemon-PDU work removes the
+    /// fallback for daemon-mode mouse-event preservation across IPC.
+    fn send_mouse_input(&mut self, pane_id: PaneId, event: &MouseEvent) {
+        let Some(mode) = self.pane_mode(pane_id) else {
+            return;
+        };
+        let mode = oriterm_core::TermMode::from_bits_truncate(mode);
+        // Same SSOT predicate as the apex `Term::handle_mouse_input` gate.
+        if !oriterm_core::encode::mouse::should_handle_mouse_input(mode) {
+            return;
+        }
+        let report = oriterm_core::encode::mouse::encode_mouse_event(event, mode);
+        let bytes = report.as_bytes();
+        if bytes.is_empty() {
+            // Diagnostic breadcrumb: under MOUSE_SGR_PIXEL the encoder
+            // returns an empty buffer when pixel coords are missing.
+            // In embedded mode, App-side clamping makes this unreachable
+            // for in-grid clicks. In daemon mode, a caller without a
+            // pixel-coord helper would silently drop events; surface
+            // the drop in the log so the diagnosis is one grep away.
+            if mode.contains(oriterm_core::TermMode::MOUSE_SGR_PIXEL) {
+                log::info!(
+                    "send_mouse_input dropped 1016 event for pane {pane_id}: \
+                     pixel coords missing"
+                );
+            }
+            return;
+        }
+        self.send_input(pane_id, bytes);
+    }
+
+    /// Dispatch a semantic mouse input for DEC Locator observation ONLY —
+    /// records the pane's locator position via `Term::observe_locator_input`
+    /// (Step A) WITHOUT encoding a mouse report. The App routes here on the
+    /// locator-only path (no mouse-tracking encoder active, or the
+    /// shift-to-select bypass) so the encoder cannot fire spuriously.
+    /// Default impl is a no-op: non-embedded backends do not yet carry
+    /// locator observation across the wire (daemon-mode wire propagation is
+    /// a separate deliverable). Embedded mode overrides this.
+    /// See: bug-tracker/section-11-mux.md (BUG-11-067) — daemon DEC Locator
+    /// wire propagation.
+    fn observe_pane_locator_input(&mut self, _pane_id: PaneId, _event: &MouseEvent) {}
+
+    /// Dispatch a semantic focus change. Routes through the
+    /// Decision-10-Option-A apex when the backend supports it
+    /// (embedded mode pipes via `PaneIoCommand::HandleFocusEvent` →
+    /// `Term::handle_focus_event` → `Effect::Pty(PtyEffect::Write {
+    /// kind: PtyWriteKind::FocusEvent, .. })`). Default impl falls
+    /// back to encoding-then-`send_input` for non-overriding backends
+    /// (kind discriminator lost on that path).
+    fn send_focus_event(&mut self, pane_id: PaneId, focused: bool) {
+        let Some(mode) = self.pane_mode(pane_id) else {
+            return;
+        };
+        let mode = oriterm_core::TermMode::from_bits_truncate(mode);
+        if !mode.contains(oriterm_core::TermMode::FOCUS_IN_OUT) {
+            return;
+        }
+        let bytes: &[u8] = if focused { b"\x1b[I" } else { b"\x1b[O" };
+        self.send_input(pane_id, bytes);
+    }
 
     /// Whether the PTY writer thread for a pane is blocked on a write.
     /// When `true`, the kernel PTY buffer is full and keyboard input

@@ -551,10 +551,17 @@ impl App {
             // when render_chrome returned via NLL).
             let renderer = ctx.renderer.as_mut().expect("renderer checked");
 
-            ctx.window.apply_pending_surface_resize(gpu);
-
-            let result =
-                renderer.render_to_surface(gpu, pipelines, ctx.window.surface(), needs_full_render);
+            // Apply deferred DXGI ResizeBuffers before surface acquisition.
+            //
+            // When configure_surface panics (caught), the surface is left
+            // marked stale; substitute SurfaceError::Outdated so the next
+            // frame's existing recovery path drives reconfigure.
+            let resize_status = ctx.window.apply_pending_surface_resize(gpu);
+            let result = if resize_status.surface_ready() {
+                renderer.render_to_surface(gpu, pipelines, ctx.window.surface(), needs_full_render)
+            } else {
+                Err(crate::gpu::window_renderer::SurfaceError::Outdated)
+            };
 
             super::draw_helpers::apply_post_render_ui_stale(ctx, &result, tab_bar_animating);
 

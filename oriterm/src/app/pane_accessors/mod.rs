@@ -102,6 +102,19 @@ impl App {
         self.pane_mode(id)
     }
 
+    /// Whether DEC Locator reporting (DECELR Ps=1/Ps=2) is active on the
+    /// active pane. Drives the additive locator-observation dispatch in
+    /// `handle_mouse_input` — independent of `terminal_mode` / mouse
+    /// tracking. Returns `false` with no active pane.
+    pub(super) fn dec_locator_active(&self) -> bool {
+        let Some(id) = self.active_pane_id() else {
+            return false;
+        };
+        self.mux
+            .as_ref()
+            .is_some_and(|mux| mux.pane_dec_locator_active(id))
+    }
+
     // Per-pane selection accessors
 
     /// The active selection for a pane, if any.
@@ -165,6 +178,41 @@ impl App {
     pub(super) fn write_pane_input(&mut self, pane_id: PaneId, data: &[u8]) {
         if let Some(mux) = self.mux.as_mut() {
             mux.send_input(pane_id, data);
+        }
+    }
+
+    /// Dispatch a semantic mouse input to a pane.
+    ///
+    /// Routes through [`MuxBackend::send_mouse_input`] per Decision 10
+    /// Option A apex. The embedded backend pipes the event into the
+    /// pane's IO thread so `Term::handle_mouse_input` encodes + emits
+    /// via `Effect::Pty(PtyEffect::Write { kind: PtyWriteKind::MouseEvent,
+    /// .. })`; the daemon backend's default impl currently encodes
+    /// locally + falls back to `send_input` (kindless on the IPC wire).
+    pub(super) fn write_pane_mouse_input(
+        &mut self,
+        pane_id: PaneId,
+        event: &oriterm_core::encode::mouse::MouseEvent,
+    ) {
+        if let Some(mux) = self.mux.as_mut() {
+            mux.send_mouse_input(pane_id, event);
+        }
+    }
+
+    /// Dispatch a semantic mouse input for DEC Locator observation ONLY.
+    ///
+    /// Routes through [`MuxBackend::observe_pane_locator_input`], which
+    /// records the pane's locator position (`Term::observe_locator_input`,
+    /// Step A) WITHOUT encoding a mouse report. Used by the locator-only
+    /// dispatch path so the encoder cannot fire when mouse-tracking is off
+    /// OR suppressed by the shift-to-select bypass.
+    pub(super) fn observe_pane_locator_input(
+        &mut self,
+        pane_id: PaneId,
+        event: &oriterm_core::encode::mouse::MouseEvent,
+    ) {
+        if let Some(mux) = self.mux.as_mut() {
+            mux.observe_pane_locator_input(pane_id, event);
         }
     }
 

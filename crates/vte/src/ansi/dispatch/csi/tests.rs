@@ -49,6 +49,10 @@ enum Call {
     Decssdt(u16),
     Decic(u16),
     Decdc(u16),
+    Decefr(u16, u16, u16, u16),
+    Decelr(u16, u16),
+    Decsle(Vec<u16>),
+    Decrqlp(u16),
     GraphicsAttribute { pi: u16, pa: u16, pv: u16 },
     Xtversion,
 }
@@ -125,6 +129,18 @@ impl Handler for RecordingHandler {
     }
     fn decdc(&mut self, count: u16) {
         self.calls.push(Call::Decdc(count));
+    }
+    fn decefr(&mut self, pt: u16, pl: u16, pb: u16, pr: u16) {
+        self.calls.push(Call::Decefr(pt, pl, pb, pr));
+    }
+    fn decelr(&mut self, ps: u16, pu: u16) {
+        self.calls.push(Call::Decelr(ps, pu));
+    }
+    fn decsle(&mut self, events: &[u16]) {
+        self.calls.push(Call::Decsle(events.to_vec()));
+    }
+    fn decrqlp(&mut self, ps: u16) {
+        self.calls.push(Call::Decrqlp(ps));
     }
     fn graphics_attribute(&mut self, pi: u16, pa: u16, pv: u16) {
         self.calls.push(Call::GraphicsAttribute { pi, pa, pv });
@@ -370,6 +386,99 @@ fn decdc_dispatches_count() {
 #[test]
 fn decdc_unhandled_with_other_intermediate() {
     let calls = run(b"\x1b[3%~");
+    assert!(calls.is_empty());
+}
+
+// ── DEC Locator subsystem (DECEFR / DECELR / DECSLE / DECRQLP) ──────
+//
+// All four use apostrophe (0x27) as the intermediate; final byte
+// distinguishes them. Independent of DECSET 1001 (highlight tracking).
+// Activated by DECELR (`CSI Ps;Pu ' z`). Sibling pattern to DECIC /
+// DECDC apostrophe-final-byte handlers above. Spec source: xterm
+// `ctlseqs.txt` §DEC Locator (lines ~1773-1944).
+
+#[test]
+fn decefr_dispatches_rectangle() {
+    let calls = run(b"\x1b[10;20;30;40'w");
+    assert_eq!(calls, vec![Call::Decefr(10, 20, 30, 40)]);
+}
+
+#[test]
+fn decefr_defaults_to_zeros_when_params_omitted() {
+    let calls = run(b"\x1b['w");
+    assert_eq!(calls, vec![Call::Decefr(0, 0, 0, 0)]);
+}
+
+#[test]
+fn decefr_unhandled_with_other_intermediate() {
+    let calls = run(b"\x1b[10;20;30;40%w");
+    assert!(calls.is_empty());
+}
+
+#[test]
+fn decelr_dispatches_ps_pu_continuous_cell() {
+    // DECELR Ps=1 (continuous) Pu=2 (character cells).
+    let calls = run(b"\x1b[1;2'z");
+    assert_eq!(calls, vec![Call::Decelr(1, 2)]);
+}
+
+#[test]
+fn decelr_dispatches_oneshot_pixel() {
+    // DECELR Ps=2 (one-report-then-disabled) Pu=1 (pixels).
+    let calls = run(b"\x1b[2;1'z");
+    assert_eq!(calls, vec![Call::Decelr(2, 1)]);
+}
+
+#[test]
+fn decelr_disabled_zero_ps() {
+    let calls = run(b"\x1b[0;0'z");
+    assert_eq!(calls, vec![Call::Decelr(0, 0)]);
+}
+
+#[test]
+fn decelr_unhandled_with_other_intermediate() {
+    let calls = run(b"\x1b[1;2#z");
+    assert!(calls.is_empty());
+}
+
+#[test]
+fn decsle_dispatches_single_event() {
+    // DECSLE Pm with a single event class.
+    let calls = run(b"\x1b[1'{");
+    assert_eq!(calls, vec![Call::Decsle(vec![1])]);
+}
+
+#[test]
+fn decsle_dispatches_event_bitmask_list() {
+    // DECSLE Pm with multiple event classes.
+    let calls = run(b"\x1b[1;3;5'{");
+    assert_eq!(calls, vec![Call::Decsle(vec![1, 3, 5])]);
+}
+
+#[test]
+fn decsle_unhandled_with_other_intermediate() {
+    // `('{', [b'$'])` IS a real arm (DECSERA — Selective Erase Rect Area);
+    // use `%` (unallocated) as the intermediate to assert DECSLE does NOT
+    // dispatch on a wrong-intermediate byte.
+    let calls = run(b"\x1b[1;3%\x7b");
+    assert!(calls.is_empty());
+}
+
+#[test]
+fn decrqlp_dispatches_request() {
+    let calls = run(b"\x1b[1'|");
+    assert_eq!(calls, vec![Call::Decrqlp(1)]);
+}
+
+#[test]
+fn decrqlp_default_zero_when_param_omitted() {
+    let calls = run(b"\x1b['|");
+    assert_eq!(calls, vec![Call::Decrqlp(0)]);
+}
+
+#[test]
+fn decrqlp_unhandled_with_other_intermediate() {
+    let calls = run(b"\x1b[1$|");
     assert!(calls.is_empty());
 }
 

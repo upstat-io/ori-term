@@ -153,6 +153,12 @@ impl MuxBackend for EmbeddedMux {
         self.panes.get(&pane_id).map(Pane::mode)
     }
 
+    fn pane_dec_locator_active(&self, pane_id: PaneId) -> bool {
+        self.panes
+            .get(&pane_id)
+            .is_some_and(Pane::dec_locator_active)
+    }
+
     fn set_pane_theme(&mut self, pane_id: PaneId, theme: Theme, palette: oriterm_core::Palette) {
         if let Some(pane) = self.panes.get(&pane_id) {
             pane.send_io_command(PaneIoCommand::SetTheme(theme, Box::new(palette)));
@@ -293,6 +299,32 @@ impl MuxBackend for EmbeddedMux {
     fn send_input(&mut self, pane_id: PaneId, data: &[u8]) {
         if let Some(pane) = self.panes.get(&pane_id) {
             pane.write_input(data);
+        }
+    }
+
+    fn send_mouse_input(
+        &mut self,
+        pane_id: PaneId,
+        event: &oriterm_core::encode::mouse::MouseEvent,
+    ) {
+        if let Some(pane) = self.panes.get(&pane_id) {
+            pane.send_io_command(PaneIoCommand::HandleMouseInput(*event));
+        }
+    }
+
+    fn observe_pane_locator_input(
+        &mut self,
+        pane_id: PaneId,
+        event: &oriterm_core::encode::mouse::MouseEvent,
+    ) {
+        if let Some(pane) = self.panes.get(&pane_id) {
+            pane.send_io_command(PaneIoCommand::ObserveLocatorInput(*event));
+        }
+    }
+
+    fn send_focus_event(&mut self, pane_id: PaneId, focused: bool) {
+        if let Some(pane) = self.panes.get(&pane_id) {
+            pane.send_io_command(PaneIoCommand::HandleFocusEvent(focused));
         }
     }
 

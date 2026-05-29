@@ -8,6 +8,7 @@
 mod alt_screen;
 pub mod charset;
 mod colors_state;
+pub mod dec_locator;
 mod dec_observable;
 mod handler;
 mod image_config;
@@ -95,6 +96,7 @@ use crate::grid::{CursorShape, Grid};
 use crate::image::ImageCache;
 use crate::image::sixel::SixelParser;
 use crate::term::colors_state::TermColorsState;
+use crate::term::dec_locator::DecLocatorState;
 use crate::term::iterm2_state::Iterm2State;
 use crate::theme::Theme;
 
@@ -314,6 +316,10 @@ pub struct Term<S: EffectSink> {
     /// iTerm2 OSC 1337 non-image sub-op state (`RemoteHost`, user variables,
     /// shell integration version). See `iterm2_state.rs`.
     iterm2_state: Iterm2State,
+    /// DEC Locator subsystem state (DECEFR/DECELR/DECSLE/DECRQLP). Independent
+    /// of DECSET 1001 (which is highlight tracking — a separate protocol per
+    /// the F1 cure). See `dec_locator/mod.rs`.
+    dec_locator: DecLocatorState,
     /// OSC 3 / 5 / 6 / 13 / 14 / 17 / 19 terminal-level color + property
     /// state. See `colors_state.rs`.
     colors_state: TermColorsState,
@@ -424,6 +430,7 @@ impl<S: EffectSink> Term<S> {
             mouse_cursor_icon: None,
             last_command_line: None,
             iterm2_state: Iterm2State::new(),
+            dec_locator: DecLocatorState::new(),
             colors_state: TermColorsState::new(),
             checksum_flags: 0,
             char_protection: false,
@@ -552,6 +559,13 @@ impl<S: EffectSink> Term<S> {
     /// Current terminal mode flags.
     pub fn mode(&self) -> TermMode {
         self.mode
+    }
+
+    /// Read-only access to DEC Locator subsystem state for tests and
+    /// observability. State mutation flows through the Handler trait
+    /// methods (decefr/decelr/decsle/decrqlp) at `handler/mod.rs`.
+    pub fn dec_locator(&self) -> &DecLocatorState {
+        &self.dec_locator
     }
 
     /// Reference to the active screen's image cache.

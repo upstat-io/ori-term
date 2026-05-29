@@ -179,7 +179,7 @@ impl App {
 
         // Global keybindings: actions that work from any window.
         if event.state == ElementState::Pressed {
-            let mods = self.modifiers.into();
+            let mods = crate::key_encoding::modifiers_from_state(self.modifiers);
             if let Some(binding_key) = keybindings::key_to_binding_key(&event.logical_key) {
                 if let Some(action) = keybindings::find_binding(&self.bindings, &binding_key, mods)
                 {

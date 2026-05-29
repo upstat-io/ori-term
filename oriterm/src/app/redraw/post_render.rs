@@ -65,7 +65,12 @@ impl App {
                 {
                     let (w, h) = ctx.window.size_px();
                     ctx.window.resize_surface(w, h, gpu);
-                    ctx.window.apply_pending_surface_resize(gpu);
+                    // Configure panic at recovery time leaves
+                    // surface_stale=true; we loop back here on the next
+                    // frame's get_current_texture Outdated and retry. If
+                    // the panic persists across frames the user sees
+                    // repeated warn lines but the process stays alive.
+                    let _resize_status = ctx.window.apply_pending_surface_resize(gpu);
                 }
             }
             Err(SurfaceError::Lost) => {

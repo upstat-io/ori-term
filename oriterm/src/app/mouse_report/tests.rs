@@ -1,8 +1,7 @@
 //! Tests for mouse event encoding.
 
 use oriterm_core::TermMode;
-
-use super::encode::{
+use oriterm_core::encode::mouse::{
     MouseButton, MouseEvent, MouseEventKind, MouseModifiers, apply_modifiers, button_code,
     encode_mouse_event, encode_normal, encode_sgr, encode_utf8,
 };
@@ -380,13 +379,7 @@ fn utf8_max_button_code_with_all_modifiers_in_range() {
 // -- encode_mouse_event dispatch tests --
 
 fn event(button: MouseButton, kind: MouseEventKind, col: usize, line: usize) -> MouseEvent {
-    MouseEvent {
-        button,
-        kind,
-        col,
-        line,
-        mods: MouseModifiers::default(),
-    }
+    MouseEvent::cell(button, kind, col, line, MouseModifiers::default())
 }
 
 fn event_with_mods(
@@ -396,13 +389,7 @@ fn event_with_mods(
     line: usize,
     mods: MouseModifiers,
 ) -> MouseEvent {
-    MouseEvent {
-        button,
-        kind,
-        col,
-        line,
-        mods,
-    }
+    MouseEvent::cell(button, kind, col, line, mods)
 }
 
 #[test]
@@ -1034,6 +1021,10 @@ fn urxvt_with_shift_modifier() {
             alt: false,
             ctrl: false,
         },
+        px: None,
+        py: None,
+        physical_px: None,
+        in_grid: true,
     };
     let bytes = encode_mouse_event(&e, mode).as_bytes().to_vec();
     // Button code = 32 + 0 + 4 (shift) = 36, col = 6, line = 4.
@@ -1053,6 +1044,10 @@ fn urxvt_with_ctrl_modifier() {
             alt: false,
             ctrl: true,
         },
+        px: None,
+        py: None,
+        physical_px: None,
+        in_grid: true,
     };
     let bytes = encode_mouse_event(&e, mode).as_bytes().to_vec();
     // Button code = 32 + 0 + 16 (ctrl) = 48.
@@ -1069,6 +1064,68 @@ fn urxvt_release_uses_m_suffix() {
     assert!(
         s.ends_with('M'),
         "URXVT release should use M suffix, got: {s}"
+    );
+}
+
+/// Regression: UTF-8 (mode 1005) reports a button RELEASE with X10 button
+/// code 3 (low-bits), NOT the real button code — 1005 changes only the
+/// coordinate transport, the Cb encoding is X10 (xterm ctlseqs). Left
+/// release → 32 + 3 = byte 35.
+#[test]
+fn utf8_release_encodes_button_code_3() {
+    let mode = TermMode::MOUSE_REPORT_CLICK | TermMode::MOUSE_UTF8;
+    let e = event(MouseButton::Left, MouseEventKind::Release, 5, 3);
+    let bytes = encode_mouse_event(&e, mode).as_bytes().to_vec();
+    // \x1b[M {32+code} {32+col+1} {32+line+1}; byte[3] is Cb.
+    assert_eq!(
+        bytes[3],
+        32 + 3,
+        "UTF-8 release Cb must be X10 code 3 (byte 35), not the real button"
+    );
+}
+
+/// URXVT (mode 1015) "uses the same button encoding as X10" (xterm ctlseqs)
+/// — a release reports decimal Cb = 35 (32 + 3), not the real button.
+#[test]
+fn urxvt_release_encodes_button_code_3() {
+    let mode = TermMode::MOUSE_REPORT_CLICK | TermMode::MOUSE_URXVT;
+    let e = event(MouseButton::Left, MouseEventKind::Release, 5, 3);
+    let bytes = encode_mouse_event(&e, mode).as_bytes().to_vec();
+    assert_eq!(
+        bytes, b"\x1b[35;6;4M",
+        "URXVT release decimal Cb must be X10 code 3 (35)"
+    );
+}
+
+/// Release code 3 still carries modifier bits (xterm: +4 shift / +8 alt /
+/// +16 ctrl). Left+shift release under UTF-8 → 3 + 4 = byte 39.
+#[test]
+fn utf8_release_code_3_carries_modifier_bits() {
+    let mode = TermMode::MOUSE_REPORT_CLICK | TermMode::MOUSE_UTF8;
+    let mut e = event(MouseButton::Left, MouseEventKind::Release, 5, 3);
+    e.mods = MouseModifiers {
+        shift: true,
+        alt: false,
+        ctrl: false,
+    };
+    let bytes = encode_mouse_event(&e, mode).as_bytes().to_vec();
+    assert_eq!(
+        bytes[3],
+        32 + 3 + 4,
+        "UTF-8 release Cb = code 3 + shift(4) = byte 39"
+    );
+}
+
+/// Companion rejecting the pre-fix behavior: UTF-8 release must NOT carry the
+/// real Left button code (0 → byte 32).
+#[test]
+fn utf8_release_rejects_real_button_code() {
+    let mode = TermMode::MOUSE_REPORT_CLICK | TermMode::MOUSE_UTF8;
+    let e = event(MouseButton::Left, MouseEventKind::Release, 5, 3);
+    let bytes = encode_mouse_event(&e, mode).as_bytes().to_vec();
+    assert_ne!(
+        bytes[3], 32,
+        "release must not encode the real Left button code (byte 32)"
     );
 }
 
@@ -1102,16 +1159,14 @@ fn x10_mode_motion_is_suppressed() {
     let mode = TermMode::MOUSE_X10;
     let e = event(MouseButton::Left, MouseEventKind::Motion, 5, 10);
     let bytes = encode_mouse_event(&e, mode).as_bytes().to_vec();
-    // Motion is a kind of "not release" but X10 should only report button
-    // presses. The motion bit in the code makes it technically a "press with
-    // motion" — that should still be filtered out since X10 is press-only.
-    // However, our current implementation only filters releases. Motion
-    // events are handled at the App layer (report_mouse_motion returns
-    // early for X10 mode), so encode_mouse_event does encode motion.
-    // This test documents the actual behavior.
+    // X10 (mode 9) is press-only: it reports neither releases nor motion
+    // (xterm ctlseqs). The encoder enforces this at the protocol boundary
+    // (defense in depth), independent of the App-layer motion gate — so a
+    // Motion event under bare mode 9 produces NO report rather than a
+    // spurious `CSI M`.
     assert!(
-        !bytes.is_empty(),
-        "motion encoding is allowed at the encoder level"
+        bytes.is_empty(),
+        "X10 mode-9 is press-only — motion must be suppressed at the encoder"
     );
 }
 
@@ -1432,7 +1487,7 @@ fn bridge_parser_to_alt_scroll_decision() {
     assert!(!should_translate_wheel_to_arrows(mode, false));
 }
 
-// : tier2_alt_scroll_payload + classify_wheel_event matrix.
+// tier2_alt_scroll_payload + classify_wheel_event matrix.
 // Verifies DECCKM-aware Tier-2 alt-scroll byte selection, the WheelTier
 // dispatcher, and ANY_MOUSE_ENCODING isolation per xterm spec
 // (ctlseqs.txt:2465-2473 + scrollbar.c:711-727).
@@ -1799,7 +1854,7 @@ fn classify_wheel_event_empty_mode_with_shift_held_returns_viewport_scroll() {
     );
 }
 
-// --- ANY_MOUSE_ENCODING isolation negative pins ---
+// --- ANY_MOUSE_ENCODING isolation rejection tests ---
 
 /// Catalog row: DEC-ALT-SCROLL
 /// Regression guard: MOUSE_SGR is in ANY_MOUSE_ENCODING (encoding format),
@@ -1860,13 +1915,14 @@ fn classify_wheel_event_any_mouse_member_count_assertion() {
     );
 }
 
-// --- : dispatch_wheel wiring matrix ---
+// --- dispatch_wheel wiring matrix ---
 // Tests pin the wiring layer extracted from `App::handle_mouse_wheel`:
 // `dispatch_wheel<S: WheelSink>(WheelDispatch, &mut S)` consumes a sink
 // trait so the side-effect surface (PTY writes, viewport scroll, mark-dirty)
 // can be matrix-tested without constructing the unconstructible-in-#[test]
-// `App`. already pinned the pure decision functions
-// (parse_wheel_delta, classify_wheel_event, tier2_alt_scroll_payload);
+// `App`. The pure decision functions
+// (parse_wheel_delta, classify_wheel_event, tier2_alt_scroll_payload) are
+// pinned separately;
 // these tests pin that the dispatcher's match arms call those decisions'
 // implications on the sink in the right order, with the right operand
 // counts, with the right bytes, and with the right post-match mark-dirty
@@ -1893,11 +1949,30 @@ struct RecordingSink {
     mark_dirty_calls: usize,
     cell_for_report_value: Option<(usize, usize)>,
     cell_for_report_calls: usize,
+    /// Set by fixtures before dispatch_wheel calls so the post-§16.2.0.B
+    /// `write_pane_mouse_input` trait method can encode locally. In
+    /// production this state lives on `Term` (read by `Term::handle_mouse_input`);
+    /// for tests the sink stores it.
+    recorded_mode: TermMode,
 }
 
 impl WheelSink for RecordingSink {
     fn write_pane_input(&mut self, pane_id: PaneId, bytes: &[u8]) {
         self.writes.push((pane_id, bytes.to_vec()));
+    }
+    fn write_pane_mouse_input(&mut self, pane_id: PaneId, event: &MouseEvent) {
+        // Test seam: encode locally so existing `writes` assertions
+        // keep working post-§16.2.0.B migration. Production path (App
+        // impl) routes through mux.send_mouse_input → PaneIoCommand
+        // pipe → Term::handle_mouse_input encoder.
+        let report = encode_mouse_event(event, self.recorded_mode);
+        let bytes = report.as_bytes();
+        if !bytes.is_empty() {
+            self.writes.push((pane_id, bytes.to_vec()));
+        }
+    }
+    fn set_recorded_mode(&mut self, mode: TermMode) {
+        self.recorded_mode = mode;
     }
     fn scroll_pane(&mut self, pane_id: PaneId, lines: isize) {
         self.scrolls.push((pane_id, lines));
@@ -1949,6 +2024,9 @@ fn dispatch_with(
             alt: false,
             ctrl: false,
         },
+        px: None,
+        py: None,
+        physical_px: None,
     }
 }
 
@@ -2015,6 +2093,10 @@ fn dispatch_wheel_mouse_report_carries_scroll_up_bytes() {
         col: 7,
         line: 3,
         mods: MouseModifiers::default(),
+        px: None,
+        py: None,
+        physical_px: None,
+        in_grid: true,
     };
     let expected = encode_mouse_event(&event, mode);
     assert_eq!(sink.writes.len(), 1);
@@ -2035,6 +2117,10 @@ fn dispatch_wheel_mouse_report_carries_scroll_down_bytes() {
         col: 7,
         line: 3,
         mods: MouseModifiers::default(),
+        px: None,
+        py: None,
+        physical_px: None,
+        in_grid: true,
     };
     let expected = encode_mouse_event(&event, mode);
     assert_eq!(sink.writes[0].1, expected.as_bytes().to_vec());
@@ -2316,6 +2402,9 @@ fn dispatch_wheel_mouse_report_propagates_alt_ctrl_modifiers_to_encoded_bytes() 
         shift_held: false,
         pane_id: Some(pane()),
         mods,
+        px: None,
+        py: None,
+        physical_px: None,
     };
     dispatch_wheel(input, &mut sink);
     let event = MouseEvent {
@@ -2324,6 +2413,10 @@ fn dispatch_wheel_mouse_report_propagates_alt_ctrl_modifiers_to_encoded_bytes() 
         col: 11,
         line: 7,
         mods,
+        px: None,
+        py: None,
+        physical_px: None,
+        in_grid: true,
     };
     let expected = encode_mouse_event(&event, mode);
     assert_eq!(sink.writes.len(), 1);
@@ -2334,6 +2427,10 @@ fn dispatch_wheel_mouse_report_propagates_alt_ctrl_modifiers_to_encoded_bytes() 
         col: 11,
         line: 7,
         mods: MouseModifiers::default(),
+        px: None,
+        py: None,
+        physical_px: None,
+        in_grid: true,
     };
     let no_mods_expected = encode_mouse_event(&no_mods_event, mode);
     assert_ne!(
@@ -2363,6 +2460,9 @@ fn dispatch_wheel_mouse_report_empty_bytes_skips_writes_but_marks_dirty() {
         shift_held: false,
         pane_id: Some(pane()),
         mods: MouseModifiers::default(),
+        px: None,
+        py: None,
+        physical_px: None,
     };
     dispatch_wheel(input, &mut sink);
     assert!(
@@ -2407,7 +2507,7 @@ fn dispatch_wheel_viewport_scroll_does_not_query_cell_for_report() {
     );
 }
 
-// --- : cross-site convergence pin ---
+// --- cross-site convergence pin ---
 // Pinned by Plan-review round 0 F2: keyboard arrow encoding via the public
 // `encode_key` dispatcher must produce IDENTICAL bytes to mouse-wheel
 // `tier2_alt_scroll_payload` for the (DECCKM × direction) cells the wheel
@@ -2484,4 +2584,246 @@ mod cross_site_convergence {
             alt_scroll_bytes(ScrollDirection::Down, false)
         );
     }
+}
+
+/// Pure `clamp_mouse_pixel_coords` helper returns `(Some, Some)` for
+/// every position when surface inputs are valid, clamping out-of-bounds
+/// positions to the nearest valid PHYSICAL (device) pixel. Returns
+/// `(None, None)` ONLY for the "no usable surface" cases (zero-size or
+/// sub-pixel bounds, non-finite input).
+///
+/// See: bug-tracker/plans/BUG-08-057/
+#[cfg(test)]
+mod clamp_mouse_pixel_coords_matrix {
+    use winit::dpi::PhysicalPosition;
+
+    use crate::app::mouse_report::clamp_mouse_pixel_coords;
+
+    fn pos(x: f64, y: f64) -> PhysicalPosition<f64> {
+        PhysicalPosition::new(x, y)
+    }
+
+    // -- §03 t27–t31: clamping + scale --
+
+    /// In-grid cursor → `(Some(rel_x), Some(rel_y))`. Baseline.
+    #[test]
+    fn clamp_in_grid_returns_some_some() {
+        let result = clamp_mouse_pixel_coords(pos(50.0, 100.0), (0.0, 0.0), (200.0, 200.0));
+        assert_eq!(result, (Some(50), Some(100)));
+    }
+
+    /// Cursor exactly at `bounds.right()` (off-by-one from in-bounds):
+    /// clamp to `width - 1`. Pre-fix returned `(None, None)`.
+    #[test]
+    fn clamp_at_right_edge_clamps_to_width_minus_one() {
+        let result = clamp_mouse_pixel_coords(pos(200.0, 100.0), (0.0, 0.0), (200.0, 200.0));
+        assert_eq!(result, (Some(199), Some(100)));
+    }
+
+    /// Cursor at `bounds.bottom()` → clamp to `height - 1`. Mirror.
+    #[test]
+    fn clamp_at_bottom_edge_clamps_to_height_minus_one() {
+        let result = clamp_mouse_pixel_coords(pos(50.0, 200.0), (0.0, 0.0), (200.0, 200.0));
+        assert_eq!(result, (Some(50), Some(199)));
+    }
+
+    /// Cursor outside top-left → clamp to `(0, 0)`. Pre-fix returned
+    /// `(None, None)`.
+    #[test]
+    fn clamp_outside_top_left_clamps_to_origin() {
+        let result = clamp_mouse_pixel_coords(pos(-10.0, -5.0), (0.0, 0.0), (200.0, 200.0));
+        assert_eq!(result, (Some(0), Some(0)));
+    }
+
+    /// Emits PHYSICAL (device) pixels — `rel` directly, NO `/scale`
+    /// division. A 100px in-grid offset reports 100, not
+    /// `100/scale`. This is the load-bearing Option-B change: SGR-Pixel
+    /// coords now match the physical CSI 14t report so notcurses decodes
+    /// the correct cell at every DPI scale.
+    #[test]
+    fn clamp_emits_physical_rel_no_scale_division() {
+        let result = clamp_mouse_pixel_coords(pos(100.0, 200.0), (0.0, 0.0), (400.0, 400.0));
+        assert_eq!(result, (Some(100), Some(200)));
+    }
+
+    // -- §03 t32–t34: no-usable-surface cases --
+
+    /// Zero-width bounds → `(None, None)`.
+    #[test]
+    fn clamp_returns_none_for_zero_width_bounds() {
+        let result = clamp_mouse_pixel_coords(pos(50.0, 100.0), (0.0, 0.0), (0.0, 200.0));
+        assert_eq!(result, (None, None));
+    }
+
+    /// Zero-height bounds → `(None, None)`.
+    #[test]
+    fn clamp_returns_none_for_zero_height_bounds() {
+        let result = clamp_mouse_pixel_coords(pos(50.0, 100.0), (0.0, 0.0), (200.0, 0.0));
+        assert_eq!(result, (None, None));
+    }
+
+    /// Structural: the pure helper has NO App / TermWindow / wgpu
+    /// dependencies. Reviewers grep this to confirm the headless
+    /// contract holds.
+    #[test]
+    fn clamp_pure_helper_does_not_require_app_construction() {
+        // If the helper signature ever takes `&App` / `&TermWindow` /
+        // `&wgpu::Device`, this test will not compile.
+        let _: fn(PhysicalPosition<f64>, (f64, f64), (f64, f64)) -> (Option<u32>, Option<u32>) =
+            clamp_mouse_pixel_coords;
+    }
+
+    // -- §03 t36 / t37: wheel-edge alignment via offset bounds --
+
+    /// Bounds with non-zero origin: clamp respects origin offset.
+    /// Simulates the grid widget laid out at `(8, 36)` (typical chrome
+    /// inset). Cursor at `(208, 100)` is past `right` by 0.5 px →
+    /// clamps to `width - 1 = 199` physical (device) pixel.
+    #[test]
+    fn clamp_respects_non_zero_bounds_origin() {
+        let result = clamp_mouse_pixel_coords(pos(208.0, 100.0), (8.0, 36.0), (200.0, 200.0));
+        assert_eq!(result, (Some(199), Some(64)));
+    }
+
+    /// Cursor at the bounds origin → `(Some(0), Some(0))` after the
+    /// origin subtraction.
+    #[test]
+    fn clamp_at_bounds_origin_returns_origin() {
+        let result = clamp_mouse_pixel_coords(pos(8.0, 36.0), (8.0, 36.0), (200.0, 200.0));
+        assert_eq!(result, (Some(0), Some(0)));
+    }
+
+    // -- subpixel + non-finite input guards --
+
+    /// Sub-pixel positive bounds (width 0.5) → `(None, None)`. Without
+    /// the `< 1.0` guard, `f64::clamp(0.0, -0.5)` would panic per Rust
+    /// std docs ("Panics if min > max").
+    #[test]
+    fn clamp_subpixel_width_returns_none() {
+        let result = clamp_mouse_pixel_coords(pos(0.25, 0.0), (0.0, 0.0), (0.5, 200.0));
+        assert_eq!(result, (None, None));
+    }
+
+    /// Sub-pixel positive bounds (height 0.5) → `(None, None)`.
+    #[test]
+    fn clamp_subpixel_height_returns_none() {
+        let result = clamp_mouse_pixel_coords(pos(0.0, 0.25), (0.0, 0.0), (200.0, 0.5));
+        assert_eq!(result, (None, None));
+    }
+
+    /// NaN cursor position → `(None, None)`. Without the finite guard,
+    /// `(NaN).clamp(0.0, 199.0)` would return NaN and `(NaN as u32)` is
+    /// platform-defined, silently fabricating origin coords.
+    #[test]
+    fn clamp_nan_position_returns_none() {
+        let result = clamp_mouse_pixel_coords(pos(f64::NAN, 100.0), (0.0, 0.0), (200.0, 200.0));
+        assert_eq!(result, (None, None));
+    }
+
+    /// Infinity cursor position → `(None, None)`. Companion to t41 —
+    /// non-finite inputs of any flavor reject up front.
+    #[test]
+    fn clamp_infinite_position_returns_none() {
+        let result =
+            clamp_mouse_pixel_coords(pos(f64::INFINITY, 100.0), (0.0, 0.0), (200.0, 200.0));
+        assert_eq!(result, (None, None));
+    }
+
+    // -- §03 Matrix C: cross-surface notcurses decode (the unit-mismatch proof) --
+
+    /// Model notcurses' wire→cell decode: it reads `cellpxy` from the CSI 14t
+    /// report (PHYSICAL cell-pixel height), then for an SGR-Pixel wire coord
+    /// `w` (1-based) computes the row as `(w - 1) / cellpxy` (xterm/notcurses
+    /// decrement-then-divide). `pch` is the physical cell-pixel height.
+    fn notcurses_decode_row(wire_y: u32, pch: u32) -> u32 {
+        (wire_y - 1) / pch
+    }
+
+    /// Regression: BUG-06-112 — with the encoder emitting PHYSICAL pixels,
+    /// notcurses recovers the clicked row EXACTLY at DPI scales > 1.0. The
+    /// pre-fix logical encoder (`physical / scale`) mis-decoded because
+    /// notcurses' `cellpxy` is physical. Calls PRODUCTION
+    /// `clamp_mouse_pixel_coords` (per `feedback_test_real_code_paths`);
+    /// only the external notcurses decode is modelled.
+    #[test]
+    fn cross_surface_decode_exact_physical() {
+        // Physical cell height 20px, grid 24 rows → 480px tall.
+        let pch = 20u32;
+        let bounds = (0.0, 0.0);
+        let size = (200.0, 480.0);
+        // A physical cursor at y=100 is in row 100/20 = 5. (At scale 1.25
+        // the pre-fix logical encoder sent 100/1.25 = 80 → notcurses decoded
+        // 80/20 = 4 — the wrong row that rolled up the menu.)
+        for (phys_y, expected_row) in [(0u32, 0u32), (20, 1), (100, 5), (479, 23)] {
+            let (_x, y) = clamp_mouse_pixel_coords(pos(50.0, f64::from(phys_y)), bounds, size);
+            let wire_y = y.expect("in-grid → Some") + 1; // encoder sends py+1
+            assert_eq!(
+                notcurses_decode_row(wire_y, pch),
+                expected_row,
+                "physical y={phys_y} must decode to row {expected_row}",
+            );
+        }
+    }
+
+    /// Test-cell inventory for the `clamp_mouse_pixel_coords` matrix.
+    /// Removing or renaming a referenced test fires a compile error
+    /// (dangling fn pointer). The `CELLS.len()` assertion documents the
+    /// expected size but does NOT auto-detect a new test added to this
+    /// module without being registered in `CELLS` — that case is bounded
+    /// by code-review convention. When adding a new clamp test (t44, t45,
+    /// ...), register it in `CELLS` below alongside `assert_eq!`.
+    #[test]
+    fn app_matrix_completeness() {
+        const CELLS: &[fn()] = &[
+            clamp_in_grid_returns_some_some,
+            clamp_at_right_edge_clamps_to_width_minus_one,
+            clamp_at_bottom_edge_clamps_to_height_minus_one,
+            clamp_outside_top_left_clamps_to_origin,
+            clamp_emits_physical_rel_no_scale_division,
+            clamp_returns_none_for_zero_width_bounds,
+            clamp_returns_none_for_zero_height_bounds,
+            clamp_pure_helper_does_not_require_app_construction,
+            clamp_respects_non_zero_bounds_origin,
+            clamp_at_bounds_origin_returns_origin,
+            clamp_subpixel_width_returns_none,
+            clamp_subpixel_height_returns_none,
+            clamp_nan_position_returns_none,
+            clamp_infinite_position_returns_none,
+            cross_surface_decode_exact_physical,
+        ];
+        assert_eq!(
+            CELLS.len(),
+            15,
+            "CELLS is the hand-maintained clamp_mouse_pixel_coords registry; a count \
+             mismatch means a registered test was removed/renamed (the fn-pointer also \
+             fails to compile) or this constant is stale. It does NOT auto-detect a NEW \
+             test added without a CELLS entry — code-review convention covers that gap \
+             (unlike the core crate's self-verifying loop-counter matrices)"
+        );
+    }
+}
+
+/// Pin: winit→semantic button mapping for DEC Locator observation
+/// dispatch. Left/Middle/Right map to their semantic counterparts;
+/// Back/Forward (and any other) map to None (DEC Locator reports only
+/// the three primary buttons per xterm button.c:944-948).
+#[test]
+fn locator_semantic_button_maps_primary_buttons_only() {
+    use winit::event::MouseButton as WB;
+
+    assert_eq!(
+        super::locator_semantic_button(WB::Left),
+        Some(MouseButton::Left)
+    );
+    assert_eq!(
+        super::locator_semantic_button(WB::Middle),
+        Some(MouseButton::Middle)
+    );
+    assert_eq!(
+        super::locator_semantic_button(WB::Right),
+        Some(MouseButton::Right)
+    );
+    assert_eq!(super::locator_semantic_button(WB::Back), None);
+    assert_eq!(super::locator_semantic_button(WB::Forward), None);
+    assert_eq!(super::locator_semantic_button(WB::Other(7)), None);
 }

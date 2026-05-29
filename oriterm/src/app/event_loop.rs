@@ -268,11 +268,22 @@ impl ApplicationHandler<TermEvent> for App {
                 // chrome caption area. This avoids acquiring the terminal
                 // lock on every cursor move over the title bar.
                 if !self.cursor_in_tab_bar(position) {
-                    if let Some(mode) = self.terminal_mode() {
-                        if self.report_mouse_motion(position, mode) {
-                            return;
-                        }
+                    // `report_mouse_motion` returns true ONLY when it actually
+                    // dispatched the move to Term (which also runs Step A
+                    // observation). It returns false for X10, no-motion mode,
+                    // same-cell dedup, shift-bypass, and out-of-grid — none of
+                    // which reach Term, so locator state would go stale.
+                    let reported = self
+                        .terminal_mode()
+                        .is_some_and(|mode| self.report_mouse_motion(position, mode));
+                    if reported {
+                        return;
                     }
+                    // Additive DEC Locator motion observation: the encoder did
+                    // NOT dispatch, so record the cursor position via the
+                    // observe-only path (never fires the encoder, safe on the
+                    // shift-bypass path where ANY_MOUSE is set but suppressed).
+                    self.maybe_observe_locator_position(false);
                     if self.mouse.left_down() {
                         self.handle_mouse_drag(position);
                     }

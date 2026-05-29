@@ -189,6 +189,7 @@ impl PrivateMode {
             67 => Self::Named(NamedPrivateMode::DecBackarrowKey),
             69 => Self::Named(NamedPrivateMode::LeftRightMargin),
             1000 => Self::Named(NamedPrivateMode::ReportMouseClicks),
+            1001 => Self::Named(NamedPrivateMode::HighlightMouse),
             1002 => Self::Named(NamedPrivateMode::ReportCellMouseMotion),
             1003 => Self::Named(NamedPrivateMode::ReportAllMouseMotion),
             1004 => Self::Named(NamedPrivateMode::ReportFocusInOut),
@@ -196,6 +197,7 @@ impl PrivateMode {
             1006 => Self::Named(NamedPrivateMode::SgrMouse),
             1007 => Self::Named(NamedPrivateMode::AlternateScroll),
             1015 => Self::Named(NamedPrivateMode::UrxvtMouse),
+            1016 => Self::Named(NamedPrivateMode::SgrPixelMouse),
             1042 => Self::Named(NamedPrivateMode::UrgencyHints),
             1047 => Self::Named(NamedPrivateMode::AltScreenOpt),
             1048 => Self::Named(NamedPrivateMode::SaveCursor),
@@ -279,6 +281,13 @@ pub enum NamedPrivateMode {
  /// CSI ? 69 l -> disable; horizontal margins reset to full width.
     LeftRightMargin = 69,
     ReportMouseClicks = 1000,
+ /// VT200 highlight mouse tracking (xterm `SET_VT200_HIGHLIGHT_MOUSE`).
+ ///
+ /// Mode 1001 enables highlight tracking — when set, the host program
+ /// can request highlight via `CSI Ps;Ps;Ps;Ps;Ps T` (XTHIMOUSE). NOT
+ /// the DEC Locator subsystem (which is independently activated by
+ /// DECELR `CSI Ps;Pu ' z`, no DECSET dependency).
+    HighlightMouse = 1001,
     ReportCellMouseMotion = 1002,
     ReportAllMouseMotion = 1003,
     ReportFocusInOut = 1004,
@@ -287,6 +296,12 @@ pub enum NamedPrivateMode {
     AlternateScroll = 1007,
  /// URXVT-style mouse encoding (`ESC[Cb;Cx;CyM`).
     UrxvtMouse = 1015,
+ /// SGR-Pixel mouse encoding (`CSI < Cb;Px;Py M|m`, pixel coords).
+ ///
+ /// Mode 1016 enables pixel-precision mouse coordinates in SGR format
+ /// instead of cell coordinates. Modern extension supported by kitty,
+ /// wezterm, foot.
+    SgrPixelMouse = 1016,
     UrgencyHints = 1042,
  /// Alt screen with clear on enter (no cursor save/restore).
     AltScreenOpt = 1047,

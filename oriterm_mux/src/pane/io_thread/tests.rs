@@ -185,6 +185,7 @@ fn make_sync_thread_with_term(term: Term<VoidEffectSink>) -> PaneIoThread<VoidEf
         effects_buf: Vec::new(),
         last_animation_deadline: None,
         pending_resize: Arc::new(AtomicU64::new(PENDING_RESIZE_NONE)),
+        dec_locator_active_cache: Arc::new(AtomicBool::new(false)),
         last_snapshot_publish: None,
         drain_handle_bytes_ns: 0,
         drain_kitty_ns: 0,
@@ -234,6 +235,7 @@ fn make_sync_thread_with_wakeup() -> (PaneIoThread<VoidEffectSink>, Arc<AtomicU6
         effects_buf: Vec::new(),
         last_animation_deadline: None,
         pending_resize: Arc::new(AtomicU64::new(PENDING_RESIZE_NONE)),
+        dec_locator_active_cache: Arc::new(AtomicBool::new(false)),
         last_snapshot_publish: None,
         drain_handle_bytes_ns: 0,
         drain_kitty_ns: 0,
@@ -301,6 +303,7 @@ fn shutdown_via_channel_disconnect() {
         effects_buf: Vec::new(),
         last_animation_deadline: None,
         pending_resize: Arc::new(AtomicU64::new(PENDING_RESIZE_NONE)),
+        dec_locator_active_cache: Arc::new(AtomicBool::new(false)),
         last_snapshot_publish: None,
         drain_handle_bytes_ns: 0,
         drain_kitty_ns: 0,
@@ -407,6 +410,7 @@ fn byte_delivery_parses_vte() {
         effects_buf: Vec::new(),
         last_animation_deadline: None,
         pending_resize: Arc::new(AtomicU64::new(PENDING_RESIZE_NONE)),
+        dec_locator_active_cache: Arc::new(AtomicBool::new(false)),
         last_snapshot_publish: None,
         drain_handle_bytes_ns: 0,
         drain_kitty_ns: 0,
@@ -570,6 +574,7 @@ fn handle_bytes_chunked_drains_commands() {
         effects_buf: Vec::new(),
         last_animation_deadline: None,
         pending_resize: Arc::new(AtomicU64::new(PENDING_RESIZE_NONE)),
+        dec_locator_active_cache: Arc::new(AtomicBool::new(false)),
         last_snapshot_publish: None,
         drain_handle_bytes_ns: 0,
         drain_kitty_ns: 0,
@@ -829,6 +834,7 @@ fn make_sync_thread_with_cmd_tx() -> (PaneIoThread<VoidEffectSink>, Sender<PaneI
         effects_buf: Vec::new(),
         last_animation_deadline: None,
         pending_resize: Arc::new(AtomicU64::new(PENDING_RESIZE_NONE)),
+        dec_locator_active_cache: Arc::new(AtomicBool::new(false)),
         last_snapshot_publish: None,
         drain_handle_bytes_ns: 0,
         drain_kitty_ns: 0,
@@ -1653,6 +1659,7 @@ fn test_io_thread_panic_does_not_crash_app() {
         double_buffer: SnapshotDoubleBuffer::new(),
         io_wake_tx: _wake_tx,
         pending_resize: Arc::new(AtomicU64::new(PENDING_RESIZE_NONE)),
+        dec_locator_active: Arc::new(AtomicBool::new(false)),
         shutdown_flag: Arc::new(AtomicBool::new(false)),
         drop_counter: None,
     };
@@ -2132,6 +2139,7 @@ fn make_sync_thread_generic<S: oriterm_core::effect::EffectSink + 'static>(
         effects_buf: Vec::new(),
         last_animation_deadline: None,
         pending_resize: Arc::new(AtomicU64::new(PENDING_RESIZE_NONE)),
+        dec_locator_active_cache: Arc::new(AtomicBool::new(false)),
         last_snapshot_publish: None,
         drain_handle_bytes_ns: 0,
         drain_kitty_ns: 0,
@@ -2685,6 +2693,7 @@ fn spawn_queueing_eof_rig() -> EofTestRig {
         effects_buf: Vec::new(),
         last_animation_deadline: None,
         pending_resize: Arc::new(AtomicU64::new(PENDING_RESIZE_NONE)),
+        dec_locator_active_cache: Arc::new(AtomicBool::new(false)),
         last_snapshot_publish: None,
         drain_handle_bytes_ns: 0,
         drain_kitty_ns: 0,
@@ -3830,7 +3839,10 @@ fn is_reply_bearing_predicate_matches_reply_field_presence() {
             | PaneIoCommand::SearchPrevMatch
             | PaneIoCommand::Reset
             | PaneIoCommand::Shutdown
-            | PaneIoCommand::SetAnswerback(_) => false,
+            | PaneIoCommand::SetAnswerback(_)
+            | PaneIoCommand::HandleMouseInput(_)
+            | PaneIoCommand::ObserveLocatorInput(_)
+            | PaneIoCommand::HandleFocusEvent(_) => false,
         }
     }
 

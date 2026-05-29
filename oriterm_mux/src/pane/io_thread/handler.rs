@@ -159,6 +159,33 @@ impl<S: EffectSink + 'static> PaneIoThread<S> {
                 }
             }
             PaneIoCommand::Reset => {} // No Term::reset() exists yet.
+            PaneIoCommand::HandleMouseInput(event) => {
+                // Term::handle_mouse_input reads TermMode, encodes per
+                // Decision 10 Option A apex, pushes Effect::Pty(Write {
+                // kind: PtyWriteKind::MouseEvent, .. }) via effect_sink.
+                // The effect_router emits MuxEvent::PtyWrite { kind, .. };
+                // the in-process pump carries bytes to pane.write_input.
+                // Intentionally NO grid_dirty: mouse-event emission is
+                // an outbound PTY write only — no visible state shifts
+                // (motion/wheel events can produce hot-path emissions,
+                // marking dirty per call would defeat the §05 render budget).
+                self.terminal.handle_mouse_input(&event);
+            }
+            PaneIoCommand::ObserveLocatorInput(event) => {
+                // Observation-only (Step A): records DEC Locator position
+                // without encoding a mouse report. Routed by the App's
+                // locator-only dispatch so the encoder cannot fire on a
+                // shift-bypass / non-tracking path. Same hot-path-safe
+                // no-grid_dirty contract as HandleMouseInput.
+                self.terminal.observe_locator_input(&event);
+            }
+            PaneIoCommand::HandleFocusEvent(focused) => {
+                // Term::handle_focus_event reads TermMode::FOCUS_IN_OUT,
+                // emits Effect::Pty(Write { kind: PtyWriteKind::FocusEvent,
+                // .. }) per Decision 10 Option A apex. Same hot-path-safe
+                // no-grid_dirty contract as HandleMouseInput.
+                self.terminal.handle_focus_event(focused);
+            }
             PaneIoCommand::SetAnswerback(bytes) => {
                 // Intentionally NO grid_dirty: answerback affects only the
                 // ENQ outbound write, no visible state change. Matches the

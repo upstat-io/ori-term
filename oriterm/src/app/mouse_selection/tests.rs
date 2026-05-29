@@ -824,13 +824,17 @@ fn handle_release_clears_last_reported_cell() {
 fn sgr_origin_release_exact_output() {
     use oriterm_core::TermMode;
 
-    use super::super::mouse_report::{
+    use oriterm_core::encode::mouse::{
         MouseButton, MouseEvent, MouseEventKind, MouseModifiers, encode_mouse_event,
     };
 
     // Left click release at origin (0,0) — no modifiers.
     let mode = TermMode::MOUSE_REPORT_CLICK | TermMode::MOUSE_SGR;
     let e = MouseEvent {
+        px: None,
+        py: None,
+        physical_px: None,
+        in_grid: true,
         button: MouseButton::Left,
         kind: MouseEventKind::Release,
         col: 0,
@@ -847,13 +851,17 @@ fn sgr_origin_release_exact_output() {
 fn normal_origin_release_exact_output() {
     use oriterm_core::TermMode;
 
-    use super::super::mouse_report::{
+    use oriterm_core::encode::mouse::{
         MouseButton, MouseEvent, MouseEventKind, MouseModifiers, encode_mouse_event,
     };
 
     // Left click release at origin (0,0).
     let mode = TermMode::MOUSE_REPORT_CLICK;
     let e = MouseEvent {
+        px: None,
+        py: None,
+        physical_px: None,
+        in_grid: true,
         button: MouseButton::Left,
         kind: MouseEventKind::Release,
         col: 0,

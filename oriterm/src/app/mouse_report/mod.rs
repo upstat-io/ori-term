@@ -5,23 +5,29 @@
 //! Also handles alternate scroll (sending arrow keys in alt screen) and
 //! motion deduplication.
 
-mod encode;
+mod locator;
 mod wheel_dispatch;
 
 use winit::dpi::PhysicalPosition;
 use winit::event::MouseScrollDelta;
 
 use oriterm_core::TermMode;
+pub(crate) use oriterm_core::encode::mouse::{
+    MouseButton, MouseEvent, MouseEventKind, MouseModifiers,
+};
 
 use crate::key_encoding::cursor_keys::{CursorKey, cursor_key_bytes};
 
 use super::App;
 use super::mouse_selection::{self, GridCtx};
 
-pub(crate) use encode::{
-    MouseButton, MouseEvent, MouseEventKind, MouseModifiers, encode_mouse_event,
-};
 use wheel_dispatch::{WheelDispatch, dispatch_wheel};
+
+// DEC Locator observation dispatch lives in `locator.rs` (separate
+// responsibility from mouse-event encoding). Re-export the winit→semantic
+// mappers so `handle_mouse_input` (app::mouse_input) reaches them as
+// `mouse_report::{element_state_to_kind, locator_semantic_button}`.
+pub(super) use locator::{element_state_to_kind, locator_semantic_button};
 
 /// Direction of a mouse wheel event after `parse_wheel_delta` normalization.
 ///
@@ -76,7 +82,12 @@ struct AltScrollPayload {
 /// free function directly.
 #[must_use]
 pub(super) fn should_report_mouse(mode: TermMode, shift_held: bool) -> bool {
-    !shift_held && mode.intersects(TermMode::ANY_MOUSE)
+    // The ANY_MOUSE-family membership is owned by the core SSOT
+    // `should_handle_mouse_input` (encode/mouse/mod.rs); compose with it
+    // rather than re-encoding `intersects(ANY_MOUSE)` so the gate cannot drift
+    // between the App and core callers. `!shift_held` is App-layer policy
+    // (shift bypasses tracking to allow text selection).
+    !shift_held && oriterm_core::encode::mouse::should_handle_mouse_input(mode)
 }
 
 /// Pure decision function: should a mouse wheel event be translated to
@@ -164,33 +175,50 @@ impl App {
 
     /// Encode and send a mouse button event to the PTY.
     ///
-    /// Encodes the event using the provided terminal mode, then writes to
-    /// the PTY. No-op if the cursor is outside the grid.
+    /// Builds the semantic [`MouseEvent`] from winit state + cell
+    /// coordinates and dispatches via [`App::write_pane_mouse_input`]
+    /// which routes through the Decision 10 Option A apex (mode 1016
+    /// pixel coords + `Effect::Pty` + `PtyWriteKind::MouseEvent`). The
+    /// caller gates on [`should_report_mouse`](App::should_report_mouse)
+    /// before calling; the encoder reads `Term::mode` on the IO thread.
+    ///
+    /// Returns `true` when the event was dispatched to Term (which also
+    /// runs Step A locator observation), `false` when it was dropped
+    /// because the cursor is out of grid (no usable cell) — the caller's
+    /// DEC Locator observe-only path then records `Unavailable`.
     pub(super) fn report_mouse_button(
         &mut self,
         button: MouseButton,
         kind: MouseEventKind,
-        mode: TermMode,
-    ) {
+    ) -> bool {
         let Some((col, line)) = self.mouse_cell() else {
-            return;
+            return false;
         };
 
         let Some(pane_id) = self.active_pane_id() else {
-            return;
+            return false;
         };
+        // Read the shared physical-pixel source ONCE; the DEC Locator Pu=1
+        // `physical_px` is the same pair zipped (one grid-bounds clamp).
+        let (px, py) = self.clamped_cursor_px();
+        let physical_px = px.zip(py);
         let event = MouseEvent {
             button,
             kind,
             col,
             line,
             mods: self.mouse_modifiers(),
+            px,
+            py,
+            // Cursor is in-grid here (guarded by the `mouse_cell()` Some
+            // above). physical_px carries DEVICE pixels so the combined
+            // mouse-tracking + DEC-Locator-Pu=1 case observes real pixels
+            // (Term Step A reads it on this same dispatch).
+            physical_px,
+            in_grid: true,
         };
-        let report = encode_mouse_event(&event, mode);
-        let bytes = report.as_bytes();
-        if !bytes.is_empty() {
-            self.write_pane_input(pane_id, bytes);
-        }
+        self.write_pane_mouse_input(pane_id, &event);
+        true
     }
 
     /// Report mouse motion to the PTY when tracking mode is active.
@@ -231,7 +259,7 @@ impl App {
 
         // Drag (button held) uses the actual button code; mode 1003 motion
         // without a button uses None (code 3+32 = 35).
-        // Priority: left > middle > right (matches Alacritty).
+        // Priority: left > middle > right.
         let button = if self.mouse.left_down() {
             MouseButton::Left
         } else if self.mouse.middle_down() {
@@ -241,20 +269,27 @@ impl App {
         } else {
             MouseButton::None
         };
+        // Read the shared physical-pixel source ONCE; the DEC Locator Pu=1
+        // `physical_px` is the same pair zipped (one grid-bounds clamp).
+        let (px, py) = self.clamped_cursor_px();
+        let physical_px = px.zip(py);
         let event = MouseEvent {
             button,
             kind: MouseEventKind::Motion,
             col,
             line,
             mods: self.mouse_modifiers(),
+            px,
+            py,
+            // Cursor is in-grid (guarded by `pixel_to_cell()` Some above).
+            // physical_px carries DEVICE pixels for combined tracking +
+            // DEC-Locator-Pu=1 observation on this dispatch.
+            physical_px,
+            in_grid: true,
         };
-        let report = encode_mouse_event(&event, mode);
-        let bytes = report.as_bytes();
-        if !bytes.is_empty() {
-            if let Some(pane_id) = self.active_pane_id() {
-                self.write_pane_input(pane_id, bytes);
-                self.mouse.set_last_reported_cell(Some((col, line)));
-            }
+        if let Some(pane_id) = self.active_pane_id() {
+            self.write_pane_mouse_input(pane_id, &event);
+            self.mouse.set_last_reported_cell(Some((col, line)));
         }
         true
     }
@@ -277,7 +312,11 @@ impl App {
         let pane_id = self.active_pane_id();
         let mods = self.mouse_modifiers();
         let shift_held = self.modifiers.shift_key();
-        dispatch_wheel(
+        // Read the shared physical-pixel source ONCE; the DEC Locator Pu=1
+        // `physical_px` is the same pair zipped (one grid-bounds clamp).
+        let (px, py) = self.clamped_cursor_px();
+        let physical_px = px.zip(py);
+        let encoder_dispatched = dispatch_wheel(
             WheelDispatch {
                 delta,
                 cell_height,
@@ -285,13 +324,22 @@ impl App {
                 shift_held,
                 pane_id,
                 mods,
+                px,
+                py,
+                physical_px,
             },
             self,
         );
+        // Additive DEC Locator wheel observation: when the Tier-1 encoder
+        // did NOT dispatch (not mouse-reporting, shift-bypass, or out-of-grid
+        // drop), refresh the locator position via the observe-only path. A
+        // wheel scroll does not move the cursor, so this re-records the
+        // current position (Unavailable when out-of-grid).
+        self.maybe_observe_locator_position(encoder_dispatched);
     }
 
     /// Convert the current cursor position to a grid cell.
-    fn mouse_cell(&self) -> Option<(usize, usize)> {
+    pub(super) fn mouse_cell(&self) -> Option<(usize, usize)> {
         self.pixel_to_cell(self.mouse.cursor_pos())
     }
 
@@ -301,7 +349,7 @@ impl App {
     /// renderer are available — positions outside the grid are clamped to
     /// the nearest edge cell. Returns `None` only if the grid widget or
     /// renderer is missing.
-    fn mouse_cell_clamped(&self) -> Option<(usize, usize)> {
+    pub(super) fn mouse_cell_clamped(&self) -> Option<(usize, usize)> {
         let wctx = self.focused_ctx()?;
         let cell = wctx.renderer.as_ref()?.cell_metrics();
         let ctx = GridCtx {
@@ -352,13 +400,115 @@ impl App {
     }
 
     /// Build modifier state from the current winit modifiers.
-    fn mouse_modifiers(&self) -> MouseModifiers {
+    pub(super) fn mouse_modifiers(&self) -> MouseModifiers {
         MouseModifiers {
             shift: self.modifiers.shift_key(),
             alt: self.modifiers.alt_key(),
             ctrl: self.modifiers.control_key(),
         }
     }
+
+    /// PHYSICAL (device) cursor pixels relative to the grid origin, clamped
+    /// to grid bounds — the single physical-pixel source shared by the
+    /// SGR-Pixel (DEC mode 1016) encoder and DEC Locator Pu=1 observation.
+    /// Per-event dispatch reads it once via `clamped_cursor_px()` and derives
+    /// the `physical_px` shape with `px.zip(py)`; the locator path reads
+    /// [`mouse_physical_px_opt`](Self::mouse_physical_px_opt).
+    ///
+    /// SGR-Pixel and CSI 14t both report PHYSICAL (device) pixels, so
+    /// 1016-aware clients (notcurses) decode the correct cell at every DPI
+    /// scale. Dividing by `scale_factor()` (logical/CSS pixels) was the unit
+    /// mismatch that broke notcurses' `cellpxy` decode at scale > 1.0.
+    ///
+    /// Returns `(Some, Some)` for every event where the surface checks pass
+    /// (focused context + grid bounds). Cursor positions outside the grid
+    /// widget's bounds are clamped to the nearest valid device pixel via
+    /// [`clamp_mouse_pixel_coords`] — mirroring
+    /// [`mouse_cell_clamped`](Self::mouse_cell_clamped). Returns
+    /// `(None, None)` ONLY when there is no usable surface. The encoder treats
+    /// `None` pixel coords under `MOUSE_SGR_PIXEL` as an upstream invariant
+    /// violation, not a drop signal — this clamping is what prevents the
+    /// violation for legitimate clicks.
+    ///
+    /// See: bug-tracker/plans/BUG-08-057/
+    /// See: bug-tracker/plans/BUG-08-064/ — the clamp extent below is the
+    /// padding-inclusive widget bounds, not the CSI 14t text area.
+    pub(super) fn clamped_cursor_px(&self) -> (Option<u32>, Option<u32>) {
+        let Some(wctx) = self.focused_ctx() else {
+            return (None, None);
+        };
+        let Some(bounds) = wctx.terminal_grid.bounds() else {
+            return (None, None);
+        };
+        // The clamp extent is the padding-INCLUSIVE widget bounds, which
+        // overshoots the CSI 14t text area (cols*cell_w × rows*cell_h) by the
+        // grid padding: a padding-band click reports a pixel a 1016-aware
+        // client decodes past the last cell. The text-area-extent fix is a
+        // filed, tracked bug — see this method's doc-comment `See:` reference.
+        clamp_mouse_pixel_coords(
+            self.mouse.cursor_pos(),
+            (f64::from(bounds.x()), f64::from(bounds.y())),
+            (f64::from(bounds.width()), f64::from(bounds.height())),
+        )
+    }
+}
+
+/// Pure clamping helper for [`App::clamped_cursor_px`] — the pixel-
+/// coordinate surface predicate factored out so it can be tested
+/// headlessly without constructing `App` / `TermWindow` / `wgpu::Surface`.
+/// Mirrors the clamping shape of `mouse_selection::pixel_to_cell` for
+/// cell coords.
+///
+/// Returns `(Some, Some)` for every position when the surface inputs are
+/// valid (both `bounds_size` dimensions ≥ 1.0, all inputs finite). Cursor
+/// positions outside `[origin, origin + size)` clamp to the nearest valid
+/// PHYSICAL (device) pixel. Returns `(None, None)` for the "no usable
+/// surface" cases — sub-pixel or zero bounds, or any non-finite input
+/// (NaN / infinity). Extracted from
+/// `App::clamped_cursor_px` so it is testable without constructing
+/// `App` / `TermWindow` / `wgpu::Surface`, mirroring the existing
+/// `RecordingSink` / `WheelDispatch` headless-seam pattern.
+///
+/// The `bounds_size < 1.0` reject is load-bearing: `f64::clamp(min, max)`
+/// panics when `min > max`, so a bounds width of `0.5` would compute
+/// `max = bounds_size.0 - 1.0 = -0.5` and trip the panic. Sub-pixel
+/// bounds are never a usable surface; reject them before the clamp.
+///
+/// See: bug-tracker/plans/BUG-08-057/
+pub(crate) fn clamp_mouse_pixel_coords(
+    pos: PhysicalPosition<f64>,
+    bounds_origin: (f64, f64),
+    bounds_size: (f64, f64),
+) -> (Option<u32>, Option<u32>) {
+    // Reject non-finite inputs before any arithmetic — propagating NaN
+    // through clamp + `as u32` would fabricate origin coords silently.
+    if !pos.x.is_finite()
+        || !pos.y.is_finite()
+        || !bounds_origin.0.is_finite()
+        || !bounds_origin.1.is_finite()
+        || !bounds_size.0.is_finite()
+        || !bounds_size.1.is_finite()
+    {
+        return (None, None);
+    }
+    // Reject sub-pixel bounds. The < 1.0 reject avoids the
+    // `f64::clamp(0.0, bounds_size.0 - 1.0)` panic when `bounds_size.0`
+    // is between 0.0 (exclusive) and 1.0 (exclusive).
+    if bounds_size.0 < 1.0 || bounds_size.1 < 1.0 {
+        return (None, None);
+    }
+    let rel_x = (pos.x - bounds_origin.0).clamp(0.0, bounds_size.0 - 1.0);
+    let rel_y = (pos.y - bounds_origin.1).clamp(0.0, bounds_size.1 - 1.0);
+    // PHYSICAL (device) pixels relative to the grid origin — consistent with
+    // the CSI 14t report, which is also physical. notcurses
+    // derives `cellpxy = csi14t_pixy / rows` (physical cell height) and
+    // decodes `(wire_y - 1) / cellpxy = physical_y / cellpxy`, recovering the
+    // row exactly at every DPI scale. Dividing by `scale_factor` here (logical
+    // pixels) was the prior logical-pixel unit mismatch — notcurses mis-decoded at
+    // scale > 1.0.
+    let physical_x = rel_x as u32;
+    let physical_y = rel_y as u32;
+    (Some(physical_x), Some(physical_y))
 }
 
 /// Parse a mouse wheel delta into `(line_count, scroll_up)`.
