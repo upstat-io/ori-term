@@ -381,7 +381,11 @@ pub fn encode_mouse_event(event: &MouseEvent, mode: TermMode) -> MouseReportBuf 
     };
     let pressed = event.kind != MouseEventKind::Release;
 
-    if x10 && !pressed {
+    // X10 (mode 9) is press-only: it reports neither releases nor motion
+    // (xterm ctlseqs "X10 compatibility mode" emits `CSI M CbCxCy` on button
+    // press only). Drop every non-Press event under X10 — gating on
+    // `!= Release` alone would leak Motion reports through.
+    if x10 && event.kind != MouseEventKind::Press {
         return buf;
     }
 

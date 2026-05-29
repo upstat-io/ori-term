@@ -1097,16 +1097,14 @@ fn x10_mode_motion_is_suppressed() {
     let mode = TermMode::MOUSE_X10;
     let e = event(MouseButton::Left, MouseEventKind::Motion, 5, 10);
     let bytes = encode_mouse_event(&e, mode).as_bytes().to_vec();
-    // Motion is a kind of "not release" but X10 should only report button
-    // presses. The motion bit in the code makes it technically a "press with
-    // motion" — that should still be filtered out since X10 is press-only.
-    // However, our current implementation only filters releases. Motion
-    // events are handled at the App layer (report_mouse_motion returns
-    // early for X10 mode), so encode_mouse_event does encode motion.
-    // This test documents the actual behavior.
+    // X10 (mode 9) is press-only: it reports neither releases nor motion
+    // (xterm ctlseqs). The encoder enforces this at the protocol boundary
+    // (defense in depth), independent of the App-layer motion gate — so a
+    // Motion event under bare mode 9 produces NO report rather than a
+    // spurious `CSI M`.
     assert!(
-        !bytes.is_empty(),
-        "motion encoding is allowed at the encoder level"
+        bytes.is_empty(),
+        "X10 mode-9 is press-only — motion must be suppressed at the encoder"
     );
 }
 

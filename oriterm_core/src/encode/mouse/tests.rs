@@ -144,6 +144,21 @@ fn encode_mouse_event_x10_mode_drops_release() {
     assert!(report.as_bytes().is_empty());
 }
 
+/// Regression: X10 (mode 9) is press-only — Motion must not leak through.
+/// The gate previously dropped only `Release`, so a held-button Motion event
+/// under bare mode 9 was encoded as a spurious `CSI M` report. Pairs with
+/// `encode_mouse_event_x10_mode_strips_modifiers`, which asserts Press emits.
+#[test]
+fn encode_mouse_event_x10_mode_drops_motion() {
+    let ev = event(MouseButton::Left, MouseEventKind::Motion, 5, 5);
+    let mode = TermMode::MOUSE_X10;
+    let report = encode_mouse_event(&ev, mode);
+    assert!(
+        report.as_bytes().is_empty(),
+        "X10 mode-9 must not emit on Motion (press-only)"
+    );
+}
+
 #[test]
 fn encode_mouse_event_x10_mode_strips_modifiers() {
     let mut ev = event(MouseButton::Left, MouseEventKind::Press, 5, 5);
