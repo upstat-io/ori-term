@@ -2527,9 +2527,9 @@ mod cross_site_convergence {
 
 /// Pure `clamp_mouse_pixel_coords` helper returns `(Some, Some)` for
 /// every position when surface inputs are valid, clamping out-of-bounds
-/// positions to the nearest valid logical pixel. Returns `(None, None)`
-/// ONLY for the "no usable surface" cases (zero-size bounds, non-positive
-/// scale).
+/// positions to the nearest valid PHYSICAL (device) pixel. Returns
+/// `(None, None)` ONLY for the "no usable surface" cases (zero-size or
+/// sub-pixel bounds, non-finite input).
 ///
 /// See: bug-tracker/plans/BUG-08-057/
 #[cfg(test)]
@@ -2547,7 +2547,7 @@ mod clamp_mouse_pixel_coords_matrix {
     /// In-grid cursor → `(Some(rel_x), Some(rel_y))`. Baseline.
     #[test]
     fn clamp_in_grid_returns_some_some() {
-        let result = clamp_mouse_pixel_coords(pos(50.0, 100.0), (0.0, 0.0), (200.0, 200.0), 1.0);
+        let result = clamp_mouse_pixel_coords(pos(50.0, 100.0), (0.0, 0.0), (200.0, 200.0));
         assert_eq!(result, (Some(50), Some(100)));
     }
 
@@ -2555,14 +2555,14 @@ mod clamp_mouse_pixel_coords_matrix {
     /// clamp to `width - 1`. Pre-fix returned `(None, None)`.
     #[test]
     fn clamp_at_right_edge_clamps_to_width_minus_one() {
-        let result = clamp_mouse_pixel_coords(pos(200.0, 100.0), (0.0, 0.0), (200.0, 200.0), 1.0);
+        let result = clamp_mouse_pixel_coords(pos(200.0, 100.0), (0.0, 0.0), (200.0, 200.0));
         assert_eq!(result, (Some(199), Some(100)));
     }
 
     /// Cursor at `bounds.bottom()` → clamp to `height - 1`. Mirror.
     #[test]
     fn clamp_at_bottom_edge_clamps_to_height_minus_one() {
-        let result = clamp_mouse_pixel_coords(pos(50.0, 200.0), (0.0, 0.0), (200.0, 200.0), 1.0);
+        let result = clamp_mouse_pixel_coords(pos(50.0, 200.0), (0.0, 0.0), (200.0, 200.0));
         assert_eq!(result, (Some(50), Some(199)));
     }
 
@@ -2570,16 +2570,19 @@ mod clamp_mouse_pixel_coords_matrix {
     /// `(None, None)`.
     #[test]
     fn clamp_outside_top_left_clamps_to_origin() {
-        let result = clamp_mouse_pixel_coords(pos(-10.0, -5.0), (0.0, 0.0), (200.0, 200.0), 1.0);
+        let result = clamp_mouse_pixel_coords(pos(-10.0, -5.0), (0.0, 0.0), (200.0, 200.0));
         assert_eq!(result, (Some(0), Some(0)));
     }
 
-    /// Scale 2.0 divides physical pixels into logical pixels per
-    /// xterm spec.
+    /// Emits PHYSICAL (device) pixels — `rel` directly, NO `/scale`
+    /// division. A 100px in-grid offset reports 100, not
+    /// `100/scale`. This is the load-bearing Option-B change: SGR-Pixel
+    /// coords now match the physical CSI 14t report so notcurses decodes
+    /// the correct cell at every DPI scale.
     #[test]
-    fn clamp_with_scale_2_divides_logical_pixels() {
-        let result = clamp_mouse_pixel_coords(pos(100.0, 200.0), (0.0, 0.0), (400.0, 400.0), 2.0);
-        assert_eq!(result, (Some(50), Some(100)));
+    fn clamp_emits_physical_rel_no_scale_division() {
+        let result = clamp_mouse_pixel_coords(pos(100.0, 200.0), (0.0, 0.0), (400.0, 400.0));
+        assert_eq!(result, (Some(100), Some(200)));
     }
 
     // -- §03 t32–t34: no-usable-surface cases --
@@ -2587,26 +2590,15 @@ mod clamp_mouse_pixel_coords_matrix {
     /// Zero-width bounds → `(None, None)`.
     #[test]
     fn clamp_returns_none_for_zero_width_bounds() {
-        let result = clamp_mouse_pixel_coords(pos(50.0, 100.0), (0.0, 0.0), (0.0, 200.0), 1.0);
+        let result = clamp_mouse_pixel_coords(pos(50.0, 100.0), (0.0, 0.0), (0.0, 200.0));
         assert_eq!(result, (None, None));
     }
 
     /// Zero-height bounds → `(None, None)`.
     #[test]
     fn clamp_returns_none_for_zero_height_bounds() {
-        let result = clamp_mouse_pixel_coords(pos(50.0, 100.0), (0.0, 0.0), (200.0, 0.0), 1.0);
+        let result = clamp_mouse_pixel_coords(pos(50.0, 100.0), (0.0, 0.0), (200.0, 0.0));
         assert_eq!(result, (None, None));
-    }
-
-    /// Non-positive scale → `(None, None)`. Two sub-cases.
-    #[test]
-    fn clamp_returns_none_for_non_positive_scale() {
-        let result_zero =
-            clamp_mouse_pixel_coords(pos(50.0, 100.0), (0.0, 0.0), (200.0, 200.0), 0.0);
-        let result_neg =
-            clamp_mouse_pixel_coords(pos(50.0, 100.0), (0.0, 0.0), (200.0, 200.0), -1.0);
-        assert_eq!(result_zero, (None, None));
-        assert_eq!(result_neg, (None, None));
     }
 
     /// Structural: the pure helper has NO App / TermWindow / wgpu
@@ -2616,12 +2608,8 @@ mod clamp_mouse_pixel_coords_matrix {
     fn clamp_pure_helper_does_not_require_app_construction() {
         // If the helper signature ever takes `&App` / `&TermWindow` /
         // `&wgpu::Device`, this test will not compile.
-        let _: fn(
-            PhysicalPosition<f64>,
-            (f64, f64),
-            (f64, f64),
-            f64,
-        ) -> (Option<u32>, Option<u32>) = clamp_mouse_pixel_coords;
+        let _: fn(PhysicalPosition<f64>, (f64, f64), (f64, f64)) -> (Option<u32>, Option<u32>) =
+            clamp_mouse_pixel_coords;
     }
 
     // -- §03 t36 / t37: wheel-edge alignment via offset bounds --
@@ -2629,10 +2617,10 @@ mod clamp_mouse_pixel_coords_matrix {
     /// Bounds with non-zero origin: clamp respects origin offset.
     /// Simulates the grid widget laid out at `(8, 36)` (typical chrome
     /// inset). Cursor at `(208, 100)` is past `right` by 0.5 px →
-    /// clamps to `width - 1 = 199` logical pixel.
+    /// clamps to `width - 1 = 199` physical (device) pixel.
     #[test]
     fn clamp_respects_non_zero_bounds_origin() {
-        let result = clamp_mouse_pixel_coords(pos(208.0, 100.0), (8.0, 36.0), (200.0, 200.0), 1.0);
+        let result = clamp_mouse_pixel_coords(pos(208.0, 100.0), (8.0, 36.0), (200.0, 200.0));
         assert_eq!(result, (Some(199), Some(64)));
     }
 
@@ -2640,7 +2628,7 @@ mod clamp_mouse_pixel_coords_matrix {
     /// origin subtraction.
     #[test]
     fn clamp_at_bounds_origin_returns_origin() {
-        let result = clamp_mouse_pixel_coords(pos(8.0, 36.0), (8.0, 36.0), (200.0, 200.0), 1.0);
+        let result = clamp_mouse_pixel_coords(pos(8.0, 36.0), (8.0, 36.0), (200.0, 200.0));
         assert_eq!(result, (Some(0), Some(0)));
     }
 
@@ -2651,14 +2639,14 @@ mod clamp_mouse_pixel_coords_matrix {
     /// std docs ("Panics if min > max").
     #[test]
     fn clamp_subpixel_width_returns_none() {
-        let result = clamp_mouse_pixel_coords(pos(0.25, 0.0), (0.0, 0.0), (0.5, 200.0), 1.0);
+        let result = clamp_mouse_pixel_coords(pos(0.25, 0.0), (0.0, 0.0), (0.5, 200.0));
         assert_eq!(result, (None, None));
     }
 
     /// Sub-pixel positive bounds (height 0.5) → `(None, None)`.
     #[test]
     fn clamp_subpixel_height_returns_none() {
-        let result = clamp_mouse_pixel_coords(pos(0.0, 0.25), (0.0, 0.0), (200.0, 0.5), 1.0);
+        let result = clamp_mouse_pixel_coords(pos(0.0, 0.25), (0.0, 0.0), (200.0, 0.5));
         assert_eq!(result, (None, None));
     }
 
@@ -2667,8 +2655,7 @@ mod clamp_mouse_pixel_coords_matrix {
     /// platform-defined, silently fabricating origin coords.
     #[test]
     fn clamp_nan_position_returns_none() {
-        let result =
-            clamp_mouse_pixel_coords(pos(f64::NAN, 100.0), (0.0, 0.0), (200.0, 200.0), 1.0);
+        let result = clamp_mouse_pixel_coords(pos(f64::NAN, 100.0), (0.0, 0.0), (200.0, 200.0));
         assert_eq!(result, (None, None));
     }
 
@@ -2677,8 +2664,44 @@ mod clamp_mouse_pixel_coords_matrix {
     #[test]
     fn clamp_infinite_position_returns_none() {
         let result =
-            clamp_mouse_pixel_coords(pos(f64::INFINITY, 100.0), (0.0, 0.0), (200.0, 200.0), 1.0);
+            clamp_mouse_pixel_coords(pos(f64::INFINITY, 100.0), (0.0, 0.0), (200.0, 200.0));
         assert_eq!(result, (None, None));
+    }
+
+    // -- §03 Matrix C: cross-surface notcurses decode (the unit-mismatch proof) --
+
+    /// Model notcurses' wire→cell decode: it reads `cellpxy` from the CSI 14t
+    /// report (PHYSICAL cell-pixel height), then for an SGR-Pixel wire coord
+    /// `w` (1-based) computes the row as `(w - 1) / cellpxy` (xterm/notcurses
+    /// decrement-then-divide). `pch` is the physical cell-pixel height.
+    fn notcurses_decode_row(wire_y: u32, pch: u32) -> u32 {
+        (wire_y - 1) / pch
+    }
+
+    /// Regression: BUG-06-112 — with the encoder emitting PHYSICAL pixels,
+    /// notcurses recovers the clicked row EXACTLY at DPI scales > 1.0. The
+    /// pre-fix logical encoder (`physical / scale`) mis-decoded because
+    /// notcurses' `cellpxy` is physical. Calls PRODUCTION
+    /// `clamp_mouse_pixel_coords` (per `feedback_test_real_code_paths`);
+    /// only the external notcurses decode is modelled.
+    #[test]
+    fn cross_surface_decode_exact_physical() {
+        // Physical cell height 20px, grid 24 rows → 480px tall.
+        let pch = 20u32;
+        let bounds = (0.0, 0.0);
+        let size = (200.0, 480.0);
+        // A physical cursor at y=100 is in row 100/20 = 5. (At scale 1.25
+        // the pre-fix logical encoder sent 100/1.25 = 80 → notcurses decoded
+        // 80/20 = 4 — the wrong row that rolled up the menu.)
+        for (phys_y, expected_row) in [(0u32, 0u32), (20, 1), (100, 5), (479, 23)] {
+            let (_x, y) = clamp_mouse_pixel_coords(pos(50.0, f64::from(phys_y)), bounds, size);
+            let wire_y = y.expect("in-grid → Some") + 1; // encoder sends py+1
+            assert_eq!(
+                notcurses_decode_row(wire_y, pch),
+                expected_row,
+                "physical y={phys_y} must decode to row {expected_row}",
+            );
+        }
     }
 
     /// Test-cell inventory for the `clamp_mouse_pixel_coords` matrix.
@@ -2695,10 +2718,9 @@ mod clamp_mouse_pixel_coords_matrix {
             clamp_at_right_edge_clamps_to_width_minus_one,
             clamp_at_bottom_edge_clamps_to_height_minus_one,
             clamp_outside_top_left_clamps_to_origin,
-            clamp_with_scale_2_divides_logical_pixels,
+            clamp_emits_physical_rel_no_scale_division,
             clamp_returns_none_for_zero_width_bounds,
             clamp_returns_none_for_zero_height_bounds,
-            clamp_returns_none_for_non_positive_scale,
             clamp_pure_helper_does_not_require_app_construction,
             clamp_respects_non_zero_bounds_origin,
             clamp_at_bounds_origin_returns_origin,
@@ -2706,12 +2728,15 @@ mod clamp_mouse_pixel_coords_matrix {
             clamp_subpixel_height_returns_none,
             clamp_nan_position_returns_none,
             clamp_infinite_position_returns_none,
+            cross_surface_decode_exact_physical,
         ];
         assert_eq!(
             CELLS.len(),
             15,
-            "expected 15 clamp_mouse_pixel_coords test cells (t27–t37 + t39–t42); \
-             a missing entry here means a test was added without registering it"
+            "expected 15 clamp_mouse_pixel_coords test cells (the scale param was dropped: \
+             scale param: scale-2 test → physical-rel pin; non-positive-scale removed; \
+             cross-surface notcurses-decode pin added); a missing entry here means a \
+             test was added without registering it"
         );
     }
 }

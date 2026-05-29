@@ -397,44 +397,44 @@ impl App {
         }
     }
 
-    /// Compute logical-pixel coordinates of the current cursor relative
-    /// to the grid origin, for SGR-Pixel (DEC mode 1016) encoding.
+    /// Compute PHYSICAL (device) pixel coordinates of the current cursor
+    /// relative to the grid origin, for SGR-Pixel (DEC mode 1016) encoding.
     ///
-    /// Per xterm `charproc.c` + kitty `mouse.c`: SGR-Pixel coordinates
-    /// are in **logical** pixels (CSS pixels) not physical. Cursor
-    /// position from winit is physical pixels; divide by `scale_factor()`.
+    /// SGR-Pixel coordinates are PHYSICAL (device) pixels — the SAME unit as
+    /// the CSI 14t cell-pixel report, so 1016-aware clients (notcurses)
+    /// decode the correct cell at every DPI scale. Dividing by
+    /// `scale_factor()` (logical/CSS pixels) was the unit mismatch that broke
+    /// notcurses' `cellpxy` decode at scale > 1.0.
     ///
-    /// Returns `(Some, Some)` for every event where the surface checks
-    /// pass (focused context + grid bounds + positive scale). Cursor
-    /// positions outside the grid widget's bounds are clamped to the
-    /// nearest valid logical pixel via [`clamp_mouse_pixel_coords`] —
-    /// mirroring [`mouse_cell_clamped`](Self::mouse_cell_clamped). Returns
-    /// `(None, None)` ONLY when there is no usable surface. Callers that
-    /// need an in-grid surface predicate (rather than a clamped pixel
-    /// pair) should use [`mouse_cell`](Self::mouse_cell) or
+    /// Returns `(Some, Some)` for every event where the surface checks pass
+    /// (focused context + grid bounds). Cursor positions outside the grid
+    /// widget's bounds are clamped to the nearest valid device pixel via
+    /// [`clamp_mouse_pixel_coords`] — mirroring
+    /// [`mouse_cell_clamped`](Self::mouse_cell_clamped). Returns
+    /// `(None, None)` ONLY when there is no usable surface. Callers that need
+    /// an in-grid surface predicate (rather than a clamped pixel pair) should
+    /// use [`mouse_cell`](Self::mouse_cell) or
     /// [`pixel_to_cell`](Self::pixel_to_cell) — those return
-    /// `Option<(usize, usize)>` and signal in-grid vs out-of-grid via
-    /// `Some` vs `None`. The encoder treats `None` pixel coords under
+    /// `Option<(usize, usize)>` and signal in-grid vs out-of-grid via `Some`
+    /// vs `None`. The encoder treats `None` pixel coords under
     /// `MOUSE_SGR_PIXEL` as an upstream invariant violation, not a drop
-    /// signal — this clamping is what prevents the violation for
-    /// legitimate clicks.
+    /// signal — this clamping is what prevents the violation for legitimate
+    /// clicks.
     ///
     /// See: bug-tracker/plans/BUG-08-057/
     fn mouse_pixel_coords(&self) -> (Option<u32>, Option<u32>) {
-        let Some(scale) = self
-            .focused_ctx()
-            .map(|wctx| wctx.window.scale_factor().factor())
-        else {
-            return (None, None);
-        };
-        self.clamped_cursor_px(scale)
+        // SGR-Pixel (mode 1016) coords are PHYSICAL (device) pixels per
+        // identical to the DEC Locator physical-px source.
+        self.clamped_cursor_px()
     }
 
-    /// Shared clamp skeleton for [`mouse_pixel_coords`] (logical px, scale =
-    /// `scale_factor`) and [`mouse_physical_px`] (device px, scale = `1.0`):
-    /// focused-context lookup → grid bounds → `clamp_mouse_pixel_coords`.
+    /// PHYSICAL (device) cursor pixels relative to the grid origin, clamped
+    /// to grid bounds. The single physical-pixel source shared by the
+    /// SGR-Pixel encoder ([`mouse_pixel_coords`]) and DEC Locator Pu=1
+    /// observation ([`mouse_physical_px_opt`](App::mouse_physical_px_opt)) —
+    /// both report physical pixels (CSI 14t convention).
     /// Returns `(None, None)` when there is no usable surface.
-    pub(super) fn clamped_cursor_px(&self, scale: f64) -> (Option<u32>, Option<u32>) {
+    pub(super) fn clamped_cursor_px(&self) -> (Option<u32>, Option<u32>) {
         let Some(wctx) = self.focused_ctx() else {
             return (None, None);
         };
@@ -445,7 +445,6 @@ impl App {
             self.mouse.cursor_pos(),
             (f64::from(bounds.x()), f64::from(bounds.y())),
             (f64::from(bounds.width()), f64::from(bounds.height())),
-            scale,
         )
     }
 }
@@ -457,11 +456,11 @@ impl App {
 /// cell coords.
 ///
 /// Returns `(Some, Some)` for every position when the surface inputs are
-/// valid (`scale > 0`, both `bounds_size` dimensions ≥ 1.0, all inputs
-/// finite). Cursor positions outside `[origin, origin + size)` clamp to
-/// the nearest valid logical pixel. Returns `(None, None)` for the "no
-/// usable surface" cases — sub-pixel or zero bounds, non-positive scale,
-/// or any non-finite input (NaN / infinity). Extracted from
+/// valid (both `bounds_size` dimensions ≥ 1.0, all inputs finite). Cursor
+/// positions outside `[origin, origin + size)` clamp to the nearest valid
+/// PHYSICAL (device) pixel. Returns `(None, None)` for the "no usable
+/// surface" cases — sub-pixel or zero bounds, or any non-finite input
+/// (NaN / infinity). Extracted from
 /// `App::mouse_pixel_coords` so it is testable without constructing
 /// `App` / `TermWindow` / `wgpu::Surface`, mirroring the existing
 /// `RecordingSink` / `WheelDispatch` headless-seam pattern.
@@ -476,7 +475,6 @@ pub(crate) fn clamp_mouse_pixel_coords(
     pos: PhysicalPosition<f64>,
     bounds_origin: (f64, f64),
     bounds_size: (f64, f64),
-    scale: f64,
 ) -> (Option<u32>, Option<u32>) {
     // Reject non-finite inputs before any arithmetic — propagating NaN
     // through clamp + `as u32` would fabricate origin coords silently.
@@ -486,21 +484,27 @@ pub(crate) fn clamp_mouse_pixel_coords(
         || !bounds_origin.1.is_finite()
         || !bounds_size.0.is_finite()
         || !bounds_size.1.is_finite()
-        || !scale.is_finite()
     {
         return (None, None);
     }
-    // Reject sub-pixel / non-positive bounds. The < 1.0 reject avoids the
+    // Reject sub-pixel bounds. The < 1.0 reject avoids the
     // `f64::clamp(0.0, bounds_size.0 - 1.0)` panic when `bounds_size.0`
     // is between 0.0 (exclusive) and 1.0 (exclusive).
-    if scale <= 0.0 || bounds_size.0 < 1.0 || bounds_size.1 < 1.0 {
+    if bounds_size.0 < 1.0 || bounds_size.1 < 1.0 {
         return (None, None);
     }
     let rel_x = (pos.x - bounds_origin.0).clamp(0.0, bounds_size.0 - 1.0);
     let rel_y = (pos.y - bounds_origin.1).clamp(0.0, bounds_size.1 - 1.0);
-    let logical_x = (rel_x / scale) as u32;
-    let logical_y = (rel_y / scale) as u32;
-    (Some(logical_x), Some(logical_y))
+    // PHYSICAL (device) pixels relative to the grid origin — consistent with
+    // the CSI 14t report, which is also physical. notcurses
+    // derives `cellpxy = csi14t_pixy / rows` (physical cell height) and
+    // decodes `(wire_y - 1) / cellpxy = physical_y / cellpxy`, recovering the
+    // row exactly at every DPI scale. Dividing by `scale_factor` here (logical
+    // pixels) was the prior logical-pixel unit mismatch — notcurses mis-decoded at
+    // scale > 1.0.
+    let physical_x = rel_x as u32;
+    let physical_y = rel_y as u32;
+    (Some(physical_x), Some(physical_y))
 }
 
 /// Parse a mouse wheel delta into `(line_count, scroll_up)`.

@@ -211,13 +211,15 @@ pub fn encode_utf8(buf: &mut [u8], code: u8, col: usize, line: usize) -> usize {
 /// Encode a mouse event in SGR-Pixel format (DEC private mode 1016).
 ///
 /// Format: `\x1b[<{code};{px};{py}{M|m}` — same wire shape as SGR
-/// but coordinates are logical pixels (1-indexed per xterm spec)
-/// rather than cell coords. Returns the number of bytes written.
+/// but coordinates are PHYSICAL (device) pixels (1-indexed per xterm
+/// spec) rather than cell coords. Returns the number of bytes written.
 ///
 /// Per xterm `charproc.c` `kitty mouse.c` reference: SGR-Pixel adds
 /// `1` to the pixel coordinate (Px+1, Py+1) just like SGR adds 1 to
-/// cell coords. Pixel coordinates flow from the App layer with the
-/// `Window::scale_factor()` already applied (logical, not physical).
+/// cell coords. Pixel coordinates flow from the App layer as PHYSICAL
+/// (device) pixels — the SAME unit as the CSI 14t cell-pixel report, so
+/// 1016-aware clients (notcurses) decode the correct cell at every DPI
+/// scale. The App does NOT divide by `Window::scale_factor()`.
 pub fn encode_sgr_pixel(buf: &mut [u8], code: u8, px: u32, py: u32, pressed: bool) -> usize {
     let suffix = if pressed { 'M' } else { 'm' };
     let mut cursor = Cursor::new(buf);
@@ -276,21 +278,22 @@ pub struct MouseEvent {
     pub line: usize,
     /// Modifier keys held during the event.
     pub mods: MouseModifiers,
-    /// Logical-pixel x coordinate for SGR-Pixel (mode 1016) encoding.
-    /// `None` for non-pixel encoders (the cell encoders ignore the
-    /// field). Pre-computed by the App caller from pinned cell metrics
+    /// PHYSICAL (device) pixel x coordinate for SGR-Pixel (mode 1016)
+    /// encoding. `None` for non-pixel encoders (the cell encoders ignore
+    /// the field). Pre-computed by the App caller from pinned cell metrics
     /// (`FontCollection::cell_metrics()` per §05 Golden Lane SSOT) +
-    /// sub-cell offset. Per xterm `charproc.c` SGR-Pixel reports use
-    /// logical (CSS) pixels, NOT physical pixels — App applies
-    /// `Window::scale_factor()` division before populating.
+    /// sub-cell offset. SGR-Pixel reports use PHYSICAL (device) pixels —
+    /// the SAME unit as the CSI 14t cell-pixel report, so 1016-aware
+    /// clients (notcurses) decode the correct cell at every DPI scale
+    ///. The App does NOT divide by `Window::scale_factor()`.
     pub px: Option<u32>,
-    /// Logical-pixel y coordinate for SGR-Pixel encoding. See `px`.
+    /// PHYSICAL (device) pixel y coordinate for SGR-Pixel encoding. See `px`.
     pub py: Option<u32>,
     /// DEVICE physical pixel coords `(px, py)` for DEC Locator Pu=1
-    /// reporting. Distinct from `px`/`py` (SGR-Pixel LOGICAL pixels):
-    /// DECLRP Pu=1 reports raw device pixels per xterm `button.c:785-807`,
-    /// so the App populates this WITHOUT the `Window::scale_factor()`
-    /// division it applies to `px`/`py`. `None` when DEC Locator is not
+    /// reporting (DECLRP Pu=1 reports raw device pixels per xterm
+    /// `button.c:785-807`). The SAME grid-relative device coordinate as
+    /// `px`/`py` (both physical) — the App reads one
+    /// shared physical-pixel source. `None` when DEC Locator is not
     /// pixel-unit OR the App did not compute it.
     pub physical_px: Option<(u32, u32)>,
     /// Whether the cursor was inside the grid when the event fired.

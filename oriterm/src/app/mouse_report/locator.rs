@@ -51,7 +51,8 @@ impl App {
     /// flag (out-of-grid → Term stores `Unavailable` → DECRQLP Pe=0) and
     /// clamped [`mouse_cell_clamped`](App::mouse_cell_clamped) for the
     /// stored cell coords. `physical_px` carries DEVICE pixels (DECELR
-    /// Pu=1) WITHOUT the `scale_factor` division SGR-Pixel uses.
+    /// Pu=1) — the SAME grid-relative physical coordinate the SGR-Pixel
+    /// encoder now reports.
     pub(in crate::app) fn report_locator_observation(
         &mut self,
         button: MouseButton,
@@ -105,23 +106,17 @@ impl App {
         }
     }
 
-    /// Compute DEVICE physical-pixel coordinates of the cursor relative to
-    /// the grid origin, for DEC Locator Pu=1 reporting.
+    /// DEVICE physical cursor pixels as a single `Option<(u32, u32)>` for
+    /// the `MouseEvent.physical_px` field (DEC Locator Pu=1) — both-present
+    /// → `Some((x, y))`, otherwise `None`.
     ///
-    /// Per xterm `button.c:785-807`, DECELR Pu=1 reports raw DEVICE pixels
-    /// — NOT the logical (scale-divided) pixels SGR-Pixel mode 1016 uses.
-    /// Reuses [`clamped_cursor_px`](App::clamped_cursor_px) with `scale =
-    /// 1.0` so the result is `(cursor - grid_origin)` device pixels,
-    /// clamped to grid bounds. Returns `(None, None)` when no usable surface.
-    fn mouse_physical_px(&self) -> (Option<u32>, Option<u32>) {
-        self.clamped_cursor_px(1.0)
-    }
-
-    /// `mouse_physical_px` collapsed to a single `Option<(u32, u32)>` for
-    /// the `MouseEvent.physical_px` field. `(None, None)` (no usable
-    /// surface) → `None`; both present → `Some((x, y))`.
+    /// Per xterm `button.c:785-807`, DECELR Pu=1 reports raw DEVICE pixels.
+    /// The SGR-Pixel encoder px/py is now ALSO physical, so this
+    /// and `mouse_pixel_coords` are the SAME grid-relative device coordinate
+    /// — both read the single shared [`clamped_cursor_px`](App::clamped_cursor_px)
+    /// source (no parallel physical-pixel computation).
     pub(super) fn mouse_physical_px_opt(&self) -> Option<(u32, u32)> {
-        match self.mouse_physical_px() {
+        match self.clamped_cursor_px() {
             (Some(x), Some(y)) => Some((x, y)),
             _ => None,
         }

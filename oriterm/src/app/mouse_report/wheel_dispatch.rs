@@ -63,16 +63,17 @@ pub(super) struct WheelDispatch {
     pub shift_held: bool,
     pub pane_id: Option<PaneId>,
     pub mods: MouseModifiers,
-    /// Logical-pixel cursor coordinates for SGR-Pixel mode 1016
-    /// encoding. `(None, None)` when SGR-Pixel is not active or the
-    /// cursor is outside the grid; the cell encoders ignore them.
+    /// PHYSICAL (device) cursor pixel coordinates for SGR-Pixel mode 1016
+    /// encoding. `(None,
+    /// None)` when SGR-Pixel is not active or the cursor is outside the
+    /// grid; the cell encoders ignore them.
     pub px: Option<u32>,
     pub py: Option<u32>,
     /// DEVICE physical-pixel cursor coordinates for DEC Locator Pu=1
-    /// observation (distinct from the scale-divided logical `px`/`py`).
-    /// `None` when no usable surface. Read by `Term` Step A so a wheel
-    /// dispatched while mouse-tracking + locator-Pu=1 are both active
-    /// observes real pixels instead of clobbering the position.
+    /// observation — the SAME grid-relative physical coordinate as
+    /// `px`/`py`. `None` when no usable surface. Read by
+    /// `Term` Step A so a wheel dispatched while mouse-tracking +
+    /// locator-Pu=1 are both active observes real pixels.
     pub physical_px: Option<(u32, u32)>,
 }
 
