@@ -1487,7 +1487,7 @@ fn bridge_parser_to_alt_scroll_decision() {
     assert!(!should_translate_wheel_to_arrows(mode, false));
 }
 
-// : tier2_alt_scroll_payload + classify_wheel_event matrix.
+// tier2_alt_scroll_payload + classify_wheel_event matrix.
 // Verifies DECCKM-aware Tier-2 alt-scroll byte selection, the WheelTier
 // dispatcher, and ANY_MOUSE_ENCODING isolation per xterm spec
 // (ctlseqs.txt:2465-2473 + scrollbar.c:711-727).
@@ -1915,13 +1915,14 @@ fn classify_wheel_event_any_mouse_member_count_assertion() {
     );
 }
 
-// --- : dispatch_wheel wiring matrix ---
+// --- dispatch_wheel wiring matrix ---
 // Tests pin the wiring layer extracted from `App::handle_mouse_wheel`:
 // `dispatch_wheel<S: WheelSink>(WheelDispatch, &mut S)` consumes a sink
 // trait so the side-effect surface (PTY writes, viewport scroll, mark-dirty)
 // can be matrix-tested without constructing the unconstructible-in-#[test]
-// `App`. already pinned the pure decision functions
-// (parse_wheel_delta, classify_wheel_event, tier2_alt_scroll_payload);
+// `App`. The pure decision functions
+// (parse_wheel_delta, classify_wheel_event, tier2_alt_scroll_payload) are
+// pinned separately;
 // these tests pin that the dispatcher's match arms call those decisions'
 // implications on the sink in the right order, with the right operand
 // counts, with the right bytes, and with the right post-match mark-dirty
@@ -2506,7 +2507,7 @@ fn dispatch_wheel_viewport_scroll_does_not_query_cell_for_report() {
     );
 }
 
-// --- : cross-site convergence pin ---
+// --- cross-site convergence pin ---
 // Pinned by Plan-review round 0 F2: keyboard arrow encoding via the public
 // `encode_key` dispatcher must produce IDENTICAL bytes to mouse-wheel
 // `tier2_alt_scroll_payload` for the (DECCKM × direction) cells the wheel
@@ -2793,10 +2794,11 @@ mod clamp_mouse_pixel_coords_matrix {
         assert_eq!(
             CELLS.len(),
             15,
-            "expected 15 clamp_mouse_pixel_coords test cells (the scale param was dropped: \
-             scale param: scale-2 test → physical-rel pin; non-positive-scale removed; \
-             cross-surface notcurses-decode pin added); a missing entry here means a \
-             test was added without registering it"
+            "CELLS is the hand-maintained clamp_mouse_pixel_coords registry; a count \
+             mismatch means a registered test was removed/renamed (the fn-pointer also \
+             fails to compile) or this constant is stale. It does NOT auto-detect a NEW \
+             test added without a CELLS entry — code-review convention covers that gap \
+             (unlike the core crate's self-verifying loop-counter matrices)"
         );
     }
 }
